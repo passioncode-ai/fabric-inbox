@@ -66,6 +66,11 @@ Locations name the source function while the integration branch is being formatt
 | action.domains.account_connect | Connect another account | app/components/domains/Accounts.tsx:82 | SCN-046 | proposed |
 | action.domains.account_remove | Remove… | app/components/domains/Accounts.tsx:59 | SCN-046 | proposed |
 | action.domains.account_keep | Keep | app/components/domains/Accounts.tsx:72 | SCN-046 | proposed |
+| state.domains.account_via_own | its own token | app/components/domains/Accounts.tsx:15 | SCN-045 | proposed |
+| state.domains.account_via_server | your server's token | app/components/domains/Accounts.tsx:15 | SCN-045 | proposed |
+| help.domains.account_token_paste | Paste the token here. Your server keeps it as its own secret; it is not shown again. | app/components/domains/Accounts.tsx:144 | SCN-046 | proposed |
+| field.domains.account_token | Token | app/components/domains/Accounts.tsx:4 | SCN-046 | proposed |
+| action.domains.account_connect_submit | Connect | app/components/domains/Accounts.tsx:24 | SCN-046 | proposed |
 | step.domains.relay | Carry the mail from its account | workers/routing/domains.ts:205 | SCN-031 | proposed |
 | navigation.inbox.knowledge | Knowledge | app/routes/unified-inbox.tsx | SCN-034 | proposed |
 | action.knowledge.create | Create collection | app/routes/knowledge.tsx | SCN-034 | proposed |
