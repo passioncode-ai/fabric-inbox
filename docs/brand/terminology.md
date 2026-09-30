@@ -28,7 +28,8 @@ Contract: brand-contract v1
 | Not spam | Not junk, Unblock | Bringing a message back from Spam and putting its sender on the Never spam list |
 | Spam rules | Spam settings, filters | The screen with what goes to Spam and the Always spam / Never spam lists |
 | Agent access | API access, integrations, MCP settings | The screen where the owner gives outside agents their keys and sees what they changed |
-| Agent key | API key, token, credential (to a user) | One outside agent's way in: a Client ID and a Client Secret, with a level and a sending mode |
+| Agent key | API key, agent token, access token, credential (to a user) | One outside agent's way in: a Client ID and a Client Secret, with a level and a sending mode |
+| Cloudflare API token | API key, Cloudflare key, credential (to a user) | What a person creates in Cloudflare (My Profile or Manage Account → API Tokens) and gives the server: one for the server's own account, one for each other account connected on Domains & addresses; "token" alone once the context has named it (operator, 2026-10-01) |
 | Outside agent | Bot, integration, app (for a keyed agent) | An AI agent the owner runs elsewhere (Claude Code, Cursor, their own) that works with Fabric Inbox through its key; never an Agent that answers an address |
 | Drafts only / Can send | Read-write, full access (for sending) | Whether an agent key's mail waits in Drafts for the owner or leaves, within its daily number |
 | Revoke | Delete key, disable | Ending an agent key: it stops working at once |
