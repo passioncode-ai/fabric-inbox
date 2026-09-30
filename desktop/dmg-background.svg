@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="340" viewBox="0 0 540 340">
+  <rect width="540" height="340" fill="#fbfaf7"/>
+  <path d="M212 160 H318" stroke="#b6aabc" stroke-width="4" stroke-linecap="round"/>
+  <path d="M306 146 L322 160 L306 174" fill="none" stroke="#b6aabc" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="270" y="292" text-anchor="middle" font-family="-apple-system, Helvetica, Arial, sans-serif" font-size="15" fill="#5c4e63">Drag Fabric Inbox to Applications to install it</text>
+</svg>

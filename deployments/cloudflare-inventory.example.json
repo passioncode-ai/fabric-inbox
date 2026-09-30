@@ -1,0 +1,32 @@
+{
+  "capturedAt": "2026-01-01T00:00:00Z",
+  "source": "Cloudflare API, read-only: zones, Email Routing settings, rules and catch-all of each zone",
+  "serverAccount": "<your-cloudflare-account-id>",
+  "otherAccounts": {
+    "example.invalid": "<the-other-account-id>"
+  },
+  "domains": {
+    "example.com": {
+      "rules": [
+        ["hello@example.com", "forward", "inbox@example.net"],
+        ["old@example.com", "forward-disabled", "inbox@example.net"],
+        ["bounce@example.com", "drop", ""]
+      ],
+      "catchAll": ["forward", "inbox@example.net"]
+    },
+    "example.org": {
+      "rules": [
+        ["support@example.org", "worker", "fabric-inbox"]
+      ],
+      "catchAll": ["worker", "fabric-inbox"]
+    },
+    "example.invalid": {
+      "rules": [],
+      "catchAll": null
+    }
+  },
+  "workerMailboxes": {
+    "source": "Mailboxes a previous Worker kept for its catch-all domains",
+    "addresses": ["sales@example.org"]
+  }
+}

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'">
+<title>Fabric Inbox</title>
+<link rel="stylesheet" href="fabric-tokens.css">
+<link rel="stylesheet" href="setup.css">
+<script src="setup.js" defer></script>
+</head>
+<body>
+<main>
+  <div class="brand-row"><p class="eyebrow"><img src="inbox-mark.svg" alt="">Fabric Inbox</p><button type="button" class="secondary small" id="theme">Dark theme</button></div>
+  <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+  <section id="step-welcome" aria-labelledby="welcome-title">
+    <h1 id="welcome-title" tabindex="-1">Welcome to Fabric Inbox</h1>
+    <p class="lead">Your mail and your project addresses in one place. Fabric Inbox runs on a small server in your own Cloudflare account: mail is received and kept there, and this app is your window onto it.</p>
+    <div class="choices" role="list">
+      <div role="listitem"><button type="button" class="choice primary-choice" id="choose-cloudflare">
+        <strong>Create my server on Cloudflare</strong>
+        <span>The app sets it up in your own Cloudflare account, free plan included. About a minute.</span>
+      </button></div>
+      <div id="bundled" role="listitem"></div>
+      <div role="listitem"><button type="button" class="choice" id="choose-file">
+        <strong>Open a setup file…</strong>
+        <span>A <code>.json</code> setup exported from Fabric Inbox or shared by your team.</span>
+      </button></div>
+      <div role="listitem"><button type="button" class="choice" id="choose-manual">
+        <strong>I already have a server</strong>
+        <span>Enter the address of a Fabric Inbox server that is already running.</span>
+      </button></div>
+    </div>
+    <details class="no-server">
+      <summary>What is the server?</summary>
+      <p>A small program in your Cloudflare account that receives mail for your domains, keeps it and sends your replies. Only you can open it: Cloudflare emails you a sign-in code. You can also run it yourself from the Fabric Inbox source and enter its address here.</p>
+    </details>
+  </section>
+
+  <section id="step-cloudflare" aria-labelledby="cloudflare-title" hidden>
+    <h1 id="cloudflare-title" tabindex="-1">Create your server on Cloudflare</h1>
+    <p class="lead">Fabric Inbox runs in your own Cloudflare account. The app creates everything it needs there; your mail stays in your account.</p>
+    <p id="cf-no-bundle" class="error" role="alert" hidden>This copy of the app carries no server to create. Download the app again, or enter the address of a server you run.</p>
+
+    <div id="cf-token-phase">
+      <h2>1. Give the app a Cloudflare token</h2>
+      <ol class="next">
+        <li><button type="button" class="secondary small" id="cf-open">Open Cloudflare API Tokens</button> and sign in, or create a free account.</li>
+        <li>Choose <strong>Create Token</strong>, then <strong>Create Custom Token</strong>, and name it “Fabric Inbox”.</li>
+        <li>Add each permission below. Under <strong>Account Resources</strong> choose your account; under <strong>Zone Resources</strong> choose <strong>All zones</strong>.</li>
+        <li>Choose <strong>Continue to summary</strong>, <strong>Create Token</strong>, and copy the token.</li>
+      </ol>
+      <table class="permissions" aria-label="Permissions the token needs">
+        <thead><tr><th>Type</th><th>Permission</th><th>Access</th></tr></thead>
+        <tbody id="cf-permissions"></tbody>
+      </table>
+      <label for="cf-token">Token</label>
+      <input id="cf-token" type="password" autocomplete="off" spellcheck="false" aria-describedby="cf-token-help">
+      <p id="cf-token-help" class="help">It is saved as a secret on your new server, which uses it to manage your domains. This Mac does not keep it.</p>
+      <p id="cf-token-error" class="error" role="alert" hidden></p>
+      <div class="actions"><button type="button" id="cf-check">Continue</button><button type="button" class="secondary" id="back-cloudflare">Back</button></div>
+    </div>
+
+    <div id="cf-details-phase" hidden>
+      <h2>2. Who signs in</h2>
+      <div id="cf-account-field">
+        <label for="cf-account">Cloudflare account</label>
+        <select id="cf-account"></select>
+      </div>
+      <p id="cf-existing" class="notice" hidden>This account already has a Fabric Inbox server. It will be updated; its mail and settings are kept.</p>
+      <label for="cf-email">Your email</label>
+      <input id="cf-email" type="email" autocomplete="email" aria-describedby="cf-email-help">
+      <p id="cf-email-help" class="help">Only this address can open your server. Each time you sign in, Cloudflare emails a code to it.</p>
+      <div id="cf-subdomain-field" hidden>
+        <label for="cf-subdomain">Name for your web address</label>
+        <input id="cf-subdomain" autocomplete="off" spellcheck="false" aria-describedby="cf-subdomain-help">
+        <p id="cf-subdomain-help" class="help">Your server will be at <code>fabric-inbox.<span id="cf-subdomain-preview">name</span>.workers.dev</code>. Letters, digits and dashes; one per Cloudflare account.</p>
+      </div>
+      <div id="cf-team-field" hidden>
+        <label for="cf-team">Name for your sign-in page</label>
+        <input id="cf-team" autocomplete="off" spellcheck="false" aria-describedby="cf-team-help">
+        <p id="cf-team-help" class="help">You will sign in at <code><span id="cf-team-preview">name</span>.cloudflareaccess.com</code>.</p>
+      </div>
+      <p id="cf-details-error" class="error" role="alert" hidden></p>
+      <div class="actions"><button type="button" id="cf-deploy">Create my server</button><button type="button" class="secondary" id="cf-back-token">Back</button></div>
+    </div>
+
+    <div id="cf-progress-phase" hidden>
+      <h2 id="cf-progress-title" tabindex="-1">Creating your server…</h2>
+      <ol id="cf-steps" class="steps" aria-live="polite"></ol>
+      <p id="cf-progress-error" class="error" role="alert" hidden></p>
+      <p id="cf-done" class="notice" hidden>Your server is ready. Sign in with the code Cloudflare emails you; then add your domains on Domains &amp; addresses.</p>
+      <div class="actions"><button type="button" id="cf-retry" hidden>Continue</button><button type="button" class="secondary" id="cf-back-details" hidden>Back</button></div>
+    </div>
+  </section>
+
+  <section id="step-review" aria-labelledby="review-title" hidden>
+    <h1 id="review-title" tabindex="-1">Review the setup</h1>
+    <dl class="facts">
+      <dt>Setup</dt><dd id="review-name"></dd>
+      <dt>Server</dt><dd id="review-origin"></dd>
+      <dt>Sign-in</dt><dd id="review-access"></dd>
+    </dl>
+    <h2 id="review-count"></h2>
+    <ul id="review-domains" class="domains"></ul>
+    <div id="review-not-served" hidden>
+      <h2>Stays as it is</h2>
+      <ul id="review-not-served-list" class="domains"></ul>
+    </div>
+    <h2>What happens next</h2>
+    <ol class="next">
+      <li>Fabric Inbox opens your server. Sign in with the code Cloudflare emails you; it stays inside the app.</li>
+      <li>The addresses above are created on the server. Nothing answers them until you choose an agent.</li>
+      <li>Where an address forwarded to Gmail, a copy keeps going there once its mail is routed to the server.</li>
+    </ol>
+    <p id="review-error" class="error" role="alert" hidden></p>
+    <div class="actions"><button type="button" id="connect-setup">Connect and apply</button><button type="button" class="secondary" id="back-review">Back</button></div>
+  </section>
+
+  <section id="step-manual" aria-labelledby="manual-title" hidden>
+    <h1 id="manual-title" tabindex="-1">Connect to your server</h1>
+    <p>Use the address where your Fabric Inbox server runs, for example <code>https://inbox.example.com</code>.</p>
+    <form id="setup">
+      <label for="origin">Server address</label>
+      <input id="origin" name="origin" type="url" placeholder="https://inbox.example.com" autocomplete="url" required aria-describedby="origin-help">
+      <p id="origin-help" class="help">HTTPS is required. HTTP is available only on localhost for development.</p>
+      <label for="access">Cloudflare Access sign-in address <span class="optional">(if your server uses it)</span></label>
+      <input id="access" name="access" type="url" placeholder="https://your-team.cloudflareaccess.com" autocomplete="off" aria-describedby="access-help">
+      <p id="access-help" class="help">Found in Cloudflare Zero Trust → Settings → Team name. With it, the sign-in page stays inside the app.</p>
+      <p id="error" class="error" role="alert" hidden></p>
+      <div class="actions"><button id="connect" type="submit">Save and connect</button><button id="retry" type="button" class="secondary" hidden>Retry connection</button><button type="button" class="secondary" id="back-manual">Back</button></div>
+    </form>
+  </section>
+
+  <p class="footnote">Mail needs a network connection in this version; there is no offline mailbox yet.</p>
+</main>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "_comment": "Copy to deployments/<name>/deployment.json (git-ignored) and replace every <placeholder>. Nothing here ships in the app or the server bundle; tests/no-owner-data.test.ts reads this file from each local deployment and checks that no committed app or server file names these values. Apply the vars once with: npx wrangler deploy --var POLICY_AUD:<aud> --var TEAM_DOMAIN:<team> --var DOMAINS:<domains> (keep_vars keeps them afterwards).",
+  "accountId": "<your-cloudflare-account-id>",
+  "worker": "fabric-inbox",
+  "origin": "https://fabric-inbox.your-subdomain.workers.dev",
+  "setupName": "Example — domains (Cloudflare)",
+  "vars": {
+    "POLICY_AUD": "<your-access-application-audience>",
+    "TEAM_DOMAIN": "https://your-team.cloudflareaccess.com",
+    "DOMAINS": "example.com example.org"
+  },
+  "identifiers": [
+    "your-subdomain.workers.dev",
+    "your-team.cloudflareaccess.com"
+  ],
+  "cloudflareToken": {
+    "secret": "CLOUDFLARE_API_TOKEN on the Worker",
+    "issuedBy": "<how the token was issued: a dashboard template or your secret store>",
+    "label": "<the token's name in the Cloudflare dashboard>",
+    "issuedOn": "<date>"
+  }
+}

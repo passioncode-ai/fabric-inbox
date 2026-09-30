@@ -1,0 +1,54 @@
+{
+  "format": "fabric-inbox-setup/1",
+  "name": "Example — domains (Cloudflare)",
+  "server": {
+    "origin": "https://fabric-inbox.your-subdomain.workers.dev",
+    "accessOrigin": "https://your-team.cloudflareaccess.com"
+  },
+  "domains": [
+    "example.com",
+    "example.org"
+  ],
+  "mailboxes": [
+    {
+      "address": "hello@example.com",
+      "forwardTo": "inbox@example.net",
+      "note": "Email Routing forwarded it to inbox@example.net"
+    },
+    {
+      "address": "catch-all@example.com",
+      "name": "Everything else",
+      "forwardTo": "inbox@example.net",
+      "note": "The catch-all forwarded every other address to inbox@example.net"
+    },
+    {
+      "address": "support@example.org",
+      "note": "Email Routing sent it to the Worker fabric-inbox"
+    },
+    {
+      "address": "sales@example.org",
+      "note": "Email Routing sent it to the Worker fabric-inbox"
+    },
+    {
+      "address": "catch-all@example.org",
+      "name": "Everything else",
+      "note": "The catch-all sent every other address to a Worker"
+    }
+  ],
+  "catchAll": [
+    {
+      "domain": "example.com",
+      "mailbox": "catch-all@example.com"
+    },
+    {
+      "domain": "example.org",
+      "mailbox": "catch-all@example.org"
+    }
+  ],
+  "notServed": [
+    {
+      "domain": "example.invalid",
+      "reason": "In another Cloudflare account: its Email Routing cannot send to this Worker; it keeps forwarding as before"
+    }
+  ]
+}

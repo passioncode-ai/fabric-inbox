@@ -1,0 +1,1533 @@
+:root {
+  --text-color-kumo-default: var(--pc-text);
+  --text-color-kumo-strong: var(--pc-text);
+  --text-color-kumo-subtle: var(--pc-text-muted);
+  --text-color-kumo-link: var(--pc-link);
+  --text-color-kumo-brand: var(--pc-link);
+  --color-kumo-base: var(--pc-bg);
+  --color-kumo-recessed: var(--pc-panel);
+  --color-kumo-elevated: var(--pc-panel-raised);
+  --color-kumo-tint: var(--pc-panel);
+  --color-kumo-line: var(--pc-border);
+}
+body {
+  font-family: var(--pc-font);
+  background: var(--pc-bg);
+  color: var(--pc-text);
+}
+.fi-app {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  height: 100dvh;
+  font-size: var(--pc-type-body);
+  line-height: 1.5;
+  background: var(--pc-bg);
+  color: var(--pc-text);
+}
+.fi-app * {
+  box-sizing: border-box;
+}
+.fi-app button,
+.fi-app input,
+.fi-app textarea,
+.fi-app select {
+  font: inherit;
+}
+.fi-app button,
+.fi-app a {
+  -webkit-tap-highlight-color: transparent;
+}
+.fi-app button {
+  cursor: pointer;
+}
+.fi-app button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.fi-app :is(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--pc-focus);
+  outline-offset: 3px;
+}
+.fi-sidebar {
+  background: var(--pc-panel);
+  border-right: 1px solid var(--pc-border);
+  padding: 25px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  min-height: 0;
+}
+.fi-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 9px;
+  text-decoration: none;
+  color: var(--pc-text);
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.45px;
+}
+.fi-brand img {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+.fi-brand small {
+  display: block;
+  color: var(--pc-text-muted);
+  font-size: 10px;
+  letter-spacing: 0.25px;
+  font-weight: 400;
+  margin-top: 1px;
+}
+.fi-primary,
+.fi-secondary {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  border-radius: var(--pc-radius-control);
+  padding: 9px 14px;
+  line-height: 1.4;
+  text-decoration: none;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+/* Every screen, not only the workbench: a disabled action must look it (the standalone pages
+   showed a disabled Save exactly like an enabled one, 2026-09-29). */
+.fi-primary:disabled,
+.fi-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.fi-primary {
+  background: var(--pc-accent);
+  color: var(--pc-on-accent);
+}
+.fi-primary:hover {
+  background: var(--pc-accent-hover);
+}
+.fi-secondary {
+  border-color: var(--pc-border);
+  background: var(--pc-bg);
+  color: var(--pc-text);
+}
+.fi-secondary:hover {
+  background: var(--pc-panel);
+}
+.fi-compose-button {
+  margin: 27px 6px 24px;
+  justify-content: flex-start;
+}
+.fi-compose-button > span {
+  margin-left: auto;
+  font-size: 17px;
+}
+.fi-section-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--pc-text-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 1.25px;
+  padding: 10px 12px;
+}
+.fi-section-label a {
+  color: inherit;
+}
+.fi-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  text-align: left;
+  text-decoration: none;
+  color: var(--pc-text-muted);
+  font-size: 13px;
+}
+.fi-nav-item > span:nth-child(2) {
+  flex: 1;
+}
+.fi-nav-item:hover,
+.fi-account:hover {
+  background: var(--pc-panel-raised);
+  color: var(--pc-text);
+}
+.fi-nav-item.is-active {
+  background: var(--pc-accent-soft);
+  color: var(--pc-text);
+  font-weight: 650;
+}
+.fi-nav-item.is-active > svg {
+  color: var(--pc-link);
+}
+.fi-counter {
+  display: inline-flex;
+  min-width: 19px;
+  padding: 0 5px;
+  justify-content: center;
+  font-size: 11px;
+  background: var(--pc-bg);
+  border: 1px solid var(--pc-border);
+  border-radius: 5px;
+  color: var(--pc-text-muted);
+}
+.fi-folders {
+  margin: 7px 0 17px;
+}
+.fi-folders .fi-nav-item {
+  padding-left: 21px;
+}
+.fi-folders .is-folder {
+  color: var(--pc-text);
+  font-weight: 600;
+}
+.fi-folders .is-folder:after {
+  content: "";
+  height: 5px;
+  width: 5px;
+  background: var(--pc-link);
+  border-radius: 50%;
+}
+.fi-account {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  gap: 10px;
+  padding: 10px 9px;
+  margin-bottom: 3px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  color: var(--pc-text);
+}
+.fi-account.is-active {
+  background: var(--pc-bg);
+  border-color: var(--pc-border-strong);
+}
+.fi-account > span:last-child {
+  min-width: 0;
+}
+.fi-account strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fi-account small {
+  display: block;
+  font-size: 10px;
+  color: var(--pc-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 151px;
+}
+.fi-account small.fi-provider {
+  font-size: 9px;
+  margin-top: 3px;
+}
+.fi-account-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 27px;
+  height: 27px;
+  border-radius: 7px;
+  background: var(--pc-info-soft);
+  color: var(--pc-info);
+  font-size: 12px;
+  font-weight: 650;
+}
+.fi-account-mark.tone-1 {
+  background: var(--pc-positive-soft);
+  color: var(--pc-positive);
+}
+.fi-account-mark.tone-2 {
+  background: var(--pc-warning-soft);
+  color: var(--pc-warning);
+}
+.fi-account-mark.tone-3 {
+  background: var(--pc-accent-soft);
+  color: var(--pc-link);
+}
+.fi-add-account {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+  color: var(--pc-text-muted);
+  text-decoration: none;
+  padding: 10px;
+  margin-bottom: 18px;
+}
+.fi-add-account:hover {
+  color: var(--pc-text);
+}
+.fi-sidebar-bottom {
+  margin-top: auto;
+  padding-top: 24px;
+}
+.fi-theme-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--pc-border);
+  margin: 15px 8px 0;
+  padding-top: 12px;
+}
+.fi-theme-row a {
+  font-size: 10px;
+  color: var(--pc-text-muted);
+  text-decoration: none;
+}
+.fi-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pc-text-muted);
+  min-width: 32px;
+  min-height: 32px;
+}
+.fi-icon-button:hover {
+  background: var(--pc-panel);
+  color: var(--pc-text);
+}
+.fi-workspace {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.fi-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 88px;
+  padding: 19px 27px;
+  border-bottom: 1px solid var(--pc-border);
+}
+.fi-toolbar > div {
+  min-width: 0;
+}
+.fi-toolbar h1 {
+  font-size: 22px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.7px;
+  margin: 3px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fi-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  color: var(--pc-text-muted);
+}
+.fi-search {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--pc-border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  color: var(--pc-text-muted);
+  width: 280px;
+  flex-shrink: 0;
+  background: var(--pc-panel);
+}
+.fi-search input {
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--pc-text);
+  min-width: 0;
+  width: 100%;
+  font-size: 12px;
+}
+.fi-search:focus-within {
+  outline: 2px solid var(--pc-focus);
+  outline-offset: 2px;
+}
+.fi-search input:focus-visible {
+  outline: 0;
+}
+.fi-search button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+.fi-content {
+  display: grid;
+  grid-template-columns: 350px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.fi-message-list {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--pc-border);
+  overflow: auto;
+  min-width: 0;
+}
+.fi-list-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 17px 21px;
+  font-size: 11px;
+  position: sticky;
+  top: 0;
+  background: var(--pc-bg);
+  z-index: 1;
+  border-bottom: 1px solid var(--pc-border);
+}
+.fi-list-heading strong {
+  font-weight: 600;
+}
+.fi-list-heading span {
+  font-size: 10px;
+  color: var(--pc-text-muted);
+}
+.fi-message {
+  display: block;
+  position: relative;
+  text-align: left;
+  padding: 19px 21px 17px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--pc-border);
+  background: var(--pc-bg);
+  color: var(--pc-text);
+  transition: background var(--pc-duration-hover) var(--pc-ease);
+}
+.fi-message:hover {
+  background: var(--pc-panel);
+}
+.fi-message.is-selected {
+  background: var(--pc-accent-soft);
+}
+.fi-message.is-selected:before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--pc-accent);
+}
+.fi-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+.fi-row-top strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fi-is-unread strong,
+.fi-message.is-unread .fi-subject,
+.fi-message.is-unread .fi-row-top strong {
+  font-weight: 650;
+}
+.fi-row-top time {
+  font-size: 10px;
+  color: var(--pc-text-muted);
+  flex-shrink: 0;
+}
+.fi-unread {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--pc-link);
+  flex-shrink: 0;
+}
+.fi-subject {
+  display: block;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fi-snippet {
+  display: block;
+  color: var(--pc-text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 5px 0 10px;
+}
+.fi-message-account {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  color: var(--pc-text-muted);
+}
+.fi-message-account svg:last-child:not(:first-child) {
+  margin-left: auto;
+  color: var(--pc-link);
+}
+.fi-list-footer {
+  font-size: 10px;
+  color: var(--pc-text-muted);
+  padding: 13px 21px;
+  border-top: 1px solid var(--pc-border);
+  margin-top: auto;
+}
+.fi-load-more {
+  margin: 12px;
+  align-self: center;
+}
+.fi-search-summary {
+  font-size: 12px;
+  padding: 10px 20px;
+  background: var(--pc-panel);
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.fi-search-summary button,
+.fi-text-button {
+  border: 0;
+  background: transparent;
+  color: var(--pc-link);
+  text-decoration: underline;
+}
+.fi-reader {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.fi-reader-empty {
+  margin: auto;
+  text-align: center;
+  color: var(--pc-text-muted);
+  padding: 36px;
+}
+.fi-empty-mark {
+  width: 70px;
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--pc-panel);
+  color: var(--pc-text-muted);
+  border: 1px solid var(--pc-border);
+  border-radius: 19px;
+  margin: 0 auto 22px;
+}
+.fi-reader-empty h2 {
+  color: var(--pc-text);
+  font-weight: 500;
+  font-size: 19px;
+  letter-spacing: -0.5px;
+  margin: 0 0 10px;
+}
+.fi-reader-empty p {
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 0;
+}
+.fi-micro {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 2px;
+  margin-top: 42px;
+}
+.fi-reader-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--pc-border);
+  min-height: 52px;
+}
+.fi-reader-toolbar > span {
+  font-size: 10px;
+  color: var(--pc-text-muted);
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fi-reader-scroll {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.fi-message-header {
+  padding: 34px 34px 20px;
+}
+.fi-account-pill {
+  font-size: 9px;
+  letter-spacing: 0;
+  font-weight: 400;
+  padding: 2px 7px;
+  border: 1px solid var(--pc-border);
+  border-radius: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fi-message-header h2 {
+  font-size: 26px;
+  font-weight: 550;
+  letter-spacing: -0.8px;
+  line-height: 1.3;
+  margin: 18px 0 27px;
+  overflow-wrap: anywhere;
+}
+.fi-sender {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-size: 11px;
+}
+.fi-sender > div {
+  min-width: 0;
+}
+.fi-sender strong {
+  font-size: 11px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.fi-sender p {
+  margin: 2px 0 0;
+  color: var(--pc-text-muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.fi-sender time {
+  margin-left: auto;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--pc-text-muted);
+}
+.fi-avatar {
+  width: 33px;
+  height: 33px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--pc-panel);
+  border: 1px solid var(--pc-border);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.fi-message-body {
+  padding: 12px 34px 35px;
+  font-size: 14px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.fi-message-body pre {
+  font: inherit;
+  white-space: pre-wrap;
+  margin: 0;
+}
+.fi-message-body iframe {
+  border-radius: 6px;
+}
+.fi-reply-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 17px 25px;
+  border-top: 1px solid var(--pc-border);
+  font-size: 12px;
+}
+.fi-rule-link {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  color: var(--pc-text-muted);
+  text-decoration: none;
+  font-size: 10px;
+}
+.fi-rule-link:hover {
+  color: var(--pc-text);
+}
+.fi-attachments {
+  padding: 0 34px 25px;
+}
+.fi-attachments h3 {
+  font-size: 11px;
+}
+.fi-attachments button {
+  margin: 6px 6px 0 0;
+  font-size: 11px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.fi-attachments small {
+  color: var(--pc-text-muted);
+}
+.fi-notice,
+.fi-provider-errors {
+  background: var(--pc-warning-soft);
+  color: var(--pc-warning);
+  padding: 12px 20px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--pc-border);
+  overflow-wrap: anywhere;
+}
+.fi-notice {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.fi-notice button {
+  background: transparent;
+  border: 0;
+  color: inherit;
+}
+.fi-provider-errors p {
+  margin: 3px 0;
+}
+.fi-provider-errors a {
+  color: inherit;
+  text-decoration: underline;
+}
+.fi-empty {
+  padding: 45px 25px;
+  text-align: center;
+  color: var(--pc-text-muted);
+  font-size: 12px;
+}
+.fi-empty > svg {
+  margin: auto auto 18px;
+}
+.fi-empty h2 {
+  color: var(--pc-text);
+  font-size: 17px;
+  margin: 0 0 10px;
+  font-weight: 500;
+}
+.fi-empty p {
+  line-height: 1.7;
+  margin: 0 0 18px;
+}
+.fi-sidebar-empty {
+  padding: 5px 12px;
+  font-size: 11px;
+  color: var(--pc-text-muted);
+}
+.fi-muted {
+  color: var(--pc-text-muted);
+  font-size: 11px;
+}
+.fi-compose,
+.fi-rules-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  background: var(--pc-bg);
+  color: var(--pc-text);
+  border: 1px solid var(--pc-border);
+  border-radius: 16px;
+  box-shadow: var(--pc-shadow-overlay);
+  padding: 24px;
+  width: min(640px, calc(100vw - 32px));
+  max-height: 90dvh;
+  overflow: auto;
+}
+.fi-compose::backdrop,
+.fi-rules-dialog::backdrop {
+  background: #0008;
+  backdrop-filter: blur(3px);
+}
+.fi-compose header,
+.fi-rules-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.fi-compose h2,
+.fi-rules-dialog h2 {
+  font-size: 22px;
+  font-weight: 550;
+  letter-spacing: -0.5px;
+  margin: 5px 0;
+}
+.fi-compose label {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-size: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--pc-border);
+}
+.fi-compose label > input,
+.fi-compose label > select {
+  flex: 1;
+  min-width: 0;
+  margin-left: auto;
+  padding: 7px;
+  border: 1px solid var(--pc-border);
+  border-radius: 6px;
+  background: var(--pc-panel);
+  color: var(--pc-text);
+}
+.fi-compose .fi-body-label {
+  display: block;
+}
+.fi-compose textarea {
+  display: block;
+  width: 100%;
+  height: clamp(120px, 22dvh, 230px);
+  resize: vertical;
+  background: var(--pc-bg);
+  color: var(--pc-text);
+  border: 0;
+  margin-top: 12px;
+  line-height: 1.7;
+}
+.fi-compose footer {
+  position: sticky;
+  bottom: -24px;
+  background: var(--pc-bg);
+  padding-bottom: 18px;
+  border-top: 1px solid var(--pc-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 18px;
+}
+.fi-compose-attachments ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+.fi-compose-attachments li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 12px;
+}
+.fi-compose-attachments li span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fi-compose-attachments small {
+  color: var(--pc-text-muted);
+  white-space: nowrap;
+}
+.fi-rules-dialog p {
+  font-size: 13px;
+  color: var(--pc-text-muted);
+  margin-bottom: 20px;
+}
+.fi-rule-account {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 15px 0;
+  border-top: 1px solid var(--pc-border);
+  text-decoration: none;
+  color: var(--pc-text);
+  overflow-wrap: anywhere;
+}
+@media (min-width: 1550px) {
+  .fi-content {
+    grid-template-columns: 390px minmax(0, 1fr);
+  }
+  .fi-message-header,
+  .fi-message-body {
+    padding-left: 50px;
+    padding-right: 50px;
+  }
+}
+@media (max-width: 1150px) {
+  .fi-app {
+    grid-template-columns: 205px minmax(0, 1fr);
+  }
+  .fi-content {
+    grid-template-columns: 300px minmax(0, 1fr);
+  }
+  .fi-search {
+    width: 210px;
+  }
+  .fi-toolbar {
+    padding: 17px 20px;
+    gap: 10px;
+  }
+  .fi-toolbar h1 {
+    font-size: 19px;
+  }
+  .fi-message-header {
+    padding: 25px 23px 18px;
+  }
+  .fi-message-body {
+    padding: 10px 23px 25px;
+  }
+  .fi-message-header h2 {
+    font-size: 23px;
+  }
+  .fi-rule-link {
+    width: 100%;
+    margin-left: 0;
+  }
+  .fi-account small {
+    max-width: 127px;
+  }
+}
+@media (max-width: 930px) {
+  .fi-content {
+    display: block;
+    position: relative;
+  }
+  .fi-message-list {
+    height: 100%;
+    border-right: 0;
+  }
+  .fi-reader {
+    display: none;
+    height: 100%;
+  }
+  .fi-has-selection .fi-message-list {
+    display: none;
+  }
+  .fi-has-selection .fi-reader {
+    display: flex;
+  }
+  .fi-search {
+    width: 190px;
+  }
+  .fi-toolbar {
+    flex-wrap: wrap;
+  }
+  .fi-toolbar > div {
+    flex: 1;
+  }
+  .fi-toolbar .fi-search {
+    order: 3;
+    width: 100%;
+  }
+}
+@media (max-width: 550px) {
+  .fi-app {
+    grid-template-columns: 1fr;
+    height: 100dvh;
+  }
+  .fi-sidebar {
+    padding: 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--pc-border);
+    max-height: 230px;
+    display: block;
+  }
+  .fi-brand {
+    font-size: 15px;
+    display: inline-flex;
+  }
+  .fi-brand img {
+    width: 29px;
+    height: 29px;
+  }
+  .fi-brand small {
+    display: none;
+  }
+  .fi-compose-button {
+    float: right;
+    margin: 0;
+    font-size: 11px;
+    padding: 8px 10px;
+  }
+  .fi-compose-button > span {
+    display: none;
+  }
+  .fi-section-label,
+  .fi-folders,
+  .fi-sidebar-empty {
+    display: none;
+  }
+  .fi-sidebar > .fi-nav-item {
+    display: inline-flex;
+    width: auto;
+    margin: 13px 0 4px;
+  }
+  .fi-account-list {
+    display: flex;
+    overflow: auto;
+    gap: 4px;
+  }
+  .fi-account {
+    flex-shrink: 0;
+    width: 180px;
+    margin-bottom: 0;
+    padding: 6px;
+  }
+  .fi-account .fi-provider {
+    display: none;
+  }
+  .fi-sidebar-bottom {
+    padding: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .fi-sidebar-bottom > .fi-nav-item {
+    font-size: 11px;
+    width: auto;
+    padding: 5px;
+  }
+  .fi-sidebar-bottom > .fi-nav-item > svg:last-child {
+    display: none;
+  }
+  .fi-theme-row {
+    padding: 0;
+    margin: 0 0 0 auto;
+    border: 0;
+  }
+  .fi-theme-row a,
+  .fi-add-account {
+    display: none;
+  }
+  .fi-workspace {
+    min-height: 0;
+  }
+  .fi-app {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .fi-toolbar {
+    min-height: 0;
+    padding: 12px 17px;
+  }
+  .fi-eyebrow {
+    font-size: 8px;
+  }
+  .fi-toolbar h1 {
+    font-size: 19px;
+  }
+  .fi-message {
+    padding: 17px;
+  }
+  .fi-reader-toolbar {
+    padding: 8px;
+  }
+  .fi-reply-bar {
+    padding: 12px 17px;
+  }
+  .fi-compose {
+    padding: 18px;
+  }
+  .fi-compose footer {
+    align-items: flex-start;
+  }
+  .fi-compose textarea {
+    height: 170px;
+  }
+}
+@media (min-width: 551px) {
+  .fi-sidebar {
+    padding-top: 18px;
+  }
+  .fi-compose-button {
+    margin-top: 19px;
+    margin-bottom: 12px;
+  }
+  .fi-folders {
+    margin-top: 2px;
+    margin-bottom: 7px;
+  }
+  .fi-sidebar-bottom {
+    padding-top: 8px;
+  }
+  .fi-section-label {
+    padding-top: 7px;
+    padding-bottom: 7px;
+  }
+  .fi-account {
+    padding-top: 7px;
+    padding-bottom: 7px;
+  }
+  .fi-add-account {
+    margin-bottom: 6px;
+  }
+  .fi-theme-row {
+    margin-top: 9px;
+    padding-top: 8px;
+  }
+}
+@media (min-width: 551px) {
+  /* The addresses keep room for about five rows; when the window is shorter than
+     everything, the whole sidebar scrolls instead of squeezing them to one line. */
+  .fi-sidebar {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .fi-sidebar > * {
+    flex-shrink: 0;
+  }
+  .fi-sidebar > .fi-section-label:first-of-type {
+    display: none;
+  }
+  .fi-folders .fi-nav-item {
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+  /* .fi-sidebar raises specificity over the base rule further down, whose
+     min-height: 0 otherwise wins by order and lets the list shrink to a row. */
+  .fi-sidebar .fi-account-list {
+    flex: 1 1 auto;
+    min-height: min(190px, 30vh);
+    overflow: auto;
+  }
+  .fi-category-list {
+    max-height: 24vh;
+    overflow: auto;
+  }
+  .fi-account {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .fi-sidebar-bottom {
+    margin-top: 0;
+  }
+}
+
+.fi-account .fi-connected-provider {
+  display: none;
+}
+
+.fi-drafts-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--pc-border);
+  border-radius: 12px;
+  background: var(--pc-bg);
+  color: var(--pc-text);
+}
+.fi-drafts-dialog::backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+.fi-drafts-dialog header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.fi-drafts-dialog h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.fi-draft-list {
+  list-style: none;
+  margin: 16px 0;
+  padding: 0;
+}
+.fi-draft-list li + li {
+  border-top: 1px solid var(--pc-border);
+}
+.fi-draft-list button {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  padding: 12px 8px;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.fi-draft-list button:hover {
+  background: var(--pc-panel);
+}
+.fi-draft-warning {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 20;
+  margin: 0;
+  padding: 12px;
+  background: var(--pc-bg);
+  color: var(--pc-text);
+  border: 1px solid var(--pc-border);
+}
+
+/* ── Triage: Focus view, groups and filters (REQ-T2) ───────────────── */
+.fi-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.fi-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pc-space-2);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--pc-border);
+  background: var(--pc-bg);
+}
+.fi-segmented {
+  display: inline-flex;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-pill);
+  overflow: hidden;
+}
+.fi-segmented button,
+.fi-chip {
+  border: 0;
+  background: transparent;
+  color: var(--pc-text-muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.fi-segmented button[aria-pressed="true"] {
+  background: var(--pc-accent-soft);
+  color: var(--pc-text);
+  font-weight: 600;
+}
+.fi-chip {
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-pill);
+}
+.fi-chip[aria-pressed="true"] {
+  border-color: var(--pc-border-strong);
+  background: var(--pc-panel-raised);
+  color: var(--pc-text);
+}
+.fi-chip span {
+  color: var(--pc-text-muted);
+  margin-left: 2px;
+}
+.fi-chip-row {
+  display: flex;
+  gap: 6px;
+  flex: 1 0 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.fi-chip-row::-webkit-scrollbar {
+  display: none;
+}
+.fi-filter-bar .fi-chip,
+.fi-filter-bar .fi-segmented button {
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.fi-segmented button:focus-visible,
+.fi-chip:focus-visible,
+.fi-group-heading button:focus-visible {
+  outline: 2px solid var(--pc-focus);
+  outline-offset: 1px;
+}
+.fi-section-heading {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  padding: 12px 21px 8px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--pc-text);
+  border-bottom: 1px solid var(--pc-border);
+  background: var(--pc-panel);
+}
+.fi-section-heading span {
+  color: var(--pc-text-muted);
+  font-weight: 500;
+}
+.fi-section-empty {
+  margin: 0;
+  padding: 14px 21px;
+  font-size: 11px;
+  color: var(--pc-text-muted);
+  border-bottom: 1px solid var(--pc-border);
+}
+.fi-group-heading {
+  margin: 0;
+  border-bottom: 1px solid var(--pc-border);
+}
+.fi-group-heading button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 21px;
+  border: 0;
+  background: var(--pc-bg);
+  color: var(--pc-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.fi-group-heading button:hover:not(:disabled) {
+  background: var(--pc-panel);
+}
+.fi-app .fi-group-heading button:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.fi-group-count {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--pc-text-muted);
+}
+.fi-group-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tag, var(--pc-text-muted));
+}
+.fi-triage-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: var(--pc-radius-pill);
+  background: var(--pc-panel-raised);
+  color: var(--pc-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+
+.tag-people { --tag: var(--pc-accent); }
+.tag-security { --tag: var(--pc-negative); }
+.tag-alerts { --tag: var(--pc-negative); }
+.tag-stores { --tag: var(--pc-info); }
+.tag-billing { --tag: var(--pc-positive); }
+.tag-dev { --tag: var(--pc-info); }
+.tag-notifications { --tag: var(--pc-text-muted); }
+.tag-social { --tag: var(--pc-warning); }
+.tag-newsletters { --tag: var(--pc-border-strong); }
+@media (prefers-reduced-motion: reduce) {
+  .fi-group-heading button { transition: none; }
+}
+
+/* ── Addresses grouped by domain (CF-1) ────────────────────────────── */
+.fi-account-list {
+  display: grid;
+  /* minmax(0, 1fr): a grid item's min-width is its content by default, so a long
+     domain widened the row past the sidebar and clipped its unread count. */
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 1px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.fi-account-group { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.fi-domain-row {
+  display: flex;
+  align-items: center;
+  border-radius: 7px;
+}
+.fi-domain-row.is-active { background: var(--pc-accent-soft); }
+.fi-domain-toggle {
+  flex-shrink: 0;
+  width: 22px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--pc-text-muted);
+  border-radius: 6px;
+}
+.fi-app .fi-domain-toggle:disabled { opacity: 0.35; }
+.fi-domain-name,
+.fi-address {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pc-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 6px 6px;
+  border-radius: 6px;
+}
+.fi-domain-name { font-weight: 600; }
+/* .fi-app button sets font: inherit (0,1,1); these need the same weight to win. */
+.fi-app .fi-domain-name,
+.fi-app .fi-address { font-size: 13px; padding-top: 5px; padding-bottom: 5px; }
+.fi-domain-name > span:first-of-type,
+.fi-address-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fi-domain-name:hover,
+.fi-address:hover { background: var(--pc-panel-raised); }
+.fi-domain-addresses {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0 0 0 28px;
+}
+.fi-address { width: 100%; color: var(--pc-text-muted); }
+.fi-address.is-active {
+  background: var(--pc-bg);
+  color: var(--pc-text);
+  box-shadow: inset 0 0 0 1px var(--pc-border-strong);
+}
+.fi-unread-count {
+  flex-shrink: 0;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--pc-radius-pill);
+  background: var(--pc-accent-soft);
+  color: var(--pc-text);
+  font-size: 10px;
+  font-weight: 650;
+  text-align: center;
+  line-height: 16px;
+}
+.fi-address-alert {
+  font-size: 9px;
+  color: var(--pc-warning);
+  white-space: nowrap;
+}
+.fi-add-links { display: grid; margin: 4px 0 12px; padding-top: 4px; border-top: 1px solid var(--pc-border); }
+@media (max-width: 550px) {
+  /* Phone: the sidebar is one scrolling row, so each domain is a chip that
+     selects the whole domain; single addresses stay reachable from Domains & addresses. */
+  .fi-account-group { flex-shrink: 0; }
+  .fi-domain-toggle,
+  .fi-domain-addresses,
+  .fi-add-links { display: none; }
+}
+.fi-add-links .fi-add-account { margin-bottom: 0; padding: 7px 10px; }
+.fi-domain-toggle:focus-visible,
+.fi-domain-name:focus-visible,
+.fi-address:focus-visible { outline: 2px solid var(--pc-focus); outline-offset: 1px; }
+
+/* ── Domain action steps (CF-2, SCR-09) ─────────────────────────────── */
+.fi-steps { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }
+.fi-step { display: grid; grid-template-columns: 7.5em minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.fi-step-mark { font-size: 11px; font-weight: 650; color: var(--pc-text-muted); }
+.fi-step.is-done .fi-step-mark { color: var(--pc-success, var(--pc-text)); }
+.fi-step.is-failed .fi-step-mark { color: var(--pc-warning); }
+.fi-step.is-failed { font-weight: 500; }
+
+/* ── Categories (CAT-5) ───────────────────────────────────────────── */
+.fi-category-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; margin-bottom: 6px; }
+.fi-app .fi-category {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0;
+  border: 0; background: transparent; color: var(--pc-text); font: inherit; font-size: 13px;
+  text-align: left; padding: 5px 10px; border-radius: 6px;
+}
+.fi-category:hover { background: var(--pc-panel-raised); }
+.fi-category.is-active { background: var(--pc-accent-soft); }
+.fi-category > svg { flex-shrink: 0; color: var(--pc-text-muted); }
+.fi-category-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fi-category-empty { margin-bottom: 6px; }
+.fi-category:focus-visible { outline: 2px solid var(--pc-focus); outline-offset: 1px; }
+.fi-category-chip {
+  display: inline-flex; align-items: center; border-radius: var(--pc-radius-pill); padding: 0 6px;
+  font-size: 10px; font-weight: 600; background: var(--pc-accent-soft); color: var(--pc-text); white-space: nowrap;
+}
+.fi-also-in { font-size: 10px; color: var(--pc-text-muted); }
+.fi-category-reason { display: block; font-size: 11px; color: var(--pc-text-muted); font-style: italic; margin-top: 2px; }
+.fi-spam-reason { font-style: normal; }
+.fi-spam-banner { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.fi-spam-banner a { color: var(--pc-link); }
+.fi-spam-confirm { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: baseline; color: var(--pc-text); }
+.fi-category-summary { margin: 2px 0 0; font-size: 12px; color: var(--pc-text-muted); max-width: 70ch; display: flex; align-items: flex-end; gap: 8px; }
+/* A long description keeps two lines here; the full text is its title and on Categories. */
+.fi-category-summary span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.fi-category-summary a { flex-shrink: 0; }
+.fi-category-summary a { color: inherit; }
+.fi-category-progress { margin: 0 16px 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--pc-border); font-size: 12px; color: var(--pc-text-muted); }
+.fi-provider-errors ul { margin: 6px 0; padding-left: 18px; font-size: 12px; }
+/* The folder list lives in the sidebar; on a phone the sidebar is one row, so folders move here. */
+.fi-folder-select { display: none; }
+.fi-folder-select select { border: 1px solid var(--pc-border); border-radius: 8px; background: var(--pc-bg); color: var(--pc-text); font: inherit; font-size: 13px; padding: 6px 8px; }
+@media (max-width: 550px) {
+  .fi-folder-select { display: block; }
+  .fi-category-list { display: flex; overflow-x: auto; gap: 4px; }
+  .fi-app .fi-category { width: auto; flex-shrink: 0; }
+  .fi-category-empty { display: none; }
+}
+
+/* Sidebar filter and hidden addresses (2026-09-29). */
+.fi-address-filter { display: flex; gap: 2px; margin: 0 6px 6px; padding: 2px; border: 1px solid var(--pc-border); border-radius: 8px; width: fit-content; }
+.fi-app .fi-address-filter button { border: 0; background: transparent; color: var(--pc-text-muted); font-size: 11px; padding: 3px 9px; border-radius: 6px; }
+.fi-app .fi-address-filter button[aria-pressed="true"] { background: var(--pc-panel-raised); color: var(--pc-text); font-weight: 600; }
+.fi-address-item { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.fi-address-item .fi-address { flex: 1; }
+.fi-app .fi-address-hide { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px;
+  border: 0; border-radius: 6px; background: transparent; color: var(--pc-text-muted); opacity: 0; padding: 0; }
+/* Shown on hover and on focus, so a keyboard reaches it; always shown where there is no hover. */
+.fi-address-item:hover .fi-address-hide, .fi-address-hide:focus-visible, .fi-address-hide.is-shown { opacity: 1; }
+@media (hover: none) { .fi-app .fi-address-hide { opacity: 1; } }
+.fi-app .fi-address-hide:hover { background: var(--pc-panel-raised); color: var(--pc-text); }
+.fi-address-note { margin: 4px 8px 6px; font-size: 11px; color: var(--pc-text-muted); }
+.fi-hidden-accounts { margin: 2px 6px 8px; font-size: 12px; }
+.fi-hidden-accounts > button { display: inline-flex; align-items: center; gap: 4px; }
+.fi-hidden-accounts ul { list-style: none; margin: 4px 0 0; padding: 0 0 0 14px; }
+/* The list scrolls, so an outline outside the button is clipped: draw it inside. */
+.fi-app .fi-address-hide:focus-visible { outline-offset: -2px; }
+/* A phone's sidebar is one short strip: the addresses keep the room; the filter still applies. */
+@media (max-width: 550px) {
+  .fi-address-filter, .fi-address-note, .fi-hidden-accounts, .fi-app .fi-address-hide { display: none; }
+}
+/* The base .fi-account-list (display: grid) comes later in this file and won by order over the
+   phone rule: domains stacked in a one-row strip, one visible. A chip row, by specificity. */
+@media (max-width: 550px) {
+  .fi-sidebar .fi-account-list { display: flex; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; gap: 4px; min-height: 0; }
+  .fi-sidebar .fi-account-group { flex: none; }
+}

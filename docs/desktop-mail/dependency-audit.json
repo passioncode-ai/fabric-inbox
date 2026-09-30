@@ -1,0 +1,314 @@
+{
+  "command": "npm audit --omit=dev --json",
+  "checked": "2026-09-26",
+  "summary": {
+    "info": 0,
+    "low": 5,
+    "moderate": 36,
+    "high": 9,
+    "critical": 0,
+    "total": 50
+  },
+  "packages": [
+    {
+      "name": "@ai-sdk/gateway",
+      "severity": "low",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@ai-sdk/provider-utils",
+      "severity": "low",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@ai-sdk/react",
+      "severity": "low",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@hono/node-server",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/core",
+      "severity": "high",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-blockquote",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-bold",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-bubble-menu",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-bullet-list",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-code",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-code-block",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-document",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-dropcursor",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-floating-menu",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-gapcursor",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-hard-break",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-heading",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-highlight",
+      "severity": "moderate",
+      "direct": true,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-horizontal-rule",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-image",
+      "severity": "moderate",
+      "direct": true,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-italic",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-link",
+      "severity": "moderate",
+      "direct": true,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-list",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-list-item",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-list-keymap",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-ordered-list",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-paragraph",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-strike",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-text",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-text-align",
+      "severity": "moderate",
+      "direct": true,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-text-style",
+      "severity": "moderate",
+      "direct": true,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extension-underline",
+      "severity": "moderate",
+      "direct": true,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/extensions",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/react",
+      "severity": "moderate",
+      "direct": true,
+      "fixAvailable": true
+    },
+    {
+      "name": "@tiptap/starter-kit",
+      "severity": "moderate",
+      "direct": true,
+      "fixAvailable": true
+    },
+    {
+      "name": "ai",
+      "severity": "low",
+      "direct": true,
+      "fixAvailable": true
+    },
+    {
+      "name": "body-parser",
+      "severity": "low",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "dompurify",
+      "severity": "moderate",
+      "direct": true,
+      "fixAvailable": true
+    },
+    {
+      "name": "echarts",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "express-rate-limit",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "fast-uri",
+      "severity": "high",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "ip-address",
+      "severity": "high",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "js-yaml",
+      "severity": "high",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "linkify-it",
+      "severity": "high",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "lodash",
+      "severity": "high",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "markdown-it",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "nanoid",
+      "severity": "high",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "path-to-regexp",
+      "severity": "high",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "picomatch",
+      "severity": "high",
+      "direct": false,
+      "fixAvailable": true
+    },
+    {
+      "name": "qs",
+      "severity": "moderate",
+      "direct": false,
+      "fixAvailable": true
+    }
+  ]
+}

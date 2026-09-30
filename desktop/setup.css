@@ -1,0 +1,62 @@
+:root { font-family:var(--pc-font);color:var(--pc-text);background:var(--pc-bg); }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 620px; margin: auto; padding: 32px; }
+.eyebrow { font-size: 13px; font-weight: 650; margin: 0 0 12px; }
+h1 { font-size: 26px; line-height: 1.2; letter-spacing: -.5px; margin: 0 0 12px; }
+p { line-height: 1.5; font-size: 14px; }
+label { display: block; font-size: 13px; font-weight: 600; margin: 22px 0 8px; }
+input { width: 100%; border: 1px solid var(--pc-border-strong); border-radius: 6px; padding: 10px 12px; font: inherit; font-size: 14px; color: inherit; background: var(--pc-panel); }
+.help, .footnote, .optional { font-size: 12px; color: var(--pc-text-muted); }
+.help { margin: 6px 0 0; }
+.optional { font-weight: 400; }
+.footnote { margin-top: 24px; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
+button { border: 1px solid transparent; border-radius: 6px; background: var(--pc-accent); color: var(--pc-panel); padding: 10px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+button.secondary { color: inherit; background: transparent; border-color: var(--pc-border-strong); }
+button:disabled { opacity: .65; cursor: wait; }
+:focus-visible { outline: 3px solid var(--pc-focus); outline-offset: 3px; }
+.notice { border: 1px solid var(--pc-border-strong); padding: 12px; border-radius: 6px; font-size: 13px; line-height: 1.5; }
+#error { color: var(--pc-negative); font-size: 13px; }
+[hidden] { display: none !important; }
+
+button {color:var(--pc-on-accent)}
+.brand-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:25px}.eyebrow{display:flex;align-items:center;gap:10px;margin:0}.eyebrow img{width:35px;height:35px;border-radius:9px}
+
+/* First run: welcome, choices, setup review (SCN-028) */
+main { max-width: 680px; }
+.lead { font-size: 15px; color: var(--pc-text-muted); margin: 0 0 22px; }
+.choices { display: grid; gap: 10px; margin: 0 0 18px; }
+.choices [role=listitem] { display: grid; gap: 10px; }
+.choice { display: grid; gap: 4px; width: 100%; text-align: left; padding: 16px 18px; border-radius: 10px; border: 1px solid var(--pc-border-strong); background: var(--pc-panel); color: var(--pc-text); font-weight: 400; cursor: pointer; }
+.choice strong { font-size: 15px; font-weight: 650; }
+.choice span { font-size: 13px; color: var(--pc-text-muted); }
+.choice:hover { border-color: var(--pc-accent); }
+.primary-choice { border-color: var(--pc-accent); background: var(--pc-accent-soft); }
+button.small { padding: 6px 10px; font-size: 12px; }
+.no-server summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.no-server p { font-size: 13px; color: var(--pc-text-muted); }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 13px; margin: 0 0 18px; }
+.facts dt { color: var(--pc-text-muted); }
+.facts dd { margin: 0; word-break: break-all; }
+h2 { font-size: 14px; margin: 20px 0 8px; }
+.domains { list-style: none; padding: 0; margin: 0; max-height: 240px; overflow: auto; border: 1px solid var(--pc-border); border-radius: 8px; }
+.domains li { display: grid; gap: 2px; padding: 8px 12px; border-bottom: 1px solid var(--pc-border); font-size: 13px; }
+.domains li:last-child { border-bottom: 0; }
+.domains li span { color: var(--pc-text-muted); font-size: 12px; }
+.next { font-size: 13px; line-height: 1.5; padding-left: 20px; }
+.error { color: var(--pc-negative); font-size: 13px; }
+code { font-family: var(--pc-font-data); font-size: 12px; }
+h1:focus { outline: none; }
+
+/* Creating a server (CF-5) */
+select { width: 100%; border: 1px solid var(--pc-border-strong); border-radius: 6px; padding: 10px 12px; font: inherit; font-size: 14px; color: inherit; background: var(--pc-panel); }
+.permissions { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0 8px; }
+.permissions th { text-align: left; font-weight: 600; color: var(--pc-text-muted); padding: 4px 8px 4px 0; }
+.permissions td { border-top: 1px solid var(--pc-border); padding: 5px 8px 5px 0; }
+.permissions td:nth-child(2) { font-weight: 600; }
+.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; font-size: 13px; }
+.steps li { display: grid; grid-template-columns: 7.5em minmax(0, 1fr); gap: 8px; line-height: 1.45; }
+.steps .mark { font-size: 11px; font-weight: 650; color: var(--pc-text-muted); }
+.steps .is-failed .mark { color: var(--pc-negative); }
+.steps .is-running .mark { color: var(--pc-accent); }

@@ -1,0 +1,9 @@
+# Desktop host bounded packet
+
+Owner: desktop subtask; branch codex/inbox-desktop. Own desktop/** and tests/desktop*.test.ts; no root package or docs changes. Root integrates.
+
+Goal: runnable macOS Electron host named Fabric Inbox for the cloud mail app. Local setup accepts HTTPS server origin or loopback HTTP development origin. Persist server settings and isolated Chromium session. Remote page is sandboxed, no Node, no preload bridge. Native menus expose retry, configure and Gmail connection. Gmail start opens the configured server's /api/accounts/gmail/connect URL in the system browser, preserving server-side OAuth cookie binding. Allow only configured origin and explicitly configured Cloudflare Access team origin in-app; other safe navigation opens system browser. Do not weaken TLS or permissions. Offline/failure states offer retry/configure and explicitly state no offline mailbox cache. No local tool-runner or complete offline scenario claims.
+
+Scenario scope: SCN-001 startup/session, SCN-002 provider connection entry, SCN-019 offline/restart (partial, cached mail/draft recovery not implemented by this host). Shared contract: docs/desktop-mail/architecture.md; UX/brand: docs/ux/scenarios.md and docs/brand/{voice,terminology,channels}. This task narrows the architecture's proposed local renderer/cache to a secure remote host; root must retain that gap and not mark full SCN-019 implemented.
+
+Files: desktop/package.json, main.cjs, policy.cjs, preload.cjs, setup.html, setup.js, setup.css, package.mjs; policy tests under tests/desktop-policy.test.ts. Packaging outputs ignored release/. Dependencies supplied by root. Checks: node tests, syntax checks, package macOS arm64 artifact, native launch smoke if available. No production credentials, deployments, real mail sends or provider grants.

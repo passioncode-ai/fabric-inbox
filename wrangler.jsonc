@@ -1,0 +1,79 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "fabric-inbox",
+	"compatibility_date": "2025-11-28",
+	"main": "./workers/app.ts",
+	"observability": {
+		"enabled": true
+	},
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	// No deployment's values live here (CF-4). POLICY_AUD, TEAM_DOMAIN and DOMAINS are set on
+	// the Worker itself: the Mac app sets them when it creates a server (desktop/cloudflare-deploy.cjs);
+	// a server deployed by hand sets them once in the dashboard or with --var. keep_vars stops a
+	// deploy from wiping them. Without Access values the Worker refuses every request (fail closed).
+	// The account comes from CLOUDFLARE_ACCOUNT_ID or wrangler login.
+	"keep_vars": true,
+	"send_email": [
+		{
+			"name": "EMAIL",
+			"remote": false
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "BUCKET",
+			"bucket_name": "fabric-inbox",
+			"preview_bucket_name": "fabric-inbox-preview"
+		}
+	],
+	"ai": {
+		"binding": "AI"
+	},
+	"durable_objects": {
+		"bindings": [
+			{ "name": "AUTOMATIONS", "class_name": "AutomationDO" },
+			{ "name": "GMAIL_ACCOUNTS", "class_name": "GmailAccountsDO" },
+			{ "name": "AGENT_REGISTRY", "class_name": "AgentRegistryDO" },
+			{ "name": "KNOWLEDGE", "class_name": "KnowledgeDO" },
+			{ "name": "CATEGORIES", "class_name": "CategoriesDO" },
+			{
+				"name": "MAILBOX",
+				"class_name": "MailboxDO"
+			},
+			{
+				"name": "EMAIL_AGENT",
+				"class_name": "EmailAgent"
+			},
+			{
+				"name": "EMAIL_MCP",
+				"class_name": "EmailMCP"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"MailboxDO"
+			]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": [
+				"EmailAgent"
+			]
+		},
+		{
+			"tag": "v3",
+			"new_sqlite_classes": [
+				"EmailMCP"
+			]
+		},
+		{ "tag": "fabric-v1", "new_sqlite_classes": ["AutomationDO", "GmailAccountsDO"] },
+		{ "tag": "fabric-v2", "new_sqlite_classes": ["AgentRegistryDO"] },
+		{ "tag": "fabric-v3", "new_sqlite_classes": ["KnowledgeDO"] },
+		{ "tag": "fabric-v4", "new_sqlite_classes": ["CategoriesDO"] }
+	]
+}

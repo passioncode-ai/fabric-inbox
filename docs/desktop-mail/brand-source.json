@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/passioncode-ai/passioncode-ai.github.io",
+  "sourceCommit": "6085d1073b28dc3b97fb9b029350a038d20afd3c",
+  "contract": "PassionCode design system v1.1.0, Fabric ADR-0070",
+  "files": [
+    {"source":"design-system/tokens.css","copies":["app/styles/fabric-tokens.css","desktop/fabric-tokens.css"],"sha256":"86866df1bec49b85e9def4132021401894483bb819dc2d3a3a70511d2e4b2a61"},
+    {"source":"assets/inbox-mark.svg","copies":["public/inbox-mark.svg","public/favicon.svg","desktop/inbox-mark.svg"],"sha256":"bc45a70e5b992f0495f3f00db6c729fd440ec9be10b75e7c13f292b1c98237c8"}
+  ]
+}

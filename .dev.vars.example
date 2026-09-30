@@ -1,0 +1,22 @@
+# Local development values for `npm run dev` (copy to .dev.vars; never commit .dev.vars).
+# Full list, kinds and defaults: docs/desktop-mail/setup.md#configuration-reference
+
+# Cloudflare Access (required in production). TEAM_DOMAIN may be the base Access URL or the full /cdn-cgi/access/certs URL.
+POLICY_AUD=your-access-policy-audience-tag
+TEAM_DOMAIN=https://your-team.cloudflareaccess.com
+
+# Project domains served, commas and/or spaces.
+# DOMAINS=example.com, project.example
+# Keep mail for unknown addresses instead of rejecting it:
+# UNKNOWN_ADDRESS_POLICY={"example.com":"catch_all:hello@example.com"}
+
+# Manage Email Routing rules from Project addresses (a secret in production).
+# CLOUDFLARE_EMAIL_ROUTING_TOKEN=
+# EMAIL_ROUTING_WORKER=fabric-inbox
+
+# Tools for agents and rules: allowed hosts, and a JSON map of credential names to tokens (secret).
+# AUTOMATION_MCP_HOSTS=tools.example.com
+# AUTOMATION_TOOL_TOKENS={"ORDERS_API":"..."}
+
+# Models (Workers AI has no local mode; runs fail closed under npm run dev).
+# AGENT_MODEL=@cf/moonshotai/kimi-k2.5

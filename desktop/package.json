@@ -1,0 +1,9 @@
+{
+  "name": "fabric-inbox-desktop",
+  "productName": "Fabric Inbox",
+  "version": "0.8.0",
+  "private": true,
+  "description": "Fabric Inbox desktop mail client",
+  "main": "main.cjs",
+  "license": "AGPL-3.0-only OR LicenseRef-PassionCode-Commercial"
+}
