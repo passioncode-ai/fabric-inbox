@@ -66,7 +66,6 @@ account appears (bounded, with the reason shown if it does not).
 | MA-12 | The door issues a token for an extra account and delivers it into the server Worker as `CLOUDFLARE_API_TOKEN_<id>` | project-observatory test; live `cloudflare.py list` |
 | MA-13 | Live: the owner's server sees all three accounts, the domain that failed receives here, and one domain in another account receives a real message through the relay | receipt in the owner's local `deployments/owner/ops/`, summarised here without identifiers |
 
-
 ## Design and contracts (stages 2–3)
 
 Modules, walking skeleton first (M1 → M2 give the operator the list; M3 → M4 carry mail):
@@ -116,7 +115,7 @@ Door: passioncode-ai/project-observatory-dashboard#93 (presets `fabric-inbox-ser
 | MA-12 | the door's tests (`test_cf_fabric_account_preset_…`, zone policy removal caught); live: three tokens issued and delivered | done, PR open |
 | MA-13 | server `1d8af191` runs 0.8.0 with the three tokens; unauthenticated relay and API paths → Access login | partly: the screen, the failed domain and a relay delivery await the operator |
 
-Gates on the 0.8.0 tree: `npm test` 431 pass / 0 fail (exit 0), `npm run typecheck` 0, `npm run build`
+Gates on the 0.8.0 tree: `npm test` 431 tests, 0 fail (exit 0; on a clone without a local deployment the owner-data file check is the one skipped, 430 pass), `npm run typecheck` 0, `npm run build`
 0, UX lint 0, doctor 0, brand lint 0 errors, `git diff --check` 0, relative links resolve.
 
 **Not run, and why.** The owner's app window kept the page it had loaded before the deploy and
@@ -128,9 +127,11 @@ not measured; the relay follows the server's own handler, which already relies o
 Found live and fixed in the same run: the account-level rules list needs **Email Routing Account
 Rules: Read** (403 with the zone-level group); added to both token lists and both door presets.
 
-## Carry-over ledger (closed)
+## Carry-over ledger
+
+Both open items moved to the board as B-39; this brief carries no open row.
 
 | Item | Status | Home |
 |---|---|---|
-| Which foreign domain is used for the live relay check | open — the operator picks it | board B-39 |
-| The live Domains screen and the failed domain turned on | open — needs the operator's app | board B-39 |
+| Which foreign domain is used for the live relay check | moved — the operator picks it | board B-39 |
+| The live Domains screen and the failed domain turned on | moved — needs the operator's app | board B-39 |

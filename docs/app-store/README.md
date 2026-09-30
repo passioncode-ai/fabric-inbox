@@ -43,7 +43,7 @@ Controller (history): linked worktree `fabric-inbox-workbench`, branch `codex/ap
 
 ### Release 0.8.0 — several Cloudflare accounts (2026-09-30): built, withdrawn
 
-The 0.8.0 tree is `main` (`a9f9516`, the public history). What changed: [CHANGELOG](../../CHANGELOG.md);
+The 0.8.0 tree is `a9f9516`, the root commit of the public `main`. What changed: [CHANGELOG](../../CHANGELOG.md);
 decisions, contracts and the REQ table: [accounts brief](tasks/2026-09-30-cloudflare-accounts.md).
 
 **The GitHub release was published and then withdrawn the same night.** The repository had been
