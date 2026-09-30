@@ -6,6 +6,7 @@ that fixes it.
 
 | ID | Item | Source | Priority |
 |---|---|---|---|
+| B-39 | Accept 0.8.0 live on the owner's server: the Cloudflare accounts section shows all three accounts, Receive mail here on the domain that failed with "must be a subdomains" completes, and one domain of another account (the operator picks it: its routing changes) receives a real message through the relay and sends a reply from there | 0.8.0, 2026-09-30 (brief "Not run") | high |
 | B-20 | Fill knowledge collections from Fabric's project memory once ADR-0069 MEM-P2 (bounded search) ships: a sync that calls `POST /api/knowledge/collections/<id>/documents` with `prune: true` for collections whose source is `fabric`, scoped by the Fabric project's grants | KN-6, operator 2026-09-29 | high |
 | B-21 | Search the same text for both providers: a plain-text search column and the From display name at receive time for Cloudflare (today raw HTML, first 2000 characters, bare address); say in the UI which fields are searched | audit feed F8, 2026-09-29 | high |
 | B-22 | One message sent to two agent addresses (To and Cc) is answered once from each; answer it once per workspace, from the address it was sent To | audit agents A4, 2026-09-29 | medium |

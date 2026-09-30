@@ -41,6 +41,29 @@ Every row stays open until evidence exists. A package script is not a signed bui
 
 Controller (history): linked worktree `fabric-inbox-workbench`, branch `codex/app-store-release`; since 2026-09-27 all work lives on `main` and the linked worktrees are removed. Each implementer gets its own worktree. No `.claude/agent-sync.json` in Inbox; no guarded shared registry. Pipeline build skill requests bounded subagents, so these are authorized by that instruction. Existing model inherited, no override. Root writes this entry/scenario integration; agents own exclusive modules. No automatic loop is armed. Credentials, local configs, dependency trees and binaries stay local only.
 
+### Release 0.8.0 — several Cloudflare accounts (2026-09-30): built, withdrawn
+
+The 0.8.0 tree is `a9f9516`, the root commit of the public `main`. What changed: [CHANGELOG](../../CHANGELOG.md);
+decisions, contracts and the REQ table: [accounts brief](tasks/2026-09-30-cloudflare-accounts.md).
+
+**The GitHub release was published and then withdrawn the same night.** The repository had been
+re-created public with a one-commit history minutes earlier; the release's tag pointed into the
+private history and pushing it uploaded that history. The tag, the release and a docs branch were
+deleted; GitHub still serves those commits by SHA until they are purged (human step 4 below). The
+image below is kept on the release machine and is published again once the history question is
+settled, on a tag in the public history (rebuilt there, so its receipt names that commit).
+
+| What | Receipt |
+|---|---|
+| Image (built from the same tree, not published) | `Fabric-Inbox-0.8.0.dmg`, 251 906 800 bytes, sha256 `98ea03525df9b390d4f0ff149e71dd27f72bdc90f79a56b58088ac7c40008426`; public build (no setup), 0 of 73 owner identifiers in `app.asar` |
+| Signing and notarization | Developer ID Application, hardened runtime, `x86_64 arm64`; image submission `795bc06d-e697-4d2c-8d5d-9b89f3d4cd4f` Accepted; app and image stapled |
+| Download as a teammate (while published) | `gh release download … --pattern 'Fabric-Inbox-*.dmg' --pattern 'Fabric-Inbox-*.dmg.sha256'`, `shasum -a 256 -c` OK |
+| Installed copy (temporary folder) | `spctl -a -vv -t execute` → `source=Notarized Developer ID`; `stapler validate` on app and image; `CFBundleShortVersionString` 0.8.0 |
+| Its agent protocol | `node scripts/check-installed-app.mjs` exit 0: server bundle 0.8.0, `initialize` → `fabric-inbox 0.8.0`, `tools/list` → 65 tools, `list_accounts` → none; without Access → 403; no outbound request but the Access stand-in's key set |
+| The owner's server | runs the 0.8.0 tree, version `1d8af191`; secrets `CLOUDFLARE_API_TOKEN` (reissued with Access: Service Tokens) and one `CLOUDFLARE_API_TOKEN_<account id>` for each of the two other accounts, all from the Observatory door; each token probed with its own rights; unauthenticated relay and API paths → the Access login |
+
+Not checked: the new screen and a relay delivery on the owner's server (B-39, human step 3).
+
 ### Release 0.7.1 — the first published release (2026-09-30)
 
 [GitHub release v0.7.1](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v0.7.1): the
@@ -86,13 +109,28 @@ app. Nothing is half-done in the tree.
 
 **Human steps** (each needs a person; everything after them an agent does):
 
-1. Add **Account · Access: Service Tokens · Edit** to the server's Cloudflare API token (the one
-   saved as `CLOUDFLARE_API_TOKEN`; dash.cloudflare.com → My Profile → API Tokens → Edit).
+1. ~~Add Access: Service Tokens to the server's token~~ — done 2026-09-30 without a person: the
+   Observatory door issued the server a new token with it (preset `fabric-inbox-server`,
+   passioncode-ai/project-observatory-dashboard#93) and the old one was revoked.
 2. Add the repository secret **`MEMBERS_READ_TOKEN`** to `passioncode-ai/passioncode`: a
    fine-grained token with Contents: read on `passioncode-ai/fabric-inbox`, entered in your own
    terminal (`gh secret set MEMBERS_READ_TOKEN -R passioncode-ai/passioncode`), never in a chat.
+3. **0.8.0 in your app** (B-39): quit and reopen Fabric Inbox (the open window keeps the page it
+   loaded before the deploy), open Domains & addresses, and **Receive mail here** on the domain
+   that failed with "must be a subdomains". Then say which domain of another account should be the
+   first to receive through the relay: its routing changes.
+4. **The private history in the public repository.** Commits of the private history (up to the
+   0.8.0 docs, including those that held the owner's deployment before it left the tree) are no
+   longer on any ref but GitHub still serves them by SHA. Either ask GitHub Support to purge the
+   repository's unreachable objects, or re-create the repository and push only the public `main`.
+   Until then, do not push a tag or branch whose history is not the public `main`.
 
-Exact next task: **accept the agent path live and publish the skill.** After human step 1: in
+Exact next task: **accept 0.8.0 live (B-39)** — after human step 3, read the Cloudflare accounts
+section (three accounts, all with mail), the failed domain's steps, and for the chosen domain of
+another account the `relay` step, a real message arriving through it and a reply leaving; record
+the receipt in the [accounts brief](tasks/2026-09-30-cloudflare-accounts.md). Then merge the door's
+PR #93 in `passioncode-ai/project-observatory-dashboard` under its release process. After that, the
+earlier next task: **accept the agent path live and publish the skill.** Now that the server can make service tokens: in
 Agent access make a temporary Mail · Drafts only key; connect an MCP client with its two headers;
 run `list_accounts`, `list_messages`, `read_message`, `save_draft`, and a refused `send_email`; see
 them in What agents changed; revoke the key and confirm it is refused; record the receipt in the
