@@ -50,12 +50,17 @@ test("mail claiming one of our domains is ours only when it proves it; otherwise
   assert.equal(spamCheck({ ...base, sender: "a@ours.invalid", headers: [] }).verdict, "clean", "with no result from Cloudflare (a local or relayed copy) nothing is claimed");
 });
 
-test("the operator's lists come first: allowed beats every check, blocked beats a pass", () => {
+test("a forgery is decided first; then the operator's lists: allowed beats the weaker checks, blocked beats a pass", () => {
   const lists: SpamLists = { blockedSenders: ["deals@shop.invalid"], blockedDomains: ["spammy.invalid"], allowedSenders: [], allowedDomains: ["payments.invalid"] };
   assert.equal(spamCheck({ ...base, lists, sender: "deals@shop.invalid", headers: [pass] }).reason, "You marked this sender as spam");
   assert.equal(spamCheck({ ...base, lists, sender: "x@mail.spammy.invalid", headers: [pass] }).reason, "You marked spammy.invalid as spam");
   const reject = cf("dmarc=fail header.from=payments.invalid policy.dmarc=reject");
-  assert.deepEqual(spamCheck({ ...base, lists, sender: "service@payments.invalid", headers: [reject] }), { verdict: "clean", reason: "You marked payments.invalid as not spam" });
+  // Allowing payments.invalid allows its mail, not mail its own DMARC says is not from it.
+  assert.equal(spamCheck({ ...base, lists, sender: "service@payments.invalid", headers: [reject] }).verdict, "spam");
+  assert.match(spamCheck({ ...base, lists, sender: "service@payments.invalid", headers: [reject] }).reason, /Failed DMARC for payments\.invalid/);
+  // A broken SPF record with no signature is weaker: the operator's allow wins there.
+  const spfFail = cf("spf=fail smtp.mailfrom=payments.invalid; dmarc=none header.from=payments.invalid");
+  assert.deepEqual(spamCheck({ ...base, lists, sender: "service@payments.invalid", headers: [spfFail] }), { verdict: "clean", reason: "You marked payments.invalid as not spam" });
   assert.equal(spamCheck({ ...base, lists: { ...lists, allowedSenders: ["deals@shop.invalid"] }, sender: "deals@shop.invalid", headers: [pass] }).verdict, "clean",
     "an allowed sender wins over a blocked one");
 });

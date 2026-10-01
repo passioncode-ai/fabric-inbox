@@ -5,7 +5,7 @@ import { CloudflareApi, CloudflareApiError, ACCOUNT_TOKEN_PERMISSIONS } from "..
 import { accountTokenName, CloudflareAccounts, isAccountId, readDomainAccounts, writeChoice } from "../routing/accounts";
 import { DomainManager } from "../routing/domains";
 import { allServedDomains } from "../lib/mailbox-store";
-import { readRelays, removeRelay } from "../relay/install";
+import { currentRelay, readRelays, removeRelay } from "../relay/install";
 
 /**
  * The Cloudflare accounts of this server (MA-2, MA-3, MA-5, SCR-09): which ones there are, which
@@ -22,7 +22,7 @@ const SECRETS_WHAT = "keep a token on your server (Workers Scripts: Edit on the 
 
 function failure(c: C, error: unknown, event: string) {
   console.error(JSON.stringify({ event, error: (error as Error).message }));
-  if (error instanceof CloudflareApiError) return c.json({ error: error.message }, error.isPermission ? 403 : 502);
+  if (error instanceof CloudflareApiError) return c.json({ error: error.message }, error.isPermission ? 403 : error.status === 409 ? 409 : 502);
   return c.json({ error: `The server could not finish this: ${(error as Error).message}. Try again.` }, 502);
 }
 
@@ -45,7 +45,7 @@ cloudflareAccountsRouter.get("/api/cloudflare/accounts", async (c) => {
     return c.json({
       connected: true, permissions: ACCOUNT_TOKEN_PERMISSIONS,
       accounts: overview.accounts.map((a) => {
-        const relay = relays.find((r) => r.accountId === a.id);
+        const relay = currentRelay(relays, a.id);
         return { ...a, relay: relay ? { version: relay.version, installedAt: relay.installedAt } : null };
       }),
       ...(overview.problems.length ? { problems: overview.problems } : {}),

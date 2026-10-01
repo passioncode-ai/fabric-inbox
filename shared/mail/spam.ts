@@ -65,6 +65,16 @@ export function spamCheck(input: {
   const sender = input.sender.trim().toLowerCase();
   const domain = domainOf(sender);
   const lists = input.lists;
+  const auth = authResults(input.headers);
+  const own = under(domain, input.ownDomains);
+  // A forgery is decided before the operator's lists: "not spam" for bank.com means mail from
+  // bank.com, not mail that bank.com's own DMARC says is not from it (2026-10-01 review).
+  // A copy with no result from Cloudflare (local, relayed, a test) claims nothing.
+  const ownAuthentic = !auth || auth.dmarc === "pass" || auth.dkimDomains.some((d) => under(d, input.ownDomains));
+  if (own && !ownAuthentic) return { verdict: "spam", reason: `Claims to be from your domain ${own} but failed its authenticity checks` };
+  if (auth && auth.dmarc === "fail" && (auth.dmarcPolicy === "reject" || auth.dmarcPolicy === "quarantine"))
+    return { verdict: "spam", reason: `Failed DMARC for ${auth.fromDomain ?? domain}, whose owner asks to ${auth.dmarcPolicy} such mail` };
+
   if (lists.allowedSenders.includes(sender)) return { verdict: "clean", reason: "You marked this sender as not spam" };
   const allowedDomain = under(domain, lists.allowedDomains);
   if (allowedDomain) return { verdict: "clean", reason: `You marked ${allowedDomain} as not spam` };
@@ -72,17 +82,9 @@ export function spamCheck(input: {
   const blockedDomain = under(domain, lists.blockedDomains);
   if (blockedDomain) return { verdict: "spam", reason: `You marked ${blockedDomain} as spam` };
 
-  const auth = authResults(input.headers);
-  const own = under(domain, input.ownDomains);
-  if (own) {
-    // A copy with no result from Cloudflare (local, relayed, a test) claims nothing.
-    if (!auth || auth.dmarc === "pass" || auth.dkimDomains.some((d) => under(d, input.ownDomains)))
-      return { verdict: "clean", reason: "From one of your own domains" };
-    return { verdict: "spam", reason: `Claims to be from your domain ${own} but failed its authenticity checks` };
-  }
+  if (own) return { verdict: "clean", reason: "From one of your own domains" };
   if (auth) {
-    if (auth.dmarc === "fail" && (auth.dmarcPolicy === "reject" || auth.dmarcPolicy === "quarantine"))
-      return { verdict: "spam", reason: `Failed DMARC for ${auth.fromDomain ?? domain}, whose owner asks to ${auth.dmarcPolicy} such mail` };
+    // Weaker than DMARC: a real sender with a broken SPF record is the operator's to allow (above).
     if (auth.spf === "fail" && !auth.dkimDomains.length && auth.dmarc !== "pass")
       return { verdict: "spam", reason: `The sending server is not allowed to send for ${domain}, and the message carries no valid signature` };
   }

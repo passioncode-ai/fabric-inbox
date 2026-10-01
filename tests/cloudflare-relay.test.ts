@@ -323,8 +323,22 @@ test("a relay reporting an older version is upgraded in the background", async (
     await server.call("/relay/incoming", "POST", undefined, { "x-test-common-name": relay.clientId, "x-fabric-envelope-to": "support@studio.invalid", "x-fabric-relay-version": "00000000" });
     for (let i = 0; i < 50 && uploads() === before; i++) await new Promise((r) => setTimeout(r, 100));
     assert.equal(uploads(), before + 1, "reinstalled once");
-    await server.call("/relay/incoming", "POST", undefined, { "x-test-common-name": relay.clientId, "x-fabric-envelope-to": "support@studio.invalid", "x-fabric-relay-version": "00000000" });
-    await new Promise((r) => setTimeout(r, 500));
+    // The new relay's own sign-in, still claiming an old version: the hourly limit, not the row, stops it.
+    let current: any;
+    for (let i = 0; i < 50 && !(current = (await server.r2("config/relays.json")).relays.find((r: any) => !r.retiredAt))?.upgradeTriedAt; i++) {
+      cf.scripts[B]["fabric-inbox-relay"].bindings.find((b) => b.name === "RELAY_VERSION")!.text = "00000000";
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    cf.scripts[B]["fabric-inbox-relay"].bindings.find((b) => b.name === "RELAY_VERSION")!.text = "00000000";
+    await server.call("/relay/incoming", "POST", undefined, { "x-test-common-name": current.clientId, "x-fabric-envelope-to": "support@studio.invalid", "x-fabric-relay-version": "00000000" });
+    for (let i = 0; i < 30; i++) {
+      const row = (await server.r2("config/relays.json")).relays.find((r: any) => r.tokenId === current.tokenId);
+      if (row?.upgradeTriedAt) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const row = (await server.r2("config/relays.json")).relays.find((r: any) => r.tokenId === current.tokenId);
+    assert.ok(row.upgradeTriedAt, "the attempt is recorded on the current row");
+    await new Promise((r) => setTimeout(r, 300));
     assert.equal(uploads(), before + 1, "at most once an hour");
   } finally { await server.mf.dispose(); }
 });

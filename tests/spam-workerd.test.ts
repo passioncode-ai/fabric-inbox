@@ -199,8 +199,11 @@ test("Report spam moves the message and blocks the sender; Not spam brings it ba
     assert.equal(release.body.moved, 1);
     assert.deepEqual(release.body.lists.allowedDomains, ["promo.invalid"]);
     assert.deepEqual(release.body.lists.blockedSenders, ["deals@promo.invalid"], "the sender entry stays until removed; the allowed domain wins");
-    const third = await receive("Even with a failed check", { from: "news@promo.invalid", headers: FORGED("promo.invalid") });
-    assert.equal(third.spam, undefined, "an allowed domain beats a failed check");
+    // Allowing promo.invalid does not let through mail that promo.invalid's own DMARC rejects.
+    const third = await receive("A forgery of an allowed domain", { from: "news@promo.invalid", headers: FORGED("promo.invalid") });
+    assert.match(third.spam ?? "", /Failed DMARC for promo\.invalid/, "a forgery is spam even from an allowed domain");
+    const fourth = await receive("Allowed, unsigned", { from: "news@promo.invalid", headers: "" });
+    assert.equal(fourth.spam, undefined, "an allowed domain still beats the model and the weaker checks");
     assert.ok((await feed("inbox")).some((m) => m.subject === "More deals" && !m.spamReason));
 
     const removed = await call("/api/spam/lists", "POST", { list: "blockedSenders", value: "deals@promo.invalid", action: "remove" });

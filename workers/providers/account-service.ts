@@ -769,7 +769,8 @@ export class AccountService {
           threadId: message.threadId,
           subject: message.subject,
           sender: message.from,
-          body: message.text,
+          // HTML-only mail has no text part; categories strip HTML on ingest (as the backfill does).
+          body: message.text || message.html || "",
           date: message.date || new Date(message.timestamp || Date.now()).toISOString(),
         });
         await this.store.transaction(async (tx) => {

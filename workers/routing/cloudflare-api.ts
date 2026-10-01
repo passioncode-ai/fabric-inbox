@@ -158,7 +158,8 @@ export async function accountIdFor(api: CloudflareApi, env: TokenEnv & { EMAIL_R
   if (!ids.length) throw new CloudflareApiError("The token sees no Cloudflare account.", 400);
   const script = env.EMAIL_ROUTING_WORKER || "fabric-inbox";
   const probes = await Promise.all(ids.map((id) => api.call(`/accounts/${id}/workers/scripts/${script}/settings`, { what: "read Workers (Workers Scripts: Edit)" })
-    .then(() => "runs" as const, (e) => (e instanceof CloudflareApiError && (e.status === 404 || e.code === 10007) ? "absent" as const : "unknown" as const))));
+    // A token without Workers rights in an account cannot be running this server's script through it: absent.
+    .then(() => "runs" as const, (e) => (e instanceof CloudflareApiError && (e.status === 404 || e.code === 10007 || e.isPermission) ? "absent" as const : "unknown" as const))));
   const runs = ids.filter((_, i) => probes[i] === "runs");
   // Exactly one account runs the script and every other one was read: anything else is a guess.
   if (runs.length === 1 && !probes.includes("unknown")) return runs[0]!;

@@ -195,7 +195,7 @@ export class CloudflareAccounts {
     const accounts = [...found.values()]
       .map((a) => ({ ...a, server: a.id === serverId }))
       .sort((a, b) => Number(b.server) - Number(a.server) || a.name.localeCompare(b.name));
-    return { accounts, problems };
+    return { accounts, problems: [...new Set(problems)] };
   }
 
   /** The token to use for an account: its own when one was saved, else the server's when that sees it. */

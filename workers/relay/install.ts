@@ -127,9 +127,27 @@ export function relayOrigin(env: Env, requestOrigin: string | undefined, existin
 async function revokeRetired(env: Env, access: AgentAccess, accountId: string, now = Date.now()) {
   const stale = (await readRelays(env.BUCKET)).filter((r) => r.accountId === accountId && r.retiredAt && now - Date.parse(r.retiredAt) >= RETIRE_AFTER_MS);
   for (const r of stale) {
-    await access.revoke(r.tokenId).catch((e: unknown) => console.warn(JSON.stringify({ event: "relay_old_token_kept", accountId, error: (e as Error).message })));
-    await updateRelays(env.BUCKET, (relays) => relays.filter((x) => x.tokenId !== r.tokenId)).catch(() => undefined);
+    // The row goes only with its sign-in: a revoke that failed keeps the row to try again from,
+    // so no sign-in exists that the registry does not name. (A token already gone is not a failure.)
+    const revoked = await access.revoke(r.tokenId).then(() => true, (e: unknown) => {
+      console.warn(JSON.stringify({ event: "relay_old_token_kept", accountId, error: (e as Error).message }));
+      return false;
+    });
+    if (revoked) await updateRelays(env.BUCKET, (relays) => relays.filter((x) => x.tokenId !== r.tokenId)).catch(() => undefined);
   }
+}
+
+/**
+ * Revokes an account's retired sign-ins once they are an hour old, without a reinstall: called from
+ * a delivery (workers/relay/ingress.ts), so a rotation finishes even if nobody connects again.
+ */
+export async function tidyRelay(env: Env, accounts: CloudflareAccounts, accountId: string): Promise<void> {
+  const now = Date.now();
+  const due = (await readRelays(env.BUCKET)).some((r) => r.accountId === accountId && r.retiredAt && now - Date.parse(r.retiredAt) >= RETIRE_AFTER_MS);
+  const primary = accounts.primary();
+  if (!due || !primary) return;
+  const serverId = await accounts.serverAccountId();
+  await underAccessLock(env, () => revokeRetired(env, new AgentAccess(primary, env, serverId), accountId, now));
 }
 
 /**
@@ -171,7 +189,9 @@ async function install({ env, accounts, accountId, api, origin: requestOrigin }:
   catch (error) { return { outcome: "failed", detail: `The relay's sign-in could not be made: ${errorText(error)}` }; }
 
   const now = new Date().toISOString();
-  const row: Relay = { accountId, tokenId: token.id, clientId: token.client_id, origin, version: RELAY_VERSION, installedAt: now };
+  // The hourly limit on automatic upgrades is the account's: a new row carries the last attempt on.
+  const row: Relay = { accountId, tokenId: token.id, clientId: token.client_id, origin, version: RELAY_VERSION, installedAt: now,
+    ...(current?.upgradeTriedAt ? { upgradeTriedAt: current.upgradeTriedAt } : {}) };
   // Registered before the upload: the new relay is accepted from its first message, and the one
   // running now stays accepted (retiring) until it has drained.
   try {
@@ -205,9 +225,13 @@ async function install({ env, accounts, accountId, api, origin: requestOrigin }:
       console.warn(JSON.stringify({ event: "relay_upload_unconfirmed", accountId }));
       return { outcome: "failed", detail: `Cloudflare did not confirm the relay's upload (${error.message}). Your mail keeps arriving; run this again to finish.` };
     }
-    // Refused: the relay that was there (if any) still runs with its old sign-in, which becomes current again.
-    await updateRelays(env.BUCKET, (list) => list.filter((r) => r.tokenId !== token.id)
-      .map((r) => (r.accountId === accountId && r.retiredAt === now ? { ...r, retiredAt: undefined } : r))).catch(() => undefined);
+    // Refused: the relay that was there (if any) still runs with its old sign-in, which becomes current
+    // again — unless a newer install has registered its own since, which stays the current one.
+    await updateRelays(env.BUCKET, (list) => {
+      const rest = list.filter((r) => r.tokenId !== token.id);
+      const newer = rest.some((r) => r.accountId === accountId && !r.retiredAt);
+      return newer ? rest : rest.map((r) => (r.accountId === accountId && r.retiredAt === now ? { ...r, retiredAt: undefined } : r));
+    }).catch(() => undefined);
     await access.revoke(token.id).catch((e: unknown) => console.error(JSON.stringify({ event: "relay_token_orphaned", accountId, error: (e as Error).message })));
     return { outcome: "failed", detail: `The relay could not be installed: ${errorText(error)} Nothing was left behind; try again.` };
   }
@@ -225,8 +249,10 @@ async function install({ env, accounts, accountId, api, origin: requestOrigin }:
  */
 export async function upgradeRelay(env: Env, accounts: CloudflareAccounts, accountId: string): Promise<void> {
   const now = Date.now();
-  const relay = currentRelay(await readRelays(env.BUCKET), accountId);
-  if (!relay || (relay.upgradeTriedAt && now - Date.parse(relay.upgradeTriedAt) < RETIRE_AFTER_MS)) return;
+  const relays = await readRelays(env.BUCKET);
+  const relay = currentRelay(relays, accountId);
+  const lastTry = Math.max(0, ...relays.filter((r) => r.accountId === accountId && r.upgradeTriedAt).map((r) => Date.parse(r.upgradeTriedAt!)));
+  if (!relay || now - lastTry < RETIRE_AFTER_MS) return;
   await updateRelays(env.BUCKET, (list) => list.map((r) => (r.tokenId === relay.tokenId ? { ...r, upgradeTriedAt: new Date(now).toISOString() } : r)));
   const api = await accounts.apiFor(accountId);
   if (!api) return;

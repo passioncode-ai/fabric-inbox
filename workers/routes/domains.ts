@@ -4,7 +4,7 @@ import type { Env } from "../types";
 import { allServedDomains, isDomainName, listMailboxAddresses, removeCatchAll, servedDomains, setCatchAll } from "../lib/mailbox-store";
 import { CloudflareApiError, TOKEN_PERMISSIONS, ACCOUNT_TOKEN_PERMISSIONS } from "../routing/cloudflare-api";
 import { CloudflareAccounts, isAccountId } from "../routing/accounts";
-import { readRelays } from "../relay/install";
+import { currentRelay, readRelays } from "../relay/install";
 import { effectiveCatchAll } from "../lib/address-ops";
 import { DomainManager, type ConnectResult, type Step } from "../routing/domains";
 
@@ -88,7 +88,7 @@ domainsRouter.get("/api/domains", async (c) => {
       ...servedOnly(served.filter((d) => !names.has(d))),
     ].sort((a, b) => Number(b.served) - Number(a.served) || a.domain.localeCompare(b.domain));
     const accounts = overview.accounts.map((a) => {
-      const relay = relays.find((r) => r.accountId === a.id);
+      const relay = currentRelay(relays, a.id);
       return { ...a, relay: relay ? { version: relay.version, installedAt: relay.installedAt } : null };
     });
     const server = overview.accounts.find((a) => a.server);

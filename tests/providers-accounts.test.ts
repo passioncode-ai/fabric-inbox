@@ -533,3 +533,21 @@ test('full-limit Gmail send keeps attachment payload out of durable receipt valu
   assert.equal(calls, 1);
   for (const value of store.data.values()) assert.ok(Buffer.byteLength(JSON.stringify(value)) < 4096);
 });
+
+test("an HTML-only Gmail message reaches its consumers with its text (2026-10-01 review)", async () => {
+  const { service, store } = await fixture(async (input) => {
+    const u = new URL(String(input));
+    if (u.pathname.endsWith("/history"))
+      return json({ historyId: "20", history: [{ messagesAdded: [{ message: { id: "html" } }] }] });
+    return json({ id: "html", threadId: "t", labelIds: ["INBOX"],
+      payload: { mimeType: "text/html", body: { data: Buffer.from("<p>Refund for order 42</p>").toString("base64url") } } });
+  });
+  const a = (await store.get<AccountRecord>("account:a"))!;
+  a.sync = { mode: "history", historyId: "10" };
+  await store.put("account:a", a);
+  await service.sync("a");
+  const bodies: string[] = [];
+  await service.drainEvents(async (event) => { bodies.push(String((event as { body?: string }).body ?? "")); });
+  assert.equal(bodies.length, 1);
+  assert.match(bodies[0], /Refund for order 42/);
+});

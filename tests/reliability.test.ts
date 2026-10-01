@@ -19,6 +19,7 @@ const bundle = await build({
         constructor(ctx, env) { super(ctx, {...env, AI:{run:forbidden}, EMAIL:{send:forbidden}}); }
         async dueNow() { this.ctx.storage.sql.exec("UPDATE incoming_receipts SET next_at = 0 WHERE automation_status = 'pending'"); await this.flushIncomingEvents(); }
         async receipts() { return this.ctx.storage.sql.exec('SELECT automation_status AS s, attempts AS a FROM incoming_receipts').toArray(); }
+        async addSent(recipient) { this.ctx.storage.sql.exec("INSERT INTO emails (id, folder_id, subject, sender, recipient, date, body) VALUES (?, 'sent', 'Hi', 'me@p.invalid', ?, ?, '')", crypto.randomUUID(), recipient, new Date().toISOString()); }
       }
       export class TestAgents extends DurableObject {
         async enqueue(mailboxId, emailId) { const seen = (await this.ctx.storage.get('seen')) || []; await this.ctx.storage.put('seen', [...seen, emailId]); }
@@ -47,6 +48,10 @@ const bundle = await build({
             try { const r = await receiveEmail(event, env, ctx); return Response.json({ r, sent }); }
             catch (e) { return Response.json({ threw: e.message, sent }); }
           }
+          if (c.op === 'thread') { const e = await box.getEmail(c.id); return Response.json({ one: e.body.length, thread: (await box.getThreadEmails(e.thread_id)).map((x) => ({ len: x.body.length, key: x.body_key ?? null })) }); }
+          if (c.op === 'email') return Response.json(await box.getEmail(c.id));
+          if (c.op === 'sent') { await box.addSent(c.recipient); return Response.json(true); }
+          if (c.op === 'known') return Response.json(await box.knownCorrespondent(c.address));
           if (c.op === 'agents') return Response.json(await env.AGENT_REGISTRY.getByName('workspace').seen());
           if (c.op === 'counts') return Response.json(await box.inboxCounts());
           if (c.op === 'due') { await box.dueNow(); return Response.json(true); }
@@ -110,5 +115,33 @@ test("a delivery cut off after storing still sends its forwarding copy when Clou
     assert.deepEqual(retry.sent, ["copy@gmail.invalid"], "the retry sends the copy it still owed");
     const again = await op({ op: "deliver", raw });
     assert.deepEqual(again.sent, [], "and never twice");
+  } finally { await mf.dispose(); }
+});
+
+test("a long message reads whole in its thread as alone; a long attachment name is stored; a known sender is the whole address (2026-10-01 review)", async () => {
+  const { mf, op } = await fixture();
+  try {
+    const long = "x".repeat(450_000);
+    const stored = await op({ op: "receive", raw: `From: a@x.invalid\r\nTo: me@p.invalid\r\nSubject: Long\r\nMessage-ID: <long@x.invalid>\r\nContent-Type: text/plain\r\n\r\n${long}\r\n` });
+    const read = await op({ op: "thread", id: stored.emailId });
+    assert.equal(read.thread[0].len, read.one, "the thread shows what the message shows");
+    assert.ok(read.one >= 450_000);
+    assert.equal(read.thread[0].key, null, "the storage key is not part of the answer");
+
+    const name = "\u00e9".repeat(600) + ".pdf";
+    const boundary = "b1";
+    const withFile = await op({ op: "receive", raw: [`From: a@x.invalid`, `To: me@p.invalid`, `Subject: File`, `Message-ID: <file@x.invalid>`,
+      `MIME-Version: 1.0`, `Content-Type: multipart/mixed; boundary=${boundary}`, ``, `--${boundary}`, `Content-Type: text/plain`, ``, `See attached.`,
+      `--${boundary}`, `Content-Type: application/pdf; name="${name}"`, `Content-Disposition: attachment; filename="${name}"`, `Content-Transfer-Encoding: base64`, ``, `aGk=`, `--${boundary}--`, ``].join("\r\n") });
+    assert.ok(withFile.emailId, JSON.stringify(withFile));
+    const email = await op({ op: "email", id: withFile.emailId });
+    assert.equal(email.attachments.length, 1);
+    assert.ok(new TextEncoder().encode(email.attachments[0].filename).length <= 200);
+    assert.match(email.attachments[0].filename, /\.pdf$/);
+
+    await op({ op: "sent", recipient: "ax@example.invalid, x@example.invalid.au" });
+    assert.equal(await op({ op: "known", address: "x@example.invalid" }), false, "not a part of another address");
+    await op({ op: "sent", recipient: "Friend <x@example.invalid>, other@example.invalid" });
+    assert.equal(await op({ op: "known", address: "x@example.invalid" }), true);
   } finally { await mf.dispose(); }
 });

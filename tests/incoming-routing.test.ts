@@ -36,6 +36,20 @@ const bundle = await build({
             setReject:(reason)=>{ rejected = reason; }};
           const testEnv = {...env, EMAIL_AGENT:agent, EMAIL_ADDRESSES:c.addresses ?? [], DOMAINS:c.domains ?? '',
             UNKNOWN_ADDRESS_POLICY:c.policy};
+          if (c.op === 'flaky') {
+            // The mailbox fails like a Durable Object reset by a deploy, 'failures' times, then works.
+            let thrown = 0;
+            const real = testEnv.MAILBOX;
+            const flaky = {...testEnv, MAILBOX: { idFromName: (n) => real.idFromName(n), getByName: (n) => real.getByName(n), get: (id) => {
+              const stub = real.get(id);
+              return new Proxy(stub, { get(target, prop) {
+                if (prop === 'hasReceivedEmail' && thrown < (c.failures ?? 1)) return async () => { thrown++; throw new Error('Durable Object storage operation exceeded timeout which caused object to be reset.'); };
+                return (...args) => target[prop](...args);
+              } });
+            } } };
+            try { const result = await handleIncomingEmail(event, flaky, ctx); return Response.json({threw:false, result, thrown}); }
+            catch (e) { return Response.json({threw:true, message:e.message, thrown}); }
+          }
           if (c.op === 'broken') {
             const broken = {...testEnv, MAILBOX:{idFromName:()=>{throw new Error('storage unavailable')}, get:()=>{throw new Error('storage unavailable')}}};
             try { await handleIncomingEmail(event, broken, ctx); return Response.json({threw:false, rejected}); }
@@ -173,5 +187,19 @@ test("a processing failure propagates instead of being reported as handled", asy
     assert.equal(out.threw, true);
     assert.match(out.message, /storage unavailable/);
     assert.equal(out.rejected, null, "a temporary failure is not turned into a permanent rejection");
+  } finally { await mf.dispose(); }
+});
+
+test("a Durable Object reset while a message arrives is retried once, and the message is stored once", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const once = await command("flaky", { to: "support@shop.invalid", raw: mail("support@shop.invalid", "reset once"), mailboxes: ["support@shop.invalid"], domains: "shop.invalid", failures: 1 });
+    assert.equal(once.threw, false, JSON.stringify(once));
+    assert.equal(once.thrown, 1);
+    assert.equal(once.result.inserted, true);
+    assert.equal((await command("count", { mailbox: "support@shop.invalid" })).count, 1);
+    const twice = await command("flaky", { to: "support@shop.invalid", raw: mail("support@shop.invalid", "reset twice"), mailboxes: ["support@shop.invalid"], domains: "shop.invalid", failures: 2 });
+    assert.equal(twice.threw, true, "a second failure is the platform's to retry");
+    assert.match(twice.message, /exceeded timeout/);
   } finally { await mf.dispose(); }
 });
