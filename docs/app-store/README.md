@@ -41,6 +41,20 @@ Every row stays open until evidence exists. A package script is not a signed bui
 
 Controller (history): linked worktree `fabric-inbox-workbench`, branch `codex/app-store-release`; since 2026-09-27 all work lives on `main` and the linked worktrees are removed. Each implementer gets its own worktree. No `.claude/agent-sync.json` in Inbox; no guarded shared registry. Pipeline build skill requests bounded subagents, so these are authorized by that instruction. Existing model inherited, no override. Root writes this entry/scenario integration; agents own exclusive modules. No automatic loop is armed. Credentials, local configs, dependency trees and binaries stay local only.
 
+### Release 0.8.2 — the second pass (2026-10-01)
+
+[GitHub release v0.8.2](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v0.8.2), from
+`6791c61` on the public `main` (PR #7). What was found and fixed — the live server's lost message,
+forgeries against Never spam, seven core bugs, the relay rotation —
+[accounts brief → Second pass](tasks/2026-09-30-cloudflare-accounts.md#second-pass-2026-10-01-082).
+
+| What | Receipt |
+|---|---|
+| Gates on `6791c61` | `npm test` 451 pass / 0 fail (exit 0), `npm run typecheck` 0, `npm run build` 0, UX lint 0, doctor 0, brand lint 0 errors, `git diff --check` 0; backlog and CHANGELOG edited under agent-sync leases |
+| Image | `Fabric-Inbox-0.8.2.dmg`, 251 927 726 bytes, sha256 `a808dd6fada61324b1b00cfbc2ebd59a441f9e924444040230a9805b979e152a`; public build, 0 of 73 owner identifiers in `app.asar`; submission `e2a5dcde-4e8e-4464-962c-c9dc4e5bca82` Accepted, stapled |
+| Download and installed copy | `shasum -a 256 -c` OK; `spctl` → `source=Notarized Developer ID`; `stapler validate` on app and image; `check-installed-app.mjs` exit 0 (`fabric-inbox 0.8.2`, 65 tools, 403 without Access) |
+| The owner's server | deployed from `6791c61`, version `4485c31d`, three token secrets kept; its Workers log for the two hours after: no invocation ending other than `ok`, no 5xx |
+
 ### Release 0.8.1 — the review of several accounts (2026-10-01)
 
 [GitHub release v0.8.1](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v0.8.1): the
