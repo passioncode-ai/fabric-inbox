@@ -1,9 +1,9 @@
 import { z } from "zod";
 import type { Env } from "../types";
-import { receiveEmail, settleRelayedCopy, MAX_EMAIL_SIZE, type IncomingEmailEvent } from "../index";
+import { receiveEmailResilient, settleRelayedCopy, MAX_EMAIL_SIZE, type IncomingEmailEvent } from "../index";
 import { CloudflareAccounts, readDomainAccounts } from "../routing/accounts";
 import type { AccessClaims } from "../mcp/keys";
-import { readRelays, upgradeRelay, type Relay } from "./install";
+import { readRelays, tidyRelay, upgradeRelay, type Relay } from "./install";
 import { RELAY_VERSION } from "./script";
 import { readSettings } from "../lib/mailbox-store";
 
@@ -71,10 +71,13 @@ export async function handleRelayIncoming(request: Request, env: Env, ctx: Execu
   if (Number(request.headers.get("content-length") ?? "0") > MAX_EMAIL_SIZE) return json(tooLarge);
   const raw = await readCapped(request, MAX_EMAIL_SIZE);
   if (!raw) return json(tooLarge);
-  // A relay of an older version is brought up to this one, off the delivery's path.
-  if (!relay.retiredAt && request.headers.get("X-Fabric-Relay-Version") !== RELAY_VERSION)
-    ctx.waitUntil(upgradeRelay(env, new CloudflareAccounts(env), relay.accountId)
-      .catch((e: unknown) => console.warn(JSON.stringify({ event: "relay_upgrade_failed", accountId: relay.accountId, error: (e as Error).message }))));
+  // Off the delivery's path: a relay of an older version is brought up to this one — whichever of its
+  // sign-ins it used, since an upgrade cut off half-way leaves the old relay delivering on a retired
+  // one (rate-limited per account in upgradeRelay); a current one finishes any rotation it left.
+  const background = request.headers.get("X-Fabric-Relay-Version") !== RELAY_VERSION
+    ? upgradeRelay(env, new CloudflareAccounts(env), relay.accountId)
+    : tidyRelay(env, new CloudflareAccounts(env), relay.accountId);
+  ctx.waitUntil(background.catch((e: unknown) => console.warn(JSON.stringify({ event: "relay_maintenance_failed", accountId: relay.accountId, error: (e as Error).message }))));
   if (!raw.byteLength) return json({ error: "The message is empty" }, 400);
 
   let reject: string | null = null;
@@ -84,7 +87,7 @@ export async function handleRelayIncoming(request: Request, env: Env, ctx: Execu
     setReject: (reason) => { reject = reason; },
     deferForward: (target) => { forwardTo = target; },
   };
-  const result = await receiveEmail(event, env, ctx);
+  const result = await receiveEmailResilient(event, env, ctx);
   if ("rejected" in result) {
     console.log(JSON.stringify({ event: "relay_rejected", accountId: relay.accountId, reason: result.rejected }));
     return json({ outcome: "rejected", reject: reject ?? "Address not found" });

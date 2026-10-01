@@ -7,6 +7,7 @@ import { cors } from "hono/cors";
 import PostalMime from "postal-mime";
 import { z } from "zod";
 import { type StoredAttachment } from "./lib/attachments";
+import { storedAttachmentName } from "../shared/mail/attachments";
 import { allServedDomains, createMailbox, deleteMailbox, listMailboxAddresses, readSettings, storedCatchAll, updateSettings, readAllSettings, allowedAddresses as allowedAddressList } from "./lib/mailbox-store";
 import { createAddress, removeAddress } from "./lib/address-ops";
 import { routingClient } from "./routing/email-routing";
@@ -457,7 +458,7 @@ async function receiveEmail(event: IncomingEmailEvent, env: Env, ctx: ExecutionC
 	if (parsedEmail.attachments) {
 		for (const [index, att] of parsedEmail.attachments.entries()) {
 			const attId = `${messageId}-${index}`;
-			const filename = (att.filename || "untitled").replace(/[\/\\:*?"<>|\x00-\x1f]/g, "_");
+			const filename = storedAttachmentName(att.filename);
 			await env.BUCKET.put(`attachments/${messageId}/${attId}/${filename}`, att.content);
 			attachmentData.push({ id: attId, email_id: messageId, filename, mimetype: att.mimeType,
 				size: typeof att.content === "string" ? att.content.length : att.content.byteLength,
@@ -523,8 +524,10 @@ async function spamVerdict(env: Env, stub: { knownCorrespondent(address: string)
     ]);
     return spamCheck({ sender, headers, ownDomains, lists, known });
   } catch (error) {
+    // Not "clean": a failed look-up must not also switch off the model's check and the agents' wait
+    // for it. "screen" still delivers to the inbox, so no mail is lost to the filter.
     console.warn(JSON.stringify({ event: "spam_check_failed", error: (error as Error).message }));
-    return { verdict: "clean", reason: "" };
+    return { verdict: "screen", reason: "" };
   }
 }
 
@@ -584,14 +587,42 @@ async function settleRelayedCopy(env: Env, mailboxId: string, emailId: string, t
 // The Email Routing entry point. A failure is logged and rethrown, so the
 // platform records an error instead of a handled message; swallowing it here
 // used to make a lost message look delivered.
+/**
+ * Durable Object failures a second attempt survives: the object was reset (a deploy restarting it,
+ * a storage operation past its timeout) or briefly unreachable. Seen live on 2026-09-28, a minute
+ * after a deploy: "Durable Object storage operation exceeded timeout which caused object to be
+ * reset", and the message was never redelivered.
+ */
+const TRANSIENT_DO = /storage operation exceeded timeout|caused object to be reset|Durable Object reset|Network connection lost|Durable Object is overloaded|internal error; reference/i;
+
+/**
+ * `receiveEmail` with one retry after a transient Durable Object failure. Safe because a delivery is
+ * stored once (its id is a hash of mailbox, sender and bytes), so a first attempt that got further
+ * than it reported is found, not duplicated. The message is read once and replayed.
+ */
+async function receiveEmailResilient(event: IncomingEmailEvent, env: Env, ctx: ExecutionContext, retryDelayMs = 1000) {
+	if (event.rawSize > MAX_EMAIL_SIZE) return receiveEmail(event, env, ctx);
+	const bytes = await streamToArrayBuffer(event.raw, event.rawSize);
+	const attempt = () => receiveEmail({ ...event, raw: new Response(bytes).body!, rawSize: bytes.byteLength }, env, ctx);
+	try {
+		return await attempt();
+	} catch (error) {
+		const message = (error as Error)?.message ?? "";
+		if (!TRANSIENT_DO.test(message)) throw error;
+		console.warn(JSON.stringify({ event: "incoming_retry", error: message.slice(0, 200) }));
+		await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+		return attempt();
+	}
+}
+
 async function handleIncomingEmail(event: IncomingEmailEvent, env: Env, ctx: ExecutionContext) {
 	try {
-		return await receiveEmail(event, env, ctx);
+		return await receiveEmailResilient(event, env, ctx);
 	} catch (e) {
 		console.error("Failed to process incoming email:", (e as Error).message, (e as Error).stack);
 		throw e;
 	}
 }
 
-export { app, receiveEmail, handleIncomingEmail, settleRelayedCopy, MAX_EMAIL_SIZE };
+export { app, receiveEmail, receiveEmailResilient, handleIncomingEmail, settleRelayedCopy, MAX_EMAIL_SIZE };
 export type { IncomingEmailEvent };

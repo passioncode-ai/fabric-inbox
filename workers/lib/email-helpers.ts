@@ -99,7 +99,10 @@ export function buildReferencesChain(original: EmailFull): {
 	references: string[];
 	threadId: string;
 } {
-	const originalMsgId = original.message_id || original.id;
+	// Only a real RFC Message-ID goes into headers: an internal id ("incoming-…", no "@") breaks the
+	// recipient's threading. Without one the reply is still threaded here, by thread id.
+	const isMessageId = (id: string | null | undefined) => !!id && /^[^<>\s@]+@[^<>\s@]+$/.test(id);
+	const originalMsgId = isMessageId(original.message_id) ? original.message_id! : "";
 	let existingRefs: string[] = [];
 	if (original.email_references) {
 		try {
@@ -108,7 +111,7 @@ export function buildReferencesChain(original: EmailFull): {
 			// Malformed JSON in email_references — treat as empty
 		}
 	}
-	const references = [...existingRefs, originalMsgId].filter(Boolean);
+	const references = [...existingRefs, originalMsgId].filter(isMessageId);
 	const threadId = original.thread_id || original.id;
 	return { originalMsgId, references, threadId };
 }

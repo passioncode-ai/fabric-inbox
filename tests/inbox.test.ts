@@ -110,3 +110,14 @@ test('a hidden address is out of All inboxes, its domain and its counts, but ope
   const alone = await readInbox(new URLSearchParams({ account: 'gmail:a' }), s, { hidden });
   assert.deepEqual(alone.messages.map(m => m.accountId), ['gmail:a'], 'opened on its own it is read');
 });
+
+test('a copy merged into a row on one page is not shown again on the next (2026-10-01 review)', async () => {
+  // limit 2: page 1 is a2 and g1, with g2 (the same email, older) merged into g1; page 2 must not show g2.
+  const a2 = message(accounts[0], 'a2', 9000), g1 = message(accounts[1], 'g1', 8000), g2 = message(accounts[2], 'g2', 7000), a1 = message(accounts[0], 'a1', 6000);
+  g1.rfcMessageId = g2.rfcMessageId = 'shared@mail.invalid';
+  const first = await readInbox(new URLSearchParams({ limit: '2' }), sources([a2, g1, g2, a1]));
+  assert.deepEqual(first.messages.map((m) => m.providerMessageId), ['a2', 'g1']);
+  assert.deepEqual(first.messages[1].alsoIn, ['gmail:b']);
+  const second = await readInbox(new URLSearchParams({ limit: '2', cursor: first.cursor! }), sources([a2, g1, g2, a1]));
+  assert.deepEqual(second.messages.map((m) => m.providerMessageId), ['a1'], 'the merged copy is not repeated');
+});

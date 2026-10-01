@@ -249,7 +249,9 @@ Every message arriving at a Cloudflare address gets a verdict before it is store
 `/spam`, lists what decides it):
 
 - **Always spam** and **Never spam** lists of senders and domains; Report spam and Not spam in the
-  reader add to them. Never spam wins over everything.
+  reader add to them. Never spam wins over everything but a forgery: mail that claims one of your
+  domains without passing its checks, or fails DMARC where its domain asks to reject or quarantine
+  it, is spam even from an allowed sender (0.8.2).
 - A message that claims one of your domains but fails its authenticity checks, fails DMARC where
   the sender's domain asks to reject or quarantine, or fails SPF with no valid signature goes to
   Spam. Only the result Cloudflare's MX writes (`Authentication-Results: mx.cloudflare.net`) counts.

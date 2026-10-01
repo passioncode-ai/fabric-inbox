@@ -17,7 +17,7 @@ interface SpamState {
 const LISTS: { id: ListName; title: string; hint: string; placeholder: string }[] = [
   { id: "blockedSenders", title: "Always spam: senders", hint: "Added when you report a message as spam.", placeholder: "deals@example.com" },
   { id: "blockedDomains", title: "Always spam: domains", hint: "Every address on the domain and its subdomains.", placeholder: "spammy.example" },
-  { id: "allowedSenders", title: "Never spam: senders", hint: "Added when you mark a message Not spam. Wins over every check.", placeholder: "friend@example.org" },
+  { id: "allowedSenders", title: "Never spam: senders", hint: "Added when you mark a message Not spam. Wins over every check but a forgery.", placeholder: "friend@example.org" },
   { id: "allowedDomains", title: "Never spam: domains", hint: "For a partner or a service whose mail must always arrive.", placeholder: "partner.example" },
 ];
 
@@ -64,7 +64,8 @@ export default function SpamRules() {
           <li>Mail from someone none of your addresses has written to, when the model judges it spam: phishing, scams, unsolicited marketing, cold outreach.</li>
         </ul>
         <p className="mt-2 text-sm text-kumo-subtle">
-          A Never spam list wins over all of these. Each message in Spam says why it is there. These rules apply to mail
+          A Never spam list wins over all of these except the first two: a forgery is spam even from a sender you allowed. Each
+          message in Spam says why it is there. These rules apply to mail
           arriving at your addresses on Cloudflare; Gmail uses its own filter, which learns from Report spam and Not spam. Spam older than
           {" "}{data?.retentionDays ?? 30} days is deleted with its attachments; Gmail keeps its own Spam, with its own 30 days.
         </p>

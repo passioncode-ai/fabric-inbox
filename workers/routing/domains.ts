@@ -101,7 +101,8 @@ export class DomainManager {
       readChoices(this.env.BUCKET).then((c) => c.choices, (e) => { problems0.push(`Your account choices could not be read (${(e as Error).message}); the defaults apply.`); return {} as Record<string, Choice>; }),
       allServedDomains(this.env),
     ]);
-    problems.push(...problems0);
+    // A copy: the listing is remembered for the request, and must not grow with each overview.
+    const allProblems = [...new Set([...problems, ...problems0])];
     const zones: Overview["zones"] = [];
     const views = await Promise.all(accounts.map(async (a): Promise<AccountView> => {
       const api = await this.accounts.apiFor(a.id);
@@ -123,7 +124,7 @@ export class DomainManager {
       return { ...base, domains: list.length, served: servedHere, hasMail, shown, ...(problem ? { problem } : {}) };
     }));
     await this.accounts.remember(zones.map((z) => ({ name: z.zone.name, accountId: z.accountId })));
-    return { accounts: views, zones, problems };
+    return { accounts: views, zones, problems: allProblems };
   }
 
   zone(domain: string): Promise<ZoneContext | null> {

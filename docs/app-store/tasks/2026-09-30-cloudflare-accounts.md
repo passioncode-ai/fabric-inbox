@@ -159,3 +159,25 @@ read against the code before it was fixed. Released as 0.8.1.
 | Smaller: id case in secret names, `routesMail` failure unreported, R2 error on choices failed the page, `aria-pressed` on a changing label, no empty state, focus lost after Remove, docs (429, "could not be read") | low | each fixed in place | — |
 
 Gates and live checks for 0.8.1: in the release entry of the [handoff](../README.md).
+
+## Second pass 2026-10-01 (0.8.2)
+
+Operator: "check for errors and fix the bugs." Three sources: the live server's own log (Workers
+Observability, read with a token the Observatory door issued for it — preset
+`workers-observability-read`, read-only), a regression reading of 0.8.1, and a bug hunt in the core
+mail paths (inbound, mailbox Durable Object, outbox, agents, spam, categories, feed, Gmail).
+
+| Finding | Source | Fix | Test |
+|---|---|---|---|
+| A message lost to a Durable Object reset a minute after a deploy ("storage operation exceeded timeout which caused object to be reset"; `internalError`, never redelivered; 2026-09-28 23:17Z) | live log | `receiveEmailResilient`: one retry after a transient DO failure, for direct and relayed mail | `incoming-routing` "reset while a message arrives" (planted defect caught) |
+| Never spam let through a DMARC-reject forgery of the allowed domain | core | forgeries decided before the lists; a failed spam look-up screens instead of passing clean | `spam`, `spam-workerd` (updated: the old rule was the hole) |
+| A >1024-byte attachment name made a message impossible to store | core | `storedAttachmentName` (200 bytes, extension kept), inbound and sent | `reliability` "2026-10-01 review" (caught) |
+| The thread view cut long messages silently | core | thread bodies read from R2; `body_key` not returned | same (caught) |
+| The same email shown twice across feed pages | core | the cursor carries the page's message fingerprints | `inbox` "merged into a row" (caught) |
+| HTML-only Gmail mail reached categories without its text | core | `text || html` | `providers-accounts` "HTML-only" |
+| "Known correspondent" matched part of an address | core | whole-address match | `reliability` (caught) |
+| A reply to mail without Message-ID carried an internal id in its headers | core | no In-Reply-To; References keep only real ids | `cloudflare-review` (caught) |
+| Retired relay sign-ins never revoked; an interrupted upgrade stalled; upgrade limit reset per row; status showed the retiring relay; busy lock answered 502; problems duplicated; rollback could revive an older row | regression | `tidyRelay` from deliveries; upgrade on the version alone; per-account limit; `currentRelay`; 409; de-duplicated; rollback yields to a newer row | `cloudflare-relay` "older version is upgraded" (now checks the hourly limit on the current row) |
+
+Not changed, said: the live log held one other failure in seven days — the known agent-key 502 of
+0.7.0 (fixed then). The log has no alert: a lost message was found by asking, not told (board B-40).

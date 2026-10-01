@@ -50,3 +50,13 @@ test("a service token may reach the relay's two paths exactly, and nothing else 
   assert.equal(identityMayUse(relay, "/api/cloudflare/accounts"), false);
   assert.equal(identityMayUse({ email: "owner@example.invalid" }, "/api/domains"), true);
 });
+
+test("a reply to mail with no Message-ID threads here but puts no internal id in its headers", async () => {
+  const { buildReferencesChain } = await import("../workers/lib/email-helpers");
+  const noId = buildReferencesChain({ id: "incoming-abc", message_id: null, thread_id: "t1", email_references: JSON.stringify(["incoming-zzz", "real@mail.invalid"]) } as never);
+  assert.equal(noId.originalMsgId, "");
+  assert.deepEqual(noId.references, ["real@mail.invalid"]);
+  assert.equal(noId.threadId, "t1");
+  const withId = buildReferencesChain({ id: "incoming-abc", message_id: "orig@mail.invalid", thread_id: null, email_references: null } as never);
+  assert.deepEqual([withId.originalMsgId, withId.references, withId.threadId], ["orig@mail.invalid", ["orig@mail.invalid"], "incoming-abc"]);
+});

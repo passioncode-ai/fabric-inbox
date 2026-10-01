@@ -5,6 +5,29 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.8.2 — 2026-10-01
+
+A second pass: the live server's own error log, the 0.8.1 changes read again, and the core mail
+paths. Every fix has a test that fails without it.
+
+- **Mail is not lost to a Durable Object reset.** A message that arrived a minute after a deploy
+  failed with "storage operation exceeded timeout" and was never delivered again (seen in the live
+  log, 2026-09-28). A delivery now retries once after such a reset; it is still stored only once.
+- **A forgery is spam even from a sender you allowed.** Mail that fails its domain's DMARC (reject or
+  quarantine), or claims one of your domains without passing its checks, no longer passes because
+  the domain is on Never spam. Never spam still wins over everything else. When the spam check
+  itself cannot run, the message is screened by the model instead of being treated as clean.
+- **A long attachment name no longer makes a message impossible to receive** (names are cut to 200
+  bytes, keeping the extension).
+- **A long message reads whole in its conversation**, as it already did on its own.
+- **The same email is not shown twice** when its copy in another inbox falls on the next page.
+- **Gmail mail with only an HTML part** is sorted into categories by its text, not its subject alone.
+- **"You have written to this sender"** now means the whole address (it matched a part of another).
+- **Replying to mail with no Message-ID** no longer puts an internal id into the reply's headers.
+- **Relays:** the sign-in a relay was moved off is revoked an hour later without waiting for another
+  connect; an upgrade cut off half-way is tried again; the hourly limit on upgrades is per account;
+  the relay status shows the current relay; a refusal while another sign-in change runs answers 409.
+
 ## 0.8.1 — 2026-10-01
 
 A review of 0.8.0's several-accounts work, every finding fixed with a test

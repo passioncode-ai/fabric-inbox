@@ -2,7 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { AttachmentValidationError, validateAttachments } from '../../shared/mail/attachments';
+import { AttachmentValidationError, storedAttachmentName, validateAttachments } from '../../shared/mail/attachments';
 import { DurableObject } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import { eq, and, or, asc, desc, sql } from "drizzle-orm";
@@ -161,7 +161,7 @@ export class MailboxDO extends DurableObject<Env> {
         const attachments: AttachmentData[] = [];
         for (const [index, attachment] of (payload.request.attachments || []).entries()) {
           const id = `${row.id}-${index}`;
-          const filename = (attachment.filename || 'untitled').replace(/[\/\\:*?"<>|\x00-\x1f]/g, '_');
+          const filename = storedAttachmentName(attachment.filename);
           const binary = atob(attachment.content);
           await this.env.BUCKET.put(`attachments/${row.id}/${id}/${filename}`, Uint8Array.from(binary, c => c.charCodeAt(0)));
           attachments.push({ id, email_id: row.id, filename, mimetype: attachment.type,
@@ -211,8 +211,8 @@ export class MailboxDO extends DurableObject<Env> {
           const chain = buildReferencesChain(original as EmailFull);
           // Never thread against an internal UUID if a sent provider receipt was opaque.
           if (!original.message_id && original.folder_id === Folders.SENT) return { error: 'Provider RFC Message-ID unavailable for this reply', code: 'INVALID_REQUEST' };
-          request.in_reply_to = chain.originalMsgId;
-          request.references = chain.references;
+          if (chain.originalMsgId) { request.in_reply_to = chain.originalMsgId; request.references = chain.references; }
+          else { delete request.in_reply_to; if (chain.references.length) request.references = chain.references; else delete request.references; }
           request.thread_id = chain.threadId;
           if (command.verifyContent) request.html = (request.html || '') + buildQuotedReplyBlock({ date: original.date || undefined, sender: original.sender || undefined, body: original.body || undefined });
         } else {
@@ -630,8 +630,10 @@ export class MailboxDO extends DurableObject<Env> {
 			email.body = object ? await object.text() : `${email.body ?? ""}\n\n[The rest of this message could not be read right now. Try again.]`;
 		}
 
+		// Where the body is kept is the store's business, not the reader's.
+		const { body_key: _key, ...shown } = email as typeof email & { body_key?: string | null };
 		return {
-			...email,
+			...shown,
 			read: !!email.read,
 			starred: !!email.starred,
 			attachments: emailAttachments,
@@ -670,8 +672,16 @@ export class MailboxDO extends DurableObject<Env> {
 			attachmentsByEmail.set(att.email_id, list);
 		}
 
-		return emailRows.map((email) => ({
+		// A body kept in R2 is read whole, as getEmail does; the thread view used to show only the
+		// row's first part of a long message, with no sign it was cut.
+		const bodies = await Promise.all(emailRows.map(async (email) => {
+			if (!email.body_key) return email.body;
+			const object = await (this.env as Env).BUCKET.get(email.body_key).catch(() => null);
+			return object ? await object.text() : `${email.body ?? ""}\n\n[The rest of this message could not be read right now. Try again.]`;
+		}));
+		return emailRows.map(({ body_key: _key, ...email }, i) => ({
 			...email,
+			body: bodies[i],
 			read: !!email.read,
 			starred: !!email.starred,
 			attachments: attachmentsByEmail.get(email.id) || [],
@@ -1113,7 +1123,11 @@ export class MailboxDO extends DurableObject<Env> {
     const needle = address.trim().toLowerCase();
     if (!needle.includes("@")) return false;
     return this.ctx.storage.sql.exec(
-      "SELECT 1 FROM emails WHERE folder_id = 'sent' AND instr(lower(coalesce(recipient,'') || ',' || coalesce(cc,'') || ',' || coalesce(bcc,'')), ?) > 0 LIMIT 1",
+      // The whole address, not a part of one: x@example.com is not known from ax@example.com or
+      // x@example.com.au. Lists are comma-joined; an entry may also be "Name <address>".
+      "SELECT 1 FROM emails WHERE folder_id = 'sent' AND (" +
+      "instr(',' || replace(lower(coalesce(recipient,'') || ',' || coalesce(cc,'') || ',' || coalesce(bcc,'')), ' ', '') || ',', ',' || ?1 || ',') > 0 OR " +
+      "instr(lower(coalesce(recipient,'') || ',' || coalesce(cc,'') || ',' || coalesce(bcc,'')), '<' || ?1 || '>') > 0) LIMIT 1",
       needle).toArray().length > 0;
   }
 

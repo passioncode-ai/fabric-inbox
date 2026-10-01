@@ -51,3 +51,19 @@ export function validateAttachments(value: unknown): MailAttachment[] {
     return { content, filename, type: type.toLowerCase(), disposition, ...(contentId !== undefined ? { contentId } : {}) };
   });
 }
+
+/**
+ * A stored attachment's name: path and control characters replaced, and cut to 200 UTF-8 bytes
+ * keeping its extension. It is part of an R2 key, which may not exceed 1024 bytes — an inbound
+ * name of 600 "é" made the message impossible to store (2026-10-01 review).
+ */
+export function storedAttachmentName(name: string | null | undefined, maxBytes = 200): string {
+  const clean = (name || 'untitled').replace(/[\/\\:*?"<>|\x00-\x1f]/g, '_').trim() || 'untitled';
+  const bytes = (text: string) => new TextEncoder().encode(text).length;
+  if (bytes(clean) <= maxBytes) return clean;
+  const dot = clean.lastIndexOf('.');
+  const ext = dot > 0 && clean.length - dot <= 16 ? clean.slice(dot) : '';
+  let stem = [...clean.slice(0, clean.length - ext.length)];
+  while (stem.length && bytes(stem.join('') + ext) > maxBytes) stem.pop();
+  return (stem.join('') || 'untitled') + ext;
+}

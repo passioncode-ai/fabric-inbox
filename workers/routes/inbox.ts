@@ -26,6 +26,23 @@ function scope(account: string, folder: string, query: string, unread: boolean, 
 }
 const DOMAIN = /^(?=.{3,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 function cursorEncode(value: unknown) { return btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(value)))); }
+/** A short fingerprint of an RFC Message-ID (FNV-1a, 32 bits), so a cursor can name a page's messages compactly. */
+function seenKey(rfcMessageId: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < rfcMessageId.length; i++) { hash ^= rfcMessageId.charCodeAt(i); hash = Math.imul(hash, 0x01000193) >>> 0; }
+  return hash.toString(16).padStart(8, "0");
+}
+const MAX_SEEN = 150;
+
+/** The messages already shown before this page (by Message-ID fingerprint); empty for an older cursor. */
+function cursorSeen(raw: string | null): Set<string> {
+  if (!raw) return new Set();
+  try {
+    const value = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(raw), c => c.charCodeAt(0))));
+    return new Set(Array.isArray(value.seen) ? value.seen.filter((x: unknown) => typeof x === "string" && /^[0-9a-f]{8}$/.test(x)).slice(0, MAX_SEEN) : []);
+  } catch { return new Set(); }
+}
+
 function cursorDecode(raw: string, expectedScope: string): InboxPosition {
   try {
     if (raw.length > 4096) throw new Error();
@@ -133,7 +150,11 @@ export async function readInbox(params: URLSearchParams, sources: InboxSources, 
   // connected Gmail) is one row naming every inbox it reached.
   const merged: InboxMessage[] = [];
   const byRfc = new Map<string, InboxMessage>();
+  // A copy of an email already shown on an earlier page (merged into its row there) is not shown
+  // again on this one: the cursor names those emails (2026-10-01 review).
+  const shown = account ? new Set<string>() : cursorSeen(rawCursor);
   for (const m of messages) {
+    if (m.rfcMessageId && shown.has(seenKey(m.rfcMessageId))) continue;
     const first = !account && m.rfcMessageId ? byRfc.get(m.rfcMessageId) : undefined;
     if (first) { first.alsoIn = [...(first.alsoIn ?? []), m.accountId]; continue; }
     if (m.rfcMessageId) byRfc.set(m.rfcMessageId, m);
@@ -147,7 +168,9 @@ export async function readInbox(params: URLSearchParams, sources: InboxSources, 
     catch (error) { console.error(JSON.stringify({ event: "inbox_decorate_failed", error: (error as Error).message.slice(0, 200) })); }
   }
   return { accounts, messages: page, issues, hasMore,
-    ...(hasMore ? { cursor: cursorEncode({ version: 1, scope: filterScope, position: inboxPosition(page[page.length - 1]) }) } : {}) };
+    ...(hasMore ? { cursor: cursorEncode({ version: 1, scope: filterScope, position: inboxPosition(page[page.length - 1]),
+      // The emails this page and the ones before showed, newest last, bounded: their older copies are skipped next.
+      ...(!account ? { seen: [...new Set([...shown, ...page.filter((m) => m.rfcMessageId).map((m) => seenKey(m.rfcMessageId!))])].slice(-MAX_SEEN) } : {}) }) } : {}) };
 }
 
 export const inboxRouter = new Hono<{ Bindings: Env }>();
