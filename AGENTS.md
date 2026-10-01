@@ -65,7 +65,6 @@ the gate. A documentation change also runs `git diff --check` and resolves every
   [docs/evidence/retro.md](docs/evidence/retro.md).
 - Code: `app/` is the React Router UI, `workers/app.ts` is the Worker entry (`wrangler.jsonc`),
   `desktop/` is the Electron shell, and `shared/` and `tests/` hold shared code and tests.
-- There is no `.claude/agent-sync.json`, so runs are not lease-gated.
 
 ### Rules in this repository
 
@@ -87,6 +86,15 @@ the gate. A documentation change also runs `git diff --check` and resolves every
   (`README.md` → License). The code imported from Cloudflare's Agentic Inbox template stays
   Apache-2.0: never remove or reword a `Copyright (c) 2026 Cloudflare, Inc.` header, and keep
   [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) true when such a file is moved, split or deleted.
+- **Shared registers are edited under a lease.** [docs/AGENT_SYNC.md](docs/AGENT_SYNC.md)
+  (generated from `.claude/agent-sync.json` by `agent_sync.py setup`; never edited by hand) lists
+  the guarded files and the gate. Run `agent_sync.py acquire <file>` before editing one and
+  `agent_sync.py release <file>` after, on every path including failure. The lease is a ref under
+  `refs/agent-sync/leases/` on `origin`, so another contributor's agent sees it
+  (`git ls-remote origin 'refs/agent-sync/leases/*'`); the record plane is local (`fs`), and
+  `.agent-sync/` is git-ignored. No register here carries a "Next free ID" line, so nothing is
+  reserved yet; a register that gains one is declared under `idRegisters` and taken with
+  `agent_sync.py reserve <REG>`.
 
 ## Organisation
 

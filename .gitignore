@@ -28,3 +28,7 @@ desktop/server-bundle/
 # owner's machine: deployments/<name>/ is never committed. deployments/README.md says how to
 # create one from the *.example.json files beside it.
 /deployments/*/
+
+# agent-sync: local state and the credentials file are never committed
+.env.agent-sync
+.agent-sync/
