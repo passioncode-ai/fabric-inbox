@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fabric } from "~/services/fabric";
 import type { CloudflareAccount, DomainList, TokenPermission } from "~/services/domains";
 import { DOMAINS_KEY } from "./DomainCard";
@@ -23,6 +23,7 @@ function describe(a: CloudflareAccount): string {
 export default function Accounts({ list, busy, run }: { list: DomainList; busy: boolean; run: Run }) {
   const [connecting, setConnecting] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
 
   const choose = (a: CloudflareAccount, shown: boolean | null) => run(async () => {
     await fabric(`/api/cloudflare/accounts/${a.id}`, { shown }, "PUT");
@@ -31,17 +32,20 @@ export default function Accounts({ list, busy, run }: { list: DomainList; busy: 
   const remove = (a: CloudflareAccount) => run(async () => {
     const r = await fabric<{ relay?: string }>(`/api/cloudflare/accounts/${a.id}`, undefined, "DELETE");
     setRemoving(null);
-    return `${a.name} was removed from your server: its token was deleted${r.relay ? " and its relay removed" : ""}.`;
+    // The row that held focus is gone: focus returns to the section.
+    heading.current?.focus();
+    return `${a.name} was removed from your server: its token was deleted.${r.relay ? ` ${r.relay}` : ""}`;
   });
 
   return (
     <section className="my-6" aria-labelledby="accounts-heading">
-      <h2 id="accounts-heading" className="text-xl font-medium">Cloudflare accounts</h2>
+      <h2 id="accounts-heading" ref={heading} tabIndex={-1} className="text-xl font-medium">Cloudflare accounts</h2>
       <p className="mt-1 text-sm text-kumo-subtle">
         Your server reads the domains of every Cloudflare account it has a token for. Accounts with mail are shown; show another one
         here, or connect an account your server cannot reach yet.
       </p>
-      <ul className="mt-3 divide-y divide-kumo-line rounded-xl border border-kumo-line text-sm">
+      {!list.accounts.length && <p className="mt-3 text-sm">No Cloudflare account could be read with your server's tokens; the reason is below.</p>}
+      {list.accounts.length > 0 && <ul className="mt-3 divide-y divide-kumo-line rounded-xl border border-kumo-line text-sm">
         {list.accounts.map((a) => (
           <li key={a.id} className="p-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -49,10 +53,11 @@ export default function Accounts({ list, busy, run }: { list: DomainList; busy: 
                 <span className="font-medium">{a.name}</span>
                 {a.server && <span className="text-kumo-subtle"> · your server's account</span>}
                 <p className="text-kumo-subtle">{describe(a)}</p>
-                {a.problem && <p role="alert" className="mt-1">Its domains could not be read: {a.problem}</p>}
+                {a.problem && <p className="mt-1 font-medium">{a.problem}</p>}
               </div>
               <div className="flex flex-wrap gap-2">
-                <button className="fi-secondary" disabled={busy} aria-pressed={a.shown}
+                <button className="fi-secondary" disabled={busy}
+                  aria-label={`${a.shown ? "Hide" : "Show"} the domains of ${a.name}`}
                   onClick={() => void choose(a, !a.shown)}>{a.shown ? "Hide" : "Show"}</button>
                 {a.choice && <button className="fi-secondary" disabled={busy} onClick={() => void choose(a, null)}>Default</button>}
                 {a.via === "account" && !a.server && (
@@ -75,8 +80,8 @@ export default function Accounts({ list, busy, run }: { list: DomainList; busy: 
             )}
           </li>
         ))}
-      </ul>
-      {list.problems?.map((p) => <p key={p} role="alert" className="mt-2 text-sm">{p}</p>)}
+      </ul>}
+      {list.problems?.map((p) => <p key={p} className="mt-2 text-sm font-medium">{p}</p>)}
       {connecting
         ? <ConnectAccount permissions={list.accountPermissions} onClose={() => setConnecting(false)} />
         : <button className="fi-secondary mt-3" disabled={busy} onClick={() => setConnecting(true)}>Connect another account</button>}
@@ -91,28 +96,35 @@ function ConnectAccount({ permissions, onClose }: { permissions: TokenPermission
   const [working, setWorking] = useState(false);
   const [result, setResult] = useState<{ tone: "status" | "alert"; text: string } | null>(null);
   const field = useRef<HTMLInputElement>(null);
+  // Polling stops when the window closes or the screen is left.
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   async function connect() {
     setWorking(true); setResult(null);
     try {
-      const r = await fabric<{ connected: { id: string; name: string }[]; skipped: { name: string; reason: string }[] }>("/api/cloudflare/accounts", { token });
+      const r = await fabric<{ connected: { id: string; name: string }[]; skipped: { name: string; reason: string }[]; failed?: { name: string; reason: string }[] }>("/api/cloudflare/accounts", { token });
       setToken("");
+      const failed = (r.failed ?? []).map((f) => `${f.name}: ${f.reason}`).join("; ");
       if (!r.connected.length) {
-        setResult({ tone: "alert", text: `Nothing new to connect: ${r.skipped.map((s) => `${s.name} (${s.reason})`).join("; ")}.` });
+        setResult({ tone: "alert", text: failed ? `Not connected. ${failed}` : `Nothing new to connect: ${r.skipped.map((s) => `${s.name} (${s.reason})`).join("; ")}.` });
         return;
       }
       const names = r.connected.map((a) => a.name).join(", ");
-      setResult({ tone: "status", text: `Connected ${names}. Your server starts using the token within a few seconds…` });
-      // A saved token is a new version of the server: read the accounts again until it is in use.
-      for (let attempt = 0; attempt < 10; attempt++) {
+      const also = failed ? ` Not connected: ${failed}.` : "";
+      setResult({ tone: "status", text: `Connected ${names}. Your server starts using the token within a few seconds…${also}` });
+      // A saved token is a new version of the server: read the accounts again until each account is
+      // reached with its own token. A read that fails while the new version starts is not the answer.
+      for (let attempt = 0; attempt < 10 && alive.current; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 3000));
-        const list = await client.fetchQuery({ queryKey: DOMAINS_KEY, queryFn: () => fabric<DomainList>("/api/domains"), staleTime: 0 });
-        if (r.connected.every((c) => list.accounts.some((a) => a.id === c.id))) {
-          setResult({ tone: "status", text: `Connected ${names}. Its domains with mail are listed below.` });
+        if (!alive.current) return;
+        const list = await client.fetchQuery({ queryKey: DOMAINS_KEY, queryFn: () => fabric<DomainList>("/api/domains"), staleTime: 0 }).catch(() => null);
+        if (list && r.connected.every((c) => list.accounts.some((a) => a.id === c.id && a.via === "account" && !a.problem))) {
+          setResult({ tone: "status", text: `Connected ${names}. Its domains with mail are listed below.${also}` });
           return;
         }
       }
-      setResult({ tone: "alert", text: `Connected ${names}, but your server has not started using the token yet. Reload this page in a minute.` });
+      if (alive.current) setResult({ tone: "alert", text: `Connected ${names}, but your server has not started using the token yet. Reload this page in a minute.${also}` });
     } catch (error) {
       setResult({ tone: "alert", text: (error as Error).message });
       field.current?.focus();

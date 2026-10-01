@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { Env } from "../types";
 import { CloudflareApi, CloudflareApiError, ACCOUNT_TOKEN_PERMISSIONS } from "../routing/cloudflare-api";
-import { accountTokenName, CloudflareAccounts, isAccountId, writeChoice } from "../routing/accounts";
+import { accountTokenName, CloudflareAccounts, isAccountId, readDomainAccounts, writeChoice } from "../routing/accounts";
 import { DomainManager } from "../routing/domains";
 import { allServedDomains } from "../lib/mailbox-store";
 import { readRelays, removeRelay } from "../relay/install";
@@ -28,8 +28,12 @@ function failure(c: C, error: unknown, event: string) {
 
 /** The domains of an account that receive here (they keep it from being hidden or removed). */
 async function servedIn(m: DomainManager, env: Env, accountId: string): Promise<string[]> {
-  const [overview, served] = await Promise.all([m.overview(), allServedDomains(env)]);
-  return overview.zones.filter((z) => z.accountId === accountId && served.includes(z.zone.name.toLowerCase())).map((z) => z.zone.name.toLowerCase()).sort();
+  // Where each domain was last seen counts too: an account whose token stopped working lists no
+  // zones, and its served domains must still hold it.
+  const [overview, served, remembered] = await Promise.all([m.overview(), allServedDomains(env), readDomainAccounts(env.BUCKET)]);
+  const listed = overview.zones.filter((z) => z.accountId === accountId).map((z) => z.zone.name.toLowerCase());
+  const cached = Object.entries(remembered).filter(([, a]) => a === accountId).map(([d]) => d);
+  return [...new Set([...listed, ...cached])].filter((d) => served.includes(d)).sort();
 }
 
 cloudflareAccountsRouter.get("/api/cloudflare/accounts", async (c) => {
@@ -87,19 +91,32 @@ cloudflareAccountsRouter.post("/api/cloudflare/accounts", async (c) => {
   if (!seen.length) return c.json({ error: "The token sees no Cloudflare account. When creating it, choose the account under Account Resources." }, 400);
   try {
     const server = await accounts.serverAccountId();
-    const own = new Set(accounts.tokens.filter((t) => t.accountId).map((t) => t.accountId));
-    const connected: { id: string; name: string }[] = [];
+    // A saved token that works stays; one that stopped working is replaced by this one.
+    const { accounts: listed } = await accounts.list();
+    const working = new Set(listed.filter((a) => a.via === "account" && !a.problem).map((a) => a.id));
+    const connected: { id: string; name: string; replaced: boolean }[] = [];
     const skipped: { id: string; name: string; reason: string }[] = [];
-    for (const a of seen) {
+    const failed: { id: string; name: string; reason: string }[] = [];
+    for (const raw of seen) {
+      const a = { id: raw.id.trim().toLowerCase(), name: raw.name || raw.id };
+      if (!isAccountId(a.id)) { skipped.push({ ...a, reason: "Cloudflare named it with an id this server does not recognise" }); continue; }
       if (a.id === server) { skipped.push({ ...a, reason: "the server's own account, reached by its own token" }); continue; }
-      if (own.has(a.id)) { skipped.push({ ...a, reason: "already connected; remove it first to replace its token" }); continue; }
-      await primary.call(`/accounts/${server}/workers/scripts/${accounts.script}/secrets`, {
-        method: "PUT", what: SECRETS_WHAT, body: { name: accountTokenName(a.id), text: parsed.data.token, type: "secret_text" },
-      });
-      connected.push({ id: a.id, name: a.name });
+      if (working.has(a.id)) { skipped.push({ ...a, reason: "already connected with a working token; remove it first to replace it" }); continue; }
+      const existing = accounts.tokens.find((t) => t.accountId === a.id);
+      try {
+        await primary.call(`/accounts/${server}/workers/scripts/${accounts.script}/secrets`, {
+          method: "PUT", what: SECRETS_WHAT, body: { name: existing?.name ?? accountTokenName(a.id), text: parsed.data.token, type: "secret_text" },
+        });
+        connected.push({ ...a, replaced: !!existing });
+      } catch (error) {
+        // One account failing does not undo the others: each is reported for what it is.
+        failed.push({ ...a, reason: error instanceof CloudflareApiError ? error.message : (error as Error).message });
+      }
     }
-    console.log(JSON.stringify({ event: "cloudflare_accounts_connected", connected: connected.map((a) => a.id), skipped: skipped.length }));
-    return c.json({ connected, skipped, note: connected.length ? "The server starts using the token within a few seconds." : undefined }, connected.length ? 201 : 200);
+    console.log(JSON.stringify({ event: "cloudflare_accounts_connected", connected: connected.map((a) => a.id), skipped: skipped.length, failed: failed.map((a) => a.id) }));
+    const status = connected.length ? 201 : failed.length ? 502 : 200;
+    return c.json({ connected, skipped, failed, note: connected.length ? "The server starts using the token within a few seconds." : undefined,
+      ...(failed.length && !connected.length ? { error: `The token could not be saved: ${failed[0].reason}` } : {}) }, status);
   } catch (error) { return failure(c, error, "cloudflare_account_connect_failed"); }
 });
 
@@ -109,7 +126,8 @@ cloudflareAccountsRouter.delete("/api/cloudflare/accounts/:id", async (c) => {
   const accounts = new CloudflareAccounts(c.env);
   const primary = accounts.primary();
   if (!primary) return c.json({ error: NOT_CONNECTED }, 503);
-  if (!accounts.tokens.some((t) => t.accountId === id))
+  const saved = accounts.tokens.find((t) => t.accountId === id);
+  if (!saved)
     return c.json({ error: "That account has no token of its own here; the server's own token reaches it, so hide it instead." }, 404);
   try {
     const server = await accounts.serverAccountId();
@@ -118,7 +136,8 @@ cloudflareAccountsRouter.delete("/api/cloudflare/accounts/:id", async (c) => {
     const served = await servedIn(m, c.env, id);
     if (served.length) return c.json({ error: `Its domains receive here (${served.join(", ")}); stop receiving them first.`, served }, 409);
     const relay = await removeRelay({ env: c.env, accounts, accountId: id, api: await accounts.apiFor(id) });
-    await primary.call(`/accounts/${server}/workers/scripts/${accounts.script}/secrets/${accountTokenName(id)}`, { method: "DELETE", what: SECRETS_WHAT })
+    // The secret's own name: one set by hand may spell the id in capitals.
+    await primary.call(`/accounts/${server}/workers/scripts/${accounts.script}/secrets/${saved.name}`, { method: "DELETE", what: SECRETS_WHAT })
       .catch((error: unknown) => { if (!(error instanceof CloudflareApiError && error.status === 404)) throw error; });
     await writeChoice(c.env.BUCKET, id, null);
     console.log(JSON.stringify({ event: "cloudflare_account_removed", accountId: id, relay: !!relay }));

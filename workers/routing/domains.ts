@@ -94,14 +94,21 @@ export class DomainManager {
    * An account that cannot be read is listed with its problem; the others still list.
    */
   async overview(): Promise<Overview> {
-    const [{ accounts, problems }, { choices }, served] = await Promise.all([
-      this.accounts.list(), readChoices(this.env.BUCKET), allServedDomains(this.env),
+    const problems0: string[] = [];
+    const [{ accounts, problems }, choices, served] = await Promise.all([
+      this.accounts.list(),
+      // An unreadable choices file is no choice at all: every account falls back to its default.
+      readChoices(this.env.BUCKET).then((c) => c.choices, (e) => { problems0.push(`Your account choices could not be read (${(e as Error).message}); the defaults apply.`); return {} as Record<string, Choice>; }),
+      allServedDomains(this.env),
     ]);
+    problems.push(...problems0);
     const zones: Overview["zones"] = [];
     const views = await Promise.all(accounts.map(async (a): Promise<AccountView> => {
       const api = await this.accounts.apiFor(a.id);
       const base = { ...a, choice: choices[a.id] ?? null, domains: 0, served: 0 };
-      if (!api) return { ...base, shown: choices[a.id] !== "hidden", hasMail: null, problem: "No token reaches this account any more." };
+      if (!api) return { ...base, shown: choices[a.id] !== "hidden", hasMail: null, problem: a.problem ?? "No token reaches this account any more." };
+      // Its token is known to be broken: nothing more to read, and it stays removable.
+      if (a.problem) return { ...base, shown: choices[a.id] !== "hidden", hasMail: null };
       const [own, routes] = await Promise.all([
         this.accounts.zonesOf(a.id, api).then((z) => ({ zones: z }), (e) => ({ error: errorText(e) })),
         this.accounts.routesMail(a.id, api).then((r) => ({ routes: r }), (e) => ({ error: errorText(e) })),
@@ -111,7 +118,8 @@ export class DomainManager {
       const servedHere = list.filter((z) => served.includes(z.name.toLowerCase())).length;
       const hasMail = servedHere > 0 || ("routes" in routes ? routes.routes : null);
       const shown = base.choice ? base.choice === "shown" : a.server || hasMail !== false;
-      const problem = "error" in own ? own.error : undefined;
+      const problem = ["error" in own ? `Its domains could not be read: ${own.error}` : "", "error" in routes ? `Whether it has mail could not be read: ${routes.error}` : ""]
+        .filter(Boolean).join(" ") || undefined;
       return { ...base, domains: list.length, served: servedHere, hasMail, shown, ...(problem ? { problem } : {}) };
     }));
     await this.accounts.remember(zones.map((z) => ({ name: z.zone.name, accountId: z.accountId })));
