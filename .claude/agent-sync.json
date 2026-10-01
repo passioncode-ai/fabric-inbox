@@ -10,7 +10,9 @@
   "guardedFiles": [
     "docs/evidence/backlog.md",
     "docs/app-store/tasks/2026-09-28-roadmap.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "docs/backlog-sources.json",
+    "docs/backlog.md"
   ],
   "claimTags": {},
   "gates": [

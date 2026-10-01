@@ -6,7 +6,7 @@ Baseline: [3d67ada](https://github.com/passioncode-ai/fabric-inbox/commit/3d67ad
 
 ## Decisions and dependencies
 
-Confirmed by existing instructions: macOS desktop, all accounts plus single-account scope, Fabric white/dark themes, original deployment preserved, private repository, commit/push authorized. Current user request authorizes completing missing functionality and pursuing release. Existing scenarios are the scope baseline, not a claim of completeness.
+Confirmed by existing instructions: macOS desktop, all accounts plus single-account scope, Fabric white/dark themes, original deployment preserved, commit/push authorized. The repository is now public; deployment-specific state remains local-only. Current user request authorizes completing missing functionality and pursuing release. Existing scenarios are the scope baseline, not a claim of completeness.
 
 Pending operator answers: public ready-to-connect client versus own-server client; Apple Developer team and App Store Connect access; free/paid/subscription. These block architecture-dependent onboarding, billing and actual submission, not independent mail reliability or packaging work. No Apple legal agreement will be accepted on behalf of the operator.
 

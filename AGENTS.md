@@ -56,7 +56,7 @@ npm run mcp:docs                                       # the agent protocol's to
 - [docs/DOCMAP.md](docs/DOCMAP.md) gives one home per question. It separates current documents
   from history, and history is not to be followed as instructions.
 - The next task is in [docs/app-store/README.md](docs/app-store/README.md) ("Exact next task").
-  The status authority is the [roadmap](docs/app-store/tasks/2026-09-28-roadmap.md).
+  The P6/L/W status authority is [docs/backlog.md](docs/backlog.md); the roadmap preserves packet descriptions.
 - How it works: [docs/architecture.md](docs/architecture.md), the architecture as built.
   Configuration and deployment order are in [docs/desktop-mail/setup.md](docs/desktop-mail/setup.md).
 - UX scenarios, flows and screens are in [docs/ux/](docs/ux/scenarios.md), and the brand pack is
@@ -74,7 +74,7 @@ npm run mcp:docs                                       # the agent protocol's to
   the skill in `plugins/fabric-inbox/` is updated when a workflow changes. `npm test` fails until
   all three agree (`tests/mcp-coverage.test.ts`, `tests/mcp-docs.test.ts`, `tests/mcp-skill.test.ts`).
   The plugin's version is the app's version; a release ships both.
-- The roadmap is the status authority. The T, REQ and R tables in older packets are frozen
+- The local backlog is the P6/L/W status authority; the audit board owns B-series rows. The T, REQ and R tables in older packets are frozen
   (`docs/DOCMAP.md`).
 - Signing and notarization keys stay outside Git (`README.md`, "Install on a Mac").
 - A deployment's own files (`deployments/<name>/`: account, domains, addresses, ops receipts) are
@@ -108,6 +108,17 @@ every org member); the shared rules live in the knowledge base:
 
 Where this file is stricter than the rules, this file wins. A change to this repository's
 role, dependencies or test command updates its row in `org-index/repositories.json` in the same change.
+
+## Shared backlog
+
+[docs/backlog-sources.json](docs/backlog-sources.json) declares this repository's canonical
+local task sources and their vision goals. The [common backlog contract](https://github.com/passioncode-ai/fabric-workspace/blob/main/knowledge/backlog.md)
+owns aggregation; [the workspace backlog](https://wiki.passioncode.ai/backlog) is a derived view.
+Edit a task only in its canonical source under an agent-sync lease, retain stable IDs and
+closure receipts, and declare any new source in the manifest. Do not edit generated task
+status in the workspace or copy another repository's task into a second editable row.
+Land the source change, then run `node scripts/workspace.mjs sync` from a Fabric checkout
+(or use the scheduled sync); check the published source commit before calling it current.
 
 ## After work
 

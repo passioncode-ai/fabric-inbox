@@ -25,7 +25,8 @@ Run `npm ci`, `npm run dev`, then `npm run desktop`. Enter the dev server's loop
 
 ## Completed in this change
 
-- Dedicated private repository and preserved upstream history.
+- Dedicated public repository; imported upstream code retains its Apache-2.0 notices in
+  [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md). Deployment data stays local-only.
 - Cloudflare persisted outbox with accepted/failed/unknown semantics, matching sender identity, incoming envelope-based deduplication and durable automation handoff. API and MCP sends share the coordinator.
 - Gmail server OAuth/PKCE, AES-GCM credentials, account-scoped cache, history/expiry sync, cloud polling, durable send/draft receipts and incoming event outbox.
 - Rule runner with exact configured actions, dry-run, approval/automatic mode, daily action cap, pause, incoming-event receipt and restart/uncertainty handling. Resolved tool proposals are tied to the original email digest.

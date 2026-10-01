@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "repository": "https://github.com/passioncode-ai/fabric-inbox",
+  "sources": [
+    {
+      "path": "docs/evidence/backlog.md",
+      "goal": "reliable-work",
+      "kind": "tasks",
+      "format": "table",
+      "idColumn": "ID",
+      "titleColumn": "Item",
+      "defaultStatus": "open"
+    },
+    {
+      "path": "docs/backlog.md",
+      "goal": "workflow-control",
+      "kind": "tasks",
+      "format": "table",
+      "idColumn": "ID",
+      "titleColumn": "Item",
+      "statusColumn": "Status"
+    },
+    {
+      "path": "docs/app-store/tasks/2026-09-28-roadmap.md",
+      "goal": "workflow-control",
+      "kind": "context"
+    }
+  ]
+}

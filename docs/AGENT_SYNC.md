@@ -1,4 +1,4 @@
-<!-- agent-sync:generated source=fabric-inbox@52e5a00 cfg=86abcaa7ef2c at=2026-09-30T23:50:29Z — regenerate with `agent_sync.py setup`, do not hand-edit -->
+<!-- agent-sync:generated source=fabric-inbox@d76aa4a cfg=76ac45f83e41 at=2026-10-01T15:52:09Z — regenerate with `agent_sync.py setup`, do not hand-edit -->
 
 # How documentation and coordination work in fabric-inbox
 
@@ -30,6 +30,8 @@ None declared here. Ids live in the parent repository; reserve them there.
 - `docs/evidence/backlog.md`
 - `docs/app-store/tasks/2026-09-28-roadmap.md`
 - `CHANGELOG.md`
+- `docs/backlog-sources.json`
+- `docs/backlog.md`
 
 ### Gates run before a change is considered done
 
