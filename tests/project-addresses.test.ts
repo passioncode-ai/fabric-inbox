@@ -20,6 +20,8 @@ function cloudflare(state: { zone?: boolean; enabled?: boolean; status?: string;
     const method = init?.method ?? "GET";
     calls.push({ method, path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
     if (state.fail) return new Response(JSON.stringify({ success: false, errors: [{ message: state.fail }] }), { status: 403 });
+    // Every real token can list its account; the server's account is decided from it.
+    if (path.startsWith("/accounts?")) return ok([{ id: "acc1", name: "Test account" }]);
     if (path.startsWith("/zones?name=")) return ok(state.zone === false ? [] : [{ id: "zone1", name: url.searchParams.get("name") }]);
     if (path === "/zones/zone1/email/routing") return ok({ enabled: state.enabled ?? true, status: state.status ?? "ready", name: "project.invalid" });
     if (path.startsWith("/zones/zone1/email/routing/rules?")) return ok(state.rules ?? []);

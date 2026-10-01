@@ -135,3 +135,27 @@ Both open items moved to the board as B-39; this brief carries no open row.
 |---|---|---|
 | Which foreign domain is used for the live relay check | moved — the operator picks it | board B-39 |
 | The live Domains screen and the failed domain turned on | moved — needs the operator's app | board B-39 |
+
+## Review 2026-10-01
+
+Operator: "check for bugs and errors, take the architecture apart, fix everything." Three independent
+reviews (relay; accounts and their callers; sending, screen, agent protocol and docs), each finding
+read against the code before it was fixed. Released as 0.8.1.
+
+| Finding | Severity | Fix | Test |
+|---|---|---|---|
+| A failed look-up of the server's account was swallowed: every zone looked foreign (relay Worker, `server: false`), so release dropped live mail and connect replaced MX before failing | high | `CloudflareAccounts.zone` refuses unless the zone's account has its own token | `cloudflare-accounts` "never guessed" (planted defect caught) |
+| `zone()` matched pending zones and tried account tokens first: a pending copy in a connected account could take a domain's relay deliveries, cache row and sending | high | `status=active` in the query and on the result; the server's token first; the relay path never writes the cache | `cloudflare-relay` "pending copy" (both filters removed: caught) |
+| An account whose saved token stopped working vanished from the list and could not be removed or replaced | high | listed with `problem`; POST replaces a token that does not work; removing tolerates a dead token | `cloudflare-accounts` "revoked" |
+| Relay install/remove not serialised (two connects, or a key change, could leave the relay on one sign-in and the registry on another, forever) | high | `underAccessLock` (shared with agent keys); "installed" read from the relay's own `RELAY_TOKEN_ID` | `cloudflare-relay` "two connects at once", "does not name" (planted defects caught) |
+| A failed registry write after an upload deleted a working relay; a timed-out upload revoked the sign-in the relay ran with | medium | register before upload, two rows while rotating, unconfirmed (no answer / 5xx) keeps both, refused restores the old | "upload that applied but was not confirmed", "moving the server's address" |
+| `accountIdFor` took the first account that answered and fell back to zones on any error | medium | probe every account; one match and no unknowns, or an error naming why; zones only on a permission refusal | "never guessed" (two accounts run the script) |
+| Errors always named "this server's token" | medium | `CloudflareApi` label for a saved account token | `cloudflare-review` "names the token" |
+| Email Sending's own 403s read as a missing permission | medium | `email.sending.error.*` keeps its own message | `cloudflare-review` "Email Sending's own refusals" |
+| Fallback send needed two tokens; a stale remembered account failed for good; inline part without Content-ID refused by REST; all-suppressed recorded as accepted | medium/low | one token is enough; one re-look-up after a refusal; sent as attachment; `E_RECIPIENT_SUPPRESSED` | `cloudflare-accounts` "sending" (planted defect caught) |
+| `list_domains` with destinations overwrote the domain's `account` | medium | destinations nested | `cloudflare-review` "keeps the domain's own account" |
+| Connecting several accounts failed silently half-way; the poll after connect broke on a hiccup, never stopped, and could claim "in use" early | medium | `{connected, skipped, failed}`; per-poll catch, stop on unmount, wait for `via: "account"` | — (UI; checked by typecheck and reading) |
+| Relay followed Access's login redirect with its secret; version bumped by hand; request origin beat `PUBLIC_APP_URL`; body read without a cap; any `ok` report cleared any copy | low | `redirect: "manual"`; version = source fingerprint + background upgrade; `PUBLIC_APP_URL` first, https only; capped read; only an owed copy to the current target settles | "login redirect", "older version is upgraded", "settles only a copy" |
+| Smaller: id case in secret names, `routesMail` failure unreported, R2 error on choices failed the page, `aria-pressed` on a changing label, no empty state, focus lost after Remove, docs (429, "could not be read") | low | each fixed in place | — |
+
+Gates and live checks for 0.8.1: in the release entry of the [handoff](../README.md).

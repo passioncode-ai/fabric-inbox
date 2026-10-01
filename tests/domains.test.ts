@@ -79,6 +79,7 @@ function fakeCloudflare(options: { deny?: RegExp } = {}) {
     const body = method === "GET" || method === "DELETE" ? null : await request.json().catch(() => null) as any;
     if (method !== "GET") writes.push(`${method} ${path}`);
     const page = Number(url.searchParams.get("page") ?? 1);
+    if (path === "/accounts") return ok(page > 1 ? [] : [{ id: "acc-1", name: "Test account" }]);
     if (path === "/zones") {
       const name = url.searchParams.get("name");
       const list = zones.filter((z) => !name || z.name === name).map((z) => ({ id: z.id, name: z.name, status: "active", account: { id: "acc-1", name: "Test account" } }));

@@ -1,4 +1,4 @@
-import { accountIdFor, CloudflareApi, CloudflareApiError, cloudflareToken, type TokenEnv } from "./cloudflare-api";
+import { accountIdFor, CloudflareApi, CloudflareApiError, cloudflareToken, configuredAccountId, type TokenEnv } from "./cloudflare-api";
 
 /**
  * Several Cloudflare accounts (MA-2…MA-5, docs/app-store/tasks/2026-09-30-cloudflare-accounts.md).
@@ -22,6 +22,8 @@ export const ACCOUNT_CHOICES_KEY = "config/cloudflare-accounts.json";
 export const DOMAIN_ACCOUNTS_KEY = "config/domain-accounts.json";
 
 const ACCOUNT_ID = /^[0-9a-f]{32}$/;
+/** An account id as Cloudflare prints it; a secret set by hand in capitals is read the same. */
+const normaliseId = (id: string) => id.trim().toLowerCase();
 export const isAccountId = (id: string) => ACCOUNT_ID.test(id);
 export const accountTokenName = (accountId: string) => ACCOUNT_TOKEN_PREFIX + accountId;
 
@@ -46,8 +48,8 @@ export function tokensOf(env: TokenEnv): TokenRef[] {
   if (primary) out.push({ name: env.CLOUDFLARE_API_TOKEN ? "CLOUDFLARE_API_TOKEN" : "CLOUDFLARE_EMAIL_ROUTING_TOKEN", token: primary });
   for (const [name, value] of Object.entries(env as Record<string, unknown>)) {
     if (!name.startsWith(ACCOUNT_TOKEN_PREFIX) || typeof value !== "string" || !value.trim()) continue;
-    const accountId = name.slice(ACCOUNT_TOKEN_PREFIX.length);
-    if (isAccountId(accountId)) out.push({ name, token: value.trim(), accountId });
+    const accountId = normaliseId(name.slice(ACCOUNT_TOKEN_PREFIX.length));
+    if (isAccountId(accountId) && !out.some((t) => t.accountId === accountId)) out.push({ name, token: value.trim(), accountId });
   }
   return out;
 }
@@ -59,6 +61,8 @@ export interface Account {
   server: boolean;
   /** The token that reaches it: the server's own, or one saved for this account. */
   via: "server" | "account";
+  /** Its saved token no longer works: the account is listed so it can be replaced or removed. */
+  problem?: string;
 }
 
 export interface Zone { id: string; name: string; status: string; account?: { id?: string; name?: string } }
@@ -138,7 +142,9 @@ export class CloudflareAccounts {
 
   private apiOf(ref: TokenRef): CloudflareApi {
     let api = this.apis.get(ref.name);
-    if (!api) this.apis.set(ref.name, (api = new CloudflareApi(ref.token, this.fetcher)));
+    if (!api) this.apis.set(ref.name, (api = new CloudflareApi(ref.token, this.fetcher, ref.accountId
+      ? { whose: `the token saved for the Cloudflare account ${ref.accountId}`, fix: "Connect that account again with a new token on Domains & addresses, or remove it there." }
+      : null)));
     return api;
   }
 
@@ -155,29 +161,37 @@ export class CloudflareAccounts {
 
   private async readAccounts() {
     const problems: string[] = [];
-    const found = new Map<string, { id: string; name: string; via: Account["via"] }>();
+    const found = new Map<string, { id: string; name: string; via: Account["via"]; problem?: string }>();
     for (const ref of this.tokens) {
       let seen: { id: string; name: string }[];
       try {
         seen = await this.apiOf(ref).list<{ id: string; name: string }>("/accounts", "find your accounts (Account Settings: Read)");
       } catch (error) {
-        if (ref.accountId) { problems.push(`The token saved for account ${ref.accountId} could not be used: ${errorText(error)}`); continue; }
+        if (ref.accountId) {
+          // Listed, not dropped: an account whose token stopped working must stay removable.
+          found.set(ref.accountId, { id: ref.accountId, name: ref.accountId, via: "account", problem: errorText(error) });
+          continue;
+        }
         // Before 0.8 the token needed no Account Settings permission: its zones still name their account.
+        if (!(error instanceof CloudflareApiError && error.isPermission)) { problems.push(errorText(error)); continue; }
         try {
           seen = (await this.apiOf(ref).call<Zone[]>("/zones?per_page=50", { what: "list your domains (Zone: Read)" }))
             .flatMap((z) => (z.account?.id ? [{ id: z.account.id, name: z.account.name ?? z.account.id }] : []));
         } catch (inner) { problems.push(errorText(inner)); continue; }
       }
-      if (ref.accountId && !seen.some((a) => a.id === ref.accountId))
-        problems.push(`The token saved for account ${ref.accountId} no longer sees that account; connect it again with a new token.`);
+      if (ref.accountId && !seen.some((a) => normaliseId(a.id) === ref.accountId)) {
+        found.set(ref.accountId, { id: ref.accountId, name: ref.accountId, via: "account",
+          problem: "Its saved token no longer sees this account. Connect it again with a new token, or remove it." });
+      }
       for (const a of seen) {
-        const via: Account["via"] = ref.accountId === a.id ? "account" : "server";
-        const prior = found.get(a.id);
-        if (!prior || (prior.via === "server" && via === "account")) found.set(a.id, { id: a.id, name: a.name || a.id, via });
+        const id = normaliseId(a.id);
+        const via: Account["via"] = ref.accountId === id ? "account" : "server";
+        const prior = found.get(id);
+        if (!prior || (prior.via === "server" && via === "account")) found.set(id, { id, name: a.name || id, via });
       }
     }
     let serverId: string | null = null;
-    try { serverId = await this.serverAccountId(); } catch (error) { if (found.size > 1) problems.push(errorText(error)); }
+    try { serverId = await this.serverAccountId(); } catch (error) { if (found.size > 1 || !found.size) problems.push(errorText(error)); }
     const accounts = [...found.values()]
       .map((a) => ({ ...a, server: a.id === serverId }))
       .sort((a, b) => Number(b.server) - Number(a.server) || a.name.localeCompare(b.name));
@@ -186,6 +200,7 @@ export class CloudflareAccounts {
 
   /** The token to use for an account: its own when one was saved, else the server's when that sees it. */
   async apiFor(accountId: string): Promise<CloudflareApi | null> {
+    accountId = normaliseId(accountId);
     const own = this.tokens.find((t) => t.accountId === accountId);
     if (own) return this.apiOf(own);
     const { accounts } = await this.list();
@@ -198,7 +213,8 @@ export class CloudflareAccounts {
    */
   serverAccountId(): Promise<string> {
     return (this.serverId ??= (async () => {
-      if (this.env.CLOUDFLARE_ACCOUNT_ID) return this.env.CLOUDFLARE_ACCOUNT_ID;
+      const configured = configuredAccountId(this.env);
+      if (configured) return configured;
       const api = this.primary();
       if (!api) throw new CloudflareApiError("This server has no Cloudflare token of its own.", 400);
       return accountIdFor(api, this.env);
@@ -226,38 +242,54 @@ export class CloudflareAccounts {
   }
 
   /**
-   * The zone of a domain, with the account, token and Worker that go with it. The account it was last
-   * seen in is asked first; then every token. Null when no token sees it; a Cloudflare failure throws.
+   * The zone of a domain, with the account, token and Worker that go with it. Only an active zone
+   * counts: a pending copy of the same name in another account is not where its mail is. The account
+   * it was last seen in is asked first, then the other tokens. Null when no token sees it; a
+   * Cloudflare failure throws, and so does a zone whose account cannot be told apart from the
+   * server's — guessing there sends mail to the wrong Worker. Remembered for the request.
    */
-  async zone(domain: string): Promise<ZoneContext | null> {
+  zone(domain: string, options: { remember?: boolean } = {}): Promise<ZoneContext | null> {
     const name = domain.toLowerCase();
-    const serverId = await this.serverAccountId().catch(() => "");
+    const key = `${name}|${options.remember !== false}`;
+    let hit = this.zones.get(key);
+    if (!hit) {
+      this.zones.set(key, (hit = this.resolveZone(name, options.remember !== false)));
+      hit.catch(() => this.zones.delete(key));
+    }
+    return hit;
+  }
+
+  private zones = new Map<string, Promise<ZoneContext | null>>();
+
+  private async resolveZone(name: string, remember: boolean): Promise<ZoneContext | null> {
+    let serverId: string | null = null;
+    let serverFailure: unknown = null;
+    try { serverId = await this.serverAccountId(); } catch (error) { serverFailure = error; }
     const remembered = (await readDomainAccounts(this.env.BUCKET))[name];
-    const tried = new Set<string>();
     const lookUp = async (ref: TokenRef) => {
-      if (tried.has(ref.name)) return null;
-      tried.add(ref.name);
       const api = this.apiOf(ref);
-      const found = await api.call<Zone[]>(`/zones?name=${encodeURIComponent(name)}&per_page=5`, { what: "read the domain (Zone: Read)" });
-      const zone = found.find((z) => z.name.toLowerCase() === name);
+      const found = await api.call<Zone[]>(`/zones?name=${encodeURIComponent(name)}&status=active&per_page=5`, { what: "read the domain (Zone: Read)" });
+      const zone = found.find((z) => z.name.toLowerCase() === name && (!z.status || z.status === "active"));
       return zone ? { zone, api, token: ref.token } : null;
     };
+    // The remembered account's own token, or the server's token when that account is the server's.
+    const first = remembered ? (this.tokens.find((t) => t.accountId === remembered) ?? (remembered === serverId ? this.tokens.find((t) => !t.accountId) : undefined)) : undefined;
+    const order = [...(first ? [first] : []), ...this.tokens.filter((t) => t !== first && !t.accountId), ...this.tokens.filter((t) => t !== first && !!t.accountId)];
     let hit: { zone: Zone; api: CloudflareApi; token: string } | null = null;
     let failure: unknown = null;
-    if (remembered) {
-      const own = this.tokens.find((t) => t.accountId === remembered);
-      if (own) hit = await lookUp(own).catch((e) => { failure = e; return null; });
-    }
-    for (const ref of [...this.tokens].sort((a, b) => Number(!!b.accountId) - Number(!!a.accountId))) {
-      if (hit) break;
+    for (const ref of order) {
       hit = await lookUp(ref).catch((e) => { failure ??= e; return null; });
+      if (hit) break;
     }
     if (!hit) { if (failure) throw failure; return null; }
-    const accountId = hit.zone.account?.id ?? serverId;
-    if (accountId) await this.remember([{ name, accountId }]);
-    // A token saved for the zone's own account is preferred over one that merely sees it.
+    const accountId = normaliseId(hit.zone.account?.id ?? serverId ?? "");
     const own = this.tokens.find((t) => t.accountId === accountId);
+    // An account connected with its own token is never the server's (connect skips the server's).
+    if (serverId === null && !own) throw serverFailure ?? new CloudflareApiError("The server's own Cloudflare account could not be found.", 400);
+    if (!accountId) throw new CloudflareApiError(`Cloudflare did not say which account ${name} is in.`, 502);
+    if (remember) await this.remember([{ name, accountId }]);
+    // A token saved for the zone's own account is preferred over one that merely sees it.
     return { zone: hit.zone, accountId, api: own ? this.apiOf(own) : hit.api, token: own ? own.token : hit.token,
-      worker: this.workerFor(accountId, serverId), server: accountId === serverId };
+      worker: this.workerFor(accountId, serverId ?? ""), server: accountId === serverId };
   }
 }

@@ -273,12 +273,13 @@ const cloudflareAccount = z.string().regex(/^[0-9a-f]{32}$/).describe("A Cloudfl
 
 const listDomains = defineTool({
   name: "list_domains", title: "List domains", level: "read", readOnly: true,
-  description: "The domains of the shown Cloudflare accounts, each with its account and whether it is served here, the accounts themselves, what a token needs, and — with destinations — the verified forwarding destinations of one account (the server's unless account is given; a copy must be confirmed in its domain's own account). Give domain for one domain's full routing detail.",
+  description: "The domains of the shown Cloudflare accounts, each with its account and whether it is served here, the accounts themselves, what a token needs, and — with destinations — `destinations: { account, destinations }`, the forwarding destinations of one account (the server's unless account is given; a copy must be confirmed in its domain's own account). Give domain for one domain's full routing detail.",
   input: { domain: domain.optional(), destinations: z.boolean().default(false).describe("Also list the forwarding destinations"), account: cloudflareAccount.optional() },
   routes: ["GET /api/domains", "GET /api/domains/:domain", "GET /api/domains/destinations"],
   async call(a, ctx) {
     const main = a.domain ? await get(ctx, `/api/domains/${enc(a.domain.toLowerCase())}`) : await get(ctx, "/api/domains");
-    return a.destinations ? { ...(main as object), ...(await get(ctx, "/api/domains/destinations", a.account ? { account: a.account } : undefined) as object) } : main;
+    // Nested: the destinations answer carries its own `account`, which must not replace the domain's.
+    return a.destinations ? { ...(main as object), destinations: await get(ctx, "/api/domains/destinations", a.account ? { account: a.account } : undefined) } : main;
   },
 });
 

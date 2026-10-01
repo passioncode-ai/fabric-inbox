@@ -15,21 +15,32 @@
  * It is plain JavaScript with no imports, uploaded as one module by workers/relay/install.ts, and
  * run in workerd by tests/cloudflare-relay.test.ts.
  */
-export const RELAY_VERSION = "1";
 export const RELAY_MODULE = "relay.js";
 export const RELAY_COMPATIBILITY_DATE = "2026-09-01";
 
-export const RELAY_SOURCE = `// Fabric Inbox relay ${RELAY_VERSION}: carries this account's mail to its server. Managed by the server; do not edit.
+// The version is the source's own fingerprint (FNV-1a, 32 bits): a change to the relay is a new
+// version with no number to remember, and the server upgrades relays that report an older one.
+const VERSION_MARK = "__RELAY_VERSION__";
+function fingerprint(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) { hash ^= text.charCodeAt(i); hash = Math.imul(hash, 0x01000193) >>> 0; }
+  return hash.toString(16).padStart(8, "0");
+}
+
+const TEMPLATE = `// Fabric Inbox relay __RELAY_VERSION__: carries this account's mail to its server. Managed by the server; do not edit.
 const auth = (env) => ({ "CF-Access-Client-Id": env.ACCESS_CLIENT_ID, "CF-Access-Client-Secret": env.ACCESS_CLIENT_SECRET });
-const log = (event, detail) => console.log(JSON.stringify({ event, relay: "${RELAY_VERSION}", ...detail }));
+const log = (event, detail) => console.log(JSON.stringify({ event, relay: "__RELAY_VERSION__", ...detail }));
 
 async function call(env, path, init) {
   let response;
   try {
-    response = await fetch(new URL(path, env.SERVER_URL), { ...init, signal: AbortSignal.timeout(60000) });
+    // No redirects: Access answers a refused sign-in with its login page, which must not receive the secret.
+    response = await fetch(new URL(path, env.SERVER_URL), { ...init, redirect: "manual", signal: AbortSignal.timeout(60000) });
   } catch (error) {
     throw new Error("The Fabric Inbox server could not be reached: " + (error && error.message || error));
   }
+  if (response.status >= 300 && response.status < 400)
+    throw new Error("The Fabric Inbox server refused the relay's sign-in (" + response.status + " to its login page); install the relay again from Domains & addresses.");
   if (!response.ok) {
     const text = (await response.text().catch(() => "")).slice(0, 300);
     throw new Error("The Fabric Inbox server answered " + response.status + (text ? ": " + text : ""));
@@ -43,7 +54,7 @@ export default {
     const answer = await call(env, "/relay/incoming", {
       method: "POST",
       headers: { ...auth(env), "Content-Type": "message/rfc822",
-        "X-Fabric-Envelope-From": message.from || "", "X-Fabric-Envelope-To": message.to || "", "X-Fabric-Relay-Version": "${RELAY_VERSION}" },
+        "X-Fabric-Envelope-From": message.from || "", "X-Fabric-Envelope-To": message.to || "", "X-Fabric-Relay-Version": "__RELAY_VERSION__" },
       body: raw,
     });
     if (answer.outcome === "rejected") {
@@ -68,3 +79,6 @@ export default {
   },
 };
 `;
+
+export const RELAY_VERSION = fingerprint(TEMPLATE);
+export const RELAY_SOURCE = TEMPLATE.split(VERSION_MARK).join(RELAY_VERSION);

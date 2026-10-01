@@ -938,9 +938,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** The server has its Cloudflare token; the owner has more than one Cloudflare account.
 - **Steps:**
   1. Open Domains & addresses -> Cloudflare accounts lists every account the server has a token for: its name, whether it has mail, how many domains and how many receive here, how it is reached (the server's token or its own), and whether its relay is installed.
-  2. The server's account and every account with mail are shown; an account without mail is listed as not shown -> Show puts its domains in the list below; Hide takes them out; Default goes back to the rule.
+  2. The server's account and every account with mail (or whose mail could not be read) are shown; an account without mail is listed as not shown -> Show puts its domains in the list below; Hide takes them out; Default goes back to the rule.
 - **Expected result:** Every account where the owner has mail is on the screen without asking, and nothing else crowds it.
-- **Alt paths:** An account whose token no longer works is listed with the reason and its domains are not guessed; the other accounts still list.
+- **Alt paths:** An account whose saved token no longer works is listed with the reason, with Remove…, and Connect another account with a new token replaces it; its domains are not guessed; the other accounts still list.
 - **UI elements:** SCR-09; Cloudflare accounts (one row per account, Show / Hide / Default).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Hiding an account whose domains receive here is refused and names them; an account that cannot be read shows why, the rest still list.

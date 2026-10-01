@@ -16,6 +16,8 @@ export const D = "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"; // an account connected dur
 interface Rule { id: string; name: string; enabled: boolean; priority: number; matchers: unknown[]; actions: { type: string; value?: string[] }[] }
 export interface FakeZone {
   id: string; name: string; account: string;
+  /** "pending": added to the account but not in use; Cloudflare allows it while the name is active elsewhere. */
+  status?: "active" | "pending";
   routing: { enabled: boolean; status: string };
   rules: Rule[];
   catchAll: Omit<Rule, "id" | "priority">;
@@ -42,6 +44,9 @@ export function fakeCloudflareAccounts() {
     { id: "z-studio", name: "studio.invalid", account: B, routing: { enabled: true, status: "ready" },
       rules: [rule("support@studio.invalid", { type: "forward", value: ["owner@gmail.test"] })], catchAll: off,
       dns: [{ id: id(), type: "MX", name: "studio.invalid", content: "route1.mx.cloudflare.net" }], sending: [] },
+    { id: "z-studio2", name: "second.invalid", account: B, routing: { enabled: true, status: "ready" },
+      rules: [rule("hello@second.invalid", { type: "forward", value: ["owner@gmail.test"] })], catchAll: off,
+      dns: [{ id: id(), type: "MX", name: "second.invalid", content: "route1.mx.cloudflare.net" }], sending: [] },
     { id: "z-archive", name: "archive.invalid", account: C, routing: { enabled: false, status: "unconfigured" }, rules: [], catchAll: off, dns: [], sending: [] },
     { id: "z-later", name: "later.invalid", account: D, routing: { enabled: false, status: "unconfigured" }, rules: [], catchAll: off, dns: [], sending: [] },
   ];
@@ -57,7 +62,9 @@ export function fakeCloudflareAccounts() {
   ];
   const sent: { account: string; body: any }[] = [];
   const writes: string[] = [];
-  const options = { deny: null as RegExp | null, sendStatus: 200, uploadFails: false };
+  const options = { deny: null as RegExp | null, sendStatus: 200, sendError: "Sender domain is not onboarded", uploadFails: false,
+    /** The upload applies, then Cloudflare answers 502: the caller cannot know it worked. */
+    uploadAppliesThen502: false, suppressAll: false };
 
   const ok = (result: unknown, status = 200) => new Response(JSON.stringify({ success: true, errors: [], messages: [], result }), { status, headers: { "content-type": "application/json" } });
   const fail = (status: number, code: number, message: string) => new Response(JSON.stringify({ success: false, errors: [{ code, message }], messages: [] }), { status });
@@ -82,9 +89,9 @@ export function fakeCloudflareAccounts() {
     const paged = <T>(list: T[]) => ok(page > 1 ? [] : list);
     if (path === "/accounts") return paged(sees.map((a) => ({ id: a, name: names[a] })));
     if (path === "/zones") {
-      const name = url.searchParams.get("name"), account = url.searchParams.get("account.id");
-      return paged(zones.filter((z) => sees.includes(z.account) && (!name || z.name === name) && (!account || z.account === account))
-        .map((z) => ({ id: z.id, name: z.name, status: "active", account: { id: z.account, name: names[z.account] } })));
+      const name = url.searchParams.get("name"), account = url.searchParams.get("account.id"), status = url.searchParams.get("status");
+      return paged(zones.filter((z) => sees.includes(z.account) && (!name || z.name === name) && (!account || z.account === account) && (!status || (z.status ?? "active") === status))
+        .map((z) => ({ id: z.id, name: z.name, status: z.status ?? "active", account: { id: z.account, name: names[z.account] } })));
     }
     const acct = path.match(/^\/accounts\/([^/]+)(\/.*)$/);
     if (acct) {
@@ -101,7 +108,12 @@ export function fakeCloudflareAccounts() {
       }
       if (rest === "/email/sending/send" && method === "POST") {
         sent.push({ account: a, body });
-        if (options.sendStatus !== 200) return fail(options.sendStatus, 2001, "Sender domain is not onboarded");
+        const fromDomain = String(typeof body.from === "string" ? body.from : body.from.address).split("@").pop();
+        // As Cloudflare: an account sends only from its own active domains (code null, like the spec's 403s).
+        if (!zones.some((z) => z.account === a && z.name === fromDomain && (z.status ?? "active") === "active"))
+          return new Response(JSON.stringify({ success: false, errors: [{ code: null, message: "email.sending.error.sender_not_configured" }], messages: [] }), { status: 403 });
+        if (options.sendStatus !== 200) return fail(options.sendStatus, 2001, options.sendError);
+        if (options.suppressAll) return ok({ delivered: [], queued: [], permanent_bounces: [], suppressed_recipients: [].concat(body.to), message_id: `<${id()}@${a}.send>` });
         return ok({ delivered: [].concat(body.to), message_id: `<${id()}@${a}.send>` });
       }
       const script = rest.match(/^\/workers\/scripts\/([^/]+)(\/.*)?$/);
@@ -114,11 +126,13 @@ export function fakeCloudflareAccounts() {
           const metadata = JSON.parse(String(form.get("metadata")));
           const file = form.get(metadata.main_module) as File | null;
           all[name] = { bindings: metadata.bindings, module: file ? await file.text() : undefined };
+          if (options.uploadAppliesThen502) return fail(502, 10013, "Bad gateway");
           return ok({ id: name });
         }
         if (!sub && method === "DELETE") { if (!all[name]) return fail(404, 10007, "workers.api.error.script_not_found"); delete all[name]; return ok(null); }
         if (!all[name]) return fail(404, 10007, "workers.api.error.script_not_found");
-        if (sub === "/settings") return ok({ bindings: all[name].bindings.map((b) => ({ type: b.type, name: b.name })) });
+        // As Cloudflare: plain bindings with their text, secrets by name only.
+        if (sub === "/settings") return ok({ bindings: all[name].bindings.map((b) => (b.type === "plain_text" ? { type: b.type, name: b.name, text: b.text } : { type: b.type, name: b.name })) });
         if (sub === "/secrets" && method === "PUT") { secrets[`${a}/${name}/${body.name}`] = body.text; return ok({ name: body.name, type: body.type }); }
         const secret = sub?.match(/^\/secrets\/([^/]+)$/);
         if (secret && method === "DELETE") {
@@ -194,6 +208,8 @@ export function fakeCloudflareAccounts() {
   return {
     /** A token as long as a real one (the connect form checks the length) that sees what `as` sees. */
     alias: (token: string, as: string) => { tokens[token] = tokens[as]; },
+    /** The token stops working at Cloudflare (revoked or deleted). */
+    revoke: (token: string) => { delete tokens[token]; },
     handle, zones, destinations, scripts, secrets, serviceTokens, policies, app, sent, writes, options,
     zone: (name: string) => zones.find((z) => z.name === name)!,
   };
@@ -214,13 +230,16 @@ const serverBundle = build({
       import { agentsRouter } from './workers/routes/agents';
       import { handleRelayIncoming, handleRelayForwarded } from './workers/relay/ingress';
       import { app as mailApp } from './workers/index';
+      export { EmailMCP } from './workers/mcp/ledger';
       const forbidden = () => { throw new Error('The send_email binding and AI are forbidden in this test'); };
       export class TestMailbox extends MailboxDO {
-        constructor(ctx, env) { super(ctx, {...env, AI:{run:forbidden}, EMAIL:{send:forbidden}}); }
+        // The binding refuses as it does for a domain outside the server's account.
+        constructor(ctx, env) { super(ctx, {...env, AI:{run:forbidden}, EMAIL:{send: async () => { throw Object.assign(new Error('Sender domain not available to this binding (test)'), { code: 'E_SENDER_DOMAIN_NOT_AVAILABLE' }); }}}); }
       }
       const claims = (c) => { const n = c.req.header('x-test-common-name'); return n ? { common_name: n } : null; };
       const app = new Hono();
       app.get('/r2', async (c) => { const o = await c.env.BUCKET.get(c.req.query('key')); return new Response(o ? await o.text() : 'null'); });
+      app.put('/r2put', async (c) => { await c.env.BUCKET.put(c.req.query('key'), await c.req.text()); return c.json({ ok: true }); });
       app.get('/owed', async (c) => Response.json(await c.env.MAILBOX.get(c.env.MAILBOX.idFromName(c.req.query('mailbox'))).forwardOwed(c.req.query('id'))));
       app.get('/inbox', async (c) => { const box = c.env.MAILBOX.getByName(c.req.query('mailbox')); return Response.json(await box.getEmails({ folder: 'inbox' })); });
       app.all('/relay/incoming', (c) => handleRelayIncoming(c.req.raw, c.env, c.executionCtx, claims(c)));
@@ -239,7 +258,7 @@ const serverBundle = build({
 export async function serverFixture(cf: ReturnType<typeof fakeCloudflareAccounts>, bindings: Record<string, string>) {
   const mf = new Miniflare({
     modules: true, script: (await serverBundle).outputFiles[0].text, compatibilityDate: "2026-09-01", compatibilityFlags: ["nodejs_compat"],
-    durableObjects: { MAILBOX: { className: "TestMailbox", useSQLite: true } }, r2Buckets: ["BUCKET"],
+    durableObjects: { MAILBOX: { className: "TestMailbox", useSQLite: true }, EMAIL_MCP: { className: "EmailMCP", useSQLite: true } }, r2Buckets: ["BUCKET"],
     bindings: { DOMAINS: "base.test", POLICY_AUD: "aud-1", ...bindings },
     outboundService: (request) => cf.handle(request),
   });
