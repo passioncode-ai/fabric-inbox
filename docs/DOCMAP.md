@@ -39,7 +39,9 @@ Status authority is the roadmap; the T, REQ and R tables above are frozen.
   README with a script; see the run brief).
 - `python3 docs/ux/lint.py`, `python3 docs/ux/doctor.py`, `python3 docs/brand/lint.py`.
 - `git diff --check`.
-- Product checks: `npm test`, `npm run typecheck`, `npm run build`. No hosted CI exists here.
+- Product checks: `npm test`, `npm run typecheck`, `npm run build`; hosted CI
+  (`.github/workflows/ci.yml`) runs them with the UX and brand lints on every pull request and on
+  `main`.
 
-No `.claude/agent-sync.json` in this repository; runs are not lease-gated. No code graph is
-built.
+Shared registers are edited under an agent-sync lease ([AGENT_SYNC.md](AGENT_SYNC.md), generated
+from `.claude/agent-sync.json`). No code graph is built.

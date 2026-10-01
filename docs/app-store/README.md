@@ -35,11 +35,11 @@ Measured 2026-09-27: `security find-identity -v -p codesigning` returns one Deve
 4. Configure isolated real-provider environment; verify with controlled accounts and messages, fix failures, complete privacy/review content.
 5. Build and verify store-signed candidate, upload to App Store Connect, TestFlight/acceptance, submit review; update public product links only when accurate. Apple review timing and acceptance are external dependencies.
 
-Every row stays open until evidence exists. A package script is not a signed build; upload is not approval; approval is not a live release. This repository has no hosted CI workflow: the local gate (`npm test`, `npm run typecheck`, `npm run build`, UX lint) is the check, and missing CI is not passing CI.
+Every row stays open until evidence exists. A package script is not a signed build; upload is not approval; approval is not a live release. The local gate (`npm test`, `npm run typecheck`, `npm run build`, UX lint) is the check; since 2026-10-01 `.github/workflows/ci.yml` runs it again on every pull request and on `main`, and a missing or skipped run is not a passing one.
 
 ## Work isolation and delivery
 
-Controller (history): linked worktree `fabric-inbox-workbench`, branch `codex/app-store-release`; since 2026-09-27 all work lives on `main` and the linked worktrees are removed. Each implementer gets its own worktree. No `.claude/agent-sync.json` in Inbox; no guarded shared registry. Pipeline build skill requests bounded subagents, so these are authorized by that instruction. Existing model inherited, no override. Root writes this entry/scenario integration; agents own exclusive modules. No automatic loop is armed. Credentials, local configs, dependency trees and binaries stay local only.
+Controller (history): linked worktree `fabric-inbox-workbench`, branch `codex/app-store-release`; since 2026-09-27 all work lives on `main` and the linked worktrees are removed. Each implementer gets its own worktree. Shared registers are edited under an agent-sync lease since 2026-09-30 ([AGENT_SYNC.md](../AGENT_SYNC.md)). Pipeline build skill requests bounded subagents, so these are authorized by that instruction. Existing model inherited, no override. Root writes this entry/scenario integration; agents own exclusive modules. No automatic loop is armed. Credentials, local configs, dependency trees and binaries stay local only.
 
 ### Release 0.8.2 — the second pass (2026-10-01)
 
@@ -99,8 +99,10 @@ Not checked: the new screen and a relay delivery on the owner's server (B-39, hu
 
 ### Release 0.7.1 — the first published release (2026-09-30)
 
-[GitHub release v0.7.1](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v0.7.1): the
-disk image, its `.sha256` and the build receipt. The tag and the image come from `9b6d273` on
+GitHub release v0.7.1: the disk image, its `.sha256` and the build receipt. It is no longer
+served: the repository was re-created public with a fresh history on 2026-09-30 (see 0.8.0 above),
+and on 2026-10-01 `releases/tag/v0.7.1` answers 404; the first release in the public history is
+[v0.8.1](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v0.8.1). The tag and the image come from `9b6d273` on
 `main` (PR #5). 0.7.1 and not 0.7.0: the `v0.7.0` tag names `c37dee0`, whose Mac app carried 0.6.2
 ([CHANGELOG](../../CHANGELOG.md)). Procedure: [docs/release.md](../release.md).
 

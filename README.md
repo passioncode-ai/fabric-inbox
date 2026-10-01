@@ -20,9 +20,8 @@ and [your deployment](#configure-your-deployment).
 ## Quick start for a new teammate
 
 1. **Install.** Download the signed, notarized disk image from the latest
-   [GitHub release](https://github.com/passioncode-ai/fabric-inbox/releases). The repository is
-   private, so its release files need a signed-in organisation member; with the
-   [GitHub CLI](https://cli.github.com/) (`gh auth login` once):
+   [GitHub release](https://github.com/passioncode-ai/fabric-inbox/releases) in the browser, or
+   with the [GitHub CLI](https://cli.github.com/) (`gh auth login` once):
 
    ```sh
    gh release download -R passioncode-ai/fabric-inbox \
@@ -128,7 +127,9 @@ python3 docs/ux/lint.py && python3 docs/ux/doctor.py   # UX contract
 python3 docs/brand/lint.py                 # brand strings (warnings are advisory)
 ```
 
-There is no hosted CI workflow in this repository; the checks above are the gate.
+The checks above are the gate, run before you push. [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+runs the same checks on every pull request and on `main` as a second opinion; the disk image,
+signing and notarization need the release machine and stay local ([docs/release.md](docs/release.md)).
 
 ## Install on a Mac
 
