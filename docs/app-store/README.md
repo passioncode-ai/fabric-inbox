@@ -41,6 +41,25 @@ Every row stays open until evidence exists. A package script is not a signed bui
 
 Controller (history): linked worktree `fabric-inbox-workbench`, branch `codex/app-store-release`; since 2026-09-27 all work lives on `main` and the linked worktrees are removed. Each implementer gets its own worktree. No `.claude/agent-sync.json` in Inbox; no guarded shared registry. Pipeline build skill requests bounded subagents, so these are authorized by that instruction. Existing model inherited, no override. Root writes this entry/scenario integration; agents own exclusive modules. No automatic loop is armed. Credentials, local configs, dependency trees and binaries stay local only.
 
+### Release 0.8.1 — the review of several accounts (2026-10-01)
+
+[GitHub release v0.8.1](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v0.8.1): the
+disk image, its `.sha256` and the build receipt, from `3909782` on the public `main` (PR #4). What
+the review found and fixed: [accounts brief → Review 2026-10-01](tasks/2026-09-30-cloudflare-accounts.md#review-2026-10-01).
+
+| What | Receipt |
+|---|---|
+| Gates on `3909782` | `npm test` 446 pass / 0 fail (exit 0; 15 new tests, a planted defect caught for each high finding), `npm run typecheck` 0, `npm run build` 0, UX lint 0, doctor 0, brand lint 0 errors, `git diff --check` 0 |
+| Image | `Fabric-Inbox-0.8.1.dmg`, 251 922 400 bytes, sha256 `728948b1b0f71a324a774634cf850b67d9a9fa97256c0fdcf75e6bfdd5a914b5`; public build (no setup), 0 of 73 owner identifiers in `app.asar` |
+| Signing and notarization | Developer ID Application, hardened runtime, `x86_64 arm64`; image submission `72463885-e897-4063-8032-0efd302e9ad4` Accepted; app and image stapled |
+| Download as a teammate | `gh release download v0.8.1 …`, `shasum -a 256 -c` OK |
+| Installed copy (temporary folder) | `spctl -a -vv -t execute` → `source=Notarized Developer ID`; `stapler validate` on app and image; `CFBundleShortVersionString` 0.8.1 |
+| Its agent protocol | `node scripts/check-installed-app.mjs` exit 0: server bundle 0.8.1 (`3909782`), `initialize` → `fabric-inbox 0.8.1`, `tools/list` → 65, without Access → 403, no outbound request but the Access stand-in's key set |
+| The owner's server | deployed from `3909782`, version `50e73435`; its three Cloudflare token secrets kept |
+| Tag | `v0.8.1` names `3909782`, checked to be on the public `main` before it was pushed (retro instruction 9) |
+
+Not checked: the screen and a relay delivery on the owner's server (B-39).
+
 ### Release 0.8.0 — several Cloudflare accounts (2026-09-30): built, withdrawn
 
 The 0.8.0 tree is `a9f9516`, the root commit of the public `main`. What changed: [CHANGELOG](../../CHANGELOG.md);
