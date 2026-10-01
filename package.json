@@ -2,6 +2,11 @@
 	"name": "fabric-inbox",
 	"private": true,
 	"license": "AGPL-3.0-only OR LicenseRef-PassionCode-Commercial",
+	"homepage": "https://github.com/passioncode-ai/fabric-inbox",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/passioncode-ai/fabric-inbox.git"
+	},
 	"type": "module",
 	"cloudflare": {
 		"label": "Fabric Inbox",

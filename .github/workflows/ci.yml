@@ -1,0 +1,43 @@
+# The repository's gate (AGENTS.md → Commands), run on every pull request and on main.
+# The repository is public, so hosted minutes are free; the local gate stays the gate and
+# this is the second opinion (knowledge base rules §3). Signing, notarization and the disk
+# image need the release machine's keys and are not run here (docs/release.md).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch or pull request cancels the older run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Tests (Worker code in workerd, no network)
+        run: npm test
+      - name: Types
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Agent protocol reference is current
+        run: npm run mcp:docs -- --check
+      - name: UX contract
+        run: python3 docs/ux/lint.py && python3 docs/ux/doctor.py
+      - name: Brand strings (warnings are advisory)
+        run: python3 docs/brand/lint.py

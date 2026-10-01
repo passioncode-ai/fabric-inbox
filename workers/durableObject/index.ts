@@ -1123,8 +1123,8 @@ export class MailboxDO extends DurableObject<Env> {
     const needle = address.trim().toLowerCase();
     if (!needle.includes("@")) return false;
     return this.ctx.storage.sql.exec(
-      // The whole address, not a part of one: x@example.com is not known from ax@example.com or
-      // x@example.com.au. Lists are comma-joined; an entry may also be "Name <address>".
+      // The whole address, not a part of one: x@example.test is not known from ax@example.test or
+      // x@example.test.au. Lists are comma-joined; an entry may also be "Name <address>".
       "SELECT 1 FROM emails WHERE folder_id = 'sent' AND (" +
       "instr(',' || replace(lower(coalesce(recipient,'') || ',' || coalesce(cc,'') || ',' || coalesce(bcc,'')), ' ', '') || ',', ',' || ?1 || ',') > 0 OR " +
       "instr(lower(coalesce(recipient,'') || ',' || coalesce(cc,'') || ',' || coalesce(bcc,'')), '<' || ?1 || '>') > 0) LIMIT 1",

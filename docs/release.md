@@ -25,9 +25,9 @@ carrying the image and its checksum. The builder is `desktop/dist-mac.mjs`
    of them agree. A release tag that already exists is never moved: a mistake gets a new version.
 2. **Gates.** `npm ci && npm test && npm run typecheck && npm run build`, then
    `python3 docs/ux/lint.py && python3 docs/ux/doctor.py && python3 docs/brand/lint.py` and
-   `git diff --check`. Read each exit code. There is no hosted CI for this private repository
-   (GitHub Actions is held by the organisation's spending cap), so the local gate is the gate.
-3. **Land.** A PR, squash-merged into `main`.
+   `git diff --check`. Read each exit code. The local gate is the gate.
+3. **Land.** A PR, squash-merged into `main` once its `ci` check (`.github/workflows/ci.yml`, the
+   same gates on a hosted runner) is green.
 4. **Build from `main`.** In a clean worktree at the merged commit:
    `npm ci && npm run desktop:dmg -- --notary-profile fabric-notary`. It writes, in `release/`:
    `Fabric-Inbox-<version>.dmg`, `Fabric-Inbox-<version>.dmg.sha256` and

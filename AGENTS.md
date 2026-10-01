@@ -5,7 +5,7 @@
 1. The PassionCode.ai knowledge base — `fabric-workspace/knowledge/` in your clone (org-index
    `scripts/clone_all.sh` makes it) or https://wiki.passioncode.ai/knowledge — at least its
    [README](https://github.com/passioncode-ai/fabric-workspace/blob/main/knowledge/README.md),
-   vision, principles and how-to-work.
+   vision, principles and how-to-work (private; readable by every org member).
 2. This file, then the organization's
    [CONTRIBUTING.md](https://github.com/passioncode-ai/.github/blob/main/CONTRIBUTING.md).
 
@@ -45,8 +45,8 @@ npm run mcp:docs                                       # the agent protocol's to
 
 `npm run dev` serves the Worker and app on `http://localhost:5173` with local Miniflare bindings.
 `npm run desktop` opens the desktop shell, and `npm run desktop:server-bundle` (run it once) gives
-**Create my server** a server to upload. There is no hosted CI workflow, so the checks above are
-the gate. A documentation change also runs `git diff --check` and resolves every relative link
+**Create my server** a server to upload. The checks above are the gate, run before you push;
+`.github/workflows/ci.yml` runs them again on every pull request and on `main`. A documentation change also runs `git diff --check` and resolves every relative link
 (see "Checks for documentation" in `docs/DOCMAP.md`).
 
 ## Local rules
