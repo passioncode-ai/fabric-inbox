@@ -26,9 +26,10 @@ const tokenRule = (tokenId: string) => ({ service_token: { token_id: tokenId } }
 const ruleToken = (rule: Record<string, unknown>) => (rule.service_token as { token_id?: string } | undefined)?.token_id;
 
 export class AgentAccess {
-  constructor(private api: CloudflareApi, private env: TokenEnv & { POLICY_AUD?: string }) {}
+  /** `accountId`, when the caller already knows the server's account, saves finding it again. */
+  constructor(private api: CloudflareApi, private env: TokenEnv & { POLICY_AUD?: string }, private accountId?: string) {}
 
-  private async account() { return accountIdFor(this.api, this.env); }
+  private async account() { return this.accountId ?? accountIdFor(this.api, this.env); }
 
   private async app(account: string): Promise<AccessApp> {
     const aud = this.env.POLICY_AUD;

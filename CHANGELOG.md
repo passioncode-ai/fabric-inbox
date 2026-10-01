@@ -5,6 +5,32 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.8.1 — 2026-10-01
+
+A review of 0.8.0's several-accounts work, every finding fixed with a test
+([brief](docs/app-store/tasks/2026-09-30-cloudflare-accounts.md#review-2026-10-01)).
+
+- **No guessing which account is the server's.** When it cannot be told (no `CLOUDFLARE_ACCOUNT_ID`
+  and a token that sees several accounts), the screen says so and nothing is connected or released;
+  before, every domain looked like another account's and **Stop receiving here** could drop mail.
+- **Only active domains count.** A pending copy of a domain in another account can no longer take
+  its mail, its relay deliveries or where it sends from.
+- **An account whose token stopped working** stays listed with the reason; **Remove…** works, and
+  **Connect another account** with a new token replaces the old one.
+- **Relays:** installed and removed one at a time (with agent keys, which share the sign-in policy);
+  a relay's own settings say which sign-in it runs with, so a lost or unconfirmed step is put right
+  by running it again; a reinstall keeps the old sign-in working while it drains; a failure never
+  removes a relay that works; relays upgrade themselves to the server's version; a refused sign-in
+  no longer follows Access's login redirect.
+- **Sending from another account:** works with one token that reaches several accounts; a domain
+  that moved is sent from where it is now; an inline image without a Content-ID goes as an
+  attachment; mail suppressed for every recipient is a failure, not "sent".
+- **Clearer refusals:** an error names which token it is about, and Email Sending's own refusals are
+  no longer reported as a missing permission.
+- Smaller: connecting several accounts at once reports each one; `list_domains` keeps a domain's own
+  account when it also lists destinations; empty and error states on the accounts list; focus after
+  Remove.
+
 ## 0.8.0 — 2026-09-30
 
 - **Several Cloudflare accounts.** Domains & addresses lists every Cloudflare account the server has

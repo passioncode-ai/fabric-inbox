@@ -167,17 +167,27 @@ flowchart LR
   `CloudflareAccounts` (`workers/routing/accounts.ts`) reads the server's token and every
   `CLOUDFLARE_API_TOKEN_<account id>` secret (the environment is the registry), lists their
   accounts, and resolves a domain to its zone, account, token and Worker; `DomainManager` works on
-  each zone with its own account's token. Which accounts show is the operator's choice in R2
-  `config/cloudflare-accounts.json`, else the server's account and those with mail. Tokens are
-  connected and removed at `/api/cloudflare/accounts` (`workers/routes/cloudflare-accounts.ts`).
+  each zone with its own account's token; only an active zone counts (a pending copy in another
+  account is not where a domain's mail is), and a zone whose account cannot be told apart from the
+  server's is refused rather than guessed. Which accounts show is the operator's choice in R2
+  `config/cloudflare-accounts.json`, else the server's account and those with mail (or whose mail
+  could not be read). An account whose saved token stopped working stays listed with the reason, so
+  it can be replaced or removed. Tokens are connected and removed at `/api/cloudflare/accounts`
+  (`workers/routes/cloudflare-accounts.ts`).
 - The relay (`workers/relay/`): a zone's Email Routing reaches only Workers in the zone's own
   account, so a domain elsewhere routes to `fabric-inbox-relay`, which the server installs there
   (`install.ts`, registry R2 `config/relays.json`, sign-in = an Access service token through the
-  agents' reusable policy). It POSTs the raw message to `/relay/incoming` (`ingress.ts`): only a
+  agents' reusable policy, changed under the same lock as agent keys). Whether a relay is current is
+  read from its own bindings (`RELAY_TOKEN_ID`, `RELAY_VERSION`, `SERVER_URL`); a reinstall
+  registers the new sign-in before the upload and keeps the old one accepted as retiring for an hour;
+  a failed or unconfirmed upload never deletes a working relay. The version is the source's
+  fingerprint, and a relay reporting an older one is upgraded in the background. It POSTs the raw message to `/relay/incoming` (`ingress.ts`): only a
   registered relay, only for domains of its own account, through the same `receiveEmail`; a copy is
   forwarded by the relay and stays owed until `/relay/forwarded`. Mail from such a domain is sent
   through that account's Email Sending REST API (`workers/email-sender.ts (sendFromAccount)`); a
-  4xx is `E_REST_REFUSED` (failed), anything else unknown.
+  4xx is a failure (`E_RATE_LIMIT_EXCEEDED` for 429, `E_RECIPIENT_SUPPRESSED` when every recipient
+  was suppressed, else `E_REST_REFUSED`), anything else unknown; a refusal from the account it was
+  remembered in looks the domain up once and sends from where it is now.
 - `CloudflareApi` (`workers/routing/cloudflare-api.ts`) turns a refusal into the permission to add;
   `TOKEN_PERMISSIONS` there and `PERMISSIONS` in `desktop/cloudflare-deploy.cjs` are one list
   (`tests/desktop-deploy.test.ts`).

@@ -22,7 +22,7 @@ test("accounts: every token's accounts are listed; the server's and those with m
     assert.deepEqual([accounts[C].hasMail, accounts[C].shown, accounts[C].domains], [false, false, 1], "no mail: listed, not shown");
     assert.equal(list.body.account, "Personal");
     const domains = Object.fromEntries(list.body.domains.map((d: any) => [d.domain, d]));
-    assert.deepEqual(Object.keys(domains).sort(), ["apex.invalid", "base.test", "studio.invalid"]);
+    assert.deepEqual(Object.keys(domains).sort(), ["apex.invalid", "base.test", "second.invalid", "studio.invalid"]);
     assert.deepEqual(domains["studio.invalid"].account, { id: B, name: "Studio", server: false });
     assert.equal(domains["base.test"].served, true);
     // Where each domain lives is remembered, for sending and for the relay's check.
@@ -74,12 +74,12 @@ test("connect another account: saved per account it sees, skipping the server's;
   try {
     const made = await call("/api/cloudflare/accounts", "POST", { token: user });
     assert.equal(made.status, 201, JSON.stringify(made.body));
-    assert.deepEqual(made.body.connected, [{ id: B, name: "Studio" }]);
+    assert.deepEqual(made.body.connected, [{ id: B, name: "Studio", replaced: false }]);
     assert.equal(made.body.skipped[0].id, S, "the server's own account keeps its own token");
     assert.equal(cf.secrets[`${S}/fabric-inbox/CLOUDFLARE_API_TOKEN_${B}`], user, "kept as the server Worker's secret");
     assert.doesNotMatch(JSON.stringify(made.body), new RegExp(user));
     const again = await call("/api/cloudflare/accounts", "POST", { token: "d-token-00000000000000000000" });
-    assert.deepEqual(again.body.connected, [{ id: D, name: "Later" }]);
+    assert.deepEqual(again.body.connected, [{ id: D, name: "Later", replaced: false }]);
   } finally { await mf.dispose(); }
 
   // The next version of the Worker carries the secrets.
@@ -121,4 +121,73 @@ test("Email Routing is turned on for a zone's own domain without a name (MA-1)",
     assert.equal(done.body.steps.find((s: any) => s.id === "routing").outcome, "done");
     assert.equal(cf.zone("apex.invalid").routing.enabled, true);
   } finally { await mf.dispose(); }
+});
+
+test("a server account that cannot be told apart is never guessed: nothing is released, and the reason is shown", async () => {
+  const cf = fakeCloudflareAccounts();
+  cf.alias("user-token-0000000000000000", "user-token");
+  cf.scripts[B]["fabric-inbox"] = { bindings: [] }; // a second deployment of the same name
+  const { mf, call } = await serverFixture(cf, { CLOUDFLARE_API_TOKEN: "user-token-0000000000000000" });
+  try {
+    await mf.dispatchFetch("https://server.test/r2put?key=config/domains.json", { method: "PUT", body: JSON.stringify(["apex.invalid"]) });
+    const list = await call("/api/domains");
+    assert.match(JSON.stringify(list.body), /2 of them run a Worker named fabric-inbox; set CLOUDFLARE_ACCOUNT_ID/);
+    const released = await call("/api/domains/apex.invalid/release", "POST", {});
+    assert.notEqual(released.status, 200, "no release on a guess");
+    assert.deepEqual(JSON.parse(await (await mf.dispatchFetch("https://server.test/r2?key=config/domains.json")).text()), ["apex.invalid"], "still served");
+    assert.equal(cf.writes.filter((w) => w.includes("/email/routing/rules")).length, 0, "no rule touched");
+  } finally { await mf.dispose(); }
+});
+
+test("an account whose saved token was revoked stays listed, can be removed, and a new token replaces the old one", async () => {
+  const cf = fakeCloudflareAccounts();
+  cf.alias("c-new-token-000000000000000", "c-token");
+  cf.revoke("c-token");
+  const { mf, call } = await serverFixture(cf, tokens);
+  try {
+    const c = (await call("/api/cloudflare/accounts")).body.accounts.find((a: any) => a.id === C);
+    assert.ok(c, "listed");
+    assert.equal(c.via, "account");
+    assert.match(c.problem, /no longer accepts the token saved for the Cloudflare account/);
+    const replaced = await call("/api/cloudflare/accounts", "POST", { token: "c-new-token-000000000000000" });
+    assert.equal(replaced.status, 201, JSON.stringify(replaced.body));
+    assert.deepEqual(replaced.body.connected, [{ id: C, name: "Archive", replaced: true }]);
+    assert.equal(cf.secrets[`${S}/fabric-inbox/CLOUDFLARE_API_TOKEN_${C}`], "c-new-token-000000000000000");
+    const removed = await call(`/api/cloudflare/accounts/${C}`, "DELETE");
+    assert.equal(removed.status, 200, JSON.stringify(removed.body));
+  } finally { await mf.dispose(); }
+});
+
+test("sending: one token that reaches another account is enough; a wrong remembered account is corrected once; nothing is sent twice", async () => {
+  const cf = fakeCloudflareAccounts();
+  cf.alias("user-token-0000000000000000", "user-token");
+  const one = await serverFixture(cf, { CLOUDFLARE_API_TOKEN: "user-token-0000000000000000", CLOUDFLARE_ACCOUNT_ID: S });
+  const send = (fx: typeof one, key: string, extra: Record<string, unknown> = {}) => fx.call("/api/v1/mailboxes/support@studio.invalid/emails", "POST",
+    { from: "support@studio.invalid", to: "friend@outside.invalid", subject: key, text: "Hi", ...extra }, { "Idempotency-Key": key });
+  try {
+    assert.equal((await one.call("/api/domains/studio.invalid/connect", "POST", { sending: false })).status, 200);
+    await one.mf.dispatchFetch("https://server.test/r2put?key=config/domain-accounts.json", { method: "PUT", body: "{}" });
+    const sent = await send(one, "one-token-1");
+    assert.equal(sent.body.status, "accepted", JSON.stringify(sent.body));
+    assert.deepEqual(cf.sent.map((x) => x.account), [B]);
+  } finally { await one.mf.dispose(); }
+
+  const two = await serverFixture(cf, tokens);
+  try {
+    await two.call("/api/domains/studio.invalid/connect", "POST", { sending: false });
+    cf.sent.length = 0;
+    await two.mf.dispatchFetch("https://server.test/r2put?key=config/domain-accounts.json", { method: "PUT", body: JSON.stringify({ "studio.invalid": C }) });
+    const corrected = await send(two, "stale-1");
+    assert.equal(corrected.body.status, "accepted", JSON.stringify(corrected.body));
+    assert.deepEqual(cf.sent.map((x) => x.account), [C, B], "refused where it was remembered, sent where it is");
+
+    cf.sent.length = 0;
+    const inline = await send(two, "inline-1", { attachments: [{ content: "aGk=", filename: "a.png", type: "image/png", disposition: "inline" }] });
+    assert.equal(inline.body.status, "accepted", JSON.stringify(inline.body));
+    assert.equal(cf.sent[0].body.attachments[0].disposition, "attachment", "an inline part with no Content-ID goes as an attachment");
+
+    cf.options.suppressAll = true;
+    const nobody = await send(two, "suppressed-1");
+    assert.deepEqual([nobody.body.status, nobody.body.errorCode], ["failed", "E_RECIPIENT_SUPPRESSED"]);
+  } finally { await two.mf.dispose(); }
 });

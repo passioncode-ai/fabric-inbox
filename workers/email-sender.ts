@@ -92,18 +92,32 @@ export async function sendFromAccount(env: SendEnv, params: SendEmailParams): Pr
 	const remembered = accounts.tokens.length ? (await readDomainAccounts(env.BUCKET))[domain] : undefined;
 	if (remembered) {
 		const server = await accounts.serverAccountId().catch(() => null);
-		if (server && remembered !== server) return sendOverRest(accounts, remembered, params);
+		if (server && remembered !== server) {
+			try {
+				return await sendOverRest(accounts, remembered, params);
+			} catch (error) {
+				// The remembered account refused before accepting anything, so nothing was sent: the
+				// domain may have moved. Look it up once and send from where it is now.
+				if (!(error instanceof SendRefused) || error.code === "E_RATE_LIMIT_EXCEEDED" || error.code === "E_RECIPIENT_SUPPRESSED") throw error;
+				const ctx = await accounts.zone(domain).catch(() => null);
+				if (!ctx || ctx.accountId === remembered) throw error;
+				if (!ctx.server) return sendOverRest(accounts, ctx.accountId, params);
+			}
+		}
 	}
 	try {
 		return await sendEmail(env.EMAIL, params);
 	} catch (error) {
 		const code = (error as { code?: unknown })?.code;
-		if (typeof code !== "string" || !NOT_IN_THIS_ACCOUNT.has(code) || accounts.tokens.length < 2) throw error;
+		// The binding sends only for its own account; one token that reaches another account is enough to try there.
+		if (typeof code !== "string" || !NOT_IN_THIS_ACCOUNT.has(code) || !accounts.tokens.length) throw error;
 		const ctx = await accounts.zone(domain).catch(() => null);
 		if (!ctx || ctx.server) throw error;
 		return sendOverRest(accounts, ctx.accountId, params);
 	}
 }
+
+type RestResult = { message_id?: string; delivered?: string[]; queued?: string[]; permanent_bounces?: string[]; suppressed_recipients?: string[] };
 
 async function sendOverRest(accounts: CloudflareAccounts, accountId: string, params: SendEmailParams): Promise<{ messageId: string }> {
 	const api = await accounts.apiFor(accountId);
@@ -116,19 +130,27 @@ async function sendOverRest(accounts: CloudflareAccounts, accountId: string, par
 	if (params.bcc) body.bcc = params.bcc;
 	if (params.replyTo) body.reply_to = address(params.replyTo);
 	if (params.headers && Object.keys(params.headers).length) body.headers = params.headers;
+	// The REST API requires a content_id on an inline part; one without it goes as an ordinary attachment.
 	if (params.attachments?.length)
-		body.attachments = params.attachments.map((a) => ({ content: a.content, filename: a.filename, type: a.type, disposition: a.disposition,
-			...(a.disposition === "inline" && a.contentId ? { content_id: a.contentId } : {}) }));
+		body.attachments = params.attachments.map((a) => a.disposition === "inline" && a.contentId
+			? { content: a.content, filename: a.filename, type: a.type, disposition: "inline", content_id: a.contentId }
+			: { content: a.content, filename: a.filename, type: a.type, disposition: "attachment" });
+	let result: RestResult;
 	try {
-		const result = await api.call<{ message_id?: string }>(`/accounts/${accountId}/email/sending/send`, {
+		result = await api.call<RestResult>(`/accounts/${accountId}/email/sending/send`, {
 			method: "POST", body, what: "send from the domain (Email Sending: Edit)", timeoutMs: 60_000,
 		});
-		return { messageId: result?.message_id ?? "" };
 	} catch (error) {
 		// A 4xx is Cloudflare refusing before accepting anything: a definite failure. Anything else —
 		// no answer, a timeout, a 5xx — may have been sent, so it stays unknown and is never retried.
 		if (error instanceof CloudflareApiError && error.status >= 400 && error.status < 500)
-			throw new SendRefused(error.message, error.status === 429 ? "E_RATE_LIMIT_EXCEEDED" : "E_REST_REFUSED");
+			throw new SendRefused(error.message, error.status === 429 ? "E_RATE_LIMIT_EXCEEDED"
+				: /recipient_suppressed|suppress/i.test(error.message) ? "E_RECIPIENT_SUPPRESSED" : "E_REST_REFUSED");
 		throw error;
 	}
+	// Accepted, but for nobody: every recipient was suppressed or bounced at once. Nothing was sent.
+	const reached = (result?.delivered?.length ?? 0) + (result?.queued?.length ?? 0);
+	const dropped = (result?.suppressed_recipients?.length ?? 0) + (result?.permanent_bounces?.length ?? 0);
+	if (!reached && dropped) throw new SendRefused(`Cloudflare delivered it to no recipient: ${[...(result.suppressed_recipients ?? []), ...(result.permanent_bounces ?? [])].join(", ")} refused or suppressed.`, "E_RECIPIENT_SUPPRESSED");
+	return { messageId: result?.message_id ?? "" };
 }

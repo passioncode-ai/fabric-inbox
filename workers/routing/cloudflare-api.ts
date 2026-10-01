@@ -65,9 +65,16 @@ export class CloudflareApiError extends Error {
   get isPermission() { return this.status === 401 || this.code === 10000 || this.code === 9109 || (this.status === 403 && !this.code); }
 }
 
+const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
 export class CloudflareApi {
   // A bare `fetch` stored on the instance throws "Illegal invocation" in workerd when called as this.fetcher.
-  constructor(private token: string, private fetcher: Fetcher = (input, init) => fetch(input, init)) {}
+  /**
+   * `label` names which token this is in a refusal, so a person replaces the right one: the
+   * server's own (the default wording) or one saved for another account.
+   */
+  constructor(private token: string, private fetcher: Fetcher = (input, init) => fetch(input, init),
+    private label: { whose: string; fix: string } | null = null) {}
 
   async call<T>(path: string, init: { method?: string; body?: unknown; form?: FormData; what?: string; timeoutMs?: number } = {}): Promise<T> {
     let response: Response;
@@ -89,12 +96,17 @@ export class CloudflareApi {
     const error = new CloudflareApiError(message, response.status, first?.code);
     // 9109 means both "Invalid access token" and "Unauthorized to access requested resource".
     if (/invalid (access|api) token|token.*(expired|revoked)/i.test(message))
-      throw new CloudflareApiError("Cloudflare no longer accepts this server's token (mistyped, expired or deleted). Create a new one and save it on the server.", response.status, first?.code);
+      throw new CloudflareApiError(this.label
+        ? `Cloudflare no longer accepts ${this.label.whose} (mistyped, expired or deleted). ${this.label.fix}`
+        : "Cloudflare no longer accepts this server's token (mistyped, expired or deleted). Create a new one and save it on the server.", response.status, first?.code);
+    // Email Sending explains its own refusals ("email.sending.error.sending_disabled", code null):
+    // that is the domain's sending state, not a permission the token lacks.
+    const sendingState = body?.errors?.some((e) => /^email\.sending\.error\./.test(e.message ?? ""));
     // A 403 that says nothing more is a refusal of the token (the Access API answers so for a
     // missing Access: Service Tokens permission); one that explains itself, like 10042, is not.
     const unexplained = response.status === 403 && !body?.errors?.some((e) => e.message);
-    if (error.isPermission || unexplained)
-      throw new CloudflareApiError(`The Cloudflare token is not allowed to ${init.what ?? "do this"}. Add the permission to the token and try again.${first?.code ? ` (Cloudflare code ${first.code})` : ""}`, response.status, first?.code);
+    if (!sendingState && (error.isPermission || unexplained))
+      throw new CloudflareApiError(`${this.label ? capitalise(this.label.whose) : "The Cloudflare token"} is not allowed to ${init.what ?? "do this"}. Add the permission to the token and try again.${first?.code ? ` (Cloudflare code ${first.code})` : ""}`, response.status, first?.code);
     throw new CloudflareApiError(`Cloudflare: ${message}`, response.status, first?.code);
   }
 
@@ -121,22 +133,36 @@ export function cloudflareApi(env: TokenEnv, fetcher?: Fetcher): CloudflareApi |
  * token sees; otherwise the one whose Workers hold this server's script (a token that reaches
  * several accounts, workers/routing/accounts.ts).
  */
+/**
+ * CLOUDFLARE_ACCOUNT_ID as Cloudflare prints ids (trimmed, lower case), or null when unset. A value
+ * set in capitals or with a stray space would otherwise make the server's own account look foreign.
+ */
+export function configuredAccountId(env: TokenEnv): string | null {
+  return env.CLOUDFLARE_ACCOUNT_ID?.trim().toLowerCase() || null;
+}
+
 export async function accountIdFor(api: CloudflareApi, env: TokenEnv & { EMAIL_ROUTING_WORKER?: string }): Promise<string> {
-  if (env.CLOUDFLARE_ACCOUNT_ID) return env.CLOUDFLARE_ACCOUNT_ID;
+  const configured = configuredAccountId(env);
+  if (configured) return configured;
   let ids: string[];
   try {
     ids = (await api.list<{ id: string }>("/accounts", "find your accounts (Account Settings: Read)")).map((a) => a.id);
-  } catch {
-    // Before 0.8 the token needed no Account Settings permission: its zones still name their account.
+  } catch (error) {
+    // Only a token without Account Settings may fall back to its zones: any other failure says
+    // nothing about which accounts exist, and a guess here decides where mail goes.
+    if (!(error instanceof CloudflareApiError && error.isPermission)) throw error;
     ids = [...new Set((await api.call<{ account?: { id?: string } }[]>("/zones?per_page=50", { what: "list your domains (Zone: Read)" }))
       .map((z) => z.account?.id).filter((id): id is string => !!id))];
   }
   if (ids.length === 1) return ids[0]!;
   if (!ids.length) throw new CloudflareApiError("The token sees no Cloudflare account.", 400);
   const script = env.EMAIL_ROUTING_WORKER || "fabric-inbox";
-  for (const id of ids) {
-    const runs = await api.call(`/accounts/${id}/workers/scripts/${script}/settings`, { what: "read Workers (Workers Scripts: Edit)" }).then(() => true, () => false);
-    if (runs) return id;
-  }
-  throw new CloudflareApiError(`The token sees ${ids.length} Cloudflare accounts and none of them runs the Worker ${script}; set CLOUDFLARE_ACCOUNT_ID on the server.`, 400);
+  const probes = await Promise.all(ids.map((id) => api.call(`/accounts/${id}/workers/scripts/${script}/settings`, { what: "read Workers (Workers Scripts: Edit)" })
+    .then(() => "runs" as const, (e) => (e instanceof CloudflareApiError && (e.status === 404 || e.code === 10007) ? "absent" as const : "unknown" as const))));
+  const runs = ids.filter((_, i) => probes[i] === "runs");
+  // Exactly one account runs the script and every other one was read: anything else is a guess.
+  if (runs.length === 1 && !probes.includes("unknown")) return runs[0]!;
+  const why = runs.length > 1 ? `${runs.length} of them run a Worker named ${script}`
+    : probes.includes("unknown") ? "not all of them could be checked" : `none of them runs the Worker ${script}`;
+  throw new CloudflareApiError(`The token sees ${ids.length} Cloudflare accounts and ${why}; set CLOUDFLARE_ACCOUNT_ID on the server.`, 400);
 }

@@ -66,12 +66,6 @@ account appears (bounded, with the reason shown if it does not).
 | MA-12 | The door issues a token for an extra account and delivers it into the server Worker as `CLOUDFLARE_API_TOKEN_<id>` | project-observatory test; live `cloudflare.py list` |
 | MA-13 | Live: the owner's server sees all three accounts, the domain that failed receives here, and one domain in another account receives a real message through the relay | receipt in the owner's local `deployments/owner/ops/`, summarised here without identifiers |
 
-## Carry-over ledger
-
-| Item | Status | Home |
-|---|---|---|
-| Which foreign domain is used for the live relay check (it changes a real domain's routing) | open, asked before the step | stage 8 |
-
 ## Design and contracts (stages 2–3)
 
 Modules, walking skeleton first (M1 → M2 give the operator the list; M3 → M4 carry mail):
@@ -98,3 +92,70 @@ delivery).
 Permissions for an extra account's token (the server's own token keeps the full list):
 Account — Workers Scripts: Edit (the relay), Account Settings: Read, Email Routing Addresses: Edit,
 Email Sending: Edit; Zone — Zone: Read, Email Routing Rules: Edit, Zone Settings: Edit, DNS: Edit.
+
+## Built, released and checked (2026-09-30)
+
+Code: the 0.8.0 tree, `a9f9516` in the public history (landed before the republication as two squashed PRs of the private history; the second adds the account-level rules permission).
+Door: passioncode-ai/project-observatory-dashboard#93 (presets `fabric-inbox-server` and
+`fabric-inbox-account` into a vault slot; open, used from its branch).
+
+| REQ | Evidence | State |
+|---|---|---|
+| MA-1 | `tests/domains.test.ts` and `tests/cloudflare-accounts.test.ts` ("Email Routing is turned on … without a name"): the fake answers Cloudflare's own `1004 must be a subdomains` to a `name`; both failed before the fix (watched), pass after | tested; live click not observed |
+| MA-2 | `tests/cloudflare-accounts.test.ts` (three tokens, three accounts, names, `via`, `server`); live: each of the owner's three tokens probed with its own rights (`/accounts` → its one account) | tested; live tokens probed |
+| MA-3 | same file ("showing and hiding is kept …"); planted defect "every account shown" caught | tested |
+| MA-4 | `tests/cloudflare-relay.test.ts` (detail, routing status, destinations of the domain's account); `tests/domains.test.ts` 18/18 unchanged | tested |
+| MA-5 | `tests/cloudflare-accounts.test.ts` (connect: checked, saved per new account, the server's skipped, never echoed; remove: secret deleted, refused while served, refused for the server's account) | tested |
+| MA-6 | `tests/cloudflare-relay.test.ts` (install: script, `forever` sign-in through the agents' policy, registry without secrets, rules to the relay; again: no write; a failed upload revokes the sign-in and moves no rule) | tested; not live |
+| MA-7 | same file, the relay's own source in workerd behind an Access stand-in: stored once, copy settled by the report, a lost report leaves it owed, unknown address bounces, another account's domain 403 → the relay fails the delivery, an unreachable server fails it; planted defects on the account check and the deferred copy caught | tested; not live |
+| MA-8 | same file: REST send for the other account; 400 → `E_REST_REFUSED` failed; 503 → unknown; planted defect caught | tested; not live |
+| MA-9 | same file ("stopping a domain in another account …") | tested |
+| MA-10 | `tests/mcp-coverage.test.ts`, `mcp-docs`, `mcp-skill` (7/7) | tested |
+| MA-11 | `app/components/domains/Accounts.tsx`; UX lint and doctor exit 0; brand lint 0 errors; SCN-045, SCN-046 | built; not seen in the app |
+| MA-12 | the door's tests (`test_cf_fabric_account_preset_…`, zone policy removal caught); live: three tokens issued and delivered | done, PR open |
+| MA-13 | server `1d8af191` runs 0.8.0 with the three tokens; unauthenticated relay and API paths → Access login | partly: the screen, the failed domain and a relay delivery await the operator |
+
+Gates on the 0.8.0 tree: `npm test` 431 tests, 0 fail (exit 0; on a clone without a local deployment the owner-data file check is the one skipped, 430 pass), `npm run typecheck` 0, `npm run build`
+0, UX lint 0, doctor 0, brand lint 0 errors, `git diff --check` 0, relative links resolve.
+
+**Not run, and why.** The owner's app window kept the page it had loaded before the deploy and
+could not be driven from here (its web content takes no synthetic clicks), so the Domains screen,
+**Receive mail here** on the domain that failed and a relay delivery on a real domain of another
+account were not observed. Whether Cloudflare retries a message when an Email Worker throws was
+not measured; the relay follows the server's own handler, which already relies on it.
+
+Found live and fixed in the same run: the account-level rules list needs **Email Routing Account
+Rules: Read** (403 with the zone-level group); added to both token lists and both door presets.
+
+## Carry-over ledger
+
+Both open items moved to the board as B-39; this brief carries no open row.
+
+| Item | Status | Home |
+|---|---|---|
+| Which foreign domain is used for the live relay check | moved — the operator picks it | board B-39 |
+| The live Domains screen and the failed domain turned on | moved — needs the operator's app | board B-39 |
+
+## Review 2026-10-01
+
+Operator: "check for bugs and errors, take the architecture apart, fix everything." Three independent
+reviews (relay; accounts and their callers; sending, screen, agent protocol and docs), each finding
+read against the code before it was fixed. Released as 0.8.1.
+
+| Finding | Severity | Fix | Test |
+|---|---|---|---|
+| A failed look-up of the server's account was swallowed: every zone looked foreign (relay Worker, `server: false`), so release dropped live mail and connect replaced MX before failing | high | `CloudflareAccounts.zone` refuses unless the zone's account has its own token | `cloudflare-accounts` "never guessed" (planted defect caught) |
+| `zone()` matched pending zones and tried account tokens first: a pending copy in a connected account could take a domain's relay deliveries, cache row and sending | high | `status=active` in the query and on the result; the server's token first; the relay path never writes the cache | `cloudflare-relay` "pending copy" (both filters removed: caught) |
+| An account whose saved token stopped working vanished from the list and could not be removed or replaced | high | listed with `problem`; POST replaces a token that does not work; removing tolerates a dead token | `cloudflare-accounts` "revoked" |
+| Relay install/remove not serialised (two connects, or a key change, could leave the relay on one sign-in and the registry on another, forever) | high | `underAccessLock` (shared with agent keys); "installed" read from the relay's own `RELAY_TOKEN_ID` | `cloudflare-relay` "two connects at once", "does not name" (planted defects caught) |
+| A failed registry write after an upload deleted a working relay; a timed-out upload revoked the sign-in the relay ran with | medium | register before upload, two rows while rotating, unconfirmed (no answer / 5xx) keeps both, refused restores the old | "upload that applied but was not confirmed", "moving the server's address" |
+| `accountIdFor` took the first account that answered and fell back to zones on any error | medium | probe every account; one match and no unknowns, or an error naming why; zones only on a permission refusal | "never guessed" (two accounts run the script) |
+| Errors always named "this server's token" | medium | `CloudflareApi` label for a saved account token | `cloudflare-review` "names the token" |
+| Email Sending's own 403s read as a missing permission | medium | `email.sending.error.*` keeps its own message | `cloudflare-review` "Email Sending's own refusals" |
+| Fallback send needed two tokens; a stale remembered account failed for good; inline part without Content-ID refused by REST; all-suppressed recorded as accepted | medium/low | one token is enough; one re-look-up after a refusal; sent as attachment; `E_RECIPIENT_SUPPRESSED` | `cloudflare-accounts` "sending" (planted defect caught) |
+| `list_domains` with destinations overwrote the domain's `account` | medium | destinations nested | `cloudflare-review` "keeps the domain's own account" |
+| Connecting several accounts failed silently half-way; the poll after connect broke on a hiccup, never stopped, and could claim "in use" early | medium | `{connected, skipped, failed}`; per-poll catch, stop on unmount, wait for `via: "account"` | — (UI; checked by typecheck and reading) |
+| Relay followed Access's login redirect with its secret; version bumped by hand; request origin beat `PUBLIC_APP_URL`; body read without a cap; any `ok` report cleared any copy | low | `redirect: "manual"`; version = source fingerprint + background upgrade; `PUBLIC_APP_URL` first, https only; capped read; only an owed copy to the current target settles | "login redirect", "older version is upgraded", "settles only a copy" |
+| Smaller: id case in secret names, `routesMail` failure unreported, R2 error on choices failed the page, `aria-pressed` on a changing label, no empty state, focus lost after Remove, docs (429, "could not be read") | low | each fixed in place | — |
+
+Gates and live checks for 0.8.1: in the release entry of the [handoff](../README.md).
