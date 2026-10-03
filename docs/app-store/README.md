@@ -44,8 +44,9 @@ Controller (history): linked worktree `fabric-inbox-workbench`, branch `codex/ap
 ### Release signing moves to CI (2026-10-03)
 
 From here on a release is built only by [`release.yml`](../../.github/workflows/release.yml) in the
-protected `release` environment (organization decision, 2026-10-03): approval by
-`release-approvers`, never the tag's author; the disk image with the CI Developer ID, the app and
+protected `release` environment (organization decision, 2026-10-03): approval by a person from
+`release-approvers`, who may be whoever pushed the tag (amended the same day; an agent never
+approves); the disk image with the CI Developer ID, the app and
 then the image notarized through the shared action; attested, `SHA256SUMS` GPG-signed, published;
 the Mac App Store package signed with the CI-only store identities and uploaded when publishing.
 The by-hand procedure the releases below followed is retired; a locally signed build is a debug
@@ -174,7 +175,8 @@ app. Nothing is half-done in the tree.
    longer on any ref but GitHub still serves them by SHA. Either ask GitHub Support to purge the
    repository's unreachable objects, or re-create the repository and push only the public `main`.
    Until then, do not push a tag or branch whose history is not the public `main`.
-5. **Approve the release rehearsal** (a member of `release-approvers` who did not push the tag):
+5. **Approve the release rehearsal** (any member of `release-approvers`, whoever pushed the tag
+   included; never an agent):
    the newest `release` run on a `v*-rc.*` tag waits in "Review deployments" for its `macos`,
    `mas` and `publish` jobs. A rehearsal publishes nothing and uploads nothing.
 6. ~~**Create the App Store Connect app record**~~ — done 2026-10-03: "Fabric Inbox", Apple id `6818818207`, SKU `fabric-inbox`, en-US, macOS.

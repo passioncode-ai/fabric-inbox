@@ -5,8 +5,9 @@ server, the Mac app and the skill, built and signed **only in GitHub Actions**
 ([`.github/workflows/release.yml`](../.github/workflows/release.yml)), in this repository's
 protected `release` environment. This follows the organization's release signing
 ([passioncode-ai/.github `release-signing/README.md`](https://github.com/passioncode-ai/.github/blob/main/release-signing/README.md)):
-a member of `release-approvers` approves the signing jobs, the tag's author cannot, and admins
-cannot bypass it. Nobody's laptop holds a release key, and a build signed anywhere else is a debug
+a member of `release-approvers` approves the signing jobs, and that may be whoever pushed the
+tag (operator decision, 2026-10-03); an agent never approves a release run, even when its account
+could; admins cannot bypass it. Nobody's laptop holds a release key, and a build signed anywhere else is a debug
 build that is never published, attached to a release or uploaded to App Store Connect.
 
 ## What a release is
@@ -111,7 +112,7 @@ per package and has no checked universal path; Intel Macs install the universal 
    store package as `mas-pkg-…`. No release is created and nothing is uploaded to App Store Connect.
 5. **Tag.** `git tag -a v<version> -m "Fabric Inbox <version>" <merge commit> && git push origin v<version>`.
    A release tag that already exists is never moved: a mistake gets a new version.
-6. **Approve.** A member of `release-approvers` other than the tag's author opens the run and
+6. **Approve.** A member of `release-approvers`, whoever pushed the tag included, opens the run and
    approves ("Review deployments") the `release` environment for the signing jobs, then again for
    `publish`.
 7. **Check from the download.** In an empty directory, do what the README tells a teammate
@@ -139,7 +140,8 @@ per package and has no checked universal path; Intel Macs install the universal 
 
 ## Human steps
 
-- **Approving** the `release` environment (step 6): `release-approvers`, never the tag's author.
+- **Approving** the `release` environment (step 6): a person from `release-approvers`, who may be
+  whoever pushed the tag; never an agent.
 - **The App Store Connect app record** for `ai.passioncode.fabric-inbox` does not exist yet, and the
   App Store Connect API cannot create one. Until a person with the Account Holder, Admin or App
   Manager role creates it (App Store Connect → Apps → + → New App, platform macOS, bundle id
