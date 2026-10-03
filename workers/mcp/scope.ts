@@ -10,6 +10,7 @@
  *   is narrowed to the key's mailboxes on the way in and filtered again on the way out.
  */
 import { ApiError, type Api, type ApiResponse, type ToolDef } from "./protocol";
+import type { Principal } from "./keys";
 
 /** "cloudflare:<address>" (a bare address counts) or "gmail:<id>", the way list_accounts names it; null otherwise. */
 export function normaliseAccountId(value: unknown): string | null {
@@ -151,4 +152,19 @@ export function scopedApi(api: Api, accounts: readonly string[]): Api {
     // Hidden entries are stored as lower-cased account ids (workers/lib/hidden-accounts.ts).
     return { ...response, data: { ...data, hidden: (data.hidden ?? []).filter((h) => allowedLower.has(String(h).toLowerCase())) } };
   }
+}
+
+/**
+ * The narrowing header (ADR-0115 §5 in passioncode-ai/fabric). A hub that holds one key for many
+ * agents names, per call, the mailboxes the calling agent was granted; the call then reaches those
+ * only. It intersects with the key's own limit, so it can narrow a key and never widen one, and a
+ * header with nothing valid in it reaches nothing. No header leaves the caller as it was.
+ */
+export const NARROW_HEADER = "X-Fabric-Accounts";
+
+export function narrowPrincipal(principal: Principal | null, header: string | null): Principal | null {
+  if (!principal || header === null) return principal;
+  const named = normaliseAccounts(header.split(",").map((s) => s.trim()).filter(Boolean)) ?? [];
+  const accounts = principal.accounts ? named.filter((a) => principal.accounts!.includes(a)) : named;
+  return { ...principal, accounts } as Principal;
 }

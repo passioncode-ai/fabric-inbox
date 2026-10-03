@@ -198,3 +198,26 @@ test("a key whose only mailbox does not exist here gets an empty feed with the r
   assert.match(JSON.stringify((out.data as { issues: unknown[] }).issues), /research@sshlg\.me has no mailbox/);
   assert.equal((await s.request("GET", "/api/inbox", { query: { account: RESEARCH } })).status, 404);
 });
+
+// ── The narrowing header (ADR-0115 §5 in passioncode-ai/fabric): a hub holding one key narrows each call ──
+import { narrowPrincipal, NARROW_HEADER } from "../workers/mcp/scope";
+
+test("X-Fabric-Accounts narrows any key to the named mailboxes, and never widens one", () => {
+  assert.equal(NARROW_HEADER, "X-Fabric-Accounts");
+  const admin = { kind: "agent", label: "Fabric", level: "admin", send: "send", dailySendLimit: 50, keyId: "k", accounts: null } as Principal;
+  assert.deepEqual(narrowPrincipal(admin, "cloudflare:News@example.com, research@sshlg.me")?.accounts, ["cloudflare:news@example.com", RESEARCH]);
+  assert.equal(narrowPrincipal(admin, null), admin, "no header, no change");
+  const limited = scoped([RESEARCH, "cloudflare:a@x.invalid"]);
+  assert.deepEqual(narrowPrincipal(limited, `${RESEARCH},cloudflare:other@x.invalid`)?.accounts, [RESEARCH], "intersection, never the union");
+  assert.deepEqual(narrowPrincipal(admin, "nonsense, ")?.accounts, [], "a header with nothing valid reaches nothing");
+  assert.deepEqual(narrowPrincipal(admin, "")?.accounts, [], "an empty header is a limit to nothing, not no header");
+  const owner = principalFor({ email: "owner@x.invalid" }, [])!;
+  assert.deepEqual(narrowPrincipal(owner, RESEARCH)?.accounts, [RESEARCH], "the owner's own session can be narrowed too");
+});
+
+test("an admin key narrowed by the header sees mailbox tools, sends from them, and loses the workspace tools", () => {
+  const narrowed = narrowPrincipal({ kind: "agent", label: "Fabric", level: "admin", send: "send", dailySendLimit: 50, keyId: "k", accounts: null } as Principal, RESEARCH)!;
+  const names = toolsFor(narrowed, TOOLS).map((t) => t.name);
+  assert.ok(names.includes("read_message") && names.includes("send_email"));
+  for (const t of ["create_address", "list_addresses", "save_agent", "connect_domain"]) assert.ok(!names.includes(t), t);
+});
