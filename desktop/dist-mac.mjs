@@ -399,7 +399,7 @@ async function main() {
     const { packager } = await import('@electron/packager');
     const [appDir] = await packager({
       dir: source, name: 'Fabric Inbox', executableName: 'Fabric Inbox', appVersion: version, buildVersion: version,
-      appBundleId: BUNDLE_ID, appCategoryType: 'public.app-category.productivity', icon: path.join(source, 'icon.icns'),
+      protocols: [{ name: 'Fabric Inbox connect link', schemes: ['fabric-inbox'] }], appBundleId: BUNDLE_ID, appCategoryType: 'public.app-category.productivity', icon: path.join(source, 'icon.icns'),
       platform: 'darwin', arch: 'universal', electronVersion, out: path.join(temp, 'out'), overwrite: true, asar: true, prune: true,
       ignore: [/\/(?:mas-package|package|dist-mac)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.icns$/, /\/dmg-background/],
       extendInfo: { NSHumanReadableCopyright: 'Fabric Inbox — PassionCode.ai', NSRequiresAquaSystemAppearance: false, LSMinimumSystemVersion: '12.0' },

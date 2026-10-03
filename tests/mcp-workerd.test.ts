@@ -72,16 +72,16 @@ async function fixture() {
   const put = (key: string, value: unknown) => mf.dispatchFetch("http://localhost/test/put", { method: "POST", body: JSON.stringify({ key, value }) });
   await put(`mailboxes/${MAILBOX}.json`, { agent: "off", fromName: "Shop support", signature: { enabled: true, text: "— Shop" } });
   await put("config/agent-keys.json", { keys: KEYS });
-  const connect = async (claims: Record<string, unknown> | null) => {
+  const connect = async (claims: Record<string, unknown> | null, extra: Record<string, string> = {}) => {
     const transport = new StreamableHTTPClientTransport(new URL("http://localhost/mcp"), {
       fetch: ((url: string | URL, init?: RequestInit) => mf.dispatchFetch(String(url), init as never)) as typeof fetch,
-      requestInit: { headers: claims ? { "x-test-claims": JSON.stringify(claims) } : {} },
+      requestInit: { headers: { ...(claims ? { "x-test-claims": JSON.stringify(claims) } : {}), ...extra } },
     });
     const client = new Client({ name: "test-agent", version: "1.0.0" });
     await client.connect(transport);
     return client;
   };
-  const as = (clientId: string) => connect({ common_name: clientId, sub: "" });
+  const as = (clientId: string, extra: Record<string, string> = {}) => connect({ common_name: clientId, sub: "" }, extra);
   const call = async (client: Client, name: string, args: Record<string, unknown> = {}) => {
     const r = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
     return { isError: !!r.isError, data: JSON.parse(r.content[0]!.text) };
@@ -279,5 +279,24 @@ test("a key limited to one mailbox sees and reaches that mailbox only, end to en
     const accounts = await call(await as("scoped.access"), "list_accounts");
     assert.equal(accounts.isError, false, JSON.stringify(accounts.data));
     assert.ok(accounts.data.accounts.every((a: { accountId: string }) => a.accountId === "cloudflare:other@shop.invalid"), JSON.stringify(accounts.data.accounts));
+  } finally { await mf.dispose(); }
+});
+
+test("a hub's admin key narrowed by X-Fabric-Accounts reaches the named mailbox only, end to end (ADR-0115 §5)", async () => {
+  const { mf, as, call } = await fixture();
+  try {
+    await mf.dispatchFetch("http://localhost/test/inbox", { method: "POST", body: JSON.stringify({ mailbox: MAILBOX, sender: "a@b.invalid", subject: "for support" }) });
+    const narrowed = await as("admin.access", { "X-Fabric-Accounts": `cloudflare:${MAILBOX}` });
+    const tools = await names(narrowed);
+    assert.ok(tools.includes("read_message") && tools.includes("send_email"));
+    assert.ok(!tools.includes("create_address") && !tools.includes("list_addresses"), "workspace tools are gone once narrowed");
+    const feed = await call(narrowed, "list_messages", {});
+    assert.equal(feed.isError, false, JSON.stringify(feed.data));
+    assert.ok(feed.data.messages.every((m: { accountId: string }) => m.accountId === `cloudflare:${MAILBOX}`));
+    const other = await call(narrowed, "list_mailbox_messages", { accountId: "cloudflare:other@shop.invalid" });
+    assert.equal(other.isError, true);
+    await assert.rejects(as("admin.access", { "X-Fabric-Accounts": "not-an-account" }), /limited to no mailbox|403/, "a header naming nothing valid reaches nothing, refused at the door");
+    const whole = await names(await as("admin.access"));
+    assert.ok(whole.includes("create_address"), "without the header the key is what it was");
   } finally { await mf.dispose(); }
 });
