@@ -128,8 +128,18 @@ export function mainEntitlements(c) {
 export function childEntitlements() {
   return { 'com.apple.security.app-sandbox': true, 'com.apple.security.inherit': true };
 }
-export function validateEntitlements(actual, expected) {
-  requireThat(JSON.stringify(Object.entries(actual).sort()) === JSON.stringify(Object.entries(expected).sort()), 'Signed entitlements differ from the declared policy.');
+export function validateEntitlements(actual, expected, label = 'the application') {
+  // Name what differs: entitlement keys are policy, not secrets, and a bare "differ" sent the
+  // first CI rehearsal (v0.9.0-rc.1) back with nothing to act on.
+  const keys = new Set([...Object.keys(actual), ...Object.keys(expected)]);
+  const missing = [], unexpected = [], different = [];
+  for (const k of [...keys].sort()) {
+    if (!(k in actual)) missing.push(k);
+    else if (!(k in expected)) unexpected.push(k);
+    else if (JSON.stringify(actual[k]) !== JSON.stringify(expected[k])) different.push(k);
+  }
+  requireThat(!missing.length && !unexpected.length && !different.length,
+    `Signed entitlements differ from the declared policy for ${label}: missing [${missing.join(', ')}], unexpected [${unexpected.join(', ')}], different [${different.join(', ')}].`);
 }
 // What a signed file must carry. codesign prints nothing for code signed without entitlements;
 // Electron's nested libraries and frameworks are such code, so an empty answer is legitimate for
@@ -205,7 +215,7 @@ export async function build(c, checked) {
       const expected = expectedEntitlementsFor(file, app, c, signedEntitlements);
       if (expected === null) continue;
       const decoded = JSON.parse(run('python3', ['-c', 'import sys,plistlib,json;print(json.dumps(plistlib.loads(sys.stdin.buffer.read())))'], { input: signedEntitlements }));
-      validateEntitlements(decoded, expected);
+      validateEntitlements(decoded, expected, path.relative(path.dirname(app), file) || path.basename(file));
     }
     const info = plistRead(path.join(app, 'Contents/Info.plist'));
     requireThat(info.CFBundleIdentifier === BUNDLE_ID && info.CFBundleVersion === c['build-number'] && info.FabricInboxSourceRevision === c.revision, 'Packaged bundle metadata does not match requested inputs.');

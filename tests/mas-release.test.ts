@@ -108,6 +108,10 @@ test('signed child entitlement drift and extra privileges are rejected', () => {
   assert.throws(() => validateEntitlements({ ...expected, 'com.apple.security.network.server': true }, expected));
   assert.throws(() => validateEntitlements({ 'com.apple.security.app-sandbox': true }, expected));
   assert.throws(() => validateEntitlements({ ...expected, 'com.apple.security.inherit': false }, expected));
+  assert.throws(() => validateEntitlements({ ...expected, 'com.apple.security.network.server': true }, expected, 'Fabric Inbox.app'),
+    /for Fabric Inbox\.app: missing \[\], unexpected \[com\.apple\.security\.network\.server\], different \[\]/);
+  assert.throws(() => validateEntitlements({ 'com.apple.security.app-sandbox': true }, expected, 'x'),
+    (e) => /missing \[/.test(e.message) && !/missing \[\]/.test(e.message));
 });
 
 
