@@ -56,7 +56,7 @@ export function validateProfile(c, p, certificateHash, now = Date.now()) {
   requireThat(Number.isFinite(Date.parse(p.ExpirationDate)) && Date.parse(p.ExpirationDate) > now, 'Profile has expired or has no valid expiry.');
   const e = p.Entitlements || {};
   requireThat(e['com.apple.developer.team-identifier'] === c.team, 'Profile entitlement team does not match.');
-  requireThat(p.AppIdentifierPrefix?.length === 1 && p.AppIdentifierPrefix[0] === c.team, 'This signing configuration requires the App ID prefix to equal the team; legacy prefixes need explicit review.');
+  requireThat(p.ApplicationIdentifierPrefix?.length === 1 && p.ApplicationIdentifierPrefix[0] === c.team, 'This signing configuration requires the App ID prefix to equal the team; legacy prefixes need explicit review.');
   requireThat(e['com.apple.application-identifier'] === `${c.team}.${BUNDLE_ID}`, 'Profile must authorize the exact bundle ID; wildcard App IDs are refused.');
   requireThat(p.CertificateHashes?.includes(certificateHash), 'Signing certificate is not authorized by this profile.');
   requireThat(p.ProvisionsAllDevices !== true, 'All-device profiles are not Mac App Store profiles.');
