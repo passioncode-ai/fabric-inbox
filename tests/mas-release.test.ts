@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import test from 'node:test';
-import { BUNDLE_ID, MIN_FREE_BYTES, checkCapacity, childEntitlements, mainEntitlements, validateEntitlements, validateSource, parseArgs, parseIdentities, selectIdentity, validateConfig, validateProfile } from '../desktop/mas-package.mjs';
+import { BUNDLE_ID, MIN_FREE_BYTES, checkCapacity, childEntitlements, expectedEntitlementsFor, mainEntitlements, validateEntitlements, validateSource, parseArgs, parseIdentities, selectIdentity, validateConfig, validateProfile } from '../desktop/mas-package.mjs';
 
 const hash = 'A'.repeat(40);
 const team = 'ABC123DEF4';
@@ -117,4 +117,19 @@ test('installed signing and packaging exports match the build API without invoki
   assert.equal(typeof signer.sign, 'function');
   assert.equal(typeof signer.flat, 'function');
   assert.equal(typeof packager.packager, 'function');
+});
+
+test('signed code without entitlements: a library is skipped, a bundle is refused by name', () => {
+  const c = configuration();
+  const app = '/build/Fabric Inbox.app';
+  const lib = `${app}/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libffmpeg.dylib`;
+  const helper = `${app}/Contents/Frameworks/Fabric Inbox Helper (GPU).app`;
+  assert.equal(expectedEntitlementsFor(lib, app, c, ''), null);
+  assert.equal(expectedEntitlementsFor(lib, app, c, '  \n'), null);
+  assert.throws(() => expectedEntitlementsFor(app, app, c, ''), /Fabric Inbox\.app; an application bundle must carry them/);
+  assert.throws(() => expectedEntitlementsFor(helper, app, c, ''), /Helper \(GPU\)\.app/);
+  const xml = '<?xml version="1.0"?><plist version="1.0"><dict/></plist>';
+  assert.deepEqual(expectedEntitlementsFor(app, app, c, xml), mainEntitlements(c));
+  assert.deepEqual(expectedEntitlementsFor(helper, app, c, xml), childEntitlements());
+  assert.deepEqual(expectedEntitlementsFor(lib, app, c, xml), childEntitlements());
 });
