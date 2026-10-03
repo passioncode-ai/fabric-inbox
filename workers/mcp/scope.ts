@@ -21,7 +21,8 @@ export function normaliseAccountId(value: unknown): string | null {
   return cloudflareId(v);
 }
 // No "%": the mailbox routes decode their parameter once more, so "x%40y@d.com" would name another mailbox.
-const cloudflareId = (address: string) => (/^[^@\s/:%]+@[^@\s/:%]+\.[^@\s/:%]+$/.test(address) ? `cloudflare:${address.toLowerCase()}` : null);
+// No ",": a narrowing header is a comma list, so "a,b@d.com" would name two.
+const cloudflareId = (address: string) => (/^[^@\s/:%,]+@[^@\s/:%,]+\.[^@\s/:%,]+$/.test(address) ? `cloudflare:${address.toLowerCase()}` : null);
 
 /**
  * A stored key's accounts: absent or null is the whole workspace. Anything present is a limit: its
