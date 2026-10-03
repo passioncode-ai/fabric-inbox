@@ -226,7 +226,7 @@ flowchart TD
 | SCR-11 | loading, empty, error, success |
 | SCR-15 | loading, empty, error, success |
 
-- **Scenario coverage:** SCN-001, SCN-012, SCN-019, SCN-028, SCN-030, SCN-043, SCN-044.
+- **Scenario coverage:** SCN-001, SCN-012, SCN-019, SCN-028, SCN-030, SCN-043, SCN-044, SCN-047.
 
 ### FLW-08: Put an agent on a project address
 - **Traces:** ST-008; RE-001

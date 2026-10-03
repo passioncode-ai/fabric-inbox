@@ -368,6 +368,6 @@ app.on('second-instance', (_event, argv) => {
 if (ownsInstance) app.whenReady().then(async () => {
   installIPC(); installMenu(); await loadBundledSetups(); await readConfig(); config ? loadMail() : showSetup(notice);
   appReady = true;
-  for (const arg of process.argv) queueLink(arg);
+  for (const arg of process.argv || []) queueLink(arg);
   void drainLinks();
 });
