@@ -7,7 +7,7 @@ import { BUNDLE_ID, MIN_FREE_BYTES, checkCapacity, childEntitlements, mainEntitl
 const hash = 'A'.repeat(40);
 const team = 'ABC123DEF4';
 const configuration = () => ({ mode: 'distribution', arch: 'arm64', team, identity: `Apple Distribution: Example (${team})`, 'installer-identity': `3rd Party Mac Developer Installer: Example (${team})`, profile: '/private/tmp/example.provisionprofile', 'build-number': '1.2.3', revision: 'a'.repeat(40), build: false });
-const profile = () => ({ Platform: ['OSX'], TeamIdentifier: [team], AppIdentifierPrefix: [team], ExpirationDate: '2030-01-01T00:00:00Z', CertificateHashes: [hash], Entitlements: { 'com.apple.application-identifier': `${team}.${BUNDLE_ID}`, 'com.apple.developer.team-identifier': team, 'com.apple.security.application-groups': [`${team}.${BUNDLE_ID}`] } });
+const profile = () => ({ Platform: ['OSX'], TeamIdentifier: [team], ApplicationIdentifierPrefix: [team], ExpirationDate: '2030-01-01T00:00:00Z', CertificateHashes: [hash], Entitlements: { 'com.apple.application-identifier': `${team}.${BUNDLE_ID}`, 'com.apple.developer.team-identifier': team, 'com.apple.security.application-groups': [`${team}.${BUNDLE_ID}`] } });
 const now = Date.parse('2026-01-01T00:00:00Z');
 
 test('distribution configuration requires explicit MAS identity, team, installer, version and exact revision', () => {
@@ -39,7 +39,7 @@ test('profile validates actual entitlement, expiry, platform and authorized cert
   for (const patch of [
     { Platform: ['iOS'] }, { Platform: undefined }, { TeamIdentifier: ['WRONG12345'] },
     { ExpirationDate: '2025-01-01' }, { ExpirationDate: 'not-a-date' }, { CertificateHashes: ['B'.repeat(40)] },
-    { AppIdentifierPrefix: ['LEGACY1234'] }, { ProvisionsAllDevices: true }, { ProvisionedDevices: [] },
+    { ApplicationIdentifierPrefix: ['LEGACY1234'] }, { ProvisionsAllDevices: true }, { ProvisionedDevices: [] },
   ]) assert.throws(() => validateProfile(configuration(), { ...profile(), ...patch }, hash, now), JSON.stringify(patch));
   for (const patch of [
     { 'com.apple.application-identifier': `${team}.*` }, { 'com.apple.application-identifier': `${team}.wrong.app` },
