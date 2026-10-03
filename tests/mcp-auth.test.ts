@@ -6,18 +6,18 @@ import { CloudflareApi } from "../workers/routing/cloudflare-api";
 
 const key = (over: Partial<AgentKey> = {}): AgentKey => ({
   id: "tok-1", clientId: "abc.access", name: "Support bot", level: "mail", send: "drafts", dailySendLimit: 50,
-  createdAt: "2026-09-29T00:00:00.000Z", expiresAt: "2027-09-29T00:00:00.000Z", ...over,
+  createdAt: "2026-09-29T00:00:00.000Z", expiresAt: "2027-09-29T00:00:00.000Z", accounts: null, ...over,
 });
 
 test("a person signed in through Access is the owner, at every level (AP-1)", () => {
-  assert.deepEqual(principalFor({ email: "owner@x.invalid" }, []), { kind: "owner", label: "owner@x.invalid", level: "admin", send: "send", dailySendLimit: null, keyId: null });
+  assert.deepEqual(principalFor({ email: "owner@x.invalid" }, []), { kind: "owner", label: "owner@x.invalid", level: "admin", send: "send", dailySendLimit: null, keyId: null, accounts: null });
 });
 
 test("a service token is an agent only while its key is registered and not expired (AP-1)", () => {
   const now = Date.parse("2026-10-01T00:00:00Z");
   assert.equal(principalFor({ common_name: "other.access", sub: "" }, [key()], now), null, "a token made for another app gets nothing");
   assert.deepEqual(principalFor({ common_name: "abc.access", sub: "" }, [key()], now),
-    { kind: "agent", label: "Support bot", level: "mail", send: "drafts", dailySendLimit: 50, keyId: "tok-1" });
+    { kind: "agent", label: "Support bot", level: "mail", send: "drafts", dailySendLimit: 50, keyId: "tok-1", accounts: null });
   assert.equal(principalFor({ common_name: "abc.access" }, [key({ expiresAt: "2026-09-30T00:00:00Z" })], now), null, "expired");
   assert.equal(principalFor({}, [key()], now), null, "no identity at all");
 });

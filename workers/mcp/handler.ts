@@ -8,6 +8,7 @@ import { api } from "../api";
 import type { Env } from "../types";
 import { principalFor, readAgentKeys, type AccessClaims, type Principal } from "./keys";
 import { ApiError, buildServer, type Api, type Ledger } from "./protocol";
+import { scopedApi } from "./scope";
 import { TOOLS } from "./tools";
 import { instructionsFor, PROTOCOL_NAME } from "./instructions";
 import { version } from "../../package.json";
@@ -60,7 +61,7 @@ const refuse = (status: number, message: string) =>
   new Response(JSON.stringify({ jsonrpc: "2.0", error: { code: -32001, message }, id: null }), { status, headers: { "Content-Type": "application/json" } });
 
 export async function resolvePrincipal(claims: AccessClaims | null, env: Env, dev: boolean): Promise<Principal | null> {
-  if (!claims) return dev ? { kind: "owner", label: "local development", level: "admin", send: "send", dailySendLimit: null, keyId: null } : null;
+  if (!claims) return dev ? { kind: "owner", label: "local development", level: "admin", send: "send", dailySendLimit: null, keyId: null, accounts: null } : null;
   const keys = claims.common_name ? await readAgentKeys(env.BUCKET) : [];
   return principalFor(claims, keys);
 }
@@ -102,7 +103,7 @@ export async function handleMcp(request: Request, env: Env, ctx: ExecutionContex
   const server = buildServer(
     { name: PROTOCOL_NAME, version, instructions: instructionsFor(principal, origin) },
     TOOLS,
-    { api: inProcessApi(origin, env, ctx), principal },
+    { api: principal.accounts ? scopedApi(inProcessApi(origin, env, ctx), principal.accounts) : inProcessApi(origin, env, ctx), principal },
     ledgerFor(env),
   );
   return createMcpHandler(server, { route: "/mcp" })(request, env, ctx);

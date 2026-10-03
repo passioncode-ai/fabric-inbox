@@ -8,6 +8,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z, type ZodRawShape } from "zod";
 import { levelAllows, type Level, type Principal } from "./keys";
+import { toolFitsScope } from "./scope";
 
 /** What a route answered: its status and parsed JSON (or text), unchanged. */
 export interface ApiResponse { status: number; data: unknown; contentType: string }
@@ -56,9 +57,14 @@ export interface Ledger {
   record(entry: { at: number; caller: string; callerLabel: string; tool: string; target: string; outcome: "done" | "failed" | "refused" | "confirmation_asked"; detail: string }): Promise<void>;
 }
 
-/** The tools a caller may see and call: its level, and sending only for a key that may send. */
+/**
+ * The tools a caller may see and call: its level, sending only for a key that may send, and for a
+ * key limited to mailboxes only the tools that stay inside a mailbox or the feed (AP-11).
+ */
 export function toolsFor(principal: Principal, tools: readonly ToolDef[]): ToolDef[] {
-  return tools.filter((t) => levelAllows(principal.level, t.level) && (!t.sends || principal.send === "send"));
+  // An empty limit (a damaged list, or a limit on an Admin key) reaches nothing, so it lists nothing.
+  if (principal.accounts && !principal.accounts.length) return [];
+  return tools.filter((t) => levelAllows(principal.level, t.level) && (!t.sends || principal.send === "send") && (!principal.accounts || toolFitsScope(t)));
 }
 
 export const callerId = (p: Principal) => (p.kind === "owner" ? `owner:${p.label}` : `key:${p.keyId}`);
