@@ -136,4 +136,8 @@ test('signed code without entitlements: a library is skipped, a bundle is refuse
   assert.deepEqual(expectedEntitlementsFor(app, app, c, xml), mainEntitlements(c));
   assert.deepEqual(expectedEntitlementsFor(helper, app, c, xml), childEntitlements());
   assert.deepEqual(expectedEntitlementsFor(lib, app, c, xml), childEntitlements());
+  const mainExe = `${app}/Contents/MacOS/Fabric Inbox`;
+  assert.deepEqual(expectedEntitlementsFor(mainExe, app, c, xml), mainEntitlements(c));
+  assert.throws(() => expectedEntitlementsFor(mainExe, app, c, ''), /an application bundle must carry them/);
+  assert.deepEqual(expectedEntitlementsFor(`${app}/Contents/Frameworks/Fabric Inbox Helper.app/Contents/MacOS/Fabric Inbox Helper`, app, c, xml), childEntitlements());
 });
