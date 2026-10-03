@@ -142,12 +142,14 @@ per package and has no checked universal path; Intel Macs install the universal 
 
 - **Approving** the `release` environment (step 6): a person from `release-approvers`, who may be
   whoever pushed the tag; never an agent.
-- **The App Store Connect app record** for `ai.passioncode.fabric-inbox` does not exist yet, and the
-  App Store Connect API cannot create one. Until a person with the Account Holder, Admin or App
-  Manager role creates it (App Store Connect → Apps → + → New App, platform macOS, bundle id
-  `ai.passioncode.fabric-inbox`, a name and SKU), every publishing run's `mas` job stops at the
-  record check with that message, and the disk image is released without it. Nothing else changes
-  when it exists: the next release uploads.
+- **The App Store Connect app record** for `ai.passioncode.fabric-inbox` exists since 2026-10-03
+  (Apple id `6818818207`, SKU `fabric-inbox`); the App Store Connect API cannot create one. Should it
+  ever be missing, a person with the Account Holder, Admin or App Manager role creates it (App Store
+  Connect → Apps → + → New App, platform macOS, bundle id `ai.passioncode.fabric-inbox`, a name and
+  SKU); until then every publishing run's `mas` job stops at the record check with that message, and
+  the disk image is released without it.
+- **Submitting for review**: an upload only makes a build appear under TestFlight. Submitting it
+  for App Review is a person's action in App Store Connect.
 - **Rotating** the CI certificates or renewing the profile (it expires 2027-10-03) is the
   organization's procedure (`release-signing/README.md` → Rotating), followed by syncing the
   `release` environment's secrets.
