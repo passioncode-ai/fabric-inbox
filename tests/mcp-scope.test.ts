@@ -221,3 +221,10 @@ test("an admin key narrowed by the header sees mailbox tools, sends from them, a
   assert.ok(names.includes("read_message") && names.includes("send_email"));
   for (const t of ["create_address", "list_addresses", "save_agent", "connect_domain"]) assert.ok(!names.includes(t), t);
 });
+
+test("a comma is never part of an account id, so a stored limit or a request cannot smuggle a second mailbox", () => {
+  assert.equal(normaliseAccountId("cloudflare:digest,ceo@corp.example"), null);
+  assert.equal(normaliseAccountId("digest,ceo@corp.example"), null);
+  assert.deepEqual(normaliseKeys({ keys: [{ id: "k", clientId: "c", accounts: ["cloudflare:digest,ceo@corp.example"] }] })[0]!.accounts, [], "a stored limit with a comma reaches nothing");
+  assert.equal(validateNewKey({ name: "x", level: "read", accounts: ["digest,ceo@corp.example"] }).ok, false);
+});
