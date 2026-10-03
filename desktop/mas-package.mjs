@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync,
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { pruneReleases } from './release-retention.mjs';
 
 export const BUNDLE_ID = 'ai.passioncode.fabric-inbox';
 export const MIN_FREE_BYTES = 6 * 1024 ** 3; // Conservative working-space budget, not a measured build size.
@@ -143,6 +144,7 @@ export async function build(c, checked) {
   // Only --build reaches imports that can download Electron or access signing keys.
   const { packager } = await import('@electron/packager');
   const { sign, flat } = await import('@electron/osx-sign');
+  const { hardenTemplateHook, verifyHardening } = await import('./hardening.mjs');
   ensureSource(c);
   capacity(root); capacity(os.tmpdir());
   const destination = path.join(root, 'release', `mas-${c.mode}-${c.arch}-${c['build-number']}-${c.revision.slice(0, 12)}`);
@@ -167,8 +169,10 @@ export async function build(c, checked) {
       appBundleId: BUNDLE_ID, appCategoryType: 'public.app-category.productivity',
       platform: 'mas', arch: c.arch, electronVersion, buildVersion: c['build-number'],
       out: destination, overwrite: false, asar: true, prune: true, osxSign: false,
-      ignore: [/\/(?:mas-package|package|dist-mac)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.icns$/, /\/dmg-background/],
+      ignore: [/\/(?:mas-package|package|dist-mac|hardening|release-retention)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.icns$/, /\/dmg-background/],
       extendInfo: { ElectronTeamID: c.team, FabricInboxSourceRevision: c.revision, NSHumanReadableCopyright: 'Fabric Inbox', NSRequiresAquaSystemAppearance: false },
+      // LC-13/LC-07: hardened fuses, no unused purpose strings (desktop/hardening.mjs); verified after signing.
+      afterExtract: hardenTemplateHook(),
     });
     requireThat(apps.length === 1, 'Expected exactly one architecture-specific MAS application.');
     const app = path.join(apps[0], 'Fabric Inbox.app');
@@ -191,6 +195,7 @@ export async function build(c, checked) {
       const decoded = JSON.parse(run('python3', ['-c', 'import sys,plistlib,json;print(json.dumps(plistlib.loads(sys.stdin.buffer.read())))'], { input: signedEntitlements }));
       validateEntitlements(decoded, file === app ? mainEntitlements(c) : childEntitlements());
     }
+    const hardening = verifyHardening(app);
     const info = plistRead(path.join(app, 'Contents/Info.plist'));
     requireThat(info.CFBundleIdentifier === BUNDLE_ID && info.CFBundleVersion === c['build-number'] && info.FabricInboxSourceRevision === c.revision, 'Packaged bundle metadata does not match requested inputs.');
     requireThat(checked.profileSha256 === sha256(path.join(app, 'Contents/embedded.provisionprofile')), 'Embedded provisioning profile mismatch.');
@@ -203,8 +208,11 @@ export async function build(c, checked) {
     const receipt = { status: c.mode === 'distribution' ? 'signed-package-local-checks-passed' : 'development-app-local-checks-passed', submissionReady: false,
       sourceRevision: c.revision, platform: 'mas', arch: c.arch, bundleId: BUNDLE_ID, buildNumber: c['build-number'], electronVersion,
       app: path.relative(destination, app), ...(pkg ? { pkg: path.basename(pkg), pkgSha256: sha256(pkg) } : {}),
+      fuses: hardening.fuses, usageDescriptions: hardening.usageDescriptions,
       remaining: ['Real MAS sandbox launch and mail acceptance', 'App Store Connect processing and review', 'Operator privacy/export/legal declarations'],
     };
+    // LC-15: release/ keeps this store build and the newest other one.
+    receipt.prunedFromRelease = pruneReleases(path.join(root, 'release'), { currentMas: path.basename(destination) });
     writeFileSync(path.join(destination, 'build-receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`);
     return receipt;
   } finally { rmSync(temp, { recursive: true, force: true }); }

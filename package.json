@@ -35,7 +35,8 @@
 		"desktop:mas": "node desktop/mas-package.mjs",
 		"desktop:dmg": "node desktop/dist-mac.mjs",
 		"desktop:server-bundle": "npm run build && node scripts/server-bundle.mjs",
-		"mcp:docs": "node --import tsx scripts/mcp-docs.ts"
+		"mcp:docs": "node --import tsx scripts/mcp-docs.ts",
+		"clean": "node scripts/clean.mjs"
 	},
 	"dependencies": {
 		"@cloudflare/ai-chat": "^0.1.8",
@@ -102,6 +103,7 @@
 		"@cloudflare/vite-plugin": "^1.0.12",
 		"@cloudflare/workers-types": "^4.20251128.0",
 		"@electron/asar": "4.3.1",
+		"@electron/fuses": "2.1.3",
 		"@electron/osx-sign": "2.7.0",
 		"@electron/packager": "^20.3.0",
 		"@react-router/dev": "^7.18.4",
@@ -114,6 +116,7 @@
 		"electron": "^44.4.5",
 		"esbuild": "^0.25.12",
 		"miniflare": "^4.20260312.1",
+		"plist": "3.1.1",
 		"tailwindcss": "^4.1.4",
 		"tsx": "^4.20.6",
 		"typescript": "^5.8.3",

@@ -96,6 +96,56 @@ npm run mcp:docs                                       # the agent protocol's to
   reserved yet; a register that gains one is declared under `idRegisters` and taken with
   `agent_sync.py reserve <REG>`.
 
+## Lifecycle
+
+How the product starts, idles, asks and stops, against the organization's
+[lifecycle contract](https://github.com/passioncode-ai/fabric-workspace/blob/main/knowledge/lifecycle.md)
+(LC-01…LC-15). The audit behind this section is `docs/reports/2026-10-03-lifecycle-audit/raw/fabric-inbox.md`
+in fabric-workspace.
+
+**Nothing runs on the Mac when the window is closed; the server does the work.** The desktop app has
+no mail engine: Cloudflare-domain mail arrives at the Worker by push, Gmail is polled by the
+server's Durable Object alarm (`GMAIL_POLL_SECONDS`, default 300 s), and agents run in the Worker.
+Closing the window destroys it and its renderer; the app stays in the Dock doing nothing.
+
+| What | Who starts it | Cadence | With no window | Who stops it | Idle budget |
+|---|---|---|---|---|---|
+| `Fabric Inbox` main process and its Chromium helpers (GPU, network, one renderer per open window) | the person (Dock, Finder) | — | main process only, no timers, no network | the person (⌘Q, Dock); Electron's default handling of `SIGTERM`/logout | 0 requests, 0 timers |
+| Mail window (`persist:fabric-<sha256(origin)[:24]>`) and its pollers (`refetchInterval` in `app/routes/`) | launch, Dock click, Retry | Automation 30 s (`app/lib/window-activity.ts`), others 15–60 s; all pause while the page is hidden, Automation also while the window is unfocused | — (destroyed with the window) | closing the window | 0 requests while hidden |
+| Agent-chat WebSocket | opening the Agent panel | one connection | — | closing the panel or window | 0 |
+| Cloudflare API calls of **Create my server** | the person, in setup | one deploy, 60 s per call, ≤2 retries | — | the deploy's end; ⌘Q cuts it and a re-run resumes | 0 |
+| Profile sweep (`desktop/profile.cjs`) | each launch, before any window | once | — | itself | — |
+
+The app owns **no launchd label, no login item, no listening port, no child process, no
+per-session server and no Keychain item read on a timer**. The agent protocol (`/mcp`) is served by
+the Worker, not the Mac. Cookie encryption (an Electron fuse, `desktop/hardening.mjs`) creates one
+Keychain item, "Fabric Inbox Safe Storage", on first launch; Chromium reads it in-process, and a
+signed release must create it without a prompt (`docs/release.md`, upgrade check).
+
+- **Builds are hardened (LC-13, LC-07).** Every Mac builder applies `hardenTemplateHook` and gates on
+  `verifyHardening`: `RunAsNode`, `EnableNodeOptionsEnvironmentVariable` and
+  `EnableNodeCliInspectArguments` off; `EnableEmbeddedAsarIntegrityValidation`, `OnlyLoadAppFromAsar`
+  and `EnableCookieEncryption` on; no `NS*UsageDescription` key outside `DECLARED_USAGE_DESCRIPTIONS`
+  (empty). The receipt records both.
+- **Profile (LC-12).** Changing the server clears the old server's partition (storage, cache,
+  `Partitions/` directory) once its window is gone; each launch removes other servers' partitions and
+  `server.json.*` / `pending-setup.json.*` leftovers. No log files are written.
+- **Tests, walks and checks never use the real profile (LC-14).** Launch a built app with
+  `--user-data-dir="$(mktemp -d)"` (and `--remote-debugging-port` only with it). An unpackaged run
+  (`npm run desktop`) uses `~/Library/Application Support/Fabric Inbox Development`, never the
+  installed app's folder.
+- **Build retention (LC-15).** Output directories: `release/` (disk images, receipts, store builds,
+  `desktop:package` folders), `build/` (the Worker and app, rebuilt every time),
+  `desktop/server-bundle/`. `npm run desktop:dmg` and `npm run desktop:mas` keep only the current and
+  the previous release in `release/` (`desktop/release-retention.mjs`; receipts stay). Caches that
+  are not releases — `build/`, `desktop/server-bundle/`, `.wrangler/tmp/`, `node_modules/.cache` —
+  are capped at 2 GB together; `npm run clean` (`scripts/clean.mjs`) removes them and keeps local
+  Miniflare data (`.wrangler/state`), and an agent that built runs it before ending its run when
+  they pass the cap (`du -shc build desktop/server-bundle .wrangler/tmp node_modules/.cache`).
+- **Not decided: notifications (F2).** The app shows no new-mail notification, open or closed: every
+  permission is denied (`desktop/main.cjs` `rejectPermissions`). Whether a mail client should notify,
+  and through what server signal, is the operator's decision (board B-41).
+
 ## Organisation
 
 This repository is one of the `passioncode-ai` repositories. **The org map and onboarding live in
