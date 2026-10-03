@@ -5,6 +5,22 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+- **Releases are signed in GitHub Actions only.** A `vX.Y.Z` tag starts `.github/workflows/release.yml`;
+  after a member of `release-approvers` (not the tag's author) approves, it builds the disk image
+  with the organization's CI Developer ID, notarizes and staples the app and then the image made
+  from it, attests every file, signs `SHA256SUMS` and publishes the release. A rehearsal on a
+  `-rc` tag does all of that and publishes nothing. A build signed on a laptop is a debug build.
+- **The Mac App Store package is built by the same workflow**, signed with the CI-only store
+  identities and the Fabric Inbox profile, and uploaded to App Store Connect when the release
+  publishes. The upload stops with a clear message while the App Store Connect app record does not
+  exist; creating it is a person's step ([docs/release.md](docs/release.md#mac-app-store)).
+- `desktop/dist-mac.mjs` gains `--stage app|image|finish` for the workflow;
+  `scripts/app-store-connect.mjs` derives the store build number from the tag, checks the app
+  record and uploads. The release no longer carries a separate `.sha256`: the signed `SHA256SUMS`
+  covers the image.
+
 ## 0.8.2 — 2026-10-01
 
 A second pass: the live server's own error log, the 0.8.1 changes read again, and the core mail

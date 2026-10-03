@@ -1,8 +1,27 @@
 # Fabric Inbox — explicit Mac App Store packaging
 
-Status: packaging and preflight implementation, **no MAS binary built or signed**. REL-08 remains open until a real signed candidate and sandbox acceptance exist. The [release entry](README.md) owns the wider release requirements; [task packet](tasks/mas.md) owns this bounded scope; [check report](mas-report.md) records actual evidence.
+Status: packaging and preflight implementation; since 2026-10-03 the release workflow builds and signs the distribution package in CI ([below](#release-builds-in-ci)). **No signed MAS package observed yet**: the first rehearsal waits for an approver. REL-08 remains open until a real signed candidate and sandbox acceptance exist. The [release entry](README.md) owns the wider release requirements; [task packet](tasks/mas.md) owns this bounded scope; [check report](mas-report.md) records actual evidence.
 
-## Commands and prerequisites
+## Release builds in CI
+
+The store identities exist only in this repository's protected `release` environment: a Mac App
+Distribution and a Mac Installer Distribution certificate issued for CI (team from the
+`APPLE_TEAM_ID` variable; in a keychain they are named "3rd Party Mac Developer
+Application/Installer: … (team)"), and the Fabric Inbox Mac App Store profile, which authorizes
+`ai.passioncode.fabric-inbox` and that application certificate only (expires 2027-10-03). No
+machine holds them. The `mas` job of [`release.yml`](../../.github/workflows/release.yml) imports
+them with the organization's `apple-signing@v1` action, decodes the profile into `$RUNNER_TEMP`, and
+runs the distribution command below with `--arch arm64`, the action's identity names, the build
+number derived from the tag and `--revision` set to the tagged commit, then `--build`. The package
+and `build-receipt.json` are kept as a workflow artifact; when the release publishes,
+`scripts/app-store-connect.mjs upload` sends the package to App Store Connect after checking that
+the app record exists. Build number, upload and the missing app record:
+[release procedure → Mac App Store](../release.md#mac-app-store).
+
+## Commands and prerequisites (local, for debugging)
+
+A package built on a machine is a debug build: it is never uploaded (`scripts/app-store-connect.mjs
+upload` refuses to run outside GitHub Actions).
 
 The existing `npm run desktop:package -- arm64` / `x64` commands retain unsigned `darwin` packaging. Those bundles cannot demonstrate MAS sandbox behavior. The new entry point is [desktop/mas-package.mjs](../../desktop/mas-package.mjs). It requires macOS, Xcode, Python 3, Node compatible with installed Electron tooling, and project dependencies (`@electron/packager`, `@electron/osx-sign` 2.7.0). Dependency installation is separate; running the preflight does not install anything.
 
@@ -31,7 +50,7 @@ node desktop/mas-package.mjs \
   --revision "$(git rev-parse HEAD)"
 ```
 
-A successful preflight prints `preflight-passed-not-built` and `submissionReady: false`. Append `--build` to the applicable command only when ready to download a MAS runtime and use the signing key. `--arch x64` makes a separate Intel build; there is no unverified universal shortcut. The script conservatively requires 6 GiB free on both repository and temporary volumes; this is a working-space budget, not a measured package size. It never uploads, notarizes, accepts agreements or answers legal questions.
+A successful preflight prints `preflight-passed-not-built` and `submissionReady: false`. Append `--build` to the applicable command only when ready to download a MAS runtime and use the signing key. `--arch x64` makes a separate Intel build; there is no unverified universal shortcut. The script conservatively requires 6 GiB free on both repository and temporary volumes; this is a working-space budget, not a measured package size. It never uploads, notarizes, accepts agreements or answers legal questions; uploading is the release workflow's separate step.
 
 ## What the implementation checks
 
@@ -41,7 +60,7 @@ The profile is decoded with `security cms`; dates and certificate fingerprints a
 
 `build` archives committed `desktop/` and `package-lock.json` into a temporary directory, pins Electron to the committed lockfile, requests `platform: mas`, and embeds the exact source SHA in Info.plist. Ignored local files in the checkout never enter this archive. Root documentation and backend changes are still represented by the exact revision; the remote workspace remains separately deployed. Output is under ignored `release/mas-MODE-ARCH-BUILD-SHA/`; an existing destination is refused. Failed outputs have no successful build receipt and must not be used.
 
-After signing, the implementation verifies nested signatures, reads main and child entitlements back, checks architecture and bundle metadata, compares the embedded profile hash, and checks the installer signature for distribution. Only then does it write `build-receipt.json` with source revision and the distribution PKG SHA-256. Receipt status describes local checks only and always retains `submissionReady: false`. The build path has not yet been executed against real MAS credentials.
+After signing, the implementation verifies nested signatures, reads main and child entitlements back, checks architecture and bundle metadata, compares the embedded profile hash, and checks the installer signature for distribution. Only then does it write `build-receipt.json` with source revision and the distribution PKG SHA-256. Receipt status describes local checks only and always retains `submissionReady: false`. The build path has not yet been executed against real MAS credentials; its first run is the CI rehearsal awaiting approval.
 
 ## Sandbox policy and acceptance
 
@@ -52,7 +71,7 @@ Before upload, execute real launch, login/reconnect, mail reading/sending, attac
 ## Focused checks
 
 ```sh
-node --import tsx --test tests/mas-release.test.ts
+node --import tsx --test tests/mas-release.test.ts tests/app-store-connect.test.ts
 node --check desktop/mas-package.mjs
 git diff --check
 ```

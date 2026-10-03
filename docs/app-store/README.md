@@ -10,7 +10,7 @@ Confirmed by existing instructions: macOS desktop, all accounts plus single-acco
 
 Pending operator answers: public ready-to-connect client versus own-server client; Apple Developer team and App Store Connect access; free/paid/subscription. These block architecture-dependent onboarding, billing and actual submission, not independent mail reliability or packaging work. No Apple legal agreement will be accepted on behalf of the operator.
 
-Measured 2026-09-27: `security find-identity -v -p codesigning` returns one Developer ID Application identity (the owner's team), no MAS distribution identity. `xcode-select -p` resolves installed Xcode. This does not prove current program membership or App Store Connect role. Free disk was initially 1.3 GiB, later 10 GiB (`df -h .`); packaging rechecks capacity rather than relying on either snapshot.
+Measured 2026-09-27: `security find-identity -v -p codesigning` returns one Developer ID Application identity (the owner's team), no MAS distribution identity. **Since 2026-10-03 the store identities exist, for CI only:** a Mac App Distribution and a Mac Installer Distribution certificate and the Fabric Inbox Mac App Store profile (`ai.passioncode.fabric-inbox`, expires 2027-10-03) are secrets of this repository's protected `release` environment, used by [`release.yml`](../../.github/workflows/release.yml) and on no machine ([release procedure](../release.md#mac-app-store)). `xcode-select -p` resolves installed Xcode. This does not prove current program membership or App Store Connect role. Free disk was initially 1.3 GiB, later 10 GiB (`df -h .`); packaging rechecks capacity rather than relying on either snapshot.
 
 ## Requirements and acceptance
 
@@ -23,7 +23,7 @@ Measured 2026-09-27: `security find-identity -v -p codesigning` returns one Deve
 | REL-05 | Read safely, search, organize and use mail through temporary connectivity loss. | Read/archive/star/soft trash/restore, external-image permission, read-on-open and Focus triage (important first, collapsed groups, unread and group filters) implemented. Cached search remains limited; bulk operations and offline mail absent. |
 | REL-06 | Explain/draft with AI, dry-run/pause rules, approve external actions and inspect history. | Cloud rules, and reusable versioned agents on project addresses with a reply policy, granted MCP tools and a run history (roadmap P2–P5) implemented and tested in workerd. No real model call, live evals or consent wording yet. |
 | REL-07 | Desktop integration works in Apple's sandbox with explicit capability limits. | Notifications, mailto and device tools missing. Arbitrary process execution cannot be assumed available in MAS. |
-| REL-08 | Produce a verified MAS package from an exact source revision; never label unsigned/dev output submit-ready. | Exact-source MAS preflight/build/sign/verify scripts and tests implemented. Store identities/profile and signed sandbox acceptance absent. |
+| REL-08 | Produce a verified MAS package from an exact source revision; never label unsigned/dev output submit-ready. | Exact-source MAS preflight/build/sign/verify scripts and tests implemented; since 2026-10-03 the `mas` job of [`release.yml`](../../.github/workflows/release.yml) builds and signs the package with the CI-only identities and profile, and uploads it when a release publishes. No signed package observed yet (the rehearsal waits for approval); the App Store Connect app record and signed sandbox acceptance are absent. |
 | REL-09 | Privacy/support, review access, metadata and screenshots describe measured shipping behavior. | Product page live; privacy disclosures, review environment and App Store metadata incomplete. |
 | REL-10 | Real account isolation, delivery, failures, upgrades and clean install pass before upload and release. | Local gate green on the latest run — the count and commit are recorded once, in the [run brief](tasks/2026-09-28-agents-triage-run.md#checks-actually-run). No live mail acceptance or store review. |
 
@@ -40,6 +40,21 @@ Every row stays open until evidence exists. A package script is not a signed bui
 ## Work isolation and delivery
 
 Controller (history): linked worktree `fabric-inbox-workbench`, branch `codex/app-store-release`; since 2026-09-27 all work lives on `main` and the linked worktrees are removed. Each implementer gets its own worktree. Shared registers are edited under an agent-sync lease since 2026-09-30 ([AGENT_SYNC.md](../AGENT_SYNC.md)). Pipeline build skill requests bounded subagents, so these are authorized by that instruction. Existing model inherited, no override. Root writes this entry/scenario integration; agents own exclusive modules. No automatic loop is armed. Credentials, local configs, dependency trees and binaries stay local only.
+
+### Release signing moves to CI (2026-10-03)
+
+From here on a release is built only by [`release.yml`](../../.github/workflows/release.yml) in the
+protected `release` environment (organization decision, 2026-10-03): approval by
+`release-approvers`, never the tag's author; the disk image with the CI Developer ID, the app and
+then the image notarized through the shared action; attested, `SHA256SUMS` GPG-signed, published;
+the Mac App Store package signed with the CI-only store identities and uploaded when publishing.
+The by-hand procedure the releases below followed is retired; a locally signed build is a debug
+build. Procedure: [docs/release.md](../release.md). Open: the first rehearsal's signing jobs wait
+for an approver (human step 5), and the App Store Connect app record does not exist (human step 6).
+Next on this path, after human step 5: read the rehearsal run (both notarization submissions
+Accepted; the `signed-release-<tag>` artifact with `SHA256SUMS.asc`; the `mas-pkg-…` artifact with a
+`signed-package-local-checks-passed` receipt) and record it here. After human step 6 the next
+published release uploads its store build.
 
 ### Release 0.8.2 — the second pass (2026-10-01)
 
@@ -159,6 +174,13 @@ app. Nothing is half-done in the tree.
    longer on any ref but GitHub still serves them by SHA. Either ask GitHub Support to purge the
    repository's unreachable objects, or re-create the repository and push only the public `main`.
    Until then, do not push a tag or branch whose history is not the public `main`.
+5. **Approve the release rehearsal** (a member of `release-approvers` who did not push the tag):
+   the newest `release` run on a `v*-rc.*` tag waits in "Review deployments" for its `macos`,
+   `mas` and `publish` jobs. A rehearsal publishes nothing and uploads nothing.
+6. **Create the App Store Connect app record** for `ai.passioncode.fabric-inbox` (Account Holder,
+   Admin or App Manager): App Store Connect → Apps → + → New App, platform macOS, that bundle id, a
+   name and SKU. The API cannot create it; until it exists a publishing run's `mas` job stops at
+   its record check and the disk image is released without the store build.
 
 Exact next task: **accept 0.8.0 live (B-39)** — after human step 3, read the Cloudflare accounts
 section (three accounts, all with mail), the failed domain's steps, and for the chosen domain of
