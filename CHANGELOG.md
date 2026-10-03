@@ -5,8 +5,17 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 0.9.0 — 2026-10-03
 
+- **Agent keys can be limited to mailboxes** (AP-11). A Read or Mail key may name its accounts and
+  then reaches those mailboxes only: it sees only tools that stay inside a mailbox, every route it
+  calls is checked against its accounts, the feed is narrowed in the request and in the answer, and
+  a category filter is refused. Agent access gains a Mailboxes choice and shows each key's scope.
+- **A hub narrows its key per call with `X-Fabric-Accounts`**: the call reaches only the named
+  mailboxes; the header intersects with the key's own limit and never widens it.
+- **A hub on this Mac connects by your consent, with nothing copied.** A `fabric-inbox://connect`
+  link opens a native Allow/Deny prompt; Allow makes the key with your own signed-in session and
+  hands it once to the hub's loopback address, and revokes it if the hub did not take it (SCN-047).
 - **Releases are signed in GitHub Actions only.** A `vX.Y.Z` tag starts `.github/workflows/release.yml`;
   after a member of `release-approvers` approves (whoever pushed the tag may; an agent never
   does), it builds the disk image
