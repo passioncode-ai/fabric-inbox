@@ -8,7 +8,8 @@ is cut and published: [docs/release.md](docs/release.md).
 ## Unreleased
 
 - **Releases are signed in GitHub Actions only.** A `vX.Y.Z` tag starts `.github/workflows/release.yml`;
-  after a member of `release-approvers` (not the tag's author) approves, it builds the disk image
+  after a member of `release-approvers` approves (whoever pushed the tag may; an agent never
+  does), it builds the disk image
   with the organization's CI Developer ID, notarizes and staples the app and then the image made
   from it, attests every file, signs `SHA256SUMS` and publishes the release. A rehearsal on a
   `-rc` tag does all of that and publishes nothing. A build signed on a laptop is a debug build.

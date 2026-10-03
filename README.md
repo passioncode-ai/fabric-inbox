@@ -149,7 +149,8 @@ and the workflow run that built it.
 
 A release is a tag: push `vX.Y.Z` on the reviewed release commit and
 [`.github/workflows/release.yml`](.github/workflows/release.yml) starts. A member of
-`release-approvers` other than the tag's author approves its `release` environment; the workflow
+`release-approvers`, who may be whoever pushed the tag, approves its `release` environment (an
+agent never approves); the workflow
 then builds the image with the CI Developer ID, notarizes and staples the app and then the image
 made from it, builds and signs the Mac App Store package, attests every file (Sigstore), signs
 `SHA256SUMS` with the organization's GPG key, publishes the GitHub release and uploads the store
