@@ -148,12 +148,16 @@ export function validateEntitlements(actual, expected, label = 'the application'
 // empty answer reached plistlib and failed as "python3 failed" (first CI rehearsal, v0.8.2-rc.2).
 export function expectedEntitlementsFor(file, app, c, signedEntitlements) {
   const empty = !String(signedEntitlements || '').trim();
-  const bundle = path.resolve(file) === path.resolve(app) || /\.app$/.test(file);
+  // The application's own executable (Contents/MacOS/<name>) is signed as part of the bundle and
+  // carries the application's entitlements, not a nested helper's (rehearsal v0.9.0-rc.2).
+  const mainExecutable = path.join(path.resolve(app), 'Contents', 'MacOS', path.basename(app, '.app'));
+  const isApp = path.resolve(file) === path.resolve(app) || path.resolve(file) === mainExecutable;
+  const bundle = isApp || /\.app$/.test(file);
   if (empty) {
     requireThat(!bundle, `Signed without entitlements: ${path.basename(file)}; an application bundle must carry them.`);
     return null;
   }
-  return path.resolve(file) === path.resolve(app) ? mainEntitlements(c) : childEntitlements();
+  return isApp ? mainEntitlements(c) : childEntitlements();
 }
 function xmlPlist(value) {
   return run('python3', ['-c', 'import sys,json,plistlib;sys.stdout.buffer.write(plistlib.dumps(json.load(sys.stdin)))'], { input: JSON.stringify(value) });
