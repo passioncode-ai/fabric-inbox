@@ -899,15 +899,15 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** The server has its Cloudflare token with Access: Service Tokens and Access: Apps and Policies.
 - **Steps:**
   1. Open Agent access from the sidebar -> what it is, and that these are not the reply agents.
-  2. Name the agent, choose Read, Mail or Admin, and for Mail or Admin Drafts only or Can send with a daily number; choose when it expires; Make key.
+  2. Name the agent, choose Read, Mail or Admin, and for Mail or Admin Drafts only or Can send with a daily number; for Read or Mail choose All mailboxes or Only these mailboxes and tick them (an Admin key reaches every mailbox); choose when it expires; Make key.
   3. The key's Client ID and Client Secret, the Claude Code command and the JSON for other clients are shown once, each with Copy; I saved it closes them.
-- **Expected result:** The agent connects to /mcp with the two headers and sees only the tools its level and sending allow.
-- **Alt paths:** The server has no Cloudflare token: the form is replaced by where to add one.
-- **UI elements:** SCR-15 (name, Level, Sending, Expires after, Make key, the one-time secret panel with Copy).
+- **Expected result:** The agent connects to /mcp with the two headers and sees only the tools its level and sending allow; a key limited to mailboxes sees only the tools that stay inside a mailbox, and is refused, with the mailboxes it may use named, on any other mailbox or shared setting. The key list shows each key's mailboxes (All mailboxes, or Only ...).
+- **Alt paths:** The server has no Cloudflare token: the form is replaced by where to add one. Only these mailboxes with none ticked: Make key stays off. A limited key whose only mailbox is gone gets an empty list with the reason, not a failure.
+- **UI elements:** SCR-15 (name, Level, Sending, Mailboxes, Expires after, Make key, the one-time secret panel with Copy).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A token without the permission names it; a key Cloudflare made but the server could not save is deleted again, and the error says to try again.
 - **Status:** draft
-- **Coverage:** app/routes/agent-access.tsx, workers/routes/agent-keys.ts, workers/mcp/access.ts, tests/mcp-auth.test.ts, tests/mcp-workerd.test.ts
+- **Coverage:** app/routes/agent-access.tsx, workers/routes/agent-keys.ts, workers/mcp/access.ts, workers/mcp/scope.ts, tests/mcp-auth.test.ts, tests/mcp-scope.test.ts, tests/mcp-workerd.test.ts, tests/agent-access-ui.test.ts
 - **Product:** unobserved
 - **Today:** Built in 0.7.0; the first live key is made at the release.
 

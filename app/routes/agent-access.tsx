@@ -11,7 +11,8 @@ export function meta() {
 
 type Level = "read" | "mail" | "admin";
 type Send = "drafts" | "send";
-interface AgentKey { id: string; clientId: string; name: string; level: Level; send: Send; dailySendLimit: number; createdAt: string; expiresAt: string | null }
+interface AgentKey { id: string; clientId: string; name: string; level: Level; send: Send; dailySendLimit: number; createdAt: string; expiresAt: string | null; accounts?: string[] | null }
+interface Mailbox { id: string; email?: string; name?: string }
 interface KeysState { keys: AgentKey[]; mcpUrl: string; canIssue: boolean }
 interface NewKey { key: AgentKey; clientSecret: string; mcpUrl: string; configs: { claudeCode: string; json: unknown; jsonFromEnvironment: unknown } }
 interface Entry { at: number; callerLabel: string; tool: string; target: string; outcome: "done" | "failed" | "refused" | "confirmation_asked"; detail: string }
@@ -26,6 +27,9 @@ const OUTCOME: Record<Entry["outcome"], string> = { done: "Done", failed: "Faile
 
 export const sendingText = (k: Pick<AgentKey, "level" | "send" | "dailySendLimit">) =>
   k.level === "read" ? "Sends nothing" : k.level === "admin" || k.send === "send" ? `Can send, ${k.dailySendLimit} a day` : "Drafts only";
+/** Which mailboxes a key reaches (AP-11): the whole workspace, or the ones it names. */
+export const scopeText = (k: Pick<AgentKey, "accounts">) =>
+  !k.accounts ? "All mailboxes" : k.accounts.length ? `Only ${k.accounts.map((a) => a.replace(/^cloudflare:/, "")).join(", ")}` : "No mailbox";
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "never");
 
 function Copy({ text, label }: { text: string; label: string }) {
@@ -48,15 +52,17 @@ export default function AgentAccess() {
   const [notice, setNotice] = useState("");
   const [created, setCreated] = useState<NewKey | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", level: "mail" as Level, send: "drafts" as Send, dailySendLimit: 50, duration: "1y" as (typeof DURATIONS)[number]["id"] });
+  const [form, setForm] = useState({ name: "", level: "mail" as Level, send: "drafts" as Send, dailySendLimit: 50, duration: "1y" as (typeof DURATIONS)[number]["id"], limited: false, accounts: [] as string[] });
+  const mailboxes = useQuery({ queryKey: ["agent-access-mailboxes"], queryFn: () => fabric<{ accounts: Mailbox[] }>("/api/inbox?limit=1") });
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true); setNotice(""); setCreated(null);
     try {
-      const made = await fabric<NewKey>("/api/agent-keys", { ...form, name: form.name.trim() });
+      const { limited, accounts, ...fields } = form;
+      const made = await fabric<NewKey>("/api/agent-keys", { ...fields, name: form.name.trim(), ...(limited && form.level !== "admin" ? { accounts } : {}) });
       setCreated(made);
-      setForm((f) => ({ ...f, name: "" }));
+      setForm((f) => ({ ...f, name: "", limited: false, accounts: [] }));
       await client.invalidateQueries({ queryKey: ["agent-keys"] });
     } catch (error) { setNotice((error as Error).message); }
     finally { setBusy(false); }
@@ -122,6 +128,7 @@ export default function AgentAccess() {
                 <span className="font-medium">{k.name}</span>
                 <span>{LEVELS.find((l) => l.id === k.level)?.title}</span>
                 <span>{sendingText(k)}</span>
+                <span>{scopeText(k)}</span>
                 <span className="text-kumo-subtle">made {day(k.createdAt)}, expires {day(k.expiresAt)}</span>
                 <span className="ml-auto">
                   {revoking === k.id ? (
@@ -179,13 +186,37 @@ export default function AgentAccess() {
                     messages a day.</span></label>
               </fieldset>
             )}
+            {form.level === "admin" ? (
+              <p>An Admin key reaches every mailbox: it manages the whole workspace.</p>
+            ) : (
+              <fieldset>
+                <legend>Mailboxes</legend>
+                <label className="mt-1 flex gap-2"><input type="radio" name="limited" checked={!form.limited} onChange={() => setForm({ ...form, limited: false })} />
+                  <span><strong>All mailboxes</strong> — and what the whole workspace shares at this level.</span></label>
+                <label className="mt-1 flex gap-2"><input type="radio" name="limited" checked={form.limited} onChange={() => setForm({ ...form, limited: true })} />
+                  <span><strong>Only these mailboxes</strong> — the agent sees and changes nothing else, not even settings.</span></label>
+                {form.limited && (
+                  <div className="ml-6 mt-1">
+                    {mailboxes.isLoading && <p>Loading mailboxes…</p>}
+                    {mailboxes.error && <p>{(mailboxes.error as Error).message} <button type="button" className="fi-text-button" onClick={() => void mailboxes.refetch()}>Retry</button></p>}
+                    {mailboxes.data?.accounts.map((m) => (
+                      <label key={m.id} className="mt-1 flex gap-2">
+                        <input type="checkbox" checked={form.accounts.includes(m.id)}
+                          onChange={(e) => setForm({ ...form, accounts: e.target.checked ? [...form.accounts, m.id] : form.accounts.filter((a) => a !== m.id) })} />
+                        <span>{m.email ?? m.id}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </fieldset>
+            )}
             <label className="block">Expires after
               <select className="ml-2 rounded border border-kumo-line bg-transparent p-1" value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value as typeof form.duration })}>
                 {DURATIONS.map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}
               </select>
             </label>
             <p className="text-kumo-subtle">Deleting mail for good, removing an address and other changes that cannot be undone always take a second call with a code, which stops a mistaken call but is not your approval. Every change is listed below.</p>
-            <button type="submit" className="rounded bg-kumo-brand px-3 py-2 text-white disabled:opacity-50" disabled={busy || !form.name.trim()}>
+            <button type="submit" className="rounded bg-kumo-brand px-3 py-2 text-white disabled:opacity-50" disabled={busy || !form.name.trim() || (form.limited && form.level !== "admin" && !form.accounts.length)}>
               {busy ? "Making the key…" : "Make key"}
             </button>
           </form>

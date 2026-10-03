@@ -6,6 +6,7 @@ import { AgentAccess, TOKEN_DURATIONS, type TokenDuration } from "../mcp/access"
 import {
   AgentKeysConflict, DEFAULT_DAILY_SENDS, LEVELS, MAX_DAILY_SENDS, MAX_KEYS, readAgentKeys, SEND_MODES, updateAgentKeys, type AgentKey,
 } from "../mcp/keys";
+import { normaliseAccountId } from "../mcp/scope";
 
 /**
  * Agent access (AP-7): the owner issues, lists and revokes the keys agents use on `/mcp`.
@@ -21,7 +22,28 @@ const NewKey = z.object({
   send: z.enum(SEND_MODES).default("drafts"),
   dailySendLimit: z.number().int().min(1).max(MAX_DAILY_SENDS).default(DEFAULT_DAILY_SENDS),
   duration: z.enum(Object.keys(TOKEN_DURATIONS) as [TokenDuration, ...TokenDuration[]]).default("1y"),
+  /** Mailboxes this key may reach (AP-11); left out, the whole workspace. */
+  accounts: z.array(z.string().max(400)).max(50).optional(),
 }).strict();
+
+export type NewKeyInput = Omit<z.infer<typeof NewKey>, "accounts"> & { accounts: string[] | null };
+
+/** Validates a new key; `accounts` comes back normalised, or null for the whole workspace. */
+export function validateNewKey(raw: unknown): { ok: true; value: NewKeyInput } | { ok: false; error: string } {
+  const parsed = NewKey.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid key" };
+  const { accounts: asked, ...rest } = parsed.data;
+  if (asked === undefined) return { ok: true, value: { ...rest, accounts: null } };
+  if (rest.level === "admin") return { ok: false, error: "An Admin key manages the whole workspace, so it cannot be limited to mailboxes. Choose Read or Mail." };
+  if (!asked.length) return { ok: false, error: "Choose at least one mailbox, or leave the limit out for the whole workspace." };
+  const accounts: string[] = [];
+  for (const a of asked) {
+    const id = normaliseAccountId(a);
+    if (!id) return { ok: false, error: `${JSON.stringify(a.slice(0, 80))} is not an account: use "cloudflare:<address>" or "gmail:<id>".` };
+    if (!accounts.includes(id)) accounts.push(id);
+  }
+  return { ok: true, value: { ...rest, accounts } };
+}
 
 /**
  * A read key sends nothing. An admin key can make rules and reply agents that send, so "Drafts
@@ -29,7 +51,7 @@ const NewKey = z.object({
  */
 export const sendFor = (level: AgentKey["level"], send: AgentKey["send"]): AgentKey["send"] => (level === "read" ? "drafts" : level === "admin" ? "send" : send);
 
-const publicKey = (k: AgentKey) => ({ id: k.id, clientId: k.clientId, name: k.name, level: k.level, send: k.send, dailySendLimit: k.dailySendLimit, createdAt: k.createdAt, expiresAt: k.expiresAt });
+const publicKey = (k: AgentKey) => ({ id: k.id, clientId: k.clientId, name: k.name, level: k.level, send: k.send, dailySendLimit: k.dailySendLimit, createdAt: k.createdAt, expiresAt: k.expiresAt, accounts: k.accounts });
 
 function access(c: C): AgentAccess | Response {
   const api = cloudflareApi(c.env);
@@ -77,9 +99,9 @@ agentKeysRouter.get("/api/agent-keys", async (c) => {
 
 agentKeysRouter.post("/api/agent-keys", async (c) => {
   c.header("Cache-Control", "no-store");
-  const parsed = NewKey.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid key" }, 400);
-  const input = parsed.data;
+  const parsed = validateNewKey(await c.req.json().catch(() => null));
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+  const input = parsed.value;
   const cf = access(c);
   if (cf instanceof Response) return cf;
   return alone(c, async () => {
@@ -89,7 +111,7 @@ agentKeysRouter.post("/api/agent-keys", async (c) => {
   catch (error) { return failure(c, error, "Making the key in Cloudflare"); }
   const key: AgentKey = {
     id: token.id, clientId: token.client_id, name: input.name, level: input.level, send: sendFor(input.level, input.send),
-    dailySendLimit: input.dailySendLimit, createdAt: new Date().toISOString(), expiresAt: token.expires_at ?? null,
+    dailySendLimit: input.dailySendLimit, createdAt: new Date().toISOString(), expiresAt: token.expires_at ?? null, accounts: input.accounts,
   };
   try {
     await updateAgentKeys(c.env.BUCKET, (keys) => [...keys.filter((k) => k.id !== key.id), key]);
@@ -98,7 +120,7 @@ agentKeysRouter.post("/api/agent-keys", async (c) => {
     await cf.revoke(token.id).catch((e) => console.error(JSON.stringify({ event: "agent_key_rollback_failed", tokenId: token.id, error: String(e) })));
     return failure(c, error, "Saving the key");
   }
-  console.log(JSON.stringify({ event: "agent_key_created", keyId: key.id, level: key.level, send: key.send }));
+  console.log(JSON.stringify({ event: "agent_key_created", keyId: key.id, level: key.level, send: key.send, limitedTo: key.accounts?.length ?? null }));
   const mcpUrl = `${new URL(c.req.url).origin}/mcp`;
   return c.json({ key: publicKey(key), clientSecret: token.client_secret, mcpUrl, configs: clientConfigs(mcpUrl, token.client_id, token.client_secret) }, 201);
   });

@@ -4,12 +4,13 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
-import AgentAccess, { LEVELS, sendingText } from "../app/routes/agent-access";
+import AgentAccess, { LEVELS, scopeText, sendingText } from "../app/routes/agent-access";
 
 /** SCR-15 (SCN-043, SCN-044) rendered with the server's answers already in the cache. */
-function render(keys: unknown, journal: unknown) {
+function render(keys: unknown, journal: unknown, mailboxes?: unknown) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   if (keys) client.setQueryData(["agent-keys"], keys);
+  if (mailboxes) client.setQueryData(["agent-access-mailboxes"], mailboxes);
   if (journal) client.setQueryData(["agent-journal", null], journal);
   return renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(MemoryRouter, null, createElement(AgentAccess))));
 }
@@ -44,4 +45,20 @@ test("with no keys, no changes and no Cloudflare token, each part says so and wh
   assert.match(html, /No agent has changed anything yet/);
   assert.match(html, /has no Cloudflare token, so it cannot make keys/);
   assert.doesNotMatch(html, /Make key/);
+});
+
+test("a key says which mailboxes it reaches, and a new Read or Mail key can be limited to some (SCN-043, AP-11)", () => {
+  assert.equal(scopeText({ accounts: null }), "All mailboxes");
+  assert.equal(scopeText({ accounts: ["cloudflare:research@sshlg.me"] }), "Only research@sshlg.me");
+  assert.equal(scopeText({ accounts: ["cloudflare:a@x.invalid", "gmail:g1"] }), "Only a@x.invalid, gmail:g1");
+  assert.equal(scopeText({ accounts: [] }), "No mailbox");
+  const html = render(
+    { keys: [{ id: "t1", clientId: "abc.access", name: "Research agent", level: "read", send: "drafts", dailySendLimit: 50, createdAt: "2026-10-03T10:00:00Z", expiresAt: null, accounts: ["cloudflare:research@sshlg.me"] }],
+      mcpUrl: "https://inbox.example/mcp", canIssue: true },
+    { entries: [], nextBefore: null },
+    { accounts: [{ id: "cloudflare:research@sshlg.me", email: "research@sshlg.me" }, { id: "cloudflare:contact@sshlg.me", email: "contact@sshlg.me" }] },
+  );
+  assert.match(html, /Only research@sshlg\.me/);
+  assert.match(html, /All mailboxes/, "the new key form offers the whole workspace");
+  assert.match(html, /Only these mailboxes/);
 });

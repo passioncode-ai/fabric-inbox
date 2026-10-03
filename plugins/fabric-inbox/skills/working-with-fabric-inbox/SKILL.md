@@ -57,7 +57,14 @@ exactly the ones you may call.
 | `send_email`, `reply`, `forward` | `mail` or `admin`, **Can send** — within a daily limit |
 | `create_address`, `save_agent`, `connect_domain` … | `admin` |
 
-A tool you need is missing → say which and why; do not look for a way around the level.
+A key can also be **limited to mailboxes**: the instructions then say "Your key is limited to …".
+You see only tools that stay inside a mailbox (no `list_addresses`, `list_domains`, `mark_spam` …),
+`list_accounts` lists only your mailboxes, and any other mailbox answers "This key is limited to …".
+Categories are the workspace's, so `categoryId` is refused. With more than one mailbox,
+`list_messages` without `accountId` gives one merged page; name an `accountId` to page further.
+
+A tool you need is missing → say which and why; do not look for a way around the level or the
+mailboxes your key names.
 
 ## 3. Non-negotiables
 

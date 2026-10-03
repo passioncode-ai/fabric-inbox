@@ -4,7 +4,7 @@ import { z } from "zod";
 import { defineTool, runTool, type Ledger } from "../workers/mcp/protocol";
 import type { Principal } from "../workers/mcp/keys";
 
-const admin: Principal = { kind: "agent", label: "Admin", level: "admin", send: "send", dailySendLimit: 5, keyId: "k" };
+const admin: Principal = { kind: "agent", label: "Admin", level: "admin", send: "send", dailySendLimit: 5, keyId: "k", accounts: null };
 const ledger = (over: Partial<Ledger> = {}): Ledger => ({
   issueConfirmation: async () => ({ code: "CODE", expiresAt: 0 }), consumeConfirmation: async () => true,
   reserveSend: async () => ({ ok: true, used: 1, limit: 5 }), refundSend: async () => {}, record: async () => {}, ...over,
