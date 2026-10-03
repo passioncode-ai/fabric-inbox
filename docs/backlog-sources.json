@@ -9,7 +9,7 @@
       "format": "table",
       "idColumn": "ID",
       "titleColumn": "Item",
-      "defaultStatus": "open"
+      "statusColumn": "Status"
     },
     {
       "path": "docs/backlog.md",
