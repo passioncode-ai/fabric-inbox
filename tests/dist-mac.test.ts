@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { parseArgs, pickIdentity, readDeploymentSetup, BUNDLE_ID } from "../desktop/dist-mac.mjs";
+import { parseArgs, pickIdentity, readDeploymentSetup, stagePaths, checkStageState, BUNDLE_ID } from "../desktop/dist-mac.mjs";
 
 const found = `  1) 1111111111111111111111111111111111111111 "Developer ID Application: Example Developer (ABCDE12345)"
   2) 2222222222222222222222222222222222222222 "3rd Party Mac Developer Application: Example Developer (ABCDE12345)"
@@ -20,8 +20,44 @@ test("the disk image is signed with the one Developer ID identity, never a store
   assert.throws(() => pickIdentity(two), /found 2; name one/);
 });
 
+// The CI release (docs/release.md): the workflow signs with the identity the apple-signing action
+// names and notarizes through the shared notarize action, so the builder works in three stages and
+// never notarizes itself there. The local path (a notary profile) stays, for debugging only.
+const CI_IDENTITY = "Developer ID Application: Example Developer (ABCDE12345)";
+const SUBMISSION = "2a4c2f0e-0000-4000-8000-000000000001";
+test("arguments: a CI stage takes the identity by name and leaves notarization to the workflow", () => {
+  assert.deepEqual(parseArgs(["--stage", "app", "--identity", CI_IDENTITY]),
+    { unsigned: false, notaryProfile: "", identity: CI_IDENTITY, setups: [], stage: "app", submission: "" });
+  assert.equal(parseArgs(["--stage", "image", "--identity", CI_IDENTITY, "--submission", SUBMISSION]).submission, SUBMISSION);
+  assert.equal(parseArgs(["--stage", "finish", "--submission", SUBMISSION]).stage, "finish");
+  assert.throws(() => parseArgs(["--stage", "app"]), /--stage app needs --identity/);
+  assert.throws(() => parseArgs(["--stage", "image"]), /--stage image needs --identity/);
+  assert.throws(() => parseArgs(["--stage", "dmg", "--identity", CI_IDENTITY]), /--stage is app, image or finish/);
+  assert.throws(() => parseArgs(["--stage", "app", "--identity", CI_IDENTITY, "--notary-profile", "fabric-notary"]), /notarized by the workflow/);
+  assert.throws(() => parseArgs(["--stage", "app", "--identity", CI_IDENTITY, "--setup", "owner"]), /never carries a setup/);
+  assert.throws(() => parseArgs(["--stage", "app", "--unsigned"]), /cannot be combined/);
+  assert.throws(() => parseArgs(["--stage", "app", "--identity", CI_IDENTITY, "--submission", SUBMISSION]), /--submission belongs to --stage image or finish/);
+  assert.throws(() => parseArgs(["--submission", SUBMISSION]), /--submission belongs to --stage image or finish/);
+  assert.throws(() => parseArgs(["--stage", "finish", "--submission", "not an id"]), /submission id/);
+});
+
+test("the stage directory and the files a CI release publishes", () => {
+  assert.deepEqual(stagePaths("/repo", "0.9.0"), {
+    dir: "/repo/release/ci", app: "/repo/release/ci/Fabric Inbox.app", state: "/repo/release/ci/state.json",
+    dmg: "/repo/release/Fabric-Inbox-0.9.0.dmg", receipt: "/repo/release/Fabric-Inbox-0.9.0.receipt.json",
+  });
+});
+
+test("a stage refuses a state written for another commit or version", () => {
+  const state = { revision: "a".repeat(40), version: "0.9.0", receipt: { product: "Fabric Inbox" } };
+  assert.deepEqual(checkStageState(state, "a".repeat(40), "0.9.0"), state);
+  assert.throws(() => checkStageState(state, "b".repeat(40), "0.9.0"), /written for commit a{12}.*HEAD is b{12}/);
+  assert.throws(() => checkStageState(state, "a".repeat(40), "0.9.1"), /version 0\.9\.0.*0\.9\.1/);
+  assert.throws(() => checkStageState(null, "a".repeat(40), "0.9.0"), /Run --stage app first/);
+});
+
 test("arguments: a notary profile by name only, unsigned stays unsigned", () => {
-  assert.deepEqual(parseArgs([]), { unsigned: false, notaryProfile: "", identity: "", setups: [] });
+  assert.deepEqual(parseArgs([]), { unsigned: false, notaryProfile: "", identity: "", setups: [], stage: "", submission: "" });
   assert.deepEqual(parseArgs(["--setup", "owner"]).setups, ["owner"]);
   assert.throws(() => parseArgs(["--setup", "../x"]), /deployment name/);
   assert.equal(parseArgs(["--notary-profile", "fabric-notary"]).notaryProfile, "fabric-notary");

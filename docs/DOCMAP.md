@@ -14,7 +14,7 @@ not for what to do next.
 | What must the interface do? | [UX scenarios](ux/scenarios.md), [flows](ux/flows.md), [screens](ux/screens.md) |
 | How does it sound? | [Brand pack](brand/README.md) |
 | What is open outside the roadmap? | [Board](evidence/backlog.md); lessons in [retro](evidence/retro.md) |
-| How is a release cut and published (disk image, notarization, GitHub release)? | [Release procedure](release.md); notes per version in [CHANGELOG.md](../CHANGELOG.md) |
+| How is a release cut and published (CI signing, disk image, notarization, Mac App Store upload, GitHub release)? | [Release procedure](release.md) and [`release.yml`](../.github/workflows/release.yml); notes per version in [CHANGELOG.md](../CHANGELOG.md) |
 | How is the Mac App Store package built? | [MAS procedure](app-store/mas.md) |
 | What was decided about delivery? | [Architecture options → decision 2026-09-28](app-store/architecture-options.md#decision--operator-2026-09-28) |
 | Where does a deployment's own configuration live, and what must never be committed? | [deployments/README.md](../deployments/README.md) (local, git-ignored `deployments/<name>/`; placeholder examples); this change: [handoff 2026-09-30](handoffs/2026-09-30-public-redaction.md) |
