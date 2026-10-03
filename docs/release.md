@@ -35,7 +35,13 @@ carrying the image and its checksum. The builder is `desktop/dist-mac.mjs`
    image, both are stapled, and `spctl -a -vv` names `source=Notarized Developer ID` for each.
    Read the receipt: `revision` is the merged commit, `signing` names the Developer ID,
    `notarization` is `accepted and stapled`, and `checks.notarySubmission` is the image's
-   submission id.
+   submission id. `checks.fuses` and `checks.usageDescriptions` are read from the built app
+   (`desktop/hardening.mjs`, LC-13 and LC-07 of the lifecycle contract): `RunAsNode`,
+   `EnableNodeOptionsEnvironmentVariable` and `EnableNodeCliInspectArguments` off,
+   `EnableEmbeddedAsarIntegrityValidation`, `OnlyLoadAppFromAsar` and `EnableCookieEncryption` on in
+   both slices, and no purpose string (`none (declared: none)`); the build fails otherwise.
+   `release/` then holds this release and the previous one; `prunedFromRelease` lists the older
+   images it removed (receipts stay).
 5. **Tag and publish.**
 
    ```sh
@@ -63,7 +69,20 @@ carrying the image and its checksum. The builder is `desktop/dist-mac.mjs`
    `{"origin":"<origin>","accessOrigin":""}` in that folder makes it open the check's server. Quit
    it by its process id (not by bundle id, which would also quit an installed copy), then run
    `/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "<folder>/Fabric Inbox.app"`
-   so Launch Services forgets the temporary copy.
+   so Launch Services forgets the temporary copy. Every launch outside the upgrade check uses a
+   throwaway `--user-data-dir`, never the installed app's profile (lifecycle LC-14).
+   **Upgrade check (cookie encryption).** Cookie encryption keeps the session cookies under a key
+   in the login Keychain, "Fabric Inbox Safe Storage", created by the app on first launch. Under the
+   stable Developer ID it must be created without a dialog and reused by every later version without
+   one; only a signed build can show that, so it is checked at each release on a Mac where the
+   previous release is installed in `/Applications` and signed in. Note the time, quit the old app,
+   drag the downloaded app over it, open it, use the mail window, quit and open it again. Then:
+   `log show --style compact --start "<time>" --predicate 'process == "SecurityAgent"'` prints no
+   entries (zero Keychain dialogs, and nobody saw one); `security find-generic-password -s "Fabric Inbox Safe Storage"`
+   (attributes only, never `-w`) finds the item; and the mail window opened without a new sign-in.
+   The first release with cookie encryption creates the item; the release after it proves an
+   update reuses it. A dialog is a release blocker: the item's access list does not match the
+   signature (team and bundle id), so every update would ask again.
 7. **Record.** Add the receipts (release URL, sha256, submission ids, Gatekeeper lines, the
    download check) to the [release entry](app-store/README.md) in a docs-only change.
 

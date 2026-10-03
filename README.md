@@ -104,7 +104,7 @@ Not yet: IMAP/Outlook and local sync of personal accounts (roadmap L1), bulk act
 ```sh
 npm ci
 npm run dev            # the Worker and app on http://localhost:5173 with local bindings
-npm run desktop        # in another terminal; enter the dev URL in setup
+npm run desktop        # in another terminal; enter the dev URL in setup (its own profile, not the installed app's)
 npm run desktop:server-bundle   # once, so Create my server has a server to upload
 ```
 

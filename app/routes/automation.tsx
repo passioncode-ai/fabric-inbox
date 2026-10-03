@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@cloudflare/kumo";
 import { fabric } from "~/services/fabric";
+import { useWindowActive } from "~/hooks/useWindowActive";
+import { AUTOMATION_POLL_MS, pollInterval } from "~/lib/window-activity";
 import type { OutboxEntry } from "../../shared/mail/outbox";
 import type { Rule, Run } from "../../workers/automation/policy";
 const input =
@@ -23,6 +25,18 @@ export function meta() {
 export default function Automation() {
   const { account = "" } = useParams();
   const base = "/api/automation/" + encodeURIComponent(account);
+  // Runs and the outbox poll every 30 s, and only while this window is visible and focused
+  // (LC-08); coming back to the window refreshes them at once instead of after the next tick.
+  const active = useWindowActive();
+  const queryClient = useQueryClient();
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (active && !wasActive.current) {
+      void queryClient.invalidateQueries({ queryKey: ["runs", account] });
+      void queryClient.invalidateQueries({ queryKey: ["outbox", account] });
+    }
+    wasActive.current = active;
+  }, [active, account, queryClient]);
   const rules = useQuery({
     queryKey: ["rules", account],
     queryFn: () => fabric<Rule[]>(base + "/rules"),
@@ -30,7 +44,7 @@ export default function Automation() {
   const runs = useQuery({
     queryKey: ["runs", account],
     queryFn: () => fabric<Run[]>(base + "/runs"),
-    refetchInterval: 5000,
+    refetchInterval: pollInterval(active, AUTOMATION_POLL_MS),
   });
   const outbox = useQuery({
     queryKey: ["outbox", account],
@@ -39,7 +53,7 @@ export default function Automation() {
         "/api/v1/mailboxes/" + encodeURIComponent(account) + "/outbox",
       ),
     enabled: !account.startsWith("gmail:"),
-    refetchInterval: 5000,
+    refetchInterval: pollInterval(active, AUTOMATION_POLL_MS),
   });
   const [editing, setEditing] = useState<Rule | null>(null);
   const [args, setArgs] = useState("{}");

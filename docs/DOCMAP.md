@@ -19,6 +19,7 @@ not for what to do next.
 | What was decided about delivery? | [Architecture options → decision 2026-09-28](app-store/architecture-options.md#decision--operator-2026-09-28) |
 | Where does a deployment's own configuration live, and what must never be committed? | [deployments/README.md](../deployments/README.md) (local, git-ignored `deployments/<name>/`; placeholder examples); this change: [handoff 2026-09-30](handoffs/2026-09-30-public-redaction.md) |
 | Under which licence is it, and what came from elsewhere? | [README → License](../README.md#license), [third-party notices](../THIRD_PARTY_NOTICES.md) (Cloudflare's Agentic Inbox template, super-ux scripts); this change: [handoff 2026-09-30](handoffs/2026-09-30-agpl-licence.md) |
+| What runs on the Mac, when, and what does a build leave behind? | [AGENTS.md → Lifecycle](../AGENTS.md#lifecycle) (resident processes, idle budget, fuses, profile, retention); this change: [handoff 2026-10-03](handoffs/2026-10-03-lifecycle-contract.md) |
 
 ## History (do not follow as instructions)
 
