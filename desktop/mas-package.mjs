@@ -131,6 +131,20 @@ export function childEntitlements() {
 export function validateEntitlements(actual, expected) {
   requireThat(JSON.stringify(Object.entries(actual).sort()) === JSON.stringify(Object.entries(expected).sort()), 'Signed entitlements differ from the declared policy.');
 }
+// What a signed file must carry. codesign prints nothing for code signed without entitlements;
+// Electron's nested libraries and frameworks are such code, so an empty answer is legitimate for
+// them and their check is skipped (null). The application and every nested .app (the helpers)
+// must carry entitlements: an empty answer there is refused, naming the file. Before 2026-10-03 the
+// empty answer reached plistlib and failed as "python3 failed" (first CI rehearsal, v0.8.2-rc.2).
+export function expectedEntitlementsFor(file, app, c, signedEntitlements) {
+  const empty = !String(signedEntitlements || '').trim();
+  const bundle = path.resolve(file) === path.resolve(app) || /\.app$/.test(file);
+  if (empty) {
+    requireThat(!bundle, `Signed without entitlements: ${path.basename(file)}; an application bundle must carry them.`);
+    return null;
+  }
+  return path.resolve(file) === path.resolve(app) ? mainEntitlements(c) : childEntitlements();
+}
 function xmlPlist(value) {
   return run('python3', ['-c', 'import sys,json,plistlib;sys.stdout.buffer.write(plistlib.dumps(json.load(sys.stdin)))'], { input: JSON.stringify(value) });
 }
@@ -188,8 +202,10 @@ export async function build(c, checked) {
     requireThat(signedChildren.size > 0, 'No nested Electron code was signed.');
     for (const file of [app, ...signedChildren]) {
       const signedEntitlements = run('/usr/bin/codesign', ['--display', '--entitlements', '-', '--xml', file]);
+      const expected = expectedEntitlementsFor(file, app, c, signedEntitlements);
+      if (expected === null) continue;
       const decoded = JSON.parse(run('python3', ['-c', 'import sys,plistlib,json;print(json.dumps(plistlib.loads(sys.stdin.buffer.read())))'], { input: signedEntitlements }));
-      validateEntitlements(decoded, file === app ? mainEntitlements(c) : childEntitlements());
+      validateEntitlements(decoded, expected);
     }
     const info = plistRead(path.join(app, 'Contents/Info.plist'));
     requireThat(info.CFBundleIdentifier === BUNDLE_ID && info.CFBundleVersion === c['build-number'] && info.FabricInboxSourceRevision === c.revision, 'Packaged bundle metadata does not match requested inputs.');
