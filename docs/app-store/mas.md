@@ -15,7 +15,7 @@ runs the distribution command below with `--arch arm64`, the action's identity n
 number derived from the tag and `--revision` set to the tagged commit, then `--build`. The package
 and `build-receipt.json` are kept as a workflow artifact; when the release publishes,
 `scripts/app-store-connect.mjs upload` sends the package to App Store Connect after checking that
-the app record exists. Build number, upload and the missing app record:
+the app record exists (it does since 2026-10-03, Apple id `6818818207`). Build number, upload and the record check:
 [release procedure → Mac App Store](../release.md#mac-app-store).
 
 ## Commands and prerequisites (local, for debugging)

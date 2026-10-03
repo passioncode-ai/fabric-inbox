@@ -23,7 +23,7 @@ Measured 2026-09-27: `security find-identity -v -p codesigning` returns one Deve
 | REL-05 | Read safely, search, organize and use mail through temporary connectivity loss. | Read/archive/star/soft trash/restore, external-image permission, read-on-open and Focus triage (important first, collapsed groups, unread and group filters) implemented. Cached search remains limited; bulk operations and offline mail absent. |
 | REL-06 | Explain/draft with AI, dry-run/pause rules, approve external actions and inspect history. | Cloud rules, and reusable versioned agents on project addresses with a reply policy, granted MCP tools and a run history (roadmap P2–P5) implemented and tested in workerd. No real model call, live evals or consent wording yet. |
 | REL-07 | Desktop integration works in Apple's sandbox with explicit capability limits. | Notifications, mailto and device tools missing. Arbitrary process execution cannot be assumed available in MAS. |
-| REL-08 | Produce a verified MAS package from an exact source revision; never label unsigned/dev output submit-ready. | Exact-source MAS preflight/build/sign/verify scripts and tests implemented; since 2026-10-03 the `mas` job of [`release.yml`](../../.github/workflows/release.yml) builds and signs the package with the CI-only identities and profile, and uploads it when a release publishes. No signed package observed yet (the rehearsal waits for approval); the App Store Connect app record and signed sandbox acceptance are absent. |
+| REL-08 | Produce a verified MAS package from an exact source revision; never label unsigned/dev output submit-ready. | Exact-source MAS preflight/build/sign/verify scripts and tests implemented; since 2026-10-03 the `mas` job of [`release.yml`](../../.github/workflows/release.yml) builds and signs the package with the CI-only identities and profile, and uploads it when a release publishes. No signed package observed yet (the rehearsal waits for approval); the App Store Connect app record exists since 2026-10-03 (Apple id `6818818207`, SKU `fabric-inbox`); signed sandbox acceptance is absent. |
 | REL-09 | Privacy/support, review access, metadata and screenshots describe measured shipping behavior. | Product page live; privacy disclosures, review environment and App Store metadata incomplete. |
 | REL-10 | Real account isolation, delivery, failures, upgrades and clean install pass before upload and release. | Local gate green on the latest run — the count and commit are recorded once, in the [run brief](tasks/2026-09-28-agents-triage-run.md#checks-actually-run). No live mail acceptance or store review. |
 
@@ -50,7 +50,7 @@ then the image notarized through the shared action; attested, `SHA256SUMS` GPG-s
 the Mac App Store package signed with the CI-only store identities and uploaded when publishing.
 The by-hand procedure the releases below followed is retired; a locally signed build is a debug
 build. Procedure: [docs/release.md](../release.md). Open: the first rehearsal's signing jobs wait
-for an approver (human step 5), and the App Store Connect app record does not exist (human step 6).
+for an approver (human step 5). The App Store Connect app record exists (human step 6, done 2026-10-03).
 Next on this path, after human step 5: read the rehearsal run (both notarization submissions
 Accepted; the `signed-release-<tag>` artifact with `SHA256SUMS.asc`; the `mas-pkg-…` artifact with a
 `signed-package-local-checks-passed` receipt) and record it here. After human step 6 the next
@@ -177,10 +177,8 @@ app. Nothing is half-done in the tree.
 5. **Approve the release rehearsal** (a member of `release-approvers` who did not push the tag):
    the newest `release` run on a `v*-rc.*` tag waits in "Review deployments" for its `macos`,
    `mas` and `publish` jobs. A rehearsal publishes nothing and uploads nothing.
-6. **Create the App Store Connect app record** for `ai.passioncode.fabric-inbox` (Account Holder,
-   Admin or App Manager): App Store Connect → Apps → + → New App, platform macOS, that bundle id, a
-   name and SKU. The API cannot create it; until it exists a publishing run's `mas` job stops at
-   its record check and the disk image is released without the store build.
+6. ~~**Create the App Store Connect app record**~~ — done 2026-10-03: "Fabric Inbox", Apple id `6818818207`, SKU `fabric-inbox`, en-US, macOS.
+   The API cannot create a record; a publishing run's `mas` job checks for it first.
 
 Exact next task: **accept 0.8.0 live (B-39)** — after human step 3, read the Cloudflare accounts
 section (three accounts, all with mail), the failed domain's steps, and for the chosen domain of
