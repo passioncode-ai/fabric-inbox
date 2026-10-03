@@ -5,11 +5,18 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const policy = require('./policy.cjs');
 const deployer = require('./cloudflare-deploy.cjs');
+const connector = require('./connect.cjs');
 
 app.setName('Fabric Inbox');
 app.enableSandbox();
 const ownsInstance = app.requestSingleInstanceLock();
 if (!ownsInstance) app.quit();
+// fabric-inbox://connect links (ADR-0115 §4): a local hub asks to connect, a person allows here.
+if (typeof app.setAsDefaultProtocolClient === "function") app.setAsDefaultProtocolClient(connector.SCHEME);
+const pendingLinks = [];
+let appReady = false;
+let connecting = false;
+app.on('open-url', (event, url) => { event.preventDefault(); queueLink(url); });
 const setupURL = pathToFileURL(path.join(__dirname, 'setup.html')).href;
 let config = null;
 let setupWindow = null;
@@ -179,6 +186,48 @@ function loadMail() {
   loadTimer = setTimeout(failure, 30000);
   void win.loadURL(snapshot.origin).catch(failure);
 }
+function queueLink(url) {
+  if (typeof url !== 'string' || !url.startsWith(`${connector.SCHEME}:`)) return;
+  pendingLinks.push(url);
+  if (appReady) void drainLinks();
+}
+async function drainLinks() {
+  if (connecting) return;
+  connecting = true;
+  try { while (pendingLinks.length) await handleConnectLink(pendingLinks.shift()); }
+  finally { connecting = false; }
+}
+async function handleConnectLink(url) {
+  const parsed = connector.parseConnectLink(url);
+  const parent = mailWindow && !mailWindow.isDestroyed() ? mailWindow : (setupWindow && !setupWindow.isDestroyed() ? setupWindow : null);
+  const box = (options) => (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options));
+  if (!parsed.ok) {
+    console.warn(JSON.stringify({ event: 'connect.refused', reason: 'bad_link' }));
+    await box({ type: 'warning', title: 'Connect', message: 'This connect link cannot be used.', detail: parsed.error, buttons: ['OK'] });
+    return;
+  }
+  const request = parsed.value;
+  const ses = config ? session.fromPartition(policy.partitionFor(config)) : null;
+  const out = await connector.connect({
+    request, config,
+    confirm: async (prompt) => (await box({ type: 'question', ...prompt })).response === 1,
+    mint: ses ? connector.mintWith(ses, config.origin) : async () => ({ ok: false, error: 'No server' }),
+    revoke: ses ? connector.revokeWith(ses, config.origin) : async () => false,
+    deliver: connector.deliverTo(request.callback),
+    signIn: async () => { loadMail(); },
+    log: (line) => console.log(line),
+  });
+  if (out.outcome === 'connected') {
+    await box({ type: 'info', title: 'Connected', message: `${request.client} is connected to Fabric Inbox.`, detail: 'You can see and revoke its key in Settings → Agent access.', buttons: ['OK'] });
+  } else if (out.outcome === 'failed') {
+    const detail = out.reason === 'no_server' ? 'Set up your Fabric Inbox server first, then connect again.'
+      : out.reason === 'sign_in_required' ? `Sign in to Fabric Inbox in the window that opened, then connect again from ${request.client}.`
+      : out.reason === 'callback_unreachable' ? `${request.client} did not receive the key, so it was ${out.revoked ? 'revoked again' : 'made but could not be revoked: revoke it in Settings → Agent access'}.`
+      : `The key could not be made: ${out.error || 'unknown error'}`;
+    if (out.reason === 'no_server') showSetup('Set up your server, then connect again.');
+    await box({ type: 'warning', title: 'Not connected', message: `${request.client} is not connected.`, detail, buttons: ['OK'] });
+  }
+}
 function installIPC() {
   function trusted(event) {
     if (!policy.isSetupSender(event, setupWindow, setupURL)) throw new Error('Untrusted setup request');
@@ -311,8 +360,14 @@ app.on('activate', () => {
   else if (setupWindow && !setupWindow.isDestroyed()) { setupWindow.show(); setupWindow.focus(); }
   else loadMail();
 });
-app.on('second-instance', () => {
+app.on('second-instance', (_event, argv) => {
+  for (const arg of argv || []) queueLink(arg);
   const win = setupWindow || mailWindow;
   if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
 });
-if (ownsInstance) app.whenReady().then(async () => { installIPC(); installMenu(); await loadBundledSetups(); await readConfig(); config ? loadMail() : showSetup(notice); });
+if (ownsInstance) app.whenReady().then(async () => {
+  installIPC(); installMenu(); await loadBundledSetups(); await readConfig(); config ? loadMail() : showSetup(notice);
+  appReady = true;
+  for (const arg of process.argv || []) queueLink(arg);
+  void drainLinks();
+});

@@ -164,7 +164,7 @@ export async function build(c, checked) {
     mkdirSync(destination, { recursive: true });
     const apps = await packager({
       dir: path.join(temp, 'desktop'), name: 'Fabric Inbox', executableName: 'Fabric Inbox',
-      appBundleId: BUNDLE_ID, appCategoryType: 'public.app-category.productivity',
+      protocols: [{ name: 'Fabric Inbox connect link', schemes: ['fabric-inbox'] }], appBundleId: BUNDLE_ID, appCategoryType: 'public.app-category.productivity',
       platform: 'mas', arch: c.arch, electronVersion, buildVersion: c['build-number'],
       out: destination, overwrite: false, asar: true, prune: true, osxSign: false,
       ignore: [/\/(?:mas-package|package|dist-mac)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.icns$/, /\/dmg-background/],
