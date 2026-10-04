@@ -5,9 +5,16 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const policy = require('./policy.cjs');
 const deployer = require('./cloudflare-deploy.cjs');
+const profile = require('./profile.cjs');
 const connector = require('./connect.cjs');
 
 app.setName('Fabric Inbox');
+// A development run (`npm run desktop`, an unpackaged Electron) keeps its own profile, so it never
+// writes into the installed app's settings, cookies or single-instance lock (LC-14). A walk or a
+// release check names its own throwaway folder with --user-data-dir, which always wins.
+if (!app.isPackaged && !app.commandLine.hasSwitch('user-data-dir')) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'Fabric Inbox Development'));
+}
 app.enableSandbox();
 const ownsInstance = app.requestSingleInstanceLock();
 if (!ownsInstance) app.quit();
@@ -26,6 +33,8 @@ let notice = '';
 let setupStart = '';
 let openingExternal = false;
 let quitting = false;
+// The partition of the last mail window this run opened; retired when the server changes.
+let mailPartition = null;
 const configPath = () => path.join(app.getPath('userData'), 'server.json');
 const pendingSetupPath = () => path.join(app.getPath('userData'), 'pending-setup.json');
 // Setups shipped with the app (desktop/setups/*.json) and one opened from a file.
@@ -75,9 +84,19 @@ function rejectPermissions(ses) {
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
 }
+/** Reads server.json; false when it exists but cannot be used. */
 async function readConfig() {
-  try { config = policy.validateConfig(JSON.parse(await fs.readFile(configPath(), 'utf8'))); }
-  catch (error) { if (error.code !== 'ENOENT') notice = 'The saved server setting could not be read. Enter it again.'; }
+  try { config = policy.validateConfig(JSON.parse(await fs.readFile(configPath(), 'utf8'))); return true; }
+  catch (error) {
+    if (error.code === 'ENOENT') return true;
+    notice = 'The saved server setting could not be read. Enter it again.';
+    return false;
+  }
+}
+/** Clears a server's partition once no window uses it (LC-12, desktop/profile.cjs). */
+async function retirePartition(partition) {
+  if (partition === mailPartition) return;
+  await profile.retirePartition({ fs, userData: app.getPath('userData'), partition, session: session.fromPartition(partition) });
 }
 async function saveConfig(next) {
   await writePrivate(configPath(), next);
@@ -120,7 +139,12 @@ function loadMail() {
   if (!config) { showSetup(); return; }
   if (mailWindow && !mailWindow.isDestroyed()) { mailWindow.destroy(); }
   const snapshot = { ...config };
-  const ses = session.fromPartition(policy.partitionFor(snapshot));
+  const partition = policy.partitionFor(snapshot);
+  const previousPartition = mailPartition;
+  mailPartition = partition;
+  // The old server's window is destroyed above; its storage goes with it (F3: never left behind).
+  if (previousPartition && previousPartition !== partition) void retirePartition(previousPartition);
+  const ses = session.fromPartition(partition);
   rejectPermissions(ses);
   // A download remains an explicit user choice; never auto-save attachment files.
   ses.removeAllListeners('will-download');
@@ -366,7 +390,11 @@ app.on('second-instance', (_event, argv) => {
   if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
 });
 if (ownsInstance) app.whenReady().then(async () => {
-  installIPC(); installMenu(); await loadBundledSetups(); await readConfig(); config ? loadMail() : showSetup(notice);
+  installIPC(); installMenu(); await loadBundledSetups();
+  // Orphan partitions and settings leftovers go before any window opens (LC-12). An unreadable
+  // server.json is kept and nothing is swept: the person is about to enter that server again.
+  if (await readConfig()) await profile.sweepProfile({ fs, userData: app.getPath('userData'), keepPartition: config ? policy.partitionFor(config) : null });
+  config ? loadMail() : showSetup(notice);
   appReady = true;
   for (const arg of process.argv || []) queueLink(arg);
   void drainLinks();

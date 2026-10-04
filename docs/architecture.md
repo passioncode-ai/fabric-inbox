@@ -285,7 +285,7 @@ read with a default where it is missing, never assumed present.
 | `app/components/inbox/` | list, composer, drafts, message actions, sidebar grouped by domain |
 | `app/routes/knowledge.tsx` | Knowledge: collections, documents, upload, try a search |
 | `app/components/domains/` | Domains & addresses: connect, domain cards, addresses, destinations, step lists |
-| `desktop/` | Electron host, first run, creating the server (`cloudflare-deploy.cjs`), packaging (`dist-mac.mjs`, `package.mjs`, `mas-package.mjs`) |
+| `desktop/` | Electron host, first run, creating the server (`cloudflare-deploy.cjs`), profile hygiene (`profile.cjs`), packaging (`dist-mac.mjs`, `package.mjs`, `mas-package.mjs`) with hardened fuses and purpose strings (`hardening.mjs`) and release retention (`release-retention.mjs`) |
 | `scripts/server-bundle.mjs` | the server the app carries |
 | `deployments/<name>/` | one deployment's own values, setup and ops receipts; local only (git-ignored), never shipped; the guide and `*.example.json` shapes are `deployments/README.md` |
 | `scripts/deployment-setup.ts` | builds `deployments/<name>/setup.json` from a read-only Email Routing inventory with the server's own conversion |

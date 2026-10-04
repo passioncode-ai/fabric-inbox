@@ -2,6 +2,7 @@ import { packager } from '@electron/packager';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { hardenTemplateHook, verifyHardening } from './hardening.mjs';
 const require = createRequire(import.meta.url);
 const desktop = path.dirname(fileURLToPath(import.meta.url));
 const arch = process.argv[2] || process.arch;
@@ -12,8 +13,10 @@ const apps = await packager({
   platform: 'darwin', arch, electronVersion: require('electron/package.json').version,
   out: path.join(desktop, '..', 'release'), overwrite: true, asar: true, prune: true,
   icon: path.join(desktop, 'icon.icns'),
-  ignore: [/\/(?:mas-package|package|dist-mac)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.icns$/, /\/dmg-background/],
+  ignore: [/\/(?:mas-package|package|dist-mac|hardening|release-retention)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.icns$/, /\/dmg-background/],
   extendInfo: { NSHumanReadableCopyright: 'Fabric Inbox', NSRequiresAquaSystemAppearance: false },
+  // Hardened like a release (desktop/hardening.mjs); an unsigned Apple-silicon build is re-signed ad hoc to launch.
+  afterExtract: hardenTemplateHook({ resetAdHocSignature: true }),
 });
-for (const output of apps) console.log(output);
+for (const output of apps) console.log(output, JSON.stringify(verifyHardening(path.join(output, 'Fabric Inbox.app'))));
 console.log('Unsigned local build. Signing and notarization are separate release steps.');

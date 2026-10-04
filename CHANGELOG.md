@@ -5,6 +5,24 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+- **The Mac app is hardened** (lifecycle contract LC-13, LC-07, PR #12). Session cookies are
+  encrypted at rest under a login-Keychain key, "Fabric Inbox Safe Storage"; the app cannot be run
+  as a plain Node process or opened with an inspector; it loads only from its own integrity-checked
+  archive; and it no longer carries Electron's camera, microphone and Bluetooth purpose strings.
+  Every build reads the fuses and purpose strings back from the built app and fails otherwise.
+  Profiles written by 0.9.0 and earlier keep working; going back to such a version means signing in
+  again.
+- **Old servers leave nothing behind** (LC-12). Changing the server clears the previous server's
+  cookies, storage and cache, so returning to it means signing in again; each launch removes what
+  servers no longer configured left in the profile.
+- **Automation polls less** (LC-08): every 30 s instead of 5 s, and only while the window is
+  visible and focused; returning to the window refreshes at once.
+- **A development run uses its own profile** (`Fabric Inbox Development`), never the installed
+  app's (LC-14). A local build keeps only the current and the previous release in `release/`, and
+  `npm run clean` removes build caches (LC-15).
+
 ## 0.9.0 — 2026-10-03
 
 - **Agent keys can be limited to mailboxes** (AP-11). A Read or Mail key may name its accounts and

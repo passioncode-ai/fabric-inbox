@@ -34,6 +34,11 @@
 // accepted both the app and the image, both are stapled, and Gatekeeper names
 // the source "Notarized Developer ID" for each. The release version needs its
 // section in CHANGELOG.md. Publishing the result: docs/release.md.
+//
+// Every build is hardened (desktop/hardening.mjs): Electron fuses flipped (LC-13) and unused purpose
+// strings stripped (LC-07), both read back from the built app into the receipt, and the build fails
+// otherwise. After a build, release/ keeps this release and the newest other one (LC-15,
+// desktop/release-retention.mjs).
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statfsSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -41,10 +46,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { hardenTemplateHook, verifyHardening } from './hardening.mjs';
+import { pruneReleases } from './release-retention.mjs';
 
 export const BUNDLE_ID = 'ai.passioncode.fabric-inbox';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MIN_FREE_BYTES = 3 * 1024 ** 3;
+const LSREGISTER = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
 /** What the server bundle is built from; must be committed before an image is made. */
 export const SERVER_SOURCES = ['app', 'workers', 'shared', 'scripts/server-bundle.mjs', 'package.json', 'package-lock.json', 'vite.config.ts', 'react-router.config.ts', 'wrangler.jsonc', 'public'];
 
@@ -380,6 +388,7 @@ async function main() {
     rmSync(`${dmg}.sha256`, { force: true });
   }
   const temp = mkdtempSync(path.join(buildTemp, 'fabric-dmg-'));
+  let builtApp = '';
   try {
     run('/usr/bin/tar', ['-xf', '-', '-C', temp], { input: run('git', ['archive', revision, 'desktop'], { encoding: 'buffer' }) });
     const source = path.join(temp, 'desktop');
@@ -401,8 +410,11 @@ async function main() {
       dir: source, name: 'Fabric Inbox', executableName: 'Fabric Inbox', appVersion: version, buildVersion: version,
       protocols: [{ name: 'Fabric Inbox connect link', schemes: ['fabric-inbox'] }], appBundleId: BUNDLE_ID, appCategoryType: 'public.app-category.productivity', icon: path.join(source, 'icon.icns'),
       platform: 'darwin', arch: 'universal', electronVersion, out: path.join(temp, 'out'), overwrite: true, asar: true, prune: true,
-      ignore: [/\/(?:mas-package|package|dist-mac)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.icns$/, /\/dmg-background/],
+      ignore: [/\/(?:mas-package|package|dist-mac|hardening|release-retention)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.icns$/, /\/dmg-background/],
       extendInfo: { NSHumanReadableCopyright: 'Fabric Inbox — PassionCode.ai', NSRequiresAquaSystemAppearance: false, LSMinimumSystemVersion: '12.0' },
+      // LC-13/LC-07: fuses flipped and unused purpose strings stripped in the Electron template, before
+      // the app is assembled and signed (desktop/hardening.mjs); verified on the built app below.
+      afterExtract: hardenTemplateHook(),
       osxSign: identity ? {
         identity: identity.hash,
         optionsForFile: () => ({ hardenedRuntime: true, entitlements: path.join(source, 'entitlements.mac.plist') }),
@@ -411,6 +423,8 @@ async function main() {
       osxNotarize: args.notaryProfile ? { keychainProfile: args.notaryProfile } : undefined,
     });
     const app = path.join(appDir, 'Fabric Inbox.app');
+    builtApp = app;
+    const hardening = verifyHardening(app);
     const receipt = {
       product: 'Fabric Inbox', version, revision, dirtyDesktopSources: dirty, electronVersion, architectures: ['arm64', 'x86_64'],
       builtAt: new Date().toISOString(), builtBy: builtBy(), image: path.basename(staged ? staged.dmg : dmg),
@@ -418,7 +432,7 @@ async function main() {
       serverBundle: { version: serverManifest.version, revision: serverManifest.revision, modules: serverManifest.modules.length,
         assets: Object.keys(serverManifest.assets.files).length, manifestSha256: sha256(path.join(source, 'server-bundle', 'manifest.json')) },
       signing: 'unsigned', notarization: 'not requested',
-      gatekeeper: 'not assessed', checks: {},
+      gatekeeper: 'not assessed', checks: { fuses: hardening.fuses, usageDescriptions: hardening.usageDescriptions },
     };
     if (identity) checkSignedApp(app, identity, receipt);
     receipt.checks.architectures = run('lipo', ['-archs', path.join(app, 'Contents/MacOS/Fabric Inbox')]).trim();
@@ -446,8 +460,13 @@ async function main() {
       receipt.notarization = 'accepted and stapled';
     }
     if (identity) assessImage(dmg, receipt, Boolean(args.notaryProfile));
+    // LC-15: release/ keeps this release and the newest other one; older images go (receipts stay).
+    receipt.prunedFromRelease = pruneReleases(out, { current: version });
     writeReceipt(dmg, receipt, path.join(out, `${name}.receipt.json`));
   } finally {
+    // The temporary app goes with the build; Launch Services forgets it first so no stale copy
+    // answers an `open` (LC-15). Best effort: a failure here never fails a finished build.
+    if (builtApp) spawnSync(LSREGISTER, ['-u', builtApp], { timeout: 30_000, stdio: 'ignore' });
     rmSync(temp, { recursive: true, force: true });
     rmSync(buildTemp, { recursive: true, force: true });
   }

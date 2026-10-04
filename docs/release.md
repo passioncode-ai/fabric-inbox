@@ -33,7 +33,14 @@ prints Apple's log otherwise), staples, and assesses with `spctl`:
 
 1. `--stage app --identity <name>`: the universal app, built from the committed tree (`git archive`
    of the tag's commit, with the server bundle from the same commit), signed with the hardened
-   runtime, checked with `codesign --verify --deep --strict`, into `release/ci/`.
+   runtime, checked with `codesign --verify --deep --strict`, into `release/ci/`. Every build is
+   hardened ([`desktop/hardening.mjs`](../desktop/hardening.mjs), LC-13 and LC-07 of the lifecycle
+   contract): before the app is assembled and signed, the Electron template's fuses are set
+   (`RunAsNode`, `EnableNodeOptionsEnvironmentVariable` and `EnableNodeCliInspectArguments` off;
+   `EnableEmbeddedAsarIntegrityValidation`, `OnlyLoadAppFromAsar` and `EnableCookieEncryption` on)
+   and its unused purpose strings removed. Both are read back from the built app into the
+   receipt's `checks.fuses` (every slice) and `checks.usageDescriptions` (`none (declared: none)`),
+   and the build fails otherwise.
 2. `notarize@v1` on `release/ci/Fabric Inbox.app`.
 3. `--stage image --identity <name> --submission <id>`: refuses an app that is not stapled or that
    Gatekeeper does not name `Notarized Developer ID`, then makes the image and signs it.
@@ -65,7 +72,8 @@ The store package, built by the `mas` job:
 3. **Build.** [`desktop/mas-package.mjs`](../desktop/mas-package.mjs)
    `--mode distribution --arch arm64` with the team, both identities, the profile, the build
    number and `--revision ${{ github.sha }}`, then `--build`: every check in
-   [app-store/mas.md](app-store/mas.md), the signed package and `build-receipt.json`. Both are kept
+   [app-store/mas.md](app-store/mas.md), the same hardening as the disk image (its `fuses` and
+   `usageDescriptions` in the receipt), the signed package and `build-receipt.json`. Both are kept
    as the workflow artifact `mas-pkg-<version>-<build number>` for 14 days. The package is not a
    release file: only the store installs it.
 4. **Upload, only when publishing.** `node scripts/app-store-connect.mjs upload <pkg>` checks the
@@ -133,10 +141,23 @@ per package and has no checked universal path; Intel Macs install the universal 
    `{"origin":"<origin>","accessOrigin":""}` in that folder makes it open the check's server. Quit
    it by its process id (not by bundle id, which would also quit an installed copy), then run
    `/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "<folder>/Fabric Inbox.app"`
-   so Launch Services forgets the temporary copy.
+   so Launch Services forgets the temporary copy. Every launch outside the upgrade check uses a
+   throwaway `--user-data-dir`, never the installed app's profile (lifecycle LC-14).
+   **Upgrade check (cookie encryption).** Cookie encryption keeps the session cookies under a key
+   in the login Keychain, "Fabric Inbox Safe Storage", created by the app on first launch. Under the
+   stable Developer ID it must be created without a dialog and reused by every later version without
+   one; only a signed build can show that, so it is checked at each release on a Mac where the
+   previous release is installed in `/Applications` and signed in. Note the time, quit the old app,
+   drag the downloaded app over it, open it, use the mail window, quit and open it again. Then:
+   `log show --style compact --start "<time>" --predicate 'process == "SecurityAgent"'` prints no
+   entries (zero Keychain dialogs, and nobody saw one); `security find-generic-password -s "Fabric Inbox Safe Storage"`
+   (attributes only, never `-w`) finds the item; and the mail window opened without a new sign-in.
+   The first release with cookie encryption creates the item; the release after it proves an
+   update reuses it. A dialog is a release blocker: the item's access list does not match the
+   signature (team and bundle id), so every update would ask again.
 8. **Record.** Add the receipts (run URL, release URL, sha256, both submission ids, Gatekeeper
-   lines, the store build number and its App Store Connect state, the download check) to the
-   [release entry](app-store/README.md) in a docs-only change.
+   lines, the store build number and its App Store Connect state, the download check, the upgrade
+   check) to the [release entry](app-store/README.md) in a docs-only change.
 
 ## Human steps
 
@@ -160,5 +181,8 @@ per package and has no checked universal path; Intel Macs install the universal 
 `--unsigned`) and `node desktop/mas-package.mjs …` still work on a Mac with a Developer ID or store
 identity, for debugging the build itself. Their receipts say `builtBy: this machine (a debug build:
 never published)`. Never attach such a build to a release or upload it: the upload command refuses
-to run outside GitHub Actions. A personal build (`--setup <name>`) carries its owner's domains and
-addresses and is never published at all; the workflow refuses `--setup` in a CI stage.
+to run outside GitHub Actions. After a local build `release/` keeps that release and the newest
+other one (`desktop/release-retention.mjs`, lifecycle LC-15); the receipt's `prunedFromRelease`
+lists the older images or store folders it removed, and receipts stay. A personal build
+(`--setup <name>`) carries its owner's domains and addresses and is never published at all; the
+workflow refuses `--setup` in a CI stage.
