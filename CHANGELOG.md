@@ -5,6 +5,50 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+- **The Mac app is hardened** (lifecycle contract LC-13, LC-07, PR #12). Session cookies are
+  encrypted at rest under a login-Keychain key, "Fabric Inbox Safe Storage"; the app cannot be run
+  as a plain Node process or opened with an inspector; it loads only from its own integrity-checked
+  archive; and it no longer carries Electron's camera, microphone and Bluetooth purpose strings.
+  Every build reads the fuses and purpose strings back from the built app and fails otherwise.
+  Profiles written by 0.9.0 and earlier keep working; going back to such a version means signing in
+  again.
+- **Old servers leave nothing behind** (LC-12). Changing the server clears the previous server's
+  cookies, storage and cache, so returning to it means signing in again; each launch removes what
+  servers no longer configured left in the profile.
+- **Automation polls less** (LC-08): every 30 s instead of 5 s, and only while the window is
+  visible and focused; returning to the window refreshes at once.
+- **A development run uses its own profile** (`Fabric Inbox Development`), never the installed
+  app's (LC-14). A local build keeps only the current and the previous release in `release/`, and
+  `npm run clean` removes build caches (LC-15).
+
+## 0.9.0 — 2026-10-03
+
+- **Agent keys can be limited to mailboxes** (AP-11). A Read or Mail key may name its accounts and
+  then reaches those mailboxes only: it sees only tools that stay inside a mailbox, every route it
+  calls is checked against its accounts, the feed is narrowed in the request and in the answer, and
+  a category filter is refused. Agent access gains a Mailboxes choice and shows each key's scope.
+- **A hub narrows its key per call with `X-Fabric-Accounts`**: the call reaches only the named
+  mailboxes; the header intersects with the key's own limit and never widens it.
+- **A hub on this Mac connects by your consent, with nothing copied.** A `fabric-inbox://connect`
+  link opens a native Allow/Deny prompt; Allow makes the key with your own signed-in session and
+  hands it once to the hub's loopback address, and revokes it if the hub did not take it (SCN-047).
+- **Releases are signed in GitHub Actions only.** A `vX.Y.Z` tag starts `.github/workflows/release.yml`;
+  after a member of `release-approvers` approves (whoever pushed the tag may; an agent never
+  does), it builds the disk image
+  with the organization's CI Developer ID, notarizes and staples the app and then the image made
+  from it, attests every file, signs `SHA256SUMS` and publishes the release. A rehearsal on a
+  `-rc` tag does all of that and publishes nothing. A build signed on a laptop is a debug build.
+- **The Mac App Store package is built by the same workflow**, signed with the CI-only store
+  identities and the Fabric Inbox profile, and uploaded to App Store Connect when the release
+  publishes. The upload stops with a clear message while the App Store Connect app record does not
+  exist; creating it is a person's step ([docs/release.md](docs/release.md#mac-app-store)).
+- `desktop/dist-mac.mjs` gains `--stage app|image|finish` for the workflow;
+  `scripts/app-store-connect.mjs` derives the store build number from the tag, checks the app
+  record and uploads. The release no longer carries a separate `.sha256`: the signed `SHA256SUMS`
+  covers the image.
+
 ## 0.8.2 — 2026-10-01
 
 A second pass: the live server's own error log, the 0.8.1 changes read again, and the core mail

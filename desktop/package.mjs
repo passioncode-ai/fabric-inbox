@@ -9,7 +9,7 @@ const arch = process.argv[2] || process.arch;
 if (!['arm64', 'x64'].includes(arch)) throw new Error('Choose arm64 or x64 for macOS.');
 const apps = await packager({
   dir: desktop, name: 'Fabric Inbox', executableName: 'Fabric Inbox',
-  appBundleId: 'ai.passioncode.fabric-inbox', appCategoryType: 'public.app-category.productivity',
+  protocols: [{ name: 'Fabric Inbox connect link', schemes: ['fabric-inbox'] }], appBundleId: 'ai.passioncode.fabric-inbox', appCategoryType: 'public.app-category.productivity',
   platform: 'darwin', arch, electronVersion: require('electron/package.json').version,
   out: path.join(desktop, '..', 'release'), overwrite: true, asar: true, prune: true,
   icon: path.join(desktop, 'icon.icns'),

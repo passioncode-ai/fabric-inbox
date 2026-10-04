@@ -115,6 +115,7 @@ Closing the window destroys it and its renderer; the app stays in the Dock doing
 | Agent-chat WebSocket | opening the Agent panel | one connection | — | closing the panel or window | 0 |
 | Cloudflare API calls of **Create my server** | the person, in setup | one deploy, 60 s per call, ≤2 retries | — | the deploy's end; ⌘Q cuts it and a re-run resumes | 0 |
 | Profile sweep (`desktop/profile.cjs`) | each launch, before any window | once | — | itself | — |
+| A `fabric-inbox://connect` link (`desktop/connect.cjs`, ADR-0115) | a hub on this Mac opens the link; Launch Services starts the app if needed | per link: one Allow/Deny dialog, one key request to the server, one POST to the hub's loopback callback (10 s deadline) | handled the same way; a sign-in opens the mail window | the link's end | 0 |
 
 The app owns **no launchd label, no login item, no listening port, no child process, no
 per-session server and no Keychain item read on a timer**. The agent protocol (`/mcp`) is served by

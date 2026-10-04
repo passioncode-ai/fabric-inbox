@@ -4,6 +4,8 @@
  * the version read so two changes at once never lose one. It holds no secret: a Client Secret
  * is shown once when the key is made and is kept only by Cloudflare and the agent.
  */
+import { normaliseAccounts } from "./scope";
+
 export const AGENT_KEYS_KEY = "config/agent-keys.json";
 
 export const LEVELS = ["read", "mail", "admin"] as const;
@@ -25,12 +27,17 @@ export interface AgentKey {
   dailySendLimit: number;
   createdAt: string;
   expiresAt: string | null;
+  /**
+   * The mailboxes this key may reach ("cloudflare:<address>" or "gmail:<id>"), or null for the whole
+   * workspace (AP-11). Only Read and Mail keys can be limited; an empty list reaches nothing.
+   */
+  accounts: string[] | null;
 }
 
 /** Who is calling the protocol, after Access and the key registry. */
 export type Principal =
-  | { kind: "owner"; label: string; level: "admin"; send: "send"; dailySendLimit: null; keyId: null }
-  | { kind: "agent"; label: string; level: Level; send: SendMode; dailySendLimit: number; keyId: string };
+  | { kind: "owner"; label: string; level: "admin"; send: "send"; dailySendLimit: null; keyId: null; accounts: null }
+  | { kind: "agent"; label: string; level: Level; send: SendMode; dailySendLimit: number; keyId: string; accounts: readonly string[] | null };
 
 const rank: Record<Level, number> = { read: 0, mail: 1, admin: 2 };
 export const levelAllows = (have: Level, need: Level) => rank[have] >= rank[need];
@@ -42,6 +49,7 @@ function normaliseKey(raw: unknown): AgentKey | null {
   const level = LEVELS.includes(k.level as Level) ? (k.level as Level) : "read";
   const send = SEND_MODES.includes(k.send as SendMode) ? (k.send as SendMode) : "drafts";
   const limit = Number(k.dailySendLimit);
+  const accounts = normaliseAccounts(k.accounts);
   return {
     id: k.id, clientId: k.clientId,
     name: typeof k.name === "string" && k.name ? k.name : k.clientId,
@@ -49,6 +57,8 @@ function normaliseKey(raw: unknown): AgentKey | null {
     dailySendLimit: Number.isInteger(limit) && limit >= 0 ? Math.min(limit, MAX_DAILY_SENDS) : DEFAULT_DAILY_SENDS,
     createdAt: typeof k.createdAt === "string" ? k.createdAt : new Date(0).toISOString(),
     expiresAt: typeof k.expiresAt === "string" ? k.expiresAt : null,
+    // A limit on an Admin key cannot hold (admin tools act on the whole workspace): it reaches nothing.
+    accounts: accounts && level === "admin" ? [] : accounts,
   };
 }
 
@@ -90,13 +100,13 @@ export interface AccessClaims { email?: unknown; common_name?: unknown; sub?: un
  */
 export function principalFor(claims: AccessClaims, keys: AgentKey[], now = Date.now()): Principal | null {
   if (typeof claims.email === "string" && claims.email)
-    return { kind: "owner", label: claims.email, level: "admin", send: "send", dailySendLimit: null, keyId: null };
+    return { kind: "owner", label: claims.email, level: "admin", send: "send", dailySendLimit: null, keyId: null, accounts: null };
   if (typeof claims.common_name !== "string" || !claims.common_name) return null;
   const key = keys.find((k) => k.clientId === claims.common_name);
   if (!key) return null;
   if (key.expiresAt && Date.parse(key.expiresAt) <= now) return null;
   // An admin key can make rules and reply agents that send; it is never Drafts only (agent-keys.ts sendFor).
-  return { kind: "agent", label: key.name, level: key.level, send: key.level === "admin" ? "send" : key.send, dailySendLimit: key.dailySendLimit, keyId: key.id };
+  return { kind: "agent", label: key.name, level: key.level, send: key.level === "admin" ? "send" : key.send, dailySendLimit: key.dailySendLimit, keyId: key.id, accounts: key.accounts };
 }
 
 /** A service token: no person behind it. */

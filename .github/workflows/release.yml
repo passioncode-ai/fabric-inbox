@@ -1,0 +1,216 @@
+# The release: the Developer ID disk image, signed with the organization's CI Developer ID,
+# notarized and stapled (app first, then the image made from the stapled app); then attested
+# (Sigstore), summed and GPG-signed, and published. Beside it, the Mac App Store package, signed
+# with the CI-only store identities and uploaded to App Store Connect when the release publishes.
+# Signing happens only here, in the protected `release` environment: approved by a
+# person from release-approvers, who may be whoever pushed the tag; an agent never
+# approves (passioncode-ai/.github release-signing/README.md). A published release is never rewritten: a fix is a new tag.
+#
+# Release:    push an annotated vX.Y.Z tag on the reviewed release commit.
+# Rehearsal:  push vX.Y.Z-rc.N (the push trigger ignores it), then
+#             gh workflow run release.yml --ref vX.Y.Z-rc.N -f publish=false
+#             The signed set and the store package are kept as workflow artifacts; no release is
+#             created and nothing is uploaded to App Store Connect.
+# Procedure and what each job proves: docs/release.md.
+name: release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "false = rehearsal: sign, notarize and attest, create no release, upload nothing to the App Store"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Two runs for one tag would race for the same release and the same store build number.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Not signing, so it needs no approval: the repository's gate on the tagged commit, and the
+  # version and store build number the signing jobs use.
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      build-number: ${{ steps.version.outputs.build-number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: The tag names the version every manifest carries
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$REF_TYPE" == tag ]] || { echo "::error::Run the release on a tag (vX.Y.Z or vX.Y.Z-rc.N), not on $REF_TYPE $TAG."; exit 1; }
+          version=$(node -p 'require("./desktop/package.json").version')
+          build=$(node scripts/app-store-connect.mjs build-number "$TAG")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build-number=$build" >> "$GITHUB_OUTPUT"
+          echo "Fabric Inbox $version from $TAG; Mac App Store build number $build."
+      - run: npm ci
+      - name: Tests (Worker code in workerd, no network)
+        run: npm test
+      - name: Types
+        run: npm run typecheck
+
+  macos:
+    needs: gate
+    runs-on: macos-latest
+    environment: release
+    timeout-minutes: 120
+    env:
+      VERSION: ${{ needs.gate.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0 (uvx runs dmgbuild for the image's Finder layout)
+      - run: npm ci
+      - id: sign
+        uses: passioncode-ai/.github/actions/apple-signing@v1
+        with:
+          developer-id-p12-b64: ${{ secrets.APPLE_DEVELOPER_ID_P12_B64 }}
+          p12-password: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          team-id: ${{ vars.APPLE_TEAM_ID }}
+      - name: Build the app, signed with the Developer ID
+        env:
+          IDENTITY: ${{ steps.sign.outputs.identity }}
+        run: node desktop/dist-mac.mjs --stage app --identity "$IDENTITY"
+      - id: notarize-app
+        uses: passioncode-ai/.github/actions/notarize@v1
+        with:
+          path: release/ci/Fabric Inbox.app
+          asc-key-id: ${{ secrets.ASC_KEY_ID }}
+          asc-issuer-id: ${{ secrets.ASC_ISSUER_ID }}
+          asc-key-p8-b64: ${{ secrets.ASC_API_KEY_P8_B64 }}
+      - name: The disk image, from the stapled app, signed
+        env:
+          IDENTITY: ${{ steps.sign.outputs.identity }}
+          SUBMISSION: ${{ steps.notarize-app.outputs.submission }}
+        run: node desktop/dist-mac.mjs --stage image --identity "$IDENTITY" --submission "$SUBMISSION"
+      - id: notarize-image
+        uses: passioncode-ai/.github/actions/notarize@v1
+        with:
+          path: release/Fabric-Inbox-${{ needs.gate.outputs.version }}.dmg
+          asc-key-id: ${{ secrets.ASC_KEY_ID }}
+          asc-issuer-id: ${{ secrets.ASC_ISSUER_ID }}
+          asc-key-p8-b64: ${{ secrets.ASC_API_KEY_P8_B64 }}
+      - name: Assess the image, write the receipt
+        env:
+          SUBMISSION: ${{ steps.notarize-image.outputs.submission }}
+        run: node desktop/dist-mac.mjs --stage finish --submission "$SUBMISSION"
+      # The receipt ships beside the image; the `.sha256` does not: release-publish's GPG-signed
+      # SHA256SUMS covers every file of the release.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-macos
+          path: |
+            release/Fabric-Inbox-${{ needs.gate.outputs.version }}.dmg
+            release/Fabric-Inbox-${{ needs.gate.outputs.version }}.receipt.json
+          if-no-files-found: error
+      - if: always()
+        uses: passioncode-ai/.github/actions/apple-signing/cleanup@v1
+
+  # The Mac App Store package. It is not a release file (only the store installs it), so its
+  # artifact is not named release-*; it is uploaded to App Store Connect only when publishing.
+  mas:
+    needs: gate
+    runs-on: macos-latest
+    environment: release
+    timeout-minutes: 120
+    env:
+      PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+      BUILD_NUMBER: ${{ needs.gate.outputs.build-number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: The App Store Connect app record exists (required to publish; a rehearsal only reports it)
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_API_KEY_P8_B64: ${{ secrets.ASC_API_KEY_P8_B64 }}
+        run: |
+          if [[ "$PUBLISH" == true ]]; then node scripts/app-store-connect.mjs check-record
+          else node scripts/app-store-connect.mjs check-record --warn-only; fi
+      - run: npm ci
+      - id: sign
+        uses: passioncode-ai/.github/actions/apple-signing@v1
+        with:
+          developer-id-p12-b64: ${{ secrets.APPLE_DEVELOPER_ID_P12_B64 }}
+          p12-password: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          team-id: ${{ vars.APPLE_TEAM_ID }}
+          distribution-p12-b64: ${{ secrets.APPLE_DISTRIBUTION_P12_B64 }}
+          installer-p12-b64: ${{ secrets.APPLE_INSTALLER_P12_B64 }}
+          mas-p12-password: ${{ secrets.APPLE_MAS_P12_PASSWORD }}
+      - name: The provisioning profile, outside the repository
+        env:
+          MAS_PROVISION_PROFILE_B64: ${{ secrets.MAS_PROVISION_PROFILE_B64 }}
+        run: |
+          [[ -n "$MAS_PROVISION_PROFILE_B64" ]] || { echo "::error::MAS_PROVISION_PROFILE_B64 is empty; is the release environment's secret set?"; exit 1; }
+          ( umask 077; printf '%s' "$MAS_PROVISION_PROFILE_B64" | base64 --decode > "$RUNNER_TEMP/fabric-inbox.provisionprofile" )
+      - name: Build the store package, signed with the Mac App Store identities
+        id: build
+        env:
+          TEAM: ${{ vars.APPLE_TEAM_ID }}
+          APP_IDENTITY: ${{ steps.sign.outputs.mas-app-identity }}
+          INSTALLER_IDENTITY: ${{ steps.sign.outputs.mas-installer-identity }}
+          REVISION: ${{ github.sha }}
+        run: |
+          node desktop/mas-package.mjs --mode distribution --arch arm64 --team "$TEAM" \
+            --identity "$APP_IDENTITY" --installer-identity "$INSTALLER_IDENTITY" \
+            --profile "$RUNNER_TEMP/fabric-inbox.provisionprofile" \
+            --build-number "$BUILD_NUMBER" --revision "$REVISION" --build
+          out="release/mas-distribution-arm64-$BUILD_NUMBER-${REVISION:0:12}"
+          [[ -f "$out/Fabric Inbox.pkg" ]] || { echo "::error::no package at $out/Fabric Inbox.pkg"; exit 1; }
+          echo "dir=$out" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mas-pkg-${{ needs.gate.outputs.version }}-${{ needs.gate.outputs.build-number }}
+          path: |
+            ${{ steps.build.outputs.dir }}/Fabric Inbox.pkg
+            ${{ steps.build.outputs.dir }}/build-receipt.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload to App Store Connect
+        if: ${{ env.PUBLISH == 'true' }}
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_API_KEY_P8_B64: ${{ secrets.ASC_API_KEY_P8_B64 }}
+          PKG_DIR: ${{ steps.build.outputs.dir }}
+        run: node scripts/app-store-connect.mjs upload "$PKG_DIR/Fabric Inbox.pkg"
+      - if: always()
+        run: rm -f "$RUNNER_TEMP/fabric-inbox.provisionprofile"
+      - if: always()
+        uses: passioncode-ai/.github/actions/apple-signing/cleanup@v1
+
+  # The Developer ID release. The store job does not hold it: a store upload Apple refuses (for
+  # example while the app record is missing) fails its own job and leaves the disk image released.
+  publish:
+    needs: [gate, macos]
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    uses: passioncode-ai/.github/.github/workflows/release-publish.yml@v1
+    with:
+      publish: ${{ github.event_name == 'push' || inputs.publish }}
+    secrets: inherit

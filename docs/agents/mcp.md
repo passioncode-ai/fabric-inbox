@@ -46,6 +46,28 @@ and Policies — Edit** to make keys (`TOKEN_PERMISSIONS` in `workers/routing/cl
   An **`admin` key always can send**: it can create rules and reply agents that send by themselves,
   which its daily limit does not count. The owner, signed in through Access, is `admin` and sends
   without a limit.
+- **A Read or Mail key can be limited to mailboxes** (AP-11): it names its accounts
+  (`cloudflare:<address>`, `gmail:<id>`) and reaches those and nothing else. It sees only the tools
+  whose every route stays inside one mailbox or reads the feed (`toolFitsScope`, read from each
+  tool's `routes`, so a new tool that touches the whole workspace is hidden from limited keys by
+  default), and every route a tool calls passes `scopedApi` (`workers/mcp/scope.ts`), which refuses
+  any other mailbox or shared setting with `403` and the mailboxes it may use. The feed is narrowed
+  to its mailboxes in the request and in the answer (issues and cursors that name another mailbox are
+  dropped); categories belong to the workspace, so a limited key cannot filter by one. With more
+  than one mailbox, `list_messages` without `accountId` returns each one's first page merged, newest
+  first, and pages one mailbox at a time. An Admin key manages the whole workspace and cannot be
+  limited; a limit that names nothing valid reaches nothing and lists no tools.
+- **A hub narrows its own key per call** with the header `X-Fabric-Accounts: <account>[,<account>…]`
+  (`narrowPrincipal`, `workers/mcp/scope.ts`). The call then behaves exactly like a key limited to
+  those mailboxes; the header intersects with the key's own limit, so it can narrow and never widen,
+  and a header naming nothing valid is refused at the door. Fabric sends it on every call it makes
+  for one of its agents (ADR-0115 in passioncode-ai/fabric).
+- **A hub on this Mac can be connected by the owner's consent** instead of a copied secret: the
+  desktop app answers a `fabric-inbox://connect?client=…&client_id=…&level=…&callback=http://127.0.0.1:<port>/…&state=…`
+  link with a native Allow/Deny prompt, makes the key through the owner's own signed-in session —
+  the Agent access route, so a person still issues it — and posts `{state, outcome, server, mcpUrl,
+  key, clientSecret}` once to the loopback callback; a key the callback did not take within 10
+  seconds is revoked (`desktop/connect.cjs`, SCN-047).
 - Keys are issued by a person in the app. No tool makes, lists or revokes keys.
 - How it is enforced: Access admits only a registered service token or the owner at the edge; the
   server lets anything but a signed-in person reach `/mcp` only (`identityMayUse`, `workers/mcp/keys.ts`);

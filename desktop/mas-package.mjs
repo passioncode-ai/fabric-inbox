@@ -57,7 +57,7 @@ export function validateProfile(c, p, certificateHash, now = Date.now()) {
   requireThat(Number.isFinite(Date.parse(p.ExpirationDate)) && Date.parse(p.ExpirationDate) > now, 'Profile has expired or has no valid expiry.');
   const e = p.Entitlements || {};
   requireThat(e['com.apple.developer.team-identifier'] === c.team, 'Profile entitlement team does not match.');
-  requireThat(p.AppIdentifierPrefix?.length === 1 && p.AppIdentifierPrefix[0] === c.team, 'This signing configuration requires the App ID prefix to equal the team; legacy prefixes need explicit review.');
+  requireThat(p.ApplicationIdentifierPrefix?.length === 1 && p.ApplicationIdentifierPrefix[0] === c.team, 'This signing configuration requires the App ID prefix to equal the team; legacy prefixes need explicit review.');
   requireThat(e['com.apple.application-identifier'] === `${c.team}.${BUNDLE_ID}`, 'Profile must authorize the exact bundle ID; wildcard App IDs are refused.');
   requireThat(p.CertificateHashes?.includes(certificateHash), 'Signing certificate is not authorized by this profile.');
   requireThat(p.ProvisionsAllDevices !== true, 'All-device profiles are not Mac App Store profiles.');
@@ -129,8 +129,36 @@ export function mainEntitlements(c) {
 export function childEntitlements() {
   return { 'com.apple.security.app-sandbox': true, 'com.apple.security.inherit': true };
 }
-export function validateEntitlements(actual, expected) {
-  requireThat(JSON.stringify(Object.entries(actual).sort()) === JSON.stringify(Object.entries(expected).sort()), 'Signed entitlements differ from the declared policy.');
+export function validateEntitlements(actual, expected, label = 'the application') {
+  // Name what differs: entitlement keys are policy, not secrets, and a bare "differ" sent the
+  // first CI rehearsal (v0.9.0-rc.1) back with nothing to act on.
+  const keys = new Set([...Object.keys(actual), ...Object.keys(expected)]);
+  const missing = [], unexpected = [], different = [];
+  for (const k of [...keys].sort()) {
+    if (!(k in actual)) missing.push(k);
+    else if (!(k in expected)) unexpected.push(k);
+    else if (JSON.stringify(actual[k]) !== JSON.stringify(expected[k])) different.push(k);
+  }
+  requireThat(!missing.length && !unexpected.length && !different.length,
+    `Signed entitlements differ from the declared policy for ${label}: missing [${missing.join(', ')}], unexpected [${unexpected.join(', ')}], different [${different.join(', ')}].`);
+}
+// What a signed file must carry. codesign prints nothing for code signed without entitlements;
+// Electron's nested libraries and frameworks are such code, so an empty answer is legitimate for
+// them and their check is skipped (null). The application and every nested .app (the helpers)
+// must carry entitlements: an empty answer there is refused, naming the file. Before 2026-10-03 the
+// empty answer reached plistlib and failed as "python3 failed" (first CI rehearsal, v0.8.2-rc.2).
+export function expectedEntitlementsFor(file, app, c, signedEntitlements) {
+  const empty = !String(signedEntitlements || '').trim();
+  // The application's own executable (Contents/MacOS/<name>) is signed as part of the bundle and
+  // carries the application's entitlements, not a nested helper's (rehearsal v0.9.0-rc.2).
+  const mainExecutable = path.join(path.resolve(app), 'Contents', 'MacOS', path.basename(app, '.app'));
+  const isApp = path.resolve(file) === path.resolve(app) || path.resolve(file) === mainExecutable;
+  const bundle = isApp || /\.app$/.test(file);
+  if (empty) {
+    requireThat(!bundle, `Signed without entitlements: ${path.basename(file)}; an application bundle must carry them.`);
+    return null;
+  }
+  return isApp ? mainEntitlements(c) : childEntitlements();
 }
 function xmlPlist(value) {
   return run('python3', ['-c', 'import sys,json,plistlib;sys.stdout.buffer.write(plistlib.dumps(json.load(sys.stdin)))'], { input: JSON.stringify(value) });
@@ -166,7 +194,7 @@ export async function build(c, checked) {
     mkdirSync(destination, { recursive: true });
     const apps = await packager({
       dir: path.join(temp, 'desktop'), name: 'Fabric Inbox', executableName: 'Fabric Inbox',
-      appBundleId: BUNDLE_ID, appCategoryType: 'public.app-category.productivity',
+      protocols: [{ name: 'Fabric Inbox connect link', schemes: ['fabric-inbox'] }], appBundleId: BUNDLE_ID, appCategoryType: 'public.app-category.productivity',
       platform: 'mas', arch: c.arch, electronVersion, buildVersion: c['build-number'],
       out: destination, overwrite: false, asar: true, prune: true, osxSign: false,
       ignore: [/\/(?:mas-package|package|dist-mac|hardening|release-retention)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.icns$/, /\/dmg-background/],
@@ -192,8 +220,10 @@ export async function build(c, checked) {
     requireThat(signedChildren.size > 0, 'No nested Electron code was signed.');
     for (const file of [app, ...signedChildren]) {
       const signedEntitlements = run('/usr/bin/codesign', ['--display', '--entitlements', '-', '--xml', file]);
+      const expected = expectedEntitlementsFor(file, app, c, signedEntitlements);
+      if (expected === null) continue;
       const decoded = JSON.parse(run('python3', ['-c', 'import sys,plistlib,json;print(json.dumps(plistlib.loads(sys.stdin.buffer.read())))'], { input: signedEntitlements }));
-      validateEntitlements(decoded, file === app ? mainEntitlements(c) : childEntitlements());
+      validateEntitlements(decoded, expected, path.relative(path.dirname(app), file) || path.basename(file));
     }
     const hardening = verifyHardening(app);
     const info = plistRead(path.join(app, 'Contents/Info.plist'));

@@ -52,6 +52,7 @@
 | SCN-044 | See what agents changed, and revoke a key | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
 | SCN-045 | Choose which Cloudflare accounts show | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | not audited |
 | SCN-046 | Connect another Cloudflare account | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | not audited |
+| SCN-047 | Connect a hub on this Mac by allowing it | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -899,15 +900,15 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** The server has its Cloudflare token with Access: Service Tokens and Access: Apps and Policies.
 - **Steps:**
   1. Open Agent access from the sidebar -> what it is, and that these are not the reply agents.
-  2. Name the agent, choose Read, Mail or Admin, and for Mail or Admin Drafts only or Can send with a daily number; choose when it expires; Make key.
+  2. Name the agent, choose Read, Mail or Admin, and for Mail or Admin Drafts only or Can send with a daily number; for Read or Mail choose All mailboxes or Only these mailboxes and tick them (an Admin key reaches every mailbox); choose when it expires; Make key.
   3. The key's Client ID and Client Secret, the Claude Code command and the JSON for other clients are shown once, each with Copy; I saved it closes them.
-- **Expected result:** The agent connects to /mcp with the two headers and sees only the tools its level and sending allow.
-- **Alt paths:** The server has no Cloudflare token: the form is replaced by where to add one.
-- **UI elements:** SCR-15 (name, Level, Sending, Expires after, Make key, the one-time secret panel with Copy).
+- **Expected result:** The agent connects to /mcp with the two headers and sees only the tools its level and sending allow; a key limited to mailboxes sees only the tools that stay inside a mailbox, and is refused, with the mailboxes it may use named, on any other mailbox or shared setting. The key list shows each key's mailboxes (All mailboxes, or Only ...).
+- **Alt paths:** The server has no Cloudflare token: the form is replaced by where to add one. Only these mailboxes with none ticked: Make key stays off. A limited key whose only mailbox is gone gets an empty list with the reason, not a failure.
+- **UI elements:** SCR-15 (name, Level, Sending, Mailboxes, Expires after, Make key, the one-time secret panel with Copy).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A token without the permission names it; a key Cloudflare made but the server could not save is deleted again, and the error says to try again.
 - **Status:** draft
-- **Coverage:** app/routes/agent-access.tsx, workers/routes/agent-keys.ts, workers/mcp/access.ts, tests/mcp-auth.test.ts, tests/mcp-workerd.test.ts
+- **Coverage:** app/routes/agent-access.tsx, workers/routes/agent-keys.ts, workers/mcp/access.ts, workers/mcp/scope.ts, tests/mcp-auth.test.ts, tests/mcp-scope.test.ts, tests/mcp-workerd.test.ts, tests/agent-access-ui.test.ts
 - **Product:** unobserved
 - **Today:** Built in 0.7.0; the first live key is made at the release.
 
@@ -969,3 +970,23 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** workers/routes/cloudflare-accounts.ts, workers/relay/install.ts, app/components/domains/Accounts.tsx, tests/cloudflare-accounts.test.ts, tests/cloudflare-relay.test.ts
 - **Product:** unobserved
 - **Today:** Operator, 2026-09-30: "the ones that are missing are connected from the connection window". Built in 0.8.0.
+
+### SCN-047: Connect a hub on this Mac by allowing it
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07, JTBD-03, JRN-03; RE-001
+- **Entry point:** SCR-15
+- **Preconditions:** The app is set up with its server and signed in; a local hub (Fabric) opens a `fabric-inbox://connect` link with its name, the level it needs, a callback on this Mac and a one-time request id.
+- **Steps:**
+  1. The link opens Fabric Inbox -> a native prompt: "Connect Fabric?", who asks, on which server, the level in plain words, that the key goes only to this Mac (its loopback address) and that it is listed under Agent access; Deny is the default.
+  2. Allow -> the app makes the key with the owner's own session (the Agent access route) and hands it to the callback once -> "Fabric is connected".
+  3. The key appears on SCR-15 under its name like any other key; Revoke… there ends it.
+- **Expected result:** A hub on this Mac gets its own key without anyone copying a Client ID or Secret. Every call the hub makes for one of its agents carries X-Fabric-Accounts, so it reaches only the mailboxes that agent was allowed.
+- **Alt paths:** Deny: nothing is made and the hub hears "denied". No server set up yet: the setup window opens and the hub hears why. The sign-in has lapsed: the mail window opens to sign in, nothing is made, and the person connects again from the hub. A link that is not a valid connect link (a callback off this Mac, an unknown level, no request id) is refused with the reason and nothing is asked.
+- **UI elements:** Native prompt (Deny, Allow), the "Connected" or "Not connected" notice, SCR-15 key list.
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** The hub does not receive the key within 10 seconds: the key is revoked at once and the notice says so (or says to revoke it on SCR-15 if Cloudflare refused); the server refuses to make a key: the notice quotes its reason.
+- **Status:** draft
+- **Coverage:** desktop/connect.cjs, desktop/main.cjs, workers/mcp/scope.ts, workers/mcp/handler.ts, tests/desktop-connect.test.ts, tests/mcp-scope.test.ts, tests/mcp-workerd.test.ts
+- **Product:** unobserved
+- **Today:** Operator, 2026-10-03: "something pops up, you authorise, and it goes on" — the product connects without copying (ADR-0115 in passioncode-ai/fabric).

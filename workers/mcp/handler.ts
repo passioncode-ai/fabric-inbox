@@ -8,6 +8,7 @@ import { api } from "../api";
 import type { Env } from "../types";
 import { principalFor, readAgentKeys, type AccessClaims, type Principal } from "./keys";
 import { ApiError, buildServer, type Api, type Ledger } from "./protocol";
+import { NARROW_HEADER, narrowPrincipal, scopedApi } from "./scope";
 import { TOOLS } from "./tools";
 import { instructionsFor, PROTOCOL_NAME } from "./instructions";
 import { version } from "../../package.json";
@@ -60,7 +61,7 @@ const refuse = (status: number, message: string) =>
   new Response(JSON.stringify({ jsonrpc: "2.0", error: { code: -32001, message }, id: null }), { status, headers: { "Content-Type": "application/json" } });
 
 export async function resolvePrincipal(claims: AccessClaims | null, env: Env, dev: boolean): Promise<Principal | null> {
-  if (!claims) return dev ? { kind: "owner", label: "local development", level: "admin", send: "send", dailySendLimit: null, keyId: null } : null;
+  if (!claims) return dev ? { kind: "owner", label: "local development", level: "admin", send: "send", dailySendLimit: null, keyId: null, accounts: null } : null;
   const keys = claims.common_name ? await readAgentKeys(env.BUCKET) : [];
   return principalFor(claims, keys);
 }
@@ -89,7 +90,7 @@ export async function handleMcp(request: Request, env: Env, ctx: ExecutionContex
   if (unsafe) return unsafe;
   let principal: Principal | null;
   try {
-    principal = await resolvePrincipal(claims, env, import.meta.env.DEV);
+    principal = narrowPrincipal(await resolvePrincipal(claims, env, import.meta.env.DEV), request.headers.get(NARROW_HEADER));
   } catch (error) {
     console.error(JSON.stringify({ event: "mcp.keys_unreadable", error: String(error) }));
     return refuse(503, "The agent keys could not be read; try again");
@@ -98,11 +99,17 @@ export async function handleMcp(request: Request, env: Env, ctx: ExecutionContex
     console.warn(JSON.stringify({ event: "mcp.refused", reason: claims?.common_name ? "unknown_or_expired_key" : "no_identity" }));
     return refuse(403, "This Access service token is not an agent key of this Fabric Inbox, or it has expired. Ask the owner for a key (Settings → Agent access).");
   }
+  // A limit that names nothing (a damaged list, or a narrowing header with no valid mailbox) reaches
+  // nothing: say so at the door rather than serve a server with no tools.
+  if (principal.accounts && !principal.accounts.length) {
+    console.warn(JSON.stringify({ event: "mcp.refused", reason: "empty_scope" }));
+    return refuse(403, "This key is limited to no mailbox here (its list, or the X-Fabric-Accounts header, names none that is valid).");
+  }
   const origin = new URL(request.url).origin;
   const server = buildServer(
     { name: PROTOCOL_NAME, version, instructions: instructionsFor(principal, origin) },
     TOOLS,
-    { api: inProcessApi(origin, env, ctx), principal },
+    { api: principal.accounts ? scopedApi(inProcessApi(origin, env, ctx), principal.accounts) : inProcessApi(origin, env, ctx), principal },
     ledgerFor(env),
   );
   return createMcpHandler(server, { route: "/mcp" })(request, env, ctx);

@@ -2,6 +2,18 @@
 // Inbox.app signed with Developer ID and the hardened runtime, inside a disk
 // image with an Applications shortcut — drag to install, like any Mac app.
 //
+// A published release is built only by .github/workflows/release.yml, in three stages, with the
+// identity the organization's apple-signing action names and notarization by its notarize action
+// (docs/release.md). The DMG is made from the stapled app, so notarization sits between stages:
+//
+//   --stage app   --identity NAME                    build and sign the app into release/ci/
+//   (workflow: notarize and staple release/ci/Fabric Inbox.app)
+//   --stage image --identity NAME [--submission ID]  the image from the stapled app, signed
+//   (workflow: notarize and staple release/Fabric-Inbox-<version>.dmg)
+//   --stage finish [--submission ID]                 assess the image, write the receipt and checksum
+//
+// Everything below is a local build: for debugging, never published or attached to a release.
+//
 //   npm run desktop:dmg                          signed with the one Developer ID identity found
 //   npm run desktop:dmg -- --notary-profile NAME notarized and stapled too (xcrun notarytool store-credentials NAME)
 //   npm run desktop:dmg -- --unsigned            local test image, not for sharing
@@ -83,22 +95,52 @@ function spawnOutput(command, args) {
 }
 const sha256 = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
 
+const STAGES = ['app', 'image', 'finish'];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function parseArgs(argv) {
-  const args = { unsigned: false, notaryProfile: '', identity: '', setups: [] };
+  const args = { unsigned: false, notaryProfile: '', identity: '', setups: [], stage: '', submission: '' };
+  const valued = { '--notary-profile': 'notaryProfile', '--identity': 'identity', '--stage': 'stage', '--submission': 'submission' };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--unsigned') args.unsigned = true;
     else if (a === '--setup') {
       requireThat(/^[a-z0-9-]{1,40}$/.test(argv[i + 1] || ''), 'Give a deployment name from deployments/, e.g. --setup owner.');
       args.setups.push(argv[++i]);
-    } else if (a === '--notary-profile' || a === '--identity') {
+    } else if (valued[a]) {
       requireThat(argv[i + 1] && !argv[i + 1].startsWith('--'), `Give a value for ${a}.`);
-      args[a === '--identity' ? 'identity' : 'notaryProfile'] = argv[++i];
-    } else throw new Error(`Unknown argument ${a}. Use --notary-profile NAME, --identity NAME or --unsigned.`);
+      args[valued[a]] = argv[++i];
+    } else throw new Error(`Unknown argument ${a}. Use --notary-profile NAME, --identity NAME, --unsigned, or --stage app|image|finish (the release workflow).`);
   }
-  requireThat(!(args.unsigned && (args.notaryProfile || args.identity)), '--unsigned cannot be combined with signing options.');
+  requireThat(!(args.unsigned && (args.notaryProfile || args.identity || args.stage)), '--unsigned cannot be combined with signing options.');
   requireThat(!args.notaryProfile || /^[A-Za-z0-9._-]{1,64}$/.test(args.notaryProfile), 'A notary profile name has letters, digits, dot, dash or underscore.');
+  if (args.stage) {
+    requireThat(STAGES.includes(args.stage), '--stage is app, image or finish.');
+    requireThat(!args.notaryProfile, 'A CI stage is notarized by the workflow (the shared notarize action); --notary-profile is the local path.');
+    requireThat(!args.setups.length, 'A CI release is the public build and never carries a setup.');
+    requireThat(args.stage === 'finish' || args.identity, `--stage ${args.stage} needs --identity (the apple-signing action's identity output).`);
+  }
+  requireThat(!args.submission || ['image', 'finish'].includes(args.stage), '--submission belongs to --stage image or finish.');
+  requireThat(!args.submission || UUID.test(args.submission), 'A notarization submission id is a UUID.');
   return args;
+}
+
+/** Where the CI stages keep the app and their state between workflow steps, and what they produce. */
+export function stagePaths(repoRoot, version) {
+  const dir = path.join(repoRoot, 'release', 'ci');
+  return {
+    dir, app: path.join(dir, 'Fabric Inbox.app'), state: path.join(dir, 'state.json'),
+    dmg: path.join(repoRoot, 'release', `Fabric-Inbox-${version}.dmg`),
+    receipt: path.join(repoRoot, 'release', `Fabric-Inbox-${version}.receipt.json`),
+  };
+}
+
+/** The state an earlier stage left, refused unless it was written for this commit and version. */
+export function checkStageState(state, revision, version) {
+  requireThat(state && typeof state === 'object' && state.receipt, 'No stage state in release/ci/. Run --stage app first.');
+  requireThat(state.revision === revision, `The stage state was written for commit ${String(state.revision).slice(0, 12)}, but HEAD is ${revision.slice(0, 12)}; run --stage app again.`);
+  requireThat(state.version === version, `The stage state is for version ${state.version}, but desktop/package.json says ${version}; run --stage app again.`);
+  return state;
 }
 
 /** The single valid Developer ID Application identity, or the named one. */
@@ -154,10 +196,8 @@ export function checksumLine(sha, fileName) {
   return `${sha}  ${fileName}\n`;
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  requireThat(process.platform === 'darwin', 'A macOS disk image is built on macOS.');
-  requireThat(statfsSync(root).bavail * statfsSync(root).bsize > MIN_FREE_BYTES, 'At least 3 GB of free disk space is needed.');
+/** What the build is made from: the committed version, Electron pin and release notes at HEAD. */
+function readSource() {
   const revision = run('git', ['rev-parse', 'HEAD']).trim();
   const dirty = run('git', ['status', '--porcelain', '--', 'desktop', 'package-lock.json']).trim().length > 0;
   const desktopPackage = JSON.parse(run('git', ['show', `${revision}:desktop/package.json`]));
@@ -170,6 +210,163 @@ async function main() {
   try { changelog = run('git', ['show', `${revision}:CHANGELOG.md`]); } catch { changelog = ''; }
   const notes = changelogSection(changelog, version);
   requireThat(notes, `The committed CHANGELOG.md has no section for ${version}; add "## ${version}" and commit it.`);
+  return { revision, dirty, version, electronVersion };
+}
+
+/** The workflow run that built it, or this machine: a local build is a debug build. */
+function builtBy() {
+  const { GITHUB_ACTIONS, GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID } = process.env;
+  return GITHUB_ACTIONS === 'true' && GITHUB_RUN_ID
+    ? `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`
+    : 'this machine (a debug build: never published)';
+}
+
+/** Temporary files stay inside release/ (git-ignored); returns the directory and resets TMPDIR to it. */
+function buildTempDir(out) {
+  // On 2026-09-28 files vanished from the system temp directory mid-build (spawn codesign ENOENT)
+  // while the disk was 99% full and other sessions were cleaning. electron-packager and
+  // os.tmpdir() both read TMPDIR.
+  const buildTemp = path.join(out, '.build-tmp');
+  rmSync(buildTemp, { recursive: true, force: true });
+  mkdirSync(buildTemp, { recursive: true });
+  process.env.TMPDIR = buildTemp + path.sep;
+  return buildTemp;
+}
+
+/** Signature checks on the packaged app, recorded in the receipt; the hardened runtime is required. */
+function checkSignedApp(app, identity, receipt) {
+  requireThat(tryRun('codesign', ['--verify', '--deep', '--strict', app]).ok, 'The signed app failed strict signature verification.');
+  receipt.signing = identity.name;
+  receipt.checks.appSignature = 'codesign --verify --deep --strict: valid';
+  receipt.checks.hardenedRuntime = /flags=0x10000\(runtime\)/.test(codesignDetails(app)) ? 'present' : 'missing';
+  requireThat(receipt.checks.hardenedRuntime === 'present', 'The app was signed without the hardened runtime; notarization would refuse it.');
+}
+
+/** The app must be notarized and stapled before it goes in an image; proven, then recorded. */
+function checkNotarizedApp(app, receipt) {
+  requireThat(tryRun('xcrun', ['stapler', 'validate', app]).ok, 'The app is not stapled; notarization of the app did not complete.');
+  receipt.checks.appStaple = 'stapler validate: valid';
+  const assessed = spctl(['--assess', '--type', 'execute', '-vv', app]);
+  const verdict = gatekeeper(assessed.out, assessed.ok);
+  requireThat(verdict.accepted, `Gatekeeper did not accept the app as notarized (source=${verdict.source}).`);
+  receipt.checks.appGatekeeper = `spctl -a -vv -t execute: accepted, source=${verdict.source}`;
+}
+
+/**
+ * Disk image: the app and an Applications shortcut over a background that says to drag it there.
+ * dmgbuild writes the Finder layout (.DS_Store) directly, so no Finder automation is involved;
+ * without uv the image is built by hdiutil with the default view, still installable by drag.
+ */
+function makeImage({ app, background, dmg, temp, identity, receipt }) {
+  const settings = path.join(temp, 'dmg-settings.py');
+  writeFileSync(settings, [
+    'import os',
+    `files = [${JSON.stringify(app)}]`,
+    "symlinks = {'Applications': '/Applications'}",
+    "icon_locations = {'Fabric Inbox.app': (140, 160), 'Applications': (400, 160)}",
+    `background = ${JSON.stringify(background)}`,
+    'window_rect = ((200, 120), (540, 340))',
+    "default_view = 'icon-view'",
+    'icon_size = 112',
+    'text_size = 13',
+    'show_status_bar = False',
+    'show_tab_view = False',
+    'show_toolbar = False',
+    'show_pathbar = False',
+    'show_sidebar = False',
+    "format = 'UDZO'",
+    "filesystem = 'HFS+'",
+    '',
+  ].join('\n'));
+  const built = tryRun('uvx', ['--from', 'dmgbuild==1.6.7', 'dmgbuild', '-s', settings, 'Fabric Inbox', dmg]);
+  if (built.ok) receipt.checks.windowLayout = 'icon view, app beside Applications, drag-to-install background (dmgbuild 1.6.7)';
+  else {
+    receipt.checks.windowLayout = `default view: dmgbuild unavailable (${built.out.split('\n').pop()?.slice(0, 160)}); the image still installs by drag`;
+    const stage = path.join(temp, 'stage');
+    mkdirSync(stage);
+    run('/usr/bin/ditto', [app, path.join(stage, 'Fabric Inbox.app')]);
+    symlinkSync('/Applications', path.join(stage, 'Applications'));
+    run('hdiutil', ['create', '-volname', 'Fabric Inbox', '-srcfolder', stage, '-fs', 'HFS+', '-format', 'UDZO', '-imagekey', 'zlib-level=9', '-ov', dmg]);
+  }
+  if (identity) {
+    run('codesign', ['--sign', identity.hash, '--timestamp', dmg]);
+    receipt.checks.imageSignature = tryRun('codesign', ['--verify', '--strict', dmg]).ok ? 'valid' : 'invalid';
+  }
+}
+
+/** Gatekeeper's verdict on a signed image, recorded; required when the image is notarized. */
+function assessImage(dmg, receipt, mustBeNotarized) {
+  const assess = spctl(['--assess', '--type', 'open', '--context', 'context:primary-signature', '-vv', dmg]);
+  const verdict = gatekeeper(assess.out, assess.ok);
+  receipt.gatekeeper = verdict.accepted ? `accepted, source=${verdict.source}`
+    : `not accepted: ${assess.out.split('\n').find((l) => l.includes('source=')) ?? assess.out.split('\n')[0]}`;
+  requireThat(verdict.accepted || !mustBeNotarized, `Gatekeeper did not accept the notarized image: ${receipt.gatekeeper}`);
+}
+
+/** The image's hash, its `.sha256` and the receipt beside it. */
+function writeReceipt(dmg, receipt, receiptFile) {
+  receipt.sha256 = sha256(dmg);
+  receipt.bytes = readFileSync(dmg).length;
+  receipt.checksumFile = `${path.basename(dmg)}.sha256`;
+  writeFileSync(`${dmg}.sha256`, checksumLine(receipt.sha256, path.basename(dmg)));
+  writeFileSync(receiptFile, JSON.stringify(receipt, null, 2) + '\n');
+  console.log(JSON.stringify(receipt, null, 2));
+}
+
+function readStageState(paths, src) {
+  let state = null;
+  try { state = JSON.parse(readFileSync(paths.state, 'utf8')); } catch { state = null; }
+  return checkStageState(state, src.revision, src.version);
+}
+
+/** CI stage 2: the image from the app the workflow notarized and stapled, signed by the same identity. */
+async function stageImage(args, src) {
+  const paths = stagePaths(root, src.version);
+  const state = readStageState(paths, src);
+  const { receipt } = state;
+  requireThat(existsSync(paths.app), `No app at ${path.relative(root, paths.app)}. Run --stage app first.`);
+  const identity = pickIdentity(run('security', ['find-identity', '-v', '-p', 'codesigning']), args.identity);
+  requireThat(identity.name === receipt.signing, 'The image is signed by the identity that signed the app.');
+  try { checkNotarizedApp(paths.app, receipt); } catch (error) {
+    throw new Error(`${error.message} Notarize and staple ${path.relative(root, paths.app)} (the shared notarize action) before --stage image.`);
+  }
+  if (args.submission) receipt.checks.appNotarySubmission = `${args.submission}: Accepted`;
+  const buildTemp = buildTempDir(path.join(root, 'release'));
+  const temp = mkdtempSync(path.join(buildTemp, 'fabric-dmg-'));
+  try {
+    run('/usr/bin/tar', ['-xf', '-', '-C', temp], { input: run('git', ['archive', src.revision, 'desktop/dmg-background.png'], { encoding: 'buffer' }) });
+    rmSync(paths.dmg, { force: true });
+    rmSync(`${paths.dmg}.sha256`, { force: true });
+    makeImage({ app: paths.app, background: path.join(temp, 'desktop', 'dmg-background.png'), dmg: paths.dmg, temp, identity, receipt });
+    requireThat(receipt.checks.imageSignature === 'valid', 'The signed image failed signature verification.');
+    writeFileSync(paths.state, JSON.stringify({ ...state, receipt }, null, 2) + '\n');
+    console.log(JSON.stringify({ stage: 'image', image: path.relative(root, paths.dmg), next: 'notarize and staple it, then --stage finish' }, null, 2));
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+    rmSync(buildTemp, { recursive: true, force: true });
+  }
+}
+
+/** CI stage 3: the image the workflow notarized and stapled, assessed; then the receipt and checksum. */
+function stageFinish(args, src) {
+  const paths = stagePaths(root, src.version);
+  const { receipt } = readStageState(paths, src);
+  requireThat(existsSync(paths.dmg) && receipt.checks.imageSignature === 'valid', `No signed image at ${path.relative(root, paths.dmg)}. Run --stage image first.`);
+  requireThat(tryRun('xcrun', ['stapler', 'validate', paths.dmg]).ok, `The image is not stapled. Notarize and staple ${path.relative(root, paths.dmg)} (the shared notarize action) before --stage finish.`);
+  if (args.submission) receipt.checks.notarySubmission = `${args.submission}: Accepted`;
+  receipt.notarization = 'accepted and stapled (release workflow, passioncode-ai/.github notarize action)';
+  assessImage(paths.dmg, receipt, true);
+  writeReceipt(paths.dmg, receipt, paths.receipt);
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  requireThat(process.platform === 'darwin', 'A macOS disk image is built on macOS.');
+  requireThat(statfsSync(root).bavail * statfsSync(root).bsize > MIN_FREE_BYTES, 'At least 3 GB of free disk space is needed.');
+  const src = readSource();
+  if (args.stage === 'image') return stageImage(args, src);
+  if (args.stage === 'finish') return stageFinish(args, src);
+  const { revision, dirty, version, electronVersion } = src;
   // Read and checked before anything is signed, so a missing or broken setup fails in seconds.
   const bundled = args.setups.map((name) => readDeploymentSetup(root, name));
 
@@ -181,17 +378,15 @@ async function main() {
 
   const out = path.join(root, 'release');
   mkdirSync(out, { recursive: true });
-  // Temporary files stay inside release/ (git-ignored): on 2026-09-28 files vanished from the
-  // system temp directory mid-build (spawn codesign ENOENT) while the disk was 99% full and other
-  // sessions were cleaning. electron-packager and os.tmpdir() both read TMPDIR.
-  const buildTemp = path.join(out, '.build-tmp');
-  rmSync(buildTemp, { recursive: true, force: true });
-  mkdirSync(buildTemp, { recursive: true });
-  process.env.TMPDIR = buildTemp + path.sep;
+  const buildTemp = buildTempDir(out);
   const name = `Fabric-Inbox-${version}${args.setups.length ? '-' + args.setups.join('-') : ''}${args.unsigned ? '-unsigned' : ''}`;
   const dmg = path.join(out, `${name}.dmg`);
-  rmSync(dmg, { force: true });
-  rmSync(`${dmg}.sha256`, { force: true });
+  const staged = args.stage === 'app' ? stagePaths(root, version) : null;
+  if (staged) rmSync(staged.dir, { recursive: true, force: true });
+  else {
+    rmSync(dmg, { force: true });
+    rmSync(`${dmg}.sha256`, { force: true });
+  }
   const temp = mkdtempSync(path.join(buildTemp, 'fabric-dmg-'));
   let builtApp = '';
   try {
@@ -213,7 +408,7 @@ async function main() {
     const { packager } = await import('@electron/packager');
     const [appDir] = await packager({
       dir: source, name: 'Fabric Inbox', executableName: 'Fabric Inbox', appVersion: version, buildVersion: version,
-      appBundleId: BUNDLE_ID, appCategoryType: 'public.app-category.productivity', icon: path.join(source, 'icon.icns'),
+      protocols: [{ name: 'Fabric Inbox connect link', schemes: ['fabric-inbox'] }], appBundleId: BUNDLE_ID, appCategoryType: 'public.app-category.productivity', icon: path.join(source, 'icon.icns'),
       platform: 'darwin', arch: 'universal', electronVersion, out: path.join(temp, 'out'), overwrite: true, asar: true, prune: true,
       ignore: [/\/(?:mas-package|package|dist-mac|hardening|release-retention)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.icns$/, /\/dmg-background/],
       extendInfo: { NSHumanReadableCopyright: 'Fabric Inbox — PassionCode.ai', NSRequiresAquaSystemAppearance: false, LSMinimumSystemVersion: '12.0' },
@@ -224,6 +419,7 @@ async function main() {
         identity: identity.hash,
         optionsForFile: () => ({ hardenedRuntime: true, entitlements: path.join(source, 'entitlements.mac.plist') }),
       } : undefined,
+      // In a CI stage the workflow notarizes; only the local path asks the packager to.
       osxNotarize: args.notaryProfile ? { keychainProfile: args.notaryProfile } : undefined,
     });
     const app = path.join(appDir, 'Fabric Inbox.app');
@@ -231,69 +427,27 @@ async function main() {
     const hardening = verifyHardening(app);
     const receipt = {
       product: 'Fabric Inbox', version, revision, dirtyDesktopSources: dirty, electronVersion, architectures: ['arm64', 'x86_64'],
-      builtAt: new Date().toISOString(), image: path.basename(dmg),
+      builtAt: new Date().toISOString(), builtBy: builtBy(), image: path.basename(staged ? staged.dmg : dmg),
       bundledSetups: bundled.length ? bundled.map(({ name, sha256 }) => ({ name, file: `deployments/${name}/setup.json`, sha256 })) : 'none (public build)',
       serverBundle: { version: serverManifest.version, revision: serverManifest.revision, modules: serverManifest.modules.length,
         assets: Object.keys(serverManifest.assets.files).length, manifestSha256: sha256(path.join(source, 'server-bundle', 'manifest.json')) },
       signing: 'unsigned', notarization: 'not requested',
       gatekeeper: 'not assessed', checks: { fuses: hardening.fuses, usageDescriptions: hardening.usageDescriptions },
     };
-    if (identity) {
-      requireThat(tryRun('codesign', ['--verify', '--deep', '--strict', app]).ok, 'The signed app failed strict signature verification.');
-      receipt.signing = identity.name;
-      receipt.checks.appSignature = 'codesign --verify --deep --strict: valid';
-      receipt.checks.hardenedRuntime = /flags=0x10000\(runtime\)/.test(codesignDetails(app)) ? 'present' : 'missing';
-      requireThat(receipt.checks.hardenedRuntime === 'present', 'The app was signed without the hardened runtime; notarization would refuse it.');
-    }
+    if (identity) checkSignedApp(app, identity, receipt);
     receipt.checks.architectures = run('lipo', ['-archs', path.join(app, 'Contents/MacOS/Fabric Inbox')]).trim();
-    if (args.notaryProfile) {
-      // The packager notarized and stapled the app (osxNotarize); prove both before it goes in the image.
-      requireThat(tryRun('xcrun', ['stapler', 'validate', app]).ok, 'The app is not stapled; notarization of the app did not complete.');
-      receipt.checks.appStaple = 'stapler validate: valid';
-      const assessed = spctl(['--assess', '--type', 'execute', '-vv', app]);
-      const verdict = gatekeeper(assessed.out, assessed.ok);
-      requireThat(verdict.accepted, `Gatekeeper did not accept the app as notarized (source=${verdict.source}).`);
-      receipt.checks.appGatekeeper = `spctl -a -vv -t execute: accepted, source=${verdict.source}`;
+    if (staged) {
+      // CI stage 1: the signed app waits in release/ci/ for the workflow to notarize and staple it.
+      mkdirSync(staged.dir, { recursive: true });
+      run('/usr/bin/ditto', [app, staged.app]);
+      receipt.notarization = 'pending: the release workflow notarizes the app, then the image';
+      writeFileSync(staged.state, JSON.stringify({ revision, version, receipt }, null, 2) + '\n');
+      console.log(JSON.stringify({ stage: 'app', app: path.relative(root, staged.app), next: 'notarize and staple it, then --stage image' }, null, 2));
+      return;
     }
-
-    // Disk image: the app and an Applications shortcut over a background that
-    // says to drag it there. dmgbuild writes the Finder layout (.DS_Store)
-    // directly, so no Finder automation is involved; without uv the image is
-    // built by hdiutil with the default view, still installable by drag.
-    const settings = path.join(temp, 'dmg-settings.py');
-    writeFileSync(settings, [
-      'import os',
-      `files = [${JSON.stringify(app)}]`,
-      "symlinks = {'Applications': '/Applications'}",
-      "icon_locations = {'Fabric Inbox.app': (140, 160), 'Applications': (400, 160)}",
-      `background = ${JSON.stringify(path.join(source, 'dmg-background.png'))}`,
-      'window_rect = ((200, 120), (540, 340))',
-      "default_view = 'icon-view'",
-      'icon_size = 112',
-      'text_size = 13',
-      'show_status_bar = False',
-      'show_tab_view = False',
-      'show_toolbar = False',
-      'show_pathbar = False',
-      'show_sidebar = False',
-      "format = 'UDZO'",
-      "filesystem = 'HFS+'",
-      '',
-    ].join('\n'));
-    const built = tryRun('uvx', ['--from', 'dmgbuild==1.6.7', 'dmgbuild', '-s', settings, 'Fabric Inbox', dmg]);
-    if (built.ok) receipt.checks.windowLayout = 'icon view, app beside Applications, drag-to-install background (dmgbuild 1.6.7)';
-    else {
-      receipt.checks.windowLayout = `default view: dmgbuild unavailable (${built.out.split('\n').pop()?.slice(0, 160)}); the image still installs by drag`;
-      const stage = path.join(temp, 'stage');
-      mkdirSync(stage);
-      run('/usr/bin/ditto', [app, path.join(stage, 'Fabric Inbox.app')]);
-      symlinkSync('/Applications', path.join(stage, 'Applications'));
-      run('hdiutil', ['create', '-volname', 'Fabric Inbox', '-srcfolder', stage, '-fs', 'HFS+', '-format', 'UDZO', '-imagekey', 'zlib-level=9', '-ov', dmg]);
-    }
-    if (identity) {
-      run('codesign', ['--sign', identity.hash, '--timestamp', dmg]);
-      receipt.checks.imageSignature = tryRun('codesign', ['--verify', '--strict', dmg]).ok ? 'valid' : 'invalid';
-    }
+    // The packager notarized and stapled the app (osxNotarize); prove both before it goes in the image.
+    if (args.notaryProfile) checkNotarizedApp(app, receipt);
+    makeImage({ app, background: path.join(source, 'dmg-background.png'), dmg, temp, identity, receipt });
     if (args.notaryProfile) {
       let submitted;
       try {
@@ -305,21 +459,10 @@ async function main() {
       requireThat(tryRun('xcrun', ['stapler', 'validate', dmg]).ok, 'The image was accepted but its staple does not validate.');
       receipt.notarization = 'accepted and stapled';
     }
-    if (identity) {
-      const assess = spctl(['--assess', '--type', 'open', '--context', 'context:primary-signature', '-vv', dmg]);
-      const verdict = gatekeeper(assess.out, assess.ok);
-      receipt.gatekeeper = verdict.accepted ? `accepted, source=${verdict.source}`
-        : `not accepted: ${assess.out.split('\n').find((l) => l.includes('source=')) ?? assess.out.split('\n')[0]}`;
-      requireThat(verdict.accepted || !args.notaryProfile, `Gatekeeper did not accept the notarized image: ${receipt.gatekeeper}`);
-    }
-    receipt.sha256 = sha256(dmg);
-    receipt.bytes = readFileSync(dmg).length;
-    receipt.checksumFile = `${path.basename(dmg)}.sha256`;
-    writeFileSync(`${dmg}.sha256`, checksumLine(receipt.sha256, path.basename(dmg)));
+    if (identity) assessImage(dmg, receipt, Boolean(args.notaryProfile));
     // LC-15: release/ keeps this release and the newest other one; older images go (receipts stay).
     receipt.prunedFromRelease = pruneReleases(out, { current: version });
-    writeFileSync(path.join(out, `${name}.receipt.json`), JSON.stringify(receipt, null, 2) + '\n');
-    console.log(JSON.stringify(receipt, null, 2));
+    writeReceipt(dmg, receipt, path.join(out, `${name}.receipt.json`));
   } finally {
     // The temporary app goes with the build; Launch Services forgets it first so no stale copy
     // answers an `open` (LC-15). Best effort: a failure here never fails a finished build.

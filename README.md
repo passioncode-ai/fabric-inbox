@@ -25,14 +25,18 @@ and [your deployment](#configure-your-deployment).
 
    ```sh
    gh release download -R passioncode-ai/fabric-inbox \
-     --pattern 'Fabric-Inbox-*.dmg' --pattern 'Fabric-Inbox-*.dmg.sha256'
-   shasum -a 256 -c Fabric-Inbox-*.dmg.sha256      # prints "Fabric-Inbox-<version>.dmg: OK"
+     --pattern 'Fabric-Inbox-*.dmg' --pattern 'SHA256SUMS*'
+   shasum -a 256 -c SHA256SUMS --ignore-missing    # prints "Fabric-Inbox-<version>.dmg: OK"
+   gh attestation verify Fabric-Inbox-*.dmg -R passioncode-ai/fabric-inbox   # built by this repository's release workflow
    open Fabric-Inbox-*.dmg                          # drag Fabric Inbox onto Applications
    spctl -a -vv "/Applications/Fabric Inbox.app"    # accepted, source=Notarized Developer ID
    ```
 
-   Add `v<version>` after `download` for a specific release. Building it yourself is in
-   [Install on a Mac](#install-on-a-mac).
+   `gpg --verify SHA256SUMS.asc SHA256SUMS` checks the sums against the organization's
+   [release key](https://github.com/passioncode-ai/.github/blob/main/release-signing/passioncode-release-signing.asc).
+   Add `v<version>` after `download` for a specific release; releases up to 0.8.2 carry
+   `Fabric-Inbox-<version>.dmg.sha256` (`shasum -a 256 -c` it) instead of `SHA256SUMS`. Building
+   it yourself is in [Install on a Mac](#install-on-a-mac).
 2. **Configure.** On first open choose **Create my server on Cloudflare**. You need a Cloudflare
    account (the free plan works) and an API token you create in its dashboard with the permissions
    the app lists ([setup → your own server](docs/desktop-mail/setup.md#your-own-server-created-by-the-mac-app-recommended)).
@@ -128,28 +132,50 @@ python3 docs/brand/lint.py                 # brand strings (warnings are advisor
 ```
 
 The checks above are the gate, run before you push. [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
-runs the same checks on every pull request and on `main` as a second opinion; the disk image,
-signing and notarization need the release machine and stay local ([docs/release.md](docs/release.md)).
+runs the same checks on every pull request and on `main` as a second opinion. Releases are
+signed, notarized and published only by [`.github/workflows/release.yml`](.github/workflows/release.yml)
+([Release](#release)).
 
 ## Install on a Mac
+
+Install a released image (Quick start above). Open the `.dmg` and drag **Fabric Inbox** onto
+**Applications**, like any Mac app. The image holds one universal app (Apple silicon and Intel),
+built from the tagged commit, signed with the organization's Developer ID and the hardened
+runtime, and notarized and stapled so Gatekeeper opens a downloaded copy without warnings; the
+receipt published beside the image states its commit, signature, both notarization submissions
+and the workflow run that built it.
+
+### Release
+
+A release is a tag: push `vX.Y.Z` on the reviewed release commit and
+[`.github/workflows/release.yml`](.github/workflows/release.yml) starts. A member of
+`release-approvers`, who may be whoever pushed the tag, approves its `release` environment (an
+agent never approves); the workflow
+then builds the image with the CI Developer ID, notarizes and staples the app and then the image
+made from it, builds and signs the Mac App Store package, attests every file (Sigstore), signs
+`SHA256SUMS` with the organization's GPG key, publishes the GitHub release and uploads the store
+package to App Store Connect. A rehearsal on a `vX.Y.Z-rc.N` tag
+(`gh workflow run release.yml --ref vX.Y.Z-rc.N -f publish=false`) does the same and publishes and
+uploads nothing. Procedure, the store build number and the human steps:
+[docs/release.md](docs/release.md).
+
+### Building it yourself (debug builds)
 
 ```sh
 npm run desktop:dmg                                   # release/Fabric-Inbox-<version>.dmg + .sha256 + .receipt.json
 npm run desktop:dmg -- --notary-profile fabric-notary # also notarized by Apple and stapled
+npm run desktop:dmg -- --unsigned                     # no identity needed
 ```
 
-Open the `.dmg` and drag **Fabric Inbox** onto **Applications**, like any Mac app. The image
-holds one universal app (Apple silicon and Intel), built from the committed `desktop/` sources,
-signed with the Developer ID identity and the hardened runtime, and with `--notary-profile`
-notarized and stapled so Gatekeeper opens a downloaded copy without warnings; the receipt
-beside the image states which is the case. With `--notary-profile` the build fails unless Apple
-accepted the app and the image and Gatekeeper names both `Notarized Developer ID`. Publishing a
-release: [docs/release.md](docs/release.md). The notary profile is made once from an App Store
-Connect API key with the Developer role (keep the key file outside Git, e.g. in
-`~/.appstoreconnect/private_keys`): `xcrun notarytool store-credentials fabric-notary --key
-<key.p8> --key-id <id> --issuer <issuer> --keychain ~/Library/Keychains/login.keychain-db`. Name
-the keychain: without `--keychain` the command can validate the key and not save the profile, and
-`notarytool` later answers "No Keychain password item found for profile".
+These sign with a Developer ID in your own keychain. They are for debugging the build and are
+never published, attached to a release or uploaded; their receipt says so (`builtBy`). With
+`--notary-profile` the build fails unless Apple accepted the app and the image and Gatekeeper
+names both `Notarized Developer ID`. The notary profile is made once from an App Store Connect API
+key with the Developer role (keep the key file outside Git): `xcrun notarytool store-credentials
+fabric-notary --key <key.p8> --key-id <id> --issuer <issuer> --keychain
+~/Library/Keychains/login.keychain-db`. Name the keychain: without `--keychain` the command can
+validate the key and not save the profile, and `notarytool` later answers "No Keychain password
+item found for profile".
 
 On first open the app offers **Create my server on Cloudflare** ([setup → Your own server](docs/desktop-mail/setup.md#your-own-server-created-by-the-mac-app-recommended)),
 a **setup** file (the server, its domains and addresses), or an existing server's address. The
@@ -159,7 +185,8 @@ personal build carries one: `npm run desktop:dmg -- --setup <name>` bundles your
 only ([Configure your deployment](#configure-your-deployment)). See [setup → Setups](docs/desktop-mail/setup.md#setups).
 
 Other builds: `npm run desktop:package -- arm64` (unsigned folder build for development),
-`npm run desktop:mas` (Mac App Store; [docs/app-store/mas.md](docs/app-store/mas.md)).
+`npm run desktop:mas` (Mac App Store packaging, built for release by the workflow;
+[docs/app-store/mas.md](docs/app-store/mas.md)).
 
 ## Deploy
 
