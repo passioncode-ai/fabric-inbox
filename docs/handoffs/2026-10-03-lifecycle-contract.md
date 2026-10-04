@@ -23,10 +23,10 @@ F1–F8). Base: `2da771d` on `main`. Branch: `claude/lifecycle-contract`.
 
 - **F2 notifications** — a product decision, not implemented: board **B-41**, awaiting the operator.
 - **Silent Keychain item under the Developer ID** — only a signed build shows it. The upgrade check
-  is in `docs/release.md` step 6 and on the board as **B-42**. No build here was signed or
-  notarized, and the built app was not launched: an unsigned binary would create the real
-  "Fabric Inbox Safe Storage" item with its own access list, which the signed release would then
-  have to ask about.
+  is in `docs/release.md` step 7 (step 6 before the merge with `main`) and on the board as
+  **B-42**. No build here was signed or notarized, and the built app was not launched: an
+  unsigned binary would create the real "Fabric Inbox Safe Storage" item with its own access list,
+  which the signed release would then have to ask about.
 - F4 (30-day Access sign-in) and F5 (a new token per server update) were not in this packet.
 
 ## Verification (local, this branch)
@@ -43,7 +43,22 @@ F1–F8). Base: `2da771d` on `main`. Branch: `claude/lifecycle-contract`.
 Planted defects watched: removing the retire call in `loadMail`, or not awaiting the start-up
 sweep, fails `tests/desktop-profile.test.ts`.
 
+## Landing, 2026-10-04
+
+`origin/main` (`dcc3879`) was merged into the branch (`a63ce20`), no rebase. Conflicts, each kept
+from both sides: `desktop/dist-mac.mjs` (main's `assessImage`/`writeReceipt` refactor; retention
+runs before the receipt is written), `desktop/main.cjs` (the profile sweep before any window, then
+main's `fabric-inbox://connect` drain), `tests/desktop-policy.test.ts` (the fake `require` serves
+both modules), `docs/release.md` (main's CI release flow; the hardening receipt moved to the disk
+image's stage 1 and the store build, the upgrade check to step 7), `docs/evidence/backlog.md`
+(main's board, which already carried B-41/B-42). `AGENTS.md → Lifecycle` gained a row for main's
+connect link; `CHANGELOG.md` gained an `## Unreleased` section for this packet.
+
+Gate on the merged tree: `npm ci`, `npm test` (524 tests, 523 pass, 1 skipped), `npm run
+typecheck`, `npm run build`, `npm run mcp:docs -- --check`, UX lint and doctor, brand lint,
+`git diff --check` — exit 0 each. No build was signed, and no image was built on this pass.
+
 ## Exact next task
 
 Review and land `claude/lifecycle-contract`. At the next signed release, run the upgrade check in
-`docs/release.md` step 6 and close B-42 with its receipt; the operator decides B-41.
+`docs/release.md` step 7 and close B-42 with its receipt; the operator decides B-41.
