@@ -60,5 +60,6 @@ typecheck`, `npm run build`, `npm run mcp:docs -- --check`, UX lint and doctor, 
 
 ## Exact next task
 
-Review and land `claude/lifecycle-contract`. At the next signed release, run the upgrade check in
-`docs/release.md` step 7 and close B-42 with its receipt; the operator decides B-41.
+Landed on `main` as `dc532a0` (2026-10-04; board B-46 done). At the next signed release, run the
+upgrade check in `docs/release.md` step 7 and close B-42 with its receipt; the operator decides
+B-41.
