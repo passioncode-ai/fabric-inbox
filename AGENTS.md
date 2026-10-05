@@ -120,6 +120,7 @@ Closing the window destroys it and its renderer; the app stays in the Dock doing
 | Agent-chat WebSocket | opening the Agent panel | one connection | — | closing the panel or window | 0 |
 | Cloudflare API calls of **Create my server** | the person, in setup | one deploy, 60 s per call, ≤2 retries | — | the deploy's end; ⌘Q cuts it and a re-run resumes | 0 |
 | Profile sweep (`desktop/profile.cjs`) | each launch, before any window | once | — | itself | — |
+| Anonymous usage counts (`desktop/analytics.cjs`, [docs/ANALYTICS.md](docs/ANALYTICS.md)); only a release image that carries an App Key | launch; the window coming forward | at launch `app_installed`/`app_started` (one batch); `app_active` once a UTC day with four count reads through the mail window's session; a refused send retried at the next focus after 60 s, then 10 min | nothing (no timer) | ⌘Q drops what waits | 0 requests, 0 timers |
 | A `fabric-inbox://connect` link (`desktop/connect.cjs`, ADR-0115) | a hub on this Mac opens the link; Launch Services starts the app if needed | per link: one Allow/Deny dialog, one key request to the server, one POST to the hub's loopback callback (10 s deadline) | handled the same way; a sign-in opens the mail window | the link's end | 0 |
 
 The app owns **no launchd label, no login item, no listening port, no child process, no
@@ -133,9 +134,12 @@ signed release must create it without a prompt (`docs/release.md`, upgrade check
   `EnableNodeCliInspectArguments` off; `EnableEmbeddedAsarIntegrityValidation`, `OnlyLoadAppFromAsar`
   and `EnableCookieEncryption` on; no `NS*UsageDescription` key outside `DECLARED_USAGE_DESCRIPTIONS`
   (empty). The receipt records both.
-- **Profile (LC-12).** Changing the server clears the old server's partition (storage, cache,
-  `Partitions/` directory) once its window is gone; each launch removes other servers' partitions and
-  `server.json.*` / `pending-setup.json.*` leftovers. No log files are written.
+- **Profile (LC-12).** Changing the server clears the old server's storage and cache once its window
+  is gone **and the new server (or its sign-in page) has answered**, so a mistyped address costs the
+  old server nothing; its `Partitions/` directory stays under the live session until the next launch.
+  Each launch removes other servers' partitions and `server.json.*` / `pending-setup.json.*`
+  leftovers. No log files are written; `analytics-state.json` (two dates and four counts) is the only
+  file usage counts add.
 - **Tests, walks and checks never use the real profile (LC-14).** Launch a built app with
   `--user-data-dir="$(mktemp -d)"` (and `--remote-debugging-port` only with it). An unpackaged run
   (`npm run desktop`) uses `~/Library/Application Support/Fabric Inbox Development`, never the
