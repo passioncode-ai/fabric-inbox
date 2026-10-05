@@ -204,16 +204,19 @@ const searchMailbox = defineTool({
 
 const listMailboxMessages = defineTool({
   name: "list_mailbox_messages", title: "List a mailbox folder", level: "read", readOnly: true,
-  description: "Messages of one Cloudflare mailbox folder in date order, including Drafts and your own folders, which the feed does not show; or every message of one thread. For Gmail use list_messages.",
-  input: { accountId, folder: z.string().max(100).default("inbox").describe("inbox, sent, draft, archive, trash, spam or one of your folders (list_folders)"),
+  description: "Messages of one Cloudflare mailbox folder in date order, including Drafts and your own folders, which the feed does not show; or every message of one thread, in every folder (your replies in Sent too) unless folder names one. For Gmail use list_messages.",
+  input: { accountId, folder: z.string().max(100).optional().describe("inbox, sent, draft, archive, trash, spam or one of your folders (list_folders); inbox when left out, every folder with threadId"),
     threadId: z.string().max(300).optional(), page: z.number().int().min(1).default(1), limit: z.number().int().min(1).max(100).default(25) },
   routes: ["GET /api/v1/mailboxes/:mailboxId/emails"],
   async call(a, ctx) {
     const account = cloudflareOnly(parseAccount(a.accountId), "Listing a folder");
-    const data = (await get(ctx, `${box(account.mailbox)}/emails`, { folder: a.folder, thread_id: a.threadId, page: a.page, limit: a.limit })) as { emails?: Record<string, unknown>[]; totalCount?: number } | Record<string, unknown>[];
+    // A conversation lives in several folders: the route spans them all when no folder is named.
+    const folder = a.folder ?? (a.threadId ? undefined : "inbox");
+    const data = (await get(ctx, `${box(account.mailbox)}/emails`, { folder, thread_id: a.threadId, page: a.page, limit: a.limit })) as { emails?: Record<string, unknown>[]; totalCount?: number } | Record<string, unknown>[];
     const emails = Array.isArray(data) ? data : data.emails ?? [];
+    // Across every folder the route does not count: say whether a further page may exist instead.
     return { messages: emails.map((e) => ({ accountId: account.id, messageId: e.id, threadId: e.thread_id, subject: e.subject, from: e.sender, to: e.recipient, date: e.date, read: !!e.read, starred: !!e.starred, folder: e.folder_id })),
-      total: Array.isArray(data) ? emails.length : data.totalCount ?? emails.length, page: a.page };
+      ...(Array.isArray(data) ? { hasMore: emails.length >= a.limit } : { total: data.totalCount ?? emails.length }), page: a.page };
   },
 });
 

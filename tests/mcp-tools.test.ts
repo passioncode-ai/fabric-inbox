@@ -198,6 +198,19 @@ test("a failed send returns the outbox id and status the route gave, so get_send
   assert.deepEqual(gsent.data.details, { status: "unknown", idempotencyKey: "s2" });
 });
 
+// ── 9. A thread spans folders ───────────────────────────────────────
+
+test("list_mailbox_messages with a threadId and no folder lists the conversation in every folder (agent audit 9)", async () => {
+  const cf = fakeApi({ [`GET ${CF_BOX}/emails`]: (c) => ok(c.query?.folder ? { emails: [], totalCount: 0 }
+    : [cfEmail(), cfEmail({ id: "m2", folder_id: "sent", sender: CF, recipient: "ann@customer.invalid" })]) });
+  const thread = await call(cf.api, "list_mailbox_messages", { accountId: `cloudflare:${CF}`, threadId: "t1" });
+  assert.equal(thread.isError, false, JSON.stringify(thread.data));
+  assert.equal(cf.calls[0]!.query!.folder, undefined);
+  assert.deepEqual(thread.data.messages.map((m: { folder: string }) => m.folder), ["inbox", "sent"]);
+  await call(cf.api, "list_mailbox_messages", { accountId: `cloudflare:${CF}` });
+  assert.equal(cf.calls[1]!.query!.folder, "inbox", "without a thread the folder is still the inbox");
+});
+
 // ── 11. Every route a tool calls is declared ────────────────────────
 
 test("reply and forward declare every route they call, Gmail's included (agent audit 11)", async () => {
