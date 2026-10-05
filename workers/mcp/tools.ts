@@ -12,6 +12,8 @@
 import { z } from "zod";
 import { ApiError, defineTool, unwrap, type ToolContext, type ToolDef } from "./protocol";
 import { clip, forwardedBlock, htmlToText, quotedBlock, textToHtml } from "./mail-text";
+import { headerValue, parseStoredHeaders } from "../agents/prefilter";
+import { GMAIL_FOLDERS } from "../providers/account-service";
 
 // ── Shared pieces ──────────────────────────────────────────────────
 
@@ -60,7 +62,7 @@ const fromFor = (mailbox: string, settings: MailboxSettings) =>
 /** One message, the same shape for both providers. */
 interface ReadMessage {
   accountId: string; messageId: string; threadId: string | null; rfcMessageId: string | null; references: string | null;
-  subject: string; from: string; to: string; cc: string | null; date: string; folder: string | null;
+  subject: string; from: string; to: string; cc: string | null; replyTo: string | null; date: string; folder: string | null;
   read: boolean; starred: boolean; spamReason: string | null; text: string; truncated: boolean; html?: string;
   attachments: { attachmentId: string; filename: string; type: string; size: number }[];
 }
@@ -72,7 +74,7 @@ async function readMessage(ctx: ToolContext, account: Account, id: string, max =
     return {
       accountId: account.id, messageId: String(e.id), threadId: (e.thread_id as string) ?? null, rfcMessageId: (e.message_id as string) ?? null,
       references: (e.email_references as string) ?? null, subject: String(e.subject ?? ""), from: String(e.sender ?? ""), to: String(e.recipient ?? ""),
-      cc: (e.cc as string) || null, date: String(e.date ?? ""), folder: (e.folder_id as string) ?? null, read: !!e.read, starred: !!e.starred,
+      cc: (e.cc as string) || null, replyTo: headerValue(parseStoredHeaders(e.raw_headers as string | null), "reply-to")?.trim() || null, date: String(e.date ?? ""), folder: (e.folder_id as string) ?? null, read: !!e.read, starred: !!e.starred,
       spamReason: (e.spam_reason as string) ?? null, text: body.text, truncated: body.truncated, ...(includeHtml ? { html } : {}),
       attachments: (e.attachments ?? []).map((a) => ({ attachmentId: String(a.id), filename: String(a.filename), type: String(a.mimetype), size: Number(a.size) })),
     };
@@ -82,7 +84,8 @@ async function readMessage(ctx: ToolContext, account: Account, id: string, max =
   const labels = m.labels ?? [];
   return {
     accountId: account.id, messageId: String(m.providerMessageId ?? id), threadId: (m.threadId as string) ?? null, rfcMessageId: (m.rfcMessageId as string) || null,
-    references: (m.references as string) || null, subject: String(m.subject ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""), cc: null,
+    references: (m.references as string) || null, subject: String(m.subject ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""),
+    cc: (m.cc as string) || null, replyTo: (m.replyTo as string) || null,
     date: String(m.date ?? ""), folder: labels.includes("SPAM") ? "spam" : labels.includes("TRASH") ? "trash" : labels.includes("INBOX") ? "inbox" : labels.includes("SENT") ? "sent" : "archive",
     read: !!m.read, starred: labels.includes("STARRED"), spamReason: labels.includes("SPAM") ? "Gmail put it in Spam" : null,
     text: body.text, truncated: body.truncated, ...(includeHtml ? { html: String(m.html ?? "") } : {}),
@@ -102,6 +105,32 @@ const quoted = (value: string) => JSON.stringify(value.replace(/\s+/g, " ").slic
 
 /** The first address in a header value, e.g. "Ann <ann@example.com>" → "ann@example.com". */
 const firstAddress = (value: string) => (value.match(/<([^>]+)>/)?.[1] ?? value.split(",")[0] ?? "").trim();
+
+/** Every address of a header value, lower-cased: commas inside quotes or <> do not split it. */
+function addresses(value: string | null | undefined): string[] {
+  const out: string[] = [];
+  let part = "", quoted = false, angle = false;
+  for (const ch of `${value ?? ""},`) {
+    if (ch === "\"") quoted = !quoted;
+    else if (!quoted && ch === "<") angle = true;
+    else if (!quoted && ch === ">") angle = false;
+    if (ch === "," && !quoted && !angle) {
+      const email = firstAddress(part).toLowerCase();
+      if (/^[^\s@<>",]+@[^\s@<>",]+\.[^\s@<>",]+$/.test(email)) out.push(email);
+      part = "";
+    } else part += ch;
+  }
+  return out;
+}
+
+/** The address an account sends as: the mailbox, or the Gmail account's own address. */
+async function ownAddress(ctx: ToolContext, account: Account): Promise<string> {
+  if (account.provider === "cloudflare") return account.mailbox;
+  const data = (await get(ctx, "/api/accounts")) as { accounts?: { id?: unknown; email?: unknown }[] };
+  const email = data.accounts?.find((a) => a.id === account.gmailId)?.email;
+  if (typeof email !== "string" || !email) throw new ApiError(404, `${account.id} is not a connected Gmail account (list_accounts)`, null);
+  return email.toLowerCase();
+}
 
 // ── Reading ────────────────────────────────────────────────────────
 
@@ -144,40 +173,50 @@ const listMessages = defineTool({
 
 const searchMailbox = defineTool({
   name: "search_mailbox", title: "Search one mailbox", level: "read", readOnly: true,
-  description: "Search one account with fields: for a Cloudflare mailbox by sender, recipient, subject, dates, read, starred and attachments, across every folder; for Gmail by text in subject, sender, recipient and snippet of the mail synced here. Use list_messages for the feed across all accounts.",
+  description: "Search one account with fields, each its own filter and all of them applied: text (query), sender, recipient (To or Cc), subject, dates, read, starred, attachments and folder. A Cloudflare mailbox is searched across every folder unless folder names one, and pages with page; Gmail searches the mail synced here, pages with cursor, and takes folder inbox, sent, archive, starred, spam, trash or draft. A filter that cannot be applied is refused, never ignored. Use list_messages for the feed across all accounts.",
   input: {
     accountId, query: z.string().max(500).optional(), from: z.string().max(320).optional(), to: z.string().max(320).optional(), subject: z.string().max(500).optional(),
-    folder: z.string().max(100).optional(), after: z.string().max(40).optional().describe("ISO date, inclusive (Cloudflare)"), before: z.string().max(40).optional().describe("ISO date (Cloudflare)"),
+    folder: z.string().max(100).optional(), after: z.string().max(40).optional().describe("ISO date, inclusive"), before: z.string().max(40).optional().describe("ISO date, inclusive"),
     unread: z.boolean().optional(), starred: z.boolean().optional(), hasAttachment: z.boolean().optional(),
-    page: z.number().int().min(1).default(1), limit: z.number().int().min(1).max(100).default(25),
+    page: z.number().int().min(1).default(1).describe("Cloudflare paging"), limit: z.number().int().min(1).max(100).default(25),
     cursor: z.string().max(300).optional().describe("Gmail paging: nextCursor of the previous page"),
   },
   routes: ["GET /api/v1/mailboxes/:mailboxId/search", "GET /api/accounts/:accountId/messages"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
+    for (const [name, value] of [["after", a.after], ["before", a.before]] as const)
+      if (value !== undefined && !Number.isFinite(Date.parse(value))) throw new ApiError(400, `${name} must be an ISO date, such as 2026-05-01`, null);
+    const flag = (value: boolean | undefined) => (value === undefined ? undefined : String(value));
     if (account.provider === "gmail") {
-      const q = [a.query, a.from, a.to, a.subject].filter(Boolean).join(" ");
-      const data = (await get(ctx, `${gmail(account.gmailId)}/messages`, { q: q || undefined, limit: a.limit, cursor: a.cursor })) as { messages: Record<string, unknown>[]; nextCursor?: string };
+      if (a.page !== 1) throw new ApiError(400, "A Gmail search pages with cursor (nextCursor of the previous page), not page", null);
+      if (a.folder !== undefined && !(GMAIL_FOLDERS as readonly string[]).includes(a.folder))
+        throw new ApiError(400, `A Gmail search takes folder ${GMAIL_FOLDERS.join(", ")}; Gmail's own labels cannot be searched here`, null);
+      const data = (await get(ctx, `${gmail(account.gmailId)}/messages`, { q: a.query, from: a.from, to: a.to, subject: a.subject, after: a.after, before: a.before,
+        unread: flag(a.unread), starred: flag(a.starred), hasAttachment: flag(a.hasAttachment), folder: a.folder, limit: a.limit, cursor: a.cursor })) as { messages: Record<string, unknown>[]; nextCursor?: string };
       return { messages: data.messages.map((m) => ({ accountId: account.id, messageId: m.providerMessageId, threadId: m.threadId, subject: m.subject, from: m.from, to: m.to, date: m.date, read: m.read, snippet: m.snippet })), nextCursor: data.nextCursor ?? null };
     }
+    if (a.cursor !== undefined) throw new ApiError(400, "A Cloudflare mailbox search pages with page, not cursor", null);
     const data = (await get(ctx, `${box(account.mailbox)}/search`, { query: a.query, from: a.from, to: a.to, subject: a.subject, folder: a.folder, date_start: a.after, date_end: a.before,
-      is_read: a.unread === undefined ? undefined : String(!a.unread), is_starred: a.starred === undefined ? undefined : String(a.starred), has_attachment: a.hasAttachment ? "true" : undefined, page: a.page, limit: a.limit })) as { emails: Record<string, unknown>[]; totalCount: number };
+      is_read: a.unread === undefined ? undefined : String(!a.unread), is_starred: flag(a.starred), has_attachment: flag(a.hasAttachment), page: a.page, limit: a.limit })) as { emails: Record<string, unknown>[]; totalCount: number };
     return { messages: data.emails.map((e) => ({ accountId: account.id, messageId: e.id, threadId: e.thread_id, subject: e.subject, from: e.sender, to: e.recipient, date: e.date, read: !!e.read, starred: !!e.starred, folder: e.folder_id, snippet: htmlToText(String(e.snippet ?? "")).slice(0, 200) })), total: data.totalCount, page: a.page };
   },
 });
 
 const listMailboxMessages = defineTool({
   name: "list_mailbox_messages", title: "List a mailbox folder", level: "read", readOnly: true,
-  description: "Messages of one Cloudflare mailbox folder in date order, including Drafts and your own folders, which the feed does not show; or every message of one thread. For Gmail use list_messages.",
-  input: { accountId, folder: z.string().max(100).default("inbox").describe("inbox, sent, draft, archive, trash, spam or one of your folders (list_folders)"),
+  description: "Messages of one Cloudflare mailbox folder in date order, including Drafts and your own folders, which the feed does not show; or every message of one thread, in every folder (your replies in Sent too) unless folder names one. For Gmail use list_messages.",
+  input: { accountId, folder: z.string().max(100).optional().describe("inbox, sent, draft, archive, trash, spam or one of your folders (list_folders); inbox when left out, every folder with threadId"),
     threadId: z.string().max(300).optional(), page: z.number().int().min(1).default(1), limit: z.number().int().min(1).max(100).default(25) },
   routes: ["GET /api/v1/mailboxes/:mailboxId/emails"],
   async call(a, ctx) {
     const account = cloudflareOnly(parseAccount(a.accountId), "Listing a folder");
-    const data = (await get(ctx, `${box(account.mailbox)}/emails`, { folder: a.folder, thread_id: a.threadId, page: a.page, limit: a.limit })) as { emails?: Record<string, unknown>[]; totalCount?: number } | Record<string, unknown>[];
+    // A conversation lives in several folders: the route spans them all when no folder is named.
+    const folder = a.folder ?? (a.threadId ? undefined : "inbox");
+    const data = (await get(ctx, `${box(account.mailbox)}/emails`, { folder, thread_id: a.threadId, page: a.page, limit: a.limit })) as { emails?: Record<string, unknown>[]; totalCount?: number } | Record<string, unknown>[];
     const emails = Array.isArray(data) ? data : data.emails ?? [];
+    // Across every folder the route does not count: say whether a further page may exist instead.
     return { messages: emails.map((e) => ({ accountId: account.id, messageId: e.id, threadId: e.thread_id, subject: e.subject, from: e.sender, to: e.recipient, date: e.date, read: !!e.read, starred: !!e.starred, folder: e.folder_id })),
-      total: Array.isArray(data) ? emails.length : data.totalCount ?? emails.length, page: a.page };
+      ...(Array.isArray(data) ? { hasMore: emails.length >= a.limit } : { total: data.totalCount ?? emails.length }), page: a.page };
   },
 });
 
@@ -408,17 +447,24 @@ const sendEmail = defineTool({
 
 const reply = defineTool({
   name: "reply", title: "Reply to a message", level: "mail", sends: true, target: (a) => `${a.accountId} ${a.messageId}`,
-  description: "Answers a message in its conversation: to its sender (or everyone with replyAll), subject Re:, threaded, with the original quoted. It really leaves; counts against this key's daily sends.",
+  description: "Answers a message in its conversation: to its Reply-To address when it has one, otherwise its sender (with replyAll also everyone else in To and Cc except you), subject Re:, threaded, with the original quoted. It really leaves; counts against this key's daily sends.",
   input: { accountId, messageId, ...body, idempotencyKey, replyAll: z.boolean().default(false), to: recipients.optional().describe("Answer these addresses instead"),
     quote: z.boolean().default(true).describe("Quote the original below your text"), signature: z.boolean().default(true).describe("Add the address's signature (Cloudflare)") },
-  routes: ["POST /api/v1/mailboxes/:mailboxId/emails/:id/reply"],
+  routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/v1/mailboxes/:mailboxId", "POST /api/v1/mailboxes/:mailboxId/emails/:id/reply",
+    "GET /api/accounts/:accountId/messages/:messageId", "GET /api/accounts", "POST /api/accounts/:accountId/send"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
     const original = await readMessage(ctx, account, a.messageId, 20_000);
-    const self = account.provider === "cloudflare" ? account.mailbox : "";
-    const others = [original.to, original.cc ?? ""].join(",").split(",").map(firstAddress).filter((x) => x && x.toLowerCase() !== self && x.toLowerCase() !== firstAddress(original.from).toLowerCase());
-    const to = list(a.to) ?? [firstAddress(original.from)];
-    const cc = !a.to && a.replyAll && others.length ? [...new Set(others)] : undefined;
+    // Reply-To names where answers go (a help desk, a list); one with no address in it is ignored.
+    const replyTargets = addresses(original.replyTo);
+    const to = list(a.to) ?? (replyTargets.length ? replyTargets : [firstAddress(original.from)]);
+    let cc: string[] | undefined;
+    if (!a.to && a.replyAll) {
+      const self = await ownAddress(ctx, account);
+      const skip = new Set([self, firstAddress(original.from).toLowerCase(), ...to.map((x) => x.toLowerCase())]);
+      const others = [...new Set([...addresses(original.to), ...addresses(original.cc)])].filter((x) => !skip.has(x));
+      cc = others.length ? others : undefined;
+    }
     const subject = /^re:/i.test(original.subject) ? original.subject : `Re: ${original.subject}`;
     const text = a.quote ? `${a.text}\n\n${quotedBlock({ from: original.from, date: original.date, text: original.text })}` : a.text;
     if (account.provider === "cloudflare") {
@@ -435,7 +481,8 @@ const forward = defineTool({
   description: "Forwards a message with its text (and, from a Cloudflare mailbox, its attachments up to 5 MB) and your note on top. It really leaves; counts against this key's daily sends.",
   input: { accountId, messageId, to: recipients, text: z.string().max(100_000).default("").describe("Your note above the forwarded message"), idempotencyKey,
     attachments: z.boolean().default(true).describe("Include the original's attachments (Cloudflare, up to 5 MB)") },
-  routes: ["POST /api/v1/mailboxes/:mailboxId/emails/:id/forward"],
+  routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/v1/mailboxes/:mailboxId", "GET /api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId",
+    "POST /api/v1/mailboxes/:mailboxId/emails/:id/forward", "GET /api/accounts/:accountId/messages/:messageId", "POST /api/accounts/:accountId/send"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
     const original = await readMessage(ctx, account, a.messageId, 200_000);
@@ -461,21 +508,32 @@ const messageRefs = z.array(z.object({ accountId, messageId })).min(1).max(100);
 async function eachMessage<T>(refs: { accountId: string; messageId: string }[], run: (account: Account, id: string) => Promise<T>) {
   const done: { accountId: string; messageId: string }[] = [];
   const failed: { accountId: string; messageId: string; error: string }[] = [];
+  let first: unknown;
   for (const ref of refs) {
     try { await run(parseAccount(ref.accountId), ref.messageId); done.push(ref); }
-    catch (error) { failed.push({ ...ref, error: error instanceof Error ? error.message : String(error) }); }
+    catch (error) { failed.push({ ...ref, error: error instanceof Error ? error.message : String(error) }); first ??= error; }
   }
+  // Nothing done is a failure, not a success with a list: the agent and the journal must see it as one.
+  if (!done.length && failed.length)
+    throw new ApiError(first instanceof ApiError ? first.status : 500,
+      `${failed.length === 1 ? "The message was not changed" : `None of the ${failed.length} messages was changed`}: ${failed[0]!.error}`, { done: 0, failed });
   return { done: done.length, failed };
 }
 
 const updateMessages = defineTool({
   name: "update_messages", title: "Mark read or starred", level: "mail", target: (a) => (a.thread ? `thread ${a.thread.threadId}` : `${a.messages?.length ?? 0} message(s)`),
-  description: "Marks messages read or unread, starred or not. For a Cloudflare conversation, threadId marks the whole conversation read.",
+  description: "Marks messages read or unread, starred or not. For a Cloudflare conversation, thread marks the whole conversation read (read: true or left out); to mark one unread or starred, list its messages (list_mailbox_messages with threadId) and pass them in messages.",
   input: { messages: messageRefs.optional(), read: z.boolean().optional(), starred: z.boolean().optional(),
     thread: z.object({ accountId, threadId: z.string().min(1).max(300) }).optional().describe("Cloudflare: mark every message of this conversation read") },
   routes: ["PUT /api/v1/mailboxes/:mailboxId/emails/:id", "POST /api/v1/mailboxes/:mailboxId/threads/:threadId/read", "POST /api/accounts/:accountId/messages/:messageId/read", "POST /api/accounts/:accountId/messages/:messageId/starred"],
   async call(a, ctx) {
-    if (a.thread) { const account = cloudflareOnly(parseAccount(a.thread.accountId), "Marking a conversation"); await post(ctx, `${box(account.mailbox)}/threads/${enc(a.thread.threadId)}/read`); }
+    if (a.thread) {
+      // The route marks a conversation read and nothing else: anything else would be done wrong, silently.
+      if (a.read === false || (!a.messages && a.starred !== undefined))
+        throw new ApiError(400, "A conversation can only be marked read (read: true). To mark it unread or starred, list its messages with list_mailbox_messages (threadId) and pass them in messages.", null);
+      const account = cloudflareOnly(parseAccount(a.thread.accountId), "Marking a conversation");
+      await post(ctx, `${box(account.mailbox)}/threads/${enc(a.thread.threadId)}/read`);
+    }
     if (!a.messages) return { ok: true };
     if (a.read === undefined && a.starred === undefined) throw new ApiError(400, "Say read, starred or both", null);
     return eachMessage(a.messages, async (account, id) => {
@@ -490,14 +548,15 @@ const moveMessages = defineTool({
   name: "move_messages", title: "Move messages", level: "mail", target: (a) => `${a.messages.length} message(s) → ${a.to}`,
   description: "Moves messages to inbox, archive or trash (both providers), or to another folder of a Cloudflare mailbox. Trash is kept and can be undone; to judge spam use mark_spam, which also teaches the lists.",
   input: { messages: messageRefs, to: z.string().min(1).max(100).describe("inbox, archive, trash, or a Cloudflare folder id (list_folders)") },
-  routes: ["POST /api/v1/mailboxes/:mailboxId/emails/:id/move", "POST /api/accounts/:accountId/messages/:messageId/archive", "POST /api/accounts/:accountId/messages/:messageId/trashed"],
+  routes: ["POST /api/v1/mailboxes/:mailboxId/emails/:id/move", "POST /api/accounts/:accountId/messages/:messageId/archive", "POST /api/accounts/:accountId/messages/:messageId/trashed",
+    "POST /api/accounts/:accountId/messages/:messageId/inbox"],
   async call(a, ctx) {
     if (a.to === "spam") throw new ApiError(400, "Use mark_spam to move mail to Spam", null);
     return eachMessage(a.messages, async (account, id) => {
       if (account.provider === "cloudflare") return post(ctx, `${box(account.mailbox)}/emails/${enc(id)}/move`, { folderId: a.to });
       if (a.to === "archive") return post(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}/archive`);
       if (a.to === "trash") return post(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}/trashed`, { trashed: true });
-      if (a.to === "inbox") return post(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}/trashed`, { trashed: false });
+      if (a.to === "inbox") return post(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}/inbox`);
       throw new ApiError(400, "A Gmail message moves to inbox, archive or trash", null);
     });
   },

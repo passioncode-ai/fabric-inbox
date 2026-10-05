@@ -147,3 +147,28 @@ test('streamed request limit rejects without a declared Content-Length or accoun
   assert.equal(response.status, 413);
   assert.equal(called, false);
 });
+
+test("the Gmail messages route passes each search field typed, and refuses one it cannot read (agent audit 5)", async () => {
+  let options: Record<string, unknown> = {};
+  const env = { ...config, GMAIL_ACCOUNTS: { getByName: () => ({ listMessages: async (_id: string, o: Record<string, unknown>) => { options = o; return { messages: [] }; } }) } };
+  const ok = await accountsRouter.request(origin + "/api/accounts/a/messages?q=x&from=ann&to=bob&subject=May&after=2026-05-01&before=2026-06-01T00:00:00Z&unread=true&starred=false&hasAttachment=true&folder=inbox&limit=10", {}, env as never);
+  assert.equal(ok.status, 200);
+  assert.deepEqual(options, { cursor: undefined, limit: 10, query: "x", from: "ann", to: "bob", subject: "May", after: Date.parse("2026-05-01"),
+    before: Date.parse("2026-06-01T00:00:00Z"), unread: true, starred: false, hasAttachment: true, folder: "inbox" });
+  for (const query of ["after=soon", "unread=maybe"]) {
+    const refused = await accountsRouter.request(origin + "/api/accounts/a/messages?" + query, {}, env as never);
+    assert.equal(refused.status, 400, query);
+    assert.deepEqual(await refused.json(), { error: "invalid_filter" });
+  }
+  const folder = await accountsRouter.request(origin + "/api/accounts/a/messages?folder=Receipts",
+    {}, { ...config, GMAIL_ACCOUNTS: { getByName: () => ({ listMessages: async () => { throw new Error("invalid_folder"); } }) } } as never);
+  assert.equal(folder.status, 400);
+});
+
+test("the Gmail inbox route moves a message to the inbox (agent audit 4)", async () => {
+  let args: unknown[] = [];
+  const env = { ...config, GMAIL_ACCOUNTS: { getByName: () => ({ moveToInbox: async (...a: unknown[]) => { args = a; return { labels: ["INBOX"] }; } }) } };
+  const response = await accountsRouter.request(origin + "/api/accounts/a/messages/m1/inbox", { method: "POST", headers: { Origin: origin } }, env as never);
+  assert.equal(response.status, 200);
+  assert.deepEqual(args, ["a", "m1"]);
+});

@@ -13,6 +13,13 @@ const LEVEL_TEXT = {
   admin: "admin: you can do everything the app does — mail, addresses and domains on Cloudflare, forwarding, spam lists, reply agents, categories, knowledge, rules and setup.",
 } as const;
 
+/** A key limited to mailboxes has only the tools that stay inside one (scope.ts): say just those. */
+const SCOPED_LEVEL_TEXT = {
+  read: LEVEL_TEXT.read,
+  mail: "mail: in the mailboxes your key is limited to, you can read, draft and handle mail (mark, move, folders, delete for good, sync Gmail); you change no settings.",
+  admin: "admin, within the mailboxes your key is limited to: what a mail key does there, plus retrying incoming mail that got stuck and disconnecting a Gmail account.",
+} as const;
+
 export function instructionsFor(p: Principal, origin: string): string {
   const who = p.kind === "owner" ? `You are signed in as the owner (${p.label}).` : `You are the agent key "${p.label}".`;
   const sending = p.level === "read" ? "" : p.level === "admin" && p.kind === "agent"
@@ -22,7 +29,7 @@ export function instructionsFor(p: Principal, origin: string): string {
     : "Your key is Drafts only: you write drafts with save_draft and a person sends them.";
   return [
     `Fabric Inbox (${origin}): one triaged inbox over the owner's Cloudflare addresses and Gmail accounts, with reply agents, categories, spam filtering and rules.`,
-    `${who} Your level is ${LEVEL_TEXT[p.level]}`,
+    `${who} Your level is ${(p.accounts ? SCOPED_LEVEL_TEXT : LEVEL_TEXT)[p.level]}`,
     p.accounts ? `Your key is limited to ${describeScope(p.accounts)}: you see and change those mailboxes only, and nothing shared by the whole workspace (settings, domains, spam lists, rules). With more than one, list_messages without accountId returns one merged page; name an accountId to page further.` : "",
     sending,
     "Accounts are named as list_accounts returns them: \"cloudflare:<address>\" or \"gmail:<id>\"; a message is its accountId plus messageId. Start with list_accounts, then list_messages.",

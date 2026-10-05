@@ -49,6 +49,9 @@ export interface Message {
   subject: string;
   from: string;
   to: string;
+  /** Cc and Reply-To header values ("" when none); absent on messages cached before 2026-10-05. */
+  cc?: string;
+  replyTo?: string;
   date: string;
   rfcMessageId: string;
   references: string;
@@ -96,6 +99,8 @@ export function normalizeMessage(
     subject: header("subject"),
     from: header("from"),
     to: header("to"),
+    cc: header("cc"),
+    replyTo: header("reply-to"),
     date: header("date"),
     rfcMessageId: header("message-id"),
     references: header("references"),

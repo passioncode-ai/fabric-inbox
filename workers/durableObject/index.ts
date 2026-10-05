@@ -903,7 +903,7 @@ export class MailboxDO extends DurableObject<Env> {
 		if (date_end) { const p = addParam(date_end); conditions.push(`${prefix}date <= ${p}`); }
 		if (is_read !== undefined) { const p = addParam(is_read ? 1 : 0); conditions.push(`${prefix}read = ${p}`); }
 		if (is_starred !== undefined) { const p = addParam(is_starred ? 1 : 0); conditions.push(`${prefix}starred = ${p}`); }
-		if (has_attachment) { conditions.push(`${prefix}id IN (SELECT DISTINCT email_id FROM attachments)`); }
+		if (has_attachment !== undefined) { conditions.push(`${prefix}id ${has_attachment ? "IN" : "NOT IN"} (SELECT DISTINCT email_id FROM attachments)`); }
 
 		return { conditions, params };
 	}
