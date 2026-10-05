@@ -96,7 +96,8 @@ to the message's `replyTo` when it has one, else its sender; `replyAll` copies t
 but never you. The address's display name and signature are added for you (`signature: false` to skip).
 
 **Find.** `list_messages` with `query` searches every inbox; `search_mailbox` searches one account
-by sender, recipient, subject, dates, read, starred and attachments.
+by sender, recipient, subject, dates, read, starred, attachments and folder — every field applies,
+and one it cannot apply is refused (Gmail pages with `cursor`, Cloudflare with `page`).
 
 **Tidy.** `move_messages` (inbox, archive, trash, a Cloudflare folder) and `mark_spam` (spam or not,
 and by default remembers the sender) act on up to 100 messages; each answer lists what failed.

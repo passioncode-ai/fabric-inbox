@@ -13,6 +13,7 @@ import { z } from "zod";
 import { ApiError, defineTool, unwrap, type ToolContext, type ToolDef } from "./protocol";
 import { clip, forwardedBlock, htmlToText, quotedBlock, textToHtml } from "./mail-text";
 import { headerValue, parseStoredHeaders } from "../agents/prefilter";
+import { GMAIL_FOLDERS } from "../providers/account-service";
 
 // ── Shared pieces ──────────────────────────────────────────────────
 
@@ -172,24 +173,31 @@ const listMessages = defineTool({
 
 const searchMailbox = defineTool({
   name: "search_mailbox", title: "Search one mailbox", level: "read", readOnly: true,
-  description: "Search one account with fields: for a Cloudflare mailbox by sender, recipient, subject, dates, read, starred and attachments, across every folder; for Gmail by text in subject, sender, recipient and snippet of the mail synced here. Use list_messages for the feed across all accounts.",
+  description: "Search one account with fields, each its own filter and all of them applied: text (query), sender, recipient (To or Cc), subject, dates, read, starred, attachments and folder. A Cloudflare mailbox is searched across every folder unless folder names one, and pages with page; Gmail searches the mail synced here, pages with cursor, and takes folder inbox, sent, archive, starred, spam, trash or draft. A filter that cannot be applied is refused, never ignored. Use list_messages for the feed across all accounts.",
   input: {
     accountId, query: z.string().max(500).optional(), from: z.string().max(320).optional(), to: z.string().max(320).optional(), subject: z.string().max(500).optional(),
-    folder: z.string().max(100).optional(), after: z.string().max(40).optional().describe("ISO date, inclusive (Cloudflare)"), before: z.string().max(40).optional().describe("ISO date (Cloudflare)"),
+    folder: z.string().max(100).optional(), after: z.string().max(40).optional().describe("ISO date, inclusive"), before: z.string().max(40).optional().describe("ISO date, inclusive"),
     unread: z.boolean().optional(), starred: z.boolean().optional(), hasAttachment: z.boolean().optional(),
-    page: z.number().int().min(1).default(1), limit: z.number().int().min(1).max(100).default(25),
+    page: z.number().int().min(1).default(1).describe("Cloudflare paging"), limit: z.number().int().min(1).max(100).default(25),
     cursor: z.string().max(300).optional().describe("Gmail paging: nextCursor of the previous page"),
   },
   routes: ["GET /api/v1/mailboxes/:mailboxId/search", "GET /api/accounts/:accountId/messages"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
+    for (const [name, value] of [["after", a.after], ["before", a.before]] as const)
+      if (value !== undefined && !Number.isFinite(Date.parse(value))) throw new ApiError(400, `${name} must be an ISO date, such as 2026-05-01`, null);
+    const flag = (value: boolean | undefined) => (value === undefined ? undefined : String(value));
     if (account.provider === "gmail") {
-      const q = [a.query, a.from, a.to, a.subject].filter(Boolean).join(" ");
-      const data = (await get(ctx, `${gmail(account.gmailId)}/messages`, { q: q || undefined, limit: a.limit, cursor: a.cursor })) as { messages: Record<string, unknown>[]; nextCursor?: string };
+      if (a.page !== 1) throw new ApiError(400, "A Gmail search pages with cursor (nextCursor of the previous page), not page", null);
+      if (a.folder !== undefined && !(GMAIL_FOLDERS as readonly string[]).includes(a.folder))
+        throw new ApiError(400, `A Gmail search takes folder ${GMAIL_FOLDERS.join(", ")}; Gmail's own labels cannot be searched here`, null);
+      const data = (await get(ctx, `${gmail(account.gmailId)}/messages`, { q: a.query, from: a.from, to: a.to, subject: a.subject, after: a.after, before: a.before,
+        unread: flag(a.unread), starred: flag(a.starred), hasAttachment: flag(a.hasAttachment), folder: a.folder, limit: a.limit, cursor: a.cursor })) as { messages: Record<string, unknown>[]; nextCursor?: string };
       return { messages: data.messages.map((m) => ({ accountId: account.id, messageId: m.providerMessageId, threadId: m.threadId, subject: m.subject, from: m.from, to: m.to, date: m.date, read: m.read, snippet: m.snippet })), nextCursor: data.nextCursor ?? null };
     }
+    if (a.cursor !== undefined) throw new ApiError(400, "A Cloudflare mailbox search pages with page, not cursor", null);
     const data = (await get(ctx, `${box(account.mailbox)}/search`, { query: a.query, from: a.from, to: a.to, subject: a.subject, folder: a.folder, date_start: a.after, date_end: a.before,
-      is_read: a.unread === undefined ? undefined : String(!a.unread), is_starred: a.starred === undefined ? undefined : String(a.starred), has_attachment: a.hasAttachment ? "true" : undefined, page: a.page, limit: a.limit })) as { emails: Record<string, unknown>[]; totalCount: number };
+      is_read: a.unread === undefined ? undefined : String(!a.unread), is_starred: flag(a.starred), has_attachment: flag(a.hasAttachment), page: a.page, limit: a.limit })) as { emails: Record<string, unknown>[]; totalCount: number };
     return { messages: data.emails.map((e) => ({ accountId: account.id, messageId: e.id, threadId: e.thread_id, subject: e.subject, from: e.sender, to: e.recipient, date: e.date, read: !!e.read, starred: !!e.starred, folder: e.folder_id, snippet: htmlToText(String(e.snippet ?? "")).slice(0, 200) })), total: data.totalCount, page: a.page };
   },
 });

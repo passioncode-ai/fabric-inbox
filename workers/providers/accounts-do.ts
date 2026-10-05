@@ -4,6 +4,7 @@ import {
   AccountService,
   type SendRequest,
   type IncomingEvent,
+  type MessageFilters,
 } from "./account-service";
 import {
   configuration,
@@ -90,10 +91,7 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
       console.warn(JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
     return result;
   }
-  listMessages(
-    accountId: string,
-    options?: { cursor?: string; limit?: number; query?: string },
-  ) {
+  listMessages(accountId: string, options?: MessageFilters) {
     return this.serial(() => this.service.listMessages(accountId, options));
   }
   inboxMessagesByIds(accountId: string, messageIds: string[], ownDomains: string[] = []) {

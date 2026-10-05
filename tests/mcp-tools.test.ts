@@ -123,6 +123,29 @@ test("moving Gmail mail to the inbox puts it in the inbox, not only out of the t
   assert.deepEqual(moved.data, { done: 1, failed: [] });
 });
 
+// ── 5. Gmail search ─────────────────────────────────────────────────
+
+test("a Gmail search_mailbox sends each field as its own filter and refuses what it cannot apply (agent audit 5)", async () => {
+  const gm = fakeApi({ "GET /api/accounts/g1/messages": ok({ messages: [] }) });
+  const found = await call(gm.api, "search_mailbox", { accountId: "gmail:g1", query: "invoice", from: "ann@x.invalid", to: "bob@x.invalid", subject: "May",
+    after: "2026-05-01", before: "2026-06-01", unread: true, starred: false, hasAttachment: true, folder: "inbox" });
+  assert.equal(found.isError, false, JSON.stringify(found.data));
+  assert.deepEqual(gm.calls[0]!.query, { q: "invoice", from: "ann@x.invalid", to: "bob@x.invalid", subject: "May", after: "2026-05-01", before: "2026-06-01",
+    unread: "true", starred: "false", hasAttachment: "true", folder: "inbox", limit: 25, cursor: undefined });
+
+  for (const [args, pattern] of [
+    [{ folder: "Receipts" }, /folder/],
+    [{ after: "last tuesday" }, /date/],
+    [{ page: 2 }, /cursor/],
+  ] as const) {
+    const refused = await call(gm.api, "search_mailbox", { accountId: "gmail:g1", ...args });
+    assert.equal(refused.isError, true, JSON.stringify(args));
+    assert.equal(refused.data.status, 400);
+    assert.match(refused.data.error, pattern);
+  }
+  assert.equal(gm.calls.length, 1, "a refused search asks nothing");
+});
+
 // ── 11. Every route a tool calls is declared ────────────────────────
 
 test("reply and forward declare every route they call, Gmail's included (agent audit 11)", async () => {

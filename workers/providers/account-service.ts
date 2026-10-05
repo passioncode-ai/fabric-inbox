@@ -103,6 +103,42 @@ function gmailInboxMessage(accountId: string, m: StoredMessage["message"], ownDo
     ...(labels.includes("SPAM") ? { spamReason: "Gmail marked it as spam" } : {}),
     triage: triage({ sender: m.from, subject: m.subject, read: m.read, starred: labels.includes("STARRED"), labels, signals: m.signals, ownDomains }) };
 }
+/** The folders a Gmail search can name; they are views over labels, as the feed shows them. */
+export const GMAIL_FOLDERS = ["inbox", "sent", "archive", "starred", "spam", "trash", "draft"] as const;
+export type GmailFolder = (typeof GMAIL_FOLDERS)[number];
+function inFolder(labels: string[], folder: GmailFolder) {
+  const trash = labels.includes("TRASH"), spam = labels.includes("SPAM"), draft = labels.includes("DRAFT");
+  if (folder === "trash") return trash;
+  if (folder === "spam") return spam && !trash;
+  if (folder === "draft") return draft && !trash;
+  if (trash || spam || draft) return false;
+  return folder === "inbox" ? labels.includes("INBOX") : folder === "sent" ? labels.includes("SENT")
+    : folder === "starred" ? labels.includes("STARRED") : !labels.includes("INBOX") && !labels.includes("SENT");
+}
+/** A search of one Gmail account's cache: every field is its own filter, and all of them apply. */
+export interface MessageFilters {
+  cursor?: string; limit?: number;
+  /** Text in the subject, sender, recipients or snippet. */
+  query?: string; from?: string; to?: string; subject?: string;
+  /** Epoch ms, both inclusive. */
+  after?: number; before?: number;
+  unread?: boolean; starred?: boolean; hasAttachment?: boolean; folder?: GmailFolder;
+}
+function checkFilters(f: MessageFilters) {
+  const bad = (["query", "from", "to", "subject"] as const).some((k) => f[k] !== undefined && typeof f[k] !== "string")
+    || (["after", "before"] as const).some((k) => f[k] !== undefined && !Number.isFinite(f[k]))
+    || (["unread", "starred", "hasAttachment"] as const).some((k) => f[k] !== undefined && typeof f[k] !== "boolean");
+  if (bad) throw new ProviderError("invalid_filter", 400);
+  if (f.folder !== undefined && !GMAIL_FOLDERS.includes(f.folder)) throw new ProviderError("invalid_folder", 400);
+}
+function matches(m: Omit<Message, "text" | "html">, f: MessageFilters) {
+  const has = (value: string | undefined, needle: string | undefined) => !needle || (value ?? "").toLowerCase().includes(needle.toLowerCase());
+  const timestamp = Number.isFinite(m.timestamp) && m.timestamp > 0 ? m.timestamp : Date.parse(m.date) || 0;
+  return has([m.subject, m.from, m.to, m.cc, m.snippet].join(" "), f.query) && has(m.from, f.from) && has([m.to, m.cc].join(" "), f.to)
+    && has(m.subject, f.subject) && (f.after === undefined || timestamp >= f.after) && (f.before === undefined || timestamp <= f.before)
+    && (f.unread === undefined || f.unread === !m.read) && (f.starred === undefined || f.starred === m.labels.includes("STARRED"))
+    && (f.hasAttachment === undefined || f.hasAttachment === (m.attachments?.length ?? 0) > 0) && (!f.folder || inFolder(m.labels, f.folder));
+}
 function keyPart(value: string) {
   if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value))
     throw new ProviderError("invalid_id", 400);
@@ -280,10 +316,8 @@ export class AccountService {
     }
     return { ...row.message, ...JSON.parse(body) };
   }
-  async listMessages(
-    accountId: string,
-    options: { cursor?: string; limit?: number; query?: string } = {},
-  ) {
+  async listMessages(accountId: string, options: MessageFilters = {}) {
+    checkFilters(options);
     const account = await this.account(accountId);
     const prefix = "message:" + keyPart(accountId) + ":";
     const limit = Math.min(100, Math.max(1, options.limit || 50));
@@ -311,19 +345,7 @@ export class AccountService {
           row.generation !== account.sync.generation
         )
           continue;
-        if (
-          options.query &&
-          ![
-            row.message.subject,
-            row.message.from,
-            row.message.to,
-            row.message.snippet,
-          ]
-            .join(" ")
-            .toLowerCase()
-            .includes(options.query.toLowerCase())
-        )
-          continue;
+        if (!matches(row.message, options)) continue;
         messages.push(row.message);
         if (messages.length >= limit) break;
       }
@@ -348,15 +370,8 @@ export class AccountService {
       for (const [key, row] of rows) {
         after = key;
         if (typeof row === "string" || (account.sync.mode === "history" && row.generation !== account.sync.generation)) continue;
-        const m = row.message, labels = m.labels;
-        const trash = labels.includes("TRASH"), spam = labels.includes("SPAM"), draft = labels.includes("DRAFT");
-        const matches = options.folder === "trash" ? trash : options.folder === "spam" ? spam && !trash : !trash && !spam && !draft && (
-          options.folder === "inbox" ? labels.includes("INBOX") :
-          options.folder === "sent" ? labels.includes("SENT") :
-          options.folder === "starred" ? labels.includes("STARRED") :
-          !labels.includes("INBOX") && !labels.includes("SENT")
-        );
-        if (!matches || (options.unread && m.read) || (options.query && ![m.subject, m.from, m.to, m.snippet].join(" ").toLowerCase().includes(options.query.toLowerCase()))) continue;
+        const m = row.message;
+        if (!inFolder(m.labels, options.folder) || (options.unread && m.read) || (options.query && ![m.subject, m.from, m.to, m.snippet].join(" ").toLowerCase().includes(options.query.toLowerCase()))) continue;
         messages.push(gmailInboxMessage(accountId, m, options.ownDomains));
       }
       messages = inboxPage(messages, options);

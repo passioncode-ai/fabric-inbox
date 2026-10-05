@@ -555,6 +555,30 @@ test("an HTML-only Gmail message reaches its consumers with its text (2026-10-01
 const cached = (id: string, over: Record<string, unknown>) => ({ message: { providerMessageId: id, threadId: id, timestamp: 0, labels: ["INBOX"], subject: "",
   from: "x@example.invalid", to: "a@example.invalid", cc: "", replyTo: "", snippet: "", date: "", read: true, attachments: [], ...over }, parts: 0 });
 
+test("a Gmail mailbox search applies each field on its own, and refuses a folder or filter it cannot apply (agent audit 5)", async () => {
+  const { service, store } = await fixture(async () => { throw new Error("search must not contact Gmail"); });
+  const rows: [string, Record<string, unknown>][] = [
+    ["invoice", { subject: "Invoice May", from: "Ann <ann@shop.invalid>", to: "a@example.invalid", timestamp: Date.parse("2026-05-10"), read: false,
+      attachments: [{ filename: "i.pdf", mimeType: "application/pdf", size: 1, providerAttachmentId: "x" }] }],
+    ["cc", { subject: "Lunch", from: "bob@shop.invalid", to: "team@example.invalid", cc: "carol@shop.invalid", timestamp: Date.parse("2026-05-20"), labels: ["INBOX", "STARRED"] }],
+    ["sent", { subject: "Invoice May", from: "a@example.invalid", to: "ann@shop.invalid", timestamp: Date.parse("2026-06-02"), labels: ["SENT"] }],
+    ["trash", { subject: "Old invoice", from: "ann@shop.invalid", timestamp: Date.parse("2026-04-01"), labels: ["TRASH"] }],
+  ];
+  for (const [id, over] of rows) await store.put("message:a:" + id, cached(id, over));
+  const ids = async (filters: Record<string, unknown>) => (await service.listMessages("a", filters)).messages.map((m) => m.providerMessageId).sort();
+  assert.deepEqual(await ids({ from: "ann@shop.invalid", subject: "invoice" }), ["invoice", "trash"], "fields combine, each matched on its own");
+  assert.deepEqual(await ids({ to: "carol@shop" }), ["cc"], "to matches the Cc too");
+  assert.deepEqual(await ids({ after: Date.parse("2026-05-15"), before: Date.parse("2026-06-01") }), ["cc"]);
+  assert.deepEqual(await ids({ unread: true }), ["invoice"]);
+  assert.deepEqual(await ids({ unread: false, starred: true }), ["cc"]);
+  assert.deepEqual(await ids({ hasAttachment: true }), ["invoice"]);
+  assert.deepEqual(await ids({ hasAttachment: false, folder: "inbox" }), ["cc"]);
+  assert.deepEqual(await ids({ folder: "sent" }), ["sent"]);
+  assert.deepEqual(await ids({ folder: "trash", query: "INVOICE" }), ["trash"]);
+  for (const bad of [{ folder: "Receipts" }, { after: "May" }, { unread: "yes" }])
+    await assert.rejects(service.listMessages("a", bad as never), /invalid_folder|invalid_filter/, JSON.stringify(bad));
+});
+
 test("moving Gmail mail to the inbox untrashes it if trashed and adds the Inbox label (agent audit 4)", async () => {
   const seen: string[] = [];
   let labels = ["TRASH"];

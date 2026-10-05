@@ -333,3 +333,21 @@ test("an attachment reaches the agent and a forward byte for byte, whatever its 
     assert.deepEqual(out!.attachments!.map((a) => [a.filename, a.content]), files.map((f) => [f.filename, base64(f.bytes)]));
   } finally { await mf.dispose(); }
 });
+
+test("search_mailbox with hasAttachment: false finds the mail without attachments, rather than ignoring the filter (agent audit 5)", async () => {
+  const { mf, as, call } = await fixture();
+  try {
+    await mf.dispatchFetch("http://localhost/test/files", { method: "POST", body: JSON.stringify({ mailbox: MAILBOX, files: [{ filename: "a.txt", mimetype: "text/plain", bytes: [104, 105] }] }) });
+    await mf.dispatchFetch("http://localhost/test/inbox", { method: "POST", body: JSON.stringify({ mailbox: MAILBOX, sender: "a@b.invalid", subject: "no files" }) });
+    const admin = await as("admin.access");
+    const subjects = async (hasAttachment: boolean) => {
+      const found = await call(admin, "search_mailbox", { accountId: `cloudflare:${MAILBOX}`, hasAttachment, folder: "inbox" });
+      assert.equal(found.isError, false, JSON.stringify(found.data));
+      return found.data.messages.map((m: { subject: string }) => m.subject);
+    };
+    assert.deepEqual(await subjects(true), ["Files"]);
+    assert.deepEqual(await subjects(false), ["no files"]);
+    const cursor = await call(admin, "search_mailbox", { accountId: `cloudflare:${MAILBOX}`, cursor: "abc" });
+    assert.equal(cursor.isError, true, "a Gmail cursor on a Cloudflare mailbox is refused, not ignored");
+  } finally { await mf.dispose(); }
+});
