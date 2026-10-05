@@ -41,8 +41,8 @@ prints Apple's log otherwise), staples, and assesses with `spctl`:
    and its unused purpose strings removed. Both are read back from the built app into the
    receipt's `checks.fuses` (every slice) and `checks.usageDescriptions` (`none (declared: none)`),
    and the build fails otherwise. The same stage writes the anonymous-usage App Key into the app
-   (`desktop/analytics.json`) from the `release` environment's secret
-   `FABRIC_INBOX_ANALYTICS_APP_KEY` ([ANALYTICS.md](ANALYTICS.md)); the receipt's `analytics` says
+   and its host (`desktop/analytics.json`) from the `release` environment's secret
+   `FABRIC_INBOX_ANALYTICS_APP_KEY` and variable `FABRIC_INBOX_ANALYTICS_HOST` ([ANALYTICS.md](ANALYTICS.md)); the receipt's `analytics` says
    `App Key bundled`, never the value. Without the secret the image is built and sends nothing.
 2. `notarize@v1` on `release/ci/Fabric Inbox.app`.
 3. `--stage image --identity <name> --submission <id>`: refuses an app that is not stapled or that

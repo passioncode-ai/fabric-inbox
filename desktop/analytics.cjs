@@ -2,7 +2,8 @@
 // Anonymous usage counts (passioncode-ai/fabric-inbox#27, docs/ANALYTICS.md): installs, days of
 // use and how many accounts, mailboxes, agents and agent keys a server has — never a name, an
 // address, a domain, a path, a message or a token. Events go to the organization's self-hosted
-// Aptabase in batches of at most 25 (the ingestion contract of ssheleg/sshlg-analytics).
+// Aptabase in batches of at most 25 (the ingestion contract of ssheleg/sshlg-analytics); its
+// address comes with the App Key, so the source names no host.
 //
 // Only an app that carries an App Key sends anything: the release workflow writes
 // desktop/analytics.json into the disk image's app; source builds, forks, tests and the store
@@ -13,7 +14,6 @@
 // forward; a refused send waits 60 s, then 10 min, before the next trigger may retry it.
 const path = require('node:path');
 
-const HOST = 'https://analytics.sshlg.me';
 const SDK = 'fabric-inbox-analytics@1';
 const KEY = /^A-SH-\d{10}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -30,11 +30,20 @@ const installationFile = (appData) => path.join(appData, 'PassionCode', 'install
 const stateFile = (userData) => path.join(userData, 'analytics-state.json');
 const utcDay = (ms) => new Date(ms).toISOString().slice(0, 10);
 
-/** The App Key bundled with a release build, or null (desktop/analytics.json, written by the builders). */
+/** An https origin with nothing after it, or null. */
+function analyticsOrigin(value) {
+  try {
+    const url = new URL(String(value));
+    return url.protocol === 'https:' && url.href === `${url.origin}/` && !url.username && !url.password ? url.origin : null;
+  } catch { return null; }
+}
+
+/** The App Key and host bundled with a release build, or null (desktop/analytics.json, written by the builder). */
 function readBundledKey(text) {
   try {
     const value = JSON.parse(text);
-    if (value && typeof value.appKey === 'string' && KEY.test(value.appKey)) return { appKey: value.appKey, debug: value.debug === true };
+    const host = value && analyticsOrigin(value.host);
+    if (host && typeof value.appKey === 'string' && KEY.test(value.appKey)) return { appKey: value.appKey, host, debug: value.debug === true };
   } catch { /* no key: nothing is sent */ }
   return null;
 }
@@ -102,7 +111,7 @@ function createAnalytics(deps) {
   const { fs, appData, userData, fetch: send, now = Date.now, uuid, random = Math.random, log = () => {},
     appVersion = '', osVersion = '', locale = '', engineVersion = '' } = deps;
   const bundle = deps.bundle || null;
-  const host = deps.host || HOST;
+  const host = bundle ? bundle.host : '';
   const shared = installationFile(appData);
   let installId = null;      // set only while analytics is on
   let queue = [];
@@ -293,4 +302,4 @@ function countsWith(ses, origin) {
   };
 }
 
-module.exports = { createAnalytics, countsWith, readBundledKey, readInstallation, ensureInstallation, writeSwitch, installationFile, stateFile, HOST, SDK, BATCH, KEY };
+module.exports = { createAnalytics, countsWith, readBundledKey, analyticsOrigin, readInstallation, ensureInstallation, writeSwitch, installationFile, stateFile, SDK, BATCH, KEY };

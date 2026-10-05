@@ -75,11 +75,15 @@ All PassionCode apps share one file:
 
 ## Which builds send
 
-`desktop/analytics.json` (`{"appKey": …, "debug": …}`) is written by
+`desktop/analytics.json` (`{"appKey": …, "host": …, "debug": …}`) is written by
 [`desktop/dist-mac.mjs`](../desktop/dist-mac.mjs) into the app it builds, from the environment
-variable `FABRIC_INBOX_ANALYTICS_APP_KEY`, and the receipt says `analytics: App Key bundled` (never
-the value). Only the release workflow's `macos` job sets that variable, from the `release`
-environment's secret of the same name, which holds the App Key of the Aptabase app *Fabric Inbox*
+variables `FABRIC_INBOX_ANALYTICS_APP_KEY` and `FABRIC_INBOX_ANALYTICS_HOST` (an https origin; the
+build refuses a key without one), and the receipt says `analytics: App Key bundled` (never the
+value). The source names no analytics host: the server's domain is also a deployment domain, which
+`tests/no-owner-data.test.ts` keeps out of everything that ships. Only the release workflow's
+`macos` job sets the two variables, from the `release` environment's variable
+`FABRIC_INBOX_ANALYTICS_HOST` (`https://analytics.sshlg.me`) and its secret
+`FABRIC_INBOX_ANALYTICS_APP_KEY`, which holds the App Key of the Aptabase app *Fabric Inbox*
 (`XnZ1VzR5qEmaf7KF1nkUVU`; vault `sshlg-analytics/prod/APTABASE_APP_KEY_FABRIC_INBOX`, found with
 `observatory_credentials sshlg-analytics`). The file is git-ignored, and the builder refuses a
 commit that contains it.

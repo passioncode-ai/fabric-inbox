@@ -48,6 +48,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { hardenTemplateHook, verifyHardening } from './hardening.mjs';
 import { pruneReleases } from './release-retention.mjs';
+const { analyticsOrigin } = createRequire(import.meta.url)('./analytics.cjs');
 
 export const BUNDLE_ID = 'ai.passioncode.fabric-inbox';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -99,16 +100,18 @@ const STAGES = ['app', 'image', 'finish'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * The anonymous-usage App Key for this build (docs/ANALYTICS.md), or null. Only the release
- * workflow sets FABRIC_INBOX_ANALYTICS_APP_KEY, so source builds and forks carry none and send
- * nothing; a key set by hand on a laptop marks its events as debug. The value never reaches a
- * receipt or a log.
+ * The anonymous-usage App Key and host for this build (docs/ANALYTICS.md), or null. Only the
+ * release workflow sets FABRIC_INBOX_ANALYTICS_APP_KEY and FABRIC_INBOX_ANALYTICS_HOST, so source
+ * builds and forks carry none and send nothing; a key set by hand on a laptop marks its events as
+ * debug. The key never reaches a receipt or a log.
  */
 export function analyticsBundle(env) {
   const key = String(env.FABRIC_INBOX_ANALYTICS_APP_KEY || '').trim();
   if (!key) return null;
   requireThat(/^A-SH-\d{10}$/.test(key), 'FABRIC_INBOX_ANALYTICS_APP_KEY is not an Aptabase App Key (A-SH-<10 digits>).');
-  return { appKey: key, debug: env.GITHUB_ACTIONS !== 'true' };
+  const host = analyticsOrigin(String(env.FABRIC_INBOX_ANALYTICS_HOST || '').trim());
+  requireThat(host, 'FABRIC_INBOX_ANALYTICS_HOST must be the analytics server as an https origin, set with the App Key.');
+  return { appKey: key, host, debug: env.GITHUB_ACTIONS !== 'true' };
 }
 
 export function parseArgs(argv) {

@@ -91,6 +91,7 @@ jobs:
           IDENTITY: ${{ steps.sign.outputs.identity }}
           # Anonymous usage counts (docs/ANALYTICS.md): only this build carries the App Key.
           FABRIC_INBOX_ANALYTICS_APP_KEY: ${{ secrets.FABRIC_INBOX_ANALYTICS_APP_KEY }}
+          FABRIC_INBOX_ANALYTICS_HOST: ${{ vars.FABRIC_INBOX_ANALYTICS_HOST }}
         run: node desktop/dist-mac.mjs --stage app --identity "$IDENTITY"
       - id: notarize-app
         uses: passioncode-ai/.github/actions/notarize@v1

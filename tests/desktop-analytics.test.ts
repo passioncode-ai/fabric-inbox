@@ -13,7 +13,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const usage = require("../desktop/analytics.cjs");
 
-const BUNDLE = { appKey: "A-SH-0123456789", debug: false };
+const HOST = "https://analytics.example.org";
+const BUNDLE = { appKey: "A-SH-0123456789", host: HOST, debug: false };
 const DAY = 24 * 3600 * 1000;
 
 function machine() {
@@ -59,7 +60,11 @@ test("a build without an App Key sends nothing and never creates the shared file
   assert.equal(existsSync(m.shared), false);
   assert.equal(await a.setEnabled(true), false);
   for (const text of ["", "{}", '{"appKey":"secret"}', '{"appKey":"A-SH-12"}', "not json"]) assert.equal(usage.readBundledKey(text), null, text);
-  assert.deepEqual(usage.readBundledKey('{"appKey":"A-SH-0123456789"}'), { appKey: "A-SH-0123456789", debug: false });
+  assert.equal(usage.readBundledKey('{"appKey":"A-SH-0123456789"}'), null, "no host, nothing sent");
+  for (const host of ["http://analytics.example.org", "https://analytics.example.org/path", "https://u:p@analytics.example.org", "nope"]) {
+    assert.equal(usage.readBundledKey(JSON.stringify({ appKey: "A-SH-0123456789", host })), null, host);
+  }
+  assert.deepEqual(usage.readBundledKey(JSON.stringify({ appKey: "A-SH-0123456789", host: HOST })), { appKey: "A-SH-0123456789", host: HOST, debug: false });
 });
 
 test("the first PassionCode app creates the shared installation; the install is counted once per app", async () => {
@@ -82,7 +87,7 @@ test("the first PassionCode app creates the shared installation; the install is 
     assert.equal(e.systemProps.osName, "macOS");
     assert.equal(e.systemProps.isDebug, false);
   }
-  assert.equal(srv.requests[0].url, `${usage.HOST}/api/v0/events`);
+  assert.equal(srv.requests[0].url, `${HOST}/api/v0/events`);
   assert.equal(srv.requests[0].headers["App-Key"], BUNDLE.appKey);
   // The next start: no second install.
   const again = client(m);
@@ -272,13 +277,16 @@ test("events older than 23 hours are dropped, never sent late", async () => {
 test("only the release workflow puts an App Key in the app, and the store package carries none", async () => {
   const workflow = readFileSync(".github/workflows/release.yml", "utf8");
   assert.match(workflow, /FABRIC_INBOX_ANALYTICS_APP_KEY: \$\{\{ secrets\.FABRIC_INBOX_ANALYTICS_APP_KEY \}\}/);
+  assert.match(workflow, /FABRIC_INBOX_ANALYTICS_HOST: \$\{\{ vars\.FABRIC_INBOX_ANALYTICS_HOST \}\}/);
   const dist = readFileSync("desktop/dist-mac.mjs", "utf8");
   assert.match(dist, /analytics\.json/);
   assert.ok(!/ANALYTICS/.test(readFileSync("desktop/mas-package.mjs", "utf8")), "the store package sends nothing");
   assert.match(readFileSync(".gitignore", "utf8"), /^desktop\/analytics\.json$/m);
   const { analyticsBundle } = await import("../desktop/dist-mac.mjs");
   assert.equal(analyticsBundle({}), null);
-  assert.deepEqual(analyticsBundle({ FABRIC_INBOX_ANALYTICS_APP_KEY: "A-SH-0123456789", GITHUB_ACTIONS: "true" }), { appKey: "A-SH-0123456789", debug: false });
-  assert.deepEqual(analyticsBundle({ FABRIC_INBOX_ANALYTICS_APP_KEY: "A-SH-0123456789" }), { appKey: "A-SH-0123456789", debug: true });
+  const key = { FABRIC_INBOX_ANALYTICS_APP_KEY: "A-SH-0123456789", FABRIC_INBOX_ANALYTICS_HOST: HOST };
+  assert.deepEqual(analyticsBundle({ ...key, GITHUB_ACTIONS: "true" }), { appKey: "A-SH-0123456789", host: HOST, debug: false });
+  assert.deepEqual(analyticsBundle(key), { appKey: "A-SH-0123456789", host: HOST, debug: true });
+  assert.throws(() => analyticsBundle({ FABRIC_INBOX_ANALYTICS_APP_KEY: "A-SH-0123456789" }), /https origin/);
   assert.throws(() => analyticsBundle({ FABRIC_INBOX_ANALYTICS_APP_KEY: "wrong" }), /App Key/);
 });
