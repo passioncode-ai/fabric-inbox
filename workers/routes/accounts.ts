@@ -197,6 +197,16 @@ accountsRouter.post(
       ),
     ),
 );
+accountsRouter.post(
+  "/api/accounts/:accountId/messages/:messageId/inbox",
+  async (c) =>
+    c.json(
+      await stub(c.env).moveToInbox(
+        c.req.param("accountId"),
+        c.req.param("messageId"),
+      ),
+    ),
+);
 accountsRouter.get(
   "/api/accounts/:accountId/messages/:messageId/attachments/:attachmentId",
   async (c) =>

@@ -113,6 +113,16 @@ test("a Gmail reply-all keeps the Cc and leaves out the account's own address (a
   assert.deepEqual(body.cc, ["bob@customer.invalid", "carol@customer.invalid"]);
 });
 
+// ── 4. Gmail move to inbox ──────────────────────────────────────────
+
+test("moving Gmail mail to the inbox puts it in the inbox, not only out of the trash (agent audit 4)", async () => {
+  const gm = fakeApi({ "POST /api/accounts/g1/messages/m1/inbox": ok(gmailMessage({ labels: ["INBOX"] })) });
+  const moved = await call(gm.api, "move_messages", { messages: [{ accountId: "gmail:g1", messageId: "m1" }], to: "inbox" });
+  assert.equal(moved.isError, false, JSON.stringify(moved.data));
+  assert.deepEqual(gm.calls.map((c) => `${c.method} ${c.path}`), ["POST /api/accounts/g1/messages/m1/inbox"]);
+  assert.deepEqual(moved.data, { done: 1, failed: [] });
+});
+
 // ── 11. Every route a tool calls is declared ────────────────────────
 
 test("reply and forward declare every route they call, Gmail's included (agent audit 11)", async () => {

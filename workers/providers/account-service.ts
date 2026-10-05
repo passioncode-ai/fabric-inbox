@@ -672,6 +672,13 @@ export class AccountService {
   async archive(accountId: string, messageId: string) {
     return this.modify(accountId, messageId, [], ["INBOX"]);
   }
+  /** Back to the Inbox from the archive, Trash or Spam: untrash only removes TRASH, so INBOX is added too. */
+  async moveToInbox(accountId: string, messageId: string) {
+    return this.changeMessage(accountId, messageId, async (client) => {
+      if ((await client.message(messageId)).labelIds?.includes("TRASH")) await client.setTrashed(messageId, false);
+      await client.modify(messageId, ["INBOX"], ["SPAM"]);
+    });
+  }
   /** Report spam or Not spam through Gmail's own label, which also trains Gmail (SP-3). */
   async setSpam(accountId: string, messageId: string, spam: boolean) {
     if (typeof spam !== "boolean") throw new ProviderError("invalid_spam_state", 400);

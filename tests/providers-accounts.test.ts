@@ -555,6 +555,27 @@ test("an HTML-only Gmail message reaches its consumers with its text (2026-10-01
 const cached = (id: string, over: Record<string, unknown>) => ({ message: { providerMessageId: id, threadId: id, timestamp: 0, labels: ["INBOX"], subject: "",
   from: "x@example.invalid", to: "a@example.invalid", cc: "", replyTo: "", snippet: "", date: "", read: true, attachments: [], ...over }, parts: 0 });
 
+test("moving Gmail mail to the inbox untrashes it if trashed and adds the Inbox label (agent audit 4)", async () => {
+  const seen: string[] = [];
+  let labels = ["TRASH"];
+  const { service } = await fixture(async (input, init) => {
+    const u = new URL(String(input));
+    seen.push(`${init?.method ?? "GET"} ${u.pathname.replace("/gmail/v1/users/me/", "")} ${init?.body ?? ""}`);
+    if (u.pathname.endsWith("/untrash")) labels = [];
+    if (u.pathname.endsWith("/modify")) labels = ["INBOX"];
+    return json({ id: "m1", threadId: "m1", labelIds: labels, payload: { headers: [] } });
+  });
+  const trashed = await service.moveToInbox("a", "m1");
+  assert.deepEqual(trashed.labels, ["INBOX"]);
+  assert.deepEqual(seen, ["GET messages/m1 ", "POST messages/m1/untrash ", 'POST messages/m1/modify {"addLabelIds":["INBOX"],"removeLabelIds":["SPAM"]}', "GET messages/m1 "]);
+  seen.length = 0;
+  labels = [];
+  const archived = await service.moveToInbox("a", "m1");
+  assert.deepEqual(archived.labels, ["INBOX"]);
+  assert.ok(!seen.some((s) => s.includes("untrash")), "an archived message is not untrashed");
+  assert.ok(seen.some((s) => s.includes("modify")));
+});
+
 test("a Gmail message cached before Cc and Reply-To were kept is read again from Gmail once (agent audit 2)", async () => {
   let fetches = 0;
   const { service, store } = await fixture(async () => {

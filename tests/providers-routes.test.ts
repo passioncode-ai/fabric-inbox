@@ -147,3 +147,11 @@ test('streamed request limit rejects without a declared Content-Length or accoun
   assert.equal(response.status, 413);
   assert.equal(called, false);
 });
+
+test("the Gmail inbox route moves a message to the inbox (agent audit 4)", async () => {
+  let args: unknown[] = [];
+  const env = { ...config, GMAIL_ACCOUNTS: { getByName: () => ({ moveToInbox: async (...a: unknown[]) => { args = a; return { labels: ["INBOX"] }; } }) } };
+  const response = await accountsRouter.request(origin + "/api/accounts/a/messages/m1/inbox", { method: "POST", headers: { Origin: origin } }, env as never);
+  assert.equal(response.status, 200);
+  assert.deepEqual(args, ["a", "m1"]);
+});

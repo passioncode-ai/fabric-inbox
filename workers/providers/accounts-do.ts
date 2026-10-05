@@ -138,6 +138,9 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
   archive(accountId: string, messageId: string) {
     return this.serial(() => this.service.archive(accountId, messageId));
   }
+  moveToInbox(accountId: string, messageId: string) {
+    return this.serial(() => this.service.moveToInbox(accountId, messageId));
+  }
   getAttachment(accountId: string, messageId: string, attachmentId: string) {
     return this.serial(() =>
       this.service.getAttachment(accountId, messageId, attachmentId),

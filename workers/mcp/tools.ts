@@ -526,14 +526,15 @@ const moveMessages = defineTool({
   name: "move_messages", title: "Move messages", level: "mail", target: (a) => `${a.messages.length} message(s) → ${a.to}`,
   description: "Moves messages to inbox, archive or trash (both providers), or to another folder of a Cloudflare mailbox. Trash is kept and can be undone; to judge spam use mark_spam, which also teaches the lists.",
   input: { messages: messageRefs, to: z.string().min(1).max(100).describe("inbox, archive, trash, or a Cloudflare folder id (list_folders)") },
-  routes: ["POST /api/v1/mailboxes/:mailboxId/emails/:id/move", "POST /api/accounts/:accountId/messages/:messageId/archive", "POST /api/accounts/:accountId/messages/:messageId/trashed"],
+  routes: ["POST /api/v1/mailboxes/:mailboxId/emails/:id/move", "POST /api/accounts/:accountId/messages/:messageId/archive", "POST /api/accounts/:accountId/messages/:messageId/trashed",
+    "POST /api/accounts/:accountId/messages/:messageId/inbox"],
   async call(a, ctx) {
     if (a.to === "spam") throw new ApiError(400, "Use mark_spam to move mail to Spam", null);
     return eachMessage(a.messages, async (account, id) => {
       if (account.provider === "cloudflare") return post(ctx, `${box(account.mailbox)}/emails/${enc(id)}/move`, { folderId: a.to });
       if (a.to === "archive") return post(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}/archive`);
       if (a.to === "trash") return post(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}/trashed`, { trashed: true });
-      if (a.to === "inbox") return post(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}/trashed`, { trashed: false });
+      if (a.to === "inbox") return post(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}/inbox`);
       throw new ApiError(400, "A Gmail message moves to inbox, archive or trash", null);
     });
   },
