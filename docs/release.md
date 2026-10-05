@@ -40,7 +40,10 @@ prints Apple's log otherwise), staples, and assesses with `spctl`:
    `EnableEmbeddedAsarIntegrityValidation`, `OnlyLoadAppFromAsar` and `EnableCookieEncryption` on)
    and its unused purpose strings removed. Both are read back from the built app into the
    receipt's `checks.fuses` (every slice) and `checks.usageDescriptions` (`none (declared: none)`),
-   and the build fails otherwise.
+   and the build fails otherwise. The same stage writes the anonymous-usage App Key into the app
+   (`desktop/analytics.json`) from the `release` environment's secret
+   `FABRIC_INBOX_ANALYTICS_APP_KEY` ([ANALYTICS.md](ANALYTICS.md)); the receipt's `analytics` says
+   `App Key bundled`, never the value. Without the secret the image is built and sends nothing.
 2. `notarize@v1` on `release/ci/Fabric Inbox.app`.
 3. `--stage image --identity <name> --submission <id>`: refuses an app that is not stapled or that
    Gatekeeper does not name `Notarized Developer ID`, then makes the image and signs it.
@@ -155,6 +158,11 @@ per package and has no checked universal path; Intel Macs install the universal 
    The first release with cookie encryption creates the item; the release after it proves an
    update reuses it. A dialog is a release blocker: the item's access list does not match the
    signature (team and bundle id), so every update would ask again.
+   **Rollback.** A version without cookie encryption (0.9.0 and earlier) cannot read the encrypted
+   cookies: going back to it means signing in again. It does not crash and loses no server data.
+   **Usage counts.** The receipt's `analytics` reads `App Key bundled`; after the upgrade check,
+   `scripts/stats.sh 1 "Fabric Inbox"` in a checkout of `sshlg-analytics` shows release events from
+   that launch ([ANALYTICS.md](ANALYTICS.md#reading-the-numbers)).
 8. **Record.** Add the receipts (run URL, release URL, sha256, both submission ids, Gatekeeper
    lines, the store build number and its App Store Connect state, the download check, the upgrade
    check) to the [release entry](app-store/README.md) in a docs-only change.

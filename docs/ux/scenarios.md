@@ -53,6 +53,7 @@
 | SCN-045 | Choose which Cloudflare accounts show | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | not audited |
 | SCN-046 | Connect another Cloudflare account | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | not audited |
 | SCN-047 | Connect a hub on this Mac by allowing it | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
+| SCN-048 | Turn the anonymous usage counts off or on | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -990,3 +991,23 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** desktop/connect.cjs, desktop/main.cjs, workers/mcp/scope.ts, workers/mcp/handler.ts, tests/desktop-connect.test.ts, tests/mcp-scope.test.ts, tests/mcp-workerd.test.ts
 - **Product:** unobserved
 - **Today:** Operator, 2026-10-03: "something pops up, you authorise, and it goes on" — the product connects without copying (ADR-0115 in passioncode-ai/fabric).
+
+### SCN-048: Turn the anonymous usage counts off or on
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07, JTBD-03; passioncode-ai/fabric-inbox#27
+- **Entry point:** The app menu, Fabric Inbox → Share Anonymous Usage Counts (a checkmark) and About Usage Counts…
+- **Preconditions:** A released disk image (it carries the App Key); no PassionCode app has turned the shared switch off.
+- **Steps:**
+  1. The person opens About Usage Counts… -> a native notice says what is sent (installed, opened, a day of use, how many Gmail accounts, Cloudflare mailboxes, agents and agent keys) and what never is (names, addresses, domains, messages, keys), and that the setting is shared by every PassionCode app on this Mac.
+  2. They clear the checkmark -> the shared file says `analytics: false`, events still waiting are dropped, and nothing more is sent by this app or by any other PassionCode app on the Mac.
+  3. They set it again -> counting resumes from that moment; nothing done while it was off is reported.
+- **Expected result:** The person knows what leaves the Mac and has one switch for it that every PassionCode app honours.
+- **Alt paths:** A build from source or the Mac App Store package: the checkmark is shown unavailable and nothing is sent. The shared file cannot be read (damaged): the checkmark cannot be set, a notice says nothing is sent, and the file is left as it is.
+- **UI elements:** App menu checkbox item, About Usage Counts… item, native notice.
+- **States covered:** empty, error, success
+- **Errors & recovery:** The shared file is damaged: analytics stays off and the notice says so; the person can remove the file to start fresh. The server is unreachable: events wait in memory (at most 23 hours) and are sent when it answers; nothing blocks the window.
+- **Status:** draft
+- **Coverage:** desktop/analytics.cjs, desktop/main.cjs, tests/desktop-analytics.test.ts, tests/desktop-profile.test.ts
+- **Product:** unobserved
+- **Today:** Built 2026-10-05 for 0.10.0 (docs/ANALYTICS.md); the switch is the one Fabric Switchboard shipped first.
