@@ -439,7 +439,8 @@ const reply = defineTool({
   description: "Answers a message in its conversation: to its Reply-To address when it has one, otherwise its sender (with replyAll also everyone else in To and Cc except you), subject Re:, threaded, with the original quoted. It really leaves; counts against this key's daily sends.",
   input: { accountId, messageId, ...body, idempotencyKey, replyAll: z.boolean().default(false), to: recipients.optional().describe("Answer these addresses instead"),
     quote: z.boolean().default(true).describe("Quote the original below your text"), signature: z.boolean().default(true).describe("Add the address's signature (Cloudflare)") },
-  routes: ["POST /api/v1/mailboxes/:mailboxId/emails/:id/reply"],
+  routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/v1/mailboxes/:mailboxId", "POST /api/v1/mailboxes/:mailboxId/emails/:id/reply",
+    "GET /api/accounts/:accountId/messages/:messageId", "GET /api/accounts", "POST /api/accounts/:accountId/send"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
     const original = await readMessage(ctx, account, a.messageId, 20_000);
@@ -469,7 +470,8 @@ const forward = defineTool({
   description: "Forwards a message with its text (and, from a Cloudflare mailbox, its attachments up to 5 MB) and your note on top. It really leaves; counts against this key's daily sends.",
   input: { accountId, messageId, to: recipients, text: z.string().max(100_000).default("").describe("Your note above the forwarded message"), idempotencyKey,
     attachments: z.boolean().default(true).describe("Include the original's attachments (Cloudflare, up to 5 MB)") },
-  routes: ["POST /api/v1/mailboxes/:mailboxId/emails/:id/forward"],
+  routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/v1/mailboxes/:mailboxId", "GET /api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId",
+    "POST /api/v1/mailboxes/:mailboxId/emails/:id/forward", "GET /api/accounts/:accountId/messages/:messageId", "POST /api/accounts/:accountId/send"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
     const original = await readMessage(ctx, account, a.messageId, 200_000);

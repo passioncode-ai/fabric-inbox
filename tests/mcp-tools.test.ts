@@ -112,3 +112,29 @@ test("a Gmail reply-all keeps the Cc and leaves out the account's own address (a
   assert.deepEqual(body.to, ["ann@customer.invalid"]);
   assert.deepEqual(body.cc, ["bob@customer.invalid", "carol@customer.invalid"]);
 });
+
+// ── 11. Every route a tool calls is declared ────────────────────────
+
+test("reply and forward declare every route they call, Gmail's included (agent audit 11)", async () => {
+  const declared = (name: string) => TOOLS.find((t) => t.name === name)!.routes;
+  const matches = (route: string, c: Call) => {
+    const [method, pattern] = route.split(" ");
+    return method === c.method && new RegExp(`^${pattern!.replace(/:[A-Za-z]+/g, "[^/]+")}$`).test(c.path);
+  };
+  const answers = {
+    [`GET ${CF_BOX}/emails/m1`]: ok(cfEmail({ attachments: [{ id: "a1", filename: "a.txt", mimetype: "text/plain", size: 2 }] })),
+    [`GET ${CF_BOX}/emails/m1/attachments/a1`]: { status: 200, data: new Uint8Array([104, 105]), contentType: "text/plain" },
+    [`GET ${CF_BOX}`]: ok({ settings: {} }),
+    [`POST ${CF_BOX}/emails/m1/reply`]: ok({ id: "ob-1" }), [`POST ${CF_BOX}/emails/m1/forward`]: ok({ id: "ob-2" }),
+    "GET /api/accounts/g1/messages/m1": ok(gmailMessage()), "GET /api/accounts": GMAIL_ACCOUNTS,
+    "POST /api/accounts/g1/send": ok({ status: "accepted" }, 202),
+  };
+  for (const [name, extra] of [["reply", { text: "x", replyAll: true }], ["forward", { to: "zed@x.invalid" }]] as const)
+    for (const accountId of [`cloudflare:${CF}`, "gmail:g1"]) {
+      const { api, calls } = fakeApi(answers);
+      const result = await call(api, name, { accountId, messageId: "m1", idempotencyKey: "k1", ...extra });
+      assert.equal(result.isError, false, `${name} ${accountId}: ${JSON.stringify(result.data)}`);
+      const undeclared = calls.filter((c) => !declared(name).some((r) => matches(r, c))).map((c) => `${c.method} ${c.path}`);
+      assert.deepEqual(undeclared, [], `${name} on ${accountId} calls routes it does not declare`);
+    }
+});
