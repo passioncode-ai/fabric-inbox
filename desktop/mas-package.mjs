@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, statfsSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statfsSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -147,6 +147,29 @@ export function validateEntitlements(actual, expected, label = 'the application'
 // them and their check is skipped (null). The application and every nested .app (the helpers)
 // must carry entitlements: an empty answer there is refused, naming the file. Before 2026-10-03 the
 // empty answer reached plistlib and failed as "python3 failed" (first CI rehearsal, v0.8.2-rc.2).
+/**
+ * Files and folders of the bundle a non-root user cannot read (folders: cannot list or enter).
+ * The store installs as root, so such a file can never be read by the person running the app,
+ * and App Store Connect refuses the upload (ITMS-90255, 0.10.1: the embedded provisioning
+ * profile was copied with the 0600 of its private temporary file). Symbolic links are skipped.
+ */
+export function unreadableByOthers(dir) {
+  const found = [];
+  const walk = (current) => {
+    for (const name of readdirSync(current)) {
+      const file = path.join(current, name);
+      const stat = lstatSync(file);
+      if (stat.isSymbolicLink()) continue;
+      if (stat.isDirectory()) {
+        if ((stat.mode & 0o005) !== 0o005) found.push(path.relative(dir, file) + '/');
+        walk(file);
+      } else if ((stat.mode & 0o004) === 0) found.push(path.relative(dir, file));
+    }
+  };
+  walk(dir);
+  return found;
+}
+
 export function expectedEntitlementsFor(file, app, c, signedEntitlements) {
   const empty = !String(signedEntitlements || '').trim();
   // The application's own executable (Contents/MacOS/<name>) is signed as part of the bundle and
@@ -225,6 +248,11 @@ export async function build(c, checked) {
       const decoded = JSON.parse(run('python3', ['-c', 'import sys,plistlib,json;print(json.dumps(plistlib.loads(sys.stdin.buffer.read())))'], { input: signedEntitlements }));
       validateEntitlements(decoded, expected, path.relative(path.dirname(app), file) || path.basename(file));
     }
+    // Readable by everyone (ITMS-90255). Modes are not sealed by the signature, so this follows it.
+    run('/bin/chmod', ['-R', 'go+rX,go-w', app]);
+    const unreadable = unreadableByOthers(app);
+    requireThat(!unreadable.length, `Not readable by other users (App Store Connect refuses it): ${unreadable.slice(0, 5).join(', ')}`);
+    run('/usr/bin/codesign', ['--verify', '--deep', '--strict', app]);
     const hardening = verifyHardening(app);
     const info = plistRead(path.join(app, 'Contents/Info.plist'));
     requireThat(info.CFBundleIdentifier === BUNDLE_ID && info.CFBundleVersion === c['build-number'] && info.FabricInboxSourceRevision === c.revision, 'Packaged bundle metadata does not match requested inputs.');

@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync, readFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
-import { BUNDLE_ID, MIN_FREE_BYTES, checkCapacity, childEntitlements, expectedEntitlementsFor, mainEntitlements, validateEntitlements, validateSource, parseArgs, parseIdentities, selectIdentity, validateConfig, validateProfile } from '../desktop/mas-package.mjs';
+import { BUNDLE_ID, MIN_FREE_BYTES, unreadableByOthers, checkCapacity, childEntitlements, expectedEntitlementsFor, mainEntitlements, validateEntitlements, validateSource, parseArgs, parseIdentities, selectIdentity, validateConfig, validateProfile } from '../desktop/mas-package.mjs';
 
 const hash = 'A'.repeat(40);
 const team = 'ABC123DEF4';
@@ -140,4 +142,20 @@ test('signed code without entitlements: a library is skipped, a bundle is refuse
   assert.deepEqual(expectedEntitlementsFor(mainExe, app, c, xml), mainEntitlements(c));
   assert.throws(() => expectedEntitlementsFor(mainExe, app, c, ''), /an application bundle must carry them/);
   assert.deepEqual(expectedEntitlementsFor(`${app}/Contents/Frameworks/Fabric Inbox Helper.app/Contents/MacOS/Fabric Inbox Helper`, app, c, xml), childEntitlements());
+});
+
+test('a store bundle with a file only root can read is refused before upload (ITMS-90255, 0.10.1)', () => {
+  const app = mkdtempSync(path.join(os.tmpdir(), 'fabric-mas-perm-'));
+  mkdirSync(path.join(app, 'Contents', 'MacOS'), { recursive: true });
+  writeFileSync(path.join(app, 'Contents', 'embedded.provisionprofile'), 'x', { mode: 0o600 });
+  writeFileSync(path.join(app, 'Contents', 'MacOS', 'Fabric Inbox'), 'x', { mode: 0o755 });
+  mkdirSync(path.join(app, 'Contents', 'Private'), { mode: 0o700 });
+  symlinkSync('MacOS', path.join(app, 'Contents', 'link'));
+  assert.deepEqual(unreadableByOthers(app).sort(), ['Contents/Private/', 'Contents/embedded.provisionprofile']);
+  chmodSync(path.join(app, 'Contents', 'embedded.provisionprofile'), 0o644);
+  chmodSync(path.join(app, 'Contents', 'Private'), 0o755);
+  assert.deepEqual(unreadableByOthers(app), []);
+  const builder = readFileSync('desktop/mas-package.mjs', 'utf8');
+  assert.match(builder, /chmod', \['-R', 'go\+rX,go-w', app\]/);
+  assert.ok(builder.indexOf("'go+rX,go-w'") < builder.indexOf('await flat('), 'fixed before the installer package is made');
 });
