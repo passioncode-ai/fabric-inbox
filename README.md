@@ -239,7 +239,7 @@ does not have it. Every field is explained in [deployments/README.md](deployment
 ## License
 
 Open source under the [GNU AGPL-3.0](LICENSE). A [commercial license](COMMERCIAL-LICENSE.md) is
-available for use that does not meet the AGPL's terms — contact@passioncode.ai.
+available for use that does not meet the AGPL's terms — [passioncode.ai/business](https://passioncode.ai/business/).
 Versions up to and including 0.7.1 were released under the Apache License 2.0.
 The code imported from Cloudflare's Agentic Inbox template stays under Apache-2.0 with its
 copyright notices ([third-party notices](THIRD_PARTY_NOTICES.md)). Contributions are accepted
