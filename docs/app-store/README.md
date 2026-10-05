@@ -182,7 +182,7 @@ app. Nothing is half-done in the tree.
 6. ~~**Create the App Store Connect app record**~~ — done 2026-10-03: "Fabric Inbox", Apple id `6818818207`, SKU `fabric-inbox`, en-US, macOS.
    The API cannot create a record; a publishing run's `mas` job checks for it first.
 
-Exact next task: **finish releasing 0.10.0** — the [release handoff](../handoffs/2026-10-05-release-0.10.0.md) names the approval (a person), then the download and upgrade checks, the receipts, the website and the knowledge base. Before 0.10.0, the next task was: **accept 0.8.0 live (B-39)** — after human step 3, read the Cloudflare accounts
+Exact next task: **finish releasing 0.10.1** (it includes 0.10.0) — the [release handoff](../handoffs/2026-10-05-release-0.10.md) names the approval (a person), then the download and upgrade checks, the receipts, the website and the knowledge base. Before 0.10.0, the next task was: **accept 0.8.0 live (B-39)** — after human step 3, read the Cloudflare accounts
 section (three accounts, all with mail), the failed domain's steps, and for the chosen domain of
 another account the `relay` step, a real message arriving through it and a reply leaving; record
 the receipt in the [accounts brief](tasks/2026-09-30-cloudflare-accounts.md). Then merge the door's
