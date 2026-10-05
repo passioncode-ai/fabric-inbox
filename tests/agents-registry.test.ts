@@ -48,6 +48,9 @@ const bundle = await build({
         async pump() { return this.alarm(); }
         async overlap() { return this.maxInflight ?? {}; }
         async expireHolds() { this.ctx.storage.sql.exec('UPDATE agent_queue SET next_at = 0'); }
+        async endClaimWaits() { this.ctx.storage.sql.exec('UPDATE agent_message_claims SET deadline = 0'); this.ctx.storage.sql.exec('UPDATE agent_queue SET next_at = 0'); }
+        async ageClaim(key, ms) { this.ctx.storage.sql.exec('UPDATE agent_message_claims SET created_at = created_at - ? WHERE key = ?', ms, key); }
+        async claimCount() { return Number(this.ctx.storage.sql.exec('SELECT COUNT(*) AS n FROM agent_message_claims').one().n); }
         async ageRuns() { const old = new Date(Date.now() - 11 * 60000).toISOString();
           for (const r of this.ctx.storage.sql.exec('SELECT id, body FROM agent_runs').toArray()) {
             const run = JSON.parse(r.body); run.updatedAt = old;
@@ -85,6 +88,10 @@ const bundle = await build({
               case 'hold': await reg.enqueue(c.mailbox, c.emailId, { holdMs: c.holdMs }); return Response.json(true);
               case 'release': await reg.release(c.mailbox, c.emailId); return Response.json(true);
               case 'expire': await reg.expireHolds(); return Response.json(true);
+              case 'endWaits': await reg.endClaimWaits(); return Response.json(true);
+              case 'claim': return Response.json(await reg.claimMessage(c.key, c.mailbox, c.elected));
+              case 'ageClaim': await reg.ageClaim(c.key, c.ms); return Response.json(true);
+              case 'claimCount': return Response.json(await reg.claimCount());
               case 'runId': return Response.json(await runIdFor(c.mailbox, c.emailId));
               case 'runs': return Response.json(await reg.listRuns({mailboxId: c.mailbox, ...(c.options ?? {})}));
               case 'sent': return Response.json(await box(c.mailbox).sentLog());
@@ -130,8 +137,8 @@ async function fixture(bindings: Record<string, string> = {}) {
 }
 
 const support = { name: "Support", instructions: "Answer from the FAQ.", knowledge: "Price: 10 EUR.", replyPolicy: { mode: "auto", allowedIntents: ["pricing"], dailySendLimit: 5 } };
-const raw = (subject: string, extra = "") =>
-  `From: Ann <ann@customer.invalid>\r\nTo: support@project.invalid\r\nSubject: ${subject}\r\nMessage-ID: <${subject.replace(/\W/g, "")}@customer.invalid>\r\n${extra}Content-Type: text/plain\r\n\r\nHow much is it?\r\n`;
+const raw = (subject: string, extra = "", to = "support@project.invalid") =>
+  `From: Ann <ann@customer.invalid>\r\nTo: ${to}\r\nSubject: ${subject}\r\nMessage-ID: <${subject.replace(/\W/g, "")}@customer.invalid>\r\n${extra}Content-Type: text/plain\r\n\r\nHow much is it?\r\n`;
 
 test("agents are versioned; a stale editor cannot overwrite; delete keeps old versions readable (REQ-P2)", async () => {
   const { mf, command } = await fixture();
@@ -295,7 +302,7 @@ test("two messages to one address are answered one after the other, never side b
     await command("setup", { mailbox: "sales@project.invalid", settings: { agent: { id: "support" } }, model: draft });
     await command("receive", { mailbox: "support@project.invalid", from: "ann@customer.invalid", raw: raw("First") });
     await command("receive", { mailbox: "support@project.invalid", from: "ann@customer.invalid", raw: raw("Second") });
-    await command("receive", { mailbox: "sales@project.invalid", from: "ann@customer.invalid", raw: raw("Other") });
+    await command("receive", { mailbox: "sales@project.invalid", from: "ann@customer.invalid", raw: raw("Other", "", "sales@project.invalid") });
     for (let i = 0; i < 5 && (await command("pump")).queue; i++);
     assert.equal((await command("runs", { mailbox: "support@project.invalid" })).length, 2);
     assert.equal((await command("runs", { mailbox: "sales@project.invalid" })).length, 1);
@@ -333,8 +340,8 @@ test("a stranger's message waits for its spam check: released, it is answered; n
     await command("setup", { mailbox: "support@project.invalid", settings: { agent: { id: "support" } }, model: draft });
     // Delivered with no agent consumer racing it: seed the mailbox, then queue by hand with a hold.
     await command("setup", { mailbox: "hold@project.invalid", settings: { agent: "off" }, model: draft });
-    const a = await command("receive", { mailbox: "hold@project.invalid", from: "ann@customer.invalid", raw: raw("First") });
-    const b = await command("receive", { mailbox: "hold@project.invalid", from: "bob@customer.invalid", raw: raw("Second") });
+    const a = await command("receive", { mailbox: "hold@project.invalid", from: "ann@customer.invalid", raw: raw("First", "", "hold@project.invalid") });
+    const b = await command("receive", { mailbox: "hold@project.invalid", from: "bob@customer.invalid", raw: raw("Second", "", "hold@project.invalid") });
     await command("pump"); // Off: nothing is answered and the plain queue rows are gone.
     await command("setup", { mailbox: "hold@project.invalid", settings: { agent: { id: "support" } }, model: draft });
     await command("hold", { mailbox: "hold@project.invalid", emailId: a.emailId, holdMs: 15 * 60_000 });
@@ -347,5 +354,135 @@ test("a stranger's message waits for its spam check: released, it is answered; n
     await command("expire");
     await command("pump");
     assert.equal((await command("runs", { mailbox: "hold@project.invalid" })).length, 2, "the hold ends by itself: a spam check that never answers delays, never drops");
+  } finally { await mf.dispose(); }
+});
+
+// ── B-22: one answer per workspace for a message sent to several agent addresses ──
+
+const autoSend = { decision: { decision: "send", intent: "pricing", grounded: true, body: "Hi Ann, 10 EUR.", reason: "" } };
+const addressed = (subject: string, to: string, cc = "", extra = `Message-ID: <${subject.replace(/\W/g, "")}@customer.invalid>\r\n`) =>
+  `From: Ann <ann@customer.invalid>\r\nTo: ${to}\r\n${cc ? `Cc: ${cc}\r\n` : ""}Subject: ${subject}\r\nDate: Mon, 5 Oct 2026 10:00:00 +0000\r\n${extra}Content-Type: text/plain\r\n\r\nHow much is it?\r\n`;
+
+async function agentAddresses(command: (op: string, fields?: Record<string, unknown>) => Promise<any>, ...boxes: string[]) {
+  await command("create", { input: support });
+  for (const mailbox of boxes) await command("setup", { mailbox, settings: { agent: { id: "support" } }, model: autoSend });
+}
+
+test("a message sent To one agent address and Cc another is answered once, from the To address (B-22)", async () => {
+  const { mf, command } = await fixture();
+  try {
+    await agentAddresses(command, "support@project.invalid", "sales@project.invalid");
+    const raw = addressed("Price", "support@project.invalid", "sales@project.invalid");
+    // The Cc copy arrives and is picked up before the To copy exists.
+    await command("receive", { mailbox: "sales@project.invalid", from: "ann@customer.invalid", raw });
+    assert.equal((await command("pump")).queue, 1, "the Cc copy waits for the To address");
+    assert.deepEqual(await command("runs", { mailbox: "sales@project.invalid" }), [], "nothing is recorded while it waits");
+    await command("receive", { mailbox: "support@project.invalid", from: "ann@customer.invalid", raw });
+    await command("pump");
+    assert.deepEqual(await command("sent", { mailbox: "support@project.invalid" }), [{ to: "ann@customer.invalid", subject: "Re: Price" }]);
+    await command("expire");
+    assert.equal((await command("pump")).queue, 0);
+    assert.deepEqual(await command("sent", { mailbox: "sales@project.invalid" }), [], "the customer gets one reply");
+    const [duplicate] = await command("runs", { mailbox: "sales@project.invalid" });
+    assert.equal(duplicate.status, "skipped");
+    assert.equal(duplicate.reason, "Duplicate: answered from support@project.invalid");
+    assert.equal(duplicate.agentId, "support", "the history names the agent that would have answered");
+    assert.equal((await command("runs", { mailbox: "support@project.invalid" }))[0].status, "sent");
+  } finally { await mf.dispose(); }
+});
+
+test("two agent addresses both in To: the first one listed answers (B-22)", async () => {
+  const { mf, command } = await fixture();
+  try {
+    await agentAddresses(command, "support@project.invalid", "sales@project.invalid");
+    const raw = addressed("Both", "Sales <sales@project.invalid>, support@project.invalid");
+    await command("receive", { mailbox: "support@project.invalid", from: "ann@customer.invalid", raw });
+    await command("receive", { mailbox: "sales@project.invalid", from: "ann@customer.invalid", raw });
+    await command("pump");
+    await command("expire");
+    await command("pump");
+    assert.equal((await command("sent", { mailbox: "sales@project.invalid" })).length, 1);
+    assert.deepEqual(await command("sent", { mailbox: "support@project.invalid" }), []);
+    assert.equal((await command("runs", { mailbox: "support@project.invalid" }))[0].reason, "Duplicate: answered from sales@project.invalid");
+  } finally { await mf.dispose(); }
+});
+
+test("deliveries that claim the same message at the same moment: exactly one claim wins (B-22)", async () => {
+  const { mf, command } = await fixture();
+  try {
+    // Neither address is listed (both Bcc): each would answer itself, so only the claim decides.
+    await agentAddresses(command, "support@project.invalid", "sales@project.invalid");
+    const raw = addressed("Hidden", "team@customer.invalid");
+    await command("receive", { mailbox: "support@project.invalid", from: "ann@customer.invalid", raw });
+    await command("receive", { mailbox: "sales@project.invalid", from: "ann@customer.invalid", raw });
+    assert.equal((await command("pump")).queue, 0, "both runs started in one pass, side by side");
+    const sent = [...await command("sent", { mailbox: "support@project.invalid" }), ...await command("sent", { mailbox: "sales@project.invalid" })];
+    assert.equal(sent.length, 1, "one reply, whichever claimed first");
+    const runs = [...await command("runs", { mailbox: "support@project.invalid" }), ...await command("runs", { mailbox: "sales@project.invalid" })];
+    assert.deepEqual(runs.map((r: any) => r.status).sort(), ["sent", "skipped"]);
+
+    // The claim itself, raced directly by eight deliveries that each choose themselves.
+    const boxes = Array.from({ length: 8 }, (_, i) => `m${i}@project.invalid`);
+    const claims = await Promise.all(boxes.map((mailbox) => command("claim", { key: "mid:race", mailbox, elected: mailbox })));
+    const winners = claims.filter((c: any) => c.outcome === "answer");
+    assert.equal(winners.length, 1, JSON.stringify(claims));
+    const owner = boxes[claims.findIndex((c: any) => c.outcome === "answer")];
+    assert.ok(claims.every((c: any) => c.outcome === "answer" || (c.outcome === "duplicate" && c.owner === owner)));
+  } finally { await mf.dispose(); }
+});
+
+test("a message with no Message-ID is still answered once, matched by sender, subject, Date, To and Cc (B-22)", async () => {
+  const { mf, command } = await fixture();
+  try {
+    await agentAddresses(command, "support@project.invalid", "sales@project.invalid");
+    const raw = addressed("No id", "support@project.invalid", "sales@project.invalid", "");
+    await command("receive", { mailbox: "sales@project.invalid", from: "ann@customer.invalid", raw });
+    await command("receive", { mailbox: "support@project.invalid", from: "ann@customer.invalid", raw });
+    await command("pump");
+    await command("expire");
+    await command("pump");
+    assert.equal((await command("sent", { mailbox: "support@project.invalid" })).length, 1);
+    assert.deepEqual(await command("sent", { mailbox: "sales@project.invalid" }), []);
+    assert.equal((await command("runs", { mailbox: "sales@project.invalid" }))[0].reason, "Duplicate: answered from support@project.invalid");
+  } finally { await mf.dispose(); }
+});
+
+test("an address with no agent changes nothing: the agent address in Cc answers at once (B-22)", async () => {
+  const { mf, command } = await fixture();
+  try {
+    await agentAddresses(command, "support@project.invalid");
+    await command("setup", { mailbox: "hello@project.invalid", settings: { agent: "off" }, model: autoSend });
+    const raw = addressed("Hello", "hello@project.invalid", "support@project.invalid");
+    await command("receive", { mailbox: "hello@project.invalid", from: "ann@customer.invalid", raw });
+    await command("receive", { mailbox: "support@project.invalid", from: "ann@customer.invalid", raw });
+    assert.equal((await command("pump")).queue, 0, "nobody waits for an address that has no agent");
+    assert.equal((await command("sent", { mailbox: "support@project.invalid" })).length, 1);
+    assert.deepEqual(await command("runs", { mailbox: "hello@project.invalid" }), [], "the Off address leaves no run");
+    assert.equal((await command("folder", { mailbox: "hello@project.invalid", folder: "inbox" })).length, 1, "and keeps the mail");
+  } finally { await mf.dispose(); }
+});
+
+test("the address chosen to answer never receives the message: the waiting copy answers once the wait ends (B-22)", async () => {
+  const { mf, command } = await fixture();
+  try {
+    await agentAddresses(command, "support@project.invalid", "sales@project.invalid");
+    // Listed in To and served here, but its copy never arrives (dropped as spam there, say).
+    await command("receive", { mailbox: "sales@project.invalid", from: "ann@customer.invalid", raw: addressed("Lost", "support@project.invalid", "sales@project.invalid") });
+    assert.equal((await command("pump")).queue, 1);
+    await command("expire");
+    assert.equal((await command("pump")).queue, 1, "still inside the wait: polled, not answered");
+    await command("endWaits");
+    assert.equal((await command("pump")).queue, 0);
+    assert.equal((await command("sent", { mailbox: "sales@project.invalid" })).length, 1, "answered rather than lost");
+  } finally { await mf.dispose(); }
+});
+
+test("message claims expire like other receipts, so storage does not grow without bound (B-22)", async () => {
+  const { mf, command } = await fixture();
+  try {
+    assert.deepEqual(await command("claim", { key: "mid:old", mailbox: "a@project.invalid", elected: "a@project.invalid" }), { outcome: "answer" });
+    await command("ageClaim", { key: "mid:old", ms: 8 * 86_400_000 });
+    await command("claim", { key: "mid:new", mailbox: "a@project.invalid", elected: "a@project.invalid" });
+    assert.equal(await command("claimCount"), 1, "the week-old claim is pruned");
   } finally { await mf.dispose(); }
 });
