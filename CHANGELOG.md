@@ -5,8 +5,42 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 0.10.0 — 2026-10-05
 
+Agents that work with mail get the right recipients and the exact bytes; a message is answered
+once; the Mac app is hardened and counts its use anonymously. Every fix has a test that fails
+without it.
+
+- **A reply goes where the sender asked.** `reply` answers the Reply-To address on both providers,
+  and `read_message` shows it. A Gmail reply-all keeps everyone on Cc and leaves your own address
+  out (Gmail messages cached before 0.10 are read again from Gmail once to learn their Cc).
+- **Attachments reach an agent byte for byte.** `get_attachment` and `forward` no longer re-encode
+  text and JSON attachments (an invalid `.json` came back as `"null"`).
+- **Moving archived Gmail mail to the inbox puts it in the inbox** (a new route adds the Inbox
+  label; before, the tool reported success and the message stayed archived).
+- **Gmail search applies each field on its own** — from, to (Cc included), subject, dates, unread,
+  starred, attachments, folder — and refuses a filter it cannot apply instead of ignoring it.
+- **Agents are told the truth about failures.** A batch where nothing was done is an error and is
+  journalled as failed; a failed send keeps the outbox id and status so `get_send_status` can follow
+  it; `update_messages` refuses to mark a whole conversation unread instead of marking it read; a
+  conversation listed by `threadId` spans every folder, your replies included; a mailbox-limited
+  key is no longer promised spam reporting it does not have.
+- **One answer per message (B-22).** A message sent to several agent addresses of one workspace
+  (To and Cc, or two in To) is answered once, from the first agent address in To; the other copies
+  are recorded as skipped with the address that answered. The claim is atomic in the workspace's
+  agent registry and expires after seven days.
+- **Anonymous usage counts** (#27, [docs/ANALYTICS.md](docs/ANALYTICS.md)). The released disk image
+  counts installs, days of use and how many Gmail accounts, Cloudflare mailboxes, agents and agent
+  keys your server has, with the installation id every PassionCode app on the Mac shares — never an
+  address, a name, a domain or anything from your mail. **Fabric Inbox → Share Anonymous Usage
+  Counts** turns it off for every PassionCode app at once. Builds from source and the Mac App
+  Store package send nothing.
+- **A mistyped server address costs nothing.** Changing the server clears the old server's
+  storage only after the new one answers; before, a wrong address deleted the old server's unsent
+  drafts and sign-in, and switching back within one run broke its storage.
+- **Local release folders keep what matters.** A development store build never removes the
+  uploaded distribution package; a removed store folder leaves its receipt; a failed removal no
+  longer fails a finished build.
 - **The Mac app is hardened** (lifecycle contract LC-13, LC-07, PR #12). Session cookies are
   encrypted at rest under a login-Keychain key, "Fabric Inbox Safe Storage"; the app cannot be run
   as a plain Node process or opened with an inspector; it loads only from its own integrity-checked
