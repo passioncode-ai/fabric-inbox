@@ -162,6 +162,26 @@ test("update_messages refuses to mark a conversation unread instead of marking i
   assert.equal(cf.calls.length, 1);
 });
 
+// ── 8. A send that failed keeps what the route knows ─────────────────
+
+test("a failed send returns the outbox id and status the route gave, so get_send_status can follow it (agent audit 8)", async () => {
+  const cf = fakeApi({
+    [`GET ${CF_BOX}`]: ok({ settings: {} }),
+    [`POST ${CF_BOX}/emails`]: ok({ id: "ob-9", mailboxId: CF, status: "unknown", errorCode: "TIMEOUT", attempts: 1, providerMessageId: null,
+      createdAt: 1, updatedAt: 2, deliveryStatus: "unconfirmed", projectionStatus: "pending", error: "Send outcome is unknown; do not resend automatically" }, 409),
+  });
+  const sent = await call(cf.api, "send_email", { accountId: `cloudflare:${CF}`, to: "ann@customer.invalid", subject: "Hi", text: "Hi.", idempotencyKey: "s1" });
+  assert.equal(sent.isError, true);
+  assert.equal(sent.data.status, 409);
+  assert.deepEqual(sent.data.details, { outboxId: "ob-9", status: "unknown", errorCode: "TIMEOUT", attempts: 1 });
+  assert.match(sent.data.next, /get_send_status/);
+
+  const gm = fakeApi({ "POST /api/accounts/g1/send": ok({ status: "unknown", idempotencyKey: "s2", error: "provider_unavailable" }, 409) });
+  const gsent = await call(gm.api, "send_email", { accountId: "gmail:g1", to: "ann@customer.invalid", subject: "Hi", text: "Hi.", idempotencyKey: "s2" });
+  assert.equal(gsent.isError, true);
+  assert.deepEqual(gsent.data.details, { status: "unknown", idempotencyKey: "s2" });
+});
+
 // ── 11. Every route a tool calls is declared ────────────────────────
 
 test("reply and forward declare every route they call, Gmail's included (agent audit 11)", async () => {

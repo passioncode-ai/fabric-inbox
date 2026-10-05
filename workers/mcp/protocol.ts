@@ -90,6 +90,18 @@ const text = (value: unknown, isError = false): ToolResult => ({
 const errorText = (error: unknown) =>
   error instanceof ApiError ? error.message : error instanceof Error ? error.message : String(error);
 
+/** What a refusing route knew that the agent needs next (a send's outbox id and status); named fields only. */
+const DETAIL_FIELDS = ["status", "errorCode", "code", "attempts", "idempotencyKey", "providerMessageId", "threadId"] as const;
+function errorDetails(error: unknown): Record<string, unknown> | undefined {
+  if (!(error instanceof ApiError) || !error.data || typeof error.data !== "object" || Array.isArray(error.data)) return undefined;
+  const data = error.data as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  // A Cloudflare send answers with its outbox entry, named by its id.
+  if (typeof data.id === "string" && typeof data.mailboxId === "string") out.outboxId = data.id;
+  for (const key of DETAIL_FIELDS) if (data[key] !== undefined && data[key] !== null) out[key] = data[key];
+  return Object.keys(out).length ? out : undefined;
+}
+
 const CONFIRM_FIELD = z.string().min(4).max(40).optional()
   .describe("Leave out on the first call. The first call returns what will happen and a code; call again with the same arguments and that code (valid 5 minutes) to do it.");
 
@@ -151,7 +163,10 @@ export async function runTool(tool: ToolDef, rawArgs: Record<string, unknown>, c
     // A route that refused (4xx) sent nothing; an unknown failure keeps the send counted.
     if (tool.sends && error instanceof ApiError && error.status < 500) await ledger.refundSend(caller).catch(() => {});
     await journal("failed", errorText(error));
-    return text({ error: errorText(error), ...(error instanceof ApiError ? { status: error.status } : {}) }, true);
+    const details = errorDetails(error);
+    const traced = tool.sends && (details?.outboxId || details?.idempotencyKey);
+    return text({ error: errorText(error), ...(error instanceof ApiError ? { status: error.status } : {}), ...(details ? { details } : {}),
+      ...(traced ? { next: "Whether it went out is in get_send_status (outboxId for a Cloudflare mailbox, idempotencyKey for Gmail). Retry only with the same idempotencyKey, never a new one." } : {}) }, true);
   }
 }
 
