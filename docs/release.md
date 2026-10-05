@@ -47,13 +47,20 @@ prints Apple's log otherwise), staples, and assesses with `spctl`:
 2. `notarize@v1` on `release/ci/Fabric Inbox.app`.
 3. `--stage image --identity <name> --submission <id>`: refuses an app that is not stapled or that
    Gatekeeper does not name `Notarized Developer ID`, then makes the image and signs it.
-4. `notarize@v1` on `release/Fabric-Inbox-<version>.dmg`.
+4. `notarize@v1` on `release/Fabric-Inbox-<version>.dmg`. The same stage also makes the automatic
+   update: `release/Fabric-Inbox-<version>-mac.zip` from the stapled app
+   (`ditto -c -k --sequesterRsrc --keepParent`), unpacked again and checked (`codesign --verify
+   --deep --strict`, `stapler validate`) before anything else happens.
 5. `--stage finish --submission <id>`: the image's staple and Gatekeeper verdict
-   (`context:primary-signature`, `source=Notarized Developer ID`), then
-   `Fabric-Inbox-<version>.receipt.json` with both submission ids, the hashes and the run that
-   built it.
+   (`context:primary-signature`, `source=Notarized Developer ID`), then `update-mac.json` (the
+   feed every released copy reads at `releases/latest/download/update-mac.json`, naming the zip
+   with its sha256 and size) and `Fabric-Inbox-<version>.receipt.json` with both submission ids,
+   the hashes, the update zip and the run that built it. The app stage writes the feed's address
+   into the app (`desktop/updates.json`, from `GITHUB_REPOSITORY`); only this workflow does
+   ([desktop-data-and-updates.md](desktop-data-and-updates.md#updates)).
 
-The release files are the image and its receipt (artifact `release-macos`). The image's own
+The release files are the image, its receipt, the update zip and `update-mac.json` (artifact
+`release-macos`). The image's own
 `.sha256` is not published any more: the GPG-signed `SHA256SUMS` covers every file, so a second,
 unsigned checksum would add nothing. Releases up to 0.8.2 carry a `.sha256` instead.
 
@@ -160,6 +167,11 @@ per package and has no checked universal path; Intel Macs install the universal 
    signature (team and bundle id), so every update would ask again.
    **Rollback.** A version without cookie encryption (0.9.0 and earlier) cannot read the encrypted
    cookies: going back to it means signing in again. It does not crash and loses no server data.
+   **Automatic update.** `curl -sL https://github.com/passioncode-ai/fabric-inbox/releases/latest/download/update-mac.json`
+   names this version, and its `sha256` equals `shasum -a 256` of the downloaded `-mac.zip`. On the
+   upgrade-check Mac (a release with the updater installed), the previous version finds, downloads
+   and installs this one with nobody downloading anything: **Check for Updates…** says it is ready,
+   quitting installs it, and the next start shows the new version (`app_updated` in the usage counts).
    **Usage counts.** The receipt's `analytics` reads `App Key bundled`; after the upgrade check,
    `scripts/stats.sh 1 "Fabric Inbox"` in a checkout of `sshlg-analytics` shows release events from
    that launch ([ANALYTICS.md](ANALYTICS.md#reading-the-numbers)).

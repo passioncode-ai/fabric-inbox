@@ -49,6 +49,7 @@ import { fileURLToPath } from 'node:url';
 import { hardenTemplateHook, verifyHardening } from './hardening.mjs';
 import { pruneReleases } from './release-retention.mjs';
 const { analyticsOrigin } = createRequire(import.meta.url)('./analytics.cjs');
+const { feedFor, feedURL } = createRequire(import.meta.url)('./updater.cjs');
 
 export const BUNDLE_ID = 'ai.passioncode.fabric-inbox';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -114,6 +115,18 @@ export function analyticsBundle(env) {
   return { appKey: key, host, debug: env.GITHUB_ACTIONS !== 'true' };
 }
 
+/**
+ * The update feed a release build checks (docs/desktop-data-and-updates.md), or null. Only the
+ * release workflow's app stage writes it, for the repository whose releases carry the update, so
+ * a source build, a debug build or a fork without its own release never checks.
+ */
+export function updateBundle(env, stage) {
+  if (stage !== 'app' || env.GITHUB_ACTIONS !== 'true') return null;
+  const repository = String(env.GITHUB_REPOSITORY || '');
+  requireThat(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository), 'GITHUB_REPOSITORY must name owner/repository for the update feed.');
+  return { feed: feedURL(repository) };
+}
+
 export function parseArgs(argv) {
   const args = { unsigned: false, notaryProfile: '', identity: '', setups: [], stage: '', submission: '' };
   const valued = { '--notary-profile': 'notaryProfile', '--identity': 'identity', '--stage': 'stage', '--submission': 'submission' };
@@ -148,6 +161,9 @@ export function stagePaths(repoRoot, version) {
     dir, app: path.join(dir, 'Fabric Inbox.app'), state: path.join(dir, 'state.json'),
     dmg: path.join(repoRoot, 'release', `Fabric-Inbox-${version}.dmg`),
     receipt: path.join(repoRoot, 'release', `Fabric-Inbox-${version}.receipt.json`),
+    // The update Squirrel.Mac downloads (the stapled app, zipped) and the feed that names it.
+    zip: path.join(repoRoot, 'release', `Fabric-Inbox-${version}-mac.zip`),
+    feed: path.join(repoRoot, 'release', 'update-mac.json'),
   };
 }
 
@@ -350,6 +366,17 @@ async function stageImage(args, src) {
   const buildTemp = buildTempDir(path.join(root, 'release'));
   const temp = mkdtempSync(path.join(buildTemp, 'fabric-dmg-'));
   try {
+    // The update: the same stapled app, zipped the way Squirrel.Mac unpacks it, then unpacked
+    // again here and checked like the original (signature, staple) before it can be published.
+    rmSync(paths.zip, { force: true });
+    run('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', paths.app, paths.zip]);
+    const unpacked = path.join(temp, 'update-check');
+    mkdirSync(unpacked);
+    run('/usr/bin/ditto', ['-x', '-k', paths.zip, unpacked]);
+    const unpackedApp = path.join(unpacked, 'Fabric Inbox.app');
+    requireThat(tryRun('codesign', ['--verify', '--deep', '--strict', unpackedApp]).ok, 'The app unpacked from the update zip fails codesign --verify.');
+    requireThat(tryRun('xcrun', ['stapler', 'validate', unpackedApp]).ok, 'The app unpacked from the update zip is not stapled.');
+    receipt.update = { zip: path.basename(paths.zip), sha256: sha256(paths.zip), bytes: readFileSync(paths.zip).length, checks: 'unpacked: codesign valid, stapled' };
     run('/usr/bin/tar', ['-xf', '-', '-C', temp], { input: run('git', ['archive', src.revision, 'desktop/dmg-background.png'], { encoding: 'buffer' }) });
     rmSync(paths.dmg, { force: true });
     rmSync(`${paths.dmg}.sha256`, { force: true });
@@ -372,6 +399,13 @@ function stageFinish(args, src) {
   if (args.submission) receipt.checks.notarySubmission = `${args.submission}: Accepted`;
   receipt.notarization = 'accepted and stapled (release workflow, passioncode-ai/.github notarize action)';
   assessImage(paths.dmg, receipt, true);
+  // The feed every released copy reads at releases/latest/download/update-mac.json.
+  requireThat(receipt.update && existsSync(paths.zip) && sha256(paths.zip) === receipt.update.sha256, `No update zip matching the receipt at ${path.relative(root, paths.zip)}. Run --stage image again.`);
+  const repository = String(process.env.GITHUB_REPOSITORY || '');
+  const feed = feedFor({ repository, version: src.version, zipName: receipt.update.zip, sha256: receipt.update.sha256, size: receipt.update.bytes,
+    notes: `Fabric Inbox ${src.version}: https://github.com/${repository}/releases/tag/v${src.version}`, pubDate: new Date().toISOString() });
+  writeFileSync(paths.feed, JSON.stringify(feed, null, 2) + '\n');
+  receipt.update.feed = path.basename(paths.feed);
   writeReceipt(paths.dmg, receipt, paths.receipt);
 }
 
@@ -412,6 +446,9 @@ async function main() {
     requireThat(!existsSync(path.join(source, 'analytics.json')), 'desktop/analytics.json exists in the commit: the App Key is written only by the build, from the release environment.');
     const analytics = analyticsBundle(process.env);
     if (analytics) writeFileSync(path.join(source, 'analytics.json'), JSON.stringify(analytics) + '\n', { mode: 0o600 });
+    requireThat(!existsSync(path.join(source, 'updates.json')), 'desktop/updates.json exists in the commit: the update feed is written only by the release build.');
+    const updatesFeed = updateBundle(process.env, args.stage);
+    if (updatesFeed) writeFileSync(path.join(source, 'updates.json'), JSON.stringify(updatesFeed) + '\n');
     for (const setup of bundled) {
       mkdirSync(path.join(source, 'setups'), { recursive: true });
       writeFileSync(path.join(source, 'setups', `${setup.name}.json`), setup.text);
@@ -448,6 +485,7 @@ async function main() {
       product: 'Fabric Inbox', version, revision, dirtyDesktopSources: dirty, electronVersion, architectures: ['arm64', 'x86_64'],
       builtAt: new Date().toISOString(), builtBy: builtBy(), image: path.basename(staged ? staged.dmg : dmg),
       analytics: analytics ? (analytics.debug ? 'App Key bundled (debug events)' : 'App Key bundled') : 'none (sends nothing)',
+      updates: updatesFeed ? updatesFeed.feed : 'none (this build never checks)',
       bundledSetups: bundled.length ? bundled.map(({ name, sha256 }) => ({ name, file: `deployments/${name}/setup.json`, sha256 })) : 'none (public build)',
       serverBundle: { version: serverManifest.version, revision: serverManifest.revision, modules: serverManifest.modules.length,
         assets: Object.keys(serverManifest.assets.files).length, manifestSha256: sha256(path.join(source, 'server-bundle', 'manifest.json')) },

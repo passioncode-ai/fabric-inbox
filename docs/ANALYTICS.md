@@ -23,6 +23,7 @@ installation id below. Nothing else identifies the Mac or the person.
 |---|---|---|
 | `app_installed` | the first start of this app on this Mac (once; kept in `<userData>/analytics-state.json`) | `first_passioncode_app` (no PassionCode app had run here before), `server_configured` |
 | `app_started` | every start | `launch`: `ordinary`, or `link` when a `fabric-inbox://connect` link opened the app |
+| `app_updated` | the first start of a new version (an automatic update or a manual one) | `from`: the version this app last started as |
 | `app_active` | once per UTC day, when the app starts or its window comes forward | `server` (whether counts were read); with a signed-in server: `gmail`, `cloudflare` (mailboxes), `agents`, `agent_keys` — counts only |
 | `account_added` / `account_removed` | the day's counts differ from the last ones | `provider` (`gmail`, `cloudflare`), `added` or `removed`, `accounts` (total after) |
 | `server_connected` | a server address is saved | `method`: `created` (Create my server), `entered`, `setup_file` |

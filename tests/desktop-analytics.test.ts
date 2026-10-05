@@ -95,6 +95,21 @@ test("the first PassionCode app creates the shared installation; the install is 
   assert.deepEqual(again.srv.events().map((e) => [e.eventName, e.props.launch]), [["app_started", "link"]]);
 });
 
+test("an update shows once as app_updated with the version it came from", async () => {
+  const m = machine();
+  const first = client(m);
+  await first.a.start({});
+  const later = client(m, { appVersion: "0.10.1" });
+  await later.a.start({});
+  const events = later.srv.events();
+  assert.deepEqual(events.map((e) => e.eventName), ["app_updated", "app_started"]);
+  assert.equal(events[0].props.from, "0.10.0");
+  assert.equal(events[0].systemProps.appVersion, "0.10.1");
+  const again = client(m, { appVersion: "0.10.1" });
+  await again.a.start({});
+  assert.deepEqual(again.srv.events().map((e) => e.eventName), ["app_started"]);
+});
+
 test("an installation made by another PassionCode app is read, never overwritten, and its fields are kept", async () => {
   const m = machine();
   mkdirSync(path.dirname(m.shared), { recursive: true });
