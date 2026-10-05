@@ -5,13 +5,16 @@
 //
 // Release artefacts: `Fabric-Inbox-<version>[-<variant>].dmg` and its `.dmg.sha256`, grouped by
 // version (a personal `-owner` image and an `-unsigned` one belong to their version), and store
-// build folders `mas-<mode>-<arch>-<build>-<revision>`. Receipts (`*.receipt.json`) are small and
-// stay as the record of what was built. Anything else in the folder is left alone.
-import { readdirSync, rmSync } from 'node:fs';
+// build folders `mas-<mode>-<arch>-<build>-<revision>`, kept per mode (a development build never
+// removes the distribution package that was uploaded). Receipts (`*.receipt.json`) are small and
+// stay as the record of what was built: a store folder's `build-receipt.json` is moved out to
+// `<folder>.receipt.json` before the folder goes. Anything else in the folder is left alone, and
+// a removal that fails is logged, never fatal: pruning runs after the build is already made.
+import { existsSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
 const IMAGE = /^Fabric-Inbox-(\d+\.\d+\.\d+)(?:-[a-z0-9-]+)?\.dmg(?:\.sha256)?$/;
-const STORE = /^mas-(?:development|distribution)-(?:arm64|x64)-(\d+(?:\.\d+){0,2})-[0-9a-f]{12}$/;
+const STORE = /^mas-(development|distribution)-(?:arm64|x64)-(\d+(?:\.\d+){0,2})-[0-9a-f]{12}$/;
 
 /** Compares dotted numeric versions: negative, zero or positive. */
 export function compareVersions(a, b) {
@@ -44,19 +47,36 @@ export function planReleasePrune(names, { current, currentMas } = {}) {
   }
   if (currentMas) {
     const stores = names.filter((n) => STORE.test(n));
-    const ordered = stores.filter((n) => n !== currentMas)
-      .sort((a, b) => compareVersions(STORE.exec(b)[1], STORE.exec(a)[1]) || b.localeCompare(a));
-    const kept = new Set([currentMas, ...ordered.slice(0, 1)]);
+    const currentMode = STORE.exec(currentMas)?.[1];
+    const newestFirst = (list) => list.sort((a, b) => compareVersions(STORE.exec(b)[2], STORE.exec(a)[2]) || b.localeCompare(a));
+    const sameMode = newestFirst(stores.filter((n) => n !== currentMas && STORE.exec(n)[1] === currentMode));
+    const otherMode = newestFirst(stores.filter((n) => STORE.exec(n)[1] !== currentMode));
+    // The current build and the one before it in its mode; the newest of the other mode untouched.
+    const kept = new Set([currentMas, ...sameMode.slice(0, 1), ...otherMode.slice(0, 1)]);
     for (const name of stores) if (!kept.has(name)) remove.push(name);
   }
   return { remove, keepVersions };
 }
 
-/** Removes what planReleasePrune names from `dir`; returns the removed names. */
-export function pruneReleases(dir, options) {
+/** Removes what planReleasePrune names from `dir`; returns the removed names. Never throws. */
+export function pruneReleases(dir, options, log = (line) => console.error(JSON.stringify(line))) {
   let names;
-  try { names = readdirSync(dir); } catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+  try { names = readdirSync(dir); }
+  catch (error) {
+    if (error.code !== 'ENOENT') log({ event: 'release_prune', outcome: 'not_read', code: error.code || 'error' });
+    return [];
+  }
   const { remove } = planReleasePrune(names, options);
-  for (const name of remove) rmSync(path.join(dir, name), { recursive: true, force: true });
-  return remove;
+  const removed = [];
+  for (const name of remove) {
+    try {
+      const storeReceipt = path.join(dir, name, 'build-receipt.json');
+      if (STORE.test(name) && existsSync(storeReceipt)) renameSync(storeReceipt, path.join(dir, `${name}.receipt.json`));
+      rmSync(path.join(dir, name), { recursive: true, force: true });
+      removed.push(name);
+    } catch (error) {
+      log({ event: 'release_prune', outcome: 'not_removed', name, code: error.code || 'error' });
+    }
+  }
+  return removed;
 }
