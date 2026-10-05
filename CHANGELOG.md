@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+- **The Mac App Store package is readable by every user.** App Store Connect refused the first
+  store upload (0.10.1, ITMS-90255: files only root can read): the embedded provisioning profile
+  kept the 0600 of its private temporary file. The bundle is made readable after signing, and the
+  build now stops before Apple does if any file or folder is not.
+
 ## 0.10.1 — 2026-10-05
 
 The Mac app now keeps itself up to date, and removing or reinstalling it loses nothing.
