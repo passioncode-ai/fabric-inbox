@@ -146,6 +146,22 @@ test("a Gmail search_mailbox sends each field as its own filter and refuses what
   assert.equal(gm.calls.length, 1, "a refused search asks nothing");
 });
 
+// ── 6. update_messages on a conversation ────────────────────────────
+
+test("update_messages refuses to mark a conversation unread instead of marking it read (agent audit 6)", async () => {
+  const cf = fakeApi({ [`POST ${CF_BOX}/threads/t1/read`]: ok({ status: "marked_read" }) });
+  const unread = await call(cf.api, "update_messages", { thread: { accountId: `cloudflare:${CF}`, threadId: "t1" }, read: false });
+  assert.equal(unread.isError, true);
+  assert.equal(unread.data.status, 400);
+  assert.match(unread.data.error, /read: true/);
+  const starred = await call(cf.api, "update_messages", { thread: { accountId: `cloudflare:${CF}`, threadId: "t1" }, starred: true });
+  assert.equal(starred.isError, true, "starring a conversation is not something the route does");
+  assert.equal(cf.calls.length, 0, "nothing was marked");
+  const read = await call(cf.api, "update_messages", { thread: { accountId: `cloudflare:${CF}`, threadId: "t1" }, read: true });
+  assert.equal(read.isError, false, JSON.stringify(read.data));
+  assert.equal(cf.calls.length, 1);
+});
+
 // ── 11. Every route a tool calls is declared ────────────────────────
 
 test("reply and forward declare every route they call, Gmail's included (agent audit 11)", async () => {

@@ -514,12 +514,18 @@ async function eachMessage<T>(refs: { accountId: string; messageId: string }[], 
 
 const updateMessages = defineTool({
   name: "update_messages", title: "Mark read or starred", level: "mail", target: (a) => (a.thread ? `thread ${a.thread.threadId}` : `${a.messages?.length ?? 0} message(s)`),
-  description: "Marks messages read or unread, starred or not. For a Cloudflare conversation, threadId marks the whole conversation read.",
+  description: "Marks messages read or unread, starred or not. For a Cloudflare conversation, thread marks the whole conversation read (read: true or left out); to mark one unread or starred, list its messages (list_mailbox_messages with threadId) and pass them in messages.",
   input: { messages: messageRefs.optional(), read: z.boolean().optional(), starred: z.boolean().optional(),
     thread: z.object({ accountId, threadId: z.string().min(1).max(300) }).optional().describe("Cloudflare: mark every message of this conversation read") },
   routes: ["PUT /api/v1/mailboxes/:mailboxId/emails/:id", "POST /api/v1/mailboxes/:mailboxId/threads/:threadId/read", "POST /api/accounts/:accountId/messages/:messageId/read", "POST /api/accounts/:accountId/messages/:messageId/starred"],
   async call(a, ctx) {
-    if (a.thread) { const account = cloudflareOnly(parseAccount(a.thread.accountId), "Marking a conversation"); await post(ctx, `${box(account.mailbox)}/threads/${enc(a.thread.threadId)}/read`); }
+    if (a.thread) {
+      // The route marks a conversation read and nothing else: anything else would be done wrong, silently.
+      if (a.read === false || (!a.messages && a.starred !== undefined))
+        throw new ApiError(400, "A conversation can only be marked read (read: true). To mark it unread or starred, list its messages with list_mailbox_messages (threadId) and pass them in messages.", null);
+      const account = cloudflareOnly(parseAccount(a.thread.accountId), "Marking a conversation");
+      await post(ctx, `${box(account.mailbox)}/threads/${enc(a.thread.threadId)}/read`);
+    }
     if (!a.messages) return { ok: true };
     if (a.read === undefined && a.starred === undefined) throw new ApiError(400, "Say read, starred or both", null);
     return eachMessage(a.messages, async (account, id) => {
