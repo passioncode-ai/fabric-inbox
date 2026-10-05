@@ -91,8 +91,9 @@ ones that matter. Report per message: who, what they want, what you suggest. Do 
 unless asked (`update_messages`).
 
 **Answer.** `read_message` (or `read_thread` for a Cloudflare conversation) → write the answer →
-`reply` with `idempotencyKey`, or `save_draft` with `replyToMessageId` when drafting. The address's
-display name and signature are added for you (`signature: false` to skip).
+`reply` with `idempotencyKey`, or `save_draft` with `replyToMessageId` when drafting. `reply` goes
+to the message's `replyTo` when it has one, else its sender; `replyAll` copies the rest of To and Cc
+but never you. The address's display name and signature are added for you (`signature: false` to skip).
 
 **Find.** `list_messages` with `query` searches every inbox; `search_mailbox` searches one account
 by sender, recipient, subject, dates, read, starred and attachments.

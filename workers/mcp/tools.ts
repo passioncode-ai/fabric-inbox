@@ -12,6 +12,7 @@
 import { z } from "zod";
 import { ApiError, defineTool, unwrap, type ToolContext, type ToolDef } from "./protocol";
 import { clip, forwardedBlock, htmlToText, quotedBlock, textToHtml } from "./mail-text";
+import { headerValue, parseStoredHeaders } from "../agents/prefilter";
 
 // ── Shared pieces ──────────────────────────────────────────────────
 
@@ -60,7 +61,7 @@ const fromFor = (mailbox: string, settings: MailboxSettings) =>
 /** One message, the same shape for both providers. */
 interface ReadMessage {
   accountId: string; messageId: string; threadId: string | null; rfcMessageId: string | null; references: string | null;
-  subject: string; from: string; to: string; cc: string | null; date: string; folder: string | null;
+  subject: string; from: string; to: string; cc: string | null; replyTo: string | null; date: string; folder: string | null;
   read: boolean; starred: boolean; spamReason: string | null; text: string; truncated: boolean; html?: string;
   attachments: { attachmentId: string; filename: string; type: string; size: number }[];
 }
@@ -72,7 +73,7 @@ async function readMessage(ctx: ToolContext, account: Account, id: string, max =
     return {
       accountId: account.id, messageId: String(e.id), threadId: (e.thread_id as string) ?? null, rfcMessageId: (e.message_id as string) ?? null,
       references: (e.email_references as string) ?? null, subject: String(e.subject ?? ""), from: String(e.sender ?? ""), to: String(e.recipient ?? ""),
-      cc: (e.cc as string) || null, date: String(e.date ?? ""), folder: (e.folder_id as string) ?? null, read: !!e.read, starred: !!e.starred,
+      cc: (e.cc as string) || null, replyTo: headerValue(parseStoredHeaders(e.raw_headers as string | null), "reply-to")?.trim() || null, date: String(e.date ?? ""), folder: (e.folder_id as string) ?? null, read: !!e.read, starred: !!e.starred,
       spamReason: (e.spam_reason as string) ?? null, text: body.text, truncated: body.truncated, ...(includeHtml ? { html } : {}),
       attachments: (e.attachments ?? []).map((a) => ({ attachmentId: String(a.id), filename: String(a.filename), type: String(a.mimetype), size: Number(a.size) })),
     };
@@ -82,7 +83,8 @@ async function readMessage(ctx: ToolContext, account: Account, id: string, max =
   const labels = m.labels ?? [];
   return {
     accountId: account.id, messageId: String(m.providerMessageId ?? id), threadId: (m.threadId as string) ?? null, rfcMessageId: (m.rfcMessageId as string) || null,
-    references: (m.references as string) || null, subject: String(m.subject ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""), cc: null,
+    references: (m.references as string) || null, subject: String(m.subject ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""),
+    cc: (m.cc as string) || null, replyTo: (m.replyTo as string) || null,
     date: String(m.date ?? ""), folder: labels.includes("SPAM") ? "spam" : labels.includes("TRASH") ? "trash" : labels.includes("INBOX") ? "inbox" : labels.includes("SENT") ? "sent" : "archive",
     read: !!m.read, starred: labels.includes("STARRED"), spamReason: labels.includes("SPAM") ? "Gmail put it in Spam" : null,
     text: body.text, truncated: body.truncated, ...(includeHtml ? { html: String(m.html ?? "") } : {}),
@@ -102,6 +104,32 @@ const quoted = (value: string) => JSON.stringify(value.replace(/\s+/g, " ").slic
 
 /** The first address in a header value, e.g. "Ann <ann@example.com>" → "ann@example.com". */
 const firstAddress = (value: string) => (value.match(/<([^>]+)>/)?.[1] ?? value.split(",")[0] ?? "").trim();
+
+/** Every address of a header value, lower-cased: commas inside quotes or <> do not split it. */
+function addresses(value: string | null | undefined): string[] {
+  const out: string[] = [];
+  let part = "", quoted = false, angle = false;
+  for (const ch of `${value ?? ""},`) {
+    if (ch === "\"") quoted = !quoted;
+    else if (!quoted && ch === "<") angle = true;
+    else if (!quoted && ch === ">") angle = false;
+    if (ch === "," && !quoted && !angle) {
+      const email = firstAddress(part).toLowerCase();
+      if (/^[^\s@<>",]+@[^\s@<>",]+\.[^\s@<>",]+$/.test(email)) out.push(email);
+      part = "";
+    } else part += ch;
+  }
+  return out;
+}
+
+/** The address an account sends as: the mailbox, or the Gmail account's own address. */
+async function ownAddress(ctx: ToolContext, account: Account): Promise<string> {
+  if (account.provider === "cloudflare") return account.mailbox;
+  const data = (await get(ctx, "/api/accounts")) as { accounts?: { id?: unknown; email?: unknown }[] };
+  const email = data.accounts?.find((a) => a.id === account.gmailId)?.email;
+  if (typeof email !== "string" || !email) throw new ApiError(404, `${account.id} is not a connected Gmail account (list_accounts)`, null);
+  return email.toLowerCase();
+}
 
 // ── Reading ────────────────────────────────────────────────────────
 
@@ -408,17 +436,23 @@ const sendEmail = defineTool({
 
 const reply = defineTool({
   name: "reply", title: "Reply to a message", level: "mail", sends: true, target: (a) => `${a.accountId} ${a.messageId}`,
-  description: "Answers a message in its conversation: to its sender (or everyone with replyAll), subject Re:, threaded, with the original quoted. It really leaves; counts against this key's daily sends.",
+  description: "Answers a message in its conversation: to its Reply-To address when it has one, otherwise its sender (with replyAll also everyone else in To and Cc except you), subject Re:, threaded, with the original quoted. It really leaves; counts against this key's daily sends.",
   input: { accountId, messageId, ...body, idempotencyKey, replyAll: z.boolean().default(false), to: recipients.optional().describe("Answer these addresses instead"),
     quote: z.boolean().default(true).describe("Quote the original below your text"), signature: z.boolean().default(true).describe("Add the address's signature (Cloudflare)") },
   routes: ["POST /api/v1/mailboxes/:mailboxId/emails/:id/reply"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
     const original = await readMessage(ctx, account, a.messageId, 20_000);
-    const self = account.provider === "cloudflare" ? account.mailbox : "";
-    const others = [original.to, original.cc ?? ""].join(",").split(",").map(firstAddress).filter((x) => x && x.toLowerCase() !== self && x.toLowerCase() !== firstAddress(original.from).toLowerCase());
-    const to = list(a.to) ?? [firstAddress(original.from)];
-    const cc = !a.to && a.replyAll && others.length ? [...new Set(others)] : undefined;
+    // Reply-To names where answers go (a help desk, a list); one with no address in it is ignored.
+    const replyTargets = addresses(original.replyTo);
+    const to = list(a.to) ?? (replyTargets.length ? replyTargets : [firstAddress(original.from)]);
+    let cc: string[] | undefined;
+    if (!a.to && a.replyAll) {
+      const self = await ownAddress(ctx, account);
+      const skip = new Set([self, firstAddress(original.from).toLowerCase(), ...to.map((x) => x.toLowerCase())]);
+      const others = [...new Set([...addresses(original.to), ...addresses(original.cc)])].filter((x) => !skip.has(x));
+      cc = others.length ? others : undefined;
+    }
     const subject = /^re:/i.test(original.subject) ? original.subject : `Re: ${original.subject}`;
     const text = a.quote ? `${a.text}\n\n${quotedBlock({ from: original.from, date: original.date, text: original.text })}` : a.text;
     if (account.provider === "cloudflare") {

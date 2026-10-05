@@ -551,3 +551,25 @@ test("an HTML-only Gmail message reaches its consumers with its text (2026-10-01
   assert.equal(bodies.length, 1);
   assert.match(bodies[0], /Refund for order 42/);
 });
+
+const cached = (id: string, over: Record<string, unknown>) => ({ message: { providerMessageId: id, threadId: id, timestamp: 0, labels: ["INBOX"], subject: "",
+  from: "x@example.invalid", to: "a@example.invalid", cc: "", replyTo: "", snippet: "", date: "", read: true, attachments: [], ...over }, parts: 0 });
+
+test("a Gmail message cached before Cc and Reply-To were kept is read again from Gmail once (agent audit 2)", async () => {
+  let fetches = 0;
+  const { service, store } = await fixture(async () => {
+    fetches++;
+    return json({ id: "old", threadId: "old", labelIds: ["INBOX"], payload: { headers: [{ name: "Cc", value: "carol@example.invalid" }] } });
+  });
+  const { cc: _cc, replyTo: _r, ...legacy } = cached("old", {}).message;
+  await store.put("message:a:old", { message: legacy, parts: 1, blobId: "b" });
+  await store.put("message:a:old:body:b:0", JSON.stringify({ text: "t", html: "" }));
+  assert.equal((await service.getMessage("a", "old")).cc, "carol@example.invalid");
+  assert.equal((await service.getMessage("a", "old")).cc, "carol@example.invalid");
+  assert.equal(fetches, 1, "fetched once, then served from the cache");
+
+  const offline = await fixture(async () => { throw new Error("offline"); });
+  await offline.store.put("message:a:old", { message: legacy, parts: 1, blobId: "b" });
+  await offline.store.put("message:a:old:body:b:0", JSON.stringify({ text: "t", html: "" }));
+  assert.equal((await offline.service.getMessage("a", "old")).text, "t", "when Gmail cannot be reached the cached message is still read");
+});

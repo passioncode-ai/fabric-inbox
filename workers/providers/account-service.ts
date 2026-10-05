@@ -258,6 +258,17 @@ export class AccountService {
         row.generation !== account.sync.generation)
     )
       throw new ProviderError("message_not_found", 404);
+    // Cached before Cc and Reply-To were kept: read it once more from Gmail so a reply reaches
+    // the right people. Gmail out of reach is no reason to fail the read; the cached copy stands.
+    if (!("cc" in row.message)) {
+      try {
+        const fresh = normalizeMessage(accountId, await (await this.client(account)).message(messageId));
+        await this.saveMessage(account, fresh);
+        return fresh;
+      } catch (error) {
+        console.warn(JSON.stringify({ event: "gmail_message_refresh_failed", error: error instanceof ProviderError ? error.code : "unknown" }));
+      }
+    }
     let body = "";
     for (let i = 0; i < row.parts; i++) {
       const part = await this.store.get<string>(
