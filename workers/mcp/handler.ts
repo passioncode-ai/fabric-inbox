@@ -38,7 +38,11 @@ export function inProcessApi(origin: string, env: Env, ctx: ExecutionContext): A
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
       }), env, ctx);
       const contentType = response.headers.get("content-type") ?? "";
-      const data = contentType.includes("json") ? await response.json().catch(() => null)
+      // A file (an attachment route answers with Content-Disposition: attachment) is its exact bytes
+      // whatever its type says: parsing a .json or decoding a .csv as text would change it.
+      const file = /^\s*attachment\b/i.test(response.headers.get("content-disposition") ?? "");
+      const data = file ? new Uint8Array(await response.arrayBuffer())
+        : contentType.includes("json") ? await response.json().catch(() => null)
         : contentType.startsWith("text/") ? await response.text()
         : new Uint8Array(await response.arrayBuffer());
       return { status: response.status, data, contentType };
