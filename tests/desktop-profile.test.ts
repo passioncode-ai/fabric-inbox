@@ -104,8 +104,8 @@ test("retiring a server clears its session storage and cache, then removes its d
 // ---- desktop/main.cjs wiring, driven through the same fake Electron the policy tests use ----
 
 type Harness = Awaited<ReturnType<typeof boot>>;
-async function boot({ config, packaged = true, switches = [] as string[], files = {} as Record<string, string[]>, readError = "" }:
-  { config?: { origin: string; accessOrigin: string }; packaged?: boolean; switches?: string[]; files?: Record<string, string[]>; readError?: string }) {
+async function boot({ config, packaged = true, switches = [] as string[], files = {} as Record<string, string[]>, readError = "", backupJson = "" }:
+  { config?: { origin: string; accessOrigin: string }; packaged?: boolean; switches?: string[]; files?: Record<string, string[]>; readError?: string; backupJson?: string }) {
   const log: string[] = [];
   const windows: any[] = [];
   const sessions = new Map<string, any>();
@@ -157,6 +157,7 @@ async function boot({ config, packaged = true, switches = [] as string[], files 
         if (!config) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
         return JSON.stringify(config);
       }
+      if (file.endsWith("PassionCode/backups/fabric-inbox.json") && backupJson) return backupJson;
       throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
     },
     readdir: async (dir: string) => {
@@ -165,7 +166,7 @@ async function boot({ config, packaged = true, switches = [] as string[], files 
       return names.map((name) => ({ name, isDirectory: () => !name.includes(".json"), isFile: () => name.includes(".json") }));
     },
     rm: async (target: string) => { log.push(`rm ${target}`); },
-    mkdir: async () => {}, writeFile: async () => {}, chmod: async () => {}, rename: async () => {},
+    mkdir: async () => {}, writeFile: async (file: string) => { log.push(`write ${file}`); }, chmod: async () => {}, rename: async (from: string, to: string) => { log.push(`rename ${to}`); },
   };
   const fakeElectron = {
     app: fakeApp, BrowserWindow: FakeWindow,
@@ -271,5 +272,36 @@ test("usage counts: a build without an App Key shows the switch unavailable and 
   assert.equal(share.enabled, false);
   assert.equal(share.checked, false);
   assert.ok(items.some((i: any) => i.label === "About Usage Counts…"));
-  assert.ok(!h.log.some((l) => l.includes("PassionCode")), "the shared installation file is not touched");
+  assert.ok(!h.log.some((l) => l.includes("installation.json")), "the shared installation file is not touched");
+  // Updates: this build carries no feed, so it never checks; the menu says so instead of hiding it.
+  assert.ok(items.some((i: any) => i.label === "Check for Updates…"));
+  const automatic = items.find((i: any) => i.label === "Install Updates Automatically");
+  assert.equal(automatic.type, "checkbox");
+  assert.equal(automatic.enabled, false);
+});
+
+test("a profile removed by an uninstaller gets its server back from the shared PassionCode copy", async () => {
+  const backupJson = JSON.stringify({ version: 1, server: { origin: A, accessOrigin: "" } });
+  const h = await boot({ backupJson, files: { [P]: [dirOf(A)] } });
+  await h.settle();
+  assert.ok(h.log.includes(`window ${policy.partitionFor({ origin: A })}`), "the mail window opens for the saved server");
+  assert.ok(h.log.some((l) => l === "rename /fixture/Fabric Inbox/server.json"), "server.json is written back");
+  assert.ok(!h.log.includes(`rm ${P}/${dirOf(A)}`), "its sign-in and drafts are kept");
+});
+
+test("with no server known at all, no partition is swept: it may be the one about to be entered again", async () => {
+  const h = await boot({ files: { [P]: [dirOf(A), dirOf(B)], "/fixture/Fabric Inbox": ["server.json.tmp", "Partitions"] } });
+  await h.settle();
+  assert.ok(!h.log.some((l) => l.startsWith(`rm ${P}`)), h.log.join("\n"));
+  assert.ok(h.log.includes("rm /fixture/Fabric Inbox/server.json.tmp"), "leftovers still go");
+});
+
+test("saving a server keeps its copy in the shared PassionCode folder", async () => {
+  const h = await boot({ config: { origin: A, accessOrigin: "" }, files: { [P]: [dirOf(A)] } });
+  await h.settle();
+  assert.ok(h.log.includes("rename /fixture/PassionCode/backups/fabric-inbox.json"), "an existing server gets its copy at start");
+  h.openSettings();
+  await h.handlers.get("fabric:setup-save")!(h.setupSender(), { origin: B, accessOrigin: "" });
+  await h.settle();
+  assert.equal(h.log.filter((l) => l === "rename /fixture/PassionCode/backups/fabric-inbox.json").length, 2);
 });

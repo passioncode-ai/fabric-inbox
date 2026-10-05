@@ -145,6 +145,18 @@ runtime, and notarized and stapled so Gatekeeper opens a downloaded copy without
 receipt published beside the image states its commit, signature, both notarization submissions
 and the workflow run that built it.
 
+### Updates and your data
+
+From 0.10.1 a released copy in **Applications** updates itself: it checks the latest GitHub
+release at launch (and when you come back to it, at most every six hours), downloads the new
+signed version in the background and installs it when you quit, or at once with **Fabric Inbox →
+Restart to Install Update**. **Install Updates Automatically** in the same menu turns it off.
+Your accounts, addresses, agents, keys and mail live on your server, so removing or reinstalling
+the app loses none of them; the server's address is also kept in
+`~/Library/Application Support/PassionCode/backups/` and read back after an uninstaller removed
+the app's own folder. What lives where and what an uninstall costs:
+[docs/desktop-data-and-updates.md](docs/desktop-data-and-updates.md).
+
 ### Anonymous usage counts
 
 A released disk image tells PassionCode.ai that it was installed and opened, once a day that it was

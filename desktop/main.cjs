@@ -9,6 +9,8 @@ const deployer = require('./cloudflare-deploy.cjs');
 const profile = require('./profile.cjs');
 const connector = require('./connect.cjs');
 const usage = require('./analytics.cjs');
+const backup = require('./backup.cjs');
+const updates = require('./updater.cjs');
 const { randomUUID } = require('node:crypto');
 
 app.setName('Fabric Inbox');
@@ -58,6 +60,8 @@ let openAfterSignIn = '';
 // Anonymous usage counts (docs/ANALYTICS.md): off unless this build carries an App Key.
 let analytics = null;
 let launchedByLink = false;
+// Automatic updates (docs/desktop-data-and-updates.md): off unless this build carries a feed.
+let updater = null;
 
 async function loadBundledSetups() {
   const dir = path.join(__dirname, 'setups');
@@ -93,14 +97,28 @@ function rejectPermissions(ses) {
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
 }
-/** Reads server.json; false when it exists but cannot be used. */
+/**
+ * Reads server.json; false when it exists but cannot be used. A missing one is restored from the
+ * copy in the shared PassionCode folder (desktop/backup.cjs), so removing the app's profile does
+ * not forget the server; an existing one refreshes that copy when it differs.
+ */
 async function readConfig() {
-  try { config = policy.validateConfig(JSON.parse(await fs.readFile(configPath(), 'utf8'))); return true; }
+  try { config = policy.validateConfig(JSON.parse(await fs.readFile(configPath(), 'utf8'))); }
   catch (error) {
-    if (error.code === 'ENOENT') return true;
-    notice = 'The saved server setting could not be read. Enter it again.';
-    return false;
+    if (error.code !== 'ENOENT') {
+      notice = 'The saved server setting could not be read. Enter it again.';
+      return false;
+    }
+    const restored = await backup.readBackup({ fs, appData: app.getPath('appData'), validate: policy.validateConfig });
+    if (!restored) return true;
+    try { await writePrivate(configPath(), restored); } catch { /* used for this run even if it cannot be written */ }
+    config = restored;
+    console.log(JSON.stringify({ event: 'settings_restored', from: 'PassionCode/backups/fabric-inbox.json' }));
+    return true;
   }
+  const saved = await backup.readBackup({ fs, appData: app.getPath('appData'), validate: policy.validateConfig });
+  if (!saved || saved.origin !== config.origin || saved.accessOrigin !== config.accessOrigin) await backup.saveBackup({ fs, appData: app.getPath('appData'), config, log: (l) => console.error(JSON.stringify(l)) });
+  return true;
 }
 /**
  * Clears a server's partition once no window uses it and the new server has answered (LC-12,
@@ -114,6 +132,7 @@ async function retirePartition(partition) {
 async function saveConfig(next) {
   await writePrivate(configPath(), next);
   config = next;
+  await backup.saveBackup({ fs, appData: app.getPath('appData'), config: next, log: (l) => console.error(JSON.stringify(l)) });
 }
 function showSetup(message = '', start = '') {
   notice = message;
@@ -253,6 +272,40 @@ async function startAnalytics() {
   await analytics.start({ launch: launchedByLink ? 'link' : 'ordinary', serverConfigured: !!config });
   installMenu();
   if (!config) void countActive();
+}
+async function startUpdates() {
+  const autoUpdater = electron.autoUpdater;
+  let feed = null;
+  try { feed = updates.readFeed(await fs.readFile(path.join(__dirname, 'updates.json'), 'utf8')); } catch { feed = null; }
+  if (!feed || !autoUpdater) return;
+  updater = updates.createUpdater({ autoUpdater, fs, userData: app.getPath('userData'), feed,
+    log: (line) => console.log(JSON.stringify(line)), onChange: () => installMenu() });
+  await updater.start({ packaged: app.isPackaged, mas: !!process.mas,
+    inApplications: typeof app.isInApplicationsFolder === 'function' && app.isInApplicationsFolder() });
+  installMenu();
+}
+async function checkForUpdates() {
+  if (!updater) {
+    await dialog.showMessageBox({ type: 'info', title: 'Updates', message: 'This copy of Fabric Inbox does not update itself.',
+      detail: 'Only the released app from GitHub or passioncode.ai checks for updates. Builds from source and the Mac App Store version are updated another way.', buttons: ['OK'] });
+    return;
+  }
+  const out = await updater.checkNow();
+  const messages = {
+    current: ['You have the latest version.', `Fabric Inbox ${app.getVersion()} is the newest release.`],
+    downloading: ['A new version is downloading.', 'It will be installed when you quit Fabric Inbox, or you can restart once it is ready (Fabric Inbox menu).'],
+    unavailable: ['Updates are not available for this copy.', updater.status().reason === 'not_in_applications'
+      ? 'Move Fabric Inbox to the Applications folder, open it from there, and it will update itself.' : 'This copy cannot update itself.'],
+    failed: ['The update check did not finish.', `${out.error || 'Unknown error'}. It will try again later; you can also download the latest version from passioncode.ai/inbox.`],
+  };
+  if (out.outcome === 'ready') {
+    const answer = await dialog.showMessageBox({ type: 'info', title: 'Updates', message: `Fabric Inbox ${out.version || ''} is ready to install.`.replace('  ', ' '),
+      detail: 'It will be installed when you quit Fabric Inbox. Restart now to use it at once.', buttons: ['Later', 'Restart Now'], defaultId: 1, cancelId: 0 });
+    if (answer.response === 1) updater.restart();
+    return;
+  }
+  const [message, detail] = messages[out.outcome] || messages.failed;
+  await dialog.showMessageBox({ type: out.outcome === 'failed' ? 'warning' : 'info', title: 'Updates', message, detail, buttons: ['OK'] });
 }
 async function toggleAnalytics(item) {
   if (!analytics) return;
@@ -426,6 +479,11 @@ function installIPC() {
 function installMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: 'Fabric Inbox', submenu: [{ role: 'about' },
+      { label: updater && updater.status().state === 'ready' ? 'Restart to Install Update' : 'Check for Updates…',
+        click: () => { if (updater && updater.status().state === 'ready') updater.restart(); else void checkForUpdates(); } },
+      { label: 'Install Updates Automatically', type: 'checkbox', checked: !!(updater && updater.status().automatic), enabled: !!updater && !['off', 'unavailable'].includes(updater.status().state),
+        click: (item) => { if (updater) void updater.setAutomatic(item.checked); } },
+      { type: 'separator' },
       { label: 'Share Anonymous Usage Counts', type: 'checkbox', checked: !!(analytics && analytics.status().enabled), enabled: !!analytics, click: (item) => void toggleAnalytics(item) },
       { label: 'About Usage Counts…', click: aboutUsageCounts },
       { type: 'separator' },
@@ -444,7 +502,10 @@ function installMenu() {
 }
 app.on('before-quit', () => { quitting = true; });
 // The window coming forward is the only retry trigger and the daily check: no timer runs (LC-08).
-app.on('browser-window-focus', () => { if (analytics) { void analytics.wake(); void countActive(); } });
+app.on('browser-window-focus', () => {
+  if (analytics) { void analytics.wake(); void countActive(); }
+  if (updater) updater.wake();
+});
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => {
   if (mailWindow && !mailWindow.isDestroyed()) { mailWindow.show(); mailWindow.focus(); }
@@ -460,10 +521,13 @@ if (ownsInstance) app.whenReady().then(async () => {
   installIPC(); installMenu(); await loadBundledSetups();
   // Orphan partitions and settings leftovers go before any window opens (LC-12). An unreadable
   // server.json is kept and nothing is swept: the person is about to enter that server again.
-  if (await readConfig()) await profile.sweepProfile({ fs, userData: app.getPath('userData'), keepPartition: config ? policy.partitionFor(config) : null });
+  // With no server known at all, no partition is an orphan yet: it may be the server the person is
+  // about to enter again, with their drafts in it.
+  if (await readConfig()) await profile.sweepProfile({ fs, userData: app.getPath('userData'), keepPartition: config ? policy.partitionFor(config) : null, keepPartitions: !config });
   config ? loadMail() : showSetup(notice);
   appReady = true;
   void startAnalytics().catch(() => {});
+  void startUpdates().catch((error) => console.error(JSON.stringify({ event: 'update', outcome: 'not_started', reason: String(error && error.message || error).slice(0, 200) })));
   for (const arg of process.argv || []) queueLink(arg);
   void drainLinks();
 });

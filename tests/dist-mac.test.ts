@@ -45,6 +45,7 @@ test("the stage directory and the files a CI release publishes", () => {
   assert.deepEqual(stagePaths("/repo", "0.9.0"), {
     dir: "/repo/release/ci", app: "/repo/release/ci/Fabric Inbox.app", state: "/repo/release/ci/state.json",
     dmg: "/repo/release/Fabric-Inbox-0.9.0.dmg", receipt: "/repo/release/Fabric-Inbox-0.9.0.receipt.json",
+    zip: "/repo/release/Fabric-Inbox-0.9.0-mac.zip", feed: "/repo/release/update-mac.json",
   });
 });
 

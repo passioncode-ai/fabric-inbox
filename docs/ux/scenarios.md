@@ -54,6 +54,8 @@
 | SCN-046 | Connect another Cloudflare account | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | not audited |
 | SCN-047 | Connect a hub on this Mac by allowing it | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
 | SCN-048 | Turn the anonymous usage counts off or on | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
+| SCN-049 | The app keeps itself up to date | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
+| SCN-050 | Remove or reinstall the app and lose nothing | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1011,3 +1013,42 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** desktop/analytics.cjs, desktop/main.cjs, tests/desktop-analytics.test.ts, tests/desktop-profile.test.ts
 - **Product:** unobserved
 - **Today:** Built 2026-10-05 for 0.10.0 (docs/ANALYTICS.md); the switch is the one Fabric Switchboard shipped first.
+
+### SCN-049: The app keeps itself up to date
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07, JTBD-03; operator request 2026-10-05
+- **Entry point:** Launching the app; the app menu, Fabric Inbox → Check for Updates…, Install Updates Automatically, Restart to Install Update
+- **Preconditions:** A released copy (0.10.1 or later) in Applications; a newer release is published.
+- **Steps:**
+  1. The person opens the app as usual -> it checks the latest release in the background; nothing is shown.
+  2. A newer version exists -> it downloads in the background; the menu item reads Restart to Install Update once it is ready.
+  3. The person quits the app whenever they like -> the new version is installed; the next start is the new version, signed in, with the same server.
+- **Expected result:** Every downloaded copy gets each release without anyone downloading anything.
+- **Alt paths:** Check for Updates… answers at once: up to date, downloading, ready (Restart Now / Later), or why not. Install Updates Automatically cleared: no checks until set again; Check for Updates… still works. Opened from the disk image or Downloads: no update; Check for Updates… says to move it to Applications. Build from source or Mac App Store copy: never checks and says why.
+- **UI elements:** App menu items, native notices.
+- **States covered:** loading, error, success
+- **Errors & recovery:** The check or download fails (offline, GitHub unreachable): logged, retried at the next launch or six hours later; Check for Updates… quotes the reason and points to passioncode.ai/inbox. An update not signed by the same team, or whose sha256 or size differs: refused by Squirrel.Mac, nothing installed.
+- **Status:** draft
+- **Coverage:** desktop/updater.cjs, desktop/main.cjs, desktop/dist-mac.mjs, .github/workflows/release.yml, tests/desktop-updates.test.ts, tests/desktop-profile.test.ts
+- **Product:** unobserved
+- **Today:** Built 2026-10-05 for 0.10.1 (docs/desktop-data-and-updates.md). 0.10.0 and earlier have no updater and are updated once by hand.
+
+### SCN-050: Remove or reinstall the app and lose nothing
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07, JTBD-03; operator request 2026-10-05
+- **Entry point:** Finder (dragging Fabric Inbox to the Trash, or an uninstaller), then a fresh download
+- **Preconditions:** The app has been set up with a server; accounts, addresses and agents are connected there.
+- **Steps:**
+  1. The person removes the app and installs it again -> it opens on the same server, signed in, with unsent drafts and every connection as before.
+  2. An uninstaller also removed the app's own folder -> the app finds the server's address in the shared PassionCode folder and opens it; the person signs in with the emailed code; accounts, addresses, agents, keys and mail are all there (they live on the server).
+- **Expected result:** No connection, setting or message depends on the app staying installed.
+- **Alt paths:** The shared copy is gone too: the person enters the address, opens the setup file, or runs Create my server again with the same Cloudflare account, which finds the existing server and keeps its storage. Moving between the Mac App Store copy and the disk image: the address is entered once (separate containers).
+- **UI elements:** Welcome / server settings window, sign-in page.
+- **States covered:** empty, success
+- **Errors & recovery:** A damaged settings copy is ignored like a damaged server.json, and the app asks for the address. Drafts are kept only on the Mac: an uninstaller that removed the app's folder removed them.
+- **Status:** draft
+- **Coverage:** desktop/backup.cjs, desktop/main.cjs, desktop/profile.cjs, tests/desktop-updates.test.ts, tests/desktop-profile.test.ts
+- **Product:** unobserved
+- **Today:** Built 2026-10-05 for 0.10.1 (docs/desktop-data-and-updates.md).
