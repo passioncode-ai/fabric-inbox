@@ -82,6 +82,8 @@ test("the first PassionCode app creates the shared installation; the install is 
   assert.equal(events[1].props.launch, "ordinary");
   for (const e of events) {
     assert.equal(e.props.install_id, file.id);
+    assert.equal(e.props.iid, file.id, "sshlg-growth counts installs by iid");
+    assert.equal(e.props.environment, "production");
     assert.match(e.sessionId, /^\d{18}$/);
     assert.equal(e.systemProps.sdkVersion, usage.SDK);
     assert.equal(e.systemProps.osName, "macOS");
@@ -93,6 +95,14 @@ test("the first PassionCode app creates the shared installation; the install is 
   const again = client(m);
   await again.a.start({ launch: "link" });
   assert.deepEqual(again.srv.events().map((e) => [e.eventName, e.props.launch]), [["app_started", "link"]]);
+});
+
+test("a debug key or a pre-release version is the sandbox environment", async () => {
+  for (const [extra, expected] of [[{ bundle: { ...BUNDLE, debug: true } }, "sandbox"], [{ appVersion: "0.11.0-rc.1" }, "sandbox"], [{}, "production"]] as const) {
+    const { a, srv } = client(machine(), extra as any);
+    await a.start({});
+    assert.ok(srv.events().every((e) => e.props.environment === expected), JSON.stringify(extra));
+  }
 });
 
 test("an update shows once as app_updated with the version it came from", async () => {
@@ -207,7 +217,7 @@ test("events carry counts and the installation id, never a planted address, doma
   const sent = JSON.stringify(srv.batches);
   for (const value of planted) assert.ok(!sent.includes(value), `${value} must never leave the Mac`);
   const active = srv.events().find((e) => e.eventName === "app_active");
-  assert.deepEqual(active.props, { server: true, gmail: 1, cloudflare: 2, agents: 1, agent_keys: 1, install_id: active.props.install_id });
+  assert.deepEqual(active.props, { server: true, gmail: 1, cloudflare: 2, agents: 1, agent_keys: 1, install_id: active.props.install_id, iid: active.props.install_id, environment: "production" });
 });
 
 test("counts are read only from a signed-in server: a sign-in redirect or an HTML page gives none", async () => {

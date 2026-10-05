@@ -7,6 +7,9 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **Usage counts carry `iid` and `environment`.** Every event repeats the shared installation id as
+  `props.iid` and says `props.environment`: `production` for a release build, `sandbox` for a debug
+  key or a pre-release version, the two values sshlg-growth counts (operator decision 2026-10-05).
 - **The Mac App Store package is readable by every user.** App Store Connect refused the first
   store upload (0.10.1, ITMS-90255: files only root can read): the embedded provisioning profile
   kept the 0600 of its private temporary file. The bundle is made readable after signing, and the

@@ -17,7 +17,10 @@ its `docs/client-contract.md`). The approach is the one Switchboard shipped firs
 
 Every event carries the app version, the OS name and version, the locale, the Electron version, an
 SDK tag (`fabric-inbox-analytics@1`), an Aptabase session id and `props.install_id`, the shared
-installation id below. Nothing else identifies the Mac or the person.
+installation id below, repeated as `props.iid`, plus `props.environment`: `production` for a
+release build, `sandbox` for a debug key or a pre-release version. sshlg-growth counts installs by
+`iid` and keeps only those two environments (operator decision 2026-10-05; Switchboard did the
+same in fabric-switchboard#75). Nothing else identifies the Mac or the person.
 
 | Event | When | Props (besides `install_id`) |
 |---|---|---|
