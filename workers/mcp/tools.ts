@@ -505,10 +505,15 @@ const messageRefs = z.array(z.object({ accountId, messageId })).min(1).max(100);
 async function eachMessage<T>(refs: { accountId: string; messageId: string }[], run: (account: Account, id: string) => Promise<T>) {
   const done: { accountId: string; messageId: string }[] = [];
   const failed: { accountId: string; messageId: string; error: string }[] = [];
+  let first: unknown;
   for (const ref of refs) {
     try { await run(parseAccount(ref.accountId), ref.messageId); done.push(ref); }
-    catch (error) { failed.push({ ...ref, error: error instanceof Error ? error.message : String(error) }); }
+    catch (error) { failed.push({ ...ref, error: error instanceof Error ? error.message : String(error) }); first ??= error; }
   }
+  // Nothing done is a failure, not a success with a list: the agent and the journal must see it as one.
+  if (!done.length && failed.length)
+    throw new ApiError(first instanceof ApiError ? first.status : 500,
+      `${failed.length === 1 ? "The message was not changed" : `None of the ${failed.length} messages was changed`}: ${failed[0]!.error}`, { done: 0, failed });
   return { done: done.length, failed };
 }
 

@@ -101,7 +101,8 @@ by sender, recipient, subject, dates, read, starred, attachments and folder — 
 and one it cannot apply is refused (Gmail pages with `cursor`, Cloudflare with `page`).
 
 **Tidy.** `move_messages` (inbox, archive, trash, a Cloudflare folder) and `mark_spam` (spam or not,
-and by default remembers the sender) act on up to 100 messages; each answer lists what failed.
+and by default remembers the sender) act on up to 100 messages; each answer lists what failed, and
+one where nothing was changed is an error with the failures in its `details`.
 `delete_message` is permanent and two-step — prefer trash.
 
 ## 5. Administration workflows (`admin` keys)

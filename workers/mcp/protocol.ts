@@ -90,8 +90,11 @@ const text = (value: unknown, isError = false): ToolResult => ({
 const errorText = (error: unknown) =>
   error instanceof ApiError ? error.message : error instanceof Error ? error.message : String(error);
 
-/** What a refusing route knew that the agent needs next (a send's outbox id and status); named fields only. */
-const DETAIL_FIELDS = ["status", "errorCode", "code", "attempts", "idempotencyKey", "providerMessageId", "threadId"] as const;
+/**
+ * What a refusing route knew that the agent needs next (a send's outbox id and status, a batch's
+ * failed items); named fields only.
+ */
+const DETAIL_FIELDS = ["status", "errorCode", "code", "attempts", "idempotencyKey", "providerMessageId", "threadId", "failed"] as const;
 function errorDetails(error: unknown): Record<string, unknown> | undefined {
   if (!(error instanceof ApiError) || !error.data || typeof error.data !== "object" || Array.isArray(error.data)) return undefined;
   const data = error.data as Record<string, unknown>;
@@ -153,7 +156,10 @@ export async function runTool(tool: ToolDef, rawArgs: Record<string, unknown>, c
   }
   try {
     const result = await tool.call(args as never, ctx);
-    if (!(await journal("done", ""))) {
+    // A batch that did some of its items says how many it did not.
+    const batch = result as { done?: unknown; failed?: unknown } | null;
+    const failed = batch && typeof batch === "object" && Array.isArray(batch.failed) ? batch.failed.length : 0;
+    if (!(await journal("done", failed ? `${failed} of ${failed + Number(batch!.done ?? 0)} failed` : ""))) {
       // Done, but the owner would not see it: say so rather than let it pass unrecorded.
       const warning = "Done, but the change could not be written to the owner's journal; tell the owner what you changed.";
       return text(result && typeof result === "object" && !Array.isArray(result) ? { ...(result as object), warning } : { result: result ?? { ok: true }, warning });

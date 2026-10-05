@@ -162,6 +162,22 @@ test("update_messages refuses to mark a conversation unread instead of marking i
   assert.equal(cf.calls.length, 1);
 });
 
+// ── 7. A batch where nothing was done ───────────────────────────────
+
+test("a batch tool where every item failed is an error and journalled as failed; a partial one says what failed (agent audit 7)", async () => {
+  const cf = fakeApi({ [`POST ${CF_BOX}/emails/m2/move`]: ok({ status: "moved" }) });
+  const none = await call(cf.api, "move_messages", { messages: [{ accountId: `cloudflare:${CF}`, messageId: "m1" }, { accountId: `cloudflare:${CF}`, messageId: "m3" }], to: "archive" });
+  assert.equal(none.isError, true, JSON.stringify(none.data));
+  assert.match(none.data.error, /None of the 2 messages/);
+  assert.equal(none.data.details.failed.length, 2);
+  assert.deepEqual(none.journal.map((j) => j.outcome), ["failed"]);
+
+  const some = await call(cf.api, "move_messages", { messages: [{ accountId: `cloudflare:${CF}`, messageId: "m1" }, { accountId: `cloudflare:${CF}`, messageId: "m2" }], to: "archive" });
+  assert.equal(some.isError, false);
+  assert.equal(some.data.done, 1);
+  assert.deepEqual(some.journal.map((j) => `${j.outcome} ${j.detail}`), ["done 1 of 2 failed"]);
+});
+
 // ── 8. A send that failed keeps what the route knows ─────────────────
 
 test("a failed send returns the outbox id and status the route gave, so get_send_status can follow it (agent audit 8)", async () => {
