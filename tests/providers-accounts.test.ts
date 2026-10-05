@@ -551,3 +551,70 @@ test("an HTML-only Gmail message reaches its consumers with its text (2026-10-01
   assert.equal(bodies.length, 1);
   assert.match(bodies[0], /Refund for order 42/);
 });
+
+const cached = (id: string, over: Record<string, unknown>) => ({ message: { providerMessageId: id, threadId: id, timestamp: 0, labels: ["INBOX"], subject: "",
+  from: "x@example.invalid", to: "a@example.invalid", cc: "", replyTo: "", snippet: "", date: "", read: true, attachments: [], ...over }, parts: 0 });
+
+test("a Gmail mailbox search applies each field on its own, and refuses a folder or filter it cannot apply (agent audit 5)", async () => {
+  const { service, store } = await fixture(async () => { throw new Error("search must not contact Gmail"); });
+  const rows: [string, Record<string, unknown>][] = [
+    ["invoice", { subject: "Invoice May", from: "Ann <ann@shop.invalid>", to: "a@example.invalid", timestamp: Date.parse("2026-05-10"), read: false,
+      attachments: [{ filename: "i.pdf", mimeType: "application/pdf", size: 1, providerAttachmentId: "x" }] }],
+    ["cc", { subject: "Lunch", from: "bob@shop.invalid", to: "team@example.invalid", cc: "carol@shop.invalid", timestamp: Date.parse("2026-05-20"), labels: ["INBOX", "STARRED"] }],
+    ["sent", { subject: "Invoice May", from: "a@example.invalid", to: "ann@shop.invalid", timestamp: Date.parse("2026-06-02"), labels: ["SENT"] }],
+    ["trash", { subject: "Old invoice", from: "ann@shop.invalid", timestamp: Date.parse("2026-04-01"), labels: ["TRASH"] }],
+  ];
+  for (const [id, over] of rows) await store.put("message:a:" + id, cached(id, over));
+  const ids = async (filters: Record<string, unknown>) => (await service.listMessages("a", filters)).messages.map((m) => m.providerMessageId).sort();
+  assert.deepEqual(await ids({ from: "ann@shop.invalid", subject: "invoice" }), ["invoice", "trash"], "fields combine, each matched on its own");
+  assert.deepEqual(await ids({ to: "carol@shop" }), ["cc"], "to matches the Cc too");
+  assert.deepEqual(await ids({ after: Date.parse("2026-05-15"), before: Date.parse("2026-06-01") }), ["cc"]);
+  assert.deepEqual(await ids({ unread: true }), ["invoice"]);
+  assert.deepEqual(await ids({ unread: false, starred: true }), ["cc"]);
+  assert.deepEqual(await ids({ hasAttachment: true }), ["invoice"]);
+  assert.deepEqual(await ids({ hasAttachment: false, folder: "inbox" }), ["cc"]);
+  assert.deepEqual(await ids({ folder: "sent" }), ["sent"]);
+  assert.deepEqual(await ids({ folder: "trash", query: "INVOICE" }), ["trash"]);
+  for (const bad of [{ folder: "Receipts" }, { after: "May" }, { unread: "yes" }])
+    await assert.rejects(service.listMessages("a", bad as never), /invalid_folder|invalid_filter/, JSON.stringify(bad));
+});
+
+test("moving Gmail mail to the inbox untrashes it if trashed and adds the Inbox label (agent audit 4)", async () => {
+  const seen: string[] = [];
+  let labels = ["TRASH"];
+  const { service } = await fixture(async (input, init) => {
+    const u = new URL(String(input));
+    seen.push(`${init?.method ?? "GET"} ${u.pathname.replace("/gmail/v1/users/me/", "")} ${init?.body ?? ""}`);
+    if (u.pathname.endsWith("/untrash")) labels = [];
+    if (u.pathname.endsWith("/modify")) labels = ["INBOX"];
+    return json({ id: "m1", threadId: "m1", labelIds: labels, payload: { headers: [] } });
+  });
+  const trashed = await service.moveToInbox("a", "m1");
+  assert.deepEqual(trashed.labels, ["INBOX"]);
+  assert.deepEqual(seen, ["GET messages/m1 ", "POST messages/m1/untrash ", 'POST messages/m1/modify {"addLabelIds":["INBOX"],"removeLabelIds":["SPAM"]}', "GET messages/m1 "]);
+  seen.length = 0;
+  labels = [];
+  const archived = await service.moveToInbox("a", "m1");
+  assert.deepEqual(archived.labels, ["INBOX"]);
+  assert.ok(!seen.some((s) => s.includes("untrash")), "an archived message is not untrashed");
+  assert.ok(seen.some((s) => s.includes("modify")));
+});
+
+test("a Gmail message cached before Cc and Reply-To were kept is read again from Gmail once (agent audit 2)", async () => {
+  let fetches = 0;
+  const { service, store } = await fixture(async () => {
+    fetches++;
+    return json({ id: "old", threadId: "old", labelIds: ["INBOX"], payload: { headers: [{ name: "Cc", value: "carol@example.invalid" }] } });
+  });
+  const { cc: _cc, replyTo: _r, ...legacy } = cached("old", {}).message;
+  await store.put("message:a:old", { message: legacy, parts: 1, blobId: "b" });
+  await store.put("message:a:old:body:b:0", JSON.stringify({ text: "t", html: "" }));
+  assert.equal((await service.getMessage("a", "old")).cc, "carol@example.invalid");
+  assert.equal((await service.getMessage("a", "old")).cc, "carol@example.invalid");
+  assert.equal(fetches, 1, "fetched once, then served from the cache");
+
+  const offline = await fixture(async () => { throw new Error("offline"); });
+  await offline.store.put("message:a:old", { message: legacy, parts: 1, blobId: "b" });
+  await offline.store.put("message:a:old:body:b:0", JSON.stringify({ text: "t", html: "" }));
+  assert.equal((await offline.service.getMessage("a", "old")).text, "t", "when Gmail cannot be reached the cached message is still read");
+});

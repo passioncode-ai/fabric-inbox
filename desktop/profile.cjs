@@ -7,7 +7,10 @@
 // partition behind forever; the audit measured 62 MB of them (raw/fabric-inbox.md §4, F3).
 //
 // - retirePartition: when the server changes, the old partition's storage and cache are cleared
-//   through its session and its directory removed, once its window is gone (main.cjs loadMail).
+//   through its session once its window is gone and the new server has answered (main.cjs
+//   loadMail). During a run its directory is kept (`removeDirectory: false`): the session that
+//   owns those files stays alive, and deleting them under it broke a switch back to that server
+//   (release review 2026-10-05). The next start's sweep removes the directory.
 // - sweepProfile: at start, before any window, every server partition other than the configured
 //   one is removed, with leftovers of server.json / pending-setup.json (`*.tmp` from an interrupted
 //   atomic write, backups). Chromium may write a few bytes into a retired directory before it exits;
@@ -61,9 +64,10 @@ async function sweepProfile({ fs, userData, keepPartition, log = defaultLog }) {
 
 /**
  * Clears a server partition that is no longer used: its storage and cache through `session`, then
- * its directory. Call it only after every window on that partition is destroyed.
+ * (unless `removeDirectory` is false) its directory. Call it only after every window on that
+ * partition is destroyed.
  */
-async function retirePartition({ fs, userData, partition, session, log = defaultLog }) {
+async function retirePartition({ fs, userData, partition, session, removeDirectory = true, log = defaultLog }) {
   const dir = partitionDirName(partition);
   if (!dir) throw new Error(`${String(partition).slice(0, 80)} is not a server partition.`);
   let outcome = { event: 'partition_retired', outcome: 'ok' };
@@ -73,8 +77,10 @@ async function retirePartition({ fs, userData, partition, session, log = default
   } catch (error) {
     outcome = { event: 'partition_retired', outcome: 'storage_not_cleared', reason: String(error && error.message || error).slice(0, 200) };
   }
-  try { await fs.rm(path.join(userData, 'Partitions', dir), { recursive: true, force: true }); }
-  catch (error) { outcome = { event: 'partition_retired', outcome: 'directory_not_removed', code: error.code || 'error' }; }
+  if (removeDirectory) {
+    try { await fs.rm(path.join(userData, 'Partitions', dir), { recursive: true, force: true }); }
+    catch (error) { outcome = { event: 'partition_retired', outcome: 'directory_not_removed', code: error.code || 'error' }; }
+  } else if (outcome.outcome === 'ok') outcome = { ...outcome, directory: 'kept until the next start' };
   log(outcome);
 }
 

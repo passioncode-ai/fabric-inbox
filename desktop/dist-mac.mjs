@@ -48,6 +48,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { hardenTemplateHook, verifyHardening } from './hardening.mjs';
 import { pruneReleases } from './release-retention.mjs';
+const { analyticsOrigin } = createRequire(import.meta.url)('./analytics.cjs');
 
 export const BUNDLE_ID = 'ai.passioncode.fabric-inbox';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -97,6 +98,21 @@ const sha256 = (file) => createHash('sha256').update(readFileSync(file)).digest(
 
 const STAGES = ['app', 'image', 'finish'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The anonymous-usage App Key and host for this build (docs/ANALYTICS.md), or null. Only the
+ * release workflow sets FABRIC_INBOX_ANALYTICS_APP_KEY and FABRIC_INBOX_ANALYTICS_HOST, so source
+ * builds and forks carry none and send nothing; a key set by hand on a laptop marks its events as
+ * debug. The key never reaches a receipt or a log.
+ */
+export function analyticsBundle(env) {
+  const key = String(env.FABRIC_INBOX_ANALYTICS_APP_KEY || '').trim();
+  if (!key) return null;
+  requireThat(/^A-SH-\d{10}$/.test(key), 'FABRIC_INBOX_ANALYTICS_APP_KEY is not an Aptabase App Key (A-SH-<10 digits>).');
+  const host = analyticsOrigin(String(env.FABRIC_INBOX_ANALYTICS_HOST || '').trim());
+  requireThat(host, 'FABRIC_INBOX_ANALYTICS_HOST must be the analytics server as an https origin, set with the App Key.');
+  return { appKey: key, host, debug: env.GITHUB_ACTIONS !== 'true' };
+}
 
 export function parseArgs(argv) {
   const args = { unsigned: false, notaryProfile: '', identity: '', setups: [], stage: '', submission: '' };
@@ -393,6 +409,9 @@ async function main() {
     run('/usr/bin/tar', ['-xf', '-', '-C', temp], { input: run('git', ['archive', revision, 'desktop'], { encoding: 'buffer' }) });
     const source = path.join(temp, 'desktop');
     requireThat(!existsSync(path.join(source, 'setups')), 'desktop/setups exists in the commit: setups belong in deployments/<name>/setup.json and are bundled only with --setup.');
+    requireThat(!existsSync(path.join(source, 'analytics.json')), 'desktop/analytics.json exists in the commit: the App Key is written only by the build, from the release environment.');
+    const analytics = analyticsBundle(process.env);
+    if (analytics) writeFileSync(path.join(source, 'analytics.json'), JSON.stringify(analytics) + '\n', { mode: 0o600 });
     for (const setup of bundled) {
       mkdirSync(path.join(source, 'setups'), { recursive: true });
       writeFileSync(path.join(source, 'setups', `${setup.name}.json`), setup.text);
@@ -428,6 +447,7 @@ async function main() {
     const receipt = {
       product: 'Fabric Inbox', version, revision, dirtyDesktopSources: dirty, electronVersion, architectures: ['arm64', 'x86_64'],
       builtAt: new Date().toISOString(), builtBy: builtBy(), image: path.basename(staged ? staged.dmg : dmg),
+      analytics: analytics ? (analytics.debug ? 'App Key bundled (debug events)' : 'App Key bundled') : 'none (sends nothing)',
       bundledSetups: bundled.length ? bundled.map(({ name, sha256 }) => ({ name, file: `deployments/${name}/setup.json`, sha256 })) : 'none (public build)',
       serverBundle: { version: serverManifest.version, revision: serverManifest.revision, modules: serverManifest.modules.length,
         assets: Object.keys(serverManifest.assets.files).length, manifestSha256: sha256(path.join(source, 'server-bundle', 'manifest.json')) },

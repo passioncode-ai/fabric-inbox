@@ -289,3 +289,18 @@ test("normalization namespaces IDs and decodes nested MIME bodies and attachment
   assert.equal(a.read, false);
   assert.equal(a.attachments[0].providerAttachmentId, "attachment");
 });
+
+test("normalization keeps Cc and Reply-To, so a reply reaches the right people (agent audit 1, 2)", () => {
+  const m = normalizeMessage("a", {
+    id: "1", threadId: "1",
+    payload: { headers: [
+      { name: "From", value: "Ann <ann@example.invalid>" }, { name: "To", value: "me@example.invalid" },
+      { name: "CC", value: "Bob <bob@example.invalid>, carol@example.invalid" }, { name: "Reply-To", value: "help@example.invalid" },
+    ] },
+  });
+  assert.equal(m.cc, "Bob <bob@example.invalid>, carol@example.invalid");
+  assert.equal(m.replyTo, "help@example.invalid");
+  const bare = normalizeMessage("a", { id: "2", threadId: "2", payload: { headers: [] } });
+  assert.equal(bare.cc, "", "a message without the header still says it has none");
+  assert.equal(bare.replyTo, "");
+});

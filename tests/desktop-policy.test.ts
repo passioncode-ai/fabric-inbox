@@ -88,7 +88,7 @@ test('a failed remote load cannot close recovery when Chromium finishes its erro
     ipcMain: { handle() {} }, shell: {}, dialog: {}, session: { fromPartition: () => fakeSession } };
   const code = await readFile(new URL('../desktop/main.cjs', import.meta.url), 'utf8');
   runInNewContext(code, {
-    require: (name: string) => name === 'electron' ? fakeElectron : name === 'node:fs/promises' ? { readFile: async () => JSON.stringify(config), readdir: async () => [] } : name === './policy.cjs' ? require('../desktop/policy.cjs') : name === './cloudflare-deploy.cjs' ? require('../desktop/cloudflare-deploy.cjs') : name === './profile.cjs' ? require('../desktop/profile.cjs') : name === './connect.cjs' ? require('../desktop/connect.cjs') : require(name),
+    require: (name: string) => name === 'electron' ? fakeElectron : name === 'node:fs/promises' ? { readFile: async () => JSON.stringify(config), readdir: async () => [] } : name === './policy.cjs' ? require('../desktop/policy.cjs') : name === './cloudflare-deploy.cjs' ? require('../desktop/cloudflare-deploy.cjs') : name === './profile.cjs' ? require('../desktop/profile.cjs') : name === './connect.cjs' ? require('../desktop/connect.cjs') : name === './analytics.cjs' ? require('../desktop/analytics.cjs') : require(name),
     __dirname: '/fixture/desktop', process: { platform: 'darwin' }, URL,
     setTimeout: () => 1, clearTimeout() {},
   });

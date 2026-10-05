@@ -23,6 +23,8 @@ worker-configuration.d.ts
 release/
 .claude/worktrees/
 desktop/server-bundle/
+# The anonymous-usage App Key is written by the release build only (docs/ANALYTICS.md).
+desktop/analytics.json
 
 # A deployment's own values (Cloudflare account, domains, addresses, ops receipts) stay on its
 # owner's machine: deployments/<name>/ is never committed. deployments/README.md says how to

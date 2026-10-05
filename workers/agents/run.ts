@@ -47,6 +47,17 @@ export interface AgentRun {
   updatedAt: string;
 }
 
+/**
+ * A copy of a message that waits for another address of the workspace to answer it (B-22).
+ * Nothing is recorded yet: the queue looks again before `until`, and at `until` the copy
+ * either reads as a duplicate or, if the other address never took the message, answers it.
+ */
+export interface AwaitingAnswer {
+  status: "waiting";
+  owner: string;
+  until: number;
+}
+
 export const RESULT_PREVIEW_CHARS = 2000;
 export const SENT_BODY_CHARS = 12_000;
 

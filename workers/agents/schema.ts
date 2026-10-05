@@ -42,4 +42,14 @@ export const AGENT_REGISTRY_STEPS: readonly SchemaStep[] = [
   statements("1_initial", INITIAL),
   // Added in 0.6.1 by a PRAGMA check before versioning, so objects may already have it.
   { name: "2_agent_queue_next_at", run: (sql) => addColumn(sql, "agent_queue", "next_at", "INTEGER NOT NULL DEFAULT 0") },
+  // B-22: which address answers a message delivered to several agent addresses; pruned after a week.
+  statements("3_message_claims", [
+    `CREATE TABLE IF NOT EXISTS agent_message_claims (
+      key TEXT PRIMARY KEY,
+      owner TEXT NOT NULL,
+      taken INTEGER NOT NULL,
+      deadline INTEGER NOT NULL,
+      created_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS agent_message_claims_by_time ON agent_message_claims(created_at)`,
+  ]),
 ];

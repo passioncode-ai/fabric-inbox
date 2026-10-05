@@ -58,7 +58,8 @@ test('AgentRegistryDO: an object that added next_at itself in 0.6.1 upgrades wit
   const s = storage();
   AGENT_REGISTRY_STEPS[0].run(s.sql);
   s.db.exec('ALTER TABLE agent_queue ADD COLUMN next_at INTEGER NOT NULL DEFAULT 0');
-  assert.deepEqual(quiet(() => migrateSchema(s, AGENT_REGISTRY_STEPS, 'AgentRegistryDO')).applied, ['1_initial', '2_agent_queue_next_at']);
+  assert.deepEqual(quiet(() => migrateSchema(s, AGENT_REGISTRY_STEPS, 'AgentRegistryDO')).applied, AGENT_REGISTRY_STEPS.map((x) => x.name));
+  assert.deepEqual(AGENT_REGISTRY_STEPS.slice(0, 2).map((x) => x.name), ['1_initial', '2_agent_queue_next_at']);
 });
 
 test('a step that fails leaves nothing behind, is not recorded, and runs again on the next start', () => {
@@ -77,9 +78,10 @@ test('a step that fails leaves nothing behind, is not recorded, and runs again o
 
 test('steps recorded by a newer release are reported, not run and not an error', () => {
   const s = storage();
-  const newer = [...AGENT_REGISTRY_STEPS, statements('3_future', ['CREATE TABLE future (id TEXT)'])];
+  const future = `${AGENT_REGISTRY_STEPS.length + 1}_future`;
+  const newer = [...AGENT_REGISTRY_STEPS, statements(future, ['CREATE TABLE future (id TEXT)'])];
   quiet(() => migrateSchema(s, newer, 'AgentRegistryDO'));
-  assert.deepEqual(quiet(() => migrateSchema(s, AGENT_REGISTRY_STEPS, 'AgentRegistryDO')), { applied: [], unknown: ['3_future'] });
+  assert.deepEqual(quiet(() => migrateSchema(s, AGENT_REGISTRY_STEPS, 'AgentRegistryDO')), { applied: [], unknown: [future] });
 });
 
 test('a step list must be numbered from 1 without gaps', () => {

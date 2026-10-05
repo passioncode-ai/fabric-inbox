@@ -4,6 +4,7 @@ import { allServedDomains } from "../lib/mailbox-store";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
 import { callMcpTool, toolResultText } from "../automation/mcp";
 import { workersAiModel } from "./model";
+import { readAssignment } from "./definition";
 import type { RunnerDeps } from "./runner";
 
 type Registry = RunnerDeps["registry"];
@@ -44,6 +45,7 @@ export function productionDeps(env: Env, mailboxId: string, registry: Registry):
           id: email.id, sender: email.sender ?? "", subject: email.subject ?? "", body: email.body ?? "",
           date: email.date ?? "", thread_id: email.thread_id ?? null, raw_headers: email.raw_headers ?? null,
           folder_id: email.folder_id ?? undefined,
+          message_id: email.message_id ?? null, recipient: email.recipient ?? null, cc: email.cc ?? null,
         };
       },
       async thread(threadId) {
@@ -63,6 +65,15 @@ export function productionDeps(env: Env, mailboxId: string, registry: Registry):
           email_references: null, thread_id: draft.threadId,
         }, []);
       },
+    },
+    // Another address has an agent when it has a mailbox here that is not Off: an assigned agent
+    // that still exists, or none yet (a pre-registry mailbox migrates on its first message).
+    async agentServes(address) {
+      const object = await env.BUCKET.get(`mailboxes/${address.toLowerCase()}.json`);
+      if (!object) return false;
+      const assignment = readAssignment(await object.json<Record<string, unknown>>());
+      if (assignment === "off") return false;
+      return assignment ? (await registry.getAgent(assignment.id)) !== null : true;
     },
     injection: (text) => scanPromptInjection(env.AI, text),
     model: (request) => workersAiModel(env.AI, env.AGENT_MODEL, request),

@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { configuration } from "../providers/google-oauth";
 import type { GmailBindings } from "../providers/accounts-do";
-import type { SendRequest } from "../providers/account-service";
+import type { GmailFolder, SendRequest } from "../providers/account-service";
 import { ProviderError } from "../providers/gmail-client";
 
 /** Mount behind the app's Cloudflare Access middleware, before the SSR fallback. */
@@ -56,6 +56,8 @@ accountsRouter.onError((error, c) => {
     invalid_starred_state: 400,
     invalid_trashed_state: 400,
     invalid_spam_state: 400,
+    invalid_filter: 400,
+    invalid_folder: 400,
     credential_store_unavailable: 503,
     message_store_unavailable: 503,
     provider_unavailable: 503,
@@ -136,15 +138,34 @@ accountsRouter.post("/api/accounts/:accountId/disconnect", async (c) =>
 accountsRouter.post("/api/accounts/:accountId/sync", async (c) =>
   c.json(await stub(c.env).sync(c.req.param("accountId"))),
 );
-accountsRouter.get("/api/accounts/:accountId/messages", async (c) =>
-  c.json(
+accountsRouter.get("/api/accounts/:accountId/messages", async (c) => {
+  // Each field is its own filter; one that cannot be read is refused, never dropped.
+  const text = (key: string) => c.req.query(key) || undefined;
+  const flag = (key: string) => {
+    const value = c.req.query(key);
+    if (value === undefined || value === "") return undefined;
+    if (value === "true" || value === "1") return true;
+    if (value === "false" || value === "0") return false;
+    throw new ProviderError("invalid_filter", 400);
+  };
+  const date = (key: string) => {
+    const value = c.req.query(key);
+    if (!value) return undefined;
+    const time = Date.parse(value);
+    if (!Number.isFinite(time)) throw new ProviderError("invalid_filter", 400);
+    return time;
+  };
+  return c.json(
     await stub(c.env).listMessages(c.req.param("accountId"), {
       cursor: c.req.query("cursor"),
       limit: Number(c.req.query("limit")) || 50,
-      query: c.req.query("q"),
+      query: text("q"), from: text("from"), to: text("to"), subject: text("subject"),
+      after: date("after"), before: date("before"),
+      unread: flag("unread"), starred: flag("starred"), hasAttachment: flag("hasAttachment"),
+      folder: text("folder") as GmailFolder | undefined,
     }),
-  ),
-);
+  );
+});
 accountsRouter.get("/api/accounts/:accountId/messages/:messageId", async (c) =>
   c.json(
     await stub(c.env).getMessage(
@@ -192,6 +213,16 @@ accountsRouter.post(
   async (c) =>
     c.json(
       await stub(c.env).archive(
+        c.req.param("accountId"),
+        c.req.param("messageId"),
+      ),
+    ),
+);
+accountsRouter.post(
+  "/api/accounts/:accountId/messages/:messageId/inbox",
+  async (c) =>
+    c.json(
+      await stub(c.env).moveToInbox(
         c.req.param("accountId"),
         c.req.param("messageId"),
       ),

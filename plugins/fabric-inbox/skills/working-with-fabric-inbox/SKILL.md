@@ -74,7 +74,8 @@ mailboxes your key names.
   draft is. A *Drafts only* key always drafts.
 - **Every send carries your own `idempotencyKey`** — stable for that one message (e.g.
   `reply-<messageId>`). Unsure whether it went out → call again with the **same** key, or
-  `get_send_status`. Never send again under a new key.
+  `get_send_status`; a failed send's `details` carry its `outboxId` (Cloudflare) or
+  `idempotencyKey` (Gmail) for it. Never send again under a new key.
 - **Two steps are for the person, not for you.** A call that returns `needsConfirmation` changed
   nothing. Show the `summary` to the person; only on their yes, call again with the same arguments
   and `confirm: "<code>"` (valid 5 minutes, once). Never confirm on your own judgement, never
@@ -91,14 +92,17 @@ ones that matter. Report per message: who, what they want, what you suggest. Do 
 unless asked (`update_messages`).
 
 **Answer.** `read_message` (or `read_thread` for a Cloudflare conversation) → write the answer →
-`reply` with `idempotencyKey`, or `save_draft` with `replyToMessageId` when drafting. The address's
-display name and signature are added for you (`signature: false` to skip).
+`reply` with `idempotencyKey`, or `save_draft` with `replyToMessageId` when drafting. `reply` goes
+to the message's `replyTo` when it has one, else its sender; `replyAll` copies the rest of To and Cc
+but never you. The address's display name and signature are added for you (`signature: false` to skip).
 
 **Find.** `list_messages` with `query` searches every inbox; `search_mailbox` searches one account
-by sender, recipient, subject, dates, read, starred and attachments.
+by sender, recipient, subject, dates, read, starred, attachments and folder — every field applies,
+and one it cannot apply is refused (Gmail pages with `cursor`, Cloudflare with `page`).
 
 **Tidy.** `move_messages` (inbox, archive, trash, a Cloudflare folder) and `mark_spam` (spam or not,
-and by default remembers the sender) act on up to 100 messages; each answer lists what failed.
+and by default remembers the sender) act on up to 100 messages; each answer lists what failed, and
+one where nothing was changed is an error with the failures in its `details`.
 `delete_message` is permanent and two-step — prefer trash.
 
 ## 5. Administration workflows (`admin` keys)

@@ -145,6 +145,15 @@ runtime, and notarized and stapled so Gatekeeper opens a downloaded copy without
 receipt published beside the image states its commit, signature, both notarization submissions
 and the workflow run that built it.
 
+### Anonymous usage counts
+
+A released disk image tells PassionCode.ai that it was installed and opened, once a day that it was
+used, and how many Gmail accounts, Cloudflare mailboxes, agents and agent keys your server has:
+counts only, never an address, a name, a domain or anything from your mail. **Fabric Inbox → Share
+Anonymous Usage Counts** turns it off, for every PassionCode app on the Mac at once. Builds from
+source and the Mac App Store package send nothing. What is sent, where, and how it is tested:
+[docs/ANALYTICS.md](docs/ANALYTICS.md).
+
 ### Release
 
 A release is a tag: push `vX.Y.Z` on the reviewed release commit and

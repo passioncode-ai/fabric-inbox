@@ -3,7 +3,7 @@
 // builders now prune it themselves (desktop/release-retention.mjs), keeping small receipts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { planReleasePrune, pruneReleases, compareVersions } from "../desktop/release-retention.mjs";
@@ -39,11 +39,29 @@ test("rebuilding an older version keeps the newest release beside it, not an eve
   assert.deepEqual(plan.remove.sort(), ["Fabric-Inbox-0.7.0.dmg", "Fabric-Inbox-0.7.0.dmg.sha256"]);
 });
 
-test("store builds keep the current and the previous build folder", () => {
+test("store builds keep the current and the previous build folder of their mode, and the newest of the other mode", () => {
   const rev = "a".repeat(12);
-  const names = [`mas-distribution-arm64-3-${rev}`, `mas-distribution-arm64-10-${rev}`, `mas-development-x64-2-${rev}`, `mas-distribution-arm64-9-${rev}`];
+  const names = [`mas-distribution-arm64-3-${rev}`, `mas-distribution-arm64-10-${rev}`, `mas-development-x64-2-${rev}`, `mas-development-x64-1-${rev}`, `mas-distribution-arm64-9-${rev}`];
   const plan = planReleasePrune(names, { currentMas: `mas-distribution-arm64-9-${rev}` });
-  assert.deepEqual(plan.remove.sort(), [`mas-development-x64-2-${rev}`, `mas-distribution-arm64-3-${rev}`]);
+  assert.deepEqual(plan.remove.sort(), [`mas-development-x64-1-${rev}`, `mas-distribution-arm64-3-${rev}`]);
+  // Two development builds in a row never remove the distribution package that was uploaded.
+  const dev = planReleasePrune([`mas-distribution-arm64-9-${rev}`, `mas-development-arm64-4-${rev}`, `mas-development-arm64-5-${rev}`, `mas-development-arm64-6-${rev}`],
+    { currentMas: `mas-development-arm64-6-${rev}` });
+  assert.deepEqual(dev.remove, [`mas-development-arm64-4-${rev}`]);
+});
+
+test("a removed store folder leaves its receipt behind, and a removal that fails is logged, not thrown", () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "fabric-release-"));
+  const rev = "b".repeat(12);
+  for (const build of ["1", "2", "3"]) {
+    mkdirSync(path.join(dir, `mas-distribution-arm64-${build}-${rev}`));
+    writeFileSync(path.join(dir, `mas-distribution-arm64-${build}-${rev}`, "build-receipt.json"), `{"build":"${build}"}`);
+  }
+  assert.deepEqual(pruneReleases(dir, { currentMas: `mas-distribution-arm64-3-${rev}` }), [`mas-distribution-arm64-1-${rev}`]);
+  assert.equal(readFileSync(path.join(dir, `mas-distribution-arm64-1-${rev}.receipt.json`), "utf8"), '{"build":"1"}');
+  const lines: any[] = [];
+  assert.deepEqual(pruneReleases(path.join(dir, `mas-distribution-arm64-3-${rev}`, "build-receipt.json"), { current: "0.9.0" }, (l: unknown) => lines.push(l)), []);
+  assert.equal(lines[0].outcome, "not_read");
 });
 
 test("after two builds, at most two releases remain on disk", () => {

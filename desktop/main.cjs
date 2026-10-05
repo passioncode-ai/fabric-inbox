@@ -1,5 +1,6 @@
 'use strict';
-const { app, BrowserWindow, Menu, ipcMain, shell, dialog, session } = require('electron');
+const electron = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, shell, dialog, session } = electron;
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -7,6 +8,8 @@ const policy = require('./policy.cjs');
 const deployer = require('./cloudflare-deploy.cjs');
 const profile = require('./profile.cjs');
 const connector = require('./connect.cjs');
+const usage = require('./analytics.cjs');
+const { randomUUID } = require('node:crypto');
 
 app.setName('Fabric Inbox');
 // A development run (`npm run desktop`, an unpackaged Electron) keeps its own profile, so it never
@@ -23,7 +26,7 @@ if (typeof app.setAsDefaultProtocolClient === "function") app.setAsDefaultProtoc
 const pendingLinks = [];
 let appReady = false;
 let connecting = false;
-app.on('open-url', (event, url) => { event.preventDefault(); queueLink(url); });
+app.on('open-url', (event, url) => { event.preventDefault(); if (!appReady) launchedByLink = true; queueLink(url); });
 const setupURL = pathToFileURL(path.join(__dirname, 'setup.html')).href;
 let config = null;
 let setupWindow = null;
@@ -33,8 +36,11 @@ let notice = '';
 let setupStart = '';
 let openingExternal = false;
 let quitting = false;
-// The partition of the last mail window this run opened; retired when the server changes.
+// The partition of the last mail window this run opened, and the previous server's partition,
+// retired only once the new server has answered (a mistyped address never costs the old one's
+// drafts and sign-in).
 let mailPartition = null;
+let retireAfterLoad = null;
 const configPath = () => path.join(app.getPath('userData'), 'server.json');
 const pendingSetupPath = () => path.join(app.getPath('userData'), 'pending-setup.json');
 // Setups shipped with the app (desktop/setups/*.json) and one opened from a file.
@@ -49,6 +55,9 @@ let cloudflareToken = null;
 let deploying = false;
 // Opened once after the first sign-in on a server the app just created.
 let openAfterSignIn = '';
+// Anonymous usage counts (docs/ANALYTICS.md): off unless this build carries an App Key.
+let analytics = null;
+let launchedByLink = false;
 
 async function loadBundledSetups() {
   const dir = path.join(__dirname, 'setups');
@@ -93,10 +102,14 @@ async function readConfig() {
     return false;
   }
 }
-/** Clears a server's partition once no window uses it (LC-12, desktop/profile.cjs). */
+/**
+ * Clears a server's partition once no window uses it and the new server has answered (LC-12,
+ * desktop/profile.cjs). Its directory stays until the next start's sweep: deleting it under the
+ * live session would break that server if the person switched back during this run.
+ */
 async function retirePartition(partition) {
-  if (partition === mailPartition) return;
-  await profile.retirePartition({ fs, userData: app.getPath('userData'), partition, session: session.fromPartition(partition) });
+  if (!partition || partition === mailPartition) return;
+  await profile.retirePartition({ fs, userData: app.getPath('userData'), partition, session: session.fromPartition(partition), removeDirectory: false });
 }
 async function saveConfig(next) {
   await writePrivate(configPath(), next);
@@ -142,8 +155,10 @@ function loadMail() {
   const partition = policy.partitionFor(snapshot);
   const previousPartition = mailPartition;
   mailPartition = partition;
-  // The old server's window is destroyed above; its storage goes with it (F3: never left behind).
-  if (previousPartition && previousPartition !== partition) void retirePartition(previousPartition);
+  // The old server's window is destroyed above; its storage goes once this server has answered
+  // (F3: never left behind). Coming back to it before then cancels that.
+  if (previousPartition && previousPartition !== partition) retireAfterLoad = previousPartition;
+  if (retireAfterLoad === partition) retireAfterLoad = null;
   const ses = session.fromPartition(partition);
   rejectPermissions(ses);
   // A download remains an explicit user choice; never auto-save attachment files.
@@ -197,6 +212,13 @@ function loadMail() {
     // signed in there (the page loads only behind Access).
     let current;
     try { current = new URL(win.webContents.getURL()); } catch { return; }
+    // The new server (or its sign-in page) answered: the previous server's storage can go.
+    if (retireAfterLoad && (current.origin === snapshot.origin || (snapshot.accessOrigin && current.origin === snapshot.accessOrigin))) {
+      const retiring = retireAfterLoad;
+      retireAfterLoad = null;
+      void retirePartition(retiring);
+    }
+    if (current.origin === snapshot.origin) void countActive();
     if (!setupOpened && current.origin === snapshot.origin && current.pathname !== '/setup' && await readPendingSetup()) {
       setupOpened = true;
       void win.loadURL(new URL('/setup?source=desktop', snapshot.origin).href).catch(failure);
@@ -209,6 +231,43 @@ function loadMail() {
   win.on('closed', () => { clearTimeout(loadTimer); if (mailWindow === win) mailWindow = null; });
   loadTimer = setTimeout(failure, 30000);
   void win.loadURL(snapshot.origin).catch(failure);
+}
+/** Once a UTC day: the active event, with the server's counts when its window is signed in. */
+async function countActive() {
+  if (!analytics || !analytics.activeDue()) return;
+  const signedIn = config && mailWindow && !mailWindow.isDestroyed();
+  const counts = signedIn ? await usage.countsWith(session.fromPartition(policy.partitionFor(config)), config.origin)() : null;
+  await analytics.active(counts);
+}
+function track(name, props) { if (analytics) void analytics.event(name, props); }
+async function startAnalytics() {
+  if (!app.isPackaged) return;
+  let bundle = null;
+  try { bundle = usage.readBundledKey(await fs.readFile(path.join(__dirname, 'analytics.json'), 'utf8')); } catch { bundle = null; }
+  if (!bundle) return;
+  const send = electron.net && typeof electron.net.fetch === 'function' ? (url, init) => electron.net.fetch(url, init) : globalThis.fetch;
+  analytics = usage.createAnalytics({ fs, bundle, fetch: send, uuid: randomUUID, appData: app.getPath('appData'), userData: app.getPath('userData'),
+    appVersion: app.getVersion(), osVersion: typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : '',
+    locale: typeof app.getLocale === 'function' ? app.getLocale() : '', engineVersion: (process.versions && process.versions.electron) || '',
+    log: (line) => console.log(JSON.stringify(line)) });
+  await analytics.start({ launch: launchedByLink ? 'link' : 'ordinary', serverConfigured: !!config });
+  installMenu();
+  if (!config) void countActive();
+}
+async function toggleAnalytics(item) {
+  if (!analytics) return;
+  const ok = await analytics.setEnabled(!!item.checked);
+  if (!ok && item.checked) {
+    await dialog.showMessageBox({ type: 'warning', title: 'Usage counts', message: 'Usage counts could not be turned on.',
+      detail: 'The shared PassionCode settings file on this Mac could not be read, so nothing is sent.', buttons: ['OK'] });
+  }
+  installMenu();
+  if (analytics.status().enabled) void countActive();
+}
+function aboutUsageCounts() {
+  void dialog.showMessageBox({ type: 'info', title: 'Usage counts', message: 'Anonymous usage counts',
+    detail: 'When this is on, Fabric Inbox tells PassionCode.ai that it was installed and opened, once a day that it was used, and how many Gmail accounts, Cloudflare mailboxes, agents and agent keys your server has. It never sends names, email addresses, domains, messages, keys or anything from your mail. The setting is shared by every PassionCode app on this Mac.',
+    buttons: ['OK'] });
 }
 function queueLink(url) {
   if (typeof url !== 'string' || !url.startsWith(`${connector.SCHEME}:`)) return;
@@ -242,6 +301,7 @@ async function handleConnectLink(url) {
     log: (line) => console.log(line),
   });
   if (out.outcome === 'connected') {
+    track('hub_connected', {});
     await box({ type: 'info', title: 'Connected', message: `${request.client} is connected to Fabric Inbox.`, detail: 'You can see and revoke its key in Settings → Agent access.', buttons: ['OK'] });
   } else if (out.outcome === 'failed') {
     const detail = out.reason === 'no_server' ? 'Set up your Fabric Inbox server first, then connect again.'
@@ -281,6 +341,7 @@ function installIPC() {
     try {
       await writePrivate(pendingSetupPath(), chosen.setup);
       await saveConfig({ origin: chosen.summary.origin, accessOrigin: chosen.summary.accessOrigin });
+      track('server_connected', { method: 'setup_file' });
       loadMail();
       return { ok: true };
     } catch { return { ok: false, error: 'The setup could not be saved on this Mac. Try again.' }; }
@@ -299,7 +360,7 @@ function installIPC() {
     trusted(event);
     try {
       const next = policy.validateConfig(value);
-      await saveConfig(next); loadMail(); return { ok: true };
+      await saveConfig(next); track('server_connected', { method: 'entered' }); loadMail(); return { ok: true };
     } catch (error) { return { ok: false, error: error instanceof Error && !error.code ? error.message : 'The server setting could not be saved. Try again.' }; }
   });
   ipcMain.handle('fabric:setup-retry', event => { trusted(event); loadMail(); return { ok: true }; });
@@ -352,6 +413,7 @@ function installIPC() {
       console.log(JSON.stringify({ event: 'server_deploy', outcome: 'ok', ms: Date.now() - started, steps: result.steps.map(s => `${s.id}:${s.outcome}`) }));
       cloudflareToken = null;
       await saveConfig(policy.validateConfig({ origin: result.origin, accessOrigin: result.accessOrigin }));
+      track('server_connected', { method: 'created' });
       openAfterSignIn = '/projects';
       loadMail();
       return { ok: true, origin: result.origin };
@@ -363,7 +425,10 @@ function installIPC() {
 }
 function installMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: 'Fabric Inbox', submenu: [{ role: 'about' }, { type: 'separator' },
+    { label: 'Fabric Inbox', submenu: [{ role: 'about' },
+      { label: 'Share Anonymous Usage Counts', type: 'checkbox', checked: !!(analytics && analytics.status().enabled), enabled: !!analytics, click: (item) => void toggleAnalytics(item) },
+      { label: 'About Usage Counts…', click: aboutUsageCounts },
+      { type: 'separator' },
       { label: 'Server settings…', accelerator: 'CmdOrCtrl+,', click: () => showSetup() },
       { label: 'Connect Cloudflare account…', click: () => showSetup('', 'cloudflare') },
       { label: 'Setup…', click: () => { if (config && mailWindow && !mailWindow.isDestroyed()) void mailWindow.loadURL(new URL('/setup', config.origin).href); else showSetup(); } },
@@ -378,6 +443,8 @@ function installMenu() {
   ]));
 }
 app.on('before-quit', () => { quitting = true; });
+// The window coming forward is the only retry trigger and the daily check: no timer runs (LC-08).
+app.on('browser-window-focus', () => { if (analytics) { void analytics.wake(); void countActive(); } });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => {
   if (mailWindow && !mailWindow.isDestroyed()) { mailWindow.show(); mailWindow.focus(); }
@@ -396,6 +463,7 @@ if (ownsInstance) app.whenReady().then(async () => {
   if (await readConfig()) await profile.sweepProfile({ fs, userData: app.getPath('userData'), keepPartition: config ? policy.partitionFor(config) : null });
   config ? loadMail() : showSetup(notice);
   appReady = true;
+  void startAnalytics().catch(() => {});
   for (const arg of process.argv || []) queueLink(arg);
   void drainLinks();
 });

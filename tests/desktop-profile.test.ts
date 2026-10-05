@@ -72,6 +72,15 @@ test("a failing sweep is logged and never stops the app from starting", async ()
   assert.equal(events[0].code, "EACCES");
 });
 
+test("retiring a server during a run clears its storage and keeps its directory for the sweep", async () => {
+  const dir = userData();
+  const ses = { clearStorageData: async () => {}, clearCache: async () => {} };
+  const events: unknown[] = [];
+  await profile.retirePartition({ fs: fsPromises, userData: dir, partition: policy.partitionFor({ origin: B }), session: ses, removeDirectory: false, log: (e: unknown) => events.push(e) });
+  assert.equal(existsSync(path.join(dir, "Partitions", dirOf(B))), true);
+  assert.deepEqual(events, [{ event: "partition_retired", outcome: "ok", directory: "kept until the next start" }]);
+});
+
 test("retiring a server clears its session storage and cache, then removes its directory", async () => {
   const dir = userData();
   const calls: string[] = [];
@@ -121,14 +130,14 @@ async function boot({ config, packaged = true, switches = [] as string[], files 
       super(); this.options = options;
       const partition = options.webPreferences.session?.partition ?? options.webPreferences.partition;
       const frame = { url: "" };
-      this.webContents = Object.assign(new EventEmitter(), { session: sessionFor(partition), mainFrame: frame, setWindowOpenHandler() {}, getURL: () => "" });
+      this.webContents = Object.assign(new EventEmitter(), { session: sessionFor(partition), mainFrame: frame, setWindowOpenHandler() {}, getURL: () => frame.url });
       log.push(`window ${partition}`);
       windows.push(this);
     }
     isDestroyed() { return this.destroyed; }
     destroy() { this.destroyed = true; log.push(`destroy ${this.webContents.session.partition}`); this.emit("closed"); }
     hide() {} show() {} focus() {} setTitle() {} reload() {} isMinimized() { return false; }
-    loadURL() { return Promise.resolve(); }
+    loadURL(url: string) { this.webContents.mainFrame.url = url; return Promise.resolve(); }
     loadFile(file: string) { this.webContents.mainFrame.url = "file://" + file; return Promise.resolve(); }
     close() { this.destroy(); }
   }
@@ -179,7 +188,8 @@ async function boot({ config, packaged = true, switches = [] as string[], files 
     const setup = windows.filter((w) => w.options.webPreferences.partition === "fabric-setup").pop();
     return { sender: setup.webContents, senderFrame: setup.webContents.mainFrame };
   };
-  return { log, windows, sessions, handlers, settle, openSettings, setupSender, menu: () => menu };
+  const mailWindows = () => windows.filter((w) => w.options.webPreferences.session);
+  return { log, windows, mailWindows, sessions, handlers, settle, openSettings, setupSender, menu: () => menu };
 }
 
 const P = "/fixture/Fabric Inbox/Partitions";
@@ -205,7 +215,7 @@ test("an unreadable server setting is not a reason to delete the session the per
   assert.ok(!h.log.some((l) => l.startsWith("rm ")), h.log.join("\n"));
 });
 
-test("changing the server retires the old server's partition once its window is gone; a retry retires nothing", async () => {
+test("changing the server retires the old server's storage once the new one answers, and keeps its directory for the next start", async () => {
   const h = await boot({ config: { origin: A, accessOrigin: "" }, files: { [P]: [dirOf(A)] } });
   await h.settle();
   h.menu()[3].submenu.find((i: any) => i.label === "Retry connection").click();
@@ -216,12 +226,30 @@ test("changing the server retires the old server's partition once its window is 
   assert.equal(answer.ok, true);
   await h.settle();
   const oldPartition = policy.partitionFor({ origin: A });
-  const destroyA = h.log.lastIndexOf(`destroy ${oldPartition}`);
-  const clear = h.log.indexOf(`clear-storage ${oldPartition}`);
-  const rm = h.log.indexOf(`rm ${P}/${dirOf(A)}`);
-  assert.ok(destroyA >= 0 && clear > destroyA && rm > clear, h.log.join("\n"));
-  assert.ok(h.log.includes(`clear-cache ${oldPartition}`));
+  assert.ok(h.log.includes(`destroy ${oldPartition}`));
+  assert.ok(!h.log.some((l) => l.startsWith("clear-")), "nothing is cleared before the new server answers");
+  h.mailWindows().pop().webContents.emit("did-finish-load");
+  await h.settle();
+  assert.ok(h.log.includes(`clear-storage ${oldPartition}`) && h.log.includes(`clear-cache ${oldPartition}`), h.log.join("\n"));
+  assert.ok(!h.log.includes(`rm ${P}/${dirOf(A)}`), "the directory stays under its live session until the next start's sweep");
   assert.ok(!h.log.some((l) => l.includes(`clear-storage ${policy.partitionFor({ origin: B })}`)), "the new server keeps its session");
+});
+
+test("a mistyped server address costs the old server nothing: its drafts and sign-in survive the failed load", async () => {
+  const h = await boot({ config: { origin: A, accessOrigin: "" }, files: { [P]: [dirOf(A)] } });
+  await h.settle();
+  h.openSettings();
+  await h.handlers.get("fabric:setup-save")!(h.setupSender(), { origin: B, accessOrigin: "" });
+  await h.settle();
+  h.mailWindows().pop().webContents.emit("did-fail-load", {}, -105, "name not resolved", B, true);
+  await h.settle();
+  h.openSettings();
+  await h.handlers.get("fabric:setup-save")!(h.setupSender(), { origin: A, accessOrigin: "" });
+  await h.settle();
+  h.mailWindows().pop().webContents.emit("did-finish-load");
+  await h.settle();
+  assert.ok(!h.log.includes(`clear-storage ${policy.partitionFor({ origin: A })}`), h.log.join("\n"));
+  assert.ok(!h.log.some((l) => l.startsWith(`rm ${P}`)), h.log.join("\n"));
 });
 
 test("a development run uses its own profile; the installed app and an explicit --user-data-dir are left alone", async () => {
@@ -232,4 +260,16 @@ test("a development run uses its own profile; the installed app and an explicit 
   assert.ok(!installed.log.some((l) => l.startsWith("set-path")));
   const harness = await boot({ packaged: false, switches: ["user-data-dir"] });
   assert.ok(!harness.log.some((l) => l.startsWith("set-path")));
+});
+
+test("usage counts: a build without an App Key shows the switch unavailable and starts nothing (docs/ANALYTICS.md)", async () => {
+  const h = await boot({ config: { origin: A, accessOrigin: "" }, files: { [P]: [dirOf(A)] } });
+  await h.settle();
+  const items = h.menu()[0].submenu;
+  const share = items.find((i: any) => i.label === "Share Anonymous Usage Counts");
+  assert.equal(share.type, "checkbox");
+  assert.equal(share.enabled, false);
+  assert.equal(share.checked, false);
+  assert.ok(items.some((i: any) => i.label === "About Usage Counts…"));
+  assert.ok(!h.log.some((l) => l.includes("PassionCode")), "the shared installation file is not touched");
 });

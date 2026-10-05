@@ -19,12 +19,20 @@ const bundle = await build({
       export class TestMailbox extends MailboxDO {
         constructor(ctx, env) {
           super(ctx, { ...env, AI: { run: () => { throw new Error('no AI in this test'); } }, EMAIL: { send: async (m) => {
-            const sent = (await ctx.storage.get('test:sent')) || []; await ctx.storage.put('test:sent', [...sent, { to: m.to, subject: m.subject }]);
+            const sent = (await ctx.storage.get('test:sent')) || [];
+            await ctx.storage.put('test:sent', [...sent, { to: m.to, subject: m.subject, ...(m.attachments ? { attachments: m.attachments.map((a) => ({ filename: a.filename, type: a.type, content: a.content })) } : {}) }]);
             return { messageId: '<sent-' + sent.length + '@cloudflare.invalid>' };
           } } });
         }
         async testSent() { return (await this.ctx.storage.get('test:sent')) || []; }
         async testInbox(sender, subject) { const id = 'in-' + crypto.randomUUID(); await this.createEmail('inbox', { id, subject, sender, recipient: this.ctx.id.name ?? 'me', date: new Date().toISOString(), body: 'hello' }, []); return id; }
+        async testWithFiles(files) {
+          const id = 'in-' + crypto.randomUUID();
+          const rows = files.map((f, i) => ({ id: id + '-' + i, email_id: id, filename: f.filename, mimetype: f.mimetype, size: f.bytes.length, content_id: null, disposition: 'attachment' }));
+          for (const [i, f] of files.entries()) await this.env.BUCKET.put('attachments/' + id + '/' + rows[i].id + '/' + f.filename, Uint8Array.from(f.bytes));
+          await this.createEmail('inbox', { id, subject: 'Files', sender: 'ann@customer.invalid', recipient: this.ctx.id.name ?? 'me', date: new Date().toISOString(), body: 'see attached' }, rows);
+          return { id, attachmentIds: rows.map((r) => r.id) };
+        }
       }
       export default {
         async fetch(request, env, ctx) {
@@ -38,6 +46,7 @@ const bundle = await build({
             return Response.json(await env.MAILBOX.get(env.MAILBOX.idFromName(m)).testSent());
           }
           if (url.pathname === '/test/inbox') { const b = await request.json(); return Response.json({ id: await env.MAILBOX.get(env.MAILBOX.idFromName(b.mailbox)).testInbox(b.sender, b.subject) }); }
+          if (url.pathname === '/test/files') { const b = await request.json(); return Response.json(await env.MAILBOX.get(env.MAILBOX.idFromName(b.mailbox)).testWithFiles(b.files)); }
           if (url.pathname === '/test/put') { const b = await request.json(); await env.BUCKET.put(b.key, JSON.stringify(b.value)); return Response.json({ ok: true }); }
           return new Response('not found', { status: 404 });
         },
@@ -86,7 +95,7 @@ async function fixture() {
     const r = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
     return { isError: !!r.isError, data: JSON.parse(r.content[0]!.text) };
   };
-  const sent = async () => (await (await mf.dispatchFetch(`http://localhost/test/sent?mailbox=${MAILBOX}`)).json()) as { to: string; subject: string }[];
+  const sent = async () => (await (await mf.dispatchFetch(`http://localhost/test/sent?mailbox=${MAILBOX}`)).json()) as { to: string; subject: string; attachments?: { filename: string; content: string }[] }[];
   return { mf, connect, as, call, sent };
 }
 
@@ -298,5 +307,47 @@ test("a hub's admin key narrowed by X-Fabric-Accounts reaches the named mailbox 
     await assert.rejects(as("admin.access", { "X-Fabric-Accounts": "not-an-account" }), /limited to no mailbox|403/, "a header naming nothing valid reaches nothing, refused at the door");
     const whole = await names(await as("admin.access"));
     assert.ok(whole.includes("create_address"), "without the header the key is what it was");
+  } finally { await mf.dispose(); }
+});
+
+test("an attachment reaches the agent and a forward byte for byte, whatever its type says (agent audit 3)", async () => {
+  const { mf, as, call, sent } = await fixture();
+  try {
+    const files = [
+      { filename: "broken.json", mimetype: "application/json", bytes: [...new TextEncoder().encode('{"total": 12,')] },
+      { filename: "prices.csv", mimetype: "text/csv", bytes: [0x63, 0x6f, 0xe9, 0x74, 0x0d, 0x0a, 0xff, 0x00] },
+      { filename: "invite.ics", mimetype: "text/calendar", bytes: [0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2] },
+    ];
+    const made = (await (await mf.dispatchFetch("http://localhost/test/files", { method: "POST", body: JSON.stringify({ mailbox: MAILBOX, files }) })).json()) as { id: string; attachmentIds: string[] };
+    const sender = await as("send.access");
+    const base64 = (bytes: number[]) => Buffer.from(bytes).toString("base64");
+    for (const [i, f] of files.entries()) {
+      const got = await call(sender, "get_attachment", { accountId: `cloudflare:${MAILBOX}`, messageId: made.id, attachmentId: made.attachmentIds[i] });
+      assert.equal(got.isError, false, JSON.stringify(got.data));
+      assert.equal(got.data.base64, base64(f.bytes), `${f.filename} comes back unchanged`);
+      assert.equal(got.data.size, f.bytes.length);
+    }
+    const forwarded = await call(sender, "forward", { accountId: `cloudflare:${MAILBOX}`, messageId: made.id, to: "bob@customer.invalid", idempotencyKey: "fwd-files" });
+    assert.equal(forwarded.isError, false, JSON.stringify(forwarded.data));
+    const [out] = await sent();
+    assert.deepEqual(out!.attachments!.map((a) => [a.filename, a.content]), files.map((f) => [f.filename, base64(f.bytes)]));
+  } finally { await mf.dispose(); }
+});
+
+test("search_mailbox with hasAttachment: false finds the mail without attachments, rather than ignoring the filter (agent audit 5)", async () => {
+  const { mf, as, call } = await fixture();
+  try {
+    await mf.dispatchFetch("http://localhost/test/files", { method: "POST", body: JSON.stringify({ mailbox: MAILBOX, files: [{ filename: "a.txt", mimetype: "text/plain", bytes: [104, 105] }] }) });
+    await mf.dispatchFetch("http://localhost/test/inbox", { method: "POST", body: JSON.stringify({ mailbox: MAILBOX, sender: "a@b.invalid", subject: "no files" }) });
+    const admin = await as("admin.access");
+    const subjects = async (hasAttachment: boolean) => {
+      const found = await call(admin, "search_mailbox", { accountId: `cloudflare:${MAILBOX}`, hasAttachment, folder: "inbox" });
+      assert.equal(found.isError, false, JSON.stringify(found.data));
+      return found.data.messages.map((m: { subject: string }) => m.subject);
+    };
+    assert.deepEqual(await subjects(true), ["Files"]);
+    assert.deepEqual(await subjects(false), ["no files"]);
+    const cursor = await call(admin, "search_mailbox", { accountId: `cloudflare:${MAILBOX}`, cursor: "abc" });
+    assert.equal(cursor.isError, true, "a Gmail cursor on a Cloudflare mailbox is refused, not ignored");
   } finally { await mf.dispose(); }
 });
