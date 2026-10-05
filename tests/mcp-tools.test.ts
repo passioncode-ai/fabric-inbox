@@ -211,6 +211,18 @@ test("list_mailbox_messages with a threadId and no folder lists the conversation
   assert.equal(cf.calls[1]!.query!.folder, "inbox", "without a thread the folder is still the inbox");
 });
 
+// ── 10. Instructions true for each key ──────────────────────────────
+
+test("the instructions promise spam reporting only to a key that has mark_spam (agent audit 10)", () => {
+  for (const level of ["read", "mail", "admin"] as const) for (const accounts of [null, ["cloudflare:support@shop.invalid"]]) {
+    const p = { kind: "agent", label: "k", level, send: "send", dailySendLimit: 5, keyId: "k", accounts } as Principal;
+    const text = instructionsFor(p, "https://mail.shop.invalid");
+    const has = toolsFor(p, TOOLS).some((t) => t.name === "mark_spam");
+    assert.equal(/spam/i.test(text.split("\n\n")[1]!), has, `${level}${accounts ? " limited" : ""}: ${text.split("\n\n")[1]}`);
+    if (accounts) assert.doesNotMatch(text, /addresses and domains on Cloudflare/, "a limited admin key is not told it manages domains");
+  }
+});
+
 // ── 11. Every route a tool calls is declared ────────────────────────
 
 test("reply and forward declare every route they call, Gmail's included (agent audit 11)", async () => {
