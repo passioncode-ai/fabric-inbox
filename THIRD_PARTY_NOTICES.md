@@ -26,7 +26,7 @@ it.
   `app/types/index.ts`, `app/index.css`, `shared/{dates,folders}.ts`,
   `workers/{app,index,email-sender,types}.ts`, `workers/agent/index.ts`, `workers/db/schema.ts`,
   `workers/durableObject/{index,migrations}.ts`, `workers/lib/{ai,attachments,email-helpers,mailbox,schemas,tools}.ts`,
-  `workers/routes/reply-forward.ts`, `public/favicon.{ico,svg}`, `demo_app.png`, and the
+  `workers/routes/reply-forward.ts`, `public/favicon.{ico,svg}`, `demo_app.png` (the template's screenshot, removed 2026-10-05), and the
   configuration files `package.json`, `package-lock.json`, `vite.config.ts`,
   `react-router.config.ts`, `tsconfig*.json`, `wrangler.jsonc`, `.gitignore`,
   `.dev.vars.example`, `README.md`.
