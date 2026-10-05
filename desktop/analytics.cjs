@@ -119,12 +119,12 @@ function createAnalytics(deps) {
   let retryAt = 0;
   let failures = 0;
   let flushing = null;
-  let state = { installed: false, activeDay: '', counts: null };
+  let state = { installed: false, activeDay: '', counts: null, version: '' };
 
   async function loadState() {
     try {
       const value = JSON.parse(await fs.readFile(stateFile(userData), 'utf8'));
-      if (value && typeof value === 'object') state = { installed: value.installed === true, activeDay: typeof value.activeDay === 'string' ? value.activeDay : '', counts: value.counts && typeof value.counts === 'object' ? cleanCounts(value.counts) : null };
+      if (value && typeof value === 'object') state = { installed: value.installed === true, activeDay: typeof value.activeDay === 'string' ? value.activeDay : '', counts: value.counts && typeof value.counts === 'object' ? cleanCounts(value.counts) : null, version: typeof value.version === 'string' ? value.version.slice(0, 50) : '' };
     } catch { /* first run, or an unreadable state: start fresh */ }
   }
   async function saveState() {
@@ -212,6 +212,9 @@ function createAnalytics(deps) {
         state.installed = true;
         await saveState();
       }
+      // An update shows as the version this app last started as (automatic updates, docs/desktop-data-and-updates.md).
+      if (state.version && state.version !== appVersion) track('app_updated', { from: state.version });
+      if (state.version !== appVersion) { state.version = String(appVersion).slice(0, 50); await saveState(); }
       track('app_started', { launch: launch === 'link' ? 'link' : 'ordinary' });
       await flush();
     },

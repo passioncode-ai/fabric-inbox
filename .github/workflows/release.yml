@@ -117,13 +117,16 @@ jobs:
           SUBMISSION: ${{ steps.notarize-image.outputs.submission }}
         run: node desktop/dist-mac.mjs --stage finish --submission "$SUBMISSION"
       # The receipt ships beside the image; the `.sha256` does not: release-publish's GPG-signed
-      # SHA256SUMS covers every file of the release.
+      # SHA256SUMS covers every file of the release. The `-mac.zip` and `update-mac.json` are the
+      # automatic update every released copy reads at releases/latest/download/update-mac.json.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-macos
           path: |
             release/Fabric-Inbox-${{ needs.gate.outputs.version }}.dmg
             release/Fabric-Inbox-${{ needs.gate.outputs.version }}.receipt.json
+            release/Fabric-Inbox-${{ needs.gate.outputs.version }}-mac.zip
+            release/update-mac.json
           if-no-files-found: error
       - if: always()
         uses: passioncode-ai/.github/actions/apple-signing/cleanup@v1

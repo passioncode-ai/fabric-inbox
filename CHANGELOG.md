@@ -5,6 +5,28 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.10.1 — 2026-10-05
+
+The Mac app now keeps itself up to date, and removing or reinstalling it loses nothing.
+
+- **Automatic updates, on by default.** A released copy in Applications checks the latest GitHub
+  release at launch (and when you come back to it, at most every six hours), downloads the new
+  signed version in the background and installs it when you quit, or at once with **Fabric Inbox →
+  Restart to Install Update**. Squirrel.Mac checks the download's sha256 and size and that it is
+  signed by the same team. **Install Updates Automatically** turns it off; **Check for Updates…**
+  checks at once and says what happened. Each release now also publishes `Fabric-Inbox-<version>-mac.zip`
+  and `update-mac.json`. Builds from source and the Mac App Store copy never check. 0.10.0 and
+  earlier have no updater: update them once by hand.
+- **The server's address survives an uninstaller.** It is also kept in
+  `~/Library/Application Support/PassionCode/backups/fabric-inbox.json` and read back when the app's
+  own folder is gone, so a reinstall opens your server instead of the welcome screen. Your
+  accounts, addresses, agents, keys and mail were always on your server; what lives where is in
+  [docs/desktop-data-and-updates.md](docs/desktop-data-and-updates.md).
+- **A start with no server known keeps every sign-in.** The profile sweep no longer removes server
+  partitions (sign-in and unsent drafts) when no server address is saved: that partition may be
+  the server you are about to enter again.
+- **Usage counts show updates** (`app_updated`, with the version it came from).
+
 ## 0.10.0 — 2026-10-05
 
 Agents that work with mail get the right recipients and the exact bytes; a message is answered

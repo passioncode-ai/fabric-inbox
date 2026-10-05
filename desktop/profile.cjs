@@ -38,14 +38,14 @@ async function entries(fs, dir) {
 }
 
 /**
- * Removes every server partition except `keepPartition` (null keeps none) and the leftovers of the
- * app's settings files. Returns what it removed; a failure is logged and returns what was done.
+ * Removes every server partition except `keepPartition` (null keeps none; `keepPartitions` keeps
+ * all, for a start with no server known) and the leftovers of the app's settings files. Returns what it removed; a failure is logged and returns what was done.
  */
-async function sweepProfile({ fs, userData, keepPartition, log = defaultLog }) {
+async function sweepProfile({ fs, userData, keepPartition, keepPartitions = false, log = defaultLog }) {
   const keep = keepPartition ? partitionDirName(keepPartition) : null;
   const removed = { partitions: [], files: [] };
   try {
-    for (const entry of await entries(fs, path.join(userData, 'Partitions'))) {
+    for (const entry of keepPartitions ? [] : await entries(fs, path.join(userData, 'Partitions'))) {
       if (!entry.isDirectory() || !PARTITION_DIR.test(entry.name) || entry.name === keep) continue;
       await fs.rm(path.join(userData, 'Partitions', entry.name), { recursive: true, force: true });
       removed.partitions.push(entry.name);
