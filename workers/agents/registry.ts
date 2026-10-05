@@ -13,6 +13,7 @@ import {
 import { RUN_OUTCOMES, runIdFor, type AgentRun, type RunOutcome } from "./run";
 import { runAgent, type RunnerDeps } from "./runner";
 import { productionDeps } from "./deps";
+import { CLAIM_POLL_MS, CLAIM_TTL_MS, decideClaim, type MessageClaim } from "./dedupe";
 
 
 /** A run left "running" this long lost its worker; it is shown as interrupted, never replayed. */
@@ -95,6 +96,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
       ensureAgent: (id, input) => this.ensureAgent(id, input),
       sentToday: (box) => this.sentToday(box),
       reserveSend: (box, limit) => this.reserveSend(box, limit),
+      claimMessage: (key, box, elected) => this.claimMessage(key, box, elected),
     });
   }
 
@@ -109,6 +111,13 @@ export class AgentRegistryDO extends DurableObject<Env> {
       const mailboxId = String(item.mailbox_id), emailId = String(item.email_id);
       try {
         const run = await runAgent({ mailboxId, emailId }, this.deps(mailboxId));
+        // A copy of a message another address answers (B-22): look again soon, and at the latest
+        // when its wait ends, so it is recorded as a duplicate or answered here.
+        if (run?.status === "waiting") {
+          this.ctx.storage.sql.exec("UPDATE agent_queue SET next_at = ? WHERE mailbox_id = ? AND email_id = ?",
+            Math.min(run.until, Date.now() + CLAIM_POLL_MS), mailboxId, emailId);
+          return;
+        }
         // Another invocation holds this message's run, or held it and vanished (a deploy, an
         // eviction): keep the message until that run is finished or stale (reliability audit M2).
         if (run?.status === "running") {
@@ -310,6 +319,28 @@ export class AgentRegistryDO extends DurableObject<Env> {
   private trimRuns() {
     this.ctx.storage.sql.exec(
       "DELETE FROM agent_runs WHERE id IN (SELECT id FROM agent_runs ORDER BY created_at DESC LIMIT -1 OFFSET ?)", MAX_RUNS_KEPT);
+  }
+
+  // ── One answer per message across addresses (B-22) ──────────────
+
+  /**
+   * Decides, for one copy of a message, whether it answers, waits for the address chosen to
+   * answer, or is a duplicate (`decideClaim`). Keyed by the message (`messageKey`) in this
+   * workspace's registry and decided in one transaction, so copies running side by side cannot
+   * both answer. Claims older than a week are pruned here.
+   */
+  async claimMessage(key: string, mailboxId: string, elected: string, now = Date.now()): Promise<MessageClaim> {
+    return this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec("DELETE FROM agent_message_claims WHERE created_at < ?", now - CLAIM_TTL_MS);
+      const row = this.rows("SELECT owner, taken, deadline FROM agent_message_claims WHERE key = ?", key)[0];
+      const prior = row ? { owner: String(row.owner), taken: Number(row.taken) === 1, deadline: Number(row.deadline) } : null;
+      const { claim, write } = decideClaim(prior, mailboxId, elected, now);
+      if (write) this.ctx.storage.sql.exec(
+        `INSERT INTO agent_message_claims (key, owner, taken, deadline, created_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET owner = excluded.owner, taken = excluded.taken, deadline = excluded.deadline`,
+        key, write.owner, write.taken ? 1 : 0, write.deadline, now);
+      return claim;
+    });
   }
 
   // ── Daily send budget per address ───────────────────────────────

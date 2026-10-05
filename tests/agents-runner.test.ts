@@ -4,6 +4,7 @@ import { runAgent, type RunnerDeps, type RunnerEmail, type ModelRequest, type Mo
 import { AgentInputSchema, type AgentVersion } from "../workers/agents/definition";
 import type { AgentRun } from "../workers/agents/run";
 import type { ModelDecision } from "../workers/agents/policy";
+import type { MessageClaim } from "../workers/agents/dedupe";
 
 // Runner logic with every effect recorded. The registry is an in-memory model
 // of AgentRegistryDO's contract (claim once, versions, daily budget); the real
@@ -32,10 +33,13 @@ function harness(options: {
   search?: RunnerDeps["knowledge"]["search"];
   servedDomains?: string[];
   injectionFor?: (text: string) => boolean;
+  /** Other addresses of the workspace that have an agent (B-22). */
+  served?: string[];
+  claim?: (key: string, mailboxId: string, elected: string) => MessageClaim;
 } = {}) {
   const runs = new Map<string, AgentRun>();
-  const effects: { sends: unknown[]; drafts: { id: string; text: string }[]; modelCalls: number; assignments: string[]; ensured: string[] } =
-    { sends: [], drafts: [], modelCalls: 0, assignments: [], ensured: [] };
+  const effects: { sends: unknown[]; drafts: { id: string; text: string }[]; modelCalls: number; assignments: string[]; ensured: string[]; claims: { key: string; mailboxId: string; elected: string }[] } =
+    { sends: [], drafts: [], modelCalls: 0, assignments: [], ensured: [], claims: [] };
   let sent = options.sentToday ?? 0;
   const theAgent = options.agent === undefined ? autoAgent() : options.agent;
   const email: RunnerEmail = { id: "incoming-1", sender: "ann@customer.invalid", subject: "Price?", body: "<p>How much is it?</p>", date: "2026-09-28T10:00:00.000Z", thread_id: "t1", raw_headers: "[]", ...options.email };
@@ -55,7 +59,12 @@ function harness(options: {
       },
       async sentToday() { return sent; },
       async reserveSend(_m, limit) { if (sent >= limit) return false; sent++; return true; },
+      async claimMessage(key, mailboxId, elected) {
+        effects.claims.push({ key, mailboxId, elected });
+        return options.claim ? options.claim(key, mailboxId, elected) : { outcome: "answer" };
+      },
     },
+    async agentServes(address) { return (options.served ?? []).includes(address); },
     mailbox: {
       async settings() { return options.settings === undefined ? { agent: { id: "support" } } : options.settings; },
       async saveAssignment(id) { effects.assignments.push(id); },
@@ -376,4 +385,42 @@ test("calendar mail and no-reply variants are skipped; an empty subject gets a r
   assert.equal(prefilter({ ...base, sender: "support@smallsaas.invalid" }), null, "a support@ person is answered");
   assert.equal(replySubject(""), "Re: (no subject)");
   assert.deepEqual(transportParams({ request: { from: "a@x.invalid", to: "b@y.invalid", subject: "s", text: "t", auto_submitted: true } as any }).headers, { "Auto-Submitted": "auto-replied" });
+});
+
+// B-22: the same message delivered to several agent addresses of the workspace.
+const copied = { message_id: "q1@customer.invalid", recipient: "first@project.invalid", cc: MAILBOX };
+
+test("a Cc copy defers to the agent address in To: it waits and records nothing (B-22)", async () => {
+  const h = harness({ email: copied, served: ["first@project.invalid"],
+    claim: (_k, _m, elected) => ({ outcome: "wait", owner: elected, until: 123 }) });
+  const result = await h.run();
+  assert.deepEqual(result, { status: "waiting", owner: "first@project.invalid", until: 123 });
+  assert.equal(h.effects.claims.length, 1);
+  assert.equal(h.effects.claims[0].elected, "first@project.invalid");
+  assert.equal(h.effects.claims[0].mailboxId, MAILBOX);
+  assert.match(h.effects.claims[0].key, /^mid:/);
+  assert.equal(h.runs.size, 0);
+  assert.equal(h.effects.modelCalls, 0);
+});
+
+test("a copy answered from another address is recorded as a skipped duplicate, without the model (B-22)", async () => {
+  const h = harness({ email: copied, served: ["first@project.invalid"],
+    claim: () => ({ outcome: "duplicate", owner: "first@project.invalid" }) });
+  const run = (await h.run()) as AgentRun;
+  assert.equal(run.status, "skipped");
+  assert.equal(run.reason, "Duplicate: answered from first@project.invalid");
+  assert.equal(run.agentId, "support");
+  assert.equal(h.effects.modelCalls, 0);
+  assert.equal(h.effects.sends.length, 0);
+  const again = (await h.run()) as AgentRun;
+  assert.equal(again.id, run.id, "a repeated trigger finds the same record");
+});
+
+test("an address in Cc answers when the To address has no agent; Off never claims the message (B-22)", async () => {
+  const h = harness({ email: copied, served: [] });
+  assert.equal(((await h.run()) as AgentRun).status, "sent");
+  assert.equal(h.effects.claims[0].elected, MAILBOX);
+  const off = harness({ email: copied, settings: { agent: "off" } });
+  assert.equal(await off.run(), null);
+  assert.equal(off.effects.claims.length, 0, "an address with no agent takes no part");
 });

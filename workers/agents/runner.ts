@@ -2,7 +2,8 @@ import type { SendMailCommand, SendMailResult } from "../../shared/mail/send";
 import { LEGACY_INSTRUCTIONS, legacyAgentId, readAssignment, type AgentVersion, type ToolGrant } from "./definition";
 import { decide, type ModelDecision } from "./policy";
 import { parseStoredHeaders, prefilter, replyToAddress, SKIP_TEXT } from "./prefilter";
-import { RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type ToolCallRecord } from "./run";
+import { RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type AwaitingAnswer, type ToolCallRecord } from "./run";
+import { answeringOrder, duplicateReason, electAnswerer, messageKey, type MessageClaim } from "./dedupe";
 import type { KnowledgeHit } from "../knowledge/store";
 
 export interface RunnerEmail {
@@ -15,6 +16,10 @@ export interface RunnerEmail {
   raw_headers: string | null;
   /** Where the message is now; absent from older callers. */
   folder_id?: string;
+  /** RFC Message-ID without brackets, and the To and Cc lists as stored ("a@x, b@y"): B-22. */
+  message_id?: string | null;
+  recipient?: string | null;
+  cc?: string | null;
 }
 export interface RunnerThreadMessage {
   id: string;
@@ -49,7 +54,11 @@ export interface RunnerDeps {
     ensureAgent(id: string, input: unknown): Promise<AgentVersion | null>;
     sentToday(mailboxId: string): Promise<number>;
     reserveSend(mailboxId: string, limit: number): Promise<boolean>;
+    /** Atomic per workspace: of the copies of one message, one answers (B-22). */
+    claimMessage(key: string, mailboxId: string, elected: string): Promise<MessageClaim>;
   };
+  /** Whether another address of this workspace has an agent (a mailbox here, not Off). */
+  agentServes(address: string): Promise<boolean>;
   mailbox: {
     settings(): Promise<Record<string, unknown> | null>;
     saveAssignment(agentId: string): Promise<void>;
@@ -150,9 +159,11 @@ function userPrompt(email: RunnerEmail, thread: RunnerThreadMessage[], mailboxId
 /**
  * Answers one incoming message with the agent assigned to its address (SCN-024).
  * Claims the run first, so a repeated trigger never answers twice; every exit
- * path writes the run with its reason.
+ * path writes the run with its reason. A copy of a message that another address of the
+ * workspace answers is recorded as a skipped duplicate, or waits while that address has
+ * not started (B-22, `workers/agents/dedupe.ts`).
  */
-export async function runAgent(input: { mailboxId: string; emailId: string }, deps: RunnerDeps): Promise<AgentRun | null> {
+export async function runAgent(input: { mailboxId: string; emailId: string }, deps: RunnerDeps): Promise<AgentRun | AwaitingAnswer | null> {
   const mailboxId = input.mailboxId.toLowerCase();
   const found = await deps.mailbox.email(input.emailId);
   if (!found) return null;
@@ -186,6 +197,15 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   }
   if (!agent && !resolveError) return null;
 
+  // One answer per workspace (B-22): decided before this copy records anything, so a copy
+  // that waits leaves no run, and one answered elsewhere never reaches the model.
+  let answeredFrom: string | null = null;
+  if (agent) {
+    const shared = await claimMessage(mailboxId, email, deps);
+    if (shared?.outcome === "wait") return { status: "waiting", owner: shared.owner, until: shared.until };
+    if (shared?.outcome === "duplicate") answeredFrom = shared.owner;
+  }
+
   const claim = await deps.registry.beginRun(draftRun);
   if (!claim.claimed) return claim.run;
   const run = claim.run;
@@ -199,6 +219,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   if (resolveError || !agent) return finish("failed", `Could not read the agent for this address: ${resolveError}`);
   run.agentId = agent.id;
   run.agentVersion = agent.version;
+  if (answeredFrom) return finish("skipped", duplicateReason(answeredFrom));
   // Anything thrown from here on is recorded on the run, never left "running".
   let sendStarted = false;
   try {
@@ -388,6 +409,25 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   }
   return finish("send_unknown", "The provider did not confirm the send. Check Sent before answering again.");
   }
+}
+
+/**
+ * Claims this copy's message for the workspace (B-22). No key (no Message-ID and no Date) means
+ * the copy cannot be matched with others and answers on its own. Addresses outside the served
+ * domains are never looked up: no mailbox of this workspace can live there.
+ */
+async function claimMessage(mailboxId: string, email: RunnerEmail, deps: RunnerDeps): Promise<MessageClaim | null> {
+  const key = await messageKey(email);
+  if (!key) return null;
+  let domains: string[] | undefined;
+  const serves = async (address: string) => {
+    domains ??= deps.servedDomains ? await deps.servedDomains().catch(() => [] as string[]) : [];
+    const domain = address.slice(address.lastIndexOf("@") + 1);
+    if (domains.length && !domains.some((d) => domain === d || domain.endsWith("." + d))) return false;
+    return deps.agentServes(address);
+  };
+  const elected = await electAnswerer(mailboxId, answeringOrder(email), serves);
+  return deps.registry.claimMessage(key, mailboxId, elected);
 }
 
 async function resolveAgent(mailboxId: string, settings: Record<string, unknown> | null, deps: RunnerDeps): Promise<AgentVersion | null> {
