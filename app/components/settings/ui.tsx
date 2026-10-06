@@ -122,14 +122,18 @@ export function useDirtyGuard(dirty: boolean, what: string) {
 /* ------------------------------------------------------------ plain dialogs */
 
 /** A modal for a short task (add an address, connect an account, make a key). Esc closes it. */
-export function Dialog({ open, title, onClose, children, wide = false, busy = false }: {
+export function Dialog({ open, title, onClose, children, wide = false, busy = false, restoreFocus }: {
   open: boolean; title: string; onClose: () => void; children: ReactNode; wide?: boolean;
   /** While a request runs, Esc and Close wait for it. */
   busy?: boolean;
+  /** Where the focus goes on close when not back to what opened it (the panel of what was just made). */
+  restoreFocus?: () => HTMLElement | null;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const returnTo = useRef<HTMLElement | null>(null);
   const titleId = useId();
+  const restore = useRef(restoreFocus);
+  restore.current = restoreFocus;
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -139,7 +143,7 @@ export function Dialog({ open, title, onClose, children, wide = false, busy = fa
       el.querySelector<HTMLElement>("[data-autofocus]")?.focus();
     } else if (!open && el.open) {
       el.close();
-      const back = returnTo.current;
+      const back = restore.current?.() ?? returnTo.current;
       if (back && back.isConnected) back.focus();
     }
   }, [open]);

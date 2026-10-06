@@ -245,9 +245,14 @@ function ServedDomain({ summary, list, data, action }: {
         <StepList steps={action.steps} />
       </PanelBlock>
 
-      <PanelBlock title={`Addresses on ${domain}`} aside={
-        <Link className="fi-text-button" to={settingsPath("addresses", null, null, { add: "1", domain })}>Add an address</Link>}>
-        {!addresses.length ? <p>No address on {domain} yet.</p> : (
+      <PanelBlock title={`Addresses on ${domain}`} aside={addresses.length > 0 ? (
+        <Link className="fi-text-button" to={settingsPath("addresses", null, null, { add: "1", domain })}>Add an address on {domain}</Link>) : undefined}>
+        {!addresses.length ? (
+          <div className="fi-empty-inline">
+            <p>No address on {domain} yet: mail to it {catchAll ? `is kept in ${catchAll}` : "is refused, and the sender is told"}.</p>
+            <Link className="fi-primary" to={settingsPath("addresses", null, null, { add: "1", domain })}>Add the first address on {domain}</Link>
+          </div>
+        ) : (
           <ul className="fi-plain-list">
             {addresses.map((a) => (
               <li key={a.email}>
