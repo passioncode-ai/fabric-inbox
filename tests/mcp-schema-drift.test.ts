@@ -6,7 +6,7 @@ import { CreateMailboxBody, DraftBody, DraftSaveBody, DraftSendBody, MailboxSett
 import { SendEmailRequestSchema } from "../workers/lib/schemas";
 import { SEND_INPUT_FIELDS } from "../workers/providers/gmail-client";
 import { GmailDraftSendBody, GmailDraftUpdateBody } from "../workers/routes/accounts";
-import { AgentAssignmentInput, CopyInput, CreateAddress } from "../workers/routes/agents";
+import { AgentAssignmentInput, CopyInput, CreateAddress, CreateAddresses } from "../workers/routes/agents";
 import { CollectionChange, CollectionInput, DocumentsInput } from "../workers/routes/knowledge";
 import { ListEdit, Report } from "../workers/spam/inputs";
 import { AllowEdit, DiscardInput, RestoreInput } from "../workers/routes/discard";
@@ -51,6 +51,7 @@ const BODIES: Record<string, string[]> = {
   "PUT /api/accounts/:accountId/drafts/:draftId": keys(GmailDraftUpdateBody),
   "POST /api/accounts/:accountId/drafts/:draftId/send": keys(GmailDraftSendBody),
   "POST /api/project-addresses": keys(CreateAddress),
+  "POST /api/project-addresses/batch": keys(CreateAddresses),
   "PUT /api/project-addresses/:email/copy": keys(CopyInput),
   "PUT /api/project-addresses/:email/agent": keys(AgentAssignmentInput),
   "POST /api/knowledge/collections": keys(CollectionInput),

@@ -53,6 +53,52 @@ export interface RoutingStatus {
   detail: string;
   via?: "rule" | "catch_all";
 }
+
+/** GET /api/project-addresses/check (workers/lib/address-ops.ts checkAddresses, SCN-061). */
+export type DomainState = "receiving" | "can_receive" | "needs_fix" | "no_token" | "not_visible" | "unknown" | "unavailable";
+export interface NameCheck {
+  localPart: string;
+  email: string;
+  status: "available" | "exists" | "elsewhere" | "invalid";
+  detail: string;
+  notes: string[];
+}
+export interface AddressCheck {
+  domain: string;
+  served: boolean;
+  state: DomainState;
+  detail: string;
+  rule: { canMake: boolean; detail: string };
+  sendTestDefault: boolean;
+  catchAll: { mailbox: string; source: "deployment" | "stored" } | null;
+  names: NameCheck[];
+}
+export interface StepFix { action: "route_here" | "connect_cloudflare" | "connect_account" | "open_domain"; label: string }
+/** One line of what creating an address did (SCN-062). */
+export interface AddressStep {
+  id: "address" | "rule";
+  label: string;
+  outcome: "done" | "already" | "skipped" | "failed";
+  detail: string;
+  fix?: StepFix;
+}
+export interface CreatedAddress { email: string; routing: RoutingStatus | null; steps: AddressStep[]; warning?: string }
+export interface BatchResult {
+  domain: string;
+  created: number;
+  failed: number;
+  results: ({ email: string; status: number; error?: string } & Partial<CreatedAddress>)[];
+}
+/** GET /api/project-addresses/:email/test (SCN-062). */
+export interface TestStatus {
+  subject: string;
+  sentAt: string;
+  sendStatus: string;
+  state: "waiting" | "arrived" | "not_arrived" | "failed";
+  detail: string;
+  arrivedAt?: string;
+  folder?: string;
+}
 export type AgentRunStatus = "running" | "off" | "skipped" | "drafted" | "sent" | "send_failed" | "send_unknown" | "failed" | "interrupted";
 export interface AgentRun {
   id: string;

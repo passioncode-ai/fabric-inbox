@@ -1,9 +1,9 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { PlusIcon } from "@phosphor-icons/react";
 import { fabric } from "~/services/fabric";
-import type { AgentList, ProjectAddress, ProjectAddresses, RoutingStatus } from "~/services/agents";
+import type { AgentList, ProjectAddress, ProjectAddresses, RoutingStatus, TestStatus } from "~/services/agents";
 import type { DomainList } from "~/services/domains";
 import { groupRows, stableGroup, visibleRows, type ListEntry } from "../list-model";
 import { settingsPath } from "../paths";
@@ -15,6 +15,9 @@ import {
   ADDRESSES_KEY, ROUTING_TEXT, answererText, refreshMail, routingKey, useAddresses, useAgents, useDestinations, useDomains,
   useInboxAccounts, useRouting,
 } from "./data";
+import AddAddressDialog from "./AddAddress";
+import { STEP_MARK, TEST_POLL_MS, agentLine, domainOptions, testStep } from "./add-address-model";
+import { ADD_ADDRESS_TEXT as T } from "./add-address-text";
 import ConfiguredAddresses from "./ConfiguredAddresses";
 import SignatureForm from "./SignatureForm";
 
@@ -71,6 +74,8 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
   const adding = params.get("add") === "1";
   const closeAdd = () => setParams((p) => { const n = new URLSearchParams(p); n.delete("add"); n.delete("domain"); n.delete("name"); return n; }, { replace: true, preventScrollReset: true });
   const openAdd = () => setParams((p) => { const n = new URLSearchParams(p); n.set("add", "1"); return n; }, { replace: true, preventScrollReset: true });
+  // An address can be added on a domain receiving here, or (with a token) on any domain that can.
+  const canAdd = domainOptions(domains.data).length > 0;
 
   const loading = domains.isPending || addresses.isPending;
   const failed = domains.isError ? domains : addresses.isError ? addresses : null;
@@ -83,14 +88,14 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
     <SelectableList label="Addresses by domain" groups={groups} selected={id}
       hrefFor={(e) => settingsPath("addresses", e.key, tab && isTab(tab) ? tab : null)}
       renderRow={(e) => <AddressRowContent entry={e} agents={agents.data} unread={unread.get(e.key.toLowerCase()) ?? 0} />}
-      empty={<EmptyAddresses list={domains.data} query={query} onAdd={openAdd} />} />
+      empty={<EmptyAddresses list={domains.data} query={query} canAdd={canAdd} onAdd={openAdd} />} />
   );
 
   const panel = !id ? (
     <PanelPlaceholder>
       <h2>Choose an address</h2>
       <p>Its routing, its copy, its name and signature, and who answers it open here.</p>
-      {served.size > 0 && <button type="button" className="fi-primary" onClick={openAdd}><PlusIcon size={16} /> Add address</button>}
+      {canAdd && <button type="button" className="fi-primary" onClick={openAdd}><PlusIcon size={16} /> Add address</button>}
     </PanelPlaceholder>
   ) : loading ? <SkeletonPanel label="Loading this address…" /> : !selected ? (
     <PanelPlaceholder>
@@ -109,8 +114,8 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
       <SectionLayout section="addresses" hasSelection={!!id}
         toolbar={<>
           <ListSearch value={query} onChange={setQuery} placeholder="Find an address" label="Find an address" />
-          <button type="button" className="fi-primary" onClick={openAdd} disabled={loading || !served.size}
-            title={!served.size ? "Receive a domain's mail here first (Domains)" : undefined}>
+          <button type="button" className="fi-primary" onClick={openAdd} disabled={loading || !canAdd}
+            title={!canAdd ? T.addDisabled : undefined}>
             <PlusIcon size={16} /> Add address
           </button>
         </>}
@@ -118,7 +123,8 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
         footer={<ConfiguredAddresses />} />
       <AddAddressDialog open={adding} onClose={closeAdd} list={domains.data} agents={agents.data} data={addresses.data}
         initialDomain={params.get("domain")} initialName={params.get("name")}
-        onAdded={(email) => navigate(settingsPath("addresses", email), { replace: true, preventScrollReset: true })} />
+        // Selected behind the dialog at once; the dialog stays open on its steps until Done.
+        onCreated={(email) => navigate(settingsPath("addresses", email, null, { add: "1" }), { replace: true, preventScrollReset: true })} />
     </>
   );
 }
@@ -147,21 +153,21 @@ function RoutingBadge({ state }: { state: RoutingStatus["state"] }) {
   return <Badge tone={state === "verified" ? "ok" : state === "missing" ? "bad" : "warn"}>{ROUTING_TEXT[state]}</Badge>;
 }
 
-function EmptyAddresses({ list, query, onAdd }: { list?: DomainList; query: string; onAdd: () => void }) {
+function EmptyAddresses({ list, query, canAdd, onAdd }: { list?: DomainList; query: string; canAdd: boolean; onAdd: () => void }) {
   if (query) return <div className="fi-list-empty"><p>No address matches “{query}”.</p></div>;
   const served = list?.domains.filter((d) => d.served) ?? [];
-  if (!served.length) {
+  if (!canAdd) {
     return (
       <div className="fi-list-empty">
-        <p>No address yet. An address lives on a domain that receives its mail here: choose one of your domains first.</p>
+        <p>{T.listEmptyNoDomains}</p>
         <Link className="fi-secondary" to={settingsPath("domains")}>Go to Domains</Link>
       </div>
     );
   }
   return (
     <div className="fi-list-empty">
-      <p>No address on {served.map((d) => d.domain).join(", ")} yet.</p>
-      <button type="button" className="fi-primary" onClick={onAdd}>Add the first address</button>
+      <p>{served.length ? T.listEmptyOn(served.map((d) => d.domain)) : T.listEmptyNoneServed}</p>
+      <button type="button" className="fi-primary" onClick={onAdd}>{T.addFirst}</button>
     </div>
   );
 }
@@ -181,6 +187,7 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
   const catchAll = data.domains.find((d) => d.domain === a.domain)?.catchAll?.mailbox === a.email;
   const routing = useRouting(a.email, true);
   const current = assignmentValue(a.agent);
+  const chosen = agents?.agents.find((x) => x.id === current);
 
   const setAnswerer = (value: string) => void work.run("Saving…", async () => {
     try {
@@ -225,11 +232,12 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
           <select className="fi-input" aria-label="Who answers" value={current} disabled={!!work.busy} onChange={(e) => setAnswerer(e.target.value)}>
             {current === "legacy" && <option value="legacy" disabled>Drafts with its old prompt (set on next message)</option>}
             <option value="off">Off — I read it myself</option>
-            {agents?.agents.map((x) => <option key={x.id} value={x.id}>{x.name} (v{x.version})</option>)}
+            {agents?.agents.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             {/* Agents that could not be listed still show the one answering, never a false "Off". */}
             {typeof a.agent === "object" && !agents && <option value={a.agent.id}>{a.agentName ?? a.agent.id}</option>}
             {typeof a.agent === "object" && agents && !a.agentName && <option value={a.agent.id} disabled>Deleted agent — Off</option>}
           </select>
+          {chosen && <span className="fi-hint">{agentLine(chosen)}</span>}
         </label>
         <ActionResult result={work.result} />
       </PanelBlock>
@@ -259,12 +267,18 @@ function RoutingTab({ address: a, catchAll, connected }: { address: ProjectAddre
     await client.invalidateQueries({ queryKey: routingKey(a.email) });
     return status.detail;
   });
-  const test = () => void work.run("Sending a test…", async () => {
-    const result = await fabric<{ subject: string; status: string }>(path + "/test", {});
-    return result.status === "accepted"
-      ? `Test message accepted by the provider: “${result.subject}”. It should appear in ${a.email} within a minute if routing works.`
-      : `Test message ${result.status}: “${result.subject}”. Check the address's outbox.`;
+  // The last test message, watched until it arrives (SCN-062); polled only while it is on its way.
+  const lastTest = useQuery({
+    queryKey: ["routing-test", a.email],
+    queryFn: () => fabric<{ test: TestStatus | null }>(path + "/test").then((r) => r.test),
+    refetchInterval: (q) => (q.state.data?.state === "waiting" ? TEST_POLL_MS : false),
   });
+  const test = () => void work.run(T.panelTestSending, async () => {
+    const result = await fabric<{ subject: string; status: string }>(path + "/test", {});
+    await client.invalidateQueries({ queryKey: ["routing-test", a.email] });
+    return result.status === "failed" ? T.panelTestRefused(result.subject) : T.panelTestSent(result.subject);
+  });
+  const elsewhere = routing.data?.state === "missing" && routing.data.detail.includes("somewhere else");
   return (
     <>
       <PanelBlock title="Does mail arrive here?" aside={
@@ -275,6 +289,10 @@ function RoutingTab({ address: a, catchAll, connected }: { address: ProjectAddre
         ) : (
           <p><RoutingBadge state={routing.data.state} /> {routing.data.detail}</p>
         )}
+        {!connected && routing.data?.state === "unknown" && (
+          <p className="fi-hint">{T.panelConnect} <Link to={settingsPath("domains", "connect")}>{T.panelConnectLink}</Link>.</p>
+        )}
+        {elsewhere && <p className="fi-hint">{T.panelElsewhere} <Link to={settingsPath("domains", a.domain)}>{a.domain}</Link>{T.panelElsewhereAfter}</p>}
         {catchAll && <p className="fi-hint">It also keeps the mail for every other address on {a.domain}.</p>}
         {a.deliveryIssue && (
           <div className="fi-callout is-bad" role="alert">
@@ -282,12 +300,23 @@ function RoutingTab({ address: a, catchAll, connected }: { address: ProjectAddre
           </div>
         )}
         <div className="fi-buttons">
-          {connected && routing.data?.state === "missing" && !routing.data.detail.includes("somewhere else") && (
-            <button type="button" className="fi-primary" disabled={!!work.busy} onClick={sendHere}>Send it here</button>
+          {connected && routing.data?.state === "missing" && !elsewhere && (
+            <button type="button" className="fi-primary" disabled={!!work.busy} onClick={sendHere} title={T.panelFixTitle}>{T.panelFix}</button>
           )}
-          <button type="button" className="fi-secondary" disabled={!!work.busy} onClick={test}>Send test message</button>
+          <button type="button" className="fi-secondary" disabled={!!work.busy} onClick={test}>{T.panelSendTest}</button>
         </div>
         <ActionResult result={work.result} />
+        {lastTest.data && (() => {
+          const step = testStep("sent", lastTest.data);
+          return (
+            <ol className="fi-steps fi-steps-live" aria-label={T.panelLastTest} aria-live="polite">
+              <li className={"fi-step is-" + step.outcome}>
+                <span className="fi-step-mark">{STEP_MARK[step.outcome]}</span>
+                <span><strong>{T.panelTestOf(new Date(lastTest.data.sentAt).toLocaleString())}</strong> {step.detail}</span>
+              </li>
+            </ol>
+          );
+        })()}
       </PanelBlock>
     </>
   );
@@ -335,104 +364,5 @@ function CopyTab({ address: a, list }: { address: ProjectAddress; list?: DomainL
       )}
       <ActionResult result={work.result} />
     </PanelBlock>
-  );
-}
-
-/* ----------------------------------------------------------- add an address */
-
-const NAME_PATTERN = "[A-Za-z0-9](?:[A-Za-z0-9._+\\-]{0,62}[A-Za-z0-9])?";
-
-function AddAddressDialog({ open, onClose, list, agents, data, initialDomain, initialName, onAdded }: {
-  open: boolean; onClose: () => void; list?: DomainList; agents?: AgentList; data?: ProjectAddresses;
-  initialDomain: string | null; initialName: string | null; onAdded: (email: string) => void;
-}) {
-  const client = useQueryClient();
-  const notify = useNotify();
-  const served = list?.domains.filter((d) => d.served) ?? [];
-  const [domain, setDomain] = useState("");
-  const [name, setName] = useState("");
-  const [agent, setAgent] = useState("off");
-  const [copy, setCopy] = useState("");
-  const [working, setWorking] = useState(false);
-  const [problem, setProblem] = useState("");
-  const nameField = useRef<HTMLInputElement>(null);
-  const ready = open && served.length > 0;
-  // The form starts over each time it opens, once the domains are known (a link may name one).
-  useEffect(() => {
-    if (!ready) return;
-    setDomain(served.some((d) => d.domain === initialDomain) ? initialDomain! : served[0]!.domain);
-    setName(initialName ?? ""); setAgent("off"); setCopy(""); setProblem("");
-    nameField.current?.focus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready]);
-  const summary = served.find((d) => d.domain === domain);
-  const connected = !!list?.connected;
-  const destinations = useDestinations(open && connected && !!summary, summary?.account && !summary.account.server ? summary.account.id : undefined);
-  const confirmed = destinations.data?.filter((d) => d.verified) ?? [];
-  const unknown = (data?.unknownRecipients ?? []).filter((u) => u.domain === domain).slice(0, 5);
-  const email = name ? `${name.toLowerCase()}@${domain}` : "";
-
-  async function submit() {
-    setWorking(true); setProblem("");
-    try {
-      const r = await fabric<{ email: string; routing: { detail: string } | null; warning?: string }>("/api/project-addresses", {
-        // A zone the token cannot see gets no rule: the address still receives through the catch-all.
-        localPart: name, domain, agent: toAssignment(agent), createRoute: connected && !!summary?.zoneId,
-        ...(copy ? { forwardTo: copy } : {}),
-      });
-      notify([`${r.email} is ready.`, r.routing?.detail ?? "Send it here from Cloudflare Email Routing, then send a test message.", r.warning].filter(Boolean).join(" "));
-      await refreshMail(client);
-      onClose();
-      onAdded(r.email);
-    } catch (error) {
-      setProblem(errorText(error));
-    } finally { setWorking(false); }
-  }
-
-  return (
-    <Dialog open={open} title="Add an address" onClose={onClose} busy={working}>
-      {!served.length ? (
-        <p>No domain receives mail here yet. <Link to={settingsPath("domains")}>Choose one on Domains</Link> first.</p>
-      ) : (
-        <form onSubmit={(e) => { e.preventDefault(); void submit(); }}>
-          <div className="fi-field-row">
-            <label className="fi-field">Name
-              <input ref={nameField} className="fi-input" data-autofocus required value={name} pattern={NAME_PATTERN} placeholder="support"
-                onChange={(e) => setName(e.target.value)} aria-describedby="add-address-at" />
-            </label>
-            <label className="fi-field">Domain
-              <select className="fi-input" value={domain} onChange={(e) => { setDomain(e.target.value); setCopy(""); }} id="add-address-at">
-                {served.map((d) => <option key={d.domain} value={d.domain}>@{d.domain}</option>)}
-              </select>
-            </label>
-          </div>
-          {unknown.length > 0 && (
-            <p className="fi-hint">Mail arrived recently for addresses on {domain} that do not exist:{" "}
-              {unknown.map((u, i) => (
-                <span key={u.address}>{i > 0 && ", "}<button type="button" className="fi-text-button" onClick={() => setName(localPart(u.address))}>{localPart(u.address)}</button> ({u.count})</span>
-              ))}.
-            </p>
-          )}
-          <label className="fi-field">Who answers
-            <select className="fi-input" value={agent} onChange={(e) => setAgent(e.target.value)}>
-              <option value="off">Off — I read it myself</option>
-              {agents?.agents.map((x) => <option key={x.id} value={x.id}>{x.name} (v{x.version})</option>)}
-            </select>
-          </label>
-          <label className="fi-field">Also forward a copy to
-            <select className="fi-input" value={copy} onChange={(e) => setCopy(e.target.value)} disabled={!connected || !confirmed.length}>
-              <option value="">No copy</option>
-              {confirmed.map((x) => <option key={x.id} value={x.email}>{x.email}</option>)}
-            </select>
-            {connected && destinations.isSuccess && !confirmed.length && <span className="fi-hint">No confirmed forwarding destination in this domain's Cloudflare account yet.</span>}
-          </label>
-          {problem && <p className="fi-action-result is-error" role="alert">{problem}</p>}
-          <div className="fi-dialog-actions">
-            <button type="button" className="fi-secondary" onClick={onClose} disabled={working}>Cancel</button>
-            <button type="submit" className="fi-primary" disabled={working || !name || !domain}>{working ? "Adding…" : email ? `Add ${email}` : "Add address"}</button>
-          </div>
-        </form>
-      )}
-    </Dialog>
   );
 }

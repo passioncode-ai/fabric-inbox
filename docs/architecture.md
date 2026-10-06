@@ -62,7 +62,7 @@ flowchart LR
 | Tools | `workers/automation/mcp.ts (callMcpTool)` | remote MCP over Streamable HTTP; host checked against `AUTOMATION_MCP_HOSTS` at save and at call; bounded result kept in the run |
 | Send | `MailboxDO.sendMail` | the one outgoing boundary: idempotency key = run id; accepted / failed / unknown; unknown is never retried |
 | Routing | `workers/routing/email-routing.ts (EmailRoutingClient)` | reads a rule/catch-all to the Worker as verified, missing or unknown; creates a literal rule without duplicating |
-| API | `workers/routes/agents.ts`, `workers/routes/knowledge.ts` | `/api/agents` (grants only existing collections), `/api/agent-runs` (`limit`, `before` = `createdAt|id` of the last run shown, `outcome` = answered / attention / skipped, `agent`, `mailbox`), `/api/project-addresses`, `/api/knowledge/*` (a collection in use cannot be deleted) |
+| API | `workers/routes/agents.ts`, `workers/routes/knowledge.ts` | `/api/agents` (grants only existing collections), `/api/agent-runs` (`limit`, `before` = `createdAt|id` of the last run shown, `outcome` = answered / attention / skipped, `agent`, `mailbox`), `/api/project-addresses` (with `/check`, `/batch` and `/:email/test`), `/api/knowledge/*` (a collection in use cannot be deleted) |
 
 The knowledge base the operator names as the single one is Fabric's project memory
 ([ADR-0069](https://github.com/passioncode-ai/fabric/blob/main/docs/adr/0069-project-memory-is-source-addressed-and-authority-bounded.md));
@@ -316,7 +316,16 @@ mailbox route (`/api/v1/mailboxes`, used for the addresses a deployment's `EMAIL
 call made is removed again when the mailbox cannot be saved; a zone the token cannot see gets its
 address with a warning; the catch-all in effect (the deployment's `UNKNOWN_ADDRESS_POLICY` wins
 over the stored choice) cannot be removed; what happens to the next message is read from
-Cloudflare after the rule is gone. `DomainManager.connect` leaves rules to another Worker alone
+Cloudflare after the rule is gone. Since 0.12 (WS7) creating answers its `steps` (address, rule —
+each done, already, skipped or failed with a `fix`); with `createRoute: "auto"` a rule that cannot be
+made no longer costs the address (with `true` it still does). `checkAddresses`
+(`GET /api/project-addresses/check`) reads Cloudflare once for a domain and several names
+(`EmailRoutingClient.routingFor`) and says per name available, exists, elsewhere or invalid;
+`createAddresses` (`POST /api/project-addresses/batch`) creates up to 50 one after another;
+`sendRoutingTest` keeps the test's subject in R2 (`routing-tests/<address>.json`) and
+`routingTestStatus` (`GET /api/project-addresses/:email/test`) finds it in the mailbox (any folder
+but Sent and Drafts) or reports it not arrived after 3 minutes. The part before @ is checked by
+`shared/address-name.ts`, the same module the dialog uses. `DomainManager.connect` leaves rules to another Worker alone
 and keeps each address's agent and the chosen catch-all; `release` keeps serving when the zone
 cannot be looked up and asks before giving up a zone the token cannot see.
 

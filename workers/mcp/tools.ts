@@ -19,6 +19,7 @@ import { headerValue, parseStoredHeaders } from "../agents/prefilter";
 import { GMAIL_FOLDERS } from "../providers/gmail-cache";
 import { parseRemoteAccount, type RemoteProvider } from "../../shared/mail/accounts";
 import { AttachmentValidationError, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, validateAttachments, type MailAttachment } from "../../shared/mail/attachments";
+import { BATCH_MAX, LOCAL_PART_RE } from "../../shared/address-name";
 
 // ── Shared pieces ──────────────────────────────────────────────────
 
@@ -957,14 +958,41 @@ const dismissRuleRun = defineTool({
 const agentChoice = z.union([z.literal("off"), z.object({ agentId: z.string().min(1).max(100) })]).describe('"off", or { agentId } of the agent that answers it (list_agents)');
 const toAgent = (choice: "off" | { agentId: string } | undefined) => (choice === undefined ? undefined : choice === "off" ? "off" : { id: choice.agentId });
 
+/** The settings an address is created with, one at a time (create_address) or several (create_addresses). */
+const newAddressSettings = {
+  name: z.string().max(80).optional().describe("Display name mail is sent with; by default the name before @, capitalised (support → Support)"),
+  agent: agentChoice.optional(),
+  signature: z.object({ enabled: z.boolean(), text: z.string().max(2000) }).optional().describe("Added to mail sent from the address"),
+  createRoute: z.union([z.literal("auto"), z.boolean()]).default("auto")
+    .describe('"auto": make the Cloudflare rule when the server can; when it cannot (no token, a zone no token sees, Cloudflare refused) the address is still created and its rule step says why and how to fix it. true: require the rule (no rule, no address). false: no rule'),
+  forwardTo: z.string().email().max(90).optional().describe("Also forward a copy here (a verified destination, list_domains destinations)"),
+};
+
+const checkAddress = defineTool({
+  name: "check_address", title: "Check addresses before creating them", level: "read", readOnly: true,
+  description: "What the person sees before creating an address: the domain's state (receiving, can_receive — create_address needs connect_domain first —, needs_fix, no_token, not_visible, unknown, unavailable), whether a Cloudflare rule can be made, whether a test message is worth sending, the catch-all, and per name: available, exists, elsewhere (a Cloudflare rule sends it somewhere else, and where) or invalid (and why), with notes such as mail that arrived for it recently or the catch-all keeping its mail today.",
+  input: { domain, localParts: z.array(z.string().max(320)).min(1).max(BATCH_MAX).describe("The names before @ to check, up to 50") },
+  routes: ["GET /api/project-addresses/check"],
+  call: (a, ctx) => get(ctx, "/api/project-addresses/check", { domain: a.domain.toLowerCase(), names: a.localParts.join(",") }),
+});
+
 const createAddress = defineTool({
   name: "create_address", title: "Create an address", level: "admin", target: (a) => `${a.localPart}@${a.domain}`,
-  description: "Makes a new mailbox on one of your served domains and, when this server can, the Cloudflare rule that sends its mail here (createRoute \"auto\", the default: no routing token means no rule, and a zone the token cannot see gets the address with a warning instead of a rule). Optionally names it, sets its agent and forwards a copy to a verified destination.",
-  input: { localPart: z.string().regex(/^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$/).describe("The part before @, lower case"), domain,
-    name: z.string().max(80).optional().describe("Display name"), agent: agentChoice.optional(), createRoute: z.union([z.literal("auto"), z.boolean()]).default("auto").describe('"auto": add the Cloudflare rule when the server can; true: require it (refused without a routing token); false: no rule'),
-    forwardTo: z.string().email().max(90).optional().describe("Also forward a copy here (a verified destination, list_domains destinations)") },
+  description: "Makes a new mailbox on one of your served domains and, when this server can, the Cloudflare rule that sends its mail here. The answer lists its steps (address, rule), each done, already, skipped or failed with a fix. Optionally sets its display name, signature, agent and a copy to a verified destination. check_address first says whether the name is free; send_test_message and check_test_message then prove it receives.",
+  input: { localPart: z.string().regex(LOCAL_PART_RE).describe("The part before @, lower case (letters, digits, . _ + -, a letter or digit at each end, no two dots together)"), domain,
+    ...newAddressSettings },
   routes: ["POST /api/project-addresses", "POST /api/v1/mailboxes"],
-  call: (a, ctx) => post(ctx, "/api/project-addresses", { localPart: a.localPart, domain: a.domain.toLowerCase(), name: a.name, agent: toAgent(a.agent), createRoute: a.createRoute, forwardTo: a.forwardTo }),
+  call: (a, ctx) => post(ctx, "/api/project-addresses", { localPart: a.localPart, domain: a.domain.toLowerCase(), name: a.name, agent: toAgent(a.agent),
+    signature: a.signature, createRoute: a.createRoute, forwardTo: a.forwardTo }),
+});
+
+const createAddresses = defineTool({
+  name: "create_addresses", title: "Create several addresses", level: "admin", target: (a) => `${a.localParts.length} on ${a.domain}`,
+  description: "Makes up to 50 addresses on one served domain with the same settings (agent, signature, copy, rule), one after another; each gets its own display name from its name unless name is given for all. Answers one row per address with its status (201 created, 409 exists, 400 refused) and steps; a failure never stops the others.",
+  input: { domain, localParts: z.array(z.string().max(320)).min(1).max(BATCH_MAX).describe("The names before @, up to 50"), ...newAddressSettings },
+  routes: ["POST /api/project-addresses/batch"],
+  call: (a, ctx) => post(ctx, "/api/project-addresses/batch", { domain: a.domain.toLowerCase(), localParts: a.localParts, name: a.name, agent: toAgent(a.agent),
+    signature: a.signature, createRoute: a.createRoute, forwardTo: a.forwardTo }),
 });
 
 const updateAddress = defineTool({
@@ -1009,9 +1037,16 @@ const routeAddress = defineTool({
 
 const sendTest = defineTool({
   name: "send_test_message", title: "Send a test message", level: "admin", sends: true, target: (a) => a.address,
-  description: "Sends a message from the address to itself through Cloudflare, to check that sending and receiving both work; it lands in its Inbox.",
+  description: "Sends a message from the address to itself through Cloudflare, to check that sending and receiving both work; it lands in its Inbox. check_test_message then says whether it arrived.",
   input: { address }, routes: ["POST /api/project-addresses/:email/test"],
   call: (a, ctx) => post(ctx, `/api/project-addresses/${enc(a.address.toLowerCase())}/test`),
+});
+
+const checkTest = defineTool({
+  name: "check_test_message", title: "Did the test message arrive?", level: "read", readOnly: true, target: (a) => a.address,
+  description: "The address's last test message (send_test_message) and its state: waiting, arrived (with when and the folder), not_arrived (nothing after 3 minutes: check_address_routing says why) or failed (the provider refused it). null when no test was sent. Ask again every few seconds while it is waiting.",
+  input: { address }, routes: ["GET /api/project-addresses/:email/test"],
+  call: (a, ctx) => get(ctx, `/api/project-addresses/${enc(a.address.toLowerCase())}/test`),
 });
 
 const setCatchAll = defineTool({
@@ -1418,7 +1453,7 @@ export const TOOLS: readonly ToolDef[] = [
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun,
-  createAddress, updateAddress, removeAddress, routeAddress, sendTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
+  checkAddress, createAddress, createAddresses, updateAddress, removeAddress, routeAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,

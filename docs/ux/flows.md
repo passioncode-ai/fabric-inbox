@@ -236,9 +236,9 @@ flowchart TD
 ### FLW-08: Put an agent on a project address
 - **Traces:** ST-008; RE-001
 - **Goal:** A project address receives mail and its agent answers within policy.
-- **Entry points:** Settings → Addresses or Domains (the sidebar's Settings, + or Add address), or Add this address from recent mail to a missing address.
+- **Entry points:** Settings → Addresses → Add address, a domain's Add an address on <domain>, the sidebar's Add address, an empty list's Add the first address, or Add this address from recent mail to a missing address — all open the one Add address dialog.
 - **Success exit:** Address verified, agent assigned, first message handled and visible in history.
-- **Task analysis:** Choose domain and address; verify routing; choose or create an agent; set its policy and tools; send a test message; watch the first run.
+- **Task analysis:** Choose the domain (receiving here, can receive here, or needs Fix it) and the part before @; read the live check; set name, signature, who answers and copy; Create; read the steps (receive the domain, the address, its rule, the test until it arrives); open the address; choose or create an agent; set its policy and tools; watch the first run.
 - **Flow:**
 
 ```mermaid
@@ -248,10 +248,18 @@ flowchart TD
   X --> W["steps: routing, served, addresses with copies, rules, sending"]
   Y -->|no| W
   W --> A
-  A["SCR-02 Addresses: Add address"] --> B{"Routing verified?"}
-  B -->|no or unknown| C["SCR-02 Routing & test: Send it here; address kept"]
+  A["SCR-02 Add address dialog: domain, name before @, settings"] --> L{"Live check: valid and free?"}
+  L -->|invalid, exists or routed elsewhere| A
+  L -->|yes| M{"Domain receives here?"}
+  M -->|can receive| R["Step in the dialog: receive the domain here; another provider's MX asks first"]
+  R --> S
+  M -->|yes| S["Steps in the dialog: address, Cloudflare rule, test message"]
+  S --> B{"Rule made and routing verified?"}
+  B -->|no or unknown| C["Not receiving yet: Fix it or Connect Cloudflare; address kept"]
   C -->|recheck| B
-  B -->|yes| D["SCR-02 Who answers: an agent or Off"]
+  B -->|yes| T{"Test arrived?"}
+  T -->|not after 3 min| C
+  T -->|yes| D["SCR-02 the new address's panel: Who answers, an agent or Off"]
   D -->|create new| E["SCR-10 agent editor: instructions, collections, tools, policy"]
   K["SCR-12 knowledge collection"] -->|tick on the agent| E
   E --> D
@@ -271,4 +279,4 @@ flowchart TD
 | SCR-11 | loading, empty, error, success |
 | SCR-12 | loading, empty, error, success |
 
-- **Scenario coverage:** SCN-021, SCN-022, SCN-023, SCN-024, SCN-025, SCN-029, SCN-031, SCN-032, SCN-033, SCN-034, SCN-035, SCN-045, SCN-046.
+- **Scenario coverage:** SCN-021, SCN-022, SCN-023, SCN-024, SCN-025, SCN-029, SCN-031, SCN-032, SCN-033, SCN-034, SCN-035, SCN-045, SCN-046, SCN-061, SCN-062, SCN-063, SCN-064, SCN-065, SCN-066.

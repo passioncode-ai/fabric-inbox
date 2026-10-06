@@ -387,3 +387,35 @@ One screen with a section list, a master list and a panel (SCR-02). Destructive 
 | navigation.settings.discard | Discard rules | app/components/settings/paths.ts | SCN-075 | proposed |
 | label.discard.always_allow | Always allow | app/components/settings/sections/DiscardSection.tsx | SCN-075 | proposed |
 | action.discard.remove_rule | Remove rule | app/components/settings/sections/DiscardSection.tsx | SCN-075 | proposed |
+
+## Add address (0.12)
+
+The one dialog that creates addresses (SCN-021, SCN-061…065): the live check, then the steps of what Create did, each with its one fix. Every word of the dialog, its steps, the panel's routing block and the entry points is in `add-address-text.ts`, one module to translate; the server's sentences (a domain's state, a name's check, a step's detail) come from `workers/lib/address-ops.ts` and `shared/address-name.ts`.
+
+| Key | Text (primary) | Location | Scenario | Status |
+|---|---|---|---|---|
+| title.address.add | Add an address | app/components/settings/sections/add-address-text.ts | SCN-021 | proposed |
+| action.address.add_on_domain | Add an address on | app/components/settings/sections/add-address-text.ts | SCN-032 | proposed |
+| action.address.add_first | Add the first address | app/components/settings/sections/add-address-text.ts | SCN-032 | proposed |
+| label.address.mode_one | One address | app/components/settings/sections/add-address-text.ts | SCN-021 | proposed |
+| label.address.mode_several | Several | app/components/settings/sections/add-address-text.ts | SCN-064 | proposed |
+| label.address.names | Names before @ | app/components/settings/sections/add-address-text.ts | SCN-064 | proposed |
+| state.address.empty_name | Type the part before @, such as support. | shared/address-name.ts | SCN-061 | proposed |
+| state.address.two_dots | Two dots in a row are not allowed. | shared/address-name.ts | SCN-061 | proposed |
+| state.address.checking | Checking… | app/components/settings/sections/add-address-text.ts | SCN-061 | proposed |
+| state.address.free | is free. | app/components/settings/sections/add-address-text.ts | SCN-061 | proposed |
+| state.domain.receiving | Receiving here | app/components/settings/sections/add-address-text.ts | SCN-063 | proposed |
+| state.domain.can_receive | Can receive here | app/components/settings/sections/add-address-text.ts | SCN-063 | proposed |
+| state.domain.needs_fix | Needs fixing | app/components/settings/sections/add-address-text.ts | SCN-063 | proposed |
+| state.domain.not_visible | Token cannot see it | app/components/settings/sections/add-address-text.ts | SCN-065 | proposed |
+| label.address.rule | Make the Cloudflare rule that sends its mail here | app/components/settings/sections/add-address-text.ts | SCN-065 | proposed |
+| label.address.send_test | Send a test message once it is created, and watch it arrive | app/components/settings/sections/add-address-text.ts | SCN-062 | proposed |
+| step.address.create | Create the address | workers/lib/address-ops.ts | SCN-062 | proposed |
+| step.address.rule | Send its mail here | workers/lib/address-ops.ts | SCN-062 | proposed |
+| step.address.test | Send a test message | app/components/settings/sections/add-address-text.ts | SCN-062 | proposed |
+| state.address.test_not_arrived | The test message has not arrived after 3 minutes. | workers/lib/address-ops.ts | SCN-062 | proposed |
+| action.domain.replace_continue | Replace and continue | app/components/settings/sections/add-address-text.ts | SCN-063 | proposed |
+| action.address.try_again | Change and try again | app/components/settings/sections/add-address-text.ts | SCN-062 | proposed |
+| action.address.add_another | Add another | app/components/settings/sections/add-address-text.ts | SCN-062 | proposed |
+| state.routing.missing | Not receiving yet | app/components/settings/sections/data.ts | SCN-065 | proposed |
+| action.routing.fix | Fix it | app/components/settings/sections/add-address-text.ts | SCN-065 | proposed |

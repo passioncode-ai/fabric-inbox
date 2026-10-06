@@ -74,6 +74,6 @@ export function answererText(agent: ProjectAddresses["addresses"][number]["agent
 
 export const ROUTING_TEXT: Record<RoutingStatus["state"], string> = {
   verified: "Arriving here",
-  missing: "Not arriving here",
+  missing: "Not receiving yet",
   unknown: "Routing unknown",
 };

@@ -15,6 +15,7 @@ import {
   SelectableList, SkeletonPanel, SkeletonRows, errorText, useConfirm, useDirtyGuard, useWork,
 } from "../ui";
 import { AGENTS_KEY, refreshMail, useAgents } from "./data";
+import { policySummary } from "./add-address-model";
 
 interface AgentEntry extends ListEntry { agent: Agent }
 
@@ -36,12 +37,8 @@ function resetTime() {
   return midnight.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-export function policySummary(agent: AgentInput) {
-  const p = agent.replyPolicy;
-  if (p.mode === "draft") return "Drafts every answer for you";
-  const intents = p.allowedIntents.length ? p.allowedIntents.join(", ") : "any grounded answer";
-  return `Sends ${intents} · up to ${p.dailySendLimit} a day per address`;
-}
+// One wording for a reply policy, here and under Who answers (add-address-model.ts).
+export { policySummary };
 
 const editInput = (agent: Agent): AgentInput => ({
   name: agent.name, instructions: agent.instructions, knowledge: agent.knowledge, collections: agent.collections ?? [],

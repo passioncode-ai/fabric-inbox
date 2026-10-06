@@ -292,6 +292,40 @@ test("create_address asks the server to make the rule when it can, unless told o
   assert.equal(posted(calls).createRoute, false);
 });
 
+// ── WS7 (0.12): everything the Add address dialog does, an agent does (SCN-066) ──
+
+test("check_address asks the server about a domain and several names at once", async () => {
+  const answer = { domain: "shop.invalid", state: "receiving", names: [{ localPart: "help", status: "available" }] };
+  const { api, calls } = fakeApi({ "GET /api/project-addresses/check": ok(answer) });
+  const r = await call(api, "check_address", { domain: "Shop.invalid", localParts: ["help", "sales"] });
+  assert.equal(r.isError, false, JSON.stringify(r.data));
+  assert.deepEqual(calls[0]!.query, { domain: "shop.invalid", names: "help,sales" });
+  assert.deepEqual(r.data, answer);
+  assert.throws(() => z.object(TOOLS.find((t) => t.name === "check_address")!.input).parse({ domain: "shop.invalid", localParts: Array.from({ length: 51 }, (_, i) => `n${i}`) }));
+});
+
+test("create_address passes the signature; create_addresses passes the same settings for every name", async () => {
+  const { api, calls } = fakeApi({
+    "POST /api/project-addresses": (c) => ok(c.body, 201),
+    "POST /api/project-addresses/batch": (c) => ok({ created: 2, failed: 0, results: [], echo: c.body }),
+  });
+  await call(api, "create_address", { localPart: "help", domain: "shop.invalid", signature: { enabled: true, text: "Help desk" } });
+  assert.deepEqual(posted(calls).signature, { enabled: true, text: "Help desk" });
+  calls.length = 0;
+  const r = await call(api, "create_addresses", { domain: "Shop.invalid", localParts: ["sales", "hello"], agent: { agentId: "a1" }, forwardTo: "me@x.invalid" });
+  assert.equal(r.isError, false, JSON.stringify(r.data));
+  assert.deepEqual(posted(calls), { domain: "shop.invalid", localParts: ["sales", "hello"], name: undefined, agent: { id: "a1" },
+    signature: undefined, createRoute: "auto", forwardTo: "me@x.invalid" });
+  assert.throws(() => z.object(TOOLS.find((t) => t.name === "create_address")!.input).parse({ localPart: "first..last", domain: "shop.invalid" }), "two dots are refused before the call");
+});
+
+test("check_test_message reads whether the test arrived", async () => {
+  const { api, calls } = fakeApi({ [`GET /api/project-addresses/${encodeURIComponent(CF)}/test`]: ok({ email: CF, test: { state: "arrived" } }) });
+  const r = await call(api, "check_test_message", { address: CF.toUpperCase() });
+  assert.equal(r.data.test.state, "arrived");
+  assert.equal(calls[0]!.method, "GET");
+});
+
 test("descriptions say what the tools do: list_addresses names the chat assistant's instructions", () => {
   const d = (name: string) => TOOLS.find((t) => t.name === name)!.description;
   assert.match(d("list_addresses"), /chat assistant/);
