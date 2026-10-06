@@ -38,6 +38,7 @@ function updater(extra: Record<string, unknown> = {}) {
   const lines: any[] = [];
   const timers: { fn: () => void; ms: number; at: number; live: boolean }[] = [];
   const feedState = { fail: false };
+  const cleans = { n: 0 };
   // What the verifier answers next: a newer verified release by default.
   const verdicts: Verdict[] = [];
   const fetchFeed = async (url: string) => {
@@ -47,14 +48,16 @@ function updater(extra: Record<string, unknown> = {}) {
     return Buffer.from("{}");
   };
   const verifier = {
-    async verify(_bytes: Buffer, { onDownload }: { onDownload: (v: string) => void }) {
+    async verify(_bytes: Buffer, { onDownload, shouldDownload }: { onDownload: (v: string, held: boolean) => void; shouldDownload: (v: string) => boolean }) {
       calls.push("verify");
       const v = verdicts.shift() ?? { outcome: "verified", version: "0.12.0", localFeed: LOCAL, migration: null };
       if ("error" in v) throw Object.assign(new Error(v.error.message || v.error.reason), v.error);
+      if (v.outcome === "verified" && !shouldDownload(v.version!)) return { outcome: "skipped", version: v.version };
+      if (v.outcome === "verified") calls.push("download");
       if (v.outcome === "verified") onDownload(v.version!, !!v.migration);
       return v;
     },
-    async clean() { calls.push("clean"); },
+    async clean() { cleans.n++; },
   };
   const setTimer = (fn: () => void, ms: number) => { const t = { fn, ms, at: clock + ms, live: true }; timers.push(t); return t; };
   const clearTimer = (t: any) => { if (t) t.live = false; };
@@ -72,7 +75,7 @@ function updater(extra: Record<string, unknown> = {}) {
     clock = until;
   };
   const pending = () => timers.filter((t) => t.live).map((t) => t.ms);
-  return { make, u, calls, lines, userData, feedState, verdicts, advance, pending };
+  return { make, u, calls, lines, userData, feedState, verdicts, advance, pending, cleans };
 }
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 /** Waits (real time, briefly) for a file write the code awaits before it acts. */
@@ -156,14 +159,15 @@ test("a verified update is handed to Squirrel.Mac as a local feed, installed on 
   const up = h.make();
   await up.start(RELEASED);
   await h.advance(90 * 1000);
-  assert.deepEqual(h.calls, ["feed-read", "verify", "squirrel-feed", "squirrel-check"]);
+  assert.deepEqual(h.calls, ["feed-read", "verify", "download", "squirrel-feed", "squirrel-check"]);
   assert.deepEqual(h.u.feed, { url: LOCAL, serverType: "json" }, "Squirrel.Mac never reads the network feed itself");
   assert.equal(up.status().state, "downloading");
   assert.deepEqual(await up.checkNow(), { outcome: "downloading" });
   h.u.emit("update-downloaded", {}, "notes", "0.12.0");
   await settle();
   assert.deepEqual([up.status().state, up.status().readyVersion], ["ready", "0.12.0"]);
-  assert.ok(h.calls.includes("clean"), "the verified zip is removed once Squirrel.Mac has its copy");
+  await settle();
+  assert.ok(h.cleans.n >= 2, "what a previous run left is removed at start, and the verified zip once Squirrel.Mac has its copy");
   assert.deepEqual(h.pending(), [], "nothing more is checked while an update waits");
   assert.deepEqual(await up.checkNow(), { outcome: "ready", version: "0.12.0" });
   assert.equal(up.restart(), true);
@@ -230,7 +234,8 @@ test("each refusal is logged under its own LC-16 code, and nothing reaches Squir
     const answer = up.checkNow();
     assert.deepEqual(await answer, { outcome: "failed", code, reason: "zip_sha256", error: "The update's bytes are not the ones its release signed." });
     assert.ok(!h.calls.some((c) => c.startsWith("squirrel")), code);
-    assert.ok(h.calls.includes("clean"), "what a failed verification left is removed");
+    await settle();
+    assert.ok(h.cleans.n >= 2, "what a failed verification left is removed");
     assert.deepEqual(events(h.lines), [`update_check:${code}`]);
   }
   const s = updater();
@@ -300,6 +305,115 @@ test("the old updates.json choice is carried over once into auto-update", async 
   await on.make().start(RELEASED);
   assert.ok(!existsSync(path.join(on.userData, "auto-update")), "on writes nothing");
   assert.ok(!existsSync(path.join(on.userData, "updates.json")));
+});
+
+test("a version Squirrel.Mac refused is not downloaded again for a day", async () => {
+  const h = updater();
+  const up = h.make();
+  await up.start(RELEASED);
+  await h.advance(90 * 1000);
+  h.u.emit("error", new Error("Code signature at URL did not pass validation"));
+  assert.equal(up.status().state, "error");
+  await h.advance(30 * 60 * 1000);
+  await h.advance(6 * HOUR);
+  await h.advance(6 * HOUR);
+  assert.equal(h.calls.filter((c) => c === "download").length, 1, "one download, not one per retry");
+  assert.ok(h.lines.some((l) => l.reason === "declined_before"));
+  await h.advance(24 * HOUR);
+  assert.equal(h.calls.filter((c) => c === "download").length, 2, "tried again the next day");
+});
+
+test("Squirrel.Mac that never answers a hand-off fails the install after 15 minutes", async () => {
+  const h = updater();
+  const up = h.make();
+  await up.start(RELEASED);
+  await h.advance(90 * 1000);
+  assert.equal(up.status().state, "downloading");
+  await h.advance(15 * 60 * 1000);
+  assert.equal(up.status().state, "error");
+  assert.ok(h.lines.some((l) => l.outcome === "install_failed" && l.reason === "squirrel_timeout"));
+  h.u.emit("update-downloaded", {}, "", "0.12.0");
+  assert.equal(up.status().state, "error", "a late answer after the timeout is ignored");
+});
+
+test("switching off while a check runs hands nothing to Squirrel.Mac", async () => {
+  let unblock: () => void = () => {};
+  const blocked = new Promise<void>((r) => { unblock = r; });
+  const h = updater({ fetchFeed: async () => { await blocked; return Buffer.from("{}"); } });
+  const up = h.make();
+  await up.start(RELEASED);
+  const tick = h.advance(90 * 1000);
+  await settle();
+  assert.equal(up.status().state, "checking");
+  await up.setAutomatic(false);
+  unblock(); await tick; await settle();
+  assert.ok(!h.calls.some((c) => c.startsWith("squirrel")), "nothing handed over after off");
+  assert.equal(up.status().state, "idle");
+  assert.deepEqual(h.pending(), []);
+});
+
+test("a failed Restart to Install Update can be tried again", async () => {
+  const h = updater();
+  const up = h.make();
+  await up.start(RELEASED);
+  await h.advance(90 * 1000);
+  h.u.emit("update-downloaded", {}, "", "0.12.0");
+  assert.equal(up.restart(), true);
+  await until(() => h.calls.includes("install"));
+  h.u.emit("error", new Error("ShipIt could not replace the app"));
+  assert.equal(up.status().installing, false);
+  await until(() => !existsSync(path.join(h.userData, "update-install.json")));
+  assert.ok(events(h.lines).includes("update_install:failed"));
+  assert.equal(up.restart(), true, "the menu item works again");
+  await until(() => h.calls.filter((c) => c === "install").length === 2);
+  await h.advance(60 * 1000);
+  assert.equal(up.status().installing, false, "a restart that never happened can be chosen again");
+  assert.ok(events(h.lines).includes("update_install:timeout"));
+});
+
+test("a held release is not downloaded again on every check", async () => {
+  const h = updater();
+  const held = { outcome: "verified", version: "0.12.0", localFeed: LOCAL, migration: { runbook: "https://example.com/runbook" } };
+  h.verdicts.push(held, held, held);
+  const up = h.make();
+  await up.start(RELEASED);
+  await h.advance(90 * 1000);
+  await h.advance(6 * HOUR);
+  await h.advance(6 * HOUR);
+  assert.equal(h.calls.filter((c) => c === "download").length, 1);
+  assert.equal(up.status().state, "held");
+  assert.deepEqual(await up.checkNow(), { outcome: "held", version: "0.12.0", runbook: "https://example.com/runbook" });
+  h.verdicts.push({ outcome: "current", version: "0.11.0" });
+  await h.advance(6 * HOUR);
+  assert.equal(up.status().state, "idle", "a feed that no longer offers it clears the hold");
+});
+
+test("a person's check during a scheduled one gets that check's answer, not 'downloading'", async () => {
+  const h = updater();
+  h.verdicts.push({ outcome: "current", version: "0.11.0" });
+  let unblock: () => void = () => {};
+  const blocked = new Promise<void>((r) => { unblock = r; });
+  const slow = updater({ fetchFeed: async () => { await blocked; return Buffer.from("{}"); } });
+  slow.verdicts.push({ outcome: "current", version: "0.11.0" });
+  const up = slow.make();
+  await up.start(RELEASED);
+  const tick = slow.advance(90 * 1000);
+  await settle();
+  assert.equal(up.status().state, "checking");
+  const answer = up.checkNow();
+  unblock(); await tick;
+  assert.deepEqual(await answer, { outcome: "current" });
+  void h;
+});
+
+test("a copy this user cannot replace never downloads, and says why", async () => {
+  const h = updater({ replaceable: async () => false });
+  const up = h.make();
+  await up.start(RELEASED);
+  await h.advance(7 * HOUR);
+  assert.deepEqual(h.calls, []);
+  assert.deepEqual([up.status().state, up.status().reason], ["unavailable", "not_replaceable"]);
+  assert.deepEqual(await up.checkNow(), { outcome: "unavailable", reason: "not_replaceable" });
 });
 
 test("the release build tells Squirrel.Mac to refuse a downgrade, and the app pins the organization's key and team", () => {

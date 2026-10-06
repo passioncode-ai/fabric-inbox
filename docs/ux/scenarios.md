@@ -1052,7 +1052,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Feature:** Resume and manage preferences
 - **Traces:** ST-007, FLW-07, JTBD-03; operator request 2026-10-05
 - **Entry point:** Launching the app; the app menu, Fabric Inbox → Check for Updates…, Install Updates Automatically, Restart to Install Update
-- **Preconditions:** A released copy (0.10.1 or later) in Applications; a newer release is published.
+- **Preconditions:** A released copy (0.11.0 or later; 0.10.1 was never published) in Applications; a newer release is published.
 - **Steps:**
   1. The person opens the app as usual -> 90 s later, and every six hours while it runs, it checks the latest release in the background; nothing is shown.
   2. A newer version exists -> it downloads in the background and is verified; the menu item reads Restart to Install Update once it is ready.
@@ -1065,7 +1065,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** draft
 - **Coverage:** desktop/updater.cjs, desktop/update-verify.cjs, desktop/pgp-verify.cjs, desktop/log.cjs, desktop/main.cjs, desktop/dist-mac.mjs, .github/workflows/release.yml, tests/desktop-updates.test.ts, tests/desktop-update-verify.test.ts, tests/desktop-pgp-verify.test.ts, tests/desktop-log.test.ts, tests/desktop-profile.test.ts
 - **Product:** unobserved
-- **Today:** Built 2026-10-05 for 0.10.1 (docs/desktop-data-and-updates.md). 0.10.0 and earlier have no updater and are updated once by hand.
+- **Today:** Built 2026-10-05; first published in 0.11.0 (0.10.1 was never published); verification, cadence and the switch file of LC-16 from 0.12.0 (docs/desktop-data-and-updates.md). 0.10.0 and earlier have no updater and are updated once by hand.
 
 ### SCN-050: Remove or reinstall the app and lose nothing
 - **Persona:** P-01
@@ -1084,7 +1084,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** draft
 - **Coverage:** desktop/backup.cjs, desktop/main.cjs, desktop/profile.cjs, tests/desktop-updates.test.ts, tests/desktop-profile.test.ts
 - **Product:** unobserved
-- **Today:** Built 2026-10-05 for 0.10.1 (docs/desktop-data-and-updates.md).
+- **Today:** Built 2026-10-05 for 0.10.1, which was never published; first published in 0.11.0 (docs/desktop-data-and-updates.md).
 
 ### SCN-051: Set up Gmail on my server
 - **Persona:** P-01

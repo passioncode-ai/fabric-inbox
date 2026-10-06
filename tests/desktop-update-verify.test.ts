@@ -184,3 +184,23 @@ test("the release gate runs the same verification on the signed release set", as
   const workflow = readFileSync(".github/workflows/release.yml", "utf8");
   assert.match(workflow, /node scripts\/check-update-release\.mjs --dir signed --version "\$VERSION"/);
 });
+
+test("before signing, the release gate checks the built feed and zip, and publish waits for it", async () => {
+  const { checkRelease } = await import("../scripts/check-update-release.mjs");
+  const exec = async (file: string, args: string[]) => {
+    if (file.endsWith("ditto")) { await fsPromises.mkdir(path.join(args[3], "Fabric Inbox.app", "Contents"), { recursive: true }); return { stdout: "" }; }
+    if (file.endsWith("plutil")) return { stdout: args[1] === "CFBundleShortVersionString" ? "0.12.0" : "ai.passioncode.fabric-inbox" };
+    return { stdout: "" };
+  };
+  // No SHA256SUMS is needed yet, and no key: the built files only.
+  const built = mkdtempSync(path.join(os.tmpdir(), "fabric-built-"));
+  for (const name of ["update-mac.json", ZIP]) await fsPromises.copyFile(`${FIX}/test-release-0.12.0-plain/${name}`, path.join(built, name));
+  assert.deepEqual(await checkRelease({ dir: built, version: "0.12.0", exec, beforeSigning: true }), { version: "0.12.0", held: false });
+  const zip = readFileSync(path.join(built, ZIP));
+  zip[3] ^= 1;
+  await fsPromises.writeFile(path.join(built, ZIP), zip);
+  await assert.rejects(checkRelease({ dir: built, version: "0.12.0", exec, beforeSigning: true }), (e: any) => e.reason === "zip_sha256");
+  const workflow = readFileSync(".github/workflows/release.yml", "utf8");
+  assert.match(workflow, /publish:\n    needs: \[gate, macos, update-precheck\]/);
+  assert.match(workflow, /check-update-release\.mjs --before-signing --dir built --version "\$VERSION" --repository "\$GITHUB_REPOSITORY"/);
+});

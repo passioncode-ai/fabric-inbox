@@ -6,6 +6,11 @@
 // not the announced version fails the release instead of every installed copy.
 //
 //   node scripts/check-update-release.mjs --dir <folder with update-mac.json, SHA256SUMS, SHA256SUMS.asc, the -mac.zip> --version 0.12.0
+//   node scripts/check-update-release.mjs --before-signing --dir release --version 0.12.0
+//
+// --before-signing runs in the release workflow before `publish`, on the built files (no
+// SHA256SUMS exists yet): everything but the signature, so a bad feed or zip stops the release
+// before it is published. The full check runs again on the signed set after `publish`.
 //
 // Runs on macOS (ditto, codesign, plutil). Exits 0 only when the update would be installed.
 import { execFile } from 'node:child_process';
@@ -46,7 +51,7 @@ function stubApp(scratch, bundleId) {
 }
 
 /** The app's verification of this release set, as a copy one version older would run it. */
-export async function checkRelease({ dir, version, repository = 'passioncode-ai/fabric-inbox', exec = run, key, fingerprint, bundleId = BUNDLE_ID }) {
+export async function checkRelease({ dir, version, repository = 'passioncode-ai/fabric-inbox', exec = run, key, fingerprint, bundleId = BUNDLE_ID, beforeSigning = false }) {
   if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('--version is a release version like 1.2.3.');
   const feed = readFileSync(path.join(dir, 'update-mac.json'));
   let announced = '';
@@ -59,6 +64,7 @@ export async function checkRelease({ dir, version, repository = 'passioncode-ai/
       runningApp: stubApp(scratch, bundleId), dir: path.join(scratch, 'updates'), fetch: localFetch(dir, repository, version),
       exec, fs, createWriteStream, key: key ?? readFileSync(path.join(root, 'desktop', 'release-key.asc'), 'utf8'), ...(fingerprint ? { fingerprint } : {}),
     });
+    if (beforeSigning) return await verifier.checkBuilt(feed, path.join(dir, `Fabric-Inbox-${version}-mac.zip`));
     const out = await verifier.verify(feed);
     if (out.outcome !== 'verified' || out.version !== version) throw new Error(`The feed announces ${out.version}, not ${version}.`);
     return { version: out.version, held: !!out.migration };
@@ -70,8 +76,11 @@ export async function checkRelease({ dir, version, repository = 'passioncode-ai/
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const arg = (name) => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
   try {
-    const out = await checkRelease({ dir: path.resolve(arg('dir') || '.'), version: arg('version') || '', repository: arg('repository') });
-    console.log(`update ${out.version}: verified as an installed copy would (signed SHA256SUMS, feed, zip digest and size, Developer ID team, version)${out.held ? '; held for a migration' : ''}`);
+    const beforeSigning = process.argv.includes('--before-signing');
+    const out = await checkRelease({ dir: path.resolve(arg('dir') || '.'), version: arg('version') || '', repository: arg('repository') || undefined, beforeSigning });
+    console.log(beforeSigning
+      ? `update ${out.version}: the built feed names its own zip, the zip has its digest and size, and the app inside is the pinned team's, of this version${out.held ? '; held for a migration' : ''}`
+      : `update ${out.version}: verified as an installed copy would (signed SHA256SUMS, feed, zip digest and size, Developer ID team, version)${out.held ? '; held for a migration' : ''}`);
   } catch (error) {
     console.error(`update check failed: ${error.code ? `${error.code}/${error.reason}: ` : ''}${error.message}`);
     process.exit(1);

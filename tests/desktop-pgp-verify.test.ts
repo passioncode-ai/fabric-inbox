@@ -50,12 +50,15 @@ test("malformed armor, a broken checksum and unsupported packets are refused, ne
   assert.throws(() => pgp.verifyDetached({ data: SUMS, signature: lines.join("\n"), key: ORG, fingerprint: pgp.RELEASE_KEY_FINGERPRINT }), /checksum/i);
   const swapped = SIG.replace("BEGIN PGP SIGNATURE", "BEGIN PGP MESSAGE").replace("END PGP SIGNATURE", "END PGP MESSAGE");
   assert.throws(() => pgp.verifyDetached({ data: SUMS, signature: swapped, key: ORG, fingerprint: pgp.RELEASE_KEY_FINGERPRINT }), /armor/i);
-  // A key block passed off as a signature: its only signature packet is the key's self-signature.
-  assert.throws(() => pgp.verifyDetached({ data: SUMS, signature: ORG.replace(/PUBLIC KEY BLOCK/g, "SIGNATURE"), key: ORG, fingerprint: pgp.RELEASE_KEY_FINGERPRINT }), /binary document/i);
+  // A key block passed off as a signature: key, user id and self-signature packets.
+  assert.throws(() => pgp.verifyDetached({ data: SUMS, signature: ORG.replace(/PUBLIC KEY BLOCK/g, "SIGNATURE"), key: ORG, fingerprint: pgp.RELEASE_KEY_FINGERPRINT }), /nothing else/i);
   const two = SIG.replace(/\n=[A-Za-z0-9+/]{4}\n/, "\n");
   const body = two.split("\n").filter((l) => /^[A-Za-z0-9+/]+=*$/.test(l)).join("");
   const doubled = Buffer.concat([Buffer.from(body, "base64"), Buffer.from(body, "base64")]).toString("base64");
   assert.throws(() => pgp.verifyDetached({ data: SUMS, signature: `-----BEGIN PGP SIGNATURE-----\n\n${doubled}\n-----END PGP SIGNATURE-----\n`, key: ORG, fingerprint: pgp.RELEASE_KEY_FINGERPRINT }), /one OpenPGP signature packet/);
+  // A marker packet (tag 10, "PGP") after the signature is refused too.
+  const marker = Buffer.concat([Buffer.from(body, "base64"), Buffer.from([0xca, 0x03, 0x50, 0x47, 0x50])]).toString("base64");
+  assert.throws(() => pgp.verifyDetached({ data: SUMS, signature: `-----BEGIN PGP SIGNATURE-----\n\n${marker}\n-----END PGP SIGNATURE-----\n`, key: ORG, fingerprint: pgp.RELEASE_KEY_FINGERPRINT }), /nothing else/);
 });
 
 test("SHA256SUMS is read strictly: one hex digest and one file name per line", () => {

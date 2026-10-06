@@ -25,7 +25,7 @@
 	"scripts": {
 		"build": "react-router build",
 		"cf-typegen": "wrangler types --strict-vars=false",
-		"deploy": "npm run build && wrangler deploy",
+		"deploy": "npm run build && wrangler deploy --var FABRIC_SERVER_VERSION:$npm_package_version",
 		"dev": "react-router dev",
 		"preview": "npm run build && vite preview",
 		"typecheck": "npm run cf-typegen && react-router typegen && tsc -b",

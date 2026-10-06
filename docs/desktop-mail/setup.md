@@ -36,8 +36,10 @@ account…**): only the storage migrations it lacks (a step that would delete or
 never sent); every setting on the Worker kept — secrets and plain vars such as
 `UNKNOWN_ADDRESS_POLICY` or `GOOGLE_CLIENT_ID` alike, with the values the app sets winning; its
 Access rules left alone, and a server signed in on its own domain keeps that sign-in. The server
-records its version (`FABRIC_SERVER_VERSION`); a server newer than the app — by that version or by
-its storage tag — is refused. The app only uploads the server built with it (the same version). The
+records its version (`FABRIC_SERVER_VERSION`; `npm run deploy` records it too, a bare `wrangler deploy`
+does not); a server newer than the app — by that version, a prerelease counting below its release, or
+by its storage tag — is refused. A server deployed without a recorded version is checked by its
+storage tag only. The app only uploads the server built with it (the same version). The
 token is held in the app's memory until the server has it and is never written on the Mac or into a
 log. Mailbox data moves forward by migrations that only add (`workers/durableObject/migrations.ts`,
 each in one transaction); nothing is rolled back.
@@ -50,8 +52,9 @@ organization, a bucket and a workers.dev name could not be exercised on an accou
 
 ## Deploying the server by hand
 
-1. `npm ci && npm test && npm run build`, then `CLOUDFLARE_ACCOUNT_ID=<account> npx wrangler deploy`
-   (applies Durable Object migrations up to `fabric-v4`). `wrangler.jsonc` names no account and no
+1. `npm ci && npm test`, then `CLOUDFLARE_ACCOUNT_ID=<account> npm run deploy` (builds, then
+   `wrangler deploy --var FABRIC_SERVER_VERSION:<version>`, so the server records its version as the
+   app's own deploy does; applies the Durable Object migrations). `wrangler.jsonc` names no account and no
    deployment's values; `keep_vars` keeps what is set on the Worker.
 2. Create a Cloudflare Access application for the Worker's hostname and set `POLICY_AUD` and
    `TEAM_DOMAIN` on the Worker once (dashboard, or `wrangler deploy --var POLICY_AUD:… --var

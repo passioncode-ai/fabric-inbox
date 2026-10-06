@@ -43,9 +43,11 @@ server's storage only after the new server answers ([AGENTS.md → Lifecycle](..
 
 ## Updates
 
-**On by default** in every copy downloaded from GitHub or passioncode.ai, from 0.10.1 on. Copies
-of 0.10.0 and earlier have no updater: they are updated once by hand, and from then on by
-themselves.
+**On by default** in every copy downloaded from GitHub or passioncode.ai. The first published
+release that updates itself is **0.11.0**: 0.10.1 carried the updater but was never published (its
+release run was cancelled), so copies of 0.10.0 and earlier are updated once by hand, and from then
+on by themselves. 0.11.0 hands the feed to Squirrel.Mac directly; from 0.12.0 every step below
+applies.
 
 Fabric Inbox follows the organization's one update behaviour for every product (LC-16 in
 fabric-workspace `knowledge/lifecycle.md`): the same switch, cadence, verification and log codes
@@ -84,13 +86,21 @@ as Fabric Switchboard, Fabric and Fabric Dashboards.
    is never stopped for an update. The next start logs whether the install happened
    (`update_install installed` or `failed`, from `update-install.json`).
 5. **Held releases.** A release whose feed marks `migration` (a runbook URL; `feedFor` in
-   `desktop/updater.cjs`) is downloaded and verified but not installed: **Check for Updates…**
-   names the step and its runbook, and the log says `update_check needs_migration`. The desktop
-   app keeps no data that needs a migration today, so no Inbox release has used it.
+   `desktop/updater.cjs`) is downloaded and verified once but not installed: **Check for Updates…**
+   names the step and its runbook, and the log says `update_check needs_migration`. Later checks
+   do not download it again while the feed still offers it. The desktop app keeps no data that
+   needs a migration today, so no Inbox release has used it.
+   **Refused by Squirrel.Mac.** A verified version Squirrel.Mac refuses (`install_failed`), or that
+   it does not answer within 15 minutes, is not downloaded again for 24 hours. A copy this Mac
+   account cannot replace (installed by another account, a read-only folder) never downloads and
+   says why (`not_replaceable`).
 6. **The switch** is the file `auto-update` in the profile: absent means on, only the word `off`
-   turns checks, downloads and installs off. **Fabric Inbox → Install Updates Automatically**
-   writes `off` or removes the file; an update or a reinstall never touches it. The `updates.json`
-   of 0.10.1–0.11.0 is carried over once and removed. **Check for Updates…** checks at once
+   turns checks and downloads off, and a check already running hands nothing to Squirrel.Mac.
+   **Fabric Inbox → Install Updates Automatically** writes `off` or removes the file; an update or
+   a reinstall never touches it. The `updates.json` of 0.11.0 is carried over once and removed.
+   One exception, recorded in `AGENTS.md` → Lifecycle as LC-16 asks: an update Squirrel.Mac
+   already downloaded before the switch went off still installs when the app quits, because
+   Squirrel.Mac offers no way to withdraw a staged update. **Check for Updates…** checks at once
    whatever the switch says, and says what happened: up to date, downloading, ready, held,
    refused by verification, or why not.
 7. **The log** is `~/Library/Logs/Fabric Inbox/fabric-inbox.log` (`desktop/log.cjs`), JSON lines

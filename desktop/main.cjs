@@ -15,7 +15,7 @@ const updateVerify = require('./update-verify.cjs');
 const { createLog } = require('./log.cjs');
 const { randomUUID } = require('node:crypto');
 const { execFile } = require('node:child_process');
-const { createWriteStream } = require('node:fs');
+const { createWriteStream, constants: fsConstants } = require('node:fs');
 
 // A development run (`npm run desktop`) is its own app to macOS: its own name, so Chromium keeps its
 // cookie key in its own Keychain item ("Fabric Inbox Development Safe Storage"). With the installed
@@ -320,7 +320,12 @@ async function startUpdates() {
   }
   // The timers hold no process open: quitting is never delayed by an update check.
   const setTimer = (fn, ms) => { const handle = setTimeout(fn, ms); if (handle.unref) handle.unref(); return handle; };
-  updater = updates.createUpdater({ autoUpdater, fs, userData: app.getPath('userData'), feed, appVersion: app.getVersion(), fetchFeed, verifier,
+  // Squirrel.Mac replaces the bundle in place: this user must be able to write it and its folder.
+  const bundle = path.resolve(process.execPath, '..', '..', '..');
+  const replaceable = async () => {
+    try { await fs.access(bundle, fsConstants.W_OK); await fs.access(path.dirname(bundle), fsConstants.W_OK); return true; } catch { return false; }
+  };
+  updater = updates.createUpdater({ autoUpdater, fs, userData: app.getPath('userData'), feed, appVersion: app.getVersion(), fetchFeed, verifier, replaceable,
     setTimer, clearTimer: clearTimeout, log: logEvent, onChange: () => installMenu() });
   await updater.start({ packaged: app.isPackaged, mas: !!process.mas,
     inApplications: typeof app.isInApplicationsFolder === 'function' && app.isInApplicationsFolder() });
@@ -337,7 +342,10 @@ async function checkForUpdates() {
     current: ['You have the latest version.', `Fabric Inbox ${app.getVersion()} is the newest release.`],
     downloading: ['A new version is downloading.', 'It will be installed when you quit Fabric Inbox, or you can restart once it is ready (Fabric Inbox menu).'],
     unavailable: ['Updates are not available for this copy.', updater.status().reason === 'not_in_applications'
-      ? 'Move Fabric Inbox to the Applications folder, open it from there, and it will update itself.' : 'This copy cannot update itself.'],
+      ? 'Move Fabric Inbox to the Applications folder, open it from there, and it will update itself.'
+      : updater.status().reason === 'not_replaceable'
+        ? 'This Mac account cannot replace the app in Applications (it was installed by another account, or the folder is read-only). Install the new version from passioncode.ai/inbox, or update it from the account that installed it.'
+        : 'This copy cannot update itself.'],
     failed: out.code === 'signature_failed'
       ? ['The update did not pass verification and was not installed.', `${out.error || 'It is not the release the organization signed.'} Fabric Inbox keeps running this version and checks again later; you can also download the latest version from passioncode.ai/inbox.`]
       : ['The update check did not finish.', `${out.error || 'Unknown error'}. It will try again later; you can also download the latest version from passioncode.ai/inbox.`],
@@ -596,7 +604,8 @@ if (ownsInstance) app.whenReady().then(async () => {
   // server.json is kept and nothing is swept: the person is about to enter that server again.
   // With no server known at all, no partition is an orphan yet: it may be the server the person is
   // about to enter again, with their drafts in it.
-  if (await readConfig()) await profile.sweepProfile({ fs, userData: app.getPath('userData'), keepPartition: config ? policy.partitionFor(config) : null, keepPartitions: !config });
+  if (await readConfig()) await profile.sweepProfile({ fs, userData: app.getPath('userData'), keepPartition: config ? policy.partitionFor(config) : null, keepPartitions: !config,
+    debugging: app.commandLine.hasSwitch('remote-debugging-port'), log: logEvent });
   config ? loadMail() : showSetup(notice);
   appReady = true;
   void startAnalytics().catch(() => {});

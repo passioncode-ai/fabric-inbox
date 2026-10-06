@@ -143,11 +143,17 @@ signed release must create it without a prompt (`docs/release.md`, upgrade check
   the server about to be entered again. The log is `~/Library/Logs/Fabric Inbox/fabric-inbox.log`, JSON lines with codes only, capped near
   2 MB (`desktop/log.cjs`); `analytics-state.json`, `auto-update` and `update-install.json` are the
   only profile files usage counts and updates add, and a verified update waits in
-  `~/Library/Caches/Fabric Inbox/updates/` until Squirrel.Mac copies it. The server's address is also kept
+  `~/Library/Caches/Fabric Inbox/updates/` until Squirrel.Mac copies it.
+- **LC-16 exception: an update already downloaded installs at quit even after the switch goes off.**
+  `off` stops every check and download, and a check running at that moment hands nothing over; but
+  Squirrel.Mac offers no way to withdraw an update it has already staged, so that one still
+  installs when the app quits (`docs/desktop-data-and-updates.md`, Updates §6). The server's address is also kept
   in `<appData>/PassionCode/backups/fabric-inbox.json` and restored from there when `server.json` is
   missing (`desktop/backup.cjs`).
 - **Tests, walks and checks never use the real profile (LC-14).** Launch a built app with
-  `--user-data-dir="$(mktemp -d)"` (and `--remote-debugging-port` only with it). An unpackaged run
+  `--user-data-dir="$(mktemp -d)"` (and `--remote-debugging-port` only with it). A
+  `DevToolsActivePort` a debugging run left in a profile is removed at the next start
+  (`desktop/profile.cjs`), unless that start is itself debugged. An unpackaged run
   (`npm run desktop`) uses `~/Library/Application Support/Fabric Inbox Development`, never the
   installed app's folder, and the app name "Fabric Inbox Development", so its cookie key is its own
   Keychain item. A local packaged debug build still shares "Fabric Inbox Safe Storage" with the

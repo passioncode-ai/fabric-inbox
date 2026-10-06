@@ -123,8 +123,9 @@ function subpackets(area) {
 function verifyDetached({ data, signature, key, fingerprint, now = Date.now() }) {
   const release = readPublicKey(key);
   if (release.fingerprint !== String(fingerprint).toUpperCase()) throw new Error('The key is not the pinned release key.');
-  const signatures = packets(dearmor(signature, 'SIGNATURE')).filter((p) => p.tag === 2);
-  if (signatures.length !== 1) throw new Error('Expected one OpenPGP signature packet.');
+  const all = packets(dearmor(signature, 'SIGNATURE'));
+  const signatures = all.filter((p) => p.tag === 2);
+  if (signatures.length !== 1 || all.length !== 1) throw new Error('Expected one OpenPGP signature packet and nothing else.');
   const body = signatures[0].body;
   if (body[0] !== 4) throw new Error('Only a version 4 OpenPGP signature is accepted.');
   if (body[1] !== 0x00) throw new Error('Only a signature over a binary document is accepted.');

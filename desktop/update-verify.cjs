@@ -147,12 +147,14 @@ function createVerifier(deps) {
 
   /**
    * The whole check. Resolves { outcome: 'current' | 'older', version } when nothing is offered,
-   * or { outcome: 'verified', version, localFeed, migration } once the zip passed every step;
+   * { outcome: 'skipped', version } when `shouldDownload(version)` says not now (a held or refused
+ * version), or { outcome: 'verified', version, localFeed, migration } once the zip passed every step;
    * `onDownload(version, held)` is called when the download begins. Throws UpdateError otherwise.
    */
-  async function verify(feedBytes, { onDownload = () => {} } = {}) {
+  async function verify(feedBytes, { onDownload = () => {}, shouldDownload = () => true } = {}) {
     const offer = readFeed(feedBytes);
     if (offer.outcome !== 'newer') return offer;
+    if (!shouldDownload(offer.version)) return { outcome: 'skipped', version: offer.version };
     await signedSums(offer.version, feedBytes, offer.update);
     onDownload(offer.version, !!offer.migration);
     const { folder, file } = await download(offer.version, offer.update);
@@ -168,7 +170,28 @@ function createVerifier(deps) {
   /** Removes what a verification left (after Squirrel.Mac copied the zip, or after a failure). */
   async function clean() { await fs.rm(dir, { recursive: true, force: true }); }
 
-  return { verify, clean };
+  /**
+   * The release gate's check before anything is signed (scripts/check-update-release.mjs
+   * --before-signing): the feed names this release's own zip, the built zip has the feed's digest
+   * and size, and the app inside is the pinned team's, of that version. The app never calls this:
+   * an installed copy always requires the signed SHA256SUMS (`verify`).
+   */
+  async function checkBuilt(feedBytes, zipPath) {
+    const offer = readFeed(feedBytes);
+    if (offer.outcome !== 'newer') fail('check_failed', 'feed_invalid', `The feed announces ${offer.version}, not a newer release.`);
+    const hash = crypto.createHash('sha256');
+    let size = 0;
+    const { createReadStream } = require('node:fs');
+    for await (const chunk of createReadStream(zipPath)) { size += chunk.length; hash.update(chunk); }
+    if (size !== offer.update.size) fail('signature_failed', 'zip_size', 'The built zip\'s size is not the one its feed says.');
+    if (hash.digest('hex') !== offer.update.sha256) fail('signature_failed', 'zip_sha256', 'The built zip is not the one its feed names.');
+    const folder = path.join(dir, offer.version);
+    await fs.mkdir(folder, { recursive: true, mode: 0o700 });
+    try { await inspect(offer.version, folder, zipPath); } finally { await clean(); }
+    return { version: offer.version, held: !!offer.migration };
+  }
+
+  return { verify, clean, checkBuilt };
 }
 
 module.exports = { createVerifier, UpdateError, compareVersions, requirementFor, TEAM };

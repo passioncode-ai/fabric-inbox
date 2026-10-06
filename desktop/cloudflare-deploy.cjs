@@ -45,10 +45,26 @@ const PERMISSIONS = [
   { scope: 'Zone', name: 'DNS', level: 'Edit', for: "replace another provider's MX records and add a DMARC record" },
 ];
 
-/** Compares dotted versions ("0.6.1" < "0.10.0"); a part that is not a number counts as 0. */
+/**
+ * Compares versions ("0.6.1" < "0.10.0"), with a prerelease below its release
+ * ("0.12.0-rc.1" < "0.12.0-rc.2" < "0.12.0"); a part that is not a number counts as 0.
+ */
 function compareVersions(a, b) {
-  const pa = String(a).split('.').map((x) => parseInt(x, 10) || 0), pb = String(b).split('.').map((x) => parseInt(x, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  const split = (v) => { const [core, pre = ''] = String(v).split('-', 2); return { core: core.split('.').map((x) => parseInt(x, 10) || 0), pre }; };
+  const x = split(a), y = split(b);
+  for (let i = 0; i < Math.max(x.core.length, y.core.length); i++) if ((x.core[i] || 0) !== (y.core[i] || 0)) return (x.core[i] || 0) - (y.core[i] || 0);
+  if (x.pre === y.pre) return 0;
+  if (!x.pre) return 1;
+  if (!y.pre) return -1;
+  const px = x.pre.split('.'), py = y.pre.split('.');
+  for (let i = 0; i < Math.max(px.length, py.length); i++) {
+    if (px[i] === undefined) return -1;
+    if (py[i] === undefined) return 1;
+    const nx = /^\d+$/.test(px[i]), ny = /^\d+$/.test(py[i]);
+    if (nx && ny && Number(px[i]) !== Number(py[i])) return Number(px[i]) - Number(py[i]);
+    if (nx !== ny) return nx ? -1 : 1;
+    if (!nx && px[i] !== py[i]) return px[i] < py[i] ? -1 : 1;
+  }
   return 0;
 }
 
@@ -330,4 +346,4 @@ async function deploy(options) {
   return { origin: `https://${host}`, accessOrigin: `https://${authDomain}`, steps };
 }
 
-module.exports = { accounts, inspect, deploy, uploadServer, client, readBundle, DeployError, PERMISSIONS, TOKEN_PAGE, SCRIPT: DEFAULT_SCRIPT, validName: (v) => NAME.test(v), validEmail: (v) => EMAIL.test(v) };
+module.exports = { accounts, inspect, deploy, uploadServer, client, readBundle, compareVersions, DeployError, PERMISSIONS, TOKEN_PAGE, SCRIPT: DEFAULT_SCRIPT, validName: (v) => NAME.test(v), validEmail: (v) => EMAIL.test(v) };
