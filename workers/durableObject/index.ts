@@ -8,7 +8,7 @@ import { drizzle } from "drizzle-orm/durable-sqlite";
 import { eq, and, or, asc, desc, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import * as schema from "../db/schema";
-import { Folders } from "../../shared/folders";
+import { Folders, isBuiltInFolder, FOLDER_DISPLAY_NAMES } from "../../shared/folders";
 import type { Env } from "../types";
 import { applyMigrations, mailboxMigrations } from "./migrations";
 import { IncomingJournal } from '../actions/incoming';
@@ -897,7 +897,9 @@ export class MailboxDO extends DurableObject<Env> {
 			.where(eq(schema.folders.id, id))
 			.get();
 
-		if (!folder || folder.is_deletable === 0) {
+		// A built-in folder is never deleted, whatever its row says (a person's folder once held the
+		// id 'discarded' as deletable: deleting it broke every delivery a discard rule took).
+		if (!folder || folder.is_deletable === 0 || isBuiltInFolder(id)) {
 			return false;
 		}
 
@@ -1163,6 +1165,8 @@ export class MailboxDO extends DurableObject<Env> {
     const now = new Date().toISOString();
     const inserted = this.ctx.storage.transactionSync(() => {
       if (this.incoming.has(email.id)) return false;
+      // A folder this delivery needs is made again if it is missing: a delivery never fails for it.
+      this.ensureBuiltInFolder(spam ? Folders.SPAM : discard ? Folders.DISCARDED : Folders.INBOX);
       this.insertEmail(spam ? Folders.SPAM : discard ? Folders.DISCARDED : Folders.INBOX, { ...email, spam_reason: spam, spam_at: spam ? now : null,
         discard_reason: discard, discarded_at: discard ? now : null, ...(discard ? { read: true } : {}) }, attachments);
       this.incoming.record(mailboxId, { id: email.id, sender: email.sender, subject: email.subject,
@@ -1220,16 +1224,18 @@ export class MailboxDO extends DurableObject<Env> {
 
   /**
    * Discards messages: each moves to Discarded, read, with why. Sent mail and drafts stay. A message
-   * already in Discarded keeps its date there (a second discard does not restart its 30 days).
+   * already in Discarded keeps its date there (a second discard does not restart its 30 days). Its
+   * spam reason and date stay on the row (read only in Spam), so Undo puts Spam mail back as it was.
    * Returns each id that moved with the folder it left and whether it was unread, for Undo.
    */
   async discardMessages(ids: string[], reason: string): Promise<{ id: string; from: string; unread: boolean }[]> {
     const moved: { id: string; from: string; unread: boolean }[] = [];
     const now = new Date().toISOString();
+    this.ensureBuiltInFolder(Folders.DISCARDED);
     for (const id of ids.slice(0, 200)) {
       const before = this.ctx.storage.sql.exec<{ folder_id: string; read: number }>("SELECT folder_id, read FROM emails WHERE id = ? AND folder_id NOT IN ('sent', 'draft')", id).toArray()[0];
       if (!before) continue;
-      this.ctx.storage.sql.exec(`UPDATE emails SET folder_id = 'discarded', read = 1, discard_reason = ?, spam_reason = NULL, spam_at = NULL,
+      this.ctx.storage.sql.exec(`UPDATE emails SET folder_id = 'discarded', read = 1, discard_reason = ?,
         discarded_at = CASE WHEN folder_id = 'discarded' AND discarded_at IS NOT NULL THEN discarded_at ELSE ? END WHERE id = ?`, reason.slice(0, 300), now, id);
       moved.push({ id, from: before.folder_id, unread: !before.read });
     }
@@ -1237,14 +1243,32 @@ export class MailboxDO extends DurableObject<Env> {
     return moved;
   }
 
-  /** Not discarded: messages back from Discarded to the inbox (unread again when `read` is false); returns the ids that moved. */
-  async restoreDiscarded(ids: string[], read?: boolean): Promise<string[]> {
+  /**
+   * Not discarded: messages back from Discarded to `to` — the inbox (Not discarded), or the folder the
+   * discard took them from (Undo) — unread again when `read` is false; returns the ids that moved.
+   * Never into Sent, Drafts or Discarded; a folder deleted since sends them to the inbox. Back in Spam
+   * they keep the reason and date they had there (30 days counted from then); anywhere else it goes.
+   */
+  async restoreDiscarded(ids: string[], read?: boolean, to: string = Folders.INBOX): Promise<string[]> {
+    const refused: string[] = [Folders.SENT, Folders.DRAFT, Folders.DISCARDED];
+    if (refused.includes(to)) throw new Error(`Discarded mail does not go back to ${to}`);
+    this.ensureBuiltInFolder(to);
+    const exists = this.ctx.storage.sql.exec("SELECT 1 FROM folders WHERE id = ?", to).toArray().length > 0;
+    const target = exists ? to : Folders.INBOX;
+    const spam = target === Folders.SPAM;
     const moved: string[] = [];
+    const now = new Date().toISOString();
+    const readSet = read === undefined ? "" : ", read = " + (read ? 1 : 0);
     for (const id of ids.slice(0, 200)) {
-      const row = this.ctx.storage.sql.exec(`UPDATE emails SET folder_id = 'inbox', discard_reason = NULL, discarded_at = NULL${read === undefined ? "" : ", read = " + (read ? 1 : 0)}
-        WHERE id = ? AND folder_id = 'discarded' RETURNING id`, id).toArray();
+      const row = (spam
+        ? this.ctx.storage.sql.exec(`UPDATE emails SET folder_id = 'spam', discard_reason = NULL, discarded_at = NULL,
+            spam_reason = COALESCE(spam_reason, 'You moved it to Spam'), spam_at = COALESCE(spam_at, ?)${readSet}
+            WHERE id = ? AND folder_id = 'discarded' RETURNING id`, now, id)
+        : this.ctx.storage.sql.exec(`UPDATE emails SET folder_id = ?, discard_reason = NULL, discarded_at = NULL, spam_reason = NULL, spam_at = NULL${readSet}
+            WHERE id = ? AND folder_id = 'discarded' RETURNING id`, target, id)).toArray();
       if (row.length) moved.push(id);
     }
+    if (moved.length && spam) await this.armSpamPurge();
     return moved;
   }
 
@@ -1412,6 +1436,19 @@ export class MailboxDO extends DurableObject<Env> {
     await this.flushIncomingEvents();
     return revived;
   }
+
+	/**
+	 * Makes a built-in folder again when its row is missing (deleted by an older version, or never
+	 * made), with its own name — or, when a person's folder has that name, the name with "(system)".
+	 */
+	private ensureBuiltInFolder(id: string) {
+		if (!isBuiltInFolder(id)) return;
+		if (this.ctx.storage.sql.exec("SELECT 1 FROM folders WHERE id = ?", id).toArray().length) return;
+		const name = FOLDER_DISPLAY_NAMES[id] ?? id;
+		const taken = this.ctx.storage.sql.exec("SELECT 1 FROM folders WHERE name = ?", name).toArray().length > 0;
+		this.ctx.storage.sql.exec("INSERT INTO folders (id, name, is_deletable) VALUES (?, ?, 0)", id, taken ? `${name} (system)` : name);
+		console.warn(JSON.stringify({ event: "builtin_folder_recreated", folder: id }));
+	}
 
 	private insertEmail(
 		folder: string,

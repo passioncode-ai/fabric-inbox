@@ -288,7 +288,7 @@ its newsletter (List-Id), else its sender. Later mail that matches goes there on
 spam check, unless one of your addresses wrote to the sender, it answers a conversation you took
 part in, it comes from one of your own domains, or the sender is on **Always allow** (Settings →
 Discard rules) or a Never spam list. Discarded mail is deleted after 30 days; in Gmail, IMAP and
-Outlook accounts it is moved to the account's Trash then. Where Discarded lives: a folder of each
+Outlook accounts it is moved to the account's Trash then (an IMAP server with no Trash folder: deleted for good). Where Discarded lives: a folder of each
 Cloudflare address; Gmail's own label "Discarded" (made the first time); a top-level folder named
 Discarded in IMAP and Outlook accounts (made the first time; an IMAP server that does not let apps
 create folders says so — create a folder named Discarded there, and it is used). Nothing to set up:

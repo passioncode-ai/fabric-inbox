@@ -6,7 +6,9 @@ import { OUTBOX_SCHEMA } from "../actions/outbox-store";
 
 export interface Migration {
 	name: string;
+	/** Static SQL; or, for a change that depends on what is there, `run` (one transaction, like `sql`). */
 	sql: string;
+	run?: (sql: SqlStorage) => void;
 }
 
 /**
@@ -45,7 +47,8 @@ export function applyMigrations(
 
 		const escapedName = migration.name.replace(/'/g, "''");
 		const run = () => {
-			sql.exec(migrationSql);
+			if (migration.run) migration.run(sql);
+			else sql.exec(migrationSql);
 			sql.exec(
 				`INSERT INTO d1_migrations (name) VALUES ('${escapedName}')`,
 			);
@@ -219,4 +222,48 @@ export const mailboxMigrations: Migration[] = [
             ALTER TABLE emails ADD COLUMN discard_reason TEXT;
             ALTER TABLE emails ADD COLUMN discarded_at TEXT;`),
 	},
+	{
+		// 17 missed the folder a person made before 0.12 by the name "Discarded" (or "discarded!" —
+		// any name the folder API turned into the id 'discarded'): it kept the id, stayed deletable,
+		// and their mail read as discarded. Their folder moves to its own id with their mail; the id
+		// becomes the system folder again. A system folder deleted meanwhile is made again.
+		name: "18_discarded_system_folder",
+		sql: "",
+		run: repairDiscardedFolder,
+	},
 ];
+
+/** The id and name a person's own folder gets when it held the id 'discarded' (migration 18). */
+export const OWN_DISCARDED_FOLDER = { id: "discarded-yours", name: "Discarded (your folder)" };
+
+function repairDiscardedFolder(sql: SqlStorage) {
+	const folders = [...sql.exec<{ id: string; name: string; is_deletable: number }>("SELECT id, name, is_deletable FROM folders")];
+	const ids = new Set(folders.map((f) => f.id));
+	const names = new Set(folders.map((f) => f.name));
+	const free = (base: string, taken: Set<string>, join: (n: number) => string) => {
+		if (!taken.has(base)) return base;
+		for (let n = 2; ; n++) if (!taken.has(join(n))) return join(n);
+	};
+	const held = folders.find((f) => f.id === "discarded");
+	if (held && held.is_deletable !== 0) {
+		const id = free(OWN_DISCARDED_FOLDER.id, ids, (n) => `${OWN_DISCARDED_FOLDER.id}-${n}`);
+		// The name they gave it stays theirs, unless it is the system folder's own.
+		names.delete(held.name);
+		const name = held.name === "Discarded" ? free(OWN_DISCARDED_FOLDER.name, names, (n) => `Discarded (your folder ${n})`) : held.name;
+		sql.exec("UPDATE folders SET name = ? WHERE id = 'discarded'", "\u0001discarded-repair");
+		sql.exec("INSERT INTO folders (id, name, is_deletable) VALUES (?, ?, 1)", id, name);
+		names.add(name);
+		// Their mail never had a discard date (the column came with 17); what a discard put there since has one.
+		sql.exec("UPDATE emails SET folder_id = ? WHERE folder_id = 'discarded' AND discarded_at IS NULL", id);
+	}
+	// Another folder renamed to "Discarded" since 17 keeps its mail under a free name.
+	for (const f of folders) {
+		if (f.id === "discarded" || f.name !== "Discarded") continue;
+		names.delete(f.name);
+		const name = free(OWN_DISCARDED_FOLDER.name, names, (n) => `Discarded (your folder ${n})`);
+		sql.exec("UPDATE folders SET name = ? WHERE id = ?", name, f.id);
+		names.add(name);
+	}
+	if (held) sql.exec("UPDATE folders SET name = 'Discarded', is_deletable = 0 WHERE id = 'discarded'");
+	else sql.exec("INSERT INTO folders (id, name, is_deletable) VALUES ('discarded', 'Discarded', 0)");
+}

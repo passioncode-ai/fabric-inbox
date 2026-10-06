@@ -148,7 +148,10 @@ class GmailSession implements ProviderSession {
         if ((await c.message(messageId)).labelIds?.includes("TRASH")) await c.setTrashed(messageId, false);
         await this.withLabel((label) => c.modify(messageId, [label], ["INBOX", "UNREAD", "SPAM"]));
       } else {
-        await this.withLabel((label) => c.modify(messageId, ["INBOX"], [label]));
+        // Back where it was: the inbox, the archive (no INBOX), or Trash.
+        const to = change.to ?? "inbox";
+        await this.withLabel((label) => c.modify(messageId, to === "inbox" ? ["INBOX"] : [], [label]));
+        if (to === "trash") await c.setTrashed(messageId, true);
       }
     }
     // Read full provider state after acknowledgement; never optimistically cache labels.

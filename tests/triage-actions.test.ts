@@ -58,8 +58,8 @@ test("one message that fails does not stop the others, and is named", async () =
 test("discard sends every message in one request, keeps what the server says for Undo, and the first lesson is said once", async () => {
   const { calls, request } = recorder({ "POST /api/discard": {
     moved: 2, failed: [], results: [
-      { accountId: "cloudflare:hi@shop.example", providerMessageId: "m1", id: "m1", from: "inbox", unread: true },
-      { accountId: "imap:a1", providerMessageId: "i-1-5", id: "x-2-1", from: "inbox", unread: false }],
+      { accountId: "cloudflare:hi@shop.example", providerMessageId: "m1", id: "m1", from: "inbox", unread: true, learnedRuleId: "l-1a2b3c4d" },
+      { accountId: "imap:a1", providerMessageId: "i-1-5", id: "x-2-1", from: "archive", unread: false }],
     learned: [{ ruleId: "l-1a2b3c4d", kind: "list", label: "Weekly Digest", discards: 1, created: true }, { ruleId: "s-00000001", kind: "sender", label: "bob@x.example", discards: 3, created: false }],
   } });
   const done = await discardMessages([cf("m1"), gm("i-1-5", true)], request);
@@ -69,9 +69,9 @@ test("discard sends every message in one request, keeps what the server says for
   assert.deepEqual(learnedNotice(done), { text: "Future mail from Weekly Digest will go to Discarded.", ruleIds: ["l-1a2b3c4d"] });
   calls.length = 0;
   await undoDone(done, request);
-  assert.deepEqual(calls, ['POST /api/discard/restore {"messages":[{"accountId":"cloudflare:hi@shop.example","providerMessageId":"m1"}],"read":false,"unlearn":true}',
-    'POST /api/discard/restore {"messages":[{"accountId":"imap:a1","providerMessageId":"x-2-1"}],"unlearn":true}'],
-    "unread ones come back unread; what the discard taught is taken back");
+  assert.deepEqual(calls, ['POST /api/discard/restore {"messages":[{"accountId":"cloudflare:hi@shop.example","providerMessageId":"m1","to":"inbox","ruleId":"l-1a2b3c4d"}],"read":false,"unlearn":true}',
+    'POST /api/discard/restore {"messages":[{"accountId":"imap:a1","providerMessageId":"x-2-1","to":"archive"}],"unlearn":true}'],
+    "each goes back where it was, unread ones unread; what each discard taught (and only that) is taken back");
 });
 
 test("a discard the server refused entirely throws its reason; a rule it could not save is said", async () => {

@@ -23,6 +23,14 @@ export const Folders = {
 export type FolderId = (typeof Folders)[keyof typeof Folders];
 
 /**
+ * Whether an id is one of the folders every mailbox has: never deleted, never taken by a folder a
+ * person makes (a name the folder API turns into one of these ids is refused), made again if missing.
+ */
+export function isBuiltInFolder(id: string): id is FolderId {
+	return (Object.values(Folders) as string[]).includes(id);
+}
+
+/**
  * System folder IDs that appear in the sidebar (excludes spam).
  * Order here matches the sidebar display order.
  */
