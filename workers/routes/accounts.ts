@@ -67,6 +67,11 @@ accountsRouter.onError((error, c) => {
     provider_failed: 502,
     provider_auth_failed: 503,
     too_many_connections: 429,
+    // What a person or the server's Google setup must change (shared/mail/gmail-reasons.ts).
+    gmail_api_disabled: 403,
+    google_client_rejected: 502,
+    redirect_uri_mismatch: 400,
+    invalid_profile: 502,
   };
   const code = error instanceof ProviderError ? error.code : error.message;
   return c.json(
