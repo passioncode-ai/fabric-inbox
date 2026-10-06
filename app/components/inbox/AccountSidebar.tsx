@@ -49,12 +49,26 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
   const [confirmHideEmpty, setConfirmHideEmpty] = useState(false);
   const small = visible.length <= 6;
   const nav = useRef<HTMLElement>(null);
-  // A selection made elsewhere (a link, the URL, a scrolled-away row) is brought into view.
+  // A selection made elsewhere (a link, the URL, a scrolled-away row) is brought into view once.
+  // Polling changes the list length every few seconds; that alone never scrolls the sidebar again.
+  const scrolledFor = useRef("");
   useEffect(() => {
-    nav.current?.querySelector(".is-active")?.scrollIntoView?.({ block: "nearest" });
-  }, [accountId, domain, accounts.length]);
+    const key = `${accountId}|${domain}|${provider}`;
+    if (scrolledFor.current === key) return;
+    const active = nav.current?.querySelector(".is-active");
+    if (!active) return;
+    scrolledFor.current = key;
+    active.scrollIntoView?.({ block: "nearest" });
+  }, [accountId, domain, provider, accounts.length]);
+  // The group of a selected address opens and stays open: choosing another one never folds the
+  // previous group away under the pointer (the 2026-10-06 audit).
+  const selectedGroup = groups.find((g) => g.accounts.some((a) => a.id === accountId))?.key;
+  useEffect(() => {
+    if (selectedGroup) setOpen((current) => (current.has(selectedGroup) ? current : new Set(current).add(selectedGroup)));
+  }, [selectedGroup]);
+  // Only the caret opens and closes a group; the name selects the whole domain and nothing else.
   const isOpen = (key: string, list: InboxAccount[]) =>
-    small || open.has(key) || key === domain || list.some((a) => a.id === accountId);
+    small || open.has(key) || list.some((a) => a.id === accountId);
   const toggle = (key: string) => setOpen((current) => {
     const next = new Set(current);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -65,7 +79,7 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
     <>
       <div className="fi-section-label">
         ADDRESSES
-        <Link to="/projects" aria-label="Add an address or a domain">+</Link>
+        <Link to="/settings/addresses?add=1" aria-label="Add an address">+</Link>
       </div>
       {accounts.length > 0 && (
         <div className="fi-address-filter" role="group" aria-label="Which addresses to list">
@@ -169,8 +183,8 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
         </div>
       )}
       <div className="fi-add-links">
-        <Link className="fi-add-account" to="/projects"><AtIcon size={15} /> Add address</Link>
-        <Link className="fi-add-account" to="/accounts"><GoogleLogoIcon size={15} /> Connect Gmail</Link>
+        <Link className="fi-add-account" to="/settings/addresses?add=1"><AtIcon size={15} /> Add address</Link>
+        <Link className="fi-add-account" to="/settings/accounts?connect=gmail"><GoogleLogoIcon size={15} /> Connect Gmail</Link>
       </div>
     </>
   );

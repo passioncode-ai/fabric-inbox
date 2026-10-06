@@ -53,7 +53,6 @@ export default function Header() {
 		}
 	};
 
-	const isSettingsActive = location.pathname.includes("/settings");
 
 	return (
 		<header className="flex items-center gap-2 px-3 py-2.5 bg-kumo-base border-b border-kumo-line sticky top-0 z-10 md:px-5 md:gap-4">
@@ -131,16 +130,11 @@ export default function Header() {
 				</Tooltip>
 				<Tooltip content="Settings" side="bottom" asChild>
 					<Button
-						variant={isSettingsActive ? "secondary" : "ghost"}
+						variant="ghost"
 						shape="square"
 						icon={<GearSixIcon size={20} />}
-						onClick={() =>
-							navigate(
-								isSettingsActive
-									? `/mailbox/${mailboxId}/emails/inbox`
-									: `/mailbox/${mailboxId}/settings`,
-							)
-						}
+						// This address's name and signature, on Settings (SCR-02).
+						onClick={() => navigate(`/settings/addresses/${encodeURIComponent(mailboxId ?? "")}/signature`)}
 						aria-label="Settings"
 					/>
 				</Tooltip>

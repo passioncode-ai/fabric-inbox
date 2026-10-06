@@ -25,7 +25,7 @@ export default function CategorySidebar({ categories, accounts, active, onOpen }
     <>
       <div className="fi-section-label">
         CATEGORIES
-        <Link to="/categories" aria-label="Create or change categories">+</Link>
+        <Link to="/settings/categories/new" aria-label="Create a category">+</Link>
       </div>
       {categories.length ? (
         <nav className="fi-category-list" aria-label="Categories">
@@ -44,7 +44,7 @@ export default function CategorySidebar({ categories, accounts, active, onOpen }
           })}
         </nav>
       ) : (
-        <Link className="fi-add-account fi-category-empty" to="/categories">
+        <Link className="fi-add-account fi-category-empty" to="/settings/categories/new">
           <SparkleIcon size={15} aria-hidden="true" /> Create a category
         </Link>
       )}

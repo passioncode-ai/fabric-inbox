@@ -97,8 +97,8 @@ export default function Automation() {
   }
   return (
     <main className="mx-auto max-w-5xl p-6 text-kumo-default">
-      <Link className="underline" to="/accounts">
-        ← Accounts
+      <Link className="underline" to={account.startsWith("gmail:") ? `/settings/accounts/${encodeURIComponent(account)}` : `/settings/addresses/${encodeURIComponent(account)}/rules`}>
+        ← Settings
       </Link>
       <div className="my-6 flex flex-wrap items-center justify-between gap-4">
         <div>
