@@ -117,9 +117,9 @@ test("8-bit bodies ask for BODY=8BITMIME and UTF-8 addresses for SMTPUTF8, only 
 });
 
 test("XOAUTH2 signs in with a token; a refused token asks for a reconnect", async (t) => {
-  const { smtp, options } = await fixture({ mechanisms: ["XOAUTH2", "PLAIN"], tokens: { [USER]: "ya29.token" } });
+  const { smtp, options } = await fixture({ mechanisms: ["XOAUTH2", "PLAIN"], tokens: { [USER]: "oauth-token-for-tests" } });
   t.after(() => smtp.stop());
-  await sendSmtp({ ...options, password: undefined, token: "ya29.token" }, { from: USER, recipients: ["b@example.invalid"] }, MESSAGE);
+  await sendSmtp({ ...options, password: undefined, token: "oauth-token-for-tests" }, { from: USER, recipients: ["b@example.invalid"] }, MESSAGE);
   assert.ok(smtp.commands.includes("AUTH XOAUTH2 <secret>"));
   await assert.rejects(verifySmtp({ ...options, password: undefined, token: "expired" }), (e: NotSentError) => e.code === "reconnect_required");
 });

@@ -13,7 +13,7 @@ import { z } from "zod";
 import { ApiError, defineTool, unwrap, type ToolContext, type ToolDef } from "./protocol";
 import { appendHtml, clip, forwardedBlock, forwardedHtml, htmlToText, quotedBlock, quotedHtml, signatureHtml, textToHtml } from "./mail-text";
 import { headerValue, parseStoredHeaders } from "../agents/prefilter";
-import { GMAIL_FOLDERS } from "../providers/account-service";
+import { GMAIL_FOLDERS } from "../providers/gmail-cache";
 import { AttachmentValidationError, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, validateAttachments, type MailAttachment } from "../../shared/mail/attachments";
 
 // ── Shared pieces ──────────────────────────────────────────────────

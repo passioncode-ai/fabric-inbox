@@ -112,8 +112,12 @@ export interface ProviderSession {
   syncPage(account: AccountBase & { provider: RemoteProvider; sync: unknown }, kind: "history" | "import", deadline: number): Promise<PageResult>;
   /** One message in full, read from the provider now. */
   message(messageId: string): Promise<Message>;
-  /** Applies a change and answers the message as the provider now has it (its id may change: IMAP moves). */
-  change(messageId: string, change: MessageChange): Promise<Message>;
+  /**
+   * Applies a change and answers the message as the provider now has it: its id may change (an IMAP
+   * move), `bodyless` when only its headers are known here, null when it moved where this server
+   * does not read (Gmail's All Mail through IMAP) or its new place is not known until the next sync.
+   */
+  change(messageId: string, change: MessageChange): Promise<(Message & { bodyless?: boolean }) | null>;
   /** One file of a message: base64url data, as Gmail's API answers it. */
   attachment(messageId: string, attachmentId: string): Promise<{ data: string; size: number }>;
   /** Every header of one message. */

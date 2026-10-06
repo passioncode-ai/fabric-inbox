@@ -25,7 +25,10 @@ import { credentialKeys, hasCredentialKey, openCredentials, sealCredentials, typ
 import { GmailProvider, type GmailAccount } from "./gmail-provider";
 import { normalizeSync } from "./gmail-sync";
 import { NotSentError, type DraftUpdate, type MailProvider, type MessageChange, type ProviderCapabilities, type ProviderSession } from "./provider";
-import type { ImapAccount } from "./imap/types";
+import type { ImapAccount, ImapCredentials } from "./imap/types";
+import { ImapProvider, type ImapDeps } from "./imap/provider";
+import { serverSettings, type ImapConnectInput } from "./imap/connect";
+import { CUSTOM, PRESETS } from "./imap/presets";
 export { importPercent, type SyncState } from "./gmail-sync";
 
 /** How a sync runs: until when it may start pages, whether it imports, and under whose lock. */
@@ -117,9 +120,9 @@ function hiddenByFirstLayout(account: AccountRecord, row: StoredMessage) {
 }
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{1,128}$/;
 
-/** What the accounts object may add for providers beyond Gmail (the IMAP provider, in tests with fakes). */
-export interface ProviderFactories {
-  imap?: (store: Store, cache: GmailCache, env: AccountsEnvironment) => MailProvider<ImapAccount> & { connect?: unknown };
+/** How providers reach their servers; the tests give in-process fakes. */
+export interface ProviderDeps {
+  imap?: ImapDeps;
 }
 export type AccountsEnvironment = GmailEnvironment & CredentialEnvironment & { MAIL_POLL_SECONDS?: string };
 
@@ -132,18 +135,18 @@ export function pollInterval(env: AccountsEnvironment) {
 export class AccountService {
   readonly cache: GmailCache;
   private gmail: GmailProvider;
-  private imap?: MailProvider<ImapAccount>;
+  private imap: ImapProvider;
   private keys?: Promise<CredentialKeys | null>;
   private renewed = new Map<string, AccountRecord["credentials"]>();
   constructor(
     private store: Store,
     private env: AccountsEnvironment,
     private http: Fetcher = fetch,
-    factories: ProviderFactories = {},
+    deps: ProviderDeps = {},
   ) {
     this.cache = new GmailCache(store);
     this.gmail = new GmailProvider(store, this.cache, env, http);
-    if (factories.imap) this.imap = factories.imap(store, this.cache, env);
+    this.imap = new ImapProvider(store, this.cache, env, deps.imap);
   }
   /** The provider of an account (or of a provider id). */
   provider(of: RemoteProvider | Pick<AccountRecord, "provider">): MailProvider<AccountRecord> {
@@ -185,7 +188,7 @@ export class AccountService {
       }),
       providers: [
         { id: "gmail", status: configuration(this.env).status },
-        { id: "imap", status: this.imap && hasCredentialKey(this.env) ? "configured" : "not_configured" },
+        { id: "imap", status: hasCredentialKey(this.env) ? "configured" : "not_configured" },
         { id: "outlook", status: "not_configured" },
       ],
     };
@@ -244,6 +247,71 @@ export class AccountService {
     await this.store.put(identityKey, id);
     return publicAccount(account);
   }
+  /**
+   * The providers this server can connect, with the IMAP presets and their help pages (no secret,
+   * nothing about any account): what Settings → Accounts and the agent tool list_mail_providers show.
+   */
+  mailProviders() {
+    return {
+      providers: [
+        { id: "gmail", name: "Gmail", auth: "oauth", status: configuration(this.env).status },
+        { id: "imap", name: "Other mail (IMAP)", auth: "app-password", status: hasCredentialKey(this.env) ? "configured" : "not_configured" },
+        { id: "outlook", name: "Outlook", auth: "oauth", status: "not_configured" },
+      ],
+      presets: [...PRESETS, { ...CUSTOM }].map((p) => ({
+        id: p.id, name: p.name, domains: p.domains, steps: p.steps, source: p.source || null, appPasswordUrl: p.appPasswordUrl || null, sentCopy: p.sentCopy,
+        ...("imap" in p ? { imap: p.imap, smtp: p.smtp } : {}),
+      })),
+    };
+  }
+  /**
+   * Connects an IMAP account (or connects one again with new settings): its IMAP login, folders and
+   * SMTP login are checked first, and only then is the password sealed and the account stored. An
+   * address already connected through Google sign-in is refused, so no mail is read twice.
+   */
+  async connectImap(input: ImapConnectInput) {
+    if (!hasCredentialKey(this.env)) throw new ProviderError("not_configured", 503);
+    const settings = serverSettings(input);
+    const accounts = [...(await this.store.list<AccountRecord>({ prefix: "account:" })).values()];
+    if (accounts.some((a) => a.provider === "gmail" && a.email.toLowerCase() === input.email)) throw new ProviderError("already_connected", 409);
+    const checked = await this.imap.verify(settings, input.password, input.email);
+    const existing = accounts.find((a) => a.provider === "imap" && a.email.toLowerCase() === input.email) as ImapAccount | undefined;
+    const id = existing?.id ?? crypto.randomUUID();
+    const sameServer = existing && existing.server.imap.host === checked.settings.imap.host && existing.server.imapUser === checked.settings.imapUser;
+    const account: ImapAccount = {
+      id, provider: "imap", preset: input.preset, email: input.email, runtime: "cloud", status: "syncing",
+      createdAt: existing?.createdAt ?? Date.now(),
+      credentials: await this.seal(id, { password: input.password } satisfies ImapCredentials),
+      server: checked.settings,
+      // The same mailbox again keeps its cache and where its sync stands; another one starts over.
+      sync: sameServer ? existing!.sync : {
+        mode: "initial", condstore: checked.condstore, listedAt: 0, targets: checked.folders.targets,
+        folders: (Object.entries(checked.folders.roles) as [ImapAccount["sync"]["folders"][number]["role"], string][])
+          .map(([role, path]) => ({ role, path, uidValidity: 0, top: 0, known: 0 })),
+      },
+    };
+    if (existing && !sameServer) await this.cache.clear(id);
+    await this.putAccount(account);
+    console.log(JSON.stringify({ event: "imap_connected", preset: input.preset, again: !!existing }));
+    return publicAccount(account);
+  }
+  /** A new app password for an IMAP account, checked against both servers before it replaces the old one. */
+  async updateImapPassword(accountId: string, password: string) {
+    const account = await this.account(accountId);
+    if (account.provider !== "imap") throw new ProviderError("not_supported", 400);
+    if (typeof password !== "string" || !password || password.length > 512) throw new ProviderError("invalid_password", 400);
+    const checked = await this.imap.verify(account.server, password, account.email);
+    account.server = checked.settings;
+    account.credentials = await this.seal(account.id, { password } satisfies ImapCredentials);
+    this.renewed.delete(account.id);
+    account.status = account.sync.mode === "initial" ? "syncing" : "connected";
+    delete account.error;
+    delete account.retryAt;
+    delete account.failures;
+    await this.store.put("account:" + account.id, account);
+    console.log(JSON.stringify({ event: "imap_password_changed", preset: account.preset }));
+    return publicAccount(account);
+  }
   protected async account(id: string) {
     const account = await this.store.get<AccountRecord>(
       "account:" + keyPart(id),
@@ -294,7 +362,7 @@ export class AccountService {
   }
   /** How a person knows the account's provider: "Gmail", or the IMAP preset's name. */
   providerName(account: Pick<AccountRecord, "provider"> & { preset?: string }): string {
-    return account.provider === "gmail" ? "Gmail" : (this.imap as { presetName?: (id?: string) => string } | undefined)?.presetName?.(account.preset) ?? "IMAP";
+    return account.provider === "gmail" ? "Gmail" : this.imap.presetName(account.preset);
   }
   private async saveMessage(account: AccountRecord, message: Message, options: { bodyless?: boolean } = {}) {
     await this.cache.save(account.id, message, (account.sync as { generation?: string }).generation, options);
@@ -630,6 +698,13 @@ export class AccountService {
     // Read full provider state after acknowledgement; never optimistically cache labels.
     // A timeout or a failed read rejects and leaves the previous cache intact.
     const message = await this.withSession(account, (s) => s.change(id, change));
+    if (!message) {
+      // It left the folders this server reads (or its new place is known only after the next sync).
+      const row = await this.cache.row(account.id, id);
+      await this.cache.remove(account.id, id);
+      if (!row) throw new ProviderError("message_not_found", 404);
+      return { ...row.message, text: "", html: "", labels: [], read: true, archived: true } as Message;
+    }
     if (message.providerMessageId !== id) {
       // Moved (IMAP): the message has a new id in its new folder. The old id keeps answering for a
       // week, so an Undo or a second action from a list read before the move still finds it.
@@ -638,8 +713,9 @@ export class AccountService {
       await this.store.put("moved:" + account.id + ":" + id, moved);
       if (messageId !== id) await this.store.put("moved:" + account.id + ":" + messageId, moved);
     }
-    await this.saveMessage(account, message);
-    return message;
+    const { bodyless, ...saved } = message;
+    await this.saveMessage(account, saved, { bodyless });
+    return saved;
   }
   async getAttachment(
     accountId: string,

@@ -228,6 +228,25 @@ export class GmailCache {
     await this.dropBodies(a, message.providerMessageId, kept);
   }
 
+  /**
+   * Changes a cached message's labels (an IMAP flag change) without touching its body: the row, its
+   * index rows and the counters move together in one transaction. False when it is not cached.
+   */
+  async relabel(a: string, id: string, labels: string[]): Promise<boolean> {
+    const key = msgKey(a, id);
+    return this.store.transaction(async (tx) => {
+      const previous = await tx.get<StoredMessage>(key);
+      if (!previous) return false;
+      const same = previous.message.labels.length === labels.length && previous.message.labels.every((l) => labels.includes(l));
+      if (same) return true;
+      if (previous.layout === 2) await this.index(tx, a, previous.message, -1);
+      const row: StoredMessage = { ...previous, layout: 2, message: { ...previous.message, labels, read: !labels.includes("UNREAD"), archived: !labels.includes("INBOX") } };
+      await tx.put<StoredMessage>(key, row);
+      await this.index(tx, a, row.message, 1);
+      return true;
+    });
+  }
+
   /** Deletes a message with its body chunks, index rows and its share of the counters. */
   async remove(a: string, id: string) {
     const key = msgKey(a, id);

@@ -124,10 +124,10 @@ export class FakeSmtp {
  * each `MailSocket` view reading it through its own Web streams; `startTls()` refuses while a
  * reader or writer still holds a lock, as workerd does.
  */
-export function nodeSockets(options: { failTls?: boolean; refuse?: boolean } = {}): SocketFactory & { upgrades: number; connections: { hostname: string; port: number; secureTransport: string }[] } {
+export function nodeSockets(options: { failTls?: boolean; refuse?: boolean; port?: () => number } = {}): SocketFactory & { upgrades: number; connections: { hostname: string; port: number; secureTransport: string }[] } {
   const factory = ((address: { hostname: string; port: number }, opts: { secureTransport: string }) => {
     factory.connections.push({ ...address, secureTransport: opts.secureTransport });
-    const socket = net.connect(options.refuse ? 1 : address.port, "127.0.0.1");
+    const socket = net.connect(options.refuse ? 1 : options.port?.() ?? address.port, "127.0.0.1");
     const queue: Uint8Array[] = [];
     let waiting: (() => void) | null = null, ended = false;
     socket.on("data", (d) => { queue.push(new Uint8Array(d)); waiting?.(); });

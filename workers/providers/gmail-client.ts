@@ -196,7 +196,16 @@ function base64Text(text: string) {
   }
   return btoa(chunks.join(''));
 }
+/** The message as Gmail's API takes it: the RFC 5322 text, base64url without padding. */
 export function makeMime(sender: string, input: SendInput): string {
+  return base64Text(rawMime(sender, input)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+/**
+ * The RFC 5322 text of a message (CRLF line ends, 7-bit: every body is base64 and the subject is
+ * encoded words). `extraHeaders` go before MIME-Version (an SMTP send adds Date and Message-ID,
+ * which Gmail adds itself); `omitBcc` leaves Bcc out of the copy handed to an SMTP server.
+ */
+export function rawMime(sender: string, input: SendInput, extraHeaders: string[] = [], options: { omitBcc?: boolean } = {}): string {
   const attachments = validateAttachments(input.attachments);
   address(sender);
   if (input.threadId !== undefined && (typeof input.threadId !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(input.threadId)))
@@ -236,10 +245,14 @@ export function makeMime(sender: string, input: SendInput): string {
     `From: ${sender}`,
     `To: ${input.to.map(address).join(", ")}`,
     `Subject: ${chunks.map((s) => "=?UTF-8?B?" + base64Text(s) + "?=").join("\r\n ")}`,
+    ...extraHeaders.map(safeHeader),
     "MIME-Version: 1.0",
   ];
   if (input.cc?.length) h.push("Cc: " + input.cc.map(address).join(", "));
-  if (input.bcc?.length) h.push("Bcc: " + input.bcc.map(address).join(", "));
+  if (input.bcc?.length) {
+    const bcc = input.bcc.map(address).join(", ");
+    if (!options.omitBcc) h.push("Bcc: " + bcc);
+  }
   if (input.inReplyTo) h.push("In-Reply-To: " + safeHeader(input.inReplyTo));
   if (input.references) h.push("References: " + safeHeader(input.references));
   const body = (text: string) =>
@@ -288,7 +301,7 @@ export function makeMime(sender: string, input: SendInput): string {
     }
     h.push(`--${mixed}--`);
   } else h.push(...parts);
-  return base64Text(h.join("\r\n")).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return h.join("\r\n");
 }
 export class GmailClient {
   constructor(
