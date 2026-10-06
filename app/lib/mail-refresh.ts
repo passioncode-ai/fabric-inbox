@@ -1,6 +1,7 @@
 // Keeping the mail list fresh: what Refresh asks Gmail for and how its answer reads (P1-5), how
 // a newly read first page joins pages loaded with "Load older" (P1-3), and when coming back to the
 // window or waking the Mac reads the list again (P1-4).
+import type { QueryClient } from "@tanstack/react-query";
 import { compareInbox } from "../../shared/mail/inbox";
 
 /** The fields of a list page this module reads. */
@@ -22,6 +23,34 @@ export function mergeHead<P extends FeedPage>(data: Pages<P> | undefined, head: 
 	const have = new Set(head.messages.map((m) => m.id));
 	const tail = data.pages[0].messages.filter((m) => !have.has(m.id) && compareInbox(position(m), last) > 0);
 	return { pages: [{ ...data.pages[0], ...head, messages: [...head.messages, ...tail], hasMore: data.pages[0].hasMore, cursor: data.pages[0].cursor }, ...data.pages.slice(1)], pageParams: data.pageParams };
+}
+
+/** A change the list shows before the server confirms it (P3-12): a row leaving, or a row's flags. */
+export type FeedChange = { id: string; removed: true } | { id: string; patch: { read?: boolean; starred?: boolean } };
+/** The cached list with `change` applied; rows of other messages are untouched. */
+export function applyFeedChange<P extends { messages: { id: string }[] }>(data: Pages<P> | P | undefined, change: FeedChange): typeof data {
+	if (!data) return data;
+	const apply = (page: P): P => ({
+		...page,
+		messages: "removed" in change
+			? page.messages.filter((m) => m.id !== change.id)
+			: page.messages.map((m) => (m.id === change.id ? { ...m, ...change.patch } : m)),
+	});
+	return "pages" in data ? { ...data, pages: data.pages.map(apply) } : apply(data);
+}
+
+/**
+ * Shows `change` in every cached list of the unified inbox (its pages, and the first page read
+ * after Load older) before the server answers; the returned function puts them back exactly as
+ * they were, for when the server refuses (P3-12).
+ */
+export async function showFeedChange(client: QueryClient, change: FeedChange): Promise<() => void> {
+	const lists = [{ queryKey: ["unified-inbox"] }, { queryKey: ["unified-inbox-head"] }];
+	// A read in flight would land on top of the change and bring the old row back.
+	await Promise.all(lists.map((filter) => client.cancelQueries(filter)));
+	const before = lists.flatMap((filter) => client.getQueriesData(filter));
+	for (const filter of lists) client.setQueriesData(filter, (data: unknown) => applyFeedChange(data as never, change));
+	return () => { for (const [key, data] of before) client.setQueryData(key, data); };
 }
 
 /**

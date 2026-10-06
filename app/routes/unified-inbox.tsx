@@ -58,7 +58,7 @@ import { totalUnread } from "~/components/inbox/account-groups";
 import { displayOrder, groupCounts, isTriageGroup, listDate, nextAfter, pinTriage, triageOf, type ListView } from "~/components/inbox/triage-view";
 import type { Triage, TriageGroup } from "../../shared/mail/triage";
 import type { InboxFolder } from "../../shared/mail/inbox";
-import { mergeHead, refreshScope, refreshSummary, WakeRefresh, type RefreshResponse } from "~/lib/mail-refresh";
+import { showFeedChange, mergeHead, refreshScope, refreshSummary, WakeRefresh, type FeedChange, type RefreshResponse } from "~/lib/mail-refresh";
 import { useWindowActive } from "~/hooks/useWindowActive";
 import { pollInterval, subscribeWindowActivity } from "~/lib/window-activity";
 /** How often the list in view is read again while the window is active. */
@@ -318,18 +318,23 @@ export default function UnifiedInbox() {
   useEffect(() => {
     if (!selected || selected.read || !detail.data || detail.data.read || markedRead.current === selected.id) return;
     markedRead.current = selected.id;
-    const request = selected.provider === "gmail"
-      ? fabric(messagePath(selected) + "/read", { read: true })
-      : fabric(messagePath(selected), { read: true }, "PUT");
     const key = ["unified-message", selected.accountId, selected.providerMessageId];
-    request
+    // The row reads as read at once; it goes back to unread if the server refuses (P3-12).
+    let undo: (() => void) | undefined;
+    void showChange({ id: selected.id, patch: { read: true } }).then((rollback) => { undo = rollback; })
+      .then(() => selected.provider === "gmail"
+        ? fabric(messagePath(selected) + "/read", { read: true })
+        : fabric(messagePath(selected), { read: true }, "PUT"))
       .then(() => {
         // The reader's own copy says read too, so "Mark as unread" is offered at once.
         client.setQueryData(key, (d: OpenMessage | undefined) => (d ? { ...d, read: true } : d));
         setSelected((current) => (current?.id === selected.id ? { ...current, read: true } : current));
         return client.invalidateQueries({ queryKey: ["unified-inbox"] });
       })
-      .catch(() => setNotice("This message could not be marked read. It stays unread."));
+      .catch(() => {
+        undo?.();
+        setNotice("This message could not be marked read. It stays unread.");
+      });
   }, [selected, detail.data, client]);
   const owner = accounts.find((a) => a.id === selected?.accountId);
   const scopeName = categoryParam
@@ -385,15 +390,24 @@ export default function UnifiedInbox() {
       setChecking(false);
     }
   }
-  async function perform(action: () => Promise<unknown>, after?: () => void) {
+  /**
+   * Shows `change` in every cached list (the pages and the first page read after Load older) before
+   * the server answers; the returned function puts them back as they were (P3-12).
+   */
+  function showChange(change: FeedChange) {
+    return showFeedChange(client, change);
+  }
+  async function perform(action: () => Promise<unknown>, after?: () => void, change?: FeedChange) {
     setBusy(true);
     setNotice("");
+    const undo = change ? await showChange(change) : undefined;
     try {
       await action();
+      after?.();
       await refresh();
       await client.invalidateQueries({ queryKey: ["unified-message"] });
-      after?.();
     } catch (e) {
+      undo?.();
       setNotice((e as Error).message);
     } finally {
       setBusy(false);
@@ -905,7 +919,8 @@ export default function UnifiedInbox() {
                   </button>
                   <span>{owner?.email ?? rawAccount(selected.accountId)}</span>
                   <MessageActions message={selected} folder={folder as InboxFolder}
-                    busy={busy || !detail.data} run={perform}
+                    busy={busy || !detail.data}
+                    run={(action, after, change) => perform(action, after, change && ("removed" in change ? { id: change.id, removed: true } : { id: change.id, patch: { starred: change.starred } }))}
                     onChanged={change => {
                       // Guard: only the message that was acted on moves the selection on.
                       if ("removed" in change) {
@@ -927,6 +942,7 @@ export default function UnifiedInbox() {
                                 folderId: "archive",
                               }),
                         () => selectNextAfter(selected.id),
+                        { id: selected.id, removed: true },
                       )
                     }
                   >
@@ -949,6 +965,8 @@ export default function UnifiedInbox() {
                               { read: !detail.data?.read },
                               "PUT",
                             ),
+                        undefined,
+                        { id: selected.id, patch: { read: !detail.data?.read } },
                       )
                     }
                   >
