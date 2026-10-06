@@ -149,6 +149,7 @@ Locations name the source function while the integration branch is being formatt
 | state.composer.recovery_saved | Send recovery saved on this device | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
 | state.composer.draft_saved | Saved to your server | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
 | state.composer.draft_saving_server | Kept on this device; saving to your server… | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
+| state.composer.draft_not_on_server | Kept on this device; not saved to your server | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
 | state.drafts.saving_server | Saving to your server… | app/components/inbox/use-drafts.ts | SCN-006 | proposed |
 | state.drafts.not_on_server | Kept on this device; not on your server yet | app/components/inbox/use-drafts.ts | SCN-019 | proposed |
 | state.drafts.offline | Not saved to your server yet; it is kept on this device and saved when the server answers. | app/components/inbox/server-drafts.ts | SCN-019 | proposed |

@@ -65,6 +65,14 @@ export default function Composer({
   const [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [loadingFiles, setLoadingFiles] = useState(false);
+  // A send stopped because the draft was not saved says so until the draft is saved again.
+  const unsavedNotice = useRef("");
+  useEffect(() => {
+    if (sync?.state === "saved" && unsavedNotice.current) {
+      setNotice((n) => (n === unsavedNotice.current ? "" : n));
+      unsavedNotice.current = "";
+    }
+  }, [sync?.state]);
   useEffect(() => {
     const el = dialog.current;
     const previous = document.activeElement as HTMLElement;
@@ -117,7 +125,8 @@ export default function Composer({
       if (!saved?.synced || !saved.serverId) {
         sending.current = false;
         setBusy(false);
-        setNotice(sync?.message && sync.state !== "saving" ? sync.message : "The draft could not be saved to your server, so it was not sent. Check the connection and try again.");
+        unsavedNotice.current = "The draft could not be saved to your server, so it was not sent. Check the connection and try again.";
+        setNotice(unsavedNotice.current);
         return;
       }
       target = saved;
@@ -628,9 +637,11 @@ export default function Composer({
                   ? "Send recovery saved on this device"
                   : sync && sync.state !== "conflict" && sync.state !== "gone"
                     ? sync.message
-                    : draft.synced
-                      ? "Saved to your server"
-                      : "Kept on this device; saving to your server…"}
+                    : sync
+                      ? "Kept on this device; not saved to your server"
+                      : draft.synced
+                        ? "Saved to your server"
+                        : "Kept on this device; saving to your server…"}
           </span>
           <button
             type="submit"

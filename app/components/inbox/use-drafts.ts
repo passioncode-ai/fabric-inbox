@@ -178,6 +178,8 @@ export function useDrafts() {
     const before = currentDrafts.current.find((x) => x.id === d.id);
     const next = rebaseEdit(before, d, uploaded.current, syncAdded.current);
     for (const f of d.serverFiles ?? []) syncAdded.current.delete(f.id);
+    // "Saved to your server" stops being true with the first change after it.
+    if (!next.synced) setSync((all) => { if (all[d.id]?.state !== "saved") return all; const rest = { ...all }; delete rest[d.id]; return rest; });
     const version = (versions.current.get(d.id) ?? 0) + 1;
     versions.current.set(d.id, version);
     dirty.current.add(d.id);
