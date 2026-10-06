@@ -98,12 +98,12 @@ export interface RefreshResponse {
 }
 
 /**
- * The Gmail and IMAP accounts Refresh reads for the list in view: `null` when there is nothing to
- * ask (one Cloudflare address or a domain of them: that mail arrives by push), `undefined` for every
- * Gmail and IMAP account, or the one account shown.
+ * The Gmail, IMAP and Outlook accounts Refresh reads for the list in view: `null` when there is
+ * nothing to ask (one Cloudflare address or a domain of them: that mail arrives by push), `undefined`
+ * for every one of them, or the one account shown.
  */
 export function refreshScope(scope: { accountId: string; domain: string }): string[] | undefined | null {
-	if (scope.accountId) return /^(gmail|imap):/.test(scope.accountId) ? [scope.accountId] : null;
+	if (scope.accountId) return /^(gmail|imap|outlook):/.test(scope.accountId) ? [scope.accountId] : null;
 	if (scope.domain) return null;
 	return undefined;
 }

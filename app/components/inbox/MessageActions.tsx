@@ -1,6 +1,7 @@
 import { ArrowUUpLeftIcon, ShieldCheckIcon, StarIcon, TrashIcon, WarningOctagonIcon } from "@phosphor-icons/react";
 import type { InboxFolder, InboxMessage } from "../../../shared/mail/inbox";
 import { fabric } from "../../services/fabric";
+import { isRemote } from "./model";
 
 export type ActionMessage = Pick<InboxMessage, "id" | "accountId" | "provider" | "providerMessageId" | "starred"> & { sender?: string };
 export type MessageChange = { id: string; starred: boolean } | { id: string; removed: true; notice?: string };
@@ -27,8 +28,8 @@ export async function changeMessage(
     throw new Error("Message account is unavailable. Refresh and try again.");
   const account = encodeURIComponent(message.accountId.slice(prefix.length));
   const id = encodeURIComponent(message.providerMessageId);
-  // Gmail and IMAP accounts share their routes (/api/accounts/<id>); a Cloudflare mailbox has its own.
-  const gmail = message.provider === "gmail" || message.provider === "imap";
+  // Gmail, IMAP and Outlook accounts share their routes (/api/accounts/<id>); a Cloudflare mailbox has its own.
+  const gmail = isRemote(message.provider);
   const path = gmail ? `/api/accounts/${account}/messages/${id}` : `/api/v1/mailboxes/${account}/emails/${id}`;
   if ("starred" in change) {
     const result = await request(gmail ? path + "/starred" : path, change, gmail ? "POST" : "PUT") as { labels?: string[]; starred?: boolean };

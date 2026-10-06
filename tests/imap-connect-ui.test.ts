@@ -21,7 +21,8 @@ test("the IMAP card connects where the server holds a credential key, and says s
   assert.equal(imapSetupState({ providers: [{ id: "imap", status: "not_configured" }] }, null), "not-configured");
   assert.equal(imapSetupState({}, null), "not-configured", "a server before 0.11 has no IMAP");
   assert.equal(imapSetupState(undefined, new Error("x")), "unavailable");
-  assert.equal(availability(PROVIDERS.find((p) => p.id === "microsoft")!, { ...base, imap: "configured" }), "unavailable", "Outlook is not in this build");
+  // Outlook connects through its own Microsoft setup, not the IMAP card's credential key alone.
+  assert.equal(availability(PROVIDERS.find((p) => p.id === "microsoft")!, { ...base, imap: "configured" }), "checking", "unknown until the accounts load");
 });
 
 test("every code the server answers a connect with is a sentence naming who refused and what to do", () => {

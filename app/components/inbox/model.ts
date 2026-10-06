@@ -1,10 +1,10 @@
 import type { Email } from "~/types";
 import type { Mail } from "~/services/fabric";
 import type { Triage } from "../../../shared/mail/triage";
-/** "cloudflare" (a mailbox on a served domain), "gmail" (Google sign-in) or "imap" (an app password). */
-export type MailProvider = "cloudflare" | "gmail" | "imap";
-/** Gmail and IMAP accounts: kept by the server's accounts object and reached at /api/accounts/<id>. */
-export const isRemote = (provider: MailProvider | string) => provider === "gmail" || provider === "imap";
+/** "cloudflare" (a mailbox on a served domain), "gmail" (Google sign-in), "imap" (an app password) or "outlook" (Microsoft sign-in). */
+export type MailProvider = "cloudflare" | "gmail" | "imap" | "outlook";
+/** Gmail, IMAP and Outlook accounts: kept by the server's accounts object and reached at /api/accounts/<id>. */
+export const isRemote = (provider: MailProvider | string) => provider === "gmail" || provider === "imap" || provider === "outlook";
 export type InboxAccount = {
   id: string;
   provider: MailProvider;
@@ -23,7 +23,7 @@ export type InboxAccount = {
   stuck?: { dead: number; retrying: number; lastError: string | null };
   /** Its counts could not be read just now; the ones shown are the last known. */
   countsStale?: boolean;
-  /** A Gmail or IMAP account's first import in percent, while it runs. */
+  /** A Gmail, IMAP or Outlook account's first import in percent, while it runs. */
   importing?: number;
   /** "Gmail", "iCloud Mail", "Fastmail"… for Gmail and IMAP accounts. */
   providerName?: string;

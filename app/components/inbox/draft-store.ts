@@ -55,7 +55,7 @@ function serverFiles(value: unknown): ServerFile[] | undefined {
 export type ForwardSource = {
   accountId: string;
   originalId: string;
-  provider: "gmail" | "imap" | "cloudflare";
+  provider: "gmail" | "imap" | "outlook" | "cloudflare";
   files: { id: string; filename: string; mimeType: string; size: number }[];
 };
 function forwardSource(value: unknown): ForwardSource | undefined {
@@ -67,7 +67,7 @@ function forwardSource(value: unknown): ForwardSource | undefined {
     !s.accountId ||
     typeof s.originalId !== "string" ||
     !s.originalId ||
-    !["gmail", "imap", "cloudflare"].includes(s.provider) ||
+    !["gmail", "imap", "outlook", "cloudflare"].includes(s.provider) ||
     !Array.isArray(s.files) ||
     s.files.length > 1000
   )

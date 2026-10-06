@@ -21,11 +21,15 @@ export type Request = <T>(url: string, body?: unknown, method?: string) => Promi
 export interface HttpError { status: number; body: Record<string, unknown> }
 const isHttp = (e: unknown): e is HttpError => !!e && typeof e === "object" && typeof (e as HttpError).status === "number" && typeof (e as HttpError).body === "object";
 
-/** "cloudflare" (a mailbox's Drafts), "gmail" (Gmail's own drafts) or "imap" (the account's Drafts folder); the last two share their routes. */
-const provider = (accountId: string) => (accountId.startsWith("gmail:") ? "gmail" : accountId.startsWith("imap:") ? "imap" : accountId.startsWith("cloudflare:") ? "cloudflare" : null);
-const remote = (accountId: string) => provider(accountId) === "gmail" || provider(accountId) === "imap";
+/**
+ * "cloudflare" (a mailbox's Drafts), "gmail" (Gmail's own drafts), "imap" (the account's Drafts
+ * folder) or "outlook" (the Outlook Drafts folder); the last three share their routes.
+ */
+const provider = (accountId: string) => (accountId.startsWith("gmail:") ? "gmail" : accountId.startsWith("imap:") ? "imap"
+  : accountId.startsWith("outlook:") ? "outlook" : accountId.startsWith("cloudflare:") ? "cloudflare" : null);
+const remote = (accountId: string) => { const p = provider(accountId); return p === "gmail" || p === "imap" || p === "outlook"; };
 /** Who keeps a remote account's drafts, in a sentence. */
-const keeper = (accountId: string) => (provider(accountId) === "gmail" ? "Gmail" : "Your mail server");
+const keeper = (accountId: string) => (provider(accountId) === "gmail" ? "Gmail" : provider(accountId) === "outlook" ? "Outlook" : "Your mail server");
 const cfBox = (accountId: string) => `/api/v1/mailboxes/${encodeURIComponent(rawAccount(accountId))}`;
 const gmailBase = (accountId: string) => `/api/accounts/${encodeURIComponent(rawAccount(accountId))}`;
 const list = (header: string | undefined) => (header ?? "").split(",").map((x) => x.trim()).filter(Boolean);

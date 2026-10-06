@@ -47,12 +47,12 @@ export type Account = {
   error?: string;
   /** Why it stopped working (shared/mail/gmail-reasons.ts). */
   reason?: string;
-  /** When access was last given on Google's page. */
+  /** When access was last given on Google's or Microsoft's page. */
   connectedAt?: number;
   /** When Google said this access ends (a Testing app's 7 days), if it gave an end. */
   accessUntil?: number;
-  /** "gmail" (Google sign-in) or "imap" (an app password); absent on a server before 0.11: Gmail. */
-  provider?: "gmail" | "imap";
+  /** "gmail" (Google sign-in), "imap" (an app password) or "outlook" (Microsoft sign-in); absent on a server before 0.11: Gmail. */
+  provider?: "gmail" | "imap" | "outlook";
   /** "Gmail", "iCloud Mail", "Fastmail"… */
   providerName?: string;
   /** The IMAP preset it was connected with (shared/mail/imap-presets.ts), or "custom". */
