@@ -128,6 +128,7 @@ test("the Mac app's translator reads the same dictionary and keeps the choice in
     assert.equal(i18n.locale(), "ru");
     assert.deepEqual(i18n.forWindow().locale, "ru");
     assert.equal(i18n.t("{client} is not connected.", { client: "Fabric" }), "Fabric не подключён.");
+    assert.equal(i18n.t.plural(3, { one: "{n} domain", other: "{n} domains" }), "3 домена");
     assert.equal(i18n.t.plural(3, { one: "{n} thing", other: "{n} things" }), "3 things", "a count the Mac app does not carry stays English");
   } finally {
     require("../desktop/i18n.cjs")._setForTests("en");

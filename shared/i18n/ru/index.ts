@@ -10,7 +10,9 @@
 import { COMMON } from "./common";
 import { DESKTOP } from "./desktop";
 import { INBOX } from "./inbox";
+import { COMPOSE } from "./compose";
 import { SETTINGS } from "./settings";
+import { RULES } from "./rules";
 import { CONNECT } from "./connect";
 import { AGENTS } from "./agents";
 import { SERVER } from "./server";
@@ -20,7 +22,9 @@ export const RU: Readonly<Record<string, string>> = Object.freeze({
 	...COMMON,
 	...DESKTOP,
 	...INBOX,
+	...COMPOSE,
 	...SETTINGS,
+	...RULES,
 	...CONNECT,
 	...AGENTS,
 	...SERVER,

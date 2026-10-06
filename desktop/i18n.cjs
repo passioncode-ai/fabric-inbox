@@ -83,13 +83,16 @@ t.text = function text(value) {
   return current === 'ru' && Object.prototype.hasOwnProperty.call(RU, value) ? RU[value] : value;
 };
 
+/** Marks English text written outside a t() call (a table's words) for the check; returns it as it is. */
+function msg(source, params) { return fill(source, params); }
+
 /** What the first-run window needs to speak the language: its code and the dictionary. */
 function forWindow() {
   return { locale: current, messages: current === 'ru' ? RU : {} };
 }
 
 module.exports = {
-  t, init, setChoice, detectLocale, parseChoice, forWindow,
+  t, msg, init, setChoice, detectLocale, parseChoice, forWindow,
   locale: () => current,
   choice: () => choice,
   /** For tests: switch without a file. */

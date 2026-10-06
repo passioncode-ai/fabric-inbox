@@ -35,6 +35,21 @@ export const COMMON: Readonly<Record<string, string>> = {
 	"{n} domains": "{n} домен|{n} домена|{n} доменов",
 	"{n} addresses": "{n} адрес|{n} адреса|{n} адресов",
 	"Open the inbox": "Открыть «Входящие»",
+	"Continue": "Продолжить",
+	"Connecting…": "Подключаемся…",
+	"Allow": "Разрешить",
+	"Deny": "Запретить",
+	"Server": "Сервер",
+	"Server address": "Адрес сервера",
+	"Token": "Токен",
+	"Type": "Тип",
+	// Step outcomes (the steps of creating a server, of adding an address, of a domain's actions)
+	"Done": "Готово",
+	"Already so": "Уже так",
+	"Not done": "Не выполнено",
+	"Working…": "Выполняется…",
+	"Waiting": "Ожидание",
+	"Nothing to do": "Ничего не нужно",
 
 	// Settings: the screen and its sections (app/routes/settings.tsx, app/components/settings/paths.ts)
 	"Settings · Fabric Inbox": "Настройки · Fabric Inbox",
