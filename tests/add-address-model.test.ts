@@ -37,7 +37,8 @@ test("the domain choice lists receiving domains first, then the ones that can re
   assert.ok(noToken.every((o) => o.label === "Receiving here"));
   assert.deepEqual(domainOptions(undefined), []);
   assert.deepEqual(filterDomains(options, "@ze").map((o) => o.domain), ["zeta.test"]);
-  assert.deepEqual(filterDomains(options, "nothing", "acme.test").map((o) => o.domain), ["acme.test"], "the chosen domain is never filtered away");
+  assert.deepEqual(filterDomains(options, "nothing"), [], "a filter that matches nothing lists nothing (Enter then chooses nothing)");
+  assert.equal(filterDomains(options, " ").length, options.length);
   assert.equal(startDomain(options, "NEW.test"), "new.test");
   assert.equal(startDomain(options, "gone.test"), "acme.test");
   assert.equal(startDomain([], null), "");
@@ -102,7 +103,7 @@ test("each step says what happened; the test is watched until it arrives (SCN-06
   assert.match(failed.detail, /Turn on Email Routing: Denied\. Nothing was created/);
 
   const t = (over: Partial<TestStatus>): TestStatus => ({ subject: "s", sentAt: "2026-10-06T10:00:00Z", sendStatus: "accepted", state: "waiting", detail: "Waiting.", ...over });
-  assert.equal(testStep("off", null).outcome, "skipped");
+  assert.equal(testStep("off", null).outcome, "not_asked");
   assert.equal(testStep("sending", null).outcome, "running");
   assert.equal(testStep("sent", t({})).outcome, "waiting");
   assert.equal(testStep("sent", t({ state: "arrived", arrivedAt: "2026-10-06T10:00:20Z", folder: "inbox" })).outcome, "done");

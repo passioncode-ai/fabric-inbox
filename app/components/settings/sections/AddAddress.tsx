@@ -74,6 +74,8 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
     if (!ready) return;
     setForm(EMPTY_FORM(startDomain(options, initialDomain), initialName ?? ""));
     setSeveral(""); setMode("one"); setSendTest(null); setRun(null);
+    // The form may arrive after the dialog opened (domains still loading): the focus goes to it then.
+    requestAnimationFrame(() => nameField.current?.focus());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
@@ -202,7 +204,10 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
     requestAnimationFrame(() => nameField.current?.focus());
   };
 
-  const title = run ? (mode === "one" ? T.titleAdding(run.rows[0]?.email ?? email) : T.titleAddingSeveral(form.domain)) : T.title;
+  const finished = !!run && !run.working && run.rows.some((r) => r.created);
+  const title = !run ? T.title
+    : mode === "one" ? (finished ? T.titleAdded : T.titleAdding)(run.rows[0]?.email ?? email)
+      : (finished ? T.titleAddedSeveral : T.titleAddingSeveral)(form.domain);
   const working = !!run?.working;
 
   return (
@@ -374,7 +379,7 @@ function DomainPicker({ id, options, value, onChange, describedBy }: {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const listId = useId();
-  const shown = filterDomains(options, open ? query : "", value);
+  const shown = filterDomains(options, open ? query : "");
   const optionId = (d: string) => `${listId}-${d.replace(/[^a-z0-9]/gi, "-")}`;
   const choose = (d: string) => { onChange(d); setOpen(false); setQuery(""); };
   const openAt = () => { setActive(Math.max(0, shown.findIndex((o) => o.domain === value))); setOpen(true); };
@@ -507,20 +512,34 @@ function RowSteps({ row, onFix, onTest, onClose, compact = false }: {
   });
   const t = testStep(row.test, test.data ?? null, row.testError);
   const steps = row.created ? [...row.steps, t] : row.steps;
-  return (
-    <ol className={"fi-steps fi-steps-live" + (compact ? " is-compact" : "")} aria-label={T.stepsFor(row.email)}>
-      {steps.map((s) => (
-        <StepLine key={s.id} step={s} action={
-          s.fix && (s.outcome === "failed" || s.outcome === "skipped") ? <FixButton fix={s.fix} onRun={() => onFix(row, s.fix!)} onClose={onClose} /> :
-          s.id === "test" && s.outcome === "skipped" ? <button type="button" className="fi-text-button" onClick={() => onTest(row.email)}>{T.sendTest}</button> :
-          s.id === "test" && s.outcome === "failed" ? <>
-            <button type="button" className="fi-text-button" onClick={() => onTest(row.email)}>{T.sendAgain}</button>
-            <Link className="fi-text-button" to={settingsPath("addresses", row.email)} onClick={onClose}>{T.checkRouting}</Link>
-          </> : null} />
-      ))}
+  const actionFor = (s: UiStep) =>
+    s.fix && (s.outcome === "failed" || s.outcome === "skipped") ? <FixButton fix={s.fix} onRun={() => onFix(row, s.fix!)} onClose={onClose} /> :
+    s.id === "test" && s.outcome === "not_asked" ? <button type="button" className="fi-text-button" onClick={() => onTest(row.email)}>{T.sendTest}</button> :
+    s.id === "test" && s.outcome === "failed" ? <>
+      <button type="button" className="fi-text-button" onClick={() => onTest(row.email)}>{T.sendAgain}</button>
+      <Link className="fi-text-button" to={settingsPath("addresses", row.email)} onClick={onClose}>{T.checkRouting}</Link>
+    </> : null;
+  const list = (
+    <ol className="fi-steps fi-steps-live" aria-label={T.stepsFor(row.email)}>
+      {steps.map((s) => <StepLine key={s.id} step={s} action={compact ? null : actionFor(s)} />)}
     </ol>
   );
+  if (!compact) return list;
+  // Several: one line per address (a chip per step and its fixes); the sentences fold under Details.
+  return (
+    <div className="fi-run-row">
+      <span className="fi-run-chips">
+        {steps.map((s) => <Badge key={s.id} tone={OUTCOME_TONE[s.outcome]}>{T.chip(s.label, STEP_MARK[s.outcome])}</Badge>)}
+        {steps.map((s) => { const a = actionFor(s); return a ? <span key={"a-" + s.id} className="fi-step-actions">{a}</span> : null; })}
+      </span>
+      <details className="fi-run-details"><summary>{T.details}</summary>{list}</details>
+    </div>
+  );
 }
+
+const OUTCOME_TONE: Record<UiStep["outcome"], "ok" | "warn" | "bad" | "busy" | "neutral"> = {
+  done: "ok", already: "ok", skipped: "warn", failed: "bad", waiting: "busy", running: "busy", not_asked: "neutral",
+};
 
 function FixButton({ fix, onRun, onClose }: { fix: StepFix; onRun: () => void; onClose: () => void }) {
   if (fix.action === "connect_cloudflare") return <Link className="fi-text-button" to={settingsPath("domains", "connect")} onClick={onClose}>{fix.label}</Link>;

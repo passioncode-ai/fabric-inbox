@@ -447,6 +447,14 @@ select.fi-input { padding-right: 28px; }
 .fi-step-actions { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; margin-left: 4px; }
 .fi-steps.is-compact { margin-top: 4px; flex-basis: 100%; }
 .fi-run-rows > li { align-items: flex-start; }
+.fi-run-row { flex-basis: 100%; display: grid; gap: 4px; }
+.fi-run-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fi-run-details > summary { cursor: pointer; color: var(--pc-text-muted); font-size: 12px; }
+.fi-steps-live .fi-step.is-not_asked .fi-step-mark { color: var(--pc-text-muted); }
+.fi-add-address .fi-field :is(input, textarea, select) { font-weight: 400; }
+.fi-add-address textarea { display: block; }
+.fi-add-address .fi-field { align-content: start; }
+.fi-combo-list .fi-grow { flex: 1; min-width: 0; }
 .fi-empty-inline p { margin: 0 0 10px; }
 @media (prefers-reduced-motion: no-preference) {
   .fi-steps-live .fi-step.is-running .fi-step-mark,

@@ -56,10 +56,10 @@ export function domainOptions(list: DomainList | undefined, learned: Record<stri
   return options.sort((a, b) => Number(a.group !== "receiving") - Number(b.group !== "receiving") || a.domain.localeCompare(b.domain));
 }
 
-/** The options a typed filter keeps ("@acme" finds acme.test); the chosen one is never hidden. */
-export function filterDomains(options: DomainOption[], query: string, keep?: string): DomainOption[] {
+/** The options a typed filter keeps ("@acme" finds acme.test); an empty filter keeps them all. */
+export function filterDomains(options: DomainOption[], query: string): DomainOption[] {
   const q = query.trim().toLowerCase().replace(/^@/, "");
-  return q ? options.filter((o) => o.domain.includes(q) || o.domain === keep) : options;
+  return q ? options.filter((o) => o.domain.includes(q)) : options;
 }
 
 /** The domain the dialog opens on: the one its entry point named, else the first receiving here. */
@@ -149,7 +149,7 @@ export function batchBody(form: AddressForm, localParts: string[]) {
 
 /* -------------------------------------------------------------- the steps */
 
-export type UiOutcome = AddressStep["outcome"] | "waiting" | "running";
+export type UiOutcome = AddressStep["outcome"] | "waiting" | "running" | "not_asked";
 export interface UiStep { id: string; label: string; outcome: UiOutcome; detail: string; fix?: StepFix }
 
 export const STEP_MARK: Record<UiOutcome, string> = T.mark;
@@ -177,7 +177,7 @@ const clock = (iso: string) => {
 /** The test message's line: sent, waiting for it, arrived, or why not (SCN-062). */
 export function testStep(phase: TestPhase, test: TestStatus | null, error?: string): UiStep {
   const label = T.stepTest;
-  if (phase === "off") return { id: "test", label, outcome: "skipped", detail: T.testOff };
+  if (phase === "off") return { id: "test", label, outcome: "not_asked", detail: T.testOff };
   if (phase === "sending") return { id: "test", label, outcome: "running", detail: T.testSending };
   if (phase === "error") return { id: "test", label, outcome: "failed", detail: error ?? T.testCouldNot };
   if (!test) return { id: "test", label, outcome: "waiting", detail: T.testSent };
