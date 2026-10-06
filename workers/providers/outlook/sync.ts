@@ -75,6 +75,19 @@ export async function readMessage(graph: GraphClient, account: OutlookAccount, g
   return { message: await messageWithBody(account.id, meta, role, mime, attachments), role, bodyless: !mime };
 }
 
+/**
+ * A message's properties from a delta page, with what only its headers said kept from the cached
+ * row (In-Reply-To, References, the Message-ID, the triage signals): a delta page carries none of
+ * them, and a read-state change must not cost a reply its thread.
+ */
+export function keptFrom(row: StoredMessage | undefined, fresh: Message): Message {
+  if (!row) return fresh;
+  const old = row.message;
+  const signals = fresh.signals ?? old.signals;
+  return { ...fresh, inReplyTo: fresh.inReplyTo || old.inReplyTo || "", references: fresh.references || old.references || "",
+    rfcMessageId: fresh.rfcMessageId || old.rfcMessageId || "", ...(signals ? { signals } : {}) };
+}
+
 export class OutlookSync {
   constructor(private store: Store, private cache: GmailCache) {}
 
@@ -195,13 +208,13 @@ export class OutlookSync {
     }
     if (kind === "import") {
       folder.seen = (folder.seen ?? 0) + 1;
-      await this.cache.save(account.id, await messageFromGraph(account.id, item, folder.role), folder.generation, { bodyless: true });
+      await this.cache.save(account.id, keptFrom(row, await messageFromGraph(account.id, item, folder.role)), folder.generation, { bodyless: true });
       return 0;
     }
     if (row) {
       // A change, or a message moved in: its properties when the page carries them, else its labels.
       if (item.subject !== undefined && item.receivedDateTime !== undefined)
-        await this.cache.save(account.id, await messageFromGraph(account.id, item, folder.role), folder.generation, { bodyless: true });
+        await this.cache.save(account.id, keptFrom(row, await messageFromGraph(account.id, item, folder.role)), folder.generation, { bodyless: true });
       else
         await this.cache.relabel(account.id, id, labelsFor(folder.role, {
           isRead: item.isRead ?? !row.message.labels.includes("UNREAD"),

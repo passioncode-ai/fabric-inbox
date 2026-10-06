@@ -205,6 +205,13 @@ test("new mail arrives whole and once; changes, moves and deletions made elsewhe
   assert.ok(k.labels.includes("STARRED"));
   const f = inbox.find((m) => m.subject === "Fresh")!;
   assert.match((await service.getMessage(account.id, f.providerMessageId)).text, /Brand new/);
+  // What only the headers said survives a read-state change made elsewhere (a delta page carries no headers).
+  const fullFresh = [...graph.mails.values()].find((m) => m.subject === "Fresh")!;
+  fullFresh.isRead = true; graph.touch(fullFresh);
+  await settle(service, account.id);
+  const kept = (await rows(service, account.id, { folder: "inbox" })).find((m) => m.subject === "Fresh")!;
+  assert.equal(kept.read, true);
+  assert.ok(kept.signals?.listId, "the List-Id read from the message itself is kept");
   const events = [...(await store.list<{ messageId: string }>({ prefix: "pending:event:" })).values()];
   assert.deepEqual(events.map((e) => e.messageId), [f.providerMessageId], "only the new message is news");
   // Moved to the Archive in Outlook: the same id, now archived; no new event.
