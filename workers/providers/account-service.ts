@@ -21,7 +21,7 @@ import {
 import { GmailClient, ProviderError, exchangeCode, makeMime, type Fetcher, type Message, type SendInput } from "./gmail-client";
 import type { InboxReadOptions, InboxMessage } from "../../shared/mail/inbox";
 import { isGmailReason, type GmailReason } from "../../shared/mail/gmail-reasons";
-import { GMAIL_FOLDERS, GmailCache, gmailInboxMessage, inFolder, keyPart, msgKey, type GmailFolder, type InboxCounts, type StoredMessage } from "./gmail-cache";
+import { DISCARDED_LABEL, GMAIL_FOLDERS, GmailCache, gmailInboxMessage, inFolder, keyPart, msgKey, type GmailFolder, type InboxCounts, type IndexRow, type StoredMessage } from "./gmail-cache";
 export { GMAIL_FOLDERS, type GmailFolder } from "./gmail-cache";
 import { credentialKeys, hasCredentialKey, openCredentials, sealCredentials, type CredentialEnvironment, type CredentialKeys } from "./credentials";
 import { GmailProvider, type GmailAccount } from "./gmail-provider";
@@ -131,8 +131,19 @@ interface PendingEvent {
   lastError?: string;
 }
 const MAX_EVENT_ATTEMPTS = 10;
-/** Why a message is in Discarded and since when, kept per message (`discarded:<acc>:<id>`): its 30 days count from `at`. */
-export interface DiscardRecord { reason: string; at: number }
+/**
+ * Why a message is in Discarded and since when, kept per message (`discarded:<acc>:<id>`): its 30 days
+ * count from `at`. `lost`: the provider moved it without saying its new id (an IMAP server without
+ * UIDPLUS whose match failed); the record waits under the old id with what finds the message in the
+ * cache once a sync reads it there, and `tries` counts the purge runs that looked.
+ */
+export interface DiscardRecord {
+  reason: string; at: number;
+  lost?: { rfcMessageId?: string; from: string; subject: string; timestamp: number };
+  tries?: number;
+}
+/** Purge runs that look for a lost discard before its record is given up (said in the logs). */
+const LOST_DISCARD_TRIES = 48;
 /** What an arrival filter decides for one new message: Discarded with its reason, or nothing. */
 export type ArrivalFilter = (event: { accountId: string; provider: RemoteProvider }, message: Message) => Promise<{ reason: string; ruleId: string } | null>;
 /** Whether a comma-joined address list (To, Cc, Bcc) names `address` as a whole address. */
@@ -931,8 +942,44 @@ export class AccountService {
     const from = (["trash", "spam", "discarded", "inbox"] as const).find((f) => inFolder(labels, f)) ?? "archive";
     const unread = !!row && !row.message.read;
     const message = await this.changeMessage(accountId, messageId, { discarded: true });
-    await this.store.put<DiscardRecord>(`discarded:${account.id}:${message.providerMessageId}`, { reason: reason.slice(0, 300), at: Date.now() });
+    const record: DiscardRecord = { reason: reason.slice(0, 300), at: Date.now() };
+    if (!message.labels.includes(DISCARDED_LABEL)) {
+      // Moved, but its new id is known only after the next sync: kept with what finds it there.
+      record.lost = { ...(message.rfcMessageId ? { rfcMessageId: message.rfcMessageId } : {}), from: message.from, subject: message.subject, timestamp: message.timestamp };
+      console.warn(JSON.stringify({ event: "discard_location_unknown", provider: account.provider }));
+    }
+    await this.store.put<DiscardRecord>(`discarded:${account.id}:${message.providerMessageId}`, record);
     return { id: message.providerMessageId, from, unread };
+  }
+  /**
+   * A lost discard (DiscardRecord.lost) found in the cache's Discarded index — by its Message-ID, else
+   * its From, Subject and date — among messages no other record names: the record moves to that id,
+   * and the old id answers for it (as after any IMAP move). Null while the sync has not read it there.
+   */
+  private async locateLost(accountId: string, oldId: string, record: DiscardRecord): Promise<string | null> {
+    const lost = record.lost;
+    if (!lost) return null;
+    let after: string | undefined;
+    const prefix = `idx:${accountId}:discarded:`;
+    for (let scanned = 0; scanned < SENT_SCAN_LIMIT;) {
+      const rows = await this.store.list<IndexRow>({ prefix, startAfter: after, limit: 500 });
+      for (const [key, row] of rows) {
+        after = key;
+        scanned++;
+        const same = lost.rfcMessageId ? row.rfcMessageId === lost.rfcMessageId
+          : row.from === lost.from && row.subject === lost.subject && row.timestamp === lost.timestamp;
+        if (!same || row.providerMessageId === oldId || await this.store.get(`discarded:${accountId}:${row.providerMessageId}`)) continue;
+        const { lost: _, tries: __, ...kept } = record;
+        await this.store.transaction(async (tx) => {
+          await tx.put<DiscardRecord>(`discarded:${accountId}:${row.providerMessageId}`, kept);
+          await tx.delete(`discarded:${accountId}:${oldId}`);
+          await tx.put("moved:" + accountId + ":" + oldId, { to: row.providerMessageId, at: Date.now() });
+        });
+        return row.providerMessageId;
+      }
+      if (rows.size < 500) break;
+    }
+    return null;
   }
   /**
    * Not discarded: back to `to` — the inbox (Not discarded), or where the discard took it from
@@ -941,8 +988,11 @@ export class AccountService {
   async restoreDiscarded(accountId: string, messageId: string, read?: boolean, to: DiscardRestoreTarget = "inbox"): Promise<{ id: string }> {
     if (!DISCARD_RESTORE_TARGETS.includes(to)) throw new ProviderError("not_supported", 400);
     const account = await this.account(accountId);
-    const old = await this.currentId(account.id, keyPart(messageId));
-    let message = await this.changeMessage(accountId, messageId, { discarded: false, ...(to === "inbox" ? {} : { to }) });
+    let old = await this.currentId(account.id, keyPart(messageId));
+    // Discarded where the provider did not say its new id: found from the cache first.
+    const pending = await this.store.get<DiscardRecord>(`discarded:${account.id}:${old}`);
+    if (pending?.lost) old = (await this.locateLost(account.id, old, pending)) ?? old;
+    let message = await this.changeMessage(accountId, old, { discarded: false, ...(to === "inbox" ? {} : { to }) });
     if (read === false && message.read) message = await this.changeMessage(accountId, message.providerMessageId, { read: false });
     await this.store.delete(`discarded:${account.id}:${old}`);
     await this.store.delete(`discarded:${account.id}:${message.providerMessageId}`);
@@ -1019,29 +1069,84 @@ export class AccountService {
   }
   /**
    * Discarded mail older than DISCARD_RETENTION_MS goes to the account's Trash (the provider empties
-   * it on its own schedule), at most `limit` a run; a message gone meanwhile only loses its record. An
-   * account whose provider cannot be reached keeps its records for the next run.
+   * it on its own schedule) — or, on an account with no Trash (an IMAP server without one), is deleted
+   * for good — at most `limit` a run, the longest due first, read across every record. A lost discard
+   * (DiscardRecord.lost) is looked for in the cache each run, at most `limit` of them, and given up
+   * after LOST_DISCARD_TRIES runs (`discarded_lost`). A message gone meanwhile only loses its record;
+   * an account whose provider cannot be reached keeps its records for the next run.
    */
-  async purgeDiscarded(now = Date.now(), limit = 25): Promise<{ trashed: number; forgotten: number }> {
-    const result = { trashed: 0, forgotten: 0 };
-    const due = [...(await this.store.list<DiscardRecord>({ prefix: "discarded:", limit: 1000 })).entries()]
-      .filter(([, r]) => !r || !Number.isFinite(r.at) || now - r.at > DISCARD_RETENTION_MS).slice(0, limit);
-    for (const [key, record] of due) {
-      const [, accountId, messageId] = key.split(":");
+  async purgeDiscarded(now = Date.now(), limit = 25): Promise<{ trashed: number; deleted: number; forgotten: number }> {
+    const result = { trashed: 0, deleted: 0, forgotten: 0 };
+    const due: [string, DiscardRecord | undefined][] = [];
+    const lost: [string, DiscardRecord][] = [];
+    let after: string | undefined;
+    for (;;) {
+      const rows = await this.store.list<DiscardRecord>({ prefix: "discarded:", startAfter: after, limit: 1000 });
+      for (const [key, record] of rows) {
+        after = key;
+        if (!record || !Number.isFinite(record.at) || now - record.at > DISCARD_RETENTION_MS) due.push([key, record]);
+        else if (record.lost) lost.push([key, record]);
+      }
+      if (rows.size < 1000) break;
+    }
+    // Lost discards not yet due: found now, so their Undo and their purge reach them.
+    for (const [key, record] of lost.slice(0, limit)) await this.findLost(key, record).catch(() => null);
+    due.sort(([, a], [, b]) => (Number.isFinite(a?.at) ? a!.at : 0) - (Number.isFinite(b?.at) ? b!.at : 0));
+    let acted = 0;
+    for (const [key, stored] of due) {
+      if (acted >= limit) break;
+      acted++;
+      const [, accountId] = key.split(":");
+      let messageId: string | undefined = key.split(":")[2];
+      let record = stored;
       if (!record || !accountId || !messageId) { await this.store.delete(key); continue; }
       try {
-        const row = await this.cache.row(accountId, await this.currentId(accountId, messageId));
-        if (!row || !row.message.labels.includes("DISCARDED")) { await this.store.delete(key); result.forgotten++; continue; }
-        await this.changeMessage(accountId, messageId, { trashed: true });
-        await this.store.delete(key);
-        result.trashed++;
+        if (record.lost) {
+          const found = await this.findLost(key, record);
+          if (!found) continue;
+          messageId = found;
+          record = (await this.store.get<DiscardRecord>(`discarded:${accountId}:${found}`)) ?? record;
+        }
+        const recordKey = `discarded:${accountId}:${messageId}`;
+        const id = await this.currentId(accountId, messageId);
+        const row = await this.cache.row(accountId, id);
+        if (!row || !row.message.labels.includes(DISCARDED_LABEL)) { await this.store.delete(recordKey); result.forgotten++; continue; }
+        const account = await this.account(accountId);
+        if (this.capabilities(account).trash) {
+          await this.changeMessage(accountId, messageId, { trashed: true });
+          result.trashed++;
+        } else {
+          // No Trash to send it to: deleted for good, as the 30 days promise.
+          await this.withSession(account, async (s) => {
+            if (!s.expunge) throw new ProviderError("not_supported", 400);
+            await s.expunge(id);
+          });
+          await this.cache.remove(accountId, id);
+          result.deleted++;
+        }
+        await this.store.delete(recordKey);
       } catch (error) {
         if (error instanceof ProviderError && (error.status === 404 || error.code === "not_supported")) { await this.store.delete(key); result.forgotten++; continue; }
         console.warn(JSON.stringify({ event: "discarded_purge_failed", error: error instanceof ProviderError ? error.code : "unknown" }));
       }
     }
-    if (result.trashed || result.forgotten) console.log(JSON.stringify({ event: "discarded_purged", provider: "remote", ...result }));
+    if (result.trashed || result.deleted || result.forgotten) console.log(JSON.stringify({ event: "discarded_purged", provider: "remote", ...result }));
     return result;
+  }
+  /** One run's look for a lost discard: its new id, or null (counted; given up and said after LOST_DISCARD_TRIES). */
+  private async findLost(key: string, record: DiscardRecord): Promise<string | null> {
+    const [, accountId, messageId] = key.split(":");
+    if (!accountId || !messageId) return null;
+    const found = await this.locateLost(accountId, messageId, record);
+    if (found) return found;
+    const tries = (record.tries ?? 0) + 1;
+    if (tries >= LOST_DISCARD_TRIES) {
+      await this.store.delete(key);
+      console.warn(JSON.stringify({ event: "discarded_lost", tries }));
+    } else {
+      await this.store.put<DiscardRecord>(key, { ...record, tries });
+    }
+    return null;
   }
 
   async getAttachment(
