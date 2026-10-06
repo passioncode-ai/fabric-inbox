@@ -12,6 +12,9 @@ is cut and published: [docs/release.md](docs/release.md).
   prompt held every count back on the owner's Mac (0.11.0).
 - **A development run is "Fabric Inbox Development"** to macOS, with its own Keychain item for its
   cookie key, so it can never leave the installed app an item it has to ask for.
+- **An update is never a downgrade.** The app reads the update feed's version first and hands
+  Squirrel.Mac only a strictly newer release; the release build also sets
+  `ElectronSquirrelPreventDowngrades`. A feed naming no release version is a failed check.
 
 ## 0.11.0 — 2026-10-06
 

@@ -287,7 +287,13 @@ async function startUpdates() {
   let feed = null;
   try { feed = updates.readFeed(await fs.readFile(path.join(__dirname, 'updates.json'), 'utf8')); } catch { feed = null; }
   if (!feed || !autoUpdater) return;
-  updater = updates.createUpdater({ autoUpdater, fs, userData: app.getPath('userData'), feed,
+  // The feed is read with Node's fetch first, so Squirrel is asked only for a newer version (LC-16).
+  const fetchFeed = async (url) => {
+    const response = await globalThis.fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(15000) });
+    if (!response.ok) throw new Error(`The update feed answered ${response.status}.`);
+    return response.json();
+  };
+  updater = updates.createUpdater({ autoUpdater, fs, userData: app.getPath('userData'), feed, appVersion: app.getVersion(), fetchFeed,
     log: (line) => console.log(JSON.stringify(line)), onChange: () => installMenu() });
   await updater.start({ packaged: app.isPackaged, mas: !!process.mas,
     inApplications: typeof app.isInApplicationsFolder === 'function' && app.isInApplicationsFolder() });

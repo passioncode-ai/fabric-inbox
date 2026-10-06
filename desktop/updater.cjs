@@ -40,6 +40,15 @@ function feedFor({ repository, version, zipName, sha256, size, notes = '', pubDa
   return { currentRelease: version, releases: [{ version, updateTo: { version, name: version, notes, pub_date: pubDate, url, sha256, size } }] };
 }
 
+/** Compares two X.Y.Z versions: negative, zero or positive. A malformed one sorts lowest. */
+function compareVersions(a, b) {
+  const parse = (v) => (/^(\d+)\.(\d+)\.(\d+)$/.exec(String(v)) || []).slice(1).map(Number);
+  const x = parse(a); const y = parse(b);
+  if (x.length !== 3 || y.length !== 3) return x.length === 3 ? 1 : y.length === 3 ? -1 : 0;
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
+  return 0;
+}
+
 const feedURL = (repository) => `https://github.com/${repository}/releases/latest/download/update-mac.json`;
 
 /**
@@ -47,7 +56,7 @@ const feedURL = (repository) => `https://github.com/${repository}/releases/lates
  * with a fake. States: off | unavailable | idle | checking | downloading | ready | error.
  */
 function createUpdater(deps) {
-  const { autoUpdater, fs, userData, feed, now = Date.now, log = () => {}, onChange = () => {} } = deps;
+  const { autoUpdater, fs, userData, feed, appVersion, fetchFeed, now = Date.now, log = () => {}, onChange = () => {} } = deps;
   const settingsFile = path.join(userData, 'updates.json');
   let automatic = true;
   let state = 'off';
@@ -94,16 +103,40 @@ function createUpdater(deps) {
     });
   }
 
-  function check() {
-    if (!['idle', 'error'].includes(state)) return false;
-    lastCheck = now();
-    try { autoUpdater.checkForUpdates(); return true; }
-    catch (error) {
-      lastError = String(error && error.message || error).slice(0, 300);
-      log({ event: 'update', outcome: 'failed', reason: lastError });
-      set('error');
-      return false;
+  function fail(error) {
+    lastError = String(error && error.message || error).slice(0, 300);
+    log({ event: 'update', outcome: 'failed', reason: lastError });
+    set('error');
+    settle({ outcome: 'failed', error: lastError });
+  }
+
+  /**
+   * Never a downgrade, never a same-version reinstall: the feed's version is read first and
+   * Squirrel.Mac is asked only when it is newer than this app (LC-16). The release build also sets
+   * ElectronSquirrelPreventDowngrades, so Squirrel itself refuses an older bundle.
+   */
+  async function checkFeed() {
+    let latest;
+    try {
+      const body = await fetchFeed(feed);
+      latest = body && typeof body.currentRelease === 'string' ? body.currentRelease : '';
+    } catch (error) { fail(error); return; }
+    if (!/^\d+\.\d+\.\d+$/.test(latest)) { fail(new Error('The update feed names no release version.')); return; }
+    if (compareVersions(latest, appVersion) <= 0) {
+      log({ event: 'update', outcome: compareVersions(latest, appVersion) < 0 ? 'refused_older' : 'current', latest, running: appVersion });
+      set('idle');
+      settle({ outcome: 'current' });
+      return;
     }
+    try { autoUpdater.checkForUpdates(); } catch (error) { fail(error); }
+  }
+
+  /** Starts a check; resolves when the feed has been read (and Squirrel asked, when it is newer). */
+  function check() {
+    if (!['idle', 'error'].includes(state)) return null;
+    lastCheck = now();
+    set('checking');
+    return checkFeed();
   }
 
   return {
@@ -116,14 +149,15 @@ function createUpdater(deps) {
       if (!inApplications) { reason = 'not_in_applications'; log({ event: 'update', outcome: 'unavailable', reason }); set('unavailable'); return; }
       try { autoUpdater.setFeedURL({ url: feed, serverType: 'json' }); }
       catch (error) { lastError = String(error && error.message || error).slice(0, 300); reason = 'feed_refused'; log({ event: 'update', outcome: 'unavailable', reason, error: lastError }); set('unavailable'); return; }
+      if (typeof fetchFeed !== 'function' || !/^\d+\.\d+\.\d+$/.test(String(appVersion))) { reason = 'no_version_check'; set('unavailable'); return; }
       wire();
       set('idle');
-      if (automatic) check();
+      if (automatic) await check();
     },
 
     /** A window came forward: check again if six hours have passed and checks are automatic. */
     wake() {
-      if (automatic && now() - lastCheck >= CHECK_EVERY_MS) return check();
+      if (automatic && now() - lastCheck >= CHECK_EVERY_MS) return check() !== null;
       return false;
     },
 
@@ -132,7 +166,7 @@ function createUpdater(deps) {
       if (state === 'ready') return Promise.resolve({ outcome: 'ready', version: readyVersion });
       if (state === 'downloading' || state === 'checking') return Promise.resolve({ outcome: 'downloading' });
       if (!['idle', 'error'].includes(state)) return Promise.resolve({ outcome: 'unavailable', reason });
-      return new Promise((resolve) => { manual = resolve; if (!check()) settle({ outcome: 'failed', error: lastError }); });
+      return new Promise((resolve) => { manual = resolve; if (check() === null) settle({ outcome: 'failed', error: lastError }); });
     },
 
     /** The switch. Off: no automatic checks (a manual check still works); on: checks at once. */
@@ -140,7 +174,7 @@ function createUpdater(deps) {
       automatic = !!on;
       await saveSettings();
       onChange(status());
-      if (automatic) check();
+      if (automatic) await check();
     },
 
     /** Restart into the downloaded version now (otherwise it is installed when the app quits). */
@@ -152,4 +186,4 @@ function createUpdater(deps) {
   };
 }
 
-module.exports = { createUpdater, readFeed, feedFor, feedURL, CHECK_EVERY_MS };
+module.exports = { createUpdater, readFeed, feedFor, feedURL, compareVersions, CHECK_EVERY_MS };

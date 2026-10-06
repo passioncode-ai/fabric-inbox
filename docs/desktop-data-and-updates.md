@@ -49,13 +49,20 @@ themselves.
    `https://github.com/passioncode-ai/fabric-inbox/releases/latest/download/update-mac.json`, the
    feed the latest published release carries (Squirrel.Mac's static `serverType: 'json'` format).
    No timer runs and nothing is checked with no window open (lifecycle LC-08).
-2. When the feed names a newer version, Squirrel.Mac (Electron's `autoUpdater`) downloads
-   `Fabric-Inbox-<version>-mac.zip` in the background. Before unpacking, it checks the zip's
-   sha256 and size from the feed. After unpacking, it checks that the new app is signed by the
-   same Developer ID team as the running one, and refuses anything else.
-3. The new version is installed when the person quits the app. The **Fabric Inbox** menu then
+2. The app compares the feed's `currentRelease` with its own version first, numerically
+   (`desktop/updater.cjs`, `compareVersions`). Only a strictly newer release is handed to
+   Squirrel.Mac; an older or equal one is logged (`refused_older` / `current`) and nothing is
+   downloaded, and a feed that names no `X.Y.Z` version is a failed check. The release build also
+   sets `ElectronSquirrelPreventDowngrades` in `Info.plist`, so Squirrel.Mac itself refuses a
+   bundle older than the running one (LC-16: never a downgrade, never a same-version reinstall).
+3. When the feed names a newer version, Squirrel.Mac (Electron's `autoUpdater`) downloads
+   `Fabric-Inbox-<version>-mac.zip` in the background. Squirrel.Mac does **not** check the zip's
+   sha256 or size (the feed carries them for the record and for `SHA256SUMS`); what it checks,
+   after unpacking, is that the new app satisfies the running app's code-signing designated
+   requirement — the same Developer ID team — and it refuses anything else.
+4. The new version is installed when the person quits the app. The **Fabric Inbox** menu then
    reads **Restart to Install Update** for anyone who wants it at once.
-4. **Fabric Inbox → Install Updates Automatically** turns the checks off (kept in
+5. **Fabric Inbox → Install Updates Automatically** turns the checks off (kept in
    `<profile>/updates.json`). **Check for Updates…** checks at once whatever the switch says, and
    says what happened: up to date, downloading, ready, or why not.
 
@@ -70,7 +77,7 @@ Copies that never check, with the reason the log and **Check for Updates…** gi
 The release publishes the update with the disk image ([release.md](release.md)). The `macos` job
 zips the stapled app (`ditto -c -k --sequesterRsrc --keepParent`), unpacks the zip again and
 checks the unpacked app's signature and staple, then writes `update-mac.json` with the zip's
-sha256 and size. Both files are release assets, covered by the attestations and the GPG-signed
+sha256 and size (a record; the designated-requirement check above is what protects the install). Both files are release assets, covered by the attestations and the GPG-signed
 `SHA256SUMS` like every other. Only a published release (not an rc rehearsal) is "latest", so no
 rehearsal is ever offered as an update. A release that is pulled back is replaced by publishing a newer
 version; a published release is never rewritten.
