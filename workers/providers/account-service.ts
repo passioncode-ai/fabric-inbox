@@ -955,7 +955,8 @@ export class AccountService {
       ...(signals.listUnsubscribe ? [{ key: "List-Unsubscribe", value: "yes" }] : []),
       ...(signals.precedence ? [{ key: "Precedence", value: signals.precedence }] : []),
     ];
-    if (signals.listId && !signals.list) {
+    // Headers unknown here (an Outlook import keeps properties only, older caches kept no List-Id): asked once.
+    if (!m.signals || (signals.listId && !signals.list)) {
       try {
         const all = await this.withSession(account, (s) => s.headers(id));
         headers = all.filter((h) => ["list-id", "list-unsubscribe", "precedence"].includes(h.key.toLowerCase()));
