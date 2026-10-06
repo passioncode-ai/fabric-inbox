@@ -167,6 +167,9 @@ async function openExternal(url, force = false) {
   } catch { showSetup('The browser could not be opened. Try again from the Account menu.'); }
   finally { openingExternal = false; }
 }
+/** The server's Settings screen, and its Setup page that applies a setup chosen in this app. */
+const SETTINGS_PAGE = '/settings';
+const SETUP_PAGE = '/settings/app/setup';
 function loadMail() {
   if (!config) { showSetup(); return; }
   if (mailWindow && !mailWindow.isDestroyed()) { mailWindow.destroy(); }
@@ -238,9 +241,9 @@ function loadMail() {
       void retirePartition(retiring);
     }
     if (current.origin === snapshot.origin) void countActive();
-    if (!setupOpened && current.origin === snapshot.origin && current.pathname !== '/setup' && await readPendingSetup()) {
+    if (!setupOpened && current.origin === snapshot.origin && current.pathname !== SETUP_PAGE && await readPendingSetup()) {
       setupOpened = true;
-      void win.loadURL(new URL('/setup?source=desktop', snapshot.origin).href).catch(failure);
+      void win.loadURL(new URL(`${SETUP_PAGE}?source=desktop`, snapshot.origin).href).catch(failure);
     } else if (openAfterSignIn && current.origin === snapshot.origin) {
       const next = openAfterSignIn;
       openAfterSignIn = '';
@@ -467,7 +470,7 @@ function installIPC() {
       cloudflareToken = null;
       await saveConfig(policy.validateConfig({ origin: result.origin, accessOrigin: result.accessOrigin }));
       track('server_connected', { method: 'created' });
-      openAfterSignIn = '/projects';
+      openAfterSignIn = '/settings/domains';
       loadMail();
       return { ok: true, origin: result.origin };
     } catch (error) {
@@ -475,6 +478,21 @@ function installIPC() {
       return { ok: false, error: problem(error) };
     } finally { deploying = false; }
   });
+}
+/**
+ * Settings… (⌘,) opens the server's Settings screen in the mail window (SCR-02); with no server
+ * yet, the local server-address window is the only setting there is. Server Address… always opens
+ * that window.
+ */
+function openSettings() {
+  if (!config) { showSetup(); return; }
+  if (mailWindow && !mailWindow.isDestroyed()) {
+    mailWindow.show(); mailWindow.focus();
+    void mailWindow.loadURL(new URL(SETTINGS_PAGE, config.origin).href).catch(() => {});
+    return;
+  }
+  openAfterSignIn = SETTINGS_PAGE;
+  loadMail();
 }
 function installMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
@@ -487,9 +505,9 @@ function installMenu() {
       { label: 'Share Anonymous Usage Counts', type: 'checkbox', checked: !!(analytics && analytics.status().enabled), enabled: !!analytics, click: (item) => void toggleAnalytics(item) },
       { label: 'About Usage Counts…', click: aboutUsageCounts },
       { type: 'separator' },
-      { label: 'Server settings…', accelerator: 'CmdOrCtrl+,', click: () => showSetup() },
+      { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: openSettings },
+      { label: 'Server Address…', click: () => showSetup() },
       { label: 'Connect Cloudflare account…', click: () => showSetup('', 'cloudflare') },
-      { label: 'Setup…', click: () => { if (config && mailWindow && !mailWindow.isDestroyed()) void mailWindow.loadURL(new URL('/setup', config.origin).href); else showSetup(); } },
       { type: 'separator' }, { role: 'services' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
     { role: 'editMenu' },
     { label: 'Account', submenu: [{ label: 'Connect Gmail in browser…', click: () => {

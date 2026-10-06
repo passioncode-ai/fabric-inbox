@@ -399,7 +399,7 @@ export function SelectableList<T extends ListEntry>({ label, groups, selected, h
   return (
     <div ref={root} className="fi-list" onKeyDown={onKey} aria-label={label} role="group">
       {pinned.length > 0 && <ul className="fi-list-rows">{pinned.map((p) => row(p.key, p.href, p.content))}</ul>}
-      {!groups.length && !pinned.length && empty}
+      {!groups.length && empty}
       {groups.map((g) => (
         <section key={g.id} aria-label={g.label}>
           {(groups.length > 1 || g.label) && <h3 className="fi-list-group">{g.label}</h3>}

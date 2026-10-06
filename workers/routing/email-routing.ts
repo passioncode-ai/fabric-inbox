@@ -211,7 +211,7 @@ export class AccountsRoutingClient implements RoutingClient {
     const domain = address.slice(address.lastIndexOf("@") + 1).toLowerCase();
     try {
       const client = await this.client(address);
-      if (!client) return { state: "unknown", detail: `The server's tokens cannot see the zone ${domain}. Connect its account on Domains & addresses.` };
+      if (!client) return { state: "unknown", detail: `The server's tokens cannot see the zone ${domain}. Connect its account in Settings → Accounts.` };
       return client.status(address);
     } catch (error) {
       return { state: "unknown", detail: `${(error as Error).message}. ${DASHBOARD_STEP}` };
@@ -247,5 +247,5 @@ export function routingClient(env: AccountsEnv, fetcher?: Fetcher): RoutingClien
 
 export const ROUTING_NOT_CONFIGURED: RoutingStatus = {
   state: "unknown",
-  detail: `Routing cannot be read: this server has no Cloudflare token yet (Domains & addresses → Connect Cloudflare). ${DASHBOARD_STEP}`,
+  detail: `Routing cannot be read: this server has no Cloudflare token yet (Settings → Domains → Connect Cloudflare). ${DASHBOARD_STEP}`,
 };

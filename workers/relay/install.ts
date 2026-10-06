@@ -164,7 +164,7 @@ export async function installRelay(input: { env: Env; accounts: CloudflareAccoun
 async function install({ env, accounts, accountId, api, origin: requestOrigin }: { env: Env; accounts: CloudflareAccounts; accountId: string; api: CloudflareApi; origin?: string }): Promise<RelayInstallResult> {
   const current = currentRelay(await readRelays(env.BUCKET), accountId);
   const origin = relayOrigin(env, requestOrigin, current);
-  if (!origin) return { outcome: "failed", detail: "The relay needs your server's public https address; open Domains & addresses from the server (or set PUBLIC_APP_URL) and try again." };
+  if (!origin) return { outcome: "failed", detail: "The relay needs your server's public https address; open Settings → Domains from the server (or set PUBLIC_APP_URL) and try again." };
   let bindings: Record<string, string> | null;
   try { bindings = await relayBindings(api, accountId); }
   catch (error) { return { outcome: "failed", detail: errorText(error) }; }

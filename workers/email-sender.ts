@@ -121,7 +121,7 @@ type RestResult = { message_id?: string; delivered?: string[]; queued?: string[]
 
 async function sendOverRest(accounts: CloudflareAccounts, accountId: string, params: SendEmailParams): Promise<{ messageId: string }> {
 	const api = await accounts.apiFor(accountId);
-	if (!api) throw new SendRefused(`No Cloudflare token this server has reaches the account of ${fromAddress(params.from)}; connect it on Domains & addresses.`, "E_SENDER_DOMAIN_NOT_AVAILABLE");
+	if (!api) throw new SendRefused(`No Cloudflare token this server has reaches the account of ${fromAddress(params.from)}; connect it in Settings → Accounts.`, "E_SENDER_DOMAIN_NOT_AVAILABLE");
 	const address = (a: string | { email: string; name: string }) => (typeof a === "string" ? a : { address: a.email, name: a.name });
 	const body: Record<string, unknown> = { from: address(params.from), to: params.to, subject: params.subject };
 	if (params.html) body.html = params.html;

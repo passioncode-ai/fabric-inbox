@@ -32,7 +32,7 @@ export const TOKEN_PERMISSIONS = [
   { scope: "Account", name: "Access: Organizations, Identity Providers, and Groups", level: "Edit", for: "set up sign-in with a code by email" },
   { scope: "Account", name: "Access: Service Tokens", level: "Edit", for: "give agents their own keys to this server" },
   { scope: "Account", name: "Account Settings", level: "Read", for: "find your account" },
-  // Domains & addresses
+  // Settings → Domains
   { scope: "Account", name: "Email Routing Addresses", level: "Edit", for: "add the addresses a copy may be forwarded to" },
   { scope: "Account", name: "Email Routing Account Rules", level: "Read", for: "see whether an account has mail" },
   // Account level, not zone: the permission-group catalogue has "Email Sending Write" only at account level (read 2026-09-29).

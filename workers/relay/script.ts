@@ -40,7 +40,7 @@ async function call(env, path, init) {
     throw new Error("The Fabric Inbox server could not be reached: " + (error && error.message || error));
   }
   if (response.status >= 300 && response.status < 400)
-    throw new Error("The Fabric Inbox server refused the relay's sign-in (" + response.status + " to its login page); install the relay again from Domains & addresses.");
+    throw new Error("The Fabric Inbox server refused the relay's sign-in (" + response.status + " to its login page); install the relay again from Settings → Domains.");
   if (!response.ok) {
     const text = (await response.text().catch(() => "")).slice(0, 300);
     throw new Error("The Fabric Inbox server answered " + response.status + (text ? ": " + text : ""));
