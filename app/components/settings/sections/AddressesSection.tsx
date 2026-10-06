@@ -17,6 +17,7 @@ import {
 } from "./data";
 import AddAddressDialog from "./AddAddress";
 import { STEP_MARK, TEST_POLL_MS, agentLine, domainOptions, testStep } from "./add-address-model";
+import { ADD_ADDRESS_TEXT as T } from "./add-address-text";
 import ConfiguredAddresses from "./ConfiguredAddresses";
 import SignatureForm from "./SignatureForm";
 
@@ -114,7 +115,7 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
         toolbar={<>
           <ListSearch value={query} onChange={setQuery} placeholder="Find an address" label="Find an address" />
           <button type="button" className="fi-primary" onClick={openAdd} disabled={loading || !canAdd}
-            title={!canAdd ? "Connect Cloudflare, or receive a domain's mail here first (Domains)" : undefined}>
+            title={!canAdd ? T.addDisabled : undefined}>
             <PlusIcon size={16} /> Add address
           </button>
         </>}
@@ -158,17 +159,15 @@ function EmptyAddresses({ list, query, canAdd, onAdd }: { list?: DomainList; que
   if (!canAdd) {
     return (
       <div className="fi-list-empty">
-        <p>No address yet. An address lives on one of your domains: connect Cloudflare on Domains so they can be chosen.</p>
+        <p>{T.listEmptyNoDomains}</p>
         <Link className="fi-secondary" to={settingsPath("domains")}>Go to Domains</Link>
       </div>
     );
   }
   return (
     <div className="fi-list-empty">
-      <p>{served.length
-        ? `No address yet on ${served.length > 3 ? `${served.slice(0, 3).map((d) => d.domain).join(", ")} and ${served.length - 3} more` : served.map((d) => d.domain).join(", ")}.`
-        : "No domain receives mail here yet. Adding an address on one of your domains receives its mail here first."}</p>
-      <button type="button" className="fi-primary" onClick={onAdd}>Add the first address</button>
+      <p>{served.length ? T.listEmptyOn(served.map((d) => d.domain)) : T.listEmptyNoneServed}</p>
+      <button type="button" className="fi-primary" onClick={onAdd}>{T.addFirst}</button>
     </div>
   );
 }
@@ -274,12 +273,10 @@ function RoutingTab({ address: a, catchAll, connected }: { address: ProjectAddre
     queryFn: () => fabric<{ test: TestStatus | null }>(path + "/test").then((r) => r.test),
     refetchInterval: (q) => (q.state.data?.state === "waiting" ? TEST_POLL_MS : false),
   });
-  const test = () => void work.run("Sending a test…", async () => {
+  const test = () => void work.run(T.panelTestSending, async () => {
     const result = await fabric<{ subject: string; status: string }>(path + "/test", {});
     await client.invalidateQueries({ queryKey: ["routing-test", a.email] });
-    return result.status === "failed"
-      ? `The provider refused the test message “${result.subject}”.`
-      : `Test message “${result.subject}” sent; its arrival is watched below.`;
+    return result.status === "failed" ? T.panelTestRefused(result.subject) : T.panelTestSent(result.subject);
   });
   const elsewhere = routing.data?.state === "missing" && routing.data.detail.includes("somewhere else");
   return (
@@ -293,9 +290,9 @@ function RoutingTab({ address: a, catchAll, connected }: { address: ProjectAddre
           <p><RoutingBadge state={routing.data.state} /> {routing.data.detail}</p>
         )}
         {!connected && routing.data?.state === "unknown" && (
-          <p className="fi-hint">Connect Cloudflare to make and check its rule: <Link to={settingsPath("domains", "connect")}>Connect Cloudflare</Link>.</p>
+          <p className="fi-hint">{T.panelConnect} <Link to={settingsPath("domains", "connect")}>{T.panelConnectLink}</Link>.</p>
         )}
-        {elsewhere && <p className="fi-hint">A rule sending it elsewhere is never overwritten from here: change it in Cloudflare, or use Bring them here on <Link to={settingsPath("domains", a.domain)}>{a.domain}</Link>, which keeps a copy.</p>}
+        {elsewhere && <p className="fi-hint">{T.panelElsewhere} <Link to={settingsPath("domains", a.domain)}>{a.domain}</Link>{T.panelElsewhereAfter}</p>}
         {catchAll && <p className="fi-hint">It also keeps the mail for every other address on {a.domain}.</p>}
         {a.deliveryIssue && (
           <div className="fi-callout is-bad" role="alert">
@@ -304,18 +301,18 @@ function RoutingTab({ address: a, catchAll, connected }: { address: ProjectAddre
         )}
         <div className="fi-buttons">
           {connected && routing.data?.state === "missing" && !elsewhere && (
-            <button type="button" className="fi-primary" disabled={!!work.busy} onClick={sendHere} title="Makes or switches on the Cloudflare rule that sends its mail here">Fix it</button>
+            <button type="button" className="fi-primary" disabled={!!work.busy} onClick={sendHere} title={T.panelFixTitle}>{T.panelFix}</button>
           )}
-          <button type="button" className="fi-secondary" disabled={!!work.busy} onClick={test}>Send a test message</button>
+          <button type="button" className="fi-secondary" disabled={!!work.busy} onClick={test}>{T.panelSendTest}</button>
         </div>
         <ActionResult result={work.result} />
         {lastTest.data && (() => {
           const step = testStep("sent", lastTest.data);
           return (
-            <ol className="fi-steps fi-steps-live" aria-label="The last test message" aria-live="polite">
+            <ol className="fi-steps fi-steps-live" aria-label={T.panelLastTest} aria-live="polite">
               <li className={"fi-step is-" + step.outcome}>
                 <span className="fi-step-mark">{STEP_MARK[step.outcome]}</span>
-                <span><strong>Test of {new Date(lastTest.data.sentAt).toLocaleString()}.</strong> {step.detail}</span>
+                <span><strong>{T.panelTestOf(new Date(lastTest.data.sentAt).toLocaleString())}</strong> {step.detail}</span>
               </li>
             </ol>
           );

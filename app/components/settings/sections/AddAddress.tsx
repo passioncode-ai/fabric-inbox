@@ -14,6 +14,7 @@ import {
   DOMAIN_GROUPS, NAME_HINT, STEP_MARK, TEST_POLL_MS, agentLine, batchBody, createBody, displayNameOf, domainOptions, filterDomains,
   nameView, receiveStep, startDomain, stepsSentence, testStep, testWaiting, type AddressForm, type DomainOption, type TestPhase, type UiStep,
 } from "./add-address-model";
+import { ADD_ADDRESS_TEXT as T } from "./add-address-text";
 
 /**
  * Add address (SCN-021, SCN-061…065): one calm dialog for every entry point. A dialog rather than a
@@ -119,8 +120,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
   const creatable = mode === "one" ? (view.canCreate ? [local.value] : []) : severalRows.filter((r) => r.view.canCreate).map((r) => r.value);
   const canSubmit = !blocked && !!form.domain && creatable.length > 0 && !checking;
   const email = local.value ? `${local.value}@${form.domain}` : "";
-  const submitLabel = mode === "one" ? (email && view.canCreate ? `Create ${email}` : "Create address")
-    : `Create ${creatable.length || ""} address${creatable.length === 1 ? "" : "es"}`.replace("  ", " ");
+  const submitLabel = mode === "one" ? (email && view.canCreate ? T.create(email) : T.createOne) : T.createSeveral(creatable.length);
 
   /* ---- Create, and what follows ---- */
   const updateRow = (target: string, change: (row: Row) => Row) =>
@@ -152,7 +152,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
   }
 
   async function createAll() {
-    const stepFor = (detail: string): UiStep => ({ id: "address", label: "Create the address", outcome: "failed", detail });
+    const stepFor = (detail: string): UiStep => ({ id: "address", label: T.stepAddress, outcome: "failed", detail });
     let rows: Row[];
     try {
       if (mode === "one") {
@@ -161,15 +161,15 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
       } else {
         const r = await fabric<BatchResult>("/api/project-addresses/batch", batchBody(form, creatable));
         rows = r.results.map((x) => ({ email: x.email, created: x.status === 201, test: x.status === 201 && testing ? "sending" : "off",
-          steps: x.status === 201 && x.steps ? x.steps : [stepFor(x.error ?? "It could not be created.")] }));
+          steps: x.status === 201 && x.steps ? x.steps : [stepFor(x.error ?? T.notCreated)] }));
       }
     } catch (error) {
-      rows = [{ email: mode === "one" ? email : form.domain, created: false, steps: [stepFor(`${errorText(error)} Nothing was created.`)], test: "off" }];
+      rows = [{ email: mode === "one" ? email : form.domain, created: false, steps: [stepFor(errorText(error) + T.nothingCreated)], test: "off" }];
     } finally { await refreshMail(client, form.domain); }
     setRun((x) => ({ receive: x?.receive ?? null, rows, working: false }));
     const made = rows.filter((r) => r.created);
     if (made[0]) onCreated(made[0].email);
-    notify(mode === "one" ? stepsSentence(rows[0]!.email, rows[0]!.steps) : `${made.length} of ${rows.length} addresses were created on ${form.domain}.`,
+    notify(mode === "one" ? stepsSentence(rows[0]!.email, rows[0]!.steps) : T.createdToast(made.length, rows.length, form.domain),
       made.length ? "ok" : "error");
     for (const row of made) if (testing) await sendTestTo(row.email);
   }
@@ -182,9 +182,9 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
   }
 
   async function fix(row: Row, f: StepFix) {
-    const rule = (outcome: UiStep["outcome"], detail: string, keep?: StepFix): UiStep => ({ id: "rule", label: "Send its mail here", outcome, detail, fix: keep });
+    const rule = (outcome: UiStep["outcome"], detail: string, keep?: StepFix): UiStep => ({ id: "rule", label: T.stepRule, outcome, detail, fix: keep });
     const put = (step: UiStep) => updateRow(row.email, (r) => ({ ...r, steps: r.steps.map((s) => (s.id === "rule" ? step : s)) }));
-    put(rule("running", "Working…"));
+    put(rule("running", T.working));
     try {
       if (f.action === "open_domain") await fabric<StepsResult>(`/api/domains/${encodeURIComponent(form.domain)}/connect`, { replaceMx: false });
       const status = f.action === "route_here"
@@ -202,34 +202,34 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
     requestAnimationFrame(() => nameField.current?.focus());
   };
 
-  const title = run ? (mode === "one" ? `Adding ${run.rows[0]?.email ?? email}` : `Adding addresses on ${form.domain}`) : "Add an address";
+  const title = run ? (mode === "one" ? T.titleAdding(run.rows[0]?.email ?? email) : T.titleAddingSeveral(form.domain)) : T.title;
   const working = !!run?.working;
 
   return (
     <Dialog open={open} title={title} onClose={onClose} busy={working} wide
       restoreFocus={() => (run?.rows.some((r) => r.created) ? document.querySelector<HTMLElement>(".fi-section-panel .fi-panel-head h2") : null)}>
       {!options.length ? (
-        <p>No domain receives mail here yet. <Link to={settingsPath("domains")}>Choose one on Domains</Link> first.</p>
+        <p>{T.noDomain} <Link to={settingsPath("domains")}>{T.chooseOnDomains}</Link>{T.noDomainAfter}</p>
       ) : run ? (
         <RunView run={run} mode={mode} domain={form.domain} onFix={fix} onTest={sendTestTo}
           onReplace={async () => { if (await receive(true)) await createAll(); }}
           onBack={() => setRun(null)} onAgain={again} onDone={onClose} />
       ) : (
         <form className="fi-add-address" noValidate onSubmit={(e) => { e.preventDefault(); void submit(); }}>
-          <div className="fi-segmented" role="radiogroup" aria-label="How many">
+          <div className="fi-segmented" role="radiogroup" aria-label={T.modeGroup}>
             {(["one", "several"] as const).map((m) => (
               <label key={m} className={mode === m ? "is-current" : undefined}>
                 <input type="radio" name="add-mode" value={m} checked={mode === m} onChange={() => setMode(m)} />
-                {m === "one" ? "One address" : "Several"}
+                {m === "one" ? T.modeOne : T.modeSeveral}
               </label>
             ))}
           </div>
 
           {mode === "one" ? (
             <div className="fi-field">
-              <label htmlFor={ids.name}>Address</label>
+              <label htmlFor={ids.name}>{T.addressLabel}</label>
               <div className="fi-address-row">
-                <input ref={nameField} id={ids.name} className="fi-input" data-autofocus value={form.localPart} placeholder="support"
+                <input ref={nameField} id={ids.name} className="fi-input" data-autofocus value={form.localPart} placeholder={T.addressPlaceholder}
                   autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={80}
                   aria-invalid={view.tone === "bad"} aria-describedby={`${ids.nameMsg} ${ids.domainMsg}`}
                   onChange={(e) => set("localPart", e.target.value)} />
@@ -243,35 +243,35 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
               </p>
               {view.notes.map((n) => <p key={n} className="fi-hint fi-field-note">{n}</p>)}
               {view.tone === "bad" && nameCheck?.status === "exists" && (
-                <Link className="fi-text-button" to={settingsPath("addresses", nameCheck.email)} onClick={onClose}>Open {nameCheck.email}</Link>
+                <Link className="fi-text-button" to={settingsPath("addresses", nameCheck.email)} onClick={onClose}>{T.openExisting(nameCheck.email)}</Link>
               )}
             </div>
           ) : (
             <>
               <div className="fi-field">
-                <label htmlFor={ids.domain}>Domain</label>
+                <label htmlFor={ids.domain}>{T.domainLabel}</label>
                 <DomainPicker id={ids.domain} options={options} value={form.domain} describedBy={ids.domainMsg}
                   onChange={(d) => setForm((f) => ({ ...f, domain: d, copy: "" }))} />
               </div>
               <div className="fi-field">
-                <label htmlFor={ids.names}>Names before @</label>
-                <textarea id={ids.names} className="fi-input" data-autofocus rows={4} value={several} placeholder={"support\nsales\nhello"}
+                <label htmlFor={ids.names}>{T.namesLabel}</label>
+                <textarea id={ids.names} className="fi-input" data-autofocus rows={4} value={several} placeholder={T.namesPlaceholder}
                   spellCheck={false} aria-describedby={ids.live} onChange={(e) => setSeveral(e.target.value)} />
-                <span className="fi-hint">One per line, or separated by commas or spaces; up to 50.</span>
+                <span className="fi-hint">{T.namesHint}</span>
               </div>
               {(severalRows.length > 0 || parsed.skipped.length > 0) && (
-                <ul className="fi-plain-list fi-name-checks" aria-label="Each address">
+                <ul className="fi-plain-list fi-name-checks" aria-label={T.namesList}>
                   {severalRows.map((r) => (
                     <li key={r.value}>
                       <span className="fi-grow">{r.value}<span className="fi-hint">@{form.domain}</span></span>
-                      <span className={`fi-field-message is-${r.view.tone}`}>{r.view.tone === "ok" ? "Free" : r.view.text}</span>
+                      <span className={`fi-field-message is-${r.view.tone}`}>{r.view.tone === "ok" ? T.nameFree : r.view.text}</span>
                     </li>
                   ))}
                   {parsed.skipped.map((s) => <li key={"skip-" + s.input}><span className="fi-grow">{s.input}</span><span className="fi-field-message is-warn">{s.reason}</span></li>)}
                 </ul>
               )}
               <p id={ids.live} className="fi-visually-hidden" aria-live="polite">
-                {severalRows.length ? `${creatable.length} of ${severalRows.length} can be created.` : ""}
+                {severalRows.length ? T.namesCount(creatable.length, severalRows.length) : ""}
               </p>
             </>
           )}
@@ -279,7 +279,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
           <DomainLine id={ids.domainMsg} domain={form.domain} option={option} check={fresh} checking={check.isFetching} />
 
           {mode === "one" && unknown.length > 0 && (
-            <p className="fi-hint">Mail arrived recently for addresses on {form.domain} that do not exist:{" "}
+            <p className="fi-hint">{T.recentMissing(form.domain)}{" "}
               {unknown.map((u, i) => (
                 <span key={u.address}>{i > 0 && ", "}<button type="button" className="fi-text-button" onClick={() => set("localPart", localOf(u.address))}>{localOf(u.address)}</button> ({u.count})</span>
               ))}.
@@ -287,76 +287,75 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
           )}
 
           <div className="fi-field-row">
-            <label className="fi-field">Display name
+            <label className="fi-field">{T.displayName}
               <input className="fi-input" maxLength={80} value={mode === "one" ? displayNameOf(form) : form.displayNameEdited ? form.displayName : ""}
-                placeholder={mode === "one" ? "Support" : "Each address's own (Support, Sales…)"}
+                placeholder={mode === "one" ? T.displayNamePlaceholder : T.displayNamePlaceholderSeveral}
                 onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value, displayNameEdited: true }))} />
-              <span className="fi-hint">The name your mail and an agent's answers are sent with.</span>
+              <span className="fi-hint">{T.displayNameHint}</span>
             </label>
-            <label className="fi-field">Who answers
+            <label className="fi-field">{T.whoAnswers}
               <select className="fi-input" value={form.agent} onChange={(e) => set("agent", e.target.value)}>
-                <option value="off">Off — I read it myself</option>
+                <option value="off">{T.answerOff}</option>
                 {agents?.agents.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
               </select>
-              <span className="fi-hint">{chosenAgent ? agentLine(chosenAgent) : "New mail stays for you; an agent can be chosen later."}</span>
+              <span className="fi-hint">{chosenAgent ? agentLine(chosenAgent) : T.answerOffHint}</span>
             </label>
           </div>
 
           <label className="fi-check">
             <input type="checkbox" checked={form.signatureOn} onChange={(e) => set("signatureOn", e.target.checked)} />
-            <span>Add a signature to mail sent from {mode === "one" && email ? email : "these addresses"}</span>
+            <span>{T.signatureToggle(mode === "one" && email ? email : T.signatureTheseAddresses)}</span>
           </label>
           {form.signatureOn && (
             <div className="fi-field-row">
-              <label className="fi-field">Signature
-                <textarea className="fi-input" rows={3} maxLength={2000} value={form.signature} placeholder={"Alex Morgan\nSupport, Acme"}
+              <label className="fi-field">{T.signature}
+                <textarea className="fi-input" rows={3} maxLength={2000} value={form.signature} placeholder={T.signaturePlaceholder}
                   onChange={(e) => set("signature", e.target.value)} />
               </label>
-              <div className="fi-field" aria-label="Signature preview">
-                <span>Preview</span>
+              <div className="fi-field" aria-label={T.signaturePreview}>
+                <span>{T.preview}</span>
                 <div className="fi-signature-preview">
-                  <span className="fi-hint">From: {(mode === "one" ? displayNameOf(form) : form.displayName) || "Support"} &lt;{email || `name@${form.domain}`}&gt;</span>
-                  <span>Hello,</span>
+                  <span className="fi-hint">{T.previewFrom((mode === "one" ? displayNameOf(form) : form.displayName) || T.displayNamePlaceholder, email || `name@${form.domain}`)}</span>
+                  <span>{T.previewGreeting}</span>
                   <span className="fi-hint">…</span>
-                  <span className="fi-signature-text">{form.signature.trim() ? `--\n${form.signature}` : "Type a signature to see it here."}</span>
+                  <span className="fi-signature-text">{form.signature.trim() ? `--\n${form.signature}` : T.previewEmpty}</span>
                 </div>
               </div>
             </div>
           )}
 
-          <label className="fi-field">Forward a copy to
+          <label className="fi-field">{T.copyLabel}
             <select className="fi-input" value={form.copy} onChange={(e) => set("copy", e.target.value)} disabled={!connected || !confirmed.length}>
-              <option value="">No copy</option>
+              <option value="">{T.noCopy}</option>
               {confirmed.map((x) => <option key={x.id} value={x.email}>{x.email}</option>)}
             </select>
             <span className="fi-hint">
-              {!connected ? "Copies are forwarded by Cloudflare: connect it on Domains to choose one."
-                : destinations.isPending ? "Loading forwarding destinations…"
-                  : destinations.isError ? `Forwarding destinations could not load: ${errorText(destinations.error)}`
-                    : confirmed.length ? "The mail itself always stays here; only confirmed destinations are listed."
-                      : <>No confirmed forwarding destination in this domain's Cloudflare account yet. <Link to={settingsPath("destinations", null, null, { add: "1" })} onClick={onClose}>Add a forwarding destination</Link>.</>}
+              {!connected ? T.copyNoToken
+                : destinations.isPending ? T.copyLoading
+                  : destinations.isError ? T.copyFailed(errorText(destinations.error))
+                    : confirmed.length ? T.copyConfirmedOnly
+                      : <>{T.copyNone} <Link to={settingsPath("destinations", null, null, { add: "1" })} onClick={onClose}>{T.addDestination}</Link>.</>}
             </span>
           </label>
 
           <details className="fi-advanced">
-            <summary>Cloudflare rule: {canMakeRule ? (form.makeRule ? "made with the address" : "not made") : "cannot be made here"}</summary>
+            <summary>{T.ruleSummary(canMakeRule ? (form.makeRule ? "made" : "off") : "cannot")}</summary>
             <label className="fi-check">
               <input type="checkbox" checked={canMakeRule && form.makeRule} disabled={!canMakeRule} onChange={(e) => set("makeRule", e.target.checked)} />
-              <span>Make the Cloudflare rule that sends its mail here</span>
+              <span>{T.ruleToggle}</span>
             </label>
-            <p className="fi-hint">{fresh?.rule.detail ?? (canMakeRule ? "A Cloudflare rule that sends the address's mail here is made with it." : "No rule can be made: this server has no Cloudflare token that sees this domain.")}
-              {" "}Without a rule, mail reaches the address only if the domain's catch-all already sends it here.</p>
+            <p className="fi-hint">{fresh?.rule.detail ?? (canMakeRule ? T.ruleCan : T.ruleCannot)}{T.ruleWithout}</p>
           </details>
 
           <label className="fi-check">
             <input type="checkbox" checked={testing} onChange={(e) => setSendTest(e.target.checked)} />
-            <span>Send a test message once it is created, and watch it arrive</span>
+            <span>{T.testToggle}</span>
           </label>
 
-          {needsReceive && <p className="fi-callout" role="note">{fresh?.detail ?? `${form.domain} does not receive mail here yet. Create first receives its mail here.`}</p>}
+          {needsReceive && <p className="fi-callout" role="note">{fresh?.detail ?? T.receiveFirst(form.domain)}</p>}
 
           <div className="fi-dialog-actions">
-            <button type="button" className="fi-secondary" onClick={onClose}>Cancel</button>
+            <button type="button" className="fi-secondary" onClick={onClose}>{T.cancel}</button>
             <button type="submit" className="fi-primary" disabled={!canSubmit}>{submitLabel}</button>
           </div>
         </form>
@@ -400,15 +399,15 @@ function DomainPicker({ id, options, value, onChange, describedBy }: {
     <div className="fi-combo">
       <input id={id} className="fi-input" role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list"
         aria-activedescendant={open && shown[active] ? optionId(shown[active]!.domain) : undefined} aria-describedby={describedBy}
-        autoComplete="off" spellCheck={false} value={open ? query : value} placeholder={open ? value : "Choose a domain"}
+        autoComplete="off" spellCheck={false} value={open ? query : value} placeholder={open ? value : T.chooseDomain}
         onChange={(e) => { setQuery(e.target.value); setActive(0); setOpen(true); }}
         onClick={() => (open ? setOpen(false) : openAt())} onKeyDown={onKey}
         onBlur={() => { setOpen(false); setQuery(""); }} />
       {current && !open && <Badge tone={current.tone}>{current.label}</Badge>}
       <CaretDownIcon className="fi-combo-caret" size={14} aria-hidden="true" />
       {open && (
-        <ul id={listId} role="listbox" className="fi-combo-list" aria-label="Domains">
-          {!shown.length && <li className="fi-combo-empty" role="presentation">No domain matches “{query}”.</li>}
+        <ul id={listId} role="listbox" className="fi-combo-list" aria-label={T.domainsList}>
+          {!shown.length && <li className="fi-combo-empty" role="presentation">{T.noDomainMatches(query)}</li>}
           {DOMAIN_GROUPS.map((g) => {
             const items = shown.filter((o) => o.group === g.id);
             if (!items.length) return null;
@@ -439,13 +438,13 @@ function DomainPicker({ id, options, value, onChange, describedBy }: {
 
 /** What choosing this domain means, under the field: its state in words (SCN-063). */
 function DomainLine({ id, domain, option, check, checking }: { id: string; domain: string; option?: DomainOption; check?: AddressCheck; checking: boolean }) {
-  const text = check?.detail ?? (checking ? `Reading ${domain} in Cloudflare…` : option ? `${domain}: ${option.label.toLowerCase()}.` : "");
+  const text = check?.detail ?? (checking ? T.domainReading(domain) : option ? T.domainSays(domain, option.label) : "");
   const tone = check ? (check.state === "receiving" || check.state === "can_receive" ? "neutral" : check.state === "no_token" ? "neutral" : "warn") : "neutral";
   return (
     <p id={id} className={`fi-hint fi-domain-line is-${tone}`}>
       {text}
-      {check?.catchAll && ` Its catch-all, ${check.catchAll.mailbox}, keeps mail for addresses that do not exist.`}
-      {check?.state === "needs_fix" && <> <Link to={settingsPath("domains", domain)}>Open {domain} to fix it</Link>.</>}
+      {check?.catchAll && T.catchAllKeeps(check.catchAll.mailbox)}
+      {check?.state === "needs_fix" && <> <Link to={settingsPath("domains", domain)}>{T.openToFix(domain)}</Link>.</>}
     </p>
   );
 }
@@ -465,17 +464,17 @@ function RunView({ run, mode, domain, onFix, onTest, onReplace, onBack, onAgain,
     <div className="fi-add-run">
       <div aria-live="polite">
         {run.receive && (
-          <ol className="fi-steps fi-steps-live" aria-label={`Receiving ${domain}`}>
+          <ol className="fi-steps fi-steps-live" aria-label={T.receiving(domain)}>
             <StepLine step={run.receive} action={run.receive.outcome === "waiting"
-              ? <button type="button" className="fi-danger" onClick={onReplace}>Replace and continue</button> : null} />
+              ? <button type="button" className="fi-danger" onClick={onReplace}>{T.replaceContinue}</button> : null} />
           </ol>
         )}
-        {run.working && !run.rows.length && !run.receive && <p role="status" className="fi-hint">Creating…</p>}
+        {run.working && !run.rows.length && !run.receive && <p role="status" className="fi-hint">{T.creating}</p>}
         {mode === "one"
           ? run.rows.map((row) => <RowSteps key={row.email} row={row} onFix={onFix} onTest={onTest} onClose={onDone} />)
           : run.rows.length > 0 && (
             <>
-              <p role="status">{created.length} of {run.rows.length} address{run.rows.length === 1 ? "" : "es"} created on {domain}.</p>
+              <p role="status">{T.createdCount(created.length, run.rows.length, domain)}</p>
               <ul className="fi-plain-list fi-run-rows">
                 {run.rows.map((row) => (
                   <li key={row.email}>
@@ -488,10 +487,10 @@ function RunView({ run, mode, domain, onFix, onTest, onReplace, onBack, onAgain,
           )}
       </div>
       <div className="fi-dialog-actions">
-        {failedBefore && <button type="button" className="fi-secondary" onClick={onBack} disabled={run.working}>Change and try again</button>}
-        {!failedBefore && <button type="button" className="fi-secondary" onClick={onAgain} disabled={run.working}>Add another</button>}
+        {failedBefore && <button type="button" className="fi-secondary" onClick={onBack} disabled={run.working}>{T.tryAgain}</button>}
+        {!failedBefore && <button type="button" className="fi-secondary" onClick={onAgain} disabled={run.working}>{T.addAnother}</button>}
         <button ref={doneRef} type="button" className="fi-primary" onClick={onDone} disabled={run.working}>
-          {created[0] ? `Done — open ${created[0].email}` : "Close"}
+          {created[0] ? T.doneOpen(created[0].email) : T.close}
         </button>
       </div>
     </div>
@@ -509,14 +508,14 @@ function RowSteps({ row, onFix, onTest, onClose, compact = false }: {
   const t = testStep(row.test, test.data ?? null, row.testError);
   const steps = row.created ? [...row.steps, t] : row.steps;
   return (
-    <ol className={"fi-steps fi-steps-live" + (compact ? " is-compact" : "")} aria-label={`What was done for ${row.email}`}>
+    <ol className={"fi-steps fi-steps-live" + (compact ? " is-compact" : "")} aria-label={T.stepsFor(row.email)}>
       {steps.map((s) => (
         <StepLine key={s.id} step={s} action={
           s.fix && (s.outcome === "failed" || s.outcome === "skipped") ? <FixButton fix={s.fix} onRun={() => onFix(row, s.fix!)} onClose={onClose} /> :
-          s.id === "test" && s.outcome === "skipped" ? <button type="button" className="fi-text-button" onClick={() => onTest(row.email)}>Send a test message</button> :
+          s.id === "test" && s.outcome === "skipped" ? <button type="button" className="fi-text-button" onClick={() => onTest(row.email)}>{T.sendTest}</button> :
           s.id === "test" && s.outcome === "failed" ? <>
-            <button type="button" className="fi-text-button" onClick={() => onTest(row.email)}>Send again</button>
-            <Link className="fi-text-button" to={settingsPath("addresses", row.email)} onClick={onClose}>Check routing</Link>
+            <button type="button" className="fi-text-button" onClick={() => onTest(row.email)}>{T.sendAgain}</button>
+            <Link className="fi-text-button" to={settingsPath("addresses", row.email)} onClick={onClose}>{T.checkRouting}</Link>
           </> : null} />
       ))}
     </ol>

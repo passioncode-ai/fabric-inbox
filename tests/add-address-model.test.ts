@@ -6,6 +6,7 @@ import {
   startDomain, stepsSentence, testStep, testWaiting, type AddressForm,
 } from "../app/components/settings/sections/add-address-model";
 import { checkLocalPart } from "../shared/address-name";
+import { ADD_ADDRESS_TEXT } from "../app/components/settings/sections/add-address-text";
 import type { DomainList } from "../app/services/domains";
 import type { AgentInput, NameCheck, TestStatus } from "../app/services/agents";
 
@@ -125,8 +126,13 @@ test("every entry point opens the one dialog, and the dialog keeps the keyboard 
   const dialog = readFileSync("app/components/settings/sections/AddAddress.tsx", "utf8");
   assert.match(section, /import AddAddressDialog from "\.\/AddAddress"/);
   assert.doesNotMatch(section, /function AddAddressDialog/, "one dialog, in its own module");
-  assert.match(domains, /Add an address on \{domain\}/);
-  assert.match(domains, /Add the first address on \{domain\}/);
+  assert.match(domains, /ADD_TEXT\.addOnDomain\(domain\)/);
+  assert.match(domains, /ADD_TEXT\.addFirstOnDomain\(domain\)/);
+  assert.equal(ADD_ADDRESS_TEXT.addOnDomain("acme.test"), "Add an address on acme.test");
+  // Localization (next): the dialog's words live in add-address-text.ts, none inline in its JSX.
+  const inline = [...dialog.matchAll(/>\s*([A-Z][a-z]+(?: [a-z]+)+)[.…]?\s*</g)].map((m) => m[1]);
+  assert.deepEqual(inline, [], `inline words in AddAddress.tsx: ${inline.join(" | ")}`);
+  assert.doesNotMatch(dialog, /(?:placeholder|aria-label|title)="[A-Z]/, "attributes read their words from the text module");
   assert.match(dialog, /data-autofocus/, "the focus lands in the field for the part before @");
   assert.match(dialog, /aria-live="polite"/, "the field's message is announced");
   assert.match(dialog, /role="combobox"/, "the domain choice is a searchable combobox");

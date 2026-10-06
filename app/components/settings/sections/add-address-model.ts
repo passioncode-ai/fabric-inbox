@@ -6,20 +6,21 @@
 import type { AddressCheck, AddressStep, AgentInput, DomainState, NameCheck, StepFix, TestStatus } from "../../../services/agents";
 import type { DomainList, Step } from "../../../services/domains";
 import { checkLocalPart, suggestDisplayName, type LocalPartCheck } from "../../../../shared/address-name";
+import { ADD_ADDRESS_TEXT as T } from "./add-address-text";
 
 export type Tone = "ok" | "warn" | "bad" | "neutral";
 
 /* ---------------------------------------------------------------- domains */
 
 export const DOMAIN_STATE: Record<DomainState, { label: string; tone: Tone }> = {
-  receiving: { label: "Receiving here", tone: "ok" },
+  receiving: { label: T.stateReceiving, tone: "ok" },
   // Without a token every domain is the same: its line under the choice says no rule can be made.
-  no_token: { label: "Receiving here", tone: "ok" },
-  can_receive: { label: "Can receive here", tone: "neutral" },
-  needs_fix: { label: "Needs fixing", tone: "bad" },
-  not_visible: { label: "Token cannot see it", tone: "warn" },
-  unknown: { label: "Routing unknown", tone: "warn" },
-  unavailable: { label: "Not available", tone: "bad" },
+  no_token: { label: T.stateReceiving, tone: "ok" },
+  can_receive: { label: T.stateCanReceive, tone: "neutral" },
+  needs_fix: { label: T.stateNeedsFix, tone: "bad" },
+  not_visible: { label: T.stateNotVisible, tone: "warn" },
+  unknown: { label: T.stateUnknown, tone: "warn" },
+  unavailable: { label: T.stateUnavailable, tone: "bad" },
 };
 
 export interface DomainOption {
@@ -32,7 +33,7 @@ export interface DomainOption {
   account: string | null;
 }
 
-export const DOMAIN_GROUPS = [{ id: "receiving", label: "Receiving here" }, { id: "can_receive", label: "Can receive here" }] as const;
+export const DOMAIN_GROUPS = [{ id: "receiving", label: T.stateReceiving }, { id: "can_receive", label: T.stateCanReceive }] as const;
 
 /**
  * Every domain an address can be created on: the ones receiving here, then (with a token) the other
@@ -77,7 +78,7 @@ export interface NameView {
   notes: string[];
 }
 
-export const NAME_HINT = "Letters a–z, digits, dots, dashes, underscores or plus; a letter or digit at each end.";
+export const NAME_HINT = T.nameHint;
 
 /** What the field says as the person types: the local check at once, then the server's. */
 export function nameView(local: LocalPartCheck, check: NameCheck | undefined, checking: boolean, checkFailed: boolean): NameView {
@@ -85,10 +86,10 @@ export function nameView(local: LocalPartCheck, check: NameCheck | undefined, ch
   if (!local.valid) return { tone: "bad", text: local.problem!, canCreate: false, notes: [] };
   const own = local.note ? [local.note] : [];
   if (checkFailed && !check)
-    return { tone: "warn", text: "It could not be checked right now; the server checks it again when you create it.", canCreate: true, notes: own };
-  if (!check || check.localPart !== local.value) return { tone: "neutral", text: checking ? "Checking…" : NAME_HINT, canCreate: false, notes: own };
+    return { tone: "warn", text: T.checkFailed, canCreate: true, notes: own };
+  if (!check || check.localPart !== local.value) return { tone: "neutral", text: checking ? T.checking : NAME_HINT, canCreate: false, notes: own };
   switch (check.status) {
-    case "available": return { tone: "ok", text: `${check.email} is free.`, canCreate: true, notes: check.notes };
+    case "available": return { tone: "ok", text: T.isFree(check.email), canCreate: true, notes: check.notes };
     case "exists": return { tone: "bad", text: check.detail, canCreate: false, notes: [] };
     default: return { tone: "bad", text: check.detail, canCreate: false, notes: check.notes };
   }
@@ -98,9 +99,8 @@ export function nameView(local: LocalPartCheck, check: NameCheck | undefined, ch
 
 export function policySummary(agent: AgentInput) {
   const p = agent.replyPolicy;
-  if (p.mode === "draft") return "Drafts every answer for you";
-  const intents = p.allowedIntents.length ? p.allowedIntents.join(", ") : "any grounded answer";
-  return `Sends ${intents} · up to ${p.dailySendLimit} a day per address`;
+  if (p.mode === "draft") return T.policyDraft;
+  return T.policyAuto(p.allowedIntents.length ? p.allowedIntents.join(", ") : T.policyAnyAnswer, p.dailySendLimit);
 }
 
 /** The one line under Who answers: what the agent is told to do, and what it may send. */
@@ -152,21 +152,19 @@ export function batchBody(form: AddressForm, localParts: string[]) {
 export type UiOutcome = AddressStep["outcome"] | "waiting" | "running";
 export interface UiStep { id: string; label: string; outcome: UiOutcome; detail: string; fix?: StepFix }
 
-export const STEP_MARK: Record<UiOutcome, string> = {
-  done: "Done", already: "Already so", skipped: "Nothing to do", failed: "Not done", waiting: "Waiting", running: "Working…",
-};
+export const STEP_MARK: Record<UiOutcome, string> = T.mark;
 
 /** The first step on a domain that does not receive here yet (SCN-063). */
 export function receiveStep(domain: string, state: { running: boolean; steps: Step[] | null; foreignMx: string[] | null; error: string | null }): UiStep {
-  const label = `Receive mail for ${domain} here`;
-  if (state.running) return { id: "receive", label, outcome: "running", detail: "Turning on Email Routing and bringing in its addresses…" };
+  const label = T.stepReceive(domain);
+  if (state.running) return { id: "receive", label, outcome: "running", detail: T.receiveRunning };
   if (state.foreignMx) return { id: "receive", label, outcome: "waiting",
-    detail: `Another provider handles mail for ${domain} today (MX ${[...new Set(state.foreignMx)].join(", ")}). Receiving here replaces those records, so mail stops reaching that provider.` };
+    detail: T.receiveMx(domain, [...new Set(state.foreignMx)].join(", ")) };
   const failed = state.steps?.find((s) => s.outcome === "failed");
-  if (failed) return { id: "receive", label, outcome: "failed", detail: `${failed.label}: ${failed.detail} Nothing was created; creating again continues from there.` };
-  if (state.error) return { id: "receive", label, outcome: "failed", detail: `${state.error} Nothing was created.` };
+  if (failed) return { id: "receive", label, outcome: "failed", detail: T.receiveFailed(failed.label, failed.detail) };
+  if (state.error) return { id: "receive", label, outcome: "failed", detail: T.receiveError(state.error) };
   const changed = state.steps?.some((s) => s.outcome === "done");
-  return { id: "receive", label, outcome: changed ? "done" : "already", detail: `${domain} receives mail here${changed ? " now" : ""}.` };
+  return { id: "receive", label, outcome: changed ? "done" : "already", detail: T.receiveDone(domain, !!changed) };
 }
 
 export type TestPhase = "off" | "sending" | "sent" | "error";
@@ -178,14 +176,14 @@ const clock = (iso: string) => {
 
 /** The test message's line: sent, waiting for it, arrived, or why not (SCN-062). */
 export function testStep(phase: TestPhase, test: TestStatus | null, error?: string): UiStep {
-  const label = "Send a test message";
-  if (phase === "off") return { id: "test", label, outcome: "skipped", detail: "Not asked for. Send one now to see mail arrive." };
-  if (phase === "sending") return { id: "test", label, outcome: "running", detail: "Sending it from the address to itself…" };
-  if (phase === "error") return { id: "test", label, outcome: "failed", detail: error ?? "It could not be sent." };
-  if (!test) return { id: "test", label, outcome: "waiting", detail: "Sent; waiting for it to arrive." };
+  const label = T.stepTest;
+  if (phase === "off") return { id: "test", label, outcome: "skipped", detail: T.testOff };
+  if (phase === "sending") return { id: "test", label, outcome: "running", detail: T.testSending };
+  if (phase === "error") return { id: "test", label, outcome: "failed", detail: error ?? T.testCouldNot };
+  if (!test) return { id: "test", label, outcome: "waiting", detail: T.testSent };
   if (test.state === "arrived")
-    return { id: "test", label, outcome: "done", detail: `Arrived at ${clock(test.arrivedAt ?? "")}${test.folder && test.folder !== "inbox" ? ` in ${test.folder}` : ""}: mail sent to this address reaches it here.` };
-  if (test.state === "waiting") return { id: "test", label, outcome: "waiting", detail: `${test.detail} Checked every 5 seconds.` };
+    return { id: "test", label, outcome: "done", detail: T.testArrived(clock(test.arrivedAt ?? ""), test.folder && test.folder !== "inbox" ? test.folder : null) };
+  if (test.state === "waiting") return { id: "test", label, outcome: "waiting", detail: T.testWaiting(test.detail) };
   return { id: "test", label, outcome: "failed", detail: test.detail };
 }
 
@@ -196,9 +194,9 @@ export const testWaiting = (test: TestStatus | null | undefined) => !test || tes
 export function stepsSentence(email: string, steps: UiStep[]): string {
   const failed = steps.find((s) => s.outcome === "failed");
   const address = steps.find((s) => s.id === "address");
-  if (!address || address.outcome === "failed") return `${email} was not created. ${failed?.detail ?? ""}`.trim();
-  if (failed) return `${email} was created; ${failed.label.toLowerCase()} did not happen. ${failed.fix ? `${failed.fix.label} fixes it.` : ""}`.trim();
-  if (steps.some((s) => s.outcome === "running" || s.outcome === "waiting")) return `${email} was created. Waiting for the test message…`;
+  if (!address || address.outcome === "failed") return T.sentenceNotCreated(email, failed?.detail ?? "");
+  if (failed) return T.sentencePartly(email, failed.label, failed.fix?.label ?? null);
+  if (steps.some((s) => s.outcome === "running" || s.outcome === "waiting")) return T.sentenceWaiting(email);
   const test = steps.find((s) => s.id === "test");
-  return test?.outcome === "done" ? `${email} is ready: the test message arrived.` : `${email} was created.`;
+  return test?.outcome === "done" ? T.sentenceReady(email) : T.sentenceCreated(email);
 }
