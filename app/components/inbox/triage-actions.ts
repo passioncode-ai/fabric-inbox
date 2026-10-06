@@ -4,6 +4,7 @@
 // and as it was (unread again if it was), and takes back what the discard taught.
 import { fabric } from "../../services/fabric";
 import { isRemote, rawAccount, type MailProvider } from "./model";
+import { TRIAGE_TEXT as T } from "./triage-text";
 
 export type ActMessage = { id: string; accountId: string; provider: MailProvider; providerMessageId: string; read: boolean };
 type Request = (url: string, body: unknown, method?: string) => Promise<unknown>;
@@ -48,7 +49,7 @@ export async function discardMessages(messages: ActMessage[], request: Request =
   return {
     kind: "discard",
     items: (answer.results ?? []).flatMap((r) => { const m = find(r); return m ? [{ message: m, id: r.id, unread: r.unread }] : []; }),
-    failed: (answer.failed ?? []).flatMap((f) => { const m = find(f); return m ? [{ message: m, error: f.error ?? "It could not be discarded" }] : []; }),
+    failed: (answer.failed ?? []).flatMap((f) => { const m = find(f); return m ? [{ message: m, error: f.error ?? T.notDiscardedAny }] : []; }),
     learned: answer.learned ?? [],
     ...(answer.ruleError ? { ruleError: answer.ruleError } : {}),
   };
@@ -66,7 +67,7 @@ export async function undoDone(done: Done, request: Request = fabric): Promise<{
       try {
         const r = (await request("/api/discard/restore", { messages: items.map((i) => ({ accountId: i.message.accountId, providerMessageId: i.id })), ...(unread ? { read: false } : {}), unlearn: true })) as { moved?: number; failed?: { error?: string }[] };
         restored += r?.moved ?? items.length;
-        for (const f of r?.failed ?? []) failed.push(f.error ?? "It could not be brought back");
+        for (const f of r?.failed ?? []) failed.push(f.error ?? T.notRestored);
       } catch (error) { failed.push((error as Error).message); }
     }
     return { restored, failed };
@@ -87,10 +88,8 @@ export async function undoDone(done: Done, request: Request = fabric): Promise<{
 
 /** The toast's words: "Archived", "3 messages discarded", and what did not work. */
 export function doneText(done: Done): string {
-  const verb = done.kind === "archive" ? "archived" : "discarded";
-  const n = done.items.length;
-  const head = n === 1 ? verb[0]!.toUpperCase() + verb.slice(1) : `${n} messages ${verb}`;
-  const failed = done.failed.length ? `; ${done.failed.length} could not be: ${done.failed[0]!.error}` : "";
+  const head = T.done(done.kind === "archive" ? T.archived : T.discarded, done.items.length);
+  const failed = done.failed.length ? T.someFailed(done.failed.length, done.failed[0]!.error) : "";
   return head + failed + (done.ruleError ? `. ${done.ruleError}` : "");
 }
 
@@ -99,19 +98,19 @@ export function learnedNotice(done: Done): { text: string; ruleIds: string[] } |
   const fresh = done.learned.filter((l) => l.created);
   if (!fresh.length) return null;
   const names = fresh.map((l) => l.label);
-  const who = names.length === 1 ? names[0] : names.length === 2 ? `${names[0]} and ${names[1]}` : `${names[0]} and ${names.length - 1} others`;
-  return { text: `Future mail from ${who} will go to Discarded.`, ruleIds: fresh.map((l) => l.ruleId) };
+  const who = names.length === 1 ? names[0]! : names.length === 2 ? T.and(names[0]!, names[1]!) : T.andOthers(names[0]!, names.length - 1);
+  return { text: T.futureMail(who), ruleIds: fresh.map((l) => l.ruleId) };
 }
 
 /** Why an action cannot be done here (in a sentence), or null when it can. */
 export function canAct(action: "archive" | "discard", folder: string, capabilities: { archive?: boolean } | undefined): string | null {
   if (action === "archive") {
-    if (folder === "archive") return "It is already archived.";
-    if (folder !== "inbox" && folder !== "starred") return "Archive works on mail in the inbox; use the buttons above the message here.";
-    if (capabilities?.archive === false) return "This account has no Archive folder; discard or trash it instead.";
+    if (folder === "archive") return T.alreadyArchived;
+    if (folder !== "inbox" && folder !== "starred") return T.archiveInboxOnly;
+    if (capabilities?.archive === false) return T.noArchiveFolder;
     return null;
   }
-  if (folder === "discarded") return "It is already discarded.";
-  if (folder === "sent") return "Mail in Sent is yours: it cannot be discarded.";
+  if (folder === "discarded") return T.alreadyDiscarded;
+  if (folder === "sent") return T.sentNotDiscardable;
   return null;
 }

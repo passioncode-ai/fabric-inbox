@@ -65,6 +65,7 @@ import UndoToast from "~/components/inbox/UndoToast";
 import ShortcutsDialog from "~/components/inbox/ShortcutsDialog";
 import { isMacPlatform, mailKeyAction } from "~/lib/mail-keys";
 import { archiveMessages, canAct, discardMessages, doneText, learnedNotice, undoDone, type Done } from "~/components/inbox/triage-actions";
+import { TRIAGE_TEXT } from "~/components/inbox/triage-text";
 import { useWindowActive } from "~/hooks/useWindowActive";
 import { settingsPath } from "~/components/settings/paths";
 import { GMAIL_REASON_TEXT, isGmailReason } from "../../shared/mail/gmail-reasons";
@@ -78,7 +79,7 @@ const folders = [
   ["archive", "Archive", TrayIcon],
   ["trash", "Trash", TrashIcon],
   ["spam", "Spam", WarningOctagonIcon],
-  ["discarded", "Discarded", XCircleIcon],
+  ["discarded", TRIAGE_TEXT.folder, XCircleIcon],
 ] as const;
 export function meta() {
   return [{ title: "All inboxes · Fabric Inbox" }];
@@ -87,7 +88,7 @@ const time = (value: string) => listDate(value);
 /** What an empty folder means, in its own words (the inbox keeps the sync sentence). */
 const FOLDER_EMPTY: Record<string, [string, string]> = {
   spam: ["No spam", "Mail judged spam lands here with the reason, and is deleted after 30 days."],
-  discarded: ["Nothing discarded", "Discard a message with ⌘⌫ (Ctrl+Backspace) and it waits here 30 days; mail like it comes here on its own after that."],
+  discarded: [TRIAGE_TEXT.emptyTitle, TRIAGE_TEXT.emptyBody],
   trash: ["Trash is empty", "Deleted mail waits here until you delete it for good."],
   sent: ["Nothing sent yet", "Mail you send from these inboxes appears here."],
   archive: ["Nothing archived", "Archive a message to keep it out of the inbox without deleting it."],
@@ -517,8 +518,8 @@ export default function UnifiedInbox() {
     if (!done || toast?.undoing) return;
     setToast({ ...toast!, undoing: true });
     const result = await undoDone(done).catch((e: Error) => ({ restored: 0, failed: [e.message] }));
-    setToast(result.failed.length ? null : { text: result.restored === 1 ? "Undone." : `Undone: ${result.restored} messages are back.` });
-    if (result.failed.length) setNotice(`${result.restored ? `${result.restored} came back; ` : ""}${result.failed.length} could not: ${result.failed[0]}`);
+    setToast(result.failed.length ? null : { text: TRIAGE_TEXT.undone(result.restored) });
+    if (result.failed.length) setNotice(TRIAGE_TEXT.undoFailed(result.restored, result.failed.length, result.failed[0]!));
     await refresh();
     void client.invalidateQueries({ queryKey: ["discard-rules"] });
   }
@@ -528,10 +529,10 @@ export default function UnifiedInbox() {
       for (const id of ruleIds) await fabric(`/api/discard/rules/${encodeURIComponent(id)}`, undefined, "DELETE");
       setToast((t) => (t ? { ...t, notice: undefined, ruleIds: undefined, text: t.text } : t));
       setRestoredRules([]);
-      setNotice(`Mail${label ? ` from ${label}` : " like this"} will not be discarded on its own. Discarded mail stays where it is.`);
+      setNotice(TRIAGE_TEXT.ruleRemoved(label));
       void client.invalidateQueries({ queryKey: ["discard-rules"] });
     } catch (e) {
-      setNotice(`The rule could not be removed: ${(e as Error).message} Remove it in Settings → Discard rules.`);
+      setNotice(TRIAGE_TEXT.ruleNotRemoved((e as Error).message));
     }
   }
   /** Not discarded: back to the inbox; names the rules that would discard it again. */
@@ -539,7 +540,7 @@ export default function UnifiedInbox() {
     await perform(async () => {
       const r = await fabric<{ moved: number; rules: { ruleId: string; label: string }[] }>("/api/discard/restore", { messages: [{ accountId: message.accountId, providerMessageId: message.providerMessageId }] });
       setRestoredRules(r.rules ?? []);
-      setNotice(r.rules?.length ? "" : "Back in the inbox.");
+      setNotice(r.rules?.length ? "" : TRIAGE_TEXT.backInInbox);
     }, () => selectNextAfter(message.id), { id: message.id, removed: true });
   }
   /** One click or key on a row: open it, add it to the selection (⌘/Ctrl), or select up to it (Shift). */
@@ -793,7 +794,7 @@ export default function UnifiedInbox() {
           </Link>
           <button className="fi-nav-item" onClick={() => setShortcutsOpen(true)} aria-keyshortcuts="?">
             <KeyboardIcon size={19} />
-            <span>Keyboard shortcuts</span>
+            <span>{TRIAGE_TEXT.shortcutsNav}</span>
             <kbd>?</kbd>
           </button>
           <div className="fi-theme-row">
@@ -931,18 +932,18 @@ export default function UnifiedInbox() {
         )}
         {folder === "discarded" && (
           <div className="fi-category-progress fi-spam-banner" role="note">
-            <span>Discarded mail is deleted after 30 days (in Gmail, IMAP and Outlook accounts it moves to their Trash). Nothing here reaches an agent, a rule or a category.</span>
-            <Link to={settingsPath("discard")}>Discard rules</Link>
+            <span>{TRIAGE_TEXT.banner}</span>
+            <Link to={settingsPath("discard")}>{TRIAGE_TEXT.bannerLink}</Link>
           </div>
         )}
         {restoredRules.length > 0 && (
           <div className="fi-notice" role="status">
-            <span>Back in the inbox. Future mail from {restoredRules.map((r) => r.label).join(", ")} still goes to Discarded.{" "}
+            <span>{TRIAGE_TEXT.stillDiscarding(restoredRules.map((r) => r.label).join(", "))}{" "}
               <button type="button" className="fi-text-button" onClick={() => void forgetRules(restoredRules.map((r) => r.ruleId), restoredRules.map((r) => r.label).join(", "))}>
-                Stop discarding mail like this
+                {TRIAGE_TEXT.stopDiscarding}
               </button>
             </span>
-            <button onClick={() => setRestoredRules([])} aria-label="Dismiss notice">×</button>
+            <button onClick={() => setRestoredRules([])} aria-label={TRIAGE_TEXT.dismiss}>×</button>
           </div>
         )}
         <div className="fi-content">
@@ -954,7 +955,7 @@ export default function UnifiedInbox() {
                   : folders.find((f) => f[0] === folder)?.[1]}
               </strong>
               <span>
-                {marked.size > 1 ? `${marked.size} selected` : view === "focus" ? "Important first" : "Newest first"}
+                {marked.size > 1 ? TRIAGE_TEXT.selected(marked.size) : view === "focus" ? "Important first" : "Newest first"}
               </span>
             </div>
             <div className="fi-filter-bar" role="toolbar" aria-label="List view and filters">
@@ -1098,20 +1099,20 @@ export default function UnifiedInbox() {
             {marked.size > 1 ? (
               <div className="fi-reader-empty">
                 <div className="fi-empty-mark"><TrayArrowDownIcon size={35} weight="duotone" /></div>
-                <h2>{marked.size} messages selected</h2>
-                <p>Act on all of them at once, or press Esc to clear the selection.</p>
+                <h2>{TRIAGE_TEXT.selectedTitle(marked.size)}</h2>
+                <p>{TRIAGE_TEXT.selectedBody}</p>
                 <div className="fi-buttons">
                   {canAct("archive", folder, undefined) === null && (
                     <button type="button" className="fi-secondary" disabled={busy} onClick={() => void triageAction("archive")}>
-                      <ArchiveIcon size={17} /> Archive <kbd>{mac ? "⌫" : "Delete"}</kbd>
+                      <ArchiveIcon size={17} /> {TRIAGE_TEXT.archive} <kbd>{mac ? "⌫" : "Delete"}</kbd>
                     </button>
                   )}
                   {canAct("discard", folder, undefined) === null && (
                     <button type="button" className="fi-secondary" disabled={busy} onClick={() => void triageAction("discard")}>
-                      <XCircleIcon size={17} /> Discard <kbd>{mac ? "⌘⌫" : "Ctrl+Backspace"}</kbd>
+                      <XCircleIcon size={17} /> {TRIAGE_TEXT.discard} <kbd>{mac ? "⌘⌫" : "Ctrl+Backspace"}</kbd>
                     </button>
                   )}
-                  <button type="button" className="fi-text-button" onClick={() => setMarked(new Set())}>Clear selection</button>
+                  <button type="button" className="fi-text-button" onClick={() => setMarked(new Set())}>{TRIAGE_TEXT.clearSelection}</button>
                 </div>
               </div>
             ) : !selected ? (
@@ -1152,7 +1153,7 @@ export default function UnifiedInbox() {
                   {owner?.capabilities?.archive !== false && folder !== "discarded" && folder !== "sent" && <button
                     className="fi-icon-button"
                     aria-label="Archive message"
-                    title={`Archive and mark read (${mac ? "⌫" : "Delete"})`}
+                    title={TRIAGE_TEXT.archiveTitle(mac ? "⌫" : "Delete")}
                     disabled={busy || !detail.data}
                     onClick={() =>
                       folder === "inbox" || folder === "starred"
@@ -1170,12 +1171,12 @@ export default function UnifiedInbox() {
                     <ArchiveIcon size={19} />
                   </button>}
                   {folder === "discarded" ? (
-                    <button className="fi-icon-button" aria-label="Not discarded" title="Not discarded: back to the inbox"
+                    <button className="fi-icon-button" aria-label={TRIAGE_TEXT.notDiscarded} title={TRIAGE_TEXT.notDiscardedTitle}
                       disabled={busy || !detail.data} onClick={() => void restore(selected)}>
                       <ArrowUUpLeftIcon size={19} />
                     </button>
                   ) : folder !== "sent" && (
-                    <button className="fi-icon-button" aria-label="Discard message" title={`Discard: out of the inbox, and mail like it from now on (${mac ? "⌘⌫" : "Ctrl+Backspace"})`}
+                    <button className="fi-icon-button" aria-label={TRIAGE_TEXT.discardButton} title={TRIAGE_TEXT.discardTitle(mac ? "⌘⌫" : "Ctrl+Backspace")}
                       disabled={busy || !detail.data} onClick={() => void triageAction("discard", [selected])}>
                       <XCircleIcon size={19} />
                     </button>
@@ -1236,8 +1237,8 @@ export default function UnifiedInbox() {
                           <h2>{detail.data.subject || "(No subject)"}</h2>
                           {selected.discardReason && (
                             <p className="fi-category-reason fi-spam-reason">
-                              Why discarded: {selected.discardReason}{" "}
-                              {restoredRules.length === 0 && <Link to={settingsPath("discard")}>Discard rules</Link>}
+                              {TRIAGE_TEXT.whyDiscarded} {selected.discardReason}{" "}
+                              {restoredRules.length === 0 && <Link to={settingsPath("discard")}>{TRIAGE_TEXT.bannerLink}</Link>}
                             </p>
                           )}
                           <div className="fi-sender">

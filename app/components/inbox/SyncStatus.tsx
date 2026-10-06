@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ArrowClockwiseIcon, CaretDownIcon, WarningCircleIcon } from "@phosphor-icons/react";
-import { syncStatus, type StatusAccount } from "~/lib/sync-status";
+import { SYNC_TEXT as T, syncStatus, type StatusAccount } from "~/lib/sync-status";
 import type { RefreshOutcome } from "~/lib/mail-refresh";
 import { useVisibleClock } from "~/hooks/useVisibleClock";
 
@@ -34,13 +34,13 @@ export default function SyncStatus({ accounts, checking, fetching, outcomes, onR
   const busy = status.tone === "updating";
   return (
     <div className="fi-sync" data-tone={status.tone} ref={root}>
-      <button type="button" className="fi-icon-button fi-refresh" aria-label="Check for new mail" title={`Check for new mail (${shortcut})`}
+      <button type="button" className="fi-icon-button fi-refresh" aria-label={T.checkNow} title={`${T.checkNow} (${shortcut})`}
         aria-keyshortcuts={mac ? "Meta+Shift+N" : "Control+Shift+N"} onClick={onRefresh} disabled={checking}>
         <ArrowClockwiseIcon size={18} className={busy ? "fi-spin" : undefined} aria-hidden="true" />
       </button>
       {status.headline && (
         <button type="button" className="fi-sync-line" aria-expanded={open} aria-controls="fi-sync-details" onClick={() => setOpen(!open)}
-          title="Each account's sync">
+          title={T.detailsLabel}>
           {status.tone === "live" && <span className="fi-live-dot" aria-hidden="true" />}
           {status.tone === "error" && <WarningCircleIcon size={14} aria-hidden="true" />}
           <span>{status.headline}</span>
@@ -48,9 +48,9 @@ export default function SyncStatus({ accounts, checking, fetching, outcomes, onR
         </button>
       )}
       {/* Said once when the state changes, not every time the minutes tick. */}
-      <span className="fi-visually-hidden" role="status">{busy ? "Updating" : status.tone === "error" ? status.headline : ""}</span>
+      <span className="fi-visually-hidden" role="status">{busy ? T.updatingSr : status.tone === "error" ? status.headline : ""}</span>
       {open && (
-        <div id="fi-sync-details" className="fi-sync-details" role="region" aria-label="Each account's sync">
+        <div id="fi-sync-details" className="fi-sync-details" role="region" aria-label={T.detailsLabel}>
           <ul>
             {status.rows.map((r) => (
               <li key={r.id} data-state={r.state}>
@@ -62,7 +62,7 @@ export default function SyncStatus({ accounts, checking, fetching, outcomes, onR
               </li>
             ))}
           </ul>
-          <p className="fi-hint">Gmail, IMAP and Outlook accounts are read every few minutes while the server runs, whether or not this window is open; Cloudflare mail arrives as it is sent. {shortcut} checks now.</p>
+          <p className="fi-hint">{T.hint(shortcut)}</p>
         </div>
       )}
     </div>

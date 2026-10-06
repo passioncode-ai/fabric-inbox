@@ -3,6 +3,7 @@ import type { InboxAccount, InboxMessage } from "./model";
 import { rawAccount, senderName } from "./model";
 import { focusSections, listDate, triageOf, type ListView } from "./triage-view";
 import { TRIAGE_GROUPS, type Triage, type TriageGroup } from "../../../shared/mail/triage";
+import { TRIAGE_TEXT } from "./triage-text";
 
 /** The group, or the specific reason an automated message was raised (e.g. "Payment problem"). */
 function tagText(t: Triage): string {
@@ -55,7 +56,7 @@ function MessageRow({ message, account, selected, marked, onSelect, showGroup, c
       <span className="fi-snippet">{message.snippet.replace(/\s+/g, " ").trim() || "Open message to read more"}</span>
       {message.categoryReason && <span className="fi-category-reason">Why: {message.categoryReason}</span>}
       {message.spamReason && <span className="fi-category-reason fi-spam-reason">Why in Spam: {message.spamReason}</span>}
-      {message.discardReason && <span className="fi-category-reason fi-spam-reason">Why discarded: {message.discardReason}</span>}
+      {message.discardReason && <span className="fi-category-reason fi-spam-reason">{TRIAGE_TEXT.whyDiscarded} {message.discardReason}</span>}
       <span className="fi-message-account">
         <EnvelopeIcon size={12} aria-hidden="true" />
         {account?.email ?? rawAccount(message.accountId)}

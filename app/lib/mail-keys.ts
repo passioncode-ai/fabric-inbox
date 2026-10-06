@@ -68,23 +68,43 @@ export function mailKeyAction(e: KeyLike, mac: boolean): MailKey | null {
   return null;
 }
 
+/** The help's words, in one table for the localization that follows (key names stay as keys are labelled). */
+export const SHORTCUT_TEXT = {
+  title: "Keyboard shortcuts",
+  close: "Close keyboard shortcuts",
+  or: " or ",
+  footnote: "Keys do nothing while you type in a field or the composer.",
+  move: "Move", act: "Act", help: "Help",
+  next: "Next message",
+  previous: "Previous message",
+  extend: "Select the next or previous message too",
+  several: "Select several messages",
+  clear: "Clear the selection",
+  archive: "Archive and mark read",
+  discard: "Discard: out of the inbox, kept in Discarded for 30 days; future mail like it goes there too",
+  undo: "Undo the last archive or discard",
+  refresh: "Check for new mail",
+  show: "Show these shortcuts",
+  click: "click",
+};
+
 /** The Keyboard shortcuts help, with the keys spelled as the platform spells them. */
 export function shortcutList(mac: boolean): { title: string; keys: { keys: string[]; does: string }[] }[] {
-  const cmd = (k: string) => (mac ? `⌘${k}` : `Ctrl+${k}`);
+  const T = SHORTCUT_TEXT;
   return [
-    { title: "Move", keys: [
-      { keys: ["↓", "J"], does: "Next message" },
-      { keys: ["↑", "K"], does: "Previous message" },
-      { keys: ["Shift ↓", "Shift ↑"], does: "Select the next or previous message too" },
-      { keys: [mac ? "⌘-click" : "Ctrl+click", "Shift-click"], does: "Select several messages" },
-      { keys: ["Esc"], does: "Clear the selection" },
+    { title: T.move, keys: [
+      { keys: ["↓", "J"], does: T.next },
+      { keys: ["↑", "K"], does: T.previous },
+      { keys: ["Shift ↓", "Shift ↑"], does: T.extend },
+      { keys: [mac ? `⌘-${T.click}` : `Ctrl+${T.click}`, `Shift-${T.click}`], does: T.several },
+      { keys: ["Esc"], does: T.clear },
     ] },
-    { title: "Act", keys: [
-      { keys: mac ? ["⌫", "⌦"] : ["Backspace", "Delete"], does: "Archive and mark read" },
-      { keys: mac ? ["⌘⌫", "⌘⌦"] : ["Ctrl+Backspace", "Ctrl+Delete"], does: "Discard: out of the inbox, kept in Discarded for 30 days; future mail like it goes there too" },
-      { keys: [cmd("Z")], does: "Undo the last archive or discard" },
-      { keys: [mac ? "⌘⇧N" : "Ctrl+Shift+N"], does: "Check for new mail" },
+    { title: T.act, keys: [
+      { keys: mac ? ["⌫", "⌦"] : ["Backspace", "Delete"], does: T.archive },
+      { keys: mac ? ["⌘⌫", "⌘⌦"] : ["Ctrl+Backspace", "Ctrl+Delete"], does: T.discard },
+      { keys: [mac ? "⌘Z" : "Ctrl+Z"], does: T.undo },
+      { keys: [mac ? "⌘⇧N" : "Ctrl+Shift+N"], does: T.refresh },
     ] },
-    { title: "Help", keys: [{ keys: ["?"], does: "Show these shortcuts" }] },
+    { title: T.help, keys: [{ keys: ["?"], does: T.show }] },
   ];
 }

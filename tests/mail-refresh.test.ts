@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { mergeHead, refreshScope, refreshSummary, WakeRefresh, type FeedPage, type FeedRow } from "../app/lib/mail-refresh";
+import { SYNC_TEXT } from "../app/lib/sync-status";
 
 const row = (id: string, timestamp: number): FeedRow => ({ id, date: new Date(timestamp).toISOString(), accountId: "gmail:a", providerMessageId: id });
 const page = (rows: FeedRow[], hasMore = true, cursor = "c-" + rows.at(-1)?.id): FeedPage => ({ messages: rows, hasMore, cursor });
@@ -76,7 +77,8 @@ test("the inbox's refresh button reads Gmail, not only the browser's cache (P1-5
   assert.match(code, /fabric<RefreshResponse>\("\/api\/inbox\/refresh"/);
   assert.match(code, /<SyncStatus [^>]*\n?[^>]*onRefresh=\{\(\) => void checkForMail\(\)\}/);
   const status = readFileSync("app/components/inbox/SyncStatus.tsx", "utf8");
-  assert.match(status, /aria-label="Check for new mail"[\s\S]{0,200}onClick=\{onRefresh\}/);
+  assert.match(status, /aria-label=\{T\.checkNow\}[\s\S]{0,200}onClick=\{onRefresh\}/);
+  assert.equal(SYNC_TEXT.checkNow, "Check for new mail");
   assert.doesNotMatch(code, /Refresh cached mail/);
 });
 
