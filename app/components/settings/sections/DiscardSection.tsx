@@ -8,75 +8,89 @@ import {
   ActionResult, Badge, LoadFailure, Panel, PanelBlock, PanelPlaceholder, SectionLayout, SelectableList, SkeletonPanel, SkeletonRows, useWork,
 } from "../ui";
 import type { DiscardRule } from "../../../../shared/mail/discard";
+import { useT, type T as Translator } from "../../../lib/i18n";
 
 interface DiscardState { rules: DiscardRule[]; allowed: string[]; retentionDays: number }
 const KEY = ["discard-rules"];
 const OVERVIEW = "overview";
 const ALLOWED = "allowed";
 
-/** Every string of the section, in one table for the localization that follows (Discarded: «Выброшенные»). */
-export const DISCARD_SECTION_TEXT = {
-  label: "Discard rules",
-  loading: "Loading discard rules…",
-  noRules: "No rules yet.",
-  rulesGroup: "Rules",
-  overviewTitle: "How Discarded works",
-  overviewMeta: (days: number) => `Kept ${days} days, out of the inbox`,
-  allowedTitle: "Always allow",
-  allowedMeta: "Senders and domains no rule discards",
-  newsletter: "Newsletter",
-  sender: "Sender",
-  counts: (r: Pick<DiscardRule, "discards" | "applied">) => `${r.discards} discarded by you · ${r.applied} on arrival`,
-  never: "never",
-  placeholderTitle: "Discarded mail teaches what to discard next",
-  placeholderSome: (n: number) => `${n} rule${n === 1 ? "" : "s"} so far. Choose one to see why it was learned, or remove it.`,
-  placeholderNone: "Discard a message (⌘⌫ in the list) and mail like it goes straight to Discarded from then on.",
-  openDiscarded: "Open Discarded",
-  how: [
-    "Discard a message with ⌘⌫ (Ctrl+Backspace on Windows and Linux), or Discard in the reader. It leaves the inbox for Discarded, read.",
-    "Each discard teaches a rule at once: the message's mailing list when it has one, else its sender. Mail that matches goes straight to Discarded when it arrives, and no rule, agent or category acts on it.",
-    "Never discarded on arrival: mail from someone your addresses wrote to, replies in a conversation you took part in, mail from your own domains, and senders on Always allow or Never spam.",
-  ],
-  howRetention: (days: number) => `Discarded mail is deleted after ${days} days. In Gmail, IMAP and Outlook accounts it is moved to the account's Trash then, which the provider empties.`,
-  howProviders: "In Gmail, Discarded is a label of that name; in IMAP and Outlook accounts, a folder of that name, made the first time you discard there.",
-  goneTitle: "This rule is gone",
-  goneBody: "It was removed, perhaps from another window.",
-  mailingList: (id: string) => `Mailing list ${id}`,
-  oneSender: "One sender",
-  why: "Why",
-  whyList: (name: string) => `It came through the mailing list ${name}.`,
-  whyNewsletter: "It carried an unsubscribe link: a newsletter or other bulk mail.",
-  whyFrom: (sender: string, domain?: string) => `From ${sender}${domain ? `, a bulk sender on ${domain}` : ""}.`,
-  whyCategory: (name: string) => `It was in the category ${name}.`,
-  whyModel: (text: string) => `The model's guess: ${text}`,
-  whatItDid: "What it did",
-  history: (counts: string, created: string, last: string, applied: string) => `${counts}. Learned ${created}; last discard ${last}; last applied ${applied}.`,
-  remove: "Remove rule",
-  removing: "Removing…",
-  allowing: "Allowing…",
-  allowSender: (sender: string) => `Always allow ${sender}`,
-  removed: "Rule removed. Mail already in Discarded stays there.",
-  allowedNow: (sender: string) => `${sender} is always allowed now, and the rule is gone.`,
-  allowedSubtitle: "Mail from these senders and domains is never discarded on arrival, whatever a rule says. Never spam entries count too.",
-  add: "Add",
-  adding: "Adding…",
-  addLabel: "Add to Always allow",
-  addPlaceholder: "friend@example.org or example.org",
-  entries: "Entries",
-  empty: "Empty.",
-  find: "Find",
-  findLabel: "Find in Always allow",
-  nothingMatches: (q: string) => `Nothing matches “${q}”.`,
-  removeEntry: "Remove",
-  removeEntryLabel: (v: string) => `Remove ${v}`,
-  entryAdded: (v: string) => `${v} is always allowed.`,
-  entryRemoved: (v: string) => `${v} removed from Always allow.`,
-};
-const T = DISCARD_SECTION_TEXT;
+/**
+ * Every string of the section, in one table, in the interface's language (`t`; Discarded:
+ * «Выброшенные», Russian in shared/i18n/ru/rules.ts).
+ */
+export function discardSectionText(t: Translator) {
+  return {
+    label: t("Discard rules"),
+    loading: t("Loading discard rules…"),
+    noRules: t("No rules yet."),
+    rulesGroup: t("Rules"),
+    overviewTitle: t("How Discarded works"),
+    overviewMeta: (days: number) => t.plural(days, { one: "Kept {n} day, out of the inbox", other: "Kept {n} days, out of the inbox" }),
+    allowedTitle: t("Always allow"),
+    allowedMeta: t("Senders and domains no rule discards"),
+    newsletter: t("Newsletter"),
+    sender: t("Sender"),
+    counts: (r: Pick<DiscardRule, "discards" | "applied">) => t("{discards} discarded by you · {applied} on arrival", { discards: r.discards, applied: r.applied }),
+    never: t("never"),
+    placeholderTitle: t("Discarded mail teaches what to discard next"),
+    placeholderSome: (n: number) => t.plural(n, {
+      one: "{n} rule so far. Choose one to see why it was learned, or remove it.",
+      other: "{n} rules so far. Choose one to see why it was learned, or remove it.",
+    }),
+    placeholderNone: t("Discard a message (⌘⌫ in the list) and mail like it goes straight to Discarded from then on."),
+    openDiscarded: t("Open Discarded"),
+    how: [
+      t("Discard a message with ⌘⌫ (Ctrl+Backspace on Windows and Linux), or Discard in the reader. It leaves the inbox for Discarded, read."),
+      t("Each discard teaches a rule at once: the message's mailing list when it has one, else its sender. Mail that matches goes straight to Discarded when it arrives, and no rule, agent or category acts on it."),
+      t("Never discarded on arrival: mail from someone your addresses wrote to, replies in a conversation you took part in, mail from your own domains, and senders on Always allow or Never spam."),
+    ],
+    howRetention: (days: number) => t.plural(days, {
+      one: "Discarded mail is deleted after {n} day. In Gmail, IMAP and Outlook accounts it is moved to the account's Trash then, which the provider empties.",
+      other: "Discarded mail is deleted after {n} days. In Gmail, IMAP and Outlook accounts it is moved to the account's Trash then, which the provider empties.",
+    }),
+    howProviders: t("In Gmail, Discarded is a label of that name; in IMAP and Outlook accounts, a folder of that name, made the first time you discard there."),
+    goneTitle: t("This rule is gone"),
+    goneBody: t("It was removed, perhaps from another window."),
+    mailingList: (id: string) => t("Mailing list {id}", { id }),
+    oneSender: t("One sender"),
+    why: t("Why"),
+    whyList: (name: string) => t("It came through the mailing list {name}.", { name }),
+    whyNewsletter: t("It carried an unsubscribe link: a newsletter or other bulk mail."),
+    whyFrom: (sender: string, domain?: string) => (domain
+      ? t("From {sender}, a bulk sender on {domain}.", { sender, domain })
+      : t("From {sender}.", { sender })),
+    whyCategory: (name: string) => t("It was in the category {name}.", { name }),
+    whyModel: (text: string) => t("The model's guess: {text}", { text }),
+    whatItDid: t("What it did"),
+    history: (counts: string, created: string, last: string, applied: string) =>
+      t("{counts}. Learned {created}; last discard {last}; last applied {applied}.", { counts, created, last, applied }),
+    remove: t("Remove rule"),
+    removing: t("Removing…"),
+    allowing: t("Allowing…"),
+    allowSender: (sender: string) => t("Always allow {sender}", { sender }),
+    removed: t("Rule removed. Mail already in Discarded stays there."),
+    allowedNow: (sender: string) => t("{sender} is always allowed now, and the rule is gone.", { sender }),
+    allowedSubtitle: t("Mail from these senders and domains is never discarded on arrival, whatever a rule says. Never spam entries count too."),
+    add: t("Add"),
+    adding: t("Adding…"),
+    addLabel: t("Add to Always allow"),
+    addPlaceholder: t("friend@example.org or example.org"),
+    entries: t("Entries"),
+    empty: t("Empty."),
+    find: t("Find"),
+    findLabel: t("Find in Always allow"),
+    nothingMatches: (query: string) => t("Nothing matches “{query}”.", { query }),
+    removeEntry: t("Remove"),
+    removeEntryLabel: (value: string) => t("Remove {value}", { value }),
+    entryAdded: (value: string) => t("{value} is always allowed.", { value }),
+    entryRemoved: (value: string) => t("{value} removed from Always allow.", { value }),
+    /** A rule's date, or "never". */
+    when: (at?: number) => (at ? t.date(at, { day: "numeric", month: "short", year: "numeric" }) : t("never")),
+  };
+}
 
 interface Row extends ListEntry { title: string; meta: string; size?: number }
-
-const when = (at?: number) => (at ? new Date(at).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" }) : T.never);
 
 /**
  * Settings → Discard rules (SCR-16): what each discard taught — a mailing list or a sender — with why,
@@ -84,6 +98,7 @@ const when = (at?: number) => (at ? new Date(at).toLocaleDateString([], { day: "
  * out of every rule.
  */
 export default function DiscardSection({ id }: { id: string | null }) {
+  const T = discardSectionText(useT());
   const state = useQuery({ queryKey: KEY, queryFn: () => fabric<DiscardState>("/api/discard/rules") });
   const data = state.data;
   const rows: Row[] = [
@@ -137,6 +152,7 @@ export default function DiscardSection({ id }: { id: string | null }) {
 }
 
 function RulePanel({ rule }: { rule: DiscardRule }) {
+  const T = discardSectionText(useT());
   const client = useQueryClient();
   const navigate = useNavigate();
   const work = useWork(rule.id);
@@ -162,7 +178,7 @@ function RulePanel({ rule }: { rule: DiscardRule }) {
         </ul>
       </PanelBlock>
       <PanelBlock title={T.whatItDid}>
-        <p>{T.history(T.counts(rule), when(rule.createdAt), when(rule.lastDiscardAt), when(rule.lastAppliedAt))}</p>
+        <p>{T.history(T.counts(rule), T.when(rule.createdAt), T.when(rule.lastDiscardAt), T.when(rule.lastAppliedAt))}</p>
         <div className="fi-buttons">
           <button type="button" className="fi-secondary" disabled={!!work.busy} onClick={() => void remove(false)}>{T.remove}</button>
           {why.sender && <button type="button" className="fi-text-button" disabled={!!work.busy} onClick={() => void remove(true)}>{T.allowSender(why.sender)}</button>}
@@ -174,6 +190,7 @@ function RulePanel({ rule }: { rule: DiscardRule }) {
 }
 
 function AllowedPanel({ values }: { values: string[] }) {
+  const T = discardSectionText(useT());
   const client = useQueryClient();
   const work = useWork(ALLOWED);
   const [value, setValue] = useState("");
