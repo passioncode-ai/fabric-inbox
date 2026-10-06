@@ -453,7 +453,7 @@ test("cached message remains intact if new body chunk persistence fails midway",
   updating = true;
   const put = store.put.bind(store);
   store.put = async (key, value) => {
-    if (key.includes(":body:") && key.endsWith(":1"))
+    if (/(^|:)body:/.test(key) && key.endsWith(":1"))
       throw new Error("storage failed");
     await put(key, value);
   };
@@ -484,12 +484,6 @@ test('unified Gmail reads sort the complete cache by date, not id; folder and qu
   }
   assert.equal((await service.listInboxMessages('b', options)).length, 0);
 });
-test('unified cache scan refuses partial ordering when storage-row budget is exceeded', async () => {
-  const { service, store } = await fixture(async () => { throw new Error('no network'); });
-  for (let i = 0; i < 20001; i++) store.data.set('message:a:' + String(i).padStart(6, '0') + ':body:1:0', 'chunk');
-  await assert.rejects(service.listInboxMessages('a', { folder: 'inbox', query: '', limit: 50 }), /cache_scan_limit/);
-});
-
 test('attachments participate in durable identity; invalid batches have no reservation or provider effect', async () => {
   let calls = 0;
   const { service, store } = await fixture(async () => { calls++; return json({ id: 'receipt', threadId: 'thread' }); });

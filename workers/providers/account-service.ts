@@ -1,4 +1,3 @@
-import { triage } from "../../shared/mail/triage";
 import { validateAttachments } from '../../shared/mail/attachments';
 import {
   configuration,
@@ -22,7 +21,9 @@ import {
   type Message,
   type SendInput,
 } from "./gmail-client";
-import { inboxIdentity, inboxPage, type InboxReadOptions, type InboxMessage } from "../../shared/mail/inbox";
+import type { InboxReadOptions, InboxMessage } from "../../shared/mail/inbox";
+import { GMAIL_FOLDERS, GmailCache, gmailInboxMessage, inFolder, keyPart, msgKey, type GmailFolder, type InboxCounts, type StoredMessage } from "./gmail-cache";
+export { GMAIL_FOLDERS, type GmailFolder } from "./gmail-cache";
 export interface AccountRecord {
   id: string;
   provider: "gmail";
@@ -48,12 +49,6 @@ export interface AccountRecord {
   };
 }
 export type PublicAccount = Omit<AccountRecord, "credentials">;
-interface StoredMessage {
-  message: Omit<Message, "text" | "html">;
-  parts: number;
-  blobId: string;
-  generation?: string;
-}
 export interface SendRequest extends SendInput {
   idempotencyKey: string;
 }
@@ -91,30 +86,6 @@ function publicAccount(record: AccountRecord): PublicAccount {
   const { credentials: _, ...account } = record;
   return account;
 }
-/** One cached Gmail message as the unified feed shows it. */
-function gmailInboxMessage(accountId: string, m: StoredMessage["message"], ownDomains: string[] = []): InboxMessage {
-  const id = "gmail:" + accountId;
-  const labels = m.labels;
-  const timestamp = Number.isFinite(m.timestamp) && m.timestamp > 0 ? m.timestamp : Date.parse(m.date) || 0;
-  return { id: inboxIdentity(id, m.providerMessageId), accountId: id, provider: "gmail", providerMessageId: m.providerMessageId,
-    subject: m.subject, sender: m.from, recipient: m.to, date: new Date(timestamp).toISOString(), timestamp,
-    read: m.read, starred: labels.includes("STARRED"), snippet: m.snippet, threadId: m.threadId,
-    ...(m.rfcMessageId ? { rfcMessageId: m.rfcMessageId.replace(/^<|>$/g, "").toLowerCase() } : {}),
-    ...(labels.includes("SPAM") ? { spamReason: "Gmail marked it as spam" } : {}),
-    triage: triage({ sender: m.from, subject: m.subject, read: m.read, starred: labels.includes("STARRED"), labels, signals: m.signals, ownDomains }) };
-}
-/** The folders a Gmail search can name; they are views over labels, as the feed shows them. */
-export const GMAIL_FOLDERS = ["inbox", "sent", "archive", "starred", "spam", "trash", "draft"] as const;
-export type GmailFolder = (typeof GMAIL_FOLDERS)[number];
-function inFolder(labels: string[], folder: GmailFolder) {
-  const trash = labels.includes("TRASH"), spam = labels.includes("SPAM"), draft = labels.includes("DRAFT");
-  if (folder === "trash") return trash;
-  if (folder === "spam") return spam && !trash;
-  if (folder === "draft") return draft && !trash;
-  if (trash || spam || draft) return false;
-  return folder === "inbox" ? labels.includes("INBOX") : folder === "sent" ? labels.includes("SENT")
-    : folder === "starred" ? labels.includes("STARRED") : !labels.includes("INBOX") && !labels.includes("SENT");
-}
 /** A search of one Gmail account's cache: every field is its own filter, and all of them apply. */
 export interface MessageFilters {
   cursor?: string; limit?: number;
@@ -139,20 +110,21 @@ function matches(m: Omit<Message, "text" | "html">, f: MessageFilters) {
     && (f.unread === undefined || f.unread === !m.read) && (f.starred === undefined || f.starred === m.labels.includes("STARRED"))
     && (f.hasAttachment === undefined || f.hasAttachment === (m.attachments?.length ?? 0) > 0) && (!f.folder || inFolder(m.labels, f.folder));
 }
-function keyPart(value: string) {
-  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value))
-    throw new ProviderError("invalid_id", 400);
-  return value;
-}
-function msgKey(accountId: string, messageId: string) {
-  return "message:" + keyPart(accountId) + ":" + keyPart(messageId);
+/** How long one read may spend moving an account's cache to the current layout before it answers from the old one. */
+const MIGRATE_ON_READ_MS = 5_000;
+/** Rows of the first layout that it already hid: an earlier import's leftovers once history took over. */
+function hiddenByFirstLayout(account: AccountRecord, row: StoredMessage) {
+  return account.sync.mode === "history" && row.generation !== account.sync.generation;
 }
 export class AccountService {
+  readonly cache: GmailCache;
   constructor(
     private store: Store,
     private env: GmailEnvironment,
     private http: Fetcher = fetch,
-  ) {}
+  ) {
+    this.cache = new GmailCache(store);
+  }
   config() {
     const config = configuration(this.env);
     if (config.status !== "configured")
@@ -261,39 +233,26 @@ export class AccountService {
       this.http,
     );
   }
-  private async saveMessage(account: AccountRecord, message: Message) {
-    const key = msgKey(account.id, message.providerMessageId),
-      { text, html, ...metadata } = message;
-    // KV values are limited to 128 KiB. Unicode JSON is split below that byte bound.
-    const previous = await this.store.get<StoredMessage>(key);
-    const blobId = crypto.randomUUID();
-    const data = JSON.stringify({ text, html }),
-      parts = Math.max(1, Math.ceil(data.length / 24000));
-    for (let i = 0; i < parts; i++)
-      await this.store.put(
-        key + ":body:" + blobId + ":" + i,
-        data.slice(i * 24000, (i + 1) * 24000),
-      );
-    await this.store.put<StoredMessage>(key, {
-      message: metadata,
-      parts,
-      blobId,
-      generation: account.sync.generation,
-    });
-    if (previous)
-      for (let i = 0; i < previous.parts; i++)
-        await this.store.delete(key + ":body:" + previous.blobId + ":" + i);
+  private async saveMessage(account: AccountRecord, message: Message, options: { bodyless?: boolean } = {}) {
+    await this.cache.save(account.id, message, account.sync.generation, options);
+  }
+  /** Moves the account's cache to the current layout within `budgetMs`; true once it is there. */
+  async migrateCache(accountId: string, budgetMs = MIGRATE_ON_READ_MS) {
+    const account = await this.account(accountId);
+    return this.cache.migrate(account.id, (row) => hiddenByFirstLayout(account, row), Date.now() + budgetMs);
   }
   async getMessage(accountId: string, messageId: string): Promise<Message> {
     const account = await this.account(accountId),
       key = msgKey(accountId, messageId);
     const row = await this.store.get<StoredMessage>(key);
-    if (
-      !row ||
-      (account.sync.mode === "history" &&
-        row.generation !== account.sync.generation)
-    )
+    if (!row || hiddenByFirstLayout(account, row))
       throw new ProviderError("message_not_found", 404);
+    // Imported with its headers only (older mail): its body is read from Gmail when first opened.
+    if (row.bodyless) {
+      const fresh = normalizeMessage(accountId, await (await this.client(account)).message(messageId));
+      await this.saveMessage(account, fresh);
+      return fresh;
+    }
     // Cached before Cc and Reply-To were kept: read it once more from Gmail so a reply reaches
     // the right people. Gmail out of reach is no reason to fail the read; the cached copy stands.
     if (!("cc" in row.message)) {
@@ -305,16 +264,7 @@ export class AccountService {
         console.warn(JSON.stringify({ event: "gmail_message_refresh_failed", error: error instanceof ProviderError ? error.code : "unknown" }));
       }
     }
-    let body = "";
-    for (let i = 0; i < row.parts; i++) {
-      const part = await this.store.get<string>(
-        key + ":body:" + row.blobId + ":" + i,
-      );
-      if (part === undefined)
-        throw new ProviderError("message_store_unavailable", 503);
-      body += part;
-    }
-    return { ...row.message, ...JSON.parse(body) };
+    return { ...row.message, ...(await this.cache.body(account.id, messageId, row)) };
   }
   async listMessages(accountId: string, options: MessageFilters = {}) {
     checkFilters(options);
@@ -340,11 +290,7 @@ export class AccountService {
         after = key;
         if (typeof row === "string") continue;
         nextCursor = row.message.providerMessageId;
-        if (
-          account.sync.mode === "history" &&
-          row.generation !== account.sync.generation
-        )
-          continue;
+        if (hiddenByFirstLayout(account, row)) continue;
         if (!matches(row.message, options)) continue;
         messages.push(row.message);
         if (messages.length >= limit) break;
@@ -356,28 +302,16 @@ export class AccountService {
     }
     return { messages, nextCursor, sync: account.sync, status: account.status };
   }
-  /** Date order requires reading the cache, not a page in provider-id order.
-   * Refuse an incomplete scan rather than quietly hiding newer messages.
-   * Bodies are never reconstructed and no provider request is made here.
+  /**
+   * One page of the account's feed, newest first, from the cache's date index: about one page
+   * of rows is read however large the cache is. While the cache is still being moved to the
+   * current layout, the old full scan answers. No request is made to Gmail here.
    */
-  async listInboxMessages(accountId: string, options: InboxReadOptions) {
+  async listInboxMessages(accountId: string, options: InboxReadOptions): Promise<InboxMessage[]> {
     const account = await this.account(accountId);
-    const prefix = "message:" + keyPart(accountId) + ":";
-    let messages: InboxMessage[] = [];
-    let after: string | undefined;
-    for (let batch = 0; batch < 200; batch++) {
-      const rows = await this.store.list<StoredMessage | string>({ prefix, limit: 100, startAfter: after });
-      for (const [key, row] of rows) {
-        after = key;
-        if (typeof row === "string" || (account.sync.mode === "history" && row.generation !== account.sync.generation)) continue;
-        const m = row.message;
-        if (!inFolder(m.labels, options.folder) || (options.unread && m.read) || (options.query && ![m.subject, m.from, m.to, m.snippet].join(" ").toLowerCase().includes(options.query.toLowerCase()))) continue;
-        messages.push(gmailInboxMessage(accountId, m, options.ownDomains));
-      }
-      messages = inboxPage(messages, options);
-      if (rows.size < 100) return messages;
-    }
-    throw new ProviderError("cache_scan_limit", 503);
+    if (await this.cache.migrate(account.id, (row) => hiddenByFirstLayout(account, row), Date.now() + MIGRATE_ON_READ_MS))
+      return this.cache.inboxPage(account.id, options);
+    return this.cache.legacyInboxPage(account.id, options, (row) => !hiddenByFirstLayout(account, row));
   }
   /**
    * The cached messages with these ids, in the feed's shape, leaving out trash,
@@ -390,50 +324,22 @@ export class AccountService {
       let key: string;
       try { key = msgKey(accountId, messageId); } catch { continue; }
       const row = await this.store.get<StoredMessage>(key);
-      if (!row || (account.sync.mode === "history" && row.generation !== account.sync.generation)) continue;
+      if (!row || hiddenByFirstLayout(account, row)) continue;
       const labels = row.message.labels;
       if (labels.includes("TRASH") || labels.includes("SPAM") || labels.includes("DRAFT")) continue;
       out.push(gmailInboxMessage(accountId, row.message, ownDomains));
     }
     return out;
   }
-  /** Unread inbox messages in the local cache (the same cache listInboxMessages reads). */
-  /** Unread and total mail in the Gmail inbox, from the cache. */
-  async countInbox(accountId: string): Promise<{ unread: number; total: number }> {
+  /** Unread and total mail in the Gmail inbox: counters kept with every cached change. */
+  async countInbox(accountId: string): Promise<InboxCounts> {
     const account = await this.account(accountId);
-    const prefix = "message:" + keyPart(accountId) + ":";
-    let unread = 0, total = 0;
-    let after: string | undefined;
-    for (let batch = 0; batch < 200; batch++) {
-      const rows = await this.store.list<StoredMessage | string>({ prefix, limit: 100, startAfter: after });
-      for (const [key, row] of rows) {
-        after = key;
-        if (typeof row === "string" || (account.sync.mode === "history" && row.generation !== account.sync.generation)) continue;
-        const labels = row.message.labels;
-        if (!labels.includes("INBOX") || labels.includes("TRASH") || labels.includes("SPAM")) continue;
-        total++;
-        if (!row.message.read) unread++;
-      }
-      if (rows.size < 100) return { unread, total };
-    }
-    throw new ProviderError("cache_scan_limit", 503);
+    if (await this.cache.migrate(account.id, (row) => hiddenByFirstLayout(account, row), Date.now() + MIGRATE_ON_READ_MS))
+      return this.cache.counts(account.id);
+    return this.cache.legacyCounts(account.id, (row) => !hiddenByFirstLayout(account, row));
   }
   async countUnreadInbox(accountId: string): Promise<number> {
-    const account = await this.account(accountId);
-    const prefix = "message:" + keyPart(accountId) + ":";
-    let count = 0;
-    let after: string | undefined;
-    for (let batch = 0; batch < 200; batch++) {
-      const rows = await this.store.list<StoredMessage | string>({ prefix, limit: 100, startAfter: after });
-      for (const [key, row] of rows) {
-        after = key;
-        if (typeof row === "string" || (account.sync.mode === "history" && row.generation !== account.sync.generation)) continue;
-        const labels = row.message.labels;
-        if (labels.includes("INBOX") && !row.message.read && !labels.includes("TRASH") && !labels.includes("SPAM")) count++;
-      }
-      if (rows.size < 100) return count;
-    }
-    throw new ProviderError("cache_scan_limit", 503);
+    return (await this.countInbox(accountId)).unread;
   }
   async sync(accountId: string) {
     const account = await this.account(accountId);
@@ -516,7 +422,7 @@ export class AccountService {
             }
           } catch (error) {
             if (error instanceof ProviderError && error.code === "not_found")
-              await this.store.delete(msgKey(accountId, id));
+              await this.cache.remove(accountId, keyPart(id));
             else throw error;
           }
         }
@@ -756,8 +662,8 @@ export class AccountService {
       /* Local removal is still possible when Google or the encryption key is unavailable. */
     }
     await this.store.delete("account:" + accountId);
+    await this.cache.clear(keyPart(accountId));
     for (const prefix of [
-      "message:" + accountId + ":",
       "event:" + accountId + ":",
       "pending:event:" + accountId + ":",
     ]) {
