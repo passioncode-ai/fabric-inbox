@@ -169,19 +169,21 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** SCR-05
 - **Preconditions:** User session and relevant account or fixture available; capabilities are checked before action.
 - **Steps:**
-  1. Choose Compose -> sender, recipients, subject and body are editable.
-  2. Select the sender and save -> draft save state is shown.
-  3. Reopen the draft -> stored fields and account are restored.
+  1. Choose Compose -> sender, recipients, subject and body are editable; a Cloudflare address's signature is already in the body once.
+  2. Select the sender and type -> the draft is kept on this device at once and saved to that account's server shortly after; the composer says "Saved to your server" or why it is not yet.
+  3. Reopen the draft from Drafts, on this device or another -> stored fields, account and files are restored.
+  4. Open an agent's draft from Drafts -> it opens to edit and send like any other (B-09).
 - **Release refinement (REL-03):** Compose starts an independent draft; Drafts reopens a selected saved item. Each sender, reply context and uncertain attempt survives separately. A blocked attempt does not block a new message. Concurrent edits must report conflict rather than overwrite another window.
+- **Release refinement (0.11, B-52):** The server's draft (a Cloudflare mailbox's Drafts, Gmail's own drafts) is the source of truth; the device keeps a cache that survives no network and a crash. A change made elsewhere — another window or device, an agent, Gmail — is shown as a conflict with "Show the saved version" and "Keep my version", never overwritten. Drafts made before this release are saved up on first run and kept on the device until the server confirms.
 - **Expected result:** A draft is associated with its selected account and is never silently sent.
 - **Alt paths:** Return to the previous surface without causing an external action; preserve confirmed saved work.
 - **UI elements:** SCR-05; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Save failure preserves current input and does not claim it was saved.
 - **Status:** validated
-- **Coverage:** app/components/inbox/draft-store.ts; app/components/inbox/use-drafts.ts; app/components/inbox/DraftsDialog.tsx; tests/inbox-drafts.test.ts
+- **Coverage:** app/components/inbox/server-drafts.ts; app/components/inbox/use-drafts.ts; app/components/inbox/draft-store.ts; app/components/inbox/DraftsDialog.tsx; workers/lib/mailbox-drafts.ts; tests/server-drafts-sync.test.ts; tests/server-drafts.test.ts; tests/gmail-drafts.test.ts; tests/inbox-drafts.test.ts
 - **Product:** unobserved
-- **Today:** Partial. Independent versioned local drafts retain sender, reply context and recovery key. Compose creates a new item; Drafts reopens a selected item. Root observed two different senders/content surviving reload at the synthetic 5190 fixture. Web Locks and revisions refuse conflicting writes; unknown attempts remain immutable. Storage failure is explicit. Cross-device drafts and a fully offline renderer remain unavailable.
+- **Today:** Partial. Drafts are saved to their account's server under a revision and listed across accounts with agents' drafts; the device copy keeps typing safe offline and after a crash, and a conflicting change elsewhere is reported, not overwritten (`tests/server-drafts-sync.test.ts`, `tests/server-drafts.test.ts`, `tests/gmail-drafts.test.ts`). A Gmail draft waits on the device until it has a valid recipient. No live provider round trip or second-device reopen was observed in this change.
 
 
 ### SCN-007: Send from the chosen identity
@@ -200,9 +202,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Invalid recipient blocks send inline; rejection preserves draft; unknown outcome is SCN-020.
 - **Status:** validated
-- **Coverage:** app/components/inbox/Composer.tsx (`send`); app/components/inbox/send-state.ts (`sendRecovery`)
+- **Coverage:** app/components/inbox/Composer.tsx (`send`); app/components/inbox/send-state.ts (`sendRecovery`); app/components/inbox/server-drafts.ts (`sendSavedDraft`); workers/durableObject/index.ts (`sendDraft`)
 - **Product:** unobserved
-- **Today:** Partial. Compose requires an explicit sender, saves a locked attempt before transport and reports accepted only after provider acceptance. An uncertain attempt locks its fields and exposes Retry same attempt with the same recovery key; a later request refusal alone cannot unlock an earlier uncertain send. No actual provider send or recipient delivery was exercised.
+- **Today:** Partial. Compose requires an explicit sender, saves the draft to the server, saves a locked attempt, then sends the server's draft as it is (one signature, the mailbox's display name) and reports accepted only after provider acceptance; the draft leaves Drafts once accepted, and a change made elsewhere just before sending stops the send with nothing sent. An uncertain attempt locks its fields and exposes Retry same attempt with the same recovery key; a later request refusal alone cannot unlock an earlier uncertain send. No actual provider send or recipient delivery was exercised.
 
 ### SCN-008: Reply to a thread
 - **Persona:** P-01
@@ -240,7 +242,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** validated
 - **Coverage:** app/routes/unified-inbox.tsx (`compose`); app/components/inbox/Composer.tsx (forward notice); app/routes/automation.tsx:273
 - **Product:** unobserved
-- **Today:** Partial. Forward prepares a draft with source account and original-file metadata. Explicit original inclusion captures all files or refuses incomplete forwarding; files persist on this device and share the 10-file/5-MiB bound. New/reply drafts support Cc/Bcc and added files. Legacy uncertain attempts retain their original request identity. Automated attachment tests pass; synthetic browser draft reload preserved a selected file and Cc/Bcc. Live original attachment forwarding remains unobserved; automation retains its separate text-only boundary. Evidence: `tests/attachment-composer.test.ts`, `docs/app-store/verification.md`.
+- **Today:** Partial. Forward prepares a draft with source account and original-file metadata. Explicit original inclusion captures all files or refuses incomplete forwarding; files are kept on this device until they are saved with the draft on the server, and files on both sides share the 10-file/5-MiB bound. New/reply drafts support Cc/Bcc and added files. Legacy uncertain attempts retain their original request identity. Automated attachment tests pass; synthetic browser draft reload preserved a selected file and Cc/Bcc. Live original attachment forwarding remains unobserved; automation retains its separate text-only boundary. Evidence: `tests/attachment-composer.test.ts`, `docs/app-store/verification.md`.
 
 ### SCN-010: Read and download an attachment
 - **Persona:** P-01

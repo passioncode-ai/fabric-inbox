@@ -147,7 +147,22 @@ Locations name the source function while the integration branch is being formatt
 | state.composer.uncertain | Acceptance is not confirmed. Retry the same attempt; its recovery key prevents a duplicate send. | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
 | state.composer.save_failed | Draft could not be saved on this device. Keep this window open and copy your text before leaving. | app/components/inbox/use-drafts.ts | SCN-006 | proposed |
 | state.composer.recovery_saved | Send recovery saved on this device | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
-| state.composer.draft_saved | Draft kept on this device | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
+| state.composer.draft_saved | Saved to your server | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
+| state.composer.draft_saving_server | Kept on this device; saving to your server… | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
+| state.drafts.saving_server | Saving to your server… | app/components/inbox/use-drafts.ts | SCN-006 | proposed |
+| state.drafts.not_on_server | Kept on this device; not on your server yet | app/components/inbox/use-drafts.ts | SCN-019 | proposed |
+| state.drafts.offline | Not saved to your server yet; it is kept on this device and saved when the server answers. | app/components/inbox/server-drafts.ts | SCN-019 | proposed |
+| state.drafts.no_sender | Choose a sender to save this draft to your server; until then it is kept on this device. | app/components/inbox/server-drafts.ts | SCN-006 | proposed |
+| state.drafts.gmail_incomplete | Gmail saves a draft once it has a recipient with a valid address; until then it is kept on this device. | app/components/inbox/server-drafts.ts | SCN-006 | proposed |
+| state.drafts.changed_elsewhere | This draft was changed elsewhere (another window or device, an agent, or Gmail). Your text is kept here. | app/components/inbox/server-drafts.ts | SCN-006 | proposed |
+| state.drafts.gone_elsewhere | This draft was sent or deleted elsewhere. Your text is kept here. | app/components/inbox/server-drafts.ts | SCN-006 | proposed |
+| action.composer.show_saved | Show the saved version | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
+| action.composer.keep_mine | Keep my version | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
+| action.composer.save_as_new | Save it again as a new draft | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
+| state.composer.not_sent_unsaved | The draft could not be saved to your server, so it was not sent. Check the connection and try again. | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
+| state.composer.changed_before_send | This draft was changed elsewhere just before sending, so it was not sent. Check it, then send again. | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
+| state.composer.signature_failed | The sender's signature could not be loaded; add it to the message if you need it. | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
+| state.composer.files_limit_total | A message can carry up to 10 files, 5 MiB together. Remove a file before adding another. | app/components/inbox/Composer.tsx:Composer | SCN-009 | proposed |
 | action.composer.discard | Discard draft | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
 | action.composer.retry | Retry same attempt | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
 | action.composer.send | Send message | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
@@ -183,7 +198,10 @@ Humanization: on; own advisory read of the registered labels and state messages.
 |---|---|---|---|---|
 | navigation.inbox.drafts | Drafts | app/components/inbox/DraftsDialog.tsx | SCN-006 | proposed |
 | action.drafts.close | Close drafts | app/components/inbox/DraftsDialog.tsx | SCN-006 | proposed |
-| state.drafts.empty | No saved drafts. Compose a new message to begin. | app/components/inbox/DraftsDialog.tsx | SCN-006 | proposed |
+| state.drafts.empty | No drafts. Compose a new message to begin. | app/components/inbox/DraftsDialog.tsx | SCN-006 | proposed |
+| state.drafts.scope | Drafts saved on your server, yours and your agents', from every account. Open one to continue, send it, or check an uncertain send. | app/components/inbox/DraftsDialog.tsx | SCN-006 | proposed |
+| state.drafts.loading | Loading drafts from your server… | app/components/inbox/DraftsDialog.tsx | SCN-006 | proposed |
+| state.drafts.no_recipient | No recipient yet | app/components/inbox/DraftsDialog.tsx | SCN-006 | proposed |
 | state.drafts.unknown | Outcome unknown. Retry same attempt | app/components/inbox/DraftsDialog.tsx | SCN-020 | proposed |
 | state.drafts.saving | Saving draft… | app/components/inbox/use-drafts.ts | SCN-006 | proposed |
 | state.drafts.unsaved | Not saved. Open to recover | app/components/inbox/use-drafts.ts | SCN-006 | proposed |
@@ -205,7 +223,7 @@ Humanization: on; own advisory read of the registered labels and state messages.
 | label.composer.cc | Cc | app/components/inbox/Composer.tsx | SCN-007 | proposed |
 | label.composer.bcc | Bcc | app/components/inbox/Composer.tsx | SCN-007 | proposed |
 | action.composer.add_files | Add files | app/components/inbox/Composer.tsx | SCN-009 | proposed |
-| state.composer.file_limit | Up to 10 files, 5 MiB total. Files are saved on this device. | app/components/inbox/Composer.tsx | SCN-009 | proposed |
+| state.composer.file_limit | Up to 10 files, 5 MiB total. Files are saved with the draft on your server. | app/components/inbox/Composer.tsx | SCN-009 | proposed |
 | state.composer.originals_ready | Original files selected for this draft. | app/components/inbox/Composer.tsx | SCN-009 | proposed |
 | state.composer.originals_none | The original message has no attachments. | app/components/inbox/Composer.tsx | SCN-009 | proposed |
 | state.composer.legacy_forward | This saved attempt contains forwarded text only. | app/components/inbox/Composer.tsx | SCN-020 | proposed |

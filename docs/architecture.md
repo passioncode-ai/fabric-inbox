@@ -195,6 +195,20 @@ flowchart LR
 - The server bundle (`scripts/server-bundle.mjs`) is the build's ES modules, bindings, migrations
   and asset hashes computed as wrangler does; no deployment's values go in it.
 
+## Drafts on the server (B-52, B-50)
+
+A draft lives in its account: a Cloudflare mailbox's `draft` folder or Gmail's own drafts. The main
+window's composer, the older per-mailbox screen and agents (`save_draft`, `send_draft`) all read and
+change the same drafts; the copy in the main window's browser storage is a cache that keeps typing
+safe offline and after a crash, never the source of truth.
+
+| Part | Where | Contract |
+|---|---|---|
+| Cloudflare draft | `workers/lib/mailbox-drafts.ts`, `MailboxDO.saveDraft/listDrafts/deleteDraft`, routes in `workers/index.ts` | one id for a draft's life; saved in place in one transaction; `emails.draft_revision` (migration `16_draft_revision`, NULL reads as 1) rises by one each save; a save naming another revision is refused (`409 draft_conflict`), one for a draft gone (`draft_gone`), one for a non-draft id (`not_a_draft`); files are `attachments` rows with bytes in R2 under the draft, kept or removed by id, 10 files and 5 MB together; a long body goes to R2 under a key of its own for that save |
+| Gmail draft | `workers/providers/account-service.ts (listDrafts, getDraft, updateDraft, deleteDraft, sendDraft)`, `workers/routes/accounts.ts` | Gmail's drafts API; a draft's revision is its message id (Gmail gives a new one on each change), checked before the change; kept files are read and written again with the new message; creation keeps its idempotent receipt |
+| Send a draft | `MailboxDO.sendDraft` (`POST …/drafts/:id/send`); `AccountService.sendDraft` (`drafts.send`) | the draft goes out as it is — no signature or quote added — as a reply in its conversation when it answers a message, from the mailbox's display name; it leaves Drafts once accepted; the same idempotency key answers the first send after the draft is gone; a stale `expected_revision` is refused (`DRAFT_CONFLICT`) and nothing is sent |
+| Main window | `app/components/inbox/server-drafts.ts`, `use-drafts.ts`, `Composer.tsx`, `DraftsDialog.tsx` | each change is kept on the device at once and saved to the server 1.5 s later under the revision it read; a conflict is shown with "Show the saved version" / "Keep my version"; Send saves first and sends the server's draft; Drafts lists every account's server drafts (agents' too) beside the ones still only here; drafts kept only on the device before 0.11 are saved up on first run and stay until the server confirms; a Gmail draft waits for a valid recipient |
+
 ## The agent protocol (AP-1…AP-11)
 
 `/mcp` gives an outside agent the whole app, limited by its key. Reference and rules:
@@ -229,7 +243,8 @@ flowchart LR
 | Data | Holder |
 |---|---|
 | Mailbox settings, agent assignment | R2 `mailboxes/<address>.json` |
-| Mail, folders, attachments metadata, outbox, incoming journal | `MailboxDO` SQLite, one per address |
+| Mail, drafts (with their revision), folders, attachments metadata, outbox, incoming journal | `MailboxDO` SQLite, one per address |
+| Main-window drafts, cached on the device until saved to the server | browser `localStorage` (`fabric-inbox:workbench-drafts:v2:*`) and IndexedDB for files not yet uploaded |
 | Attachment bytes | R2 `attachments/<emailId>/<attachmentId>/<filename>` |
 | Unknown recipients | R2 `unknown-recipients/<domain>/<address>.json` |
 | Domains served at runtime, catch-all mailboxes | R2 `config/domains.json`, `config/catch-all.json` |
@@ -245,7 +260,8 @@ flowchart LR
 | A body too large for a row | R2 `bodies/<id>.html` (`emails.body_key`) |
 | Addresses hidden from the sidebar and All inboxes | R2 `config/hidden-accounts.json` |
 | Rules, rule runs | `AutomationDO` storage, one per account |
-| Gmail tokens (AES-GCM), message cache | `GmailAccountsDO` (`workspace`) |
+| Gmail tokens (AES-GCM), message cache, send and draft receipts | `GmailAccountsDO` (`workspace`) |
+| Gmail drafts | the Gmail account itself (drafts API), read live, not cached |
 | Chat history | `EmailAgent` per mailbox |
 | Agent keys (no secrets: id, Client ID, name, level, sending, limit, dates) | R2 `config/agent-keys.json` |
 | Agent protocol confirmations, send counts, journal | `EmailMCP` SQLite (`workspace`) |
