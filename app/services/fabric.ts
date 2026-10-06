@@ -1,4 +1,5 @@
 import { ApiError } from "./api";
+import { noteServerBuild } from "../lib/build-version";
 /**
  * JSON request to this app's API. Distinguishes an empty success (204), an
  * expired sign-in (Cloudflare Access answers with an HTML page or a redirect),
@@ -22,6 +23,7 @@ export async function fabric<T>(
     const timeout = error instanceof DOMException && error.name === "TimeoutError";
     throw new ApiError(0, { error: timeout ? "The server did not answer in 30 seconds. Try again." : "The server could not be reached. Check the connection and try again." });
   }
+  noteServerBuild(response.headers);
   if (response.status === 204) return undefined as T;
   if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400))
     throw new ApiError(401, { error: "Your sign-in expired. Reload the page to sign in again." });
