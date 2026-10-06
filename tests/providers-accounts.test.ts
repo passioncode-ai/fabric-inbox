@@ -81,17 +81,18 @@ async function fixture(http: typeof fetch) {
     });
   return { store, service: new AccountService(store, configEnv, http) };
 }
-test("initial import resumes pagination and stores account-scoped messages before advancing baseline", async () => {
+test("an import resumes its listing page by page and keeps accounts apart", async () => {
   const seen: string[] = [];
   const { service, store } = await fixture(async (input) => {
     const u = new URL(String(input));
     seen.push(u.href);
     if (u.pathname.endsWith("/profile"))
-      return json({ historyId: "10", emailAddress: "a@example.invalid" });
+      return json({ historyId: "10", emailAddress: "a@example.invalid", messagesTotal: 2 });
+    if (u.pathname.endsWith("/history")) return json({ historyId: "10" });
     if (u.pathname.endsWith("/messages"))
       return json(
-        u.searchParams.has("pageToken")
-          ? { messages: [{ id: "older" }] }
+        u.searchParams.has("labelIds") ? {}
+          : u.searchParams.has("pageToken") ? { messages: [{ id: "older" }] }
           : { messages: [{ id: "same" }], nextPageToken: "page-two" },
       );
     return json({
@@ -100,52 +101,54 @@ test("initial import resumes pagination and stores account-scoped messages befor
       payload: { headers: [{ name: "Subject", value: "Fixture" }] },
     });
   });
-  await service.sync("a");
+  for (let i = 0; i < 3; i++) await service.sync("a");
   let account = await store.get<AccountRecord>("account:a");
   assert.equal(account?.sync.pageToken, "page-two");
   assert.equal(account?.sync.mode, "initial");
-  await service.sync("a");
+  assert.equal(account?.sync.historyId, "10", "history runs from the import's start");
+  for (let i = 0; i < 3; i++) await service.sync("a");
   account = await store.get<AccountRecord>("account:a");
-  assert.equal(account?.sync.historyId, "10");
   assert.equal(account?.sync.mode, "history");
   assert.equal((await service.listMessages("a")).messages.length, 2);
-  await service.sync("b");
+  await service.sync("b", { deadline: Date.now() + 5000 });
   assert.notEqual(
     (await service.getMessage("a", "same")).id,
     (await service.getMessage("b", "same")).id,
   );
-  assert.equal((await store.list({ prefix: "event:" })).size, 0);
+  assert.equal((await store.list({ prefix: "event:" })).size, 0, "an import queues no automation");
   assert.ok(seen.some((u) => u.includes("pageToken=page-two")));
 });
-test("failed merge does not advance page; expired history returns to initial resync", async () => {
-  let fail = true;
+test("a failed message does not advance the page; expired history imports again and keeps the cache", async () => {
+  let fail = true, expired = false;
   const { service, store } = await fixture(async (input) => {
     const u = new URL(String(input));
     if (u.pathname.endsWith("/profile")) return json({ historyId: "10" });
-    if (u.pathname.endsWith("/history")) return json({}, 404);
+    if (u.pathname.endsWith("/history")) return expired ? json({}, 404) : json({ historyId: "10" });
     if (u.pathname.endsWith("/messages"))
-      return json({ messages: [{ id: "one" }], nextPageToken: "second" });
+      return json(u.searchParams.has("labelIds") ? { messages: [{ id: "one" }], nextPageToken: "second" } : {});
     if (fail) return json({}, 500);
     return json({ id: "one", threadId: "one" });
   });
+  await service.sync("a"); // the import records where history starts
   await assert.rejects(service.sync("a"));
-  assert.equal(
-    (await store.get<AccountRecord>("account:a"))?.sync.pageToken,
-    undefined,
-  );
+  assert.equal((await store.get<AccountRecord>("account:a"))?.sync.pageToken, undefined);
   fail = false;
   const retry = (await store.get<AccountRecord>("account:a"))!;
   retry.retryAt = 0;
   await store.put("account:a", retry);
   await service.sync("a");
+  assert.equal((await store.get<AccountRecord>("account:a"))?.sync.pageToken, "second", "the page advances once its message is read");
+  expired = true;
+  const generation = (await store.get<AccountRecord>("account:a"))!.sync.generation;
+  await service.sync("a"); // history expired: back to a new import
   let account = (await store.get<AccountRecord>("account:a"))!;
+  assert.equal(account.sync.mode, "initial");
+  assert.notEqual(account.sync.generation, generation, "a new import under a new generation");
+  assert.equal((await service.getMessage("a", "one")).threadId, "one", "the cache stays readable meanwhile");
   account.sync = { mode: "history", historyId: "old" };
   await store.put("account:a", account);
   await service.sync("a");
-  assert.equal(
-    (await store.get<AccountRecord>("account:a"))?.sync.mode,
-    "initial",
-  );
+  assert.equal((await store.get<AccountRecord>("account:a"))?.sync.mode, "initial");
 });
 test("incremental additions queue once, label changes do not re-trigger automation", async () => {
   const { service, store } = await fixture(async (input) => {
@@ -362,7 +365,7 @@ test("large body is stored in bounded chunks and reconstructed without truncatio
       },
     });
   });
-  await service.sync("a");
+  await service.sync("a", { deadline: Date.now() + 5000 });
   assert.equal((await service.getMessage("a", "large")).text, body);
   for (const value of store.data.values())
     assert.ok(Buffer.byteLength(JSON.stringify(value)) < 128 * 1024);
@@ -449,7 +452,7 @@ test("cached message remains intact if new body chunk persistence fails midway",
       },
     });
   });
-  await service.sync("a");
+  await service.sync("a", { deadline: Date.now() + 5000 });
   updating = true;
   const put = store.put.bind(store);
   store.put = async (key, value) => {

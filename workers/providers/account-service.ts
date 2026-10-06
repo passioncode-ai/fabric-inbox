@@ -24,6 +24,22 @@ import {
 import type { InboxReadOptions, InboxMessage } from "../../shared/mail/inbox";
 import { GMAIL_FOLDERS, GmailCache, gmailInboxMessage, inFolder, keyPart, msgKey, type GmailFolder, type InboxCounts, type StoredMessage } from "./gmail-cache";
 export { GMAIL_FOLDERS, type GmailFolder } from "./gmail-cache";
+import { GmailSync, normalizeSync, type SyncState } from "./gmail-sync";
+export { importPercent, type SyncState } from "./gmail-sync";
+/** How a sync runs: until when it may start pages, whether it imports, and under whose lock. */
+export interface SyncOptions {
+  /** No page is started after this (epoch ms); history's first page and the import's next page always run. */
+  deadline?: number;
+  /** Read new mail and changes only (Refresh): no import page. */
+  historyOnly?: boolean;
+  /** Runs each page under the caller's lock, so other work interleaves between pages. */
+  lock?: <T>(fn: () => Promise<T>) => Promise<T>;
+}
+/** Work is still waiting: an import not finished, or a history page in progress. */
+export function syncPending(account: Pick<AccountRecord, "sync">) {
+  return account.sync.mode === "initial" || !!account.sync.historyPageToken;
+}
+const RETRY_MS = 60_000, MAX_RETRY_MS = 900_000;
 export interface AccountRecord {
   id: string;
   provider: "gmail";
@@ -40,13 +56,11 @@ export interface AccountRecord {
   error?: string;
   retryAt?: number;
   credentials: Envelope;
-  sync: {
-    mode: "initial" | "history";
-    historyId?: string;
-    pageToken?: string;
-    baseline?: string;
-    generation?: string;
-  };
+  sync: SyncState;
+  /** Failed syncs in a row: the wait before the next one doubles from 60 s to 15 min. */
+  failures?: number;
+  /** Messages set aside after failing MAX_MESSAGE_ATTEMPTS times (kept under `skipped:`). */
+  skipped?: number;
 }
 export type PublicAccount = Omit<AccountRecord, "credentials">;
 export interface SendRequest extends SendInput {
@@ -118,12 +132,14 @@ function hiddenByFirstLayout(account: AccountRecord, row: StoredMessage) {
 }
 export class AccountService {
   readonly cache: GmailCache;
+  private syncer: GmailSync;
   constructor(
     private store: Store,
     private env: GmailEnvironment,
     private http: Fetcher = fetch,
   ) {
     this.cache = new GmailCache(store);
+    this.syncer = new GmailSync(store, this.cache);
   }
   config() {
     const config = configuration(this.env);
@@ -341,125 +357,68 @@ export class AccountService {
   async countUnreadInbox(accountId: string): Promise<number> {
     return (await this.countInbox(accountId)).unread;
   }
-  async sync(accountId: string) {
+  /**
+   * Brings an account's cache up to date: history first, to its last page (new mail is never
+   * behind the import), then import pages until `deadline`. Each page runs under `lock`.
+   * Throws the first failure after recording it on the account (status, error, when to retry).
+   */
+  async sync(accountId: string, options: SyncOptions = {}): Promise<PublicAccount> {
+    const lock = options.lock ?? (<T>(fn: () => Promise<T>) => fn());
+    const deadline = options.deadline ?? Date.now();
+    let step = await lock(() => this.syncPage(accountId, "history", deadline));
+    while (step.more && Date.now() < deadline) step = await lock(() => this.syncPage(accountId, "history", deadline));
+    if (options.historyOnly) return step.account;
+    step = await lock(() => this.syncPage(accountId, "import", deadline));
+    while (step.more && Date.now() < deadline) step = await lock(() => this.syncPage(accountId, "import", deadline));
+    return step.account;
+  }
+  /** One page of history or of the import, with the account's status kept true either way. */
+  private async syncPage(accountId: string, kind: "history" | "import", deadline: number): Promise<{ account: PublicAccount; more: boolean }> {
     const account = await this.account(accountId);
     if (account.status === "reconnect_required")
       throw new ProviderError("reconnect_required", 401);
     if (account.retryAt && account.retryAt > Date.now())
-      throw new ProviderError(
-        account.status === "rate_limited" ? "rate_limited" : "sync_backoff",
-        429,
-      );
+      throw new ProviderError(account.status === "rate_limited" ? "rate_limited" : "sync_backoff", 429);
+    account.sync = normalizeSync(account.sync);
+    // History starts with the import, which records where it begins; an imported account has no import page.
+    if ((kind === "history" && !account.sync.historyId) || (kind === "import" && account.sync.mode === "history"))
+      return { account: publicAccount(account), more: false };
     const client = await this.client(account);
+    let more: boolean;
     try {
-      if (account.sync.mode === "initial") {
-        if (!account.sync.baseline) {
-          account.sync.baseline = (await client.profile()).historyId;
-          account.sync.generation = crypto.randomUUID();
-          await this.store.put("account:" + accountId, account);
-        }
-        const page = await client.list(account.sync.pageToken);
-        for (const item of page.messages || []) {
-          try {
-            await this.saveMessage(
-              account,
-              normalizeMessage(accountId, await client.message(item.id)),
-            );
-          } catch (error) {
-            if (!(error instanceof ProviderError && error.code === "not_found"))
-              throw error;
-          }
-        }
-        if (page.nextPageToken) account.sync.pageToken = page.nextPageToken;
-        else
-          account.sync = {
-            mode: "history",
-            historyId: account.sync.baseline,
-            generation: account.sync.generation,
-          };
-      } else {
-        const page = await client.history(
-          account.sync.historyId!,
-          account.sync.pageToken,
-        );
-        const ids = new Set<string>(),
-          added = new Set<string>();
-        for (const item of page.history || []) {
-          for (const message of item.messages || []) ids.add(message.id);
-          for (const change of [
-            ...(item.messagesAdded || []),
-            ...(item.messagesDeleted || []),
-            ...(item.labelsAdded || []),
-            ...(item.labelsRemoved || []),
-          ])
-            ids.add(change.message.id);
-          for (const change of item.messagesAdded || [])
-            added.add(change.message.id);
-        }
-        for (const id of ids) {
-          try {
-            const message = normalizeMessage(
-              accountId,
-              await client.message(id),
-            );
-            await this.saveMessage(account, message);
-            // Stable event key survives history replay and is retained after acknowledgement.
-            if (
-              added.has(id) &&
-              !message.labels.includes("SENT") &&
-              !message.labels.includes("DRAFT")
-            ) {
-              const eventKey =
-                "event:" + keyPart(accountId) + ":" + keyPart(id);
-              await this.store.transaction(async (tx) => {
-                const old = await tx.get<PendingEvent>(eventKey);
-                if (!old || !old.delivered) {
-                  const event = { accountId, messageId: id, delivered: false };
-                  await tx.put(eventKey, event);
-                  await tx.put("pending:" + eventKey, event);
-                }
-              });
-            }
-          } catch (error) {
-            if (error instanceof ProviderError && error.code === "not_found")
-              await this.cache.remove(accountId, keyPart(id));
-            else throw error;
-          }
-        }
-        if (page.nextPageToken) account.sync.pageToken = page.nextPageToken;
-        else {
-          account.sync.historyId = page.historyId;
-          delete account.sync.pageToken;
-        }
-      }
-      account.status =
-        account.sync.mode === "initial" ? "syncing" : "connected";
+      const page = kind === "history"
+        ? await this.syncer.historyPage(account.id, account.sync, client)
+        : await this.syncer.importPage(account.id, account.sync, client, deadline);
+      more = page.more;
+      if (page.skipped) account.skipped = (account.skipped ?? 0) + page.skipped;
+      account.status = account.sync.mode === "initial" ? "syncing" : "connected";
       account.lastSyncAt = Date.now();
       delete account.error;
       delete account.retryAt;
+      delete account.failures;
     } catch (error) {
       if (error instanceof ProviderError && error.code === "history_expired") {
+        // Gmail no longer has history from there: import again under a new generation. The cache
+        // stays visible meanwhile, and the sweep removes what the new import does not find.
         account.sync = { mode: "initial" };
         account.status = "syncing";
         account.error = "history_expired";
         await this.store.put("account:" + accountId, account);
-        return publicAccount(account);
+        console.warn(JSON.stringify({ event: "gmail_history_expired" }));
+        return { account: publicAccount(account), more: true };
       }
-      account.error =
-        error instanceof ProviderError ? error.code : "sync_failed";
-      account.status =
-        account.error === "reconnect_required"
-          ? "reconnect_required"
-          : account.error === "rate_limited"
-            ? "rate_limited"
-            : "error";
-      account.retryAt =
-        Date.now() + (account.status === "rate_limited" ? 900000 : 60000);
+      account.error = error instanceof ProviderError ? error.code : "sync_failed";
+      account.status = account.error === "reconnect_required" ? "reconnect_required"
+        : account.error === "rate_limited" ? "rate_limited" : "error";
+      account.failures = (account.failures ?? 0) + 1;
+      account.retryAt = Date.now() + (account.status === "rate_limited" ? MAX_RETRY_MS
+        : Math.min(RETRY_MS * 2 ** (account.failures - 1), MAX_RETRY_MS));
       await this.store.put("account:" + accountId, account);
+      console.warn(JSON.stringify({ event: "gmail_sync_failed", kind, error: account.error, failures: account.failures }));
       throw error;
     }
     await this.store.put("account:" + accountId, account);
-    return publicAccount(account);
+    return { account: publicAccount(account), more };
   }
   send(accountId: string, request: SendRequest) {
     return this.submit("send", accountId, request);
@@ -664,6 +623,8 @@ export class AccountService {
     await this.store.delete("account:" + accountId);
     await this.cache.clear(keyPart(accountId));
     for (const prefix of [
+      "attempts:" + accountId + ":",
+      "skipped:" + accountId + ":",
       "event:" + accountId + ":",
       "pending:event:" + accountId + ":",
     ]) {

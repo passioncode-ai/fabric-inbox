@@ -25,7 +25,22 @@ export type Fetcher = (
 export interface GmailProfile {
   emailAddress: string;
   historyId: string;
+  /** Messages in the whole mailbox, as Gmail counts them: the import's denominator. */
+  messagesTotal?: number;
 }
+/** One page of messages.list: newest first, as Gmail orders it. */
+export interface ListOptions {
+  pageToken?: string;
+  /** Only messages with all these labels (e.g. INBOX). */
+  labelIds?: string[];
+  /** A Gmail search, e.g. newer_than:30d. */
+  q?: string;
+  includeSpamTrash?: boolean;
+  maxResults?: number;
+}
+/** The headers a message imported without its body keeps: what the feed, triage and replies read. */
+export const METADATA_HEADERS = ["Subject", "From", "To", "Cc", "Reply-To", "Date", "Message-ID", "References",
+  "List-Id", "List-Unsubscribe", "Precedence", "Auto-Submitted"];
 export interface GmailPart {
   mimeType?: string;
   filename?: string;
@@ -379,24 +394,27 @@ export class GmailClient {
   profile() {
     return this.request<GmailProfile>("profile");
   }
-  list(pageToken?: string) {
-    const q = new URLSearchParams({
-      maxResults: "25",
-      includeSpamTrash: "true",
-    });
-    if (pageToken) q.set("pageToken", pageToken);
+  list(options: ListOptions = {}) {
+    const q = new URLSearchParams({ maxResults: String(options.maxResults ?? 50) });
+    if (options.includeSpamTrash) q.set("includeSpamTrash", "true");
+    for (const label of options.labelIds ?? []) q.append("labelIds", label);
+    if (options.q) q.set("q", options.q);
+    if (options.pageToken) q.set("pageToken", options.pageToken);
     return this.request<{
       messages?: { id: string }[];
       nextPageToken?: string;
     }>("messages?" + q);
   }
-  message(id: string) {
+  /** A message in full, or with only METADATA_HEADERS (labels, snippet and date, no body). */
+  message(id: string, format: "full" | "metadata" = "full") {
+    const q = new URLSearchParams({ format });
+    if (format === "metadata") for (const h of METADATA_HEADERS) q.append("metadataHeaders", h);
     return this.request<GmailMessage>(
-      "messages/" + encodeURIComponent(id) + "?format=full",
+      "messages/" + encodeURIComponent(id) + "?" + q,
     );
   }
   history(startHistoryId: string, pageToken?: string) {
-    const q = new URLSearchParams({ startHistoryId, maxResults: "25" });
+    const q = new URLSearchParams({ startHistoryId, maxResults: "100" });
     if (pageToken) q.set("pageToken", pageToken);
     return this.request<{
       historyId: string;
