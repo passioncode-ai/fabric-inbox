@@ -598,6 +598,14 @@ const syncAccount = defineTool({
   async call(a, ctx) { const account = parseAccount(a.accountId); if (account.provider !== "gmail") throw new ApiError(400, "Only Gmail accounts sync; Cloudflare mail arrives as it is sent", null); return post(ctx, `${gmail(account.gmailId)}/sync`); },
 });
 
+const refreshInbox = defineTool({
+  name: "refresh_inbox", title: "Fetch new Gmail mail now", level: "mail", target: (a) => (a.accountIds ?? ["every Gmail account"]).join(" "),
+  description: "Reads Gmail now for new mail, changes and deletions (every Gmail account, or the ones named), within about 20 seconds, and says per account: synced, backoff (with retryAt), reconnect, failed (with error) or not_reached; importing gives a first import's progress in percent. Cloudflare mail arrives as it is sent and needs no refresh.",
+  input: { accountIds: z.array(accountId).max(100).optional().describe('Gmail accounts ("gmail:<id>") to refresh; every Gmail account when left out') },
+  routes: ["POST /api/inbox/refresh"],
+  async call(a, ctx) { return post(ctx, "/api/inbox/refresh", a.accountIds ? { accounts: a.accountIds.map((id) => parseAccount(id).id) } : {}); },
+});
+
 const markCategorySeen = defineTool({
   name: "mark_category_seen", title: "Mark a category seen", level: "mail", target: (a) => a.categoryId,
   description: "Clears a category's count of new messages, as opening it in the app does.",
@@ -957,7 +965,7 @@ const agentActivity = defineTool({
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listFolders, getSendStatus,
   listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listCategories, listKnowledge, searchKnowledge, listRules,
-  saveDraft, sendEmail, reply, forward, updateMessages, moveMessages, markSpam, deleteMessage, syncAccount, markCategorySeen, manageFolder,
+  saveDraft, sendEmail, reply, forward, updateMessages, moveMessages, markSpam, deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun,
   createAddress, updateAddress, removeAddress, routeAddress, sendTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,

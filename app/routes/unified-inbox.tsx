@@ -58,6 +58,7 @@ import { totalUnread } from "~/components/inbox/account-groups";
 import { displayOrder, groupCounts, isTriageGroup, listDate, nextAfter, pinTriage, triageOf, type ListView } from "~/components/inbox/triage-view";
 import type { Triage, TriageGroup } from "../../shared/mail/triage";
 import type { InboxFolder } from "../../shared/mail/inbox";
+import { refreshScope, refreshSummary, type RefreshResponse } from "~/lib/mail-refresh";
 const folders = [
   ["inbox", "Inbox", TrayArrowDownIcon],
   ["starred", "Starred", StarIcon],
@@ -123,6 +124,8 @@ export default function UnifiedInbox() {
     [issuesOpen, setIssuesOpen] = useState(false),
     [theme, setTheme] = useState("light"),
     [notice, setNotice] = useState(""),
+    [checking, setChecking] = useState(false),
+    [checkedAt, setCheckedAt] = useState(0),
     [busy, setBusy] = useState(false),
     [composeOpen, setComposeOpen] = useState(false),
     [draftsOpen, setDraftsOpen] = useState(false),
@@ -311,6 +314,30 @@ export default function UnifiedInbox() {
   }
   async function refresh() {
     await client.invalidateQueries({ queryKey: ["unified-inbox"] });
+  }
+  /**
+   * Refresh (P1-5): Gmail is read now for the accounts in view (Cloudflare mail arrives by push),
+   * then the list and the categories are read again. Says which accounts could not be read.
+   */
+  async function checkForMail() {
+    setChecking(true);
+    try {
+      const scope = refreshScope({ accountId, domain: domainFilter });
+      let summary = { ok: true, text: "Updated just now." };
+      if (scope !== null) {
+        try {
+          const r = await fabric<RefreshResponse>("/api/inbox/refresh", scope ? { accounts: scope } : {});
+          summary = refreshSummary(r.accounts);
+        } catch (e) {
+          summary = { ok: false, text: `Gmail could not be checked: ${(e as Error).message} The list below is what the server had.` };
+        }
+      }
+      await Promise.all([refresh(), client.invalidateQueries({ queryKey: ["categories"] })]);
+      setCheckedAt(Date.now());
+      setNotice(summary.ok && summary.text === "Updated just now." ? "" : summary.text);
+    } finally {
+      setChecking(false);
+    }
   }
   async function perform(action: () => Promise<unknown>, after?: () => void) {
     setBusy(true);
@@ -583,10 +610,10 @@ export default function UnifiedInbox() {
           </form>
           <button
             className="fi-icon-button"
-            title="Refresh cached mail"
-            aria-label="Refresh cached mail"
-            onClick={() => void refresh()}
-            disabled={list.isFetching}
+            title="Check for new mail"
+            aria-label="Check for new mail"
+            onClick={() => void checkForMail()}
+            disabled={checking || list.isFetching}
           >
             <ArrowClockwiseIcon size={19} />
           </button>
@@ -618,7 +645,7 @@ export default function UnifiedInbox() {
                 ))}
               </ul>
             )}
-            <button className="fi-text-button" onClick={() => void refresh()}>Retry</button>{" "}
+            <button className="fi-text-button" disabled={checking} onClick={() => void checkForMail()}>Retry</button>{" "}
             · <Link to="/accounts">Manage connections</Link>
           </div>
         )}
@@ -659,8 +686,12 @@ export default function UnifiedInbox() {
                   : folders.find((f) => f[0] === folder)?.[1]}
               </strong>
               <span>
-                {list.isFetching
+                {checking
+                  ? "Checking Gmail…"
+                  : list.isFetching
                   ? "Updating…"
+                  : checkedAt && Date.now() - checkedAt < 60_000
+                    ? "Updated just now"
                   : view === "focus"
                     ? "Important first"
                     : "Newest first"}

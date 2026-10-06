@@ -108,6 +108,28 @@ test("Refresh reads history only, reports each account, and leaves the alarm alo
   assert.deepEqual((await scheduler.refresh(["gmail:a"])).map((o) => o.accountId), ["gmail:a"], "a scope reads only its accounts");
 });
 
+test("POST /api/inbox/refresh passes the Gmail accounts in scope and answers per account (P1-5)", async () => {
+  const { inboxRouter } = await import("../workers/routes/inbox");
+  const asked: (string[] | undefined)[] = [];
+  const env = { GMAIL_ACCOUNTS: { getByName: () => ({ refresh: async (ids?: string[]) => { asked.push(ids); return [{ accountId: "gmail:a", email: "a@example.invalid", result: "synced" }]; } }) } };
+  const call = (body: unknown) => inboxRouter.request("https://mail.example.invalid/api/inbox/refresh", { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } }, env as never);
+  const all = await call({});
+  assert.equal(all.status, 200);
+  const data = await all.json() as { accounts: { result: string }[]; refreshedAt: number };
+  assert.equal(data.accounts[0].result, "synced");
+  assert.ok(data.refreshedAt > 0);
+  await call({ accounts: ["gmail:a", "cloudflare:me@example.invalid"] });
+  assert.deepEqual(asked, [undefined, ["gmail:a"]], "every account, then only the Gmail ones named");
+  const cloudflareOnly = await (await call({ accounts: ["cloudflare:me@example.invalid"] })).json() as { accounts: unknown[] };
+  assert.deepEqual(cloudflareOnly.accounts, [], "a Cloudflare scope needs no Gmail read");
+  assert.equal(asked.length, 2);
+  assert.equal((await call({ accounts: "gmail:a" })).status, 400);
+  const broken = { GMAIL_ACCOUNTS: { getByName: () => ({ refresh: async () => { throw new Error("private upstream detail"); } }) } };
+  const failed = await inboxRouter.request("https://mail.example.invalid/api/inbox/refresh", { method: "POST", body: "{}" }, broken as never);
+  assert.equal(failed.status, 503);
+  assert.ok(!(await failed.text()).includes("private"));
+});
+
 test("Refresh stops starting accounts when its budget is spent (P1-5)", async () => {
   const service = new FakeService([account("a"), account("b"), account("c")]);
   service.delayMs = 60;
