@@ -57,7 +57,11 @@
 | SCN-049 | The app keeps itself up to date | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
 | SCN-050 | Remove or reinstall the app and lose nothing | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
 | SCN-051 | Set up Gmail on my server | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
-| SCN-052 | Connect Gmail with an app password | Connect an account | P-01 | ST-001, FLW-01 | draft | not audited |
+| SCN-052 | Connect Gmail with an app password | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-053 | Connect another mail account with an app password | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-054 | Give an IMAP account a new app password | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-055 | Disconnect an IMAP account | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-056 | An IMAP connection is refused | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1089,16 +1093,97 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Feature:** Connect an account
 - **Traces:** ST-001, FLW-01, JTBD-01, JRN-01; RE-003
 - **Entry point:** SCR-02 (Settings → Accounts → Connect account → Gmail with an app password)
-- **Preconditions:** A personal Google account with 2-Step Verification; the IMAP provider is available on the server (0.11.0 WS4).
+- **Preconditions:** A personal Google account with 2-Step Verification; the server holds a credential key (Create my server makes one; MAIL_CREDENTIAL_KEY on a server deployed by hand).
 - **Steps:**
   1. Choose Gmail with an app password -> what it needs (2-Step Verification, not a work or school account), Google's help page, and what it gives up next to connecting through Google (labels appear as folders).
-  2. Create an app password in the Google account and paste it with the address -> the account appears with its import progress.
-- **Expected result:** A person who does not want a Google Cloud project still reads and sends their Gmail here.
-- **Alt paths:** Back returns to the provider cards; connecting through Google stays available beside it.
-- **UI elements:** SCR-02; the provider card with its trade-off line and help link.
-- **States covered:** empty, error, success
-- **Errors & recovery:** Until the IMAP provider is in this build, the card is shown unavailable and says so; it never pretends to connect.
-- **Status:** draft
-- **Coverage:** app/components/settings/sections/providers.ts, tests/gmail-setup-ui.test.ts
+  2. Make an app password in the Google account and paste it with the address -> "Checking with Gmail (app password)…": the server signs in to imap.gmail.com and smtp.gmail.com, then keeps the password, encrypted.
+  3. The account opens in Settings with its sync -> its mail arrives in All inboxes under Other mail, older mail is imported while new mail already arrives.
+- **Expected result:** A person who does not want a Google Cloud project still reads and sends their Gmail here, also while the Mac is closed.
+- **Alt paths:** Back returns to the provider cards; connecting through Google stays available beside it. An address already connected through Google sign-in is refused (it would be read twice).
+- **UI elements:** SCR-02; the provider card with its trade-off line and help link; the address and app password form (SCN-053).
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** As SCN-056: a normal password is "needs an app password here", a wrong one names Gmail and the help page. A server without a credential key says so and how to get one; the card is "Not set up on this server".
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/providers.ts, app/components/settings/sections/ImapAccount.tsx, shared/mail/imap-presets.ts, workers/providers/imap/, tests/gmail-setup-ui.test.ts, tests/imap-provider.test.ts, tests/imap-connect-ui.test.ts
 - **Product:** unobserved
-- **Today:** A marked provider card stub only (0.11.0 WS6); WS4 wires it to the IMAP preset (imap.gmail.com / smtp.gmail.com).
+- **Today:** Built in 0.11.0 (WS4). Gmail keeps the Sent copy itself (support.google.com/mail/answer/78892), so none is appended; Archive moves to All Mail, which this server does not read, so an archived message leaves the app's lists. Checked against imap.gmail.com and smtp.gmail.com from workerd with a made-up account (both refused the sign-in, 2026-10-06); not yet walked with a real app password.
+
+### SCN-053: Connect another mail account with an app password
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01, JRN-01; RE-003; operator decision 2026-10-05/06 ("connect popular email providers besides Gmail; credentials live on the server, encrypted")
+- **Entry point:** SCR-02 (Settings → Accounts → Connect account → Other mail (IMAP)), or the sidebar's Connect other mail
+- **Preconditions:** The server holds a credential key; the person can make an app password at their provider (and switch IMAP on where it is off: GMX, Zoho, Yandex).
+- **Steps:**
+  1. Choose Other mail (IMAP) -> a card per provider (iCloud Mail, Yahoo Mail, AOL Mail, Fastmail, Zoho Mail and Zoho Mail for a domain, Yandex Mail, Mail.ru, GMX for gmx.com and for gmx.net, Other).
+  2. Choose one -> what to do at the provider first, in its own words (two-factor authentication, where its app passwords are, IMAP to switch on), and its help page.
+  3. Enter the address and paste the app password (Other: the IMAP server and port, the SMTP server with SSL/TLS on 465 or STARTTLS on 587, a user name when it is not the address) -> Connect: "Checking with <provider>…".
+  4. The server signs in to IMAP over TLS, reads the folder list and opens the Inbox, then signs in to SMTP; only then is the password kept, encrypted -> the account opens in Settings with "Older mail is being read: N%. New mail already arrives."
+- **Expected result:** Mail of any provider with IMAP and SMTP is read and sent here like Gmail's, with rules, agents, categories and spam, also while the Mac is closed.
+- **Alt paths:** An address of another provider's domain is said before connecting ("This looks like an iCloud Mail address"). Connecting the same address again with a new password keeps the account and its mail. Back returns to the provider cards.
+- **UI elements:** SCR-02; provider cards; the form (Address, App password, the server fields for Other, Connect, Back); the account panel (Sync, Servers, Open its mail, Rules and history).
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** SCN-056. Nothing is kept until both servers took the password.
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/ImapAccount.tsx, app/components/settings/sections/AccountsSection.tsx, app/components/settings/sections/providers.ts, shared/mail/imap-presets.ts, workers/providers/imap/connect.ts, workers/providers/imap/provider.ts, workers/providers/account-service.ts, workers/routes/accounts.ts, tests/imap-provider.test.ts, tests/imap-routes.test.ts, tests/imap-connect-ui.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS4) and tested against in-process IMAP and SMTP servers. Every preset's servers were reached from workerd on 2026-10-06 with a made-up account (each refused the sign-in); not yet walked with a real app password at any provider.
+
+### SCN-054: Give an IMAP account a new app password
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01; operator request 2026-10-06 ("Edit (change password)")
+- **Entry point:** SCR-02 (the account's panel → More actions → Enter a new app password…, opened by itself when the account needs one), or the inbox banner's Enter a new app password
+- **Preconditions:** An IMAP account whose app password was deleted or changed at the provider (status "reconnect required"), or one the person wants to replace.
+- **Steps:**
+  1. The panel says the provider no longer accepts the app password this server has -> the New app password block.
+  2. Make a new one at the provider (its help page is linked) and paste it -> Save: "Checking with <provider>…".
+  3. "<provider> took the new app password. Mail is read again now." -> the status returns to connected and the sync resumes where it stopped.
+- **Expected result:** A refused password is fixed in one step, without losing the account's mail, rules or history.
+- **Alt paths:** Close leaves the old password in place.
+- **UI elements:** SCR-02; the account panel's callout, the New app password block (App password, Save, Close).
+- **States covered:** loading, error, success
+- **Errors & recovery:** A new password the provider refuses is said as in SCN-056, and the one the server has stays; nothing changes until both servers took the new one.
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/ImapAccount.tsx, app/routes/unified-inbox.tsx, workers/providers/account-service.ts (updateImapPassword), workers/routes/accounts.ts, tests/imap-provider.test.ts, tests/imap-routes.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS4); tested against fakes.
+
+### SCN-055: Disconnect an IMAP account
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01
+- **Entry point:** SCR-02 (the account's panel → More actions → Disconnect…)
+- **Preconditions:** A connected IMAP account.
+- **Steps:**
+  1. Disconnect… -> "Disconnect <address>?": its app password is deleted from your server and its synced mail leaves this app; its mail stays with the provider; to end the app password itself, delete it at the provider.
+  2. Confirm -> "<address> was disconnected. Delete its app password at <provider> too." and the list without it.
+- **Expected result:** The server forgets the account and its password; nothing at the provider is changed.
+- **Alt paths:** Cancel keeps everything. An outside agent with an admin key can do the same with disconnect_account (two calls).
+- **UI elements:** SCR-02; the confirmation dialog.
+- **States covered:** loading, success, error
+- **Errors & recovery:** A failure is said in the panel and the account stays; send receipts are kept, so a retry of an unknown send can never send twice.
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/ImapAccount.tsx, workers/providers/account-service.ts (disconnect), workers/mcp/tools.ts (disconnect_account), tests/imap-provider.test.ts, tests/imap-routes.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS4); tested against fakes.
+
+### SCN-056: An IMAP connection is refused
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01; RE-003
+- **Entry point:** SCR-02 (connecting, or a new app password), the account panel, the inbox banner
+- **Preconditions:** A provider refused, or could not be reached.
+- **Steps:**
+  1. Connect or Save -> the answer names who refused and the one thing to do, with the provider's help page:
+     a wrong password ("refused the address or the app password … it takes an app password, not the password you sign in with"); a normal password where an app password is needed (Gmail, Mail.ru); IMAP switched off (GMX, Zoho); Yandex's one answer for both; a sign-in on the provider's website wanted first; the sending server refusing a password the incoming one took; no TLS on that port; a server that does not answer; Port 25; port 143 or POP.
+  2. Later, during a sync: a refused password stops the account ("reconnect required") until SCN-054; a server out of reach is tried again on its own, 60 seconds doubling to 15 minutes, and the panel offers Retry now.
+- **Expected result:** The person knows what to change, and never finds an account half connected.
+- **Alt paths:** Back to the provider cards; Other for a server the presets do not have.
+- **UI elements:** SCR-02; the form's error callout with the help link; the panel's callout; the inbox banner.
+- **States covered:** error
+- **Errors & recovery:** This scenario is the recovery: nothing is stored on a refused connect, and a refused new password leaves the old one.
+- **Status:** validated
+- **Coverage:** app/lib/imap-errors.ts, app/components/settings/sections/ImapAccount.tsx, workers/providers/imap/client.ts (loginFailure), workers/providers/imap/smtp.ts, workers/routes/accounts.ts, tests/imap-client.test.ts, tests/smtp.test.ts, tests/imap-connect-ui.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS4). The login answers of Yandex, Mail.ru, Gmail and Yahoo were read from their servers on 2026-10-06 and are in the tests; the others are matched by their common wording.

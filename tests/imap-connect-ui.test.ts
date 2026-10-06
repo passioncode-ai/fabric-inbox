@@ -6,7 +6,7 @@ import { imapErrorText, IMAP_ERROR_CODES } from "../app/lib/imap-errors";
 import { imapSetupState } from "../app/lib/account-status";
 import { PRESETS, presetFor } from "../shared/mail/imap-presets";
 
-/** Settings → Accounts for IMAP accounts (SCN-060…SCN-063): the card, the errors and the form. */
+/** Settings → Accounts for IMAP accounts (SCN-052…SCN-056): the card, the errors and the form. */
 
 test("the IMAP card connects where the server holds a credential key, and says so where it does not", () => {
   const card = PROVIDERS.find((p) => p.id === "imap")!;

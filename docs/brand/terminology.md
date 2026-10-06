@@ -34,6 +34,10 @@ Contract: brand-contract v1
 | Outside agent | Bot, integration, app (for a keyed agent) | An AI agent the owner runs elsewhere (Claude Code, Cursor, their own) that works with Fabric Inbox through its key; never an Agent that answers an address |
 | Drafts only / Can send | Read-write, full access (for sending) | Whether an agent key's mail waits in Drafts for the owner or leaves, within its daily number |
 | Revoke | Delete key, disable | Ending an agent key: it stops working at once |
+| App password | Mail password, IMAP password | A password the person makes at their mail provider for one app (Apple names it app-specific password in its own menus); checked with the provider, then kept encrypted on the server and never shown again |
+| IMAP account | IMAP connection, mail connector | A mail account read over IMAP and sent over SMTP with an app password (iCloud Mail, Yahoo Mail, Fastmail…); named `imap:<id>` to agents |
+| Other mail | Other accounts, generic mail | The Settings card ("Other mail (IMAP)") and the sidebar group for IMAP accounts |
+| Enter a new app password | Reconnect (for an IMAP account), re-authenticate | What fixes an IMAP account whose provider refused the app password |
 
 ## Entity and tier names — exact spelling
 | Name | Wrong forms seen |
@@ -50,6 +54,12 @@ Contract: brand-contract v1
 | Cloudflare | CloudFlare |
 | Mac | mac (device name) |
 | Outlook | outlook (provider name) |
+| IMAP | Imap, imap (to a user) |
+| SMTP | Smtp, smtp (to a user) |
+| iCloud Mail | iCloud mail, ICloud |
+| Fastmail | FastMail |
+| Mail.ru | mail.ru (the provider's name) |
+| GMX | Gmx |
 | Drafts | drafts (navigation label) |
 | MiB | Mib, MB (when the bound is 1,048,576-byte units) |
 | Claude | claude (the assistant's name) |

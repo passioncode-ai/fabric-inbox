@@ -9,7 +9,7 @@ import { ActionMenu, ActionResult, Badge, Panel, PanelBlock, errorText, useConfi
 import { GMAIL_KEY } from "./data";
 
 /**
- * IMAP accounts in Settings → Accounts (SCN-060…SCN-063): connecting one with an address and an
+ * IMAP accounts in Settings → Accounts (SCN-052…SCN-056): connecting one with an address and an
  * app password (checked with the provider's IMAP and SMTP servers before the server keeps it,
  * sealed), giving it a new password, and disconnecting it. The password goes to the server once
  * and is never shown again.

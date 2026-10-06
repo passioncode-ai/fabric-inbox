@@ -36,7 +36,7 @@ const gmailStatus = (a: Account) => a.status.replaceAll("_", " ");
 const gmailTone = (a: Account) => (a.error ? "bad" : a.status === "connected" ? "ok" : "warn") as "bad" | "ok" | "warn";
 
 /**
- * Settings → Accounts (SCR-02, SCN-002, SCN-003, SCN-045, SCN-046, SCN-060…SCN-063): the Cloudflare
+ * Settings → Accounts (SCR-02, SCN-002, SCN-003, SCN-045, SCN-046, SCN-052…SCN-056): the Cloudflare
  * accounts the server has a token for, and the connected Gmail and IMAP accounts. Connecting one more
  * opens a dialog with a card per provider (providers.ts); providers this build cannot connect say so.
  */

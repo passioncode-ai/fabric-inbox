@@ -146,7 +146,7 @@ accountsRouter.get("/api/accounts/providers", async (c) => {
   return c.json(await stub(c.env).mailProviders());
 });
 /**
- * Connects an IMAP account with an app password (SCN for WS4): checked with the provider's IMAP and
+ * Connects an IMAP account with an app password (SCN-053): checked with the provider's IMAP and
  * SMTP servers before it is kept, sealed, on this server. Not an agent tool: an agent never
  * receives a person's password (mcp/tools.ts NOT_TOOLS).
  */
