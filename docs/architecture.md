@@ -116,7 +116,16 @@ its key by fingerprint (first 9 bytes of SHA-256); version 1 envelopes and keys 
 `MAIL_CREDENTIAL_KEY_PREVIOUS` keep opening and are sealed again with the current key the next
 time the account is used, which is how the key is rotated. An envelope no key opens is
 `reconnect_required` (`credentials_unreadable`). Create my server makes `MAIL_CREDENTIAL_KEY` once
-(`desktop/cloudflare-deploy.cjs`); the Gmail and Outlook setups make it when the server has none.
+(`desktop/cloudflare-deploy.cjs`); the Gmail and Outlook setups, and `POST /api/credential-key`
+(Settings, `create_credential_key`), make it when the server has none. All three write through
+`writeWorkerSettings` (`workers/gmail-setup/server-settings.ts`), which runs under one R2 lock
+(`workers/lib/settings-lock.ts`, `config/worker-settings.lock`, taken with a conditional write,
+stale after 2 minutes) and reads the live bindings just before it writes: a credential key bound
+under either name is inherited, never written again, even before the new Worker version holding it
+runs — so two requests at once make exactly one key. Only a `MAIL_CREDENTIAL_KEY` the running Worker
+holds but cannot use (set by hand) is replaced, and not within 10 minutes of a key this server wrote
+(`config/credential-key.json`, a time, no value). A change that waits too long for the lock is
+refused with 409 and nothing written.
 
 **Schedule.** One alarm serves every account of every provider (`gmail-scheduler.ts`, below);
 `MAIL_POLL_SECONDS` (else `GMAIL_POLL_SECONDS`, default 300) sets the interval; an account whose

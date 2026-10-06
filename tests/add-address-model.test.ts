@@ -184,7 +184,7 @@ test("an answer that did not arrive: what exists now is read again, and nothing 
   const unknown = lostAnswerRows("sales@acme.test", ["sales"], null, {}, "The server could not be reached.");
   assert.equal(unknown.length, 1);
   assert.equal(unknown[0]!.created, false);
-  assert.match(unknown[0]!.steps[0]!.detail, /could not be read: open Addresses to see which addresses exist/);
+  assert.match(unknown[0]!.steps[0]!.detail, /could not be read: the address list shows which addresses exist/);
   assert.doesNotMatch(unknown[0]!.steps[0]!.detail, /Nothing was created/);
   const missing = lostAnswerRows("x@acme.test", ["x"], { ...check, names: [] }, {}, "Lost.");
   assert.match(missing[0]!.steps[0]!.detail, /x@acme\.test does not exist/, "a name the check did not answer is not claimed either way");
