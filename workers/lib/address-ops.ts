@@ -5,6 +5,7 @@ import { routingClient, RoutingError, ZoneNotVisible, ROUTING_NOT_CONFIGURED, ty
 import { allowedAddresses, allServedDomains, createMailbox, deleteMailbox, readSettings, settingsKey, storedCatchAll, updateSettings } from "./mailbox-store";
 import { checkLocalPart, suggestDisplayName } from "../../shared/address-name";
 import { Folders } from "../../shared/folders";
+import { msg } from "../../shared/i18n";
 
 /**
  * The one way an address is created or removed (SCN-021, SCN-032, MB-1), used by
@@ -51,7 +52,7 @@ export interface AddressStep {
 }
 export interface StepFix { action: "route_here" | "connect_cloudflare" | "connect_account" | "open_domain"; label: string }
 
-const RULE_LABEL = "Send its mail here";
+const RULE_LABEL = msg("Send its mail here");
 
 export async function createAddress(env: Env, input: CreateAddressInput, agentProblem: string | null): Promise<OpResult> {
   const email = input.email.trim().toLowerCase();
@@ -59,16 +60,16 @@ export async function createAddress(env: Env, input: CreateAddressInput, agentPr
   const local = checkLocalPart(email.slice(0, email.lastIndexOf("@")));
   if (!local.valid) return { status: 400, body: { error: local.problem } };
   const served = await allServedDomains(env);
-  if (!served.includes(domain)) return { status: 400, body: { error: `${domain} is not served here; receive its mail here first (Settings → Domains)` } };
-  if (await env.BUCKET.head(settingsKey(email))) return { status: 409, body: { error: "This address already exists", email } };
+  if (!served.includes(domain)) return { status: 400, body: { error: msg("{domain} is not served here; receive its mail here first (Settings → Domains)", { domain }) } };
+  if (await env.BUCKET.head(settingsKey(email))) return { status: 409, body: { error: msg("This address already exists"), email } };
   if (agentProblem) return { status: 400, body: { error: agentProblem } };
   const allowed = allowedAddresses(env);
-  if (allowed.length && !allowed.includes(email)) return { status: 403, body: { error: "Mailbox creation is restricted to configured EMAIL_ADDRESSES" } };
+  if (allowed.length && !allowed.includes(email)) return { status: 403, body: { error: msg("Mailbox creation is restricted to configured EMAIL_ADDRESSES") } };
 
   const warnings: string[] = [];
   if (input.forwardTo) {
     if (served.includes(domainOf(input.forwardTo)))
-      return { status: 400, body: { error: "A copy to a domain served here would come straight back; choose an outside address" } };
+      return { status: 400, body: { error: msg("A copy to a domain served here would come straight back; choose an outside address") } };
     const accounts = new CloudflareAccounts(env);
     if (accounts.connected) {
       try {
@@ -76,12 +77,12 @@ export async function createAddress(env: Env, input: CreateAddressInput, agentPr
         const destination = (await new DomainManager(accounts, env).destinationsFor(email)).find((d) => d.email === input.forwardTo);
         if (!destination?.verified)
           return { status: 400, body: { error: destination
-            ? `${input.forwardTo} has not confirmed yet: Cloudflare sent it a link. Confirm it, then add the address.`
-            : `${input.forwardTo} is not a forwarding destination yet. Add it under Forwarding destinations first.` } };
+            ? msg("{address} has not confirmed yet: Cloudflare sent it a link. Confirm it, then add the address.", { address: input.forwardTo })
+            : msg("{address} is not a forwarding destination yet. Add it under Forwarding destinations first.", { address: input.forwardTo }) } };
       } catch (error) {
-        warnings.push(`Could not check that ${input.forwardTo} is a confirmed destination (${(error as Error).message}); a failed copy will show on the address.`);
+        warnings.push(msg("Could not check that {address} is a confirmed destination ({error}); a failed copy will show on the address.", { address: input.forwardTo, error: (error as Error).message }));
       }
-    } else warnings.push(`A copy to ${input.forwardTo} works once it is a confirmed Email Routing destination in the domain's Cloudflare account.`);
+    } else warnings.push(msg("A copy to {address} works once it is a confirmed Email Routing destination in the domain's Cloudflare account.", { address: input.forwardTo }));
   }
 
   // The rule is made before the mailbox, so a mailbox that cannot be saved takes its new rule away
@@ -93,34 +94,34 @@ export async function createAddress(env: Env, input: CreateAddressInput, agentPr
   const client = input.createRoute === false ? null : routingClient(env);
   if (input.createRoute === false) {
     rule = { id: "rule", label: RULE_LABEL, outcome: "skipped",
-      detail: `No routing rule was asked for: mail reaches ${email} only if the domain's routing already sends it here.`,
-      fix: { action: "route_here", label: "Make the rule" } };
+      detail: msg("No routing rule was asked for: mail reaches {email} only if the domain's routing already sends it here.", { email }),
+      fix: { action: "route_here", label: msg("Make the rule") } };
   } else if (!client) {
     if (input.createRoute === true) return { status: 503, body: { error: ROUTING_NOT_CONFIGURED.detail } };
-    const detail = `This server has no Cloudflare token for Email Routing, so no rule was made; mail reaches ${email} only if the domain's routing already sends it here.`;
+    const detail = msg("This server has no Cloudflare token for Email Routing, so no rule was made; mail reaches {email} only if the domain's routing already sends it here.", { email });
     warnings.push(detail);
-    rule = { id: "rule", label: RULE_LABEL, outcome: "skipped", detail, fix: { action: "connect_cloudflare", label: "Connect Cloudflare" } };
+    rule = { id: "rule", label: RULE_LABEL, outcome: "skipped", detail, fix: { action: "connect_cloudflare", label: msg("Connect Cloudflare") } };
   } else {
     try {
       const ensured = await client.ensureRule(email);
       routing = ensured.status;
       madeRule = ensured.created;
       rule = { id: "rule", label: RULE_LABEL, outcome: ensured.created ? "done" : "already", detail: routing.detail,
-        ...(routing.state === "verified" ? {} : { fix: { action: "open_domain" as const, label: "Fix it" } }) };
+        ...(routing.state === "verified" ? {} : { fix: { action: "open_domain" as const, label: msg("Fix it") } }) };
     } catch (error) {
       if (error instanceof ZoneNotVisible) {
         // A served domain the token cannot see still receives what Cloudflare routes here.
-        const detail = `${error.message}, so no routing rule was made; mail reaches ${email} only if the domain's catch-all sends it here.`;
+        const detail = msg("{reason}, so no routing rule was made; mail reaches {email} only if the domain's catch-all sends it here.", { reason: error.message, email });
         warnings.push(detail);
-        rule = { id: "rule", label: RULE_LABEL, outcome: "skipped", detail, fix: { action: "connect_account", label: "Connect its account" } };
+        rule = { id: "rule", label: RULE_LABEL, outcome: "skipped", detail, fix: { action: "connect_account", label: msg("Connect its account") } };
       } else if (input.createRoute === true) {
-        return { status: 502, body: { error: error instanceof RoutingError ? error.message : "Routing could not be created" } };
+        return { status: 502, body: { error: error instanceof RoutingError ? error.message : msg("Routing could not be created") } };
       } else {
-        const reason = error instanceof RoutingError ? error.message : `Routing could not be created (${(error as Error).message})`;
-        const detail = `${reason.replace(/\.$/, "")}. The address was kept; it receives nothing until its mail is sent here.`;
+        const reason = error instanceof RoutingError ? error.message : msg("Routing could not be created ({error})", { error: (error as Error).message });
+        const detail = msg("{reason}. The address was kept; it receives nothing until its mail is sent here.", { reason: reason.replace(/\.$/, "") });
         warnings.push(detail);
         console.error(JSON.stringify({ event: "address_rule_failed", domain, error: reason }));
-        rule = { id: "rule", label: RULE_LABEL, outcome: "failed", detail, fix: { action: "route_here", label: "Fix it" } };
+        rule = { id: "rule", label: RULE_LABEL, outcome: "failed", detail, fix: { action: "route_here", label: msg("Fix it") } };
       }
     }
   }
@@ -134,16 +135,20 @@ export async function createAddress(env: Env, input: CreateAddressInput, agentPr
     });
   } catch (error) {
     await undoRule(client, email, madeRule);
-    return { status: 502, body: { error: `The address could not be saved (${(error as Error).message}).${madeRule ? " Its new routing rule was removed again." : ""}` } };
+    return { status: 502, body: { error: madeRule
+      ? msg("The address could not be saved ({error}). Its new routing rule was removed again.", { error: (error as Error).message })
+      : msg("The address could not be saved ({error}).", { error: (error as Error).message }) } };
   }
   if (created.status !== "created") {
     await undoRule(client, email, madeRule);
     return created.status === "exists"
-      ? { status: 409, body: { error: "This address already exists", email } }
+      ? { status: 409, body: { error: msg("This address already exists"), email } }
       : { status: 403, body: { error: created.reason } };
   }
-  const address: AddressStep = { id: "address", label: "Create the address", outcome: "done",
-    detail: `${email} keeps its mail here${input.forwardTo ? ` and forwards a copy to ${input.forwardTo}` : ""}.` };
+  const address: AddressStep = { id: "address", label: msg("Create the address"), outcome: "done",
+    detail: input.forwardTo
+      ? msg("{email} keeps its mail here and forwards a copy to {address}.", { email, address: input.forwardTo })
+      : msg("{email} keeps its mail here.", { email }) };
   console.log(JSON.stringify({ event: "address_created", domain, routed: !!routing, madeRule, rule: rule.outcome, copy: !!input.forwardTo, signature: !!input.signature?.enabled }));
   return { status: 201, body: { email, settings: created.settings, routing, steps: [address, rule], ...(warnings.length ? { warning: warnings.join(" ") } : {}) } };
 }
@@ -151,26 +156,26 @@ export async function createAddress(env: Env, input: CreateAddressInput, agentPr
 /** Changes or removes an address's forwarding copy (MB-3), with the checks creating one has. */
 export async function setForwardCopy(env: Env, rawEmail: string, forwardTo: string | null): Promise<OpResult> {
   const email = rawEmail.trim().toLowerCase();
-  if (!(await env.BUCKET.head(settingsKey(email)))) return { status: 404, body: { error: "Address not found" } };
+  if (!(await env.BUCKET.head(settingsKey(email)))) return { status: 404, body: { error: msg("Address not found") } };
   const warnings: string[] = [];
   if (forwardTo) {
     if ((await allServedDomains(env)).includes(domainOf(forwardTo)))
-      return { status: 400, body: { error: "A copy to a domain served here would come straight back; choose an outside address" } };
+      return { status: 400, body: { error: msg("A copy to a domain served here would come straight back; choose an outside address") } };
     const accounts = new CloudflareAccounts(env);
     if (accounts.connected) {
       try {
         const destination = (await new DomainManager(accounts, env).destinationsFor(email)).find((d) => d.email === forwardTo);
         if (!destination?.verified)
           return { status: 400, body: { error: destination
-            ? `${forwardTo} has not confirmed yet: Cloudflare sent it a link. Confirm it, then choose it again.`
-            : `${forwardTo} is not a forwarding destination yet. Add it under Forwarding destinations first.` } };
+            ? msg("{address} has not confirmed yet: Cloudflare sent it a link. Confirm it, then choose it again.", { address: forwardTo })
+            : msg("{address} is not a forwarding destination yet. Add it under Forwarding destinations first.", { address: forwardTo }) } };
       } catch (error) {
-        warnings.push(`Could not check that ${forwardTo} is a confirmed destination (${(error as Error).message}); a failed copy will show on the address.`);
+        warnings.push(msg("Could not check that {address} is a confirmed destination ({error}); a failed copy will show on the address.", { address: forwardTo, error: (error as Error).message }));
       }
     }
   }
   const next = await updateSettings(env.BUCKET, email, (s) => ({ ...s, forwarding: forwardTo ? { enabled: true, email: forwardTo } : { enabled: false, email: "" } }));
-  if (!next) return { status: 404, body: { error: "Address not found" } };
+  if (!next) return { status: 404, body: { error: msg("Address not found") } };
   // A new target starts clean: the last failure was about the old one.
   await env.BUCKET.delete(`delivery-issues/${email}.json`).catch(() => undefined);
   console.log(JSON.stringify({ event: "address_copy_changed", domain: domainOf(email), copy: !!forwardTo }));
@@ -186,33 +191,33 @@ async function undoRule(client: ReturnType<typeof routingClient>, email: string,
 export async function removeAddress(env: Env, rawEmail: string): Promise<OpResult> {
   const email = rawEmail.trim().toLowerCase();
   const domain = domainOf(email);
-  if (!(await env.BUCKET.head(settingsKey(email)))) return { status: 404, body: { error: "Address not found" } };
+  if (!(await env.BUCKET.head(settingsKey(email)))) return { status: 404, body: { error: msg("Address not found") } };
   const catchAll = await effectiveCatchAll(env, domain);
   if (catchAll?.mailbox === email)
     return { status: 409, body: { error: catchAll.source === "deployment"
-      ? `${email} keeps mail for every other address on ${domain} (set in this deployment's UNKNOWN_ADDRESS_POLICY); change it there first.`
-      : `${email} keeps mail for every other address on ${domain}. Choose another catch-all (or none) first.` } };
-  let routing = "Cloudflare was not changed: this server has no token. Remove the address's routing rule in the dashboard.";
+      ? msg("{email} keeps mail for every other address on {domain} (set in this deployment's UNKNOWN_ADDRESS_POLICY); change it there first.", { email, domain })
+      : msg("{email} keeps mail for every other address on {domain}. Choose another catch-all (or none) first.", { email, domain }) } };
+  let routing = msg("Cloudflare was not changed: this server has no token. Remove the address's routing rule in the dashboard.");
   const client = routingClient(env);
   if (client) {
     try { routing = await client.deleteRule(email); }
     catch (error) {
-      if (error instanceof ZoneNotVisible) routing = `${error.message}, so its routing rules were not changed.`;
-      else return { status: 502, body: { error: `${error instanceof RoutingError ? error.message : "Routing could not be changed"}. Nothing was deleted.` } };
+      if (error instanceof ZoneNotVisible) routing = msg("{reason}, so its routing rules were not changed.", { reason: error.message });
+      else return { status: 502, body: { error: msg("{reason}. Nothing was deleted.", { reason: error instanceof RoutingError ? error.message : msg("Routing could not be changed") }) } };
     }
   }
   try {
     await deleteMailbox(env, email);
   } catch (error) {
-    return { status: 502, body: { error: `${routing} The mailbox could not be deleted (${(error as Error).message}); remove it again to finish.` } };
+    return { status: 502, body: { error: msg("{routing} The mailbox could not be deleted ({error}); remove it again to finish.", { routing, error: (error as Error).message }) } };
   }
   await env.BUCKET.delete(`delivery-issues/${email}.json`).catch(() => undefined);
   // What happens to the next message is read from Cloudflare, not assumed.
   let afterwards: string;
   const next = client ? await client.status(email).catch(() => null) : null;
-  if (next?.state === "verified") afterwards = catchAll ? `New mail to ${email} goes to ${catchAll.mailbox}.` : `New mail to ${email} still arrives here and is refused; the sender is told.`;
-  else if (next?.state === "missing") afterwards = `New mail to ${email} no longer comes here: ${next.detail}`;
-  else afterwards = catchAll ? `New mail to ${email} goes to ${catchAll.mailbox} if Cloudflare still sends it here.` : `New mail to ${email} is refused if Cloudflare still sends it here.`;
+  if (next?.state === "verified") afterwards = catchAll ? msg("New mail to {email} goes to {mailbox}.", { email, mailbox: catchAll.mailbox }) : msg("New mail to {email} still arrives here and is refused; the sender is told.", { email });
+  else if (next?.state === "missing") afterwards = msg("New mail to {email} no longer comes here: {detail}", { email, detail: next.detail });
+  else afterwards = catchAll ? msg("New mail to {email} goes to {mailbox} if Cloudflare still sends it here.", { email, mailbox: catchAll.mailbox }) : msg("New mail to {email} is refused if Cloudflare still sends it here.", { email });
   console.log(JSON.stringify({ event: "address_deleted", domain }));
   return { status: 200, body: { email, routing, afterwards } };
 }
@@ -253,11 +258,15 @@ export interface AddressCheck {
 }
 
 const describeAction = (email: string, a: RouteAction) =>
-  a.type === "forward" ? `forwards ${email} to ${a.value ?? "another address"}`
-    : a.type === "worker" ? `sends ${email} to the Worker ${a.value ?? "of another app"}`
-      : `drops mail for ${email}`;
+  a.type === "forward" ? (a.value ? msg("forwards {email} to {target}", { email, target: a.value }) : msg("forwards {email} to another address", { email }))
+    : a.type === "worker" ? (a.value ? msg("sends {email} to the Worker {name}", { email, name: a.value }) : msg("sends {email} to the Worker of another app", { email }))
+      : msg("drops mail for {email}", { email });
 
-const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
+/** Mail that arrived for a name before it existed: one sentence per count and fate, so each translates whole. */
+const arrivedNote = (n: number, when: string, refused: boolean) =>
+  n === 1
+    ? refused ? msg("1 message arrived for it recently (last {when} UTC), refused.", { when }) : msg("1 message arrived for it recently (last {when} UTC), kept in the catch-all.", { when })
+    : refused ? msg("{n} messages arrived for it recently (last {when} UTC), refused.", { n, when }) : msg("{n} messages arrived for it recently (last {when} UTC), kept in the catch-all.", { n, when });
 
 /**
  * Everything the Add address dialog and check_address say before Create (SCN-061): the domain's state
@@ -283,35 +292,37 @@ export async function checkAddresses(env: Env, rawDomain: string, rawNames: stri
   if (!served) {
     if (cf?.visible) {
       state = "can_receive";
-      detail = `${domain} does not receive mail here yet. Creating an address first receives its mail here: Email Routing on, its existing addresses brought in keeping their copies, sending on.`;
+      detail = msg("{domain} does not receive mail here yet. Creating an address first receives its mail here: Email Routing on, its existing addresses brought in keeping their copies, sending on.", { domain });
     } else {
       state = "unavailable";
       detail = cfProblem
-        ? `${domain} does not receive mail here, and Cloudflare could not be read (${cfProblem}).`
-        : `${domain} does not receive mail here and none of this server's Cloudflare tokens can see it. Connect its account in Settings → Accounts.`;
+        ? msg("{domain} does not receive mail here, and Cloudflare could not be read ({problem}).", { domain, problem: cfProblem })
+        : msg("{domain} does not receive mail here and none of this server's Cloudflare tokens can see it. Connect its account in Settings → Accounts.", { domain });
     }
   } else if (!client) {
     state = "no_token";
-    detail = `${domain} receives mail here. This server has no Cloudflare token, so no routing rule can be made: an address receives only if the domain's routing already sends its mail here.`;
+    detail = msg("{domain} receives mail here. This server has no Cloudflare token, so no routing rule can be made: an address receives only if the domain's routing already sends its mail here.", { domain });
   } else if (cfProblem) {
     state = "unknown";
-    detail = `${domain} receives mail here, but Cloudflare could not be read (${cfProblem}); routing is unknown.`;
+    detail = msg("{domain} receives mail here, but Cloudflare could not be read ({problem}); routing is unknown.", { domain, problem: cfProblem });
   } else if (!cf?.visible) {
     state = "not_visible";
-    detail = `${domain} receives mail here, but none of this server's Cloudflare tokens can see it, so no routing rule can be made. Connect its account in Settings → Accounts.`;
+    detail = msg("{domain} receives mail here, but none of this server's Cloudflare tokens can see it, so no routing rule can be made. Connect its account in Settings → Accounts.", { domain });
   } else if (!cf.enabled || cf.status !== "ready") {
     state = "needs_fix";
-    detail = `Email Routing for ${domain} is ${cf.enabled ? cf.status : "off"}: no mail arrives until it is fixed. Fix it turns it on again (Receive mail here).`;
+    detail = cf.enabled
+      ? msg("Email Routing for {domain} is {status}: no mail arrives until it is fixed. Fix it turns it on again (Receive mail here).", { domain, status: cf.status })
+      : msg("Email Routing for {domain} is off: no mail arrives until it is fixed. Fix it turns it on again (Receive mail here).", { domain });
   } else {
     state = "receiving";
-    detail = `${domain} receives mail here.`;
+    detail = msg("{domain} receives mail here.", { domain });
   }
   const canMake = !!client && !!cf?.visible;
   const ruleDetail = canMake
-    ? "A Cloudflare rule that sends the address's mail here is made with it."
-    : !client ? "No rule can be made: this server has no Cloudflare token yet (Settings → Domains → Connect Cloudflare)."
-      : cfProblem ? `Cloudflare could not be read (${cfProblem}); the rule is tried when the address is created.`
-        : `No rule can be made: none of this server's Cloudflare tokens can see ${domain}.`;
+    ? msg("A Cloudflare rule that sends the address's mail here is made with it.")
+    : !client ? msg("No rule can be made: this server has no Cloudflare token yet (Settings → Domains → Connect Cloudflare).")
+      : cfProblem ? msg("Cloudflare could not be read ({problem}); the rule is tried when the address is created.", { problem: cfProblem })
+        : msg("No rule can be made: none of this server's Cloudflare tokens can see {domain}.", { domain });
   const catchAllHere = !!cf?.catchAll?.enabled && cf.catchAll.toHere;
 
   const exists = await Promise.all(emails.map(async (e) => [e, !!(await env.BUCKET.head(settingsKey(e)))] as const));
@@ -325,21 +336,24 @@ export async function checkAddresses(env: Env, rawDomain: string, rawNames: stri
   const names = checks.map((c): NameCheck => {
     const email = `${c.value}@${domain}`;
     if (!c.valid) return { localPart: c.value, email, status: "invalid", detail: c.problem!, notes: [] };
-    if (existing.has(email)) return { localPart: c.value, email, status: "exists", detail: `${email} already exists here.`, notes: [] };
+    if (existing.has(email)) return { localPart: c.value, email, status: "exists", detail: msg("{email} already exists here.", { email }), notes: [] };
     const rule = cf?.rules.find((r) => r.address === email);
     if (rule && !rule.toHere)
       return { localPart: c.value, email, status: "elsewhere", notes: [],
-        detail: `A Cloudflare rule${rule.enabled ? "" : " (switched off)"} ${describeAction(email, rule.action)}. Change or delete it in Cloudflare (the domain → Email → Email Routing → Routing rules), or use Bring them here on the domain, which keeps a copy.` };
+        detail: rule.enabled
+          ? msg("A Cloudflare rule {action}. Change or delete it in Cloudflare (the domain → Email → Email Routing → Routing rules), or use Bring them here on the domain, which keeps a copy.", { action: describeAction(email, rule.action) })
+          : msg("A Cloudflare rule (switched off) {action}. Change or delete it in Cloudflare (the domain → Email → Email Routing → Routing rules), or use Bring them here on the domain, which keeps a copy.", { action: describeAction(email, rule.action) }) };
     const notes: string[] = [];
-    const kept = catchAll ? `kept in ${catchAll.mailbox}, the domain's catch-all` : "refused";
-    if (rule?.enabled) notes.push(`Cloudflare already sends it here; until it exists, its mail is ${kept}.`);
-    else if (rule) notes.push("Its Cloudflare rule to this server is switched off; creating it switches it on.");
-    else if (catchAll && catchAllHere) notes.push(`Today its mail is kept in ${catchAll.mailbox}, the domain's catch-all; once created it has its own mailbox.`);
-    else if (cf?.catchAll?.enabled && !cf.catchAll.toHere) notes.push(`Today Cloudflare's catch-all ${describeAction(email, cf.catchAll.action)}; once created, its own rule sends it here.`);
+    if (rule?.enabled) notes.push(catchAll
+      ? msg("Cloudflare already sends it here; until it exists, its mail is kept in {mailbox}, the domain's catch-all.", { mailbox: catchAll.mailbox })
+      : msg("Cloudflare already sends it here; until it exists, its mail is refused."));
+    else if (rule) notes.push(msg("Its Cloudflare rule to this server is switched off; creating it switches it on."));
+    else if (catchAll && catchAllHere) notes.push(msg("Today its mail is kept in {mailbox}, the domain's catch-all; once created it has its own mailbox.", { mailbox: catchAll.mailbox }));
+    else if (cf?.catchAll?.enabled && !cf.catchAll.toHere) notes.push(msg("Today Cloudflare's catch-all {action}; once created, its own rule sends it here.", { action: describeAction(email, cf.catchAll.action) }));
     const seen = recent.get(email);
-    if (seen) notes.push(`${plural(seen.count, "message")} arrived for it recently (last ${seen.lastSeen.slice(0, 16).replace("T", " ")} UTC), ${seen.action === "rejected" ? "refused" : "kept in the catch-all"}.`);
+    if (seen) notes.push(arrivedNote(seen.count, seen.lastSeen.slice(0, 16).replace("T", " "), seen.action === "rejected"));
     if (c.note) notes.push(c.note);
-    return { localPart: c.value, email, status: "available", detail: `${email} can be created.`, notes };
+    return { localPart: c.value, email, status: "available", detail: msg("{email} can be created.", { email }), notes };
   });
 
   console.log(JSON.stringify({ event: "address_check", domain, state, names: names.length, available: names.filter((n) => n.status === "available").length }));
@@ -361,7 +375,7 @@ export interface BatchInput extends Omit<CreateAddressInput, "email"> {
 export async function createAddresses(env: Env, input: BatchInput, agentProblem: string | null): Promise<OpResult> {
   const domain = input.domain.trim().toLowerCase();
   if (!(await allServedDomains(env)).includes(domain))
-    return { status: 400, body: { error: `${domain} is not served here; receive its mail here first (Settings → Domains, or connect_domain)` } };
+    return { status: 400, body: { error: msg("{domain} is not served here; receive its mail here first (Settings → Domains, or connect_domain)", { domain }) } };
   if (agentProblem) return { status: 400, body: { error: agentProblem } };
   const { domain: _domain, localParts, ...settings } = input;
   const results: Record<string, unknown>[] = [];
@@ -403,14 +417,18 @@ function testState(record: TestRecord, arrival: { date: string; folder: string }
   const base = { subject: record.subject, sentAt: record.sentAt, sendStatus: record.sendStatus };
   if (arrival)
     return { ...base, state: "arrived", arrivedAt: arrival.date, folder: arrival.folder,
-      detail: `The test message arrived${arrival.folder === Folders.INBOX ? "" : ` in ${arrival.folder}`}: mail sent to this address reaches it here.` };
+      detail: arrival.folder === Folders.INBOX
+        ? msg("The test message arrived: mail sent to this address reaches it here.")
+        : msg("The test message arrived in {folder}: mail sent to this address reaches it here.", { folder: arrival.folder }) };
   if (record.sendStatus === "failed")
-    return { ...base, state: "failed", detail: `The provider refused the test message${record.errorCode ? ` (${record.errorCode})` : ""}: sending from this domain may be off. Turn on sending on its domain, then send it again.` };
+    return { ...base, state: "failed", detail: record.errorCode
+      ? msg("The provider refused the test message ({code}): sending from this domain may be off. Turn on sending on its domain, then send it again.", { code: record.errorCode })
+      : msg("The provider refused the test message: sending from this domain may be off. Turn on sending on its domain, then send it again.") };
   if (now - Date.parse(record.sentAt) > TEST_WAIT_MS)
-    return { ...base, state: "not_arrived", detail: "The test message has not arrived after 3 minutes. Cloudflare may not send this address's mail here: check its routing." };
+    return { ...base, state: "not_arrived", detail: msg("The test message has not arrived after 3 minutes. Cloudflare may not send this address's mail here: check its routing.") };
   return { ...base, state: "waiting", detail: record.sendStatus === "accepted"
-    ? "The provider accepted the test message; waiting for it to arrive."
-    : "The test message is being sent; waiting for it to arrive." };
+    ? msg("The provider accepted the test message; waiting for it to arrive.")
+    : msg("The test message is being sent; waiting for it to arrive.") };
 }
 
 /**
@@ -419,7 +437,7 @@ function testState(record: TestRecord, arrival: { date: string; folder: string }
  */
 export async function sendRoutingTest(env: Env, rawEmail: string, now = Date.now()): Promise<OpResult> {
   const email = rawEmail.trim().toLowerCase();
-  if (!(await readSettings(env.BUCKET, email))) return { status: 404, body: { error: "Address not found" } };
+  if (!(await readSettings(env.BUCKET, email))) return { status: 404, body: { error: msg("Address not found") } };
   const subject = `Fabric Inbox routing test ${new Date(now).toISOString().slice(0, 16).replace("T", " ")} UTC`;
   const result = await env.MAILBOX.get(env.MAILBOX.idFromName(email)).sendMail({
     mailboxId: email,
@@ -437,7 +455,7 @@ export async function sendRoutingTest(env: Env, rawEmail: string, now = Date.now
 /** The last test message of an address and whether it has arrived (SCN-062); null when none was sent. */
 export async function routingTestStatus(env: Env, rawEmail: string, now = Date.now()): Promise<OpResult> {
   const email = rawEmail.trim().toLowerCase();
-  if (!(await env.BUCKET.head(settingsKey(email)))) return { status: 404, body: { error: "Address not found" } };
+  if (!(await env.BUCKET.head(settingsKey(email)))) return { status: 404, body: { error: msg("Address not found") } };
   const record = await (await env.BUCKET.get(testKey(email)))?.json<TestRecord>().catch(() => null);
   if (!record?.subject) return { status: 200, body: { email, test: null } };
   // Only the two reads used here; the full RPC type of the mailbox is too deep to infer.

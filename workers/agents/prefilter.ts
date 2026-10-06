@@ -1,3 +1,4 @@
+import { msg } from "../../shared/i18n";
 /**
  * Mail no agent should answer, decided from headers before any model call
  * (REQ-P3, SCN-024 alt path). Cheap, deterministic and explainable: every skip
@@ -17,17 +18,17 @@ export type SkipReason =
   | "already_answered";
 
 export const SKIP_TEXT: Record<SkipReason, string> = {
-  no_sender: "The message has no sender address",
-  own_address: "The message came from this address itself",
-  own_domain: "The message came from one of this server's own addresses",
-  calendar: "Calendar invitation or response",
-  auto_submitted: "Automatically generated message (Auto-Submitted)",
-  bulk: "Bulk or list precedence",
-  mailing_list: "Mailing list or newsletter",
-  auto_reply: "Automatic reply or out-of-office",
-  delivery_report: "Delivery report or bounce",
-  no_reply_sender: "The sender does not accept replies",
-  already_answered: "The operator already replied in this thread",
+  no_sender: msg("The message has no sender address"),
+  own_address: msg("The message came from this address itself"),
+  own_domain: msg("The message came from one of this server's own addresses"),
+  calendar: msg("Calendar invitation or response"),
+  auto_submitted: msg("Automatically generated message (Auto-Submitted)"),
+  bulk: msg("Bulk or list precedence"),
+  mailing_list: msg("Mailing list or newsletter"),
+  auto_reply: msg("Automatic reply or out-of-office"),
+  delivery_report: msg("Delivery report or bounce"),
+  no_reply_sender: msg("The sender does not accept replies"),
+  already_answered: msg("The operator already replied in this thread"),
 };
 
 export interface PrefilterInput {

@@ -13,6 +13,7 @@ import {
 } from "../lib/address-ops";
 import { BATCH_MAX, checkLocalPart } from "../../shared/address-name";
 import { ROUTING_NOT_CONFIGURED, routingClient, RoutingError, type RoutingStatus } from "../routing/email-routing";
+import { msg } from "../../shared/i18n";
 
 /**
  * SCR-09 (project addresses) and SCR-10 (agents). Behind the same Access and
@@ -27,7 +28,7 @@ function registryFailure(c: C, error: unknown) {
   const known = registryError(error);
   if (!known) {
     console.error(JSON.stringify({ event: "agent_registry_error", error: (error as Error).message }));
-    return c.json({ error: "Agents are unavailable right now" }, 503);
+    return c.json({ error: msg("Agents are unavailable right now") }, 503);
   }
   const status = known.code === "agent_conflict" ? 409 : known.code === "agent_not_found" ? 404 : 400;
   return c.json({ error: known.detail, code: known.code }, status);
@@ -40,11 +41,11 @@ async function assignments(env: Env) {
 }
 
 agentsRouter.use("/api/agents/*", async (c, next) => {
-  if (!c.env.AGENT_REGISTRY) return c.json({ error: "Agents are not configured on this server" }, 503);
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
   await next();
 });
 agentsRouter.use("/api/agents", async (c, next) => {
-  if (!c.env.AGENT_REGISTRY) return c.json({ error: "Agents are not configured on this server" }, 503);
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
   await next();
 });
 
@@ -68,7 +69,7 @@ async function unknownCollections(c: C, input: unknown): Promise<string | null> 
   if (!Array.isArray(wanted) || !wanted.length) return null;
   const known = await knownCollections(c.env);
   const missing = wanted.filter((id) => typeof id !== "string" || !known.has(id));
-  return missing.length ? `No such knowledge collection: ${missing.join(", ")}` : null;
+  return missing.length ? msg("No such knowledge collection: {names}", { names: missing.join(", ") }) : null;
 }
 
 agentsRouter.post("/api/agents", async (c) => {
@@ -84,7 +85,7 @@ agentsRouter.get("/api/agents/:id", async (c) => {
   try {
     const id = c.req.param("id");
     const [agent, versions, served] = await Promise.all([registry(c).getAgent(id), registry(c).listVersions(id), assignments(c.env)]);
-    if (!agent) return c.json({ error: "Agent not found" }, 404);
+    if (!agent) return c.json({ error: msg("Agent not found") }, 404);
     return c.json({ agent, versions: versions.map((v) => ({ version: v.version, createdAt: v.createdAt })),
       addresses: served.filter((s) => s.assignment && s.assignment !== "off" && s.assignment.id === id).map((s) => s.email) });
   } catch (error) { return registryFailure(c, error); }
@@ -102,12 +103,12 @@ agentsRouter.put("/api/agents/:id", async (c) => {
 
 agentsRouter.delete("/api/agents/:id", async (c) => {
   try {
-    return (await registry(c).deleteAgent(c.req.param("id"))) ? c.body(null, 204) : c.json({ error: "Agent not found" }, 404);
+    return (await registry(c).deleteAgent(c.req.param("id"))) ? c.body(null, 204) : c.json({ error: msg("Agent not found") }, 404);
   } catch (error) { return registryFailure(c, error); }
 });
 
 agentsRouter.get("/api/agent-runs", async (c) => {
-  if (!c.env.AGENT_REGISTRY) return c.json({ error: "Agents are not configured on this server" }, 503);
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
   const limit = Number(c.req.query("limit") || 50);
   try {
     const outcome = c.req.query("outcome");
@@ -127,7 +128,7 @@ agentsRouter.get("/api/agent-runs", async (c) => {
 /** The part before @, checked as the dialog checks it (shared/address-name.ts): a refusal says why in words. */
 const LocalPart = z.string().max(320).transform((v, ctx) => {
   const check = checkLocalPart(v);
-  if (!check.valid) ctx.addIssue({ code: z.ZodIssueCode.custom, message: check.problem ?? "Not a valid name" });
+  if (!check.valid) ctx.addIssue({ code: z.ZodIssueCode.custom, message: check.problem ?? msg("Not a valid name") });
   return check.value;
 });
 const Assignment = z.union([z.literal("off"), z.object({ id: z.string().min(1).max(100) })]);
@@ -151,13 +152,13 @@ export const CreateAddress = z.object({ localPart: LocalPart, domain: Domain, ..
 /** Several addresses on one domain with the same settings (SCN-064); each name is checked on its own. */
 export const CreateAddresses = z.object({
   domain: Domain,
-  localParts: z.array(z.string().max(320)).min(1, "Give at least one name").max(BATCH_MAX, `At most ${BATCH_MAX} addresses at once`),
+  localParts: z.array(z.string().max(320)).min(1, msg("Give at least one name")).max(BATCH_MAX, msg("At most {max} addresses at once", { max: BATCH_MAX })),
   ...AddressSettings,
 }).strict();
 
 async function checkAgentExists(c: C, assignment: z.infer<typeof Assignment> | undefined) {
   if (!assignment || assignment === "off") return null;
-  return (await registry(c).getAgent(assignment.id)) ? null : "The chosen agent does not exist";
+  return (await registry(c).getAgent(assignment.id)) ? null : msg("The chosen agent does not exist");
 }
 
 /** Last forwarding failure per address (written by the email handler, cleared by the next success). */
@@ -219,7 +220,7 @@ agentsRouter.get("/api/project-addresses", async (c) => {
     });
   } catch (error) {
     console.error(JSON.stringify({ event: "project_addresses_error", error: (error as Error).message }));
-    return c.json({ error: "Project addresses are unavailable right now" }, 503);
+    return c.json({ error: msg("Project addresses are unavailable right now") }, 503);
   }
 });
 
@@ -233,11 +234,11 @@ agentsRouter.post("/api/project-addresses/:email/routing", async (c) => {
   const client = routingClient(c.env);
   if (!client) return c.json({ error: ROUTING_NOT_CONFIGURED.detail }, 503);
   const email = c.req.param("email").toLowerCase();
-  if (!(await c.env.BUCKET.head(settingsKey(email)))) return c.json({ error: "Create the address first" }, 404);
+  if (!(await c.env.BUCKET.head(settingsKey(email)))) return c.json({ error: msg("Create the address first") }, 404);
   try {
     return c.json(await client.createRule(email));
   } catch (error) {
-    return c.json({ error: error instanceof RoutingError ? error.message : "Routing could not be changed" }, 502);
+    return c.json({ error: error instanceof RoutingError ? error.message : msg("Routing could not be changed") }, 502);
   }
 });
 
@@ -248,7 +249,7 @@ agentsRouter.post("/api/project-addresses/:email/routing", async (c) => {
  */
 agentsRouter.post("/api/project-addresses", async (c) => {
   const parsed = CreateAddress.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid address" }, 400);
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? msg("Invalid address") }, 400);
   const input = parsed.data;
   const result = await createAddress(c.env, { email: `${input.localPart}@${input.domain}`, name: input.name, agent: input.agent,
     signature: input.signature, createRoute: input.createRoute, forwardTo: input.forwardTo }, await agentProblemOf(c, input.agent));
@@ -256,12 +257,12 @@ agentsRouter.post("/api/project-addresses", async (c) => {
 });
 
 const agentProblemOf = async (c: C, agent: z.infer<typeof Assignment> | undefined) =>
-  c.env.AGENT_REGISTRY ? await checkAgentExists(c, agent) : agent && agent !== "off" ? "Agents are not configured" : null;
+  c.env.AGENT_REGISTRY ? await checkAgentExists(c, agent) : agent && agent !== "off" ? msg("Agents are not configured") : null;
 
 /** SCN-064: several addresses on one domain, each with its own result and steps. */
 agentsRouter.post("/api/project-addresses/batch", async (c) => {
   const parsed = CreateAddresses.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid request" }, 400);
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? msg("Invalid request") }, 400);
   const { localParts, domain, ...settings } = parsed.data;
   const result = await createAddresses(c.env, { domain, localParts, ...settings }, await agentProblemOf(c, settings.agent));
   return c.json(result.body, result.status);
@@ -274,14 +275,14 @@ agentsRouter.post("/api/project-addresses/batch", async (c) => {
 agentsRouter.get("/api/project-addresses/check", async (c) => {
   c.header("Cache-Control", "no-store");
   const domain = (c.req.query("domain") ?? "").trim().toLowerCase();
-  if (!isDomainName(domain)) return c.json({ error: "Give the domain, e.g. domain=example.com" }, 400);
+  if (!isDomainName(domain)) return c.json({ error: msg("Give the domain, e.g. domain=example.com") }, 400);
   const names = (c.req.query("names") ?? "").split(",").map((n) => n.trim()).filter(Boolean);
-  if (names.length > BATCH_MAX) return c.json({ error: `At most ${BATCH_MAX} names at once` }, 400);
+  if (names.length > BATCH_MAX) return c.json({ error: msg("At most {max} names at once", { max: BATCH_MAX }) }, 400);
   try {
     return c.json(await checkAddresses(c.env, domain, names));
   } catch (error) {
     console.error(JSON.stringify({ event: "address_check_error", domain, error: (error as Error).message }));
-    return c.json({ error: "The address could not be checked right now. Try again." }, 503);
+    return c.json({ error: msg("The address could not be checked right now. Try again.") }, 503);
   }
 });
 
@@ -297,7 +298,7 @@ agentsRouter.delete("/api/project-addresses/:email", async (c) => {
 export const CopyInput = z.object({ forwardTo: z.string().trim().toLowerCase().email().max(90).nullable() }).strict();
 agentsRouter.put("/api/project-addresses/:email/copy", async (c) => {
   const parsed = CopyInput.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: "Choose a forwarding destination, or no copy" }, 400);
+  if (!parsed.success) return c.json({ error: msg("Choose a forwarding destination, or no copy") }, 400);
   const result = await setForwardCopy(c.env, c.req.param("email"), parsed.data.forwardTo);
   return c.json(result.body, result.status);
 });
@@ -305,14 +306,14 @@ agentsRouter.put("/api/project-addresses/:email/copy", async (c) => {
 export const AgentAssignmentInput = z.object({ agent: Assignment }).strict();
 agentsRouter.put("/api/project-addresses/:email/agent", async (c) => {
   const parsed = AgentAssignmentInput.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: "Choose an agent or Off" }, 400);
+  if (!parsed.success) return c.json({ error: msg("Choose an agent or Off") }, 400);
   if (c.env.AGENT_REGISTRY) {
     const missing = await checkAgentExists(c, parsed.data.agent);
     if (missing) return c.json({ error: missing }, 400);
-  } else if (parsed.data.agent !== "off") return c.json({ error: "Agents are not configured" }, 503);
+  } else if (parsed.data.agent !== "off") return c.json({ error: msg("Agents are not configured") }, 503);
   const email = c.req.param("email").toLowerCase();
   const next = await updateSettings(c.env.BUCKET, email, (s) => ({ ...s, agent: parsed.data.agent }));
-  return next ? c.json({ email, agent: parsed.data.agent }) : c.json({ error: "Address not found" }, 404);
+  return next ? c.json({ email, agent: parsed.data.agent }) : c.json({ error: msg("Address not found") }, 404);
 });
 
 /**

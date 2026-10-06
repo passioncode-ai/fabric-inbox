@@ -22,6 +22,7 @@ import { compareInbox, inboxIdentity, inboxPage, type InboxFolder, type InboxMes
 import { ProviderError, type Message } from "./gmail-client";
 import type { RemoteProvider } from "../../shared/mail/accounts";
 import type { Store } from "./google-oauth";
+import { msg } from "../../shared/i18n";
 
 export interface StoredMessage {
   message: Omit<Message, "text" | "html">;
@@ -109,7 +110,7 @@ export function gmailInboxMessage(accountId: string, m: IndexRow, ownDomains: st
     subject: m.subject, sender: m.from, recipient: m.to, date: new Date(timestamp).toISOString(), timestamp,
     read: m.read, starred: labels.includes("STARRED"), snippet: m.snippet, threadId: m.threadId,
     ...(m.rfcMessageId ? { rfcMessageId: m.rfcMessageId.replace(/^<|>$/g, "").toLowerCase() } : {}),
-    ...(labels.includes("SPAM") ? { spamReason: `${feed.providerName ?? "The provider"} marked it as spam` } : {}),
+    ...(labels.includes("SPAM") ? { spamReason: feed.providerName ? msg("{provider} marked it as spam", { provider: feed.providerName }) : msg("The provider marked it as spam") } : {}),
     triage: triage({ sender: m.from, subject: m.subject, read: m.read, starred: labels.includes("STARRED"), labels, signals: m.signals, ownDomains }) };
 }
 const searchText = (m: Pick<Message, "subject" | "from" | "to" | "snippet">) => [m.subject, m.from, m.to, m.snippet].join(" ").toLowerCase();

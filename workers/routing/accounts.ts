@@ -1,4 +1,5 @@
 import { accountIdFor, CloudflareApi, CloudflareApiError, cloudflareToken, configuredAccountId, type TokenEnv } from "./cloudflare-api";
+import { msg } from "../../shared/i18n";
 
 /**
  * Several Cloudflare accounts (MA-2…MA-5, docs/app-store/tasks/2026-09-30-cloudflare-accounts.md).
@@ -102,7 +103,7 @@ export async function writeChoice(bucket: R2Bucket, accountId: string, choice: C
     });
     if (written) return next;
   }
-  throw new Error("The account choices changed several times at once; try again");
+  throw new Error(msg("The account choices changed several times at once; try again"));
 }
 
 /** Which account each domain was last seen in. A cache: a miss or a stale row is looked up again. */
@@ -143,7 +144,9 @@ export class CloudflareAccounts {
   private apiOf(ref: TokenRef): CloudflareApi {
     let api = this.apis.get(ref.name);
     if (!api) this.apis.set(ref.name, (api = new CloudflareApi(ref.token, this.fetcher, ref.accountId
-      ? { whose: `the token saved for the Cloudflare account ${ref.accountId}`, fix: "Connect that account again with a new token in Settings → Accounts, or remove it there." }
+      ? { whose: msg("the token saved for the Cloudflare account {account}", { account: ref.accountId }),
+          Whose: msg("The token saved for the Cloudflare account {account}", { account: ref.accountId }),
+          fix: msg("Connect that account again with a new token in Settings → Accounts, or remove it there.") }
       : null)));
     return api;
   }
@@ -165,7 +168,7 @@ export class CloudflareAccounts {
     for (const ref of this.tokens) {
       let seen: { id: string; name: string }[];
       try {
-        seen = await this.apiOf(ref).list<{ id: string; name: string }>("/accounts", "find your accounts (Account Settings: Read)");
+        seen = await this.apiOf(ref).list<{ id: string; name: string }>("/accounts", msg("find your accounts (Account Settings: Read)"));
       } catch (error) {
         if (ref.accountId) {
           // Listed, not dropped: an account whose token stopped working must stay removable.
@@ -175,13 +178,13 @@ export class CloudflareAccounts {
         // Before 0.8 the token needed no Account Settings permission: its zones still name their account.
         if (!(error instanceof CloudflareApiError && error.isPermission)) { problems.push(errorText(error)); continue; }
         try {
-          seen = (await this.apiOf(ref).call<Zone[]>("/zones?per_page=50", { what: "list your domains (Zone: Read)" }))
+          seen = (await this.apiOf(ref).call<Zone[]>("/zones?per_page=50", { what: msg("list your domains (Zone: Read)") }))
             .flatMap((z) => (z.account?.id ? [{ id: z.account.id, name: z.account.name ?? z.account.id }] : []));
         } catch (inner) { problems.push(errorText(inner)); continue; }
       }
       if (ref.accountId && !seen.some((a) => normaliseId(a.id) === ref.accountId)) {
         found.set(ref.accountId, { id: ref.accountId, name: ref.accountId, via: "account",
-          problem: "Its saved token no longer sees this account. Connect it again with a new token, or remove it." });
+          problem: msg("Its saved token no longer sees this account. Connect it again with a new token, or remove it.") });
       }
       for (const a of seen) {
         const id = normaliseId(a.id);
@@ -216,7 +219,7 @@ export class CloudflareAccounts {
       const configured = configuredAccountId(this.env);
       if (configured) return configured;
       const api = this.primary();
-      if (!api) throw new CloudflareApiError("This server has no Cloudflare token of its own.", 400);
+      if (!api) throw new CloudflareApiError(msg("This server has no Cloudflare token of its own."), 400);
       return accountIdFor(api, this.env);
     })());
   }
@@ -227,12 +230,12 @@ export class CloudflareAccounts {
 
   /** An account's active domains. */
   zonesOf(accountId: string, api: CloudflareApi): Promise<Zone[]> {
-    return api.list<Zone>(`/zones?status=active&account.id=${encodeURIComponent(accountId)}`, "list your domains (Zone: Read)");
+    return api.list<Zone>(`/zones?status=active&account.id=${encodeURIComponent(accountId)}`, msg("list your domains (Zone: Read)"));
   }
 
   /** Whether the account routes any mail: one enabled routing rule is enough. */
   async routesMail(accountId: string, api: CloudflareApi): Promise<boolean> {
-    const rules = await api.call<unknown[]>(`/accounts/${accountId}/email/routing/rules?enabled=true&per_page=5`, { what: "see whether the account has mail (Account: Email Routing Account Rules: Read)" });
+    const rules = await api.call<unknown[]>(`/accounts/${accountId}/email/routing/rules?enabled=true&per_page=5`, { what: msg("see whether the account has mail (Account: Email Routing Account Rules: Read)") });
     return rules.length > 0;
   }
 
@@ -268,7 +271,7 @@ export class CloudflareAccounts {
     const remembered = (await readDomainAccounts(this.env.BUCKET))[name];
     const lookUp = async (ref: TokenRef) => {
       const api = this.apiOf(ref);
-      const found = await api.call<Zone[]>(`/zones?name=${encodeURIComponent(name)}&status=active&per_page=5`, { what: "read the domain (Zone: Read)" });
+      const found = await api.call<Zone[]>(`/zones?name=${encodeURIComponent(name)}&status=active&per_page=5`, { what: msg("read the domain (Zone: Read)") });
       const zone = found.find((z) => z.name.toLowerCase() === name && (!z.status || z.status === "active"));
       return zone ? { zone, api, token: ref.token } : null;
     };
@@ -285,8 +288,8 @@ export class CloudflareAccounts {
     const accountId = normaliseId(hit.zone.account?.id ?? serverId ?? "");
     const own = this.tokens.find((t) => t.accountId === accountId);
     // An account connected with its own token is never the server's (connect skips the server's).
-    if (serverId === null && !own) throw serverFailure ?? new CloudflareApiError("The server's own Cloudflare account could not be found.", 400);
-    if (!accountId) throw new CloudflareApiError(`Cloudflare did not say which account ${name} is in.`, 502);
+    if (serverId === null && !own) throw serverFailure ?? new CloudflareApiError(msg("The server's own Cloudflare account could not be found."), 400);
+    if (!accountId) throw new CloudflareApiError(msg("Cloudflare did not say which account {domain} is in.", { domain: name }), 502);
     if (remember) await this.remember([{ name, accountId }]);
     // A token saved for the zone's own account is preferred over one that merely sees it.
     return { zone: hit.zone, accountId, api: own ? this.apiOf(own) : hit.api, token: own ? own.token : hit.token,

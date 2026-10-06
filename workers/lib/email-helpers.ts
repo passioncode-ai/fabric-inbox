@@ -15,6 +15,7 @@ import type { EmailFull } from "./schemas";
 import { Folders } from "../../shared/folders";
 import type { Env } from "../types";
 import { formatQuotedDate } from "../../shared/dates";
+import { msg } from "../../shared/i18n";
 
 // ── DO Stub ────────────────────────────────────────────────────────
 
@@ -57,12 +58,12 @@ export function validateSender(
 	const fromEmail = (typeof from === "string" ? from : from.email).toLowerCase();
 
 	if (fromEmail !== mailboxId.toLowerCase()) {
-		throw new SenderValidationError("From address must match the mailbox email address");
+		throw new SenderValidationError(msg("From address must match the mailbox email address"));
 	}
 
 	const fromDomain = fromEmail.split("@")[1];
 	if (!fromDomain) {
-		throw new SenderValidationError("Invalid sender email address");
+		throw new SenderValidationError(msg("Invalid sender email address"));
 	}
 
 	return { toStr, fromEmail, fromDomain };

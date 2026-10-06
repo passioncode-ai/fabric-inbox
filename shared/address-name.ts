@@ -3,6 +3,7 @@
  * server's routes and the agent protocol, so the three can never disagree about what is allowed.
  * Every refusal says what to type instead. Plain module: the tests, the Worker and the app load it.
  */
+import { msg } from "./i18n";
 
 /** RFC 5321 limits the part before @ to 64 characters. */
 export const LOCAL_PART_MAX = 64;
@@ -19,14 +20,14 @@ const ALLOWED = /[a-z0-9._+-]/;
 
 /** Role names other mail servers and people write to on any domain (RFC 2142, RFC 5321). */
 const ROLE_NOTES: Record<string, string> = {
-  postmaster: "Other mail servers write to postmaster@ about delivery problems; a domain that receives mail is expected to have it (RFC 5321).",
-  abuse: "Reports of spam or abuse sent from your domain arrive at abuse@ (RFC 2142).",
-  hostmaster: "Problems with the domain's DNS are reported to hostmaster@ (RFC 2142).",
-  webmaster: "Problems with your website are reported to webmaster@ (RFC 2142).",
-  security: "Security researchers write to security@ to report a vulnerability.",
-  "mailer-daemon": "Bounce messages are sent in mailer-daemon's name; what arrives here is usually automatic.",
-  noreply: "People do answer no-reply addresses: their replies will arrive here.",
-  "no-reply": "People do answer no-reply addresses: their replies will arrive here.",
+  postmaster: msg("Other mail servers write to postmaster@ about delivery problems; a domain that receives mail is expected to have it (RFC 5321)."),
+  abuse: msg("Reports of spam or abuse sent from your domain arrive at abuse@ (RFC 2142)."),
+  hostmaster: msg("Problems with the domain's DNS are reported to hostmaster@ (RFC 2142)."),
+  webmaster: msg("Problems with your website are reported to webmaster@ (RFC 2142)."),
+  security: msg("Security researchers write to security@ to report a vulnerability."),
+  "mailer-daemon": msg("Bounce messages are sent in mailer-daemon's name; what arrives here is usually automatic."),
+  noreply: msg("People do answer no-reply addresses: their replies will arrive here."),
+  "no-reply": msg("People do answer no-reply addresses: their replies will arrive here."),
 };
 
 export interface LocalPartCheck {
@@ -41,22 +42,26 @@ export interface LocalPartCheck {
 
 export const roleNote = (localPart: string): string | null => ROLE_NOTES[localPart.trim().toLowerCase()] ?? null;
 
-const quoteList = (chars: string[]) => chars.map((c) => `“${c}”`).join(chars.length === 2 ? " and " : ", ");
+const quoted = (c: string) => `“${c}”`;
+/** The characters that may not be used, said in one sentence per count so it translates whole (L10N-04). */
+const notAllowed = (chars: string[]) =>
+  chars.length === 1 ? msg("{char} is not allowed: use letters a–z, digits, dots, dashes, underscores or plus.", { char: quoted(chars[0]!) })
+    : chars.length === 2 ? msg("{a} and {b} are not allowed: use letters a–z, digits, dots, dashes, underscores or plus.", { a: quoted(chars[0]!), b: quoted(chars[1]!) })
+      : msg("{chars} are not allowed: use letters a–z, digits, dots, dashes, underscores or plus.", { chars: chars.map(quoted).join(", ") });
 
 export function checkLocalPart(raw: string): LocalPartCheck {
   const value = raw.trim().toLowerCase();
   const fail = (problem: string): LocalPartCheck => ({ value, valid: false, problem, note: null });
-  if (!value) return fail("Type the part before @, such as support.");
-  if (value.includes("@")) return fail("Type only the part before @: the domain is chosen beside it.");
-  if (/\s/.test(value)) return fail("Spaces are not allowed: use a dot or a dash instead (first.last).");
+  if (!value) return fail(msg("Type the part before @, such as support."));
+  if (value.includes("@")) return fail(msg("Type only the part before @: the domain is chosen beside it."));
+  if (/\s/.test(value)) return fail(msg("Spaces are not allowed: use a dot or a dash instead (first.last)."));
   const bad = [...new Set([...value].filter((c) => !ALLOWED.test(c)))];
   if (bad.length) {
-    const shown = bad.slice(0, 3);
-    return fail(`${quoteList(shown)} ${shown.length === 1 ? "is" : "are"} not allowed: use letters a–z, digits, dots, dashes, underscores or plus.`);
+    return fail(notAllowed(bad.slice(0, 3)));
   }
-  if (value.length > LOCAL_PART_MAX) return fail(`Too long: ${value.length} characters; at most ${LOCAL_PART_MAX}.`);
-  if (!/^[a-z0-9]/.test(value) || !/[a-z0-9]$/.test(value)) return fail("It must start and end with a letter or digit.");
-  if (value.includes("..")) return fail("Two dots in a row are not allowed.");
+  if (value.length > LOCAL_PART_MAX) return fail(msg("Too long: {length} characters; at most {max}.", { length: value.length, max: LOCAL_PART_MAX }));
+  if (!/^[a-z0-9]/.test(value) || !/[a-z0-9]$/.test(value)) return fail(msg("It must start and end with a letter or digit."));
+  if (value.includes("..")) return fail(msg("Two dots in a row are not allowed."));
   return { value, valid: true, problem: null, note: roleNote(value) };
 }
 
@@ -88,12 +93,12 @@ export function parseLocalParts(text: string, domain: string): ParsedNames {
     const at = token.lastIndexOf("@");
     if (at > 0) {
       const other = token.slice(at + 1).toLowerCase();
-      if (other !== wanted) { skipped.push({ input: token, reason: `${token} is on ${other}, not ${wanted}.` }); continue; }
+      if (other !== wanted) { skipped.push({ input: token, reason: msg("{address} is on {domain}, not {wanted}.", { address: token, domain: other, wanted }) }); continue; }
       name = token.slice(0, at);
     }
     const check = checkLocalPart(name);
-    if (seen.has(check.value)) { skipped.push({ input: token, reason: `${check.value} is listed already.` }); continue; }
-    if (entries.length >= BATCH_MAX) { skipped.push({ input: token, reason: `At most ${BATCH_MAX} addresses at once.` }); continue; }
+    if (seen.has(check.value)) { skipped.push({ input: token, reason: msg("{name} is listed already.", { name: check.value }) }); continue; }
+    if (entries.length >= BATCH_MAX) { skipped.push({ input: token, reason: msg("At most {max} addresses at once.", { max: BATCH_MAX }) }); continue; }
     seen.add(check.value);
     entries.push({ input: token, check });
   }

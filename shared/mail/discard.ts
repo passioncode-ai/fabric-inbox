@@ -1,3 +1,4 @@
+import { msg } from "../i18n";
 /**
  * Discarded (operator decision 2026-10-06): mail thrown away on purpose, kept apart from Trash and
  * Spam so a mistake can be undone, and learned from. Pure: the Worker and the app both read it.
@@ -173,12 +174,12 @@ export interface Learned {
  */
 export function learnDiscard(store: DiscardStore, facts: DiscardFacts, now: number, options: LearnOptions = {}): Learned {
   const key = ruleFor(facts);
-  if (!key) return { store, created: false, skipped: "The message names no sender or list to learn from" };
+  if (!key) return { store, created: false, skipped: msg("The message names no sender or list to learn from") };
   if (key.kind === "sender") {
-    if (options.known) return { store, created: false, skipped: "You have written to this sender, so their mail is never discarded on its own" };
-    if (under(domainOf(facts.sender), options.ownDomains ?? [])) return { store, created: false, skipped: "It is from your own domain, whose mail is never discarded on its own" };
+    if (options.known) return { store, created: false, skipped: msg("You have written to this sender, so their mail is never discarded on its own") };
+    if (under(domainOf(facts.sender), options.ownDomains ?? [])) return { store, created: false, skipped: msg("It is from your own domain, whose mail is never discarded on its own") };
   }
-  if (allowed(facts, store)) return { store, created: false, skipped: "The sender is on the Always allow list" };
+  if (allowed(facts, store)) return { store, created: false, skipped: msg("The sender is on the Always allow list") };
   const id = ruleId(key.kind, key.value);
   const old = store.rules.find((r) => r.id === id);
   const rule: DiscardRule = old
@@ -212,9 +213,9 @@ export function matchDiscard(store: DiscardStore, facts: DiscardFacts, spamAllow
 /** Why mail that matches a rule must still reach the inbox, or null when nothing stops it. */
 export function discardSafety(input: { sender: string; known: boolean; inThread: boolean; ownDomains: string[] }): string | null {
   const sender = addressOf(input.sender);
-  if (sender && under(domainOf(sender), input.ownDomains)) return "It is from one of your own domains";
-  if (input.known) return "You have written to this sender";
-  if (input.inThread) return "It is in a conversation you took part in";
+  if (sender && under(domainOf(sender), input.ownDomains)) return msg("It is from one of your own domains");
+  if (input.known) return msg("You have written to this sender");
+  if (input.inThread) return msg("It is in a conversation you took part in");
   return null;
 }
 
@@ -225,10 +226,14 @@ export function ruleSubject(rule: Pick<DiscardRule, "label" | "value">): string 
 
 /** The reason mail discarded on arrival carries. */
 export function autoReason(rule: Pick<DiscardRule, "kind" | "label" | "value" | "discards">): string {
-  const n = `${rule.discards} message${rule.discards === 1 ? "" : "s"}`;
-  return rule.kind === "list"
-    ? `Discarded automatically: you discarded ${n} from this newsletter (${ruleSubject(rule)})`
-    : `Discarded automatically: you discarded ${n} from ${ruleSubject(rule)}`;
+  // One whole sentence per count and kind, so the interface can translate it (L10N-04).
+  const name = ruleSubject(rule);
+  const n = rule.discards;
+  if (rule.kind === "list")
+    return n === 1 ? msg("Discarded automatically: you discarded 1 message from this newsletter ({name})", { name })
+      : msg("Discarded automatically: you discarded {n} messages from this newsletter ({name})", { n, name });
+  return n === 1 ? msg("Discarded automatically: you discarded 1 message from {name}", { name })
+    : msg("Discarded automatically: you discarded {n} messages from {name}", { n, name });
 }
 
 /** A rule applied to one more arriving message. */

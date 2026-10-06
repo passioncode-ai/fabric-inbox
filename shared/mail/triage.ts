@@ -1,3 +1,4 @@
+import { msg } from "../i18n";
 /**
  * Deterministic triage of one message (REQ-T1): which group it belongs to and
  * whether it deserves attention now. Header and label rules only — no model,
@@ -43,16 +44,16 @@ export interface Triage {
 }
 
 export const TRIAGE_GROUPS: { id: TriageGroup; label: string }[] = [
-  { id: "people", label: "People" },
-  { id: "internal", label: "Your addresses" },
-  { id: "security", label: "Security" },
-  { id: "alerts", label: "Alerts" },
-  { id: "stores", label: "App stores" },
-  { id: "billing", label: "Billing" },
-  { id: "dev", label: "Dev & CI" },
-  { id: "notifications", label: "Notifications" },
-  { id: "social", label: "Social" },
-  { id: "newsletters", label: "Newsletters" },
+  { id: "people", label: msg("People") },
+  { id: "internal", label: msg("Your addresses") },
+  { id: "security", label: msg("Security") },
+  { id: "alerts", label: msg("Alerts") },
+  { id: "stores", label: msg("App stores") },
+  { id: "billing", label: msg("Billing") },
+  { id: "dev", label: msg("Dev & CI") },
+  { id: "notifications", label: msg("Notifications") },
+  { id: "social", label: msg("Social") },
+  { id: "newsletters", label: msg("Newsletters") },
 ];
 
 const address = (sender: string) => (sender.match(/<([^<>]+)>/)?.[1] ?? sender).trim().toLowerCase();
@@ -102,62 +103,62 @@ export function triage(input: TriageInput): Triage {
     // Our own addresses: tests, forwards, a colleague on the same domain (even through a
     // group with List-Id). Visible, never raised as someone else's unread mail.
     group = "internal";
-    reasons.push("From one of your addresses");
+    reasons.push(msg("From one of your addresses"));
   } else if (BOUNCE_LOCAL.test(local) || (automated && BOUNCE_SUBJECT.test(subject))) {
     group = "alerts";
-    reasons.push("Delivery failure: a message you sent did not arrive");
+    reasons.push(msg("Delivery failure: a message you sent did not arrive"));
     importance = input.read ? "normal" : "important";
   } else if ((domain === CALENDAR_DOMAIN && CALENDAR_LOCALS.includes(local)) || RSVP.test(subject.trim()) || INVITATION.test(subject.trim())) {
     group = "notifications";
-    reasons.push(RSVP.test(subject.trim()) ? "Calendar reply" : "Calendar invitation");
+    reasons.push(RSVP.test(subject.trim()) ? msg("Calendar reply") : msg("Calendar invitation"));
     importance = RSVP.test(subject.trim()) ? "low" : "normal";
   } else if (SECURITY.test(subject)) {
     group = "security";
-    reasons.push("Security or sign-in message");
+    reasons.push(msg("Security or sign-in message"));
     importance = input.read ? "normal" : "important";
   } else if (fromDomain(domain, ALERT_SENDERS) || (automated && ALERT_WORDS.test(subject) && /\b(alert|monitor|status|uptime|incident)\b/i.test(email + " " + subject))) {
     group = "alerts";
-    reasons.push("Monitoring alert");
+    reasons.push(msg("Monitoring alert"));
     importance = ALERT_WORDS.test(subject) && !input.read ? "important" : "normal";
   } else if (STORE_ADDRESSES.includes(email) || (STORE_WORDS.test(subject) && (fromDomain(domain, STORE_SENDERS) || automated))) {
     group = "stores";
-    reasons.push("App store message");
-    if (STORE_ACTION.test(subject)) { importance = "important"; reasons.push("Needs action"); }
+    reasons.push(msg("App store message"));
+    if (STORE_ACTION.test(subject)) { importance = "important"; reasons.push(msg("Needs action")); }
   } else if (fromDomain(domain, BILLING_SENDERS) || (automated && BILLING_WORDS.test(subject))) {
     group = "billing";
-    reasons.push("Billing or receipt");
-    if (BILLING_PROBLEM.test(subject)) { importance = "important"; reasons.push("Payment problem"); }
+    reasons.push(msg("Billing or receipt"));
+    if (BILLING_PROBLEM.test(subject)) { importance = "important"; reasons.push(msg("Payment problem")); }
     else importance = "low";
   } else if (fromDomain(domain, DEV_SENDERS) || /^\[[\w.-]+\/[\w.-]+\]/.test(subject)) {
     group = "dev";
-    reasons.push("Developer tool notification");
+    reasons.push(msg("Developer tool notification"));
     importance = /\b(failed|failing|broken|build error|deploy(ment)? failed|security advisory|vulnerab)/i.test(subject) && !input.read ? "important" : "low";
-    if (importance === "important") reasons.push("Failure or advisory");
+    if (importance === "important") reasons.push(msg("Failure or advisory"));
   } else if (labels.has("CATEGORY_SOCIAL") || fromDomain(domain, SOCIAL_SENDERS)) {
     group = "social";
-    reasons.push("Social network");
+    reasons.push(msg("Social network"));
     importance = "low";
   } else if (bulk || labels.has("CATEGORY_PROMOTIONS") || labels.has("CATEGORY_FORUMS")) {
     group = "newsletters";
-    reasons.push(bulk ? "Mailing list" : "Promotions or forums");
+    reasons.push(bulk ? msg("Mailing list") : msg("Promotions or forums"));
     importance = "low";
   } else if (automated || labels.has("CATEGORY_UPDATES")) {
     group = "notifications";
-    reasons.push("Automated sender");
+    reasons.push(msg("Automated sender"));
     importance = "low";
   } else {
     group = "people";
-    reasons.push("Written by a person");
+    reasons.push(msg("Written by a person"));
     importance = input.read ? "normal" : "important";
-    if (!input.read) reasons.push("Unread");
+    if (!input.read) reasons.push(msg("Unread"));
   }
   if (labels.has("IMPORTANT") && group === "people" && importance !== "important") {
     importance = "important";
-    reasons.push("Marked important by Gmail");
+    reasons.push(msg("Marked important by Gmail"));
   }
   if (input.starred) {
     importance = "important";
-    reasons.push("Starred");
+    reasons.push(msg("Starred"));
   }
   return { group, importance, reasons };
 }

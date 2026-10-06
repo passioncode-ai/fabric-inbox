@@ -27,6 +27,7 @@ import { parseStoredHeaders } from '../agents/prefilter';
 import { DISCARD_RETENTION_MS } from '../../shared/mail/discard';
 import { listDrafts as listDraftRows, saveDraft as saveDraftRows, type DraftSql, type DraftSummary, type SaveDraftInput, type SaveDraftResult } from '../lib/mailbox-drafts';
 import { htmlToText } from '../../shared/mail/text';
+import { msg } from "../../shared/i18n";
 
 
 /** Reject control characters before durable reservation and after reply-header derivation. */
@@ -200,9 +201,9 @@ export class MailboxDO extends DurableObject<Env> {
       validateSender(request.to, request.from, mailboxId);
       validateSendHeaders(request);
       const key = command.idempotencyKey ?? crypto.randomUUID();
-      if (typeof key !== 'string' || !key || key.length > 200 || /[\r\n]/.test(key)) return { error: 'Invalid idempotency key', code: 'INVALID_REQUEST' };
+      if (typeof key !== 'string' || !key || key.length > 200 || /[\r\n]/.test(key)) return { error: msg('Invalid idempotency key'), code: 'INVALID_REQUEST' };
       const kind = command.kind || 'send';
-      if (!['send', 'reply', 'forward'].includes(kind)) return { error: 'Invalid send operation', code: 'INVALID_REQUEST' };
+      if (!['send', 'reply', 'forward'].includes(kind)) return { error: msg('Invalid send operation'), code: 'INVALID_REQUEST' };
       const identity = { mailboxId, request: structuredClone(request), kind, originalEmailId: command.originalEmailId, verifyContent: !!command.verifyContent };
       const existing = this.outbox.find(mailboxId, key, await payloadHash(identity));
       // Arm before creating durable pending state. A crash after this point leaves
@@ -211,12 +212,12 @@ export class MailboxDO extends DurableObject<Env> {
       if (existing) return await this.sender.process(existing.id);
       if (kind !== 'send') {
         let original = command.originalEmailId ? await this.getEmail(command.originalEmailId) : null;
-        if (!original) return { error: 'Original email not found', code: 'NOT_FOUND' };
+        if (!original) return { error: msg('Original email not found'), code: 'NOT_FOUND' };
         if (original.folder_id === Folders.DRAFT && original.in_reply_to) original = await this.getEmail(original.in_reply_to) || original;
         if (kind === 'reply') {
           const chain = buildReferencesChain(original as EmailFull);
           // Never thread against an internal UUID if a sent provider receipt was opaque.
-          if (!original.message_id && original.folder_id === Folders.SENT) return { error: 'Provider RFC Message-ID unavailable for this reply', code: 'INVALID_REQUEST' };
+          if (!original.message_id && original.folder_id === Folders.SENT) return { error: msg('Provider RFC Message-ID unavailable for this reply'), code: 'INVALID_REQUEST' };
           if (chain.originalMsgId) { request.in_reply_to = chain.originalMsgId; request.references = chain.references; }
           else { delete request.in_reply_to; if (chain.references.length) request.references = chain.references; else delete request.references; }
           request.thread_id = chain.threadId;
@@ -227,7 +228,7 @@ export class MailboxDO extends DurableObject<Env> {
       }
       if (command.verifyContent && request.html) {
         const verified = await verifyDraft(this.env.AI, request.html);
-        if (!verified) return { error: 'Draft verification failed', code: 'INVALID_REQUEST' };
+        if (!verified) return { error: msg('Draft verification failed'), code: 'INVALID_REQUEST' };
         request.html = verified;
       }
       await this.armRecovery();
@@ -236,7 +237,7 @@ export class MailboxDO extends DurableObject<Env> {
     } catch (error) {
       if (error instanceof AttachmentValidationError) return { error: error.code, code: 'INVALID_REQUEST' };
       if (error instanceof IdempotencyConflict) return { error: error.message, code: 'IDEMPOTENCY_CONFLICT' };
-      if (error instanceof Error && (error.name === 'ZodError' || error.name === 'SenderValidationError')) return { error: 'Invalid send request or sender', code: 'INVALID_REQUEST' };
+      if (error instanceof Error && (error.name === 'ZodError' || error.name === 'SenderValidationError')) return { error: msg('Invalid send request or sender'), code: 'INVALID_REQUEST' };
       throw error;
     }
   }
@@ -814,18 +815,18 @@ export class MailboxDO extends DurableObject<Env> {
 		if (!draft || draft.folder_id !== Folders.DRAFT) {
 			const prior = this.ctx.storage.sql.exec("SELECT id FROM outbox WHERE mailbox_id = ? AND idempotency_key = ?", mailboxId, command.idempotencyKey).toArray()[0];
 			if (prior) return this.sender.process(String(prior.id));
-			return { error: "Draft not found: it was sent or deleted", code: "NOT_FOUND" };
+			return { error: msg("Draft not found: it was sent or deleted"), code: "NOT_FOUND" };
 		}
 		const revision = Number(draft.draft_revision ?? 1);
 		if (command.expectedRevision !== undefined && command.expectedRevision !== revision)
-			return { error: `The draft changed since revision ${command.expectedRevision} (now ${revision}); read it again before sending`, code: "DRAFT_CONFLICT" };
+			return { error: msg("The draft changed since revision {expected} (now {revision}); read it again before sending", { expected: command.expectedRevision, revision }), code: "DRAFT_CONFLICT" };
 		const split = (value: string | null | undefined) => (value ?? "").split(",").map((x) => x.trim()).filter(Boolean);
 		const to = split(draft.recipient);
-		if (!to.length) return { error: "The draft has no recipient", code: "INVALID_REQUEST" };
+		if (!to.length) return { error: msg("The draft has no recipient"), code: "INVALID_REQUEST" };
 		const files: MailAttachment[] = [];
 		for (const a of draft.attachments ?? []) {
 			const object = await (this.env as Env).BUCKET.get(`attachments/${draft.id}/${a.id}/${a.filename}`);
-			if (!object) return { error: `The draft's file ${a.filename} could not be read; remove it and add it again`, code: "INVALID_REQUEST" };
+			if (!object) return { error: msg("The draft's file {file} could not be read; remove it and add it again", { file: a.filename }), code: "INVALID_REQUEST" };
 			const bytes = new Uint8Array(await object.arrayBuffer());
 			let binary = "";
 			for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -943,9 +944,9 @@ export class MailboxDO extends DurableObject<Env> {
 		const now = new Date().toISOString();
 		const moved = this.db
 			.update(schema.emails)
-			.set({ folder_id: folderId, spam_reason: folderId === Folders.SPAM ? "You moved it to Spam" : null,
+			.set({ folder_id: folderId, spam_reason: folderId === Folders.SPAM ? msg("You moved it to Spam") : null,
 				spam_at: folderId === Folders.SPAM ? now : null,
-				discard_reason: folderId === Folders.DISCARDED ? "You moved it to Discarded" : null,
+				discard_reason: folderId === Folders.DISCARDED ? msg("You moved it to Discarded") : null,
 				discarded_at: folderId === Folders.DISCARDED ? now : null })
 			.where(eq(schema.emails.id, id))
 			.returning({ id: schema.emails.id })
@@ -1109,8 +1110,8 @@ export class MailboxDO extends DurableObject<Env> {
 		const now = Date.now();
 		const count = (since: number) => Number([...this.ctx.storage.sql.exec(
 			"SELECT COUNT(*) AS n FROM outbox WHERE attempts > 0 AND attempted_at >= ?", since)][0].n);
-		if (count(now - 3_600_000) >= 20) return "Rate limit exceeded: max 20 emails per hour per mailbox";
-		if (count(now - 86_400_000) >= 100) return "Rate limit exceeded: max 100 emails per day per mailbox";
+		if (count(now - 3_600_000) >= 20) return msg("Rate limit exceeded: max {n} emails per hour per mailbox", { n: 20 });
+		if (count(now - 86_400_000) >= 100) return msg("Rate limit exceeded: max {n} emails per day per mailbox", { n: 100 });
 		return null;
 	}
 

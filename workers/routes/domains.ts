@@ -7,6 +7,7 @@ import { CloudflareAccounts, isAccountId } from "../routing/accounts";
 import { currentRelay, readRelays } from "../relay/install";
 import { effectiveCatchAll } from "../lib/address-ops";
 import { DomainManager, type ConnectResult, type Step } from "../routing/domains";
+import { msg } from "../../shared/i18n";
 
 /**
  * Settings → Domains (CF-2/CF-3, SCR-02). Behind the same Access and
@@ -18,7 +19,7 @@ type C = Context<{ Bindings: Env }>;
 
 /** Where a token is created; the permissions to pick are listed beside it. */
 export const TOKEN_DASHBOARD_URL = "https://dash.cloudflare.com/profile/api-tokens";
-const NOT_CONNECTED = "This server has no Cloudflare token yet. Create one with the permissions listed, then save it on the server as CLOUDFLARE_API_TOKEN.";
+const NOT_CONNECTED = msg("This server has no Cloudflare token yet. Create one with the permissions listed, then save it on the server as CLOUDFLARE_API_TOKEN.");
 
 function manager(c: C): DomainManager | null {
   const accounts = new CloudflareAccounts(c.env);
@@ -41,13 +42,13 @@ function failure(c: C, error: unknown, event: string) {
   console.error(JSON.stringify({ event, error: (error as Error).message }));
   if (error instanceof CloudflareApiError) return c.json({ error: error.message }, error.isPermission ? 403 : 502);
   // Not every failure here is Cloudflare's: say what actually failed (audit finding 4).
-  return c.json({ error: `The server could not finish this: ${(error as Error).message}. Try again.` }, 502);
+  return c.json({ error: msg("The server could not finish this: {error}. Try again.", { error: (error as Error).message }) }, 502);
 }
 
 /** Steps with a failure answer 502 and name the first failure as `error`, so the screen never shows a bare status. */
 function stepsResponse(c: C, result: { domain: string; steps: Step[]; needsConfirmation?: unknown }) {
   const failed = result.steps.find((s) => s.outcome === "failed");
-  if (result.needsConfirmation) return c.json({ ...result, error: failed?.detail ?? "Confirm first" }, 409);
+  if (result.needsConfirmation) return c.json({ ...result, error: failed?.detail ?? msg("Confirm first") }, 409);
   return failed ? c.json({ ...result, error: `${failed.label}: ${failed.detail}` }, 502) : c.json(result, 200);
 }
 
@@ -67,7 +68,7 @@ domainsRouter.get("/api/domains", async (c) => {
   try {
     const [overview, relays] = await Promise.all([m.overview(), readRelays(c.env.BUCKET)]);
     if (!overview.accounts.length) {
-      const problem = overview.problems[0] ?? "The token sees no Cloudflare account.";
+      const problem = overview.problems[0] ?? msg("The token sees no Cloudflare account.");
       return c.json({ ...base, connected: false, problem, accounts: [], domains: servedOnly(served) });
     }
     const byId = new Map(overview.accounts.map((a) => [a.id, a]));
@@ -95,7 +96,7 @@ domainsRouter.get("/api/domains", async (c) => {
     return c.json({ ...base, connected: true, account: server?.name ?? overview.accounts[0]?.name ?? null, accounts,
       ...(overview.problems.length ? { problems: overview.problems } : {}), domains });
   } catch (error) {
-    const message = error instanceof CloudflareApiError ? error.message : "Cloudflare could not be reached from the server.";
+    const message = error instanceof CloudflareApiError ? error.message : msg("Cloudflare could not be reached from the server.");
     return c.json({ ...base, connected: false, problem: message, accounts: [], domains: servedOnly(served) });
   }
 });
@@ -103,7 +104,7 @@ domainsRouter.get("/api/domains", async (c) => {
 domainsRouter.get("/api/domains/destinations", async (c) => {
   c.header("Cache-Control", "no-store");
   const account = accountParam(c);
-  if (account === null) return c.json({ error: "Not a Cloudflare account id" }, 400);
+  if (account === null) return c.json({ error: msg("Not a Cloudflare account id") }, 400);
   const m = manager(c);
   if (!m) return c.json({ error: NOT_CONNECTED }, 503);
   try { return c.json({ account: account ?? await m.accounts.serverAccountId(), destinations: await m.destinations(account) }); }
@@ -113,11 +114,11 @@ domainsRouter.get("/api/domains/destinations", async (c) => {
 export const DestinationInput = z.object({ email: z.string().trim().toLowerCase().email().max(90) }).strict();
 domainsRouter.post("/api/domains/destinations", async (c) => {
   const parsed = DestinationInput.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: "Enter an email address" }, 400);
+  if (!parsed.success) return c.json({ error: msg("Enter an email address") }, 400);
   const account = accountParam(c);
-  if (account === null) return c.json({ error: "Not a Cloudflare account id" }, 400);
+  if (account === null) return c.json({ error: msg("Not a Cloudflare account id") }, 400);
   if ((await allServedDomains(c.env)).includes(parsed.data.email.slice(parsed.data.email.lastIndexOf("@") + 1)))
-    return c.json({ error: "That address is on a domain served here; a copy there would come straight back." }, 400);
+    return c.json({ error: msg("That address is on a domain served here; a copy there would come straight back.") }, 400);
   const m = manager(c);
   if (!m) return c.json({ error: NOT_CONNECTED }, 503);
   try {
@@ -132,12 +133,12 @@ domainsRouter.post("/api/domains/destinations", async (c) => {
 domainsRouter.get("/api/domains/:domain", async (c) => {
   c.header("Cache-Control", "no-store");
   const domain = domainParam(c);
-  if (!domain) return c.json({ error: "Not a domain name" }, 400);
+  if (!domain) return c.json({ error: msg("Not a domain name") }, 400);
   const m = manager(c);
   if (!m) return c.json({ error: NOT_CONNECTED }, 503);
   try {
     const detail = await m.detail(domain);
-    return detail ? c.json(detail) : c.json({ error: `${domain} is not visible to any Cloudflare token this server has.` }, 404);
+    return detail ? c.json(detail) : c.json({ error: msg("{domain} is not visible to any Cloudflare token this server has.", { domain }) }, 404);
   } catch (error) { return failure(c, error, "domain_read_failed"); }
 });
 
@@ -145,9 +146,9 @@ export const ConnectInput = z.object({ replaceMx: z.boolean().default(false), se
 
 domainsRouter.post("/api/domains/:domain/connect", async (c) => {
   const domain = domainParam(c);
-  if (!domain) return c.json({ error: "Not a domain name" }, 400);
+  if (!domain) return c.json({ error: msg("Not a domain name") }, 400);
   const parsed = ConnectInput.safeParse((await c.req.json().catch(() => ({}))) ?? {});
-  if (!parsed.success) return c.json({ error: "Unknown option" }, 400);
+  if (!parsed.success) return c.json({ error: msg("Unknown option") }, 400);
   const m = manager(c);
   if (!m) return c.json({ error: NOT_CONNECTED }, 503);
   try {
@@ -163,7 +164,7 @@ domainsRouter.post("/api/domains/:domain/connect", async (c) => {
 
 domainsRouter.post("/api/domains/:domain/release", async (c) => {
   const domain = domainParam(c);
-  if (!domain) return c.json({ error: "Not a domain name" }, 400);
+  if (!domain) return c.json({ error: msg("Not a domain name") }, 400);
   const m = manager(c);
   if (!m) return c.json({ error: NOT_CONNECTED }, 503);
   try {
@@ -176,7 +177,7 @@ domainsRouter.post("/api/domains/:domain/release", async (c) => {
 
 domainsRouter.post("/api/domains/:domain/sending", async (c) => {
   const domain = domainParam(c);
-  if (!domain) return c.json({ error: "Not a domain name" }, 400);
+  if (!domain) return c.json({ error: msg("Not a domain name") }, 400);
   const m = manager(c);
   if (!m) return c.json({ error: NOT_CONNECTED }, 503);
   try {
@@ -189,22 +190,22 @@ domainsRouter.post("/api/domains/:domain/sending", async (c) => {
 export const CatchAllInput = z.object({ mailbox: z.string().trim().toLowerCase().email().nullable() }).strict();
 domainsRouter.put("/api/domains/:domain/catch-all", async (c) => {
   const domain = domainParam(c);
-  if (!domain) return c.json({ error: "Not a domain name" }, 400);
+  if (!domain) return c.json({ error: msg("Not a domain name") }, 400);
   const parsed = CatchAllInput.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: "Choose an address on this domain, or none" }, 400);
+  if (!parsed.success) return c.json({ error: msg("Choose an address on this domain, or none") }, 400);
   const mailbox = parsed.data.mailbox;
-  if (!(await allServedDomains(c.env)).includes(domain)) return c.json({ error: `${domain} is not served here` }, 400);
+  if (!(await allServedDomains(c.env)).includes(domain)) return c.json({ error: msg("{domain} is not served here", { domain }) }, 400);
   if (mailbox && (!mailbox.endsWith("@" + domain) || !(await listMailboxAddresses(c.env.BUCKET)).includes(mailbox)))
-    return c.json({ error: "Choose an address that exists on this domain" }, 400);
+    return c.json({ error: msg("Choose an address that exists on this domain") }, 400);
   const effective = await effectiveCatchAll(c.env, domain);
   if (effective?.source === "deployment")
-    return c.json({ error: `The catch-all of ${domain} is set in this deployment (UNKNOWN_ADDRESS_POLICY → ${effective.mailbox}); change it there.` }, 409);
+    return c.json({ error: msg("The catch-all of {domain} is set in this deployment (UNKNOWN_ADDRESS_POLICY → {mailbox}); change it there.", { domain, mailbox: effective.mailbox }) }, 409);
   const m = manager(c);
   if (!m) {
     // Without a token the server side still changes; Cloudflare's rule is the operator's step.
     if (mailbox) await setCatchAll(c.env.BUCKET, [{ domain, mailbox }]); else await removeCatchAll(c.env.BUCKET, domain);
-    return c.json({ domain, steps: [{ id: "catch-all", label: "Keep mail for other addresses", outcome: "done",
-      detail: mailbox ? `Kept in ${mailbox} once Cloudflare's catch-all sends mail here (${NOT_CONNECTED})` : "Other addresses are refused." }] });
+    return c.json({ domain, steps: [{ id: "catch-all", label: msg("Keep mail for other addresses"), outcome: "done",
+      detail: mailbox ? msg("Kept in {mailbox} once Cloudflare's catch-all sends mail here ({problem})", { mailbox, problem: NOT_CONNECTED }) : msg("Other addresses are refused.") }] });
   }
   try {
     const steps = await m.setCatchAllMailbox(domain, mailbox);

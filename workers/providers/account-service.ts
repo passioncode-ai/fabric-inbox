@@ -36,6 +36,7 @@ import { GraphClient } from "./outlook/graph";
 import { createMicrosoftAuthorization, exchangeMicrosoftCode, microsoftConfiguration, type MicrosoftEnvironment } from "./outlook/oauth";
 import { CUSTOM, PRESETS } from "../../shared/mail/imap-presets";
 import { DISCARD_RETENTION_MS, addressOf } from "../../shared/mail/discard";
+import { msg } from "../../shared/i18n";
 export { importPercent, type SyncState } from "./gmail-sync";
 
 /** How a sync runs: until when it may start pages, whether it imports, and under whose lock. */
@@ -318,7 +319,7 @@ export class AccountService {
     return {
       providers: [
         { id: "gmail", name: "Gmail", auth: "oauth", status: configuration(this.env).status },
-        { id: "imap", name: "Other mail (IMAP)", auth: "app-password", status: hasCredentialKey(this.env) ? "configured" : "not_configured" },
+        { id: "imap", name: msg("Other mail (IMAP)"), auth: "app-password", status: hasCredentialKey(this.env) ? "configured" : "not_configured" },
         { id: "outlook", name: "Outlook", auth: "oauth", status: microsoftConfiguration(this.env).status },
       ],
       presets: [...PRESETS, { ...CUSTOM }].map((p) => ({
@@ -617,7 +618,7 @@ export class AccountService {
     if (options.folder === "discarded") {
       for (const m of page) {
         const kept = await this.store.get<DiscardRecord>(`discarded:${account.id}:${m.providerMessageId}`);
-        m.discardReason = kept?.reason ?? `It is in the account's Discarded ${account.provider === "gmail" ? "label" : "folder"}`;
+        m.discardReason = kept?.reason ?? (account.provider === "gmail" ? msg("It is in the account's Discarded label") : msg("It is in the account's Discarded folder"));
       }
     }
     return page;

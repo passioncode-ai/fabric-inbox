@@ -9,6 +9,7 @@
  * A rule is {matchers:[{type:"literal",field:"to",value}], actions:[{type:"worker",value:[name]}], enabled}.
  */
 import { CloudflareAccounts, type AccountsEnv } from "./accounts";
+import { msg } from "../../shared/i18n";
 
 export type RoutingState = "verified" | "missing" | "unknown";
 export interface RoutingStatus {
@@ -25,7 +26,9 @@ interface Rule { id?: string; enabled?: boolean; matchers?: Matcher[]; actions?:
 type Fetcher = typeof fetch;
 
 const API = "https://api.cloudflare.com/client/v4";
-const DASHBOARD_STEP = "In the Cloudflare dashboard open the domain → Email → Email Routing → Routing rules, and send this address to the Worker.";
+/** A failure to read routing, with the step that fixes it by hand: one sentence, so it translates (L10N-04). */
+const withDashboardStep = (error: string) =>
+  msg("{error}. In the Cloudflare dashboard open the domain → Email → Email Routing → Routing rules, and send this address to the Worker.", { error });
 
 export class RoutingError extends Error {}
 /** The token cannot see the domain's zone: nothing can be read or changed there. */
@@ -66,7 +69,7 @@ export class EmailRoutingClient {
         signal: AbortSignal.timeout(15_000),
       });
     } catch (error) {
-      throw new RoutingError(`Cloudflare API unreachable: ${(error as Error).message}`);
+      throw new RoutingError(msg("Cloudflare API unreachable: {error}", { error: (error as Error).message }));
     }
     const body = (await response.json().catch(() => null)) as { success?: boolean; result?: T; errors?: { message?: string }[] } | null;
     if (!response.ok || !body?.success) {
@@ -104,26 +107,27 @@ export class EmailRoutingClient {
     const domain = email.slice(email.lastIndexOf("@") + 1);
     try {
       const zone = await this.zoneId(domain);
-      if (!zone) return { state: "unknown", detail: `The token cannot see the zone ${domain}. Give it Zone read and Email Routing edit on this zone.` };
+      if (!zone) return { state: "unknown", detail: msg("The token cannot see the zone {domain}. Give it Zone read and Email Routing edit on this zone.", { domain }) };
       const settings = await this.call<{ enabled?: boolean; status?: string }>(`/zones/${zone}/email/routing`);
-      if (!settings.enabled) return { state: "missing", detail: `Email Routing is off for ${domain}. Enable it in the dashboard (Email → Email Routing).` };
+      if (!settings.enabled) return { state: "missing", detail: msg("Email Routing is off for {domain}. Enable it in the dashboard (Email → Email Routing).", { domain }) };
       if (settings.status && settings.status !== "ready")
-        return { state: "missing", detail: `Email Routing for ${domain} is ${settings.status}: its DNS records need fixing in the dashboard.` };
+        return { state: "missing", detail: msg("Email Routing for {domain} is {status}: its DNS records need fixing in the dashboard.", { domain, status: settings.status }) };
       const rule = this.literalRule(await this.rules(zone), email);
       // A disabled rule matches nothing: the catch-all decides (seen on the owner's
       // contact@ addresses, whose old forward rules were switched off, 2026-09-29).
       if (rule && rule.enabled !== false) {
-        if (!this.toWorker(rule)) return { state: "missing", detail: `A routing rule sends ${email} somewhere else. Point it at the Worker ${this.worker}.`, via: "rule", ruleId: rule.id };
-        return { state: "verified", detail: `Mail for ${email} goes to ${this.worker}.`, via: "rule", ruleId: rule.id };
+        if (!this.toWorker(rule)) return { state: "missing", detail: msg("A routing rule sends {email} somewhere else. Point it at the Worker {worker}.", { email, worker: this.worker }), via: "rule", ruleId: rule.id };
+        return { state: "verified", detail: msg("Mail for {email} goes to {worker}.", { email, worker: this.worker }), via: "rule", ruleId: rule.id };
       }
-      const off = rule ? ` (its own rule is disabled)` : "";
       const catchAll = await this.call<Rule>(`/zones/${zone}/email/routing/rules/catch_all`);
       if (catchAll.enabled && this.toWorker(catchAll))
-        return { state: "verified", detail: `Mail for ${email} reaches ${this.worker} through the catch-all rule${off}.`, via: "catch_all" };
-      if (rule) return { state: "missing", detail: `The routing rule for ${email} is disabled and the catch-all does not send mail here.`, via: "rule", ruleId: rule.id };
-      return { state: "missing", detail: `No routing rule sends ${email} to ${this.worker}. Create one here or in the dashboard.` };
+        return { state: "verified", detail: rule
+          ? msg("Mail for {email} reaches {worker} through the catch-all rule (its own rule is disabled).", { email, worker: this.worker })
+          : msg("Mail for {email} reaches {worker} through the catch-all rule.", { email, worker: this.worker }), via: "catch_all" };
+      if (rule) return { state: "missing", detail: msg("The routing rule for {email} is disabled and the catch-all does not send mail here.", { email }), via: "rule", ruleId: rule.id };
+      return { state: "missing", detail: msg("No routing rule sends {email} to {worker}. Create one here or in the dashboard.", { email, worker: this.worker }) };
     } catch (error) {
-      return { state: "unknown", detail: `${(error as Error).message}. ${DASHBOARD_STEP}` };
+      return { state: "unknown", detail: withDashboardStep((error as Error).message) };
     }
   }
 
@@ -182,12 +186,12 @@ export class EmailRoutingClient {
     const email = address.toLowerCase();
     const domain = email.slice(email.lastIndexOf("@") + 1);
     const zone = await this.zoneId(domain);
-    if (!zone) throw new ZoneNotVisible(`The token cannot see the zone ${domain}`);
+    if (!zone) throw new ZoneNotVisible(msg("The token cannot see the zone {domain}", { domain }));
     const rule = this.literalRule(await this.rules(zone), email);
-    if (!rule) return `No routing rule named ${email}.`;
-    if (!this.toWorker(rule)) return `The routing rule for ${email} sends mail elsewhere; it was left as it is.`;
+    if (!rule) return msg("No routing rule named {email}.", { email });
+    if (!this.toWorker(rule)) return msg("The routing rule for {email} sends mail elsewhere; it was left as it is.", { email });
     await this.call(`/zones/${zone}/email/routing/rules/${rule.id}`, { method: "DELETE" });
-    return `The routing rule for ${email} was removed.`;
+    return msg("The routing rule for {email} was removed.", { email });
   }
 
   /** Creates the literal rule unless one for the address already exists (duplicates shadow each other). */
@@ -204,11 +208,11 @@ export class EmailRoutingClient {
     const email = address.toLowerCase();
     const domain = email.slice(email.lastIndexOf("@") + 1);
     const zone = await this.zoneId(domain);
-    if (!zone) throw new ZoneNotVisible(`The token cannot see the zone ${domain}`);
+    if (!zone) throw new ZoneNotVisible(msg("The token cannot see the zone {domain}", { domain }));
     const existing = this.literalRule(await this.rules(zone), email);
     if (existing) {
       if (!this.toWorker(existing))
-        throw new RoutingError(`A routing rule for ${email} already exists and sends mail elsewhere; change it in the dashboard`);
+        throw new RoutingError(msg("A routing rule for {email} already exists and sends mail elsewhere; change it in the dashboard", { email }));
       if (existing.enabled === false)
         await this.call(`/zones/${zone}/email/routing/rules/${existing.id}`, { method: "PUT", body: JSON.stringify({
           name: existing.name || `Fabric Inbox: ${email}`, enabled: true, priority: existing.priority ?? 0, matchers: existing.matchers, actions: existing.actions }) });
@@ -248,10 +252,10 @@ export class AccountsRoutingClient implements RoutingClient {
     const domain = address.slice(address.lastIndexOf("@") + 1).toLowerCase();
     try {
       const client = await this.client(address);
-      if (!client) return { state: "unknown", detail: `The server's tokens cannot see the zone ${domain}. Connect its account in Settings → Accounts.` };
+      if (!client) return { state: "unknown", detail: msg("The server's tokens cannot see the zone {domain}. Connect its account in Settings → Accounts.", { domain }) };
       return client.status(address);
     } catch (error) {
-      return { state: "unknown", detail: `${(error as Error).message}. ${DASHBOARD_STEP}` };
+      return { state: "unknown", detail: withDashboardStep((error as Error).message) };
     }
   }
 
@@ -267,7 +271,7 @@ export class AccountsRoutingClient implements RoutingClient {
 
   async deleteRule(address: string): Promise<string> {
     const client = await this.client(address).catch((e) => { throw new RoutingError((e as Error).message); });
-    if (!client) throw new ZoneNotVisible(`The server's tokens cannot see the zone ${address.slice(address.lastIndexOf("@") + 1)}`);
+    if (!client) throw new ZoneNotVisible(msg("The server's tokens cannot see the zone {domain}", { domain: address.slice(address.lastIndexOf("@") + 1) }));
     return client.deleteRule(address);
   }
 
@@ -277,7 +281,7 @@ export class AccountsRoutingClient implements RoutingClient {
 
   async ensureRule(address: string): Promise<{ status: RoutingStatus; created: boolean; ruleId?: string }> {
     const client = await this.client(address).catch((e) => { throw new RoutingError((e as Error).message); });
-    if (!client) throw new ZoneNotVisible(`The server's tokens cannot see the zone ${address.slice(address.lastIndexOf("@") + 1)}`);
+    if (!client) throw new ZoneNotVisible(msg("The server's tokens cannot see the zone {domain}", { domain: address.slice(address.lastIndexOf("@") + 1) }));
     return client.ensureRule(address);
   }
 }
@@ -289,5 +293,5 @@ export function routingClient(env: AccountsEnv, fetcher?: Fetcher): RoutingClien
 
 export const ROUTING_NOT_CONFIGURED: RoutingStatus = {
   state: "unknown",
-  detail: `Routing cannot be read: this server has no Cloudflare token yet (Settings → Domains → Connect Cloudflare). ${DASHBOARD_STEP}`,
+  detail: msg("Routing cannot be read: this server has no Cloudflare token yet (Settings → Domains → Connect Cloudflare). In the Cloudflare dashboard open the domain → Email → Email Routing → Routing rules, and send this address to the Worker."),
 };

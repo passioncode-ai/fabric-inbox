@@ -1,6 +1,7 @@
 import { inboxIdentity, type InboxReadOptions, type InboxMessage } from "../../shared/mail/inbox";
 import { signalsFromHeaders, triage } from "../../shared/mail/triage";
 import { parseStoredHeaders } from "../agents/prefilter";
+import { msg } from "../../shared/i18n";
 
 /** Bounded SQL keyset read. SQL parameters contain every caller-controlled value. */
 export function mailboxInboxQuery(accountId: string, options: InboxReadOptions) {
@@ -51,8 +52,8 @@ export function mailboxInboxMessage(accountId: string, row: MailboxInboxRow, own
     date: new Date(row.timestamp).toISOString(), timestamp: row.timestamp,
     read: !!row.read, starred: !!row.starred, snippet: textSnippet(row.snippet), threadId: row.thread_id || undefined,
     ...(row.message_id ? { rfcMessageId: String(row.message_id).replace(/^<|>$/g, "").toLowerCase() } : {}),
-    ...(row.folder_id === "spam" ? { spamReason: row.spam_reason || "In Spam" } : {}),
-    ...(row.folder_id === "discarded" ? { discardReason: row.discard_reason || "You discarded it" } : {}) };
+    ...(row.folder_id === "spam" ? { spamReason: row.spam_reason || msg("In Spam") } : {}),
+    ...(row.folder_id === "discarded" ? { discardReason: row.discard_reason || msg("You discarded it") } : {}) };
   message.triage = triage({ sender: message.sender, subject: message.subject, read: message.read, starred: message.starred,
     signals: signalsFromHeaders(parseStoredHeaders(row.raw_headers)), ownDomains });
   return message;

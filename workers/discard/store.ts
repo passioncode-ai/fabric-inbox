@@ -1,4 +1,5 @@
 import { EMPTY_DISCARD_STORE, normaliseDiscardStore, type DiscardFacts, type DiscardStore } from "../../shared/mail/discard";
+import { msg } from "../../shared/i18n";
 
 /**
  * The workspace's discard rules and its Always allow list (shared/mail/discard.ts): one R2 object,
@@ -29,7 +30,7 @@ export async function updateDiscardStore(bucket: R2Bucket, change: (store: Disca
     });
     if (written) return next;
   }
-  throw new DiscardStoreConflict("The discard rules changed several times at once; try again");
+  throw new DiscardStoreConflict(msg("The discard rules changed several times at once; try again"));
 }
 
 const EXPLAIN_PROMPT = `You explain in one short sentence (at most 20 words) why a person might throw away an email like this one, judging only from its sender, list and subject. Answer with the sentence alone, no quotes. If you cannot tell, answer: unknown.`;

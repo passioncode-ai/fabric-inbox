@@ -28,6 +28,7 @@ const BATCH = 3;
 const MAX_ATTEMPTS = 5;
 
 import { AgentConflict, AgentInvalid, AgentNotFound } from "./errors";
+import { msg } from "../../shared/i18n";
 export { AgentConflict, AgentInvalid, AgentNotFound, registryError, type RegistryErrorCode } from "./errors";
 
 type Row = Record<string, string | number | null>;
@@ -136,7 +137,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
           // Given up: said in the history, not only in the logs (reliability audit L3).
           const at = new Date().toISOString();
           await this.beginRun({ id: await runIdFor(mailboxId, emailId), mailboxId, emailId, sender: "", subject: "",
-            status: "failed", reason: `The message could not be read for its agent after ${attempts} attempts (${(error as Error).message.slice(0, 160)}); it is left for you in the inbox.`,
+            status: "failed", reason: msg("The message could not be read for its agent after {attempts} attempts ({error}); it is left for you in the inbox.", { attempts, error: (error as Error).message.slice(0, 160) }),
             toolCalls: [], createdAt: at, updatedAt: at }).catch(() => undefined);
           this.ctx.storage.sql.exec("DELETE FROM agent_queue WHERE mailbox_id = ? AND email_id = ?", mailboxId, emailId);
         } else {
@@ -199,7 +200,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
     const data = this.validate(input);
     return this.ctx.storage.transactionSync(() => {
       if (Number(this.rows("SELECT COUNT(*) AS n FROM agents WHERE deleted_at IS NULL")[0].n) >= MAX_AGENTS)
-        throw new AgentInvalid(`At most ${MAX_AGENTS} agents`);
+        throw new AgentInvalid(msg("At most {max} agents", { max: MAX_AGENTS }));
       const base = requestedId ?? agentId(data.name);
       let id = base;
       for (let n = 2; this.rows("SELECT 1 FROM agents WHERE id = ?", id).length; n++) id = `${base}-${n}`;
@@ -227,7 +228,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
       const head = this.rows("SELECT current_version, deleted_at FROM agents WHERE id = ?", id)[0];
       if (!head || head.deleted_at) throw new AgentNotFound(id);
       if (Number(head.current_version) !== expectedVersion)
-        throw new AgentConflict(`Agent changed: version ${head.current_version} is newer than ${expectedVersion}`);
+        throw new AgentConflict(msg("Agent changed: version {current} is newer than {expected}", { current: String(head.current_version), expected: expectedVersion }));
       return this.insertVersion(id, expectedVersion + 1, data, false);
     });
   }
@@ -311,8 +312,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
   private present(run: AgentRun): AgentRun {
     if (run.status === "running" && Date.now() - Date.parse(run.updatedAt) > RUN_STALE_MS)
       return { ...run, status: "interrupted", reason: run.phase === "sending"
-        ? "Processing stopped while sending. Check Sent before answering."
-        : "Processing stopped before a result was recorded; it is run again automatically." };
+        ? msg("Processing stopped while sending. Check Sent before answering.")
+        : msg("Processing stopped before a result was recorded; it is run again automatically.") };
     return run;
   }
 

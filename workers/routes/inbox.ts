@@ -6,6 +6,7 @@ import { inScope } from "../categories/definition";
 import { allServedDomains, storedCatchAll } from "../lib/mailbox-store";
 import { changeHidden, HiddenConflict, readHidden } from "../lib/hidden-accounts";
 import { REMOTE_ACCOUNT, parseRemoteAccount } from "../../shared/mail/accounts";
+import { msg } from "../../shared/i18n";
 
 export interface InboxSources {
   cloudflareAccounts(): Promise<InboxAccount[]>;
@@ -202,7 +203,7 @@ inboxRouter.get("/api/inbox/hidden", async (c) => {
 inboxRouter.put("/api/inbox/hidden", async (c) => {
   const body = await c.req.json().catch(() => null) as { hide?: unknown; show?: unknown } | null;
   const list = (v: unknown) => Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 500) : [];
-  if (!body || (!list(body.hide).length && !list(body.show).length)) return c.json({ error: "Name the addresses to hide or show" }, 400);
+  if (!body || (!list(body.hide).length && !list(body.show).length)) return c.json({ error: msg("Name the addresses to hide or show") }, 400);
   try {
     const hidden = await changeHidden(c.env.BUCKET, { hide: list(body.hide), show: list(body.show) });
     console.log(JSON.stringify({ event: "accounts_hidden_changed", hidden: hidden.length }));

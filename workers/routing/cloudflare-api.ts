@@ -1,3 +1,4 @@
+import { msg } from "../../shared/i18n";
 /**
  * The one Cloudflare API client of this server (CF-2/CF-3). The token is the
  * `CLOUDFLARE_API_TOKEN` secret; `CLOUDFLARE_EMAIL_ROUTING_TOKEN` is read as a
@@ -26,21 +27,21 @@ export function cloudflareToken(env: TokenEnv): string | undefined {
  */
 export const TOKEN_PERMISSIONS = [
   // Creating and updating the server from the Mac app (desktop/cloudflare-deploy.cjs, same list; a test keeps them equal)
-  { scope: "Account", name: "Workers Scripts", level: "Edit", for: "create and update the server" },
-  { scope: "Account", name: "Workers R2 Storage", level: "Edit", for: "create the storage for your mail" },
-  { scope: "Account", name: "Access: Apps and Policies", level: "Edit", for: "make the server open only for you" },
-  { scope: "Account", name: "Access: Organizations, Identity Providers, and Groups", level: "Edit", for: "set up sign-in with a code by email" },
-  { scope: "Account", name: "Access: Service Tokens", level: "Edit", for: "give agents their own keys to this server" },
-  { scope: "Account", name: "Account Settings", level: "Read", for: "find your account" },
+  { scope: "Account", name: "Workers Scripts", level: "Edit", for: msg("create and update the server") },
+  { scope: "Account", name: "Workers R2 Storage", level: "Edit", for: msg("create the storage for your mail") },
+  { scope: "Account", name: "Access: Apps and Policies", level: "Edit", for: msg("make the server open only for you") },
+  { scope: "Account", name: "Access: Organizations, Identity Providers, and Groups", level: "Edit", for: msg("set up sign-in with a code by email") },
+  { scope: "Account", name: "Access: Service Tokens", level: "Edit", for: msg("give agents their own keys to this server") },
+  { scope: "Account", name: "Account Settings", level: "Read", for: msg("find your account") },
   // Settings → Domains
-  { scope: "Account", name: "Email Routing Addresses", level: "Edit", for: "add the addresses a copy may be forwarded to" },
-  { scope: "Account", name: "Email Routing Account Rules", level: "Read", for: "see whether an account has mail" },
+  { scope: "Account", name: "Email Routing Addresses", level: "Edit", for: msg("add the addresses a copy may be forwarded to") },
+  { scope: "Account", name: "Email Routing Account Rules", level: "Read", for: msg("see whether an account has mail") },
   // Account level, not zone: the permission-group catalogue has "Email Sending Write" only at account level (read 2026-09-29).
-  { scope: "Account", name: "Email Sending", level: "Edit", for: "send from your domains" },
-  { scope: "Zone", name: "Zone", level: "Read", for: "list your domains" },
-  { scope: "Zone", name: "Email Routing Rules", level: "Edit", for: "send addresses to your server" },
-  { scope: "Zone", name: "Zone Settings", level: "Edit", for: "turn Email Routing on for a domain" },
-  { scope: "Zone", name: "DNS", level: "Edit", for: "replace another provider's MX records and add a DMARC record" },
+  { scope: "Account", name: "Email Sending", level: "Edit", for: msg("send from your domains") },
+  { scope: "Zone", name: "Zone", level: "Read", for: msg("list your domains") },
+  { scope: "Zone", name: "Email Routing Rules", level: "Edit", for: msg("send addresses to your server") },
+  { scope: "Zone", name: "Zone Settings", level: "Edit", for: msg("turn Email Routing on for a domain") },
+  { scope: "Zone", name: "DNS", level: "Edit", for: msg("replace another provider's MX records and add a DMARC record") },
 ] as const;
 
 /**
@@ -48,15 +49,15 @@ export const TOKEN_PERMISSIONS = [
  * their mail here. It makes no storage and no sign-in there; those stay in the server's account.
  */
 export const ACCOUNT_TOKEN_PERMISSIONS = [
-  { scope: "Account", name: "Workers Scripts", level: "Edit", for: "install the relay that carries the account's mail to your server" },
-  { scope: "Account", name: "Account Settings", level: "Read", for: "find the account" },
-  { scope: "Account", name: "Email Routing Addresses", level: "Edit", for: "add the addresses a copy may be forwarded to" },
-  { scope: "Account", name: "Email Routing Account Rules", level: "Read", for: "see whether the account has mail" },
-  { scope: "Account", name: "Email Sending", level: "Edit", for: "send from the account's domains" },
-  { scope: "Zone", name: "Zone", level: "Read", for: "list the account's domains" },
-  { scope: "Zone", name: "Email Routing Rules", level: "Edit", for: "send addresses to your server" },
-  { scope: "Zone", name: "Zone Settings", level: "Edit", for: "turn Email Routing on for a domain" },
-  { scope: "Zone", name: "DNS", level: "Edit", for: "replace another provider's MX records and add a DMARC record" },
+  { scope: "Account", name: "Workers Scripts", level: "Edit", for: msg("install the relay that carries the account's mail to your server") },
+  { scope: "Account", name: "Account Settings", level: "Read", for: msg("find the account") },
+  { scope: "Account", name: "Email Routing Addresses", level: "Edit", for: msg("add the addresses a copy may be forwarded to") },
+  { scope: "Account", name: "Email Routing Account Rules", level: "Read", for: msg("see whether the account has mail") },
+  { scope: "Account", name: "Email Sending", level: "Edit", for: msg("send from the account's domains") },
+  { scope: "Zone", name: "Zone", level: "Read", for: msg("list the account's domains") },
+  { scope: "Zone", name: "Email Routing Rules", level: "Edit", for: msg("send addresses to your server") },
+  { scope: "Zone", name: "Zone Settings", level: "Edit", for: msg("turn Email Routing on for a domain") },
+  { scope: "Zone", name: "DNS", level: "Edit", for: msg("replace another provider's MX records and add a DMARC record") },
 ] as const;
 
 export class CloudflareApiError extends Error {
@@ -74,7 +75,7 @@ export class CloudflareApi {
    * server's own (the default wording) or one saved for another account.
    */
   constructor(private token: string, private fetcher: Fetcher = (input, init) => fetch(input, init),
-    private label: { whose: string; fix: string } | null = null) {}
+    private label: { whose: string; Whose?: string; fix: string } | null = null) {}
 
   async call<T>(path: string, init: { method?: string; body?: unknown; form?: FormData; what?: string; timeoutMs?: number } = {}): Promise<T> {
     let response: Response;
@@ -87,7 +88,7 @@ export class CloudflareApi {
         signal: AbortSignal.timeout(init.timeoutMs ?? (init.form ? 60_000 : 15_000)),
       });
     } catch (error) {
-      throw new CloudflareApiError(`Cloudflare did not answer (${(error as Error).message}). Try again.`, 0);
+      throw new CloudflareApiError(msg("Cloudflare did not answer ({error}). Try again.", { error: (error as Error).message }), 0);
     }
     const body = (await response.json().catch(() => null)) as { success?: boolean; result?: T; errors?: { code?: number; message?: string }[] } | null;
     if (response.ok && body?.success) return body.result as T;
@@ -97,8 +98,8 @@ export class CloudflareApi {
     // 9109 means both "Invalid access token" and "Unauthorized to access requested resource".
     if (/invalid (access|api) token|token.*(expired|revoked)/i.test(message))
       throw new CloudflareApiError(this.label
-        ? `Cloudflare no longer accepts ${this.label.whose} (mistyped, expired or deleted). ${this.label.fix}`
-        : "Cloudflare no longer accepts this server's token (mistyped, expired or deleted). Create a new one and save it on the server.", response.status, first?.code);
+        ? msg("Cloudflare no longer accepts {whose} (mistyped, expired or deleted). {fix}", { whose: this.label.whose, fix: this.label.fix })
+        : msg("Cloudflare no longer accepts this server's token (mistyped, expired or deleted). Create a new one and save it on the server."), response.status, first?.code);
     // Email Sending explains its own refusals ("email.sending.error.sending_disabled", code null):
     // that is the domain's sending state, not a permission the token lacks.
     const sendingState = body?.errors?.some((e) => /^email\.sending\.error\./.test(e.message ?? ""));
@@ -106,7 +107,13 @@ export class CloudflareApi {
     // missing Access: Service Tokens permission); one that explains itself, like 10042, is not.
     const unexplained = response.status === 403 && !body?.errors?.some((e) => e.message);
     if (!sendingState && (error.isPermission || unexplained))
-      throw new CloudflareApiError(`${this.label ? capitalise(this.label.whose) : "The Cloudflare token"} is not allowed to ${init.what ?? "do this"}. Add the permission to the token and try again.${first?.code ? ` (Cloudflare code ${first.code})` : ""}`, response.status, first?.code);
+    {
+      const who = this.label ? this.label.Whose ?? capitalise(this.label.whose) : msg("The Cloudflare token");
+      const what = init.what ?? msg("do this");
+      throw new CloudflareApiError(first?.code
+        ? msg("{who} is not allowed to {what}. Add the permission to the token and try again. (Cloudflare code {code})", { who, what, code: first.code })
+        : msg("{who} is not allowed to {what}. Add the permission to the token and try again.", { who, what }), response.status, first?.code);
+    }
     throw new CloudflareApiError(`Cloudflare: ${message}`, response.status, first?.code);
   }
 
@@ -146,24 +153,24 @@ export async function accountIdFor(api: CloudflareApi, env: TokenEnv & { EMAIL_R
   if (configured) return configured;
   let ids: string[];
   try {
-    ids = (await api.list<{ id: string }>("/accounts", "find your accounts (Account Settings: Read)")).map((a) => a.id);
+    ids = (await api.list<{ id: string }>("/accounts", msg("find your accounts (Account Settings: Read)"))).map((a) => a.id);
   } catch (error) {
     // Only a token without Account Settings may fall back to its zones: any other failure says
     // nothing about which accounts exist, and a guess here decides where mail goes.
     if (!(error instanceof CloudflareApiError && error.isPermission)) throw error;
-    ids = [...new Set((await api.call<{ account?: { id?: string } }[]>("/zones?per_page=50", { what: "list your domains (Zone: Read)" }))
+    ids = [...new Set((await api.call<{ account?: { id?: string } }[]>("/zones?per_page=50", { what: msg("list your domains (Zone: Read)") }))
       .map((z) => z.account?.id).filter((id): id is string => !!id))];
   }
   if (ids.length === 1) return ids[0]!;
-  if (!ids.length) throw new CloudflareApiError("The token sees no Cloudflare account.", 400);
+  if (!ids.length) throw new CloudflareApiError(msg("The token sees no Cloudflare account."), 400);
   const script = env.EMAIL_ROUTING_WORKER || "fabric-inbox";
-  const probes = await Promise.all(ids.map((id) => api.call(`/accounts/${id}/workers/scripts/${script}/settings`, { what: "read Workers (Workers Scripts: Edit)" })
+  const probes = await Promise.all(ids.map((id) => api.call(`/accounts/${id}/workers/scripts/${script}/settings`, { what: msg("read Workers (Workers Scripts: Edit)") })
     // A token without Workers rights in an account cannot be running this server's script through it: absent.
     .then(() => "runs" as const, (e) => (e instanceof CloudflareApiError && (e.status === 404 || e.code === 10007 || e.isPermission) ? "absent" as const : "unknown" as const))));
   const runs = ids.filter((_, i) => probes[i] === "runs");
   // Exactly one account runs the script and every other one was read: anything else is a guess.
   if (runs.length === 1 && !probes.includes("unknown")) return runs[0]!;
-  const why = runs.length > 1 ? `${runs.length} of them run a Worker named ${script}`
-    : probes.includes("unknown") ? "not all of them could be checked" : `none of them runs the Worker ${script}`;
-  throw new CloudflareApiError(`The token sees ${ids.length} Cloudflare accounts and ${why}; set CLOUDFLARE_ACCOUNT_ID on the server.`, 400);
+  const why = runs.length > 1 ? msg("{n} of them run a Worker named {script}", { n: runs.length, script })
+    : probes.includes("unknown") ? msg("not all of them could be checked") : msg("none of them runs the Worker {script}", { script });
+  throw new CloudflareApiError(msg("The token sees {n} Cloudflare accounts and {why}; set CLOUDFLARE_ACCOUNT_ID on the server.", { n: ids.length, why }), 400);
 }

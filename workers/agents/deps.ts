@@ -6,6 +6,7 @@ import { callMcpTool, toolResultText } from "../automation/mcp";
 import { workersAiModel } from "./model";
 import { readAssignment } from "./definition";
 import type { RunnerDeps } from "./runner";
+import { msg } from "../../shared/i18n";
 
 type Registry = RunnerDeps["registry"];
 
@@ -14,7 +15,7 @@ function toolTokens(env: Env): Record<string, string> {
     const value = JSON.parse(env.AUTOMATION_TOOL_TOKENS || "{}");
     return value && typeof value === "object" ? value : {};
   } catch {
-    throw new Error("Tool credentials are misconfigured");
+    throw new Error(msg("Tool credentials are misconfigured"));
   }
 }
 

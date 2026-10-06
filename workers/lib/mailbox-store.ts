@@ -1,4 +1,5 @@
 import type { Env } from "../types";
+import { msg } from "../../shared/i18n";
 
 /**
  * Cloudflare mailbox records: `mailboxes/<address>.json` in R2 holds the
@@ -172,10 +173,10 @@ export type CreateMailboxResult =
 export async function createMailbox(env: Env, rawEmail: string, name: string, settings: Record<string, unknown> = {}): Promise<CreateMailboxResult> {
   const email = rawEmail.trim().toLowerCase();
   const allowed = allowedAddresses(env);
-  if (allowed.length && !allowed.includes(email)) return { status: "forbidden", reason: "Mailbox creation is restricted to configured EMAIL_ADDRESSES" };
+  if (allowed.length && !allowed.includes(email)) return { status: "forbidden", reason: msg("Mailbox creation is restricted to configured EMAIL_ADDRESSES") };
   const domains = await allServedDomains(env);
   if (domains.length && !domains.includes(email.slice(email.lastIndexOf("@") + 1)))
-    return { status: "forbidden", reason: `The domain is not served here; add it to DOMAINS first (${domains.join(", ")})` };
+    return { status: "forbidden", reason: msg("The domain is not served here; add it to DOMAINS first ({domains})", { domains: domains.join(", ") }) };
   if (await env.BUCKET.head(settingsKey(email))) return { status: "exists" };
   const finalSettings = {
     fromName: name,
@@ -206,5 +207,5 @@ export async function updateSettings(
     const next = change(await object.json<Record<string, unknown>>());
     if (await bucket.put(settingsKey(email), JSON.stringify(next), { onlyIf: { etagMatches: object.etag } })) return next;
   }
-  throw new Error(`The settings of ${email} changed several times at once; try again`);
+  throw new Error(msg("The settings of {email} changed several times at once; try again", { email }));
 }

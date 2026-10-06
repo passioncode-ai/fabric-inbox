@@ -7,6 +7,7 @@ import { applySetup } from "../lib/apply-setup";
 import { ROUTING_NOT_CONFIGURED, routingClient, RoutingError, type DomainRouting } from "../routing/email-routing";
 export { applySetup };
 import { setupFromRouting } from "../routing/to-setup";
+import { msg } from "../../shared/i18n";
 
 /**
  * Setups (shared/setup.ts): apply one, export the current one, or derive one
@@ -21,7 +22,7 @@ function accessOrigin(env: Env): string | undefined {
 
 setupRouter.post("/api/setup/apply", async (c) => {
   const parsed = parseSetup(await c.req.json().catch(() => null));
-  if (!parsed.ok) return c.json({ error: "This is not a Fabric Inbox setup", problems: parsed.problems }, 400);
+  if (!parsed.ok) return c.json({ error: msg("This is not a Fabric Inbox setup"), problems: parsed.problems }, 400);
   try {
     const result = await applySetup(c.env, parsed.setup);
     console.log(JSON.stringify({ event: "setup_applied", name: parsed.setup.name, domainsAdded: result.domainsAdded.length,
@@ -29,7 +30,7 @@ setupRouter.post("/api/setup/apply", async (c) => {
     return c.json(result);
   } catch (error) {
     console.error(JSON.stringify({ event: "setup_apply_failed", error: (error as Error).message }));
-    return c.json({ error: "The setup could not be applied completely. Applying it again is safe." }, 503);
+    return c.json({ error: msg("The setup could not be applied completely. Applying it again is safe.") }, 503);
   }
 });
 
@@ -66,13 +67,13 @@ setupRouter.get("/api/setup/from-cloudflare", async (c) => {
   if (!client) return c.json({ error: ROUTING_NOT_CONFIGURED.detail }, 503);
   const requested = (c.req.query("domains") ?? "").split(/[\s,]+/).map((d) => d.trim().toLowerCase()).filter(Boolean);
   const domains = requested.length ? requested : await allServedDomains(c.env);
-  if (!domains.length) return c.json({ error: "Name the domains to read: ?domains=example.com,other.example" }, 400);
-  if (domains.length > 100) return c.json({ error: "At most 100 domains at a time" }, 400);
+  if (!domains.length) return c.json({ error: msg("Name the domains to read: ?domains=example.com,other.example") }, 400);
+  if (domains.length > 100) return c.json({ error: msg("At most {max} domains at a time", { max: 100 }) }, 400);
   try {
     const routings: DomainRouting[] = [];
     for (let i = 0; i < domains.length; i += 5) routings.push(...await Promise.all(domains.slice(i, i + 5).map((d) => client.inventory(d))));
     return c.json(setupFromRouting(routings, { origin: new URL(c.req.url).origin, ...(accessOrigin(c.env) ? { accessOrigin: accessOrigin(c.env) } : {}) }));
   } catch (error) {
-    return c.json({ error: error instanceof RoutingError ? error.message : "Email Routing could not be read" }, 502);
+    return c.json({ error: error instanceof RoutingError ? error.message : msg("Email Routing could not be read") }, 502);
   }
 });

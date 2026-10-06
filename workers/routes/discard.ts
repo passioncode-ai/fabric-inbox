@@ -8,6 +8,7 @@ import { DiscardStoreConflict, explainDiscard, readDiscardStore, updateDiscardSt
 import { readSpamLists } from "../spam/lists";
 import { allServedDomains } from "../lib/mailbox-store";
 import { parseRemoteAccount } from "../../shared/mail/accounts";
+import { msg } from "../../shared/i18n";
 
 /**
  * Discarded (operator decision 2026-10-06): throwing a message away on purpose, bringing it back,
@@ -37,7 +38,7 @@ export const RestoreInput = z.object({
 export const AllowEdit = z.object({ value: z.string().min(1).max(320), action: z.enum(["add", "remove"]) }).strict();
 
 /** Why a message moved, as the person discarded it. */
-export const MANUAL_REASON = "You discarded it";
+export const MANUAL_REASON = msg("You discarded it");
 
 type Ref = z.infer<typeof Message>;
 interface Facts { facts: DiscardFacts; known: boolean; inThread: boolean; subject: string }
@@ -45,7 +46,7 @@ interface Facts { facts: DiscardFacts; known: boolean; inThread: boolean; subjec
 function failure(c: C, error: unknown, action: string) {
   if (error instanceof DiscardStoreConflict) return c.json({ error: error.message }, 409);
   console.error(JSON.stringify({ event: "discard_action_failed", action, error: (error as Error)?.message?.slice(0, 300) }));
-  return c.json({ error: `${action} could not be completed: ${(error as Error)?.message ?? "unknown error"}` }, 502);
+  return c.json({ error: msg("{action} could not be completed: {error}", { action, error: (error as Error)?.message ?? msg("unknown error") }) }, 502);
 }
 
 const cloudflare = (env: Env, ref: Ref) => {
@@ -53,7 +54,7 @@ const cloudflare = (env: Env, ref: Ref) => {
   return env.MAILBOX.get(env.MAILBOX.idFromName(mailbox));
 };
 const accounts = (env: Env) => {
-  if (!env.GMAIL_ACCOUNTS) throw new Error("Mail accounts are not configured on this server");
+  if (!env.GMAIL_ACCOUNTS) throw new Error(msg("Mail accounts are not configured on this server"));
   return env.GMAIL_ACCOUNTS.getByName("workspace");
 };
 
@@ -71,18 +72,18 @@ async function factsOf(env: Env, ref: Ref, category?: string): Promise<Facts | n
   if (ref.accountId.startsWith("cloudflare:")) {
     const row = await cloudflare(env, ref).discardFacts(ref.providerMessageId);
     if (!row) return null;
-    if (row.folder === "sent" || row.folder === "draft") throw new Error("It is sent mail or a draft");
+    if (row.folder === "sent" || row.folder === "draft") throw new Error(msg("It is sent mail or a draft"));
     return { facts: discardFacts({ sender: row.sender, headers: row.headers, category }), known: row.known, inThread: row.inThread, subject: row.subject };
   }
   const remote = parseRemoteAccount(ref.accountId);
-  if (!remote) throw new Error("Not an account of this server");
+  if (!remote) throw new Error(msg("Not an account of this server"));
   const row = await accounts(env).discardFacts(remote.id, ref.providerMessageId);
   return { facts: discardFacts({ sender: row.sender, headers: row.headers, category }), known: row.known, inThread: row.inThread, subject: row.subject };
 }
 
 const errorText = (error: unknown) => {
-  const message = (error as Error)?.message ?? "unknown error";
-  return message === "message_not_found" ? "It is no longer here" : message === "not_supported" ? "This account cannot do that" : message.slice(0, 200);
+  const message = (error as Error)?.message ?? msg("unknown error");
+  return message === "message_not_found" ? msg("It is no longer here") : message === "not_supported" ? msg("This account cannot do that") : message.slice(0, 200);
 };
 
 /**
@@ -92,16 +93,16 @@ const errorText = (error: unknown) => {
  */
 discardRouter.post("/api/discard", async (c) => {
   const parsed = DiscardInput.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: "Choose one or more messages" }, 400);
+  if (!parsed.success) return c.json({ error: msg("Choose one or more messages") }, 400);
   const { messages, learn } = parsed.data;
   const categories = learn ? await categoriesOf(c.env, messages) : new Map<string, string>();
   const results = await Promise.all(messages.map(async (m) => {
     try {
       const facts = learn ? await factsOf(c.env, m, categories.get(JSON.stringify([m.accountId, m.providerMessageId]))) : null;
-      if (learn && !facts) return { ...m, ok: false as const, error: "It is no longer here" };
+      if (learn && !facts) return { ...m, ok: false as const, error: msg("It is no longer here") };
       if (m.accountId.startsWith("cloudflare:")) {
         const [moved] = await cloudflare(c.env, m).discardMessages([m.providerMessageId], MANUAL_REASON);
-        if (!moved) return { ...m, ok: false as const, error: "It is sent mail, a draft, or no longer here" };
+        if (!moved) return { ...m, ok: false as const, error: msg("It is sent mail, a draft, or no longer here") };
         return { ...m, ok: true as const, id: moved.id, from: moved.from, unread: moved.unread, facts };
       }
       const remote = parseRemoteAccount(m.accountId)!;
@@ -132,7 +133,7 @@ discardRouter.post("/api/discard", async (c) => {
         return next;
       });
     } catch (error) {
-      ruleError = `The messages were discarded, but nothing was learned: ${(error as Error).message}`;
+      ruleError = msg("The messages were discarded, but nothing was learned: {error}", { error: (error as Error).message });
     }
   }
   // A new rule's one-line reason from the model, when the server has one; never holds the answer up.
@@ -155,7 +156,7 @@ discardRouter.post("/api/discard", async (c) => {
     learned: [...learned.values()].map(({ rule, created }) => ({ ruleId: rule.id, kind: rule.kind, label: rule.label, discards: rule.discards, created })),
     skipped: [...skipped],
     ...(ruleError ? { ruleError } : {}),
-    ...(!done.length && failed.length ? { error: failed[0]!.error ?? "Nothing was discarded" } : {}),
+    ...(!done.length && failed.length ? { error: failed[0]!.error ?? msg("Nothing was discarded") } : {}),
   }, done.length || !results.length ? 200 : 502);
 });
 
@@ -166,7 +167,7 @@ discardRouter.post("/api/discard", async (c) => {
  */
 discardRouter.post("/api/discard/restore", async (c) => {
   const parsed = RestoreInput.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: "Choose one or more messages" }, 400);
+  if (!parsed.success) return c.json({ error: msg("Choose one or more messages") }, 400);
   const { messages, read, unlearn } = parsed.data;
   const results = await Promise.all(messages.map(async (m) => {
     let facts: Facts | null = null;
@@ -174,11 +175,11 @@ discardRouter.post("/api/discard/restore", async (c) => {
     try {
       if (m.accountId.startsWith("cloudflare:")) {
         const moved = await cloudflare(c.env, m).restoreDiscarded([m.providerMessageId], read);
-        if (!moved.length) return { ...m, ok: false as const, error: "It is no longer in Discarded" };
+        if (!moved.length) return { ...m, ok: false as const, error: msg("It is no longer in Discarded") };
         return { ...m, ok: true as const, id: m.providerMessageId, facts };
       }
       const remote = parseRemoteAccount(m.accountId);
-      if (!remote) return { ...m, ok: false as const, error: "Not an account of this server" };
+      if (!remote) return { ...m, ok: false as const, error: msg("Not an account of this server") };
       const moved = await accounts(c.env).restoreDiscarded(remote.id, m.providerMessageId, read);
       return { ...m, ok: true as const, id: moved.id, facts };
     } catch (error) {
@@ -193,7 +194,7 @@ discardRouter.post("/api/discard/restore", async (c) => {
       ? await updateDiscardStore(c.env.BUCKET, (s) => done.reduce((acc, r) => (r.facts ? forgetDiscard(acc, r.facts.facts) : acc), s))
       : await readDiscardStore(c.env.BUCKET);
   } catch (error) {
-    ruleError = `The messages are back in the inbox, but the rules could not be read: ${(error as Error).message}`;
+    ruleError = msg("The messages are back in the inbox, but the rules could not be read: {error}", { error: (error as Error).message });
   }
   const spam = store ? await readSpamLists(c.env.BUCKET).catch(() => undefined) : undefined;
   const rules = new Map<string, DiscardRule>();
@@ -208,7 +209,7 @@ discardRouter.post("/api/discard/restore", async (c) => {
     results: done.map((r) => ({ accountId: r.accountId, providerMessageId: r.providerMessageId, id: (r as { id: string }).id })),
     rules: [...rules.values()].map((r) => ({ ruleId: r.id, kind: r.kind, label: r.label, discards: r.discards })),
     ...(ruleError ? { ruleError } : {}),
-    ...(!done.length && failed.length ? { error: failed[0]!.error ?? "Nothing was restored" } : {}),
+    ...(!done.length && failed.length ? { error: failed[0]!.error ?? msg("Nothing was restored") } : {}),
   }, done.length || !results.length ? 200 : 502);
 });
 
@@ -218,35 +219,35 @@ discardRouter.get("/api/discard/rules", async (c) => {
   try {
     const store = await readDiscardStore(c.env.BUCKET);
     return c.json({ rules: store.rules, allowed: store.allowed, retentionDays: DISCARD_RETENTION_DAYS });
-  } catch (error) { return failure(c, error, "Reading the discard rules"); }
+  } catch (error) { return failure(c, error, msg("Reading the discard rules")); }
 });
 
 /** Stop discarding mail like this: the rule goes; mail already in Discarded stays there. */
 discardRouter.delete("/api/discard/rules/:id", async (c) => {
   const id = c.req.param("id");
-  if (!/^[ls]-[0-9a-f]{8}$/.test(id)) return c.json({ error: "Not a discard rule" }, 400);
+  if (!/^[ls]-[0-9a-f]{8}$/.test(id)) return c.json({ error: msg("Not a discard rule") }, 400);
   try {
     let found = false;
     const store = await updateDiscardStore(c.env.BUCKET, (s) => {
       found = s.rules.some((r) => r.id === id);
       return { ...s, rules: s.rules.filter((r) => r.id !== id) };
     });
-    if (!found) return c.json({ error: "That rule is not there any more" }, 404);
+    if (!found) return c.json({ error: msg("That rule is not there any more") }, 404);
     console.log(JSON.stringify({ event: "discard_rule_removed" }));
     return c.json({ rules: store.rules, allowed: store.allowed });
-  } catch (error) { return failure(c, error, "Removing the rule"); }
+  } catch (error) { return failure(c, error, msg("Removing the rule")); }
 });
 
 /** The Always allow list: senders and domains whose mail is never discarded on arrival. */
 discardRouter.post("/api/discard/allowed", async (c) => {
   const parsed = AllowEdit.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: "Give an address or a domain, and add or remove" }, 400);
+  if (!parsed.success) return c.json({ error: msg("Give an address or a domain, and add or remove") }, 400);
   const entry = allowEntry(parsed.data.value);
-  if (!entry) return c.json({ error: `${parsed.data.value} is not an email address or a domain` }, 400);
+  if (!entry) return c.json({ error: msg("{value} is not an email address or a domain", { value: parsed.data.value }) }, 400);
   try {
     const store = await updateDiscardStore(c.env.BUCKET, (s) => ({ ...s,
       allowed: parsed.data.action === "add" ? [entry, ...s.allowed.filter((x) => x !== entry)] : s.allowed.filter((x) => x !== entry) }));
     console.log(JSON.stringify({ event: "discard_allowed_changed", action: parsed.data.action }));
     return c.json({ allowed: store.allowed, rules: store.rules });
-  } catch (error) { return failure(c, error, "Changing the Always allow list"); }
+  } catch (error) { return failure(c, error, msg("Changing the Always allow list")); }
 });

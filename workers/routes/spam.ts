@@ -7,6 +7,7 @@ import { listMailboxAddresses } from "../lib/mailbox-store";
 import { DEFAULT_SPAM_DAILY_CALLS } from "../categories/store";
 import { ListEdit, Report } from "../spam/inputs";
 import { parseRemoteAccount } from "../../shared/mail/accounts";
+import { msg } from "../../shared/i18n";
 
 /**
  * Spam (SP-3, SP-4, SP-6): the operator's lists, Report spam / Not spam for both
@@ -21,7 +22,7 @@ export const SPAM_RETENTION_DAYS = 30;
 function failure(c: C, error: unknown, action: string) {
   if (error instanceof SpamListConflict) return c.json({ error: error.message }, 409);
   console.error(JSON.stringify({ event: "spam_action_failed", action, error: (error as Error)?.message?.slice(0, 300) }));
-  return c.json({ error: `${action} could not be completed: ${(error as Error)?.message ?? "unknown error"}` }, 502);
+  return c.json({ error: msg("{action} could not be completed: {error}", { action, error: (error as Error)?.message ?? msg("unknown error") }) }, 502);
 }
 
 spamRouter.get("/api/spam", async (c) => {
@@ -33,29 +34,29 @@ spamRouter.get("/api/spam", async (c) => {
       : null;
     return c.json({ lists, retentionDays: SPAM_RETENTION_DAYS,
       model: model ?? { used: 0, limit: Number(c.env.SPAM_DAILY_LIMIT) || DEFAULT_SPAM_DAILY_CALLS, spamToday: 0, screenedToday: 0, unavailable: true } });
-  } catch (error) { return failure(c, error, "Reading the spam rules"); }
+  } catch (error) { return failure(c, error, msg("Reading the spam rules")); }
 });
 
 spamRouter.post("/api/spam/lists", async (c) => {
   const parsed = ListEdit.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: "Choose a list, an address or domain, and add or remove" }, 400);
+  if (!parsed.success) return c.json({ error: msg("Choose a list, an address or domain, and add or remove") }, 400);
   const { list, value, action } = parsed.data;
   const kind = list.endsWith("Senders") ? "sender" : "domain";
   const entry = listEntry(value, kind);
-  if (!entry) return c.json({ error: kind === "sender" ? `${value} is not an email address` : `${value} is not a domain` }, 400);
+  if (!entry) return c.json({ error: kind === "sender" ? msg("{value} is not an email address", { value }) : msg("{value} is not a domain", { value }) }, 400);
   try {
     const lists = await updateSpamLists(c.env.BUCKET, (l) => action === "remove"
       ? { ...l, [list]: l[list].filter((x) => x !== entry) }
       : listChange(l, { kind, value: entry }, list.startsWith("blocked") ? "blocked" : "allowed"));
     console.log(JSON.stringify({ event: "spam_list_changed", list, action }));
     return c.json({ lists });
-  } catch (error) { return failure(c, error, "Changing the spam rules"); }
+  } catch (error) { return failure(c, error, msg("Changing the spam rules")); }
 });
 
 /** Moves each message and records the sender (or domain) on the list; says what did not move. */
 async function move(c: C, spam: boolean) {
   const parsed = Report.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: "Choose one or more messages" }, 400);
+  if (!parsed.success) return c.json({ error: msg("Choose one or more messages") }, 400);
   const { messages, list } = parsed.data;
   const results = await Promise.all(messages.map(async (m) => {
     try {
@@ -63,16 +64,16 @@ async function move(c: C, spam: boolean) {
         const mailbox = m.accountId.slice("cloudflare:".length).toLowerCase();
         const stub = c.env.MAILBOX.get(c.env.MAILBOX.idFromName(mailbox));
         const moved = spam
-          ? await stub.markSpam([m.providerMessageId], list === "none" ? "You reported it as spam"
-            : `You reported it as spam; mail from ${list === "domain" ? "its domain" : "this sender"} now goes to Spam`)
+          ? await stub.markSpam([m.providerMessageId], list === "none" ? msg("You reported it as spam")
+            : list === "domain" ? msg("You reported it as spam; mail from its domain now goes to Spam") : msg("You reported it as spam; mail from this sender now goes to Spam"))
           : await stub.markNotSpam([m.providerMessageId]);
-        return { ...m, ok: moved.length > 0, error: moved.length ? undefined : spam ? "It is sent mail, a draft, or no longer here" : "It is no longer in Spam" };
+        return { ...m, ok: moved.length > 0, error: moved.length ? undefined : spam ? msg("It is sent mail, a draft, or no longer here") : msg("It is no longer in Spam") };
       }
       // A Gmail or IMAP account: its own spam folder (Gmail's label, or the IMAP Junk folder), which
       // also trains the provider's filter.
       const remote = parseRemoteAccount(m.accountId);
-      if (!remote) return { ...m, ok: false as boolean, error: "Not an account of this server" as string | undefined };
-      if (!c.env.GMAIL_ACCOUNTS) return { ...m, ok: false as boolean, error: "Mail accounts are not configured on this server" as string | undefined };
+      if (!remote) return { ...m, ok: false as boolean, error: msg("Not an account of this server") as string | undefined };
+      if (!c.env.GMAIL_ACCOUNTS) return { ...m, ok: false as boolean, error: msg("Mail accounts are not configured on this server") as string | undefined };
       await c.env.GMAIL_ACCOUNTS.getByName("workspace").setSpam(remote.id, m.providerMessageId, spam);
       return { ...m, ok: true, error: undefined };
     } catch (error) {
@@ -86,13 +87,13 @@ async function move(c: C, spam: boolean) {
     try {
       lists = await updateSpamLists(c.env.BUCKET, (l) => entries.reduce((acc, value) => listChange(acc, { kind: list as "sender" | "domain", value }, spam ? "blocked" : "allowed"), l));
     } catch (error) {
-      listError = `The messages moved, but the spam rules were not changed: ${(error as Error).message}`;
+      listError = msg("The messages moved, but the spam rules were not changed: {error}", { error: (error as Error).message });
     }
   }
   const moved = results.filter((r) => r.ok).length;
   console.log(JSON.stringify({ event: spam ? "spam_reported" : "spam_released", moved, failed: results.length - moved, list }));
   const failed = results.filter((r) => !r.ok).map((r) => ({ accountId: r.accountId, providerMessageId: r.providerMessageId, error: r.error }));
-  return c.json({ moved, failed, ...(!moved && failed.length ? { error: failed[0].error ?? "Nothing moved" } : {}),
+  return c.json({ moved, failed, ...(!moved && failed.length ? { error: failed[0].error ?? msg("Nothing moved") } : {}),
     listed: entries, ...(lists ? { lists } : {}), ...(listError ? { listError } : {}) }, moved || !results.length ? 200 : 502);
 }
 
@@ -108,5 +109,5 @@ spamRouter.post("/api/spam/empty", async (c) => {
     const failed = counts.filter((r) => r.status === "rejected").length;
     console.log(JSON.stringify({ event: "spam_emptied", deleted, failed }));
     return c.json({ deleted, failed }, failed && !deleted ? 502 : 200);
-  } catch (error) { return failure(c, error, "Emptying Spam"); }
+  } catch (error) { return failure(c, error, msg("Emptying Spam")); }
 });

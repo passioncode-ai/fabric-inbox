@@ -19,6 +19,7 @@ import { processRun, ActionRejected } from "./engine";
 import { invokeTool } from "./mcp";
 import { parseRemoteAccount } from "../../shared/mail/accounts";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
+import { msg } from "../../shared/i18n";
 
 export class AutomationDO extends DurableObject<Env> {
   private processing: Promise<void> | undefined;
@@ -30,7 +31,7 @@ export class AutomationDO extends DurableObject<Env> {
         if (run.status === "running") {
           run.status = "unknown";
           run.detail =
-            "Processing was interrupted. Verify the outcome before repeating.";
+            msg("Processing was interrupted. Verify the outcome before repeating.");
           await ctx.storage.put(key, run);
         }
       if ([...runs.values()].some((r) => r.status === "pending"))
@@ -106,7 +107,7 @@ export class AutomationDO extends DurableObject<Env> {
           status: limited ? "skipped" : "pending",
           createdAt: now,
           updatedAt: now,
-          ...(limited ? { detail: "Daily rule limit reached" } : {}),
+          ...(limited ? { detail: msg("Daily rule limit reached") } : {}),
         };
         await txn.put("run:" + id, run);
         if (!limited) {
@@ -143,7 +144,7 @@ export class AutomationDO extends DurableObject<Env> {
       )
         throw new Error("Run cannot be cancelled");
       run.status = "cancelled";
-      run.detail = "Cancelled by user";
+      run.detail = msg("Cancelled by user");
       await txn.put("run:" + id, run);
       return run;
     });
@@ -181,7 +182,7 @@ export class AutomationDO extends DurableObject<Env> {
   }
   private async analyze(rule: Rule, email: RuleEmail): Promise<Analysis> {
     if (!rule.conditions.ai && rule.action.type !== "draft")
-      return { matches: true, summary: "Matched rule conditions", draft: "" };
+      return { matches: true, summary: msg("Matched rule conditions"), draft: "" };
     const provider = createWorkersAI({ binding: this.env.AI });
     const result = await generateObject({
       model: provider(
@@ -211,7 +212,7 @@ export class AutomationDO extends DurableObject<Env> {
     const deterministic = matchesRule({ ...rule, enabled: true }, email);
     const analysis = deterministic
       ? await this.analyze(rule, email)
-      : { matches: false, summary: "Conditions did not match", draft: "" };
+      : { matches: false, summary: msg("Conditions did not match"), draft: "" };
     return {
       matched: deterministic && analysis.matches,
       analysis,
@@ -235,21 +236,20 @@ export class AutomationDO extends DurableObject<Env> {
       );
     if (action.type === "forward" && email.hasAttachments)
       throw new ActionRejected(
-        "Forward was not attempted: attachments require manual handling",
+        msg("Forward was not attempted: attachments require manual handling"),
       );
     const remote = parseRemoteAccount(run.account);
     if (remote) {
       // A Gmail or IMAP account: the same actions through the accounts object.
       const provider = this.env.GMAIL_ACCOUNTS.getByName("workspace");
       const id = remote.id;
-      const name = remote.provider === "gmail" ? "Gmail" : "the mail server";
       if (action.type === "archive") {
         await provider.archive(id, email.id);
-        return "Archived";
+        return msg("Archived");
       }
       if (action.type === "mark_read") {
         await provider.setRead(id, email.id, true);
-        return "Marked read";
+        return msg("Marked read");
       }
       const input = {
         idempotencyKey: "rule-" + run.id,
@@ -271,7 +271,7 @@ export class AutomationDO extends DurableObject<Env> {
       };
       if (action.type === "draft" && !input.text.trim())
         throw new ActionRejected(
-          "AI did not produce a draft; nothing was saved",
+          msg("AI did not produce a draft; nothing was saved"),
         );
       const result =
         action.type === "draft"
@@ -280,22 +280,22 @@ export class AutomationDO extends DurableObject<Env> {
       if (result.status !== "accepted")
         throw new Error("Provider did not confirm the action");
       return action.type === "draft"
-        ? `Draft saved in ${remote.provider === "gmail" ? "Gmail" : "the account's Drafts"}`
-        : `Forward accepted by ${name}`;
+        ? remote.provider === "gmail" ? msg("Draft saved in Gmail") : msg("Draft saved in the account's Drafts")
+        : remote.provider === "gmail" ? msg("Forward accepted by Gmail") : msg("Forward accepted by the mail server");
     }
     const stub = this.env.MAILBOX.get(this.env.MAILBOX.idFromName(run.account));
     if (action.type === "archive") {
       await stub.moveEmail(email.id, "archive");
-      return "Archived";
+      return msg("Archived");
     }
     if (action.type === "mark_read") {
       await stub.updateEmail(email.id, { read: true });
-      return "Marked read";
+      return msg("Marked read");
     }
     if (action.type === "draft") {
       if (!run.analysis?.draft.trim())
         throw new ActionRejected(
-          "AI did not produce a draft; nothing was saved",
+          msg("AI did not produce a draft; nothing was saved"),
         );
       const draftId = "rule-" + run.id;
       if (!(await stub.getEmail(draftId)))
@@ -313,7 +313,7 @@ export class AutomationDO extends DurableObject<Env> {
           },
           [],
         );
-      return "Draft saved";
+      return msg("Draft saved");
     }
     const result = await stub.sendMail({
       mailboxId: run.account,
@@ -329,7 +329,7 @@ export class AutomationDO extends DurableObject<Env> {
     });
     if ("error" in result || result.status !== "accepted")
       throw new Error("Forward was not accepted");
-    return "Forward accepted by email provider";
+    return msg("Forward accepted by email provider");
   }
   async alarm() {
     if (this.processing) return this.processing;
@@ -398,7 +398,7 @@ export const automationRouter = new Hono<{ Bindings: Env }>();
 const base = "/api/automation/:account";
 automationRouter.use(base + "/*", async (c, next) => {
   if (!c.env.AUTOMATIONS)
-    return c.json({ error: "Automation is not configured" }, 503);
+    return c.json({ error: msg("Automation is not configured") }, 503);
   await next();
 });
 const stub = (c: any) =>
@@ -412,7 +412,7 @@ automationRouter.put(base + "/rules", async (c) => {
   try {
     return c.json(await stub(c).saveRule(await c.req.json()));
   } catch {
-    return c.json({ error: "Invalid rule or tool host is not enabled" }, 400);
+    return c.json({ error: msg("Invalid rule or tool host is not enabled") }, 400);
   }
 });
 automationRouter.get(base + "/runs", async (c) => c.json(await stub(c).runs()));
@@ -420,14 +420,14 @@ automationRouter.post(base + "/runs/:id/approve", async (c) => {
   try {
     return c.json(await stub(c).approve(c.req.param("id")!));
   } catch {
-    return c.json({ error: "Approval is no longer available" }, 409);
+    return c.json({ error: msg("Approval is no longer available") }, 409);
   }
 });
 automationRouter.post(base + "/runs/:id/dismiss", async (c) => {
   try {
     return c.json(await stub(c).dismiss(c.req.param("id")!));
   } catch {
-    return c.json({ error: "This run cannot be cancelled" }, 409);
+    return c.json({ error: msg("This run cannot be cancelled") }, 409);
   }
 });
 automationRouter.post(base + "/dry-run", async (c) => {
@@ -439,7 +439,7 @@ automationRouter.post(base + "/dry-run", async (c) => {
   } catch {
     return c.json(
       {
-        error: "Could not preview rule; check the message and AI configuration",
+        error: msg("Could not preview rule; check the message and AI configuration"),
       },
       400,
     );

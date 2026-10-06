@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { msg } from "../../shared/i18n";
 
 /**
  * Categories and projects (CAT-1, CAT-2). Pure definitions: schemas, scope and
@@ -11,20 +12,20 @@ import { z } from "zod";
  *   verdict (conditions first, then the model for a description), stored with its reason.
  */
 const Id = z.string().regex(/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/);
-const Domain = z.string().trim().toLowerCase().regex(/^(?=.{3,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/, "Not a domain name");
+const Domain = z.string().trim().toLowerCase().regex(/^(?=.{3,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/, msg("Not a domain name"));
 const Address = z.string().trim().toLowerCase().email().max(254);
 const Word = z.string().trim().min(1).max(60);
 /** An email address, a domain, or @domain; matched against the sender. */
 const SenderPattern = z.string().trim().toLowerCase().min(3).max(254)
-  .refine((v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || /^@?[a-z0-9.-]+\.[a-z]{2,63}$/.test(v), "An address, a domain or @domain");
+  .refine((v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || /^@?[a-z0-9.-]+\.[a-z]{2,63}$/.test(v), msg("An address, a domain or @domain"));
 const unique = <T extends z.ZodTypeAny>(item: T, max: number) =>
   z.array(item).max(max).default([]).transform((xs: z.infer<T>[]) => [...new Set(xs)]);
 
 export const ProjectInputSchema = z.object({
-  name: z.string().trim().min(1, "A project needs a name").max(80),
+  name: z.string().trim().min(1, msg("A project needs a name")).max(80),
   domains: unique(Domain, 50),
   addresses: unique(Address, 100),
-}).strict().refine((p) => p.domains.length + p.addresses.length > 0, "Add at least one domain or address");
+}).strict().refine((p) => p.domains.length + p.addresses.length > 0, msg("Add at least one domain or address"));
 export type ProjectInput = z.infer<typeof ProjectInputSchema>;
 export interface Project extends ProjectInput { id: string; createdAt: string; updatedAt: string }
 
@@ -46,7 +47,7 @@ export const ConditionsSchema = z.object({
 export type Conditions = z.infer<typeof ConditionsSchema>;
 
 export const CategoryInputSchema = z.object({
-  name: z.string().trim().min(1, "A category needs a name").max(60),
+  name: z.string().trim().min(1, msg("A category needs a name")).max(60),
   /** What belongs here, in words; the model reads each message in scope against it. */
   description: z.string().trim().max(1000).default(""),
   scope: ScopeSchema,
@@ -55,7 +56,7 @@ export const CategoryInputSchema = z.object({
   promote: z.boolean().default(false),
   enabled: z.boolean().default(true),
 }).strict().refine((c) => c.scope.all || c.scope.accounts.length + c.scope.domains.length + c.scope.projects.length > 0,
-  "Choose where to look: all inboxes, or projects, domains or addresses");
+  msg("Choose where to look: all inboxes, or projects, domains or addresses"));
 export type CategoryInput = z.infer<typeof CategoryInputSchema>;
 export type CategoryKind = "scope" | "screened";
 export interface Category extends CategoryInput {
@@ -107,19 +108,19 @@ export function matchesConditions(c: Conditions, m: ClassifiedMessage): { ok: bo
     const fromDomain = domainOf(from);
     const hit = c.senders.find((p) => (p.includes("@") && !p.startsWith("@") ? from === p : underDomain(fromDomain, [p.replace(/^@/, "")])));
     if (!hit) return { ok: false, reason: "" };
-    reasons.push(`from ${hit}`);
+    reasons.push(msg("from {sender}", { sender: hit }));
   }
   const subject = m.subject.toLowerCase();
   if (c.subjectWords.length) {
     const hit = c.subjectWords.find((w) => subject.includes(w.toLowerCase()));
     if (!hit) return { ok: false, reason: "" };
-    reasons.push(`subject has “${hit}”`);
+    reasons.push(msg("subject has “{word}”", { word: hit }));
   }
   if (c.textWords.length) {
     const text = (m.subject + "\n" + m.text).toLowerCase();
     const hit = c.textWords.find((w) => text.includes(w.toLowerCase()));
     if (!hit) return { ok: false, reason: "" };
-    reasons.push(`mentions “${hit}”`);
+    reasons.push(msg("mentions “{word}”", { word: hit }));
   }
   return { ok: true, reason: reasons.join(", ") };
 }

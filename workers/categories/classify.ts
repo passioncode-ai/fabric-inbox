@@ -1,6 +1,7 @@
 import { generateObject, type LanguageModel } from "ai";
 import { z } from "zod";
 import type { ClassifiedMessage } from "./definition";
+import { msg } from "../../shared/i18n";
 
 /**
  * One model call per message for every described category in its scope (CAT-3).
@@ -65,6 +66,6 @@ export async function classify(model: LanguageModel, categories: DescribedCatego
   // A category the model left out is "no", with the omission said, never guessed.
   return categories.map((c) => {
     const r = byId.get(c.id);
-    return r ? { id: c.id, match: r.match, reason: r.reason.trim().slice(0, 300) } : { id: c.id, match: false, reason: "The model gave no answer for this category" };
+    return r ? { id: c.id, match: r.match, reason: r.reason.trim().slice(0, 300) } : { id: c.id, match: false, reason: msg("The model gave no answer for this category") };
   });
 }
