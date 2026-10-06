@@ -37,6 +37,8 @@ export interface Email {
 	starred: boolean;
 	body?: string | null;
 	in_reply_to?: string | null;
+	/** Drafts: raised by each save on the server (B-52). */
+	draft_revision?: number | null;
 	email_references?: string | null;
 	message_id?: string | null;
 	raw_headers?: string | null;

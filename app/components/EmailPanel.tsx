@@ -14,9 +14,10 @@ import ThreadMessage from "~/components/email-panel/ThreadMessage";
 import LoadError from "~/components/LoadError";
 import PermanentDeleteDialog from "~/components/PermanentDeleteDialog";
 import { useDeleteMessage } from "~/hooks/useDeleteMessage";
-import { splitEmailList, toEmailListValue } from "~/lib/utils";
+import { splitEmailList } from "~/lib/utils";
 import api from "~/services/api";
-import { useDeleteEmail, useEmail, useMoveEmail, useReplyToEmail, useSendEmail, useThreadReplies, useUpdateEmail } from "~/queries/emails";
+import { useDeleteEmail, useEmail, useMoveEmail, useThreadReplies, useUpdateEmail } from "~/queries/emails";
+import { useQueryClient } from "@tanstack/react-query";
 import { useFolders } from "~/queries/folders";
 import { useMailbox } from "~/queries/mailboxes";
 import { useUIStore } from "~/hooks/useUIStore";
@@ -46,9 +47,8 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 	};
 	const updateEmail = useUpdateEmail();
 	const deleteEmailMut = useDeleteEmail();
+	const queryClient = useQueryClient();
 	const moveEmailMut = useMoveEmail();
-	const sendEmailMut = useSendEmail();
-	const replyMut = useReplyToEmail();
 	const { data: folders = [] } = useFolders(mailboxId) as { data?: Folder[] };
 	const { data: currentMailbox } = useMailbox(mailboxId) as {
 		data?: Mailbox;
@@ -140,28 +140,14 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 		if (!mailboxId || !currentMailbox) return;
 		setIsSending(true);
 		try {
-			if (!target.recipient || !target.subject) { try { const fresh = await api.getEmail(mailboxId, target.id) as Email; if (fresh) target = fresh; } catch {} }
-			if (!target.recipient) { toastManager.add({ title: "Cannot send: no recipient set on this draft.", variant: "error" }); return; }
-			const toRecipients = splitEmailList(target.recipient);
-			if (toRecipients.length === 0) { toastManager.add({ title: "Cannot send: no valid recipient set on this draft.", variant: "error" }); return; }
-			const fromName = currentMailbox.settings?.fromName || currentMailbox.name;
-			const from = fromName && fromName !== currentMailbox.email ? { email: currentMailbox.email, name: fromName } : currentMailbox.email;
-			const originalEmail = target.in_reply_to ? allMessages.find((msg) => msg.id === target.in_reply_to) : undefined;
-			const emailData = {
-				idempotencyKey: "draft-" + target.id,
-				to: toEmailListValue(toRecipients),
-				cc: toEmailListValue(splitEmailList(target.cc)),
-				bcc: toEmailListValue(splitEmailList(target.bcc)),
-				from,
-				subject: target.subject || "(no subject)",
-				html: target.body || "",
-				text: target.body ? target.body.replace(/<[^>]*>/g, "").trim() : "",
-			};
-			if (originalEmail) await replyMut.mutateAsync({ mailboxId, emailId: originalEmail.id, email: emailData }); else await sendEmailMut.mutateAsync({ mailboxId, email: emailData });
+			if (!target.recipient) { try { const fresh = await api.getEmail(mailboxId, target.id) as Email; if (fresh) target = fresh; } catch {} }
+			if (!splitEmailList(target.recipient).length) { toastManager.add({ title: "Cannot send: no recipient set on this draft.", variant: "error" }); return; }
+			// The server sends the draft as it is (one signature, the quote it holds), in its
+			// conversation, from the display name, and removes it from Drafts once accepted.
+			await api.sendDraft(mailboxId, target.id, `draft-${target.id}-${target.draft_revision ?? 1}`);
 			toastManager.add({ title: "Accepted by email provider" });
-			// The send succeeded; a failed draft cleanup must not read as a failed send.
-			// It is announced on its own by MutationErrorToasts.
-			deleteEmailMut.mutate({ mailboxId, id: target.id });
+			queryClient.invalidateQueries({ queryKey: ["emails", mailboxId] });
+			queryClient.invalidateQueries({ queryKey: ["folders", mailboxId] });
 			if (isDraftFolder) closePanel();
 		} catch (err) {
 			const message = (err instanceof Error ? err.message : null) || "Failed to send email.";

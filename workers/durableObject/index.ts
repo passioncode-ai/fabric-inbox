@@ -24,7 +24,7 @@ import type { SendMailCommand, SendMailResult, SendMailRequest } from '../../sha
 import type { InboxReadOptions } from '../../shared/mail/inbox';
 import { mailboxInboxQuery, mailboxInboxMessage, type MailboxInboxRow } from '../lib/inbox-query';
 import { listDrafts as listDraftRows, saveDraft as saveDraftRows, type DraftSql, type DraftSummary, type SaveDraftInput, type SaveDraftResult } from '../lib/mailbox-drafts';
-import { htmlToText } from '../mcp/mail-text';
+import { htmlToText } from '../../shared/mail/text';
 
 
 /** Reject control characters before durable reservation and after reply-header derivation. */

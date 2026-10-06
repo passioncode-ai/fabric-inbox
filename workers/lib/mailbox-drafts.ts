@@ -8,7 +8,7 @@
  * rows in `attachments` like any message's, their bytes in R2 under the draft's id.
  */
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "../../shared/mail/attachments";
-import { htmlToText } from "../mcp/mail-text";
+import { htmlToText } from "../../shared/mail/text";
 
 export interface DraftSql { exec(query: string, ...args: (string | number | null)[]): Iterable<Record<string, unknown>> }
 

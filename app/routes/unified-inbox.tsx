@@ -48,7 +48,8 @@ import {
   type OpenMessage,
 } from "~/components/inbox/model";
 import { useDrafts } from "~/components/inbox/use-drafts";
-import DraftsDialog from "~/components/inbox/DraftsDialog";
+import DraftsDialog, { draftRows } from "~/components/inbox/DraftsDialog";
+import { listServerDrafts, signatureFor } from "~/components/inbox/server-drafts";
 import MessageActions, { applyMessageChange } from "~/components/inbox/MessageActions";
 import TriagedList from "~/components/inbox/TriagedList";
 import AccountSidebar from "~/components/inbox/AccountSidebar";
@@ -283,6 +284,13 @@ export default function UnifiedInbox() {
       .catch(() => setNotice("This message could not be marked read. It stays unread."));
   }, [selected, detail.data, client]);
   const owner = accounts.find((a) => a.id === selected?.accountId);
+  // Drafts on the server, every account's (B-52): read afresh each time Drafts opens.
+  const serverDrafts = useQuery({
+    queryKey: ["server-drafts", accounts.map((a) => a.id).join(",")],
+    queryFn: () => listServerDrafts(accounts.map((a) => a.id), fabric),
+    enabled: draftsOpen && accounts.length > 0,
+    staleTime: 0,
+  });
   const scopeName = categoryParam
     ? activeCategory?.name ?? "Category"
     : active?.email || (accountId ? "Selected account" : domainFilter || (providerFilter ? "Gmail" : "All inboxes"));
@@ -338,11 +346,22 @@ export default function UnifiedInbox() {
       );
     }
   }
-  function compose(mode: Draft["mode"]) {
+  async function compose(mode: Draft["mode"]) {
     const m = detail.data;
+    const from = mode === "new" ? accountId : (selected?.accountId ?? "");
+    // A Cloudflare address's signature goes into the text once, where the person sees and edits it;
+    // the draft is then sent as it is (B-52), so nothing adds it a second time.
+    let signature = "";
+    try {
+      signature = from ? await signatureFor(from, fabric) : "";
+    } catch {
+      setNotice("The sender's signature could not be loaded; add it to the message if you need it.");
+    }
+    const signed = signature ? "\n\n" + signature : "";
     saved.create({
       id: crypto.randomUUID(),
-      accountId: mode === "new" ? accountId : (selected?.accountId ?? ""),
+      accountId: from,
+      ...(signature ? { signature } : {}),
       to:
         mode === "reply"
           ? replyRecipient(m?.from ?? "", m?.to ?? "", owner?.email ?? "")
@@ -353,13 +372,13 @@ export default function UnifiedInbox() {
           : (mode === "reply" ? "Re: " : "Fwd: ") + (m?.subject ?? ""),
       text:
         mode === "forward"
-          ? "\n\nForwarded message\nFrom: " +
+          ? signed + "\n\nForwarded message\nFrom: " +
             m?.from +
             "\nSubject: " +
             m?.subject +
             "\n\n" +
             (m?.text || (m?.html ? htmlToPlainText(m.html) : ""))
-          : "",
+          : signed,
       mode,
       originalId: selected?.providerMessageId,
       forwardSource:
@@ -422,7 +441,7 @@ export default function UnifiedInbox() {
         </Link>
         <button
           className="fi-primary fi-compose-button"
-          onClick={() => compose("new")}
+          onClick={() => void compose("new")}
           disabled={!accounts.length || !saved.loaded}
         >
           <PencilSimpleIcon size={18} />
@@ -439,7 +458,7 @@ export default function UnifiedInbox() {
         >
           <PencilSimpleIcon size={18} />
           <span>Drafts</span>
-          <span className="fi-counter">{saved.drafts.length}</span>
+          <span className="fi-counter">{draftRows(saved.drafts, serverDrafts.data?.drafts ?? []).length}</span>
         </button>
         <div className="fi-section-label">WORKSPACE</div>
         <button
@@ -957,13 +976,13 @@ export default function UnifiedInbox() {
                       <footer className="fi-reply-bar">
                         <button
                           className="fi-primary"
-                          onClick={() => compose("reply")}
+                          onClick={() => void compose("reply")}
                         >
                           <ArrowBendUpLeftIcon size={17} /> Reply
                         </button>
                         <button
                           className="fi-secondary"
-                          onClick={() => compose("forward")}
+                          onClick={() => void compose("forward")}
                         >
                           <ArrowBendUpRightIcon size={17} /> Forward
                         </button>
@@ -989,6 +1008,8 @@ export default function UnifiedInbox() {
       {draftsOpen && (
         <DraftsDialog
           drafts={saved.drafts}
+          server={serverDrafts.data?.drafts ?? []}
+          serverState={{ loading: serverDrafts.isFetching && !serverDrafts.data, failed: serverDrafts.data?.failed ?? [] }}
           accounts={accounts}
           statuses={saved.statuses}
           onClose={() => setDraftsOpen(false)}
@@ -998,9 +1019,17 @@ export default function UnifiedInbox() {
               setComposeOpen(true);
             }
           }}
+          onOpenServer={(row) => {
+            void saved.openServer(row).then((opened) => {
+              if (opened) {
+                setDraftsOpen(false);
+                setComposeOpen(true);
+              }
+            });
+          }}
           onCompose={() => {
             setDraftsOpen(false);
-            compose("new");
+            void compose("new");
           }}
         />
       )}
@@ -1010,6 +1039,10 @@ export default function UnifiedInbox() {
           draft={draft}
           storageError={saved.error}
           saving={saved.saving}
+          sync={saved.sync}
+          onFlush={saved.flush}
+          onResync={saved.resync}
+          onResolve={saved.resolve}
           onLock={saved.lock}
           onSettle={saved.settle}
           onDiscard={saved.discard}
