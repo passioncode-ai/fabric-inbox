@@ -7,6 +7,38 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **Settings is one screen, and nothing jumps.** Addresses, Domains, Accounts, Forwarding
+  destinations, Agents, Knowledge, Categories, Spam rules, Agent access and App live under
+  **Settings** (⌘, in the Mac app), each as a searchable list with the chosen item's panel beside
+  it. Choosing a row no longer scrolls the page or folds another domain (the old screen navigated
+  and reset the scroll to the top); results show where you acted; destructive actions sit in one
+  menu with one confirmation; a narrow window shows the panel with Back. Old addresses redirect.
+- **Mail refresh works.** Gmail brings new mail during a first import, imports recent inbox mail
+  first, syncs as soon as an account connects, and no longer drops out of the inbox when its cache
+  passes about 10,000 messages (a date index and stored counts replace full scans; the cache is
+  migrated in place). **Refresh** reads Gmail now and says per account what happened; the inbox
+  keeps updating after Load older, refreshes when the window comes back or the Mac wakes, applies
+  archive, delete and read at once, and offers a reload after a server update. One bad message no
+  longer stops an account, a manual sync no longer delays the others, and only a revoked grant
+  asks for a reconnect.
+- **Agents can do everything the interface does.** New tools send, edit and delete drafts
+  (`send_draft`, `list_drafts`, `read_draft`, `delete_draft`), send files, Cc, Bcc and a subject on
+  replies and forwards, keep the signature and quote in HTML, read raw headers, list agent keys
+  (without secrets) and providers, and refresh mail. Saving a rule or a project changes only what
+  is given. A test now fails when a route accepts a field its tool does not.
+- **Drafts live on the server.** The main window saves drafts to the account's server drafts
+  (Cloudflare and Gmail), so an agent's draft appears in Drafts for a person to review and send,
+  and a person's draft is safe if the Mac is lost; conflicting edits ask which version to keep.
+  Drafts that were only on this Mac are moved to the server on first start.
+- **Gmail setup in the app.** A seven-step guide with links and copy buttons; the server checks
+  the Google client, creates its own credential key and saves its settings itself. Connecting ends
+  on a page that says what happened, and an account that stops working says why (for example the
+  7-day expiry of a Google app left in Testing) with the one action that fixes it.
+- **More mail accounts: iCloud Mail, Yahoo, AOL, Fastmail, Zoho, Yandex, Mail.ru, GMX, Gmail with
+  an app password, or any IMAP server.** Added in Settings → Accounts with an app password, checked
+  before it is stored, kept encrypted on your server, and read and sent by the server, so they work
+  with the Mac closed. Credentials use a versioned envelope with a rotatable key
+  (`MAIL_CREDENTIAL_KEY`).
 - **Usage counts carry `iid` and `environment`.** Every event repeats the shared installation id as
   `props.iid` and says `props.environment`: `production` for a release build, `sandbox` for a debug
   key or a pre-release version, the two values sshlg-growth counts (operator decision 2026-10-05).
