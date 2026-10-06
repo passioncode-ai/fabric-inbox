@@ -1,8 +1,11 @@
 import { useEffect, useRef } from "react";
-import { SHORTCUT_TEXT as T, shortcutList } from "~/lib/mail-keys";
+import { shortcutList, shortcutText } from "~/lib/mail-keys";
+import { useT } from "~/lib/i18n";
 
 /** The Keyboard shortcuts help (? in the mail list): every key the list answers to, as the platform spells it. */
 export default function ShortcutsDialog({ open, mac, onClose }: { open: boolean; mac: boolean; onClose: () => void }) {
+  const t = useT();
+  const T = shortcutText(t);
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -15,7 +18,7 @@ export default function ShortcutsDialog({ open, mac, onClose }: { open: boolean;
         <h2 id="fi-shortcuts-title">{T.title}</h2>
         <button type="button" className="fi-icon-button" aria-label={T.close} onClick={onClose}>×</button>
       </header>
-      {shortcutList(mac).map((group) => (
+      {shortcutList(mac, t).map((group) => (
         <section key={group.title}>
           <h3>{group.title}</h3>
           <dl>

@@ -1,3 +1,4 @@
+import { englishT, type T } from "../../../shared/i18n";
 import { TRIAGE_GROUPS, triage, type Triage, type TriageGroup } from "../../../shared/mail/triage";
 
 export type ListView = "focus" | "newest";
@@ -92,11 +93,11 @@ export function pinTriage<M extends TriageMessage>(messages: M[], pinned: { id: 
 }
 
 /** A row's date: the time for today, month and day this year, the year for older mail. */
-export function listDate(value: string, now = new Date()): string {
+export function listDate(value: string, now = new Date(), t: T = englishT): string {
   const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return "Unknown date";
-  if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (Number.isNaN(date.valueOf())) return t("Unknown date");
+  if (date.toDateString() === now.toDateString()) return t.time(date, { hour: "2-digit", minute: "2-digit" });
   return date.getFullYear() === now.getFullYear()
-    ? date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-    : date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    ? t.date(date, { month: "short", day: "numeric" })
+    : t.date(date, { month: "short", day: "numeric", year: "numeric" });
 }

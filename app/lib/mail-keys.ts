@@ -5,7 +5,9 @@
 // (desktop/main.cjs installMenu); ⌘⇧N is Apple Mail's own "Get All New Mail".
 // Nothing fires while the person types, and no combination that is not listed here does anything.
 
-export type MailKey = "archive" | "discard" | "next" | "previous" | "extendNext" | "extendPrevious" | "undo" | "help" | "refresh" | "clear";
+import { englishT, type T } from "../../shared/i18n";
+
+export type MailKey ="archive" | "discard" | "next" | "previous" | "extendNext" | "extendPrevious" | "undo" | "help" | "refresh" | "clear";
 
 /** What the handler reads of an element: enough to tell a field from a message row. */
 export interface KeyTarget {
@@ -68,35 +70,41 @@ export function mailKeyAction(e: KeyLike, mac: boolean): MailKey | null {
   return null;
 }
 
-/** The help's words, in one table for the localization that follows (key names stay as keys are labelled). */
-export const SHORTCUT_TEXT = {
-  title: "Keyboard shortcuts",
-  close: "Close keyboard shortcuts",
-  or: " or ",
-  footnote: "Keys do nothing while you type in a field or the composer.",
-  move: "Move", act: "Act", help: "Help",
-  next: "Next message",
-  previous: "Previous message",
-  extend: "Select the next or previous message too",
-  several: "Select several messages",
-  clear: "Clear the selection",
-  archive: "Archive and mark read",
-  discard: "Discard: out of the inbox, kept in Discarded for 30 days; future mail like it goes there too",
-  undo: "Undo the last archive or discard",
-  refresh: "Check for new mail",
-  show: "Show these shortcuts",
-  click: "click",
-};
+/** The help's words in the interface's language (key names stay as keys are labelled). */
+export function shortcutText(t: T) {
+  return {
+    title: t("Keyboard shortcuts"),
+    close: t("Close keyboard shortcuts"),
+    or: t(" or "),
+    footnote: t("Keys do nothing while you type in a field or the composer."),
+    move: t("Move"), act: t("Act"), help: t("Help"),
+    next: t("Next message"),
+    previous: t("Previous message"),
+    extend: t("Select the next or previous message too"),
+    several: t("Select several messages"),
+    clear: t("Clear the selection"),
+    archive: t("Archive and mark read"),
+    discard: t("Discard: out of the inbox, kept in Discarded for 30 days; future mail like it goes there too"),
+    undo: t("Undo the last archive or discard"),
+    refresh: t("Check for new mail"),
+    show: t("Show these shortcuts"),
+    commandClick: t("⌘-click"),
+    controlClick: t("Ctrl+click"),
+    shiftClick: t("Shift-click"),
+  };
+}
+/** The English table: what tests read. */
+export const SHORTCUT_TEXT = shortcutText(englishT);
 
 /** The Keyboard shortcuts help, with the keys spelled as the platform spells them. */
-export function shortcutList(mac: boolean): { title: string; keys: { keys: string[]; does: string }[] }[] {
-  const T = SHORTCUT_TEXT;
+export function shortcutList(mac: boolean, t: T = englishT): { title: string; keys: { keys: string[]; does: string }[] }[] {
+  const T = shortcutText(t);
   return [
     { title: T.move, keys: [
       { keys: ["↓", "J"], does: T.next },
       { keys: ["↑", "K"], does: T.previous },
       { keys: ["Shift ↓", "Shift ↑"], does: T.extend },
-      { keys: [mac ? `⌘-${T.click}` : `Ctrl+${T.click}`, `Shift-${T.click}`], does: T.several },
+      { keys: [mac ? T.commandClick : T.controlClick, T.shiftClick], does: T.several },
       { keys: ["Esc"], does: T.clear },
     ] },
     { title: T.act, keys: [

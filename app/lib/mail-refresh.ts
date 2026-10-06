@@ -2,6 +2,7 @@
 // a newly read first page joins pages loaded with "Load older" (P1-3), and when coming back to the
 // window or waking the Mac reads the list again (P1-4).
 import type { QueryClient } from "@tanstack/react-query";
+import { englishT, type T } from "../../shared/i18n";
 import { compareInbox } from "../../shared/mail/inbox";
 
 /** The fields of a list page this module reads. */
@@ -109,31 +110,33 @@ export function refreshScope(scope: { accountId: string; domain: string }): stri
 }
 
 /** Plain words for why an account could not be read; `who` is "Gmail" or "Its mail server". */
-const FAILED: Record<string, (who: string) => string> = {
-	rate_limited: (who) => `${who} asked us to slow down`,
-	provider_unavailable: (who) => `${who} could not be reached`,
-	provider_failed: (who) => `${who} answered with an error`,
-	provider_auth_failed: (who) => `${who} refused the request`,
-	credential_store_unavailable: () => "its sign-in could not be read on the server",
-};
-const providerOf = (accountId: string) => (accountId.startsWith("imap:") ? "Its mail server" : "Gmail");
-const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+function failedText(code: string, who: string, t: T): string {
+	switch (code) {
+		case "rate_limited": return t("{who} asked us to slow down", { who });
+		case "provider_unavailable": return t("{who} could not be reached", { who });
+		case "provider_failed": return t("{who} answered with an error", { who });
+		case "provider_auth_failed": return t("{who} refused the request", { who });
+		case "credential_store_unavailable": return t("its sign-in could not be read on the server");
+		default: return t("{who} could not be read", { who });
+	}
+}
 
 /** One sentence per account that did not simply sync; `ok` when every account did. */
-export function refreshSummary(outcomes: RefreshOutcome[]): { ok: boolean; text: string } {
+export function refreshSummary(outcomes: RefreshOutcome[], t: T = englishT): { ok: boolean; text: string } {
 	const notes: string[] = [];
+	const clock = (at: number) => t.time(at, { hour: "2-digit", minute: "2-digit" });
 	let ok = true;
 	for (const o of outcomes) {
 		if (o.result === "synced") {
-			if (o.importing !== undefined) notes.push(`${o.email} is still importing older mail (${o.importing}%); new mail is in.`);
+			if (o.importing !== undefined) notes.push(t("{email} is still importing older mail ({n}%); new mail is in.", { email: o.email, n: o.importing }));
 			continue;
 		}
 		ok = false;
-		const who = providerOf(o.accountId);
-		if (o.result === "backoff") notes.push(`${o.email}: ${who} failed a moment ago; it tries again at ${clock(o.retryAt ?? Date.now())}.`);
-		else if (o.result === "reconnect") notes.push(`${o.email} needs to be connected again (Settings → Accounts).`);
-		else if (o.result === "not_reached") notes.push(`${o.email} was not checked in time; it syncs on its own within minutes.`);
-		else notes.push(`${o.email}: ${FAILED[o.error ?? ""]?.(who) ?? `${who} could not be read`}. Try again in a minute.`);
+		const who = o.accountId.startsWith("imap:") ? t("Its mail server") : "Gmail";
+		if (o.result === "backoff") notes.push(t("{email}: {who} failed a moment ago; it tries again at {at}.", { email: o.email, who, at: clock(o.retryAt ?? Date.now()) }));
+		else if (o.result === "reconnect") notes.push(t("{email} needs to be connected again (Settings → Accounts).", { email: o.email }));
+		else if (o.result === "not_reached") notes.push(t("{email} was not checked in time; it syncs on its own within minutes.", { email: o.email }));
+		else notes.push(t("{email}: {problem}. Try again in a minute.", { email: o.email, problem: failedText(o.error ?? "", who, t) }));
 	}
-	return { ok, text: [ok ? "Updated just now." : "Updated, except:", ...notes].join(" ") };
+	return { ok, text: [ok ? t("Updated just now.") : t("Updated, except:"), ...notes].join(" ") };
 }

@@ -1,3 +1,4 @@
+import { englishT, type T } from "../../../shared/i18n";
 import type { InboxAccount } from "./model";
 
 export interface AccountGroup {
@@ -18,7 +19,7 @@ const domainOf = (email: string) => email.slice(email.lastIndexOf("@") + 1).toLo
  * group at the top, Outlook accounts in one after it, IMAP accounts ("Other mail") after that.
  * Pure, so ordering is testable.
  */
-export function groupAccounts(accounts: InboxAccount[]): AccountGroup[] {
+export function groupAccounts(accounts: InboxAccount[], t: T = englishT): AccountGroup[] {
   const sum = (list: InboxAccount[]) => list.some((a) => typeof a.unread === "number")
     ? list.reduce((n, a) => n + (a.unread ?? 0), 0) : undefined;
   const gmail = accounts.filter((a) => a.provider === "gmail").sort((a, b) => a.email.localeCompare(b.email));
@@ -32,7 +33,7 @@ export function groupAccounts(accounts: InboxAccount[]): AccountGroup[] {
   const groups: AccountGroup[] = [];
   if (gmail.length) groups.push({ key: "gmail", label: "Gmail", kind: "gmail", accounts: gmail, unread: sum(gmail) });
   if (outlook.length) groups.push({ key: "outlook", label: "Outlook", kind: "outlook", accounts: outlook, unread: sum(outlook) });
-  if (imap.length) groups.push({ key: "imap", label: "Other mail", kind: "imap", accounts: imap, unread: sum(imap) });
+  if (imap.length) groups.push({ key: "imap", label: t("Other mail"), kind: "imap", accounts: imap, unread: sum(imap) });
   for (const [domain, list] of [...byDomain.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     list.sort((a, b) => (a.email.startsWith("catch-all@") ? 1 : 0) - (b.email.startsWith("catch-all@") ? 1 : 0) || a.email.localeCompare(b.email));
     groups.push({ key: domain, label: domain, kind: "domain", accounts: list, unread: sum(list) });
@@ -41,10 +42,10 @@ export function groupAccounts(accounts: InboxAccount[]): AccountGroup[] {
 }
 
 /** What a row shows: the part before @ for a domain address ("everything else" for the catch-all). */
-export function addressLabel(account: InboxAccount): string {
+export function addressLabel(account: InboxAccount, t: T = englishT): string {
   if (account.provider !== "cloudflare") return account.email;
   const local = account.email.slice(0, account.email.lastIndexOf("@"));
-  return local === "catch-all" ? "everything else" : local;
+  return local === "catch-all" ? t("everything else") : local;
 }
 
 export function totalUnread(accounts: InboxAccount[]): number | undefined {

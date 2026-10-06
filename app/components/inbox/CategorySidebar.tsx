@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { FunnelSimpleIcon, SparkleIcon } from "@phosphor-icons/react";
 import type { Category } from "~/services/categories";
+import { useT } from "~/lib/i18n";
 import type { InboxAccount } from "./model";
 
 interface Props {
@@ -16,6 +17,7 @@ interface Props {
  * counts the unread mail of the inboxes it covers.
  */
 export default function CategorySidebar({ categories, accounts, active, onOpen }: Props) {
+  const t = useT();
   const count = (c: Category) => {
     if (c.kind === "screened") return c.stats.fresh;
     const ids = new Set(c.accountIds ?? []);
@@ -24,11 +26,11 @@ export default function CategorySidebar({ categories, accounts, active, onOpen }
   return (
     <>
       <div className="fi-section-label">
-        CATEGORIES
-        <Link to="/settings/categories/new" aria-label="Create a category">+</Link>
+        {t("CATEGORIES")}
+        <Link to="/settings/categories/new" aria-label={t("Create a category")}>+</Link>
       </div>
       {categories.length ? (
-        <nav className="fi-category-list" aria-label="Categories">
+        <nav className="fi-category-list" aria-label={t("Categories")}>
           {categories.filter((c) => c.enabled).map((c) => {
             const n = count(c);
             return (
@@ -37,7 +39,7 @@ export default function CategorySidebar({ categories, accounts, active, onOpen }
                 {c.kind === "screened" ? <SparkleIcon size={14} aria-hidden="true" /> : <FunnelSimpleIcon size={14} aria-hidden="true" />}
                 <span className="fi-category-name">{c.name}</span>
                 {!!n && (
-                  <span className="fi-unread-count" aria-label={c.kind === "screened" ? `${n} new in ${c.name}` : `${n} unread in ${c.name}`}>{n}</span>
+                  <span className="fi-unread-count" aria-label={c.kind === "screened" ? t("{n} new in {label}", { n, label: c.name }) : t("{n} unread in {label}", { n, label: c.name })}>{n}</span>
                 )}
               </button>
             );
@@ -45,7 +47,7 @@ export default function CategorySidebar({ categories, accounts, active, onOpen }
         </nav>
       ) : (
         <Link className="fi-add-account fi-category-empty" to="/settings/categories/new">
-          <SparkleIcon size={15} aria-hidden="true" /> Create a category
+          <SparkleIcon size={15} aria-hidden="true" /> {t("Create a category")}
         </Link>
       )}
     </>

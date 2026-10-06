@@ -1,4 +1,5 @@
-import { TRIAGE_TEXT as T } from "./triage-text";
+import { useT } from "~/lib/i18n";
+import { triageText } from "./triage-text";
 
 /**
  * What an archive or a discard did, with Undo (also ⌘Z / Ctrl+Z), and after a discard that taught a
@@ -13,6 +14,7 @@ export default function UndoToast({ text, onUndo, undoing, notice, onDont, onClo
   onClose: () => void;
   undoKey: string;
 }) {
+  const T = triageText(useT());
   return (
     <div className="fi-toast" role="status" aria-live="polite">
       <p>

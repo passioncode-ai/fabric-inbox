@@ -11,6 +11,7 @@ import {
 	deleteModeFor,
 	restoreFolderFor,
 } from "~/lib/delete-policy";
+import { useT } from "~/lib/i18n";
 import { useDeleteEmail, useMoveEmail } from "~/queries/emails";
 import type { Email } from "~/types";
 
@@ -27,6 +28,7 @@ export function useDeleteMessage(
 	mailboxId: string | undefined,
 	currentFolder: string | undefined,
 ) {
+	const t = useT();
 	const moveEmail = useMoveEmail();
 	const deleteEmail = useDeleteEmail();
 	const toastManager = useKumoToastManager();
@@ -49,10 +51,10 @@ export function useDeleteMessage(
 			.mutateAsync({ mailboxId, id: email.id, folderId: Folders.TRASH })
 			.then(() => {
 				const toastId: string = toastManager.add({
-					title: DELETE_COPY.trash.done,
+					title: t.text(DELETE_COPY.trash.done),
 					actions: [
 						{
-							children: DELETE_COPY.trash.undo,
+							children: t.text(DELETE_COPY.trash.undo),
 							variant: "secondary",
 							size: "sm",
 							onClick: () => {
@@ -83,7 +85,7 @@ export function useDeleteMessage(
 		deleteEmail
 			.mutateAsync({ mailboxId, id: email.id })
 			.then(() => {
-				toastManager.add({ title: DELETE_COPY.permanent.done });
+				toastManager.add({ title: t.text(DELETE_COPY.permanent.done) });
 				onRemoved?.();
 			})
 			.catch(() => {
@@ -105,8 +107,8 @@ export function useDeleteMessage(
 		/** Label for the delete control of a message in `folderId`. */
 		deleteLabel: (email?: Email) =>
 			deleteModeFor(email ? folderOf(email) : currentFolder) === "permanent"
-				? DELETE_COPY.permanent.label
-				: DELETE_COPY.trash.label,
+				? t.text(DELETE_COPY.permanent.label)
+				: t.text(DELETE_COPY.trash.label),
 		dialogProps,
 	};
 }

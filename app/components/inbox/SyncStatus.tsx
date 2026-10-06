@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ArrowClockwiseIcon, CaretDownIcon, WarningCircleIcon } from "@phosphor-icons/react";
-import { SYNC_TEXT as T, syncStatus, type StatusAccount } from "~/lib/sync-status";
+import { syncStatus, syncText, type StatusAccount } from "~/lib/sync-status";
+import { useT } from "~/lib/i18n";
 import type { RefreshOutcome } from "~/lib/mail-refresh";
 import { useVisibleClock } from "~/hooks/useVisibleClock";
 
@@ -18,8 +19,10 @@ export default function SyncStatus({ accounts, checking, fetching, outcomes, onR
   onRefresh: () => void;
   mac: boolean;
 }) {
+  const t = useT();
+  const T = syncText(t);
   const now = useVisibleClock(15_000);
-  const status = syncStatus({ accounts, now, checking, fetching, outcomes });
+  const status = syncStatus({ accounts, now, checking, fetching, outcomes, t });
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {

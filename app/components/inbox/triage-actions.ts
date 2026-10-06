@@ -4,7 +4,8 @@
 // and as it was (unread again if it was), and takes back what the discard taught.
 import { fabric } from "../../services/fabric";
 import { isRemote, rawAccount, type MailProvider } from "./model";
-import { TRIAGE_TEXT as T } from "./triage-text";
+import { englishT, type T } from "../../../shared/i18n";
+import { TRIAGE_TEXT, triageText } from "./triage-text";
 
 export type ActMessage = { id: string; accountId: string; provider: MailProvider; providerMessageId: string; read: boolean };
 type Request = (url: string, body: unknown, method?: string) => Promise<unknown>;
@@ -49,7 +50,7 @@ export async function discardMessages(messages: ActMessage[], request: Request =
   return {
     kind: "discard",
     items: (answer.results ?? []).flatMap((r) => { const m = find(r); return m ? [{ message: m, id: r.id, unread: r.unread }] : []; }),
-    failed: (answer.failed ?? []).flatMap((f) => { const m = find(f); return m ? [{ message: m, error: f.error ?? T.notDiscardedAny }] : []; }),
+    failed: (answer.failed ?? []).flatMap((f) => { const m = find(f); return m ? [{ message: m, error: f.error ?? TRIAGE_TEXT.notDiscardedAny }] : []; }),
     learned: answer.learned ?? [],
     ...(answer.ruleError ? { ruleError: answer.ruleError } : {}),
   };
@@ -67,7 +68,7 @@ export async function undoDone(done: Done, request: Request = fabric): Promise<{
       try {
         const r = (await request("/api/discard/restore", { messages: items.map((i) => ({ accountId: i.message.accountId, providerMessageId: i.id })), ...(unread ? { read: false } : {}), unlearn: true })) as { moved?: number; failed?: { error?: string }[] };
         restored += r?.moved ?? items.length;
-        for (const f of r?.failed ?? []) failed.push(f.error ?? T.notRestored);
+        for (const f of r?.failed ?? []) failed.push(f.error ?? TRIAGE_TEXT.notRestored);
       } catch (error) { failed.push((error as Error).message); }
     }
     return { restored, failed };
@@ -87,14 +88,16 @@ export async function undoDone(done: Done, request: Request = fabric): Promise<{
 }
 
 /** The toast's words: "Archived", "3 messages discarded", and what did not work. */
-export function doneText(done: Done): string {
-  const head = T.done(done.kind === "archive" ? T.archived : T.discarded, done.items.length);
-  const failed = done.failed.length ? T.someFailed(done.failed.length, done.failed[0]!.error) : "";
-  return head + failed + (done.ruleError ? `. ${done.ruleError}` : "");
+export function doneText(done: Done, t: T = englishT): string {
+  const T = triageText(t);
+  const head = T.done(done.kind, done.items.length);
+  const text = done.failed.length ? T.someFailed(head, done.failed.length, done.failed[0]!.error) : head;
+  return text + (done.ruleError ? `. ${t.text(done.ruleError)}` : "");
 }
 
 /** The once-only notice after a discard taught a new rule, with the rules Don't removes. */
-export function learnedNotice(done: Done): { text: string; ruleIds: string[] } | null {
+export function learnedNotice(done: Done, t: T = englishT): { text: string; ruleIds: string[] } | null {
+  const T = triageText(t);
   const fresh = done.learned.filter((l) => l.created);
   if (!fresh.length) return null;
   const names = fresh.map((l) => l.label);
@@ -103,7 +106,8 @@ export function learnedNotice(done: Done): { text: string; ruleIds: string[] } |
 }
 
 /** Why an action cannot be done here (in a sentence), or null when it can. */
-export function canAct(action: "archive" | "discard", folder: string, capabilities: { archive?: boolean } | undefined): string | null {
+export function canAct(action: "archive" | "discard", folder: string, capabilities: { archive?: boolean } | undefined, t: T = englishT): string | null {
+  const T = triageText(t);
   if (action === "archive") {
     if (folder === "archive") return T.alreadyArchived;
     if (folder !== "inbox" && folder !== "starred") return T.archiveInboxOnly;
