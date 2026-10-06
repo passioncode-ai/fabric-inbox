@@ -27,7 +27,8 @@ and [your deployment](#configure-your-deployment).
    gh release download -R passioncode-ai/fabric-inbox \
      --pattern 'Fabric-Inbox-*.dmg' --pattern 'SHA256SUMS*'
    shasum -a 256 -c SHA256SUMS --ignore-missing    # prints "Fabric-Inbox-<version>.dmg: OK"
-   gh attestation verify Fabric-Inbox-*.dmg -R passioncode-ai/fabric-inbox   # built by this repository's release workflow
+   gh attestation verify Fabric-Inbox-*.dmg -R passioncode-ai/fabric-inbox \
+     --signer-workflow passioncode-ai/.github/.github/workflows/release-publish.yml   # signed by the organization's release workflow
    open Fabric-Inbox-*.dmg                          # drag Fabric Inbox onto Applications
    spctl -a -vv "/Applications/Fabric Inbox.app"    # accepted, source=Notarized Developer ID
    ```

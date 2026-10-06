@@ -135,7 +135,7 @@ per package and has no checked universal path; Intel Macs install the universal 
    `publish`.
 7. **Check from the download.** In an empty directory, do what the README tells a teammate
    (`gh release download …`, `gpg --verify SHA256SUMS.asc SHA256SUMS`,
-   `shasum -a 256 -c SHA256SUMS --ignore-missing`, `gh attestation verify`). Install the copy into
+   `shasum -a 256 -c SHA256SUMS --ignore-missing`, `gh attestation verify <file> -R passioncode-ai/fabric-inbox --signer-workflow passioncode-ai/.github/.github/workflows/release-publish.yml`: the attestations are signed by the organization's reusable `release-publish.yml`, so without `--signer-workflow` the check fails with "verifying with issuer sigstore.dev"). Install the copy into
    a temporary folder, not over `/Applications`, and assess it:
    `spctl -a -vv -t execute "<folder>/Fabric Inbox.app"` (`source=Notarized Developer ID`) and
    `xcrun stapler validate` on the app and the image. Then check its agent protocol:
