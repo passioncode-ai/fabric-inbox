@@ -87,6 +87,14 @@ export interface SendInput {
   from?: string;
   attachments?: MailAttachment[];
 }
+/**
+ * Every field of SendInput, for the agent protocol's schema-drift test (tests/mcp-schema-drift.test.ts):
+ * the compile-time check below fails when SendInput gains a field this list does not name.
+ */
+export const SEND_INPUT_FIELDS = ["to", "cc", "bcc", "subject", "text", "html", "threadId", "inReplyTo", "references", "from", "attachments"] as const;
+type MissingSendField = Exclude<keyof SendInput, (typeof SEND_INPUT_FIELDS)[number]>;
+const _everySendField: [MissingSendField] extends [never] ? true : never = true;
+void _everySendField;
 export function normalizeMessage(
   accountId: string,
   raw: GmailMessage,

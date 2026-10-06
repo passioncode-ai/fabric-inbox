@@ -244,15 +244,17 @@ agentsRouter.delete("/api/project-addresses/:email", async (c) => {
   return c.json(result.body, result.status);
 });
 
+export const CopyInput = z.object({ forwardTo: z.string().trim().toLowerCase().email().max(90).nullable() }).strict();
 agentsRouter.put("/api/project-addresses/:email/copy", async (c) => {
-  const parsed = z.object({ forwardTo: z.string().trim().toLowerCase().email().max(90).nullable() }).strict().safeParse(await c.req.json().catch(() => null));
+  const parsed = CopyInput.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Choose a forwarding destination, or no copy" }, 400);
   const result = await setForwardCopy(c.env, c.req.param("email"), parsed.data.forwardTo);
   return c.json(result.body, result.status);
 });
 
+export const AgentAssignmentInput = z.object({ agent: Assignment }).strict();
 agentsRouter.put("/api/project-addresses/:email/agent", async (c) => {
-  const parsed = z.object({ agent: Assignment }).strict().safeParse(await c.req.json().catch(() => null));
+  const parsed = AgentAssignmentInput.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Choose an agent or Off" }, 400);
   if (c.env.AGENT_REGISTRY) {
     const missing = await checkAgentExists(c, parsed.data.agent);
