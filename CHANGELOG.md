@@ -51,6 +51,19 @@ is cut and published: [docs/release.md](docs/release.md).
   and verified, not installed, and Check for Updates… names its runbook.
 - **The app keeps a log**, `~/Library/Logs/Fabric Inbox/fabric-inbox.log` (codes only, about 2 MB
   at most), with the shared update events.
+- **An update never loops or waits forever.** A version macOS refuses, or that Squirrel.Mac does not
+  take within 15 minutes, is not downloaded again for a day; a held release is downloaded once; a
+  copy this Mac account cannot replace says so and downloads nothing. Turning automatic updates off
+  stops a check that is running from handing anything over (an update already downloaded still
+  installs at quit). A failed Restart to Install Update can be chosen again.
+- **The release refuses a bad update before publishing it.** A new `update-precheck` job runs the
+  app's own checks on the built feed and zip, and `publish` waits for it; the signed set is checked
+  again after publishing.
+- **Creating a server never puts a prerelease over its release**, and `npm run deploy` records the
+  server's version as the app's own deploy does.
+- **A `DevToolsActivePort` left by a debugging run is removed** from the profile at the next start.
+- **Corrected:** the first published release that updates itself is 0.11.0; 0.10.1 was never
+  published.
 
 ## 0.11.0 — 2026-10-06
 
