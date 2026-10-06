@@ -1054,16 +1054,16 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** Launching the app; the app menu, Fabric Inbox → Check for Updates…, Install Updates Automatically, Restart to Install Update
 - **Preconditions:** A released copy (0.10.1 or later) in Applications; a newer release is published.
 - **Steps:**
-  1. The person opens the app as usual -> it checks the latest release in the background; nothing is shown.
-  2. A newer version exists -> it downloads in the background; the menu item reads Restart to Install Update once it is ready.
+  1. The person opens the app as usual -> 90 s later, and every six hours while it runs, it checks the latest release in the background; nothing is shown.
+  2. A newer version exists -> it downloads in the background and is verified; the menu item reads Restart to Install Update once it is ready.
   3. The person quits the app whenever they like -> the new version is installed; the next start is the new version, signed in, with the same server.
 - **Expected result:** Every downloaded copy gets each release without anyone downloading anything.
-- **Alt paths:** Check for Updates… answers at once: up to date, downloading, ready (Restart Now / Later), or why not. Install Updates Automatically cleared: no checks until set again; Check for Updates… still works. Opened from the disk image or Downloads: no update; Check for Updates… says to move it to Applications. Build from source or Mac App Store copy: never checks and says why.
+- **Alt paths:** Check for Updates… answers at once: up to date, downloading, ready (Restart Now / Later), held for a step (with its runbook), refused by verification, or why not. Install Updates Automatically cleared: no checks, downloads or installs until set again (the `auto-update` file reads `off`); Check for Updates… still works. Opened from the disk image or Downloads: no update; Check for Updates… says to move it to Applications. Build from source or Mac App Store copy: never checks and says why.
 - **UI elements:** App menu items, native notices.
 - **States covered:** loading, error, success
-- **Errors & recovery:** The check or download fails (offline, GitHub unreachable): logged, retried at the next launch or six hours later; Check for Updates… quotes the reason and points to passioncode.ai/inbox. An update not signed by the same team, or whose sha256 or size differs: refused by Squirrel.Mac, nothing installed.
+- **Errors & recovery:** The check or download fails (offline, GitHub unreachable): logged, retried once within the hour, then every six hours; Check for Updates… quotes the reason and points to passioncode.ai/inbox. An update whose `SHA256SUMS` is not signed by the organization's key, whose bytes differ from the signed digest, that is not signed by the pinned Developer ID team, or whose version is not the announced one: refused by the app before Squirrel.Mac sees it, nothing installed, the app keeps running (`update_check signature_failed`).
 - **Status:** draft
-- **Coverage:** desktop/updater.cjs, desktop/main.cjs, desktop/dist-mac.mjs, .github/workflows/release.yml, tests/desktop-updates.test.ts, tests/desktop-profile.test.ts
+- **Coverage:** desktop/updater.cjs, desktop/update-verify.cjs, desktop/pgp-verify.cjs, desktop/log.cjs, desktop/main.cjs, desktop/dist-mac.mjs, .github/workflows/release.yml, tests/desktop-updates.test.ts, tests/desktop-update-verify.test.ts, tests/desktop-pgp-verify.test.ts, tests/desktop-log.test.ts, tests/desktop-profile.test.ts
 - **Product:** unobserved
 - **Today:** Built 2026-10-05 for 0.10.1 (docs/desktop-data-and-updates.md). 0.10.0 and earlier have no updater and are updated once by hand.
 

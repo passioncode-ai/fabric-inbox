@@ -179,9 +179,11 @@ and the workflow run that built it.
 ### Updates and your data
 
 From 0.10.1 a released copy in **Applications** updates itself: it checks the latest GitHub
-release at launch (and when you come back to it, at most every six hours), downloads the new
-signed version in the background and installs it when you quit, or at once with **Fabric Inbox →
-Restart to Install Update**. **Install Updates Automatically** in the same menu turns it off.
+release 90 seconds after it starts and every six hours while it runs, downloads a newer version
+in the background, verifies it (the organization's signed `SHA256SUMS`, the file's digest, the
+Developer ID team and the version inside) and installs it when you quit, or at once with
+**Fabric Inbox → Restart to Install Update**. A version that fails any check is not installed.
+**Install Updates Automatically** in the same menu turns it off.
 Your accounts, addresses, agents, keys and mail live on your server, so removing or reinstalling
 the app loses none of them; the server's address is also kept in
 `~/Library/Application Support/PassionCode/backups/` and read back after an uninstaller removed

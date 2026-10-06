@@ -11,7 +11,11 @@ const connector = require('./connect.cjs');
 const usage = require('./analytics.cjs');
 const backup = require('./backup.cjs');
 const updates = require('./updater.cjs');
+const updateVerify = require('./update-verify.cjs');
+const { createLog } = require('./log.cjs');
 const { randomUUID } = require('node:crypto');
+const { execFile } = require('node:child_process');
+const { createWriteStream } = require('node:fs');
 
 // A development run (`npm run desktop`) is its own app to macOS: its own name, so Chromium keeps its
 // cookie key in its own Keychain item ("Fabric Inbox Development Safe Storage"). With the installed
@@ -66,6 +70,14 @@ let analytics = null;
 let launchedByLink = false;
 // Automatic updates (docs/desktop-data-and-updates.md): off unless this build carries a feed.
 let updater = null;
+// The app's log, ~/Library/Logs/<app name>/ (LC-12): codes and versions only.
+let appLog = null;
+function logEvent(line) {
+  if (!appLog && typeof app.isReady === 'function' && app.isReady()) {
+    try { appLog = createLog({ fs, dir: app.getPath('logs') }); } catch { appLog = null; }
+  }
+  if (appLog) void appLog(line); else console.error(JSON.stringify(line));
+}
 
 async function loadBundledSetups() {
   const dir = path.join(__dirname, 'setups');
@@ -117,11 +129,11 @@ async function readConfig() {
     if (!restored) return true;
     try { await writePrivate(configPath(), restored); } catch { /* used for this run even if it cannot be written */ }
     config = restored;
-    console.log(JSON.stringify({ event: 'settings_restored', from: 'PassionCode/backups/fabric-inbox.json' }));
+    logEvent({ event: 'settings_restored', from: 'PassionCode/backups/fabric-inbox.json' });
     return true;
   }
   const saved = await backup.readBackup({ fs, appData: app.getPath('appData'), validate: policy.validateConfig });
-  if (!saved || saved.origin !== config.origin || saved.accessOrigin !== config.accessOrigin) await backup.saveBackup({ fs, appData: app.getPath('appData'), config, log: (l) => console.error(JSON.stringify(l)) });
+  if (!saved || saved.origin !== config.origin || saved.accessOrigin !== config.accessOrigin) await backup.saveBackup({ fs, appData: app.getPath('appData'), config, log: logEvent });
   return true;
 }
 /**
@@ -136,7 +148,7 @@ async function retirePartition(partition) {
 async function saveConfig(next) {
   await writePrivate(configPath(), next);
   config = next;
-  await backup.saveBackup({ fs, appData: app.getPath('appData'), config: next, log: (l) => console.error(JSON.stringify(l)) });
+  await backup.saveBackup({ fs, appData: app.getPath('appData'), config: next, log: logEvent });
 }
 function showSetup(message = '', start = '') {
   notice = message;
@@ -277,7 +289,7 @@ async function startAnalytics() {
   analytics = usage.createAnalytics({ fs, bundle, fetch: send, uuid: randomUUID, appData: app.getPath('appData'), userData: app.getPath('userData'),
     appVersion: app.getVersion(), osVersion: typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : '',
     locale: typeof app.getLocale === 'function' ? app.getLocale() : '', engineVersion: (process.versions && process.versions.electron) || '',
-    log: (line) => console.log(JSON.stringify(line)) });
+    log: logEvent });
   await analytics.start({ launch: launchedByLink ? 'link' : 'ordinary', serverConfigured: !!config });
   installMenu();
   if (!config) void countActive();
@@ -287,14 +299,29 @@ async function startUpdates() {
   let feed = null;
   try { feed = updates.readFeed(await fs.readFile(path.join(__dirname, 'updates.json'), 'utf8')); } catch { feed = null; }
   if (!feed || !autoUpdater) return;
-  // The feed is read with Node's fetch first, so Squirrel is asked only for a newer version (LC-16).
+  // The feed is read with Node's fetch, and a newer release is downloaded and verified by the app
+  // itself (desktop/update-verify.cjs) before Squirrel.Mac is handed the verified zip (LC-16).
   const fetchFeed = async (url) => {
-    const response = await globalThis.fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(15000) });
+    const response = await globalThis.fetch(url, { redirect: 'follow', cache: 'no-store', signal: AbortSignal.timeout(15000) });
     if (!response.ok) throw new Error(`The update feed answered ${response.status}.`);
-    return response.json();
+    return Buffer.from(await response.arrayBuffer());
   };
-  updater = updates.createUpdater({ autoUpdater, fs, userData: app.getPath('userData'), feed, appVersion: app.getVersion(), fetchFeed,
-    log: (line) => console.log(JSON.stringify(line)), onChange: () => installMenu() });
+  let verifier = null;
+  try {
+    const key = await fs.readFile(path.join(__dirname, 'release-key.asc'), 'utf8');
+    const repository = new URL(feed).pathname.split('/').slice(1, 3).join('/');
+    const exec = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10 * 60 * 1000, maxBuffer: 1024 * 1024 },
+      (error, stdout) => (error ? reject(error) : resolve({ stdout }))));
+    verifier = updateVerify.createVerifier({ repository, appVersion: app.getVersion(), appName: 'Fabric Inbox',
+      zipName: (version) => `Fabric-Inbox-${version}-mac.zip`, runningApp: path.resolve(process.execPath, '..', '..', '..'),
+      dir: path.join(app.getPath('cache'), app.getName(), 'updates'), fetch: globalThis.fetch, exec, fs, createWriteStream, key, log: logEvent });
+  } catch (error) {
+    logEvent({ event: 'update_check', outcome: 'check_failed', reason: 'no_release_key' });
+  }
+  // The timers hold no process open: quitting is never delayed by an update check.
+  const setTimer = (fn, ms) => { const handle = setTimeout(fn, ms); if (handle.unref) handle.unref(); return handle; };
+  updater = updates.createUpdater({ autoUpdater, fs, userData: app.getPath('userData'), feed, appVersion: app.getVersion(), fetchFeed, verifier,
+    setTimer, clearTimer: clearTimeout, log: logEvent, onChange: () => installMenu() });
   await updater.start({ packaged: app.isPackaged, mas: !!process.mas,
     inApplications: typeof app.isInApplicationsFolder === 'function' && app.isInApplicationsFolder() });
   installMenu();
@@ -311,7 +338,10 @@ async function checkForUpdates() {
     downloading: ['A new version is downloading.', 'It will be installed when you quit Fabric Inbox, or you can restart once it is ready (Fabric Inbox menu).'],
     unavailable: ['Updates are not available for this copy.', updater.status().reason === 'not_in_applications'
       ? 'Move Fabric Inbox to the Applications folder, open it from there, and it will update itself.' : 'This copy cannot update itself.'],
-    failed: ['The update check did not finish.', `${out.error || 'Unknown error'}. It will try again later; you can also download the latest version from passioncode.ai/inbox.`],
+    failed: out.code === 'signature_failed'
+      ? ['The update did not pass verification and was not installed.', `${out.error || 'It is not the release the organization signed.'} Fabric Inbox keeps running this version and checks again later; you can also download the latest version from passioncode.ai/inbox.`]
+      : ['The update check did not finish.', `${out.error || 'Unknown error'}. It will try again later; you can also download the latest version from passioncode.ai/inbox.`],
+    held: ['A new version needs a step before it is installed.', `Fabric Inbox ${out.version || ''} is downloaded and verified, but it is not installed until the step in its release notes is done: ${out.runbook || 'see the release notes'}.`],
   };
   if (out.outcome === 'ready') {
     const answer = await dialog.showMessageBox({ type: 'info', title: 'Updates', message: `Fabric Inbox ${out.version || ''} is ready to install.`.replace('  ', ' '),
@@ -366,7 +396,7 @@ async function handleConnectLink(url) {
     revoke: ses ? connector.revokeWith(ses, config.origin) : async () => false,
     deliver: connector.deliverTo(request.callback),
     signIn: async () => { loadMail(); },
-    log: (line) => console.log(line),
+    log: (line) => { try { logEvent(JSON.parse(line)); } catch { logEvent({ event: 'connect', outcome: 'unparsed' }); } },
   });
   if (out.outcome === 'connected') {
     track('hub_connected', {});
@@ -478,7 +508,7 @@ function installIPC() {
     try {
       const result = await deployer.deploy({ token: cloudflareToken, accountId, email: input.email, subdomain: input.subdomain, team: input.team,
         bundleDir: serverBundleDir, onStep: step => { if (!event.sender.isDestroyed()) event.sender.send('fabric:cf-step', step); } });
-      console.log(JSON.stringify({ event: 'server_deploy', outcome: 'ok', ms: Date.now() - started, steps: result.steps.map(s => `${s.id}:${s.outcome}`) }));
+      logEvent({ event: 'server_deploy', outcome: 'ok', ms: Date.now() - started, steps: result.steps.map(s => `${s.id}:${s.outcome}`) });
       cloudflareToken = null;
       await saveConfig(policy.validateConfig({ origin: result.origin, accessOrigin: result.accessOrigin }));
       track('server_connected', { method: 'created' });
@@ -486,7 +516,7 @@ function installIPC() {
       loadMail();
       return { ok: true, origin: result.origin };
     } catch (error) {
-      console.error(JSON.stringify({ event: 'server_deploy', outcome: 'failed', ms: Date.now() - started, steps: (error.steps || []).map(s => `${s.id}:${s.outcome}`) }));
+      logEvent({ event: 'server_deploy', outcome: 'failed', ms: Date.now() - started, steps: (error.steps || []).map(s => `${s.id}:${s.outcome}`) });
       return { ok: false, error: problem(error) };
     } finally { deploying = false; }
   });
@@ -509,7 +539,8 @@ function openSettings() {
 function installMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: 'Fabric Inbox', submenu: [{ role: 'about' },
-      { label: updater && updater.status().state === 'ready' ? 'Restart to Install Update' : 'Check for Updates…',
+      { label: updater && updater.status().state === 'ready' ? 'Restart to Install Update' : updater && updater.status().state === 'downloading' ? 'Downloading Update…' : 'Check for Updates…',
+        enabled: !(updater && updater.status().state === 'downloading'),
         click: () => { if (updater && updater.status().state === 'ready') updater.restart(); else void checkForUpdates(); } },
       { label: 'Install Updates Automatically', type: 'checkbox', checked: !!(updater && updater.status().automatic), enabled: !!updater && !['off', 'unavailable'].includes(updater.status().state),
         click: (item) => { if (updater) void updater.setAutomatic(item.checked); } },
@@ -531,10 +562,17 @@ function installMenu() {
   ]));
 }
 app.on('before-quit', () => { quitting = true; });
-// The window coming forward is the only retry trigger and the daily check: no timer runs (LC-08).
+// A ready update is installed by Squirrel.Mac's ShipIt as the app exits; the next launch logs the result.
+let installNoted = false;
+app.on('will-quit', (event) => {
+  if (installNoted || !updater || updater.status().state !== 'ready' || updater.status().installing) return;
+  event.preventDefault();
+  installNoted = true;
+  void updater.quitting().finally(() => app.quit());
+});
+// The window coming forward retries usage counts (LC-08); updates run on their own timer (LC-16).
 app.on('browser-window-focus', () => {
   if (analytics) { void analytics.wake(); void countActive(); }
-  if (updater) updater.wake();
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => {
@@ -562,7 +600,7 @@ if (ownsInstance) app.whenReady().then(async () => {
   config ? loadMail() : showSetup(notice);
   appReady = true;
   void startAnalytics().catch(() => {});
-  void startUpdates().catch((error) => console.error(JSON.stringify({ event: 'update', outcome: 'not_started', reason: String(error && error.message || error).slice(0, 200) })));
+  void startUpdates().catch(() => logEvent({ event: 'update_check', outcome: 'check_failed', reason: 'not_started' }));
   for (const arg of process.argv || []) queueLink(arg);
   void drainLinks();
 });

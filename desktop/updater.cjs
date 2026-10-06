@@ -1,10 +1,10 @@
 'use strict';
-// Automatic updates of the Mac app (docs/desktop-data-and-updates.md). On by default: a released
-// disk image checks the latest GitHub release's `update-mac.json`, downloads the signed,
-// notarized `.zip` it names in the background, and Squirrel.Mac installs it the next time the app
-// quits (or at once, when the person chooses Restart). Squirrel.Mac refuses an update that is not
-// signed by the same Developer ID team as the running app, and the feed's sha256 and size are
-// checked before anything is unpacked.
+// Automatic updates of the Mac app (docs/desktop-data-and-updates.md), one behaviour with every
+// PassionCode.ai product (LC-16). On by default: a released copy reads the latest GitHub release's
+// `update-mac.json`, and when it names a newer version the app downloads and verifies that release
+// itself (desktop/update-verify.cjs: signed SHA256SUMS, digest, pinned Developer ID team, version)
+// before Squirrel.Mac is handed the verified zip. Squirrel.Mac installs it when the person quits
+// (or at once, on Restart to Install Update); a running session is never stopped for an update.
 //
 // Only an app the release workflow built carries a feed (desktop/updates.json, written by
 // dist-mac.mjs in CI): source builds, forks without their own release, debug builds and the Mac
@@ -12,11 +12,20 @@
 // (a disk image, Downloads under App Translocation) cannot replace itself, so it does not check
 // and says so.
 //
-// Lifecycle (LC-08): no timer. A check runs at launch and when a window comes forward, at most
-// every six hours; with no window open nothing is checked.
+// The switch is the file `auto-update` in the app's data folder: absent means on, only the word
+// `off` turns checks off. Cadence: the first check 90 s after start, then every 6 h while the app
+// runs (window or not), and after a failed check one retry within the hour. The timers are the
+// only ones this module owns, and they hold no process open (main.cjs unrefs them).
 const path = require('node:path');
 
+const { compareVersions } = require('./update-verify.cjs');
+
+const FIRST_CHECK_MS = 90 * 1000;
 const CHECK_EVERY_MS = 6 * 3600 * 1000;
+const RETRY_MS = 30 * 60 * 1000;
+const RESTART_TIMEOUT_MS = 60 * 1000;
+const SWITCH_FILE = 'auto-update';
+const INSTALL_FILE = 'update-install.json';
 const FEED = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/releases\/latest\/download\/update-mac\.json$/;
 
 /** The feed a release build carries, or null. */
@@ -30,160 +39,236 @@ function readFeed(text) {
 
 /**
  * The feed file for a release (`update-mac.json`, Squirrel.Mac's static `serverType: 'json'`
- * format): only the release itself, with the sha256 and size Squirrel.Mac checks before unpacking.
+ * format): only the release itself, with the zip's sha256 and size the app checks before Squirrel.Mac
+ * sees it. `migration` (a runbook URL) holds the release: it is downloaded and verified but not
+ * installed until a person takes the step (LC-16 "Held releases").
  */
-function feedFor({ repository, version, zipName, sha256, size, notes = '', pubDate }) {
+function feedFor({ repository, version, zipName, sha256, size, notes = '', pubDate, migration = null }) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error('A repository is owner/name.');
   if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Only a release version (X.Y.Z) is offered as an update.');
   if (!/^[0-9a-f]{64}$/.test(sha256) || !Number.isInteger(size) || size <= 0) throw new Error('The update needs its sha256 and size.');
   const url = `https://github.com/${repository}/releases/download/v${version}/${encodeURIComponent(zipName)}`;
-  return { currentRelease: version, releases: [{ version, updateTo: { version, name: version, notes, pub_date: pubDate, url, sha256, size } }] };
-}
-
-/** Compares two X.Y.Z versions: negative, zero or positive. A malformed one sorts lowest. */
-function compareVersions(a, b) {
-  const parse = (v) => (/^(\d+)\.(\d+)\.(\d+)$/.exec(String(v)) || []).slice(1).map(Number);
-  const x = parse(a); const y = parse(b);
-  if (x.length !== 3 || y.length !== 3) return x.length === 3 ? 1 : y.length === 3 ? -1 : 0;
-  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
-  return 0;
+  const updateTo = { version, name: version, notes, pub_date: pubDate, url, sha256, size };
+  if (migration !== null) {
+    if (!/^https:\/\//.test(String(migration))) throw new Error('A held release names its runbook as an https URL.');
+    updateTo.migration = { runbook: migration };
+  }
+  return { currentRelease: version, releases: [{ version, updateTo }] };
 }
 
 const feedURL = (repository) => `https://github.com/${repository}/releases/latest/download/update-mac.json`;
 
 /**
  * The updater. `autoUpdater` is Electron's; every other dependency is passed in so tests drive it
- * with a fake. States: off | unavailable | idle | checking | downloading | ready | error.
+ * with fakes. States: off | unavailable | idle | checking | downloading | ready | held | error.
+ *
+ * deps: { autoUpdater, fs, userData, feed, appVersion, fetchFeed(url) → Buffer, verifier
+ *   ({ verify(feedBytes, { onDownload }), clean() }), now, setTimer(fn, ms) → handle,
+ *   clearTimer(handle), log, onChange }
  */
 function createUpdater(deps) {
-  const { autoUpdater, fs, userData, feed, appVersion, fetchFeed, now = Date.now, log = () => {}, onChange = () => {} } = deps;
-  const settingsFile = path.join(userData, 'updates.json');
+  const { autoUpdater, fs, userData, feed, appVersion, fetchFeed, verifier, now = Date.now,
+    setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (h) => clearTimeout(h), log = () => {}, onChange = () => {} } = deps;
+  const switchFile = path.join(userData, SWITCH_FILE);
+  const installFile = path.join(userData, INSTALL_FILE);
   let automatic = true;
   let state = 'off';
   let reason = '';
-  let lastCheck = 0;
   let readyVersion = '';
+  let heldVersion = '';
+  let runbook = '';
   let lastError = '';
-  let manual = null;      // resolves a person's "Check for Updates…" with what happened
+  let lastCheck = 0;
+  let retried = false;     // one retry within the hour after a failed check, then back to 6 h
+  let timer = null;
+  let manual = null;       // resolves a person's "Check for Updates…" with what happened
+  let staging = '';        // the version handed to Squirrel.Mac, until it answers
   let wired = false;
+  let installing = false;  // Restart to Install Update was chosen: the quit is Squirrel.Mac's
 
   const set = (next) => { state = next; onChange(status()); };
-  function status() { return { state, reason, automatic, readyVersion, error: lastError }; }
-
-  async function loadSettings() {
-    try {
-      const value = JSON.parse(await fs.readFile(settingsFile, 'utf8'));
-      if (value && value.automatic === false) automatic = false;
-    } catch { /* first run: automatic */ }
-  }
-  async function saveSettings() {
-    await fs.mkdir(userData, { recursive: true, mode: 0o700 });
-    await fs.writeFile(`${settingsFile}.tmp`, JSON.stringify({ automatic }) + '\n', { mode: 0o600 });
-    await fs.rename(`${settingsFile}.tmp`, settingsFile);
-  }
+  function status() { return { state, reason, automatic, readyVersion, heldVersion, runbook, error: lastError, lastCheck, installing }; }
   function settle(outcome) { if (manual) { const done = manual; manual = null; done(outcome); } }
+
+  /** The switch: absent = on, only `off` = off. A legacy `updates.json` choice is carried over once. */
+  async function loadSwitch() {
+    try {
+      automatic = (await fs.readFile(switchFile, 'utf8')).trim() !== 'off';
+      return;
+    } catch { /* absent: on, unless the person turned it off before the file existed */ }
+    const legacy = path.join(userData, 'updates.json');
+    try {
+      const value = JSON.parse(await fs.readFile(legacy, 'utf8'));
+      if (value && value.automatic === false) { await writeSwitch(false); automatic = false; }
+      await fs.rm(legacy, { force: true });
+    } catch { /* no legacy choice */ }
+  }
+  async function writeSwitch(on) {
+    await fs.mkdir(userData, { recursive: true, mode: 0o700 });
+    if (on) { await fs.rm(switchFile, { force: true }); return; }
+    await fs.writeFile(`${switchFile}.tmp`, 'off\n', { mode: 0o600 });
+    await fs.rename(`${switchFile}.tmp`, switchFile);
+  }
+
+  /** What the previous run left: an install that started, and whether this launch is its result. */
+  async function reconcileInstall() {
+    let pending;
+    try { pending = JSON.parse(await fs.readFile(installFile, 'utf8')); } catch { return; }
+    await fs.rm(installFile, { force: true });
+    if (!pending || typeof pending.version !== 'string') return;
+    const installed = compareVersions(appVersion, pending.version) >= 0;
+    log({ event: 'update_install', outcome: installed ? 'installed' : 'failed', version: pending.version, running: appVersion });
+  }
+  async function recordInstall(version) {
+    try { await fs.writeFile(installFile, JSON.stringify({ version, from: appVersion, at: new Date(now()).toISOString() }) + '\n', { mode: 0o600 }); }
+    catch { /* the next launch then cannot tell; nothing else depends on it */ }
+  }
+
+  function schedule(ms) {
+    if (timer) clearTimer(timer);
+    timer = null;
+    if (!automatic || ['off', 'unavailable', 'ready'].includes(state)) return;
+    timer = setTimer(() => { timer = null; if (automatic) void check(); }, ms);
+  }
+
+  function failed(code, why, message) {
+    lastError = String(message || why || code).slice(0, 300);
+    reason = why || code;
+    log({ event: 'update_check', outcome: code, reason: reason, version: staging || undefined });
+    staging = '';
+    set('error');
+    settle({ outcome: 'failed', code, reason, error: lastError });
+    if (!retried) { retried = true; schedule(RETRY_MS); } else { retried = false; schedule(CHECK_EVERY_MS); }
+  }
 
   function wire() {
     if (wired) return;
     wired = true;
-    autoUpdater.on('checking-for-update', () => set('checking'));
-    autoUpdater.on('update-available', () => { log({ event: 'update', outcome: 'downloading' }); set('downloading'); settle({ outcome: 'downloading' }); });
-    autoUpdater.on('update-not-available', () => { log({ event: 'update', outcome: 'current' }); set('idle'); settle({ outcome: 'current' }); });
     autoUpdater.on('update-downloaded', (_event, _notes, name) => {
-      readyVersion = typeof name === 'string' ? name : '';
-      log({ event: 'update', outcome: 'ready', version: readyVersion });
+      readyVersion = staging || (typeof name === 'string' ? name : '');
+      staging = '';
+      log({ event: 'update_check', outcome: 'ready', version: readyVersion });
       set('ready');
       settle({ outcome: 'ready', version: readyVersion });
+      schedule(0);
+      void verifier.clean().catch(() => {});
+    });
+    autoUpdater.on('update-not-available', () => {
+      // Squirrel.Mac was handed a verified newer release and refused it: an install failure.
+      if (state === 'downloading') failed('install_failed', 'squirrel_declined', 'Squirrel.Mac did not accept the verified update.');
     });
     autoUpdater.on('error', (error) => {
-      lastError = String(error && error.message || error).slice(0, 300);
-      log({ event: 'update', outcome: 'failed', reason: lastError });
-      set('error');
-      settle({ outcome: 'failed', error: lastError });
+      const message = String(error && error.message || error);
+      if (state === 'downloading') { void verifier.clean().catch(() => {}); failed('install_failed', 'squirrel', message); }
+      else if (state === 'ready') log({ event: 'update_install', outcome: 'failed', reason: 'squirrel' });
+      else failed('check_failed', 'squirrel', message);
     });
   }
 
-  function fail(error) {
-    lastError = String(error && error.message || error).slice(0, 300);
-    log({ event: 'update', outcome: 'failed', reason: lastError });
-    set('error');
-    settle({ outcome: 'failed', error: lastError });
-  }
-
-  /**
-   * Never a downgrade, never a same-version reinstall: the feed's version is read first and
-   * Squirrel.Mac is asked only when it is newer than this app (LC-16). The release build also sets
-   * ElectronSquirrelPreventDowngrades, so Squirrel itself refuses an older bundle.
-   */
-  async function checkFeed() {
-    let latest;
-    try {
-      const body = await fetchFeed(feed);
-      latest = body && typeof body.currentRelease === 'string' ? body.currentRelease : '';
-    } catch (error) { fail(error); return; }
-    if (!/^\d+\.\d+\.\d+$/.test(latest)) { fail(new Error('The update feed names no release version.')); return; }
-    if (compareVersions(latest, appVersion) <= 0) {
-      log({ event: 'update', outcome: compareVersions(latest, appVersion) < 0 ? 'refused_older' : 'current', latest, running: appVersion });
-      set('idle');
-      settle({ outcome: 'current' });
-      return;
-    }
-    try { autoUpdater.checkForUpdates(); } catch (error) { fail(error); }
-  }
-
-  /** Starts a check; resolves when the feed has been read (and Squirrel asked, when it is newer). */
-  function check() {
-    if (!['idle', 'error'].includes(state)) return null;
+  /** One check: read the feed, verify a newer release, then hand it to Squirrel.Mac. */
+  async function check() {
+    if (!['idle', 'error', 'held'].includes(state)) return null;
     lastCheck = now();
     set('checking');
-    return checkFeed();
+    let feedBytes;
+    try { feedBytes = await fetchFeed(feed); }
+    catch (error) { failed('check_failed', 'feed_unreachable', error && error.message); return null; }
+    let out;
+    try {
+      // A held release is downloaded and verified too, but a person's check waits for its verdict.
+      out = await verifier.verify(feedBytes, { onDownload: (version, held) => { staging = version; set('downloading'); if (!held) settle({ outcome: 'downloading', version }); } });
+    } catch (error) {
+      void verifier.clean().catch(() => {});
+      failed(error && error.code || 'check_failed', error && error.reason, error && error.message);
+      return null;
+    }
+    retried = false;
+    if (out.outcome !== 'verified') {
+      log({ event: 'update_check', outcome: 'current', latest: out.version, running: appVersion, ...(out.outcome === 'older' ? { refused: 'older' } : {}) });
+      staging = '';
+      set('idle');
+      settle({ outcome: 'current' });
+      schedule(CHECK_EVERY_MS);
+      return null;
+    }
+    if (out.migration) {
+      heldVersion = out.version; runbook = out.migration.runbook;
+      log({ event: 'update_check', outcome: 'needs_migration', version: out.version });
+      staging = '';
+      void verifier.clean().catch(() => {});
+      set('held');
+      settle({ outcome: 'held', version: out.version, runbook });
+      schedule(CHECK_EVERY_MS);
+      return null;
+    }
+    try {
+      autoUpdater.setFeedURL({ url: out.localFeed, serverType: 'json' });
+      autoUpdater.checkForUpdates();
+    } catch (error) {
+      void verifier.clean().catch(() => {});
+      failed('install_failed', 'squirrel', error && error.message);
+    }
+    return null;
   }
 
   return {
     status,
 
-    /** At launch: decide whether this app can update itself, then check if automatic. */
+    /** At launch: decide whether this copy can update itself, then schedule the first check. */
     async start({ packaged, mas, inApplications }) {
-      await loadSettings();
+      await loadSwitch();
+      await reconcileInstall();
       if (!feed || !packaged || mas) { reason = !feed ? 'no_feed' : mas ? 'app_store' : 'development'; set('off'); return; }
-      if (!inApplications) { reason = 'not_in_applications'; log({ event: 'update', outcome: 'unavailable', reason }); set('unavailable'); return; }
-      try { autoUpdater.setFeedURL({ url: feed, serverType: 'json' }); }
-      catch (error) { lastError = String(error && error.message || error).slice(0, 300); reason = 'feed_refused'; log({ event: 'update', outcome: 'unavailable', reason, error: lastError }); set('unavailable'); return; }
-      if (typeof fetchFeed !== 'function' || !/^\d+\.\d+\.\d+$/.test(String(appVersion))) { reason = 'no_version_check'; set('unavailable'); return; }
+      if (!inApplications) { reason = 'not_in_applications'; log({ event: 'update_check', outcome: 'check_failed', reason }); set('unavailable'); return; }
+      if (typeof fetchFeed !== 'function' || !verifier || !/^\d+\.\d+\.\d+$/.test(String(appVersion))) {
+        reason = 'no_version_check'; set('unavailable'); return;
+      }
       wire();
       set('idle');
-      if (automatic) await check();
-    },
-
-    /** A window came forward: check again if six hours have passed and checks are automatic. */
-    wake() {
-      if (automatic && now() - lastCheck >= CHECK_EVERY_MS) return check() !== null;
-      return false;
+      schedule(FIRST_CHECK_MS);
     },
 
     /** "Check for Updates…": checks now, whatever the switch says, and resolves with the outcome. */
     checkNow() {
       if (state === 'ready') return Promise.resolve({ outcome: 'ready', version: readyVersion });
       if (state === 'downloading' || state === 'checking') return Promise.resolve({ outcome: 'downloading' });
-      if (!['idle', 'error'].includes(state)) return Promise.resolve({ outcome: 'unavailable', reason });
-      return new Promise((resolve) => { manual = resolve; if (check() === null) settle({ outcome: 'failed', error: lastError }); });
+      if (!['idle', 'error', 'held'].includes(state)) return Promise.resolve({ outcome: 'unavailable', reason });
+      return new Promise((resolve) => { manual = resolve; void check(); });
     },
 
-    /** The switch. Off: no automatic checks (a manual check still works); on: checks at once. */
+    /** The switch. Off: no checks, downloads or installs start; on: a check runs at once. */
     async setAutomatic(on) {
       automatic = !!on;
-      await saveSettings();
+      await writeSwitch(automatic);
+      log({ event: 'auto_update', outcome: automatic ? 'on' : 'off' });
       onChange(status());
-      if (automatic) await check();
+      if (automatic) await check(); else schedule(0);
     },
 
     /** Restart into the downloaded version now (otherwise it is installed when the app quits). */
     restart() {
-      if (state !== 'ready') return false;
-      autoUpdater.quitAndInstall();
+      if (state !== 'ready') { log({ event: 'update_restart', outcome: 'refused', state }); return false; }
+      if (installing) return true;
+      installing = true;
+      log({ event: 'update_restart', outcome: 'requested', version: readyVersion });
+      void recordInstall(readyVersion).then(() => {
+        log({ event: 'update_install', outcome: 'started', version: readyVersion });
+        autoUpdater.quitAndInstall();
+        setTimer(() => log({ event: 'update_install', outcome: 'timeout', version: readyVersion }), RESTART_TIMEOUT_MS);
+      });
       return true;
     },
+
+    /** The app is quitting: a ready update is installed now by Squirrel.Mac's ShipIt. */
+    async quitting() {
+      if (state !== 'ready' || installing) return;
+      log({ event: 'update_install', outcome: 'started', version: readyVersion });
+      await recordInstall(readyVersion);
+    },
+
+    /** Stops the timers (tests; the app's own exit needs nothing). */
+    stop() { if (timer) clearTimer(timer); timer = null; },
   };
 }
 
-module.exports = { createUpdater, readFeed, feedFor, feedURL, compareVersions, CHECK_EVERY_MS };
+module.exports = { createUpdater, readFeed, feedFor, feedURL, compareVersions, FIRST_CHECK_MS, CHECK_EVERY_MS, RETRY_MS, SWITCH_FILE };

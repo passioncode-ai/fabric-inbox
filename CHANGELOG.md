@@ -12,9 +12,22 @@ is cut and published: [docs/release.md](docs/release.md).
   prompt held every count back on the owner's Mac (0.11.0).
 - **A development run is "Fabric Inbox Development"** to macOS, with its own Keychain item for its
   cookie key, so it can never leave the installed app an item it has to ask for.
-- **An update is never a downgrade.** The app reads the update feed's version first and hands
-  Squirrel.Mac only a strictly newer release; the release build also sets
-  `ElectronSquirrelPreventDowngrades`. A feed naming no release version is a failed check.
+- **Automatic updates behave as in every PassionCode.ai product (LC-16).** The first check runs
+  90 s after start, then every 6 h while the app runs, window or not; a failed check is retried
+  once within the hour. The switch is the file `auto-update` in the profile (absent = on, `off` =
+  off); the 0.10.1–0.11.0 `updates.json` choice is carried over.
+- **An update is verified by the app before anything can replace it.** The release's
+  `SHA256SUMS` must carry the organization's pinned GPG signature and list the feed itself; the
+  zip must have the signed digest and size; the app inside must be signed by a Developer ID of team
+  `KJ35UYYL22` and carry the announced version. Only then is Squirrel.Mac handed the verified zip.
+  Before, Squirrel.Mac checked only the signing team, and the docs wrongly said it checked the
+  digest.
+- **An update is never a downgrade or a reinstall**: only a strictly newer release is offered, and
+  the release build sets `ElectronSquirrelPreventDowngrades`.
+- **A release can be held for a step a person takes** (`migration` in its feed): it is downloaded
+  and verified, not installed, and Check for Updates… names its runbook.
+- **The app keeps a log**, `~/Library/Logs/Fabric Inbox/fabric-inbox.log` (codes only, about 2 MB
+  at most), with the shared update events.
 
 ## 0.11.0 — 2026-10-06
 

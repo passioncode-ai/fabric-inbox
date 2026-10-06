@@ -115,16 +115,16 @@ Closing the window destroys it and its renderer; the app stays in the Dock doing
 
 | What | Who starts it | Cadence | With no window | Who stops it | Idle budget |
 |---|---|---|---|---|---|
-| `Fabric Inbox` main process and its Chromium helpers (GPU, network, one renderer per open window) | the person (Dock, Finder) | — | main process only, no timers, no network | the person (⌘Q, Dock); Electron's default handling of `SIGTERM`/logout | 0 requests, 0 timers |
+| `Fabric Inbox` main process and its Chromium helpers (GPU, network, one renderer per open window) | the person (Dock, Finder) | — | main process only; its one update timer (below) | the person (⌘Q, Dock); Electron's default handling of `SIGTERM`/logout | 1 request per 6 h, 1 timer |
 | Mail window (`persist:fabric-<sha256(origin)[:24]>`) and its pollers (`refetchInterval` in `app/routes/`) | launch, Dock click, Retry | Automation 30 s (`app/lib/window-activity.ts`), others 15–60 s; all pause while the page is hidden, Automation also while the window is unfocused | — (destroyed with the window) | closing the window | 0 requests while hidden |
 | Agent-chat WebSocket | opening the Agent panel | one connection | — | closing the panel or window | 0 |
 | Cloudflare API calls of **Create my server** | the person, in setup | one deploy, 60 s per call, ≤2 retries | — | the deploy's end; ⌘Q cuts it and a re-run resumes | 0 |
 | Profile sweep (`desktop/profile.cjs`) | each launch, before any window | once | — | itself | — |
 | Anonymous usage counts (`desktop/analytics.cjs`, [docs/ANALYTICS.md](docs/ANALYTICS.md)); only a release image that carries an App Key | launch; the window coming forward | at launch `app_installed`/`app_started` (one batch); `app_active` once a UTC day with four count reads through the mail window's session; a refused send retried at the next focus after 60 s, then 10 min | nothing (no timer) | ⌘Q drops what waits | 0 requests, 0 timers |
-| Automatic updates (`desktop/updater.cjs`, [docs/desktop-data-and-updates.md](docs/desktop-data-and-updates.md)); only a release image in /Applications | launch; the window coming forward | one GET of the latest release's `update-mac.json`, at most every 6 h; a found update downloads in the background; Squirrel.Mac's `ShipIt` installs it when the app quits (or on Restart to Install Update) | nothing (no timer) | the person (switch in the app menu) | 0 requests, 0 timers |
+| Automatic updates (`desktop/updater.cjs`, `desktop/update-verify.cjs`, [docs/desktop-data-and-updates.md](docs/desktop-data-and-updates.md), LC-16); only a release image in /Applications | launch | one GET of the latest release's `update-mac.json` 90 s after start, then every 6 h while the app runs (one unref'd timer); after a failure one retry within the hour; a newer release's `SHA256SUMS` + `.asc` and zip are downloaded and verified (`ditto`, `codesign`, `plutil` run once each), then Squirrel.Mac's `ShipIt` installs it when the app quits (or on Restart to Install Update) | the same timer | the person (`auto-update` file = `off`, the app-menu switch) | 1 request per 6 h, 1 timer |
 | A `fabric-inbox://connect` link (`desktop/connect.cjs`, ADR-0115) | a hub on this Mac opens the link; Launch Services starts the app if needed | per link: one Allow/Deny dialog, one key request to the server, one POST to the hub's loopback callback (10 s deadline) | handled the same way; a sign-in opens the mail window | the link's end | 0 |
 
-The app owns **no launchd label, no login item, no listening port, no child process (apart from Squirrel.Mac's `ShipIt`, which installs a downloaded update as the app quits), no
+The app owns **no launchd label, no login item, no listening port, no long-lived child process (Squirrel.Mac's `ShipIt` installs a downloaded update as the app quits; `ditto`, `codesign` and `plutil` run once while an update is verified), no
 per-session server and no Keychain item read on a timer**. The agent protocol (`/mcp`) is served by
 the Worker, not the Mac. Cookie encryption (an Electron fuse, `desktop/hardening.mjs`) creates one
 Keychain item, "Fabric Inbox Safe Storage", on first launch; Chromium reads it in-process, and a
@@ -140,8 +140,10 @@ signed release must create it without a prompt (`docs/release.md`, upgrade check
   old server nothing; its `Partitions/` directory stays under the live session until the next launch.
   Each launch removes other servers' partitions and `server.json.*` / `pending-setup.json.*`
   leftovers, **except when no server is known at all**: then every partition is kept, since it may be
-  the server about to be entered again. No log files are written; `analytics-state.json` and
-  `updates.json` are the only files usage counts and updates add. The server's address is also kept
+  the server about to be entered again. The log is `~/Library/Logs/Fabric Inbox/fabric-inbox.log`, JSON lines with codes only, capped near
+  2 MB (`desktop/log.cjs`); `analytics-state.json`, `auto-update` and `update-install.json` are the
+  only profile files usage counts and updates add, and a verified update waits in
+  `~/Library/Caches/Fabric Inbox/updates/` until Squirrel.Mac copies it. The server's address is also kept
   in `<appData>/PassionCode/backups/fabric-inbox.json` and restored from there when `server.json` is
   missing (`desktop/backup.cjs`).
 - **Tests, walks and checks never use the real profile (LC-14).** Launch a built app with
