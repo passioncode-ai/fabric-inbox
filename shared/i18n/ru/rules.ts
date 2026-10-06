@@ -2,19 +2,13 @@
 export const RULES: Readonly<Record<string, string>> = {
 	// Words these sections share with other sections (Agents, Knowledge, Agent access, Addresses):
 	// candidates for common.ts.
-	"Loading…": "Загрузка…",
-	"Deleting…": "Удаляем…",
-	"Off": "Выключено",
 
 	// Settings → Domains (DomainsSection.tsx)
-	"Receiving here": "Почта приходит сюда",
 	"Other domains on Cloudflare": "Другие домены в Cloudflare",
 	"Loading your domains…": "Загружаем ваши домены…",
 	"Your domains": "Ваши домены",
 	"Needed to list and change your domains": "Нужно, чтобы видеть и менять ваши домены",
-	"No domain matches “{query}”.": "Ни один домен не подходит под «{query}».",
 	"No domain is listed yet.": "Доменов в списке пока нет.",
-	"Choose a domain": "Выберите домен",
 	"Connect Cloudflare first: then every domain of your account is listed here.": "Сначала подключите Cloudflare: тогда здесь появятся все домены вашего аккаунта.",
 	"Its state in Cloudflare, its addresses and what can change open here.": "Здесь откроются его состояние в Cloudflare, его адреса и то, что можно изменить.",
 	"Loading this domain…": "Загружаем домен…",
@@ -100,7 +94,6 @@ export const RULES: Readonly<Record<string, string>> = {
 	"Loading categories…": "Загружаем категории…",
 	"Categories and projects": "Категории и проекты",
 	"No domain yet": "Доменов пока нет",
-	"Important": "Важное",
 	"No category matches “{query}”.": "Ни одна категория не подходит под «{query}».",
 	"No category yet. For example: “Refund requests”, looking at all inboxes, described as “the sender asks for their money back”.": "Категорий пока нет. Например: «Запросы на возврат» — во всех входящих, с описанием „отправитель просит вернуть деньги“.",
 	"Choose a category": "Выберите категорию",
@@ -167,7 +160,6 @@ export const RULES: Readonly<Record<string, string>> = {
 	"Single inboxes elsewhere, for example a Gmail account the project uses.": "Отдельные ящики в других местах, например аккаунт Gmail, которым пользуется проект.",
 	"Save project": "Сохранить проект",
 	"Looked at by {names}.": "В нём ищут: {names}.",
-	"All inboxes": "Все входящие",
 	"{first} and {n} more": "{first} и ещё {n}",
 	"Paused: new mail is not sorted into it": "Приостановлена: новая почта в неё не разбирается",
 	"Sorting recent mail: {done} of {total} · {detail}": "Разбираем недавнюю почту: {done} из {total} · {detail}",

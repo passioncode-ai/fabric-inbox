@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { PlusIcon } from "@phosphor-icons/react";
+import { useT } from "~/lib/i18n";
 import { fabric } from "~/services/fabric";
 import type { AgentList, ProjectAddress, ProjectAddresses, RoutingStatus, TestStatus } from "~/services/agents";
 import type { DomainList } from "~/services/domains";
@@ -16,8 +17,8 @@ import {
   useInboxAccounts, useRouting,
 } from "./data";
 import AddAddressDialog from "./AddAddress";
-import { STEP_MARK, TEST_POLL_MS, agentLine, domainOptions, testStep } from "./add-address-model";
-import { ADD_ADDRESS_TEXT as T } from "./add-address-text";
+import { TEST_POLL_MS, agentLine, domainOptions, testStep } from "./add-address-model";
+import { addAddressText } from "./add-address-text";
 import ConfiguredAddresses from "./ConfiguredAddresses";
 import SignatureForm from "./SignatureForm";
 
@@ -32,13 +33,13 @@ const toAssignment = (value: string) => (value === "off" ? "off" as const : { id
 const localPart = (email: string) => email.slice(0, email.lastIndexOf("@"));
 
 export const ADDRESS_TABS = [
-  { id: "routing", label: "Routing & test" },
-  { id: "copy", label: "Copy" },
-  { id: "signature", label: "Name & signature" },
-  { id: "rules", label: "Rules & history" },
+  { id: "routing" },
+  { id: "copy" },
+  { id: "signature" },
+  { id: "rules" },
 ] as const;
 type AddressTab = (typeof ADDRESS_TABS)[number]["id"];
-const isTab = (tab: string | null): tab is AddressTab => ADDRESS_TABS.some((t) => t.id === tab);
+const isTab = (tab: string | null): tab is AddressTab => ADDRESS_TABS.some((known) => known.id === tab);
 
 /**
  * Settings → Addresses (SCR-02, SCN-021, SCN-032, SCN-033): every address that receives here,
@@ -46,6 +47,8 @@ const isTab = (tab: string | null): tab is AddressTab => ADDRESS_TABS.some((t) =
  * beside the list; nothing above the list moves.
  */
 export default function AddressesSection({ id, tab }: { id: string | null; tab: string | null }) {
+  const t = useT();
+  const T = addAddressText(t);
   const domains = useDomains();
   const addresses = useAddresses();
   const agents = useAgents();
@@ -68,7 +71,7 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
   [addresses.data, domains.data]);
   const groupIds = [...new Set(entries.map((e) => e.group))].sort();
   const groups = groupRows(visibleRows(entries, query, id), groupIds.map((d) => ({
-    id: d, label: served.has(d) || !domains.data ? d : `${d} · not received here`,
+    id: d, label: served.has(d) || !domains.data ? d : t("{domain} · not received here", { domain: d }),
   })));
 
   const adding = params.get("add") === "1";
@@ -81,11 +84,11 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
   const failed = domains.isError ? domains : addresses.isError ? addresses : null;
   const selected = id ? entries.find((e) => e.key === id) ?? null : null;
 
-  const list = loading ? <SkeletonRows label="Loading your addresses…" /> : failed ? (
-    <LoadFailure what="Your addresses" error={failed.error} retrying={failed.isFetching}
+  const list = loading ? <SkeletonRows label={t("Loading your addresses…")} /> : failed ? (
+    <LoadFailure what={t("Your addresses")} error={failed.error} retrying={failed.isFetching}
       onRetry={() => { void domains.refetch(); void addresses.refetch(); }} />
   ) : (
-    <SelectableList label="Addresses by domain" groups={groups} selected={id}
+    <SelectableList label={t("Addresses by domain")} groups={groups} selected={id}
       hrefFor={(e) => settingsPath("addresses", e.key, tab && isTab(tab) ? tab : null)}
       renderRow={(e) => <AddressRowContent entry={e} agents={agents.data} unread={unread.get(e.key.toLowerCase()) ?? 0} />}
       empty={<EmptyAddresses list={domains.data} query={query} canAdd={canAdd} onAdd={openAdd} />} />
@@ -93,15 +96,15 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
 
   const panel = !id ? (
     <PanelPlaceholder>
-      <h2>Choose an address</h2>
-      <p>Its routing, its copy, its name and signature, and who answers it open here.</p>
-      {canAdd && <button type="button" className="fi-primary" onClick={openAdd}><PlusIcon size={16} /> Add address</button>}
+      <h2>{t("Choose an address")}</h2>
+      <p>{t("Its routing, its copy, its name and signature, and who answers it open here.")}</p>
+      {canAdd && <button type="button" className="fi-primary" onClick={openAdd}><PlusIcon size={16} /> {t("Add address")}</button>}
     </PanelPlaceholder>
-  ) : loading ? <SkeletonPanel label="Loading this address…" /> : !selected ? (
+  ) : loading ? <SkeletonPanel label={t("Loading this address…")} /> : !selected ? (
     <PanelPlaceholder>
-      <h2>{id} is not here</h2>
-      <p>It may have been removed, or its address was mistyped.</p>
-      <Link className="fi-secondary" to={settingsPath("addresses")} replace preventScrollReset>All addresses</Link>
+      <h2>{t("{address} is not here", { address: id })}</h2>
+      <p>{t("It may have been removed, or its address was mistyped.")}</p>
+      <Link className="fi-secondary" to={settingsPath("addresses")} replace preventScrollReset>{t("All addresses")}</Link>
     </PanelPlaceholder>
   ) : (
     <AddressPanel key={selected.key} entry={selected} tab={isTab(tab) ? tab : "routing"} agents={agents.data}
@@ -113,10 +116,10 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
     <>
       <SectionLayout section="addresses" hasSelection={!!id}
         toolbar={<>
-          <ListSearch value={query} onChange={setQuery} placeholder="Find an address" label="Find an address" />
+          <ListSearch value={query} onChange={setQuery} placeholder={t("Find an address")} label={t("Find an address")} />
           <button type="button" className="fi-primary" onClick={openAdd} disabled={loading || !canAdd}
             title={!canAdd ? T.addDisabled : undefined}>
-            <PlusIcon size={16} /> Add address
+            <PlusIcon size={16} /> {t("Add address")}
           </button>
         </>}
         list={list} panel={panel}
@@ -130,37 +133,42 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
 }
 
 function AddressRowContent({ entry, agents, unread }: { entry: AddressEntry; agents?: AgentList; unread: number }) {
+  const t = useT();
   const a = entry.address;
   // Routing is shown once it has been read (opening the address reads it); never guessed.
   const routing = useRouting(a.email, false);
+  const answerer = answererText(a.agent, a.agentName, agents, t);
   return (
     <>
       <span className="fi-row-main">
         <span className="fi-row-title">{localPart(a.email)}<span className="fi-hint">@{a.domain}</span></span>
-        <span className="fi-row-meta">{answererText(a.agent, a.agentName, agents)}{a.forwardTo ? ` · copy to ${a.forwardTo}` : ""}</span>
+        <span className="fi-row-meta">{a.forwardTo ? t("{answerer} · copy to {destination}", { answerer, destination: a.forwardTo }) : answerer}</span>
       </span>
       <span className="fi-row-side">
-        {a.deliveryIssue ? <Badge tone="bad" title={a.deliveryIssue.problem}>Copy failing</Badge>
-          : entry.orphan ? <Badge tone="warn">Not received</Badge>
+        {a.deliveryIssue ? <Badge tone="bad" title={t.text(a.deliveryIssue.problem)}>{t("Copy failing")}</Badge>
+          : entry.orphan ? <Badge tone="warn">{t("Not received")}</Badge>
           : routing.data ? <RoutingBadge state={routing.data.state} /> : null}
-        {unread > 0 && <span className="fi-unread-count" aria-label={`${unread} unread`}>{unread}</span>}
+        {unread > 0 && <span className="fi-unread-count" aria-label={t.plural(unread, { one: "{n} unread", other: "{n} unread" })}>{unread}</span>}
       </span>
     </>
   );
 }
 
 function RoutingBadge({ state }: { state: RoutingStatus["state"] }) {
-  return <Badge tone={state === "verified" ? "ok" : state === "missing" ? "bad" : "warn"}>{ROUTING_TEXT[state]}</Badge>;
+  const t = useT();
+  return <Badge tone={state === "verified" ? "ok" : state === "missing" ? "bad" : "warn"}>{t.text(ROUTING_TEXT[state])}</Badge>;
 }
 
 function EmptyAddresses({ list, query, canAdd, onAdd }: { list?: DomainList; query: string; canAdd: boolean; onAdd: () => void }) {
-  if (query) return <div className="fi-list-empty"><p>No address matches “{query}”.</p></div>;
+  const t = useT();
+  const T = addAddressText(t);
+  if (query) return <div className="fi-list-empty"><p>{t("No address matches “{query}”.", { query })}</p></div>;
   const served = list?.domains.filter((d) => d.served) ?? [];
   if (!canAdd) {
     return (
       <div className="fi-list-empty">
         <p>{T.listEmptyNoDomains}</p>
-        <Link className="fi-secondary" to={settingsPath("domains")}>Go to Domains</Link>
+        <Link className="fi-secondary" to={settingsPath("domains")}>{t("Go to Domains")}</Link>
       </div>
     );
   }
@@ -177,6 +185,7 @@ function EmptyAddresses({ list, query, canAdd, onAdd }: { list?: DomainList; que
 function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
   entry: AddressEntry; tab: AddressTab; agents?: AgentList; list?: DomainList; data: ProjectAddresses; unread: number; onRemoved: () => void;
 }) {
+  const t = useT();
   const a = entry.address;
   const client = useQueryClient();
   const confirm = useConfirm();
@@ -188,27 +197,33 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
   const routing = useRouting(a.email, true);
   const current = assignmentValue(a.agent);
   const chosen = agents?.agents.find((x) => x.id === current);
+  const tabs = [
+    { id: "routing", label: t("Routing & test") },
+    { id: "copy", label: t("[tab] Copy") },
+    { id: "signature", label: t("Name & signature") },
+    { id: "rules", label: t("Rules & history") },
+  ];
 
-  const setAnswerer = (value: string) => void work.run("Saving…", async () => {
+  const setAnswerer = (value: string) => void work.run(t("Saving…"), async () => {
     try {
       await fabric(path + "/agent", { agent: toAssignment(value) }, "PUT");
     } finally { await refreshMail(client); }
-    return value === "off" ? `${a.email} is Off. New mail stays for you.`
-      : `${a.email} is answered by ${agents?.agents.find((x) => x.id === value)?.name ?? value}.`;
+    return value === "off" ? t("{email} is Off. New mail stays for you.", { email: a.email })
+      : t("{email} is answered by {agent}.", { email: a.email, agent: agents?.agents.find((x) => x.id === value)?.name ?? value });
   });
 
   const remove = async () => {
     const ok = await confirm({
-      title: `Remove ${a.email} and delete its mail?`,
-      body: <p>Its routing rule in Cloudflare is removed too. This cannot be undone.</p>,
-      confirmLabel: "Remove and delete mail", danger: true,
-      blocked: catchAll ? `${a.email} keeps the mail for every other address on ${a.domain}. Choose another catch-all on Domains first.` : undefined,
+      title: t("Remove {email} and delete its mail?", { email: a.email }),
+      body: <p>{t("Its routing rule in Cloudflare is removed too. This cannot be undone.")}</p>,
+      confirmLabel: t("Remove and delete mail"), danger: true,
+      blocked: catchAll ? t("{email} keeps the mail for every other address on {domain}. Choose another catch-all on Domains first.", { email: a.email, domain: a.domain }) : undefined,
     });
     if (!ok) return;
-    const done = await removeWork.run("Removing…", async () => {
+    const done = await removeWork.run(t("Removing…"), async () => {
       try {
         const r = await fabric<{ routing: string; afterwards: string }>(path, undefined, "DELETE");
-        return `${a.email} was removed. ${r.routing} ${r.afterwards}`;
+        return t("{email} was removed. {routing} {afterwards}", { email: a.email, routing: t.text(r.routing), afterwards: t.text(r.afterwards) });
       } finally { await refreshMail(client); }
     });
     if (done) onRemoved();
@@ -216,40 +231,42 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
 
   return (
     <Panel title={a.email} closeTo={settingsPath("addresses")}
-      subtitle={<>On {a.domain}{entry.orphan ? " — this domain no longer receives here, so new mail is refused" : ""}</>}
+      subtitle={entry.orphan
+        ? t("On {domain} — this domain no longer receives here, so new mail is refused", { domain: a.domain })
+        : t("On {domain}", { domain: a.domain })}
       badges={<>
         {routing.data && <RoutingBadge state={routing.data.state} />}
-        {catchAll && <Badge>Catch-all for {a.domain}</Badge>}
-        {unread > 0 && <Badge>{unread} unread</Badge>}
+        {catchAll && <Badge>{t("Catch-all for {domain}", { domain: a.domain })}</Badge>}
+        {unread > 0 && <Badge>{t.plural(unread, { one: "{n} unread", other: "{n} unread" })}</Badge>}
       </>}
-      menu={<ActionMenu label={`More actions for ${a.email}`} actions={[
-        { label: "Open its mail", onSelect: () => navigate("/?account=" + encodeURIComponent("cloudflare:" + a.email)) },
-        { label: `Remove ${a.email}…`, danger: true, onSelect: () => void remove() },
+      menu={<ActionMenu label={t("More actions for {email}", { email: a.email })} actions={[
+        { label: t("Open its mail"), onSelect: () => navigate("/?account=" + encodeURIComponent("cloudflare:" + a.email)) },
+        { label: t("Remove {email}…", { email: a.email }), danger: true, onSelect: () => void remove() },
       ]} />}>
-      <PanelBlock title="Who answers">
+      <PanelBlock title={t("Who answers")}>
         <label className="fi-field">
-          <span className="fi-hint">An agent answers new mail within its reply policy; Off keeps the mail for you.</span>
-          <select className="fi-input" aria-label="Who answers" value={current} disabled={!!work.busy} onChange={(e) => setAnswerer(e.target.value)}>
-            {current === "legacy" && <option value="legacy" disabled>Drafts with its old prompt (set on next message)</option>}
-            <option value="off">Off — I read it myself</option>
+          <span className="fi-hint">{t("An agent answers new mail within its reply policy; Off keeps the mail for you.")}</span>
+          <select className="fi-input" aria-label={t("Who answers")} value={current} disabled={!!work.busy} onChange={(e) => setAnswerer(e.target.value)}>
+            {current === "legacy" && <option value="legacy" disabled>{t("Drafts with its old prompt (set on next message)")}</option>}
+            <option value="off">{t("Off — I read it myself")}</option>
             {agents?.agents.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             {/* Agents that could not be listed still show the one answering, never a false "Off". */}
             {typeof a.agent === "object" && !agents && <option value={a.agent.id}>{a.agentName ?? a.agent.id}</option>}
-            {typeof a.agent === "object" && agents && !a.agentName && <option value={a.agent.id} disabled>Deleted agent — Off</option>}
+            {typeof a.agent === "object" && agents && !a.agentName && <option value={a.agent.id} disabled>{t("Deleted agent — Off")}</option>}
           </select>
-          {chosen && <span className="fi-hint">{agentLine(chosen)}</span>}
+          {chosen && <span className="fi-hint">{agentLine(chosen, t)}</span>}
         </label>
         <ActionResult result={work.result} />
       </PanelBlock>
-      <PanelTabs label={`Settings of ${a.email}`} tabs={[...ADDRESS_TABS]} current={tab}
-        hrefFor={(t) => settingsPath("addresses", a.email, t === "routing" ? null : t)} />
+      <PanelTabs label={t("Settings of {email}", { email: a.email })} tabs={tabs} current={tab}
+        hrefFor={(id) => settingsPath("addresses", a.email, id === "routing" ? null : id)} />
       {tab === "routing" && <RoutingTab address={a} catchAll={catchAll} connected={!!list?.connected} />}
       {tab === "copy" && <CopyTab address={a} list={list} />}
       {tab === "signature" && <SignatureForm email={a.email} />}
       {tab === "rules" && (
         <PanelBlock>
-          <p>Rules act on new mail to {a.email}: they can archive, label, forward or call a tool, after approval or by themselves. Every run is kept with what it did.</p>
-          <Link className="fi-secondary" to={"/automation/" + encodeURIComponent(a.email)}>Open rules and history</Link>
+          <p>{t("Rules act on new mail to {email}: they can archive, label, forward or call a tool, after approval or by themselves. Every run is kept with what it did.", { email: a.email })}</p>
+          <Link className="fi-secondary" to={"/automation/" + encodeURIComponent(a.email)}>{t("Open rules and history")}</Link>
         </PanelBlock>
       )}
       <ActionResult result={removeWork.result} />
@@ -258,14 +275,16 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
 }
 
 function RoutingTab({ address: a, catchAll, connected }: { address: ProjectAddress; catchAll: boolean; connected: boolean }) {
+  const t = useT();
+  const T = addAddressText(t);
   const client = useQueryClient();
   const routing = useRouting(a.email, true);
   const work = useWork(a.email, "routing");
   const path = "/api/project-addresses/" + encodeURIComponent(a.email);
-  const sendHere = () => void work.run("Changing routing…", async () => {
+  const sendHere = () => void work.run(t("Changing routing…"), async () => {
     const status = await fabric<RoutingStatus>(path + "/routing", {});
     await client.invalidateQueries({ queryKey: routingKey(a.email) });
-    return status.detail;
+    return t.text(status.detail);
   });
   // The last test message, watched until it arrives (SCN-062); polled only while it is on its way.
   const lastTest = useQuery({
@@ -278,25 +297,30 @@ function RoutingTab({ address: a, catchAll, connected }: { address: ProjectAddre
     await client.invalidateQueries({ queryKey: ["routing-test", a.email] });
     return result.status === "failed" ? T.panelTestRefused(result.subject) : T.panelTestSent(result.subject);
   });
+  // The server's English sentence (workers/lib/address-ops.ts) says when the rule sends the mail elsewhere.
   const elsewhere = routing.data?.state === "missing" && routing.data.detail.includes("somewhere else");
+  const issue = a.deliveryIssue;
   return (
     <>
-      <PanelBlock title="Does mail arrive here?" aside={
+      <PanelBlock title={t("Does mail arrive here?")} aside={
         <button type="button" className="fi-text-button" disabled={routing.isFetching}
-          onClick={() => void client.invalidateQueries({ queryKey: routingKey(a.email) })}>{routing.isFetching ? "Checking…" : "Check again"}</button>}>
-        {routing.isPending ? <p role="status" className="fi-hint">Reading Cloudflare Email Routing…</p> : routing.isError ? (
-          <p role="alert">Routing unknown: {errorText(routing.error)}</p>
+          onClick={() => void client.invalidateQueries({ queryKey: routingKey(a.email) })}>{routing.isFetching ? t("Checking…") : t("Check again")}</button>}>
+        {routing.isPending ? <p role="status" className="fi-hint">{t("Reading Cloudflare Email Routing…")}</p> : routing.isError ? (
+          <p role="alert">{t("Routing unknown: {error}", { error: t.text(errorText(routing.error)) })}</p>
         ) : (
-          <p><RoutingBadge state={routing.data.state} /> {routing.data.detail}</p>
+          <p><RoutingBadge state={routing.data.state} /> {t.text(routing.data.detail)}</p>
         )}
         {!connected && routing.data?.state === "unknown" && (
-          <p className="fi-hint">{T.panelConnect} <Link to={settingsPath("domains", "connect")}>{T.panelConnectLink}</Link>.</p>
+          <p className="fi-hint">{T.panelConnect(<Link key="connect" to={settingsPath("domains", "connect")}>{T.panelConnectLink}</Link>)}</p>
         )}
-        {elsewhere && <p className="fi-hint">{T.panelElsewhere} <Link to={settingsPath("domains", a.domain)}>{a.domain}</Link>{T.panelElsewhereAfter}</p>}
-        {catchAll && <p className="fi-hint">It also keeps the mail for every other address on {a.domain}.</p>}
-        {a.deliveryIssue && (
+        {elsewhere && <p className="fi-hint">{T.panelElsewhere(<Link key="domain" to={settingsPath("domains", a.domain)}>{a.domain}</Link>)}</p>}
+        {catchAll && <p className="fi-hint">{t("It also keeps the mail for every other address on {domain}.", { domain: a.domain })}</p>}
+        {issue && (
           <div className="fi-callout is-bad" role="alert">
-            <p>The copy to {a.deliveryIssue.target} failed {a.deliveryIssue.count} time{a.deliveryIssue.count > 1 ? "s" : ""}, last {new Date(a.deliveryIssue.lastAt).toLocaleString()}: {a.deliveryIssue.problem}. The mail itself is kept here.</p>
+            <p>{t.plural(issue.count, {
+              one: "The copy to {target} failed {n} time, last {when}: {problem}. The mail itself is kept here.",
+              other: "The copy to {target} failed {n} times, last {when}: {problem}. The mail itself is kept here.",
+            }, { target: issue.target, when: t.dateTime(issue.lastAt), problem: t.text(issue.problem) })}</p>
           </div>
         )}
         <div className="fi-buttons">
@@ -307,12 +331,12 @@ function RoutingTab({ address: a, catchAll, connected }: { address: ProjectAddre
         </div>
         <ActionResult result={work.result} />
         {lastTest.data && (() => {
-          const step = testStep("sent", lastTest.data);
+          const step = testStep("sent", lastTest.data, undefined, t);
           return (
             <ol className="fi-steps fi-steps-live" aria-label={T.panelLastTest} aria-live="polite">
               <li className={"fi-step is-" + step.outcome}>
-                <span className="fi-step-mark">{STEP_MARK[step.outcome]}</span>
-                <span><strong>{T.panelTestOf(new Date(lastTest.data.sentAt).toLocaleString())}</strong> {step.detail}</span>
+                <span className="fi-step-mark">{T.mark[step.outcome]}</span>
+                <span><strong>{T.panelTestOf(t.dateTime(lastTest.data.sentAt))}</strong> {t.text(step.detail)}</span>
               </li>
             </ol>
           );
@@ -323,6 +347,7 @@ function RoutingTab({ address: a, catchAll, connected }: { address: ProjectAddre
 }
 
 function CopyTab({ address: a, list }: { address: ProjectAddress; list?: DomainList }) {
+  const t = useT();
   const client = useQueryClient();
   const work = useWork(a.email, "copy");
   const summary = list?.domains.find((d) => d.domain === a.domain);
@@ -333,32 +358,37 @@ function CopyTab({ address: a, list }: { address: ProjectAddress; list?: DomainL
   const options = [...new Set([...confirmed, ...(a.forwardTo ? [a.forwardTo] : [])])];
   const [copy, setCopy] = useState(a.forwardTo ?? "");
   useEffect(() => setCopy(a.forwardTo ?? ""), [a.forwardTo]);
-  const save = () => void work.run("Saving…", async () => {
+  const save = () => void work.run(t("Saving…"), async () => {
     try {
       const r = await fabric<{ warning?: string }>(`/api/project-addresses/${encodeURIComponent(a.email)}/copy`, { forwardTo: copy || null }, "PUT");
-      return [copy ? `A copy of ${a.email}'s mail now goes to ${copy}.` : `${a.email} no longer forwards a copy.`, r.warning].filter(Boolean).join(" ");
+      return [
+        copy ? t("A copy of {email}'s mail now goes to {destination}.", { email: a.email, destination: copy }) : t("{email} no longer forwards a copy.", { email: a.email }),
+        r.warning ? t.text(r.warning) : r.warning,
+      ].filter(Boolean).join(" ");
     } finally { await client.invalidateQueries({ queryKey: ADDRESSES_KEY }); }
   });
   return (
-    <PanelBlock title="Forward a copy">
-      <p>{a.forwardTo ? `A copy of each message is forwarded to ${a.forwardTo}.` : "No copy is forwarded."} The mail itself always stays here.</p>
+    <PanelBlock title={t("Forward a copy")}>
+      <p>{a.forwardTo ? t("A copy of each message is forwarded to {destination}.", { destination: a.forwardTo }) : t("No copy is forwarded.")} {t("The mail itself always stays here.")}</p>
       {!connected ? (
-        <p className="fi-hint">Changing the copy needs Cloudflare: connect it on <Link to={settingsPath("domains")}>Domains</Link>.</p>
-      ) : destinations.isPending ? <p role="status" className="fi-hint">Loading forwarding destinations…</p> : destinations.isError ? (
-        <LoadFailure what="Forwarding destinations" error={destinations.error} onRetry={() => void destinations.refetch()} retrying={destinations.isFetching} />
+        <p className="fi-hint">{t.rich("Changing the copy needs Cloudflare: connect it on {link}.", { link: <Link key="domains" to={settingsPath("domains")}>{t("Domains")}</Link> })}</p>
+      ) : destinations.isPending ? <p role="status" className="fi-hint">{t("Loading forwarding destinations…")}</p> : destinations.isError ? (
+        <LoadFailure what={t("Forwarding destinations")} error={destinations.error} onRetry={() => void destinations.refetch()} retrying={destinations.isFetching} />
       ) : (
         <>
-          <label className="fi-field">Forward a copy to
+          <label className="fi-field">{t("Forward a copy to")}
             <select className="fi-input" value={copy} onChange={(e) => setCopy(e.target.value)} disabled={!!work.busy}>
-              <option value="">No copy</option>
+              <option value="">{t("No copy")}</option>
               {options.map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
           </label>
           {!confirmed.length && (
-            <p className="fi-hint">Cloudflare only forwards to a confirmed destination. <Link to={settingsPath("destinations", null, null, { add: "1" })}>Add a forwarding destination</Link> first.</p>
+            <p className="fi-hint">{t.rich("Cloudflare only forwards to a confirmed destination. {link} first.", {
+              link: <Link key="add" to={settingsPath("destinations", null, null, { add: "1" })}>{t("Add a forwarding destination")}</Link>,
+            })}</p>
           )}
           <div className="fi-buttons">
-            <button type="button" className="fi-primary" disabled={!!work.busy || copy === (a.forwardTo ?? "")} onClick={save}>{work.busy ? "Saving…" : "Save"}</button>
+            <button type="button" className="fi-primary" disabled={!!work.busy || copy === (a.forwardTo ?? "")} onClick={save}>{work.busy ? t("Saving…") : t("Save")}</button>
           </div>
         </>
       )}

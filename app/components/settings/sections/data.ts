@@ -4,6 +4,7 @@ import { fabric, type AccountList } from "~/services/fabric";
 import type { AgentList, ProjectAddresses, RoutingStatus } from "~/services/agents";
 import type { Destination, DomainList, Step } from "~/services/domains";
 import type { InboxAccount } from "~/components/inbox/model";
+import { englishT, msg, type T } from "../../../../shared/i18n";
 
 /** The server answers the Settings sections read, under one key each, shared across sections. */
 export const DOMAINS_KEY = ["domains"];
@@ -65,15 +66,16 @@ export async function refreshMail(client: QueryClient, domain?: string) {
 export const StepMemory = createContext<{ get(domain: string): Step[]; set(domain: string, steps: Step[]): void } | null>(null);
 export const useStepMemory = () => useContext(StepMemory);
 
-/** "Off", the agent's name, or what an address still carries from an older version. */
-export function answererText(agent: ProjectAddresses["addresses"][number]["agent"], agentName: string | null, agents?: AgentList): string {
-  if (agent === "off") return "Off — you read it";
-  if (agent === "legacy") return "Drafts with its old prompt";
-  return agentName ?? agents?.agents.find((a) => a.id === agent.id)?.name ?? "A deleted agent (Off)";
+/** "Off", the agent's name, or what an address still carries from an older version, in the language of `t`. */
+export function answererText(agent: ProjectAddresses["addresses"][number]["agent"], agentName: string | null, agents?: AgentList, t: T = englishT): string {
+  if (agent === "off") return t("Off — you read it");
+  if (agent === "legacy") return t("Drafts with its old prompt");
+  return agentName ?? agents?.agents.find((a) => a.id === agent.id)?.name ?? t("A deleted agent (Off)");
 }
 
+/** An address's routing in a word; shown through `t.text()`. */
 export const ROUTING_TEXT: Record<RoutingStatus["state"], string> = {
-  verified: "Arriving here",
-  missing: "Not receiving yet",
-  unknown: "Routing unknown",
+  verified: msg("Arriving here"),
+  missing: msg("Not receiving yet"),
+  unknown: msg("Routing unknown"),
 };

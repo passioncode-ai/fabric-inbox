@@ -10,8 +10,10 @@ import Header from "~/components/Header";
 import Sidebar from "~/components/Sidebar";
 import { useMailbox } from "~/queries/mailboxes";
 import { useUIStore } from "~/hooks/useUIStore";
+import { useT } from "../lib/i18n";
 
 export default function MailboxRoute() {
+	const t = useT();
 	const { mailboxId } = useParams<{ mailboxId: string }>();
 	// Prefetch mailbox data for child components
 	useMailbox(mailboxId);
@@ -48,7 +50,7 @@ export default function MailboxRoute() {
 					onKeyDown={(e) => e.key === "Escape" && closeSidebar()}
 					role="button"
 					tabIndex={-1}
-					aria-label="Close sidebar"
+					aria-label={t("Close sidebar")}
 				/>
 			)}
 

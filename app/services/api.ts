@@ -3,6 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import type { Email, Folder, Mailbox } from "~/types";
+import { msg } from "../../shared/i18n";
 import { noteServerBuild } from "../lib/build-version";
 
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -12,7 +13,8 @@ export class ApiError extends Error {
 	body: Record<string, unknown>;
 
 	constructor(status: number, body: Record<string, unknown>) {
-		super((body.error as string) || `Request failed: ${status}`);
+		// Shown through t.text() where it is displayed; the server's own `error` is English too.
+		super((body.error as string) || msg("Request failed: {status}", { status }));
 		this.name = "ApiError";
 		this.status = status;
 		this.body = body;
@@ -89,7 +91,7 @@ function del<T>(url: string) {
 
 async function sendConfirmed(url: string, email: unknown) {
  const result = await post<{status: string; id: string}>(url, email);
- if (result.status !== 'accepted') throw new Error('Send is still pending or uncertain. Check the outbox before repeating it.');
+ if (result.status !== 'accepted') throw new Error(msg('Send is still pending or uncertain. Check the outbox before repeating it.'));
  return result;
 }
 

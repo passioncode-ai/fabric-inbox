@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useParams, type MetaArgs } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@cloudflare/kumo";
+import { metaT, useT } from "../lib/i18n";
 import { htmlToPlainText } from "~/lib/utils";
 import { ApiError } from "~/services/api";
 import {
@@ -23,10 +24,12 @@ type Draft = {
   idempotencyKey: string;
 };
 type Receipt = { status: string; providerMessageId?: string; error?: string };
-export function meta() {
-  return [{ title: "Gmail · Fabric Inbox" }];
+export function meta({ matches }: MetaArgs) {
+  const t = metaT(matches);
+  return [{ title: t("Gmail · Fabric Inbox") }];
 }
 export default function GmailInbox() {
+  const t = useT();
   const { accountId = "" } = useParams(),
     base = accountPath(accountId);
   const [cursor, setCursor] = useState(""),
@@ -45,10 +48,10 @@ export default function GmailInbox() {
       setDraft(value?.draft ?? null);
       setLocked(value?.locked ?? false);
     } catch {
-      setNotice("Saved draft could not be restored.");
+      setNotice(t("Saved draft could not be restored."));
     }
     setLoadedAccount(accountId);
-  }, [accountId]);
+  }, [accountId, t]);
   useEffect(() => {
     if (loadedAccount !== accountId) return;
     try {
@@ -60,10 +63,10 @@ export default function GmailInbox() {
       else localStorage.removeItem("fabric-draft:" + accountId);
     } catch {
       setNotice(
-        "This draft could not be saved on this device. Keep this window open.",
+        t("This draft could not be saved on this device. Keep this window open."),
       );
     }
-  }, [draft, locked, accountId, loadedAccount]);
+  }, [draft, locked, accountId, loadedAccount, t]);
   const windowActive = useWindowActive();
   const accounts = useQuery({
     queryKey: ["fabric-accounts"],
@@ -102,7 +105,7 @@ export default function GmailInbox() {
       await messages.refetch();
       await accounts.refetch();
     } catch (e) {
-      setNotice((e as Error).message);
+      setNotice(t.text((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -121,11 +124,18 @@ export default function GmailInbox() {
         mode === "new"
           ? ""
           : (mode === "reply" ? "Re: " : "Fwd: ") + (mail?.subject ?? ""),
+      // The forwarded block's words follow the interface language of the person writing.
       text:
         mode === "forward"
-          ? "\n\nForwarded message\nFrom: " +
+          ? "\n\n" +
+            t("Forwarded message") +
+            "\n" +
+            t("From:") +
+            " " +
             mail?.from +
-            "\nSubject: " +
+            "\n" +
+            t("Subject:") +
+            " " +
             mail?.subject +
             "\n\n" +
             (mail?.text ||
@@ -153,7 +163,7 @@ export default function GmailInbox() {
     } catch {
       sending.current = false;
       setNotice(
-        "Cannot save send recovery information on this device. Sending was not attempted.",
+        t("Cannot save send recovery information on this device. Sending was not attempted."),
       );
       return;
     }
@@ -169,11 +179,11 @@ export default function GmailInbox() {
           .filter(Boolean),
       });
       if (receipt.status === "accepted") {
-        setNotice("Accepted by Gmail. Recipient delivery is not confirmed.");
+        setNotice(t("Accepted by Gmail. Recipient delivery is not confirmed."));
         setDraft(null);
         setLocked(false);
       } else
-        setNotice("Outcome unknown. Check send status before trying again.");
+        setNotice(t("Outcome unknown. Check send status before trying again."));
     } catch (e) {
       if (
         e instanceof ApiError &&
@@ -181,13 +191,13 @@ export default function GmailInbox() {
       ) {
         setLocked(false);
         setNotice(
-          "Send refused: " +
-            e.message +
-            ". Correct the message or reconnect, then try again.",
+          t("Send refused: {error}. Correct the message or reconnect, then try again.", {
+            error: t.text(e.message),
+          }),
         );
       } else
         setNotice(
-          "Send was not confirmed. Check send status before trying again.",
+          t("Send was not confirmed. Check send status before trying again."),
         );
     } finally {
       sending.current = false;
@@ -204,12 +214,12 @@ export default function GmailInbox() {
         if (receipt.status === "accepted") {
           setDraft(null);
           setLocked(false);
-          setNotice("Accepted by Gmail.");
+          setNotice(t("Accepted by Gmail."));
         } else
           setNotice(
-            "Send status: " +
-              receipt.status +
-              ". Check your Gmail Sent folder before repeating.",
+            t("Send status: {status}. Check your Gmail Sent folder before repeating.", {
+              status: t.text(receipt.status),
+            }),
           );
       } catch (error) {
         if (
@@ -220,7 +230,7 @@ export default function GmailInbox() {
           // Keep the same key: a delayed request and the explicit retry still share one intent.
           setLocked(false);
           setNotice(
-            "No send attempt is recorded. You can retry with the same recovery key.",
+            t("No send attempt is recorded. You can retry with the same recovery key."),
           );
         } else throw error;
       }
@@ -254,13 +264,13 @@ export default function GmailInbox() {
     <main className="min-h-screen p-6 text-kumo-default">
       <nav className="flex flex-wrap gap-6">
         <Link className="underline" to="/accounts">
-          ← Accounts
+          {t("← Accounts")}
         </Link>
         <Link
           className="underline"
           to={"/automation/" + encodeURIComponent("gmail:" + accountId)}
         >
-          Rules and history
+          {t("Rules and history")}
         </Link>
       </nav>
       <header className="my-6 flex flex-wrap justify-between gap-3">
@@ -269,7 +279,7 @@ export default function GmailInbox() {
             {account?.email ?? "Gmail"}
           </h1>
           <p className="text-sm text-kumo-subtle">
-            {account?.status.replaceAll("_", " ")} · Cloud sync
+            {t("{status} · Cloud sync", { status: account?.status.replaceAll("_", " ") ?? "" })}
           </p>
         </div>
         <div className="flex gap-3">
@@ -278,10 +288,10 @@ export default function GmailInbox() {
             disabled={busy}
             onClick={() => perform(() => fabric(base + "/sync", {}))}
           >
-            Sync now
+            {t("Sync now")}
           </Button>
           <Button disabled={!!draft} onClick={() => compose("new")}>
-            Compose
+            {t("Compose")}
           </Button>
         </div>
       </header>
@@ -301,13 +311,12 @@ export default function GmailInbox() {
             send();
           }}
         >
-          <h2 className="text-xl font-semibold">Compose</h2>
+          <h2 className="text-xl font-semibold">{t("Compose")}</h2>
           <p className="text-sm text-kumo-subtle">
-            Drafts are saved on this device when storage is available. Forwarding here includes
-            text only.
+            {t("Drafts are saved on this device when storage is available. Forwarding here includes text only.")}
           </p>
           <label className="block">
-            To (comma-separated)
+            {t("To (comma-separated)")}
             <input
               required
               disabled={locked}
@@ -317,7 +326,7 @@ export default function GmailInbox() {
             />
           </label>
           <label className="block">
-            Subject
+            {t("Subject")}
             <input
               disabled={locked}
               className={field}
@@ -326,7 +335,7 @@ export default function GmailInbox() {
             />
           </label>
           <label className="block">
-            Message
+            {t("Message")}
             <textarea
               disabled={locked}
               rows={9}
@@ -337,7 +346,7 @@ export default function GmailInbox() {
           </label>
           <div className="flex gap-3">
             <Button type="submit" disabled={busy || locked}>
-              Send
+              {t("Send")}
             </Button>
             {locked && (
               <Button
@@ -346,7 +355,7 @@ export default function GmailInbox() {
                 disabled={busy}
                 onClick={check}
               >
-                Check send status
+                {t("Check send status")}
               </Button>
             )}
             <Button
@@ -354,21 +363,21 @@ export default function GmailInbox() {
               variant="secondary"
               disabled={busy}
               onClick={() => {
-                if (window.confirm("Discard this draft?")) {
+                if (window.confirm(t("Discard this draft?"))) {
                   setDraft(null);
                   setLocked(false);
                 }
               }}
             >
-              Discard
+              {t("[draft] Discard")}
             </Button>
           </div>
         </form>
       )}
       <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
-        <section aria-label="Messages">
+        <section aria-label={t("Messages")}>
           <label className="block mb-4">
-            Search cached mail
+            {t("Search cached mail")}
             <input
               className={field}
               value={search}
@@ -378,16 +387,16 @@ export default function GmailInbox() {
               }}
             />
           </label>
-          {messages.isPending && <p>Loading mail…</p>}
+          {messages.isPending && <p>{t("Loading mail…")}</p>}
           {messages.error && (
             <p role="alert">
-              Mail could not load.{" "}
-              <button onClick={() => messages.refetch()}>Retry</button>
+              {t("Mail could not load.")}{" "}
+              <button onClick={() => messages.refetch()}>{t("Retry")}</button>
             </p>
           )}
           {messages.data?.messages.length === 0 && (
             <p>
-              No matching mail in this page. Sync or continue to the next page.
+              {t("No matching mail in this page. Sync or continue to the next page.")}
             </p>
           )}
           {messages.data?.messages
@@ -404,10 +413,10 @@ export default function GmailInbox() {
                 }
               >
                 <div className={m.read ? "" : "font-semibold"}>{m.from}</div>
-                <div className="truncate">{m.subject || "(No subject)"}</div>
+                <div className="truncate">{m.subject || t("(No subject)")}</div>
                 <p className="truncate text-sm text-kumo-subtle">{m.snippet}</p>
                 <span className="text-xs text-kumo-subtle">
-                  {new Date(m.timestamp).toLocaleString()}
+                  {t.dateTime(m.timestamp)}
                 </span>
               </button>
             ))}
@@ -417,35 +426,35 @@ export default function GmailInbox() {
               disabled={!cursor}
               onClick={() => setCursor("")}
             >
-              First page
+              {t("First page")}
             </Button>
             <Button
               variant="secondary"
               disabled={!messages.data?.nextCursor}
               onClick={() => setCursor(messages.data?.nextCursor ?? "")}
             >
-              Next page
+              {t("Next page")}
             </Button>
           </div>
         </section>
         <section
-          aria-label="Reading pane"
+          aria-label={t("Reading pane")}
           className="min-w-0 rounded-xl border border-kumo-line p-5"
         >
           {!selected && (
-            <p className="text-kumo-subtle">Select a message to read it.</p>
+            <p className="text-kumo-subtle">{t("Select a message to read it.")}</p>
           )}
-          {selected && message.isPending && <p>Loading message…</p>}
-          {message.error && <p role="alert">Message could not load.</p>}
+          {selected && message.isPending && <p>{t("Loading message…")}</p>}
+          {message.error && <p role="alert">{t("Message could not load.")}</p>}
           {mail && (
             <>
               <h2 className="text-xl font-semibold">
-                {mail.subject || "(No subject)"}
+                {mail.subject || t("(No subject)")}
               </h2>
-              <p className="mt-3 break-all">From: {mail.from}</p>
-              <p className="text-kumo-subtle break-all">To: {mail.to}</p>
+              <p className="mt-3 break-all">{t("From: {sender}", { sender: mail.from })}</p>
+              <p className="text-kumo-subtle break-all">{t("To: {recipient}", { recipient: mail.to })}</p>
               <p className="my-2 text-sm text-kumo-subtle">
-                Message ID: {mail.providerMessageId}
+                {t("Message ID: {id}", { id: mail.providerMessageId })}
               </p>
               <div className="my-4 flex flex-wrap gap-2">
                 <Button
@@ -453,14 +462,14 @@ export default function GmailInbox() {
                   disabled={!!draft}
                   onClick={() => compose("reply")}
                 >
-                  Reply
+                  {t("Reply")}
                 </Button>
                 <Button
                   variant="secondary"
                   disabled={!!draft}
                   onClick={() => compose("forward")}
                 >
-                  Forward text
+                  {t("Forward text")}
                 </Button>
                 <Button
                   variant="secondary"
@@ -474,7 +483,7 @@ export default function GmailInbox() {
                     })
                   }
                 >
-                  {mail.read ? "Mark unread" : "Mark read"}
+                  {mail.read ? t("Mark unread") : t("Mark read")}
                 </Button>
                 <Button
                   variant="secondary"
@@ -489,18 +498,18 @@ export default function GmailInbox() {
                     })
                   }
                 >
-                  Archive
+                  {t("Archive")}
                 </Button>
               </div>
               <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-6">
                 {mail.text ||
                   (mail.html ? htmlToPlainText(mail.html) : mail.snippet) ||
-                  "No message content."}
+                  t("No message content.")}
               </pre>
               {mail.attachments.map((a) => (
                 <div key={a.providerAttachmentId} className="mt-3">
                   <Button variant="secondary" onClick={() => download(a)}>
-                    {a.filename} · {Math.ceil(a.size / 1024)} KB
+                    {t("{name} · {size} KB", { name: a.filename, size: Math.ceil(a.size / 1024) })}
                   </Button>
                 </div>
               ))}

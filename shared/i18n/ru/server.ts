@@ -164,7 +164,6 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Name at least one collection": "Укажите хотя бы одну коллекцию",
 
 	// Adding and removing addresses (workers/lib/address-ops.ts)
-	"Send its mail here": "Направить его почту сюда",
 	"{domain} is not served here; receive its mail here first (Settings → Domains)": "{domain} здесь не обслуживается; сначала начните получать его почту здесь («Настройки → Домены»)",
 	"This address already exists": "Такой адрес уже есть",
 	"Mailbox creation is restricted to configured EMAIL_ADDRESSES": "Создавать почтовые ящики можно только для адресов из EMAIL_ADDRESSES",
@@ -176,8 +175,6 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"No routing rule was asked for: mail reaches {email} only if the domain's routing already sends it here.": "Правило маршрутизации не запрашивалось: почта дойдёт до {email}, только если маршрутизация домена уже направляет её сюда.",
 	"Make the rule": "Создать правило",
 	"This server has no Cloudflare token for Email Routing, so no rule was made; mail reaches {email} only if the domain's routing already sends it here.": "У этого сервера нет токена Cloudflare для Email Routing, поэтому правило не создано; почта дойдёт до {email}, только если маршрутизация домена уже направляет её сюда.",
-	"Connect Cloudflare": "Подключить Cloudflare",
-	"Fix it": "Исправить",
 	"{reason}, so no routing rule was made; mail reaches {email} only if the domain's catch-all sends it here.": "{reason}, поэтому правило маршрутизации не создано; почта дойдёт до {email}, только если общее правило домена направляет её сюда.",
 	"Connect its account": "Подключить его аккаунт",
 	"Routing could not be created": "Не удалось создать маршрутизацию",
@@ -185,7 +182,6 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"{reason}. The address was kept; it receives nothing until its mail is sent here.": "{reason}. Адрес сохранён, но он ничего не получит, пока его почта не будет направлена сюда.",
 	"The address could not be saved ({error}). Its new routing rule was removed again.": "Не удалось сохранить адрес ({error}). Его новое правило маршрутизации удалено.",
 	"The address could not be saved ({error}).": "Не удалось сохранить адрес ({error}).",
-	"Create the address": "Создать адрес",
 	"{email} keeps its mail here and forwards a copy to {address}.": "{email} хранит почту здесь и пересылает копию на {address}.",
 	"{email} keeps its mail here.": "{email} хранит почту здесь.",
 	"{address} has not confirmed yet: Cloudflare sent it a link. Confirm it, then choose it again.": "{address} ещё не подтверждён: Cloudflare отправил на него ссылку. Подтвердите его, затем выберите снова.",
@@ -213,8 +209,6 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"{domain} receives mail here, but none of this server's Cloudflare tokens can see it, so no routing rule can be made. Connect its account in Settings → Accounts.": "{domain} получает почту здесь, но ни один токен Cloudflare этого сервера его не видит, поэтому правило маршрутизации создать нельзя. Подключите его аккаунт в разделе «Настройки → Аккаунты».",
 	"Email Routing for {domain} is {status}: no mail arrives until it is fixed. Fix it turns it on again (Receive mail here).": "Email Routing для {domain} в состоянии {status}: почта не придёт, пока это не исправлено. «Исправить» снова включит его («Получать почту здесь»).",
 	"Email Routing for {domain} is off: no mail arrives until it is fixed. Fix it turns it on again (Receive mail here).": "Email Routing для {domain} выключен: почта не придёт, пока это не исправлено. «Исправить» снова включит его («Получать почту здесь»).",
-	"{domain} receives mail here.": "{domain} получает почту здесь.",
-	"A Cloudflare rule that sends the address's mail here is made with it.": "Вместе с адресом создаётся правило Cloudflare, которое направляет его почту сюда.",
 	"No rule can be made: this server has no Cloudflare token yet (Settings → Domains → Connect Cloudflare).": "Правило создать нельзя: у этого сервера пока нет токена Cloudflare («Настройки → Домены → Подключить Cloudflare»).",
 	"Cloudflare could not be read ({problem}); the rule is tried when the address is created.": "Cloudflare не удалось прочитать ({problem}); правило попробуем создать вместе с адресом.",
 	"No rule can be made: none of this server's Cloudflare tokens can see {domain}.": "Правило создать нельзя: ни один токен Cloudflare этого сервера не видит {domain}.",

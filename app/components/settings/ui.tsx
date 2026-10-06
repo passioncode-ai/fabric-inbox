@@ -308,9 +308,10 @@ export function errorText(error: unknown): string {
 
 /** The last result of the work on one item, in a slot that never moves the content above it. */
 export function ActionResult({ result }: { result: ActionOutcome | null }) {
+  const t = useT();
   return (
     <p className={"fi-action-result" + (result?.tone === "error" ? " is-error" : "")} role={result?.tone === "error" ? "alert" : "status"}>
-      {result?.text ?? ""}
+      {result ? t.text(result.text) : ""}
     </p>
   );
 }

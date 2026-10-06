@@ -135,3 +135,10 @@ test("the Mac app's translator reads the same dictionary and keeps the choice in
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("L10N-02/03: every wrapped string has its Russian, the Mac app's copy is current, and no English literal is left in JSX", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const run = spawnSync(process.execPath, ["scripts/check-locale.mjs"], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /interface strings, all in Russian/);
+});

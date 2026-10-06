@@ -143,14 +143,11 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"{n} without mail not listed.": "Не показаны адреса без почты: {n}.",
 	"Hide them…": "Скрыть их…",
 	"Hide the {n} addresses with no mail? They keep receiving; new mail shows under Hidden.": "Скрыть {n} адрес без почты? Он продолжит получать почту; новая почта появится в разделе «Скрытые».|Скрыть {n} адреса без почты? Они продолжат получать почту; новая почта появится в разделе «Скрытые».|Скрыть {n} адресов без почты? Они продолжат получать почту; новая почта появится в разделе «Скрытые».",
-	"Hide": "Скрыть",
 	"Hidden ({n})": "Скрытые ({n})",
-	"Open {email}": "Открыть {email}",
 	"Show {email} again": "Снова показать {email}",
 	"Show again": "Показать снова",
 	"Connect Gmail": "Подключить Gmail",
 	"Connect other mail": "Подключить другую почту",
-	"Other mail": "Другая почта",
 	"everything else": "всё остальное",
 
 	// Categories in the sidebar (app/components/inbox/CategorySidebar.tsx)
@@ -173,7 +170,6 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Move to trash": "Переместить в корзину",
 	"Not spam": "Не спам",
 	"Not spam: back to the inbox": "Не спам: вернуть во «Входящие»",
-	"Report spam": "Это спам",
 	"Report spam: move it and its sender to Spam": "Это спам: переместить письмо и его отправителя в «Спам»",
 
 	// The message list (app/components/inbox/TriagedList.tsx, triage-view.ts)

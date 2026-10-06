@@ -3,6 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import { Button, Dialog } from "@cloudflare/kumo";
+import { useT } from "../lib/i18n";
 import { DELETE_COPY, permanentDeleteDescription } from "~/lib/delete-policy";
 
 export interface PermanentDeleteDialogProps {
@@ -21,6 +22,7 @@ export default function PermanentDeleteDialog({
 	onCancel,
 	onConfirm,
 }: PermanentDeleteDialogProps) {
+	const t = useT();
 	return (
 		<Dialog.Root
 			open={open}
@@ -30,21 +32,21 @@ export default function PermanentDeleteDialog({
 		>
 			<Dialog size="sm" className="p-6">
 				<Dialog.Title className="text-base font-semibold mb-2">
-					{DELETE_COPY.permanent.confirmTitle}
+					{t.text(DELETE_COPY.permanent.confirmTitle)}
 				</Dialog.Title>
 				<Dialog.Description className="text-kumo-subtle text-sm mb-5">
-					{permanentDeleteDescription(subject)}
+					{t.text(permanentDeleteDescription(subject))}
 				</Dialog.Description>
 				<div className="flex justify-end gap-2">
 					<Dialog.Close
 						render={(props) => (
 							<Button {...props} variant="secondary" size="sm" disabled={pending}>
-								Cancel
+								{t("Cancel")}
 							</Button>
 						)}
 					/>
 					<Button variant="destructive" size="sm" loading={pending} onClick={onConfirm}>
-						{DELETE_COPY.permanent.confirmAction}
+						{t.text(DELETE_COPY.permanent.confirmAction)}
 					</Button>
 				</div>
 			</Dialog>

@@ -11,7 +11,6 @@
 export const COMPOSE: Readonly<Record<string, string>> = {
 	// Composer (app/components/inbox/Composer.tsx)
 	"{size} bytes": "{size} байт|{size} байта|{size} байт",
-	"The sender's signature could not be loaded; add it to the message if you need it.": "Не удалось загрузить подпись отправителя; если она нужна, добавьте её в письмо сами.",
 	"The draft could not be saved to your server, so it was not sent. Check the connection and try again.": "Черновик не удалось сохранить на ваш сервер, поэтому он не отправлен. Проверьте подключение и попробуйте ещё раз.",
 	"Could not save send recovery information. Sending was not attempted.": "Не удалось сохранить данные для повтора отправки. Отправка не начиналась.",
 	"Acceptance is not confirmed. Keep this attempt unchanged and check again.": "Приём не подтверждён. Не меняйте эту попытку и проверьте ещё раз.",
@@ -36,20 +35,15 @@ export const COMPOSE: Readonly<Record<string, string>> = {
 	"From": "От",
 	"Choose a sender": "Выберите отправителя",
 	"Account unavailable": "Аккаунт недоступен",
-	"To": "Кому",
 	"Cc": "Копия",
 	"Optional recipients": "Получатели копии, необязательно",
 	"Bcc": "Скрытая копия",
 	"Optional hidden recipients": "Скрытые получатели, необязательно",
-	"Subject": "Тема",
-	"Message": "Текст письма",
 	"Message attachments": "Вложения письма",
 	"Add files": "Добавить файлы",
 	"Up to 10 files, 5 MiB total. Files are saved with the draft on your server.": "До 10 файлов, всего до 5 МиБ. Файлы сохраняются вместе с черновиком на вашем сервере.",
 	"Files saved with the draft": "Файлы, сохранённые с черновиком",
 	"Saved": "Сохранено",
-	"Remove {name}": "Убрать {name}",
-	"Remove": "Убрать",
 	"Pending": "Ожидает",
 	"Original attachments are not included yet. Load all files below before forwarding.": "Исходные вложения ещё не добавлены. Загрузите все файлы ниже, прежде чем пересылать.",
 	"Original files selected for this draft.": "Исходные файлы выбраны для этого черновика.",
@@ -72,12 +66,9 @@ export const COMPOSE: Readonly<Record<string, string>> = {
 	"Kept on this device; not saved to your server": "Хранится на этом устройстве; на ваш сервер не сохранён",
 	"Saved to your server": "Сохранён на вашем сервере",
 	"Kept on this device; saving to your server…": "Хранится на этом устройстве; сохраняем на ваш сервер…",
-	"Checking…": "Проверяем…",
 	"Retry same attempt": "Повторить ту же попытку",
-	"Send message": "Отправить письмо",
 
 	// Drafts list (app/components/inbox/DraftsDialog.tsx)
-	"Drafts": "Черновики",
 	"Close drafts": "Закрыть черновики",
 	"Drafts saved on your server, yours and your agents', from every account. Open one to continue, send it, or check an uncertain send.": "Черновики на вашем сервере — ваши и ваших агентов — из всех аккаунтов. Откройте черновик, чтобы продолжить, отправить его или проверить отправку с неизвестным результатом.",
 	"Loading drafts from your server…": "Загружаем черновики с вашего сервера…",
@@ -89,7 +80,6 @@ export const COMPOSE: Readonly<Record<string, string>> = {
 	"To {address}": "Кому: {address}",
 	"No recipient yet": "Получателя ещё нет",
 	"{n} files": "{n} файл|{n} файла|{n} файлов",
-	"Compose": "Написать",
 
 	// Drafts on this device and their save states (app/components/inbox/use-drafts.ts)
 	"Draft could not be saved on this device. Keep this window open and copy your text before leaving.": "Черновик не удалось сохранить на этом устройстве. Не закрывайте окно и скопируйте текст, прежде чем уйти.",
@@ -109,7 +99,6 @@ export const COMPOSE: Readonly<Record<string, string>> = {
 	"This draft was changed elsewhere (another window or device, an agent, or the mail account itself). Your text is kept here.": "Этот черновик изменили в другом месте (в другом окне или на другом устройстве, агент или сам почтовый аккаунт). Ваш текст сохранён здесь.",
 	"This draft was sent or deleted elsewhere. Your text is kept here.": "Этот черновик отправили или удалили в другом месте. Ваш текст сохранён здесь.",
 	"Not saved to your server yet; it is kept on this device and saved when the server answers.": "На ваш сервер ещё не сохранён: хранится на этом устройстве и будет сохранён, когда сервер ответит.",
-	"Your sign-in expired. Reload the page to sign in again.": "Срок входа истёк. Перезагрузите страницу, чтобы войти снова.",
 	"The server did not save this draft: {error}": "Сервер не сохранил этот черновик: {error}",
 	"Choose a sender to save this draft to your server; until then it is kept on this device.": "Выберите отправителя, чтобы сохранить черновик на ваш сервер; до тех пор он хранится на этом устройстве.",
 	"{keeper} saves a draft once it has a recipient with a valid address; until then it is kept on this device.": "{keeper} сохраняет черновик, когда в нём есть получатель с правильным адресом; до тех пор он хранится на этом устройстве.",
@@ -159,11 +148,7 @@ export const COMPOSE: Readonly<Record<string, string>> = {
 	"No mailbox selected.": "Почтовый ящик не выбран.",
 	"Add at least one recipient.": "Добавьте хотя бы одного получателя.",
 	"Sending email...": "Отправляем письмо…",
-	"Accepted by email provider": "Принято почтовым провайдером",
-	"Failed to send email.": "Не удалось отправить письмо.",
 	// The forwarded message's header, which the person's own forward carries in the interface language (L10N-05)
 	"Forwarded message:": "Пересланное письмо:",
-	"From:": "От:",
 	"Date:": "Дата:",
-	"Subject:": "Тема:",
 };

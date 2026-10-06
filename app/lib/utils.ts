@@ -11,6 +11,7 @@ import { attachmentPath } from "./mail-image-policy";
  */
 import DOMPurify from "dompurify";
 import { formatQuotedDate } from "shared/dates";
+import { englishT, type T } from "../../shared/i18n";
 import type { Attachment } from "~/types";
 
 export {
@@ -23,15 +24,23 @@ export {
 export const formatComposeDate = formatQuotedDate;
 
 /**
- * Format a byte count as a human-readable file size.
+ * Format a byte count as a human-readable file size, in the interface language
+ * (`t` from `useT()`; English when none is given).
  */
-export function formatBytes(bytes: number, decimals = 1): string {
-	if (bytes === 0) return "0 B";
+export function formatBytes(bytes: number, decimals = 1, t: T = englishT): string {
+	if (bytes === 0) return t("{size} B", { size: 0 });
 	const k = 1024;
 	const dm = decimals < 0 ? 0 : decimals;
 	const sizes = ["B", "KB", "MB", "GB"];
 	const i = Math.floor(Math.log(bytes) / Math.log(k));
-	return `${Number.parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+	const size = Number.parseFloat((bytes / Math.pow(k, i)).toFixed(dm));
+	switch (i) {
+		case 0: return t("{size} B", { size });
+		case 1: return t("{size} KB", { size });
+		case 2: return t("{size} MB", { size });
+		case 3: return t("{size} GB", { size });
+		default: return `${size} ${sizes[i]}`;
+	}
 }
 
 /**
@@ -150,15 +159,18 @@ export function getSignatureBlock(settings?: {
 }
 
 /**
- * Build a quoted reply block HTML string from original email data.
+ * Build a quoted reply block HTML string from original email data. The words
+ * around it ("On …, … wrote:") and the date follow the interface language of
+ * the person writing (`t` from `useT()`; English when none is given).
  */
 export function buildQuotedReplyBlock(
 	dateStr: string | undefined,
 	sender: string,
 	body: string,
+	t: T = englishT,
 ): string {
 	if (!body) return "";
-	const formattedDate = formatComposeDate(dateStr);
+	const formattedDate = formatQuotedDate(dateStr, t.locale);
 	
 	// HTML-escape sender to prevent <john@example.com> from disappearing as a tag
 	const escapedSender = escapeHtml(sender);
@@ -169,7 +181,7 @@ export function buildQuotedReplyBlock(
 	// execute. Convert to escaped plain text instead.
 	const bodyToQuote = escapeHtml(stripHtml(body)).replace(/\n/g, "<br>");
 
-	return `<br><blockquote style="border-left: 2px solid #ccc; margin: 0; padding-left: 1em; color: #666;">On ${formattedDate}, ${escapedSender} wrote:<br><br>${bodyToQuote}</blockquote>`;
+	return `<br><blockquote style="border-left: 2px solid #ccc; margin: 0; padding-left: 1em; color: #666;">${t("On {date}, {sender} wrote:", { date: formattedDate, sender: escapedSender })}<br><br>${bodyToQuote}</blockquote>`;
 }
 
 /**

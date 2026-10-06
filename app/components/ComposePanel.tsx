@@ -6,9 +6,11 @@ import { Banner, Button, Input } from "@cloudflare/kumo";
 import { FloppyDiskIcon, PaperPlaneTiltIcon, XIcon } from "@phosphor-icons/react";
 import { useParams } from "react-router";
 import { useComposeForm } from "~/hooks/useComposeForm";
+import { useT } from "../lib/i18n";
 import RichTextEditor from "./RichTextEditor";
 
 export default function ComposePanel() {
+	const t = useT();
 	const { mailboxId, folder } = useParams<{
 		mailboxId: string;
 		folder: string;
@@ -41,7 +43,7 @@ export default function ComposePanel() {
 		<div className="flex flex-col h-full bg-kumo-base">
 			<div className="flex items-center justify-between px-4 py-3 border-b border-kumo-line shrink-0 md:px-6">
 				<h2 className="text-base font-semibold text-kumo-default">
-					{formTitle}
+					{t.text(formTitle)}
 				</h2>
 				<div className="flex items-center gap-1">
 					<Button
@@ -51,7 +53,7 @@ export default function ComposePanel() {
 						icon={<XIcon size={18} />}
 						onClick={closeCompose}
 						disabled={isSending}
-						aria-label="Close compose"
+						aria-label={t("Close compose")}
 					/>
 				</div>
 			</div>
@@ -61,12 +63,12 @@ export default function ComposePanel() {
 				className="flex flex-col flex-1 min-h-0 overflow-y-auto"
 			>
 				<div className="p-4 md:p-6 space-y-4">
-					{error && <Banner variant="error" text={error} />}
+					{error && <Banner variant="error" text={t.text(error)} />}
 
 					<div className="space-y-3">
 						<div className="flex items-center gap-2">
 							<label className="text-sm font-medium text-kumo-subtle w-14 shrink-0">
-								To
+								{t("To")}
 							</label>
 							<div className="flex-1 flex items-center gap-2 min-w-0">
 								<Input
@@ -83,7 +85,7 @@ export default function ComposePanel() {
 										onClick={() => setShowCcBcc(true)}
 										className="shrink-0 text-xs text-kumo-link hover:text-kumo-link-hover font-medium"
 									>
-										CC / BCC
+										{t("CC / BCC")}
 									</button>
 								)}
 							</div>
@@ -92,7 +94,7 @@ export default function ComposePanel() {
 						{showCcBcc && (
 							<div className="flex items-center gap-2">
 								<label className="text-sm font-medium text-kumo-subtle w-14 shrink-0">
-									CC
+									{t("CC")}
 								</label>
 								<div className="flex-1">
 									<Input
@@ -100,7 +102,7 @@ export default function ComposePanel() {
 										size="sm"
 										value={cc}
 										onChange={(e) => setCc(e.target.value)}
-										placeholder="Separate multiple addresses with commas"
+										placeholder={t("Separate multiple addresses with commas")}
 									/>
 								</div>
 							</div>
@@ -109,7 +111,7 @@ export default function ComposePanel() {
 						{showCcBcc && (
 							<div className="flex items-center gap-2">
 								<label className="text-sm font-medium text-kumo-subtle w-14 shrink-0">
-									BCC
+									{t("BCC")}
 								</label>
 								<div className="flex-1">
 									<Input
@@ -117,7 +119,7 @@ export default function ComposePanel() {
 										size="sm"
 										value={bcc}
 										onChange={(e) => setBcc(e.target.value)}
-										placeholder="Separate multiple addresses with commas"
+										placeholder={t("Separate multiple addresses with commas")}
 									/>
 								</div>
 							</div>
@@ -125,12 +127,12 @@ export default function ComposePanel() {
 
 						<div className="flex items-center gap-2">
 							<label className="text-sm font-medium text-kumo-subtle w-14 shrink-0">
-								Subject
+								{t("Subject")}
 							</label>
 							<div className="flex-1">
 								<Input
 									type="text"
-									placeholder="Email subject"
+									placeholder={t("Email subject")}
 									size="sm"
 									value={subject}
 									onChange={(e) => setSubject(e.target.value)}
@@ -152,7 +154,7 @@ export default function ComposePanel() {
 				<div className="mt-auto px-4 py-3 border-t border-kumo-line bg-kumo-fill/30 shrink-0 md:px-6">
 					<div className="flex items-center justify-between">
 						<Button type="button" variant="ghost" size="sm" onClick={closeCompose} disabled={isSending}>
-							Discard
+							{t("[draft] Discard")}
 						</Button>
 						<div className="flex items-center gap-2">
 							<Button
@@ -164,7 +166,7 @@ export default function ComposePanel() {
 								icon={<FloppyDiskIcon size={14} />}
 								onClick={handleSaveDraft}
 							>
-								{isSavingDraft ? "Saving..." : "Save as Draft"}
+								{isSavingDraft ? t("Saving...") : t("Save as Draft")}
 							</Button>
 							<Button
 								type="submit"
@@ -174,7 +176,7 @@ export default function ComposePanel() {
 								disabled={isSavingDraft || isSending}
 								icon={<PaperPlaneTiltIcon size={14} />}
 							>
-								{isSending ? "Sending..." : "Send"}
+								{isSending ? t("Sending...") : t("Send")}
 							</Button>
 						</div>
 					</div>

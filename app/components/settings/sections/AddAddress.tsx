@@ -10,11 +10,12 @@ import { checkLocalPart, parseLocalParts } from "../../../../shared/address-name
 import { settingsPath } from "../paths";
 import { Badge, Dialog, errorText, useNotify } from "../ui";
 import { refreshMail, useDestinations } from "./data";
+import { useT } from "~/lib/i18n";
 import {
-  DOMAIN_GROUPS, NAME_HINT, STEP_MARK, TEST_POLL_MS, agentLine, batchBody, createBody, displayNameOf, domainOptions, filterDomains,
+  TEST_POLL_MS, agentLine, batchBody, createBody, displayNameOf, domainGroups, domainOptions, filterDomains,
   nameView, receiveStep, startDomain, stepsSentence, testStep, testWaiting, type AddressForm, type DomainOption, type TestPhase, type UiStep,
 } from "./add-address-model";
-import { ADD_ADDRESS_TEXT as T } from "./add-address-text";
+import { addAddressText } from "./add-address-text";
 
 /**
  * Add address (SCN-021, SCN-061…065): one calm dialog for every entry point. A dialog rather than a
@@ -28,7 +29,7 @@ const localOf = (email: string) => email.slice(0, email.lastIndexOf("@"));
 /** A value that settles once the person stops typing. */
 function useSettled<T>(value: T, ms: number): T {
   const [settled, setSettled] = useState(value);
-  useEffect(() => { const t = setTimeout(() => setSettled(value), ms); return () => clearTimeout(t); }, [value, ms]);
+  useEffect(() => { const timer = setTimeout(() => setSettled(value), ms); return () => clearTimeout(timer); }, [value, ms]);
   return settled;
 }
 
@@ -56,10 +57,12 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
   /** The new address is selected behind the dialog as soon as it exists. */
   onCreated: (email: string) => void;
 }) {
+  const t = useT();
+  const T = addAddressText(t);
   const client = useQueryClient();
   const notify = useNotify();
   const [learned, setLearned] = useState<Record<string, DomainState>>({});
-  const options = useMemo(() => domainOptions(list, learned), [list, learned]);
+  const options = useMemo(() => domainOptions(list, learned, t), [list, learned, t]);
   const [mode, setMode] = useState<"one" | "several">("one");
   const [form, setForm] = useState<AddressForm>(EMPTY_FORM(""));
   const [several, setSeveral] = useState("");
@@ -102,7 +105,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
   }, [check.data, learned]);
 
   const nameCheck = fresh?.names.find((n) => n.localPart === local.value);
-  const view = nameView(local, nameCheck, checking, check.isError);
+  const view = nameView(local, nameCheck, checking, check.isError, t);
   const testDefault = !!fresh?.sendTestDefault;
   const testing = sendTest ?? testDefault;
   const canMakeRule = fresh ? fresh.rule.canMake : connected && !!summary?.zoneId;
@@ -117,7 +120,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
 
   const severalRows = parsed.entries.map((e) => {
     const c = fresh?.names.find((n) => n.localPart === e.check.value);
-    return { input: e.input, value: e.check.value, view: nameView(e.check, c, checking, check.isError) };
+    return { input: e.input, value: e.check.value, view: nameView(e.check, c, checking, check.isError, t) };
   });
   const creatable = mode === "one" ? (view.canCreate ? [local.value] : []) : severalRows.filter((r) => r.view.canCreate).map((r) => r.value);
   const canSubmit = !blocked && !!form.domain && creatable.length > 0 && !checking;
@@ -129,14 +132,14 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
     setRun((r) => (r ? { ...r, rows: r.rows.map((row) => (row.email === target ? change(row) : row)) } : r));
 
   async function receive(replaceMx: boolean): Promise<boolean> {
-    setRun((r) => ({ receive: receiveStep(form.domain, { running: true, steps: null, foreignMx: null, error: null }), rows: r?.rows ?? [], working: true }));
+    setRun((r) => ({ receive: receiveStep(form.domain, { running: true, steps: null, foreignMx: null, error: null }, t), rows: r?.rows ?? [], working: true }));
     try {
       const r = await fabric<StepsResult>(`/api/domains/${encodeURIComponent(form.domain)}/connect`, { replaceMx });
-      setRun((x) => x && { ...x, receive: receiveStep(form.domain, { running: false, steps: r.steps, foreignMx: null, error: null }) });
+      setRun((x) => x && { ...x, receive: receiveStep(form.domain, { running: false, steps: r.steps, foreignMx: null, error: null }, t) });
       return true;
     } catch (error) {
       const body = (error instanceof ApiError ? error.body : {}) as Partial<StepsResult>;
-      const step = receiveStep(form.domain, { running: false, steps: body.steps ?? null, foreignMx: body.needsConfirmation?.foreignMx ?? null, error: body.steps ? null : errorText(error) });
+      const step = receiveStep(form.domain, { running: false, steps: body.steps ?? null, foreignMx: body.needsConfirmation?.foreignMx ?? null, error: body.steps ? null : errorText(error) }, t);
       setRun((x) => x && { ...x, receive: step, working: false });
       return false;
     } finally { await refreshMail(client, form.domain); }
@@ -149,7 +152,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
       await client.invalidateQueries({ queryKey: ["routing-test", target] });
       updateRow(target, (row) => ({ ...row, test: "sent" }));
     } catch (error) {
-      updateRow(target, (row) => ({ ...row, test: "error", testError: errorText(error) }));
+      updateRow(target, (row) => ({ ...row, test: "error", testError: t.text(errorText(error)) }));
     }
   }
 
@@ -163,15 +166,15 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
       } else {
         const r = await fabric<BatchResult>("/api/project-addresses/batch", batchBody(form, creatable));
         rows = r.results.map((x) => ({ email: x.email, created: x.status === 201, test: x.status === 201 && testing ? "sending" : "off",
-          steps: x.status === 201 && x.steps ? x.steps : [stepFor(x.error ?? T.notCreated)] }));
+          steps: x.status === 201 && x.steps ? x.steps : [stepFor(t.text(x.error ?? T.notCreated))] }));
       }
     } catch (error) {
-      rows = [{ email: mode === "one" ? email : form.domain, created: false, steps: [stepFor(errorText(error) + T.nothingCreated)], test: "off" }];
+      rows = [{ email: mode === "one" ? email : form.domain, created: false, steps: [stepFor(T.nothingCreated(errorText(error)))], test: "off" }];
     } finally { await refreshMail(client, form.domain); }
     setRun((x) => ({ receive: x?.receive ?? null, rows, working: false }));
     const made = rows.filter((r) => r.created);
     if (made[0]) onCreated(made[0].email);
-    notify(mode === "one" ? stepsSentence(rows[0]!.email, rows[0]!.steps) : T.createdToast(made.length, rows.length, form.domain),
+    notify(mode === "one" ? stepsSentence(rows[0]!.email, rows[0]!.steps, t) : T.createdToast(made.length, rows.length, form.domain),
       made.length ? "ok" : "error");
     for (const row of made) if (testing) await sendTestTo(row.email);
   }
@@ -214,7 +217,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
     <Dialog open={open} title={title} onClose={onClose} busy={working} wide
       restoreFocus={() => (run?.rows.some((r) => r.created) ? document.querySelector<HTMLElement>(".fi-section-panel .fi-panel-head h2") : null)}>
       {!options.length ? (
-        <p>{T.noDomain} <Link to={settingsPath("domains")}>{T.chooseOnDomains}</Link>{T.noDomainAfter}</p>
+        <p>{T.noDomain(<Link key="domains" to={settingsPath("domains")}>{T.chooseOnDomains}</Link>)}</p>
       ) : run ? (
         <RunView run={run} mode={mode} domain={form.domain} onFix={fix} onTest={sendTestTo}
           onReplace={async () => { if (await receive(true)) await createAll(); }}
@@ -243,7 +246,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
                   onChange={(d) => setForm((f) => ({ ...f, domain: d, copy: "" }))} />
               </div>
               <p id={ids.nameMsg} className={`fi-field-message is-${view.tone}`} aria-live="polite">
-                {email && view.tone !== "bad" && view.text !== NAME_HINT && view.tone !== "ok" ? <span className="fi-address-preview">{email} · </span> : null}
+                {email && view.tone !== "bad" && view.text !== T.nameHint && view.tone !== "ok" ? <span className="fi-address-preview">{email} · </span> : null}
                 {view.text}
               </p>
               {view.notes.map((n) => <p key={n} className="fi-hint fi-field-note">{n}</p>)}
@@ -272,7 +275,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
                       <span className={`fi-field-message is-${r.view.tone}`}>{r.view.tone === "ok" ? T.nameFree : r.view.text}</span>
                     </li>
                   ))}
-                  {parsed.skipped.map((s) => <li key={"skip-" + s.input}><span className="fi-grow">{s.input}</span><span className="fi-field-message is-warn">{s.reason}</span></li>)}
+                  {parsed.skipped.map((s) => <li key={"skip-" + s.input}><span className="fi-grow">{s.input}</span><span className="fi-field-message is-warn">{t.text(s.reason)}</span></li>)}
                 </ul>
               )}
               <p id={ids.live} className="fi-visually-hidden" aria-live="polite">
@@ -303,7 +306,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
                 <option value="off">{T.answerOff}</option>
                 {agents?.agents.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
               </select>
-              <span className="fi-hint">{chosenAgent ? agentLine(chosenAgent) : T.answerOffHint}</span>
+              <span className="fi-hint">{chosenAgent ? agentLine(chosenAgent, t) : T.answerOffHint}</span>
             </label>
           </div>
 
@@ -339,7 +342,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
                 : destinations.isPending ? T.copyLoading
                   : destinations.isError ? T.copyFailed(errorText(destinations.error))
                     : confirmed.length ? T.copyConfirmedOnly
-                      : <>{T.copyNone} <Link to={settingsPath("destinations", null, null, { add: "1" })} onClick={onClose}>{T.addDestination}</Link>.</>}
+                      : T.copyNone(<Link key="add" to={settingsPath("destinations", null, null, { add: "1" })} onClick={onClose}>{T.addDestination}</Link>)}
             </span>
           </label>
 
@@ -349,7 +352,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
               <input type="checkbox" checked={canMakeRule && form.makeRule} disabled={!canMakeRule} onChange={(e) => set("makeRule", e.target.checked)} />
               <span>{T.ruleToggle}</span>
             </label>
-            <p className="fi-hint">{fresh?.rule.detail ?? (canMakeRule ? T.ruleCan : T.ruleCannot)}{T.ruleWithout}</p>
+            <p className="fi-hint">{t.text(fresh?.rule.detail ?? (canMakeRule ? T.ruleCan : T.ruleCannot))}{" "}{T.ruleWithout}</p>
           </details>
 
           <label className="fi-check">
@@ -357,7 +360,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
             <span>{T.testToggle}</span>
           </label>
 
-          {needsReceive && <p className="fi-callout" role="note">{fresh?.detail ?? T.receiveFirst(form.domain)}</p>}
+          {needsReceive && <p className="fi-callout" role="note">{t.text(fresh?.detail ?? T.receiveFirst(form.domain))}</p>}
 
           <div className="fi-dialog-actions">
             <button type="button" className="fi-secondary" onClick={onClose}>{T.cancel}</button>
@@ -375,6 +378,8 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
 function DomainPicker({ id, options, value, onChange, describedBy }: {
   id: string; options: DomainOption[]; value: string; onChange: (domain: string) => void; describedBy: string;
 }) {
+  const t = useT();
+  const T = addAddressText(t);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -413,7 +418,7 @@ function DomainPicker({ id, options, value, onChange, describedBy }: {
       {open && (
         <ul id={listId} role="listbox" className="fi-combo-list" aria-label={T.domainsList}>
           {!shown.length && <li className="fi-combo-empty" role="presentation">{T.noDomainMatches(query)}</li>}
-          {DOMAIN_GROUPS.map((g) => {
+          {domainGroups(t).map((g) => {
             const items = shown.filter((o) => o.group === g.id);
             if (!items.length) return null;
             return (
@@ -443,12 +448,14 @@ function DomainPicker({ id, options, value, onChange, describedBy }: {
 
 /** What choosing this domain means, under the field: its state in words (SCN-063). */
 function DomainLine({ id, domain, option, check, checking }: { id: string; domain: string; option?: DomainOption; check?: AddressCheck; checking: boolean }) {
-  const text = check?.detail ?? (checking ? T.domainReading(domain) : option ? T.domainSays(domain, option.label) : "");
+  const t = useT();
+  const T = addAddressText(t);
+  const text = t.text(check?.detail ?? (checking ? T.domainReading(domain) : option ? T.domainSays(domain, option.label) : ""));
   const tone = check ? (check.state === "receiving" || check.state === "can_receive" ? "neutral" : check.state === "no_token" ? "neutral" : "warn") : "neutral";
   return (
     <p id={id} className={`fi-hint fi-domain-line is-${tone}`}>
       {text}
-      {check?.catchAll && T.catchAllKeeps(check.catchAll.mailbox)}
+      {check?.catchAll && <>{" "}{T.catchAllKeeps(check.catchAll.mailbox)}</>}
       {check?.state === "needs_fix" && <> <Link to={settingsPath("domains", domain)}>{T.openToFix(domain)}</Link>.</>}
     </p>
   );
@@ -461,6 +468,7 @@ function RunView({ run, mode, domain, onFix, onTest, onReplace, onBack, onAgain,
   onFix: (row: Row, fix: StepFix) => void; onTest: (email: string) => void; onReplace: () => void;
   onBack: () => void; onAgain: () => void; onDone: () => void;
 }) {
+  const T = addAddressText(useT());
   const doneRef = useRef<HTMLButtonElement>(null);
   const created = run.rows.filter((r) => r.created);
   const failedBefore = !run.working && !created.length;
@@ -505,13 +513,16 @@ function RunView({ run, mode, domain, onFix, onTest, onReplace, onBack, onAgain,
 function RowSteps({ row, onFix, onTest, onClose, compact = false }: {
   row: Row; onFix: (row: Row, fix: StepFix) => void; onTest: (email: string) => void; onClose: () => void; compact?: boolean;
 }) {
+  const t = useT();
+  const T = addAddressText(t);
+  const mark = T.mark;
   const test = useQuery({
     queryKey: ["routing-test", row.email], enabled: row.test === "sent",
     queryFn: () => fabric<{ test: TestStatus | null }>(`/api/project-addresses/${encodeURIComponent(row.email)}/test`).then((r) => r.test),
     refetchInterval: (q) => (testWaiting(q.state.data) ? TEST_POLL_MS : false),
   });
-  const t = testStep(row.test, test.data ?? null, row.testError);
-  const steps = row.created ? [...row.steps, t] : row.steps;
+  const testLine = testStep(row.test, test.data ?? null, row.testError, t);
+  const steps = row.created ? [...row.steps, testLine] : row.steps;
   const actionFor = (s: UiStep) =>
     s.fix && (s.outcome === "failed" || s.outcome === "skipped") ? <FixButton fix={s.fix} onRun={() => onFix(row, s.fix!)} onClose={onClose} /> :
     s.id === "test" && s.outcome === "not_asked" ? <button type="button" className="fi-text-button" onClick={() => onTest(row.email)}>{T.sendTest}</button> :
@@ -529,7 +540,7 @@ function RowSteps({ row, onFix, onTest, onClose, compact = false }: {
   return (
     <div className="fi-run-row">
       <span className="fi-run-chips">
-        {steps.map((s) => <Badge key={s.id} tone={OUTCOME_TONE[s.outcome]}>{T.chip(s.label, STEP_MARK[s.outcome])}</Badge>)}
+        {steps.map((s) => <Badge key={s.id} tone={OUTCOME_TONE[s.outcome]}>{T.chip(s.label, mark[s.outcome])}</Badge>)}
         {steps.map((s) => { const a = actionFor(s); return a ? <span key={"a-" + s.id} className="fi-step-actions">{a}</span> : null; })}
       </span>
       <details className="fi-run-details"><summary>{T.details}</summary>{list}</details>
@@ -541,17 +552,22 @@ const OUTCOME_TONE: Record<UiStep["outcome"], "ok" | "warn" | "bad" | "busy" | "
   done: "ok", already: "ok", skipped: "warn", failed: "bad", waiting: "busy", running: "busy", not_asked: "neutral",
 };
 
+/** The server names the fix in its own words; they are shown in the interface's language. */
 function FixButton({ fix, onRun, onClose }: { fix: StepFix; onRun: () => void; onClose: () => void }) {
-  if (fix.action === "connect_cloudflare") return <Link className="fi-text-button" to={settingsPath("domains", "connect")} onClick={onClose}>{fix.label}</Link>;
-  if (fix.action === "connect_account") return <Link className="fi-text-button" to={settingsPath("accounts", null, null, { connect: "cloudflare" })} onClick={onClose}>{fix.label}</Link>;
-  return <button type="button" className="fi-text-button" onClick={onRun}>{fix.label}</button>;
+  const t = useT();
+  const label = t.text(fix.label);
+  if (fix.action === "connect_cloudflare") return <Link className="fi-text-button" to={settingsPath("domains", "connect")} onClick={onClose}>{label}</Link>;
+  if (fix.action === "connect_account") return <Link className="fi-text-button" to={settingsPath("accounts", null, null, { connect: "cloudflare" })} onClick={onClose}>{label}</Link>;
+  return <button type="button" className="fi-text-button" onClick={onRun}>{label}</button>;
 }
 
+/** A step the server reported keeps its words until here: they are translated where they show. */
 function StepLine({ step, action }: { step: UiStep; action: ReactNode }) {
+  const t = useT();
   return (
     <li className={"fi-step is-" + step.outcome}>
-      <span className="fi-step-mark">{STEP_MARK[step.outcome]}</span>
-      <span><strong>{step.label}.</strong> {step.detail} {action && <span className="fi-step-actions">{action}</span>}</span>
+      <span className="fi-step-mark">{addAddressText(t).mark[step.outcome]}</span>
+      <span><strong>{t.text(step.label)}.</strong> {t.text(step.detail)} {action && <span className="fi-step-actions">{action}</span>}</span>
     </li>
   );
 }

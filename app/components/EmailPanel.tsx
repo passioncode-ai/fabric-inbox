@@ -14,6 +14,7 @@ import ThreadMessage from "~/components/email-panel/ThreadMessage";
 import LoadError from "~/components/LoadError";
 import PermanentDeleteDialog from "~/components/PermanentDeleteDialog";
 import { useDeleteMessage } from "~/hooks/useDeleteMessage";
+import { useT } from "../lib/i18n";
 import { splitEmailList } from "~/lib/utils";
 import api from "~/services/api";
 import { useDeleteEmail, useEmail, useMoveEmail, useThreadReplies, useUpdateEmail } from "~/queries/emails";
@@ -34,6 +35,7 @@ function EmailPanelSkeleton() {
 }
 
 export default function EmailPanel({ emailId }: { emailId: string }) {
+	const t = useT();
 	const { mailboxId, folder } = useParams<{ mailboxId: string; folder: string }>();
 	const {
 		data: email,
@@ -99,12 +101,12 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 		if (emailFailed && !emailFetching) {
 			return (
 				<LoadError
-					title="Couldn't open this message"
+					title={t("Couldn't open this message")}
 					error={emailError}
 					onRetry={() => refetchEmail()}
 					extraAction={
 						<Button variant="ghost" size="sm" onClick={closePanel}>
-							Close
+							{t("Close")}
 						</Button>
 					}
 				/>
@@ -127,10 +129,10 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 	const handleDeleteDraft = async (draftMsg?: Email) => {
 		const target = draftMsg || email;
 		if (!mailboxId) return;
-		if (!window.confirm("Discard this draft?")) return;
+		if (!window.confirm(t("Discard this draft?"))) return;
 		// Failure is announced by MutationErrorToasts; success is only claimed once it happened.
 		deleteEmailMut.mutateAsync({ mailboxId, id: target.id })
-			.then(() => toastManager.add({ title: "Draft discarded" }))
+			.then(() => toastManager.add({ title: t("Draft discarded") }))
 			.catch(() => {});
 		if (target.id === emailId) closePanel();
 	};
@@ -141,17 +143,17 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 		setIsSending(true);
 		try {
 			if (!target.recipient) { try { const fresh = await api.getEmail(mailboxId, target.id) as Email; if (fresh) target = fresh; } catch {} }
-			if (!splitEmailList(target.recipient).length) { toastManager.add({ title: "Cannot send: no recipient set on this draft.", variant: "error" }); return; }
+			if (!splitEmailList(target.recipient).length) { toastManager.add({ title: t("Cannot send: no recipient set on this draft."), variant: "error" }); return; }
 			// The server sends the draft as it is (one signature, the quote it holds), in its
 			// conversation, from the display name, and removes it from Drafts once accepted.
 			await api.sendDraft(mailboxId, target.id, `draft-${target.id}-${target.draft_revision ?? 1}`);
-			toastManager.add({ title: "Accepted by email provider" });
+			toastManager.add({ title: t("Accepted by email provider") });
 			queryClient.invalidateQueries({ queryKey: ["emails", mailboxId] });
 			queryClient.invalidateQueries({ queryKey: ["folders", mailboxId] });
 			if (isDraftFolder) closePanel();
 		} catch (err) {
-			const message = (err instanceof Error ? err.message : null) || "Failed to send email.";
-			toastManager.add({ title: message, variant: "error" });
+			const message = (err instanceof Error ? err.message : null) || t("Failed to send email.");
+			toastManager.add({ title: t.text(message), variant: "error" });
 		} finally { setIsSending(false); }
 	};
 

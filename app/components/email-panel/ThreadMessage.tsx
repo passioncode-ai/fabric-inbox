@@ -13,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import EmailAttachmentList from "~/components/EmailAttachmentList";
 import EmailIframe from "~/components/EmailIframe";
+import { useT } from "../../lib/i18n";
 import {
 	formatDetailDate,
 	formatShortDate,
@@ -68,9 +69,10 @@ export default function ThreadMessage({
 	onViewSource,
 	onPreviewImage,
 }: ThreadMessageProps) {
+	const t = useT();
 	const isSelf = email.sender === mailboxEmail;
 	const containerClassName = `${!isLast ? "border-b border-kumo-line" : ""} ${isDraft ? "border-l-2 border-l-kumo-warning bg-kumo-warning/[0.02]" : ""}`;
-	const senderLabel = isDraft ? "Draft reply" : isSelf ? "You" : email.sender;
+	const senderLabel = isDraft ? t("Draft reply") : isSelf ? t("You") : email.sender;
 
 	if (!isExpanded) {
 		return (
@@ -87,7 +89,7 @@ export default function ThreadMessage({
 								{senderLabel}
 							</span>
 							<span className="text-xs text-kumo-subtle shrink-0">
-								{formatDetailDate(email.date)}
+								{formatDetailDate(email.date, t.locale)}
 							</span>
 						</div>
 						<p className="text-xs text-kumo-subtle truncate">
@@ -109,7 +111,7 @@ export default function ThreadMessage({
 							type="button"
 							onClick={onToggleExpand}
 							className="shrink-0"
-							aria-label="Collapse message"
+							aria-label={t("Collapse message")}
 						>
 							<div className="cursor-pointer hover:ring-2 hover:ring-kumo-brand/30 transition-shadow rounded-full">
 								<Avatar isDraft={isDraft} isSelf={isSelf} sender={email.sender} />
@@ -120,24 +122,24 @@ export default function ThreadMessage({
 								<span className="text-sm font-medium text-kumo-default truncate">
 									{senderLabel}
 								</span>
-								{isDraft && <Badge variant="outline">Draft</Badge>}
+								{isDraft && <Badge variant="outline">{t("Draft")}</Badge>}
 							</div>
-							<div className="text-xs text-kumo-subtle">To: {email.recipient}</div>
+							<div className="text-xs text-kumo-subtle">{t("To: {recipient}", { recipient: email.recipient })}</div>
 						</div>
 					</div>
 					<div className="flex items-center gap-1 shrink-0">
 						<span className="text-xs text-kumo-subtle">
-							{formatShortDate(email.date)}
+							{formatShortDate(email.date, t.locale)}
 						</span>
 						{onViewSource && (
-							<Tooltip content="View source" side="bottom" asChild>
+							<Tooltip content={t("View source")} side="bottom" asChild>
 								<Button
 									variant="ghost"
 									shape="square"
 									size="sm"
 									icon={<CodeIcon size={14} />}
 									onClick={onViewSource}
-									aria-label="View source"
+									aria-label={t("View source")}
 									className="transition-opacity !h-6 !w-6"
 								/>
 							</Tooltip>
@@ -146,7 +148,7 @@ export default function ThreadMessage({
 							type="button"
 							onClick={onToggleExpand}
 							className="ml-1"
-							aria-label="Collapse message"
+							aria-label={t("Collapse message")}
 						>
 							<CaretUpIcon
 								size={14}
@@ -181,7 +183,7 @@ export default function ThreadMessage({
 								loading={isSending}
 								disabled={isSending}
 							>
-								{isSending ? "Sending..." : "Send"}
+								{isSending ? t("Sending...") : t("Send")}
 							</Button>
 						)}
 						{onEditDraft && (
@@ -192,7 +194,7 @@ export default function ThreadMessage({
 								onClick={onEditDraft}
 								disabled={isSending}
 							>
-								Edit
+								{t("Edit")}
 							</Button>
 						)}
 						{onDeleteDraft && (
@@ -203,7 +205,7 @@ export default function ThreadMessage({
 								onClick={onDeleteDraft}
 								disabled={isSending}
 							>
-								Discard
+								{t("[draft] Discard")}
 							</Button>
 						)}
 					</div>

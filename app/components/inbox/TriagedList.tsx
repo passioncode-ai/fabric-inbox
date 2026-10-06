@@ -69,7 +69,7 @@ function MessageRow({ message, account, selected, marked, onSelect, showGroup, c
           <span className={"fi-triage-tag tag-" + tri.group} title={tri.reasons.map((r) => t.text(r)).join(" · ")}>{tagText(tri, t)}</span>
         )}
         {chips.map((c) => (
-          <span key={c.id} className="fi-category-chip" title={c.reason}>{c.name}</span>
+          <span key={c.id} className="fi-category-chip" title={t.text(c.reason)}>{c.name}</span>
         ))}
         {message.starred && <StarIcon size={12} weight="fill" role="img" aria-label={t("Starred")} />}
       </span>

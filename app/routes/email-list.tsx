@@ -21,11 +21,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { Folders } from "shared/folders";
 import { formatListDate } from "shared/dates";
+import { msg } from "../../shared/i18n";
 import LoadError from "~/components/LoadError";
 import MailboxSplitView from "~/components/MailboxSplitView";
 import PermanentDeleteDialog from "~/components/PermanentDeleteDialog";
 import { useDeleteMessage } from "~/hooks/useDeleteMessage";
 import { TRASH_EMPTY_STATE } from "~/lib/delete-policy";
+import { useT } from "../lib/i18n";
 import { isRowActivation } from "~/lib/row-keys";
 import { getSnippetText } from "~/lib/utils";
 import {
@@ -42,6 +44,9 @@ import type { Email } from "~/types";
 
 const PAGE_SIZE = 25;
 
+/** Folders the server names itself (in English): their names are shown through t.text(). */
+const SYSTEM_FOLDERS: readonly string[] = Object.values(Folders);
+
 const FOLDER_EMPTY_STATES: Record<
 	string,
 	{
@@ -53,30 +58,30 @@ const FOLDER_EMPTY_STATES: Record<
 > = {
 	[Folders.INBOX]: {
 		icon: <TrayIcon size={48} weight="thin" className="text-kumo-subtle" />,
-		title: "Your inbox is empty",
+		title: msg("Your inbox is empty"),
 		description:
-			"New emails will appear here when they arrive. Send an email to get the conversation started.",
+			msg("New emails will appear here when they arrive. Send an email to get the conversation started."),
 		showCompose: true,
 	},
 	[Folders.SENT]: {
 		icon: (
 			<PaperPlaneTiltIcon size={48} weight="thin" className="text-kumo-subtle" />
 		),
-		title: "No sent emails",
-		description: "Emails you send will show up here.",
+		title: msg("No sent emails"),
+		description: msg("Emails you send will show up here."),
 		showCompose: true,
 	},
 	[Folders.DRAFT]: {
 		icon: <FileIcon size={48} weight="thin" className="text-kumo-subtle" />,
-		title: "No drafts",
-		description: "Emails you're still working on will be saved here.",
+		title: msg("No drafts"),
+		description: msg("Emails you're still working on will be saved here."),
 		showCompose: true,
 	},
 	[Folders.ARCHIVE]: {
 		icon: <ArchiveIcon size={48} weight="thin" className="text-kumo-subtle" />,
-		title: "Archive is empty",
+		title: msg("Archive is empty"),
 		description:
-			"Move emails here to keep your inbox clean without deleting them.",
+			msg("Move emails here to keep your inbox clean without deleting them."),
 	},
 	[Folders.TRASH]: {
 		icon: <TrashIcon size={48} weight="thin" className="text-kumo-subtle" />,
@@ -117,18 +122,19 @@ function FolderEmptyState({
 		icon: (
 			<EnvelopeSimpleIcon size={48} weight="thin" className="text-kumo-subtle" />
 		),
-		title: "No emails",
-		description: "This folder is empty.",
+		title: msg("No emails"),
+		description: msg("This folder is empty."),
 	};
+	const t = useT();
 
 	return (
 		<div className="flex flex-col items-center justify-center py-24 px-6 text-center">
 			<div className="mb-4">{config.icon}</div>
 			<h3 className="text-base font-semibold text-kumo-default mb-1.5">
-				{config.title}
+				{t.text(config.title)}
 			</h3>
 			<p className="text-sm text-kumo-subtle max-w-xs mb-5">
-				{config.description}
+				{t.text(config.description)}
 			</p>
 			{"showCompose" in config && config.showCompose && (
 				<Button
@@ -137,7 +143,7 @@ function FolderEmptyState({
 					icon={<PencilSimpleIcon size={16} />}
 					onClick={onCompose}
 				>
-					Compose
+					{t("Compose")}
 				</Button>
 			)}
 		</div>
@@ -145,6 +151,7 @@ function FolderEmptyState({
 }
 
 export default function EmailListRoute() {
+	const t = useT();
 	const { mailboxId, folder } = useParams<{
 		mailboxId: string;
 		folder: string;
@@ -192,9 +199,12 @@ export default function EmailListRoute() {
 
 	const folderName = useMemo(() => {
 		const found = folders.find((f) => f.id === folder);
-		if (found) return found.name;
-		return folder ? folder.charAt(0).toUpperCase() + folder.slice(1) : "Inbox";
-	}, [folders, folder]);
+		const system = !!folder && SYSTEM_FOLDERS.includes(folder);
+		if (found) return system ? t.text(found.name) : found.name;
+		if (!folder) return t("Inbox");
+		const name = folder.charAt(0).toUpperCase() + folder.slice(1);
+		return system ? t.text(name) : name;
+	}, [folders, folder, t]);
 
 	const isPanelOpen = selectedEmailId !== null || isComposing;
 
@@ -306,11 +316,11 @@ export default function EmailListRoute() {
 					<div className="flex items-center gap-1">
 						{totalCount > 0 && (
 							<span className="text-sm text-kumo-subtle mr-2 hidden sm:inline">
-								{totalCount} conversation{totalCount !== 1 ? "s" : ""}
+								{t.plural(totalCount, { one: "{n} conversation", other: "{n} conversations" })}
 							</span>
 						)}
 						<Tooltip
-							content={isRefreshing ? "Refreshing..." : "Refresh"}
+							content={isRefreshing ? t("Refreshing...") : t("Refresh")}
 							side="bottom"
 							asChild
 						>
@@ -326,7 +336,7 @@ export default function EmailListRoute() {
 								}
 								onClick={handleRefresh}
 								disabled={isRefreshing}
-								aria-label="Refresh"
+								aria-label={t("Refresh")}
 							/>
 						</Tooltip>
 					</div>
@@ -337,7 +347,7 @@ export default function EmailListRoute() {
 				{loadFailed && emails.length > 0 && (
 					<LoadError
 						compact
-						title={`Couldn't refresh ${folderName}.`}
+						title={t("Couldn't refresh {folder}.", { folder: folderName })}
 						error={loadError}
 						onRetry={() => refetchEmails()}
 						retrying={isRefreshing}
@@ -347,7 +357,7 @@ export default function EmailListRoute() {
 					<EmailListSkeleton />
 				) : loadFailed && emails.length === 0 ? (
 					<LoadError
-						title={`Couldn't load ${folderName}`}
+						title={t("Couldn't load {folder}", { folder: folderName })}
 						error={loadError}
 						onRetry={() => refetchEmails()}
 					/>
@@ -384,7 +394,7 @@ export default function EmailListRoute() {
 										<button
 											type="button"
 											className="shrink-0 p-0.5 bg-transparent border-0 cursor-pointer"
-											aria-label={email.starred ? "Unstar" : "Star"}
+											aria-label={email.starred ? t("Unstar") : t("Star")}
 											aria-pressed={email.starred}
 											onClick={(e) => {
 												e.stopPropagation();
@@ -417,18 +427,18 @@ export default function EmailListRoute() {
 												)}
 												{email.has_draft && (
 													<span className="shrink-0 text-xs text-kumo-destructive font-medium">
-														Draft
+														{t("Draft")}
 													</span>
 												)}
 												{email.needs_reply && !email.has_draft && (
-													<Tooltip content="Needs reply" asChild>
+													<Tooltip content={t("Needs reply")} asChild>
 														<span className="shrink-0 text-kumo-warning">
 															<ArrowBendUpLeftIcon size={14} weight="bold" />
 														</span>
 													</Tooltip>
 												)}
 												<span className="text-sm text-kumo-subtle shrink-0 ml-auto">
-													{formatListDate(email.date)}
+													{formatListDate(email.date, t.locale)}
 												</span>
 											</div>
 											<div className="truncate text-sm mt-0.5">
@@ -439,7 +449,7 @@ export default function EmailListRoute() {
 												</span>
 											{snippet && (
 												<span className="text-kumo-subtle font-normal">
-													{" "}&mdash; {snippet}
+													{" "}— {snippet}
 												</span>
 											)}
 										</div>
@@ -447,7 +457,7 @@ export default function EmailListRoute() {
 
 										{/* Row actions: on hover, and whenever focus is inside the row */}
 										<div className="hidden group-hover:flex group-focus-within:flex items-center shrink-0">
-											<Tooltip content={email.read ? "Mark unread" : "Mark read"} asChild>
+											<Tooltip content={email.read ? t("Mark unread") : t("Mark read")} asChild>
 												<Button
 													variant="ghost"
 													shape="square"
@@ -462,17 +472,17 @@ export default function EmailListRoute() {
 																data: { read: !email.read },
 															});
 													}}
-													aria-label={email.read ? "Mark unread" : "Mark read"}
+													aria-label={email.read ? t("Mark unread") : t("Mark read")}
 												/>
 											</Tooltip>
-											<Tooltip content={deleteLabel(email)} asChild>
+											<Tooltip content={t.text(deleteLabel(email))} asChild>
 												<Button
 													variant="ghost"
 													shape="square"
 													size="sm"
 													icon={<TrashIcon size={14} />}
 													onClick={(e) => handleDelete(e, email)}
-													aria-label={deleteLabel(email)}
+													aria-label={t.text(deleteLabel(email))}
 												/>
 											</Tooltip>
 										</div>

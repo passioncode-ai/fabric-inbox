@@ -5,6 +5,7 @@
 import DOMPurify from "dompurify";
 import { mailImagePolicy, type InlineAttachments } from "~/lib/mail-image-policy";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useT } from "../lib/i18n";
 
 /**
  * Every link in a message opens a new window with no opener. A message can no
@@ -60,6 +61,7 @@ interface EmailIframeProps {
  *   iframe as a defense-in-depth layer.
  */
 export default function EmailIframe({ body, messageKey, inlineAttachments, autoSize }: EmailIframeProps) {
+	const t = useT();
 	const iframeRef = useRef<HTMLIFrameElement>(null);
 	const [height, setHeight] = useState(autoSize ? 100 : 0);
 	const [allowedMessage, setAllowedMessage] = useState<string | null>(null);
@@ -178,9 +180,9 @@ ul, ol { padding-left: 20px; margin: 4px 0; }
 	return (
 		<div className={autoSize ? "" : "flex h-full min-h-0 flex-col"}>
 			<div className="flex flex-wrap items-center justify-between gap-2 border-b border-kumo-line p-3 text-sm text-kumo-subtle">
-				<span>{remoteImages ? "External images enabled for this message." : "External images are blocked to protect your privacy."}</span>
+				<span>{remoteImages ? t("External images enabled for this message.") : t("External images are blocked to protect your privacy.")}</span>
 				<button type="button" className="rounded px-2 py-1 font-medium text-kumo-default underline focus-visible:outline focus-visible:outline-2" onClick={() => setAllowedMessage(remoteImages ? null : identity)}>
-					{remoteImages ? "Block external images" : "Load external images"}
+					{remoteImages ? t("Block external images") : t("Load external images")}
 				</button>
 			</div>
 		<iframe
@@ -188,7 +190,7 @@ ul, ol { padding-left: 20px; margin: 4px 0; }
 			className="block w-full border-0"
 			style={autoSize ? { height: `${height}px` } : { height: "100%" }}
 			sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
-			title="Email content"
+			title={t("Email content")}
 			referrerPolicy="no-referrer"
 		/>
 		</div>

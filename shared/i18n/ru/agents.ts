@@ -17,7 +17,6 @@ export const AGENTS: Readonly<Record<string, string>> = {
 
 	// What happened to one answer (app/services/agents.ts)
 	"Working": "Работает",
-	"Skipped": "Пропущено",
 	"Draft waiting": "Черновик ждёт",
 	"[run] Sent": "Отправлено",
 	"Not sent": "Не отправлено",
@@ -101,7 +100,6 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"from Fabric": "из Fabric",
 	"A ticked collection no longer exists; untick it before saving.": "Отмеченной коллекции больше нет — снимите отметку перед сохранением.",
 	"Filter the history": "Фильтр истории",
-	"Show": "Показать",
 	"Agent": "Агент",
 	"Loading answers…": "Загружаем ответы…",
 	"The history": "История",
@@ -146,7 +144,6 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"Find a collection": "Найти коллекцию",
 	"Put only what an agent may tell a customer into a collection an agent answering customers can search.": "В коллекцию, где ищет агент, отвечающий клиентам, кладите только то, что агенту можно сказать клиенту.",
 	"the new collection": "новая коллекция",
-	"Creating…": "Создаём…",
 	"{name} is ready. Add documents to it, then tick it on an agent.": "Коллекция «{name}» готова. Добавьте в неё документы, затем отметьте её у агента.",
 	"Customer FAQ": "Частые вопросы клиентов",
 	"What is in it (optional)": "Что в ней (необязательно)",
@@ -200,7 +197,6 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"All mailboxes": "Все почтовые ящики",
 	"Only {mailboxes}": "Только {mailboxes}",
 	"No mailbox": "Ни одного почтового ящика",
-	"Copied": "Скопировано",
 	"Keys": "Ключи",
 	"Loading agent keys…": "Загружаем ключи агентов…",
 	"Agent keys": "Ключи агентов",
@@ -225,7 +221,6 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"Revoke…": "Отозвать…",
 	"Level": "Уровень",
 	"Made": "Создан",
-	"Expires": "Истекает",
 	"The secret was shown once, when the key was made. A lost secret means a new key.": "Секрет показывался один раз — при создании ключа. Если он потерян, нужен новый ключ.",
 	"The journal": "Журнал",
 	"Nothing older.": "Более ранних записей нет.",
@@ -312,13 +307,4 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"Available Tools": "Доступные инструменты",
 
 	// Words several settings sections share; kept here once (a second home fails the check)
-	"Delete {name}?": "Удалить «{name}»?",
-	"Delete {name}": "Удалить «{name}»",
-	"Delete {name}…": "Удалить «{name}»…",
-	"Undo changes": "Отменить изменения",
-	"New": "Создать",
-	"Adding…": "Добавляем…",
-	"This cannot be undone.": "Это нельзя отменить.",
-	"never": "никогда",
-	"Sending": "Отправка",
 };
