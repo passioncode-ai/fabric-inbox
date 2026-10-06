@@ -31,6 +31,15 @@ export interface Env extends Cloudflare.Env {
 	GMAIL_TOKEN_ENCRYPTION_KEY?: string;
 	PUBLIC_APP_URL?: string;
 	GMAIL_POLL_SECONDS?: string;
+	/** Outlook (SCN-057): the Microsoft Entra app registration's Application (client) ID. */
+	MICROSOFT_CLIENT_ID?: string;
+	/** Outlook: the app registration's client secret Value (a Worker secret). */
+	MICROSOFT_CLIENT_SECRET?: string;
+	/** Outlook: the date that client secret ends (YYYY-MM-DD); Settings warns 30 days before. */
+	MICROSOFT_CLIENT_SECRET_EXPIRES?: string;
+	/** The key mail credentials are sealed with (workers/providers/credentials.ts), and older ones. */
+	MAIL_CREDENTIAL_KEY?: string;
+	MAIL_CREDENTIAL_KEY_PREVIOUS?: string;
 	/** Set on the Worker, not in wrangler.jsonc (CF-4): the Access application audience. */
 	POLICY_AUD: string;
 	/** Set on the Worker: https://<team>.cloudflareaccess.com */
