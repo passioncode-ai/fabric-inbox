@@ -150,6 +150,11 @@ export interface ProviderSession {
   updateDraft(draftId: string, update: DraftUpdate): Promise<{ draftId: string; revision: string; messageId: string; threadId: string }>;
   deleteDraft(draftId: string): Promise<void>;
   sendDraft(draftId: string): Promise<SendResult>;
+  /**
+   * Deletes one message for good, where the account has no Trash to send it to (an IMAP server
+   * without one): Discarded mail past its 30 days. Absent where Trash always exists.
+   */
+  expunge?(messageId: string): Promise<void>;
   close(): Promise<void>;
 }
 
