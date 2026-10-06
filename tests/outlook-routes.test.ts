@@ -5,6 +5,7 @@ import { microsoftSetupRouter, pastedChecks } from "../workers/routes/microsoft-
 import { outlookResultPage } from "../workers/microsoft-setup/result-page";
 import { ProviderError } from "../workers/providers/gmail-client";
 import { adminConsentUrl, microsoftSetupValues, parseSecretExpiry, secretExpiry, secretExpiryProblem } from "../shared/mail/microsoft-setup";
+import { fakeBucket } from "./fake-r2";
 
 /**
  * SCN-057…SCN-060: connecting Outlook in the browser ends on a page for success and for every
@@ -153,7 +154,8 @@ test("what was pasted is checked first: a client ID, a secret's Value (not its S
 
 const json = (x: unknown, status = 200) => new Response(JSON.stringify(x), { status, headers: { "Content-Type": "application/json" } });
 const cf = (result: unknown, status = 200) => json(status < 300 ? { success: true, errors: [], result } : { success: false, errors: [{ code: 10000, message: "Authentication error" }], result: null }, status);
-function cloudflare(patch: "ok" | "forbidden" = "ok") {
+/** `keyBound`: the live settings hold a credential key (as a server that has its key does). */
+function cloudflare(patch: "ok" | "forbidden" = "ok", keyBound = true) {
   const calls: { method: string; url: string; body?: { bindings: { type: string; name: string; text?: string }[] } }[] = [];
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input)), method = init?.method ?? "GET";
@@ -161,13 +163,14 @@ function cloudflare(patch: "ok" | "forbidden" = "ok") {
     calls.push(record);
     if (url.hostname !== "api.cloudflare.com") throw new Error("unexpected " + url.href);
     if (method === "GET") return cf({ bindings: [{ type: "durable_object_namespace", name: "MAILBOX" }, { type: "secret_text", name: "CLOUDFLARE_API_TOKEN" },
-      { type: "secret_text", name: "MICROSOFT_CLIENT_SECRET" }, { type: "plain_text", name: "GOOGLE_CLIENT_ID", text: "kept" }, { type: "secret_text", name: "MAIL_CREDENTIAL_KEY" }] });
+      { type: "secret_text", name: "MICROSOFT_CLIENT_SECRET" }, { type: "plain_text", name: "GOOGLE_CLIENT_ID", text: "kept" },
+      ...(keyBound ? [{ type: "secret_text", name: "MAIL_CREDENTIAL_KEY" }] : [])] });
     record.body = JSON.parse(await ((init?.body as FormData).get("settings") as Blob).text());
     return patch === "forbidden" ? cf(null, 403) : cf({});
   }) as typeof fetch;
   return calls;
 }
-const baseEnv = { CLOUDFLARE_API_TOKEN: "t".repeat(40), CLOUDFLARE_ACCOUNT_ID: ACCOUNT };
+const baseEnv = { CLOUDFLARE_API_TOKEN: "t".repeat(40), CLOUDFLARE_ACCOUNT_ID: ACCOUNT, BUCKET: fakeBucket() };
 const setup = (path: string, e: Record<string, unknown>, init: RequestInit = {}, origin = ORIGIN) => microsoftSetupRouter.request(origin + path, init, e as never);
 const put = (e: Record<string, unknown>, body: unknown, origin = ORIGIN) =>
   setup("/api/microsoft-setup", e, { method: "PUT", headers: { "Content-Type": "application/json", Origin: origin }, body: JSON.stringify(body) }, origin);
@@ -188,7 +191,7 @@ test("GET /api/microsoft-setup says what is missing, what to copy, and when the 
 });
 
 test("PUT writes the client, its secret's date and a credential key in one change; the secret goes in as a secret and never comes back", async () => {
-  const calls = cloudflare();
+  const calls = cloudflare("ok", false);
   const response = await put(baseEnv, { clientId: CLIENT_ID.toUpperCase(), clientSecret: SECRET, secretExpires: isoDay(200) });
   assert.equal(response.status, 202, await response.clone().text());
   const body = (await response.json()) as Record<string, any>;
@@ -208,6 +211,11 @@ test("PUT writes the client, its secret's date and a credential key in one chang
   const again = cloudflare();
   await put({ ...baseEnv, MAIL_CREDENTIAL_KEY: KEY }, { clientId: CLIENT_ID, clientSecret: SECRET, secretExpires: isoDay(200) });
   assert.equal(again.find((c) => c.method === "PATCH")!.body!.bindings.find((b) => b.name === "MAIL_CREDENTIAL_KEY")!.type, "inherit");
+  // Nor one bound a moment ago that this Worker's environment does not show yet (L2).
+  const fresh = cloudflare();
+  const answer = (await (await put(baseEnv, { clientId: CLIENT_ID, clientSecret: SECRET, secretExpires: isoDay(200) })).json()) as { keyCreated: boolean };
+  assert.equal(answer.keyCreated, false);
+  assert.equal(fresh.find((c) => c.method === "PATCH")!.body!.bindings.find((b) => b.name === "MAIL_CREDENTIAL_KEY")!.type, "inherit");
 });
 
 test("PUT refuses what cannot work before writing anything, and says Cloudflare's refusal plainly", async () => {

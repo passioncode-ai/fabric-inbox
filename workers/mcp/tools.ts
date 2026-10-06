@@ -1422,7 +1422,7 @@ const checkGmailSetup = defineTool({
 
 const createCredentialKey = defineTool({
   name: "create_credential_key", title: "Give the server its credential key", level: "admin", target: () => "MAIL_CREDENTIAL_KEY",
-  description: "Makes the key the server seals saved access with (IMAP app passwords, Gmail and Outlook tokens) and writes it into the server's own settings with its Cloudflare token, when the server has none; a key it already has is never replaced. The value is never returned. Needed before an IMAP account can be connected on a server that has no key (list_mail_providers says not_configured).",
+  description: "Makes the key the server seals saved access with (IMAP app passwords, Gmail and Outlook tokens) and writes it into the server's own settings with its Cloudflare token, when the server has none; a key it already has, even one written a moment ago, is never replaced (changes to the settings run one at a time), so calls at once make one key. The value is never returned. Needed before an IMAP account can be connected on a server that has no key (list_mail_providers says not_configured).",
   input: {},
   routes: ["POST /api/credential-key"],
   call: (_a, ctx) => post(ctx, "/api/credential-key"),

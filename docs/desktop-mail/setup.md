@@ -631,8 +631,11 @@ not show again.
   Settings → Accounts → Connect account → Other mail → **Make the key** (`POST /api/credential-key`,
   `workers/routes/credential-key.ts`; agents: `create_credential_key`). The server writes it into its
   own settings with its Cloudflare token, keeping every other setting; it never replaces a key it
-  already has, and the value is never shown. Without a Cloudflare token of its own the server says
-  so, and the key is set with wrangler as below.
+  already has, and the value is never shown. Changes to the server's own settings run one at a time
+  and read Cloudflare's current settings first, so a person in Settings and an agent asking at the
+  same moment (or the Gmail or Outlook setup) make one key, not two; the second is told the server
+  has one. Without a Cloudflare token of its own the server says so, and the key is set with
+  wrangler as below.
 
 - **Backup.** For a server deployed by hand, make the key yourself, keep it in your password
   manager, then set it: `openssl rand -base64 32 | tr '+/' '-_' | tr -d '=' > key.txt`, then
