@@ -86,7 +86,10 @@ accountsRouter.get("/api/accounts", async (c) => {
         { id: "outlook", status: "not_configured" },
       ],
     });
-  return c.json(await stub(c.env).listAccounts());
+  // Where a person connects another Gmail account (gmail_connect_link): the configured origin only.
+  const config = configuration(c.env);
+  return c.json({ ...(await stub(c.env).listAccounts()),
+    ...(config.status === "configured" ? { connectUrl: new URL("/api/accounts/gmail/connect", config.origin).href } : {}) });
 });
 accountsRouter.get("/api/accounts/gmail/connect", async (c) => {
   const config = configuration(c.env);

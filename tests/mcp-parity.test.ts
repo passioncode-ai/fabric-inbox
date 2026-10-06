@@ -169,6 +169,97 @@ test("a message given as HTML keeps the signature and the quoted or forwarded or
 
 // ── Gap 13: the attachment limit is said ────────────────────────────
 
+// ── Gap 8: a knowledge collection kept by Fabric ───────────────────
+
+test("save_knowledge_collection makes a collection kept from a Fabric project, and refuses a source on a rename (parity gap 8)", async () => {
+  const { api, calls } = fakeApi({ "POST /api/knowledge/collections": ok({ id: "c1" }, 201), "PUT /api/knowledge/collections/c1": ok({ id: "c1" }) });
+  const made = await call(api, "save_knowledge_collection", { name: "Docs", source: { kind: "fabric", project: "fabric-inbox", scope: "docs" } });
+  assert.equal(made.isError, false, JSON.stringify(made.data));
+  assert.deepEqual(posted(calls), { name: "Docs", description: undefined, source: { kind: "fabric", project: "fabric-inbox", scope: "docs" } });
+  calls.length = 0;
+  const renamed = await call(api, "save_knowledge_collection", { collectionId: "c1", name: "Docs", source: { kind: "manual" } });
+  assert.equal(renamed.data.status, 400);
+  assert.equal(calls.length, 0);
+});
+
+// ── Gaps 9–11: what a person does, named; keys read without secrets ─
+
+test("gmail_connect_link gives the person the server's connect address, and says when Gmail is not set up (parity gap 9)", async () => {
+  const link = await call(fakeApi({ "GET /api/accounts": ok({ configuration: "configured", accounts: [], connectUrl: "https://mail.shop.invalid/api/accounts/gmail/connect" }) }).api, "gmail_connect_link", {});
+  assert.equal(link.data.url, "https://mail.shop.invalid/api/accounts/gmail/connect");
+  const off = await call(fakeApi({ "GET /api/accounts": ok({ configuration: "not_configured", accounts: [] }) }).api, "gmail_connect_link", {});
+  assert.equal(off.data.status, 503);
+  const tool = TOOLS.find((t) => t.name === "gmail_connect_link")!;
+  assert.ok(tool.readOnly && tool.level === "admin");
+});
+
+test("the exclusions say where a person does what no tool does (parity gaps 9–11)", async () => {
+  const { NOT_TOOLS } = await import("../workers/mcp/tools");
+  assert.match(NOT_TOOLS["POST /api/cloudflare/accounts"]!, /Settings → Accounts/);
+  assert.equal(NOT_TOOLS["GET /api/agent-keys"], undefined, "reading keys is a tool now");
+  assert.ok(NOT_TOOLS["POST /api/agent-keys"] && NOT_TOOLS["DELETE /api/agent-keys/:id"], "making and revoking keys stays a person's");
+  assert.ok(NOT_TOOLS["GET /api/accounts/gmail/connect"] && NOT_TOOLS["POST /api/accounts/gmail/connect"]);
+});
+
+test("list_agent_keys lists the keys without anything secret (parity gap 11)", async () => {
+  const { api } = fakeApi({ "GET /api/agent-keys": ok({ keys: [{ id: "k1", clientId: "abc.access", name: "Research", level: "read", send: "drafts", dailySendLimit: 50,
+    createdAt: "2026-10-01T00:00:00Z", expiresAt: null, accounts: ["cloudflare:support@shop.invalid"], clientSecret: "never" }], mcpUrl: "https://mail.shop.invalid/mcp", canIssue: true }) });
+  const listed = await call(api, "list_agent_keys", {});
+  assert.deepEqual(listed.data.keys, [{ id: "k1", name: "Research", level: "read", send: "drafts", dailySendLimit: 50, accounts: ["cloudflare:support@shop.invalid"],
+    createdAt: "2026-10-01T00:00:00Z", expiresAt: null }]);
+  assert.doesNotMatch(JSON.stringify(listed.data), /never|abc\.access/);
+});
+
+// ── Misleading descriptions and dangerous replaces ─────────────────
+
+test("save_rule changes only what it is given: a rename keeps a rule on, its mode and its limit", async () => {
+  const BASE = `/api/automation/${encodeURIComponent(CF)}/rules`;
+  const existing = { id: "r1", version: 3, name: "Invoices", enabled: true, mode: "automatic", conditions: { from: "billing@x.invalid" }, action: { type: "archive" }, dailyLimit: 50 };
+  const { api, calls } = fakeApi({ [`GET ${BASE}`]: ok([existing]), [`PUT ${BASE}`]: (c) => ok(c.body) });
+  const renamed = await call(api, "save_rule", { accountId: `cloudflare:${CF}`, rule: { id: "r1", name: "Bills" } });
+  assert.equal(renamed.isError, false, JSON.stringify(renamed.data));
+  assert.deepEqual(posted(calls), { ...existing, name: "Bills" });
+
+  calls.length = 0;
+  await call(api, "save_rule", { accountId: `cloudflare:${CF}`, rule: { id: "r2", name: "New", conditions: { subject: "hi" }, action: { type: "mark_read" } } });
+  assert.deepEqual(posted(calls), { id: "r2", name: "New", conditions: { subject: "hi" }, action: { type: "mark_read" }, enabled: false, mode: "approval", dailyLimit: 20, version: 1 });
+  calls.length = 0;
+  const incomplete = await call(api, "save_rule", { accountId: `cloudflare:${CF}`, rule: { id: "r3", name: "Half" } });
+  assert.equal(incomplete.data.status, 400);
+  assert.match(incomplete.data.error, /conditions, action/);
+  assert.equal(calls.filter((c) => c.method === "PUT").length, 0);
+  assert.doesNotMatch(TOOLS.find((t) => t.name === "save_rule")!.description, /raise version/);
+});
+
+test("save_project changes only what it is given: a rename keeps the project's domains and addresses", async () => {
+  const project = { id: "p1", name: "Shop", domains: ["shop.invalid"], addresses: ["ceo@other.invalid"] };
+  const { api, calls } = fakeApi({ "GET /api/projects": ok({ projects: [project] }), "PUT /api/projects/p1": (c) => ok(c.body), "POST /api/projects": (c) => ok(c.body, 201) });
+  await call(api, "save_project", { projectId: "p1", name: "Shop EU" });
+  assert.deepEqual(posted(calls), { name: "Shop EU", domains: ["shop.invalid"], addresses: ["ceo@other.invalid"] });
+  calls.length = 0;
+  await call(api, "save_project", { name: "New", domains: ["new.invalid"] });
+  assert.deepEqual(posted(calls), { name: "New", domains: ["new.invalid"], addresses: [] });
+  const missing = await call(api, "save_project", { projectId: "ghost", name: "x" });
+  assert.equal(missing.data.status, 404);
+  const nameless = await call(api, "save_project", { domains: ["a.invalid"] });
+  assert.equal(nameless.data.status, 400);
+});
+
+test("create_address asks the server to make the rule when it can, unless told otherwise", async () => {
+  const { api, calls } = fakeApi({ "POST /api/project-addresses": (c) => ok(c.body, 201) });
+  await call(api, "create_address", { localPart: "help", domain: "shop.invalid" });
+  assert.equal(posted(calls).createRoute, "auto");
+  calls.length = 0;
+  await call(api, "create_address", { localPart: "help", domain: "shop.invalid", createRoute: false });
+  assert.equal(posted(calls).createRoute, false);
+});
+
+test("descriptions say what the tools do: list_addresses names the chat assistant's instructions", () => {
+  const d = (name: string) => TOOLS.find((t) => t.name === name)!.description;
+  assert.match(d("list_addresses"), /chat assistant/);
+  assert.doesNotMatch(d("list_addresses"), /agent instructions/);
+});
+
 test("get_attachment says it returns files up to 5 MB and what happens to a larger one (parity gap 13)", () => {
   const d = TOOLS.find((t) => t.name === "get_attachment")!.description;
   assert.match(d, /5 MB/);

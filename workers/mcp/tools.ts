@@ -315,7 +315,7 @@ const getSendStatus = defineTool({
 
 const listAddresses = defineTool({
   name: "list_addresses", title: "List addresses", level: "read", readOnly: true,
-  description: "The Cloudflare addresses this server keeps mail for: each with its display name, its agent, where a copy is forwarded and any delivery problem; the served domains with their catch-all; and recent mail to addresses that do not exist. Give address to get one address's settings (display name, signature, agent instructions).",
+  description: "The Cloudflare addresses this server keeps mail for: each with its display name, its agent, where a copy is forwarded and any delivery problem; the served domains with their catch-all; and recent mail to addresses that do not exist. Give address to get one address's settings: display name, signature, its reply agent, its forwarding copy, and the chat assistant's instructions for that mailbox (agentSystemPrompt, set with update_address assistantPrompt).",
   input: { address: address.optional() },
   routes: ["GET /api/project-addresses", "GET /api/v1/mailboxes", "GET /api/v1/mailboxes/:mailboxId", "GET /api/v1/config"],
   async call(a, ctx) {
@@ -729,9 +729,9 @@ const toAgent = (choice: "off" | { agentId: string } | undefined) => (choice ===
 
 const createAddress = defineTool({
   name: "create_address", title: "Create an address", level: "admin", target: (a) => `${a.localPart}@${a.domain}`,
-  description: "Makes a new mailbox on one of your served domains and, by default, the Cloudflare rule that sends its mail here. Optionally names it, sets its agent and forwards a copy to a verified destination.",
+  description: "Makes a new mailbox on one of your served domains and, when this server can, the Cloudflare rule that sends its mail here (createRoute \"auto\", the default: no routing token means no rule, and a zone the token cannot see gets the address with a warning instead of a rule). Optionally names it, sets its agent and forwards a copy to a verified destination.",
   input: { localPart: z.string().regex(/^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$/).describe("The part before @, lower case"), domain,
-    name: z.string().max(80).optional().describe("Display name"), agent: agentChoice.optional(), createRoute: z.boolean().default(true).describe("Add the Cloudflare rule for it"),
+    name: z.string().max(80).optional().describe("Display name"), agent: agentChoice.optional(), createRoute: z.union([z.literal("auto"), z.boolean()]).default("auto").describe('"auto": add the Cloudflare rule when the server can; true: require it (refused without a routing token); false: no rule'),
     forwardTo: z.string().email().max(90).optional().describe("Also forward a copy here (a verified destination, list_domains destinations)") },
   routes: ["POST /api/project-addresses", "POST /api/v1/mailboxes"],
   call: (a, ctx) => post(ctx, "/api/project-addresses", { localPart: a.localPart, domain: a.domain.toLowerCase(), name: a.name, agent: toAgent(a.agent), createRoute: a.createRoute, forwardTo: a.forwardTo }),
@@ -925,11 +925,22 @@ const deleteCategory = defineTool({
   async call(a, ctx) { await del(ctx, `/api/categories/${enc(a.categoryId)}`); return { deleted: a.categoryId }; },
 });
 const saveProject = defineTool({
-  name: "save_project", title: "Create or change a project", level: "admin", target: (a) => a.projectId ?? a.name,
-  description: "A project groups domains and addresses so categories can be scoped to it. Give projectId to change one.",
-  input: { projectId: z.string().max(100).optional(), name: z.string().min(1).max(80), domains: z.array(z.string().max(253)).max(50).default([]), addresses: z.array(z.string().email()).max(100).default([]) },
-  routes: ["POST /api/projects", "PUT /api/projects/:id"],
-  call: (a, ctx) => { const b = { name: a.name, domains: a.domains, addresses: a.addresses }; return a.projectId ? put(ctx, `/api/projects/${enc(a.projectId)}`, b) : post(ctx, "/api/projects", b); },
+  name: "save_project", title: "Create or change a project", level: "admin", target: (a) => a.projectId ?? a.name ?? "",
+  description: "A project groups domains and addresses so categories can be scoped to it. Give projectId to change one: only the fields you give change (a rename keeps its domains and addresses); domains and addresses, when given, replace the lists.",
+  input: { projectId: z.string().max(100).optional(), name: z.string().min(1).max(80).optional().describe("Required for a new project"),
+    domains: z.array(z.string().max(253)).max(50).optional(), addresses: z.array(z.string().email()).max(100).optional() },
+  routes: ["POST /api/projects", "PUT /api/projects/:id", "GET /api/projects"],
+  async call(a, ctx) {
+    if (!a.projectId) {
+      if (!a.name) throw new ApiError(400, "A new project needs a name", null);
+      return post(ctx, "/api/projects", { name: a.name, domains: a.domains ?? [], addresses: a.addresses ?? [] });
+    }
+    // The route replaces the whole project: start from what it holds now, so a rename does not empty it.
+    const { projects } = (await get(ctx, "/api/projects")) as { projects: { id: string; name: string; domains: string[]; addresses: string[] }[] };
+    const current = projects.find((p) => p.id === a.projectId);
+    if (!current) throw new ApiError(404, `No project ${a.projectId} (list_categories lists them)`, null);
+    return put(ctx, `/api/projects/${enc(a.projectId)}`, { name: a.name ?? current.name, domains: a.domains ?? current.domains, addresses: a.addresses ?? current.addresses });
+  },
 });
 const deleteProject = defineTool({
   name: "delete_project", title: "Delete a project", level: "admin", target: (a) => a.projectId,
@@ -942,13 +953,19 @@ const deleteProject = defineTool({
 
 const saveCollection = defineTool({
   name: "save_knowledge_collection", title: "Create or rename a knowledge collection", level: "admin", target: (a) => a.collectionId ?? a.name ?? "",
-  description: "Creates a knowledge collection, or renames or redescribes one (give collectionId). Fill it with put_knowledge_documents; grant it to an agent with save_agent.",
-  input: { collectionId: z.string().max(100).optional(), name: z.string().min(1).max(80).optional(), description: z.string().max(500).optional() },
+  description: "Creates a knowledge collection, or renames or redescribes one (give collectionId). A new collection is filled by hand (put_knowledge_documents) unless source names a Fabric project, whose knowledge Fabric keeps it in step with. Grant it to an agent with save_agent.",
+  input: { collectionId: z.string().max(100).optional(), name: z.string().min(1).max(80).optional(), description: z.string().max(500).optional(),
+    source: z.union([z.object({ kind: z.literal("manual") }).strict(),
+      z.object({ kind: z.literal("fabric"), project: z.string().min(1).max(120), scope: z.string().max(200).optional() }).strict()]).optional()
+      .describe('New collections only: {kind:"manual"} (the default) or {kind:"fabric", project, scope?}') },
   routes: ["POST /api/knowledge/collections", "PUT /api/knowledge/collections/:id"],
   call: (a, ctx) => {
-    if (a.collectionId) return put(ctx, `/api/knowledge/collections/${enc(a.collectionId)}`, { name: a.name, description: a.description });
+    if (a.collectionId) {
+      if (a.source) throw new ApiError(400, "A collection's source is chosen when it is made; make a new collection for another source", null);
+      return put(ctx, `/api/knowledge/collections/${enc(a.collectionId)}`, { name: a.name, description: a.description });
+    }
     if (!a.name) throw new ApiError(400, "A new collection needs a name", null);
-    return post(ctx, "/api/knowledge/collections", { name: a.name, description: a.description });
+    return post(ctx, "/api/knowledge/collections", { name: a.name, description: a.description, ...(a.source ? { source: a.source } : {}) });
   },
 });
 const deleteCollection = defineTool({
@@ -977,19 +994,37 @@ const deleteDocument = defineTool({
   async call(a, ctx) { await del(ctx, `/api/knowledge/collections/${enc(a.collectionId)}/documents/${enc(a.documentId)}`); return { deleted: a.documentId }; },
 });
 
+const ruleConditions = z.object({ from: z.string().max(320).optional(), subject: z.string().max(200).optional(), ai: z.string().max(1000).optional() });
+const ruleAction = z.record(z.unknown()).describe('{type:"forward",to} | {type:"archive"} | {type:"mark_read"} | {type:"draft"} | {type:"mcp",endpoint,tool,arguments,tokenRef?,location:"cloud"}');
+/** A whole rule, for trying one out: what is left out takes the defaults a new rule gets. */
 const ruleInput = z.object({
-  id: z.string().min(1).max(100), version: z.number().int().min(1), name: z.string().min(1).max(100), enabled: z.boolean().default(false),
-  mode: z.enum(["approval", "automatic"]).default("approval"),
-  conditions: z.object({ from: z.string().max(320).optional(), subject: z.string().max(200).optional(), ai: z.string().max(1000).optional() }),
-  action: z.record(z.unknown()).describe('{type:"forward",to} | {type:"archive"} | {type:"mark_read"} | {type:"draft"} | {type:"mcp",endpoint,tool,arguments,tokenRef?,location:"cloud"}'),
+  id: z.string().min(1).max(100), version: z.number().int().min(1).default(1).describe("Set by the server when a rule is saved; any value here"),
+  name: z.string().min(1).max(100), enabled: z.boolean().default(false),
+  mode: z.enum(["approval", "automatic"]).default("approval"), conditions: ruleConditions, action: ruleAction,
   dailyLimit: z.number().int().min(1).max(100).default(20),
+});
+/** A rule to save: a new one needs name, conditions and action; a change names only what changes. */
+const ruleChange = z.object({
+  id: z.string().min(1).max(100).describe("The rule's id: an existing one is changed, a new one is made"),
+  name: z.string().min(1).max(100).optional(), enabled: z.boolean().optional().describe("New rules start off (false)"),
+  mode: z.enum(["approval", "automatic"]).optional().describe("New rules wait for approval"), conditions: ruleConditions.optional(), action: ruleAction.optional(),
+  dailyLimit: z.number().int().min(1).max(100).optional().describe("New rules: 20"),
 });
 const saveRule = defineTool({
   name: "save_rule", title: "Create or change a rule", level: "admin", target: (a) => `${a.accountId} ${a.rule.id}`,
-  description: "Saves an automation rule of one account (same id replaces it; raise version when you change it). A rule in approval mode waits for approve_rule_run; turn a rule off with enabled: false.",
-  input: { accountId, rule: ruleInput },
-  routes: ["PUT /api/automation/:account/rules"],
-  call: (a, ctx) => put(ctx, `${automationBase(parseAccount(a.accountId))}/rules`, a.rule),
+  description: "Creates an automation rule of one account, or changes one (same id): only the fields you give change, so renaming a rule keeps it on, its mode and its limit. A new rule needs name, conditions and action and starts off, in approval mode, 20 runs a day. The server numbers each saved version. A rule in approval mode waits for approve_rule_run; turn a rule off with enabled: false.",
+  input: { accountId, rule: ruleChange },
+  routes: ["GET /api/automation/:account/rules", "PUT /api/automation/:account/rules"],
+  async call(a, ctx) {
+    const base = automationBase(parseAccount(a.accountId));
+    const rules = (await get(ctx, `${base}/rules`)) as ({ id: string; version: number } & Record<string, unknown>)[];
+    const current = rules.find((r) => r.id === a.rule.id);
+    const given = Object.fromEntries(Object.entries(a.rule).filter(([, v]) => v !== undefined));
+    if (current) return put(ctx, `${base}/rules`, { ...current, ...given });
+    const missing = (["name", "conditions", "action"] as const).filter((k) => a.rule[k] === undefined);
+    if (missing.length) throw new ApiError(400, `A new rule needs ${missing.join(", ")}`, null);
+    return put(ctx, `${base}/rules`, { enabled: false, mode: "approval", dailyLimit: 20, ...given, version: 1 });
+  },
 });
 const dryRunRule = defineTool({
   // Changes nothing but spends the model's daily budget, so it is journalled (not readOnly).
@@ -1032,6 +1067,31 @@ const disconnectGmail = defineTool({
   async call(a, ctx) { const account = parseAccount(a.accountId); if (account.provider !== "gmail") throw new ApiError(400, "Only a Gmail account is disconnected; remove a Cloudflare address with remove_address", null); return post(ctx, `${gmail(account.gmailId)}/disconnect`); },
 });
 
+const gmailConnectLink = defineTool({
+  name: "gmail_connect_link", title: "Link to connect Gmail", level: "admin", readOnly: true,
+  description: "The address a person opens to connect a Gmail account to this server: in the browser or app where they use Fabric Inbox, they choose the Google account and allow access, and it then appears in list_accounts. Connecting is the person's consent on Google's page; an agent cannot connect an account itself.",
+  input: {},
+  routes: ["GET /api/accounts"],
+  async call(_a, ctx) {
+    const data = (await get(ctx, "/api/accounts")) as { configuration?: string; connectUrl?: string };
+    if (data.configuration !== "configured" || !data.connectUrl)
+      throw new ApiError(503, "Gmail is not set up on this server (Google client, encryption key and the app's public address); see docs/desktop-mail/setup.md", null);
+    return { url: data.connectUrl, next: "Give this link to the person you work for. After they allow access, call list_accounts to see the account." };
+  },
+});
+
+const listAgentKeys = defineTool({
+  name: "list_agent_keys", title: "List agent keys", level: "admin", readOnly: true,
+  description: "The agent keys of this server, without secrets: each key's name, level, how it sends and its daily limit, the mailboxes it is limited to, when it was made and when it expires, and the address agents connect to. Keys are made and revoked by a person in Settings → Agent access.",
+  input: {},
+  routes: ["GET /api/agent-keys"],
+  async call(_a, ctx) {
+    const data = (await get(ctx, "/api/agent-keys")) as { keys?: Record<string, unknown>[]; mcpUrl?: unknown };
+    return { keys: (data.keys ?? []).map((k) => ({ id: k.id, name: k.name, level: k.level, send: k.send, dailySendLimit: k.dailySendLimit,
+      accounts: k.accounts ?? null, createdAt: k.createdAt, expiresAt: k.expiresAt ?? null })), mcpUrl: data.mcpUrl };
+  },
+});
+
 const agentActivity = defineTool({
   name: "list_agent_activity", title: "What agents changed", level: "admin", readOnly: true,
   description: "The journal of every change made through this protocol, newest first: which key, which tool, on what, and whether it was done, refused or waiting for confirmation.",
@@ -1049,18 +1109,17 @@ export const TOOLS: readonly ToolDef[] = [
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,
-  disconnectGmail, agentActivity,
+  disconnectGmail, gmailConnectLink, listAgentKeys, agentActivity,
 ];
 
 /**
  * Routes no tool calls, each with why (AP-5). Anything else the Worker serves must be behind a tool.
  */
 export const NOT_TOOLS: Readonly<Record<string, string>> = {
-  "GET /api/accounts/gmail/connect": "Connecting Gmail is a person's consent in a browser (Google's OAuth page and a cookie)",
+  "GET /api/accounts/gmail/connect": "Connecting Gmail is a person's consent in a browser (Google's OAuth page and a cookie); gmail_connect_link gives the person this address",
   "POST /api/accounts/gmail/connect": "Connecting Gmail is a person's consent in a browser (Google's OAuth page and a cookie)",
   "GET /api/accounts/gmail/callback": "Google's OAuth redirect back to the browser",
-  "GET /api/agent-keys": "Agent keys are issued and revoked by a person in the app; an agent cannot mint keys",
-  "POST /api/agent-keys": "Agent keys are issued and revoked by a person in the app; an agent cannot mint keys",
-  "DELETE /api/agent-keys/:id": "Agent keys are issued and revoked by a person in the app; an agent cannot mint keys",
-  "POST /api/cloudflare/accounts": "A Cloudflare token is a secret: a person pastes it in the app, so it never passes through an agent's transcript",
+  "POST /api/agent-keys": "Agent keys are issued by a person in the app (its answer carries the key's secret); an agent cannot mint keys. list_agent_keys reads them",
+  "DELETE /api/agent-keys/:id": "Agent keys are revoked by a person in the app (Settings → Agent access); list_agent_keys reads them",
+  "POST /api/cloudflare/accounts": "A Cloudflare token is a secret: a person pastes it in Settings → Accounts, so it never passes through an agent's transcript",
 };

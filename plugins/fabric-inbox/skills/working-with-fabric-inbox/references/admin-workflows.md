@@ -20,8 +20,9 @@ works; the live tool schemas have every input.
 ## Addresses
 
 - **Create:** `list_domains` (the domain must be served) → `create_address` with `localPart`,
-  `domain`, optionally `name`, `agent`, `forwardTo` (`createRoute` defaults to true: Cloudflare
-  gets the rule) → `check_address_routing` → optionally `send_test_message`.
+  `domain`, optionally `name`, `agent`, `forwardTo` (`createRoute` defaults to `"auto"`: the rule is
+  made when the server has a routing token; read the answer's `warning` when it was not) →
+  `check_address_routing` → optionally `send_test_message`.
 - **Change:** `update_address` — only the fields you pass change: `fromName`, `signature`,
   `assistantPrompt`, `agent` (`"off"` or `{ agentId }`), `forwardTo` (`null` stops forwarding).
 - **Remove:** `remove_address` is two-step and deletes the address's mail for good. Its summary
@@ -79,19 +80,22 @@ two-step and permanent for Cloudflare mailboxes; Gmail's Spam is not touched.
 
 ## Categories and projects
 
-`list_categories` → `save_project` (group domains and addresses) → `save_category` with a `scope`
+`list_categories` → `save_project` (group domains and addresses; with `projectId` only the fields
+you give change) → `save_category` with a `scope`
 and either `conditions` (rules, no model) or a `description` (screened by the model, backfilled in
 the background). `delete_category` / `delete_project` are two-step.
 
 ## Knowledge
 
-`save_knowledge_collection` → `put_knowledge_documents` (up to 100 per call, updated by
+`save_knowledge_collection` (`source: { kind: "fabric", project, scope? }` makes one Fabric keeps in
+step; a collection's source is chosen when it is made) → `put_knowledge_documents` (up to 100 per call, updated by
 `sourceUri`; `prune: true` deletes the rest and is two-step) → grant it with `save_agent`
 (`collections`). `search_knowledge` shows what an agent would be given.
 
 ## Rules
 
-`list_rules` for the account → `save_rule` (same `id` replaces; raise `version`; `mode: approval`
+`list_rules` for the account → `save_rule` (same `id` changes only the fields you give; a new rule
+needs `name`, `conditions`, `action` and starts off; the server numbers versions; `mode: approval`
 waits for `approve_rule_run`) → `dry_run_rule` on a real message before enabling. Runs waiting for
 approval appear in `list_rules`; `dismiss_rule_run` cancels one.
 
@@ -99,6 +103,13 @@ approval appear in `list_rules`; `dismiss_rule_run` cancels one.
 
 `export_setup` gives the setup (no secrets); with `fromCloudflare: true` it proposes one from the
 account's Email Routing rules. `apply_setup` applies one — two-step, never deletes.
+
+## What a person does
+
+Connecting a Gmail account, issuing or revoking an agent key, and pasting a Cloudflare token are
+the person's own acts. `gmail_connect_link` gives the address they open to connect Gmail;
+`list_agent_keys` lists the keys (no secrets); keys are made in Settings → Agent access and tokens
+pasted in Settings → Accounts.
 
 ## Checking your own work
 

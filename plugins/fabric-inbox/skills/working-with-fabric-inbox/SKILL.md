@@ -118,7 +118,7 @@ MX is two-step).
 | Symptom | Do |
 |---|---|
 | `list_accounts` shows `stuck` on an address | mail reached the inbox but not its rules or agent; `retry_incoming` (admin) or tell the owner |
-| a Gmail account has `error` / `reconnect_required` | only the owner can reconnect it in the app |
+| a Gmail account has `error` / `reconnect_required` | only the owner can reconnect it; an admin key can hand them the address from `gmail_connect_link` |
 | "The Cloudflare token is not allowed to …" | the owner adds the named permission to the server's token |
 | a tool times out | retry once with the same arguments (and the same `idempotencyKey`); then report |
 

@@ -123,12 +123,13 @@ agentsRouter.get("/api/agent-runs", async (c) => {
 
 const LOCAL_PART = /^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$/;
 const Assignment = z.union([z.literal("off"), z.object({ id: z.string().min(1).max(100) })]);
-const CreateAddress = z.object({
+export const CreateAddress = z.object({
   localPart: z.string().trim().toLowerCase().regex(LOCAL_PART, "Use letters, digits, dots, dashes or plus"),
   domain: z.string().trim().toLowerCase().min(3).max(253),
   name: z.string().trim().max(80).optional(),
   agent: Assignment.optional(),
-  createRoute: z.boolean().default(false),
+  /** "auto" makes the rule when the server can (it has a routing token); a zone the token cannot see gets a warning. */
+  createRoute: z.union([z.boolean(), z.literal("auto")]).default(false),
   /** Keep forwarding a copy of each message here; must be a verified Email Routing destination. */
   forwardTo: z.string().trim().toLowerCase().email().max(90).optional(),
 }).strict();

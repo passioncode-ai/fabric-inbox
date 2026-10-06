@@ -172,3 +172,21 @@ test("the Gmail inbox route moves a message to the inbox (agent audit 4)", async
   assert.equal(response.status, 200);
   assert.deepEqual(args, ["a", "m1"]);
 });
+
+test("the account list names where a person connects Gmail, only when Gmail is set up (parity gap 9)", async () => {
+  const env = { ...config, GMAIL_ACCOUNTS: { getByName: () => ({ listAccounts: async () => ({ configuration: "configured", accounts: [] }) }) } };
+  const listed = (await (await accountsRouter.request(origin + "/api/accounts", {}, env as never)).json()) as { connectUrl?: string };
+  assert.equal(listed.connectUrl, "https://mail.example.invalid/api/accounts/gmail/connect");
+  const unset = { GMAIL_ACCOUNTS: { getByName: () => ({ listAccounts: async () => ({ configuration: "not_configured", accounts: [] }) }) } };
+  const bare = (await (await accountsRouter.request(origin + "/api/accounts", {}, unset as never)).json()) as { connectUrl?: string };
+  assert.equal(bare.connectUrl, undefined);
+});
+
+test("the Gmail headers route returns every header of one message (parity gap 7)", async () => {
+  let args: unknown[] = [];
+  const env = { ...config, GMAIL_ACCOUNTS: { getByName: () => ({ getHeaders: async (...a: unknown[]) => { args = a; return { headers: [{ key: "Received", value: "x" }] }; } }) } };
+  const response = await accountsRouter.request(origin + "/api/accounts/a/messages/m1/headers", {}, env as never);
+  assert.equal(response.status, 200);
+  assert.deepEqual(args, ["a", "m1"]);
+  assert.deepEqual(await response.json(), { headers: [{ key: "Received", value: "x" }] });
+});

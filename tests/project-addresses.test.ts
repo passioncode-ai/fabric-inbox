@@ -135,6 +135,31 @@ test("without a routing token the status is unknown and creating a rule is refus
   assert.equal(h.objects.has(mailboxKey("support@project.invalid")), false, "a failed rule leaves no half-configured address");
 });
 
+test("createRoute auto makes the rule when the server has a routing token, and says so when it has none (parity: create_address)", async () => {
+  const without = environment();
+  const made = await without.call("POST", "/api/project-addresses", { localPart: "support", domain: "project.invalid", createRoute: "auto" });
+  assert.equal(made.status, 201, JSON.stringify(made.body));
+  assert.equal(made.body.routing, null);
+  assert.match(made.body.warning, /no Cloudflare token for Email Routing, so no rule was made/);
+  assert.equal(without.objects.has(mailboxKey("support@project.invalid")), true);
+
+  const original = globalThis.fetch;
+  try {
+    const withToken = environment({ token: true });
+    const cf = cloudflare({});
+    globalThis.fetch = cf.fetcher;
+    const routed = await withToken.call("POST", "/api/project-addresses", { localPart: "support", domain: "project.invalid", createRoute: "auto" });
+    assert.equal(routed.status, 201);
+    assert.equal(routed.body.routing.state, "verified");
+    assert.ok(cf.calls.some((c) => c.method === "POST" && c.path === "/zones/zone1/email/routing/rules"), "the rule was made");
+    // A served domain whose zone this token cannot see still gets its address, with a warning.
+    globalThis.fetch = cloudflare({ zone: false }).fetcher;
+    const invisible = await withToken.call("POST", "/api/project-addresses", { localPart: "sales", domain: "project.invalid", createRoute: "auto" });
+    assert.equal(invisible.status, 201, JSON.stringify(invisible.body));
+    assert.match(invisible.body.warning, /no routing rule was made/);
+  } finally { globalThis.fetch = original; }
+});
+
 test("a rule refused by Cloudflare leaves no mailbox; an accepted one creates both", async () => {
   const original = globalThis.fetch;
   try {
