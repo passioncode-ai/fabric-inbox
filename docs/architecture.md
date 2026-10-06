@@ -179,8 +179,18 @@ tick a few seconds per account; until an account is done its reads use the old f
 accounts in scope (every one, or the ones named; none for Cloudflare mail, which arrives by push)
 within about 20 s shared fairly, without moving the alarm, and answers per account `synced` (with
 `importing` percent while an import runs), `backoff` (with `retryAt`), `reconnect`, `failed` (with
-`error`) or `not_reached`. The inbox's "Check for new mail" button calls it, then reads the list and
-the categories again and shows "Updated just now" or which accounts were not read.
+`error`) or `not_reached`. Refresh — on the left of the toolbar, under the list's title, also ⌘⇧N
+(Ctrl+Shift+N; ⌘R stays the Mac menu's Retry connection) — calls it, then reads the list and the
+categories again.
+
+**The status beside Refresh** (`app/lib/sync-status.ts (syncStatus)`, `app/components/inbox/SyncStatus.tsx`)
+is the server's last successful read of each Gmail, IMAP and Outlook account in view (`lastSyncAt`;
+the headline is the oldest of them), "Live" for Cloudflare addresses (they receive by push),
+"Updating…" while Refresh or a read of the list runs, an import's percent, a wait the provider asked
+for (`retryAt`, now in the feed's accounts), and an error that names the account and its fix (also
+from the last Refresh's per-account outcomes). Its relative time ticks every 15 s only while the
+page is visible (`app/hooks/useVisibleClock.ts`), in its own component, so the list never re-renders
+for it.
 
 **Freshness in the app** (`app/routes/unified-inbox.tsx`, `app/lib/mail-refresh.ts`). The list
 polls every 60 s while the window is active (`pollInterval(useWindowActive())`); after Load older
@@ -189,6 +199,13 @@ window, or the Mac waking (`powerMonitor` `resume` → `fabric:resumed` on the m
 bridge), reads the list at once, at most every 10 s. Categories are read with each read of the
 list. A count the server could not read comes back `countsStale` and is drawn dimmed. Archive,
 trash, spam, star and read show at once in every cached list and roll back if the server refuses.
+**Keyboard** (`app/lib/mail-keys.ts`, `app/components/inbox/triage-actions.ts`): Delete or Backspace
+archives and marks read; ⌘⌫ (Ctrl+Backspace) discards; both act on every message chosen together
+(Shift+↓/↑, ⌘/Ctrl-click, Shift-click), move the rows out at once, open the next message and offer
+Undo (⌘Z) for 10 s, which moves each back and makes it unread again if it was. ↓/J and ↑/K move; Esc
+clears; ? shows the help. No key acts while the person types in a field or a dialog is open, and no
+undefined combination does anything. The words of these parts live in tables per component
+(`TRIAGE_TEXT`, `SYNC_TEXT`, `SHORTCUT_TEXT`, `DISCARD_SECTION_TEXT`) for localization.
 Every API answer carries `X-Fabric-Build` (one id per build, `shared/build.ts`); a page with
 another id offers "Reload to update", and a page that cannot load its own code after an update
 reloads once (`app/lib/build-version.ts`).
@@ -260,6 +277,25 @@ A stranger's message waits in the agent queue for its spam check (`AgentRegistry
 answer, so spam never gets a draft and a model that never answers delays an answer without
 dropping it. Agents skip a message that is in Spam or Trash by the time its run starts.
 
+## Discarded (0.12, WS8)
+
+Mail thrown away on purpose (⌘⌫, `discard_messages`), kept apart from Trash and Spam so a mistake can
+come back, and learned from (operator decision 2026-10-06). Discarded counts as deleted: out of the
+inbox, its counts and categories; kept 30 days.
+
+| Piece | Where | What it guarantees |
+|---|---|---|
+| Rules and why | `shared/mail/discard.ts` (pure), R2 `config/discard.json` (`workers/discard/store.ts`, written conditionally on its etag) | each discard records the message's mailing list (List-Id) or newsletter mark (List-Unsubscribe), its sender, the sender's domain only for bulk senders and never a shared personal domain (gmail.com, icloud.com…), the category it was in, and a model's one-line guess when the server has Workers AI (`explainDiscard`, after the answer, 8 s, optional); a rule is keyed on the List-Id, else the sender's address, learned at the first discard and counted after; a sender the mailbox wrote to, one on the workspace's own domains, or one on Always allow is not learned (a list is); Undo (`unlearn`) takes a discard back; at most 2000 rules, the least recently used dropped |
+| Cloudflare | `MailboxDO` (migration `17_discarded`: folder `discarded`, `emails.discard_reason`, `emails.discarded_at`); `discardMessages`, `restoreDiscarded`, `purgeDiscarded` on the alarm | read on discard; a second discard keeps its date; a folder the person had named Discarded is renamed "Discarded (your folder)" and keeps its mail |
+| Gmail | `gmail-provider.ts` (`discardLabel`), `gmail-client.ts` (`labelAliases`) | the account's own label "Discarded" (found by name or made, its id kept under `label:<acc>:discarded`, made again once if deleted in Gmail); INBOX, UNREAD and SPAM removed; every message read through the client carries it as `DISCARDED` in the cache |
+| IMAP | `imap/provider.ts` (`makeDiscarded`), `imap/client.ts` (`create`) | a folder named Discarded (or Выброшенные) is used, else created at the top level; it joins the synced folders (role `discarded`, ids `x-…`); `\Seen` set before the move; a server that refuses CREATE answers `folder_create_refused` — the person makes the folder and tries again |
+| Outlook | `outlook/provider.ts` (`discardedFolder`), `outlook/sync.ts` (`findDiscarded`) | a top-level folder found by display name or made (`POST /me/mailFolders`), read (`isRead`), then moved; found at connect and daily like the well-known folders |
+| The cache | `gmail-cache.ts` (`DISCARDED_LABEL`, `inFolder`) | `DISCARDED` is in no other view; `discarded` is a feed folder with its own index; counters exclude it; `discarded:<acc>:<id>` keeps why and since when |
+| Arrival | `workers/index.ts (discardVerdict)` after `spamVerdict`; `accounts-do.ts (arrivalFilter)` in `AccountService.drainEvents` | mail matching a rule goes to Discarded before any rule, agent or category, with "Discarded automatically: you discarded N messages from …"; never mail from someone the account wrote to (Cloudflare: its Sent; remote: the cached Sent index, newest 5,000), a reply in a conversation it took part in, the workspace's own domains, or Always allow / Never spam senders; any failure delivers it as before; a Cloudflare copy is not forwarded |
+| Retention | `MailboxDO.purgeDiscarded`; `AccountService.purgeDiscarded` on the accounts alarm (25 a tick) | Cloudflare: deleted with attachments 30 days after `discarded_at`; Gmail, IMAP, Outlook: moved to the account's Trash, which the provider empties |
+| Routes and tools | `workers/routes/discard.ts`; tools `discard_messages`, `restore_discarded`, `list_discard_rules`, `remove_discard_rule`, `update_discard_allow_list`, `list_messages` folder `discarded` | the shared routes are outside a mailbox-limited key's reach (they teach the whole workspace) |
+| Screens | the Discarded folder in the unified feed; Settings → Discard rules (`app/components/settings/sections/DiscardSection.tsx`, SCR-16) | each row says why it is there; Not discarded names the rule to stop |
+
 ## Delivery guarantees
 
 | Path | Guarantee | Where |
@@ -270,7 +306,7 @@ dropping it. Agents skip a message that is in Spam or Trash by the time its run 
 | Agents | one run per message; a message whose run was cut off waits in the queue until that run is stale; one message delivered to several agent addresses is answered once per workspace (B-22) | `workers/agents/registry.ts`, `workers/agents/dedupe.ts` |
 | Gmail events | each event its own backoff, `dead:event:` after 10 | `workers/providers/account-service.ts (drainEvents)` |
 | Outbox | an unknown outcome is never retried | `workers/actions/outbox*.ts` |
-| Bounded stores | Spam 30 days after it entered Spam; AutomationDO prunes daily | `MailboxDO.purgeSpam`, `AutomationDO.prune` |
+| Bounded stores | Spam 30 days after it entered Spam; Discarded 30 days after it was discarded (remote accounts: to their Trash); AutomationDO prunes daily | `MailboxDO.purgeSpam`, `MailboxDO.purgeDiscarded`, `AccountService.purgeDiscarded`, `AutomationDO.prune` |
 
 ## Addresses: one way to create and remove
 
@@ -413,6 +449,9 @@ flowchart LR
 | Knowledge collections, documents, chunks, FTS5 index | `KnowledgeDO` SQLite (`workspace`), migration `fabric-v3` |
 | Projects, categories, verdicts, category queue, model budget, backfills, spam checks and their budget | `CategoriesDO` SQLite (`workspace`), migration `fabric-v4` |
 | Spam lists (blocked and allowed senders and domains) | R2 `config/spam.json` |
+| Discard rules (list or sender, why, counts) and the Always allow list | R2 `config/discard.json` |
+| Why a message is in Discarded, and since when | `MailboxDO` `emails.discard_reason`, `emails.discarded_at`; `GmailAccountsDO` `discarded:<acc>:<id>` |
+| A Gmail account's Discarded label id | `GmailAccountsDO` `label:<acc>:discarded` |
 | Why a message is in Spam, and since when | `MailboxDO` `emails.spam_reason`, `emails.spam_at` |
 | A body too large for a row | R2 `bodies/<id>.html` (`emails.body_key`) |
 | Addresses hidden from the sidebar and All inboxes | R2 `config/hidden-accounts.json` |
@@ -449,6 +488,7 @@ read with a default where it is missing, never assumed present.
 | `workers/agents/` | address agents: definition, registry, prefilter, runner, one answer per message (dedupe), policy, model |
 | `workers/categories/` | categories: definition and matching, the classifier, `CategoriesDO` (also the spam model) |
 | `workers/spam/`, `shared/mail/spam.ts` | spam lists in R2; the verdict on arrival |
+| `workers/discard/`, `shared/mail/discard.ts`, `workers/routes/discard.ts` | Discarded: rules in R2, why, matching and safety on arrival, the routes |
 | `workers/knowledge/` | knowledge store (`KnowledgeDO`) and pure text work (chunking, FTS query quoting) |
 | `workers/automation/` | rules engine, policy, MCP client |
 | `workers/providers/` | the provider interface, credentials, account service, `GmailAccountsDO`, scheduler, cache; Gmail OAuth, client, sync loop and provider |

@@ -81,7 +81,7 @@ Locations name the source function while the integration branch is being formatt
 | action.inbox.compose | Compose | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-006 | proposed |
 | action.inbox.search | Search | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-005 | proposed |
 | action.inbox.clear_search | Clear search | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-005 | proposed |
-| action.inbox.refresh | Check for new mail | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-004 | proposed |
+| action.inbox.refresh | Check for new mail | app/lib/sync-status.ts | SCN-070 | proposed |
 | label.inbox.cached_search | Search cached mail | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-005 | proposed |
 | state.inbox.partial | inboxes are unavailable; the rest of your mail is shown. | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-004 | proposed |
 | navigation.inbox.categories | CATEGORIES | app/components/inbox/CategorySidebar.tsx | SCN-036 | proposed |
@@ -364,3 +364,26 @@ One screen with a section list, a master list and a panel (SCR-02). Destructive 
 | action.settings.connect_account | Connect an account | app/components/settings/sections/AccountsSection.tsx | SCN-002 | proposed |
 | action.desktop.settings | Settings… | desktop/main.cjs | SCN-012 | proposed |
 | action.desktop.server_address | Server address… | desktop/main.cjs | SCN-001 | proposed |
+| navigation.inbox.discarded | Discarded | app/components/inbox/triage-text.ts | SCN-073 | proposed |
+| state.discarded.empty_title | Nothing discarded | app/components/inbox/triage-text.ts | SCN-072 | proposed |
+| state.discarded.banner | Discarded mail is deleted after 30 days (in Gmail, IMAP and Outlook accounts it moves to their Trash). Nothing here reaches an agent, a rule or a category. | app/components/inbox/triage-text.ts | SCN-073 | proposed |
+| label.inbox.discard_reason | Why discarded: | app/components/inbox/triage-text.ts | SCN-073 | proposed |
+| state.discarded.auto_reason | Discarded automatically: you discarded | shared/mail/discard.ts | SCN-073 | proposed |
+| action.message.discard | Discard message | app/components/inbox/triage-text.ts | SCN-072 | proposed |
+| action.message.not_discarded | Not discarded | app/components/inbox/triage-text.ts | SCN-074 | proposed |
+| action.discard.stop | Stop discarding mail like this | app/components/inbox/triage-text.ts | SCN-074 | proposed |
+| state.discard.learned | will go to Discarded. | app/components/inbox/triage-text.ts | SCN-072 | proposed |
+| action.discard.dont | Don't | app/components/inbox/triage-text.ts | SCN-072 | proposed |
+| state.toast.archived | Archived | app/components/inbox/triage-text.ts | SCN-071 | proposed |
+| state.toast.discarded | Discarded | app/components/inbox/triage-text.ts | SCN-071 | proposed |
+| action.toast.undo | Undo | app/components/inbox/triage-text.ts | SCN-071 | proposed |
+| state.toast.undone | Undone. | app/components/inbox/triage-text.ts | SCN-071 | proposed |
+| state.selection.count | messages selected | app/components/inbox/triage-text.ts | SCN-071 | proposed |
+| navigation.shortcuts | Keyboard shortcuts | app/lib/mail-keys.ts | SCN-071 | proposed |
+| state.sync.updated | Updated | app/lib/sync-status.ts | SCN-070 | proposed |
+| state.sync.live | Live | app/lib/sync-status.ts | SCN-070 | proposed |
+| state.sync.updating | Updating… | app/lib/sync-status.ts | SCN-070 | proposed |
+| state.sync.failed | needs to be connected again | app/lib/sync-status.ts | SCN-070 | proposed |
+| navigation.settings.discard | Discard rules | app/components/settings/paths.ts | SCN-075 | proposed |
+| label.discard.always_allow | Always allow | app/components/settings/sections/DiscardSection.tsx | SCN-075 | proposed |
+| action.discard.remove_rule | Remove rule | app/components/settings/sections/DiscardSection.tsx | SCN-075 | proposed |

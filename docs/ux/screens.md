@@ -21,6 +21,7 @@
 | SCR-13 | Settings → Categories | FLW-02 | deferred | built | app/components/settings/sections/CategoriesSection.tsx, workers/categories/store.ts |
 | SCR-14 | Settings → Spam rules | FLW-02 | deferred | built | app/components/settings/sections/SpamSection.tsx, workers/routes/spam.ts |
 | SCR-15 | Settings → Agent access | FLW-07 | deferred | built | app/components/settings/sections/AgentAccessSection.tsx, workers/routes/agent-keys.ts |
+| SCR-16 | Settings → Discard rules | FLW-02 | deferred | built | app/components/settings/sections/DiscardSection.tsx, workers/routes/discard.ts |
 
 ## Design system
 - **Style pack:** canonical Fabric tokens (Kumo and Tailwind retained); see [brand provenance](../desktop-mail/brand-source.json).
@@ -85,7 +86,7 @@ Records retain designed status because their complete target state sets have not
 ### SCR-03: Inbox and search
 - **Used by:** FLW-01, FLW-02, FLW-07
 - **Purpose:** Find source-labeled conversations.
-- **Elements:** Compose (primary); Drafts list with sender, subject and saved/uncertain status; All inboxes / domain / one address / every Gmail account scope; CATEGORIES in the sidebar with counts and +; a category's view (eyebrow CATEGORY, its description, Change, sorting progress, Why: on each row); search; Focus / Newest order (a described category reads newest first); Unread only; group chips with counts (All stays while a group is chosen); Important section; group headings the operator opens (kept for the session); a Spam folder (newest first, no triage marks, Why in Spam, a banner with Spam rules and Delete all now…); row reason tag, category chips, "+N" for a message in several inboxes; message list; unread/archive/delete (the next message is selected); account health (collapsed "N inboxes unavailable"); a folder select on a phone; addresses With mail / All with Hide on each, "Hide them…" for those without mail and a Hidden list; a banner when mail did not reach its rules, agents or categories, with Retry; one Settings entry in the sidebar (Add address and Connect Gmail open their sections; choosing a domain selects it and folds no other group).
+- **Elements:** Compose (primary); Drafts list with sender, subject and saved/uncertain status; All inboxes / domain / one address / every Gmail account scope; CATEGORIES in the sidebar with counts and +; a category's view (eyebrow CATEGORY, its description, Change, sorting progress, Why: on each row); search; Focus / Newest order (a described category reads newest first); Unread only; group chips with counts (All stays while a group is chosen); Important section; group headings the operator opens (kept for the session); a Spam folder (newest first, no triage marks, Why in Spam, a banner with Spam rules and Delete all now…); row reason tag, category chips, "+N" for a message in several inboxes; message list; unread/archive/delete (the next message is selected); account health (collapsed "N inboxes unavailable"); a folder select on a phone; addresses With mail / All with Hide on each, "Hide them…" for those without mail and a Hidden list; a banner when mail did not reach its rules, agents or categories, with Retry; one Settings entry in the sidebar (Add address and Connect Gmail open their sections; choosing a domain selects it and folds no other group); under the title, Refresh and its status (Updated 3 min ago, Live, Updating…, which account failed) with each account's details; a Discarded folder (Why discarded on each row, a banner with Discard rules) and Not discarded with Stop discarding mail like this; the keyboard (Delete/Backspace archive and mark read, ⌘⌫ discard, ⌘Z undo, ↓/J ↑/K, Shift and ⌘/Ctrl-click to choose several with "N messages selected", Esc, ? for Keyboard shortcuts, ⌘⇧N refresh); the Undo toast with the once-only "Future mail from X will go to Discarded · Don't"; Keyboard shortcuts in the sidebar.
 - **States:**
 
 | State | Trigger | Figma frame | Behavior |
@@ -95,8 +96,8 @@ Records retain designed status because their complete target state sets have not
 | loading | Pending operation | deferred | Retain current list and mark refresh or initial loading. |
 | error | Operation cannot complete | deferred | Partial account failure with retry; unaffected accounts remain readable. |
 
-- **Coverage:** app/routes/unified-inbox.tsx (`UnifiedInbox`, `scope`, list query); app/components/inbox/TriagedList.tsx; workers/routes/inbox.ts
-- **Scenarios:** SCN-004, SCN-005, SCN-011, SCN-019, SCN-026, SCN-027, SCN-036, SCN-037, SCN-038, SCN-039, SCN-042
+- **Coverage:** app/routes/unified-inbox.tsx (`UnifiedInbox`, `scope`, list query); app/components/inbox/TriagedList.tsx; app/components/inbox/SyncStatus.tsx; app/components/inbox/UndoToast.tsx; app/components/inbox/ShortcutsDialog.tsx; workers/routes/inbox.ts
+- **Scenarios:** SCN-004, SCN-005, SCN-011, SCN-019, SCN-026, SCN-027, SCN-036, SCN-037, SCN-038, SCN-039, SCN-042, SCN-070, SCN-071, SCN-072, SCN-073, SCN-074
 - **Resources:** [Flow specification](flows.md), [shared interaction requirements](scenarios.md); provider capability and action status contracts in [architecture](../desktop-mail/architecture.md).
 - **Status:** built
 - **Today:** The workbench combines all-account cached mail, keeps accounts visible and filters one account in place. Source identity is shown per row. Search/folder/account scope is URL-addressable; loading, no matches and partial provider failure have distinct states. Synthetic all-account and one-account views were observed (RE-009); live completeness and full threads remain open.
@@ -297,3 +298,23 @@ Records retain designed status because their complete target state sets have not
 | empty | No relevant data | deferred | No agent has a key yet; no agent has changed anything yet. |
 | loading | Pending operation | deferred | Loading agent keys; Making the key… with the button disabled. |
 | error | Operation cannot complete | deferred | A failed load offers Retry; a refused key names the missing permission; a partial revoke names where to finish it. |
+
+### SCR-16: Settings → Discard rules
+- **Part of:** SCR-02 Settings (Discard rules section); the list and panel follow SCR-02.
+- **Used by:** FLW-02
+- **Purpose:** Show what each discard taught, and undo any of it.
+- **Elements:** How Discarded works (what is learned, what is never discarded, 30 days, where Discarded lives per provider); Always allow (Add, Remove, Find); one row per rule (Newsletter or Sender, discarded by you · on arrival); a rule's panel: Why (list, newsletter, sender and bulk domain, category, the model's guess), What it did (counts, learned, last discard, last applied), Remove rule, Always allow <sender>; Open Discarded.
+- **States:**
+
+| State | Trigger | Figma frame | Behavior |
+|---|---|---|---|
+| success | Available result | deferred | Rules and the list shown; a change says what was done. |
+| empty | No relevant data | deferred | No rules yet; Always allow Empty. |
+| loading | Pending operation | deferred | Loading discard rules; buttons disabled while a change is saved. |
+| error | Operation cannot complete | deferred | A failed load offers Retry; a refused entry names why; a removed rule says it is gone. |
+
+- **Coverage:** app/components/settings/sections/DiscardSection.tsx (DiscardSection, RulePanel, AllowedPanel); workers/routes/discard.ts; workers/discard/store.ts
+- **Scenarios:** SCN-075
+- **Resources:** [Flow specification](flows.md), [shared interaction requirements](scenarios.md).
+- **Status:** built
+- **Today:** Built in 0.12 (WS8); seen in the local Worker on 2026-10-06.

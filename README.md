@@ -81,7 +81,16 @@ and [your deployment](#configure-your-deployment).
 - **Settings.** One screen (the gear in the sidebar, or **Settings…** ⌘, in the Mac app) with a
   section list, a searchable list and the chosen item beside it; choosing an item never moves the
   page. Sections: Addresses, Domains, Accounts, Forwarding destinations, Categories, Spam rules,
-  Agents, Knowledge, Agent access and App. Every older page address redirects into its section.
+  Discard rules, Agents, Knowledge, Agent access and App. Every older page address redirects into its section.
+- **Keyboard triage.** Delete or Backspace archives and marks read; ⌘⌫ (Ctrl+Backspace) discards;
+  ⌘Z undoes either; ↓/J and ↑/K move, Shift and ⌘-click choose several; ? lists every key.
+- **Discarded.** Mail thrown away on purpose waits 30 days in Discarded (Gmail: a label of that name;
+  IMAP and Outlook: a folder of that name), apart from Trash and Spam. Each discard teaches a rule —
+  the newsletter, else the sender — and later mail like it goes straight there, never from someone
+  you wrote to or a conversation you are in. Not discarded brings one back; Settings → Discard rules
+  shows why each rule was learned.
+- **Freshness in view.** Refresh sits under the list's title with the server's last read of each
+  account in view, Live for Cloudflare addresses, and which account failed with its fix (⌘⇧N).
 - **Domains and addresses.** Every domain of your Cloudflare account in Settings → Domains. **Receive
   mail here** turns on Email Routing (asking before it replaces another provider's MX), brings
   in the addresses that already exist while each keeps forwarding a copy where it went before,

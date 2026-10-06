@@ -79,7 +79,7 @@ interface Row extends ListEntry { title: string; meta: string; size?: number }
 const when = (at?: number) => (at ? new Date(at).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" }) : T.never);
 
 /**
- * Settings → Discard rules (SCR-15): what each discard taught — a mailing list or a sender — with why,
+ * Settings → Discard rules (SCR-16): what each discard taught — a mailing list or a sender — with why,
  * its counts and when it last applied; Remove stops it. The Always allow list keeps a sender's mail
  * out of every rule.
  */

@@ -78,6 +78,12 @@ flowchart TD
   C -->|Report spam| S
   S -->|Not spam| A
   S -->|Spam rules| R["SCR-14 always / never spam lists"]
+  A -->|Delete or Backspace| AR["archived and read; next message; toast Undo"]
+  A -->|⌘⌫ or Discard| X["SCR-03 Discarded: rule learned; toast Undo, Don't"]
+  AR -->|⌘Z| A
+  X -->|⌘Z or Not discarded| A
+  X -->|Discard rules| DR["SCR-16 rules, why, Always allow"]
+  A -->|Refresh, ⌘⇧N| A
 ```
 
 - **Screens traversed:**
