@@ -89,7 +89,8 @@ mailboxes your key names.
 **Triage.** `list_accounts` → `list_messages` (default: every inbox, newest first; `unread: true`,
 `accountId`, `domain`, `categoryId`, `query` narrow it; `cursor` pages) → `read_message` for the
 ones that matter. Report per message: who, what they want, what you suggest. Do not mark read
-unless asked (`update_messages`).
+unless asked (`update_messages`). Gmail is read on a schedule (every few minutes); when the person
+expects mail that just arrived, `refresh_inbox` first — it says per account whether it synced.
 
 **Answer.** `read_message` (or `read_thread` for a Cloudflare conversation) → write the answer →
 `reply` with `idempotencyKey`, or `save_draft` with `replyToMessageId` when drafting. `reply` goes
@@ -119,6 +120,7 @@ MX is two-step).
 |---|---|
 | `list_accounts` shows `stuck` on an address | mail reached the inbox but not its rules or agent; `retry_incoming` (admin) or tell the owner |
 | a Gmail account has `error` / `reconnect_required` | only the owner can reconnect it in the app |
+| `refresh_inbox` answers `backoff` for an account | Gmail failed a moment ago; it retries by itself at `retryAt` — say when, do not loop |
 | "The Cloudflare token is not allowed to …" | the owner adds the named permission to the server's token |
 | a tool times out | retry once with the same arguments (and the same `idempotencyKey`); then report |
 

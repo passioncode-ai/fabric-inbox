@@ -17,6 +17,10 @@ export type InboxAccount = {
   catchAll?: boolean;
   /** Journal events that did not reach rules, agents or categories. */
   stuck?: { dead: number; retrying: number; lastError: string | null };
+  /** Its counts could not be read just now; the ones shown are the last known. */
+  countsStale?: boolean;
+  /** A Gmail account's first import in percent, while it runs. */
+  importing?: number;
 };
 export type InboxMessage = {
   id: string;

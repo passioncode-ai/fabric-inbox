@@ -12,7 +12,7 @@ import {
 } from "@cloudflare/kumo";
 import { WarningIcon } from "@phosphor-icons/react";
 import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { forwardRef, useState } from "react";
+import { forwardRef, useEffect, useState } from "react";
 import {
 	isRouteErrorResponse,
 	Links,
@@ -24,6 +24,7 @@ import {
 } from "react-router";
 import MutationErrorToasts from "~/components/MutationErrorToasts";
 import { ApiError } from "~/services/api";
+import { reloadForMissingCode, UPDATE_EVENT } from "~/lib/build-version";
 import "./index.css";
 
 function makeQueryClient() {
@@ -106,6 +107,36 @@ export function HydrateFallback() {
 	);
 }
 
+/**
+ * The server was updated after this page loaded (P3-13): offer to reload, and reload once by
+ * itself when a piece of the old page's code can no longer be fetched.
+ */
+function UpdateNotice() {
+	const [available, setAvailable] = useState(false);
+	useEffect(() => {
+		const onUpdate = () => setAvailable(true);
+		const onMissingCode = (event: Event) => {
+			let storage: Storage | undefined;
+			try { storage = window.sessionStorage; } catch { storage = undefined; }
+			if (reloadForMissingCode(storage, () => window.location.reload())) event.preventDefault();
+			else setAvailable(true);
+		};
+		window.addEventListener(UPDATE_EVENT, onUpdate);
+		window.addEventListener("vite:preloadError", onMissingCode);
+		return () => {
+			window.removeEventListener(UPDATE_EVENT, onUpdate);
+			window.removeEventListener("vite:preloadError", onMissingCode);
+		};
+	}, []);
+	if (!available) return null;
+	return (
+		<div className="fi-update-notice" role="status">
+			A new version of Fabric Inbox is on the server.{" "}
+			<button type="button" className="fi-text-button" onClick={() => window.location.reload()}>Reload to update</button>
+		</div>
+	);
+}
+
 export default function App() {
 	// Use useState to ensure each SSR request gets a fresh client while the
 	// browser reuses the same singleton across navigations.
@@ -116,6 +147,7 @@ export default function App() {
 				<TooltipProvider>
 					<Toasty>
 						<MutationErrorToasts />
+						<UpdateNotice />
 						<Outlet />
 					</Toasty>
 				</TooltipProvider>

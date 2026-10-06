@@ -8,7 +8,8 @@ export interface MessageActionsProps {
   message: ActionMessage;
   folder: InboxFolder;
   busy: boolean;
-  run: (action: () => Promise<unknown>, after?: () => void) => Promise<unknown>;
+  /** Runs the action; `optimistic` is what the list may show before the server answers (P3-12). */
+  run: (action: () => Promise<unknown>, after?: () => void, optimistic?: MessageChange) => Promise<unknown>;
   onChanged: (change: MessageChange) => void;
 }
 type Request = (url: string, body: unknown, method?: string) => Promise<unknown>;
@@ -35,6 +36,11 @@ export async function changeMessage(
   await request(gmail ? path + "/trashed" : path + "/move",
     gmail ? change : { folderId: change.trashed ? "trash" : "inbox" }, "POST");
   return { id: message.id, removed: true };
+}
+
+/** What the list may show at once for an action on `message`, before the server confirms it. */
+export function expectedChange(message: ActionMessage, change: { starred: boolean } | { trashed: boolean } | { spam: boolean }): MessageChange {
+  return "starred" in change ? { id: message.id, starred: change.starred } : { id: message.id, removed: true };
 }
 
 /** Guard completion against selecting a different account/message while waiting. */
@@ -73,7 +79,7 @@ export default function MessageActions({ message, folder, busy, run, onChanged }
     // Parent run surfaces errors and refreshes provider-backed lists before completion.
     void run(async () => { result = await changeMessage(message, change); }, () => {
       if (result) onChanged(result);
-    });
+    }, expectedChange(message, change));
   }
   const inSpam = folder === "spam";
   const canReport = !inSpam && folder !== "sent" && folder !== "trash";
@@ -81,7 +87,7 @@ export default function MessageActions({ message, folder, busy, run, onChanged }
     let result: MessageChange | undefined;
     void run(async () => { result = await changeSpam(message, toSpam); }, () => {
       if (result) onChanged(result);
-    });
+    }, expectedChange(message, { spam: toSpam }));
   }
   return <>
     {inSpam && (

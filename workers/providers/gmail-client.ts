@@ -25,7 +25,22 @@ export type Fetcher = (
 export interface GmailProfile {
   emailAddress: string;
   historyId: string;
+  /** Messages in the whole mailbox, as Gmail counts them: the import's denominator. */
+  messagesTotal?: number;
 }
+/** One page of messages.list: newest first, as Gmail orders it. */
+export interface ListOptions {
+  pageToken?: string;
+  /** Only messages with all these labels (e.g. INBOX). */
+  labelIds?: string[];
+  /** A Gmail search, e.g. newer_than:30d. */
+  q?: string;
+  includeSpamTrash?: boolean;
+  maxResults?: number;
+}
+/** The headers a message imported without its body keeps: what the feed, triage and replies read. */
+export const METADATA_HEADERS = ["Subject", "From", "To", "Cc", "Reply-To", "Date", "Message-ID", "References",
+  "List-Id", "List-Unsubscribe", "Precedence", "Auto-Submitted"];
 export interface GmailPart {
   mimeType?: string;
   filename?: string;
@@ -290,21 +305,28 @@ export class GmailClient {
     } catch {
       throw new ProviderError("provider_unavailable", 503);
     }
-    const data = (await response.json()) as {
+    // Google answers an outage with an HTML page: no JSON is no reason to call it a revoked grant.
+    let data: {
       access_token?: string;
       expires_in?: number;
       refresh_token?: string;
       error?: string;
-    };
+    } = {};
+    try {
+      data = (await response.json()) as typeof data;
+    } catch {
+      /* not JSON; the status decides below */
+    }
+    // Only a revoked or expired grant needs the person to connect again. Anything else is the
+    // token service being busy or down, and the account waits and tries again (P2-9).
     if (!response.ok)
-      throw new ProviderError(
-        data.error === "invalid_grant"
-          ? "reconnect_required"
-          : response.status === 429
-            ? "rate_limited"
-            : "oauth_failed",
-        response.status === 429 ? 429 : 401,
-      );
+      throw data.error === "invalid_grant"
+        ? new ProviderError("reconnect_required", 401)
+        : response.status === 429
+          ? new ProviderError("rate_limited", 429)
+          : response.status >= 500
+            ? new ProviderError("provider_unavailable", 503)
+            : new ProviderError("oauth_failed", 401);
     if (!data.access_token || !data.expires_in)
       throw new ProviderError("oauth_failed");
     const next = {
@@ -348,10 +370,12 @@ export class GmailClient {
       await this.token(true);
       return this.request<T>(path, init, false);
     }
+    // A 401 that a freshly refreshed token did not cure is Gmail refusing this request, not the
+    // grant being gone (that is invalid_grant at the token endpoint): back off, never disconnect.
     if (!response.ok)
       throw new ProviderError(
         response.status === 401
-          ? "reconnect_required"
+          ? "provider_auth_failed"
           : response.status === 429
             ? "rate_limited"
             : response.status === 404
@@ -359,31 +383,38 @@ export class GmailClient {
                 ? "history_expired"
                 : "not_found"
               : "provider_failed",
-        response.status === 429 ? 429 : response.status === 404 ? 404 : 502,
+        response.status === 429 ? 429 : response.status === 404 ? 404 : response.status === 401 ? 401 : 502,
       );
-    return (await response.json()) as T;
+    try {
+      return (await response.json()) as T;
+    } catch {
+      throw new ProviderError("provider_failed", 502);
+    }
   }
   profile() {
     return this.request<GmailProfile>("profile");
   }
-  list(pageToken?: string) {
-    const q = new URLSearchParams({
-      maxResults: "25",
-      includeSpamTrash: "true",
-    });
-    if (pageToken) q.set("pageToken", pageToken);
+  list(options: ListOptions = {}) {
+    const q = new URLSearchParams({ maxResults: String(options.maxResults ?? 50) });
+    if (options.includeSpamTrash) q.set("includeSpamTrash", "true");
+    for (const label of options.labelIds ?? []) q.append("labelIds", label);
+    if (options.q) q.set("q", options.q);
+    if (options.pageToken) q.set("pageToken", options.pageToken);
     return this.request<{
       messages?: { id: string }[];
       nextPageToken?: string;
     }>("messages?" + q);
   }
-  message(id: string) {
+  /** A message in full, or with only METADATA_HEADERS (labels, snippet and date, no body). */
+  message(id: string, format: "full" | "metadata" = "full") {
+    const q = new URLSearchParams({ format });
+    if (format === "metadata") for (const h of METADATA_HEADERS) q.append("metadataHeaders", h);
     return this.request<GmailMessage>(
-      "messages/" + encodeURIComponent(id) + "?format=full",
+      "messages/" + encodeURIComponent(id) + "?" + q,
     );
   }
   history(startHistoryId: string, pageToken?: string) {
-    const q = new URLSearchParams({ startHistoryId, maxResults: "25" });
+    const q = new URLSearchParams({ startHistoryId, maxResults: "100" });
     if (pageToken) q.set("pageToken", pageToken);
     return this.request<{
       historyId: string;

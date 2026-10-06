@@ -3,6 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import type { Email, Folder, Mailbox } from "~/types";
+import { noteServerBuild } from "../lib/build-version";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -40,6 +41,7 @@ async function request<T>(
 			},
 		});
 
+		noteServerBuild(res.headers);
 		if (!res.ok) {
 			const body = await res.json().catch(() => ({}));
 			throw new ApiError(res.status, body as Record<string, unknown>);

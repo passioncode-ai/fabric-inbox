@@ -10,6 +10,8 @@ import {
   type AccountList,
   type Mail,
 } from "~/services/fabric";
+import { useWindowActive } from "~/hooks/useWindowActive";
+import { pollInterval } from "~/lib/window-activity";
 const field = "w-full rounded-md border border-kumo-line bg-kumo-base p-2";
 type Draft = {
   to: string;
@@ -62,6 +64,7 @@ export default function GmailInbox() {
       );
     }
   }, [draft, locked, accountId, loadedAccount]);
+  const windowActive = useWindowActive();
   const accounts = useQuery({
     queryKey: ["fabric-accounts"],
     queryFn: () => fabric<AccountList>("/api/accounts"),
@@ -73,7 +76,8 @@ export default function GmailInbox() {
       fabric<{ messages: Mail[]; nextCursor?: string }>(
         base + "/messages?" + new URLSearchParams({ cursor, q: search }),
       ),
-    refetchInterval: 30_000,
+    // Every 30 s while this window is active; never while it is hidden or in the background.
+    refetchInterval: pollInterval(windowActive, 30_000),
   });
   const message = useQuery({
     queryKey: ["gmail-message", accountId, selected],

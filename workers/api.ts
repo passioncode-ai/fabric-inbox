@@ -17,8 +17,14 @@ import { categoriesRouter } from "./routes/categories";
 import { spamRouter } from "./routes/spam";
 import { agentKeysRouter } from "./routes/agent-keys";
 import type { Env } from "./types";
+import { BUILD_HEADER, BUILD_ID } from "../shared/build";
 
 export const api = new Hono<{ Bindings: Env }>();
+// Every answer names the build that gave it, so a page older than the server can say so (P3-13).
+api.use("*", async (c, next) => {
+  await next();
+  c.header(BUILD_HEADER, BUILD_ID);
+});
 api.route("/", automationRouter);
 api.route("/", accountsRouter);
 api.route("/", inboxRouter);

@@ -135,12 +135,17 @@ export async function readInbox(params: URLSearchParams, sources: InboxSources, 
     await Promise.all(Array.from({ length: Math.min(8, counting.length) }, async () => {
       while (n < counting.length) {
         const a = counting[n++];
+        // A count that cannot be read is said to be stale, never silently left as it was (P2-11).
+        const stale = (error: unknown) => {
+          a.countsStale = true;
+          console.warn(JSON.stringify({ event: "inbox_count_failed", provider: a.provider, error: publicError(error) }));
+        };
         if (sources.counts) await sources.counts(a).then((c) => {
           a.unread = c.unread;
           if (typeof c.total === "number") a.total = c.total;
           if (c.stuck && (c.stuck.dead || c.stuck.retrying)) a.stuck = c.stuck;
-        }).catch(() => undefined);
-        else await sources.unreadCount!(a).then(count => { a.unread = count; }).catch(() => undefined);
+        }).catch(stale);
+        else await sources.unreadCount!(a).then(count => { a.unread = count; }).catch(stale);
       }
     }));
   }
@@ -204,6 +209,29 @@ inboxRouter.put("/api/inbox/hidden", async (c) => {
     return c.json({ error: (error as Error).message }, error instanceof HiddenConflict ? 409 : 503);
   }
 });
+/**
+ * Refresh (P1-5): reads Gmail now — new mail, changes and deletions — for the Gmail accounts in
+ * `accounts` (feed ids, "gmail:<id>"; every Gmail account when it is absent), within about 20 s,
+ * and says what happened to each. Cloudflare mailboxes receive by push and need no refresh. The
+ * accounts' regular sync is not moved.
+ */
+inboxRouter.post("/api/inbox/refresh", async (c) => {
+  c.header("Cache-Control", "no-store");
+  const body = (await c.req.json().catch(() => ({}))) as { accounts?: unknown } | null;
+  const raw = body?.accounts;
+  if (raw !== undefined && (!Array.isArray(raw) || raw.length > 200 || raw.some((x) => typeof x !== "string" || x.length > 512)))
+    return c.json({ error: "invalid_filter" }, 400);
+  const gmail = raw === undefined ? undefined : (raw as string[]).filter((x) => /^gmail:[A-Za-z0-9_-]{1,128}$/.test(x));
+  const refreshedAt = Date.now();
+  if (!c.env.GMAIL_ACCOUNTS || (gmail && !gmail.length)) return c.json({ accounts: [], refreshedAt });
+  try {
+    return c.json({ accounts: await c.env.GMAIL_ACCOUNTS.getByName("workspace").refresh(gmail), refreshedAt });
+  } catch (error) {
+    console.error(JSON.stringify({ event: "inbox_refresh_failed", error: (error as Error)?.message?.slice(0, 200) }));
+    return c.json({ error: "refresh_unavailable" }, 503);
+  }
+});
+
 inboxRouter.get("/api/inbox", async c => {
   c.header("Cache-Control", "no-store");
   try {

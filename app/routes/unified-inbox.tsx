@@ -55,6 +55,11 @@ import { totalUnread } from "~/components/inbox/account-groups";
 import { displayOrder, groupCounts, isTriageGroup, listDate, nextAfter, pinTriage, triageOf, type ListView } from "~/components/inbox/triage-view";
 import type { Triage, TriageGroup } from "../../shared/mail/triage";
 import type { InboxFolder } from "../../shared/mail/inbox";
+import { showFeedChange, mergeHead, refreshScope, refreshSummary, WakeRefresh, type FeedChange, type RefreshResponse } from "~/lib/mail-refresh";
+import { useWindowActive } from "~/hooks/useWindowActive";
+import { pollInterval, subscribeWindowActivity } from "~/lib/window-activity";
+/** How often the list in view is read again while the window is active. */
+const INBOX_POLL_MS = 60_000;
 const folders = [
   ["inbox", "Inbox", TrayArrowDownIcon],
   ["starred", "Starred", StarIcon],
@@ -120,6 +125,8 @@ export default function UnifiedInbox() {
     [issuesOpen, setIssuesOpen] = useState(false),
     [theme, setTheme] = useState("light"),
     [notice, setNotice] = useState(""),
+    [checking, setChecking] = useState(false),
+    [checkedAt, setCheckedAt] = useState(0),
     [busy, setBusy] = useState(false),
     [composeOpen, setComposeOpen] = useState(false),
     [draftsOpen, setDraftsOpen] = useState(false),
@@ -171,10 +178,9 @@ export default function UnifiedInbox() {
     if (rulesOpen) el?.showModal();
     else el?.close();
   }, [rulesOpen]);
-  const list = useInfiniteQuery({
-    queryKey: ["unified-inbox", accountId, domainFilter, providerFilter, categoryParam, folder, search, unreadOnly],
-    initialPageParam: "",
-    queryFn: ({ pageParam }) =>
+  const windowActive = useWindowActive();
+  const listKey = ["unified-inbox", accountId, domainFilter, providerFilter, categoryParam, folder, search, unreadOnly];
+  const readPage = (pageParam: string) =>
       fabric<InboxData>(
         "/api/inbox?" +
           new URLSearchParams({
@@ -188,17 +194,60 @@ export default function UnifiedInbox() {
             ...(categoryParam ? { category: categoryParam } : {}),
             ...(providerFilter ? { provider: providerFilter } : {}),
           }),
-      ),
+      );
+  const list = useInfiniteQuery({
+    queryKey: listKey,
+    initialPageParam: "",
+    queryFn: ({ pageParam }) => readPage(pageParam),
     getNextPageParam: (page) => (page.hasMore ? page.cursor : undefined),
-    // Refreshing re-reads every loaded page; after "Load older" that is left to the Refresh button.
-    refetchInterval: (query) => ((query.state.data?.pages.length ?? 0) > 1 ? false : 60_000),
+    // One page: it is read again every minute while the window is active. After "Load older" the
+    // first page alone is read (below) and joined to the rest, never every loaded page (P1-3).
+    refetchInterval: (query) => ((query.state.data?.pages.length ?? 0) > 1 ? false : pollInterval(windowActive, INBOX_POLL_MS)),
   });
+  const olderLoaded = (list.data?.pages.length ?? 0) > 1;
+  const head = useQuery({
+    queryKey: ["unified-inbox-head", ...listKey.slice(1)],
+    queryFn: () => readPage(""),
+    enabled: olderLoaded,
+    refetchInterval: olderLoaded ? pollInterval(windowActive, INBOX_POLL_MS) : false,
+  });
+  useEffect(() => {
+    const fresh = head.data;
+    if (!fresh || !olderLoaded) return;
+    client.setQueryData(listKey, (data: { pages: InboxData[]; pageParams: unknown[] } | undefined) => mergeHead(data, fresh));
+  }, [head.dataUpdatedAt]);
+  /** Reads what is in view again: the one page, or the first page joined to older ones. */
+  function readAgain() {
+    void (olderLoaded ? head.refetch() : list.refetch());
+  }
+  // Coming back to the window, or the Mac waking from sleep, reads the list at once instead of up
+  // to a minute later (P1-4). The desktop app signals a wake through its narrow bridge.
+  const wake = useRef(new WakeRefresh());
+  const readAgainRef = useRef(readAgain);
+  readAgainRef.current = readAgain;
+  useEffect(() => {
+    if (list.dataUpdatedAt) wake.current.read(list.dataUpdatedAt);
+  }, [list.dataUpdatedAt]);
+  useEffect(() => {
+    const stop = subscribeWindowActivity(window, document, (now) => { if (wake.current.activity(now)) readAgainRef.current(); });
+    const bridge = (window as unknown as { fabricDesktop?: { onResume?(callback: () => void): (() => void) | undefined } }).fabricDesktop;
+    const stopResume = bridge?.onResume?.(() => { if (wake.current.resume()) readAgainRef.current(); });
+    return () => { stop(); stopResume?.(); };
+  }, []);
+  // Categories and their counts are read with the list, not on a clock of their own, so the
+  // sidebar's numbers and the messages always come from the same moment (P2-11).
   const categoryList = useQuery({
     queryKey: ["categories"],
     queryFn: () => fabric<CategoryList>("/api/categories"),
-    refetchInterval: 60_000,
     retry: false,
   });
+  const listReadAt = useRef(0);
+  useEffect(() => {
+    if (!list.dataUpdatedAt || listReadAt.current === list.dataUpdatedAt) return;
+    const first = listReadAt.current === 0;
+    listReadAt.current = list.dataUpdatedAt;
+    if (!first) void categoryList.refetch();
+  }, [list.dataUpdatedAt]);
   const categories = categoryList.data?.categories ?? [];
   const activeCategory = list.data?.pages[0]?.category ?? categories.find((c) => c.id === categoryParam);
   // A described category has already chosen its mail: grouping it again would fold
@@ -266,18 +315,23 @@ export default function UnifiedInbox() {
   useEffect(() => {
     if (!selected || selected.read || !detail.data || detail.data.read || markedRead.current === selected.id) return;
     markedRead.current = selected.id;
-    const request = selected.provider === "gmail"
-      ? fabric(messagePath(selected) + "/read", { read: true })
-      : fabric(messagePath(selected), { read: true }, "PUT");
     const key = ["unified-message", selected.accountId, selected.providerMessageId];
-    request
+    // The row reads as read at once; it goes back to unread if the server refuses (P3-12).
+    let undo: (() => void) | undefined;
+    void showChange({ id: selected.id, patch: { read: true } }).then((rollback) => { undo = rollback; })
+      .then(() => selected.provider === "gmail"
+        ? fabric(messagePath(selected) + "/read", { read: true })
+        : fabric(messagePath(selected), { read: true }, "PUT"))
       .then(() => {
         // The reader's own copy says read too, so "Mark as unread" is offered at once.
         client.setQueryData(key, (d: OpenMessage | undefined) => (d ? { ...d, read: true } : d));
         setSelected((current) => (current?.id === selected.id ? { ...current, read: true } : current));
         return client.invalidateQueries({ queryKey: ["unified-inbox"] });
       })
-      .catch(() => setNotice("This message could not be marked read. It stays unread."));
+      .catch(() => {
+        undo?.();
+        setNotice("This message could not be marked read. It stays unread.");
+      });
   }, [selected, detail.data, client]);
   const owner = accounts.find((a) => a.id === selected?.accountId);
   const scopeName = categoryParam
@@ -309,15 +363,48 @@ export default function UnifiedInbox() {
   async function refresh() {
     await client.invalidateQueries({ queryKey: ["unified-inbox"] });
   }
-  async function perform(action: () => Promise<unknown>, after?: () => void) {
+  /**
+   * Refresh (P1-5): Gmail is read now for the accounts in view (Cloudflare mail arrives by push),
+   * then the list and the categories are read again. Says which accounts could not be read.
+   */
+  async function checkForMail() {
+    setChecking(true);
+    try {
+      const scope = refreshScope({ accountId, domain: domainFilter });
+      let summary = { ok: true, text: "Updated just now." };
+      if (scope !== null) {
+        try {
+          const r = await fabric<RefreshResponse>("/api/inbox/refresh", scope ? { accounts: scope } : {});
+          summary = refreshSummary(r.accounts);
+        } catch (e) {
+          summary = { ok: false, text: `Gmail could not be checked: ${(e as Error).message} The list below is what the server had.` };
+        }
+      }
+      await Promise.all([refresh(), client.invalidateQueries({ queryKey: ["categories"] })]);
+      setCheckedAt(Date.now());
+      setNotice(summary.ok && summary.text === "Updated just now." ? "" : summary.text);
+    } finally {
+      setChecking(false);
+    }
+  }
+  /**
+   * Shows `change` in every cached list (the pages and the first page read after Load older) before
+   * the server answers; the returned function puts them back as they were (P3-12).
+   */
+  function showChange(change: FeedChange) {
+    return showFeedChange(client, change);
+  }
+  async function perform(action: () => Promise<unknown>, after?: () => void, change?: FeedChange) {
     setBusy(true);
     setNotice("");
+    const undo = change ? await showChange(change) : undefined;
     try {
       await action();
+      after?.();
       await refresh();
       await client.invalidateQueries({ queryKey: ["unified-message"] });
-      after?.();
     } catch (e) {
+      undo?.();
       setNotice((e as Error).message);
     } finally {
       setBusy(false);
@@ -564,10 +651,10 @@ export default function UnifiedInbox() {
           </form>
           <button
             className="fi-icon-button"
-            title="Refresh cached mail"
-            aria-label="Refresh cached mail"
-            onClick={() => void refresh()}
-            disabled={list.isFetching}
+            title="Check for new mail"
+            aria-label="Check for new mail"
+            onClick={() => void checkForMail()}
+            disabled={checking || list.isFetching}
           >
             <ArrowClockwiseIcon size={19} />
           </button>
@@ -599,7 +686,7 @@ export default function UnifiedInbox() {
                 ))}
               </ul>
             )}
-            <button className="fi-text-button" onClick={() => void refresh()}>Retry</button>{" "}
+            <button className="fi-text-button" disabled={checking} onClick={() => void checkForMail()}>Retry</button>{" "}
             · <Link to="/accounts">Manage connections</Link>
           </div>
         )}
@@ -640,8 +727,12 @@ export default function UnifiedInbox() {
                   : folders.find((f) => f[0] === folder)?.[1]}
               </strong>
               <span>
-                {list.isFetching
+                {checking
+                  ? "Checking Gmail…"
+                  : list.isFetching
                   ? "Updating…"
+                  : checkedAt && Date.now() - checkedAt < 60_000
+                    ? "Updated just now"
                   : view === "focus"
                     ? "Important first"
                     : "Newest first"}
@@ -809,7 +900,8 @@ export default function UnifiedInbox() {
                   </button>
                   <span>{owner?.email ?? rawAccount(selected.accountId)}</span>
                   <MessageActions message={selected} folder={folder as InboxFolder}
-                    busy={busy || !detail.data} run={perform}
+                    busy={busy || !detail.data}
+                    run={(action, after, change) => perform(action, after, change && ("removed" in change ? { id: change.id, removed: true } : { id: change.id, patch: { starred: change.starred } }))}
                     onChanged={change => {
                       // Guard: only the message that was acted on moves the selection on.
                       if ("removed" in change) {
@@ -831,6 +923,7 @@ export default function UnifiedInbox() {
                                 folderId: "archive",
                               }),
                         () => selectNextAfter(selected.id),
+                        { id: selected.id, removed: true },
                       )
                     }
                   >
@@ -853,6 +946,8 @@ export default function UnifiedInbox() {
                               { read: !detail.data?.read },
                               "PUT",
                             ),
+                        undefined,
+                        { id: selected.id, patch: { read: !detail.data?.read } },
                       )
                     }
                   >

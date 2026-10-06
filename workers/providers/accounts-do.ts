@@ -11,6 +11,7 @@ import {
   type GmailEnvironment,
   type Store,
 } from "./google-oauth";
+import { GmailScheduler, type AlarmStorage } from "./gmail-scheduler";
 
 interface AutomationStub {
   ingest(
@@ -33,10 +34,15 @@ export interface GmailBindings extends GmailEnvironment {
 /** One object per Access workspace. Access users intentionally share every account. */
 export class GmailAccountsDO extends DurableObject<GmailBindings> {
   private service: AccountService;
+  private scheduler: GmailScheduler;
   private tail: Promise<unknown> = Promise.resolve();
   constructor(ctx: DurableObjectState, env: GmailBindings) {
     super(ctx, env);
     this.service = new AccountService(ctx.storage as unknown as Store, env);
+    this.scheduler = new GmailScheduler(ctx.storage as unknown as AlarmStorage, this.service, (fn) => this.serial(fn), () => {
+      const config = configuration(this.env);
+      return config.status === "configured" ? config.pollMs : null;
+    });
   }
   // Serialize network-spanning operations as well as storage writes. A durable
   // sending receipt handles process death while this in-memory lock is held.
@@ -44,11 +50,6 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     const result = this.tail.then(fn);
     this.tail = result.catch(() => {});
     return result;
-  }
-  private async schedule() {
-    const config = configuration(this.env);
-    if (config.status === "configured")
-      await this.ctx.storage.setAlarm(Date.now() + config.pollMs);
   }
   private async drain() {
     if (!this.env.AUTOMATIONS && !this.env.CATEGORIES) return;
@@ -63,8 +64,17 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
       }
     });
   }
+  // Reads take no lock: every cached change is one transaction, and a read is about one page of
+  // rows, so the feed never waits behind a sync page or a mail action.
   listAccounts() {
-    return this.serial(() => this.service.listAccounts());
+    return this.service.listAccounts();
+  }
+  /** Refresh: Gmail's new mail and changes for these accounts (all when omitted) within the budget. */
+  async refresh(accountIds?: string[]) {
+    const outcomes = await this.scheduler.refresh(accountIds);
+    await this.drain().catch((error: unknown) =>
+      console.warn(JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
+    return outcomes;
   }
   beginConnect() {
     return this.serial(() => this.service.connect());
@@ -77,37 +87,36 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
         code,
         error,
       );
-      await this.schedule();
+      // Its first sync starts now, not a whole poll interval later.
+      await this.scheduler.connected();
       return account;
     });
   }
+  /** History then import pages for one account now; the shared alarm is never moved later (P1-6). */
   async sync(accountId: string) {
-    const result = await this.serial(async () => {
-      await this.schedule();
-      return this.service.sync(accountId);
-    });
+    const result = await this.scheduler.syncNow(accountId);
     // A sync that worked is reported as working even if handing its events on did not.
     await this.drain().catch((error: unknown) =>
       console.warn(JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
     return result;
   }
   listMessages(accountId: string, options?: MessageFilters) {
-    return this.serial(() => this.service.listMessages(accountId, options));
+    return this.service.listMessages(accountId, options);
   }
   inboxMessagesByIds(accountId: string, messageIds: string[], ownDomains: string[] = []) {
-    return this.serial(() => this.service.inboxMessagesByIds(accountId, messageIds, ownDomains));
+    return this.service.inboxMessagesByIds(accountId, messageIds, ownDomains);
   }
   getMessage(accountId: string, messageId: string) {
     return this.serial(() => this.service.getMessage(accountId, messageId));
   }
   countInbox(accountId: string) {
-    return this.serial(() => this.service.countInbox(accountId));
+    return this.service.countInbox(accountId);
   }
   countUnreadInbox(accountId: string) {
-    return this.serial(() => this.service.countUnreadInbox(accountId));
+    return this.service.countUnreadInbox(accountId);
   }
   listInboxMessages(accountId: string, options: InboxReadOptions) {
-    return this.serial(() => this.service.listInboxMessages(accountId, options));
+    return this.service.listInboxMessages(accountId, options);
   }
   send(accountId: string, request: SendRequest) {
     return this.serial(() => this.service.send(accountId, request));
@@ -148,32 +157,13 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     return this.serial(() => this.service.disconnect(accountId));
   }
   async alarm() {
-    await this.serial(async () => {
-      const config = configuration(this.env);
-      if (config.status !== "configured") return;
-      // Schedule before outbound I/O: a restart cannot silently stop cloud polling.
-      await this.schedule();
-      const { accounts } = await this.service.listAccounts();
-      if (!accounts.length) {
-        await this.ctx.storage.deleteAlarm();
-        return;
-      }
-      const offset = (await this.ctx.storage.get<number>("poll:offset")) || 0;
-      for (let i = 0; i < Math.min(5, accounts.length); i++) {
-        const account = accounts[(offset + i) % accounts.length];
-        if (
-          account.status === "reconnect_required" ||
-          (account.retryAt && account.retryAt > Date.now())
-        )
-          continue;
-        try {
-          await this.service.sync(account.id);
-        } catch {
-          /* Sanitized account status is durable; no secrets or upstream bodies in logs. */
-        }
-      }
-      await this.ctx.storage.put("poll:offset", (offset + 5) % accounts.length);
-    });
+    // A cache of the first layout moves over in the background, a few seconds per account per tick.
+    for (const account of (await this.service.listAccounts()).accounts) {
+      await this.serial(() => this.service.migrateCache(account.id)).catch((error: unknown) =>
+        console.warn(JSON.stringify({ event: "gmail_cache_migration_failed", error: (error as Error)?.message?.slice(0, 200) })));
+    }
+    // Each sync page takes the lock on its own; mail actions and reads go on between pages.
+    await this.scheduler.tick();
     // Release the account lock before invoking automations: a rule may RPC back
     // into this object to read or send mail. Holding it would deadlock the rule.
     try {
