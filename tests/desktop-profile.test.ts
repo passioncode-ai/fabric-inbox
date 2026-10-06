@@ -184,7 +184,7 @@ async function boot({ config, packaged = true, switches = [] as string[], files 
   await new Promise((resolve) => setImmediate(resolve));
   await new Promise((resolve) => setImmediate(resolve));
   const settle = async () => { for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve)); };
-  const openSettings = () => menu[0].submenu.find((item: any) => item.label === "Server Address…").click();
+  const openSettings = () => menu[0].submenu.find((item: any) => item.label === "Server address…").click();
   const setupSender = () => {
     const setup = windows.filter((w) => w.options.webPreferences.partition === "fabric-setup").pop();
     return { sender: setup.webContents, senderFrame: setup.webContents.mainFrame };
@@ -306,14 +306,14 @@ test("saving a server keeps its copy in the shared PassionCode folder", async ()
   assert.equal(h.log.filter((l) => l === "rename /fixture/PassionCode/backups/fabric-inbox.json").length, 2);
 });
 
-test("Settings… (⌘,) opens the server's Settings screen in the mail window; Server Address… opens the local window", async () => {
+test("Settings… (⌘,) opens the server's Settings screen in the mail window; Server address… opens the local window", async () => {
   const h = await boot({ config: { origin: A, accessOrigin: "" }, files: { [P]: [dirOf(A)] } });
   await h.settle();
   const items = h.menu()[0].submenu;
   const settings = items.find((i: any) => i.label === "Settings…");
   assert.equal(settings.accelerator, "CmdOrCtrl+,");
   assert.ok(!items.some((i: any) => ["Server settings…", "Setup…"].includes(i.label)), "the old labels without a Settings screen are gone");
-  assert.ok(items.some((i: any) => i.label === "Server Address…"));
+  assert.ok(items.some((i: any) => i.label === "Server address…"));
   const before = h.windows.length;
   settings.click();
   await h.settle();
@@ -321,5 +321,5 @@ test("Settings… (⌘,) opens the server's Settings screen in the mail window; 
   assert.equal(h.mailWindows().pop().webContents.getURL(), new URL("/settings", A).href);
   h.openSettings();
   await h.settle();
-  assert.ok(h.windows.some((w: any) => w.options.webPreferences.partition === "fabric-setup"), "Server Address… opens the server-address window");
+  assert.ok(h.windows.some((w: any) => w.options.webPreferences.partition === "fabric-setup"), "Server address… opens the server-address window");
 });

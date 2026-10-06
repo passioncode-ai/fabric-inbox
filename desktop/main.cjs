@@ -481,7 +481,7 @@ function installIPC() {
 }
 /**
  * Settings… (⌘,) opens the server's Settings screen in the mail window (SCR-02); with no server
- * yet, the local server-address window is the only setting there is. Server Address… always opens
+ * yet, the local server-address window is the only setting there is. Server address… always opens
  * that window.
  */
 function openSettings() {
@@ -506,7 +506,7 @@ function installMenu() {
       { label: 'About Usage Counts…', click: aboutUsageCounts },
       { type: 'separator' },
       { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: openSettings },
-      { label: 'Server Address…', click: () => showSetup() },
+      { label: 'Server address…', click: () => showSetup() },
       { label: 'Connect Cloudflare account…', click: () => showSetup('', 'cloudflare') },
       { type: 'separator' }, { role: 'services' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
     { role: 'editMenu' },

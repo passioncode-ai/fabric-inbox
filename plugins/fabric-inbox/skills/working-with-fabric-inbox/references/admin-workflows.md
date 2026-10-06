@@ -37,8 +37,8 @@ works; the live tool schemas have every input.
   shown accounts' domains, each with its `account`.
 - **Show or hide:** `show_cloudflare_account` with `shown` (`null` = the default: shown when it has
   mail). An account whose domain receives here cannot be hidden.
-- **Connect one more:** only the owner can, in the app (Domains & addresses → Connect another
-  account): the token is a secret and never goes through a tool. Say so rather than asking for it.
+- **Connect one more:** only the owner can, in the app (Settings → Accounts → Connect account →
+  Cloudflare): the token is a secret and never goes through a tool. Say so rather than asking for it.
 - **Remove:** `remove_cloudflare_account` — two-step; refused while one of its domains receives
   here (`release_domain` first).
 

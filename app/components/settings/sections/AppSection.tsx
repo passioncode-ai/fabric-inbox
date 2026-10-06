@@ -75,8 +75,8 @@ function ServerPanel() {
           <li><strong>Domains in its configuration</strong> {config.isPending ? "…" : config.isError ? `unknown (${errorText(config.error)})` : config.data.domains.length ? config.data.domains.join(", ") : "none — domains are chosen on Domains"}</li>
         </ul>
         <p className="fi-hint">{desktop
-          ? "To open another server, choose Fabric Inbox → Server Address… in the menu bar."
-          : "The Mac app chooses its server under Fabric Inbox → Server Address…."}</p>
+          ? "To open another server, choose Fabric Inbox → Server address… in the menu bar."
+          : "The Mac app chooses its server under Fabric Inbox → Server address…."}</p>
         <div className="fi-buttons">
           <Link className="fi-secondary" to={settingsPath("domains")}>Domains</Link>
           <Link className="fi-secondary" to={settingsPath("accounts")}>Accounts</Link>
@@ -96,7 +96,7 @@ function DesktopPanel() {
           <li><strong>Check for Updates…</strong> looks for a newer version now.</li>
           <li><strong>Install Updates Automatically</strong> downloads a new version in the background and installs it when the app quits.</li>
           <li><strong>Share Anonymous Usage Counts</strong> and <strong>About Usage Counts…</strong> say what is counted and turn it off or on.</li>
-          <li><strong>Server Address…</strong> chooses the server this app opens.</li>
+          <li><strong>Server address…</strong> chooses the server this app opens.</li>
           <li><strong>Connect Cloudflare account…</strong> saves your Cloudflare API token on your server.</li>
           <li><strong>Settings…</strong> (⌘,) opens this screen.</li>
         </ul>

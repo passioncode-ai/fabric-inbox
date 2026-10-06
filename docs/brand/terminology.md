@@ -12,7 +12,8 @@ Contract: brand-contract v1
 | Project address | Alias, forwarding address | An address on a served project domain, received by the Worker |
 | Reply policy | Auto-reply settings | What an agent may send without the operator: mode, allowed intents, daily limit |
 | Answer | AI response (in run history) | One agent run for one incoming message |
-| Domains & addresses | Project addresses (screen name, since 0.3) | The screen managing the connected Cloudflare account's domains and their addresses |
+| Settings | Manage accounts, Mailboxes, Accounts and rules, Server settings, Domains & addresses (screen names before 0.11) | The one screen for everything set up rather than read, with its sections: Addresses, Domains, Accounts, Forwarding destinations, Categories, Spam rules, Agents, Knowledge, Agent access, App; a section is named "Settings → Domains" |
+| Server address | Server settings (the Mac app's menu item) | The address of the server the Mac app opens, chosen in its own window (Fabric Inbox → Server address…) |
 | Receive mail here | Connect domain, Import domain | Moving a domain's mail to the server, keeping each old destination as a copy |
 | Forwarding destination | Forward target, verified email | An outside address a copy may go to, confirmed through Cloudflare's link |
 | Your server | Backend, instance, origin (to a user) | The Fabric Inbox Worker in the person's own Cloudflare account |
@@ -29,7 +30,7 @@ Contract: brand-contract v1
 | Spam rules | Spam settings, filters | The screen with what goes to Spam and the Always spam / Never spam lists |
 | Agent access | API access, integrations, MCP settings | The screen where the owner gives outside agents their keys and sees what they changed |
 | Agent key | API key, agent token, access token, credential (to a user) | One outside agent's way in: a Client ID and a Client Secret, with a level and a sending mode |
-| Cloudflare API token | API key, Cloudflare key, credential (to a user) | What a person creates in Cloudflare (My Profile or Manage Account → API Tokens) and gives the server: one for the server's own account, one for each other account connected on Domains & addresses; "token" alone once the context has named it (operator, 2026-10-01) |
+| Cloudflare API token | API key, Cloudflare key, credential (to a user) | What a person creates in Cloudflare (My Profile or Manage Account → API Tokens) and gives the server: one for the server's own account, one for each other account connected in Settings → Accounts; "token" alone once the context has named it (operator, 2026-10-01) |
 | Outside agent | Bot, integration, app (for a keyed agent) | An AI agent the owner runs elsewhere (Claude Code, Cursor, their own) that works with Fabric Inbox through its key; never an Agent that answers an address |
 | Drafts only / Can send | Read-write, full access (for sending) | Whether an agent key's mail waits in Drafts for the owner or leaves, within its daily number |
 | Revoke | Delete key, disable | Ending an agent key: it stops working at once |

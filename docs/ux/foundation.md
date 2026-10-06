@@ -82,7 +82,7 @@ Evidence: RE-001, RE-003; inferred pain, not measured.
 |---|---|---|---|---|---|---|
 | 1 | Launch | Open app and restore session | SCR-01 | unknown | Expired access | Offer sign-in without claiming current data; F/S/S unknown |
 | 2 | Recover | Reconnect or continue offline | SCR-01, SCR-02 | unknown | Accidental repeats | Keep pending work explicit; F/S/S unknown |
-| 3 | Manage | Adjust settings | SCR-06 | unknown | Lost input after error | Preserve edits and show save state; F/S/S unknown |
+| 3 | Manage | Adjust settings | SCR-02 | unknown | Lost input after error | Preserve edits and show save state; F/S/S unknown |
 
 ## Monetization
 None in this approved scope. No paywall, acquisition funnel or commercial claim is being designed.

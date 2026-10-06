@@ -48,7 +48,7 @@ and [your deployment](#configure-your-deployment).
    hand or making a personal build: [Configure your deployment](#configure-your-deployment).
 3. **MCP.** The installed app listens on no port and serves no MCP of its own: it
    opens your server, and agents connect to that server at **`<your server>/mcp`**, where
-   `<your server>` is the address in **Fabric Inbox → Server settings…** — for a server made by
+   `<your server>` is the address in **Fabric Inbox → Server address…** — for a server made by
    **Create my server**, `https://fabric-inbox.<your-workers-subdomain>.workers.dev/mcp`. In the app,
    **Settings → Agent access** makes a key and prints the whole command,
    `claude mcp add --transport http fabric-inbox https://<your-server>/mcp --header …`
@@ -75,7 +75,11 @@ and [your deployment](#configure-your-deployment).
   — people, security, alerts, app stores, billing, dev & CI, notifications, social,
   newsletters — with counts. Filters: unread only, one group, one account, search of cached
   mail. Placement is deterministic header and label rules, and each row says why.
-- **Domains & addresses.** Every domain of your Cloudflare account on one screen. **Receive
+- **Settings.** One screen (the gear in the sidebar, or **Settings…** ⌘, in the Mac app) with a
+  section list, a searchable list and the chosen item beside it; choosing an item never moves the
+  page. Sections: Addresses, Domains, Accounts, Forwarding destinations, Categories, Spam rules,
+  Agents, Knowledge, Agent access and App. Every older page address redirects into its section.
+- **Domains and addresses.** Every domain of your Cloudflare account in Settings → Domains. **Receive
   mail here** turns on Email Routing (asking before it replaces another provider's MX), brings
   in the addresses that already exist while each keeps forwarding a copy where it went before,
   points them here, and turns on sending with a DMARC record. Add and remove addresses, choose a

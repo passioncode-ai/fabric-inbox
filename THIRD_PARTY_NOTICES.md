@@ -17,10 +17,10 @@ it.
 - **Licence:** Apache License 2.0, copyright (c) 2026 Cloudflare, Inc. The full text as upstream
   ships it is [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt) (it was this repository's
   `LICENSE` in every release up to 0.7.1). Upstream ships no `NOTICE` file, so there is none to carry.
-- **Where it is:** the files imported in `93b86c6` that are still here (71 of 72;
-  `workers/mcp/index.ts` was removed): `app/components/{AgentPanel,AgentSidebar,ComposeEmail,ComposePanel,EmailAttachmentList,EmailIframe,EmailPanel,Header,MCPPanel,MailboxSplitView,RichTextEditor,Sidebar}.tsx`,
+- **Where it is:** the files imported in `93b86c6` that are still here (70 of 72;
+  `workers/mcp/index.ts` and `app/routes/home.tsx` were removed): `app/components/{AgentPanel,AgentSidebar,ComposeEmail,ComposePanel,EmailAttachmentList,EmailIframe,EmailPanel,Header,MCPPanel,MailboxSplitView,RichTextEditor,Sidebar}.tsx`,
   `app/components/email-panel/{EmailPanelDialogs,EmailPanelHeader,EmailPanelToolbar,SingleMessageView,ThreadMessage}.tsx`, `app/entry.server.tsx`, `app/root.tsx`,
-  `app/routes.ts`, `app/routes/{email-list,home,mailbox-index,mailbox,not-found,search-results,settings}.tsx`,
+  `app/routes.ts`, `app/routes/{email-list,mailbox-index,mailbox,not-found,search-results,settings}.tsx`,
   `app/hooks/{useComposeForm,useUIStore}.ts`, `app/lib/{search-parser,utils}.ts`,
   `app/queries/{emails,folders,keys,mailboxes,search}.ts`, `app/services/api.ts`,
   `app/types/index.ts`, `app/index.css`, `shared/{dates,folders}.ts`,
@@ -31,10 +31,14 @@ it.
   `react-router.config.ts`, `tsconfig*.json`, `wrangler.jsonc`, `.gitignore`,
   `.dev.vars.example`, `README.md`.
 - **Notices kept:** every file that carries the header `Copyright (c) 2026 Cloudflare, Inc.` /
-  `Licensed under the Apache 2.0 license` keeps it (67 files at this commit:
-  `git grep -l "Licensed under the Apache 2.0 license"`). Eleven of them were added on 2026-09-28
+  `Licensed under the Apache 2.0 license` keeps it (68 files at this commit:
+  `git grep -l "Licensed under the Apache 2.0 license" -- ':!THIRD_PARTY_NOTICES.md'`). Eleven of them were added on 2026-09-28
   (`9d922fd`), partly with code moved out of imported files (`AgentMarkdown.tsx` out of
-  `AgentPanel.tsx`, for example); they keep the header as it was written. Where a header
+  `AgentPanel.tsx`, for example); they keep the header as it was written. In 0.11 (Settings as one screen) `app/routes/home.tsx`
+  (the Mailboxes screen) was removed: its creation of the configured addresses moved to
+  `app/components/settings/sections/ConfiguredAddresses.tsx`, and the mailbox settings form of
+  `app/routes/settings.tsx` moved to `app/components/settings/sections/SignatureForm.tsx`; both keep
+  the header, and `app/routes/settings.tsx`, now the Settings screen, keeps its own. Where a header
   says "the LICENSE file", read [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt).
 - **Changes:** PassionCode.ai has modified these files since the import; `git log` records every
   change. The modifications are PassionCode.ai's work under the project's licence; the

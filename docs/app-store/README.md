@@ -167,7 +167,7 @@ app. Nothing is half-done in the tree.
    fine-grained token with Contents: read on `passioncode-ai/fabric-inbox`, entered in your own
    terminal (`gh secret set MEMBERS_READ_TOKEN -R passioncode-ai/passioncode`), never in a chat.
 3. **0.8.0 in your app** (B-39): quit and reopen Fabric Inbox (the open window keeps the page it
-   loaded before the deploy), open Domains & addresses, and **Receive mail here** on the domain
+   loaded before the deploy), open Settings → Domains, and **Receive mail here** on the domain
    that failed with "must be a subdomains". Then say which domain of another account should be the
    first to receive through the relay: its routing changes.
 4. **The private history in the public repository.** Commits of the private history (up to the
