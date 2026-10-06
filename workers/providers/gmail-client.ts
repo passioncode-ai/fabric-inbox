@@ -290,21 +290,28 @@ export class GmailClient {
     } catch {
       throw new ProviderError("provider_unavailable", 503);
     }
-    const data = (await response.json()) as {
+    // Google answers an outage with an HTML page: no JSON is no reason to call it a revoked grant.
+    let data: {
       access_token?: string;
       expires_in?: number;
       refresh_token?: string;
       error?: string;
-    };
+    } = {};
+    try {
+      data = (await response.json()) as typeof data;
+    } catch {
+      /* not JSON; the status decides below */
+    }
+    // Only a revoked or expired grant needs the person to connect again. Anything else is the
+    // token service being busy or down, and the account waits and tries again (P2-9).
     if (!response.ok)
-      throw new ProviderError(
-        data.error === "invalid_grant"
-          ? "reconnect_required"
-          : response.status === 429
-            ? "rate_limited"
-            : "oauth_failed",
-        response.status === 429 ? 429 : 401,
-      );
+      throw data.error === "invalid_grant"
+        ? new ProviderError("reconnect_required", 401)
+        : response.status === 429
+          ? new ProviderError("rate_limited", 429)
+          : response.status >= 500
+            ? new ProviderError("provider_unavailable", 503)
+            : new ProviderError("oauth_failed", 401);
     if (!data.access_token || !data.expires_in)
       throw new ProviderError("oauth_failed");
     const next = {
@@ -348,10 +355,12 @@ export class GmailClient {
       await this.token(true);
       return this.request<T>(path, init, false);
     }
+    // A 401 that a freshly refreshed token did not cure is Gmail refusing this request, not the
+    // grant being gone (that is invalid_grant at the token endpoint): back off, never disconnect.
     if (!response.ok)
       throw new ProviderError(
         response.status === 401
-          ? "reconnect_required"
+          ? "provider_auth_failed"
           : response.status === 429
             ? "rate_limited"
             : response.status === 404
@@ -359,9 +368,13 @@ export class GmailClient {
                 ? "history_expired"
                 : "not_found"
               : "provider_failed",
-        response.status === 429 ? 429 : response.status === 404 ? 404 : 502,
+        response.status === 429 ? 429 : response.status === 404 ? 404 : response.status === 401 ? 401 : 502,
       );
-    return (await response.json()) as T;
+    try {
+      return (await response.json()) as T;
+    } catch {
+      throw new ProviderError("provider_failed", 502);
+    }
   }
   profile() {
     return this.request<GmailProfile>("profile");

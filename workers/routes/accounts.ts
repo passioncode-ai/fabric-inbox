@@ -62,6 +62,7 @@ accountsRouter.onError((error, c) => {
     message_store_unavailable: 503,
     provider_unavailable: 503,
     provider_failed: 502,
+    provider_auth_failed: 503,
     too_many_connections: 429,
   };
   const code = error instanceof ProviderError ? error.code : error.message;
