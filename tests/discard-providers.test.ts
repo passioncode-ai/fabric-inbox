@@ -189,6 +189,26 @@ test("a discard on arrival runs under the object's lock, never alongside a sync 
   assert.equal(locked, 2);
 });
 
+test("a sender the account wrote to in Cc or Bcc is known, as in To — also from Sent rows indexed before Cc and Bcc were kept", async (t) => {
+  const { imap, store, service } = await imapFixture(t);
+  const sent = (subject: string, header: string) =>
+    mail(subject, { from: EMAIL }).replace(`To: ${EMAIL}\r\n`, `To: Someone <someone@example.org>\r\n${header}\r\n`);
+  imap.deliver("Sent", sent("Copy to Carol", "Cc: Carol <carol@example.org>, dave@example.org"), { flags: ["\\Seen"] });
+  imap.deliver("Sent", sent("Blind to Erin", "Bcc: erin@example.org"), { flags: ["\\Seen"] });
+  const { id } = await service.connectImap({ preset: "fastmail", email: EMAIL, password: PASS });
+  await settle(service, id);
+  for (const who of ["someone@example.org", "Carol <carol@example.org>", "dave@example.org", "erin@example.org"])
+    assert.equal((await service.sentContact(id, who, undefined)).known, true, who);
+  assert.equal((await service.sentContact(id, "arol@example.org", undefined)).known, false, "the whole address, never a part");
+  // Index rows written before 0.12 kept To only: the message row says the rest.
+  for (const [key, row] of await store.list<Record<string, unknown>>({ prefix: `idx:${id}:sent:` })) {
+    const { cc: _cc, bcc: _bcc, ...old } = row;
+    await store.put(key, old);
+  }
+  assert.equal((await service.sentContact(id, "carol@example.org", undefined)).known, true);
+  assert.equal((await service.sentContact(id, "erin@example.org", undefined)).known, true);
+});
+
 test("IMAP: Discarded mail goes to Trash after 30 days; younger mail stays", async (t) => {
   const { imap, store, service } = await imapFixture(t);
   imap.deliver("INBOX", mail("Old"));

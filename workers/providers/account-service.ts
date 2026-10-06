@@ -135,6 +135,8 @@ const MAX_EVENT_ATTEMPTS = 10;
 export interface DiscardRecord { reason: string; at: number }
 /** What an arrival filter decides for one new message: Discarded with its reason, or nothing. */
 export type ArrivalFilter = (event: { accountId: string; provider: RemoteProvider }, message: Message) => Promise<{ reason: string; ruleId: string } | null>;
+/** Whether a comma-joined address list (To, Cc, Bcc) names `address` as a whole address. */
+const names = (list: string | undefined, address: string) => !!list && list.toLowerCase().split(",").some((part) => addressOf(part) === address);
 /** Sent mail read for "has this account written to them": at most this many rows of the Sent index. */
 const SENT_SCAN_LIMIT = 5_000;
 function publicAccount(record: AccountRecord): PublicAccount {
@@ -968,9 +970,10 @@ export class AccountService {
     return { sender: m.from, subject: m.subject, headers, ...contact };
   }
   /**
-   * Whether this account wrote to `sender` (its Sent mail names them in To) or took part in the
-   * conversation `threadId` (a message of it is in Sent), read from the cached Sent index, newest
-   * first, at most SENT_SCAN_LIMIT rows.
+   * Whether this account wrote to `sender` (its Sent mail names them in To, Cc or Bcc) or took part
+   * in the conversation `threadId` (a message of it is in Sent), read from the cached Sent index,
+   * newest first, at most SENT_SCAN_LIMIT rows. A row indexed before Cc and Bcc were kept there is
+   * completed from its message row.
    */
   async sentContact(accountId: string, sender: string, threadId: string | undefined): Promise<{ known: boolean; inThread: boolean }> {
     const address = addressOf(sender);
@@ -978,14 +981,18 @@ export class AccountService {
     let after: string | undefined;
     const prefix = `idx:${accountId}:sent:`;
     while (scanned < SENT_SCAN_LIMIT && !(known && inThread)) {
-      const rows = await this.store.list<{ to?: string; threadId?: string }>({ prefix, startAfter: after, limit: 500 });
+      const rows = await this.store.list<{ to?: string; cc?: string; bcc?: string; threadId?: string; providerMessageId?: string }>({ prefix, startAfter: after, limit: 500 });
       for (const [key, row] of rows) {
         after = key;
         scanned++;
         if (threadId && row.threadId === threadId) inThread = true;
         if (address && !known) {
-          const to = (row.to ?? "").toLowerCase();
-          known = to.split(",").some((part) => addressOf(part) === address);
+          let cc = row.cc, bcc = row.bcc;
+          if (cc === undefined && bcc === undefined && row.providerMessageId && !names(row.to, address)) {
+            const full = await this.cache.row(accountId, row.providerMessageId).catch(() => undefined);
+            cc = full?.message.cc; bcc = full?.message.bcc;
+          }
+          known = [row.to, cc, bcc].some((list) => names(list, address));
         }
       }
       if (rows.size < 500) break;
