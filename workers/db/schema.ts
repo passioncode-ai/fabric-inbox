@@ -34,6 +34,9 @@ export const emails = sqliteTable("emails", {
 	body_key: text("body_key"),
 	/** Drafts only: raised by each save (workers/lib/mailbox-drafts.ts); NULL reads as 1. */
 	draft_revision: integer("draft_revision"),
+	/** Discarded only: why (the person, or a discard rule on arrival) and since when; its 30 days count from here. */
+	discard_reason: text("discard_reason"),
+	discarded_at: text("discarded_at"),
 });
 
 export const attachments = sqliteTable("attachments", {

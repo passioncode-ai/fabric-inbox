@@ -59,7 +59,7 @@ export interface GraphAttachment {
 export const MESSAGE_FIELDS = ["id", "conversationId", "parentFolderId", "subject", "from", "sender", "toRecipients", "ccRecipients", "bccRecipients",
   "replyTo", "receivedDateTime", "sentDateTime", "isRead", "isDraft", "flag", "hasAttachments", "internetMessageId", "bodyPreview", "changeKey"].join(",");
 
-const ROLE_LABEL: Record<OutlookRole, string | null> = { inbox: "INBOX", sent: "SENT", drafts: "DRAFT", trash: "TRASH", junk: "SPAM", archive: null };
+const ROLE_LABEL: Record<OutlookRole, string | null> = { inbox: "INBOX", sent: "SENT", drafts: "DRAFT", trash: "TRASH", junk: "SPAM", archive: null, discarded: "DISCARDED" };
 
 export function labelsFor(role: OutlookRole, m: Pick<GraphMessage, "isRead" | "flag">): string[] {
   const labels: string[] = [];

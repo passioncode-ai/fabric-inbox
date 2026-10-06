@@ -4,10 +4,15 @@
  */
 import type { AccountBase } from "../provider";
 
-/** The folders this server reads, by role. A message's id starts with its folder's key. */
-export const FOLDER_ROLES = ["inbox", "sent", "drafts", "trash", "junk", "archive"] as const;
+/**
+ * The folders this server reads, by role. A message's id starts with its folder's key. "discarded" is
+ * the folder named Discarded, made on the server the first time a message is discarded.
+ */
+export const FOLDER_ROLES = ["inbox", "sent", "drafts", "trash", "junk", "archive", "discarded"] as const;
 export type FolderRole = (typeof FOLDER_ROLES)[number];
-export const ROLE_KEY: Record<FolderRole, string> = { inbox: "i", sent: "s", drafts: "d", trash: "t", junk: "j", archive: "a" };
+export const ROLE_KEY: Record<FolderRole, string> = { inbox: "i", sent: "s", drafts: "d", trash: "t", junk: "j", archive: "a", discarded: "x" };
+/** The name the Discarded folder is made with. */
+export const DISCARDED_FOLDER = "Discarded";
 
 /** Where the account's servers are. IMAP is always TLS from the first byte (port 993 by default). */
 export interface ServerSettings {

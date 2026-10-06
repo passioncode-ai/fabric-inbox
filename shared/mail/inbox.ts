@@ -1,5 +1,5 @@
 import type { Triage } from "./triage";
-export const INBOX_FOLDERS = ["inbox", "sent", "archive", "trash", "starred", "spam"] as const;
+export const INBOX_FOLDERS = ["inbox", "sent", "archive", "trash", "starred", "spam", "discarded"] as const;
 export type InboxFolder = (typeof INBOX_FOLDERS)[number];
 export type InboxProvider = "cloudflare" | "gmail" | "imap" | "outlook";
 export interface InboxAccount {
@@ -12,6 +12,8 @@ export interface InboxAccount {
   /** Why a Gmail account stopped working (shared/mail/gmail-reasons.ts); absent while it works. */
   reason?: string;
   lastSyncAt?: number;
+  /** A Gmail, IMAP or Outlook account waiting out a failure or the provider's request to slow down: when it tries again. */
+  retryAt?: number;
   /** Unread messages in this account's inbox; sent with the first page only. */
   unread?: number;
   /** Every message in its inbox (first page only): the sidebar's "With mail" filter. */
@@ -58,6 +60,8 @@ export interface InboxMessage {
   categoryReason?: string;
   /** Why it is in Spam (SP-4): a rule, the model, the operator, or Gmail. */
   spamReason?: string;
+  /** Why it is in Discarded: the person discarded it, or a discard rule did on arrival (shared/mail/discard.ts). */
+  discardReason?: string;
 }
 export interface InboxIssue {
   accountId?: string;

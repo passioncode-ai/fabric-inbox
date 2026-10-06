@@ -31,7 +31,7 @@ import type { PageResult } from "../provider";
 import { MESSAGE_FIELDS, labelsFor, localId, messageFromGraph, messageWithBody, roleOfLabels, type GraphAttachment, type GraphMessage } from "./convert";
 import type { GraphClient } from "./graph";
 import { randomId } from "./oauth";
-import { OUTLOOK_FOLDERS, type OutlookAccount, type OutlookFolderState, type OutlookRole, type OutlookSyncState } from "./types";
+import { DISCARDED_FOLDER, OUTLOOK_FOLDERS, type OutlookAccount, type OutlookFolderState, type OutlookRole, type OutlookSyncState } from "./types";
 
 /** Messages per delta page. */
 export const PAGE_SIZE = 50;
@@ -42,12 +42,28 @@ export const MAX_MESSAGE_BYTES = 30 * 1024 * 1024;
 /** The folders are listed again after a day. */
 const LIST_EVERY_MS = 86_400_000;
 /** The import order: what a person looks at first, first. */
-const IMPORT_ORDER: OutlookRole[] = ["inbox", "sent", "archive", "drafts", "junk", "trash"];
+const IMPORT_ORDER: OutlookRole[] = ["inbox", "sent", "archive", "drafts", "junk", "trash", "discarded"];
 /** How long a throttled read may wait in place for its Retry-After. */
 const PATIENCE_MS = 5_000;
 
 const patience = (deadline: number) => Math.max(0, Math.min(PATIENCE_MS, deadline - Date.now()));
 const enc = encodeURIComponent;
+
+/**
+ * The account's top-level folder named Discarded (any case), or null when it has none. Graph's
+ * `$filter` on `displayName` is an exact match, so the name is asked as it is made.
+ */
+export async function findDiscarded(graph: GraphClient, patienceMs?: number): Promise<{ id: string; totalItemCount?: number } | null> {
+  let found: { value?: { id?: string; displayName?: string; totalItemCount?: number }[] };
+  try {
+    found = await graph.json(`/me/mailFolders?$filter=${enc(`displayName eq '${DISCARDED_FOLDER}'`)}&$select=id,displayName,totalItemCount`, { patience: patienceMs });
+  } catch (error) {
+    if (error instanceof ProviderError && error.code === "not_found") return null;
+    throw error;
+  }
+  const folder = (found.value ?? []).find((f) => f.id && (f.displayName ?? "").toLowerCase() === DISCARDED_FOLDER.toLowerCase());
+  return folder?.id ? { id: folder.id, totalItemCount: folder.totalItemCount } : null;
+}
 
 /** The role of a Graph folder id among the account's synced folders. */
 export function roleOfFolder(sync: OutlookSyncState, folderId: string | undefined): OutlookRole | undefined {
@@ -108,6 +124,13 @@ export class OutlookSync {
       const old = sync.folders.find((f) => f.role === role);
       next.push(old && old.id === folder.id ? { ...old, total: folder.totalItemCount ?? old.total }
         : { role, id: folder.id, total: folder.totalItemCount ?? 0, seen: 0, generation: randomId() });
+    }
+    // Discarded has no well-known name: it is the top-level folder named so, when there is one.
+    const discarded = await findDiscarded(graph, patience(deadline));
+    if (discarded) {
+      const old = sync.folders.find((f) => f.role === "discarded");
+      next.push(old && old.id === discarded.id ? { ...old, total: discarded.totalItemCount ?? old.total }
+        : { role: "discarded", id: discarded.id, total: discarded.totalItemCount ?? 0, seen: 0, generation: randomId() });
     }
     // A folder gone (or replaced) takes its cached mail with it.
     for (const old of sync.folders) if (!next.some((f) => f.role === old.role && f.id === old.id)) await this.sweepRole(account, old.role, null, undefined, Infinity);

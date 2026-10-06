@@ -135,6 +135,11 @@ function hash(value: string): string {
   return h.toString(16).padStart(8, "0");
 }
 const ruleId = (kind: DiscardRule["kind"], value: string) => (kind === "list" ? "l-" : "s-") + hash(kind + ":" + value);
+/** The id of the rule these facts are kept under, or null when they name no list and no sender. */
+export function ruleIdOf(facts: DiscardFacts): string | null {
+  const key = ruleFor(facts);
+  return key ? ruleId(key.kind, key.value) : null;
+}
 
 /** The person's own entry, or the list's: an Always allow entry or a Never spam one. */
 function allowed(facts: DiscardFacts, store: DiscardStore, spam?: { allowedSenders: string[]; allowedDomains: string[] }): boolean {

@@ -7,6 +7,7 @@
  * |---|---|
  * | INBOX / Sent / Drafts / Trash / Junk | INBOX / SENT / DRAFT / TRASH / SPAM |
  * | Archive | none (the feed's archive is "in no other folder") |
+ * | Discarded (a folder by that name) | DISCARDED |
  * | no \Seen | UNREAD |
  * | \Flagged | STARRED |
  */
@@ -15,7 +16,7 @@ import { signalsFromHeaders } from "../../../shared/mail/triage";
 import type { Message } from "../gmail-client";
 import { ROLE_KEY, type FolderRole } from "./types";
 
-const ROLE_LABEL: Record<FolderRole, string | null> = { inbox: "INBOX", sent: "SENT", drafts: "DRAFT", trash: "TRASH", junk: "SPAM", archive: null };
+const ROLE_LABEL: Record<FolderRole, string | null> = { inbox: "INBOX", sent: "SENT", drafts: "DRAFT", trash: "TRASH", junk: "SPAM", archive: null, discarded: "DISCARDED" };
 
 export function labelsFor(role: FolderRole, flags: Iterable<string>): string[] {
   const set = new Set([...flags].map((f) => f.toLowerCase()));

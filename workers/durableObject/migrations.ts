@@ -209,4 +209,14 @@ export const mailboxMigrations: Migration[] = [
 		name: "16_draft_revision",
 		sql: txn(`ALTER TABLE emails ADD COLUMN draft_revision INTEGER;`),
 	},
+	{
+		// Discarded (operator, 2026-10-06): mail thrown away on purpose, kept apart from Trash and Spam
+		// for 30 days, with why (the person, or a discard rule on arrival) and since when. A folder the
+		// person had already named "Discarded" keeps its mail under a new name, so the two never mix.
+		name: "17_discarded",
+		sql: txn(`UPDATE folders SET name = 'Discarded (your folder)' WHERE name = 'Discarded' AND id <> 'discarded';
+            INSERT OR IGNORE INTO folders (id, name, is_deletable) VALUES ('discarded', 'Discarded', 0);
+            ALTER TABLE emails ADD COLUMN discard_reason TEXT;
+            ALTER TABLE emails ADD COLUMN discarded_at TEXT;`),
+	},
 ];

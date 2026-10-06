@@ -33,8 +33,8 @@ import { NotSentError, type DraftUpdate, type DraftView, type MailProvider, type
 import { MESSAGE_FIELDS, addresses, attachmentFromKey, attachmentKey, labelsFor, localId, messageWithBody, threadOf, type GraphAttachment, type GraphMessage } from "./convert";
 import { GraphClient } from "./graph";
 import { microsoftConfiguration, randomId, type MicrosoftEnvironment } from "./oauth";
-import { MAX_MESSAGE_BYTES, OutlookSync, readMessage, roleOfFolder } from "./sync";
-import { WELL_KNOWN, type OutlookAccount, type OutlookCredentials, type OutlookRole } from "./types";
+import { MAX_MESSAGE_BYTES, OutlookSync, findDiscarded, readMessage, roleOfFolder } from "./sync";
+import { DISCARDED_FOLDER, WELL_KNOWN, type OutlookAccount, type OutlookCredentials, type OutlookRole } from "./types";
 
 /** A MIME message larger than this (base64, as sent) is created without its files, which follow one by one. */
 export const MIME_LIMIT = 3 * 1024 * 1024;
@@ -150,9 +150,14 @@ export class OutlookSession implements ProviderSession {
     try {
       if ("read" in change) now = await this.graph.json(path, { method: "PATCH", json: { isRead: change.read } });
       else if ("starred" in change) now = await this.graph.json(path, { method: "PATCH", json: { flag: { flagStatus: change.starred ? "flagged" : "notFlagged" } } });
-      else {
-        const target: OutlookRole = "trashed" in change ? (change.trashed ? "trash" : "inbox")
-          : "archive" in change ? "archive" : "inbox" in change ? "inbox" : change.spam ? "junk" : "inbox";
+      else if ("discarded" in change && change.discarded) {
+        // Discarded: read, then into the folder named Discarded (made the first time).
+        await this.graph.json(path, { method: "PATCH", json: { isRead: true } });
+        const folder = await this.discardedFolder();
+        now = await this.graph.json(path + "/move", { method: "POST", json: { destinationId: folder } });
+      } else {
+        const target = "trashed" in change ? (change.trashed ? "trash" : "inbox")
+          : "archive" in change ? "archive" : "inbox" in change || "discarded" in change ? "inbox" : change.spam ? "junk" : "inbox";
         if (!this.account.sync.folders.some((f) => f.role === target)) throw new ProviderError("not_supported", 400);
         now = await this.graph.json(path + "/move", { method: "POST", json: { destinationId: WELL_KNOWN[target] } });
       }
@@ -168,6 +173,32 @@ export class OutlookSession implements ProviderSession {
     const body = row.bodyless ? { text: "", html: "" } : await this.cache.body(this.account.id, messageId, row);
     return { ...row.message, ...body, labels, read: !labels.includes("UNREAD"), archived: !labels.includes("INBOX"), remoteId: now.id ?? graphId,
       ...(row.bodyless ? { bodyless: true } : {}) };
+  }
+
+  /**
+   * The id of the account's Discarded folder: the synced one, else a top-level folder by that name,
+   * else one made now (`POST /me/mailFolders`, https://learn.microsoft.com/en-us/graph/api/user-post-mailfolders).
+   * It joins the synced folders; the caller keeps the account record with it (AccountService.changeMessage).
+   */
+  private async discardedFolder(): Promise<string> {
+    const synced = this.account.sync.folders.find((f) => f.role === "discarded");
+    if (synced) return synced.id;
+    let found = await findDiscarded(this.graph);
+    let made = false;
+    if (!found) {
+      try {
+        const created = await this.graph.json<{ id?: string; totalItemCount?: number }>("/me/mailFolders", { method: "POST", json: { displayName: DISCARDED_FOLDER, isHidden: false } });
+        if (created?.id) { found = { id: created.id, totalItemCount: 0 }; made = true; }
+      } catch (error) {
+        // Made meanwhile (ErrorFolderExists, 409): the list has it now.
+        if (!(error instanceof ProviderError)) throw error;
+      }
+      found ??= await findDiscarded(this.graph);
+    }
+    if (!found) throw new ProviderError("folder_create_refused", 502);
+    this.account.sync.folders.push({ role: "discarded", id: found.id, total: found.totalItemCount ?? 0, seen: 0, generation: randomId() });
+    console.log(JSON.stringify({ event: "outlook_discarded_folder", created: made }));
+    return found.id;
   }
 
   async attachment(messageId: string, attachmentId: string) {
