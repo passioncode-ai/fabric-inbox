@@ -20,7 +20,7 @@ export function normaliseAccountId(value: unknown): string | null {
   if (v.startsWith("cloudflare:")) return cloudflareId(v.slice(11));
   const remote = parseRemoteAccount(v);
   if (remote) return v;
-  if (/^(gmail|imap):/.test(v)) return null;
+  if (/^(gmail|imap|outlook):/.test(v)) return null;
   return cloudflareId(v);
 }
 // No "%": the mailbox routes decode their parameter once more, so "x%40y@d.com" would name another mailbox.
@@ -80,7 +80,7 @@ function cursorAccounts(cursor: unknown): string[] | null {
   if (typeof cursor !== "string") return [];
   try {
     const text = new TextDecoder().decode(Uint8Array.from(atob(cursor), (c) => c.charCodeAt(0)));
-    return [...text.matchAll(/"((?:cloudflare|gmail|imap):[^"]+)"/g)].map((m) => m[1]!.toLowerCase());
+    return [...text.matchAll(/"((?:cloudflare|gmail|imap|outlook):[^"]+)"/g)].map((m) => m[1]!.toLowerCase());
   } catch { return null; }
 }
 

@@ -79,7 +79,7 @@ export async function readInbox(params: URLSearchParams, sources: InboxSources, 
   if (domain && !DOMAIN.test(domain)) throw new InboxRequestError("invalid_filter");
   // Every inbox of one provider (the sidebar's Gmail or IMAP group).
   const provider = params.get("provider") || "";
-  if (provider && provider !== "gmail" && provider !== "imap" && provider !== "cloudflare") throw new InboxRequestError("invalid_filter");
+  if (provider && provider !== "gmail" && provider !== "imap" && provider !== "outlook" && provider !== "cloudflare") throw new InboxRequestError("invalid_filter");
   const limit = Number(params.get("limit") || 50);
   if (!INBOX_FOLDERS.includes(folder as InboxReadOptions["folder"]) || !Number.isInteger(limit) || limit < 1 || limit > 100 || query.length > 500 || account.length > 512)
     throw new InboxRequestError("invalid_filter");
@@ -109,7 +109,7 @@ export async function readInbox(params: URLSearchParams, sources: InboxSources, 
   const messages: InboxMessage[] = [];
   // Bound concurrent DO calls and total account fan-out; never omit that limit.
   if (selected.length > 100) {
-    for (const provider of ["cloudflare", "gmail", "imap"] as const)
+    for (const provider of ["cloudflare", "gmail", "imap", "outlook"] as const)
       if (selected.slice(100).some(a => a.provider === provider)) issues.push({ provider, error: "account_limit" });
   }
   const reading = selected.slice(0, 100);

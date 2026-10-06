@@ -140,6 +140,8 @@ export interface OAuthState {
   verifier: string;
   browserHash: string;
   expiresAt: number;
+  /** Whose sign-in it is ("outlook"); absent is Gmail's, as every state before 0.11 was. */
+  provider?: "gmail" | "outlook";
 }
 export async function createAuthorization(
   store: Store,
@@ -178,6 +180,8 @@ export async function consumeState(
   state: string,
   browserToken: string,
   now = Date.now(),
+  /** A state of another provider's sign-in is refused (and used up). */
+  provider: "gmail" | "outlook" = "gmail",
 ): Promise<OAuthState> {
   if (
     !state ||
@@ -197,7 +201,7 @@ export async function consumeState(
       return saved;
     })
     .then((saved) => {
-      if (saved.expiresAt <= now) throw new Error("invalid_state");
+      if (saved.expiresAt <= now || (saved.provider ?? "gmail") !== provider) throw new Error("invalid_state");
       return saved;
     });
 }

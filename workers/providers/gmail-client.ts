@@ -11,6 +11,8 @@ export class ProviderError extends Error {
     public status = 502,
     /** Why, when the code alone is not enough to act on (shared/mail/gmail-reasons.ts, or "invalid_grant"). */
     public reason?: string,
+    /** When the provider said to try again (epoch ms; a Retry-After header), for a throttled request. */
+    public retryAt?: number,
   ) {
     super(code);
   }
@@ -115,6 +117,11 @@ export interface Message {
   labels: string[];
   /** List/bulk/auto header signals for triage; absent on messages cached before 2026-09-28. */
   signals?: TriageSignals;
+  /**
+   * The provider's own id when it cannot be a storage key (an Outlook message id is longer than
+   * 128 characters, so the id here is its hash): what requests to the provider name.
+   */
+  remoteId?: string;
   attachments: {
     filename: string;
     mimeType: string;

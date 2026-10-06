@@ -1,6 +1,7 @@
 /**
- * Why a Gmail account stopped working, and what the person does about it (SCN-003). One source
- * for the inbox banner, Settings → Accounts, the agent protocol and the OAuth result page.
+ * Why an OAuth account (Gmail, SCN-003; Outlook, SCN-059) stopped working, and what the person does
+ * about it. One source for the inbox banner, Settings → Accounts, the agent protocol and the OAuth
+ * result pages; the Microsoft reasons start with `microsoft_`.
  *
  * The server stores the reason on the account (`reason`) next to its error code (`error`), so a
  * cause found once — a revoked grant, the Gmail API switched off, an unticked box on Google's page
@@ -10,6 +11,13 @@
  *  - refresh tokens and the 7-day expiry of a Testing app: https://developers.google.com/identity/protocols/oauth2#expiration
  *  - gmail.modify is a restricted scope: https://developers.google.com/workspace/gmail/api/auth/scopes
  *  - personal use without verification: https://support.google.com/cloud/answer/13464323
+ *
+ * Microsoft's, read 2026-10-06:
+ *  - token endpoint errors (invalid_grant, interaction_required, invalid_client):
+ *    https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow
+ *  - an expired client secret is AADSTS7000222; client secrets last at most 24 months:
+ *    https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes,
+ *    https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-credentials
  *
  * Plain module: the app, the Worker and the tests load it directly.
  */
@@ -21,6 +29,10 @@ export const GMAIL_REASONS = [
   "gmail_api_disabled",
   "client_rejected",
   "credentials_unreadable",
+  "microsoft_access_revoked",
+  "microsoft_signin_required",
+  "microsoft_secret_expired",
+  "microsoft_client_rejected",
 ] as const;
 export type GmailReason = (typeof GMAIL_REASONS)[number];
 
@@ -76,6 +88,30 @@ export const GMAIL_REASON_TEXT: Readonly<Record<GmailReason, GmailReasonText>> =
     explain: "The server's credential key changed, so the access saved for this account can no longer be read.",
     fix: "Reconnect it.",
     action: "reconnect",
+  },
+  microsoft_access_revoked: {
+    short: "needs to be reconnected: Microsoft no longer accepts its access",
+    explain: "The access was removed in the Microsoft account, its password changed, or it went unused for a long time.",
+    fix: "Reconnect it with Microsoft.",
+    action: "reconnect",
+  },
+  microsoft_signin_required: {
+    short: "needs you to sign in to Microsoft again",
+    explain: "Microsoft asks for another sign-in step: a new sign-in rule of your organization, multi-factor sign-in, or a permission that needs approving again.",
+    fix: "Reconnect it with Microsoft and finish every step Microsoft shows.",
+    action: "reconnect",
+  },
+  microsoft_secret_expired: {
+    short: "cannot be read: the Microsoft client secret on your server has expired",
+    explain: "Client secrets in Microsoft Entra end on the date chosen when they were made, at most two years later.",
+    fix: "In Microsoft Entra, add a new client secret to the app registration, then save it in Settings → Accounts → Outlook. The account does not need to be reconnected.",
+    action: "setup",
+  },
+  microsoft_client_rejected: {
+    short: "cannot be read: Microsoft refused this server's app registration",
+    explain: "The app registration was deleted, or its client secret was removed or changed, in Microsoft Entra.",
+    fix: "Check the Outlook setup in Settings → Accounts and save the client again; then reconnect the account.",
+    action: "setup",
   },
 });
 
