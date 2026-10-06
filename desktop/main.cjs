@@ -519,6 +519,11 @@ app.on('second-instance', (_event, argv) => {
 });
 if (ownsInstance) app.whenReady().then(async () => {
   installIPC(); installMenu(); await loadBundledSetups();
+  // The Mac woke from sleep: the open mail window reads new mail now instead of at its next poll
+  // (P1-4). An event, not a timer: nothing runs here while the Mac sleeps or no window is open.
+  if (electron.powerMonitor) electron.powerMonitor.on('resume', () => {
+    if (mailWindow && !mailWindow.isDestroyed()) mailWindow.webContents.send('fabric:resumed');
+  });
   // Orphan partitions and settings leftovers go before any window opens (LC-12). An unreadable
   // server.json is kept and nothing is swept: the person is about to enter that server again.
   // With no server known at all, no partition is an orphan yet: it may be the server the person is

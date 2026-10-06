@@ -23,7 +23,7 @@ interface EmailListResponse {
 export function useEmails(
 	mailboxId: string | undefined,
 	params: Record<string, string>,
-	options?: { enabled?: boolean; refetchInterval?: number },
+	options?: { enabled?: boolean; refetchInterval?: number | false },
 ) {
 	const queryParams = params.folder
 		? { ...params, threaded: "true" }

@@ -58,6 +58,8 @@ test('a failed remote load cannot close recovery when Chromium finishes its erro
   const { readFile } = await import('node:fs/promises');
   const { runInNewContext } = await import('node:vm');
   const windows: any[] = [];
+  const sent: string[] = [];
+  const powerMonitor = new EventEmitter();
   const fakeSession = Object.assign(new EventEmitter(), { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} });
   class FakeWindow extends EventEmitter {
     destroyed = false;
@@ -66,7 +68,7 @@ test('a failed remote load cannot close recovery when Chromium finishes its erro
     options: any;
     constructor(options: any) {
       super(); this.options = options;
-      this.webContents = Object.assign(new EventEmitter(), { session: fakeSession, setWindowOpenHandler() {} });
+      this.webContents = Object.assign(new EventEmitter(), { session: fakeSession, setWindowOpenHandler() {}, send: (channel: string) => sent.push(channel) });
       windows.push(this);
     }
     isDestroyed() { return this.destroyed; }
@@ -85,7 +87,7 @@ test('a failed remote load cannot close recovery when Chromium finishes its erro
   });
   const fakeElectron = { app: fakeApp, BrowserWindow: FakeWindow,
     Menu: { buildFromTemplate: (x: any) => x, setApplicationMenu() {} },
-    ipcMain: { handle() {} }, shell: {}, dialog: {}, session: { fromPartition: () => fakeSession } };
+    ipcMain: { handle() {} }, shell: {}, dialog: {}, session: { fromPartition: () => fakeSession }, powerMonitor };
   const code = await readFile(new URL('../desktop/main.cjs', import.meta.url), 'utf8');
   runInNewContext(code, {
     require: (name: string) => name === 'electron' ? fakeElectron : name === 'node:fs/promises' ? { readFile: async () => JSON.stringify(config), readdir: async () => [] } : name === './policy.cjs' ? require('../desktop/policy.cjs') : name === './cloudflare-deploy.cjs' ? require('../desktop/cloudflare-deploy.cjs') : name === './profile.cjs' ? require('../desktop/profile.cjs') : name === './connect.cjs' ? require('../desktop/connect.cjs') : name.startsWith('./') ? require('../desktop/' + name.slice(2)) : require(name),
@@ -95,11 +97,15 @@ test('a failed remote load cannot close recovery when Chromium finishes its erro
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(windows.length, 1);
   const mail = windows[0];
-  // The server page gets one narrow bridge and nothing else (desktop/mail-preload.cjs).
+  // The server page gets one narrow bridge and nothing else (desktop/mail-preload.cjs): the pending
+  // setup, and a receive-only wake signal (P1-4) it can subscribe to and unsubscribe from.
   assert.equal(mail.options.webPreferences.preload, '/fixture/desktop/mail-preload.cjs');
   const bridge = await readFile(new URL('../desktop/mail-preload.cjs', import.meta.url), 'utf8');
   assert.deepEqual([...bridge.matchAll(/ipcRenderer\.(\w+)\('([^']+)'/g)].map(m => m[1] + ' ' + m[2]),
-    ['invoke fabric:pending-setup', 'invoke fabric:pending-setup-done']);
+    ['invoke fabric:pending-setup', 'invoke fabric:pending-setup-done', 'on fabric:resumed', 'removeListener fabric:resumed']);
+  // Waking the Mac tells the open mail window, and only it, to read new mail.
+  powerMonitor.emit('resume');
+  assert.deepEqual(sent, ['fabric:resumed']);
   assert.equal(mail.options.webPreferences.sandbox, true);
   assert.equal(mail.options.webPreferences.nodeIntegration, false);
   mail.webContents.emit('did-fail-load', {}, -102, 'connection refused', config.origin, true);

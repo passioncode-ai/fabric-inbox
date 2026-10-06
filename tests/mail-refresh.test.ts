@@ -1,7 +1,46 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { refreshScope, refreshSummary } from "../app/lib/mail-refresh";
+import { mergeHead, refreshScope, refreshSummary, WakeRefresh, type FeedPage, type FeedRow } from "../app/lib/mail-refresh";
+
+const row = (id: string, timestamp: number): FeedRow => ({ id, date: new Date(timestamp).toISOString(), accountId: "gmail:a", providerMessageId: id });
+const page = (rows: FeedRow[], hasMore = true, cursor = "c-" + rows.at(-1)?.id): FeedPage => ({ messages: rows, hasMore, cursor });
+
+test("after Load older, a newly read first page joins the loaded pages: new mail on top, nothing lost (P1-3)", () => {
+  const loaded = { pages: [page([row("m9", 900), row("m8", 800), row("m7", 700)]), page([row("m6", 600), row("m5", 500)])], pageParams: ["", "c-m7"] };
+  // Two new messages arrived; the new first page (three rows) now ends at m9.
+  const head = page([row("n2", 1200), row("n1", 1100), row("m9", 900)]);
+  const merged = mergeHead(loaded, head);
+  assert.deepEqual(merged.pages.flatMap((p) => p.messages.map((m) => m.id)), ["n2", "n1", "m9", "m8", "m7", "m6", "m5"]);
+  assert.deepEqual(merged.pages[0].messages.map((m) => m.id), ["n2", "n1", "m9", "m8", "m7"], "rows older than the new page's last stay: no gap before page 2");
+  assert.deepEqual(merged.pageParams, ["", "c-m7"], "page 2 and its cursor are kept");
+  assert.equal(merged.pages[0].cursor, "c-m7");
+  const archived = mergeHead(loaded, page([row("n1", 1100), row("m9", 900), row("m7", 700)]));
+  assert.deepEqual(archived.pages[0].messages.map((m) => m.id), ["n1", "m9", "m7"], "a row in the new page's range that it lacks was archived and goes");
+});
+
+test("coming back to the window or waking the Mac reads the list again, not more than every 10 s (P1-4)", () => {
+  const wake = new WakeRefresh(10_000);
+  assert.equal(wake.activity(true, 1_000), false, "already active: nothing to do");
+  assert.equal(wake.activity(false, 2_000), false);
+  assert.equal(wake.activity(true, 20_000), true, "back from elsewhere: read now");
+  assert.equal(wake.activity(false, 21_000), false);
+  assert.equal(wake.activity(true, 22_000), false, "a quick switch away and back does not read again");
+  assert.equal(wake.resume(40_000), true, "the Mac woke");
+  wake.read(60_000);
+  assert.equal(wake.resume(65_000), false, "the list was just read by its poll");
+});
+
+test("the inbox polls through the window-activity policy and keeps polling the first page after Load older (P1-3, P1-4)", () => {
+  const code = readFileSync("app/routes/unified-inbox.tsx", "utf8");
+  assert.doesNotMatch(code, /refetchInterval:\s*\d/, "no fixed interval: polling stops while the window is not active");
+  assert.match(code, /> 1 \? false : pollInterval\(windowActive, INBOX_POLL_MS\)/);
+  assert.match(code, /queryKey: \["unified-inbox-head"/);
+  assert.match(code, /refetchInterval: olderLoaded \? pollInterval\(windowActive, INBOX_POLL_MS\) : false/);
+  assert.match(code, /mergeHead\(data, fresh\)/);
+  assert.match(code, /subscribeWindowActivity\(window, document/);
+  assert.match(code, /onResume\?\.\(/);
+});
 
 test("Refresh asks Gmail only for the Gmail accounts in view (P1-5)", () => {
   assert.equal(refreshScope({ accountId: "", domain: "" }), undefined, "every Gmail account");

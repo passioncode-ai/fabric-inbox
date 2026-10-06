@@ -58,7 +58,11 @@ import { totalUnread } from "~/components/inbox/account-groups";
 import { displayOrder, groupCounts, isTriageGroup, listDate, nextAfter, pinTriage, triageOf, type ListView } from "~/components/inbox/triage-view";
 import type { Triage, TriageGroup } from "../../shared/mail/triage";
 import type { InboxFolder } from "../../shared/mail/inbox";
-import { refreshScope, refreshSummary, type RefreshResponse } from "~/lib/mail-refresh";
+import { mergeHead, refreshScope, refreshSummary, WakeRefresh, type RefreshResponse } from "~/lib/mail-refresh";
+import { useWindowActive } from "~/hooks/useWindowActive";
+import { pollInterval, subscribeWindowActivity } from "~/lib/window-activity";
+/** How often the list in view is read again while the window is active. */
+const INBOX_POLL_MS = 60_000;
 const folders = [
   ["inbox", "Inbox", TrayArrowDownIcon],
   ["starred", "Starred", StarIcon],
@@ -177,10 +181,9 @@ export default function UnifiedInbox() {
     if (rulesOpen) el?.showModal();
     else el?.close();
   }, [rulesOpen]);
-  const list = useInfiniteQuery({
-    queryKey: ["unified-inbox", accountId, domainFilter, providerFilter, categoryParam, folder, search, unreadOnly],
-    initialPageParam: "",
-    queryFn: ({ pageParam }) =>
+  const windowActive = useWindowActive();
+  const listKey = ["unified-inbox", accountId, domainFilter, providerFilter, categoryParam, folder, search, unreadOnly];
+  const readPage = (pageParam: string) =>
       fabric<InboxData>(
         "/api/inbox?" +
           new URLSearchParams({
@@ -194,11 +197,46 @@ export default function UnifiedInbox() {
             ...(categoryParam ? { category: categoryParam } : {}),
             ...(providerFilter ? { provider: providerFilter } : {}),
           }),
-      ),
+      );
+  const list = useInfiniteQuery({
+    queryKey: listKey,
+    initialPageParam: "",
+    queryFn: ({ pageParam }) => readPage(pageParam),
     getNextPageParam: (page) => (page.hasMore ? page.cursor : undefined),
-    // Refreshing re-reads every loaded page; after "Load older" that is left to the Refresh button.
-    refetchInterval: (query) => ((query.state.data?.pages.length ?? 0) > 1 ? false : 60_000),
+    // One page: it is read again every minute while the window is active. After "Load older" the
+    // first page alone is read (below) and joined to the rest, never every loaded page (P1-3).
+    refetchInterval: (query) => ((query.state.data?.pages.length ?? 0) > 1 ? false : pollInterval(windowActive, INBOX_POLL_MS)),
   });
+  const olderLoaded = (list.data?.pages.length ?? 0) > 1;
+  const head = useQuery({
+    queryKey: ["unified-inbox-head", ...listKey.slice(1)],
+    queryFn: () => readPage(""),
+    enabled: olderLoaded,
+    refetchInterval: olderLoaded ? pollInterval(windowActive, INBOX_POLL_MS) : false,
+  });
+  useEffect(() => {
+    const fresh = head.data;
+    if (!fresh || !olderLoaded) return;
+    client.setQueryData(listKey, (data: { pages: InboxData[]; pageParams: unknown[] } | undefined) => mergeHead(data, fresh));
+  }, [head.dataUpdatedAt]);
+  /** Reads what is in view again: the one page, or the first page joined to older ones. */
+  function readAgain() {
+    void (olderLoaded ? head.refetch() : list.refetch());
+  }
+  // Coming back to the window, or the Mac waking from sleep, reads the list at once instead of up
+  // to a minute later (P1-4). The desktop app signals a wake through its narrow bridge.
+  const wake = useRef(new WakeRefresh());
+  const readAgainRef = useRef(readAgain);
+  readAgainRef.current = readAgain;
+  useEffect(() => {
+    if (list.dataUpdatedAt) wake.current.read(list.dataUpdatedAt);
+  }, [list.dataUpdatedAt]);
+  useEffect(() => {
+    const stop = subscribeWindowActivity(window, document, (now) => { if (wake.current.activity(now)) readAgainRef.current(); });
+    const bridge = (window as unknown as { fabricDesktop?: { onResume?(callback: () => void): (() => void) | undefined } }).fabricDesktop;
+    const stopResume = bridge?.onResume?.(() => { if (wake.current.resume()) readAgainRef.current(); });
+    return () => { stop(); stopResume?.(); };
+  }, []);
   // Categories and their counts are read with the list, not on a clock of their own, so the
   // sidebar's numbers and the messages always come from the same moment (P2-11).
   const categoryList = useQuery({
