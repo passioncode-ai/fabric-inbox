@@ -157,6 +157,38 @@ test("IMAP: a discard that fails on arrival (the server refuses to make Discarde
   assert.deepEqual(await service.drainEvents(async (e) => { delivered.push(e.subject); }, Date.now(), filter), { delivered: 0, failed: 0, dead: 0, discarded: 0 }, "never again");
 });
 
+test("a discard on arrival runs under the object's lock, never alongside a sync page or a mail action", async (t) => {
+  const { imap, service } = await imapFixture(t);
+  const { id } = await service.connectImap({ preset: "fastmail", email: EMAIL, password: PASS });
+  await settle(service, id);
+  imap.deliver("INBOX", mail("Digest 4", { extra: "List-Id: <weekly.news.example.org>\r\n" }));
+  await service.sync(id, { historyOnly: true, deadline: Date.now() + 10_000 });
+  // The object's lock, as GmailAccountsDO.serial chains it: one holder at a time.
+  let held = 0, overlapped = false, locked = 0;
+  let tail: Promise<unknown> = Promise.resolve();
+  const serial = <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = tail.then(async () => { held++; locked++; try { return await fn(); } finally { held--; } });
+    tail = run.catch(() => {});
+    return run;
+  };
+  const discard = service.discard.bind(service);
+  let discardsLocked = 0;
+  service.discard = async (...args: Parameters<typeof discard>) => { if (held === 1) discardsLocked++; if (held > 1) overlapped = true; return discard(...args); };
+  // A mail action that holds the lock while the drain wants it.
+  let release!: () => void;
+  const action = serial(() => new Promise<void>((resolve) => { release = resolve; }));
+  const filter: ArrivalFilter = async () => ({ reason: "Discarded automatically", ruleId: "l-00000001" });
+  const drained = service.drainEvents(async () => {}, Date.now(), filter, undefined, serial);
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(imap.folder("INBOX").messages.length, 1, "the discard waits for the action holding the lock");
+  release();
+  await action;
+  assert.equal((await drained).discarded, 1);
+  assert.equal(discardsLocked, 1, "the discard ran holding the lock");
+  assert.equal(overlapped, false);
+  assert.equal(locked, 2);
+});
+
 test("IMAP: Discarded mail goes to Trash after 30 days; younger mail stays", async (t) => {
   const { imap, store, service } = await imapFixture(t);
   imap.deliver("INBOX", mail("Old"));

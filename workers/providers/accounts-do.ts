@@ -69,7 +69,10 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
         emails ??= new Map((await this.service.listAccounts()).accounts.map((a) => [a.provider + ":" + a.id, a.email] as [string, string]));
         await this.env.CATEGORIES.getByName("workspace").ingest({ id: event.account, email: emails.get(event.account) ?? "" }, payload);
       }
-    }, Date.now(), await this.arrivalFilter(), (ruleId) => updateDiscardStore(this.env.BUCKET!, (store) => recordApplied(store, ruleId, Date.now())));
+    }, Date.now(), await this.arrivalFilter(), (ruleId) => updateDiscardStore(this.env.BUCKET!, (store) => recordApplied(store, ruleId, Date.now())),
+    // drain() never runs inside serial (a consumer may call back into this object), so taking the
+    // lock here for the discard alone cannot deadlock; it keeps the discard off a sync page's back.
+    (fn) => this.serial(fn));
   }
   /**
    * The discard rules applied to new inbox mail of Gmail, IMAP and Outlook accounts (after the

@@ -1072,7 +1072,9 @@ export class AccountService {
    * `dead:event:` with its error, so it never holds back the events behind it.
    */
   async drainEvents(deliver: (event: IncomingEvent) => Promise<unknown>, now = Date.now(), filter?: ArrivalFilter,
-    applied?: (ruleId: string) => Promise<unknown>): Promise<{ delivered: number; failed: number; dead: number; discarded: number }> {
+    applied?: (ruleId: string) => Promise<unknown>,
+    /** The object's lock (GmailAccountsDO.serial): a discard changes the provider, the cache and the account record. */
+    serial: <T>(fn: () => Promise<T>) => Promise<T> = (fn) => fn()): Promise<{ delivered: number; failed: number; dead: number; discarded: number }> {
     const result = { delivered: 0, failed: 0, dead: 0, discarded: 0 };
     let handled = 0;
     const providers = new Map<string, string>();
@@ -1106,7 +1108,7 @@ export class AccountService {
           : null;
         // A discard the provider refuses (a folder it will not make, a label it rejects, an outage)
         // must not cost the message its delivery: it stays in the inbox and is handed on below.
-        const discarded = verdict ? await this.discard(event.accountId, event.messageId, verdict.reason).then(() => true, (error: unknown) => {
+        const discarded = verdict ? await serial(() => this.discard(event.accountId, event.messageId, verdict.reason)).then(() => true, (error: unknown) => {
           console.warn(JSON.stringify({ event: "discard_arrival_failed", provider, rule: verdict.ruleId,
             error: error instanceof ProviderError ? error.code : (error as Error)?.message?.slice(0, 120) ?? "unknown" }));
           return false;
