@@ -975,15 +975,16 @@ const newAddressSettings = {
 
 const checkAddress = defineTool({
   name: "check_address", title: "Check addresses before creating them", level: "read", readOnly: true,
-  description: "What the person sees before creating an address: the domain's state (receiving, can_receive — create_address needs connect_domain first —, needs_fix, no_token, not_visible, unknown, unavailable), whether a Cloudflare rule can be made, whether a test message is worth sending, the catch-all, and per name: available, exists, elsewhere (a Cloudflare rule sends it somewhere else, and where) or invalid (and why), with notes such as mail that arrived for it recently or the catch-all keeping its mail today.",
+  description: "What the person sees before creating an address: the domain's state (receiving, can_receive — create_address needs connect_domain first —, needs_fix, no_token, not_visible, unknown, unavailable), whether a Cloudflare rule can be made, whether a test message is worth sending, the catch-all, and per name: available, exists, elsewhere (a Cloudflare rule sends it somewhere else, and where), invalid (and why) or restricted (this server creates only the addresses its EMAIL_ADDRESSES lists), with notes such as mail that arrived for it recently or the catch-all keeping its mail today.",
   input: { domain, localParts: z.array(z.string().max(320)).min(1).max(BATCH_MAX).describe("The names before @ to check, up to 50") },
   routes: ["GET /api/project-addresses/check"],
-  call: (a, ctx) => get(ctx, "/api/project-addresses/check", { domain: a.domain.toLowerCase(), names: a.localParts.join(",") }),
+  // A JSON array, so a name is checked exactly as given and never split at a comma.
+  call: (a, ctx) => get(ctx, "/api/project-addresses/check", { domain: a.domain.toLowerCase(), names: JSON.stringify(a.localParts) }),
 });
 
 const createAddress = defineTool({
   name: "create_address", title: "Create an address", level: "admin", target: (a) => `${a.localPart}@${a.domain}`,
-  description: "Makes a new mailbox on one of your served domains and, when this server can, the Cloudflare rule that sends its mail here. The answer lists its steps (address, rule), each done, already, skipped or failed with a fix. Optionally sets its display name, signature, agent and a copy to a verified destination. check_address first says whether the name is free; send_test_message and check_test_message then prove it receives.",
+  description: "Makes a new mailbox on one of your served domains and, when this server can, the Cloudflare rule that sends its mail here. The answer lists its steps (address, rule), each done, already, skipped, failed or not_receiving (the rule exists but Email Routing is off or broken for the domain), the last three with a fix. Optionally sets its display name, signature, agent and a copy to a verified destination. check_address first says whether the name is free; send_test_message and check_test_message then prove it receives.",
   input: { localPart: z.string().regex(LOCAL_PART_RE).describe("The part before @, lower case (letters, digits, . _ + -, a letter or digit at each end, no two dots together)"), domain,
     ...newAddressSettings },
   routes: ["POST /api/project-addresses", "POST /api/v1/mailboxes"],
@@ -993,7 +994,7 @@ const createAddress = defineTool({
 
 const createAddresses = defineTool({
   name: "create_addresses", title: "Create several addresses", level: "admin", target: (a) => `${a.localParts.length} on ${a.domain}`,
-  description: "Makes up to 50 addresses on one served domain with the same settings (agent, signature, copy, rule), one after another; each gets its own display name from its name unless name is given for all. Answers one row per address with its status (201 created, 409 exists, 400 refused) and steps; a failure never stops the others.",
+  description: "Makes up to 50 addresses on one served domain with the same settings (agent, signature, copy, rule), one after another; each gets its own display name from its name unless name is given for all. Answers one row per address with its status (201 created, 409 exists, 400 refused) and steps; a failure never stops the others. One call does only what fits the server's Cloudflare budget for a request: the names it did not start come back in remaining (complete false) — call create_addresses again with them, same settings, until complete is true. Sending a name again is safe: an address that exists answers 409.",
   input: { domain, localParts: z.array(z.string().max(320)).min(1).max(BATCH_MAX).describe("The names before @, up to 50"), ...newAddressSettings },
   routes: ["POST /api/project-addresses/batch"],
   call: (a, ctx) => post(ctx, "/api/project-addresses/batch", { domain: a.domain.toLowerCase(), localParts: a.localParts, name: a.name, agent: toAgent(a.agent),
@@ -1426,7 +1427,7 @@ const checkGmailSetup = defineTool({
 
 const createCredentialKey = defineTool({
   name: "create_credential_key", title: "Give the server its credential key", level: "admin", target: () => "MAIL_CREDENTIAL_KEY",
-  description: "Makes the key the server seals saved access with (IMAP app passwords, Gmail and Outlook tokens) and writes it into the server's own settings with its Cloudflare token, when the server has none; a key it already has is never replaced. The value is never returned. Needed before an IMAP account can be connected on a server that has no key (list_mail_providers says not_configured).",
+  description: "Makes the key the server seals saved access with (IMAP app passwords, Gmail and Outlook tokens) and writes it into the server's own settings with its Cloudflare token, when the server has none; a key it already has, even one written a moment ago, is never replaced (changes to the settings run one at a time), so calls at once make one key. The value is never returned. Needed before an IMAP account can be connected on a server that has no key (list_mail_providers says not_configured).",
   input: {},
   routes: ["POST /api/credential-key"],
   call: (_a, ctx) => post(ctx, "/api/credential-key"),

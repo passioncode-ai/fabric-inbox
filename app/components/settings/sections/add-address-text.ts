@@ -111,8 +111,14 @@ export const ADD_ADDRESS_TEXT = {
   working: "Working…",
   notCreated: "It could not be created.",
   nothingCreated: " Nothing was created.",
+  creatingRest: "Creating the rest…",
+  // When the server's answer did not arrive, what exists is read again (never "Nothing was created").
+  lostExists: (email: string) => `${email} exists now (read again: the server's answer did not arrive).`,
+  lostMissing: (email: string, why: string) => `${email} does not exist. ${why} If it does not appear in the address list in a moment, create it again.`,
+  lostUnknown: (why: string) => `${why} What was created could not be read: the address list shows which addresses exist.`,
+  ruleUnread: "Its rule could not be read. Fix it checks the rule and makes it if it is missing.",
 
-  mark: { done: "Done", already: "Already so", skipped: "Skipped", failed: "Not done", waiting: "Waiting", running: "Working…", not_asked: "Not asked" },
+  mark: { done: "Done", already: "Already so", skipped: "Skipped", failed: "Not done", not_receiving: "Not receiving yet", waiting: "Waiting", running: "Working…", not_asked: "Not asked" },
   details: "Details",
   chip: (step: string, mark: string) => `${step}: ${mark.toLowerCase()}`,
   titleAdded: (email: string) => `Added ${email}`,
@@ -135,6 +141,7 @@ export const ADD_ADDRESS_TEXT = {
 
   sentenceNotCreated: (email: string, detail: string) => `${email} was not created. ${detail}`.trim(),
   sentencePartly: (email: string, step: string, fix: string | null) => `${email} was created; ${step.toLowerCase()} did not happen.${fix ? ` ${fix} fixes it.` : ""}`,
+  sentenceNotReceiving: (email: string, fix: string | null) => `${email} was created; its mail does not arrive here yet.${fix ? ` ${fix} fixes it.` : ""}`,
   sentenceWaiting: (email: string) => `${email} was created. Waiting for the test message…`,
   sentenceReady: (email: string) => `${email} is ready: the test message arrived.`,
   sentenceCreated: (email: string) => `${email} was created.`,

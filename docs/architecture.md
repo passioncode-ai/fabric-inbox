@@ -116,7 +116,16 @@ its key by fingerprint (first 9 bytes of SHA-256); version 1 envelopes and keys 
 `MAIL_CREDENTIAL_KEY_PREVIOUS` keep opening and are sealed again with the current key the next
 time the account is used, which is how the key is rotated. An envelope no key opens is
 `reconnect_required` (`credentials_unreadable`). Create my server makes `MAIL_CREDENTIAL_KEY` once
-(`desktop/cloudflare-deploy.cjs`); the Gmail and Outlook setups make it when the server has none.
+(`desktop/cloudflare-deploy.cjs`); the Gmail and Outlook setups, and `POST /api/credential-key`
+(Settings, `create_credential_key`), make it when the server has none. All three write through
+`writeWorkerSettings` (`workers/gmail-setup/server-settings.ts`), which runs under one R2 lock
+(`workers/lib/settings-lock.ts`, `config/worker-settings.lock`, taken with a conditional write,
+stale after 2 minutes) and reads the live bindings just before it writes: a credential key bound
+under either name is inherited, never written again, even before the new Worker version holding it
+runs — so two requests at once make exactly one key. Only a `MAIL_CREDENTIAL_KEY` the running Worker
+holds but cannot use (set by hand) is replaced, and not within 10 minutes of a key this server wrote
+(`config/credential-key.json`, a time, no value). A change that waits too long for the lock is
+refused with 409 and nothing written.
 
 **Schedule.** One alarm serves every account of every provider (`gmail-scheduler.ts`, below);
 `MAIL_POLL_SECONDS` (else `GMAIL_POLL_SECONDS`, default 300) sets the interval; an account whose
@@ -315,18 +324,39 @@ inbox, its counts and categories; kept 30 days.
 `workers/lib/address-ops.ts` (`createAddress`, `removeAddress`, `setForwardCopy`,
 `effectiveCatchAll`) is behind both Settings → Addresses (`/api/project-addresses`) and the legacy
 mailbox route (`/api/v1/mailboxes`, used for the addresses a deployment's `EMAIL_ADDRESSES` lists). Every check runs before Cloudflare is touched; a rule the
-call made is removed again when the mailbox cannot be saved; a zone the token cannot see gets its
+mailbox is saved before its rule (below), so no rule is left without a mailbox; a zone the token cannot see gets its
 address with a warning; the catch-all in effect (the deployment's `UNKNOWN_ADDRESS_POLICY` wins
 over the stored choice) cannot be removed; what happens to the next message is read from
 Cloudflare after the rule is gone. Since 0.12 (WS7) creating answers its `steps` (address, rule —
-each done, already, skipped or failed with a `fix`); with `createRoute: "auto"` a rule that cannot be
+each done, already, skipped or failed with a `fix`, or `not_receiving` with the domain's fix when
+the rule exists but Email Routing is off or misconfigured for the domain, so a rule is never shown
+done while no mail can arrive); with `createRoute: "auto"` a rule that cannot be
 made no longer costs the address (with `true` it still does). `checkAddresses`
 (`GET /api/project-addresses/check`) reads Cloudflare once for a domain and several names
-(`EmailRoutingClient.routingFor`) and says per name available, exists, elsewhere or invalid;
-`createAddresses` (`POST /api/project-addresses/batch`) creates up to 50 one after another;
-`sendRoutingTest` keeps the test's subject in R2 (`routing-tests/<address>.json`) and
-`routingTestStatus` (`GET /api/project-addresses/:email/test`) finds it in the mailbox (any folder
-but Sent and Drafts) or reports it not arrived after 3 minutes. The part before @ is checked by
+(`EmailRoutingClient.routingFor`) and says per name available, exists, elsewhere, invalid or
+restricted (not in the deployment's `EMAIL_ADDRESSES`, which creating refuses too); it takes the
+names as a JSON array (`check_address`; a name is never split at a comma) or, from the dialog, a
+comma-separated list;
+`createAddresses` (`POST /api/project-addresses/batch`) creates up to 50 one after another with one
+routing client, so the zone, Email Routing's state and the rules are read once
+(`EmailRoutingClient` remembers them for the request and keeps them current as it changes rules)
+and each address then costs one Cloudflare call; one request stops starting addresses when its
+Cloudflare calls near `BATCH_SUBREQUESTS` (40, under the free plan's 50 subrequests) or after
+`BATCH_TIME_MS` (15 s, inside the app's 30-second wait), and answers the names it did not start in
+`remaining` (`complete: false`), which the dialog and `create_addresses` send again. The mailbox is
+written before its rule, with a conditional write (`If-None-Match: *`): a request cut off between
+the two leaves an address that says it does not receive yet, never a rule without a mailbox, and of
+two creates of one address one wins and the other answers 409 without touching Cloudflare. With
+`createRoute: true` a rule Cloudflare refuses takes the new mailbox away again. When the dialog's
+answer is lost (a timeout, no connection, a 5xx) it reads the names back
+(`/api/project-addresses/check`, then each existing address's routing) and says which exist,
+never "Nothing was created";
+`sendRoutingTest` sends each test as its own message (a fresh idempotency key per send and an
+8-character nonce in the subject, so Send again within the same minute really sends) and keeps its
+subject in R2 (`routing-tests/<address>.json`); `routingTestStatus`
+(`GET /api/project-addresses/:email/test`) counts only a message with exactly that subject, received at or
+after the send, in any folder but Sent and Drafts (a reply or an earlier test does not count), or
+reports it not arrived after 3 minutes. The part before @ is checked by
 `shared/address-name.ts`, the same module the dialog uses. `DomainManager.connect` leaves rules to another Worker alone
 and keeps each address's agent and the chosen catch-all; `release` keeps serving when the zone
 cannot be looked up and asks before giving up a zone the token cannot see.

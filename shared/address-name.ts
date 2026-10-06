@@ -75,14 +75,17 @@ export interface ParsedNames {
 
 /**
  * Several names typed at once: one per line, or separated by commas, semicolons or spaces. A full
- * address on the chosen domain counts as its name; one on another domain, a repeat and anything past
- * the 50th are set aside with the reason.
+ * address on the chosen domain counts as its name; one on another domain and a repeat are set aside
+ * with the reason. Only names that can be created count toward the 50; invalid ones are listed with
+ * why (up to 50 of them too), and whatever is past either limit is said once, with how many.
  */
 export function parseLocalParts(text: string, domain: string): ParsedNames {
   const entries: ParsedNames["entries"] = [];
   const skipped: ParsedNames["skipped"] = [];
   const seen = new Set<string>();
   const wanted = domain.trim().toLowerCase();
+  let valid = 0;
+  let over = 0;
   for (const token of text.split(/[\s,;]+/).filter(Boolean)) {
     let name = token;
     const at = token.lastIndexOf("@");
@@ -93,9 +96,11 @@ export function parseLocalParts(text: string, domain: string): ParsedNames {
     }
     const check = checkLocalPart(name);
     if (seen.has(check.value)) { skipped.push({ input: token, reason: `${check.value} is listed already.` }); continue; }
-    if (entries.length >= BATCH_MAX) { skipped.push({ input: token, reason: `At most ${BATCH_MAX} addresses at once.` }); continue; }
+    if (check.valid ? valid >= BATCH_MAX : entries.length - valid >= BATCH_MAX) { over++; continue; }
     seen.add(check.value);
     entries.push({ input: token, check });
+    if (check.valid) valid++;
   }
+  if (over) skipped.push({ input: "…", reason: `${over} more ${over === 1 ? "name was" : "names were"} left out: at most ${BATCH_MAX} at once.` });
   return { entries, skipped };
 }

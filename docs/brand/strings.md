@@ -418,4 +418,10 @@ The one dialog that creates addresses (SCN-021, SCN-061…065): the live check, 
 | action.address.try_again | Change and try again | app/components/settings/sections/add-address-text.ts | SCN-062 | proposed |
 | action.address.add_another | Add another | app/components/settings/sections/add-address-text.ts | SCN-062 | proposed |
 | state.routing.missing | Not receiving yet | app/components/settings/sections/data.ts | SCN-065 | proposed |
+| state.address.rule_not_receiving | Not receiving yet | app/components/settings/sections/add-address-text.ts | SCN-065 | proposed |
+| state.address.creating_rest | Creating the rest… | app/components/settings/sections/add-address-text.ts | SCN-064 | proposed |
+| state.address.lost_exists | exists now (read again: the server's answer did not arrive). | app/components/settings/sections/add-address-text.ts | SCN-064 | proposed |
+| state.address.lost_missing | If it does not appear in the address list in a moment, create it again. | app/components/settings/sections/add-address-text.ts | SCN-064 | proposed |
+| state.address.lost_unknown | What was created could not be read: the address list shows which addresses exist. | app/components/settings/sections/add-address-text.ts | SCN-064 | proposed |
+| state.address.rule_unread | Its rule could not be read. Fix it checks the rule and makes it if it is missing. | app/components/settings/sections/add-address-text.ts | SCN-065 | proposed |
 | action.routing.fix | Fix it | app/components/settings/sections/add-address-text.ts | SCN-065 | proposed |

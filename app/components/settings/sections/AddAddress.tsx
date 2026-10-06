@@ -11,7 +11,7 @@ import { settingsPath } from "../paths";
 import { Badge, Dialog, errorText, useNotify } from "../ui";
 import { refreshMail, useDestinations } from "./data";
 import {
-  DOMAIN_GROUPS, NAME_HINT, STEP_MARK, TEST_POLL_MS, agentLine, batchBody, createBody, displayNameOf, domainOptions, filterDomains,
+  DOMAIN_GROUPS, FIXABLE, NAME_HINT, STEP_MARK, TEST_POLL_MS, agentLine, answerLost, batchBody, continueBatch, createBody, displayNameOf, domainOptions, filterDomains, lostAnswerRows,
   nameView, receiveStep, startDomain, stepsSentence, testStep, testWaiting, type AddressForm, type DomainOption, type TestPhase, type UiStep,
 } from "./add-address-model";
 import { ADD_ADDRESS_TEXT as T } from "./add-address-text";
@@ -66,6 +66,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
   const [sendTest, setSendTest] = useState<boolean | null>(null);
   const [run, setRun] = useState<Run | null>(null);
   const nameField = useRef<HTMLInputElement>(null);
+  const namesField = useRef<HTMLTextAreaElement>(null);
   const ids = { name: useId(), nameMsg: useId(), domain: useId(), domainMsg: useId(), names: useId(), live: useId() };
   const ready = open && options.length > 0;
 
@@ -153,20 +154,39 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
     }
   }
 
+  /** After an answer that did not arrive: which of these names exist now, and their rules, read again. */
+  async function readBack(localParts: string[], why: string): Promise<Row[]> {
+    const check = await fabric<AddressCheck>(`/api/project-addresses/check?domain=${encodeURIComponent(form.domain)}&names=${encodeURIComponent(localParts.join(","))}`).catch(() => null);
+    const found = check?.names.filter((n) => n.status === "exists").map((n) => n.email) ?? [];
+    const routing = Object.fromEntries(await Promise.all(found.map(async (e) =>
+      [e, await fabric<RoutingStatus>(`/api/project-addresses/${encodeURIComponent(e)}/routing`).catch(() => null)] as const)));
+    return lostAnswerRows(email || form.domain, localParts, check, routing, why)
+      .map((r): Row => ({ ...r, test: r.created && testing ? "sending" : "off" }));
+  }
+
   async function createAll() {
     const stepFor = (detail: string): UiStep => ({ id: "address", label: T.stepAddress, outcome: "failed", detail });
-    let rows: Row[];
+    let rows: Row[] = [];
+    // The names not yet answered for: all of them at first, then what the server handed back (SCN-064).
+    let pending = mode === "one" ? [local.value] : creatable;
     try {
       if (mode === "one") {
         const r = await fabric<CreatedAddress>("/api/project-addresses", createBody(form));
         rows = [{ email: r.email, created: true, steps: r.steps, test: testing ? "sending" : "off" }];
       } else {
-        const r = await fabric<BatchResult>("/api/project-addresses/batch", batchBody(form, creatable));
-        rows = r.results.map((x) => ({ email: x.email, created: x.status === 201, test: x.status === 201 && testing ? "sending" : "off",
-          steps: x.status === 201 && x.steps ? x.steps : [stepFor(x.error ?? T.notCreated)] }));
+        while (pending.length) {
+          const r = await fabric<BatchResult>("/api/project-addresses/batch", batchBody(form, pending));
+          rows = [...rows, ...r.results.map((x): Row => ({ email: x.email, created: x.status === 201, test: x.status === 201 && testing ? "sending" : "off",
+            steps: x.status === 201 && x.steps ? x.steps : [stepFor(x.error ?? T.notCreated)] }))];
+          pending = continueBatch(pending, r);
+          if (pending.length) { const shown = rows; setRun((x) => ({ receive: x?.receive ?? null, rows: shown, working: true })); }
+        }
       }
     } catch (error) {
-      rows = [{ email: mode === "one" ? email : form.domain, created: false, steps: [stepFor(errorText(error) + T.nothingCreated)], test: "off" }];
+      // An answer that may have been lost is never "Nothing was created": what exists is read again.
+      rows = answerLost(error instanceof ApiError ? error.status : null)
+        ? [...rows, ...(await readBack(pending, errorText(error)))]
+        : [...rows, { email: mode === "one" ? email : form.domain, created: false, steps: [stepFor(errorText(error) + T.nothingCreated)], test: "off" }];
     } finally { await refreshMail(client, form.domain); }
     setRun((x) => ({ receive: x?.receive ?? null, rows, working: false }));
     const made = rows.filter((r) => r.created);
@@ -201,7 +221,8 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
   const again = () => {
     setForm((f) => ({ ...EMPTY_FORM(f.domain), agent: f.agent, copy: f.copy, signatureOn: f.signatureOn, signature: f.signature, makeRule: f.makeRule }));
     setSeveral(""); setRun(null);
-    requestAnimationFrame(() => nameField.current?.focus());
+    // The form comes back in the mode in use: the focus goes to its field, never to the page.
+    requestAnimationFrame(() => (mode === "one" ? nameField : namesField).current?.focus());
   };
 
   const finished = !!run && !run.working && run.rows.some((r) => r.created);
@@ -260,7 +281,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
               </div>
               <div className="fi-field">
                 <label htmlFor={ids.names}>{T.namesLabel}</label>
-                <textarea id={ids.names} className="fi-input" data-autofocus rows={4} value={several} placeholder={T.namesPlaceholder}
+                <textarea ref={namesField} id={ids.names} className="fi-input" data-autofocus rows={4} value={several} placeholder={T.namesPlaceholder}
                   spellCheck={false} aria-describedby={ids.live} onChange={(e) => setSeveral(e.target.value)} />
                 <span className="fi-hint">{T.namesHint}</span>
               </div>
@@ -475,6 +496,7 @@ function RunView({ run, mode, domain, onFix, onTest, onReplace, onBack, onAgain,
           </ol>
         )}
         {run.working && !run.rows.length && !run.receive && <p role="status" className="fi-hint">{T.creating}</p>}
+        {run.working && run.rows.length > 0 && mode === "several" && <p className="fi-hint">{T.creatingRest}</p>}
         {mode === "one"
           ? run.rows.map((row) => <RowSteps key={row.email} row={row} onFix={onFix} onTest={onTest} onClose={onDone} />)
           : run.rows.length > 0 && (
@@ -513,7 +535,7 @@ function RowSteps({ row, onFix, onTest, onClose, compact = false }: {
   const t = testStep(row.test, test.data ?? null, row.testError);
   const steps = row.created ? [...row.steps, t] : row.steps;
   const actionFor = (s: UiStep) =>
-    s.fix && (s.outcome === "failed" || s.outcome === "skipped") ? <FixButton fix={s.fix} onRun={() => onFix(row, s.fix!)} onClose={onClose} /> :
+    s.fix && FIXABLE.has(s.outcome) ? <FixButton fix={s.fix} onRun={() => onFix(row, s.fix!)} onClose={onClose} /> :
     s.id === "test" && s.outcome === "not_asked" ? <button type="button" className="fi-text-button" onClick={() => onTest(row.email)}>{T.sendTest}</button> :
     s.id === "test" && s.outcome === "failed" ? <>
       <button type="button" className="fi-text-button" onClick={() => onTest(row.email)}>{T.sendAgain}</button>
@@ -538,7 +560,7 @@ function RowSteps({ row, onFix, onTest, onClose, compact = false }: {
 }
 
 const OUTCOME_TONE: Record<UiStep["outcome"], "ok" | "warn" | "bad" | "busy" | "neutral"> = {
-  done: "ok", already: "ok", skipped: "warn", failed: "bad", waiting: "busy", running: "busy", not_asked: "neutral",
+  done: "ok", already: "ok", skipped: "warn", failed: "bad", not_receiving: "warn", waiting: "busy", running: "busy", not_asked: "neutral",
 };
 
 function FixButton({ fix, onRun, onClose }: { fix: StepFix; onRun: () => void; onClose: () => void }) {

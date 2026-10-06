@@ -1294,7 +1294,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** The dialog is open on a domain.
 - **Steps:**
   1. Type the part before @ -> letters are kept lower case, and the field says at once what is wrong: a character that is not a letter, digit, dot, dash, underscore or plus; a dot or symbol at the start or end; two dots together; more than 64 characters.
-  2. Pause typing -> the server checks the address: free here; already an address here (Open it); a Cloudflare rule already sends it somewhere else (where, and what to do); Cloudflare already sends it here; the domain's catch-all keeps its mail today; mail arrived for it recently.
+  2. Pause typing -> the server checks the address: free here; already an address here (Open it); a Cloudflare rule already sends it somewhere else (where, and what to do); this server creates only the addresses its EMAIL_ADDRESSES lists and this is not one (the same refusal Create would give); Cloudflare already sends it here; the domain's catch-all keeps its mail today; mail arrived for it recently.
   3. Type a role name (postmaster, abuse, hostmaster, webmaster, security, mailer-daemon) -> the field says who writes to that address, and Create still works.
 - **Expected result:** Before Create, the person knows whether the address can be made and what changes for mail already sent to it.
 - **Alt paths:** The names of recent mail to addresses that do not exist are offered as buttons that fill the field.
@@ -1318,10 +1318,10 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   3. It arrives -> Arrived, with the time and the folder it landed in; the new address is already selected in the list behind the dialog.
   4. Done -> the dialog closes and the focus moves to the address's panel.
 - **Expected result:** One surface shows that the address exists, that Cloudflare sends its mail here, and that a real message arrived — or exactly which of the three did not happen.
-- **Alt paths:** Add another keeps the domain and the settings and starts a new address; a test that is not ticked is offered again as Send a test message.
-- **UI elements:** SCR-02; the step list (Done, Already so, Nothing to do, Not done, Waiting), Send a test message, Done, Add another.
+- **Alt paths:** Add another keeps the domain and the settings and starts a new address, with the focus in the name field (in Several, the names box); a test that is not ticked is offered again as Send a test message.
+- **UI elements:** SCR-02; the step list (Done, Already so, Skipped, Not done, Not receiving yet, Waiting), Send a test message, Done, Add another.
 - **States covered:** loading, error, success
-- **Errors & recovery:** Every failed step says what happened, what was kept and the one action that fixes it; a test not arrived after 3 minutes is reported as not arrived with Check routing; a test the provider refused names the provider's reason.
+- **Errors & recovery:** Every failed step says what happened, what was kept and the one action that fixes it; a test not arrived after 3 minutes is reported as not arrived with Check routing; a test the provider refused names the provider's reason. Send again always sends a new message, even within the same minute, and only that message arriving counts — not an earlier test, and not a reply to one.
 - **Status:** draft
 - **Coverage:** app/components/settings/sections/AddAddress.tsx, app/components/settings/sections/add-address-model.ts, workers/lib/address-ops.ts (createAddress, routingTestStatus), workers/routes/agents.ts (/api/project-addresses/:email/test), tests/project-addresses.test.ts, tests/add-address-model.test.ts
 - **Product:** unobserved
@@ -1356,12 +1356,12 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Steps:**
   1. Choose Several -> one box for names, one per line or separated by commas or spaces (support, sales, hello); each name is listed below with its own check.
   2. Set who answers, a copy, the signature and the test once -> they apply to every address; each address gets its own display name from its name (Support, Sales, Hello) unless one is typed for all.
-  3. Create N addresses -> one row per address with its own steps; a failure on one never stops the others.
+  3. Create N addresses -> one row per address with its own steps; a failure on one never stops the others. The server creates as many as fit one request and hands the rest back; the dialog sends them again on its own (Creating the rest…) until every name is answered.
 - **Expected result:** A new project's usual addresses exist in one pass, and each one says whether it receives.
-- **Alt paths:** A name that is invalid or already taken is listed with its reason and skipped; Create counts only the names that can be made.
+- **Alt paths:** A name that is invalid or already taken is listed with its reason and skipped; Create counts only the names that can be made, and only those count toward the 50 (names past it are left out and said once, with how many).
 - **UI elements:** SCR-02; the names box, the per-name checks, the result table.
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** Each row carries its own failure and fix; up to 50 names at once.
+- **Errors & recovery:** Each row carries its own failure and fix; up to 50 names at once. If the server's answer does not arrive (a timeout, no connection, a server error), the dialog reads the names back and lists which exist now (with their rule) and which do not — never "Nothing was created" — and when even that cannot be read, it says so and points to Addresses.
 - **Status:** draft
 - **Coverage:** shared/address-name.ts (parseLocalParts), workers/routes/agents.ts (/api/project-addresses/batch), app/components/settings/sections/AddAddress.tsx, tests/project-addresses.test.ts, tests/address-name.test.ts
 - **Product:** unobserved
@@ -1374,8 +1374,8 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** SCR-02 (the step list; the address's Routing & test tab)
 - **Preconditions:** An address was created and its rule was not made: the server has no token, none of its tokens sees the zone, or Cloudflare refused.
 - **Steps:**
-  1. The rule step reads Not done (or Nothing to do) with the reason in words: no token yet; the token cannot see <domain>; Cloudflare's own message.
-  2. Its one fix is beside it: Connect Cloudflare, Connect its account, or Fix it, which makes the rule again.
+  1. The rule step reads Not done (or Skipped) with the reason in words: no token yet; the token cannot see <domain>; Cloudflare's own message. When the rule was made but Email Routing is off or misconfigured for the domain, it reads Not receiving yet — never Done — and says so.
+  2. Its one fix is beside it: Connect Cloudflare, Connect its account, or Fix it, which makes the rule again (or, for Not receiving yet, runs Receive mail here for the domain again).
   3. The address in the list and on its panel shows Not receiving yet until routing is verified.
 - **Expected result:** Nothing half-done is left silent: the address is kept, it says it does not receive yet, and one action fixes it.
 - **Alt paths:** The domain's catch-all already sends its mail here: the step says no rule was needed and the address receives.
