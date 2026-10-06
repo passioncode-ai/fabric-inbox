@@ -1356,12 +1356,12 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Steps:**
   1. Choose Several -> one box for names, one per line or separated by commas or spaces (support, sales, hello); each name is listed below with its own check.
   2. Set who answers, a copy, the signature and the test once -> they apply to every address; each address gets its own display name from its name (Support, Sales, Hello) unless one is typed for all.
-  3. Create N addresses -> one row per address with its own steps; a failure on one never stops the others.
+  3. Create N addresses -> one row per address with its own steps; a failure on one never stops the others. The server creates as many as fit one request and hands the rest back; the dialog sends them again on its own (Creating the rest…) until every name is answered.
 - **Expected result:** A new project's usual addresses exist in one pass, and each one says whether it receives.
 - **Alt paths:** A name that is invalid or already taken is listed with its reason and skipped; Create counts only the names that can be made.
 - **UI elements:** SCR-02; the names box, the per-name checks, the result table.
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** Each row carries its own failure and fix; up to 50 names at once.
+- **Errors & recovery:** Each row carries its own failure and fix; up to 50 names at once. If the server's answer does not arrive (a timeout, no connection, a server error), the dialog reads the names back and lists which exist now (with their rule) and which do not — never "Nothing was created" — and when even that cannot be read, it says so and points to Addresses.
 - **Status:** draft
 - **Coverage:** shared/address-name.ts (parseLocalParts), workers/routes/agents.ts (/api/project-addresses/batch), app/components/settings/sections/AddAddress.tsx, tests/project-addresses.test.ts, tests/address-name.test.ts
 - **Product:** unobserved

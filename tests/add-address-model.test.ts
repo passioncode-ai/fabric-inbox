@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   DOMAIN_STATE, NAME_HINT, agentLine, batchBody, createBody, displayNameOf, domainOptions, filterDomains, nameView, receiveStep,
-  startDomain, stepsSentence, testStep, testWaiting, type AddressForm,
+  startDomain, stepsSentence, testStep, testWaiting, type AddressForm, answerLost, continueBatch, lostAnswerRows,
 } from "../app/components/settings/sections/add-address-model";
 import { checkLocalPart } from "../shared/address-name";
 import { ADD_ADDRESS_TEXT } from "../app/components/settings/sections/add-address-text";
 import type { DomainList } from "../app/services/domains";
-import type { AgentInput, NameCheck, TestStatus } from "../app/services/agents";
+import type { AddressCheck, AgentInput, BatchResult, NameCheck, TestStatus } from "../app/services/agents";
 
 // The Add address dialog (SCN-061…065): what it shows and sends, decided outside React.
 
@@ -147,4 +147,50 @@ test("every entry point opens the one dialog, and the dialog keeps the keyboard 
   assert.match(dialog, /FIXABLE\.has\(s\.outcome\)/, "a step's fix is offered whenever its outcome is fixable");
   assert.match(readFileSync("app/components/settings/sections/add-address-model.ts", "utf8"), /FIXABLE = new Set<UiOutcome>\(\["failed", "skipped", "not_receiving"\]\)/,
     "Not receiving yet carries its fix like a failed step");
+});
+
+// Review F2 (HIGH): a batch continues until the server hands nothing back, and an answer that never
+// arrived is never reported as "Nothing was created": what exists is read again and said.
+test("several: the dialog sends the names the server handed back until none remain, and stops if a call makes no progress (SCN-064)", () => {
+  const result = (remaining: string[], done: number): BatchResult => ({ domain: "acme.test", created: done, failed: 0, results: [], remaining, complete: !remaining.length });
+  assert.deepEqual(continueBatch(["a", "b", "c"], result(["c"], 2)), ["c"]);
+  assert.deepEqual(continueBatch(["a", "b", "c"], result([], 3)), []);
+  assert.deepEqual(continueBatch(["c"], result(["c"], 0)), [], "no progress: stop rather than loop");
+  assert.deepEqual(continueBatch(["a"], { domain: "acme.test", created: 1, failed: 0, results: [] }), [], "a server before the fix answers without remaining: done");
+});
+
+test("an answer that did not arrive: what exists now is read again, and nothing is claimed that is not known", () => {
+  assert.equal(answerLost(0), true, "timeout or no connection");
+  assert.equal(answerLost(502), true);
+  assert.equal(answerLost(null), true, "not an answer of the server at all");
+  assert.equal(answerLost(400), false, "a refusal is an answer: nothing was done");
+  assert.equal(answerLost(409), false);
+
+  const name = (localPart: string, status: NameCheck["status"]): NameCheck => ({ localPart, email: `${localPart}@acme.test`, status, detail: "", notes: [] });
+  const check: AddressCheck = { domain: "acme.test", served: true, state: "receiving", detail: "", rule: { canMake: true, detail: "" }, sendTestDefault: true, catchAll: null,
+    names: [name("sales", "exists"), name("hello", "available"), name("info", "exists")] };
+  const rows = lostAnswerRows("sales@acme.test", ["sales", "hello", "info"], check,
+    { "sales@acme.test": { state: "verified", detail: "Mail for sales@acme.test goes to fabric-inbox." }, "info@acme.test": null }, "The server did not answer in 30 seconds. Try again.");
+  assert.deepEqual(rows.map((r) => [r.email, r.created]), [["sales@acme.test", true], ["hello@acme.test", false], ["info@acme.test", true]]);
+  assert.deepEqual(rows[0]!.steps.map((x) => [x.id, x.outcome]), [["address", "done"], ["rule", "done"]]);
+  assert.match(rows[0]!.steps[0]!.detail, /sales@acme\.test exists now/);
+  assert.deepEqual([rows[2]!.steps[1]!.outcome, rows[2]!.steps[1]!.fix?.action], ["skipped", "route_here"], "a rule that could not be read offers Fix it, which checks and makes it");
+  assert.equal(rows[1]!.steps[0]!.outcome, "failed");
+  assert.match(rows[1]!.steps[0]!.detail, /hello@acme\.test does not exist/);
+  for (const r of rows) for (const step of r.steps) assert.doesNotMatch(step.detail, /Nothing was created/);
+
+  const unknown = lostAnswerRows("sales@acme.test", ["sales"], null, {}, "The server could not be reached.");
+  assert.equal(unknown.length, 1);
+  assert.equal(unknown[0]!.created, false);
+  assert.match(unknown[0]!.steps[0]!.detail, /could not be read: open Addresses to see which addresses exist/);
+  assert.doesNotMatch(unknown[0]!.steps[0]!.detail, /Nothing was created/);
+  const missing = lostAnswerRows("x@acme.test", ["x"], { ...check, names: [] }, {}, "Lost.");
+  assert.match(missing[0]!.steps[0]!.detail, /x@acme\.test does not exist/, "a name the check did not answer is not claimed either way");
+});
+
+test("the dialog continues a batch and reads again after a lost answer, instead of saying nothing was created", () => {
+  const dialog = readFileSync("app/components/settings/sections/AddAddress.tsx", "utf8");
+  assert.match(dialog, /continueBatch\(/);
+  assert.match(dialog, /lostAnswerRows\(/);
+  assert.match(dialog, /answerLost\(/);
 });

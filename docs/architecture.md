@@ -313,7 +313,7 @@ inbox, its counts and categories; kept 30 days.
 `workers/lib/address-ops.ts` (`createAddress`, `removeAddress`, `setForwardCopy`,
 `effectiveCatchAll`) is behind both Settings → Addresses (`/api/project-addresses`) and the legacy
 mailbox route (`/api/v1/mailboxes`, used for the addresses a deployment's `EMAIL_ADDRESSES` lists). Every check runs before Cloudflare is touched; a rule the
-call made is removed again when the mailbox cannot be saved; a zone the token cannot see gets its
+mailbox is saved before its rule (below), so no rule is left without a mailbox; a zone the token cannot see gets its
 address with a warning; the catch-all in effect (the deployment's `UNKNOWN_ADDRESS_POLICY` wins
 over the stored choice) cannot be removed; what happens to the next message is read from
 Cloudflare after the rule is gone. Since 0.12 (WS7) creating answers its `steps` (address, rule —
@@ -323,7 +323,20 @@ done while no mail can arrive); with `createRoute: "auto"` a rule that cannot be
 made no longer costs the address (with `true` it still does). `checkAddresses`
 (`GET /api/project-addresses/check`) reads Cloudflare once for a domain and several names
 (`EmailRoutingClient.routingFor`) and says per name available, exists, elsewhere or invalid;
-`createAddresses` (`POST /api/project-addresses/batch`) creates up to 50 one after another;
+`createAddresses` (`POST /api/project-addresses/batch`) creates up to 50 one after another with one
+routing client, so the zone, Email Routing's state and the rules are read once
+(`EmailRoutingClient` remembers them for the request and keeps them current as it changes rules)
+and each address then costs one Cloudflare call; one request stops starting addresses when its
+Cloudflare calls near `BATCH_SUBREQUESTS` (40, under the free plan's 50 subrequests) or after
+`BATCH_TIME_MS` (15 s, inside the app's 30-second wait), and answers the names it did not start in
+`remaining` (`complete: false`), which the dialog and `create_addresses` send again. The mailbox is
+written before its rule, with a conditional write (`If-None-Match: *`): a request cut off between
+the two leaves an address that says it does not receive yet, never a rule without a mailbox, and of
+two creates of one address one wins and the other answers 409 without touching Cloudflare. With
+`createRoute: true` a rule Cloudflare refuses takes the new mailbox away again. When the dialog's
+answer is lost (a timeout, no connection, a 5xx) it reads the names back
+(`/api/project-addresses/check`, then each existing address's routing) and says which exist,
+never "Nothing was created";
 `sendRoutingTest` keeps the test's subject in R2 (`routing-tests/<address>.json`) and
 `routingTestStatus` (`GET /api/project-addresses/:email/test`) finds it in the mailbox (any folder
 but Sent and Drafts) or reports it not arrived after 3 minutes. The part before @ is checked by

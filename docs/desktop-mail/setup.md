@@ -197,13 +197,16 @@ lists every domain of the connected account. Receiving here first:
   characters; already an address here; a Cloudflare rule that sends it elsewhere, named; the
   catch-all that keeps its mail today), the display name, a signature, who answers, a copy to a
   confirmed forwarding destination, the Cloudflare rule, and **Send a test message**. **Several**
-  creates up to 50 on one domain with the same settings. On **Create** the dialog lists what it did:
+  creates up to 50 on one domain with the same settings; the server does as many as fit one request
+  and the dialog sends the rest again on its own until all are done. If the server's answer does not
+  arrive, the dialog reads back which addresses exist and says so. On **Create** the dialog lists what it did:
   receiving the domain first when it was not (another provider's MX asks before it is replaced),
   the address, its rule (a disabled rule that points here is switched back on; with no token, a
   zone no token sees, or a rule Cloudflare refuses, the address is still made, marked **Not
   receiving yet**, with the one fix; a rule made while the domain's Email Routing is off or
   misconfigured reads **Not receiving yet** too, with **Fix it**, which turns it on again), and the test message, checked every 5 seconds until it
-  arrives or 3 minutes pass. If the mailbox cannot be saved, a rule made for it is removed again.
+  arrives or 3 minutes pass. The mailbox is saved before its rule, so no rule is ever left without
+  an address.
   **Change** next to the copy picks another destination or none.
 - **Remove…** deletes the address's rule, then the mailbox and its mail, after a confirmation, and
   says what Cloudflare now does with its mail. The domain's catch-all mailbox — chosen here or set by

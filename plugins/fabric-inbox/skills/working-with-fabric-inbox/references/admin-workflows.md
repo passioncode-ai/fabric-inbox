@@ -28,10 +28,14 @@ works; the live tool schemas have every input.
   keeping that address's mail today, mail that arrived for it recently, role names.
 - **Create:** `create_address` with `localPart`, `domain`, optionally `name` (default: the name,
   capitalised), `signature`, `agent`, `forwardTo`; several at once: `create_addresses` with
-  `localParts` and the same settings for all. `createRoute` defaults to `"auto"`: the rule is made
-  when the server can, and when it cannot the address is still created — read its `steps`: a rule
-  step `skipped` or `failed` carries the reason and a `fix` (`route_address_here` makes the rule
-  again once the cause is gone).
+  `localParts` and the same settings for all. One call does only what fits the server's Cloudflare
+  budget for a request: while `complete` is false, call `create_addresses` again with the names in
+  `remaining` (the same settings) until it is true. `createRoute` defaults to `"auto"`: the rule is
+  made when the server can, and when it cannot the address is still created — read its `steps`: a
+  rule step `skipped` or `failed` carries the reason and a `fix` (`route_address_here` makes the
+  rule again once the cause is gone); `not_receiving` means the rule exists but the domain's Email
+  Routing is off or broken (`connect_domain` turns it on again). If a call's answer is lost,
+  `check_address` with the same names says which exist now; never assume none were created.
 - **Prove it:** `send_test_message` → `check_test_message` every few seconds until its `state` is
   `arrived` or `not_arrived` (after 3 minutes); `not_arrived` → `check_address_routing`.
 - **Change:** `update_address` — only the fields you pass change: `fromName`, `signature`,

@@ -988,7 +988,7 @@ const createAddress = defineTool({
 
 const createAddresses = defineTool({
   name: "create_addresses", title: "Create several addresses", level: "admin", target: (a) => `${a.localParts.length} on ${a.domain}`,
-  description: "Makes up to 50 addresses on one served domain with the same settings (agent, signature, copy, rule), one after another; each gets its own display name from its name unless name is given for all. Answers one row per address with its status (201 created, 409 exists, 400 refused) and steps; a failure never stops the others.",
+  description: "Makes up to 50 addresses on one served domain with the same settings (agent, signature, copy, rule), one after another; each gets its own display name from its name unless name is given for all. Answers one row per address with its status (201 created, 409 exists, 400 refused) and steps; a failure never stops the others. One call does only what fits the server's Cloudflare budget for a request: the names it did not start come back in remaining (complete false) — call create_addresses again with them, same settings, until complete is true. Sending a name again is safe: an address that exists answers 409.",
   input: { domain, localParts: z.array(z.string().max(320)).min(1).max(BATCH_MAX).describe("The names before @, up to 50"), ...newAddressSettings },
   routes: ["POST /api/project-addresses/batch"],
   call: (a, ctx) => post(ctx, "/api/project-addresses/batch", { domain: a.domain.toLowerCase(), localParts: a.localParts, name: a.name, agent: toAgent(a.agent),

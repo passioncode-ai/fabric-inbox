@@ -11,7 +11,9 @@ const unknownKey = (address: string) => `unknown-recipients/${address.slice(addr
 // once; addresses are created with their agent, and a failed rule leaves no
 // mailbox. Cloudflare API responses are recorded fakes of the v4 envelope.
 type Json = Record<string, unknown>;
-function cloudflare(state: { zone?: boolean; enabled?: boolean; status?: string; rules?: Json[]; catchAll?: Json; fail?: string; failRule?: string }) {
+function cloudflare(state: { zone?: boolean; enabled?: boolean; status?: string; rules?: Json[]; catchAll?: Json; fail?: string; failRule?: string;
+  /** Called when a rule is created, before Cloudflare answers (to see what exists at that moment, or to wait). */
+  onRule?: (to: string) => void | Promise<void> }) {
   const calls: { method: string; path: string; body?: Json }[] = [];
   const ok = (result: unknown) => new Response(JSON.stringify({ success: true, errors: [], messages: [], result }), { status: 200 });
   const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -29,7 +31,8 @@ function cloudflare(state: { zone?: boolean; enabled?: boolean; status?: string;
     if (path === "/zones/zone1/email/routing/rules" && method === "POST" && state.failRule)
       return new Response(JSON.stringify({ success: false, errors: [{ message: state.failRule }] }), { status: 400 });
     if (path === "/zones/zone1/email/routing/rules" && method === "POST") {
-      const rule = { id: "new", ...JSON.parse(String(init!.body)) };
+      const rule = { id: `new${(state.rules ?? []).length}`, ...JSON.parse(String(init!.body)) };
+      await state.onRule?.(rule.matchers[0].value);
       (state.rules ??= []).push(rule);
       return ok(rule);
     }
@@ -82,11 +85,15 @@ function environment(options: { token?: boolean; agents?: string[]; policy?: str
     async head(key: string) { return objects.has(key) ? {} : null; },
     // Like R2: an etag per version, and a conditional put that answers null when it does not hold.
     async get(key: string) { const v = objects.get(key); return v === undefined ? null : { etag: String(versions.get(key) ?? 0), json: async () => JSON.parse(v), text: async () => v }; },
-    async put(key: string, value: string, options?: { onlyIf?: { etagMatches?: string } }) {
-      if (options?.onlyIf?.etagMatches !== undefined && options.onlyIf.etagMatches !== String(versions.get(key) ?? 0)) return null;
+    async put(key: string, value: string, options?: { onlyIf?: { etagMatches?: string } | Headers }) {
+      const onlyIf = options?.onlyIf;
+      // R2 takes the condition as fields or as headers; If-None-Match: * writes only a key that does not exist.
+      if (onlyIf instanceof Headers ? onlyIf.get("If-None-Match") === "*" && objects.has(key) : false) return null;
+      if (onlyIf && !(onlyIf instanceof Headers) && onlyIf.etagMatches !== undefined && onlyIf.etagMatches !== String(versions.get(key) ?? 0)) return null;
       objects.set(key, value); versions.set(key, (versions.get(key) ?? 0) + 1);
       return { etag: String(versions.get(key)) };
     },
+    async delete(keys: string | string[]) { for (const k of [keys].flat()) objects.delete(k); },
     async list({ prefix }: { prefix: string }) { return { objects: [...objects.keys()].filter((k) => k.startsWith(prefix)).sort().map((key) => ({ key })), truncated: false }; },
   };
   const agents = new Set(options.agents ?? ["support"]);
@@ -103,6 +110,7 @@ function environment(options: { token?: boolean; agents?: string[]; policy?: str
     UNKNOWN_ADDRESS_POLICY: options.policy,
     MAILBOX: { idFromName: (n: string) => n, get: () => ({
       getFolders: async () => [],
+      purge: async () => [],
       sendMail: async (c: unknown) => { sends.push(c); return { id: "o", status: options.sendStatus ?? "accepted", errorCode: options.sendStatus === "failed" ? "E_REFUSED" : null }; },
       getOutboxAction: async () => null,
       // The mailbox's search: the sent copy and, once routing delivered it, the received one.
@@ -358,6 +366,85 @@ test("several addresses are created one by one, each with its own result; a bad 
   assert.equal((await h.call("POST", "/api/project-addresses/batch", { domain: "stranger.invalid", localParts: ["a"] })).status, 400);
   assert.equal((await h.call("POST", "/api/project-addresses/batch", { domain: "project.invalid", localParts: [] })).status, 400);
   assert.equal((await h.call("POST", "/api/project-addresses/batch", { domain: "project.invalid", localParts: ["a"], agent: { id: "ghost" } })).status, 400);
+});
+
+// ── Review F2 (0.12.0): a batch fits one request's Cloudflare budget, resumes, and never orphans a rule ──
+
+const names = (n: number) => Array.from({ length: n }, (_, i) => `n${i}`);
+const external = (cf: { calls: unknown[] }) => cf.calls.length;
+
+test("a batch reads the zone, Email Routing and the rules once, then costs one Cloudflare call per address (SCN-064)", async () => {
+  const h = environment({ token: true });
+  const cf = cloudflare({});
+  await withFetch(cf.fetcher, async () => {
+    const r = await h.call("POST", "/api/project-addresses/batch", { domain: "project.invalid", localParts: names(5), createRoute: "auto" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.created, 5);
+    assert.deepEqual(r.body.remaining, []);
+    assert.equal(r.body.complete, true);
+  });
+  const count = (p: (c: { method: string; path: string }) => boolean) => cf.calls.filter(p).length;
+  assert.equal(count((c) => c.method === "POST"), 5, "one rule per address");
+  assert.equal(count((c) => c.path.startsWith("/zones/zone1/email/routing/rules?")), 1, "the rules are read once for the batch");
+  assert.equal(count((c) => c.path === "/zones/zone1/email/routing"), 1, "Email Routing's state is read once");
+  assert.ok(count((c) => c.path.startsWith("/zones?name=")) <= 2, "the zone is looked up once per client, not once per address");
+  assert.ok(external(cf) <= 12, `${external(cf)} Cloudflare calls for 5 addresses`);
+});
+
+test("a batch larger than one request's Cloudflare budget stops in time and hands back the rest, which a second call finishes (SCN-064)", async () => {
+  const h = environment({ token: true });
+  const cf = cloudflare({});
+  await withFetch(cf.fetcher, async () => {
+    const first = await h.call("POST", "/api/project-addresses/batch", { domain: "project.invalid", localParts: names(50), createRoute: "auto" });
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    assert.ok(external(cf) <= 45, `${external(cf)} Cloudflare calls in one request: within the free plan's 50 subrequests`);
+    assert.equal(first.body.complete, false);
+    const done = first.body.results.map((x: any) => x.email.split("@")[0]);
+    assert.ok(done.length >= 20, `${done.length} rows done in the first request`);
+    assert.deepEqual([...done, ...first.body.remaining], names(50), "every name is either done or handed back, in order, never both");
+    assert.match(first.body.note, new RegExp(`${first.body.remaining.length} of the 50 names were not started`));
+    const before = external(cf);
+    const second = await h.call("POST", "/api/project-addresses/batch", { domain: "project.invalid", localParts: first.body.remaining, createRoute: "auto" });
+    assert.equal(second.body.complete, true, JSON.stringify(second.body));
+    assert.ok(external(cf) - before <= 45);
+    assert.equal(first.body.created + second.body.created, 50);
+  });
+  for (const n of names(50)) assert.ok(h.objects.has(mailboxKey(`${n}@project.invalid`)), n);
+});
+
+test("a batch also stops when its time is up, after at least one address (SCN-064)", async () => {
+  const { createAddresses } = await import("../workers/lib/address-ops");
+  const h = environment();
+  const r = await createAddresses(h.env as never, { domain: "project.invalid", localParts: ["a", "b", "c"], createRoute: false }, null, { timeBudgetMs: 0 });
+  assert.deepEqual((r.body.results as any[]).map((x) => x.email), ["a@project.invalid"], "the first address always runs: every call makes progress");
+  assert.deepEqual(r.body.remaining, ["b", "c"]);
+});
+
+test("the mailbox is saved before its rule is made, so a request cut off between them never leaves a rule without a mailbox", async () => {
+  const h = environment({ token: true });
+  const seen: boolean[] = [];
+  await withFetch(cloudflare({ onRule: (to) => { seen.push(h.objects.has(mailboxKey(to))); } }).fetcher, async () => {
+    assert.equal((await h.call("POST", "/api/project-addresses", { localPart: "support", domain: "project.invalid", createRoute: "auto" })).status, 201);
+    assert.equal((await h.call("POST", "/api/project-addresses/batch", { domain: "project.invalid", localParts: ["a", "b"], createRoute: "auto" })).status, 200);
+  });
+  assert.deepEqual(seen, [true, true, true], "the mailbox existed when each rule was made");
+});
+
+test("two creates of the same address at once: one wins, the other is told it exists and never touches the winner's rule", async () => {
+  const h = environment({ token: true });
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const cf = cloudflare({ onRule: () => gate });
+  await withFetch(cf.fetcher, async () => {
+    const a = h.call("POST", "/api/project-addresses", { localPart: "support", domain: "project.invalid", createRoute: "auto" });
+    const b = h.call("POST", "/api/project-addresses", { localPart: "support", domain: "project.invalid", createRoute: "auto" });
+    await new Promise((r) => setTimeout(r, 20));
+    release();
+    const statuses = (await Promise.all([a, b])).map((r) => r.status).sort();
+    assert.deepEqual(statuses, [201, 409]);
+  });
+  assert.equal(cf.calls.filter((c) => c.method === "DELETE").length, 0, "no rule is deleted");
+  assert.equal(cf.calls.filter((c) => c.method === "POST").length, 1, "one rule");
 });
 
 test("a test message is kept and watched: waiting, arrived (not the sent copy), not arrived after 3 minutes, refused (SCN-062)", async () => {

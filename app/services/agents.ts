@@ -89,6 +89,10 @@ export interface BatchResult {
   created: number;
   failed: number;
   results: ({ email: string; status: number; error?: string } & Partial<CreatedAddress>)[];
+  /** The names one request did not start (its Cloudflare budget ran out): send them again to continue. */
+  remaining?: string[];
+  complete?: boolean;
+  note?: string;
 }
 /** GET /api/project-addresses/:email/test (SCN-062). */
 export interface TestStatus {
