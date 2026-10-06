@@ -130,9 +130,11 @@ export interface MessageFilters {
   /** Epoch ms, both inclusive. */
   after?: number; before?: number;
   unread?: boolean; starred?: boolean; hasAttachment?: boolean; folder?: GmailFolder;
+  /** One conversation's messages (read_thread for Gmail and IMAP accounts). */
+  threadId?: string;
 }
 function checkFilters(f: MessageFilters) {
-  const bad = (["query", "from", "to", "subject"] as const).some((k) => f[k] !== undefined && typeof f[k] !== "string")
+  const bad = (["query", "from", "to", "subject", "threadId"] as const).some((k) => f[k] !== undefined && typeof f[k] !== "string")
     || (["after", "before"] as const).some((k) => f[k] !== undefined && !Number.isFinite(f[k]))
     || (["unread", "starred", "hasAttachment"] as const).some((k) => f[k] !== undefined && typeof f[k] !== "boolean");
   if (bad) throw new ProviderError("invalid_filter", 400);
@@ -144,7 +146,8 @@ function matches(m: Omit<Message, "text" | "html">, f: MessageFilters) {
   return has([m.subject, m.from, m.to, m.cc, m.snippet].join(" "), f.query) && has(m.from, f.from) && has([m.to, m.cc].join(" "), f.to)
     && has(m.subject, f.subject) && (f.after === undefined || timestamp >= f.after) && (f.before === undefined || timestamp <= f.before)
     && (f.unread === undefined || f.unread === !m.read) && (f.starred === undefined || f.starred === m.labels.includes("STARRED"))
-    && (f.hasAttachment === undefined || f.hasAttachment === (m.attachments?.length ?? 0) > 0) && (!f.folder || inFolder(m.labels, f.folder));
+    && (f.hasAttachment === undefined || f.hasAttachment === (m.attachments?.length ?? 0) > 0) && (!f.folder || inFolder(m.labels, f.folder))
+    && (f.threadId === undefined || m.threadId === f.threadId);
 }
 /** How long one read may spend moving an account's cache to the current layout before it answers from the old one. */
 const MIGRATE_ON_READ_MS = 5_000;
@@ -216,9 +219,12 @@ export class AccountService {
     return {
       configuration: configuration(this.env).status,
       accounts: accounts.map((a) => {
-        let capabilities: ProviderCapabilities | undefined;
-        try { capabilities = this.capabilities(a); } catch { /* a provider this build does not carry */ }
-        return { ...publicAccount(a), providerName: this.providerName(a), ...(capabilities ? { capabilities } : {}) };
+        let capabilities: ProviderCapabilities | undefined, importing: number | undefined;
+        try {
+          capabilities = this.capabilities(a);
+          if (a.sync.mode === "initial") importing = this.provider(a).progress(a);
+        } catch { /* a provider this build does not carry */ }
+        return { ...publicAccount(a), providerName: this.providerName(a), ...(capabilities ? { capabilities } : {}), ...(importing !== undefined ? { importing } : {}) };
       }),
       providers: [
         { id: "gmail", status: configuration(this.env).status },

@@ -17,6 +17,7 @@ import {
 } from "./policy";
 import { processRun, ActionRejected } from "./engine";
 import { invokeTool } from "./mcp";
+import { parseRemoteAccount } from "../../shared/mail/accounts";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
 
 export class AutomationDO extends DurableObject<Env> {
@@ -148,10 +149,11 @@ export class AutomationDO extends DurableObject<Env> {
     });
   }
   private async readEmail(account: string, id: string): Promise<RuleEmail> {
-    if (account.startsWith("gmail:")) {
+    const remote = parseRemoteAccount(account);
+    if (remote) {
       const mail = await this.env.GMAIL_ACCOUNTS.getByName(
         "workspace",
-      ).getMessage(account.slice(6), id);
+      ).getMessage(remote.id, id);
       return {
         id,
         sender: mail.from,
@@ -235,9 +237,12 @@ export class AutomationDO extends DurableObject<Env> {
       throw new ActionRejected(
         "Forward was not attempted: attachments require manual handling",
       );
-    if (run.account.startsWith("gmail:")) {
+    const remote = parseRemoteAccount(run.account);
+    if (remote) {
+      // A Gmail or IMAP account: the same actions through the accounts object.
       const provider = this.env.GMAIL_ACCOUNTS.getByName("workspace");
-      const id = run.account.slice(6);
+      const id = remote.id;
+      const name = remote.provider === "gmail" ? "Gmail" : "the mail server";
       if (action.type === "archive") {
         await provider.archive(id, email.id);
         return "Archived";
@@ -275,8 +280,8 @@ export class AutomationDO extends DurableObject<Env> {
       if (result.status !== "accepted")
         throw new Error("Provider did not confirm the action");
       return action.type === "draft"
-        ? "Draft saved in Gmail"
-        : "Forward accepted by Gmail";
+        ? `Draft saved in ${remote.provider === "gmail" ? "Gmail" : "the account's Drafts"}`
+        : `Forward accepted by ${name}`;
     }
     const stub = this.env.MAILBOX.get(this.env.MAILBOX.idFromName(run.account));
     if (action.type === "archive") {

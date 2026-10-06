@@ -6,6 +6,7 @@ import { listChange, readSpamLists, SpamListConflict, updateSpamLists } from "..
 import { listMailboxAddresses } from "../lib/mailbox-store";
 import { DEFAULT_SPAM_DAILY_CALLS } from "../categories/store";
 import { ListEdit, Report } from "../spam/inputs";
+import { parseRemoteAccount } from "../../shared/mail/accounts";
 
 /**
  * Spam (SP-3, SP-4, SP-6): the operator's lists, Report spam / Not spam for both
@@ -67,8 +68,12 @@ async function move(c: C, spam: boolean) {
           : await stub.markNotSpam([m.providerMessageId]);
         return { ...m, ok: moved.length > 0, error: moved.length ? undefined : spam ? "It is sent mail, a draft, or no longer here" : "It is no longer in Spam" };
       }
-      if (!c.env.GMAIL_ACCOUNTS) return { ...m, ok: false as boolean, error: "Gmail is not configured on this server" as string | undefined };
-      await c.env.GMAIL_ACCOUNTS.getByName("workspace").setSpam(m.accountId.slice("gmail:".length), m.providerMessageId, spam);
+      // A Gmail or IMAP account: its own spam folder (Gmail's label, or the IMAP Junk folder), which
+      // also trains the provider's filter.
+      const remote = parseRemoteAccount(m.accountId);
+      if (!remote) return { ...m, ok: false as boolean, error: "Not an account of this server" as string | undefined };
+      if (!c.env.GMAIL_ACCOUNTS) return { ...m, ok: false as boolean, error: "Mail accounts are not configured on this server" as string | undefined };
+      await c.env.GMAIL_ACCOUNTS.getByName("workspace").setSpam(remote.id, m.providerMessageId, spam);
       return { ...m, ok: true, error: undefined };
     } catch (error) {
       return { ...m, ok: false, error: (error as Error).message.slice(0, 200) };

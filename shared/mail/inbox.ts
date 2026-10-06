@@ -18,8 +18,12 @@ export interface InboxAccount {
   total?: number;
   /** Its counts could not be read just now: `unread` and `total` are the last ones known (P2-11). */
   countsStale?: boolean;
-  /** A Gmail account's first import, in percent, while it runs (status "syncing"); absent when unknown. */
+  /** A Gmail or IMAP account's first import, in percent, while it runs (status "syncing"); absent when unknown. */
   importing?: number;
+  /** How a person knows a Gmail or IMAP account's provider: "Gmail", "iCloud Mail", "Fastmail"… */
+  providerName?: string;
+  /** What a Gmail or IMAP account can do (workers/providers/provider.ts): the app offers only that. */
+  capabilities?: { archive: boolean; spam: boolean; trash: boolean; drafts: boolean; organization: "labels" | "folders" };
   /** Hidden by the operator: left out of All inboxes, domains and totals; still receiving. */
   hidden?: boolean;
   /** Keeps mail for every other address on its domain. */

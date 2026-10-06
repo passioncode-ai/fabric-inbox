@@ -10,6 +10,7 @@ import type { Store } from "./google-oauth";
 import { hasCredentialKey } from "./credentials";
 import { pollInterval, type AccountsEnvironment } from "./account-service";
 import { GmailScheduler, type AlarmStorage } from "./gmail-scheduler";
+import type { ImapConnectInput } from "./imap/connect";
 
 interface AutomationStub {
   ingest(
@@ -74,6 +75,24 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     await this.drain().catch((error: unknown) =>
       console.warn(JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
     return outcomes;
+  }
+  /** The providers and IMAP presets this server offers (no account, no secret). */
+  mailProviders() {
+    return this.service.mailProviders();
+  }
+  /**
+   * Connects an IMAP account. Checking the servers takes seconds and runs outside the object's lock,
+   * so mail actions and syncs go on meanwhile; the first sync starts at once.
+   */
+  async connectImap(input: ImapConnectInput) {
+    const account = await this.service.connectImap(input);
+    await this.scheduler.connected();
+    return account;
+  }
+  async updateImapPassword(accountId: string, password: string) {
+    const account = await this.service.updateImapPassword(accountId, password);
+    await this.scheduler.connected();
+    return account;
   }
   beginConnect() {
     return this.serial(() => this.service.connect());

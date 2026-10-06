@@ -13,7 +13,7 @@ function message(account: InboxAccount, id: string, timestamp: number): InboxMes
     date: new Date(timestamp).toISOString(), timestamp, read: false, starred: false, snippet: '' };
 }
 function sources(rows: InboxMessage[]) {
-  return { cloudflareAccounts: async () => structuredClone(accounts.slice(0, 1)), gmailAccounts: async () => structuredClone(accounts.slice(1)),
+  return { cloudflareAccounts: async () => structuredClone(accounts.slice(0, 1)), remoteAccounts: async () => structuredClone(accounts.slice(1)),
     messages: async (a: InboxAccount, o: InboxReadOptions) => inboxPage(rows.filter(m => m.accountId === a.id), o) };
 }
 test('merge has collision-free identities and keyset pages with ties, no repeats or omissions', async () => {
@@ -47,7 +47,7 @@ test('failed account is explicit, safe, and does not block another account', asy
   assert.equal(result.messages.length, 1); assert.equal(result.issues.length, 2);
   assert.ok(result.issues.every(i => i.error === 'account_unavailable'));
   assert.ok(!JSON.stringify(result).includes('private'));
-  s.gmailAccounts = async () => { throw new Error('provider down'); };
+  s.remoteAccounts = async () => { throw new Error('provider down'); };
   const filtered = await readInbox(new URLSearchParams({ account: 'gmail:a' }), s);
   assert.equal(filtered.messages.length, 0); assert.equal(filtered.issues[0].provider, 'gmail');
 });
