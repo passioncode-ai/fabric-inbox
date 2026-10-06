@@ -5,8 +5,9 @@
  * STARTTLS is never used (2026-10-05 spike). No IDLE: a connection lives for one tick or one action.
  *
  * Failure codes (ProviderError):
- * - at login: `auth_failed`, `app_password_required`, `imap_disabled`, `web_login_required`
- *   (the person's part), `tls_failed`, `host_unreachable` (the server's);
+ * - at login: `auth_failed`, `app_password_required`, `imap_disabled`, `auth_or_imap_disabled`
+ *   (a server that does not say which), `web_login_required` (the person's part), `tls_failed`,
+ *   `host_unreachable` (the server's);
  * - after login: `provider_unavailable` (the connection went), `folder_missing`, `provider_failed`.
  * Server text never leaves this module: it is matched here and reduced to a code.
  */
@@ -54,6 +55,8 @@ const text = (error: unknown) => {
 export function loginFailure(error: unknown): string {
   const t = text(error);
   if (/application-specific password|app(lication)? password|InvalidSecondFactor|\[ALERT\] Please use an app/i.test(t)) return "app_password_required";
+  // Yandex answers one sentence for both (measured 2026-10-06): "invalid credentials or IMAP is disabled".
+  if (/credentials or imap is disabled/i.test(t)) return "auth_or_imap_disabled";
   if (/imap.{0,40}(disabled|not enabled|is off|switched off|access)|enable imap|pop3.{0,10}imap|not allowed to use imap/i.test(t)) return "imap_disabled";
   if (/web ?browser|web login|log ?in via|sign in via/i.test(t)) return "web_login_required";
   return "auth_failed";

@@ -22,6 +22,11 @@ test("a refused login is a public code; the server's words decide which one", as
   assert.equal(loginFailure({ authenticationFailed: true, responseText: "[ALERT] Application-specific password required: https://support.google.com/accounts/answer/185833 (Failure)" }), "app_password_required");
   assert.equal(loginFailure({ authenticationFailed: true, responseText: "[AUTHENTICATIONFAILED] IMAP access is disabled for this account" }), "imap_disabled");
   assert.equal(loginFailure({ authenticationFailed: true, responseText: "[ALERT] Please log in via your web browser" }), "web_login_required");
+  // Real answers, read from the providers' servers on 2026-10-06 with a made-up account.
+  assert.equal(loginFailure({ authenticationFailed: true, serverResponseCode: "AUTHENTICATIONFAILED", responseText: "AUTHENTICATE invalid credentials or IMAP is disabled sc=x" }), "auth_or_imap_disabled");
+  assert.equal(loginFailure({ authenticationFailed: true, serverResponseCode: "AUTHENTICATIONFAILED", responseText: "NEOBHODIM parol prilozheniya https://help.mail.ru/mail/security/protection/external / Application password is REQUIRED" }), "app_password_required");
+  assert.equal(loginFailure({ authenticationFailed: true, serverResponseCode: "ALERT", responseText: "Invalid credentials (Failure)" }), "auth_failed");
+  assert.equal(loginFailure({ authenticationFailed: true, serverResponseCode: "AUTHENTICATIONFAILED", responseText: "AUTHENTICATE Invalid credentials" }), "auth_failed");
   const alert = await server({ loginFailure: "NO [ALERT] Application-specific password required" });
   t.after(() => alert.stop());
   await assert.rejects(ImapConnection.connect({ host: "127.0.0.1", port: alert.port, user: USER, password: "normal" }, PLAIN), (e: ProviderError) => e.code === "app_password_required");

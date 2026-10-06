@@ -85,6 +85,7 @@ accountsRouter.onError((error, c) => {
     auth_failed: 400,
     app_password_required: 400,
     imap_disabled: 400,
+    auth_or_imap_disabled: 400,
     web_login_required: 400,
     smtp_auth_failed: 400,
     smtp_auth_unsupported: 502,

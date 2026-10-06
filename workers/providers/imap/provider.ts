@@ -36,7 +36,7 @@ export interface ImapDeps {
 /** A message larger than this is not downloaded to be read here (Gmail's own limit is 25 MB). */
 const MAX_MESSAGE_BYTES = 30 * 1024 * 1024;
 /** Login failures that only the person can fix. */
-const LOGIN_CODES = new Set(["auth_failed", "app_password_required", "imap_disabled", "web_login_required"]);
+const LOGIN_CODES = new Set(["auth_failed", "app_password_required", "imap_disabled", "auth_or_imap_disabled", "web_login_required"]);
 
 const smtpOptions = (server: ServerSettings, password: string, sockets: SocketFactory, email: string) => ({
   host: server.smtp.host, port: server.smtp.port, security: server.smtp.security, user: server.smtpUser, password, socket: sockets,
