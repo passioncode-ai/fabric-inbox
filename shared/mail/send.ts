@@ -18,5 +18,6 @@ export interface SendMailCommand {
 }
 export type SendMailResult = OutboxEntry | {
   error: string;
-  code: 'INVALID_REQUEST' | 'IDEMPOTENCY_CONFLICT' | 'NOT_FOUND';
+  /** DRAFT_CONFLICT: a draft send named a revision the draft has moved past (MailboxDO.sendDraft). */
+  code: 'INVALID_REQUEST' | 'IDEMPOTENCY_CONFLICT' | 'NOT_FOUND' | 'DRAFT_CONFLICT';
 };

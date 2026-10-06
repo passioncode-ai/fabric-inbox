@@ -179,16 +179,26 @@ const listAccounts = defineTool({
 
 const listMessages = defineTool({
   name: "list_messages", title: "List or search messages", level: "read", readOnly: true,
-  description: "The triaged feed across every mailbox, newest first — the same list the app shows. Narrow it to one account, a domain, a provider, a folder, unread mail, a category, or text in the subject, sender or body (query). Page with cursor. Hidden addresses are left out unless you name the account.",
+  description: "The triaged feed across every mailbox, newest first, as the app's All inboxes reads it (the app then groups it by triage; here it is one list). Narrow it to one account, a domain, a provider, a folder, unread mail, a category, or text in the subject, sender or body (query). Page with cursor. Hidden addresses are left out unless you name the account. folder \"draft\" lists the drafts kept on the server (as list_drafts does; unread and categoryId do not apply).",
   input: {
     accountId: accountId.optional(), domain: z.string().max(253).optional().describe("Only Cloudflare addresses on this domain"),
-    provider: z.enum(["cloudflare", "gmail"]).optional(), folder: z.enum(["inbox", "sent", "archive", "trash", "starred", "spam"]).default("inbox"),
+    provider: z.enum(["cloudflare", "gmail"]).optional(), folder: z.enum(["inbox", "sent", "archive", "trash", "starred", "spam", "draft"]).default("inbox"),
     unread: z.boolean().optional(), query: z.string().max(500).optional().describe("Text to find in subject, sender, recipient or body"),
     categoryId: z.string().max(100).optional().describe("Only messages in this category (list_categories)"),
     limit: z.number().int().min(1).max(100).default(25), cursor: z.string().max(2000).optional().describe("From the previous page's nextCursor"),
   },
-  routes: ["GET /api/inbox"],
+  routes: ["GET /api/inbox", "GET /api/v1/mailboxes/:mailboxId/drafts", "GET /api/accounts/:accountId/drafts"],
   async call(a, ctx) {
+    if (a.folder === "draft") {
+      if (a.unread !== undefined || a.categoryId) throw new ApiError(400, "Drafts have no unread state or category; leave unread and categoryId out", null);
+      const page = await listDraftRows(ctx, a.accountId, a.cursor);
+      const needle = a.query?.toLowerCase();
+      const drafts = page.drafts.filter((d) => (!a.provider || d.accountId.startsWith(a.provider + ":"))
+        && (!a.domain || (d.accountId.startsWith("cloudflare:") && d.accountId.toLowerCase().endsWith("@" + a.domain.toLowerCase())))
+        && (!needle || [d.subject, d.to, d.cc, d.snippet].join(" ").toLowerCase().includes(needle)));
+      return { messages: drafts.slice(0, a.limit).map((d) => ({ accountId: d.accountId, messageId: d.messageId, draftId: d.draftId, revision: d.revision, threadId: d.threadId,
+        subject: d.subject, to: d.to, date: d.date, snippet: d.snippet })), hasMore: drafts.length > a.limit, nextCursor: page.nextCursor, issues: page.issues };
+    }
     const data = (await get(ctx, "/api/inbox", { account: a.accountId ? parseAccount(a.accountId).id : undefined, domain: a.domain, provider: a.provider, folder: a.folder,
       unread: a.unread ? 1 : undefined, query: a.query, category: a.categoryId, limit: a.limit, cursor: a.cursor })) as { messages: Record<string, unknown>[]; issues: unknown[]; hasMore: boolean; cursor?: string };
     return { messages: data.messages.map(row), hasMore: data.hasMore, nextCursor: data.cursor ?? null, issues: data.issues };
@@ -452,27 +462,169 @@ function checkFiles(files: MailAttachment[]): MailAttachment[] {
 const withFiles = (files: MailAttachment[]) => (files.length ? { attachments: files } : {});
 
 
-const saveDraft = defineTool({
-  name: "save_draft", title: "Save a draft", level: "mail", target: (a) => `${a.accountId}`,
-  description: "Saves a message in Drafts without sending it — the way to propose mail a person sends. For a Cloudflare mailbox give draftId to change an existing draft; replyTo keeps it in the conversation.",
-  input: { accountId, to: recipients.optional(), cc: recipients.optional(), bcc: recipients.optional(), subject: z.string().max(998).default(""), ...body,
-    replyToMessageId: messageId.optional().describe("The message this draft answers"), draftId: z.string().max(200).optional().describe("Cloudflare: replace this draft"),
-    signature: z.boolean().default(true).describe("Add the address's signature (Cloudflare)"),
-    idempotencyKey: idempotencyKey.optional().describe("Gmail: required; your stable id for this draft") },
-  routes: ["POST /api/v1/mailboxes/:mailboxId/drafts", "POST /api/accounts/:accountId/drafts"],
+// ── Drafts (B-50, B-52): one list across accounts, changed in place, sent as they are ──
+
+const draftId = z.string().min(1).max(200).describe("The draft's id (draftId from list_drafts or save_draft)");
+const revision = z.union([z.number().int().min(0), z.string().min(1).max(200)])
+  .describe("The draft's revision as you read it (list_drafts, read_draft, save_draft): a change made meanwhile by a person or another agent is then refused instead of overwritten");
+/** One draft, the same shape for both providers. */
+interface DraftRow {
+  accountId: string; draftId: string; revision: number | string; messageId: string; to: string; cc: string | null; bcc: string | null; subject: string;
+  date: string; replyToMessageId: string | null; inReplyTo: string | null; threadId: string | null; snippet: string;
+  attachments: { attachmentId: string; filename: string; type: string; size: number }[];
+}
+const cfDraft = (account: Account, d: Record<string, unknown> & { attachments?: Record<string, unknown>[] }): DraftRow => ({
+  accountId: account.id, draftId: String(d.id), revision: Number(d.revision ?? 1), messageId: String(d.id), to: String(d.to ?? ""), cc: (d.cc as string) || null,
+  bcc: (d.bcc as string) || null, subject: String(d.subject ?? ""), date: String(d.date ?? ""), replyToMessageId: (d.inReplyTo as string) || null, inReplyTo: null,
+  threadId: (d.threadId as string) || null, snippet: String(d.snippet ?? htmlToText(String(d.body ?? "")).slice(0, 200)),
+  attachments: (d.attachments ?? []).map((a) => ({ attachmentId: String(a.id), filename: String(a.filename), type: String(a.mimetype), size: Number(a.size) })),
+});
+const gmailDraftRow = (account: Account, d: Record<string, unknown> & { attachments?: Record<string, unknown>[] }): DraftRow => ({
+  accountId: account.id, draftId: String(d.draftId), revision: String(d.revision), messageId: String(d.messageId), to: String(d.to ?? ""), cc: (d.cc as string) || null,
+  bcc: (d.bcc as string) || null, subject: String(d.subject ?? ""), date: String(d.date ?? ""), replyToMessageId: null, inReplyTo: (d.inReplyTo as string) || null,
+  threadId: (d.threadId as string) || null, snippet: String(d.snippet ?? ""),
+  attachments: (d.attachments ?? []).map((a) => ({ attachmentId: String(a.id), filename: String(a.filename), type: String(a.mimetype), size: Number(a.size) })),
+});
+const DRAFT_ROUTES = ["GET /api/inbox", "GET /api/v1/mailboxes/:mailboxId/drafts", "GET /api/accounts/:accountId/drafts"] as const;
+
+/** Drafts of one account, or of every account the caller reaches (a failing account becomes an issue). */
+async function listDraftRows(ctx: ToolContext, accountId: string | undefined, cursor?: string) {
+  const one = async (account: Account) => {
+    if (account.provider === "cloudflare") {
+      const data = (await get(ctx, `${box(account.mailbox)}/drafts`)) as { drafts: Record<string, unknown>[] };
+      return { drafts: data.drafts.map((d) => cfDraft(account, d)), nextCursor: null as string | null };
+    }
+    const data = (await get(ctx, `${gmail(account.gmailId)}/drafts`, { cursor })) as { drafts: Record<string, unknown>[]; nextCursor?: string | null };
+    return { drafts: data.drafts.map((d) => gmailDraftRow(account, d)), nextCursor: data.nextCursor ?? null };
+  };
+  if (accountId) {
+    const page = await one(parseAccount(accountId));
+    return { drafts: page.drafts, nextCursor: page.nextCursor, issues: [] as { accountId: string; error: string }[] };
+  }
+  if (cursor) throw new ApiError(400, "cursor pages one Gmail account's drafts: give its accountId too", null);
+  const feed = (await get(ctx, "/api/inbox", { limit: 1 })) as { accounts: { id: string }[] };
+  const drafts: DraftRow[] = [], issues: { accountId: string; error: string }[] = [];
+  for (const a of feed.accounts) {
+    try { drafts.push(...(await one(parseAccount(a.id))).drafts); }
+    catch (error) { issues.push({ accountId: a.id, error: error instanceof Error ? error.message : String(error) }); }
+  }
+  drafts.sort((x, y) => (Date.parse(y.date) || 0) - (Date.parse(x.date) || 0));
+  return { drafts, nextCursor: null, issues };
+}
+
+const listDraftsTool = defineTool({
+  name: "list_drafts", title: "List drafts", level: "read", readOnly: true,
+  description: "Drafts kept on the server, across every account or in one: Cloudflare mailboxes' Drafts and Gmail's own drafts, newest first, each with its draftId, revision, recipients, subject, the message it answers and its files. These are the drafts the app's Drafts list shows, a person's and agents' alike. read_draft gives one in full; send_draft sends one.",
+  input: { accountId: accountId.optional(), cursor: z.string().max(200).optional().describe("Gmail: nextCursor of the previous page of this account") },
+  routes: [...DRAFT_ROUTES],
+  call: (a, ctx) => listDraftRows(ctx, a.accountId, a.cursor),
+});
+
+const readDraft = defineTool({
+  name: "read_draft", title: "Read a draft", level: "read", readOnly: true,
+  description: "One draft in full: recipients, subject, its text (and HTML), the message it answers, its files and its revision, the way save_draft and send_draft take them.",
+  input: { accountId, draftId, maxChars, includeHtml: z.boolean().default(false).describe("Also return the HTML") },
+  routes: ["GET /api/v1/mailboxes/:mailboxId/drafts/:id", "GET /api/accounts/:accountId/drafts/:draftId/content"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
     if (account.provider === "cloudflare") {
-      const settings = await mailboxSettings(ctx, account.mailbox);
-      const original = a.replyToMessageId ? await readMessage(ctx, account, a.replyToMessageId, 1) : null;
-      const text = signed(a.text, settings, a.signature);
-      return post(ctx, `${box(account.mailbox)}/drafts`, { body: a.html !== undefined ? appendHtml(a.html, signedHtml(settings, a.signature)) : textToHtml(text), to: list(a.to)?.join(", "), cc: list(a.cc)?.join(", "), bcc: list(a.bcc)?.join(", "),
-        subject: a.subject, in_reply_to: original?.messageId, thread_id: original?.threadId ?? undefined, draft_id: a.draftId });
+      const d = (await get(ctx, `${box(account.mailbox)}/drafts/${enc(a.draftId)}`)) as Record<string, unknown>;
+      const html = String(d.body ?? "");
+      const body = clip(htmlToText(html), a.maxChars);
+      return { ...cfDraft(account, d), text: body.text, truncated: body.truncated, ...(a.includeHtml ? { html } : {}) };
     }
-    if (!a.idempotencyKey) throw new ApiError(400, "A Gmail draft needs an idempotencyKey", null);
-    const original = a.replyToMessageId ? await readMessage(ctx, account, a.replyToMessageId, 1) : null;
-    return post(ctx, `${gmail(account.gmailId)}/drafts`, { idempotencyKey: a.idempotencyKey, to: list(a.to) ?? [], cc: list(a.cc), bcc: list(a.bcc), subject: a.subject, text: a.text, html: a.html,
-      threadId: original?.threadId ?? undefined, inReplyTo: original?.rfcMessageId ?? undefined, references: original ? [original.references, original.rfcMessageId].filter(Boolean).join(" ") : undefined });
+    const d = (await get(ctx, `${gmail(account.gmailId)}/drafts/${enc(a.draftId)}/content`)) as Record<string, unknown>;
+    const body = clip(String(d.text || "") || htmlToText(String(d.html ?? "")), a.maxChars);
+    return { ...gmailDraftRow(account, d), text: body.text, truncated: body.truncated, ...(a.includeHtml ? { html: String(d.html ?? "") } : {}) };
+  },
+});
+
+const saveDraft = defineTool({
+  name: "save_draft", title: "Save a draft", level: "mail", target: (a) => `${a.accountId}${a.draftId ? ` ${a.draftId}` : ""}`,
+  description: "Saves a message as a draft on the server without sending it, the way to propose mail a person reviews: it shows in the app's Drafts, where they can change and send it (or you can, with send_draft). With replyToMessageId it answers that message in its conversation, the original quoted. Give draftId to change a draft of either provider (yours or a person's), with expectedRevision so a change made meanwhile is not overwritten; only the files in keepAttachments stay when you give it. Returns draftId and revision.",
+  input: { accountId, to: recipients.optional(), cc: recipients.optional(), bcc: recipients.optional(), subject: z.string().max(998).default(""), ...body,
+    replyToMessageId: messageId.optional().describe("The message this draft answers (a changed draft keeps the one it had)"),
+    draftId: draftId.optional().describe("Change this draft instead of making a new one"), expectedRevision: revision.optional(),
+    attachments, keepAttachments: z.array(z.string().max(2048)).max(MAX_ATTACHMENTS).optional().describe("A changed draft: ids of its files to keep (list_drafts); left out keeps them all"),
+    quote: z.boolean().default(true).describe("Quote the message it answers below your text"),
+    signature: z.boolean().default(true).describe("Add the address's signature (Cloudflare)"),
+    idempotencyKey: idempotencyKey.optional().describe("Your stable id for a new draft: saving again with it changes that draft, never makes a second. Required for a new Gmail draft") },
+  routes: ["PUT /api/v1/mailboxes/:mailboxId/drafts/:id", "GET /api/v1/mailboxes/:mailboxId/drafts/:id", "GET /api/v1/mailboxes/:mailboxId",
+    "GET /api/v1/mailboxes/:mailboxId/emails/:id", "POST /api/v1/mailboxes/:mailboxId/drafts",
+    "POST /api/accounts/:accountId/drafts", "PUT /api/accounts/:accountId/drafts/:draftId", "GET /api/accounts/:accountId/drafts/:draftId/content",
+    "GET /api/accounts/:accountId/messages/:messageId"],
+  async call(a, ctx) {
+    const account = parseAccount(a.accountId);
+    const files = checkFiles(toMail(a.attachments));
+    if (a.keepAttachments && !a.draftId) throw new ApiError(400, "keepAttachments is for changing a draft: give its draftId", null);
+    if (account.provider === "cloudflare") {
+      if (typeof a.expectedRevision === "string") throw new ApiError(400, "A Cloudflare draft's revision is a number (list_drafts)", null);
+      const id = a.draftId ?? (a.idempotencyKey ? `draft-${a.idempotencyKey}` : crypto.randomUUID());
+      const current = a.draftId ? (await get(ctx, `${box(account.mailbox)}/drafts/${enc(a.draftId)}`)) as { inReplyTo?: string | null; threadId?: string | null } : null;
+      const answers = a.replyToMessageId ?? current?.inReplyTo ?? undefined;
+      const original = answers ? await readMessage(ctx, account, answers, 20_000) : null;
+      const settings = await mailboxSettings(ctx, account.mailbox);
+      const quote = original && a.quote ? { text: quotedBlock(original), html: quotedHtml(original) } : null;
+      const text = [signed(a.text, settings, a.signature), quote?.text].filter(Boolean).join("\n\n");
+      const html = a.html !== undefined ? appendHtml(a.html, signedHtml(settings, a.signature), quote?.html ?? "") : textToHtml(text);
+      const saved = (await put(ctx, `${box(account.mailbox)}/drafts/${enc(id)}`, { to: list(a.to)?.join(", ") ?? "", cc: list(a.cc)?.join(", "), bcc: list(a.bcc)?.join(", "),
+        subject: a.subject, body: html, in_reply_to: original?.messageId, thread_id: original?.threadId ?? current?.threadId ?? undefined,
+        ...withFiles(files), ...(a.keepAttachments ? { keep_attachments: a.keepAttachments } : {}),
+        ...(a.expectedRevision !== undefined ? { expected_revision: a.expectedRevision } : {}) })) as Record<string, unknown>;
+      return cfDraft(account, saved);
+    }
+    if (typeof a.expectedRevision === "number") throw new ApiError(400, "A Gmail draft's revision is its message id, a string (list_drafts)", null);
+    const current = a.draftId && !a.replyToMessageId
+      ? (await get(ctx, `${gmail(account.gmailId)}/drafts/${enc(a.draftId)}/content`)) as { threadId?: string; inReplyTo?: string | null; references?: string | null }
+      : null;
+    const original = a.replyToMessageId ? await readMessage(ctx, account, a.replyToMessageId, 20_000) : null;
+    const quote = original && a.quote ? { text: quotedBlock(original), html: quotedHtml(original) } : null;
+    const message = { to: list(a.to) ?? [], cc: list(a.cc), bcc: list(a.bcc), subject: a.subject, text: [a.text, quote?.text].filter(Boolean).join("\n\n"),
+      html: a.html !== undefined ? appendHtml(a.html, quote?.html ?? "") : undefined,
+      threadId: original?.threadId ?? current?.threadId ?? undefined, inReplyTo: original?.rfcMessageId ?? current?.inReplyTo ?? undefined,
+      references: original ? [original.references, original.rfcMessageId].filter(Boolean).join(" ") || undefined : current?.references ?? undefined, ...withFiles(files) };
+    if (a.draftId) {
+      const saved = (await put(ctx, `${gmail(account.gmailId)}/drafts/${enc(a.draftId)}`, { ...message,
+        ...(a.keepAttachments ? { keepAttachments: a.keepAttachments } : {}), ...(a.expectedRevision !== undefined ? { expectedRevision: a.expectedRevision } : {}) })) as Record<string, unknown>;
+      return { accountId: account.id, draftId: a.draftId, revision: saved.revision, messageId: saved.messageId, threadId: saved.threadId };
+    }
+    if (!a.idempotencyKey) throw new ApiError(400, "A new Gmail draft needs an idempotencyKey", null);
+    const receipt = (await post(ctx, `${gmail(account.gmailId)}/drafts`, { idempotencyKey: a.idempotencyKey, ...message })) as Record<string, unknown>;
+    return { accountId: account.id, draftId: receipt.providerDraftId ?? null, revision: receipt.providerMessageId ?? null, messageId: receipt.providerMessageId ?? null,
+      threadId: receipt.threadId ?? null, status: receipt.status, idempotencyKey: a.idempotencyKey };
+  },
+});
+
+const sendDraft = defineTool({
+  name: "send_draft", title: "Send a draft", level: "mail", sends: true, target: (a) => `${a.accountId} ${a.draftId}`,
+  description: "Sends a draft as it is (its recipients, text, quote, signature and files; nothing is added), as a reply in its conversation when it answers a message, and removes it from Drafts once the provider accepted it. Give expectedRevision (list_drafts, read_draft) so a draft changed meanwhile is not sent unread. It really leaves: send a person's draft only when they asked. A retry with the same idempotencyKey never sends twice and answers the first send; counts against this key's daily sends.",
+  input: { accountId, draftId, idempotencyKey, expectedRevision: revision.optional() },
+  routes: ["POST /api/v1/mailboxes/:mailboxId/drafts/:id/send", "POST /api/accounts/:accountId/drafts/:draftId/send"],
+  async call(a, ctx) {
+    const account = parseAccount(a.accountId);
+    if (account.provider === "cloudflare") {
+      if (typeof a.expectedRevision === "string") throw new ApiError(400, "A Cloudflare draft's revision is a number (list_drafts)", null);
+      return post(ctx, `${box(account.mailbox)}/drafts/${enc(a.draftId)}/send`, { idempotencyKey: a.idempotencyKey, ...(a.expectedRevision !== undefined ? { expected_revision: a.expectedRevision } : {}) });
+    }
+    if (typeof a.expectedRevision === "number") throw new ApiError(400, "A Gmail draft's revision is its message id, a string (list_drafts)", null);
+    return post(ctx, `${gmail(account.gmailId)}/drafts/${enc(a.draftId)}/send`, { idempotencyKey: a.idempotencyKey, ...(a.expectedRevision !== undefined ? { expectedRevision: a.expectedRevision } : {}) });
+  },
+});
+
+const deleteDraft = defineTool({
+  name: "delete_draft", title: "Delete a draft", level: "mail", target: (a) => `${a.accountId} ${a.draftId}`,
+  description: "Deletes a draft and its files, from the app's Drafts and (for Gmail) from Gmail. It cannot be restored. Two calls: the first says which draft and gives a code.",
+  input: { accountId, draftId },
+  confirm: async (a, ctx) => {
+    const d = (await readDraft.call({ accountId: a.accountId, draftId: a.draftId, maxChars: 500, includeHtml: false }, ctx)) as DraftRow;
+    return `Delete the draft ${quoted(d.subject || "(no subject)")} to ${quoted(d.to || "nobody yet")} in ${a.accountId}, with ${d.attachments.length} file(s). It cannot be restored.`;
+  },
+  routes: ["DELETE /api/v1/mailboxes/:mailboxId/drafts/:id", "DELETE /api/accounts/:accountId/drafts/:draftId",
+    "GET /api/v1/mailboxes/:mailboxId/drafts/:id", "GET /api/accounts/:accountId/drafts/:draftId/content"],
+  async call(a, ctx) {
+    const account = parseAccount(a.accountId);
+    await del(ctx, account.provider === "cloudflare" ? `${box(account.mailbox)}/drafts/${enc(a.draftId)}` : `${gmail(account.gmailId)}/drafts/${enc(a.draftId)}`);
+    return { deleted: a.draftId };
   },
 });
 
@@ -1103,7 +1255,7 @@ const agentActivity = defineTool({
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listFolders, getSendStatus,
   listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listCategories, listKnowledge, searchKnowledge, listRules,
-  saveDraft, sendEmail, reply, forward, updateMessages, moveMessages, markSpam, deleteMessage, syncAccount, markCategorySeen, manageFolder,
+  listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, markSpam, deleteMessage, syncAccount, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun,
   createAddress, updateAddress, removeAddress, routeAddress, sendTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,

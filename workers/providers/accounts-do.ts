@@ -150,6 +150,21 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
   getHeaders(accountId: string, messageId: string) {
     return this.serial(() => this.service.getHeaders(accountId, messageId));
   }
+  listDrafts(accountId: string, pageToken?: string) {
+    return this.serial(() => this.service.listDrafts(accountId, pageToken));
+  }
+  getDraft(accountId: string, draftId: string) {
+    return this.serial(() => this.service.getDraft(accountId, draftId));
+  }
+  updateDraft(accountId: string, draftId: string, request: Parameters<AccountService["updateDraft"]>[2]) {
+    return this.serial(() => this.service.updateDraft(accountId, draftId, request));
+  }
+  deleteDraft(accountId: string, draftId: string) {
+    return this.serial(() => this.service.deleteDraft(accountId, draftId));
+  }
+  sendDraft(accountId: string, draftId: string, idempotencyKey: string, expectedRevision?: string) {
+    return this.serial(() => this.service.sendDraft(accountId, draftId, idempotencyKey, expectedRevision));
+  }
   async alarm() {
     await this.serial(async () => {
       const config = configuration(this.env);

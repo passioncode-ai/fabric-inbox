@@ -26,6 +26,44 @@ test("read_message returns inReplyTo and bcc on both providers (parity gap 1)", 
   assert.equal(gread.data.folder, "draft");
 });
 
+// ── Gap 1: drafts on the server, changed and sent over MCP (Gmail; Cloudflare end to end in mcp-workerd) ──
+
+test("Gmail drafts are listed with the others, changed under their revision keeping their thread, sent and deleted over MCP (parity gap 1)", async () => {
+  const gDraft = { draftId: "r1", revision: "m5", messageId: "m5", threadId: "th1", to: "ann@x.invalid", cc: null, bcc: null, subject: "Re: Order", date: "2026-10-06T09:00:00Z",
+    inReplyTo: "<orig@x.invalid>", references: "<orig@x.invalid>", snippet: "Soon", attachments: [{ id: "att1", filename: "a.txt", mimetype: "text/plain", size: 2 }] };
+  const { api, calls } = fakeApi({
+    "GET /api/inbox": ok({ accounts: [{ id: "gmail:g1" }, { id: `cloudflare:${CF}` }, { id: "gmail:broken" }], messages: [], issues: [] }),
+    "GET /api/accounts/g1/drafts": ok({ drafts: [gDraft], nextCursor: null }),
+    [`GET ${CF_BOX}/drafts`]: ok({ drafts: [{ id: "d1", revision: 2, to: "bob@x.invalid", subject: "New", date: "2026-10-06T10:00:00Z", inReplyTo: null, threadId: "d1", snippet: "Hi", attachments: [] }] }),
+    "GET /api/accounts/broken/drafts": ok({ error: "reconnect_required" }, 401),
+    "GET /api/accounts/g1/drafts/r1/content": ok({ ...gDraft, text: "Soon", html: "" }),
+    "PUT /api/accounts/g1/drafts/r1": (c) => ok({ draftId: "r1", revision: "m6", messageId: "m6", threadId: (c.body as { threadId: string }).threadId }),
+    "POST /api/accounts/g1/drafts/r1/send": ok({ status: "accepted", idempotencyKey: "s1", providerMessageId: "sent-1", threadId: "th1" }),
+    "DELETE /api/accounts/g1/drafts/r1": ok({ deleted: "r1" }),
+  });
+  const listed = await call(api, "list_drafts", {});
+  assert.equal(listed.isError, false, JSON.stringify(listed.data));
+  assert.deepEqual(listed.data.drafts.map((d: { accountId: string; draftId: string; revision: unknown }) => [d.accountId, d.draftId, d.revision]),
+    [[`cloudflare:${CF}`, "d1", 2], ["gmail:g1", "r1", "m5"]], "newest first, across providers");
+  assert.deepEqual(listed.data.issues.map((i: { accountId: string }) => i.accountId), ["gmail:broken"], "an account that cannot be read is named, the others listed");
+
+  const changed = await call(api, "save_draft", { accountId: "gmail:g1", draftId: "r1", expectedRevision: "m5", to: "ann@x.invalid", subject: "Re: Order", text: "Monday.", keepAttachments: ["att1"] });
+  assert.equal(changed.isError, false, JSON.stringify(changed.data));
+  const put = calls.find((c) => c.method === "PUT")!.body as Record<string, unknown>;
+  assert.deepEqual([put.threadId, put.inReplyTo, put.expectedRevision, put.keepAttachments], ["th1", "<orig@x.invalid>", "m5", ["att1"]], "a change keeps its thread");
+  assert.equal(changed.data.revision, "m6");
+  const mismatched = await call(api, "send_draft", { accountId: "gmail:g1", draftId: "r1", idempotencyKey: "s1", expectedRevision: 6 });
+  assert.equal(mismatched.data.status, 400, "a Gmail revision is a string");
+  const sent = await call(api, "send_draft", { accountId: "gmail:g1", draftId: "r1", idempotencyKey: "s1", expectedRevision: "m6" });
+  assert.equal(sent.data.status, "accepted");
+  assert.deepEqual(calls.find((c) => c.path === "/api/accounts/g1/drafts/r1/send")!.body, { idempotencyKey: "s1", expectedRevision: "m6" });
+  const asked = await call(api, "delete_draft", { accountId: "gmail:g1", draftId: "r1" });
+  assert.equal(asked.data.needsConfirmation, true);
+  assert.match(asked.data.summary, /Re: Order/);
+  const tool = TOOLS.find((t) => t.name === "send_draft")!;
+  assert.ok(tool.sends && tool.level === "mail", "send_draft counts as a send");
+});
+
 // ── Gap 7: View source ──────────────────────────────────────────────
 
 test("read_message includeHeaders returns every header, as View source shows them (parity gap 7)", async () => {

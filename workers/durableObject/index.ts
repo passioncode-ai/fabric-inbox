@@ -2,7 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { AttachmentValidationError, storedAttachmentName, validateAttachments } from '../../shared/mail/attachments';
+import { AttachmentValidationError, storedAttachmentName, validateAttachments, type MailAttachment } from '../../shared/mail/attachments';
 import { DurableObject } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import { eq, and, or, asc, desc, sql } from "drizzle-orm";
@@ -23,6 +23,8 @@ import { verifyDraft } from '../lib/ai';
 import type { SendMailCommand, SendMailResult, SendMailRequest } from '../../shared/mail/send';
 import type { InboxReadOptions } from '../../shared/mail/inbox';
 import { mailboxInboxQuery, mailboxInboxMessage, type MailboxInboxRow } from '../lib/inbox-query';
+import { listDrafts as listDraftRows, saveDraft as saveDraftRows, type DraftSql, type DraftSummary, type SaveDraftInput, type SaveDraftResult } from '../lib/mailbox-drafts';
+import { htmlToText } from '../mcp/mail-text';
 
 
 /** Reject control characters before durable reservation and after reply-header derivation. */
@@ -757,6 +759,88 @@ export class MailboxDO extends DurableObject<Env> {
 				.where(eq(schema.attachments.id, id))
 				.get() ?? null
 		);
+	}
+
+	// ── Drafts on the server (B-52, workers/lib/mailbox-drafts.ts) ──
+
+	async listDrafts(limit = 200): Promise<DraftSummary[]> {
+		return listDraftRows(this.ctx.storage.sql as unknown as DraftSql, limit);
+	}
+
+	/**
+	 * Creates or changes one draft in place. A body too long for a row goes to R2 under a key of
+	 * its own for this save, so a refused save never touches the stored draft's body; whatever
+	 * this save made unused (removed files, the previous body) is deleted after it is stored.
+	 */
+	async saveDraft(input: Omit<SaveDraftInput, "body" | "bodyKey" | "now"> & { body: string }): Promise<SaveDraftResult> {
+		const env = this.env as Env;
+		let body = input.body, bodyKey: string | null = null;
+		if (body.length > BODY_INLINE_CHARS) {
+			bodyKey = `bodies/${input.id}.${crypto.randomUUID()}.html`;
+			await env.BUCKET.put(bodyKey, body, { httpMetadata: { contentType: "text/html; charset=utf-8" } });
+			body = body.slice(0, BODY_INLINE_CHARS);
+		}
+		const result = this.ctx.storage.transactionSync(() => saveDraftRows(this.ctx.storage.sql as unknown as DraftSql,
+			{ ...input, body, bodyKey, now: new Date().toISOString() }));
+		const unused = result.ok
+			? [...result.removed.map((a) => `attachments/${input.id}/${a.id}/${a.filename}`), ...(result.oldBodyKey ? [result.oldBodyKey] : [])]
+			: bodyKey ? [bodyKey] : [];
+		if (unused.length) await env.BUCKET.delete(unused).catch((error: unknown) =>
+			console.warn(JSON.stringify({ event: "draft_cleanup_failed", error: (error as Error).message })));
+		return result;
+	}
+
+	/** Deletes a draft (only a draft): its row, files' rows and kept body; the caller removes the files' bytes. */
+	async deleteDraft(id: string) {
+		const row = this.ctx.storage.sql.exec("SELECT folder_id FROM emails WHERE id = ?", id).toArray()[0];
+		if (!row || row.folder_id !== Folders.DRAFT) return null;
+		return this.deleteEmail(id);
+	}
+
+	/**
+	 * Sends a draft as it is (no signature or quote added: the draft already holds what the person
+	 * or agent wrote) and removes it once the transport accepted it. A draft that answers a message
+	 * goes out as a reply in its conversation. A retry with the same key after the draft is gone
+	 * answers the first attempt's outcome; a key used for different content is a conflict.
+	 */
+	async sendDraft(command: { mailboxId: string; draftId: string; idempotencyKey: string; from: string | { email: string; name: string }; expectedRevision?: number }): Promise<SendMailResult> {
+		const mailboxId = command.mailboxId.toLowerCase();
+		const draft = await this.getEmail(command.draftId);
+		if (!draft || draft.folder_id !== Folders.DRAFT) {
+			const prior = this.ctx.storage.sql.exec("SELECT id FROM outbox WHERE mailbox_id = ? AND idempotency_key = ?", mailboxId, command.idempotencyKey).toArray()[0];
+			if (prior) return this.sender.process(String(prior.id));
+			return { error: "Draft not found: it was sent or deleted", code: "NOT_FOUND" };
+		}
+		const revision = Number(draft.draft_revision ?? 1);
+		if (command.expectedRevision !== undefined && command.expectedRevision !== revision)
+			return { error: `The draft changed since revision ${command.expectedRevision} (now ${revision}); read it again before sending`, code: "DRAFT_CONFLICT" };
+		const split = (value: string | null | undefined) => (value ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+		const to = split(draft.recipient);
+		if (!to.length) return { error: "The draft has no recipient", code: "INVALID_REQUEST" };
+		const files: MailAttachment[] = [];
+		for (const a of draft.attachments ?? []) {
+			const object = await (this.env as Env).BUCKET.get(`attachments/${draft.id}/${a.id}/${a.filename}`);
+			if (!object) return { error: `The draft's file ${a.filename} could not be read; remove it and add it again`, code: "INVALID_REQUEST" };
+			const bytes = new Uint8Array(await object.arrayBuffer());
+			let binary = "";
+			for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+			files.push({ content: btoa(binary), filename: a.filename, type: a.mimetype, disposition: (a.disposition === "inline" ? "inline" : "attachment") as "inline" | "attachment",
+				...(a.content_id ? { contentId: a.content_id } : {}) });
+		}
+		const html = draft.body ?? "";
+		const cc = split(draft.cc), bcc = split(draft.bcc);
+		const result = await this.sendMail({
+			mailboxId, idempotencyKey: command.idempotencyKey, kind: draft.in_reply_to ? "reply" : "send",
+			originalEmailId: draft.in_reply_to ? draft.id : undefined,
+			request: { to, ...(cc.length ? { cc } : {}), ...(bcc.length ? { bcc } : {}), from: command.from, subject: draft.subject || "(no subject)",
+				html, text: htmlToText(html) || " ", ...(files.length ? { attachments: files } : {}) },
+		});
+		if (!("error" in result) && result.status === "accepted") {
+			const removed = await this.deleteDraft(draft.id);
+			if (removed?.length) await (this.env as Env).BUCKET.delete(removed.map((a: { id: string; filename: string }) => `attachments/${draft.id}/${a.id}/${a.filename}`))
+				.catch((error: unknown) => console.warn(JSON.stringify({ event: "draft_cleanup_failed", error: (error as Error).message })));
+		}
+		return result;
 	}
 
 	// ── Folders (Drizzle) ──────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { triage } from "../../shared/mail/triage";
-import { validateAttachments } from '../../shared/mail/attachments';
+import { validateAttachments, type MailAttachment } from '../../shared/mail/attachments';
 import {
   configuration,
   createAuthorization,
@@ -19,6 +19,7 @@ import {
   normalizeMessage,
   type Credentials,
   type Fetcher,
+  type GmailMessage,
   type Message,
   type SendInput,
 } from "./gmail-client";
@@ -842,4 +843,109 @@ export class AccountService {
       throw error;
     }
   }
+  /**
+   * Gmail's own drafts (B-50, B-52), read and changed in Gmail so they show there too. A draft's
+   * revision is its message id: Gmail gives the message a new id on every change, so a save or a
+   * send that names the id it read is refused when the draft moved on (`draft_conflict`).
+   */
+  async listDrafts(accountId: string, pageToken?: string) {
+    const account = await this.account(accountId);
+    if (pageToken !== undefined && !/^[A-Za-z0-9_-]{1,200}$/.test(pageToken)) throw new ProviderError("invalid_filter", 400);
+    const client = await this.client(account);
+    const page = await client.listDrafts(pageToken);
+    const drafts: ReturnType<typeof gmailDraft>[] = [];
+    for (const d of page.drafts ?? []) {
+      try { drafts.push(gmailDraft(accountId, await client.getDraft(d.id), false)); }
+      catch (error) { if (!(error instanceof ProviderError && error.code === "not_found")) throw error; /* sent or deleted meanwhile */ }
+    }
+    return { drafts, nextCursor: page.nextPageToken ?? null };
+  }
+  async getDraft(accountId: string, draftId: string) {
+    keyPart(draftId);
+    const account = await this.account(accountId);
+    return gmailDraft(accountId, await draftOrMissing((await this.client(account)).getDraft(draftId)), true);
+  }
+  async updateDraft(accountId: string, draftId: string, request: SendInput & { expectedRevision?: string; keepAttachments?: string[] }) {
+    keyPart(draftId);
+    const account = await this.account(accountId);
+    const client = await this.client(account);
+    const { expectedRevision, keepAttachments, ...input } = request;
+    const current = await draftOrMissing(client.getDraft(draftId));
+    if (expectedRevision !== undefined && current.message.id !== expectedRevision) throw new ProviderError("draft_conflict", 409);
+    // The draft's message is replaced whole: the files it keeps are read and written again.
+    const keep = keepAttachments === undefined ? null : new Set(keepAttachments);
+    const kept: MailAttachment[] = [];
+    for (const f of normalizeMessage(accountId, current.message).attachments) {
+      if (keep && !keep.has(f.providerAttachmentId)) continue;
+      const data = (await client.attachment(current.message.id, f.providerAttachmentId)).data.replace(/-/g, "+").replace(/_/g, "/");
+      kept.push({ content: data + "=".repeat((4 - (data.length % 4)) % 4), filename: f.filename || "attachment", type: f.mimeType || "application/octet-stream", disposition: "attachment" as const });
+    }
+    const files = validateAttachments([...kept, ...validateAttachments(input.attachments)]);
+    const raw = makeMime(account.email, { ...input, attachments: files });
+    const result = await client.updateDraft(draftId, raw, input.threadId);
+    return { draftId, revision: result.message.id, messageId: result.message.id, threadId: result.message.threadId };
+  }
+  async deleteDraft(accountId: string, draftId: string) {
+    keyPart(draftId);
+    const account = await this.account(accountId);
+    await draftOrMissing((await this.client(account)).deleteDraft(draftId));
+    return { deleted: draftId };
+  }
+  /** Sends a draft as Gmail holds it, once per idempotency key (its receipt is a send receipt). */
+  async sendDraft(accountId: string, draftId: string, idempotencyKey: string, expectedRevision?: string): Promise<SendReceipt> {
+    keyPart(draftId);
+    const account = await this.account(accountId);
+    if (typeof idempotencyKey !== "string" || !/^[A-Za-z0-9_.:-]{1,128}$/.test(idempotencyKey)) throw new ProviderError("idempotency_key_required", 400);
+    const key = "send:" + keyPart(accountId) + ":" + idempotencyKey;
+    const digest = await pkceChallenge(JSON.stringify({ draft: draftId }));
+    const answer = async (receipt: StoredSend) => {
+      if (receipt.status === "sending") { receipt.status = "unknown"; receipt.error = "send_outcome_unknown"; await this.store.put(key, receipt); }
+      const { digest: _, ...publicReceipt } = receipt;
+      return publicReceipt;
+    };
+    // A retry after the draft went out (and Gmail removed it) answers the first attempt.
+    const old = await this.store.get<StoredSend>(key);
+    if (old) { if (old.digest !== digest) throw new ProviderError("idempotency_conflict", 409); return answer(old); }
+    const client = await this.client(account);
+    const current = await draftOrMissing(client.getDraft(draftId, "minimal"));
+    if (expectedRevision !== undefined && current.message.id !== expectedRevision) throw new ProviderError("draft_conflict", 409);
+    const reservation = await this.store.transaction(async (tx) => {
+      const existing = await tx.get<StoredSend>(key);
+      if (existing) { if (existing.digest !== digest) throw new ProviderError("idempotency_conflict", 409); return { fresh: false, receipt: existing }; }
+      const receipt: StoredSend = { status: "sending", idempotencyKey, digest };
+      await tx.put(key, receipt);
+      return { fresh: true, receipt };
+    });
+    if (!reservation.fresh) return answer(reservation.receipt);
+    const receipt = reservation.receipt;
+    try {
+      const sent = await client.sendDraft(draftId);
+      if (!sent.id) throw new ProviderError("invalid_send_receipt");
+      receipt.status = "accepted"; receipt.providerMessageId = sent.id; receipt.threadId = sent.threadId;
+    } catch (error) {
+      receipt.status = "unknown";
+      receipt.error = error instanceof ProviderError ? error.code : "send_outcome_unknown";
+    }
+    await this.store.put(key, receipt);
+    const { digest: _, ...publicReceipt } = receipt;
+    return publicReceipt;
+  }
+}
+
+/** A draft Gmail no longer has is `draft_not_found`, not a provider failure. */
+async function draftOrMissing<T>(work: Promise<T>): Promise<T> {
+  try { return await work; }
+  catch (error) { if (error instanceof ProviderError && error.code === "not_found") throw new ProviderError("draft_not_found", 404); throw error; }
+}
+
+/** One Gmail draft as the drafts list (and, with its body, the composer) shows it. */
+function gmailDraft(accountId: string, draft: { id: string; message: GmailMessage }, withBody: boolean) {
+  const m = normalizeMessage(accountId, draft.message);
+  return {
+    draftId: draft.id, revision: m.providerMessageId, messageId: m.providerMessageId, threadId: m.threadId,
+    to: m.to, cc: m.cc || null, bcc: m.bcc || null, subject: m.subject, date: m.timestamp ? new Date(m.timestamp).toISOString() : m.date,
+    inReplyTo: m.inReplyTo || null, references: m.references || null, snippet: m.snippet,
+    attachments: m.attachments.map((a) => ({ id: a.providerAttachmentId, filename: a.filename, mimetype: a.mimeType, size: a.size })),
+    ...(withBody ? { text: m.text, html: m.html } : {}),
+  };
 }

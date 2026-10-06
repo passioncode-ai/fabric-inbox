@@ -366,6 +366,8 @@ export class GmailClient {
               : "provider_failed",
         response.status === 429 ? 429 : response.status === 404 ? 404 : 502,
       );
+    // A DELETE answers 204 with no body.
+    if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   }
   profile() {
@@ -432,6 +434,30 @@ export class GmailClient {
       },
       false,
     );
+  }
+  // ── Drafts (B-50/B-52): Gmail's own drafts, so they show in Gmail too ──
+  listDrafts(pageToken?: string) {
+    const q = new URLSearchParams({ maxResults: "25" });
+    if (pageToken) q.set("pageToken", pageToken);
+    return this.request<{ drafts?: { id: string; message: { id: string; threadId: string } }[]; nextPageToken?: string }>("drafts?" + q);
+  }
+  getDraft(id: string, format: "full" | "minimal" = "full") {
+    return this.request<{ id: string; message: GmailMessage }>("drafts/" + encodeURIComponent(id) + "?format=" + format);
+  }
+  /** Replaces the draft's message; Gmail gives the new message a new id (the draft's revision here). */
+  updateDraft(id: string, raw: string, threadId?: string) {
+    return this.request<{ id: string; message: { id: string; threadId: string } }>(
+      "drafts/" + encodeURIComponent(id),
+      { method: "PUT", body: JSON.stringify({ id, message: { raw, ...(threadId ? { threadId } : {}) } }) },
+      false,
+    );
+  }
+  deleteDraft(id: string) {
+    return this.request<void>("drafts/" + encodeURIComponent(id), { method: "DELETE" }, false);
+  }
+  /** Sends the draft as Gmail holds it; Gmail removes the draft. */
+  sendDraft(id: string) {
+    return this.request<{ id: string; threadId: string }>("drafts/send", { method: "POST", body: JSON.stringify({ id }) }, false);
   }
   modify(id: string, addLabelIds: string[], removeLabelIds: string[]) {
     return this.request<GmailMessage>(

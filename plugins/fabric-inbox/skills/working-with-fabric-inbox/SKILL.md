@@ -54,7 +54,7 @@ exactly the ones you may call.
 |---|---|
 | only `list_*`, `read_*`, `search_*`, `get_*` | `read` — report, never change |
 | `save_draft`, `move_messages`, no `send_email` | `mail`, **Drafts only** — a person sends |
-| `send_email`, `reply`, `forward` | `mail` or `admin`, **Can send** — within a daily limit |
+| `send_email`, `reply`, `forward`, `send_draft` | `mail` or `admin`, **Can send** — within a daily limit |
 | `create_address`, `save_agent`, `connect_domain` … | `admin` |
 
 A key can also be **limited to mailboxes**: the instructions then say "Your key is limited to …".
@@ -95,6 +95,18 @@ unless asked (`update_messages`).
 `reply` with `idempotencyKey`, or `save_draft` with `replyToMessageId` when drafting. `reply` goes
 to the message's `replyTo` when it has one, else its sender; `replyAll` copies the rest of To and Cc
 but never you. The address's display name and signature are added for you (`signature: false` to skip).
+`to`, `cc`, `bcc` and `subject` replace what would be chosen; `html` keeps the signature and quote.
+
+**Drafts.** Drafts live on the server and show in the app's Drafts, a person's and agents' alike.
+`list_drafts` (every account, or one) → `read_draft` → change one with `save_draft` + `draftId` +
+`expectedRevision` (a change made meanwhile is refused, not overwritten; read it again) → when the
+person approves, `send_draft` with `expectedRevision` and an `idempotencyKey`: it goes out as it is,
+as a reply when it answers a message, and leaves Drafts. A new draft with your own `idempotencyKey`
+is made once however often you save it. `delete_draft` is two-step.
+
+**Files.** `send_email`, `reply`, `forward` and `save_draft` take `attachments:
+[{ filename, type, base64 }]` (10 files, 5 MB together). `get_attachment` returns a file in that
+form; `forward` carries the original's files unless `includeOriginalAttachments: false`.
 
 **Find.** `list_messages` with `query` searches every inbox; `search_mailbox` searches one account
 by sender, recipient, subject, dates, read, starred, attachments and folder — every field applies,
