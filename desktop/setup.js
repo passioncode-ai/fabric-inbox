@@ -197,13 +197,14 @@ let stopListening = null;
 async function deploy() {
   fail($('#cf-details-error'), ''); fail($('#cf-progress-error'), '');
   const input = { accountId: $('#cf-account').value, email: $('#cf-email').value.trim(),
-    subdomain: $('#cf-subdomain').value.trim().toLowerCase(), team: $('#cf-team').value.trim().toLowerCase() };
+    subdomain: $('#cf-subdomain').value.trim().toLowerCase(), team: $('#cf-team').value.trim().toLowerCase(),
+    gmail: $('#cf-gmail').checked };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) { fail($('#cf-details-error'), 'Enter the email address you will sign in with.'); $('#cf-email').focus(); return; }
   if (!$('#cf-subdomain-field').hidden && !NAME.test(input.subdomain)) { fail($('#cf-details-error'), 'Choose a name for your web address: letters, digits and dashes.'); $('#cf-subdomain').focus(); return; }
   if (!$('#cf-team-field').hidden && !NAME.test(input.team)) { fail($('#cf-details-error'), 'Choose a name for your sign-in page: letters, digits and dashes.'); $('#cf-team').focus(); return; }
   stepState = {}; renderSteps(stepState);
   phase('progress'); $('#cf-progress-title').textContent = 'Creating your server…'; $('#cf-progress-title').focus();
-  $('#cf-retry').hidden = true; $('#cf-back-details').hidden = true; $('#cf-done').hidden = true;
+  $('#cf-retry').hidden = true; $('#cf-back-details').hidden = true; $('#cf-done').hidden = true; $('#cf-done-gmail').hidden = true;
   stopListening?.();
   stopListening = cf.onStep(step => {
     stepState[step.id] = step;
@@ -216,7 +217,7 @@ async function deploy() {
     const r = await cf.deploy(input);
     if (r.ok) {
       $('#cf-progress-title').textContent = 'Your server is ready';
-      $('#cf-done').hidden = false;
+      $(input.gmail ? '#cf-done-gmail' : '#cf-done').hidden = false;
       say('Opening your server. Sign in there with the code Cloudflare emails you.');
     } else {
       $('#cf-progress-title').textContent = 'Your server is not ready yet';

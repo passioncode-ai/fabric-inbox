@@ -47,7 +47,7 @@ flowchart TD
 | SCR-02 | loading, empty, error, success |
 | SCR-03 | loading, empty, error, success |
 
-- **Scenario coverage:** SCN-002, SCN-003.
+- **Scenario coverage:** SCN-002, SCN-003, SCN-051, SCN-052.
 
 ### FLW-02: Find and handle a conversation
 - **Traces:** ST-002; RE-001, RE-003

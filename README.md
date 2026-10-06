@@ -40,9 +40,11 @@ and [your deployment](#configure-your-deployment).
 2. **Configure.** On first open choose **Create my server on Cloudflare**. You need a Cloudflare
    account (the free plan works) and an API token you create in its dashboard with the permissions
    the app lists ([setup → your own server](docs/desktop-mail/setup.md#your-own-server-created-by-the-mac-app-recommended)).
-   Gmail needs `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from your own Google Cloud OAuth
-   client, a `GMAIL_TOKEN_ENCRYPTION_KEY` you generate and `PUBLIC_APP_URL`
-   ([setup → Gmail](docs/desktop-mail/setup.md#gmail)). For `npm run dev`, copy
+   Gmail needs an OAuth client of your own in Google Cloud: **Settings → Accounts → Connect
+   account → Gmail** walks through it step by step with the values to copy, checks the client with
+   Google and saves it on your server itself (the Mac app offers it right after creating the
+   server). Publish the Google Cloud app (or make it Internal for Workspace): one left in Testing
+   loses Gmail access every 7 days ([setup → Gmail](docs/desktop-mail/setup.md#gmail)). For `npm run dev`, copy
    `.dev.vars.example` to `.dev.vars`; every setting is in the
    [configuration reference](docs/desktop-mail/setup.md#configuration-reference). Deploying by
    hand or making a personal build: [Configure your deployment](#configure-your-deployment).

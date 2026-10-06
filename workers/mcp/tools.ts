@@ -1235,9 +1235,25 @@ const gmailConnectLink = defineTool({
   async call(_a, ctx) {
     const data = (await get(ctx, "/api/accounts")) as { configuration?: string; connectUrl?: string };
     if (data.configuration !== "configured" || !data.connectUrl)
-      throw new ApiError(503, "Gmail is not set up on this server (Google client, encryption key and the app's public address); see docs/desktop-mail/setup.md", null);
+      throw new ApiError(503, "Gmail is not set up on this server yet: the owner sets it up in Settings → Accounts → Connect account → Gmail (gmail_setup_status says what is missing)", null);
     return { url: data.connectUrl, next: "Give this link to the person you work for. After they allow access, call list_accounts to see the account." };
   },
+});
+
+const gmailSetupStatus = defineTool({
+  name: "gmail_setup_status", title: "Gmail setup on this server", level: "admin", readOnly: true,
+  description: "Whether Gmail is set up on this server and what is missing, with the exact values the owner copies into Google Cloud (app name, redirect URI, authorized domain, scope), the Google Cloud pages for each step, and whether the server can save the setup itself. The client secret is never returned; the owner pastes it in Settings → Accounts → Gmail.",
+  input: {},
+  routes: ["GET /api/gmail-setup"],
+  call: (_a, ctx) => get(ctx, "/api/gmail-setup"),
+});
+
+const checkGmailSetup = defineTool({
+  name: "check_gmail_setup", title: "Check the Gmail setup", level: "admin", readOnly: true,
+  description: "Checks the server's Google OAuth client with Google: that Google accepts the client ID and secret, that it knows this server's redirect URI, and that the app is used at the address Gmail was set up for. Each check says ok, failed or unknown, with what to fix and where in Google Cloud.",
+  input: {},
+  routes: ["GET /api/gmail-setup/check"],
+  call: (_a, ctx) => get(ctx, "/api/gmail-setup/check"),
 });
 
 const listAgentKeys = defineTool({
@@ -1269,7 +1285,7 @@ export const TOOLS: readonly ToolDef[] = [
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,
-  disconnectGmail, gmailConnectLink, listAgentKeys, agentActivity,
+  disconnectGmail, gmailConnectLink, gmailSetupStatus, checkGmailSetup, listAgentKeys, agentActivity,
 ];
 
 /**
@@ -1282,4 +1298,5 @@ export const NOT_TOOLS: Readonly<Record<string, string>> = {
   "POST /api/agent-keys": "Agent keys are issued by a person in the app (its answer carries the key's secret); an agent cannot mint keys. list_agent_keys reads them",
   "DELETE /api/agent-keys/:id": "Agent keys are revoked by a person in the app (Settings → Agent access); list_agent_keys reads them",
   "POST /api/cloudflare/accounts": "A Cloudflare token is a secret: a person pastes it in Settings → Accounts, so it never passes through an agent's transcript",
+  "PUT /api/gmail-setup": "A Google OAuth client secret is a secret: the owner pastes it in Settings → Accounts → Gmail, so it never passes through an agent's transcript; gmail_setup_status and check_gmail_setup read and check the setup",
 };

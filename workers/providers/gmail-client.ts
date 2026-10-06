@@ -9,6 +9,8 @@ export class ProviderError extends Error {
   constructor(
     public code: string,
     public status = 502,
+    /** Why, when the code alone is not enough to act on (shared/mail/gmail-reasons.ts, or "invalid_grant"). */
+    public reason?: string,
   ) {
     super(code);
   }
@@ -17,6 +19,37 @@ export interface Credentials {
   accessToken: string;
   refreshToken: string;
   expiresAt: number;
+  /** When Google said the grant itself ends (refresh_token_expires_in): time-limited access only. */
+  refreshExpiresAt?: number;
+}
+/** The reasons in a Google API error body (`error.errors[].reason`, `error.details[].reason`, `error.status`). */
+export async function googleErrorReasons(response: Response): Promise<string[]> {
+  try {
+    const data = (await response.json()) as {
+      error?: { status?: string; errors?: { reason?: string }[]; details?: { reason?: string }[] };
+    };
+    const reasons = [
+      ...(data.error?.errors ?? []).map((e) => e.reason),
+      ...(data.error?.details ?? []).map((d) => d.reason),
+      data.error?.status,
+    ];
+    return reasons.filter((r): r is string => typeof r === "string");
+  } catch {
+    return [];
+  }
+}
+/**
+ * A 403 from the Gmail API, by its reason: the API switched off in the Google Cloud project, a
+ * grant without the Gmail scope, or a quota (which Gmail also answers with 403).
+ */
+export function forbidden(reasons: string[]): ProviderError {
+  if (reasons.some((r) => r === "accessNotConfigured" || r === "SERVICE_DISABLED"))
+    return new ProviderError("gmail_api_disabled", 403, "gmail_api_disabled");
+  if (reasons.some((r) => r === "insufficientPermissions" || r === "ACCESS_TOKEN_SCOPE_INSUFFICIENT"))
+    return new ProviderError("insufficient_scope", 403, "insufficient_scope");
+  if (reasons.some((r) => /^(userRateLimitExceeded|rateLimitExceeded|RATE_LIMIT_EXCEEDED)$/.test(r)))
+    return new ProviderError("rate_limited", 429);
+  return new ProviderError("provider_failed", 502);
 }
 export type Fetcher = (
   input: string | URL | Request,
@@ -343,22 +376,26 @@ export class GmailClient {
     } catch {
       /* not JSON; the status decides below */
     }
-    // Only a revoked or expired grant needs the person to connect again. Anything else is the
-    // token service being busy or down, and the account waits and tries again (P2-9).
+    // Only a revoked or expired grant needs the person to connect again; a client Google no
+    // longer knows (deleted, secret changed) is the server's setup. Anything else is the token
+    // service being busy or down, and the account waits and tries again (P2-9).
     if (!response.ok)
       throw data.error === "invalid_grant"
-        ? new ProviderError("reconnect_required", 401)
-        : response.status === 429
+        ? new ProviderError("reconnect_required", 401, "invalid_grant")
+        : data.error === "invalid_client" || data.error === "unauthorized_client"
+          ? new ProviderError("google_client_rejected", 502, "client_rejected")
+          : response.status === 429
           ? new ProviderError("rate_limited", 429)
           : response.status >= 500
             ? new ProviderError("provider_unavailable", 503)
             : new ProviderError("oauth_failed", 401);
     if (!data.access_token || !data.expires_in)
       throw new ProviderError("oauth_failed");
-    const next = {
+    const next: Credentials = {
       accessToken: data.access_token,
       refreshToken: data.refresh_token || this.credentials.refreshToken,
       expiresAt: Date.now() + data.expires_in * 1000,
+      ...(this.credentials.refreshExpiresAt ? { refreshExpiresAt: this.credentials.refreshExpiresAt } : {}),
     };
     await this.persist(next);
     this.credentials = next;
@@ -396,6 +433,14 @@ export class GmailClient {
       await this.token(true);
       return this.request<T>(path, init, false);
     }
+    // A write refused with 401 was not carried out, and is not repeated here either. Whether the
+    // grant itself is gone is asked of the token endpoint: invalid_grant there means the account
+    // needs a reconnect (and the account says so), anything else was a stale access token.
+    if (response.status === 401 && init.method && init.method !== "GET") {
+      await this.token(true);
+      throw new ProviderError("provider_auth_failed", 401);
+    }
+    if (response.status === 403) throw forbidden(await googleErrorReasons(response));
     // A 401 that a freshly refreshed token did not cure is Gmail refusing this request, not the
     // grant being gone (that is invalid_grant at the token endpoint): back off, never disconnect.
     if (!response.ok)
@@ -564,26 +609,39 @@ export async function exchangeCode(
       signal: AbortSignal.timeout(20000),
     });
   } catch {
-    throw new ProviderError("oauth_failed");
+    throw new ProviderError("provider_unavailable", 503);
   }
-  const data = (await response.json()) as {
+  let data: {
     access_token?: string;
     refresh_token?: string;
     expires_in?: number;
+    refresh_token_expires_in?: number;
     scope?: string;
-  };
-  if (
-    !response.ok ||
-    !data.access_token ||
-    !data.refresh_token ||
-    !data.expires_in
-  )
+    error?: string;
+  } = {};
+  try {
+    data = (await response.json()) as typeof data;
+  } catch {
+    /* Google answered with a page, not JSON: the status decides below */
+  }
+  if (!response.ok) {
+    // Each refusal names what to change: the server's client, its redirect address, or nothing
+    // (a code used twice or too late: start again).
+    if (data.error === "invalid_client" || data.error === "unauthorized_client")
+      throw new ProviderError("google_client_rejected", 502, "client_rejected");
+    if (data.error === "redirect_uri_mismatch") throw new ProviderError("redirect_uri_mismatch", 400);
+    if (response.status >= 500) throw new ProviderError("provider_unavailable", 503);
+    throw new ProviderError("oauth_failed", 400);
+  }
+  if (!data.access_token || !data.refresh_token || !data.expires_in)
     throw new ProviderError("oauth_failed", 400);
   if (!data.scope?.split(" ").includes(GMAIL_SCOPE))
-    throw new ProviderError("insufficient_scope", 403);
+    throw new ProviderError("insufficient_scope", 403, "insufficient_scope");
+  const grantSeconds = Number(data.refresh_token_expires_in);
   return {
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
     expiresAt: Date.now() + data.expires_in * 1000,
+    ...(Number.isFinite(grantSeconds) && grantSeconds > 0 ? { refreshExpiresAt: Date.now() + grantSeconds * 1000 } : {}),
   };
 }

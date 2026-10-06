@@ -19,6 +19,7 @@ import type { MailAttachment } from "../../shared/mail/attachments";
 import type { RemoteProvider } from "../../shared/mail/accounts";
 import type { Message, SendInput } from "./gmail-client";
 import type { CredentialEnvelope } from "./credentials";
+import type { GmailReason } from "../../shared/mail/gmail-reasons";
 
 /** What one account's provider can do. Every field is a fact about this account, not a promise. */
 export interface ProviderCapabilities {
@@ -61,6 +62,12 @@ export interface AccountBase {
   failures?: number;
   /** Messages set aside after failing MAX_MESSAGE_ATTEMPTS times (kept under `skipped:`). */
   skipped?: number;
+  /** Why it stopped working, in a word the app turns into a sentence (shared/mail/gmail-reasons.ts). */
+  reason?: GmailReason;
+  /** When access was last given on the provider's page (Gmail: connect or reconnect): dates a 7-day Testing expiry. */
+  connectedAt?: number;
+  /** When the provider said this access ends, if it gave an end (time-limited access, a Testing app). */
+  accessUntil?: number;
 }
 
 /** A change to one message, as the app and agents ask for it; each provider maps it to its own model. */

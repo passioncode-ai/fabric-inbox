@@ -28,7 +28,8 @@ A new user needs nothing but a Cloudflare account (the free plan works) and the 
    token as the secret `CLOUDFLARE_API_TOKEN`), then publishing it on workers.dev. A failure names
    what to do; **Continue** runs the rest again, and what is done stays done.
 5. The app opens the server; sign in with the code Cloudflare emails. **Settings → Domains**
-   opens next: choose **Receive mail here** on a domain.
+   opens next: choose **Receive mail here** on a domain. With **Then set up Gmail (optional)**
+   ticked before step 4, the Gmail setup opens instead ([Gmail](#gmail)).
 
 The same flow updates an existing server in place (menu **Fabric Inbox → Connect Cloudflare
 account…**): only the storage migrations it lacks (a step that would delete or move a class is
@@ -98,7 +99,7 @@ organization, a bucket and a workers.dev name could not be exercised on an accou
    stored in R2 `config/catch-all.json`, or `UNKNOWN_ADDRESS_POLICY`). Every unknown address is
    recorded (address, first and last time, count; never the sender or body) under
    `unknown-recipients/` for the Create address list.
-5. Gmail settings as below. Never commit secrets or paste them into a chat.
+5. Gmail: from the app once it runs ([Gmail](#gmail)), or by hand as described there. Never commit secrets or paste them into a chat.
 6. Check Access denial/allow, an incoming message, a reply, and rule pause before directing
    regular traffic to it. Rollback: `wrangler rollback`; Durable Object data and migrations are not
    rolled back.
@@ -124,8 +125,8 @@ Every name the Worker reads (`workers/types.ts`). None is in `wrangler.jsonc` (C
 | `SPAM_DAILY_LIMIT` | var | optional | `300` | strangers' messages the model reads for spam per UTC day on its own; a check made in the same call as a category does not count; beyond it new mail is not judged by the model |
 | `AUTOMATION_MCP_HOSTS` | var | agent or rule tools | empty → no tools | exact HTTPS hosts tools may call |
 | `AUTOMATION_TOOL_TOKENS` | secret | tools with credentials | `{}` | JSON map credential name → bearer token; agents and rules store only the name |
-| `GOOGLE_CLIENT_ID`, `PUBLIC_APP_URL`, `GMAIL_POLL_SECONDS` | var | Gmail | — / — / 300 | see Gmail below |
-| `GOOGLE_CLIENT_SECRET`, `GMAIL_TOKEN_ENCRYPTION_KEY` | secret | Gmail | — | see Gmail below |
+| `GOOGLE_CLIENT_ID`, `PUBLIC_APP_URL`, `GMAIL_POLL_SECONDS` | var | Gmail | — / — / 300 | written by the server from Settings → Accounts → Gmail, or by hand; see Gmail below |
+| `GOOGLE_CLIENT_SECRET`, `GMAIL_TOKEN_ENCRYPTION_KEY` | secret | Gmail | — | the same; the key is made by the server when missing and never replaced; see Gmail below |
 
 Bindings in `wrangler.jsonc`: `BUCKET` (R2), `AI` (Workers AI), `EMAIL` (send_email), Durable Objects `MAILBOX`, `AUTOMATIONS`, `GMAIL_ACCOUNTS`, `AGENT_REGISTRY`, `KNOWLEDGE`, `CATEGORIES`, `EMAIL_AGENT`, `EMAIL_MCP`. Migrations: `fabric-v2` adds `AgentRegistryDO`, `fabric-v3` `KnowledgeDO`, `fabric-v4` `CategoriesDO`.
 
@@ -321,19 +322,99 @@ the category is next changed (board B-26).
 
 ## Gmail
 
-`workers/providers/google-oauth.ts` validates:
+Two routes. **Through Google** (OAuth, the one built today): your own Google Cloud app, set up once
+from the app in about ten minutes, then each Gmail account is a sign-in on Google's page. **With an
+app password** (IMAP, no Google Cloud): a provider card stub until the IMAP/SMTP providers land
+(0.11.0 WS4); it needs 2-Step Verification on the Google account, is not offered for work or school
+accounts ([Google](https://support.google.com/accounts/answer/185833)), and shows Gmail's labels
+as folders.
 
-| Setting | Meaning |
-|---|---|
-| `GOOGLE_CLIENT_ID` | OAuth web application client ID |
-| `GOOGLE_CLIENT_SECRET` | OAuth client secret, server only |
-| `GMAIL_TOKEN_ENCRYPTION_KEY` | Base64url-encoded 32-byte AES-GCM key; back up safely before using accounts |
-| `PUBLIC_APP_URL` | Exact HTTPS application origin; no path/query/credentials |
-| `GMAIL_POLL_SECONDS` | Optional poll interval, default 300 seconds; clamped to 60–3600. While an import or a history page is unfinished the next sync is 10 s away instead; a new account syncs at once, and Check for new mail reads Gmail on demand ([architecture](../architecture.md#gmail-sync-cache-and-refresh)) |
+### Set up Gmail from the app (recommended)
 
-Register `PUBLIC_APP_URL` plus `/api/accounts/gmail/callback` as the OAuth redirect URI. Enable Gmail API and configure consent/test users for the requested `gmail.modify` scope. These are provider administration steps, not a guarantee that Google will grant the app production access.
+**Settings → Accounts → Connect account → Gmail** on a server without Google set up shows the steps
+(`app/components/settings/sections/GmailSetup.tsx`, SCN-051). Each opens the Google Cloud page it
+names, and every value comes with a Copy button, computed from the address the app is open at
+(`shared/mail/gmail-setup.ts`). The Mac app offers the same right after **Create my server**: tick
+**Then set up Gmail (optional)** and the server opens on these steps after sign-in.
 
-Use **Connect Gmail in browser** or the native Account menu. The browser first opens the application's `/api/accounts/gmail/connect` route, which binds state to that browser before redirecting to Google. Opening only a Google authorization URL copied from another browser is insufficient. Return to the app after completion; Accounts refreshes periodically.
+**Human steps (Google Cloud, once per server).** Only the Google account's owner can do these; no
+API makes a Google Cloud OAuth client on their behalf.
+
+1. **Create a project** — [New project](https://console.cloud.google.com/projectcreate).
+2. **Turn on the Gmail API** — [Gmail API](https://console.cloud.google.com/apis/library/gmail.googleapis.com) → Enable, with the new project selected.
+3. **Branding** — [Branding](https://console.cloud.google.com/auth/branding): app name `Fabric Inbox`, your email as the support email, and under Authorized domains the server's registrable domain (`<name>.workers.dev` for `fabric-inbox.<name>.workers.dev`).
+4. **Audience** — [Audience](https://console.cloud.google.com/auth/audience): **Internal** for a Google Workspace account; **External** then **Publish app** for a personal one. Not Testing: Google gives a Testing app's grant 7 days ("A Google Cloud Platform project with an OAuth consent screen configured for an external user type and a publishing status of 'Testing' is issued a refresh token expiring in 7 days", [Google](https://developers.google.com/identity/protocols/oauth2#expiration)), so the account would need reconnecting every week. Your own app with fewer than 100 users needs no verification ([Google](https://support.google.com/cloud/answer/13464323)); Google shows "Google hasn't verified this app" once, and Advanced → continue goes on.
+5. **Data Access** — [Data Access](https://console.cloud.google.com/auth/scopes): add `https://www.googleapis.com/auth/gmail.modify` by hand. Google classes it as restricted ([Google](https://developers.google.com/workspace/gmail/api/auth/scopes)); that requires verification only for an app published to the public.
+6. **Client** — [Create client](https://console.cloud.google.com/auth/clients/create): type Web application, Authorized redirect URI `<server origin>/api/accounts/gmail/callback`.
+7. **Paste the client ID and secret into the app**, then **Save and check**.
+
+**What the server does with them** (`workers/routes/gmail-setup.ts`). It checks the pair with
+Google's token endpoint (a code that cannot be valid: `invalid_grant` means the client is right,
+`invalid_client` that it is not) and refuses a pair Google refuses, with nothing written. It makes a
+credential key only when it has none: a valid `GMAIL_TOKEN_ENCRYPTION_KEY` is never replaced, since
+every account's access is sealed with it. It then writes `GOOGLE_CLIENT_ID` and `PUBLIC_APP_URL`
+(vars, the latter the address the app is open at) and `GOOGLE_CLIENT_SECRET` and the key (secrets)
+in one change to its own Worker settings, with its own token (`CLOUDFLARE_API_TOKEN`, written by
+Create my server; it needs **Workers Scripts: Edit**, already in the token's list). Every other
+binding is carried over as `inherit` (`workers/gmail-setup/server-settings.ts`). A token without
+the permission is named and nothing changes. A redirect URI Google does not know yet does not block
+the save; it is reported, since Google can take minutes to apply one just added.
+
+**Self-test** — **Check the setup** in the connect step, `GET /api/gmail-setup/check`, tool
+`check_gmail_setup` (`workers/gmail-setup/google-check.ts`): the token endpoint accepts the client;
+Google knows the redirect URI (read from Google's sign-in page without following it: a known pair
+is redirected to sign-in, a problem to Google's error page whose `authError` names it — Google's
+interface, not a documented API, so an unreadable answer is "Not checked", never OK); and the app is
+open at the address Gmail was set up for. `GET /api/gmail-setup` (tool `gmail_setup_status`) answers
+what is missing and the values to copy; the secret is never returned. `PUT /api/gmail-setup` has no
+tool: the secret is pasted by the owner only.
+
+### Set up Gmail by hand
+
+For a server without its own Cloudflare token, set the same values with wrangler (`workers/providers/google-oauth.ts` validates them):
+
+| Setting | Kind | Meaning |
+|---|---|---|
+| `GOOGLE_CLIENT_ID` | var | OAuth web application client ID |
+| `GOOGLE_CLIENT_SECRET` | secret | OAuth client secret, server only |
+| `GMAIL_TOKEN_ENCRYPTION_KEY` | secret | Base64url-encoded 32-byte AES-GCM key (`openssl rand -base64 32 \| tr '+/' '-_' \| tr -d '='`); back it up before connecting accounts — a new key makes every account reconnect |
+| `PUBLIC_APP_URL` | var | Exact HTTPS application origin; no path/query/credentials |
+| `GMAIL_POLL_SECONDS` | var | Optional poll interval, default 300 seconds; clamped to 60–3600. While an import or a history page is unfinished the next sync is 10 s away instead; a new account syncs at once, and Check for new mail reads Gmail on demand ([architecture](../architecture.md#gmail-sync-cache-and-refresh)) |
+
+### Connecting an account
+
+**Connect Gmail in browser** (Settings → Accounts, or the Mac app's Account menu) opens the
+server's `/api/accounts/gmail/connect` in the system browser: Google forbids its sign-in in a web
+view the app controls ("A developer must not direct a Google OAuth 2.0 authorization request to an
+embedded user-agent under the developer's control", [Google](https://developers.google.com/identity/protocols/oauth2/policies)).
+That browser has no session with the server yet, so **the first time it asks for the Cloudflare
+Access sign-in** (the emailed code) before Google's page; the connect step says so before it opens.
+The route binds the sign-in to that browser (a cookie) before redirecting to Google; a Google URL
+copied to another browser does not work. Before redirecting it asks Google's sign-in page whether
+it would only show an error for this redirect URI or client, and if so shows the fix instead
+(`authorizationProblem`). The callback ends on a page in the app's style for every outcome
+(`workers/gmail-setup/result-page.ts`): connected (and, when Google limited the grant to a date,
+the warning to publish the app), Cancel on Google's page, an unticked Gmail box, the Gmail API off
+(linked to the client's project), an unknown redirect URI (the exact URI to add), a refused client,
+an expired sign-in. Return to the app afterwards; the account is listed with its import progress.
+
+### When an account stops working
+
+The account keeps its reason (`reason`, `shared/mail/gmail-reasons.ts`), from a sync and from a
+write alike; the inbox banner and the account's panel in Settings say it with one action:
+
+| Reason | Cause, as Google answers | What fixes it |
+|---|---|---|
+| `testing_expiry` | `invalid_grant` about 7 days after connecting, or past the end date Google gave | publish the app (Audience), then Reconnect |
+| `access_revoked` | `invalid_grant` otherwise: access removed in the Google account, password changed, unused 6 months | Reconnect |
+| `insufficient_scope` | grant without `gmail.modify`, or Gmail's 403 `insufficientPermissions` | Reconnect and tick the Gmail box |
+| `gmail_api_disabled` | Gmail's 403 `accessNotConfigured` / `SERVICE_DISABLED` | Enable the Gmail API, then Retry (no reconnect) |
+| `client_rejected` | `invalid_client` / `unauthorized_client` at the token endpoint | save the client again in the Gmail setup, then Reconnect |
+| `credentials_unreadable` | the credential key cannot open the saved access (the key changed) | Reconnect |
+
+Gmail's 403 `userRateLimitExceeded` is a rate limit (back off), not a failure. A write refused with
+401 is not repeated; the token endpoint is asked whether the grant is gone, and an `invalid_grant`
+there marks the account as above.
 
 Tokens are encrypted server-side and omitted from account responses. Initial/history-expiry import does not run rules against historical messages. Incremental incoming events use a durable acknowledgement outbox (`workers/providers/account-service.ts`, provider tests). Polling continues in Durable Object alarms after the desktop closes, once deployed/configured. Pub/Sub is not implemented.
 

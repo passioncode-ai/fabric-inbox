@@ -42,6 +42,8 @@ function navigation(urlString, config) {
   return 'deny';
 }
 function gmailConnectURL(config) { return new URL('/api/accounts/gmail/connect', config.origin).href; }
+/** Where the server opens after Create my server: Domains, or the Gmail setup when it was asked for (SCN-030, SCN-051). */
+function afterDeployPage(input) { return input && input.gmail === true ? '/settings/accounts?connect=gmail' : '/settings/domains'; }
 function partitionFor(config) { return `persist:fabric-${createHash('sha256').update(config.origin).digest('hex').slice(0, 24)}`; }
 function isSetupSender(event, setupWindow, setupURL) {
   return Boolean(setupWindow && !setupWindow.isDestroyed() && event.sender === setupWindow.webContents && event.senderFrame === setupWindow.webContents.mainFrame && event.senderFrame.url === setupURL);
@@ -87,4 +89,4 @@ function isMailSender(event, mailWindow, config) {
   if (!mailWindow || mailWindow.isDestroyed() || !config || event.sender !== mailWindow.webContents || event.senderFrame !== mailWindow.webContents.mainFrame) return false;
   try { return new URL(event.senderFrame.url).origin === config.origin; } catch { return false; }
 }
-module.exports = { serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };
+module.exports = { serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };

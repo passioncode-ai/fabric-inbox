@@ -19,6 +19,7 @@ import {
 } from "./google-oauth";
 import { GmailClient, ProviderError, exchangeCode, makeMime, type Fetcher, type Message, type SendInput } from "./gmail-client";
 import type { InboxReadOptions, InboxMessage } from "../../shared/mail/inbox";
+import { isGmailReason, type GmailReason } from "../../shared/mail/gmail-reasons";
 import { GMAIL_FOLDERS, GmailCache, gmailInboxMessage, inFolder, keyPart, msgKey, type GmailFolder, type InboxCounts, type StoredMessage } from "./gmail-cache";
 export { GMAIL_FOLDERS, type GmailFolder } from "./gmail-cache";
 import { credentialKeys, hasCredentialKey, openCredentials, sealCredentials, type CredentialEnvironment, type CredentialKeys } from "./credentials";
@@ -51,6 +52,39 @@ const RETRY_MS = 60_000, MAX_RETRY_MS = 900_000;
 
 export type AccountRecord = GmailAccount | ImapAccount;
 export type PublicAccount = Omit<AccountRecord, "credentials">;
+const DAY = 86_400_000;
+/**
+ * Google's answer to a refresh, "invalid_grant", says only that the grant is gone. A grant that ends
+ * about 7 days after it was given is a Testing app's (Google's stated expiry); one that ends on the
+ * date Google gave is too. Anything else was removed: in the Google account, by a password change,
+ * or after six months unused.
+ */
+export function grantEndReason(account: Pick<AccountRecord, "connectedAt" | "accessUntil">, now = Date.now()): GmailReason {
+  if (account.accessUntil && now >= account.accessUntil - 3_600_000) return "testing_expiry";
+  const age = account.connectedAt ? now - account.connectedAt : -1;
+  return age >= 7 * DAY - 2 * 3_600_000 && age <= 9 * DAY ? "testing_expiry" : "access_revoked";
+}
+/**
+ * What a failure says about the account itself, or null when it concerns one request only (a
+ * message gone, the provider busy). The same answer is kept on the account by a sync and by a write.
+ */
+export function accountProblem(error: unknown, account: Pick<AccountRecord, "connectedAt" | "accessUntil">, now = Date.now()):
+  { status: AccountRecord["status"]; error: string; reason?: GmailReason } | null {
+  if (!(error instanceof ProviderError)) return null;
+  switch (error.code) {
+    case "reconnect_required":
+      return { status: "reconnect_required", error: "reconnect_required",
+        reason: error.reason === "invalid_grant" ? grantEndReason(account, now) : isGmailReason(error.reason) ? error.reason : undefined };
+    case "insufficient_scope":
+      return { status: "reconnect_required", error: "reconnect_required", reason: "insufficient_scope" };
+    case "gmail_api_disabled":
+      return { status: "error", error: "gmail_api_disabled", reason: "gmail_api_disabled" };
+    case "google_client_rejected":
+      return { status: "error", error: "google_client_rejected", reason: "client_rejected" };
+    default:
+      return null;
+  }
+}
 export interface SendRequest extends SendInput {
   idempotencyKey: string;
 }
@@ -240,6 +274,8 @@ export class AccountService {
       runtime: "cloud",
       status: "connected",
       createdAt: existing?.createdAt || Date.now(),
+      connectedAt: Date.now(),
+      ...(credentials.refreshExpiresAt ? { accessUntil: credentials.refreshExpiresAt } : {}),
       credentials: await this.seal(id, credentials),
       sync: existing?.sync || { mode: "initial" },
     };
@@ -327,12 +363,14 @@ export class AccountService {
     const provider = this.provider(account);
     if (!provider.configured()) throw new ProviderError("not_configured", 503);
     const keys = await this.credentialKeys();
+    if (!keys) throw new ProviderError("not_configured", 503);
     let opened: { value: unknown; stale: boolean };
     try {
-      if (!keys) throw new Error();
       opened = await openCredentials(keys, account.id, account.credentials);
     } catch {
-      throw new ProviderError("credential_store_unavailable", 503);
+      // The keys the server holds cannot open what was sealed for this account: only a reconnect
+      // (or, for IMAP, the password entered again) gives it access again.
+      throw new ProviderError("reconnect_required", 401, "credentials_unreadable");
     }
     // Renewed credentials (an OAuth refresh) go into the stored record and into every copy of it a
     // caller writes later in this object's life (putAccount), so no page writes an older envelope back.
@@ -349,10 +387,36 @@ export class AccountService {
     }
     return provider.open(account, opened.value, persist);
   }
+  /**
+   * Runs work in the account's provider session. A failure that is about the account rather than
+   * this one request (the grant gone, the Gmail API off, the client refused, a password refused) is
+   * kept on the account, so the inbox and Settings say why, the same as when a sync meets it.
+   */
   protected async withSession<T>(account: AccountRecord, work: (session: ProviderSession) => Promise<T>): Promise<T> {
-    const session = await this.session(account);
-    try { return await work(session); }
-    finally { await session.close().catch(() => undefined); }
+    return this.noting(account.id, async () => {
+      const session = await this.session(account);
+      try { return await work(session); }
+      finally { await session.close().catch(() => undefined); }
+    });
+  }
+  private async noting<T>(accountId: string, work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      await this.noteProblem(accountId, error);
+      throw error;
+    }
+  }
+  private async noteProblem(accountId: string, error: unknown) {
+    const current = await this.store.get<AccountRecord>("account:" + accountId);
+    if (!current) return;
+    const problem = accountProblem(error, current);
+    if (!problem || (current.status === problem.status && current.error === problem.error && current.reason === problem.reason)) return;
+    current.status = problem.status;
+    current.error = problem.error;
+    if (problem.reason) current.reason = problem.reason; else delete current.reason;
+    await this.store.put("account:" + accountId, current);
+    console.warn(JSON.stringify({ event: current.provider === "gmail" ? "gmail_account_problem" : "mail_account_problem", provider: current.provider, error: problem.error, reason: problem.reason ?? null }));
   }
   /** Writes an account record, with credentials renewed meanwhile by a session kept over its newer ones. */
   protected async putAccount(account: AccountRecord) {
@@ -527,6 +591,7 @@ export class AccountService {
       account.status = account.sync.mode === "initial" ? "syncing" : "connected";
       account.lastSyncAt = Date.now();
       delete account.error;
+      delete account.reason;
       delete account.retryAt;
       delete account.failures;
     } catch (error) {
@@ -542,14 +607,15 @@ export class AccountService {
       }
       // A session that failed is not reused: the next page opens a fresh one.
       if (sessions.current) { await sessions.current.close().catch(() => undefined); delete sessions.current; }
-      account.error = error instanceof ProviderError ? error.code : "sync_failed";
-      account.status = account.error === "reconnect_required" ? "reconnect_required"
-        : account.error === "rate_limited" ? "rate_limited" : "error";
+      const problem = accountProblem(error, account);
+      account.error = problem?.error ?? (error instanceof ProviderError ? error.code : "sync_failed");
+      account.status = problem?.status ?? (account.error === "rate_limited" ? "rate_limited" : "error");
+      if (problem?.reason) account.reason = problem.reason; else delete account.reason;
       account.failures = (account.failures ?? 0) + 1;
       account.retryAt = Date.now() + (account.status === "rate_limited" ? MAX_RETRY_MS
         : Math.min(RETRY_MS * 2 ** (account.failures - 1), MAX_RETRY_MS));
       await this.putAccount(account);
-      console.warn(JSON.stringify({ event: account.provider === "gmail" ? "gmail_sync_failed" : "mail_sync_failed", provider: account.provider, kind, error: account.error, failures: account.failures }));
+      console.warn(JSON.stringify({ event: account.provider === "gmail" ? "gmail_sync_failed" : "mail_sync_failed", provider: account.provider, kind, error: account.error, reason: account.reason ?? null, failures: account.failures }));
       throw error;
     }
     await this.putAccount(account);
@@ -655,6 +721,7 @@ export class AccountService {
       receipt.status = "unknown";
       receipt.error =
         error instanceof ProviderError ? error.code : "send_outcome_unknown";
+      await this.noteProblem(account.id, error);
     }
     // A failed durable receipt write leaves 'sending'; future attempts resolve to unknown, never resend.
     await this.store.put(key, receipt);
@@ -894,6 +961,7 @@ export class AccountService {
         }
         receipt.status = "unknown";
         receipt.error = error instanceof ProviderError ? error.code : "send_outcome_unknown";
+        await this.noteProblem(account.id, error);
       }
       await this.store.put(key, receipt);
       const { digest: _, ...publicReceipt } = receipt;
