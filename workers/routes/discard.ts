@@ -8,6 +8,7 @@ import { DiscardStoreConflict, explainDiscard, readDiscardStore, updateDiscardSt
 import { readSpamLists } from "../spam/lists";
 import { cloudflareWorkspace } from "../discard/workspace";
 import { parseRemoteAccount } from "../../shared/mail/accounts";
+import { DISCARD_RESTORE_TARGETS, type DiscardRestoreTarget } from "../providers/provider";
 
 /**
  * Discarded (operator decision 2026-10-06): throwing a message away on purpose, bringing it back,
@@ -31,6 +32,12 @@ export const RestoreInput = z.object({
   messages: z.array(Message.extend({
     /** Undo: the rule this message's discard taught (`learnedRuleId` in the discard's answer); only it is taken back. */
     ruleId: z.string().regex(/^[ls]-[0-9a-f]{8}$/).optional(),
+    /**
+     * Where it goes back to: the inbox when absent (Not discarded); Undo names the folder the discard
+     * took it from (its `from`). Never Sent, Drafts or Discarded; a Gmail, IMAP or Outlook message goes
+     * back to inbox, archive or trash.
+     */
+    to: z.string().regex(/^[a-z0-9_-]{1,100}$/).refine((v) => !["sent", "draft", "discarded"].includes(v)).optional(),
   })).min(1).max(100),
   /** Unread again (Undo of a discard of unread mail); left as it is when absent. */
   read: z.boolean().optional(),
@@ -193,13 +200,14 @@ discardRouter.post("/api/discard/restore", async (c) => {
     try { facts = await factsOf(c.env, m); } catch { /* the move below says what is wrong */ }
     try {
       if (m.accountId.startsWith("cloudflare:")) {
-        const moved = await cloudflare(c.env, m).restoreDiscarded([m.providerMessageId], read);
+        const moved = await cloudflare(c.env, m).restoreDiscarded([m.providerMessageId], read, m.to);
         if (!moved.length) return { ...m, ok: false as const, error: "It is no longer in Discarded" };
         return { ...m, ok: true as const, id: m.providerMessageId, facts };
       }
       const remote = parseRemoteAccount(m.accountId);
       if (!remote) return { ...m, ok: false as const, error: "Not an account of this server" };
-      const moved = await accounts(c.env).restoreDiscarded(remote.id, m.providerMessageId, read);
+      if (m.to && !(DISCARD_RESTORE_TARGETS as readonly string[]).includes(m.to)) return { ...m, ok: false as const, error: "A Gmail, IMAP or Outlook message goes back to the inbox, the archive or Trash" };
+      const moved = await accounts(c.env).restoreDiscarded(remote.id, m.providerMessageId, read, m.to as DiscardRestoreTarget | undefined);
       return { ...m, ok: true as const, id: moved.id, facts };
     } catch (error) {
       return { ...m, ok: false as const, error: errorText(error) };

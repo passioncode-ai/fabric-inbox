@@ -1497,7 +1497,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   1. Open Discarded, or search within it -> each message says why it is there.
   2. Not discarded -> it is back in the inbox; when a rule would discard such mail again, the notice offers "Stop discarding mail like this".
 - **Expected result:** A mistake costs one click, and the rule behind it can go in the same breath.
-- **Alt paths:** Undo right after a discard does the same and takes back what that discard taught.
+- **Alt paths:** Undo right after a discard puts each message back where it was — the inbox, Archive (still starred), Trash, Spam (with its reason and its 30 days), a folder of the person's — and takes back only what that discard taught; a folder deleted since sends it to the inbox.
 - **UI elements:** SCR-03 notice with Stop discarding mail like this; SCR-04 Not discarded.
 - **States covered:** loading, error, success
 - **Errors & recovery:** A message no longer in Discarded says so. After 30 days Discarded mail is deleted (Gmail, IMAP and Outlook: moved to their Trash, which the provider empties).

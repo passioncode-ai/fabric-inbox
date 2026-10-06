@@ -26,7 +26,7 @@ export { GMAIL_FOLDERS, type GmailFolder } from "./gmail-cache";
 import { credentialKeys, hasCredentialKey, openCredentials, sealCredentials, type CredentialEnvironment, type CredentialKeys } from "./credentials";
 import { GmailProvider, type GmailAccount } from "./gmail-provider";
 import { normalizeSync } from "./gmail-sync";
-import { NotSentError, type DraftUpdate, type MailProvider, type MessageChange, type ProviderCapabilities, type ProviderSession } from "./provider";
+import { DISCARD_RESTORE_TARGETS, NotSentError, type DiscardRestoreTarget, type DraftUpdate, type MailProvider, type MessageChange, type ProviderCapabilities, type ProviderSession } from "./provider";
 import type { ImapAccount, ImapCredentials } from "./imap/types";
 import { ImapProvider, type ImapDeps } from "./imap/provider";
 import { serverSettings, type ImapConnectInput } from "./imap/connect";
@@ -869,7 +869,9 @@ export class AccountService {
     keyPart(messageId);
     const account = await this.account(accountId);
     const capabilities = this.capabilities(account);
-    if (("archive" in change && !capabilities.archive) || ("spam" in change && !capabilities.spam) || ("trashed" in change && !capabilities.trash))
+    const restoreTo = "discarded" in change && !change.discarded ? change.to : undefined;
+    if (("archive" in change && !capabilities.archive) || ("spam" in change && !capabilities.spam) || ("trashed" in change && !capabilities.trash)
+      || (restoreTo === "archive" && !capabilities.archive) || (restoreTo === "trash" && !capabilities.trash))
       throw new ProviderError("not_supported", 400);
     const id = await this.currentId(account.id, messageId);
     const folders = () => ((account.sync as { folders?: { role: string }[] }).folders ?? []).map((f) => f.role).join(",");
@@ -932,11 +934,15 @@ export class AccountService {
     await this.store.put<DiscardRecord>(`discarded:${account.id}:${message.providerMessageId}`, { reason: reason.slice(0, 300), at: Date.now() });
     return { id: message.providerMessageId, from, unread };
   }
-  /** Not discarded: back to the inbox (unread again when `read` is false); the kept reason goes. */
-  async restoreDiscarded(accountId: string, messageId: string, read?: boolean): Promise<{ id: string }> {
+  /**
+   * Not discarded: back to `to` — the inbox (Not discarded), or where the discard took it from
+   * (Undo: the archive or Trash) — unread again when `read` is false; the kept reason goes.
+   */
+  async restoreDiscarded(accountId: string, messageId: string, read?: boolean, to: DiscardRestoreTarget = "inbox"): Promise<{ id: string }> {
+    if (!DISCARD_RESTORE_TARGETS.includes(to)) throw new ProviderError("not_supported", 400);
     const account = await this.account(accountId);
     const old = await this.currentId(account.id, keyPart(messageId));
-    let message = await this.changeMessage(accountId, messageId, { discarded: false });
+    let message = await this.changeMessage(accountId, messageId, { discarded: false, ...(to === "inbox" ? {} : { to }) });
     if (read === false && message.read) message = await this.changeMessage(accountId, message.providerMessageId, { read: false });
     await this.store.delete(`discarded:${account.id}:${old}`);
     await this.store.delete(`discarded:${account.id}:${message.providerMessageId}`);

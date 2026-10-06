@@ -383,6 +383,34 @@ test("Gmail, IMAP, Outlook: mail in the account's Spam is not discarded — movi
     "It is in Spam: moving it out would teach the account's spam filter that it is not spam. Spam is emptied on its own");
 });
 
+test("Gmail, IMAP: restore takes a discarded message back to the place it was discarded from — archive or Trash", async (t) => {
+  quiet(t);
+  const { gmail, service } = await gmailFixture();
+  await service.discard("a", "m1", "You discarded it");
+  gmail.seen.length = 0;
+  await service.restoreDiscarded("a", "m1", undefined, "archive");
+  assert.deepEqual(gmail.seen.filter((x) => x.includes("/modify")), ['POST messages/m1/modify {"addLabelIds":[],"removeLabelIds":["Label_7"]}'], "out of Discarded, not into the inbox");
+  assert.equal((await service.listInboxMessages("a", { folder: "archive", query: "", limit: 10 })).length, 1);
+  await service.discard("a", "m1", "You discarded it");
+  await service.restoreDiscarded("a", "m1", undefined, "trash");
+  assert.ok(gmail.labels.get("m1")!.includes("TRASH"));
+  assert.ok(!gmail.labels.get("m1")!.includes("Label_7"));
+  assert.equal((await service.listInboxMessages("a", { folder: "trash", query: "", limit: 10 })).length, 1);
+
+  const imap = await imapFixture(t);
+  imap.imap.deliver("INBOX", mail("Filed"));
+  const { id } = await imap.service.connectImap({ preset: "fastmail", email: EMAIL, password: PASS });
+  await settle(imap.service, id);
+  const m = (await page(imap.service, id, "inbox"))[0]!;
+  const archived = await imap.service.archive(id, m.providerMessageId);
+  const moved = await imap.service.discard(id, archived.providerMessageId, "You discarded it");
+  assert.equal(moved.from, "archive");
+  await imap.service.restoreDiscarded(id, moved.id, undefined, "archive");
+  assert.equal(imap.imap.folder("Archive").messages.length, 1);
+  assert.equal(imap.imap.folder("Discarded").messages.length, 0);
+  assert.equal(imap.imap.folder("INBOX").messages.length, 0);
+});
+
 test("Gmail: a label deleted in Gmail since is made again, once; one the person made by hand is found by name", async (t) => {
   quiet(t);
   const { gmail, store, service } = await gmailFixture();

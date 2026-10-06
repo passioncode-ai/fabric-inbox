@@ -11,6 +11,7 @@ import { hasCredentialKey } from "./credentials";
 import { pollInterval, type AccountsEnvironment } from "./account-service";
 import { GmailScheduler, type AlarmStorage } from "./gmail-scheduler";
 import type { ImapConnectInput } from "./imap/connect";
+import type { DiscardRestoreTarget } from "./provider";
 import { autoReason, discardFacts, discardSafety, matchDiscard, recordApplied } from "../../shared/mail/discard";
 import { readDiscardStore, updateDiscardStore } from "../discard/store";
 import { readSpamLists } from "../spam/lists";
@@ -244,9 +245,9 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
   discardMessage(accountId: string, messageId: string, reason: string) {
     return this.serial(() => this.service.discard(accountId, messageId, reason));
   }
-  /** Not discarded: back to the inbox. */
-  restoreDiscarded(accountId: string, messageId: string, read?: boolean) {
-    return this.serial(() => this.service.restoreDiscarded(accountId, messageId, read));
+  /** Not discarded: back to the inbox, or (Undo) to the archive or Trash it was discarded from. */
+  restoreDiscarded(accountId: string, messageId: string, read?: boolean, to?: DiscardRestoreTarget) {
+    return this.serial(() => this.service.restoreDiscarded(accountId, messageId, read, to));
   }
   /** Whether any connected account wrote to this sender (a read: no lock, like the feed). */
   knownSender(address: string) {

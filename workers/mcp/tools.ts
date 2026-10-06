@@ -100,7 +100,7 @@ async function readMessage(ctx: ToolContext, account: Account, id: string, max =
       subject: String(e.subject ?? ""), from: String(e.sender ?? ""), to: String(e.recipient ?? ""),
       cc: (e.cc as string) || null, bcc: (e.bcc as string) || null,
       replyTo: headerValue(parseStoredHeaders(e.raw_headers as string | null), "reply-to")?.trim() || null, date: String(e.date ?? ""), folder: (e.folder_id as string) ?? null, read: !!e.read, starred: !!e.starred,
-      spamReason: (e.spam_reason as string) ?? null, text: body.text, truncated: body.truncated, ...(includeHtml ? { html } : {}),
+      spamReason: e.folder_id === "spam" ? (e.spam_reason as string) ?? null : null, text: body.text, truncated: body.truncated, ...(includeHtml ? { html } : {}),
       ...(includeHeaders ? { headers: cloudflareHeaders(e) } : {}),
       attachments: (e.attachments ?? []).map((a) => ({ attachmentId: String(a.id), filename: String(a.filename), type: String(a.mimetype), size: Number(a.size) })),
     };
@@ -859,14 +859,15 @@ const discardMessages = defineTool({
 
 const restoreDiscarded = defineTool({
   name: "restore_discarded", title: "Bring back discarded messages", level: "mail", target: (a) => `${a.messages.length} message(s)${a.unlearn ? " (unlearn)" : ""}`,
-  description: "Not discarded: moves messages from Discarded back to the inbox. Answers rules: the discard rules that would discard such mail again (remove_discard_rule stops one). unlearn: true is an undo of the discard — for each message given with ruleId (the learnedRuleId discard_messages answered for it), that rule's count is taken back, and a rule the discard made goes; a message without ruleId forgets nothing, so a rule learned earlier is never removed by mistake. read: false makes them unread again. A message gives its id in the inbox in results (an IMAP move gives it a new one).",
+  description: "Not discarded: moves messages from Discarded back to the inbox, or with to back to the folder each was discarded from (an undo: archive, trash, spam or a Cloudflare folder; the from discard_messages answered). Answers rules: the discard rules that would discard such mail again (remove_discard_rule stops one). unlearn: true is an undo of the discard — for each message given with ruleId (the learnedRuleId discard_messages answered for it), that rule's count is taken back, and a rule the discard made goes; a message without ruleId forgets nothing, so a rule learned earlier is never removed by mistake. read: false makes them unread again. A message gives its id in the inbox in results (an IMAP move gives it a new one).",
   input: { messages: z.array(z.object({ accountId, messageId,
-      ruleId: z.string().regex(/^[ls]-[0-9a-f]{8}$/).optional().describe("The rule this message's discard taught (learnedRuleId from discard_messages); taken back with unlearn") })).min(1).max(100),
+      ruleId: z.string().regex(/^[ls]-[0-9a-f]{8}$/).optional().describe("The rule this message's discard taught (learnedRuleId from discard_messages); taken back with unlearn"),
+      to: z.string().regex(/^[a-z0-9_-]{1,100}$/).optional().describe("Where it goes back: the inbox when absent; for an undo, the folder discard_messages answered as its from (archive, trash, spam or a Cloudflare folder id; Gmail, IMAP and Outlook: inbox, archive or trash)") })).min(1).max(100),
     read: z.boolean().optional().describe("Unread again with false; left as it is when absent"),
     unlearn: z.boolean().default(false).describe("Also take back what each discard taught (an undo; needs each message's ruleId)") },
   routes: ["POST /api/discard/restore"],
   call: (a, ctx) => post(ctx, "/api/discard/restore", {
-    messages: a.messages.map((m) => ({ accountId: parseAccount(m.accountId).id, providerMessageId: m.messageId, ...(m.ruleId ? { ruleId: m.ruleId } : {}) })),
+    messages: a.messages.map((m) => ({ accountId: parseAccount(m.accountId).id, providerMessageId: m.messageId, ...(m.to ? { to: m.to } : {}), ...(m.ruleId ? { ruleId: m.ruleId } : {}) })),
     read: a.read, unlearn: a.unlearn }),
 });
 

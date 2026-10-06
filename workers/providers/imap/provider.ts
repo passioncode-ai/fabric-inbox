@@ -208,7 +208,7 @@ class ImapSession implements ProviderSession {
       return this.fromCache(messageId, { id: messageId, role: at.role, flags: now.flags });
     }
     const target: FolderRole = "trashed" in change ? (change.trashed ? "trash" : "inbox")
-      : "archive" in change ? "archive" : "inbox" in change ? "inbox" : "discarded" in change ? (change.discarded ? "discarded" : "inbox")
+      : "archive" in change ? "archive" : "inbox" in change ? "inbox" : "discarded" in change ? (change.discarded ? "discarded" : change.to ?? "inbox")
       : change.spam ? "junk" : "inbox";
     // Discarded mail is read: marked before the move, so the copy in its new folder carries it.
     if ("discarded" in change && change.discarded) await at.conn.setFlags(at.uid, ["\\Seen"], []);

@@ -157,7 +157,7 @@ export class OutlookSession implements ProviderSession {
         now = await this.graph.json(path + "/move", { method: "POST", json: { destinationId: folder } });
       } else {
         const target = "trashed" in change ? (change.trashed ? "trash" : "inbox")
-          : "archive" in change ? "archive" : "inbox" in change || "discarded" in change ? "inbox" : change.spam ? "junk" : "inbox";
+          : "archive" in change ? "archive" : "inbox" in change ? "inbox" : "discarded" in change ? change.to ?? "inbox" : change.spam ? "junk" : "inbox";
         if (!this.account.sync.folders.some((f) => f.role === target)) throw new ProviderError("not_supported", 400);
         now = await this.graph.json(path + "/move", { method: "POST", json: { destinationId: WELL_KNOWN[target] } });
       }

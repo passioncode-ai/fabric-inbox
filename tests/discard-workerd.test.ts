@@ -31,7 +31,7 @@ const bundle = await build({
         async upgrade(n) { applyMigrations(this.ctx.storage.sql, mailboxMigrations.slice(0, n ?? mailboxMigrations.length), this.ctx.storage); }
         async legacyMessage(id, folder) { this.ctx.storage.sql.exec("INSERT INTO emails (id, folder_id, subject, sender, recipient, date, read, starred, body) VALUES (?, ?, 'Kept by hand', 'friend@example.org', 'support@shop.invalid', ?, 1, 0, 'mine')", id, folder, new Date().toISOString()); }
         async dropFolder(id) { this.ctx.storage.sql.exec("UPDATE emails SET folder_id = 'inbox' WHERE folder_id = ?", id); this.ctx.storage.sql.exec('DELETE FROM folders WHERE id = ?', id); }
-        async row(id) { return this.ctx.storage.sql.exec('SELECT folder_id, read, discard_reason, discarded_at FROM emails WHERE id = ?', id).toArray()[0] ?? null; }
+        async row(id) { return this.ctx.storage.sql.exec('SELECT folder_id, read, starred, discard_reason, discarded_at, spam_reason, spam_at FROM emails WHERE id = ?', id).toArray()[0] ?? null; }
         async sent(to, threadId) { await this.createEmail('sent', { id: 'sent-' + to + (threadId || ''), subject: 'Hello', sender: 'support@shop.invalid', recipient: to, date: new Date().toISOString(), body: 'hi', thread_id: threadId || null }, []); }
         async backdateDiscarded(days) { this.ctx.storage.sql.exec("UPDATE emails SET discarded_at = ? WHERE folder_id = 'discarded'", new Date(Date.now() - days * 86400000).toISOString()); }
         async folders() { return this.ctx.storage.sql.exec('SELECT id, name, is_deletable FROM folders ORDER BY id').toArray(); }
@@ -406,5 +406,39 @@ test("Undo takes back only what that discard taught: a discard that learned noth
     await call("/api/discard/restore", "POST", { messages: [{ ...ref(c.emailId), ruleId }], unlearn: true });
     assert.equal((await call("/api/discard/rules")).body.rules[0].discards, 1);
     assert.equal((await call("/api/discard/restore", "POST", { messages: [{ ...ref(c.emailId), ruleId: "nope" }], unlearn: true })).status, 400);
+  } finally { await mf.dispose(); }
+});
+
+test("Undo puts a discarded message back where it was: Archive (starred), Trash, Spam with its reason, a folder of the person's", async () => {
+  const { mf, call, receive, ref } = await fixture();
+  try {
+    const place = async (subject: string, folderId: string) => {
+      const m = await receive(subject, { from: `${folderId}@shop-deals.example` });
+      assert.equal((await call(`${BOX}/emails/${m.emailId}/move`, "POST", { folderId })).status, 200);
+      return m.emailId;
+    };
+    assert.equal((await call(`${BOX}/folders`, "POST", { name: "Receipts" })).status, 201);
+    const archived = await place("Kept", "archive");
+    await call(`${BOX}/emails/${archived}`, "PUT", { starred: true });
+    const ids = { archive: archived, trash: await place("Binned", "trash"), spam: await place("Junk", "spam"), receipts: await place("Paid", "receipts") };
+    const spamBefore = (await call("/row", "POST", { id: ids.spam })).body;
+    const discarded = await call("/api/discard", "POST", { messages: Object.values(ids).map(ref), learn: false });
+    assert.deepEqual(discarded.body.results.map((r: any) => r.from), ["archive", "trash", "spam", "receipts"], "each says the folder it left");
+    const undo = await call("/api/discard/restore", "POST", { messages: discarded.body.results.map((r: any) => ({ ...ref(r.id), to: r.from })), unlearn: true });
+    assert.equal(undo.body.moved, 4);
+    for (const [folder, id] of Object.entries(ids)) assert.equal((await call("/row", "POST", { id })).body.folder_id, folder, folder);
+    assert.equal((await call("/row", "POST", { id: ids.archive })).body.starred, 1, "still starred");
+    const spam = (await call("/row", "POST", { id: ids.spam })).body;
+    assert.deepEqual([spam.spam_reason, spam.spam_at], [spamBefore.spam_reason, spamBefore.spam_at], "Spam as it was: its reason and its 30 days");
+    // Without a place, back to the inbox (Not discarded); never into Sent, Drafts or Discarded itself.
+    await call("/api/discard", "POST", { messages: [ref(ids.trash)], learn: false });
+    assert.equal((await call("/api/discard/restore", "POST", { messages: [{ ...ref(ids.trash), to: "sent" }] })).status, 400);
+    await call("/api/discard/restore", "POST", { messages: [ref(ids.trash)] });
+    assert.equal((await call("/row", "POST", { id: ids.trash })).body.folder_id, "inbox");
+    // A folder deleted since: the inbox.
+    await call("/api/discard", "POST", { messages: [ref(ids.receipts)], learn: false });
+    await call(`${BOX}/folders/receipts`, "DELETE");
+    assert.equal((await call("/api/discard/restore", "POST", { messages: [{ ...ref(ids.receipts), to: "receipts" }] })).body.moved, 1);
+    assert.equal((await call("/row", "POST", { id: ids.receipts })).body.folder_id, "inbox");
   } finally { await mf.dispose(); }
 });
