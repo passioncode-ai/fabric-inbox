@@ -56,6 +56,26 @@ export function authErrorName(location: string): string | null {
   return AUTH_ERRORS.find((name) => text.includes(name)) ?? null;
 }
 
+/**
+ * Before sending a person to Google, asks Google's sign-in page whether it would only show an error
+ * for this client and redirect URI. Returns the server-side problem by its public code, or null when
+ * Google would show its sign-in (or did not answer in time: the person then sees Google's own page).
+ */
+export async function authorizationProblem(authorizationUrl: string, http: Fetcher = fetch, timeoutMs = 5_000):
+  Promise<"redirect_uri_mismatch" | "google_client_rejected" | null> {
+  try {
+    const response = await http(authorizationUrl, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(timeoutMs) });
+    const location = response.headers.get("Location") ?? "";
+    if (!(response.status >= 300 && response.status < 400 && /\/signin\/oauth\/error/.test(location))) return null;
+    const name = authErrorName(location);
+    if (name === "redirect_uri_mismatch") return "redirect_uri_mismatch";
+    if (name === "invalid_client" || name === "deleted_client" || name === "disabled_client") return "google_client_rejected";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function tokenCheck(clientId: string, clientSecret: string, redirectUri: string, http: Fetcher): Promise<Check[]> {
   let response: Response;
   try {

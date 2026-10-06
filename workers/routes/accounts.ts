@@ -1,12 +1,15 @@
 import { bodyLimit } from 'hono/body-limit';
 import { MAX_SEND_REQUEST_BYTES } from '../../shared/mail/attachments';
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { configuration } from "../providers/google-oauth";
 import type { GmailBindings } from "../providers/accounts-do";
 import type { GmailFolder, SendRequest } from "../providers/account-service";
 import { ProviderError } from "../providers/gmail-client";
+import { renderResult } from "../gmail-setup/result-page";
+import { authorizationProblem } from "../gmail-setup/google-check";
+import { projectNumberOf } from "../../shared/mail/gmail-reasons";
 
 /** Mount behind the app's Cloudflare Access middleware, before the SSR fallback. */
 export const accountsRouter = new Hono<{ Bindings: GmailBindings }>();
@@ -100,13 +103,32 @@ accountsRouter.get("/api/accounts", async (c) => {
   return c.json({ ...(await stub(c.env).listAccounts()),
     ...(config.status === "configured" ? { connectUrl: new URL("/api/accounts/gmail/connect", config.origin).href } : {}) });
 });
+/** The browser's side of connecting: every answer is a page a person can act on (result-page.ts). */
+const pageFor = (c: Context<{ Bindings: GmailBindings }>, outcome: string, extra: { email?: string; accessUntil?: number; googleError?: string } = {}) => {
+  const config = configuration(c.env);
+  const page = renderResult({ outcome, ...extra, projectNumber: projectNumberOf(c.env.GOOGLE_CLIENT_ID),
+    ...(config.status === "configured" ? { origin: config.origin, redirectUri: config.redirectUri } : {}) });
+  // Through the context, so a cookie set or cleared on it travels with the page.
+  return c.body(page.html, page.status as 200, page.headers);
+};
+const codeOf = (error: unknown) => (error instanceof ProviderError ? error.code : (error as Error)?.message) || "account_service_unavailable";
 accountsRouter.get("/api/accounts/gmail/connect", async (c) => {
   const config = configuration(c.env);
-  if (config.status !== "configured")
-    return c.json({ error: "not_configured" }, 503);
-  if (new URL(c.req.url).origin !== config.origin)
-    return c.json({ error: "invalid_origin" }, 403);
-  const result = await stub(c.env).beginConnect();
+  if (config.status !== "configured") return pageFor(c, "not_configured");
+  if (new URL(c.req.url).origin !== config.origin) return pageFor(c, "invalid_origin");
+  let result: { authorizationUrl: string; browserToken: string };
+  try {
+    result = await stub(c.env).beginConnect();
+  } catch (error) {
+    return pageFor(c, codeOf(error));
+  }
+  // Google shows a dead end of its own for a redirect URI or client it does not know; this server
+  // says what to change instead, before the person leaves for Google.
+  const problem = await authorizationProblem(result.authorizationUrl);
+  if (problem) {
+    console.warn(JSON.stringify({ event: "gmail_connect_blocked", problem }));
+    return pageFor(c, problem);
+  }
   setCookie(c, cookie, result.browserToken, {
     httpOnly: true,
     secure: true,
@@ -129,20 +151,28 @@ accountsRouter.post("/api/accounts/gmail/connect", async (c) => {
 });
 accountsRouter.get("/api/accounts/gmail/callback", async (c) => {
   const config = configuration(c.env);
-  if (config.status !== "configured")
-    return c.json({ error: "not_configured" }, 503);
-  if (new URL(c.req.url).origin !== config.origin)
-    return c.json({ error: "invalid_origin" }, 403);
+  if (config.status !== "configured") return pageFor(c, "not_configured");
+  if (new URL(c.req.url).origin !== config.origin) return pageFor(c, "invalid_origin");
   const browserToken = getCookie(c, cookie) || "";
   deleteCookie(c, cookie, { path: "/", secure: true });
-  await stub(c.env).callback(
-    c.req.query("state") || "",
-    browserToken,
-    c.req.query("code") || "",
-    c.req.query("error"),
-  );
-  // Fixed relative path: OAuth parameters cannot choose a redirect destination.
-  return c.redirect("/?gmail=connected", 303);
+  // Google's own word for a refusal, shown only from a fixed list: the query is not page content.
+  const googleError = c.req.query("error");
+  const known = googleError && /^[a-z_]{1,40}$/.test(googleError) ? googleError : googleError ? "unknown_error" : undefined;
+  try {
+    const account = await stub(c.env).callback(
+      c.req.query("state") || "",
+      browserToken,
+      c.req.query("code") || "",
+      googleError,
+    );
+    console.log(JSON.stringify({ event: "gmail_connected", limited: !!account.accessUntil }));
+    // A fixed page, not a redirect: OAuth parameters cannot choose where the browser goes next.
+    return pageFor(c, "connected", { email: account.email, accessUntil: account.accessUntil });
+  } catch (error) {
+    const code = codeOf(error);
+    console.warn(JSON.stringify({ event: "gmail_connect_failed", error: code, googleError: known ?? null }));
+    return pageFor(c, code, { googleError: known });
+  }
 });
 accountsRouter.post("/api/accounts/:accountId/disconnect", async (c) =>
   c.json(await stub(c.env).disconnect(c.req.param("accountId"))),
