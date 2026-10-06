@@ -180,9 +180,12 @@ export class ImapSync {
       if (!(await this.drop(account.id, folder.role, folder.uidValidity, deadline))) return { more: true, skipped: 0 };
       folder.uidValidity = 0;
     }
+    // A server that does not say UIDNEXT (allowed by RFC 3501 only in odd cases): read the last UID instead.
+    const uidNext = Number.isFinite(opened.uidNext) && opened.uidNext > 0 ? opened.uidNext
+      : opened.exists ? ((await conn.fetch("*", {}, { bySeq: true }))[0]?.uid ?? 0) + 1 : 1;
     if (!folder.uidValidity) {
       // First sight of the folder: mail above uidNext - 1 is new from now on; what is there is imported.
-      Object.assign(folder, { uidValidity: opened.uidValidity, top: Math.max(0, opened.uidNext - 1), importFrom: opened.exists, importTotal: opened.exists, known: 0 });
+      Object.assign(folder, { uidValidity: opened.uidValidity, top: Math.max(0, uidNext - 1), importFrom: opened.exists, importTotal: opened.exists, known: 0 });
       delete folder.modseq;
       delete folder.reconciledAt;
       if (opened.highestModseq) folder.modseq = opened.highestModseq;
@@ -191,7 +194,7 @@ export class ImapSync {
     }
     let more = false;
     // New mail: everything above top, oldest first, whole.
-    if (opened.uidNext - 1 > folder.top) {
+    if (uidNext - 1 > folder.top) {
       const fresh = (await conn.fetch(`${folder.top + 1}:*`, {})).filter((m) => m.uid > folder.top).sort((x, y) => x.uid - y.uid);
       const now = fresh.slice(0, NEW_PER_PAGE);
       for (let i = 0; i < now.length; i += 10) {

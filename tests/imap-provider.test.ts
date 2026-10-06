@@ -335,6 +335,26 @@ test("attachments and headers are read from the server; disconnecting forgets th
   assert.equal(imap.folder("INBOX").messages.length, 1, "the mail stays at the provider");
 });
 
+test("the shared schedule reads IMAP accounts: a tick imports, Refresh names them imap:<id>", async (t) => {
+  const { GmailScheduler } = await import("../workers/providers/gmail-scheduler");
+  const { service, imap } = await fixture(t);
+  imap.deliver("INBOX", mail("Scheduled"));
+  const { id } = await service.connectImap({ preset: "fastmail", email: EMAIL, password: PASS });
+  const data = new Map<string, unknown>();
+  let alarm: number | null = null;
+  const storage = { getAlarm: async () => alarm, setAlarm: async (at: number) => { alarm = at; }, deleteAlarm: async () => { alarm = null; },
+    get: async <T,>(k: string) => data.get(k) as T | undefined, put: async <T,>(k: string, v: T) => { data.set(k, v); } };
+  const scheduler = new GmailScheduler(storage, { listAccounts: () => service.listAccounts(), sync: (a, o) => service.sync(a, o), ready: (a) => service.ready(a) },
+    <T,>(fn: () => Promise<T>) => fn(), () => 300_000);
+  for (let i = 0; i < 4; i++) await scheduler.tick();
+  assert.deepEqual((await service.listInboxMessages(id, { folder: "inbox", query: "", limit: 5 })).map((m) => m.subject), ["Scheduled"]);
+  imap.deliver("INBOX", mail("Refreshed"));
+  const outcomes = await scheduler.refresh(["imap:" + id]);
+  assert.deepEqual(outcomes.map((o) => [o.accountId, o.result]), [["imap:" + id, "synced"]]);
+  assert.equal((await service.listInboxMessages(id, { folder: "inbox", query: "", limit: 5 })).length, 2);
+  assert.deepEqual(await scheduler.refresh(["gmail:" + id]), [], "the same id under another provider is not this account");
+});
+
 test("an address already connected with Google sign-in is not connected again over IMAP", async (t) => {
   const { service, store } = await fixture(t);
   await store.put<Partial<AccountRecord>>("account:g1", { id: "g1", provider: "gmail", email: "ann@gmail.com", status: "connected", sync: { mode: "history" } });
