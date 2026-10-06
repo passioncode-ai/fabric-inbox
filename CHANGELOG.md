@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+- **Usage counts no longer wait for the Keychain.** They are sent with Node's `fetch` in the main
+  process instead of Chromium's network stack, which waits for the cookie key; a pending Keychain
+  prompt held every count back on the owner's Mac (0.11.0).
+- **A development run is "Fabric Inbox Development"** to macOS, with its own Keychain item for its
+  cookie key, so it can never leave the installed app an item it has to ask for.
+
 ## 0.11.0 — 2026-10-06
 
 - **Settings is one screen, and nothing jumps.** Addresses, Domains, Accounts, Forwarding

@@ -13,7 +13,11 @@ const backup = require('./backup.cjs');
 const updates = require('./updater.cjs');
 const { randomUUID } = require('node:crypto');
 
-app.setName('Fabric Inbox');
+// A development run (`npm run desktop`) is its own app to macOS: its own name, so Chromium keeps its
+// cookie key in its own Keychain item ("Fabric Inbox Development Safe Storage"). With the installed
+// app's name, the first unsigned run created "Fabric Inbox Safe Storage" with an access list only it
+// matched, and the signed release then asked for the login password (0.11.0 upgrade check, B-42).
+app.setName(app.isPackaged ? 'Fabric Inbox' : 'Fabric Inbox Development');
 // A development run (`npm run desktop`, an unpackaged Electron) keeps its own profile, so it never
 // writes into the installed app's settings, cookies or single-instance lock (LC-14). A walk or a
 // release check names its own throwaway folder with --user-data-dir, which always wins.
@@ -267,7 +271,9 @@ async function startAnalytics() {
   let bundle = null;
   try { bundle = usage.readBundledKey(await fs.readFile(path.join(__dirname, 'analytics.json'), 'utf8')); } catch { bundle = null; }
   if (!bundle) return;
-  const send = electron.net && typeof electron.net.fetch === 'function' ? (url, init) => electron.net.fetch(url, init) : globalThis.fetch;
+  // Node's fetch, not Chromium's: the counts need no cookies, and Chromium's network stack waits for
+  // the cookie key from the Keychain, so a pending Keychain prompt held every count back (0.11.0).
+  const send = globalThis.fetch;
   analytics = usage.createAnalytics({ fs, bundle, fetch: send, uuid: randomUUID, appData: app.getPath('appData'), userData: app.getPath('userData'),
     appVersion: app.getVersion(), osVersion: typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : '',
     locale: typeof app.getLocale === 'function' ? app.getLocale() : '', engineVersion: (process.versions && process.versions.electron) || '',

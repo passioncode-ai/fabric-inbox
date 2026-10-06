@@ -147,7 +147,9 @@ signed release must create it without a prompt (`docs/release.md`, upgrade check
 - **Tests, walks and checks never use the real profile (LC-14).** Launch a built app with
   `--user-data-dir="$(mktemp -d)"` (and `--remote-debugging-port` only with it). An unpackaged run
   (`npm run desktop`) uses `~/Library/Application Support/Fabric Inbox Development`, never the
-  installed app's folder.
+  installed app's folder, and the app name "Fabric Inbox Development", so its cookie key is its own
+  Keychain item. A local packaged debug build still shares "Fabric Inbox Safe Storage" with the
+  installed app: launching one on the owner's Mac makes the signed app ask once (`docs/release.md`).
 - **Build retention (LC-15).** Output directories: `release/` (disk images, receipts, store builds,
   `desktop:package` folders), `build/` (the Worker and app, rebuilt every time),
   `desktop/server-bundle/`. `npm run desktop:dmg` and `npm run desktop:mas` keep only the current and
