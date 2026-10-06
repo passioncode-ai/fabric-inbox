@@ -173,8 +173,8 @@ select.fi-input { padding-right: 28px; }
 }
 .fi-panel-title { flex: 1; min-width: 0; }
 .fi-panel-title h2 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -0.2px; overflow-wrap: anywhere; }
-.fi-panel-title h2:focus { outline: none; }
-.fi-panel-title h2:focus-visible { outline: 2px solid var(--pc-focus); outline-offset: 2px; }
+/* Headings take focus only so a screen reader announces the panel; they are not controls, so no ring. */
+.fi-settings :is(h2, h3)[tabindex="-1"]:is(:focus, :focus-visible) { outline: none; }
 .fi-panel-title > p { margin: 2px 0 0; color: var(--pc-text-muted); font-size: 13px; overflow-wrap: anywhere; }
 .fi-panel-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .fi-panel-actions { display: flex; gap: 4px; align-items: center; }

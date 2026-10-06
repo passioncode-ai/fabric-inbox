@@ -108,7 +108,7 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
     <>
       <SectionLayout section="addresses" hasSelection={!!id}
         toolbar={<>
-          <ListSearch value={query} onChange={setQuery} placeholder="Find an address or agent" label="Find an address" />
+          <ListSearch value={query} onChange={setQuery} placeholder="Find an address" label="Find an address" />
           <button type="button" className="fi-primary" onClick={openAdd} disabled={loading || !served.size}
             title={!served.size ? "Receive a domain's mail here first (Domains)" : undefined}>
             <PlusIcon size={16} /> Add address
