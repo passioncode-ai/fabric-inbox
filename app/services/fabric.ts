@@ -1,5 +1,6 @@
 import { ApiError } from "./api";
 import { noteServerBuild } from "../lib/build-version";
+import { msg } from "../../shared/i18n";
 /**
  * JSON request to this app's API. Distinguishes an empty success (204), an
  * expired sign-in (Cloudflare Access answers with an HTML page or a redirect),
@@ -21,21 +22,21 @@ export async function fabric<T>(
     });
   } catch (error) {
     const timeout = error instanceof DOMException && error.name === "TimeoutError";
-    throw new ApiError(0, { error: timeout ? "The server did not answer in 30 seconds. Try again." : "The server could not be reached. Check the connection and try again." });
+    throw new ApiError(0, { error: timeout ? msg("The server did not answer in 30 seconds. Try again.") : msg("The server could not be reached. Check the connection and try again.") });
   }
   noteServerBuild(response.headers);
   if (response.status === 204) return undefined as T;
   if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400))
-    throw new ApiError(401, { error: "Your sign-in expired. Reload the page to sign in again." });
+    throw new ApiError(401, { error: msg("Your sign-in expired. Reload the page to sign in again.") });
   const type = response.headers.get("content-type") ?? "";
   if (!type.includes("application/json")) {
     throw new ApiError(response.status, {
       error: [401, 403].includes(response.status) || type.includes("text/html")
-        ? "Your sign-in expired. Reload the page to sign in again."
-        : `The server answered ${response.status} without data. Try again.`,
+        ? msg("Your sign-in expired. Reload the page to sign in again.")
+        : msg("The server answered {status} without data. Try again.", { status: response.status }),
     });
   }
-  const data = await response.json().catch(() => ({ error: "The server sent an unreadable answer. Try again." }));
+  const data = await response.json().catch(() => ({ error: msg("The server sent an unreadable answer. Try again.") }));
   if (!response.ok) throw new ApiError(response.status, data as Record<string, unknown>);
   return data as T;
 }

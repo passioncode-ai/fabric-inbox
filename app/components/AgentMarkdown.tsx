@@ -6,6 +6,9 @@
 
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useMemo } from "react";
+import { useT } from "../lib/i18n";
+import { englishT, type T } from "../../shared/i18n";
 
 /**
  * Markdown for the chat agent's replies.
@@ -26,18 +29,19 @@ function hostOf(src: string): string | null {
 	}
 }
 
-export function imageLinkLabel(alt: string | null | undefined, src: string | null | undefined): string {
+export function imageLinkLabel(alt: string | null | undefined, src: string | null | undefined, t: T = englishT): string {
 	const name = alt?.trim();
 	const host = src ? hostOf(src) : null;
-	if (name && host) return `Image: ${name} (${host})`;
-	if (name) return `Image: ${name}`;
-	if (host) return `Image from ${host}`;
-	return "Image";
+	if (name && host) return t("Image: {name} ({host})", { name, host });
+	if (name) return t("Image: {name}", { name });
+	if (host) return t("Image from {host}", { host });
+	return t("Image");
 }
 
 const linkStyle = { color: "var(--color-link)", textDecoration: "underline" } as const;
 
-const components: Components = {
+/** The renderers; only an image's link label depends on the language. */
+const componentsFor = (t: T): Components => ({
 	a: ({ href, children }) => (
 		<a href={href} target="_blank" rel="noopener noreferrer" style={linkStyle}>
 			{children}
@@ -45,7 +49,7 @@ const components: Components = {
 	),
 	img: ({ src, alt }) => {
 		const href = typeof src === "string" ? src : undefined;
-		const label = imageLinkLabel(alt, href);
+		const label = imageLinkLabel(alt, href, t);
 		return href ? (
 			<a
 				href={href}
@@ -89,9 +93,11 @@ const components: Components = {
 	td: ({ children }) => (
 		<td className="px-2 py-1 border-b border-kumo-line/50">{children}</td>
 	),
-};
+});
 
 export default function AgentMarkdown({ children }: { children: string }) {
+	const t = useT();
+	const components = useMemo(() => componentsFor(t), [t]);
 	return (
 		<Markdown remarkPlugins={[remarkGfm]} components={components}>
 			{children}

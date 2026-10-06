@@ -1,4 +1,6 @@
 /** Client view of /api/agents, /api/agent-runs and /api/project-addresses (workers/routes/agents.ts). */
+import { englishT, type T } from "../../shared/i18n";
+
 export type ReplyMode = "draft" | "auto";
 export interface ToolGrant {
   name: string;
@@ -119,18 +121,23 @@ export interface AgentRun {
   createdAt: string;
 }
 
-/** One word per state, in the product's terms: "Sent" only after the provider accepted. */
-export const RUN_STATUS_TEXT: Record<AgentRunStatus, string> = {
-  running: "Working",
-  off: "Off",
-  skipped: "Skipped",
-  drafted: "Draft waiting",
-  sent: "Sent",
-  send_failed: "Not sent",
-  send_unknown: "Outcome unknown",
-  failed: "Failed",
-  interrupted: "Interrupted",
-};
+/**
+ * One word per state, in the product's terms: "Sent" only after the provider accepted. A run's
+ * "Sent" is a state, not the Sent folder, hence the context in its key.
+ */
+export function runStatusText(t: T = englishT): Record<AgentRunStatus, string> {
+  return {
+    running: t("Working"),
+    off: t("Off"),
+    skipped: t("Skipped"),
+    drafted: t("Draft waiting"),
+    sent: t("[run] Sent"),
+    send_failed: t("Not sent"),
+    send_unknown: t("Outcome unknown"),
+    failed: t("Failed"),
+    interrupted: t("Interrupted"),
+  };
+}
 
 export function blankAgent(): AgentInput {
   return { name: "", instructions: "", knowledge: "", collections: [], tools: [], replyPolicy: { mode: "draft", allowedIntents: [], dailySendLimit: 20 } };
