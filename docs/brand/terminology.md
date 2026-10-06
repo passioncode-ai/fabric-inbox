@@ -87,5 +87,5 @@ Contract: brand-contract v1
 |---|---|
 | Continue draft | Reopen the selected saved workbench draft, retaining its sender and send recovery |
 | Retry same attempt | Reconcile or retry the locked send with its existing recovery key and unchanged content |
-| Refresh cached mail | Reload the combined cached list; not a promise to sync the entire provider mailbox |
+| Check for new mail | Read Gmail's new mail and changes now for the Gmail accounts in view, then reload the combined list; it does not import a whole mailbox, and names any account it could not read |
 | Light theme / Dark theme | Appearance preference; no change to message, account or send state |

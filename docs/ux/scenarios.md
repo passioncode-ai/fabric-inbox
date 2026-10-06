@@ -98,9 +98,10 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **UI elements:** SCR-02; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Cancel leaves no connected account; unavailable configuration shows setup needed; provider refusal offers reconnect.
+- **Refinement (2026-10-06, mail refresh):** A connected Gmail account syncs at once, not a poll interval later. Its sidebar row says "importing 40%" (or "importing" until Gmail reports the mailbox size) while older mail is imported; new mail already arrives during the import. Only a revoked grant asks for a reconnect; Gmail being down or refusing one request waits and retries (60 s doubling to 15 min). Evidence: `tests/gmail-scheduler.test.ts` ("a new connection syncs now…"), `tests/feed-freshness.test.ts` ("a Gmail account importing says so…"), `tests/gmail-sync.test.ts` (P2-9 tests).
 - **Audit refinement (2026-09-28):** Until the account list loads, Accounts shows "Checking Gmail setup…" instead of claiming Gmail is not configured; a failed load says setup is unknown beside the Retry alert. Evidence: `tests/frontend-states.test.ts` ("Gmail is only called 'not configured'…").
 - **Status:** validated
-- **Coverage:** app/routes/fabric-accounts.tsx:61, app/lib/account-status.ts, workers/routes/accounts.ts:83, desktop/main.cjs:151
+- **Coverage:** app/routes/fabric-accounts.tsx:61, app/lib/account-status.ts, workers/routes/accounts.ts:83, desktop/main.cjs:151; workers/providers/gmail-scheduler.ts (`connected`); app/components/inbox/AccountSidebar.tsx (`syncLabel`)
 - **Product:** unobserved
 - **Today:** Partial. Accounts lists Gmail and Cloudflare separately; the configured Gmail link starts at the server in a browser. The not_configured state was reported from the running app (RE-006). No real OAuth grant, mailbox synchronization or send acceptance was performed. Outlook/IMAP are explicitly unavailable.
 
@@ -137,8 +138,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **UI elements:** SCR-03, SCR-04; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** One account sync failure is shown separately; initial loading is not an empty inbox.
+- **Refinement (2026-10-06, mail refresh):** "Check for new mail" reads Gmail now for the Gmail accounts in view (none for a Cloudflare address or domain, whose mail arrives by push), then the list and categories; it says "Updated just now" or names each account not read and why (busy until a time, needs reconnecting, Gmail error, not reached in time). The list keeps updating every minute while the window is active, also after Load older (the first page is read and joined to the pages already loaded), and at once when the window comes back or the Mac wakes. A count the server could not read stays as last known, dimmed, "may be out of date". A large Gmail cache never makes its account vanish. Evidence: `tests/mail-refresh.test.ts`, `tests/gmail-cache.test.ts`, `tests/gmail-scheduler.test.ts`, `tests/feed-freshness.test.ts`.
 - **Status:** validated
-- **Coverage:** app/routes/unified-inbox.tsx (`UnifiedInbox`, `scope`, detail query); app/components/inbox/model.ts (`messagePath`); workers/routes/inbox.ts
+- **Coverage:** app/routes/unified-inbox.tsx (`UnifiedInbox`, `scope`, detail query, `checkForMail`, head query); app/components/inbox/model.ts (`messagePath`); workers/routes/inbox.ts (`/api/inbox/refresh`); app/lib/mail-refresh.ts; workers/providers/gmail-cache.ts
 - **Product:** unobserved
 - **Today:** Partial. The unified workbench shows all-account mail with source labels and filters one account in place through URL scope. Root observed three synthetic accounts, six messages and a one-account view with two messages (RE-009). Detail queries retain account and provider message identity. Individual-message reading exists; full threads, real multi-account synchronization and live account acceptance remain unverified.
 
@@ -277,9 +279,10 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **UI elements:** SCR-03, SCR-04; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** On failure restore the previous visible state; undo only when supported by the provider.
+- **Refinement (2026-10-06, mail refresh):** In the unified inbox, archive, trash, spam, star and read show at once in the list and are put back exactly when the server refuses, with the reason in the notice; opening an unread message marks its row read at once the same way. A change in one mailbox's own view refreshes the unified inbox too. Evidence: `tests/optimistic-feed.test.ts`.
 - **Audit refinement (2026-09-28), Cloudflare mailbox view:** Delete outside Trash moves the message to Trash and offers Undo (back to the folder it came from). Inside Trash the control reads "Delete permanently" and a dialog titled "Delete permanently?" must be confirmed. Moving a message out of Trash restores it — the Trash empty state says exactly this. A failed star, read change, move, delete or folder create raises an error toast announced as an alert; a failed folder load shows an error with Retry, never "Your inbox is empty". Row actions appear on keyboard focus as well as hover; the star has an accessible name. Evidence: `tests/delete-policy.test.ts`, `tests/mutation-errors.test.ts`, `tests/frontend-states.test.ts`.
 - **Status:** draft
-- **Coverage:** app/routes/unified-inbox.tsx (`perform`, reader toolbar); app/routes/email-list.tsx; app/components/EmailPanel.tsx; app/hooks/useDeleteMessage.ts; app/lib/delete-policy.ts; app/components/MutationErrorToasts.tsx; tests/automation-integration.test.ts:170
+- **Coverage:** app/routes/unified-inbox.tsx (`perform`, `showChange`, reader toolbar); app/lib/mail-refresh.ts (`showFeedChange`); app/routes/email-list.tsx; app/components/EmailPanel.tsx; app/hooks/useDeleteMessage.ts; app/lib/delete-policy.ts; app/components/MutationErrorToasts.tsx; tests/automation-integration.test.ts:170
 - **Product:** unobserved
 - **Today:** Partial. The unified reader offers read/unread, archive, star/unstar, soft trash and restore. Provider mutations precede visible confirmation; late completion cannot clear another selected message. Synthetic browser acceptance exercised star/unstar and trash/restore for Gmail and Cloudflare. Gmail untrash does not promise Inbox. Live organization, bulk controls and permanent deletion remain unverified or absent. Evidence: `tests/mail-actions.test.ts`; `docs/app-store/verification.md`.
 
@@ -434,8 +437,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **UI elements:** SCR-01, SCR-03, SCR-05; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Expired session offers sign-in; unavailable attachment remains unavailable; unsaved content is never claimed durable.
+- **Refinement (2026-10-06, mail refresh):** After the Mac wakes from sleep the open mail window reads new mail at once (the desktop app's `powerMonitor` resume, sent only to the mail window). A page older than an updated server shows "A new version of Fabric Inbox is on the server. Reload to update"; a page whose code can no longer be fetched after an update reloads once by itself. Evidence: `tests/desktop-policy.test.ts` (bridge IPC list, resume), `tests/build-version.test.ts`.
 - **Status:** validated
-- **Coverage:** desktop/main.cjs:90, desktop/setup.html:27, app/routes/gmail-inbox.tsx:41
+- **Coverage:** desktop/main.cjs:90, desktop/setup.html:27, app/routes/gmail-inbox.tsx:41; desktop/mail-preload.cjs (`onResume`); app/lib/build-version.ts; app/root.tsx (`UpdateNotice`)
 - **Product:** unobserved
 - **Today:** Partial. Native connection-refused/retry behavior and session partition restart were observed. Gmail localStorage draft/recovery code now exists, but no runtime draft-restoration receipt is recorded. There is no offline mailbox cache or bundled renderer to read it; this original requirement remains open.
 

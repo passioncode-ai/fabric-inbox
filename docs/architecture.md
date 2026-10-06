@@ -88,6 +88,66 @@ is involved. The client (`app/components/inbox/TriagedList.tsx`, `triage-view.ts
 selected message keeps its section until the selection changes, and Archive/Trash selects the next
 one in the order shown.
 
+## Gmail sync, cache and refresh
+
+All Gmail accounts live in one `GmailAccountsDO` (`workspace`). Its code is split so another
+provider can take Gmail's place: `gmail-client.ts` (HTTP to Google), `gmail-cache.ts` (storage
+layout, index, counters, migration), `gmail-sync.ts` (one page of history or of the import),
+`gmail-scheduler.ts` (when each account syncs), `account-service.ts` (accounts, credentials,
+actions, sends) and `accounts-do.ts` (the object and its lock).
+
+**Sync model** (`gmail-sync.ts`). Connecting an account records Gmail's `historyId` before
+anything is listed, and every sync reads history first, to its last page: new mail, label changes
+and deletions reach the cache even while an import runs, and history no longer falls behind into
+`history_expired`. The import then runs in phases: `recent` — the inbox of the last 30 days, newest
+first, in full; `backfill` — every other message (spam and trash included) with headers only, its
+body read from Gmail the first time it is opened; `sweep` — rows the import did not see under its
+`generation` are deleted (they are gone from Gmail). `history_expired` starts a new import under a
+new generation while the old cache stays visible until the sweep. A message whose own fetch keeps
+failing is retried `MAX_MESSAGE_ATTEMPTS` (5) times, then set aside under `skipped:<acc>:<id>` and
+counted in the account's `skipped`; offline, rate-limit and auth failures never count against a
+message. Failed syncs back off 60 s doubling to 15 min; only `invalid_grant` from Google's token
+endpoint asks for a reconnect (`reconnect_required`), a 401 that a fresh token does not cure is
+`provider_auth_failed` and backs off.
+
+**Schedule** (`gmail-scheduler.ts`). One alarm serves every account. A tick reads history for every
+due account first, then gives imports the rest of a 25 s budget in fair shares, starting one account
+further on each tick (`poll:offset`); while an import or a history page is unfinished the next tick
+is 10 s away, otherwise `GMAIL_POLL_SECONDS` (default 300). An account waiting out a failure is
+retried when its wait ends. A manual sync (`sync_account`), Refresh and a new connection never move
+the alarm later; a new connection syncs at once. Each page runs under the object's lock on its own,
+and cache reads take no lock, so the feed and mail actions never wait behind a sync.
+
+**Cache layout 2** (`gmail-cache.ts`), per account `a`: `message:a:<id>` metadata rows;
+`body:a:<id>:<blob>:<i>` body chunks under 128 KiB, deleted with their message (and any chunk a
+failed save left); `idx:a:<folder>[~u]:<rev-ts>:<id>` one index row per folder the message is in,
+plus `~u` while unread, newest first, holding what the feed shows; `count:a` the inbox's unread and
+total, changed in the same transaction as every save and delete; `cache:a` the layout and a
+migration's resume point. A page of the feed reads about one page of index rows however large the
+cache; a search reads its folder's index until it has a page, up to 50,000 rows (`cache_scan_limit`
+beyond). Caches written before 0.11 (layout 1: chunks under the message key, no index) move over in
+resumable batches of 100 rows, each one transaction with its resume point, so nothing is indexed or
+counted twice; rows layout 1 already hid are dropped. Reads migrate for up to 5 s and each alarm
+tick a few seconds per account; until an account is done its reads use the old full scan.
+
+**Refresh** (`POST /api/inbox/refresh`, tool `refresh_inbox`). Reads Gmail history for the Gmail
+accounts in scope (every one, or the ones named; none for Cloudflare mail, which arrives by push)
+within about 20 s shared fairly, without moving the alarm, and answers per account `synced` (with
+`importing` percent while an import runs), `backoff` (with `retryAt`), `reconnect`, `failed` (with
+`error`) or `not_reached`. The inbox's "Check for new mail" button calls it, then reads the list and
+the categories again and shows "Updated just now" or which accounts were not read.
+
+**Freshness in the app** (`app/routes/unified-inbox.tsx`, `app/lib/mail-refresh.ts`). The list
+polls every 60 s while the window is active (`pollInterval(useWindowActive())`); after Load older
+only the first page is polled and joined to the loaded pages (`mergeHead`). Coming back to the
+window, or the Mac waking (`powerMonitor` `resume` → `fabric:resumed` on the mail window's preload
+bridge), reads the list at once, at most every 10 s. Categories are read with each read of the
+list. A count the server could not read comes back `countsStale` and is drawn dimmed. Archive,
+trash, spam, star and read show at once in every cached list and roll back if the server refuses.
+Every API answer carries `X-Fabric-Build` (one id per build, `shared/build.ts`); a page with
+another id offers "Reload to update", and a page that cannot load its own code after an update
+reloads once (`app/lib/build-version.ts`).
+
 ## Spam (SP-1…SP-6)
 
 | Piece | Where | What it guarantees |
@@ -245,7 +305,7 @@ flowchart LR
 | A body too large for a row | R2 `bodies/<id>.html` (`emails.body_key`) |
 | Addresses hidden from the sidebar and All inboxes | R2 `config/hidden-accounts.json` |
 | Rules, rule runs | `AutomationDO` storage, one per account |
-| Gmail tokens (AES-GCM), message cache | `GmailAccountsDO` (`workspace`) |
+| Gmail tokens (AES-GCM), message cache (layout 2: rows, bodies, date index, inbox counters; see "Gmail sync, cache and refresh"), set-aside messages | `GmailAccountsDO` (`workspace`) |
 | Chat history | `EmailAgent` per mailbox |
 | Agent keys (no secrets: id, Client ID, name, level, sending, limit, dates) | R2 `config/agent-keys.json` |
 | Agent protocol confirmations, send counts, journal | `EmailMCP` SQLite (`workspace`) |
@@ -274,7 +334,7 @@ read with a default where it is missing, never assumed present.
 | `workers/spam/`, `shared/mail/spam.ts` | spam lists in R2; the verdict on arrival |
 | `workers/knowledge/` | knowledge store (`KnowledgeDO`) and pure text work (chunking, FTS query quoting) |
 | `workers/automation/` | rules engine, policy, MCP client |
-| `workers/providers/` | Gmail OAuth, client, account service, `GmailAccountsDO` |
+| `workers/providers/` | Gmail OAuth, client, cache, sync loop, scheduler, account service, `GmailAccountsDO` |
 | `workers/routing/` | Cloudflare API client, the accounts the tokens reach (`accounts.ts`), Email Routing status, `DomainManager` (domains, rules, catch-all, sending, destinations), setup from routing |
 | `workers/relay/` | the relay Worker's source, installing it in another account, and where it hands mail over |
 | `workers/routes/` | accounts, unified inbox, agents and project addresses, categories and projects, domains, setups |
@@ -297,5 +357,7 @@ read with a default where it is missing, never assumed present.
   key is limited by level and sending mode, not by mailbox.
 - Tool output reaches the model and the run record (bounded), never the rule journal.
 - `checkSendRateLimit` reads the same budget the outbox enforces (20/hour, 100/day per address).
-- Gmail initial sync fetches 25 messages per poll and the inbox read scans the whole cache;
-  large accounts are slow to import (see the audit backlog).
+- A Gmail import of a large mailbox still takes a while (about 100 headers-only messages per
+  page, six requests in flight, ticks 10 s apart while it runs); new mail is unaffected because
+  history runs from the start. A search over more than 50,000 cached rows of one folder answers
+  `cache_scan_limit`.

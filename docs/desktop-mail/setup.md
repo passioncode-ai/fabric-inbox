@@ -329,7 +329,7 @@ the category is next changed (board B-26).
 | `GOOGLE_CLIENT_SECRET` | OAuth client secret, server only |
 | `GMAIL_TOKEN_ENCRYPTION_KEY` | Base64url-encoded 32-byte AES-GCM key; back up safely before using accounts |
 | `PUBLIC_APP_URL` | Exact HTTPS application origin; no path/query/credentials |
-| `GMAIL_POLL_SECONDS` | Optional poll interval, default 300 seconds; clamped to 60–3600 |
+| `GMAIL_POLL_SECONDS` | Optional poll interval, default 300 seconds; clamped to 60–3600. While an import or a history page is unfinished the next sync is 10 s away instead; a new account syncs at once, and Check for new mail reads Gmail on demand ([architecture](../architecture.md#gmail-sync-cache-and-refresh)) |
 
 Register `PUBLIC_APP_URL` plus `/api/accounts/gmail/callback` as the OAuth redirect URI. Enable Gmail API and configure consent/test users for the requested `gmail.modify` scope. These are provider administration steps, not a guarantee that Google will grant the app production access.
 

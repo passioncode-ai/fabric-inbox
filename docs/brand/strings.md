@@ -81,7 +81,7 @@ Locations name the source function while the integration branch is being formatt
 | action.inbox.compose | Compose | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-006 | proposed |
 | action.inbox.search | Search | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-005 | proposed |
 | action.inbox.clear_search | Clear search | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-005 | proposed |
-| action.inbox.refresh | Refresh cached mail | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-005 | proposed |
+| action.inbox.refresh | Check for new mail | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-004 | proposed |
 | label.inbox.cached_search | Search cached mail | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-005 | proposed |
 | state.inbox.partial | inboxes are unavailable; the rest of your mail is shown. | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-004 | proposed |
 | navigation.inbox.categories | CATEGORIES | app/components/inbox/CategorySidebar.tsx | SCN-036 | proposed |
