@@ -26,7 +26,7 @@ import { preset, presetName } from "../../../shared/mail/imap-presets";
 import { sendSmtp, verifySmtp } from "./smtp";
 import { cloudflareSockets, type SocketFactory } from "./sockets";
 import { ImapSync, mapFolders } from "./sync";
-import type { FolderRole, FolderState, ImapAccount, ImapCredentials, ServerSettings } from "./types";
+import { DISCARDED_FOLDER, type FolderRole, type FolderState, type ImapAccount, type ImapCredentials, type ServerSettings } from "./types";
 
 /** How the provider reaches servers; the tests replace both with in-process fakes. */
 export interface ImapDeps {
@@ -127,6 +127,8 @@ export class ImapProvider implements MailProvider<ImapAccount> {
 }
 
 class ImapSession implements ProviderSession {
+  /** This session made the Discarded folder (it was not on the server before). */
+  private madeDiscarded = false;
   private conn?: ImapConnection;
   private connecting?: Promise<ImapConnection>;
   constructor(private account: ImapAccount, private password: string, private provider: ImapProvider, private store: Store, private cache: GmailCache, private syncer: ImapSync) {}
@@ -206,8 +208,12 @@ class ImapSession implements ProviderSession {
       return this.fromCache(messageId, { id: messageId, role: at.role, flags: now.flags });
     }
     const target: FolderRole = "trashed" in change ? (change.trashed ? "trash" : "inbox")
-      : "archive" in change ? "archive" : "inbox" in change ? "inbox" : change.spam ? "junk" : "inbox";
+      : "archive" in change ? "archive" : "inbox" in change ? "inbox" : "discarded" in change ? (change.discarded ? "discarded" : "inbox")
+      : change.spam ? "junk" : "inbox";
+    // Discarded mail is read: marked before the move, so the copy in its new folder carries it.
+    if ("discarded" in change && change.discarded) await at.conn.setFlags(at.uid, ["\\Seen"], []);
     if (target === at.role) return this.fromCache(messageId, { id: messageId, role: at.role, flags: (await at.conn.fetch(String(at.uid), {}))[0]?.flags ?? [] });
+    if (target === "discarded" && !this.folder("discarded")) await this.makeDiscarded(at.conn);
     const destination = this.folder(target)?.path ?? this.account.sync.targets?.[target];
     if (!destination) throw new ProviderError("not_supported", 400);
     // The Message-ID finds the message in its new folder when the server does not say its new UID.
@@ -226,8 +232,27 @@ class ImapSession implements ProviderSession {
     if (!newUid && rfcId) newUid = (await at.conn.findMessageId(rfcId)).sort((x, y) => y - x)[0];
     // Not found (no UIDPLUS and no Message-ID): the next sync reads it in its new folder.
     if (!newUid) return null;
+    // A Discarded folder made just now holds only this message: its sync starts after it, with nothing to import.
+    if (dest.role === "discarded" && this.madeDiscarded && !dest.uidValidity) Object.assign(dest, { uidValidity: opened.uidValidity, top: newUid, known: 1 });
     const [now] = await at.conn.fetch(String(newUid), {});
     return this.fromCache(messageId, { id: messageKey(target, opened.uidValidity, newUid), role: target, flags: now?.flags ?? before?.flags ?? [] });
+  }
+
+  /**
+   * The Discarded folder, made on the server the first time it is needed: a folder already named
+   * Discarded (any case, or Выброшенные) is used as it is, else one is created at the top level. It
+   * joins the folders this account syncs; the caller keeps the account record with it
+   * (AccountService.changeMessage). A server that refuses to create folders says so
+   * (`folder_create_refused`): the person makes a folder named Discarded there and tries again.
+   */
+  private async makeDiscarded(conn: ImapConnection) {
+    const list = await conn.folders();
+    const existing = mapFolders(list).roles.discarded;
+    const path = existing ?? await conn.create(DISCARDED_FOLDER);
+    // A folder the person already had is imported like any other; one made now starts empty.
+    this.madeDiscarded = !existing;
+    this.account.sync.folders.push({ role: "discarded", path, uidValidity: 0, top: 0, known: 0 });
+    console.log(JSON.stringify({ event: "imap_discarded_folder", created: !existing }));
   }
 
   async attachment(messageId: string, attachmentId: string) {

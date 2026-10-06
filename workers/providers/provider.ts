@@ -78,7 +78,13 @@ export type MessageChange =
   | { trashed: boolean }
   | { archive: true }
   | { inbox: true }
-  | { spam: boolean };
+  | { spam: boolean }
+  /**
+   * Discarded (true): out of the inbox into the account's Discarded place — Gmail's "Discarded"
+   * label, an IMAP or Outlook folder named Discarded, made when missing — and read. Not discarded
+   * (false): back to the inbox, out of that place.
+   */
+  | { discarded: boolean };
 
 /** The result of one unit of sync work. */
 export interface PageResult {

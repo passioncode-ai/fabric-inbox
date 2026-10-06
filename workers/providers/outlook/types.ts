@@ -14,8 +14,12 @@ export const OUTLOOK_FOLDERS = [
   { role: "junk", wellKnown: "junkemail" },
   { role: "archive", wellKnown: "archive" },
 ] as const;
-export type OutlookRole = (typeof OUTLOOK_FOLDERS)[number]["role"];
-export const WELL_KNOWN: Record<OutlookRole, string> = Object.fromEntries(OUTLOOK_FOLDERS.map((f) => [f.role, f.wellKnown])) as Record<OutlookRole, string>;
+export type WellKnownRole = (typeof OUTLOOK_FOLDERS)[number]["role"];
+/** The synced folders' roles: the well-known six, and "discarded" — a top-level folder named Discarded, made the first time a message is discarded. */
+export type OutlookRole = WellKnownRole | "discarded";
+export const WELL_KNOWN: Record<WellKnownRole, string> = Object.fromEntries(OUTLOOK_FOLDERS.map((f) => [f.role, f.wellKnown])) as Record<WellKnownRole, string>;
+/** The display name the Discarded folder is found by, and made with. */
+export const DISCARDED_FOLDER = "Discarded";
 
 /** One synced folder and where its delta query stands. */
 export interface OutlookFolderState {

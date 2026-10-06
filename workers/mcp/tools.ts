@@ -115,7 +115,7 @@ async function readMessage(ctx: ToolContext, account: Account, id: string, max =
     references: (m.references as string) || null, inReplyTo: (m.inReplyTo as string) || null,
     subject: String(m.subject ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""),
     cc: (m.cc as string) || null, bcc: (m.bcc as string) || null, replyTo: (m.replyTo as string) || null,
-    date: String(m.date ?? ""), folder: labels.includes("SPAM") ? "spam" : labels.includes("TRASH") ? "trash" : labels.includes("DRAFT") ? "draft" : labels.includes("INBOX") ? "inbox" : labels.includes("SENT") ? "sent" : "archive",
+    date: String(m.date ?? ""), folder: labels.includes("SPAM") ? "spam" : labels.includes("TRASH") ? "trash" : labels.includes("DRAFT") ? "draft" : labels.includes("DISCARDED") ? "discarded" : labels.includes("INBOX") ? "inbox" : labels.includes("SENT") ? "sent" : "archive",
     read: !!m.read, starred: labels.includes("STARRED"), spamReason: labels.includes("SPAM") ? (account.provider === "gmail" ? "Gmail put it in Spam" : account.provider === "outlook" ? "It is in the account's Junk Email folder" : "It is in the account's spam folder") : null,
     text: body.text, truncated: body.truncated, ...(includeHtml ? { html: String(m.html ?? "") } : {}), ...(headers ? { headers } : {}),
     attachments: (m.attachments ?? []).map((a) => ({ attachmentId: String(a.providerAttachmentId), filename: String(a.filename), type: String(a.mimeType), size: Number(a.size) })),
@@ -126,7 +126,7 @@ const row = (m: Record<string, unknown>) => ({
   accountId: m.accountId, messageId: m.providerMessageId, threadId: m.threadId ?? null, subject: m.subject, from: m.sender, to: m.recipient,
   date: m.date, read: m.read, starred: m.starred, snippet: m.snippet,
   ...(m.alsoIn ? { alsoIn: m.alsoIn } : {}), ...(m.categories ? { categories: m.categories } : {}),
-  ...(m.spamReason ? { spamReason: m.spamReason } : {}), ...(m.triage ? { triage: m.triage } : {}),
+  ...(m.spamReason ? { spamReason: m.spamReason } : {}), ...(m.discardReason ? { discardReason: m.discardReason } : {}), ...(m.triage ? { triage: m.triage } : {}),
 });
 
 /** Text written by other people, quoted and cut, so it cannot pass for the summary's own words. */
@@ -185,10 +185,10 @@ const listAccounts = defineTool({
 
 const listMessages = defineTool({
   name: "list_messages", title: "List or search messages", level: "read", readOnly: true,
-  description: "The triaged feed across every mailbox, newest first, as the app's All inboxes reads it (the app then groups it by triage; here it is one list). Narrow it to one account, a domain, a provider, a folder, unread mail, a category, or text in the subject, sender or body (query). Page with cursor. Hidden addresses are left out unless you name the account. folder \"draft\" lists the drafts kept on the server (as list_drafts does; unread and categoryId do not apply).",
+  description: "The triaged feed across every mailbox, newest first, as the app's All inboxes reads it (the app then groups it by triage; here it is one list). Narrow it to one account, a domain, a provider, a folder, unread mail, a category, or text in the subject, sender or body (query). Page with cursor. Hidden addresses are left out unless you name the account. folder \"draft\" lists the drafts kept on the server (as list_drafts does; unread and categoryId do not apply). folder \"discarded\" lists Discarded mail, each with discardReason (deleted after 30 days; restore_discarded brings one back).",
   input: {
     accountId: accountId.optional(), domain: z.string().max(253).optional().describe("Only Cloudflare addresses on this domain"),
-    provider: z.enum(["cloudflare", "gmail", "imap", "outlook"]).optional(), folder: z.enum(["inbox", "sent", "archive", "trash", "starred", "spam", "draft"]).default("inbox"),
+    provider: z.enum(["cloudflare", "gmail", "imap", "outlook"]).optional(), folder: z.enum(["inbox", "sent", "archive", "trash", "starred", "spam", "discarded", "draft"]).default("inbox"),
     unread: z.boolean().optional(), query: z.string().max(500).optional().describe("Text to find in subject, sender, recipient or body"),
     categoryId: z.string().max(100).optional().describe("Only messages in this category (list_categories)"),
     limit: z.number().int().min(1).max(100).default(25), cursor: z.string().max(2000).optional().describe("From the previous page's nextCursor"),
@@ -816,6 +816,7 @@ const moveMessages = defineTool({
     "POST /api/accounts/:accountId/messages/:messageId/inbox"],
   async call(a, ctx) {
     if (a.to === "spam") throw new ApiError(400, "Use mark_spam to move mail to Spam", null);
+    if (a.to === "discarded") throw new ApiError(400, "Use discard_messages to discard mail (it also learns a rule), and restore_discarded to bring it back", null);
     return eachMessage(a.messages, async (account, id) => {
       if (account.provider === "cloudflare") return post(ctx, `${box(account.mailbox)}/emails/${enc(id)}/move`, { folderId: a.to });
       if (a.to === "archive") return post(ctx, `${remote(account.remoteId)}/messages/${enc(id)}/archive`);
@@ -843,6 +844,49 @@ const markSpam = defineTool({
     }
     return post(ctx, a.spam ? "/api/spam/report" : "/api/spam/release", { messages, list: a.list });
   },
+});
+
+const messageRefsOf = (messages: { accountId: string; messageId: string }[]) => messages.map((m) => ({ accountId: parseAccount(m.accountId).id, providerMessageId: m.messageId }));
+
+const discardMessages = defineTool({
+  name: "discard_messages", title: "Discard messages", level: "mail", target: (a) => `${a.messages.length} message(s)${a.learn === false ? " (no rule)" : ""}`,
+  description: "Discards messages, as ⌘⌫ does in the app: each leaves the inbox for Discarded (a Cloudflare mailbox's Discarded folder, Gmail's own \"Discarded\" label, an IMAP or Outlook folder named Discarded, made when missing), marked read. Discarded counts as deleted — out of the inbox, its counts and categories — but is kept 30 days and can be brought back (restore_discarded). Each discard also learns a rule keyed on the message's mailing list (List-Id), else its sender, so future mail like it goes straight to Discarded; learned names each rule and created: true the first time. learn: false discards without teaching anything. Mail from someone a mailbox wrote to, replies in a conversation it took part in, and allowed senders are never discarded on arrival. Discarding is undone with restore_discarded (unlearn: true takes the rule back too).",
+  input: { messages: messageRefs, learn: z.boolean().default(true).describe("Learn a rule from each message (the default)") },
+  routes: ["POST /api/discard"],
+  call: (a, ctx) => post(ctx, "/api/discard", { messages: messageRefsOf(a.messages), learn: a.learn }),
+});
+
+const restoreDiscarded = defineTool({
+  name: "restore_discarded", title: "Bring back discarded messages", level: "mail", target: (a) => `${a.messages.length} message(s)${a.unlearn ? " (unlearn)" : ""}`,
+  description: "Not discarded: moves messages from Discarded back to the inbox. Answers rules: the discard rules that would discard such mail again (remove_discard_rule stops one). unlearn: true is an undo of the discard — the rule it made (or its count) is taken back too. read: false makes them unread again. A message gives its id in the inbox in results (an IMAP move gives it a new one).",
+  input: { messages: messageRefs, read: z.boolean().optional().describe("Unread again with false; left as it is when absent"),
+    unlearn: z.boolean().default(false).describe("Also take back what the discard taught (an undo)") },
+  routes: ["POST /api/discard/restore"],
+  call: (a, ctx) => post(ctx, "/api/discard/restore", { messages: messageRefsOf(a.messages), read: a.read, unlearn: a.unlearn }),
+});
+
+const listDiscardRules = defineTool({
+  name: "list_discard_rules", title: "List discard rules", level: "read", readOnly: true,
+  description: "Every discard rule, most recently used first: what it matches (kind list = a mailing list by its List-Id, sender = an address), why it was learned (why: newsletter, sender, the bulk sender's domain, the category, a model's one-line reason), how many messages were discarded by hand (discards) and on arrival (applied, lastAppliedAt); the Always allow list (senders and domains never discarded on arrival); and how many days Discarded keeps mail.",
+  input: {},
+  routes: ["GET /api/discard/rules"],
+  call: (_a, ctx) => get(ctx, "/api/discard/rules"),
+});
+
+const removeDiscardRule = defineTool({
+  name: "remove_discard_rule", title: "Stop a discard rule", level: "admin", target: (a) => a.ruleId,
+  description: "Stops discarding mail like this: the rule goes (list_discard_rules gives its ruleId, restore_discarded names the rules that match a message). Mail already in Discarded stays there.",
+  input: { ruleId: z.string().regex(/^[ls]-[0-9a-f]{8}$/).describe("The rule's id, e.g. l-1a2b3c4d") },
+  routes: ["DELETE /api/discard/rules/:id"],
+  call: (a, ctx) => del(ctx, `/api/discard/rules/${enc(a.ruleId)}`),
+});
+
+const updateDiscardAllowList = defineTool({
+  name: "update_discard_allow_list", title: "Change the Always allow list", level: "admin", target: (a) => `${a.action} ${a.value}`,
+  description: "Adds a sender (full address) or a domain (and its subdomains) to the Always allow list — their mail is never discarded on arrival, whatever a rule says — or removes it. The Never spam lists count as Always allow too.",
+  input: { value: z.string().min(1).max(320).describe("An address, or a domain such as example.com"), action: z.enum(["add", "remove"]) },
+  routes: ["POST /api/discard/allowed"],
+  call: (a, ctx) => post(ctx, "/api/discard/allowed", a),
 });
 
 const deleteMessage = defineTool({
@@ -1371,11 +1415,12 @@ const agentActivity = defineTool({
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listFolders, getSendStatus,
   listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listCategories, listKnowledge, searchKnowledge, listRules,
-  listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, markSpam, deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
+  listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
+  deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun,
   createAddress, updateAddress, removeAddress, routeAddress, sendTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
-  updateSpamList, emptySpam, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
+  updateSpamList, emptySpam, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,
   disconnectGmail, disconnectAccount, listMailProviders, gmailConnectLink, gmailSetupStatus, checkGmailSetup, createCredentialKey,
   outlookConnectLink, microsoftSetupStatus, checkMicrosoftSetup, listAgentKeys, agentActivity,

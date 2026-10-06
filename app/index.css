@@ -4,6 +4,7 @@
 @import "./styles/fabric-tokens.css";
 @import "./styles/workbench.css";
 @import "./styles/settings.css";
+@import "./styles/triage.css";
 
 body {
   margin: 0;

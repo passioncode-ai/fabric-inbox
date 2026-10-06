@@ -248,3 +248,27 @@ test("reply and forward declare every route they call, Gmail's included (agent a
       assert.deepEqual(undeclared, [], `${name} on ${accountId} calls routes it does not declare`);
     }
 });
+
+// ── 12. Discarded (operator, 2026-10-06) ─────────────────────────────
+
+test("discard_messages and restore_discarded send the feed's account ids to the discard routes; move_messages refuses Discarded", async () => {
+  const { api, calls } = fakeApi({
+    "POST /api/discard": (c) => ok({ moved: 2, failed: [], results: [], learned: [{ ruleId: "l-1a2b3c4d", kind: "list", label: "Weekly", discards: 1, created: true }], skipped: [], echo: c.body }),
+    "POST /api/discard/restore": (c) => ok({ moved: 1, failed: [], results: [], rules: [], echo: c.body }),
+    "GET /api/discard/rules": ok({ rules: [], allowed: [], retentionDays: 30 }),
+    "DELETE /api/discard/rules/l-1a2b3c4d": ok({ rules: [], allowed: [] }),
+  });
+  const discarded = await call(api, "discard_messages", { messages: [{ accountId: CF, messageId: "m1" }, { accountId: "gmail:a1", messageId: "g1" }] });
+  assert.equal(discarded.isError, false);
+  assert.deepEqual(calls[0]!.body, { messages: [{ accountId: `cloudflare:${CF}`, providerMessageId: "m1" }, { accountId: "gmail:a1", providerMessageId: "g1" }], learn: true });
+  assert.equal(discarded.data.learned[0].created, true, "the agent sees the rule it taught");
+  const quiet = await call(api, "discard_messages", { messages: [{ accountId: CF, messageId: "m1" }], learn: false });
+  assert.equal(quiet.data.echo.learn, false);
+  const back = await call(api, "restore_discarded", { messages: [{ accountId: CF, messageId: "m1" }], unlearn: true, read: false });
+  assert.deepEqual(back.data.echo, { messages: [{ accountId: `cloudflare:${CF}`, providerMessageId: "m1" }], read: false, unlearn: true });
+  assert.equal((await call(api, "list_discard_rules", {})).data.retentionDays, 30);
+  assert.equal((await call(api, "remove_discard_rule", { ruleId: "l-1a2b3c4d" })).isError, false);
+  const move = await call(api, "move_messages", { messages: [{ accountId: CF, messageId: "m1" }], to: "discarded" });
+  assert.equal(move.isError, true);
+  assert.match(JSON.stringify(move.data), /discard_messages/);
+});

@@ -23,6 +23,8 @@ export interface FakeImapOptions {
   loginFailure?: string;
   /** Folders besides INBOX, with their special use. */
   folders?: { path: string; specialUse?: string }[];
+  /** CREATE is refused (a server that does not let clients make folders). */
+  createRefused?: boolean;
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -38,6 +40,8 @@ export class FakeImap {
   /** Every command, with login arguments replaced. */
   commands: string[] = [];
   logins = 0;
+  /** Folders a client made (CREATE). */
+  created: string[] = [];
   private sockets = new Set<net.Socket>();
   private validity = 1_700_000_000;
   constructor(public options: FakeImapOptions = {}) {
@@ -199,6 +203,14 @@ export class FakeImap {
           s.write(`* ${verb} (${flags.join(" ")}) "/" ${quote(f.path)}\r\n`);
         }
         return ok();
+      }
+      case "CREATE": {
+        const path = str(args[0]);
+        if (this.options.createRefused) return void s.write(`${tag} NO [CANNOT] Folders cannot be created here\r\n`);
+        if (this.folders.has(path)) return void s.write(`${tag} NO [ALREADYEXISTS] Mailbox already exists\r\n`);
+        this.folders.set(path, { path, uidValidity: this.validity++, uidNext: 1, modseq: 1, messages: [] });
+        this.created.push(path);
+        return ok("CREATE completed");
       }
       case "STATUS": {
         const f = this.folder(str(args[0]));

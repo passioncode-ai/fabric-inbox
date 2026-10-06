@@ -6,7 +6,7 @@
 import { validateAttachments, type MailAttachment } from "../../shared/mail/attachments";
 import { configuration, type GmailEnvironment, type Store } from "./google-oauth";
 import { GmailClient, ProviderError, makeMime, normalizeMessage, type Credentials, type Fetcher, type GmailMessage, type Message, type SendInput } from "./gmail-client";
-import type { GmailCache } from "./gmail-cache";
+import { DISCARDED_LABEL, type GmailCache } from "./gmail-cache";
 import { GmailSync, importPercent, normalizeSync, type SyncState } from "./gmail-sync";
 import type { AccountBase, DraftUpdate, DraftView, MailProvider, MessageChange, ProviderCapabilities, ProviderSession } from "./provider";
 
@@ -14,6 +14,11 @@ export interface GmailAccount extends AccountBase {
   provider: "gmail";
   sync: SyncState;
 }
+
+/** The name of the account's own label that is Discarded (made the first time a message is discarded). */
+export const DISCARD_LABEL_NAME = "Discarded";
+/** Where this server keeps the id Gmail gave that label (`Label_…`). */
+const discardLabelKey = (accountId: string) => `label:${accountId}:discarded`;
 
 const CAPABILITIES: ProviderCapabilities = {
   organization: "labels", threads: "provider", drafts: true, archive: true, spam: true, trash: true,
@@ -73,12 +78,45 @@ export class GmailProvider implements MailProvider<GmailAccount> {
   async open(account: GmailAccount, credentials: unknown, persist: (next: unknown) => Promise<void>): Promise<ProviderSession> {
     if (!this.configured()) throw new ProviderError("not_configured", 503);
     const client = new GmailClient(this.env, credentials as Credentials, persist, this.http);
-    return new GmailSession(account, client, this.syncer);
+    const label = await this.store.get<string>(discardLabelKey(account.id));
+    if (label) client.labelAliases = { [label]: DISCARDED_LABEL };
+    return new GmailSession(account, client, this.syncer, this.store);
   }
 }
 
 class GmailSession implements ProviderSession {
-  constructor(private account: GmailAccount, private client: GmailClient, private syncer: GmailSync) {}
+  constructor(private account: GmailAccount, private client: GmailClient, private syncer: GmailSync, private store: Store) {}
+  /**
+   * The id of the account's "Discarded" label: the one this server made or found before, else one of
+   * the account's labels by that name, else a new one. Kept, and read as DISCARDED on every message.
+   */
+  private async discardLabel(fresh = false): Promise<string> {
+    const key = discardLabelKey(this.account.id);
+    if (!fresh) {
+      const kept = await this.store.get<string>(key);
+      if (kept) return kept;
+    }
+    const find = async () => (await this.client.labels()).labels?.find((l) => l.name.trim().toLowerCase() === DISCARD_LABEL_NAME.toLowerCase())?.id;
+    let id = await find();
+    if (!id) {
+      try { id = (await this.client.createLabel(DISCARD_LABEL_NAME)).id; }
+      // Made meanwhile (another window, Gmail itself): the list has it now.
+      catch (error) { id = await find(); if (!id) throw error; }
+    }
+    if (!id) throw new ProviderError("discard_label_unavailable", 502);
+    await this.store.put(key, id);
+    this.client.labelAliases = { [id]: DISCARDED_LABEL };
+    console.log(JSON.stringify({ event: "gmail_discard_label_ready", again: fresh }));
+    return id;
+  }
+  /** A change naming the Discarded label; a label deleted in Gmail since is found or made again, once. */
+  private async withLabel(work: (label: string) => Promise<unknown>) {
+    try { await work(await this.discardLabel()); }
+    catch (error) {
+      if (!(error instanceof ProviderError && (error.code === "provider_failed" || error.code === "not_found"))) throw error;
+      await work(await this.discardLabel(true));
+    }
+  }
   async syncPage(record: AccountBase & { sync: unknown }, kind: "history" | "import", deadline: number) {
     const account = record as GmailAccount;
     account.sync = normalizeSync(account.sync);
@@ -98,10 +136,20 @@ class GmailSession implements ProviderSession {
     else if ("inbox" in change) {
       // Back to the Inbox from the archive, Trash or Spam: untrash only removes TRASH, so INBOX is added too.
       if ((await c.message(messageId)).labelIds?.includes("TRASH")) await c.setTrashed(messageId, false);
-      await c.modify(messageId, ["INBOX"], ["SPAM"]);
+      // Out of Discarded too, when the account has that label: the inbox is one place.
+      const discard = await this.store.get<string>(discardLabelKey(this.account.id));
+      await c.modify(messageId, ["INBOX"], ["SPAM", ...(discard ? [discard] : [])]);
     } else if ("spam" in change) {
       // Report spam or Not spam through Gmail's own label, which also trains Gmail (SP-3).
       await c.modify(messageId, change.spam ? ["SPAM"] : ["INBOX"], change.spam ? ["INBOX"] : ["SPAM"]);
+    } else if ("discarded" in change) {
+      // Discarded is the account's own "Discarded" label, out of the inbox, read; from Trash it is untrashed first.
+      if (change.discarded) {
+        if ((await c.message(messageId)).labelIds?.includes("TRASH")) await c.setTrashed(messageId, false);
+        await this.withLabel((label) => c.modify(messageId, [label], ["INBOX", "UNREAD", "SPAM"]));
+      } else {
+        await this.withLabel((label) => c.modify(messageId, ["INBOX"], [label]));
+      }
     }
     // Read full provider state after acknowledgement; never optimistically cache labels.
     return this.message(messageId);

@@ -271,6 +271,20 @@ spam check (at most 15 minutes later if the model does not answer). Spam older t
 **Delete all now** empties it at once. Gmail keeps its own spam; Report spam and Not spam on a Gmail
 message use Gmail's own label. Mail that arrived before 0.6.0 is not re-checked.
 
+## Discarded
+
+⌘⌫ (Ctrl+Backspace) or Discard in the reader moves a message to **Discarded** and teaches a rule:
+its newsletter (List-Id), else its sender. Later mail that matches goes there on arrival, after the
+spam check, unless one of your addresses wrote to the sender, it answers a conversation you took
+part in, it comes from one of your own domains, or the sender is on **Always allow** (Settings →
+Discard rules) or a Never spam list. Discarded mail is deleted after 30 days; in Gmail, IMAP and
+Outlook accounts it is moved to the account's Trash then. Where Discarded lives: a folder of each
+Cloudflare address; Gmail's own label "Discarded" (made the first time); a top-level folder named
+Discarded in IMAP and Outlook accounts (made the first time; an IMAP server that does not let apps
+create folders says so — create a folder named Discarded there, and it is used). Nothing to set up:
+the rules live in the server's bucket (`config/discard.json`). A model's one-line guess at why a rule
+was learned is added when the server has Workers AI.
+
 ## Addresses in the sidebar
 
 The sidebar lists, by default, addresses with mail in their inbox, catch-all mailboxes and the one

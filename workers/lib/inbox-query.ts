@@ -5,7 +5,7 @@ import { parseStoredHeaders } from "../agents/prefilter";
 /** Bounded SQL keyset read. SQL parameters contain every caller-controlled value. */
 export function mailboxInboxQuery(accountId: string, options: InboxReadOptions) {
   const conditions: string[] = [], parameters: (string | number)[] = [];
-  if (options.folder === "starred") conditions.push("starred = 1 AND folder_id NOT IN ('trash', 'spam', 'draft')");
+  if (options.folder === "starred") conditions.push("starred = 1 AND folder_id NOT IN ('trash', 'spam', 'draft', 'discarded')");
   else { conditions.push("folder_id = ?"); parameters.push(options.folder); }
   if (options.unread) conditions.push("read = 0");
   if (options.query) {
@@ -19,7 +19,7 @@ export function mailboxInboxQuery(accountId: string, options: InboxReadOptions) 
   }
   parameters.push(options.limit + 1);
   return {
-    sql: `SELECT * FROM (SELECT id, subject, sender, recipient, date, read, starred, thread_id, folder_id, raw_headers, message_id, spam_reason,
+    sql: `SELECT * FROM (SELECT id, subject, sender, recipient, date, read, starred, thread_id, folder_id, raw_headers, message_id, spam_reason, discard_reason,
       substr(body,1,2000) AS snippet,
       coalesce(cast(round((julianday(date)-2440587.5)*86400000) AS INTEGER),0) AS timestamp
       FROM emails) WHERE ${conditions.join(" AND ")} ORDER BY timestamp DESC, id ASC LIMIT ?`,
@@ -31,7 +31,7 @@ export interface MailboxInboxRow {
   id: string; subject: string | null; sender: string | null; recipient: string | null;
   date: string | null; read: number; starred: number; thread_id: string | null;
   snippet: string | null; timestamp: number; raw_headers: string | null; message_id: string | null;
-  spam_reason: string | null; folder_id: string | null;
+  spam_reason: string | null; folder_id: string | null; discard_reason: string | null;
 }
 
 /** A plain-text preview: the body column holds HTML for most mail. */
@@ -51,7 +51,8 @@ export function mailboxInboxMessage(accountId: string, row: MailboxInboxRow, own
     date: new Date(row.timestamp).toISOString(), timestamp: row.timestamp,
     read: !!row.read, starred: !!row.starred, snippet: textSnippet(row.snippet), threadId: row.thread_id || undefined,
     ...(row.message_id ? { rfcMessageId: String(row.message_id).replace(/^<|>$/g, "").toLowerCase() } : {}),
-    ...(row.folder_id === "spam" ? { spamReason: row.spam_reason || "In Spam" } : {}) };
+    ...(row.folder_id === "spam" ? { spamReason: row.spam_reason || "In Spam" } : {}),
+    ...(row.folder_id === "discarded" ? { discardReason: row.discard_reason || "You discarded it" } : {}) };
   message.triage = triage({ sender: message.sender, subject: message.subject, read: message.read, starred: message.starred,
     signals: signalsFromHeaders(parseStoredHeaders(row.raw_headers)), ownDomains });
   return message;

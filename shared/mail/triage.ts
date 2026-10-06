@@ -19,6 +19,8 @@ export type Importance = "important" | "normal" | "low";
 
 export interface TriageSignals {
   listId?: boolean;
+  /** The List-Id header itself (a discard rule is keyed on it); absent on mail cached before 0.12. */
+  list?: string;
   listUnsubscribe?: boolean;
   precedence?: string;
   autoSubmitted?: string;
@@ -164,7 +166,8 @@ export function triage(input: TriageInput): Triage {
 export function signalsFromHeaders(headers: { key: string; value: string }[]): TriageSignals {
   const get = (name: string) => headers.find((h) => h.key?.toLowerCase() === name)?.value;
   const signals: TriageSignals = {};
-  if (get("list-id")) signals.listId = true;
+  const listId = get("list-id");
+  if (listId) { signals.listId = true; signals.list = listId.trim().slice(0, 300); }
   if (get("list-unsubscribe")) signals.listUnsubscribe = true;
   const precedence = get("precedence");
   if (precedence) signals.precedence = precedence.trim().toLowerCase().slice(0, 20);

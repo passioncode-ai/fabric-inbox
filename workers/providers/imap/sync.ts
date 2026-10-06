@@ -47,6 +47,7 @@ const NAMES: Record<Exclude<FolderRole, "inbox">, string[]> = {
   trash: ["trash", "deleted messages", "deleted items", "bin", "корзина", "удаленные", "удалённые", "papierkorb", "gelöscht"],
   junk: ["junk", "spam", "bulk mail", "junk e-mail", "junk email", "спам", "unerwünscht"],
   archive: ["archive", "archives", "архив", "archiv"],
+  discarded: ["discarded", "выброшенные"],
 };
 const SPECIAL: Record<string, FolderRole> = { "\\inbox": "inbox", "\\sent": "sent", "\\drafts": "drafts", "\\trash": "trash", "\\junk": "junk", "\\archive": "archive" };
 
@@ -71,7 +72,7 @@ export function mapFolders(list: FolderInfo[]): { roles: Partial<Record<FolderRo
 }
 
 /** The import order: what a person looks at first, first. */
-const IMPORT_ORDER: FolderRole[] = ["inbox", "sent", "archive", "drafts", "junk", "trash"];
+const IMPORT_ORDER: FolderRole[] = ["inbox", "sent", "archive", "drafts", "junk", "trash", "discarded"];
 
 export class ImapSync {
   constructor(private store: Store, private cache: GmailCache) {}

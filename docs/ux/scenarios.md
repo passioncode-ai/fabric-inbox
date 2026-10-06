@@ -66,6 +66,12 @@
 | SCN-058 | Connect an Outlook or Microsoft 365 account | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
 | SCN-059 | My organization's administrator must allow Fabric Inbox | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
 | SCN-060 | An Outlook account needs a reconnect or a new client secret | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-070 | See how fresh the mail is, and check now | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
+| SCN-071 | Archive or discard from the keyboard, and undo | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
+| SCN-072 | Discard a message and stop mail like it | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
+| SCN-073 | Mail like discarded mail goes to Discarded on arrival | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
+| SCN-074 | Bring a discarded message back | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
+| SCN-075 | Keep the discard rules | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1271,3 +1277,122 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** app/components/settings/sections/OutlookSetup.tsx, app/components/settings/sections/AccountsSection.tsx, app/routes/unified-inbox.tsx, shared/mail/gmail-reasons.ts, workers/providers/outlook/oauth.ts, workers/providers/account-service.ts (accountProblem), tests/outlook-provider.test.ts, tests/outlook-setup-ui.test.ts
 - **Product:** unobserved
 - **Today:** Built in 0.11.0 (WS5); tested against fakes.
+
+### SCN-070: See how fresh the mail is, and check now
+- **Persona:** P-01
+- **Feature:** Find and handle a conversation
+- **Traces:** ST-002, FLW-02, JTBD-01, JRN-01; operator decision 2026-10-06 (refresh on the left, with its status)
+- **Entry point:** SCR-03 (the toolbar, under the list's title)
+- **Preconditions:** At least one account is in view.
+- **Steps:**
+  1. Open any view -> under the title, Refresh and a status: "Updated 3 min ago" — the server's last successful read of the Gmail, IMAP and Outlook accounts in view (the oldest of them) — or "Live" when the view holds only Cloudflare addresses, which receive by push.
+  2. Click Refresh (or press ⌘⇧N, Ctrl+Shift+N elsewhere) -> the arrow turns and the status says "Updating…" until the accounts are read and the list is read again.
+  3. Click the status -> each account in view with its own line: Live, Updated 2 min ago, Importing older mail: 40%, asked to slow down until 14:05, or what failed with its fix (Reconnect in browser ↗, Enter a new app password, Why, and what to do).
+- **Expected result:** The person knows how old what they see is, and which account is behind and what fixes it, without leaving the inbox.
+- **Alt paths:** An import shows its progress beside the time; a refresh that could not reach an account keeps saying so until the next one; not reached in time is not a failure.
+- **UI elements:** SCR-03 (Refresh, the status line, its details).
+- **States covered:** loading, error, success
+- **Errors & recovery:** One failing account turns the line into "alex@gmail.example needs to be connected again" (or "could not be updated"); several into "2 accounts could not be updated"; each row carries its own fix. The relative time ticks every 15 seconds only while the window is visible, and never re-renders the list.
+- **Status:** validated
+- **Coverage:** app/components/inbox/SyncStatus.tsx, app/lib/sync-status.ts, app/hooks/useVisibleClock.ts, app/routes/unified-inbox.tsx (checkForMail, inScope), workers/lib/inbox-sources.ts (retryAt), tests/sync-status.test.ts, tests/mail-refresh.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS8) and walked against the local Worker with one synthetic Gmail account (idle, updating, error) on 2026-10-06; ⌘R stays the Mac menu's Retry connection.
+
+### SCN-071: Archive or discard from the keyboard, and undo
+- **Persona:** P-01
+- **Feature:** Find and handle a conversation
+- **Traces:** ST-002, FLW-02, JTBD-01, JRN-01; operator decision 2026-10-06; board B-25 (keyboard navigation)
+- **Entry point:** SCR-03 (the message list), SCR-04 (the open message)
+- **Preconditions:** A message is selected or open, or several are chosen; focus is not in a field.
+- **Steps:**
+  1. Press Delete or Backspace -> the message is archived and marked read; the next one opens; a toast says "Archived · Undo".
+  2. Press ⌘⌫ (Ctrl+Backspace elsewhere) -> it is discarded (SCN-072); the toast says "Discarded · Undo".
+  3. Press ⌘Z (Ctrl+Z), or Undo -> every message is back where it was, unread again if it was; a discard's lesson is taken back too.
+  4. ↓/J and ↑/K move; Shift with them, ⌘/Ctrl-click and Shift-click choose several, which the keys act on together; Esc clears; ? shows Keyboard shortcuts.
+- **Expected result:** Triage at the speed of the keyboard, with every step reversible for as long as the toast shows.
+- **Alt paths:** The reader's Archive and Discard buttons do the same; in Archive, Sent, Trash or Spam the keys say what they cannot do there instead of guessing.
+- **UI elements:** SCR-03 (rows chosen together, "N selected", the toast), SCR-04 (Archive, Discard), the Keyboard shortcuts help.
+- **States covered:** loading, error, success
+- **Errors & recovery:** The rows leave at once and come back if the server refuses; one message that fails is named and the others still move. Keys never fire while typing in a field, the composer, or with a dialog open, and Alt or other combinations do nothing.
+- **Status:** validated
+- **Coverage:** app/lib/mail-keys.ts, app/components/inbox/triage-actions.ts, app/components/inbox/UndoToast.tsx, app/components/inbox/ShortcutsDialog.tsx, app/components/inbox/TriagedList.tsx, app/routes/unified-inbox.tsx (triageAction, undoLast, choose, step), tests/mail-keys.test.ts, tests/triage-actions.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS8); archive, Undo and a three-message selection walked against the local Worker on 2026-10-06.
+
+### SCN-072: Discard a message and stop mail like it
+- **Persona:** P-01
+- **Feature:** Find and handle a conversation
+- **Traces:** ST-002, FLW-02, JTBD-01, JRN-01; operator decision 2026-10-06 ("we analyze why we delete it, and in the future put such messages straight into Discarded")
+- **Entry point:** SCR-03, SCR-04
+- **Preconditions:** A message that is not sent mail or a draft.
+- **Steps:**
+  1. ⌘⌫ (or Discard in the reader) -> the message goes to Discarded, read: a Cloudflare mailbox's Discarded folder, Gmail's own label "Discarded", an IMAP or Outlook folder named Discarded (made the first time).
+  2. The server records why: its mailing list (List-Id) or newsletter mark (List-Unsubscribe), its sender, the sender's domain only for bulk senders and never a shared personal domain, the category it was in, and a model's one-line guess when the server has one; a rule is kept on the list, else the sender.
+  3. The first discard of a list or sender -> the toast adds once "Future mail from Weekly Digest will go to Discarded · Don't".
+- **Expected result:** One keystroke removes the message and teaches the inbox; the person sees what was learned and can refuse it at once.
+- **Alt paths:** Don't removes the rule; a sender the mailbox wrote to, one on its own domains, or one on Always allow is not learned (the mail is still discarded); agents discard with discard_messages, learn: false for a one-off.
+- **UI elements:** SCR-03 toast with Undo and Don't; SCR-04 Discard.
+- **States covered:** loading, error, success
+- **Errors & recovery:** A rule that cannot be saved still discards the mail and says nothing was learned; a server that refuses to make the IMAP folder says so (make a folder named Discarded there and try again).
+- **Status:** validated
+- **Coverage:** shared/mail/discard.ts, workers/routes/discard.ts, workers/discard/store.ts, workers/durableObject/index.ts (discardMessages), workers/providers/account-service.ts (discard, discardFacts), workers/providers/gmail-provider.ts, workers/providers/imap/provider.ts, workers/providers/outlook/provider.ts, tests/discard.test.ts, tests/discard-workerd.test.ts, tests/discard-providers.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS8); Cloudflare in workerd and the local Worker, Gmail, IMAP and Outlook against fakes.
+
+### SCN-073: Mail like discarded mail goes to Discarded on arrival
+- **Persona:** P-01
+- **Feature:** Find and handle a conversation
+- **Traces:** ST-002, FLW-02, JTBD-01, JRN-01; operator decision 2026-10-06
+- **Entry point:** SCR-03 (Discarded folder)
+- **Preconditions:** A discard rule exists.
+- **Steps:**
+  1. New mail arrives that matches a rule by its List-Id or its sender -> after the spam check, it goes straight to Discarded, read; no rule, agent or category sees it, and no forwarding copy is sent.
+  2. Open Discarded -> it says "Why discarded: Discarded automatically: you discarded 3 messages from this newsletter (Weekly Digest)".
+- **Expected result:** What the person threw away once does not come back to the inbox.
+- **Alt paths:** Never on arrival: mail from someone the account wrote to, a reply in a conversation it took part in, mail from the workspace's own domains, senders on Always allow or Never spam. Gmail, IMAP and Outlook mail is filed when its sync is handed on (seconds after it is read), before rules, agents and categories.
+- **UI elements:** SCR-03 Discarded folder, its banner, Why discarded.
+- **States covered:** empty, success
+- **Errors & recovery:** Rules that cannot be read, or a check that fails, leave the mail in the inbox and deliver it as before.
+- **Status:** validated
+- **Coverage:** workers/index.ts (discardVerdict), workers/durableObject/index.ts (receiveEmailOnce), workers/providers/accounts-do.ts (arrivalFilter), workers/providers/account-service.ts (drainEvents, sentContact), tests/discard-workerd.test.ts, tests/discard-providers.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS8); the next issue of a discarded newsletter was filed on arrival in the local Worker on 2026-10-06.
+
+### SCN-074: Bring a discarded message back
+- **Persona:** P-01
+- **Feature:** Find and handle a conversation
+- **Traces:** ST-002, FLW-02, JTBD-01, JRN-01; operator decision 2026-10-06 ("so it can be found and returned if it was thrown away by mistake")
+- **Entry point:** SCR-03 (Discarded folder), SCR-04
+- **Preconditions:** A message in Discarded (kept 30 days).
+- **Steps:**
+  1. Open Discarded, or search within it -> each message says why it is there.
+  2. Not discarded -> it is back in the inbox; when a rule would discard such mail again, the notice offers "Stop discarding mail like this".
+- **Expected result:** A mistake costs one click, and the rule behind it can go in the same breath.
+- **Alt paths:** Undo right after a discard does the same and takes back what that discard taught.
+- **UI elements:** SCR-03 notice with Stop discarding mail like this; SCR-04 Not discarded.
+- **States covered:** loading, error, success
+- **Errors & recovery:** A message no longer in Discarded says so. After 30 days Discarded mail is deleted (Gmail, IMAP and Outlook: moved to their Trash, which the provider empties).
+- **Status:** validated
+- **Coverage:** workers/routes/discard.ts (restore), workers/durableObject/index.ts (restoreDiscarded, purgeDiscarded), workers/providers/account-service.ts (restoreDiscarded, purgeDiscarded), app/routes/unified-inbox.tsx (restore, forgetRules), tests/discard-workerd.test.ts, tests/discard-providers.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS8); restored with Stop discarding offered in the local Worker on 2026-10-06.
+
+### SCN-075: Keep the discard rules
+- **Persona:** P-01
+- **Feature:** Find and handle a conversation
+- **Traces:** ST-002, FLW-02, JTBD-01, JRN-01; operator decision 2026-10-06
+- **Entry point:** SCR-16
+- **Preconditions:** None.
+- **Steps:**
+  1. Open Settings → Discard rules -> How Discarded works, Always allow, and each rule with its kind and counts.
+  2. Open a rule -> why it was learned, discarded by you and on arrival, when; Remove rule, or Always allow its sender.
+  3. Always allow -> add or remove senders and domains no rule discards.
+- **Expected result:** Everything the inbox learned is visible and reversible.
+- **Alt paths:** Agents read the rules (list_discard_rules) and, with an admin key, remove one or change Always allow.
+- **UI elements:** SCR-16.
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** An entry that is not an address or a domain is refused with the reason; two changes at once both land; a rule removed elsewhere says it is gone.
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/DiscardSection.tsx, workers/routes/discard.ts, tests/discard-workerd.test.ts, tests/triage-text.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS8); seen in the local Worker on 2026-10-06.

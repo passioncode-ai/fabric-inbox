@@ -56,6 +56,8 @@ export interface FakeGraphOptions {
   noMailbox?: boolean;
   /** No Archive folder yet. */
   noArchive?: boolean;
+  /** The mailbox refuses to make folders. */
+  noFolderCreate?: boolean;
 }
 
 const FOLDERS = ["inbox", "sentitems", "drafts", "deleteditems", "junkemail", "archive"] as const;
@@ -94,9 +96,20 @@ export class FakeGraph {
   codes = new Set<string>();
   verifierOf = new Map<string, string>();
 
+  /** Folders the account made itself, by key (the lower-cased name) → display name. */
+  customFolders: Record<string, string> = {};
+
   constructor(options: FakeGraphOptions = {}) {
     this.options = options;
     for (const f of FOLDERS) this.folderIds[f] = graphId("folder-" + f);
+  }
+
+  /** A top-level folder of the account's own (as Outlook's "New folder" makes); its key is its name lower-cased. */
+  addFolder(displayName: string) {
+    const key = displayName.toLowerCase();
+    this.customFolders[key] = displayName;
+    this.folderIds[key] = graphId("folder-" + key);
+    return key;
   }
 
   /** A sign-in code Microsoft would redirect with, for a given PKCE verifier challenge. */
@@ -232,6 +245,21 @@ export class FakeGraph {
     const select = url.searchParams.get("$select")?.split(",");
     let m: RegExpExecArray | null;
     if (path === "/me" && method === "GET") return json(this.me);
+    // The account's own top-level folders (the Discarded folder): listed by display name, and made.
+    if (path === "/me/mailFolders" && method === "GET") {
+      if (this.options.noMailbox) return graphError(404, "MailboxNotEnabledForRESTAPI");
+      const name = /displayName eq '([^']*)'/.exec(url.searchParams.get("$filter") ?? "")?.[1];
+      return json({ value: Object.entries(this.customFolders).filter(([, n]) => name === undefined || n.toLowerCase() === name.toLowerCase())
+        .map(([key, displayName]) => ({ id: this.folderIds[key], displayName, totalItemCount: [...this.mails.values()].filter((x) => x.folder === key).length })) });
+    }
+    if (path === "/me/mailFolders" && method === "POST") {
+      if (this.options.noFolderCreate) return graphError(403, "ErrorAccessDenied");
+      const { displayName } = JSON.parse(body ?? "{}") as { displayName: string };
+      if (Object.values(this.customFolders).some((n) => n.toLowerCase() === displayName.toLowerCase())) return graphError(409, "ErrorFolderExists");
+      this.addFolder(displayName);
+      const key = displayName.toLowerCase();
+      return json({ id: this.folderIds[key], displayName, totalItemCount: 0 }, 201);
+    }
     if ((m = /^\/me\/mailFolders\/([a-z]+)$/.exec(path)) && method === "GET") {
       if (this.options.noMailbox) return graphError(404, "MailboxNotEnabledForRESTAPI");
       if (m[1] === "archive" && this.options.noArchive) return graphError(404, "ErrorFolderNotFound");

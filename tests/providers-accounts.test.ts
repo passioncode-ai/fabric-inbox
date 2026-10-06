@@ -296,8 +296,8 @@ test("durable event delivery retries failure and records acknowledgement; sent m
   assert.deepEqual(await service.drainEvents(async () => {
     calls++;
     throw new Error("automation unavailable");
-  }), { delivered: 0, failed: 1, dead: 0 });
-  assert.deepEqual(await service.drainEvents(async () => { calls++; }), { delivered: 0, failed: 0, dead: 0 }, "not before its backoff");
+  }), { delivered: 0, failed: 1, dead: 0, discarded: 0 });
+  assert.deepEqual(await service.drainEvents(async () => { calls++; }), { delivered: 0, failed: 0, dead: 0, discarded: 0 }, "not before its backoff");
   await service.drainEvents(async (event) => {
     calls++;
     assert.equal(event.account, "gmail:a");

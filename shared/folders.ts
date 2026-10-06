@@ -17,6 +17,7 @@ export const Folders = {
 	ARCHIVE: "archive",
 	TRASH: "trash",
 	SPAM: "spam",
+	DISCARDED: "discarded",
 } as const;
 
 export type FolderId = (typeof Folders)[keyof typeof Folders];
@@ -44,6 +45,7 @@ export const FOLDER_DISPLAY_NAMES: Record<string, string> = {
 	[Folders.ARCHIVE]: "Archive",
 	[Folders.TRASH]: "Trash",
 	[Folders.SPAM]: "Spam",
+	[Folders.DISCARDED]: "Discarded",
 };
 
 /** Formatted string for tool parameter descriptions (agent + MCP). */

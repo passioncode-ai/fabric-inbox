@@ -12,7 +12,7 @@ Contract: brand-contract v1
 | Project address | Alias, forwarding address | An address on a served project domain, received by the Worker |
 | Reply policy | Auto-reply settings | What an agent may send without the operator: mode, allowed intents, daily limit |
 | Answer | AI response (in run history) | One agent run for one incoming message |
-| Settings | Manage accounts, Mailboxes screen, Accounts and rules, Server settings, Domains & addresses (screen names before 0.11) | The one screen for everything set up rather than read, with its sections: Addresses, Domains, Accounts, Forwarding destinations, Categories, Spam rules, Agents, Knowledge, Agent access, App; a section is named "Settings → Domains" |
+| Settings | Manage accounts, Mailboxes screen, Accounts and rules, Server settings, Domains & addresses (screen names before 0.11) | The one screen for everything set up rather than read, with its sections: Addresses, Domains, Accounts, Forwarding destinations, Categories, Spam rules, Discard rules, Agents, Knowledge, Agent access, App; a section is named "Settings → Domains" |
 | Server address | Server settings (the Mac app's menu item) | The address of the server the Mac app opens, chosen in its own window (Fabric Inbox → Server address…) |
 | Receive mail here | Connect domain, Import domain | Moving a domain's mail to the server, keeping each old destination as a copy |
 | Forwarding destination | Forward target, verified email | An outside address a copy may go to, confirmed through Cloudflare's link |
@@ -28,6 +28,13 @@ Contract: brand-contract v1
 | Report spam | Mark as junk, Block sender | Moving a message to Spam and putting its sender on the Always spam list |
 | Not spam | Not junk, Unblock | Bringing a message back from Spam and putting its sender on the Never spam list |
 | Spam rules | Spam settings, filters | The screen with what goes to Spam and the Always spam / Never spam lists |
+| Discarded | Bin, Rubbish, Thrown away (for this folder) | The folder of mail thrown away on purpose (⌘⌫), apart from Trash and Spam; counts as deleted, kept 30 days so a mistake can come back; Russian UI: «Выброшенные» |
+| Discard (a message) | Throw away, Bin (for ⌘⌫) | Sending a message to Discarded and teaching a rule from it; "Discard" on a draft is another action (throwing the draft away) |
+| Not discarded | Undiscard, Undelete | Bringing a message back from Discarded to the inbox |
+| Discard rule | Block rule, auto-delete rule | What a discard teaches: a mailing list (List-Id) or a sender whose new mail goes straight to Discarded |
+| Discard rules | Discard settings | The Settings section with every discard rule, why it was learned, and Always allow |
+| Always allow | Whitelist, safe-sender list | Senders and domains no discard rule ever takes on arrival |
+| Stop discarding mail like this | Unblock sender | Removing the rule that would discard such mail again |
 | Agent access | API access, integrations, MCP settings | The screen where the owner gives outside agents their keys and sees what they changed |
 | Agent key | API key, agent token, access token, credential (to a user) | One outside agent's way in: a Client ID and a Client Secret, with a level and a sending mode |
 | Cloudflare API token | API key, Cloudflare key, credential (to a user) | What a person creates in Cloudflare (My Profile or Manage Account → API Tokens) and gives the server: one for the server's own account, one for each other account connected in Settings → Accounts; "token" alone once the context has named it (operator, 2026-10-01) |
@@ -50,6 +57,8 @@ Contract: brand-contract v1
 | Focus | focus (the view's name) |
 | Important | important (the section's name) |
 | Spam | spam (the folder's name) |
+| Discarded | discarded (the folder's name) |
+| Trash | trash (the folder's name) |
 | Gmail | GMail |
 | Google | google (provider name) |
 | Google Cloud | google cloud, GCP (to a user) |
@@ -110,5 +119,8 @@ Contract: brand-contract v1
 |---|---|
 | Continue draft | Reopen the selected saved workbench draft, retaining its sender and send recovery |
 | Retry same attempt | Reconcile or retry the locked send with its existing recovery key and unchanged content |
-| Check for new mail | Read Gmail's new mail and changes now for the Gmail accounts in view, then reload the combined list; it does not import a whole mailbox, and names any account it could not read |
+| Check for new mail | Read new mail and changes now for the Gmail, IMAP and Outlook accounts in view (⌘⇧N), then reload the combined list; it does not import a whole mailbox, and the status beside it names any account it could not read |
+| Updated 3 min ago / Live | The status beside Check for new mail: the server's last successful read of the accounts in view; Live for Cloudflare addresses, which receive by push |
+| Archive (from the keyboard) | Delete or Backspace: out of the inbox into Archive and marked read |
+| Keyboard shortcuts | The help (?) listing every key the mail list answers to |
 | Light theme / Dark theme | Appearance preference; no change to message, account or send state |

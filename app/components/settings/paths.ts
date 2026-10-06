@@ -7,7 +7,7 @@
  */
 
 export const SECTION_IDS = [
-  "addresses", "domains", "accounts", "destinations", "agents", "knowledge", "categories", "spam", "agent-access", "app",
+  "addresses", "domains", "accounts", "destinations", "agents", "knowledge", "categories", "spam", "discard", "agent-access", "app",
 ] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 
@@ -35,6 +35,8 @@ export const SECTIONS: readonly SectionInfo[] = [
     description: "Views of the mail that matters, and the projects they can look at." },
   { id: "spam", label: "Spam rules", group: "mail",
     description: "What goes to Spam, and your lists of senders and domains." },
+  { id: "discard", label: "Discard rules", group: "mail",
+    description: "What you discarded teaches: mail like it goes straight to Discarded. Remove a rule, or always allow a sender." },
   { id: "agents", label: "Agents", group: "agents",
     description: "Agents answer mail on the addresses you give them, within their reply policy." },
   { id: "knowledge", label: "Knowledge", group: "agents",

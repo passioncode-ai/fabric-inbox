@@ -39,15 +39,22 @@ export interface InboxCounts { unread: number; total: number }
 interface CacheState { layout: 1 | 2; after?: string }
 
 /** The folders a Gmail search can name; they are views over labels, as the feed shows them. */
-export const GMAIL_FOLDERS = ["inbox", "sent", "archive", "starred", "spam", "trash", "draft"] as const;
+export const GMAIL_FOLDERS = ["inbox", "sent", "archive", "starred", "spam", "trash", "draft", "discarded"] as const;
 export type GmailFolder = (typeof GMAIL_FOLDERS)[number];
-const FEED_FOLDERS: InboxFolder[] = ["inbox", "sent", "archive", "trash", "starred", "spam"];
+const FEED_FOLDERS: InboxFolder[] = ["inbox", "sent", "archive", "trash", "starred", "spam", "discarded"];
+/**
+ * The label every provider maps its Discarded place onto: Gmail's own "Discarded" label (whatever its
+ * id), an IMAP or Outlook folder named Discarded. Discarded counts as deleted: such a message is in
+ * no other view (inbox, archive, starred), and out of the inbox's counts.
+ */
+export const DISCARDED_LABEL = "DISCARDED";
 export function inFolder(labels: string[], folder: GmailFolder) {
-  const trash = labels.includes("TRASH"), spam = labels.includes("SPAM"), draft = labels.includes("DRAFT");
+  const trash = labels.includes("TRASH"), spam = labels.includes("SPAM"), draft = labels.includes("DRAFT"), discarded = labels.includes(DISCARDED_LABEL);
   if (folder === "trash") return trash;
   if (folder === "spam") return spam && !trash;
+  if (folder === "discarded") return discarded && !trash && !spam;
   if (folder === "draft") return draft && !trash;
-  if (trash || spam || draft) return false;
+  if (trash || spam || draft || discarded) return false;
   return folder === "inbox" ? labels.includes("INBOX") : folder === "sent" ? labels.includes("SENT")
     : folder === "starred" ? labels.includes("STARRED") : !labels.includes("INBOX") && !labels.includes("SENT");
 }

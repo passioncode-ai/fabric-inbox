@@ -187,6 +187,22 @@ export class ImapConnection {
     await this.run(() => this.client.messageDelete(String(uid), { uid: true }));
   }
 
+  /**
+   * Makes a folder (the Discarded folder); one that is already there is not a failure. A server that
+   * refuses to make it answers `folder_create_refused`.
+   */
+  async create(path: string): Promise<string> {
+    try {
+      const made = await this.client.mailboxCreate(path);
+      return (made as { path?: string } | undefined)?.path || path;
+    } catch (error) {
+      if (/ALREADYEXISTS|already exists/i.test(text(error))) return path;
+      const failure = connectionFailure(error);
+      if (failure.code === "host_unreachable") throw new ProviderError("provider_unavailable", 503);
+      throw new ProviderError("folder_create_refused", 502);
+    }
+  }
+
   async close() {
     try {
       await Promise.race([this.client.logout(), new Promise((resolve) => setTimeout(resolve, 3_000))]);

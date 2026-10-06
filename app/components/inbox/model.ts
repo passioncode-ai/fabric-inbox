@@ -13,6 +13,10 @@ export type InboxAccount = {
   status: string;
   error?: string;
   lastSyncAt?: number;
+  /** When a Gmail, IMAP or Outlook account tries again after a failure or a request to slow down. */
+  retryAt?: number;
+  /** Why an OAuth account stopped working (shared/mail/gmail-reasons.ts). */
+  reason?: string;
   unread?: number;
   /** Every message in its inbox, when known (the "With mail" filter). */
   total?: number;
@@ -49,6 +53,8 @@ export type InboxMessage = {
   /** In a category's own view: why the message belongs there. */
   categoryReason?: string;
   spamReason?: string;
+  /** Why it is in Discarded: the person discarded it, or a discard rule did on arrival. */
+  discardReason?: string;
   /** Other inboxes that received this same email. */
   alsoIn?: string[];
 };

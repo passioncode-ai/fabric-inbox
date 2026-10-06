@@ -10,6 +10,7 @@ works; the live tool schemas have every input.
 - [Domains](#domains)
 - [Forwarding copies](#forwarding-copies)
 - [Spam](#spam)
+- [Discard rules](#discard-rules)
 - [Reply agents](#reply-agents)
 - [Categories and projects](#categories-and-projects)
 - [Knowledge](#knowledge)
@@ -66,6 +67,13 @@ it) → once verified, `update_address` with `forwardTo`, or `create_address` wi
 `get_spam_settings` → `update_spam_list` (`blockedSenders`, `blockedDomains`, `allowedSenders`,
 `allowedDomains`; `add` or `remove`). Judging messages is `mark_spam` (mail level). `empty_spam` is
 two-step and permanent for Cloudflare mailboxes; Gmail's Spam is not touched.
+
+## Discard rules
+
+`list_discard_rules` (each rule with why and its counts, the Always allow list) → `remove_discard_rule`
+with its `ruleId` to stop discarding mail like it (what is in Discarded stays), or
+`update_discard_allow_list` (`add` or `remove` an address or a domain) so a sender is never discarded
+on arrival. Rules are learned by `discard_messages` (mail level), never written directly.
 
 ## Reply agents
 

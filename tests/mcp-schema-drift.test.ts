@@ -9,6 +9,7 @@ import { GmailDraftSendBody, GmailDraftUpdateBody } from "../workers/routes/acco
 import { AgentAssignmentInput, CopyInput, CreateAddress } from "../workers/routes/agents";
 import { CollectionChange, CollectionInput, DocumentsInput } from "../workers/routes/knowledge";
 import { ListEdit, Report } from "../workers/spam/inputs";
+import { AllowEdit, DiscardInput, RestoreInput } from "../workers/routes/discard";
 import { CatchAllInput, ConnectInput, DestinationInput } from "../workers/routes/domains";
 import { ShownInput } from "../workers/routes/cloudflare-accounts";
 import { RuleSchema } from "../workers/automation/policy";
@@ -59,6 +60,9 @@ const BODIES: Record<string, string[]> = {
   "POST /api/spam/report": keys(Report),
   "POST /api/spam/release": keys(Report),
   "POST /api/spam/lists": keys(ListEdit),
+  "POST /api/discard": keys(DiscardInput),
+  "POST /api/discard/restore": keys(RestoreInput),
+  "POST /api/discard/allowed": keys(AllowEdit),
   "POST /api/domains/:domain/connect": keys(ConnectInput),
   "POST /api/domains/destinations": keys(DestinationInput),
   "PUT /api/domains/:domain/catch-all": keys(CatchAllInput),
