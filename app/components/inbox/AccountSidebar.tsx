@@ -24,9 +24,17 @@ function readFilter(): AddressFilter {
   try { return localStorage.getItem(FILTER_KEY) === "all" ? "all" : "mail"; } catch { return "mail"; }
 }
 
-function Count({ n, label }: { n?: number; label: string }) {
+function Count({ n, label, stale }: { n?: number; label: string; stale?: boolean }) {
   if (!n) return null;
-  return <span className="fi-unread-count" aria-label={`${n} unread in ${label}`}>{n}</span>;
+  // A count the server could not read just now is the last one known, and says so (P2-11).
+  return stale
+    ? <span className="fi-unread-count is-stale" title="Last known count; it could not be updated just now" aria-label={`${n} unread in ${label}, may be out of date`}>{n}</span>
+    : <span className="fi-unread-count" aria-label={`${n} unread in ${label}`}>{n}</span>;
+}
+/** What a Gmail account's sync is doing while it is not simply up to date (P2-10). */
+export function syncLabel(a: { status: string; importing?: number }) {
+  if (a.status !== "syncing") return "";
+  return typeof a.importing === "number" ? `importing ${a.importing}%` : "importing";
 }
 
 /**
@@ -100,10 +108,12 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
                         aria-pressed={a.id === accountId} title={a.email}
                         onClick={() => onScope({ account: a.id, domain: "", provider: "" })}>
                         <span className="fi-address-name">{addressLabel(a)}</span>
-                        {(a.error || !["connected", "syncing"].includes(a.status)) && (
+                        {(a.error || !["connected", "syncing"].includes(a.status)) ? (
                           <span className="fi-address-alert" title={a.error || a.status}>needs attention</span>
+                        ) : syncLabel(a) && (
+                          <span className="fi-address-sync" title="Older Gmail mail is still being imported; new mail already arrives">{syncLabel(a)}</span>
                         )}
-                        <Count n={a.unread} label={a.email} />
+                        <Count n={a.unread} label={a.email} stale={a.countsStale} />
                       </button>
                       <button type="button" className="fi-address-hide" disabled={busy} aria-label={`Hide ${a.email}`}
                         title="Hide: out of All inboxes and the counts; it keeps receiving"

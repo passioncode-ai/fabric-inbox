@@ -1,6 +1,7 @@
 import type { Env } from "../types";
 import type { InboxAccount } from "../../shared/mail/inbox";
 import type { InboxSources } from "../routes/inbox";
+import { importPercent } from "../providers/gmail-sync";
 
 /**
  * The feed's providers, read the same way by the /api/inbox route and by
@@ -29,7 +30,8 @@ export function inboxSources(env: Env): InboxSources {
       const result = await env.GMAIL_ACCOUNTS.getByName("workspace").listAccounts();
       return result.accounts.map(a => ({ id: "gmail:" + a.id, provider: "gmail", email: a.email, name: a.email,
         status: a.sync.mode === "initial" && a.status === "connected" ? "syncing" : a.status,
-        error: a.error, lastSyncAt: a.lastSyncAt }));
+        error: a.error, lastSyncAt: a.lastSyncAt,
+        ...(a.sync.mode === "initial" && importPercent(a.sync) !== undefined ? { importing: importPercent(a.sync) } : {}) }));
   },
     async unreadCount(account) {
       if (account.provider === "gmail") return env.GMAIL_ACCOUNTS.getByName("workspace").countUnreadInbox(account.id.slice(6));

@@ -199,12 +199,20 @@ export default function UnifiedInbox() {
     // Refreshing re-reads every loaded page; after "Load older" that is left to the Refresh button.
     refetchInterval: (query) => ((query.state.data?.pages.length ?? 0) > 1 ? false : 60_000),
   });
+  // Categories and their counts are read with the list, not on a clock of their own, so the
+  // sidebar's numbers and the messages always come from the same moment (P2-11).
   const categoryList = useQuery({
     queryKey: ["categories"],
     queryFn: () => fabric<CategoryList>("/api/categories"),
-    refetchInterval: 60_000,
     retry: false,
   });
+  const listReadAt = useRef(0);
+  useEffect(() => {
+    if (!list.dataUpdatedAt || listReadAt.current === list.dataUpdatedAt) return;
+    const first = listReadAt.current === 0;
+    listReadAt.current = list.dataUpdatedAt;
+    if (!first) void categoryList.refetch();
+  }, [list.dataUpdatedAt]);
   const categories = categoryList.data?.categories ?? [];
   const activeCategory = list.data?.pages[0]?.category ?? categories.find((c) => c.id === categoryParam);
   // A described category has already chosen its mail: grouping it again would fold

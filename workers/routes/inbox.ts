@@ -135,12 +135,17 @@ export async function readInbox(params: URLSearchParams, sources: InboxSources, 
     await Promise.all(Array.from({ length: Math.min(8, counting.length) }, async () => {
       while (n < counting.length) {
         const a = counting[n++];
+        // A count that cannot be read is said to be stale, never silently left as it was (P2-11).
+        const stale = (error: unknown) => {
+          a.countsStale = true;
+          console.warn(JSON.stringify({ event: "inbox_count_failed", provider: a.provider, error: publicError(error) }));
+        };
         if (sources.counts) await sources.counts(a).then((c) => {
           a.unread = c.unread;
           if (typeof c.total === "number") a.total = c.total;
           if (c.stuck && (c.stuck.dead || c.stuck.retrying)) a.stuck = c.stuck;
-        }).catch(() => undefined);
-        else await sources.unreadCount!(a).then(count => { a.unread = count; }).catch(() => undefined);
+        }).catch(stale);
+        else await sources.unreadCount!(a).then(count => { a.unread = count; }).catch(stale);
       }
     }));
   }

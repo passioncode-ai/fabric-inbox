@@ -14,6 +14,10 @@ export interface InboxAccount {
   unread?: number;
   /** Every message in its inbox (first page only): the sidebar's "With mail" filter. */
   total?: number;
+  /** Its counts could not be read just now: `unread` and `total` are the last ones known (P2-11). */
+  countsStale?: boolean;
+  /** A Gmail account's first import, in percent, while it runs (status "syncing"); absent when unknown. */
+  importing?: number;
   /** Hidden by the operator: left out of All inboxes, domains and totals; still receiving. */
   hidden?: boolean;
   /** Keeps mail for every other address on its domain. */

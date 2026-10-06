@@ -1441,6 +1441,12 @@ body {
   color: var(--pc-warning);
   white-space: nowrap;
 }
+.fi-address-sync {
+  font-size: 9px;
+  color: var(--pc-text-muted);
+  white-space: nowrap;
+}
+.fi-unread-count.is-stale { opacity: 0.55; }
 .fi-add-links { display: grid; margin: 4px 0 12px; padding-top: 4px; border-top: 1px solid var(--pc-border); }
 @media (max-width: 550px) {
   /* Phone: the sidebar is one scrolling row, so each domain is a chip that
