@@ -363,6 +363,9 @@ export function SelectableList<T extends ListEntry>({ label, groups, selected, h
   const busy = useBusyRows();
   const keys = [...pinned.map((p) => p.key), ...groups.flatMap((g) => g.rows.map((r) => r.key))];
   const focusKey = selected && keys.includes(selected) ? selected : keys[0];
+  // Where the selected row stood, so a removed item hands the focus to the row that took its place.
+  const selectedIndex = useRef(-1);
+  if (selected && keys.includes(selected)) selectedIndex.current = keys.indexOf(selected);
 
   useEffect(() => {
     const was = previous.current;
@@ -372,7 +375,10 @@ export function SelectableList<T extends ListEntry>({ label, groups, selected, h
     // Closing the panel (Esc, Back, Close) returns the focus to the row that opened it.
     else if (was) {
       const active = document.activeElement;
-      if (!active || active === document.body || !active.isConnected || active.closest(".fi-section-panel")) rowOf(was)?.focus();
+      if (!active || active === document.body || !active.isConnected || active.closest(".fi-section-panel")) {
+        const rows = [...(root.current?.querySelectorAll<HTMLElement>("[data-row-key]") ?? [])];
+        (rowOf(was) ?? rows[Math.min(selectedIndex.current, rows.length - 1)] ?? rows[0])?.focus();
+      }
     }
   }, [selected]);
 
@@ -401,10 +407,10 @@ export function SelectableList<T extends ListEntry>({ label, groups, selected, h
       {pinned.length > 0 && <ul className="fi-list-rows">{pinned.map((p) => row(p.key, p.href, p.content))}</ul>}
       {!groups.length && empty}
       {groups.map((g) => (
-        <section key={g.id} aria-label={g.label}>
+        <div key={g.id} role="group" aria-label={g.label || undefined}>
           {(groups.length > 1 || g.label) && <h3 className="fi-list-group">{g.label}</h3>}
           <ul className="fi-list-rows">{g.rows.map((r) => row(r.key, hrefFor(r), renderRow(r)))}</ul>
-        </section>
+        </div>
       ))}
     </div>
   );

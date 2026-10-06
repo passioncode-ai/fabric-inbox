@@ -49,7 +49,7 @@ export default function DomainsSection({ id }: { id: string | null }) {
       pinned={list && !list.connected ? [{ key: CONNECT_KEY, href: settingsPath("domains", CONNECT_KEY), content: (
         <span className="fi-row-main"><span className="fi-row-title">Connect Cloudflare</span><span className="fi-row-meta">Needed to list and change your domains</span></span>
       ) }] : []}
-      renderRow={(e) => <DomainRowContent entry={e} several={several} />}
+      renderRow={(e) => <DomainRowContent entry={e} several={several} connected={!!list?.connected} />}
       empty={<div className="fi-list-empty"><p>{query ? `No domain matches “${query}”.` : "No domain is listed yet."}</p></div>} />
   );
 
@@ -77,7 +77,7 @@ export default function DomainsSection({ id }: { id: string | null }) {
   );
 }
 
-function DomainRowContent({ entry, several }: { entry: DomainEntry; several: boolean }) {
+function DomainRowContent({ entry, several, connected }: { entry: DomainEntry; several: boolean; connected: boolean }) {
   const d = entry.summary;
   const moved = (entry.group === "served") !== d.served;
   return (
@@ -90,7 +90,7 @@ function DomainRowContent({ entry, several }: { entry: DomainEntry; several: boo
       </span>
       <span className="fi-row-side">
         {moved && (d.served ? <Badge tone="ok">Receiving here now</Badge> : <Badge tone="warn">No longer received</Badge>)}
-        {d.served && !d.zoneId && <Badge tone="warn" title="None of your server's tokens can see this domain">Not visible</Badge>}
+        {connected && d.served && !d.zoneId && <Badge tone="warn" title="None of your server's tokens can see this domain">Not visible</Badge>}
       </span>
     </>
   );

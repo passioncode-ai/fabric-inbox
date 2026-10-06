@@ -11,8 +11,10 @@ import {
 /**
  * The addresses of the settings pages before Settings became one screen (SCR-02, 0.11). Each one
  * still works: it answers with a redirect into its section (app/components/settings/paths.ts).
+ * (`/agents` is not one: the Worker gives that path to the Agents SDK, which is why the old page was
+ * `/ai-agents`.)
  */
-const LEGACY_SETTINGS = ["mailboxes", "accounts", "ai-agents", "agents", "knowledge", "categories", "spam", "agent-access", "projects", "setup"];
+const LEGACY_SETTINGS = ["mailboxes", "accounts", "ai-agents", "knowledge", "categories", "spam", "agent-access", "projects", "setup"];
 
 export default [
 	index("routes/unified-inbox.tsx"),

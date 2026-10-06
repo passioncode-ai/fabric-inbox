@@ -77,7 +77,6 @@ export function legacyTarget(pathname: string, search = ""): string | null {
     case "/accounts":
       return settingsPath("accounts");
     case "/ai-agents":
-    case "/agents":
       return settingsPath("agents");
     case "/knowledge":
       return settingsPath("knowledge", c);

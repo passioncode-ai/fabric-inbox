@@ -17,7 +17,7 @@ test("every old settings address lands in its section, keeping what it pointed a
   assert.equal(legacyTarget("/accounts"), "/settings/accounts");
   assert.equal(legacyTarget("/accounts/"), "/settings/accounts", "a trailing slash is the same address");
   assert.equal(legacyTarget("/ai-agents"), "/settings/agents");
-  assert.equal(legacyTarget("/agents"), "/settings/agents");
+  assert.equal(legacyTarget("/agents"), null, "/agents belongs to the Agents SDK on the Worker, never a page");
   assert.equal(legacyTarget("/knowledge", "?c=kc1"), "/settings/knowledge/kc1");
   assert.equal(legacyTarget("/knowledge"), "/settings/knowledge");
   assert.equal(legacyTarget("/categories", "?c=cat%201"), "/settings/categories/cat%201");
@@ -32,7 +32,7 @@ test("every old settings address lands in its section, keeping what it pointed a
 
 test("every old address is registered as a redirect route", () => {
   const routes = readFileSync("app/routes.ts", "utf8");
-  for (const path of ["mailboxes", "accounts", "ai-agents", "agents", "knowledge", "categories", "spam", "agent-access", "projects", "setup"]) {
+  for (const path of ["mailboxes", "accounts", "ai-agents", "knowledge", "categories", "spam", "agent-access", "projects", "setup"]) {
     assert.match(routes, new RegExp(`"${path}"`), path);
     assert.notEqual(legacyTarget(`/${path}`), null, path);
   }

@@ -222,7 +222,7 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
       <PanelBlock title="Who answers">
         <label className="fi-field">
           <span className="fi-hint">An agent answers new mail within its reply policy; Off keeps the mail for you.</span>
-          <select className="fi-input" value={current} disabled={!!work.busy} onChange={(e) => setAnswerer(e.target.value)}>
+          <select className="fi-input" aria-label="Who answers" value={current} disabled={!!work.busy} onChange={(e) => setAnswerer(e.target.value)}>
             {current === "legacy" && <option value="legacy" disabled>Drafts with its old prompt (set on next message)</option>}
             <option value="off">Off — I read it myself</option>
             {agents?.agents.map((x) => <option key={x.id} value={x.id}>{x.name} (v{x.version})</option>)}
@@ -355,12 +355,16 @@ function AddAddressDialog({ open, onClose, list, agents, data, initialDomain, in
   const [copy, setCopy] = useState("");
   const [working, setWorking] = useState(false);
   const [problem, setProblem] = useState("");
+  const nameField = useRef<HTMLInputElement>(null);
+  const ready = open && served.length > 0;
+  // The form starts over each time it opens, once the domains are known (a link may name one).
   useEffect(() => {
-    if (!open) return;
-    setDomain(served.some((d) => d.domain === initialDomain) ? initialDomain! : served[0]?.domain ?? "");
+    if (!ready) return;
+    setDomain(served.some((d) => d.domain === initialDomain) ? initialDomain! : served[0]!.domain);
     setName(initialName ?? ""); setAgent("off"); setCopy(""); setProblem("");
+    nameField.current?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [ready]);
   const summary = served.find((d) => d.domain === domain);
   const connected = !!list?.connected;
   const destinations = useDestinations(open && connected && !!summary, summary?.account && !summary.account.server ? summary.account.id : undefined);
@@ -393,7 +397,7 @@ function AddAddressDialog({ open, onClose, list, agents, data, initialDomain, in
         <form onSubmit={(e) => { e.preventDefault(); void submit(); }}>
           <div className="fi-field-row">
             <label className="fi-field">Name
-              <input className="fi-input" data-autofocus required value={name} pattern={NAME_PATTERN} placeholder="support"
+              <input ref={nameField} className="fi-input" data-autofocus required value={name} pattern={NAME_PATTERN} placeholder="support"
                 onChange={(e) => setName(e.target.value)} aria-describedby="add-address-at" />
             </label>
             <label className="fi-field">Domain
