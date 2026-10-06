@@ -499,14 +499,17 @@ function testState(record: TestRecord, arrival: { date: string; folder: string }
 /**
  * Sends a message from the address to itself through the real transport (SCN-062) and keeps what
  * was sent, so its arrival can be read with routingTestStatus. The agent skips its own address.
+ * Every send is its own message: a fresh idempotency key (so Send again never gets back an earlier
+ * attempt's outbox row) and a nonce in the subject (so only this message's arrival counts).
  */
 export async function sendRoutingTest(env: Env, rawEmail: string, now = Date.now()): Promise<OpResult> {
   const email = rawEmail.trim().toLowerCase();
   if (!(await readSettings(env.BUCKET, email))) return { status: 404, body: { error: "Address not found" } };
-  const subject = `Fabric Inbox routing test ${new Date(now).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  const id = crypto.randomUUID();
+  const subject = `Fabric Inbox routing test ${new Date(now).toISOString().slice(0, 16).replace("T", " ")} UTC · ${id.slice(0, 8)}`;
   const result = await env.MAILBOX.get(env.MAILBOX.idFromName(email)).sendMail({
     mailboxId: email,
-    idempotencyKey: `routing-test-${subject}`,
+    idempotencyKey: `routing-test-${id}`,
     kind: "send",
     request: { from: email, to: email, subject, text: "If this message appears in the address's inbox, routing works." },
   });
@@ -526,7 +529,7 @@ export async function routingTestStatus(env: Env, rawEmail: string, now = Date.n
   // Only the two reads used here; the full RPC type of the mailbox is too deep to infer.
   const stub = env.MAILBOX.get(env.MAILBOX.idFromName(email)) as unknown as {
     getOutboxAction(mailboxId: string, id: string): Promise<{ status: string; errorCode: string | null } | null>;
-    searchEmails(options: { query: string; subject: string; limit: number }): Promise<{ folder_id?: string; date?: string }[]>;
+    searchEmails(options: { query: string; subject: string; date_start: string; limit: number }): Promise<{ subject?: string; folder_id?: string; date?: string }[]>;
   };
   // A send still in flight is read again from the outbox; its last answer is kept.
   if (record.outboxId && ["pending", "sending", "unknown"].includes(record.sendStatus)) {
@@ -536,10 +539,15 @@ export async function routingTestStatus(env: Env, rawEmail: string, now = Date.n
       await env.BUCKET.put(testKey(email), JSON.stringify(record));
     }
   }
-  const rows = await stub.searchEmails({ query: "", subject: record.subject, limit: 10 }).catch((error: unknown) => {
+  // The search matches the subject anywhere (LIKE), so a reply ("Re: …") or an earlier test would
+  // match too: only the exact subject, received at or after the send, is this test arriving. A
+  // received message's date is the Worker's receive time (workers/index.ts), on the same clock as sentAt.
+  const sentAt = Date.parse(record.sentAt);
+  const rows = await stub.searchEmails({ query: "", subject: record.subject, date_start: record.sentAt, limit: 25 }).catch((error: unknown) => {
     console.error(JSON.stringify({ event: "routing_test_read_failed", domain: domainOf(email), error: (error as Error).message }));
     return [];
   });
-  const received = rows.find((r) => r.folder_id && r.folder_id !== Folders.SENT && r.folder_id !== Folders.DRAFT);
+  const received = rows.find((r) => r.subject === record.subject && !!r.date && Date.parse(r.date) >= sentAt
+    && !!r.folder_id && r.folder_id !== Folders.SENT && r.folder_id !== Folders.DRAFT);
   return { status: 200, body: { email, test: testState(record, received ? { date: received.date ?? "", folder: received.folder_id! } : null, now) } };
 }

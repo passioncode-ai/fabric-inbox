@@ -1321,7 +1321,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Alt paths:** Add another keeps the domain and the settings and starts a new address, with the focus in the name field (in Several, the names box); a test that is not ticked is offered again as Send a test message.
 - **UI elements:** SCR-02; the step list (Done, Already so, Skipped, Not done, Not receiving yet, Waiting), Send a test message, Done, Add another.
 - **States covered:** loading, error, success
-- **Errors & recovery:** Every failed step says what happened, what was kept and the one action that fixes it; a test not arrived after 3 minutes is reported as not arrived with Check routing; a test the provider refused names the provider's reason.
+- **Errors & recovery:** Every failed step says what happened, what was kept and the one action that fixes it; a test not arrived after 3 minutes is reported as not arrived with Check routing; a test the provider refused names the provider's reason. Send again always sends a new message, even within the same minute, and only that message arriving counts — not an earlier test, and not a reply to one.
 - **Status:** draft
 - **Coverage:** app/components/settings/sections/AddAddress.tsx, app/components/settings/sections/add-address-model.ts, workers/lib/address-ops.ts (createAddress, routingTestStatus), workers/routes/agents.ts (/api/project-addresses/:email/test), tests/project-addresses.test.ts, tests/add-address-model.test.ts
 - **Product:** unobserved

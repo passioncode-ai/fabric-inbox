@@ -113,8 +113,9 @@ function environment(options: { token?: boolean; agents?: string[]; policy?: str
       purge: async () => [],
       sendMail: async (c: unknown) => { sends.push(c); return { id: "o", status: options.sendStatus ?? "accepted", errorCode: options.sendStatus === "failed" ? "E_REFUSED" : null }; },
       getOutboxAction: async () => null,
-      // The mailbox's search: the sent copy and, once routing delivered it, the received one.
-      searchEmails: async ({ subject }: { subject: string }) => (options.received ?? []).filter((r) => r.subject === subject),
+      // The mailbox's search: the sent copy and, once routing delivered it, the received one. Like the
+      // real search, the subject matches anywhere in a message's subject (SQL LIKE %subject%).
+      searchEmails: async ({ subject }: { subject: string }) => (options.received ?? []).filter((r) => r.subject.includes(subject)),
     }) },
   };
   const call = async (method: string, path: string, body?: unknown) => {
@@ -368,6 +369,35 @@ test("several addresses are created one by one, each with its own result; a bad 
   assert.equal((await h.call("POST", "/api/project-addresses/batch", { domain: "project.invalid", localParts: ["a"], agent: { id: "ghost" } })).status, 400);
 });
 
+test("Send again in the same minute sends a new message, and only that message arriving after it counts (review 14, SCN-062)", async () => {
+  const received: { subject: string; folder_id: string; date: string }[] = [];
+  const h = environment({ received, sendStatus: "failed" });
+  await h.call("POST", "/api/project-addresses", { localPart: "help", domain: "project.invalid" });
+  const first = await h.call("POST", "/api/project-addresses/help@project.invalid/test");
+  const second = await h.call("POST", "/api/project-addresses/help@project.invalid/test");
+  assert.equal(h.sends.length, 2, "the second click sends, although it is the same minute");
+  const [a, b] = h.sends as any[];
+  assert.notEqual(a.idempotencyKey, b.idempotencyKey, "each click has its own key: the old failed send is not returned");
+  assert.notEqual(first.body.subject, second.body.subject, "each test has its own subject");
+  assert.match(second.body.subject, /^Fabric Inbox routing test \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC · [0-9a-f]{8}$/);
+
+  const ok = environment({ received });
+  await ok.call("POST", "/api/project-addresses", { localPart: "help", domain: "project.invalid" });
+  const sent = await ok.call("POST", "/api/project-addresses/help@project.invalid/test");
+  const subject: string = sent.body.subject;
+  const record = JSON.parse(ok.objects.get("routing-tests/help@project.invalid.json")!);
+  const after = new Date(Date.parse(record.sentAt) + 10_000).toISOString();
+  const state = async () => (await ok.call("GET", "/api/project-addresses/help@project.invalid/test")).body.test.state;
+  // An earlier test of the same minute (its subject a prefix of this one, as before the fix), a reply,
+  // and this subject dated before the send: none of them is this test arriving.
+  received.push({ subject: subject.replace(/ · [0-9a-f]{8}$/, ""), folder_id: "inbox", date: after });
+  received.push({ subject: `Re: ${subject}`, folder_id: "inbox", date: after });
+  received.push({ subject, folder_id: "inbox", date: new Date(Date.parse(record.sentAt) - 60_000).toISOString() });
+  assert.equal(await state(), "waiting");
+  received.push({ subject, folder_id: "inbox", date: after });
+  assert.equal(await state(), "arrived");
+});
+
 // ── Review F2 (0.12.0): a batch fits one request's Cloudflare budget, resumes, and never orphans a rule ──
 
 const names = (n: number) => Array.from({ length: n }, (_, i) => `n${i}`);
@@ -479,11 +509,12 @@ test("a test message is kept and watched: waiting, arrived (not the sent copy), 
   const sent = await h.call("POST", "/api/project-addresses/help@project.invalid/test");
   assert.equal(sent.status, 200);
   assert.equal(sent.body.test.state, "waiting");
-  received.push({ subject: sent.body.subject, folder_id: "sent", date: "2026-10-06T10:00:00Z" });
+  const later = new Date(Date.now() + 20_000).toISOString();
+  received.push({ subject: sent.body.subject, folder_id: "sent", date: later });
   assert.equal((await h.call("GET", "/api/project-addresses/help@project.invalid/test")).body.test.state, "waiting", "the sent copy is not an arrival");
-  received.push({ subject: sent.body.subject, folder_id: "inbox", date: "2026-10-06T10:00:20Z" });
+  received.push({ subject: sent.body.subject, folder_id: "inbox", date: later });
   const arrived = (await h.call("GET", "/api/project-addresses/help@project.invalid/test")).body.test;
-  assert.deepEqual([arrived.state, arrived.folder, arrived.arrivedAt], ["arrived", "inbox", "2026-10-06T10:00:20Z"]);
+  assert.deepEqual([arrived.state, arrived.folder, arrived.arrivedAt], ["arrived", "inbox", later]);
 
   const late = environment();
   await late.call("POST", "/api/project-addresses", { localPart: "late", domain: "project.invalid" });

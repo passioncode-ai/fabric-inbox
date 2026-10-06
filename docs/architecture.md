@@ -340,9 +340,12 @@ two creates of one address one wins and the other answers 409 without touching C
 answer is lost (a timeout, no connection, a 5xx) it reads the names back
 (`/api/project-addresses/check`, then each existing address's routing) and says which exist,
 never "Nothing was created";
-`sendRoutingTest` keeps the test's subject in R2 (`routing-tests/<address>.json`) and
-`routingTestStatus` (`GET /api/project-addresses/:email/test`) finds it in the mailbox (any folder
-but Sent and Drafts) or reports it not arrived after 3 minutes. The part before @ is checked by
+`sendRoutingTest` sends each test as its own message (a fresh idempotency key per send and an
+8-character nonce in the subject, so Send again within the same minute really sends) and keeps its
+subject in R2 (`routing-tests/<address>.json`); `routingTestStatus`
+(`GET /api/project-addresses/:email/test`) counts only a message with exactly that subject, received at or
+after the send, in any folder but Sent and Drafts (a reply or an earlier test does not count), or
+reports it not arrived after 3 minutes. The part before @ is checked by
 `shared/address-name.ts`, the same module the dialog uses. `DomainManager.connect` leaves rules to another Worker alone
 and keeps each address's agent and the chosen catch-all; `release` keeps serving when the zone
 cannot be looked up and asks before giving up a zone the token cannot see.
