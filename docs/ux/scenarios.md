@@ -56,6 +56,8 @@
 | SCN-048 | Turn the anonymous usage counts off or on | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
 | SCN-049 | The app keeps itself up to date | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
 | SCN-050 | Remove or reinstall the app and lose nothing | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
+| SCN-051 | Set up Gmail on my server | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-052 | Connect Gmail with an app password | Connect an account | P-01 | ST-001, FLW-01 | draft | not audited |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -98,10 +100,11 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **UI elements:** SCR-02; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Cancel leaves no connected account; unavailable configuration shows setup needed; provider refusal offers reconnect.
+- **Refinement (2026-10-06, WS6 Gmail):** With Gmail not set up, choosing Gmail opens its setup (SCN-051) instead of "not configured". Once set up, the connect step says before it opens that Google's sign-in happens in the browser (Google forbids it inside apps) and, in the Mac app, that the browser first asks for the server's emailed code. If Google would refuse the redirect URI or the client, the server says so before the person leaves for Google. The browser ends on a page for every outcome — connected (with a warning when Google limited the access to 7 days), Cancel, unticked Gmail box, Gmail API off, unknown redirect URI, refused client, expired sign-in — never raw JSON. Evidence: `tests/gmail-callback-pages.test.ts`, `tests/gmail-setup-ui.test.ts`.
 - **Refinement (2026-10-06, mail refresh):** A connected Gmail account syncs at once, not a poll interval later. Its sidebar row says "importing 40%" (or "importing" until Gmail reports the mailbox size) while older mail is imported; new mail already arrives during the import. Only a revoked grant asks for a reconnect; Gmail being down or refusing one request waits and retries (60 s doubling to 15 min). Evidence: `tests/gmail-scheduler.test.ts` ("a new connection syncs now…"), `tests/feed-freshness.test.ts` ("a Gmail account importing says so…"), `tests/gmail-sync.test.ts` (P2-9 tests).
 - **Audit refinement (2026-09-28):** Until the account list loads, Accounts shows "Checking Gmail setup…" instead of claiming Gmail is not configured; a failed load says setup is unknown beside the Retry alert. Evidence: `tests/frontend-states.test.ts` ("Gmail is only called 'not configured'…").
 - **Status:** validated
-- **Coverage:** app/components/settings/sections/AccountsSection.tsx, app/lib/account-status.ts, workers/routes/accounts.ts:83, desktop/main.cjs:151; workers/providers/gmail-scheduler.ts (`connected`); app/components/inbox/AccountSidebar.tsx (`syncLabel`)
+- **Coverage:** app/components/settings/sections/AccountsSection.tsx, app/components/settings/sections/GmailSetup.tsx, app/lib/account-status.ts, workers/routes/accounts.ts, workers/gmail-setup/result-page.ts, desktop/main.cjs:151; workers/providers/gmail-scheduler.ts (`connected`); app/components/inbox/AccountSidebar.tsx (`syncLabel`)
 - **Product:** unobserved
 - **Today:** Partial. Accounts lists Gmail and Cloudflare separately; the configured Gmail link starts at the server in a browser. The not_configured state was reported from the running app (RE-006). No real OAuth grant, mailbox synchronization or send acceptance was performed. Outlook/IMAP are explicitly unavailable.
 
@@ -119,8 +122,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **UI elements:** SCR-02; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** No adapter or credentials: keep capability unavailable, never simulate a connected account.
+- **Refinement (2026-10-06, WS6 reconnect with reasons):** A Gmail account that stops working keeps why — Google ended a Testing app's access after 7 days, access removed, Gmail box not ticked, Gmail API off, the server's Google client refused, saved access unreadable — whether a sync or a mail action met it, and the inbox banner and the account's panel say it with one action: Reconnect in browser, Enable the Gmail API then Retry, or Check the Gmail setup. Gmail's quota 403 waits and retries. Evidence: `tests/gmail-reasons.test.ts`, `tests/gmail-setup-ui.test.ts`.
 - **Status:** draft
-- **Coverage:** app/components/settings/sections/AccountsSection.tsx, app/components/settings/sections/AccountsSection.tsx, app/components/settings/sections/AccountsSection.tsx
+- **Coverage:** app/components/settings/sections/AccountsSection.tsx, app/components/settings/sections/GmailSetup.tsx, app/routes/unified-inbox.tsx, shared/mail/gmail-reasons.ts, workers/providers/account-service.ts, workers/providers/gmail-client.ts
 - **Product:** unobserved
 - **Today:** Partial. Missing configuration and unsupported providers have visible text; account status and sync errors have source coverage. A real revoked-token/reconnect walkthrough is not recorded. Disconnect is two-step — "Disconnect…" arms it for one account, then "Disconnect <email>" confirms or "Keep" (default focus, also Escape) backs out — and reports whether provider revocation succeeded.
 
@@ -656,7 +660,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   3. Enter the email that signs in (and, the first time, names for the workers.dev address and the sign-in page), Create my server -> eight steps are shown as they run: web address, storage, sign-in page, codes by email, only you can open it, upload, start, publish.
   4. The server opens in the app -> sign in with the emailed code -> Settings → Domains opens.
 - **Expected result:** A person with only a Cloudflare account has their own server running and is signed in, without a terminal.
-- **Alt paths:** Fabric Inbox → Connect Cloudflare account… runs the same flow for an existing server, which is updated in place (only missing storage migrations; DOMAINS, secrets and sign-in rules kept).
+- **Alt paths:** Fabric Inbox → Connect Cloudflare account… runs the same flow for an existing server, which is updated in place (only missing storage migrations; DOMAINS, secrets and sign-in rules kept). Then set up Gmail (optional), ticked before Create my server, opens the Gmail setup (SCN-051) after sign-in instead of Domains.
 - **UI elements:** SCR-01 (Create my server: token, details, progress).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A token Cloudflare does not accept, a missing permission (named), R2 or Zero Trust not turned on yet (the dashboard step is named) or a taken name stop at that step; Continue runs the rest again and what is done stays done; a server newer than the app is refused.
@@ -1059,3 +1063,42 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** desktop/backup.cjs, desktop/main.cjs, desktop/profile.cjs, tests/desktop-updates.test.ts, tests/desktop-profile.test.ts
 - **Product:** unobserved
 - **Today:** Built 2026-10-05 for 0.10.1 (docs/desktop-data-and-updates.md).
+
+### SCN-051: Set up Gmail on my server
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01, JRN-01; RE-001; operator request 2026-10-06 ("work out connecting Gmail accounts")
+- **Entry point:** SCR-02 (Settings → Accounts → Connect account → Gmail), or the Mac app right after Create my server with Then set up Gmail (optional) ticked
+- **Preconditions:** The server runs with its own Cloudflare API token (Create my server writes it); Gmail is not set up, or the owner chose Use another Google client…
+- **Steps:**
+  1. Choose Gmail -> seven numbered steps, each opening its Google Cloud page: create a project, turn on the Gmail API, Branding (app name and authorized domain, each with Copy), Audience (Internal for Google Workspace, External then Publish app for a personal account, and why: a Testing app loses access after 7 days), Data Access (the scope, with Copy), the Web application client (the redirect URI of this server, with Copy).
+  2. Paste the client ID and the client secret, Save and check -> the server asks Google whether it accepts the pair and knows the redirect URI, makes a credential key if it has none, and saves the four settings itself.
+  3. "Saved. Your server starts using it within a few seconds…" -> the dialog moves on to the connect step (SCN-002).
+- **Expected result:** A person with a Google account sets Gmail up from the app, without a terminal, with Google's 7-day Testing expiry avoided before it happens.
+- **Alt paths:** Later closes the dialog; nothing is saved until Save and check. Check the setup in the connect step re-runs the checks at any time. A server without its own Cloudflare token says it cannot save and points to setting the values by hand.
+- **UI elements:** SCR-02; Connect account dialog → Gmail: the steps with External links and Copy buttons, Client ID and Client secret fields, Save and check, Later, Back; the checks' verdicts (OK / Not right / Not checked).
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** A client ID that is not one, or a pair Google refuses (unknown client, wrong secret) is refused with the fix and its Google Cloud page, and nothing is written; a token without Workers Scripts: Edit is named and nothing changes; a redirect URI Google does not know yet is saved and said (Google can take minutes); Google out of reach does not block saving and the checks say Not checked; a server that has not started using the settings after 30 seconds says to reload in a minute. An existing credential key is never replaced.
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/GmailSetup.tsx, app/components/settings/sections/AccountsSection.tsx, workers/routes/gmail-setup.ts, workers/gmail-setup/google-check.ts, workers/gmail-setup/server-settings.ts, shared/mail/gmail-setup.ts, desktop/setup.html, desktop/policy.cjs, tests/gmail-setup.test.ts, tests/gmail-setup-ui.test.ts, tests/desktop-policy.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS6) and tested against fakes of Google and Cloudflare. Not yet walked against a real Google Cloud project; the redirect-URI check reads Google's error page, observed 2026-10-06, not a documented API.
+
+### SCN-052: Connect Gmail with an app password
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01, JRN-01; RE-003
+- **Entry point:** SCR-02 (Settings → Accounts → Connect account → Gmail with an app password)
+- **Preconditions:** A personal Google account with 2-Step Verification; the IMAP provider is available on the server (0.11.0 WS4).
+- **Steps:**
+  1. Choose Gmail with an app password -> what it needs (2-Step Verification, not a work or school account), Google's help page, and what it gives up next to connecting through Google (labels appear as folders).
+  2. Create an app password in the Google account and paste it with the address -> the account appears with its import progress.
+- **Expected result:** A person who does not want a Google Cloud project still reads and sends their Gmail here.
+- **Alt paths:** Back returns to the provider cards; connecting through Google stays available beside it.
+- **UI elements:** SCR-02; the provider card with its trade-off line and help link.
+- **States covered:** empty, error, success
+- **Errors & recovery:** Until the IMAP provider is in this build, the card is shown unavailable and says so; it never pretends to connect.
+- **Status:** draft
+- **Coverage:** app/components/settings/sections/providers.ts, tests/gmail-setup-ui.test.ts
+- **Product:** unobserved
+- **Today:** A marked provider card stub only (0.11.0 WS6); WS4 wires it to the IMAP preset (imap.gmail.com / smtp.gmail.com).

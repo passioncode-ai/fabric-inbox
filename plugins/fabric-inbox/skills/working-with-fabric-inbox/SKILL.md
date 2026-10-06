@@ -131,7 +131,8 @@ MX is two-step).
 | Symptom | Do |
 |---|---|
 | `list_accounts` shows `stuck` on an address | mail reached the inbox but not its rules or agent; `retry_incoming` (admin) or tell the owner |
-| a Gmail account has `error` / `reconnect_required` | only the owner can reconnect it; an admin key can hand them the address from `gmail_connect_link` |
+| a Gmail account has `error` / `reconnect_required` | its `reason` says why (`testing_expiry`: the owner publishes the Google Cloud app, then reconnects; `gmail_api_disabled`: the owner enables the Gmail API, no reconnect). Only the owner can reconnect; an admin key can hand them the address from `gmail_connect_link` |
+| Gmail is not set up (`gmail_connect_link` answers 503) | `gmail_setup_status` lists what is missing and the values to copy; the owner pastes the client secret in Settings → Accounts → Gmail; `check_gmail_setup` checks it with Google |
 | `refresh_inbox` answers `backoff` for an account | Gmail failed a moment ago; it retries by itself at `retryAt` — say when, do not loop |
 | "The Cloudflare token is not allowed to …" | the owner adds the named permission to the server's token |
 | a tool times out | retry once with the same arguments (and the same `idempotencyKey`); then report |

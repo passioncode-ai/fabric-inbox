@@ -8,8 +8,8 @@ Bounded inventory of actual integrated source wording. Rows remain proposed beca
 |---|---|---|---|---|
 | action.mail.search | Search emails | app/components/Header.tsx:80 | SCN-005 | proposed |
 | navigation.settings | Settings | app/routes/settings.tsx | SCN-012 | proposed |
-| action.account.connect_gmail | Connect Gmail in browser ↗ | app/components/settings/sections/AccountsSection.tsx | SCN-002 | proposed |
-| state.account.not_configured | Gmail connection is not configured on this server. Set up Google OAuth to enable it. | app/components/settings/sections/AccountsSection.tsx | SCN-003 | proposed |
+| action.account.connect_gmail | Connect Gmail in browser ↗ | app/components/settings/sections/GmailSetup.tsx | SCN-002 | proposed |
+| state.account.not_configured | Gmail is connected through a Google Cloud app of your own, so your mail goes only between Google and your server. | app/components/settings/sections/GmailSetup.tsx | SCN-051 | proposed |
 | state.account.other_unavailable | Not available in this build | app/components/settings/sections/providers.ts | SCN-003 | proposed |
 | navigation.rules | Rules and history | app/components/settings/sections/AccountsSection.tsx | SCN-016 | proposed |
 | action.mail.sync | Sync now | app/routes/gmail-inbox.tsx:277 | SCN-004 | proposed |
@@ -264,6 +264,29 @@ Humanization: on; own advisory read of the registered labels and state messages.
 | action.load.retry | Retry | app/components/LoadError.tsx | SCN-011 | proposed |
 | state.addresses.autocreate_failed | configured addresses could not be created | app/components/settings/sections/ConfiguredAddresses.tsx | SCN-002 | proposed |
 | state.account.checking | Checking Gmail setup… | app/components/settings/sections/AccountsSection.tsx | SCN-002 | proposed |
+| action.gmail_setup.save | Save and check | app/components/settings/sections/GmailSetup.tsx | SCN-051 | proposed |
+| state.gmail_setup.saving | Checking with Google | app/components/settings/sections/GmailSetup.tsx | SCN-051 | proposed |
+| action.gmail_setup.copy | Copy | app/components/settings/sections/GmailSetup.tsx | SCN-051 | proposed |
+| state.gmail_setup.copy_blocked | Copying is blocked here: select the text and copy it. | app/components/settings/sections/GmailSetup.tsx | SCN-051 | proposed |
+| hint.gmail_setup.not_testing | Why: Google ends a Testing app's access after 7 days, and the account would need connecting again every week | app/components/settings/sections/GmailSetup.tsx | SCN-051 | proposed |
+| action.gmail_setup.check | Check the setup | app/components/settings/sections/GmailSetup.tsx | SCN-051 | proposed |
+| action.gmail_setup.replace | Use another Google client… | app/components/settings/sections/GmailSetup.tsx | SCN-051 | proposed |
+| state.gmail_connect.browser | Google's sign-in opens in your browser: Google does not allow it inside apps. | app/components/settings/sections/GmailSetup.tsx | SCN-002 | proposed |
+| state.gmail_connect.second_sign_in | The first time, your browser asks you to sign in to your server | app/components/settings/sections/GmailSetup.tsx | SCN-002 | proposed |
+| action.gmail.reconnect | Reconnect in browser ↗ | app/components/settings/sections/GmailSetup.tsx | SCN-003 | proposed |
+| action.gmail.enable_api | Enable the Gmail API ↗ | app/components/settings/sections/GmailSetup.tsx | SCN-003 | proposed |
+| state.gmail.testing_expiry | lost its Gmail access after 7 days | shared/mail/gmail-reasons.ts | SCN-003 | proposed |
+| state.gmail.access_revoked | needs to be reconnected: Google no longer accepts its access | shared/mail/gmail-reasons.ts | SCN-003 | proposed |
+| state.gmail.insufficient_scope | was connected without Gmail access | shared/mail/gmail-reasons.ts | SCN-003 | proposed |
+| state.gmail.api_disabled | cannot be read: the Gmail API is off in your Google Cloud project | shared/mail/gmail-reasons.ts | SCN-003 | proposed |
+| state.gmail.client_rejected | cannot be read: Google refused this server's OAuth client | shared/mail/gmail-reasons.ts | SCN-003 | proposed |
+| state.gmail.credentials_unreadable | needs to be reconnected: its saved access cannot be opened | shared/mail/gmail-reasons.ts | SCN-003 | proposed |
+| action.inbox.why | Why, and what to do | app/routes/unified-inbox.tsx | SCN-003 | proposed |
+| title.gmail_result.connected | Gmail is connected | workers/gmail-setup/result-page.ts | SCN-002 | proposed |
+| title.gmail_result.not_ticked | The Gmail box was not ticked | workers/gmail-setup/result-page.ts | SCN-002 | proposed |
+| title.gmail_result.redirect | Google does not know this server's redirect URI | workers/gmail-setup/result-page.ts | SCN-002 | proposed |
+| label.desktop.then_gmail | Then set up Gmail (optional) | desktop/setup.html | SCN-030 | proposed |
+| label.provider.gmail_app_password | Gmail with an app password | app/components/settings/sections/providers.ts | SCN-052 | proposed |
 | action.account.disconnect | Disconnect | app/components/settings/sections/AccountsSection.tsx | SCN-003 | proposed |
 | label.agent.image_link | Image from | app/components/AgentMarkdown.tsx | SCN-013 | proposed |
 | state.mailbox.update_failed | Couldn't update the message. | app/lib/mutation-errors.ts | SCN-011 | proposed |
