@@ -27,7 +27,7 @@ A new user needs nothing but a Cloudflare account (the free plan works) and the 
    (bindings, Durable Object migrations, `POLICY_AUD`, `TEAM_DOMAIN`, `CLOUDFLARE_ACCOUNT_ID`, the
    token as the secret `CLOUDFLARE_API_TOKEN`), then publishing it on workers.dev. A failure names
    what to do; **Continue** runs the rest again, and what is done stays done.
-5. The app opens the server; sign in with the code Cloudflare emails. **Domains & addresses**
+5. The app opens the server; sign in with the code Cloudflare emails. **Settings → Domains**
    opens next: choose **Receive mail here** on a domain.
 
 The same flow updates an existing server in place (menu **Fabric Inbox → Connect Cloudflare
@@ -56,7 +56,7 @@ organization, a bucket and a workers.dev name could not be exercised on an accou
    `TEAM_DOMAIN` on the Worker once (dashboard, or `wrangler deploy --var POLICY_AUD:… --var
    TEAM_DOMAIN:…`). Production requests fail closed without them (`workers/app.ts`). Access users
    share the whole workspace; this is not a per-user multitenant boundary.
-3. Give the Worker its Cloudflare token, so **Domains & addresses** can manage your domains: the 13
+3. Give the Worker its Cloudflare token, so **Settings → Domains** can manage your domains: the 13
    permissions in `TOKEN_PERMISSIONS` (`workers/routing/cloudflare-api.ts`, listed on the screen
    and in the app's Create my server). On this machine the Observatory credential door issues it
    from the stashed admin token into a vault slot, and it goes into the Worker's secret on stdin —
@@ -76,7 +76,7 @@ organization, a bucket and a workers.dev name could not be exercised on an accou
 
    **More Cloudflare accounts (0.8).** The server lists the domains of every account it has a
    token for. Its own token covers its own account (and, when it is a token made under My Profile,
-   every account it was given). For any other account, Domains & addresses → **Connect another
+   every account it was given). For any other account, Settings → Accounts → **Connect account → Cloudflare
    account** takes a token made in that account with the 9 permissions in
    `ACCOUNT_TOKEN_PERMISSIONS` (the window lists them). The server keeps it as its own Worker
    secret `CLOUDFLARE_API_TOKEN_<account id>`, written with its own token's Workers Scripts
@@ -94,7 +94,7 @@ organization, a bucket and a workers.dev name could not be exercised on an accou
    each message to `/relay/incoming` unchanged. Sending from such a domain goes through that
    account's Email Sending API.
 4. Unknown addresses: mail to an address on a served domain without a mailbox is refused with
-   "Address not found" unless the domain has a catch-all mailbox (chosen on Domains & addresses,
+   "Address not found" unless the domain has a catch-all mailbox (chosen on Settings → Domains,
    stored in R2 `config/catch-all.json`, or `UNKNOWN_ADDRESS_POLICY`). Every unknown address is
    recorded (address, first and last time, count; never the sender or body) under
    `unknown-recipients/` for the Create address list.
@@ -110,11 +110,11 @@ Every name the Worker reads (`workers/types.ts`). None is in `wrangler.jsonc` (C
 | Name | Kind | Needed when | Default | Meaning |
 |---|---|---|---|---|
 | `POLICY_AUD`, `TEAM_DOMAIN` | var on the Worker | always in production | — | Cloudflare Access audience and team URL; requests fail closed without them |
-| `DOMAINS` | var on the Worker | optional | empty | domains always served, commas and/or spaces; domains received from **Domains & addresses** or a setup live in R2 `config/domains.json` |
+| `DOMAINS` | var on the Worker | optional | empty | domains always served, commas and/or spaces; domains received from **Settings → Domains** or a setup live in R2 `config/domains.json` |
 | `EMAIL_ADDRESSES` | var | optional | `[]` | when non-empty, the only addresses that may have a mailbox; an address outside it is treated as unknown on inbound. A JSON array, a JSON string of one, or a comma-separated list |
 | `UNKNOWN_ADDRESS_POLICY` | var | optional | reject | JSON `{"<domain>":"catch_all:<address>"}`; invalid JSON fails the delivery |
 | `CLOUDFLARE_API_TOKEN` | secret | managing domains and addresses | none → the screen explains how to connect | the permissions above; `CLOUDFLARE_EMAIL_ROUTING_TOKEN` (before 0.3) is still read when this is absent |
-| `CLOUDFLARE_API_TOKEN_<account id>` | secret, one per extra account | domains in another Cloudflare account | none | written by the server when a token is connected on Domains & addresses (or by the door); removed with the account |
+| `CLOUDFLARE_API_TOKEN_<account id>` | secret, one per extra account | domains in another Cloudflare account | none | written by the server when a token is connected in Settings → Accounts (or by the door); removed with the account |
 | `CLOUDFLARE_ACCOUNT_ID` | var | optional | the only account the server's token sees, else the one whose Workers hold `EMAIL_ROUTING_WORKER` | the account the server runs in (its Access app, agent keys and relays' sign-ins live there) |
 | `EMAIL_ROUTING_WORKER` | var | routing | `fabric-inbox` | the Worker routing rules point at |
 | `AGENT_MODEL` | var | optional | `@cf/moonshotai/kimi-k2.5` | Workers AI model for address agents and the chat |
@@ -140,10 +140,10 @@ server's address and Access sign-in, the served domains, the mailboxes (address,
 - **In the app, first run:** open a setup file (or, in a personal build made with
   `npm run desktop:dmg -- --setup <name>`, choose the setup bundled from `deployments/<name>/setup.json`) →
   review → **Connect and apply**. The app connects, you sign in on the server, and the server's
-  **Setup** page (`/setup`) applies it and lists each address as created, updated, already there
+  **Settings → App → Setup** page (`/settings/app/setup`; the old `/setup` redirects there) applies it and lists each address as created, updated, already there
   or not created (with the reason). The app keeps the chosen setup in
   `~/Library/Application Support/Fabric Inbox/pending-setup.json` (mode 600) until it is applied.
-- **On the server:** `/setup` also opens a file, reads Cloudflare (**Read from Cloudflare Email
+- **On the server:** Settings → App → Setup also opens a file, reads Cloudflare (**Read from Cloudflare Email
   Routing**, needs `CLOUDFLARE_API_TOKEN`) and exports the current setup.
   API: `POST /api/setup/apply`, `GET /api/setup/export`, `GET /api/setup/from-cloudflare[?domains=a,b]`.
 - **Applying** adds the domains (R2 `config/domains.json`, next to `DOMAINS`) and catch-alls
@@ -155,7 +155,7 @@ server's address and Access sign-in, the served domains, the mailboxes (address,
   `delivery-issues/<address>.json`.
 - **Routing is not changed by applying a setup.** Mail reaches the mailboxes only when each
   address's (or the catch-all's) Email Routing rule sends to the Worker; until then it keeps
-  going where it went. **Receive mail here** / **Bring them here** on Domains & addresses changes
+  going where it went. **Receive mail here** / **Bring them here** on Settings → Domains changes
   them, keeping each copy.
 
 No deployment's own data ships or is committed (CF-4): a deployment's values, setup, Email
@@ -169,9 +169,9 @@ named with `--setup`, from the local file, with its SHA-256 in the image receipt
 setup can be generated offline from a Cloudflare inventory with
 `npx tsx scripts/deployment-setup.ts <name>` ([deployments guide](../../deployments/README.md#a-setup-file-from-cloudflare-email-routing)).
 
-## Domains & addresses
+## Settings → Domains and Addresses
 
-**Domains & addresses** (`/projects`, `workers/routes/domains.ts`, `workers/routing/domains.ts`)
+**Settings → Domains** and **Settings → Addresses** (`/settings/domains`, `/settings/addresses`; the old `/projects` redirects there; `workers/routes/domains.ts`, `workers/routing/domains.ts`)
 lists every domain of the connected account. Receiving here first:
 
 - **Receive mail here** on a domain runs, and reports, idempotent steps that stop at the first
@@ -218,7 +218,7 @@ Cloudflare routes to the Worker.
 
 ## Agents
 
-Create agents on **Agents** (`/ai-agents`): from the Support, Sales or Billing template or blank. A new agent drafts every answer. **Send answers it is allowed to send** turns on sending for the intents listed (empty = any grounded answer), within the daily limit per address; everything else becomes a draft with its reason. Skipped before any model call: mail with `List-*`, `Precedence: bulk|list` or `Auto-Submitted`, no-reply senders, bounces, calendar invitations and replies, mail from any address on a domain this server serves (so two agent addresses never answer each other), and a message you already replied to yourself. When a message has `Reply-To`, that is the address answered and checked. Answers carry `Auto-Submitted: auto-replied`, the address's display name and its signature. The daily send limit counts per UTC day. **Recent answers** filters by what happened (sent or drafted, needs a look, left alone) and by agent, and pages with **Show older**; **Open the draft** opens that draft. Tools are remote MCP tools on `AUTOMATION_MCP_HOSTS`; a failed tool call turns the answer into a draft. Every run, with the version that answered, the passages it was given and exactly what was sent, is listed under **Recent answers**.
+Create agents on **Settings → Agents** (`/settings/agents`; **New agent**): from the Support, Sales or Billing template or blank. A new agent drafts every answer. **Send answers it is allowed to send** turns on sending for the intents listed (empty = any grounded answer), within the daily limit per address; everything else becomes a draft with its reason. Skipped before any model call: mail with `List-*`, `Precedence: bulk|list` or `Auto-Submitted`, no-reply senders, bounces, calendar invitations and replies, mail from any address on a domain this server serves (so two agent addresses never answer each other), and a message you already replied to yourself. When a message has `Reply-To`, that is the address answered and checked. Answers carry `Auto-Submitted: auto-replied`, the address's display name and its signature. The daily send limit counts per UTC day. **Recent answers** filters by what happened (sent or drafted, needs a look, left alone) and by agent, and pages with **Show older**; **Open the draft** opens that draft. Tools are remote MCP tools on `AUTOMATION_MCP_HOSTS`; a failed tool call turns the answer into a draft. Every run, with the version that answered, the passages it was given and exactly what was sent, is listed under **Recent answers**.
 
 ## Knowledge for agents
 

@@ -143,7 +143,7 @@ export class CloudflareAccounts {
   private apiOf(ref: TokenRef): CloudflareApi {
     let api = this.apis.get(ref.name);
     if (!api) this.apis.set(ref.name, (api = new CloudflareApi(ref.token, this.fetcher, ref.accountId
-      ? { whose: `the token saved for the Cloudflare account ${ref.accountId}`, fix: "Connect that account again with a new token on Domains & addresses, or remove it there." }
+      ? { whose: `the token saved for the Cloudflare account ${ref.accountId}`, fix: "Connect that account again with a new token in Settings → Accounts, or remove it there." }
       : null)));
     return api;
   }

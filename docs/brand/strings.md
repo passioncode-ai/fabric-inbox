@@ -7,11 +7,11 @@ Bounded inventory of actual integrated source wording. Rows remain proposed beca
 | Key | Text (primary) | Location | Scenario | Status |
 |---|---|---|---|---|
 | action.mail.search | Search emails | app/components/Header.tsx:80 | SCN-005 | proposed |
-| navigation.settings | Settings | app/routes/settings.tsx:15 | SCN-012 | proposed |
-| action.account.connect_gmail | Connect Gmail in browser ↗ | app/routes/fabric-accounts.tsx:68 | SCN-002 | proposed |
-| state.account.not_configured | Gmail connection is not configured on this server. Set up Google OAuth to enable it. | app/routes/fabric-accounts.tsx:72 | SCN-003 | proposed |
-| state.account.other_unavailable | Outlook and IMAP connections are not available in this build. | app/routes/fabric-accounts.tsx:134 | SCN-003 | proposed |
-| navigation.rules | Rules and history | app/routes/fabric-accounts.tsx:95 | SCN-016 | proposed |
+| navigation.settings | Settings | app/routes/settings.tsx | SCN-012 | proposed |
+| action.account.connect_gmail | Connect Gmail in browser ↗ | app/components/settings/sections/AccountsSection.tsx | SCN-002 | proposed |
+| state.account.not_configured | Gmail connection is not configured on this server. Set up Google OAuth to enable it. | app/components/settings/sections/AccountsSection.tsx | SCN-003 | proposed |
+| state.account.other_unavailable | Not available in this build | app/components/settings/sections/providers.ts | SCN-003 | proposed |
+| navigation.rules | Rules and history | app/components/settings/sections/AccountsSection.tsx | SCN-016 | proposed |
 | action.mail.sync | Sync now | app/routes/gmail-inbox.tsx:277 | SCN-004 | proposed |
 | action.mail.compose | Compose | app/routes/gmail-inbox.tsx:280 | SCN-006 | proposed |
 | action.mail.send | Send | app/routes/gmail-inbox.tsx:336 | SCN-007 | proposed |
@@ -54,29 +54,29 @@ Locations name the source function while the integration branch is being formatt
 | navigation.inbox.connect | Connect Gmail | app/components/inbox/AccountSidebar.tsx | SCN-002 | proposed |
 | navigation.inbox.add_address | Add address | app/components/inbox/AccountSidebar.tsx | SCN-032 | proposed |
 | action.desktop.create_server | Create my server on Cloudflare | desktop/setup.html | SCN-030 | proposed |
-| action.domains.receive | Receive mail here | app/components/domains/DomainCard.tsx | SCN-031 | proposed |
-| heading.domains.accounts | Cloudflare accounts | app/components/domains/Accounts.tsx:20 | SCN-045 | proposed |
-| action.domains.account_hide | Hide | app/components/domains/Accounts.tsx:56 | SCN-045 | proposed |
-| action.domains.account_show | Show | app/components/domains/Accounts.tsx:56 | SCN-045 | proposed |
-| action.domains.account_default | Default | app/components/domains/Accounts.tsx:57 | SCN-045 | proposed |
-| state.domains.account_has_mail | Has mail | app/components/domains/Accounts.tsx:13 | SCN-045 | proposed |
-| state.domains.account_no_mail | No mail yet | app/components/domains/Accounts.tsx:13 | SCN-045 | proposed |
-| state.domains.account_mail_unknown | Mail not checked | app/components/domains/Accounts.tsx:13 | SCN-045 | proposed |
-| state.domains.account_server | your server's account | app/components/domains/Accounts.tsx:50 | SCN-045 | proposed |
-| action.domains.account_connect | Connect another account | app/components/domains/Accounts.tsx:82 | SCN-046 | proposed |
-| action.domains.account_remove | Remove… | app/components/domains/Accounts.tsx:59 | SCN-046 | proposed |
-| action.domains.account_keep | Keep | app/components/domains/Accounts.tsx:72 | SCN-046 | proposed |
-| state.domains.account_via_own | its own token | app/components/domains/Accounts.tsx:15 | SCN-045 | proposed |
-| state.domains.account_via_server | your server's token | app/components/domains/Accounts.tsx:15 | SCN-045 | proposed |
-| help.domains.account_token_paste | Paste the token here. Your server keeps it as its own secret; it is not shown again. | app/components/domains/Accounts.tsx:144 | SCN-046 | proposed |
-| field.domains.account_token | Token | app/components/domains/Accounts.tsx:4 | SCN-046 | proposed |
-| action.domains.account_connect_submit | Connect | app/components/domains/Accounts.tsx:24 | SCN-046 | proposed |
+| action.domains.receive | Receive mail here | app/components/settings/sections/DomainsSection.tsx | SCN-031 | proposed |
+| heading.domains.accounts | Cloudflare accounts | app/components/settings/sections/AccountsSection.tsx | SCN-045 | proposed |
+| action.domains.account_hide | Hide | app/components/settings/sections/AccountsSection.tsx | SCN-045 | proposed |
+| action.domains.account_show | Show | app/components/settings/sections/AccountsSection.tsx | SCN-045 | proposed |
+| action.domains.account_default | Default | app/components/settings/sections/AccountsSection.tsx | SCN-045 | proposed |
+| state.domains.account_has_mail | Has mail | app/components/settings/sections/AccountsSection.tsx | SCN-045 | proposed |
+| state.domains.account_no_mail | No mail yet | app/components/settings/sections/AccountsSection.tsx | SCN-045 | proposed |
+| state.domains.account_mail_unknown | Mail not checked | app/components/settings/sections/AccountsSection.tsx | SCN-045 | proposed |
+| state.domains.account_server | your server's account | app/components/settings/sections/AccountsSection.tsx | SCN-045 | proposed |
+| action.domains.account_connect | Connect account | app/components/settings/sections/AccountsSection.tsx | SCN-046 | proposed |
+| action.domains.account_remove | from your server? | app/components/settings/sections/AccountsSection.tsx | SCN-046 | proposed |
+| action.settings.cancel | Cancel | app/components/settings/ui.tsx | SCN-046 | proposed |
+| state.domains.account_via_own | its own token | app/components/settings/sections/AccountsSection.tsx | SCN-045 | proposed |
+| state.domains.account_via_server | your server's token | app/components/settings/sections/AccountsSection.tsx | SCN-045 | proposed |
+| help.domains.account_token_paste | Paste the token here. Your server keeps it as its own secret; it is not shown again. | app/components/settings/sections/AccountsSection.tsx | SCN-046 | proposed |
+| field.domains.account_token | Token | app/components/settings/sections/AccountsSection.tsx | SCN-046 | proposed |
+| action.domains.account_connect_submit | Connect | app/components/settings/sections/AccountsSection.tsx | SCN-046 | proposed |
 | step.domains.relay | Carry the mail from its account | workers/routing/domains.ts:205 | SCN-031 | proposed |
-| navigation.inbox.knowledge | Knowledge | app/routes/unified-inbox.tsx | SCN-034 | proposed |
-| action.knowledge.create | Create collection | app/routes/knowledge.tsx | SCN-034 | proposed |
-| label.agents.collections | Knowledge collections it may search | app/routes/agents.tsx | SCN-034 | proposed |
+| navigation.settings.knowledge | Knowledge | app/components/settings/paths.ts | SCN-034 | proposed |
+| action.knowledge.create | Create collection | app/components/settings/sections/KnowledgeSection.tsx | SCN-034 | proposed |
+| label.agents.collections | Knowledge collections it may search | app/components/settings/sections/AgentsSection.tsx | SCN-034 | proposed |
 | navigation.inbox.rules | Rules & history | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-016 | proposed |
-| navigation.inbox.manage | Manage accounts | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-003 | proposed |
+| navigation.inbox.settings | Settings | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-012 | proposed |
 | action.inbox.continue_draft | Continue draft | app/components/inbox/DraftsDialog.tsx | SCN-006 | proposed |
 | action.inbox.compose | Compose | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-006 | proposed |
 | action.inbox.search | Search | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-005 | proposed |
@@ -85,17 +85,17 @@ Locations name the source function while the integration branch is being formatt
 | label.inbox.cached_search | Search cached mail | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-005 | proposed |
 | state.inbox.partial | inboxes are unavailable; the rest of your mail is shown. | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-004 | proposed |
 | navigation.inbox.categories | CATEGORIES | app/components/inbox/CategorySidebar.tsx | SCN-036 | proposed |
-| action.categories.create | New category | app/routes/categories.tsx | SCN-036 | proposed |
-| action.categories.project | New project | app/routes/categories.tsx | SCN-037 | proposed |
-| label.categories.scope | Where to look | app/routes/categories.tsx | SCN-036 | proposed |
-| label.categories.description | What belongs here, in your words (optional) | app/routes/categories.tsx | SCN-036 | proposed |
-| label.categories.conditions | Plain conditions (optional, no model) | app/routes/categories.tsx | SCN-036 | proposed |
-| label.categories.promote | Also raise its messages to Important in Focus | app/routes/categories.tsx | SCN-038 | proposed |
-| action.categories.save | Save category | app/routes/categories.tsx | SCN-036 | proposed |
+| action.categories.create | New category | app/components/settings/sections/CategoriesSection.tsx | SCN-036 | proposed |
+| action.categories.project | New project | app/components/settings/sections/CategoriesSection.tsx | SCN-037 | proposed |
+| label.categories.scope | Where to look | app/components/settings/sections/CategoriesSection.tsx | SCN-036 | proposed |
+| label.categories.description | What belongs here, in your words (optional) | app/components/settings/sections/CategoriesSection.tsx | SCN-036 | proposed |
+| label.categories.conditions | Plain conditions (optional, no model) | app/components/settings/sections/CategoriesSection.tsx | SCN-036 | proposed |
+| label.categories.promote | Also raise its messages to Important in Focus | app/components/settings/sections/CategoriesSection.tsx | SCN-038 | proposed |
+| action.categories.save | Save category | app/components/settings/sections/CategoriesSection.tsx | SCN-036 | proposed |
 | label.inbox.category_reason | Why: | app/components/inbox/TriagedList.tsx | SCN-036 | proposed |
-| label.agents.history_filter | Needs a look | app/routes/agents.tsx | SCN-024 | proposed |
-| action.agents.older | Show older | app/routes/agents.tsx | SCN-024 | proposed |
-| action.agents.reload_newest | Load the newest version | app/routes/agents.tsx | SCN-022 | proposed |
+| label.agents.history_filter | Needs a look | app/components/settings/sections/AgentsSection.tsx | SCN-024 | proposed |
+| action.agents.older | Show older | app/components/settings/sections/AgentsSection.tsx | SCN-024 | proposed |
+| action.agents.reload_newest | Load the newest version | app/components/settings/sections/AgentsSection.tsx | SCN-022 | proposed |
 | navigation.inbox.spam | Spam | app/routes/unified-inbox.tsx | SCN-039 | proposed |
 | action.message.report_spam | Report spam | app/components/inbox/MessageActions.tsx | SCN-040 | proposed |
 | action.message.not_spam | Not spam | app/components/inbox/MessageActions.tsx | SCN-040 | proposed |
@@ -103,11 +103,11 @@ Locations name the source function while the integration branch is being formatt
 | state.spam.banner | Mail in Spam is deleted after 30 days. Nothing here reaches an agent, a rule or a category. | app/routes/unified-inbox.tsx | SCN-039 | proposed |
 | action.spam.empty | Delete all now… | app/routes/unified-inbox.tsx | SCN-039 | proposed |
 | state.spam.empty_title | No spam | app/routes/unified-inbox.tsx | SCN-039 | proposed |
-| navigation.spam.rules | Spam rules | app/routes/spam.tsx | SCN-041 | proposed |
-| label.spam.always_senders | Always spam: senders | app/routes/spam.tsx | SCN-041 | proposed |
-| label.spam.never_senders | Never spam: senders | app/routes/spam.tsx | SCN-041 | proposed |
-| label.settings.signature | Add a signature to mail sent from | app/routes/settings.tsx | SCN-012 | proposed |
-| action.address.change_copy | Change | app/components/domains/AddressRow.tsx | SCN-032 | proposed |
+| navigation.spam.rules | Spam rules | app/components/settings/sections/SpamSection.tsx | SCN-041 | proposed |
+| label.spam.always_senders | Always spam: senders | app/components/settings/sections/SpamSection.tsx | SCN-041 | proposed |
+| label.spam.never_senders | Never spam: senders | app/components/settings/sections/SpamSection.tsx | SCN-041 | proposed |
+| label.settings.signature | Add a signature to mail sent from | app/components/settings/sections/SignatureForm.tsx | SCN-012 | proposed |
+| action.address.copy_save | Forward a copy to | app/components/settings/sections/AddressesSection.tsx | SCN-032 | proposed |
 | label.sidebar.with_mail | With mail | app/components/inbox/AccountSidebar.tsx | SCN-042 | proposed |
 | action.sidebar.hide_empty | Hide them… | app/components/inbox/AccountSidebar.tsx | SCN-042 | proposed |
 | label.sidebar.hidden | Hidden | app/components/inbox/AccountSidebar.tsx | SCN-042 | proposed |
@@ -164,7 +164,7 @@ Locations name the source function while the integration branch is being formatt
 
 ## Copy follow-up
 
-The Gmail helper now qualifies local persistence: “Drafts are saved on this device when storage is available.” (`app/routes/gmail-inbox.tsx:302`). Storage-failure messaging remains explicit (`app/routes/gmail-inbox.tsx:61`); no runtime restoration receipt is implied. The account page's cloud-continuity sentence is configured-product intent (`app/routes/fabric-accounts.tsx:43`), not measured uptime. This documentation pass records the source correction without changing product code.
+The Gmail helper now qualifies local persistence: “Drafts are saved on this device when storage is available.” (`app/routes/gmail-inbox.tsx:302`). Storage-failure messaging remains explicit (`app/routes/gmail-inbox.tsx:61`); no runtime restoration receipt is implied. The account page's cloud-continuity sentence is configured-product intent (`app/components/settings/sections/AccountsSection.tsx`), not measured uptime. This documentation pass records the source correction without changing product code.
 
 Humanization: on; own advisory read of the registered labels and state messages. No source copy rewritten by this documentation pass (0% changed). Checked preservation claims, recipient-delivery uncertainty, text-only forwarding and recovery meaning; this was not an exhaustive legacy-copy audit.
 
@@ -240,37 +240,57 @@ Humanization: on; own advisory read of the registered labels and state messages.
 | state.mailbox.folder_create_failed | Couldn't create the folder. | app/queries/folders.ts | SCN-011 | proposed |
 | state.load.message_failed | Couldn't open this message | app/components/EmailPanel.tsx | SCN-011 | proposed |
 | state.load.search_failed | Search failed | app/routes/search-results.tsx | SCN-005 | proposed |
-| state.load.settings_failed | Couldn't load settings | app/routes/settings.tsx | SCN-012 | proposed |
-| state.load.mailboxes_failed | Couldn't load your mailboxes | app/routes/home.tsx | SCN-002 | proposed |
+| state.load.failed | could not load. | app/components/settings/ui.tsx | SCN-012 | proposed |
 | state.load.not_found | It may have been deleted or moved. | app/lib/load-error.ts | SCN-011 | proposed |
 | action.load.retry | Retry | app/components/LoadError.tsx | SCN-011 | proposed |
-| state.mailboxes.autocreate_failed | One configured mailbox could not be created. | app/routes/home.tsx | SCN-002 | proposed |
-| state.account.checking | Checking Gmail setup… | app/routes/fabric-accounts.tsx | SCN-002 | proposed |
-| action.account.disconnect_arm | Disconnect… | app/routes/fabric-accounts.tsx | SCN-003 | proposed |
-| action.account.keep | Keep | app/routes/fabric-accounts.tsx | SCN-003 | proposed |
+| state.addresses.autocreate_failed | configured addresses could not be created | app/components/settings/sections/ConfiguredAddresses.tsx | SCN-002 | proposed |
+| state.account.checking | Checking Gmail setup… | app/components/settings/sections/AccountsSection.tsx | SCN-002 | proposed |
+| action.account.disconnect | Disconnect | app/components/settings/sections/AccountsSection.tsx | SCN-003 | proposed |
 | label.agent.image_link | Image from | app/components/AgentMarkdown.tsx | SCN-013 | proposed |
 | state.mailbox.update_failed | Couldn't update the message. | app/lib/mutation-errors.ts | SCN-011 | proposed |
 | state.mailbox.folder_rename_failed | Couldn't rename the folder. | app/queries/folders.ts | SCN-011 | proposed |
 | state.mailbox.folder_delete_failed | Couldn't delete the folder. | app/queries/folders.ts | SCN-011 | proposed |
 | title.mailbox.trash_empty | Trash is empty | app/lib/delete-policy.ts | SCN-011 | proposed |
 | state.load.refresh_failed | Couldn't refresh these results. | app/routes/search-results.tsx | SCN-005 | proposed |
-| state.load.mailboxes_unknown | Couldn't check which mailboxes exist. | app/routes/home.tsx | SCN-002 | proposed |
 | state.request.timeout | The request timed out. Try again. | app/lib/load-error.ts | SCN-011 | proposed |
 | state.request.offline | Check your connection and try again. | app/lib/load-error.ts | SCN-011 | proposed |
 | state.request.server | The server had a problem. Try again in a moment. | app/lib/load-error.ts | SCN-011 | proposed |
 | state.request.forbidden | You don't have access to this. Sign in again and retry. | app/lib/load-error.ts | SCN-011 | proposed |
-| navigation.agent_access | Agent access | app/routes/agent-access.tsx | SCN-043 | proposed |
-| state.agent_access.intro | Let an AI agent you run elsewhere, such as Claude Code, Cursor or your own, work with Fabric Inbox through its agent protocol (MCP). | app/routes/agent-access.tsx | SCN-043 | proposed |
-| state.agent_access.not_reply_agents | These are not the reply agents that answer your addresses. | app/routes/agent-access.tsx | SCN-043 | proposed |
-| action.agent_key.make | Make key | app/routes/agent-access.tsx | SCN-043 | proposed |
-| state.agent_key.making | Making the key… | app/routes/agent-access.tsx | SCN-043 | proposed |
-| state.agent_key.secret_once | Copy the secret now: it is shown only once. | app/routes/agent-access.tsx | SCN-043 | proposed |
-| action.agent_key.saved | I saved it | app/routes/agent-access.tsx | SCN-043 | proposed |
-| label.agent_key.drafts_only | Drafts only | app/routes/agent-access.tsx | SCN-043 | proposed |
-| label.agent_key.can_send | Can send | app/routes/agent-access.tsx | SCN-043 | proposed |
-| action.agent_key.revoke_arm | Revoke… | app/routes/agent-access.tsx | SCN-044 | proposed |
-| action.agent_key.revoke | Revoke | app/routes/agent-access.tsx | SCN-044 | proposed |
-| state.agent_key.revoked | can no longer use Fabric Inbox. | app/routes/agent-access.tsx | SCN-044 | proposed |
-| title.agent_journal | What agents changed | app/routes/agent-access.tsx | SCN-044 | proposed |
-| state.agent_journal.empty | No agent has changed anything yet. | app/routes/agent-access.tsx | SCN-044 | proposed |
-| state.agent_key.empty | No agent has a key yet. | app/routes/agent-access.tsx | SCN-043 | proposed |
+| navigation.agent_access | Agent access | app/components/settings/sections/AgentAccessSection.tsx | SCN-043 | proposed |
+| state.agent_access.intro | Let an AI agent you run elsewhere work with Fabric Inbox | app/components/settings/sections/AgentAccessSection.tsx | SCN-043 | proposed |
+| state.agent_access.not_reply_agents | These are not the reply agents that answer your addresses. | app/components/settings/sections/AgentAccessSection.tsx | SCN-043 | proposed |
+| action.agent_key.make | Make key | app/components/settings/sections/AgentAccessSection.tsx | SCN-043 | proposed |
+| state.agent_key.making | Making the key… | app/components/settings/sections/AgentAccessSection.tsx | SCN-043 | proposed |
+| state.agent_key.secret_once | Copy the secret now: it is shown only once. | app/components/settings/sections/AgentAccessSection.tsx | SCN-043 | proposed |
+| action.agent_key.saved | I saved it | app/components/settings/sections/AgentAccessSection.tsx | SCN-043 | proposed |
+| label.agent_key.drafts_only | Drafts only | app/components/settings/sections/AgentAccessSection.tsx | SCN-043 | proposed |
+| label.agent_key.can_send | Can send | app/components/settings/sections/AgentAccessSection.tsx | SCN-043 | proposed |
+| action.agent_key.revoke_arm | Revoke… | app/components/settings/sections/AgentAccessSection.tsx | SCN-044 | proposed |
+| action.agent_key.revoke | Revoke | app/components/settings/sections/AgentAccessSection.tsx | SCN-044 | proposed |
+| state.agent_key.revoked | can no longer use Fabric Inbox. | app/components/settings/sections/AgentAccessSection.tsx | SCN-044 | proposed |
+| title.agent_journal | What agents changed | app/components/settings/sections/AgentAccessSection.tsx | SCN-044 | proposed |
+| state.agent_journal.empty | No agent has changed anything yet. | app/components/settings/sections/AgentAccessSection.tsx | SCN-044 | proposed |
+| state.agent_key.empty | No agent has a key yet. | app/components/settings/sections/AgentAccessSection.tsx | SCN-043 | proposed |
+
+## Settings (0.11)
+
+One screen with a section list, a master list and a panel (SCR-02). Destructive actions sit behind the ⋯ menu and confirm in one shared dialog.
+
+| Key | Text (primary) | Location | Scenario | Status |
+|---|---|---|---|---|
+| navigation.settings.back | Back to mail | app/routes/settings.tsx | SCN-012 | proposed |
+| navigation.settings.addresses | Addresses | app/components/settings/paths.ts | SCN-032 | proposed |
+| navigation.settings.domains | Domains | app/components/settings/paths.ts | SCN-031 | proposed |
+| navigation.settings.accounts | Accounts | app/components/settings/paths.ts | SCN-002 | proposed |
+| navigation.settings.destinations | Forwarding destinations | app/components/settings/paths.ts | SCN-033 | proposed |
+| navigation.settings.app | App | app/components/settings/paths.ts | SCN-012 | proposed |
+| action.settings.more | More actions for | app/components/settings/sections/AddressesSection.tsx | SCN-032 | proposed |
+| action.settings.discard | Discard changes | app/components/settings/ui.tsx | SCN-012 | proposed |
+| action.settings.keep_editing | Keep editing | app/components/settings/ui.tsx | SCN-012 | proposed |
+| state.settings.choose_address | Choose an address | app/components/settings/sections/AddressesSection.tsx | SCN-032 | proposed |
+| action.settings.retry | Retry | app/components/settings/ui.tsx | SCN-012 | proposed |
+| action.address.remove | Remove and delete mail | app/components/settings/sections/AddressesSection.tsx | SCN-032 | proposed |
+| label.address.who_answers | Who answers | app/components/settings/sections/AddressesSection.tsx | SCN-023 | proposed |
+| action.settings.connect_account | Connect an account | app/components/settings/sections/AccountsSection.tsx | SCN-002 | proposed |
+| action.desktop.settings | Settings… | desktop/main.cjs | SCN-012 | proposed |
+| action.desktop.server_address | Server address… | desktop/main.cjs | SCN-001 | proposed |

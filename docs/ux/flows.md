@@ -34,7 +34,7 @@ Forwarding remains text-only, search covers cached data, and the reader displays
 
 ```mermaid
 flowchart TD
-  A["SCR-02 accounts"] --> B{"Authorized?"}
+  A["SCR-02 Settings → Accounts"] --> B{"Authorized?"}
   B -->|yes| C["SCR-03 inbox"]
   B -->|no or unresolved| D["Cancelled, denied or unavailable: stay in SCR-02 and reconnect or return"]
   D -->|recover or return| A
@@ -210,7 +210,7 @@ flowchart TD
   W -->|address entered| B
   A --> B{"Session and network ready?"}
   B -->|yes| C["SCR-03 inbox"]
-  B -->|no or unresolved| D["Offline: labeled cache; expired: sign in; settings failure: SCR-06 retains edits"]
+  B -->|no or unresolved| D["Offline: labeled cache; expired: sign in; settings failure: SCR-02 retains edits"]
   D -->|recover or return| A
 ```
 
@@ -222,7 +222,6 @@ flowchart TD
 | SCR-02 | loading, empty, error, success |
 | SCR-03 | loading, empty, error, success |
 | SCR-05 | loading, empty, error, success |
-| SCR-06 | loading, empty, error, success |
 | SCR-11 | loading, empty, error, success |
 | SCR-15 | loading, empty, error, success |
 
@@ -231,22 +230,22 @@ flowchart TD
 ### FLW-08: Put an agent on a project address
 - **Traces:** ST-008; RE-001
 - **Goal:** A project address receives mail and its agent answers within policy.
-- **Entry points:** Project addresses navigation, or Create address from an unknown recipient.
+- **Entry points:** Settings → Addresses or Domains (the sidebar's Settings, + or Add address), or Add this address from recent mail to a missing address.
 - **Success exit:** Address verified, agent assigned, first message handled and visible in history.
 - **Task analysis:** Choose domain and address; verify routing; choose or create an agent; set its policy and tools; send a test message; watch the first run.
 - **Flow:**
 
 ```mermaid
 flowchart TD
-  Z["SCR-09 Receive mail here on a domain"] --> Y{"Another provider's MX?"}
-  Y -->|yes| X["SCR-09 confirm replacing"]
+  Z["SCR-02 Domains: Receive mail here"] --> Y{"Another provider's MX?"}
+  Y -->|yes| X["SCR-02 confirm replacing"]
   X --> W["steps: routing, served, addresses with copies, rules, sending"]
   Y -->|no| W
   W --> A
-  A["SCR-09 add address"] --> B{"Routing verified?"}
-  B -->|no or unknown| C["SCR-09 routing fix step; address kept"]
+  A["SCR-02 Addresses: Add address"] --> B{"Routing verified?"}
+  B -->|no or unknown| C["SCR-02 Routing & test: Send it here; address kept"]
   C -->|recheck| B
-  B -->|yes| D["SCR-09 choose agent or Off"]
+  B -->|yes| D["SCR-02 Who answers: an agent or Off"]
   D -->|create new| E["SCR-10 agent editor: instructions, collections, tools, policy"]
   K["SCR-12 knowledge collection"] -->|tick on the agent| E
   E --> D
@@ -260,7 +259,7 @@ flowchart TD
 
 | Screen | States used here |
 |---|---|
-| SCR-09 | loading, empty, error, success |
+| SCR-02 | loading, empty, error, success |
 | SCR-10 | loading, empty, error, success |
 | SCR-08 | loading, empty, error, success |
 | SCR-11 | loading, empty, error, success |

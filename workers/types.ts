@@ -18,7 +18,7 @@ export interface Env extends Cloudflare.Env {
 	SPAM_DAILY_LIMIT?: string;
 	/** Workers AI model for address agents and the chat; defaults to @cf/moonshotai/kimi-k2.5. */
 	AGENT_MODEL?: string;
-	/** Cloudflare API token for Domains & addresses (secret); permissions in workers/routing/cloudflare-api.ts. */
+	/** Cloudflare API token for Settings → Domains (secret); permissions in workers/routing/cloudflare-api.ts. */
 	CLOUDFLARE_API_TOKEN?: string;
 	/** Before 0.3: the same token under its old name; read when CLOUDFLARE_API_TOKEN is absent. */
 	CLOUDFLARE_EMAIL_ROUTING_TOKEN?: string;

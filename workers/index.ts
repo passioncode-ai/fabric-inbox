@@ -98,7 +98,7 @@ app.get("/api/v1/mailboxes", async (c) => {
 });
 
 // Mailboxes screen (MB-1): creating and removing go through the same operations as
-// Domains & addresses, so Cloudflare's rule and the catch-all are kept right.
+// Settings → Addresses, so Cloudflare's rule and the catch-all are kept right.
 app.post("/api/v1/mailboxes", async (c) => {
 	const parsed = CreateMailboxBody.safeParse(await c.req.json().catch(() => null));
 	if (!parsed.success) return c.json({ error: "Invalid mailbox: email and name are required" }, 400);

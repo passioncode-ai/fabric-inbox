@@ -9,7 +9,7 @@ import { effectiveCatchAll } from "../lib/address-ops";
 import { DomainManager, type ConnectResult, type Step } from "../routing/domains";
 
 /**
- * Domains & addresses (CF-2/CF-3, SCR-09). Behind the same Access and
+ * Settings → Domains (CF-2/CF-3, SCR-02). Behind the same Access and
  * same-origin boundary as every /api route. Without a Cloudflare token every
  * route answers what to create and where, and nothing else is claimed.
  */

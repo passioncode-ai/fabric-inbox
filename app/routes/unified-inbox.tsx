@@ -11,9 +11,6 @@ import {
   ArrowLeftIcon,
   ArrowBendUpLeftIcon,
   ArrowBendUpRightIcon,
-  AtIcon,
-  BooksIcon, PlugIcon,
-  RobotIcon,
   CaretRightIcon,
   EnvelopeIcon,
   GearSixIcon,
@@ -496,25 +493,9 @@ export default function UnifiedInbox() {
             <span>Rules & history</span>
             <CaretRightIcon size={14} />
           </button>
-          <Link className="fi-nav-item" to="/projects">
-            <AtIcon size={19} />
-            <span>Domains &amp; addresses</span>
-          </Link>
-          <Link className="fi-nav-item" to="/ai-agents">
-            <RobotIcon size={19} />
-            <span>Agents</span>
-          </Link>
-          <Link className="fi-nav-item" to="/knowledge">
-            <BooksIcon size={19} />
-            <span>Knowledge</span>
-          </Link>
-          <Link className="fi-nav-item" to="/agent-access">
-            <PlugIcon size={19} />
-            <span>Agent access</span>
-          </Link>
-          <Link className="fi-nav-item" to="/accounts">
+          <Link className="fi-nav-item" to="/settings">
             <GearSixIcon size={19} />
-            <span>Manage accounts</span>
+            <span>Settings</span>
           </Link>
           <div className="fi-theme-row">
             <a

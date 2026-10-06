@@ -68,7 +68,7 @@ The knowledge base the operator names as the single one is Fabric's project memo
 on 2026-09-29 it is a plan (MEM-P0…P7 undelivered). A collection's source is `manual` or
 `fabric` (project + scope), and `POST /api/knowledge/collections/:id/documents` with `prune: true`
 is the endpoint a Fabric memory sync is to call once MEM-P2 exposes search (board B-20).
-| Screens | `app/routes/agents.tsx` (`/ai-agents`), `app/routes/project-addresses.tsx` (`/projects`) | SCR-10, SCR-09 |
+| Screens | `app/components/settings/sections/AgentsSection.tsx` (`/settings/agents`), `app/components/settings/sections/AddressesSection.tsx` (`/settings/addresses`) | SCR-10, SCR-02 |
 
 The interactive chat agent (`workers/agent/index.ts (EmailAgent)`, `/agents/*` WebSocket) is a
 separate operator assistant; it no longer answers incoming mail.
@@ -97,7 +97,7 @@ one in the order shown.
 | The model | `workers/categories/store.ts` (`SPAM_CATEGORY` in `classify`, `spam_checks`, `spam_budget`) | a screened message is judged once, in the same call as its categories when it has any, else within `SPAM_DAILY_LIMIT`; spam moves with the model's reason and leaves every category; almost empty mail (`tooLittleToJudge`) is not judged |
 | Actions | `workers/routes/spam.ts`, `MailboxDO.markSpam/markNotSpam`, Gmail `setSpam` (SPAM label) | Report spam / Not spam put the sender (or domain) on the block or allow list in `config/spam.json`, written conditionally on its etag |
 | Retention | `MailboxDO.purgeSpam` on the mailbox's alarm | spam older than 30 days goes with its attachments; `/api/spam/empty` deletes it all now; Gmail keeps its own spam |
-| Screens | the Spam folder in the unified feed, `app/routes/spam.tsx` (SCR-14) | each row says why it is in Spam; Spam reads newest first with no triage marks |
+| Screens | the Spam folder in the unified feed, `app/components/settings/sections/SpamSection.tsx` (SCR-14) | each row says why it is in Spam; Spam reads newest first with no triage marks |
 
 A stranger's message waits in the agent queue for its spam check (`AgentRegistryDO.enqueue` with
 `holdMs`, 15 minutes at most); `CategoriesDO` releases it once the check has answered, whatever the
@@ -119,8 +119,8 @@ dropping it. Agents skip a message that is in Spam or Trash by the time its run 
 ## Addresses: one way to create and remove
 
 `workers/lib/address-ops.ts` (`createAddress`, `removeAddress`, `setForwardCopy`,
-`effectiveCatchAll`) is behind both Domains & addresses (`/api/project-addresses`) and the
-Mailboxes screen (`/api/v1/mailboxes`). Every check runs before Cloudflare is touched; a rule the
+`effectiveCatchAll`) is behind both Settings → Addresses (`/api/project-addresses`) and the legacy
+mailbox route (`/api/v1/mailboxes`, used for the addresses a deployment's `EMAIL_ADDRESSES` lists). Every check runs before Cloudflare is touched; a rule the
 call made is removed again when the mailbox cannot be saved; a zone the token cannot see gets its
 address with a warning; the catch-all in effect (the deployment's `UNKNOWN_ADDRESS_POLICY` wins
 over the stored choice) cannot be removed; what happens to the next message is read from
@@ -135,7 +135,7 @@ flowchart LR
   MB["MailboxDO / GmailAccountsDO journal"] -->|ingest account + event| CAT["CategoriesDO (workspace)"]
   CAT -->|conditions, then one call per message for every described category in scope| AI["Workers AI (CATEGORY_MODEL)"]
   CAT -->|verdicts| FEED["/api/inbox?category=…, chips, Raise to Important"]
-  UI["Categories /categories"] -->|/api/categories, /api/projects| CAT
+  UI["Settings → Categories /settings/categories"] -->|/api/categories, /api/projects| CAT
 ```
 
 | Piece | Where | What it guarantees |
@@ -145,7 +145,7 @@ flowchart LR
 | Store | `workers/categories/store.ts (CategoriesDO)` | projects, categories (a version per selection change), verdicts per (category, account, message), a queue drained by alarms (8 per pass, 4 at once, 5 attempts with backoff, then an error verdict), a daily model budget (`CATEGORY_DAILY_LIMIT`, default 500: the rest wait for the next UTC day), a backfill of the last 200 messages in scope on create or change |
 | Feed | `workers/routes/inbox.ts (readCategory, markCategories)` | a scope category reads the feed of its inboxes; a screened one pages its verdicts, hydrates the messages and forgets the ones that are gone; every row gets its category chips, and a Raise to Important category raises unread and read rows with "Category: X" |
 | API | `workers/routes/categories.ts` | `/api/categories` (with `accountIds` it covers, every inbox for the picker, limits), `/api/categories/:id`, `/:id/seen`, `/api/projects` (a project in use cannot be deleted) |
-| Screens | `app/routes/categories.tsx` (`/categories`), `app/components/inbox/CategorySidebar.tsx` | SCR-13; the sidebar section with counts (new since opened for screened, unread for scope) |
+| Screens | `app/components/settings/sections/CategoriesSection.tsx` (`/settings/categories`), `app/components/inbox/CategorySidebar.tsx` | SCR-13; the sidebar section with counts (new since opened for screened, unread for scope) |
 
 A message restored from Trash does not return to a described category until the category
 changes (board B-26).
@@ -158,7 +158,7 @@ flowchart LR
   DEP -->|R2, Zero Trust, one-time PIN, Access app, assets, Worker, workers.dev| CF["Cloudflare API"]
   DEP -->|secret CLOUDFLARE_API_TOKEN| W["Worker"]
   W -->|DomainManager: zones, Email Routing, rules, catch-all, sending, DNS, destinations| CF
-  UI2["Domains & addresses /projects"] -->|/api/domains, /api/project-addresses| W
+  UI2["Settings → Domains /settings/domains"] -->|/api/domains, /api/project-addresses| W
 ```
 
 - `DomainManager.connect` is idempotent and ordered so no message is refused mid-change: routing on
@@ -284,12 +284,17 @@ read with a default where it is missing, never assumed present.
 | `shared/mail/` | contracts shared by Worker and client (inbox, triage, send, attachments) |
 | `app/routes/unified-inbox.tsx` | the main workbench |
 | `app/components/inbox/` | list, composer, drafts, message actions, sidebar grouped by domain |
-| `app/routes/knowledge.tsx` | Knowledge: collections, documents, upload, try a search |
-| `app/components/domains/` | Domains & addresses: connect, domain cards, addresses, destinations, step lists |
+| `app/components/settings/sections/KnowledgeSection.tsx` | Knowledge: collections, documents, upload, try a search |
+| `app/routes/settings.tsx` | Settings (SCR-02): the section list and the section shown, at `/settings/:section/:id?/:tab?` |
+| `app/routes/settings-redirect.tsx` | the older page addresses (`/projects`, `/accounts`, `/mailboxes`, `/ai-agents`, `/knowledge`, `/categories`, `/spam`, `/agent-access`, `/setup`, `/mailbox/:id/settings`), each a redirect into its section (`legacyTarget` in `app/components/settings/paths.ts`) |
+| `app/components/settings/` | the parts every section shares (`ui.tsx`: list, panel, ⋯ menu, one confirmation dialog, per-row work and results, unsaved-change guard; `list-model.ts`: stable groups, search, arrow keys; `paths.ts`) and one file per section under `sections/` |
+| `app/components/domains/StepList.tsx` | the step list a domain action leaves |
 | `desktop/` | Electron host, first run, creating the server (`cloudflare-deploy.cjs`), profile hygiene (`profile.cjs`), packaging (`dist-mac.mjs`, `package.mjs`, `mas-package.mjs`) with hardened fuses and purpose strings (`hardening.mjs`) and release retention (`release-retention.mjs`) |
 | `scripts/server-bundle.mjs` | the server the app carries |
 | `deployments/<name>/` | one deployment's own values, setup and ops receipts; local only (git-ignored), never shipped; the guide and `*.example.json` shapes are `deployments/README.md` |
 | `scripts/deployment-setup.ts` | builds `deployments/<name>/setup.json` from a read-only Email Routing inventory with the server's own conversion |
+
+`scripts/settings-scroll-check.mjs` drives a running app over the DevTools protocol and checks that choosing a row in a long Settings list moves neither the page nor the list, at 1360 px and 800 px.
 
 ## Boundaries worth knowing
 

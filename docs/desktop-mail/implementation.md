@@ -13,7 +13,7 @@ This report describes an initial desktop/cloud implementation, not completion of
 | Gmail | [Gmail receipt](../../.task-pipeline/build/fabric-inbox/gmail-report.md), integrated commit `5930de0` | OAuth/refresh/history/send/draft code tested with fake upstream; no real grant |
 | Desktop | [desktop receipt](../../.task-pipeline/build/fabric-inbox/desktop-report.md), integrated commit `bda7683` | Remote web host, not the originally proposed bundled offline renderer |
 | Automation | `workers/automation/index.ts:65`, `workers/automation/engine.ts:20`, `tests/automation-integration.test.ts` | Event receipt commits selected rule snapshots atomically; approval bound to resolved proposal/message; interrupted effects become unknown |
-| UI | `app/routes/fabric-accounts.tsx`, `app/routes/gmail-inbox.tsx`, `app/routes/automation.tsx`, `app/routes.ts` | Accounts/per-account reading, rules/history; no combined all-account list |
+| UI | `app/components/settings/sections/AccountsSection.tsx`, `app/routes/gmail-inbox.tsx`, `app/routes/automation.tsx`, `app/routes.ts` | Accounts/per-account reading, rules/history; no combined all-account list |
 | Sender recovery | `app/services/api.ts:88`, `app/hooks/useComposeForm.ts:184`, `app/routes/gmail-inbox.tsx:41` | Cloudflare key per compose attempt; Gmail draft/key persists locally. No full Cloudflare offline draft recovery |
 
 ## Immutable source snapshot

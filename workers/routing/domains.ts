@@ -11,7 +11,7 @@ import {
 } from "../lib/mailbox-store";
 
 /**
- * Domains & addresses (CF-2, SCR-09, MA-4): what each zone of the connected
+ * Settings → Domains (CF-2, SCR-02, MA-4): what each zone of the connected
  * Cloudflare accounts does with mail, and the idempotent steps that move a
  * domain's mail to this server and back. Every zone is worked on with the token
  * of its own account; a zone outside the server's account sends its mail to the
@@ -69,7 +69,7 @@ const domainOf = (email: string) => email.slice(email.lastIndexOf("@") + 1);
 const errorText = (e: unknown) => (e instanceof CloudflareApiError ? e.message : `Unexpected error: ${(e as Error).message}`);
 
 export interface AccountView extends Account {
-  /** Shown on Domains & addresses: the operator's choice, else the server's account, else having mail. */
+  /** Shown on Settings → Domains: the operator's choice, else the server's account, else having mail. */
   shown: boolean;
   choice: Choice | null;
   /** null when it could not be read (then the account counts as having mail: showing is harmless). */

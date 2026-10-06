@@ -6,7 +6,7 @@ import { allowedAddresses, allServedDomains, createMailbox, deleteMailbox, setti
 
 /**
  * The one way an address is created or removed (SCN-021, SCN-032, MB-1), used by
- * Domains & addresses and by the Mailboxes screen alike. Every check runs before
+ * Settings → Addresses and by the agent protocol alike. Every check runs before
  * Cloudflare is touched; a rule this call created is taken away again when the
  * mailbox cannot be made; a domain's catch-all is never removed while it is one.
  */
@@ -39,7 +39,7 @@ export async function createAddress(env: Env, input: CreateAddressInput, agentPr
   const email = input.email.trim().toLowerCase();
   const domain = domainOf(email);
   const served = await allServedDomains(env);
-  if (!served.includes(domain)) return { status: 400, body: { error: `${domain} is not served here; receive its mail here first (Domains & addresses)` } };
+  if (!served.includes(domain)) return { status: 400, body: { error: `${domain} is not served here; receive its mail here first (Settings → Domains)` } };
   if (await env.BUCKET.head(settingsKey(email))) return { status: 409, body: { error: "This address already exists", email } };
   if (agentProblem) return { status: 400, body: { error: agentProblem } };
   const allowed = allowedAddresses(env);
