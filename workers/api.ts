@@ -16,6 +16,7 @@ import { knowledgeRouter } from "./routes/knowledge";
 import { categoriesRouter } from "./routes/categories";
 import { spamRouter } from "./routes/spam";
 import { agentKeysRouter } from "./routes/agent-keys";
+import { gmailSetupRouter } from "./routes/gmail-setup";
 import type { Env } from "./types";
 import { BUILD_HEADER, BUILD_ID } from "../shared/build";
 
@@ -36,4 +37,5 @@ api.route("/", knowledgeRouter);
 api.route("/", categoriesRouter);
 api.route("/", spamRouter);
 api.route("/", agentKeysRouter);
+api.route("/", gmailSetupRouter);
 api.route("/", mailboxApi);

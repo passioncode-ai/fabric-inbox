@@ -217,7 +217,7 @@ test("saved access the server's key cannot open asks for a reconnect, with its r
 test("a reconnect records when access was given and Google's end date, and clears the old reason", async () => {
   const { service, store } = await fixture(async (input) =>
     String(input).includes("/token")
-      ? json({ access_token: "a2", refresh_token: "r2", expires_in: 3600, refresh_token_expires_in: 604_799, scope: "https://www.googleapis.com/auth/gmail.modify" })
+      ? json({ access_token: "a2", refresh_token: "refresh-token-fixture-two", expires_in: 3600, refresh_token_expires_in: 604_799, scope: "https://www.googleapis.com/auth/gmail.modify" })
       : json({ emailAddress: "a@example.invalid", historyId: "10" }),
   { status: "reconnect_required", error: "reconnect_required", reason: "testing_expiry" });
   const flow = await service.connect();
@@ -228,7 +228,7 @@ test("a reconnect records when access was given and Google's end date, and clear
   assert.equal(account.reason, undefined);
   assert.ok(account.connectedAt! >= before);
   assert.ok(account.accessUntil! > Date.now() + 6 * DAY, "Google's end date is kept so the app can warn about it");
-  assert.ok(!JSON.stringify(await store.get("account:a")).includes("r2"), "the refresh token stays sealed");
+  assert.ok(!JSON.stringify(await store.get("account:a")).includes("refresh-token-fixture-two"), "the refresh token stays sealed");
 });
 
 // ── The credential envelope ─────────────────────────────────────────────────────
