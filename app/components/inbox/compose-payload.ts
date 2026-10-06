@@ -5,6 +5,7 @@ import {
 } from "./attachment-store";
 import { recipientAddresses } from "./send-state";
 import type { Draft } from "./draft-store";
+import { msg } from "../../../shared/i18n";
 
 export function missingOriginals(draft: Draft) {
   // An original is included while its bytes wait here or once they are on the server.
@@ -19,27 +20,27 @@ export function appendAttachments(
 ): Draft {
   if (!current || current.id !== draftId || current.locked)
     throw new Error(
-      "The draft changed while files were loading. Open the original draft and choose the files again.",
+      msg("The draft changed while files were loading. Open the original draft and choose the files again."),
     );
   return { ...current, attachments: [...(current.attachments ?? []), ...refs] };
 }
 export async function prepareMessage(draft: Draft, storage: AttachmentStorage) {
   if (draft.pendingAttachments?.length)
     throw new Error(
-      "Files are not ready. Wait for loading to finish, or remove pending files and add them again.",
+      msg("Files are not ready. Wait for loading to finish, or remove pending files and add them again."),
     );
   const to = recipientAddresses(draft.to);
   if (/[\r\n]/.test((draft.cc ?? "") + (draft.bcc ?? "")))
-    throw new Error("Recipients cannot contain line breaks.");
+    throw new Error(msg("Recipients cannot contain line breaks."));
   const cc = draft.cc?.trim() ? recipientAddresses(draft.cc) : [];
   const bcc = draft.bcc?.trim() ? recipientAddresses(draft.bcc) : [];
   if (draft.mode === "forward" && !draft.forwardSource && !draft.locked)
     throw new Error(
-      "Original attachment information is unavailable for this saved draft. Open the original message and start a new forward.",
+      msg("Original attachment information is unavailable for this saved draft. Open the original message and start a new forward."),
     );
   if (missingOriginals(draft).length)
     throw new Error(
-      "Include all original attachments before forwarding. If a file cannot be retrieved, keep this draft and try again.",
+      msg("Include all original attachments before forwarding. If a file cannot be retrieved, keep this draft and try again."),
     );
   const attachments = await loadAttachments(
     storage,
@@ -77,7 +78,7 @@ export function finishAttachments(
 ): Draft {
   if (!current || current.id !== draftId || current.locked)
     throw new Error(
-      "The draft changed while files were loading. Open the original draft to check its files.",
+      msg("The draft changed while files were loading. Open the original draft to check its files."),
     );
   return {
     ...current,

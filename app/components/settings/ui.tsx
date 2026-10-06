@@ -7,7 +7,7 @@ import {
   type KeyboardEvent, type ReactNode, type RefObject,
 } from "react";
 import { Link, useBlocker, useNavigate } from "react-router";
-import { useT } from "~/lib/i18n";
+import { useT } from "../../lib/i18n";
 import { LIST_KEYS, nextIndex, type ListEntry, type ListGroup, type ListKey } from "./list-model";
 import { sectionInfo, type SectionId } from "./paths";
 import { msg } from "../../../shared/i18n";

@@ -1,3 +1,5 @@
+/** @jsxRuntime automatic @jsxImportSource react */
+// ^ pins the automatic JSX runtime so the tests (tsx) render the provider as the app does.
 /**
  * The interface language in React (shared/i18n, L10N-01…06).
  *

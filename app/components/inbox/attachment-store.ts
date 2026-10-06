@@ -4,6 +4,7 @@ import {
   validateAttachments,
   type MailAttachment,
 } from "../../../shared/mail/attachments";
+import { msg } from "../../../shared/i18n";
 
 export type AttachmentRef = Omit<MailAttachment, "content"> & {
   id: string;
@@ -20,13 +21,13 @@ export interface AttachmentStorage {
 export class AttachmentCaptureError extends Error {
   constructor(public refs: AttachmentRef[]) {
     super(
-      "Some files could not be saved on this device. Remove those files and add them again before sending.",
+      msg("Some files could not be saved on this device. Remove those files and add them again before sending."),
     );
   }
 }
 const invalid = () =>
   new Error(
-    "This attachment has an invalid name or file type. Choose another file.",
+    msg("This attachment has an invalid name or file type. Choose another file."),
   );
 export function attachmentRefs(
   value: unknown,
@@ -35,7 +36,7 @@ export function attachmentRefs(
   if (!Array.isArray(value)) throw invalid();
   if (value.length > MAX_ATTACHMENTS)
     throw new Error(
-      "A message can contain up to 10 files. Remove a file before adding another.",
+      msg("A message can contain up to 10 files. Remove a file before adding another."),
     );
   const ids = new Set<string>();
   let total = 0;
@@ -57,7 +58,7 @@ export function attachmentRefs(
     total += item.size;
     if (total > MAX_ATTACHMENT_BYTES)
       throw new Error(
-        "Attachments exceed the 5 MiB total limit. Remove a file or choose a smaller one.",
+        msg("Attachments exceed the 5 MiB total limit. Remove a file or choose a smaller one."),
       );
     let checked: MailAttachment;
     try {
@@ -108,7 +109,7 @@ export function browserAttachmentStorage(): AttachmentStorage {
           blocked = true;
           reject(
             new Error(
-              "Attachment storage is blocked. Close other Fabric Inbox windows and retry.",
+              msg("Attachment storage is blocked. Close other Fabric Inbox windows and retry."),
             ),
           );
         };
@@ -130,7 +131,7 @@ export function browserAttachmentStorage(): AttachmentStorage {
       tx.oncomplete = () => resolve(request.result);
       tx.onerror = () => reject(tx.error ?? request.error);
       tx.onabort = () =>
-        reject(tx.error ?? new Error("Attachment could not be saved."));
+        reject(tx.error ?? new Error(msg("Attachment could not be saved.")));
     });
   }
   return {
@@ -177,7 +178,7 @@ export async function captureFiles(
   // A remounted composer sees durable pending IDs and cannot send around this job.
   if (lifecycle && !(await lifecycle.stage(refs)))
     throw new Error(
-      "File selection could not be saved. Keep this window open before sending.",
+      msg("File selection could not be saved. Keep this window open before sending."),
     );
   try {
     for (let i = 0; i < files.length; i++) {
@@ -193,7 +194,7 @@ export async function captureFiles(
   }
   if (lifecycle && !(await lifecycle.complete(refs.map((ref) => ref.id))))
     throw new Error(
-      "Files were saved, but their ready state could not be saved. Keep this draft open before sending.",
+      msg("Files were saved, but their ready state could not be saved. Keep this draft open before sending."),
     );
   return refs;
 }
@@ -214,7 +215,7 @@ export async function loadAttachments(
       record.bytes.byteLength !== ref.size
     )
       throw new Error(
-        `Attachment “${ref.filename}” is unavailable on this device. For an editable draft, remove it and add the file again. A locked attempt must keep its saved files.`,
+        msg("Attachment “{filename}” is unavailable on this device. For an editable draft, remove it and add the file again. A locked attempt must keep its saved files.", { filename: ref.filename }),
       );
     const { id: _, draftId: __, size: ___, sourceId: ____, ...metadata } = ref;
     files.push({ ...metadata, content: base64(record.bytes) });

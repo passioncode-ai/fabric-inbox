@@ -14,6 +14,7 @@ import { loadAttachments, type AttachmentStorage } from "./attachment-store";
 import type { Draft, ServerFile } from "./draft-store";
 import { rawAccount } from "./model";
 import { recipientAddresses } from "./send-state";
+import { msg } from "../../../shared/i18n";
 
 /** The app's API as the sync needs it (`fabric` in the app, a fake in tests). */
 export type Request = <T>(url: string, body?: unknown, method?: string) => Promise<T>;
@@ -29,7 +30,7 @@ const provider = (accountId: string) => (accountId.startsWith("gmail:") ? "gmail
   : accountId.startsWith("outlook:") ? "outlook" : accountId.startsWith("cloudflare:") ? "cloudflare" : null);
 const remote = (accountId: string) => { const p = provider(accountId); return p === "gmail" || p === "imap" || p === "outlook"; };
 /** Who keeps a remote account's drafts, in a sentence. */
-const keeper = (accountId: string) => (provider(accountId) === "gmail" ? "Gmail" : provider(accountId) === "outlook" ? "Outlook" : "Your mail server");
+const keeper = (accountId: string) => (provider(accountId) === "gmail" ? "Gmail" : provider(accountId) === "outlook" ? "Outlook" : msg("Your mail server"));
 const cfBox = (accountId: string) => `/api/v1/mailboxes/${encodeURIComponent(rawAccount(accountId))}`;
 const gmailBase = (accountId: string) => `/api/accounts/${encodeURIComponent(rawAccount(accountId))}`;
 const list = (header: string | undefined) => (header ?? "").split(",").map((x) => x.trim()).filter(Boolean);
@@ -41,18 +42,18 @@ export type SyncResult =
   | { ok: false; reason: "pending"; patch: Partial<Draft>; message: string }
   | { ok: false; reason: "no_sender" | "incomplete" | "offline" | "refused" | "conflict" | "gone"; message: string };
 
-const CONFLICT = "This draft was changed elsewhere (another window or device, an agent, or the mail account itself). Your text is kept here.";
-const GONE = "This draft was sent or deleted elsewhere. Your text is kept here.";
+const CONFLICT = msg("This draft was changed elsewhere (another window or device, an agent, or the mail account itself). Your text is kept here.");
+const GONE = msg("This draft was sent or deleted elsewhere. Your text is kept here.");
 
 /** What the server said, in the sync's own terms. */
 function refusal(error: unknown): SyncResult {
   if (!isHttp(error) || error.status === 0 || error.status >= 500 || error.status === 429)
-    return { ok: false, reason: "offline", message: "Not saved to your server yet; it is kept on this device and saved when the server answers." };
+    return { ok: false, reason: "offline", message: msg("Not saved to your server yet; it is kept on this device and saved when the server answers.") };
   const code = String(error.body.code ?? error.body.error ?? "");
   if (code === "draft_conflict") return { ok: false, reason: "conflict", message: CONFLICT };
   if (code === "draft_gone" || code === "draft_not_found") return { ok: false, reason: "gone", message: GONE };
-  if (error.status === 401) return { ok: false, reason: "offline", message: String(error.body.error ?? "Your sign-in expired. Reload the page to sign in again.") };
-  return { ok: false, reason: "refused", message: `The server did not save this draft: ${String(error.body.error ?? error.status)}` };
+  if (error.status === 401) return { ok: false, reason: "offline", message: String(error.body.error ?? msg("Your sign-in expired. Reload the page to sign in again.")) };
+  return { ok: false, reason: "refused", message: msg("The server did not save this draft: {error}", { error: String(error.body.error ?? error.status) }) };
 }
 
 /** New server files matched to the local files just uploaded, by size and then name, each used once. */
@@ -79,7 +80,7 @@ const cfFiles = (files: { id: string; filename: string; mimetype: string; size: 
  */
 export async function syncDraft(draft: Draft, files: AttachmentStorage, request: Request): Promise<SyncResult> {
   const kind = provider(draft.accountId);
-  if (!kind) return { ok: false, reason: "no_sender", message: "Choose a sender to save this draft to your server; until then it is kept on this device." };
+  if (!kind) return { ok: false, reason: "no_sender", message: msg("Choose a sender to save this draft to your server; until then it is kept on this device.") };
   let local: MailAttachment[];
   try { local = await loadAttachments(files, draft.attachments ?? [], draft.id); }
   catch (error) { return { ok: false, reason: "refused", message: (error as Error).message }; }
@@ -103,7 +104,7 @@ export async function syncDraft(draft: Draft, files: AttachmentStorage, request:
     cc = draft.cc?.trim() ? recipientAddresses(draft.cc) : [];
     bcc = draft.bcc?.trim() ? recipientAddresses(draft.bcc) : [];
   } catch {
-    return { ok: false, reason: "incomplete", message: `${keeper(draft.accountId)} saves a draft once it has a recipient with a valid address; until then it is kept on this device.` };
+    return { ok: false, reason: "incomplete", message: msg("{keeper} saves a draft once it has a recipient with a valid address; until then it is kept on this device.", { keeper: keeper(draft.accountId) }) };
   }
   const message = { to, cc, bcc, subject: draft.subject, text: draft.text,
     ...(draft.threadId ? { threadId: draft.threadId } : {}), ...(draft.inReplyTo ? { inReplyTo: draft.inReplyTo } : {}), ...(draft.references ? { references: draft.references } : {}) };
@@ -116,11 +117,11 @@ export async function syncDraft(draft: Draft, files: AttachmentStorage, request:
           .catch((error: unknown) => { if (isHttp(error) && error.status === 404) return null; throw error; });
         if (receipt?.status === "accepted" && receipt.providerDraftId) { serverId = receipt.providerDraftId; serverRevision = receipt.providerMessageId; }
         else if (receipt) return { ok: false, reason: "pending", patch: { pendingCreateKey: `draft-${draft.id}-${crypto.randomUUID().slice(0, 8)}` },
-          message: `${keeper(draft.accountId)} did not confirm the last save; it is tried again.` };
+          message: msg("{keeper} did not confirm the last save; it is tried again.", { keeper: keeper(draft.accountId) }) };
       }
       if (!serverId) {
         const key = draft.pendingCreateKey ?? `draft-${draft.id}-${crypto.randomUUID().slice(0, 8)}`;
-        if (!draft.pendingCreateKey) return { ok: false, reason: "pending", patch: { pendingCreateKey: key }, message: provider(draft.accountId) === "gmail" ? "Saving to Gmail…" : "Saving to your mail server…" };
+        if (!draft.pendingCreateKey) return { ok: false, reason: "pending", patch: { pendingCreateKey: key }, message: provider(draft.accountId) === "gmail" ? msg("Saving to Gmail…") : msg("Saving to your mail server…") };
         const receipt = await request<{ status: string; providerDraftId?: string; providerMessageId?: string }>(`${base}/drafts`, { idempotencyKey: key, ...message,
           ...(local.length ? { attachments: local } : {}) }).catch((error: unknown) => {
           // An unconfirmed creation, or this key used for other text: a fresh key next time (Gmail may keep a second draft).
@@ -128,8 +129,8 @@ export async function syncDraft(draft: Draft, files: AttachmentStorage, request:
           throw error;
         });
         if (receipt.status === "retry") return { ok: false, reason: "pending", patch: { pendingCreateKey: `draft-${draft.id}-${crypto.randomUUID().slice(0, 8)}` },
-          message: `${keeper(draft.accountId)} did not confirm the last save; it is tried again.` };
-        if (receipt.status !== "accepted" || !receipt.providerDraftId) return { ok: false, reason: "offline", message: `${keeper(draft.accountId)} did not confirm the save; it is tried again.` };
+          message: msg("{keeper} did not confirm the last save; it is tried again.", { keeper: keeper(draft.accountId) }) };
+        if (receipt.status !== "accepted" || !receipt.providerDraftId) return { ok: false, reason: "offline", message: msg("{keeper} did not confirm the save; it is tried again.", { keeper: keeper(draft.accountId) }) };
         return { ok: true, serverId: receipt.providerDraftId, serverRevision: receipt.providerMessageId!, serverFiles: await gmailFiles(base, receipt.providerDraftId, request, before, draft.attachments),
           uploaded: (draft.attachments ?? []).map((a) => a.id) };
       }
@@ -192,7 +193,7 @@ export function contentKey(d: Draft): string {
 
 /** Sends the saved draft from the server; it leaves Drafts there once accepted. Throws the server's refusal. */
 export function sendSavedDraft(draft: Draft, request: Request) {
-  if (!draft.serverId || !draft.synced) throw new Error("Save the draft to your server before sending.");
+  if (!draft.serverId || !draft.synced) throw new Error(msg("Save the draft to your server before sending."));
   if (provider(draft.accountId) === "cloudflare")
     return request<{ status: string }>(`${cfBox(draft.accountId)}/drafts/${encodeURIComponent(draft.serverId)}/send`,
       { idempotencyKey: draft.idempotencyKey, expected_revision: Number(draft.serverRevision) });
@@ -254,7 +255,7 @@ export async function openServerDraft(row: Pick<ServerDraftRow, "accountId" | "s
  * this copy that are still there under their ids now (to save this copy over theirs).
  */
 export async function refreshFromServer(draft: Draft, request: Request): Promise<{ draft: Draft; matchedFiles: ServerFile[] }> {
-  if (!draft.serverId) throw new Error("This draft is not on the server yet");
+  if (!draft.serverId) throw new Error(msg("This draft is not on the server yet"));
   const server = await openServerDraft({ accountId: draft.accountId, serverId: draft.serverId }, request);
   const rest = [...(server.serverFiles ?? [])];
   const matchedFiles: ServerFile[] = [];
