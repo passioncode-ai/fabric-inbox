@@ -23,7 +23,7 @@ interface EmailListResponse {
 export function useEmails(
 	mailboxId: string | undefined,
 	params: Record<string, string>,
-	options?: { enabled?: boolean; refetchInterval?: number },
+	options?: { enabled?: boolean; refetchInterval?: number | false },
 ) {
 	const queryParams = params.folder
 		? { ...params, threaded: "true" }
@@ -97,7 +97,10 @@ export function useThreadReplies(
 
 // ---------- Mutations ----------
 
-/** Invalidate both the email list and folder counts after any email mutation. */
+/**
+ * Invalidate the mailbox's list, its folder counts and the unified inbox (which shows the same
+ * mail, P3-12) after any email mutation.
+ */
 function useInvalidateEmailData() {
 	const qc = useQueryClient();
 	return (mailboxId: string) => {
@@ -105,8 +108,11 @@ function useInvalidateEmailData() {
 		qc.invalidateQueries({
 			queryKey: queryKeys.folders.list(mailboxId),
 		});
+		qc.invalidateQueries({ queryKey: UNIFIED_INBOX });
 	};
 }
+/** The unified inbox's queries (app/routes/unified-inbox.tsx). */
+const UNIFIED_INBOX = ["unified-inbox"];
 
 export function useSendEmail() {
 	const invalidate = useInvalidateEmailData();
@@ -193,6 +199,7 @@ export function useUpdateEmail() {
 			qc.invalidateQueries({
 				queryKey: queryKeys.folders.list(mailboxId),
 			});
+			qc.invalidateQueries({ queryKey: UNIFIED_INBOX });
 		},
 	});
 }
@@ -211,6 +218,7 @@ export function useMarkThreadRead() {
 			qc.invalidateQueries({
 				queryKey: queryKeys.folders.list(mailboxId),
 			});
+			qc.invalidateQueries({ queryKey: UNIFIED_INBOX });
 		},
 	});
 }

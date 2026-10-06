@@ -4,7 +4,7 @@
  * One R2 object for the workspace, written conditionally so two changes never lose one.
  */
 export const HIDDEN_KEY = "config/hidden-accounts.json";
-const ACCOUNT = /^(cloudflare|gmail):[^\s]{1,320}$/;
+const ACCOUNT = /^(cloudflare|gmail|imap|outlook):[^\s]{1,320}$/;
 const LIMIT = 2000;
 
 function normalise(value: unknown): string[] {

@@ -1,13 +1,20 @@
 import type { Env } from "../types";
 import type { InboxAccount } from "../../shared/mail/inbox";
+import { parseRemoteAccount } from "../../shared/mail/accounts";
 import type { InboxSources } from "../routes/inbox";
+import { importPercent } from "../providers/gmail-sync";
 
 /**
- * The feed's providers, read the same way by the /api/inbox route and by
- * background work (a category's first classification): Cloudflare mailboxes
- * listed from R2, Gmail accounts from GmailAccountsDO.
+ * The feed's providers, read the same way by the /api/inbox route and by background work (a
+ * category's first classification): Cloudflare mailboxes listed from R2; Gmail, IMAP and Outlook accounts
+ * from the accounts object (GmailAccountsDO, named for its first provider).
  */
 export function inboxSources(env: Env): InboxSources {
+  const remote = (account: InboxAccount) => {
+    const parsed = parseRemoteAccount(account.id);
+    if (!parsed) throw new Error("account_not_found");
+    return { stub: env.GMAIL_ACCOUNTS.getByName("workspace"), id: parsed.id };
+  };
   return {
     async cloudflareAccounts() {
       const accounts: InboxAccount[] = [];
@@ -24,23 +31,31 @@ export function inboxSources(env: Env): InboxSources {
       }
       throw new Error("account_limit");
   },
-    async gmailAccounts() {
+    async remoteAccounts() {
       if (!env.GMAIL_ACCOUNTS) return [];
       const result = await env.GMAIL_ACCOUNTS.getByName("workspace").listAccounts();
-      return result.accounts.map(a => ({ id: "gmail:" + a.id, provider: "gmail", email: a.email, name: a.email,
-        status: a.sync.mode === "initial" && a.status === "connected" ? "syncing" : a.status,
-        error: a.error, lastSyncAt: a.lastSyncAt }));
+      return result.accounts.map((a): InboxAccount => {
+        const c = a.capabilities;
+        const provider = a.provider ?? "gmail";
+        const importing = a.importing ?? importPercent(a.sync as Parameters<typeof importPercent>[0]);
+        return { id: provider + ":" + a.id, provider, email: a.email, name: a.email,
+          status: a.sync.mode === "initial" && a.status === "connected" ? "syncing" : a.status,
+          error: a.error, lastSyncAt: a.lastSyncAt, ...(a.reason ? { reason: a.reason } : {}),
+          ...(a.providerName ? { providerName: a.providerName } : {}),
+          ...(c ? { capabilities: { archive: c.archive, spam: c.spam, trash: c.trash, drafts: c.drafts, organization: c.organization } } : {}),
+          ...(a.sync.mode === "initial" && importing !== undefined ? { importing } : {}) };
+      });
   },
     async unreadCount(account) {
-      if (account.provider === "gmail") return env.GMAIL_ACCOUNTS.getByName("workspace").countUnreadInbox(account.id.slice(6));
+      if (account.provider !== "cloudflare") { const r = remote(account); return r.stub.countUnreadInbox(r.id); }
       return env.MAILBOX.get(env.MAILBOX.idFromName(account.id.slice(11))).countUnreadInbox();
   },
     async counts(account) {
-      if (account.provider === "gmail") return env.GMAIL_ACCOUNTS.getByName("workspace").countInbox(account.id.slice(6));
+      if (account.provider !== "cloudflare") { const r = remote(account); return r.stub.countInbox(r.id); }
       return env.MAILBOX.get(env.MAILBOX.idFromName(account.id.slice(11))).inboxCounts();
   },
     async messages(account, options) {
-      if (account.provider === "gmail") return env.GMAIL_ACCOUNTS.getByName("workspace").listInboxMessages(account.id.slice(6), options);
+      if (account.provider !== "cloudflare") { const r = remote(account); return r.stub.listInboxMessages(r.id, options); }
       // The account list was read from R2 a moment ago; a mailbox deleted since reads as empty.
       const email = account.id.slice(11);
       return env.MAILBOX.get(env.MAILBOX.idFromName(email)).listInboxMessages(email, options);
@@ -48,9 +63,9 @@ export function inboxSources(env: Env): InboxSources {
   };
 }
 
-/** Current inbox accounts of both providers; a provider that cannot be listed is left out. */
+/** Current inbox accounts of every provider; a provider that cannot be listed is left out. */
 export async function listInboxAccounts(env: Env): Promise<InboxAccount[]> {
   const s = inboxSources(env);
-  const found = await Promise.allSettled([s.cloudflareAccounts(), s.gmailAccounts()]);
+  const found = await Promise.allSettled([s.cloudflareAccounts(), s.remoteAccounts()]);
   return found.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
 }

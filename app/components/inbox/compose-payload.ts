@@ -7,7 +7,8 @@ import { recipientAddresses } from "./send-state";
 import type { Draft } from "./draft-store";
 
 export function missingOriginals(draft: Draft) {
-  const included = new Set(draft.attachments?.map((a) => a.sourceId));
+  // An original is included while its bytes wait here or once they are on the server.
+  const included = new Set([...(draft.attachments ?? []).map((a) => a.sourceId), ...(draft.serverFiles ?? []).map((f) => f.sourceId)]);
   return draft.forwardSource?.files.filter((f) => !included.has(f.id)) ?? [];
 }
 /** Merge only references into the current identity, never captured message text. */

@@ -1,7 +1,7 @@
 import type { Triage } from "./triage";
 export const INBOX_FOLDERS = ["inbox", "sent", "archive", "trash", "starred", "spam"] as const;
 export type InboxFolder = (typeof INBOX_FOLDERS)[number];
-export type InboxProvider = "cloudflare" | "gmail";
+export type InboxProvider = "cloudflare" | "gmail" | "imap" | "outlook";
 export interface InboxAccount {
   id: string;
   provider: InboxProvider;
@@ -9,11 +9,21 @@ export interface InboxAccount {
   name: string;
   status: string;
   error?: string;
+  /** Why a Gmail account stopped working (shared/mail/gmail-reasons.ts); absent while it works. */
+  reason?: string;
   lastSyncAt?: number;
   /** Unread messages in this account's inbox; sent with the first page only. */
   unread?: number;
   /** Every message in its inbox (first page only): the sidebar's "With mail" filter. */
   total?: number;
+  /** Its counts could not be read just now: `unread` and `total` are the last ones known (P2-11). */
+  countsStale?: boolean;
+  /** A Gmail or IMAP account's first import, in percent, while it runs (status "syncing"); absent when unknown. */
+  importing?: number;
+  /** How a person knows a Gmail or IMAP account's provider: "Gmail", "iCloud Mail", "Fastmail"… */
+  providerName?: string;
+  /** What a Gmail or IMAP account can do (workers/providers/provider.ts): the app offers only that. */
+  capabilities?: { archive: boolean; spam: boolean; trash: boolean; drafts: boolean; organization: "labels" | "folders" };
   /** Hidden by the operator: left out of All inboxes, domains and totals; still receiving. */
   hidden?: boolean;
   /** Keeps mail for every other address on its domain. */
@@ -53,6 +63,8 @@ export interface InboxIssue {
   accountId?: string;
   provider: InboxProvider;
   error: string;
+  /** The account's own reason, when it has one (shared/mail/gmail-reasons.ts). */
+  reason?: string;
 }
 export interface InboxResponse {
   accounts: InboxAccount[];

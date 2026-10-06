@@ -26,11 +26,12 @@ export function inProcessApi(origin: string, env: Env, ctx: ExecutionContext): A
         url.searchParams.set(k, Array.isArray(v) ? v.join(",") : String(v));
       }
       const headers: Record<string, string> = init.body === undefined ? {} : { "Content-Type": "application/json" };
-      // The Gmail routes take changes only from their configured origin (accounts.ts); this call
-      // comes from the server itself, after the agent protocol's own checks.
+      // The account routes take changes only from the app's own origin (accounts.ts: Gmail's
+      // configured one, else the server's); this call comes from the server itself, after the agent
+      // protocol's own checks.
       if (method !== "GET" && url.pathname.startsWith("/api/accounts/")) {
         const gmail = configuration(env);
-        if (gmail.status === "configured") headers.Origin = gmail.origin;
+        headers.Origin = gmail.status === "configured" ? gmail.origin : url.origin;
       }
       const response = await api.fetch(new Request(url, {
         method,

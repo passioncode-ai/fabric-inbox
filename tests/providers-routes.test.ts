@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { accountsRouter } from "../workers/routes/accounts";
 const config = {
@@ -22,6 +22,10 @@ test("accounts explicitly reports unavailable setup without a namespace", async 
   assert.equal(response.headers.get("Cache-Control"), "no-store");
 });
 test("external browser can begin OAuth at server URL; secure state cookie is set before Google redirect", async () => {
+  // Google's sign-in page, asked first (without following) whether it would only show an error.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(null, { status: 302, headers: { Location: "https://accounts.google.com/v3/signin/identifier" } })) as typeof fetch;
+  after(() => { globalThis.fetch = realFetch; });
   const env = {
     ...config,
     GMAIL_ACCOUNTS: {
@@ -81,6 +85,7 @@ test("callback forwards state and browser cookie, consumes cookie and ignores re
       getByName: () => ({
         callback: async (...a: unknown[]) => {
           args = a;
+          return { id: "g1", email: "connected@example.invalid", status: "connected" };
         },
       }),
     },
@@ -91,8 +96,13 @@ test("callback forwards state and browser cookie, consumes cookie and ignores re
     { headers: { Cookie: "__Host-fabric-gmail-state=browser" } },
     env as never,
   );
-  assert.equal(response.status, 303);
-  assert.equal(response.headers.get("Location"), "/?gmail=connected");
+  // A fixed page, not a redirect: no OAuth parameter chooses where the browser goes.
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Location"), null);
+  const page = await response.text();
+  assert.match(page, /Gmail is connected/);
+  assert.match(page, /connected@example\.invalid/);
+  assert.ok(!page.includes("evil.example"));
   assert.deepEqual(args.slice(0, 3), ["random", "browser", "synthetic"]);
   assert.match(response.headers.get("Set-Cookie")!, /Max-Age=0/);
 });
@@ -171,4 +181,22 @@ test("the Gmail inbox route moves a message to the inbox (agent audit 4)", async
   const response = await accountsRouter.request(origin + "/api/accounts/a/messages/m1/inbox", { method: "POST", headers: { Origin: origin } }, env as never);
   assert.equal(response.status, 200);
   assert.deepEqual(args, ["a", "m1"]);
+});
+
+test("the account list names where a person connects Gmail, only when Gmail is set up (parity gap 9)", async () => {
+  const env = { ...config, GMAIL_ACCOUNTS: { getByName: () => ({ listAccounts: async () => ({ configuration: "configured", accounts: [] }) }) } };
+  const listed = (await (await accountsRouter.request(origin + "/api/accounts", {}, env as never)).json()) as { connectUrl?: string };
+  assert.equal(listed.connectUrl, "https://mail.example.invalid/api/accounts/gmail/connect");
+  const unset = { GMAIL_ACCOUNTS: { getByName: () => ({ listAccounts: async () => ({ configuration: "not_configured", accounts: [] }) }) } };
+  const bare = (await (await accountsRouter.request(origin + "/api/accounts", {}, unset as never)).json()) as { connectUrl?: string };
+  assert.equal(bare.connectUrl, undefined);
+});
+
+test("the Gmail headers route returns every header of one message (parity gap 7)", async () => {
+  let args: unknown[] = [];
+  const env = { ...config, GMAIL_ACCOUNTS: { getByName: () => ({ getHeaders: async (...a: unknown[]) => { args = a; return { headers: [{ key: "Received", value: "x" }] }; } }) } };
+  const response = await accountsRouter.request(origin + "/api/accounts/a/messages/m1/headers", {}, env as never);
+  assert.equal(response.status, 200);
+  assert.deepEqual(args, ["a", "m1"]);
+  assert.deepEqual(await response.json(), { headers: [{ key: "Received", value: "x" }] });
 });

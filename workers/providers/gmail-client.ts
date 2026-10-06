@@ -9,6 +9,10 @@ export class ProviderError extends Error {
   constructor(
     public code: string,
     public status = 502,
+    /** Why, when the code alone is not enough to act on (shared/mail/gmail-reasons.ts, or "invalid_grant"). */
+    public reason?: string,
+    /** When the provider said to try again (epoch ms; a Retry-After header), for a throttled request. */
+    public retryAt?: number,
   ) {
     super(code);
   }
@@ -17,6 +21,37 @@ export interface Credentials {
   accessToken: string;
   refreshToken: string;
   expiresAt: number;
+  /** When Google said the grant itself ends (refresh_token_expires_in): time-limited access only. */
+  refreshExpiresAt?: number;
+}
+/** The reasons in a Google API error body (`error.errors[].reason`, `error.details[].reason`, `error.status`). */
+export async function googleErrorReasons(response: Response): Promise<string[]> {
+  try {
+    const data = (await response.json()) as {
+      error?: { status?: string; errors?: { reason?: string }[]; details?: { reason?: string }[] };
+    };
+    const reasons = [
+      ...(data.error?.errors ?? []).map((e) => e.reason),
+      ...(data.error?.details ?? []).map((d) => d.reason),
+      data.error?.status,
+    ];
+    return reasons.filter((r): r is string => typeof r === "string");
+  } catch {
+    return [];
+  }
+}
+/**
+ * A 403 from the Gmail API, by its reason: the API switched off in the Google Cloud project, a
+ * grant without the Gmail scope, or a quota (which Gmail also answers with 403).
+ */
+export function forbidden(reasons: string[]): ProviderError {
+  if (reasons.some((r) => r === "accessNotConfigured" || r === "SERVICE_DISABLED"))
+    return new ProviderError("gmail_api_disabled", 403, "gmail_api_disabled");
+  if (reasons.some((r) => r === "insufficientPermissions" || r === "ACCESS_TOKEN_SCOPE_INSUFFICIENT"))
+    return new ProviderError("insufficient_scope", 403, "insufficient_scope");
+  if (reasons.some((r) => /^(userRateLimitExceeded|rateLimitExceeded|RATE_LIMIT_EXCEEDED)$/.test(r)))
+    return new ProviderError("rate_limited", 429);
+  return new ProviderError("provider_failed", 502);
 }
 export type Fetcher = (
   input: string | URL | Request,
@@ -25,7 +60,22 @@ export type Fetcher = (
 export interface GmailProfile {
   emailAddress: string;
   historyId: string;
+  /** Messages in the whole mailbox, as Gmail counts them: the import's denominator. */
+  messagesTotal?: number;
 }
+/** One page of messages.list: newest first, as Gmail orders it. */
+export interface ListOptions {
+  pageToken?: string;
+  /** Only messages with all these labels (e.g. INBOX). */
+  labelIds?: string[];
+  /** A Gmail search, e.g. newer_than:30d. */
+  q?: string;
+  includeSpamTrash?: boolean;
+  maxResults?: number;
+}
+/** The headers a message imported without its body keeps: what the feed, triage and replies read. */
+export const METADATA_HEADERS = ["Subject", "From", "To", "Cc", "Reply-To", "Date", "Message-ID", "References",
+  "List-Id", "List-Unsubscribe", "Precedence", "Auto-Submitted"];
 export interface GmailPart {
   mimeType?: string;
   filename?: string;
@@ -52,6 +102,9 @@ export interface Message {
   /** Cc and Reply-To header values ("" when none); absent on messages cached before 2026-10-05. */
   cc?: string;
   replyTo?: string;
+  /** Bcc (on your own sent mail and drafts) and In-Reply-To ("" when none); absent on messages cached before 2026-10-06. */
+  bcc?: string;
+  inReplyTo?: string;
   date: string;
   rfcMessageId: string;
   references: string;
@@ -64,6 +117,11 @@ export interface Message {
   labels: string[];
   /** List/bulk/auto header signals for triage; absent on messages cached before 2026-09-28. */
   signals?: TriageSignals;
+  /**
+   * The provider's own id when it cannot be a storage key (an Outlook message id is longer than
+   * 128 characters, so the id here is its hash): what requests to the provider name.
+   */
+  remoteId?: string;
   attachments: {
     filename: string;
     mimeType: string;
@@ -84,6 +142,14 @@ export interface SendInput {
   from?: string;
   attachments?: MailAttachment[];
 }
+/**
+ * Every field of SendInput, for the agent protocol's schema-drift test (tests/mcp-schema-drift.test.ts):
+ * the compile-time check below fails when SendInput gains a field this list does not name.
+ */
+export const SEND_INPUT_FIELDS = ["to", "cc", "bcc", "subject", "text", "html", "threadId", "inReplyTo", "references", "from", "attachments"] as const;
+type MissingSendField = Exclude<keyof SendInput, (typeof SEND_INPUT_FIELDS)[number]>;
+const _everySendField: [MissingSendField] extends [never] ? true : never = true;
+void _everySendField;
 export function normalizeMessage(
   accountId: string,
   raw: GmailMessage,
@@ -101,6 +167,8 @@ export function normalizeMessage(
     to: header("to"),
     cc: header("cc"),
     replyTo: header("reply-to"),
+    bcc: header("bcc"),
+    inReplyTo: header("in-reply-to"),
     date: header("date"),
     rfcMessageId: header("message-id"),
     references: header("references"),
@@ -168,7 +236,16 @@ function base64Text(text: string) {
   }
   return btoa(chunks.join(''));
 }
+/** The message as Gmail's API takes it: the RFC 5322 text, base64url without padding. */
 export function makeMime(sender: string, input: SendInput): string {
+  return base64Text(rawMime(sender, input)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+/**
+ * The RFC 5322 text of a message (CRLF line ends, 7-bit: every body is base64 and the subject is
+ * encoded words). `extraHeaders` go before MIME-Version (an SMTP send adds Date and Message-ID,
+ * which Gmail adds itself); `omitBcc` leaves Bcc out of the copy handed to an SMTP server.
+ */
+export function rawMime(sender: string, input: SendInput, extraHeaders: string[] = [], options: { omitBcc?: boolean } = {}): string {
   const attachments = validateAttachments(input.attachments);
   address(sender);
   if (input.threadId !== undefined && (typeof input.threadId !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(input.threadId)))
@@ -208,10 +285,14 @@ export function makeMime(sender: string, input: SendInput): string {
     `From: ${sender}`,
     `To: ${input.to.map(address).join(", ")}`,
     `Subject: ${chunks.map((s) => "=?UTF-8?B?" + base64Text(s) + "?=").join("\r\n ")}`,
+    ...extraHeaders.map(safeHeader),
     "MIME-Version: 1.0",
   ];
   if (input.cc?.length) h.push("Cc: " + input.cc.map(address).join(", "));
-  if (input.bcc?.length) h.push("Bcc: " + input.bcc.map(address).join(", "));
+  if (input.bcc?.length) {
+    const bcc = input.bcc.map(address).join(", ");
+    if (!options.omitBcc) h.push("Bcc: " + bcc);
+  }
   if (input.inReplyTo) h.push("In-Reply-To: " + safeHeader(input.inReplyTo));
   if (input.references) h.push("References: " + safeHeader(input.references));
   const body = (text: string) =>
@@ -260,7 +341,7 @@ export function makeMime(sender: string, input: SendInput): string {
     }
     h.push(`--${mixed}--`);
   } else h.push(...parts);
-  return base64Text(h.join("\r\n")).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return h.join("\r\n");
 }
 export class GmailClient {
   constructor(
@@ -290,27 +371,38 @@ export class GmailClient {
     } catch {
       throw new ProviderError("provider_unavailable", 503);
     }
-    const data = (await response.json()) as {
+    // Google answers an outage with an HTML page: no JSON is no reason to call it a revoked grant.
+    let data: {
       access_token?: string;
       expires_in?: number;
       refresh_token?: string;
       error?: string;
-    };
+    } = {};
+    try {
+      data = (await response.json()) as typeof data;
+    } catch {
+      /* not JSON; the status decides below */
+    }
+    // Only a revoked or expired grant needs the person to connect again; a client Google no
+    // longer knows (deleted, secret changed) is the server's setup. Anything else is the token
+    // service being busy or down, and the account waits and tries again (P2-9).
     if (!response.ok)
-      throw new ProviderError(
-        data.error === "invalid_grant"
-          ? "reconnect_required"
+      throw data.error === "invalid_grant"
+        ? new ProviderError("reconnect_required", 401, "invalid_grant")
+        : data.error === "invalid_client" || data.error === "unauthorized_client"
+          ? new ProviderError("google_client_rejected", 502, "client_rejected")
           : response.status === 429
-            ? "rate_limited"
-            : "oauth_failed",
-        response.status === 429 ? 429 : 401,
-      );
+          ? new ProviderError("rate_limited", 429)
+          : response.status >= 500
+            ? new ProviderError("provider_unavailable", 503)
+            : new ProviderError("oauth_failed", 401);
     if (!data.access_token || !data.expires_in)
       throw new ProviderError("oauth_failed");
-    const next = {
+    const next: Credentials = {
       accessToken: data.access_token,
       refreshToken: data.refresh_token || this.credentials.refreshToken,
       expiresAt: Date.now() + data.expires_in * 1000,
+      ...(this.credentials.refreshExpiresAt ? { refreshExpiresAt: this.credentials.refreshExpiresAt } : {}),
     };
     await this.persist(next);
     this.credentials = next;
@@ -348,10 +440,20 @@ export class GmailClient {
       await this.token(true);
       return this.request<T>(path, init, false);
     }
+    // A write refused with 401 was not carried out, and is not repeated here either. Whether the
+    // grant itself is gone is asked of the token endpoint: invalid_grant there means the account
+    // needs a reconnect (and the account says so), anything else was a stale access token.
+    if (response.status === 401 && init.method && init.method !== "GET") {
+      await this.token(true);
+      throw new ProviderError("provider_auth_failed", 401);
+    }
+    if (response.status === 403) throw forbidden(await googleErrorReasons(response));
+    // A 401 that a freshly refreshed token did not cure is Gmail refusing this request, not the
+    // grant being gone (that is invalid_grant at the token endpoint): back off, never disconnect.
     if (!response.ok)
       throw new ProviderError(
         response.status === 401
-          ? "reconnect_required"
+          ? "provider_auth_failed"
           : response.status === 429
             ? "rate_limited"
             : response.status === 404
@@ -359,31 +461,46 @@ export class GmailClient {
                 ? "history_expired"
                 : "not_found"
               : "provider_failed",
-        response.status === 429 ? 429 : response.status === 404 ? 404 : 502,
+        response.status === 429 ? 429 : response.status === 404 ? 404 : response.status === 401 ? 401 : 502,
       );
-    return (await response.json()) as T;
+    // A DELETE answers 204 with no body.
+    if (response.status === 204) return undefined as T;
+    try {
+      return (await response.json()) as T;
+    } catch {
+      throw new ProviderError("provider_failed", 502);
+    }
   }
   profile() {
     return this.request<GmailProfile>("profile");
   }
-  list(pageToken?: string) {
-    const q = new URLSearchParams({
-      maxResults: "25",
-      includeSpamTrash: "true",
-    });
-    if (pageToken) q.set("pageToken", pageToken);
+  list(options: ListOptions = {}) {
+    const q = new URLSearchParams({ maxResults: String(options.maxResults ?? 50) });
+    if (options.includeSpamTrash) q.set("includeSpamTrash", "true");
+    for (const label of options.labelIds ?? []) q.append("labelIds", label);
+    if (options.q) q.set("q", options.q);
+    if (options.pageToken) q.set("pageToken", options.pageToken);
     return this.request<{
       messages?: { id: string }[];
       nextPageToken?: string;
     }>("messages?" + q);
   }
-  message(id: string) {
+  /** A message in full, or with only METADATA_HEADERS (labels, snippet and date, no body). */
+  message(id: string, format: "full" | "metadata" = "full") {
+    const q = new URLSearchParams({ format });
+    if (format === "metadata") for (const h of METADATA_HEADERS) q.append("metadataHeaders", h);
     return this.request<GmailMessage>(
-      "messages/" + encodeURIComponent(id) + "?format=full",
+      "messages/" + encodeURIComponent(id) + "?" + q,
+    );
+  }
+  /** Every header of one message, as Gmail has it (format=metadata carries no body). */
+  messageHeaders(id: string) {
+    return this.request<GmailMessage>(
+      "messages/" + encodeURIComponent(id) + "?format=metadata",
     );
   }
   history(startHistoryId: string, pageToken?: string) {
-    const q = new URLSearchParams({ startHistoryId, maxResults: "25" });
+    const q = new URLSearchParams({ startHistoryId, maxResults: "100" });
     if (pageToken) q.set("pageToken", pageToken);
     return this.request<{
       historyId: string;
@@ -421,6 +538,30 @@ export class GmailClient {
       },
       false,
     );
+  }
+  // ── Drafts (B-50/B-52): Gmail's own drafts, so they show in Gmail too ──
+  listDrafts(pageToken?: string) {
+    const q = new URLSearchParams({ maxResults: "25" });
+    if (pageToken) q.set("pageToken", pageToken);
+    return this.request<{ drafts?: { id: string; message: { id: string; threadId: string } }[]; nextPageToken?: string }>("drafts?" + q);
+  }
+  getDraft(id: string, format: "full" | "minimal" = "full") {
+    return this.request<{ id: string; message: GmailMessage }>("drafts/" + encodeURIComponent(id) + "?format=" + format);
+  }
+  /** Replaces the draft's message; Gmail gives the new message a new id (the draft's revision here). */
+  updateDraft(id: string, raw: string, threadId?: string) {
+    return this.request<{ id: string; message: { id: string; threadId: string } }>(
+      "drafts/" + encodeURIComponent(id),
+      { method: "PUT", body: JSON.stringify({ id, message: { raw, ...(threadId ? { threadId } : {}) } }) },
+      false,
+    );
+  }
+  deleteDraft(id: string) {
+    return this.request<void>("drafts/" + encodeURIComponent(id), { method: "DELETE" }, false);
+  }
+  /** Sends the draft as Gmail holds it; Gmail removes the draft. */
+  sendDraft(id: string) {
+    return this.request<{ id: string; threadId: string }>("drafts/send", { method: "POST", body: JSON.stringify({ id }) }, false);
   }
   modify(id: string, addLabelIds: string[], removeLabelIds: string[]) {
     return this.request<GmailMessage>(
@@ -475,26 +616,39 @@ export async function exchangeCode(
       signal: AbortSignal.timeout(20000),
     });
   } catch {
-    throw new ProviderError("oauth_failed");
+    throw new ProviderError("provider_unavailable", 503);
   }
-  const data = (await response.json()) as {
+  let data: {
     access_token?: string;
     refresh_token?: string;
     expires_in?: number;
+    refresh_token_expires_in?: number;
     scope?: string;
-  };
-  if (
-    !response.ok ||
-    !data.access_token ||
-    !data.refresh_token ||
-    !data.expires_in
-  )
+    error?: string;
+  } = {};
+  try {
+    data = (await response.json()) as typeof data;
+  } catch {
+    /* Google answered with a page, not JSON: the status decides below */
+  }
+  if (!response.ok) {
+    // Each refusal names what to change: the server's client, its redirect address, or nothing
+    // (a code used twice or too late: start again).
+    if (data.error === "invalid_client" || data.error === "unauthorized_client")
+      throw new ProviderError("google_client_rejected", 502, "client_rejected");
+    if (data.error === "redirect_uri_mismatch") throw new ProviderError("redirect_uri_mismatch", 400);
+    if (response.status >= 500) throw new ProviderError("provider_unavailable", 503);
+    throw new ProviderError("oauth_failed", 400);
+  }
+  if (!data.access_token || !data.refresh_token || !data.expires_in)
     throw new ProviderError("oauth_failed", 400);
   if (!data.scope?.split(" ").includes(GMAIL_SCOPE))
-    throw new ProviderError("insufficient_scope", 403);
+    throw new ProviderError("insufficient_scope", 403, "insufficient_scope");
+  const grantSeconds = Number(data.refresh_token_expires_in);
   return {
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
     expiresAt: Date.now() + data.expires_in * 1000,
+    ...(Number.isFinite(grantSeconds) && grantSeconds > 0 ? { refreshExpiresAt: Date.now() + grantSeconds * 1000 } : {}),
   };
 }

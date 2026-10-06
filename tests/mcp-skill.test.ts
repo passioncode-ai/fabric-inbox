@@ -12,7 +12,7 @@ const PLUGIN = "plugins/fabric-inbox";
 const SKILL_DIR = join(PLUGIN, "skills", "working-with-fabric-inbox");
 const files = [join(SKILL_DIR, "SKILL.md"), ...readdirSync(join(SKILL_DIR, "references")).map((f) => join(SKILL_DIR, "references", f))];
 /** Backticked snake_case words in the skill that are not tools. */
-const NOT_TOOL_WORDS = new Set(["reconnect_required"]);
+const NOT_TOOL_WORDS = new Set(["reconnect_required", "testing_expiry", "gmail_api_disabled", "microsoft_access_revoked", "microsoft_signin_required", "microsoft_secret_expired"]);
 
 test("the skill names only tools the server has", () => {
   const names = new Set(TOOLS.map((t) => t.name));

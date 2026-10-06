@@ -11,9 +11,6 @@ import {
   ArrowLeftIcon,
   ArrowBendUpLeftIcon,
   ArrowBendUpRightIcon,
-  AtIcon,
-  BooksIcon, PlugIcon,
-  RobotIcon,
   CaretRightIcon,
   EnvelopeIcon,
   GearSixIcon,
@@ -38,6 +35,7 @@ import EmailIframe from "~/components/EmailIframe";
 import { replyRecipient } from "~/components/inbox/send-state";
 import Composer, { type Draft } from "~/components/inbox/Composer";
 import {
+  isRemote,
   messagePath,
   normalizeMessage,
   rawAccount,
@@ -48,7 +46,8 @@ import {
   type OpenMessage,
 } from "~/components/inbox/model";
 import { useDrafts } from "~/components/inbox/use-drafts";
-import DraftsDialog from "~/components/inbox/DraftsDialog";
+import DraftsDialog, { draftRows } from "~/components/inbox/DraftsDialog";
+import { listServerDrafts, signatureFor } from "~/components/inbox/server-drafts";
 import MessageActions, { applyMessageChange } from "~/components/inbox/MessageActions";
 import TriagedList from "~/components/inbox/TriagedList";
 import AccountSidebar from "~/components/inbox/AccountSidebar";
@@ -58,6 +57,13 @@ import { totalUnread } from "~/components/inbox/account-groups";
 import { displayOrder, groupCounts, isTriageGroup, listDate, nextAfter, pinTriage, triageOf, type ListView } from "~/components/inbox/triage-view";
 import type { Triage, TriageGroup } from "../../shared/mail/triage";
 import type { InboxFolder } from "../../shared/mail/inbox";
+import { showFeedChange, mergeHead, refreshScope, refreshSummary, WakeRefresh, type FeedChange, type RefreshResponse } from "~/lib/mail-refresh";
+import { useWindowActive } from "~/hooks/useWindowActive";
+import { settingsPath } from "~/components/settings/paths";
+import { GMAIL_REASON_TEXT, isGmailReason } from "../../shared/mail/gmail-reasons";
+import { pollInterval, subscribeWindowActivity } from "~/lib/window-activity";
+/** How often the list in view is read again while the window is active. */
+const INBOX_POLL_MS = 60_000;
 const folders = [
   ["inbox", "Inbox", TrayArrowDownIcon],
   ["starred", "Starred", StarIcon],
@@ -78,9 +84,11 @@ const FOLDER_EMPTY: Record<string, [string, string]> = {
   archive: ["Nothing archived", "Archive a message to keep it out of the inbox without deleting it."],
   starred: ["No starred mail", "Star a message to find it here."],
 };
-/** Plain words for a provider problem, instead of its code. */
+/** Plain words for a provider problem, instead of its code; an account's own reason says more (issueText). */
 const ISSUE_TEXT: Record<string, string> = {
   reconnect_required: "needs to be connected again",
+  gmail_api_disabled: GMAIL_REASON_TEXT.gmail_api_disabled.short,
+  google_client_rejected: GMAIL_REASON_TEXT.client_rejected.short,
   rate_limited: "is busy right now; its mail loads on the next refresh",
   cache_scan_limit: "has more cached mail than one read can scan",
   account_not_found: "is no longer here",
@@ -88,6 +96,14 @@ const ISSUE_TEXT: Record<string, string> = {
   account_limit: "is beyond the 100 inboxes one view reads",
   account_unavailable: "could not be read",
 };
+const issueText = (issue: { error: string; reason?: string }) =>
+  (isGmailReason(issue.reason) ? GMAIL_REASON_TEXT[issue.reason].short : ISSUE_TEXT[issue.error]) ?? ISSUE_TEXT.account_unavailable;
+/** An issue a sign-in on Google's page fixes: the banner offers it in one click. An IMAP account's new app password is entered in Settings instead. */
+const needsReconnect = (issue: { error: string; reason?: string; provider?: string }) => issue.provider !== "imap" &&
+  (isGmailReason(issue.reason) ? GMAIL_REASON_TEXT[issue.reason].action === "reconnect" : issue.error === "reconnect_required");
+const needsPassword = (issue: { error: string; provider?: string }) => issue.provider === "imap" && issue.error === "reconnect_required";
+/** Where a sign-in fixes an account: Microsoft's for an Outlook account, Google's for a Gmail one. */
+const reconnectPath = (issue: { provider?: string }) => (issue.provider === "outlook" ? "/api/accounts/outlook/connect" : "/api/accounts/gmail/connect");
 const OPEN_GROUPS_KEY = "fabric-inbox:open-groups";
 function readOpenGroups(): Set<TriageGroup> {
   try {
@@ -104,7 +120,8 @@ export default function UnifiedInbox() {
     search = params.get("query") ?? "";
   const domainFilter = params.get("domain") ?? "";
   const categoryParam = params.get("category") ?? "";
-  const providerFilter = params.get("provider") === "gmail" ? "gmail" : "";
+  const providerParam = params.get("provider");
+  const providerFilter = providerParam === "gmail" || providerParam === "imap" || providerParam === "outlook" ? providerParam : "";
   const unreadOnly = params.get("unread") === "1",
     groupParam = params.get("group"),
     group = isTriageGroup(groupParam) ? groupParam : undefined,
@@ -123,6 +140,8 @@ export default function UnifiedInbox() {
     [issuesOpen, setIssuesOpen] = useState(false),
     [theme, setTheme] = useState("light"),
     [notice, setNotice] = useState(""),
+    [checking, setChecking] = useState(false),
+    [checkedAt, setCheckedAt] = useState(0),
     [busy, setBusy] = useState(false),
     [composeOpen, setComposeOpen] = useState(false),
     [draftsOpen, setDraftsOpen] = useState(false),
@@ -174,10 +193,9 @@ export default function UnifiedInbox() {
     if (rulesOpen) el?.showModal();
     else el?.close();
   }, [rulesOpen]);
-  const list = useInfiniteQuery({
-    queryKey: ["unified-inbox", accountId, domainFilter, providerFilter, categoryParam, folder, search, unreadOnly],
-    initialPageParam: "",
-    queryFn: ({ pageParam }) =>
+  const windowActive = useWindowActive();
+  const listKey = ["unified-inbox", accountId, domainFilter, providerFilter, categoryParam, folder, search, unreadOnly];
+  const readPage = (pageParam: string) =>
       fabric<InboxData>(
         "/api/inbox?" +
           new URLSearchParams({
@@ -191,17 +209,60 @@ export default function UnifiedInbox() {
             ...(categoryParam ? { category: categoryParam } : {}),
             ...(providerFilter ? { provider: providerFilter } : {}),
           }),
-      ),
+      );
+  const list = useInfiniteQuery({
+    queryKey: listKey,
+    initialPageParam: "",
+    queryFn: ({ pageParam }) => readPage(pageParam),
     getNextPageParam: (page) => (page.hasMore ? page.cursor : undefined),
-    // Refreshing re-reads every loaded page; after "Load older" that is left to the Refresh button.
-    refetchInterval: (query) => ((query.state.data?.pages.length ?? 0) > 1 ? false : 60_000),
+    // One page: it is read again every minute while the window is active. After "Load older" the
+    // first page alone is read (below) and joined to the rest, never every loaded page (P1-3).
+    refetchInterval: (query) => ((query.state.data?.pages.length ?? 0) > 1 ? false : pollInterval(windowActive, INBOX_POLL_MS)),
   });
+  const olderLoaded = (list.data?.pages.length ?? 0) > 1;
+  const head = useQuery({
+    queryKey: ["unified-inbox-head", ...listKey.slice(1)],
+    queryFn: () => readPage(""),
+    enabled: olderLoaded,
+    refetchInterval: olderLoaded ? pollInterval(windowActive, INBOX_POLL_MS) : false,
+  });
+  useEffect(() => {
+    const fresh = head.data;
+    if (!fresh || !olderLoaded) return;
+    client.setQueryData(listKey, (data: { pages: InboxData[]; pageParams: unknown[] } | undefined) => mergeHead(data, fresh));
+  }, [head.dataUpdatedAt]);
+  /** Reads what is in view again: the one page, or the first page joined to older ones. */
+  function readAgain() {
+    void (olderLoaded ? head.refetch() : list.refetch());
+  }
+  // Coming back to the window, or the Mac waking from sleep, reads the list at once instead of up
+  // to a minute later (P1-4). The desktop app signals a wake through its narrow bridge.
+  const wake = useRef(new WakeRefresh());
+  const readAgainRef = useRef(readAgain);
+  readAgainRef.current = readAgain;
+  useEffect(() => {
+    if (list.dataUpdatedAt) wake.current.read(list.dataUpdatedAt);
+  }, [list.dataUpdatedAt]);
+  useEffect(() => {
+    const stop = subscribeWindowActivity(window, document, (now) => { if (wake.current.activity(now)) readAgainRef.current(); });
+    const bridge = (window as unknown as { fabricDesktop?: { onResume?(callback: () => void): (() => void) | undefined } }).fabricDesktop;
+    const stopResume = bridge?.onResume?.(() => { if (wake.current.resume()) readAgainRef.current(); });
+    return () => { stop(); stopResume?.(); };
+  }, []);
+  // Categories and their counts are read with the list, not on a clock of their own, so the
+  // sidebar's numbers and the messages always come from the same moment (P2-11).
   const categoryList = useQuery({
     queryKey: ["categories"],
     queryFn: () => fabric<CategoryList>("/api/categories"),
-    refetchInterval: 60_000,
     retry: false,
   });
+  const listReadAt = useRef(0);
+  useEffect(() => {
+    if (!list.dataUpdatedAt || listReadAt.current === list.dataUpdatedAt) return;
+    const first = listReadAt.current === 0;
+    listReadAt.current = list.dataUpdatedAt;
+    if (!first) void categoryList.refetch();
+  }, [list.dataUpdatedAt]);
   const categories = categoryList.data?.categories ?? [];
   const activeCategory = list.data?.pages[0]?.category ?? categories.find((c) => c.id === categoryParam);
   // A described category has already chosen its mail: grouping it again would fold
@@ -269,23 +330,35 @@ export default function UnifiedInbox() {
   useEffect(() => {
     if (!selected || selected.read || !detail.data || detail.data.read || markedRead.current === selected.id) return;
     markedRead.current = selected.id;
-    const request = selected.provider === "gmail"
-      ? fabric(messagePath(selected) + "/read", { read: true })
-      : fabric(messagePath(selected), { read: true }, "PUT");
     const key = ["unified-message", selected.accountId, selected.providerMessageId];
-    request
+    // The row reads as read at once; it goes back to unread if the server refuses (P3-12).
+    let undo: (() => void) | undefined;
+    void showChange({ id: selected.id, patch: { read: true } }).then((rollback) => { undo = rollback; })
+      .then(() => isRemote(selected.provider)
+        ? fabric(messagePath(selected) + "/read", { read: true })
+        : fabric(messagePath(selected), { read: true }, "PUT"))
       .then(() => {
         // The reader's own copy says read too, so "Mark as unread" is offered at once.
         client.setQueryData(key, (d: OpenMessage | undefined) => (d ? { ...d, read: true } : d));
         setSelected((current) => (current?.id === selected.id ? { ...current, read: true } : current));
         return client.invalidateQueries({ queryKey: ["unified-inbox"] });
       })
-      .catch(() => setNotice("This message could not be marked read. It stays unread."));
+      .catch(() => {
+        undo?.();
+        setNotice("This message could not be marked read. It stays unread.");
+      });
   }, [selected, detail.data, client]);
   const owner = accounts.find((a) => a.id === selected?.accountId);
+  // Drafts on the server, every account's (B-52): read afresh each time Drafts opens.
+  const serverDrafts = useQuery({
+    queryKey: ["server-drafts", accounts.map((a) => a.id).join(",")],
+    queryFn: () => listServerDrafts(accounts.map((a) => a.id), fabric),
+    enabled: draftsOpen && accounts.length > 0,
+    staleTime: 0,
+  });
   const scopeName = categoryParam
     ? activeCategory?.name ?? "Category"
-    : active?.email || (accountId ? "Selected account" : domainFilter || (providerFilter ? "Gmail" : "All inboxes"));
+    : active?.email || (accountId ? "Selected account" : domainFilter || (providerFilter === "imap" ? "Other mail" : providerFilter === "outlook" ? "Outlook" : providerFilter ? "Gmail" : "All inboxes"));
   /**
    * Changes what the list shows. Changing the order or the group keeps the open message;
    * changing where to look (inbox, folder, category, search) closes it and clears the group.
@@ -312,15 +385,48 @@ export default function UnifiedInbox() {
   async function refresh() {
     await client.invalidateQueries({ queryKey: ["unified-inbox"] });
   }
-  async function perform(action: () => Promise<unknown>, after?: () => void) {
+  /**
+   * Refresh (P1-5): Gmail is read now for the accounts in view (Cloudflare mail arrives by push),
+   * then the list and the categories are read again. Says which accounts could not be read.
+   */
+  async function checkForMail() {
+    setChecking(true);
+    try {
+      const scope = refreshScope({ accountId, domain: domainFilter });
+      let summary = { ok: true, text: "Updated just now." };
+      if (scope !== null) {
+        try {
+          const r = await fabric<RefreshResponse>("/api/inbox/refresh", scope ? { accounts: scope } : {});
+          summary = refreshSummary(r.accounts);
+        } catch (e) {
+          summary = { ok: false, text: `Gmail could not be checked: ${(e as Error).message} The list below is what the server had.` };
+        }
+      }
+      await Promise.all([refresh(), client.invalidateQueries({ queryKey: ["categories"] })]);
+      setCheckedAt(Date.now());
+      setNotice(summary.ok && summary.text === "Updated just now." ? "" : summary.text);
+    } finally {
+      setChecking(false);
+    }
+  }
+  /**
+   * Shows `change` in every cached list (the pages and the first page read after Load older) before
+   * the server answers; the returned function puts them back as they were (P3-12).
+   */
+  function showChange(change: FeedChange) {
+    return showFeedChange(client, change);
+  }
+  async function perform(action: () => Promise<unknown>, after?: () => void, change?: FeedChange) {
     setBusy(true);
     setNotice("");
+    const undo = change ? await showChange(change) : undefined;
     try {
       await action();
+      after?.();
       await refresh();
       await client.invalidateQueries({ queryKey: ["unified-message"] });
-      after?.();
     } catch (e) {
+      undo?.();
       setNotice((e as Error).message);
     } finally {
       setBusy(false);
@@ -338,11 +444,22 @@ export default function UnifiedInbox() {
       );
     }
   }
-  function compose(mode: Draft["mode"]) {
+  async function compose(mode: Draft["mode"]) {
     const m = detail.data;
+    const from = mode === "new" ? accountId : (selected?.accountId ?? "");
+    // A Cloudflare address's signature goes into the text once, where the person sees and edits it;
+    // the draft is then sent as it is (B-52), so nothing adds it a second time.
+    let signature = "";
+    try {
+      signature = from ? await signatureFor(from, fabric) : "";
+    } catch {
+      setNotice("The sender's signature could not be loaded; add it to the message if you need it.");
+    }
+    const signed = signature ? "\n\n" + signature : "";
     saved.create({
       id: crypto.randomUUID(),
-      accountId: mode === "new" ? accountId : (selected?.accountId ?? ""),
+      accountId: from,
+      ...(signature ? { signature } : {}),
       to:
         mode === "reply"
           ? replyRecipient(m?.from ?? "", m?.to ?? "", owner?.email ?? "")
@@ -353,13 +470,13 @@ export default function UnifiedInbox() {
           : (mode === "reply" ? "Re: " : "Fwd: ") + (m?.subject ?? ""),
       text:
         mode === "forward"
-          ? "\n\nForwarded message\nFrom: " +
+          ? signed + "\n\nForwarded message\nFrom: " +
             m?.from +
             "\nSubject: " +
             m?.subject +
             "\n\n" +
             (m?.text || (m?.html ? htmlToPlainText(m.html) : ""))
-          : "",
+          : signed,
       mode,
       originalId: selected?.providerMessageId,
       forwardSource:
@@ -382,7 +499,7 @@ export default function UnifiedInbox() {
     if (!selected) return;
     await perform(async () => {
       let blob: Blob;
-      if (selected.provider === "gmail") {
+      if (isRemote(selected.provider)) {
         const result = await fabric<{ data: string }>(
           messagePath(selected) + "/attachments/" + encodeURIComponent(a.id),
         );
@@ -422,7 +539,7 @@ export default function UnifiedInbox() {
         </Link>
         <button
           className="fi-primary fi-compose-button"
-          onClick={() => compose("new")}
+          onClick={() => void compose("new")}
           disabled={!accounts.length || !saved.loaded}
         >
           <PencilSimpleIcon size={18} />
@@ -439,7 +556,7 @@ export default function UnifiedInbox() {
         >
           <PencilSimpleIcon size={18} />
           <span>Drafts</span>
-          <span className="fi-counter">{saved.drafts.length}</span>
+          <span className="fi-counter">{draftRows(saved.drafts, serverDrafts.data?.drafts ?? []).length}</span>
         </button>
         <div className="fi-section-label">WORKSPACE</div>
         <button
@@ -496,25 +613,9 @@ export default function UnifiedInbox() {
             <span>Rules & history</span>
             <CaretRightIcon size={14} />
           </button>
-          <Link className="fi-nav-item" to="/projects">
-            <AtIcon size={19} />
-            <span>Domains &amp; addresses</span>
-          </Link>
-          <Link className="fi-nav-item" to="/ai-agents">
-            <RobotIcon size={19} />
-            <span>Agents</span>
-          </Link>
-          <Link className="fi-nav-item" to="/knowledge">
-            <BooksIcon size={19} />
-            <span>Knowledge</span>
-          </Link>
-          <Link className="fi-nav-item" to="/agent-access">
-            <PlugIcon size={19} />
-            <span>Agent access</span>
-          </Link>
-          <Link className="fi-nav-item" to="/accounts">
+          <Link className="fi-nav-item" to="/settings">
             <GearSixIcon size={19} />
-            <span>Manage accounts</span>
+            <span>Settings</span>
           </Link>
           <div className="fi-theme-row">
             <a
@@ -546,7 +647,7 @@ export default function UnifiedInbox() {
         <header className="fi-toolbar">
           <div>
             <span className="fi-eyebrow">
-              {categoryParam ? "CATEGORY" : accountId ? "ONE ADDRESS" : domainFilter ? "ONE DOMAIN" : providerFilter ? "EVERY GMAIL ACCOUNT" : "YOUR MAIL, TOGETHER"}
+              {categoryParam ? "CATEGORY" : accountId ? "ONE ADDRESS" : domainFilter ? "ONE DOMAIN" : providerFilter === "imap" ? "EVERY IMAP ACCOUNT" : providerFilter === "outlook" ? "EVERY OUTLOOK ACCOUNT" : providerFilter ? "EVERY GMAIL ACCOUNT" : "YOUR MAIL, TOGETHER"}
             </span>
             <h1>{scopeName}</h1>
             {categoryParam && activeCategory && (
@@ -583,10 +684,10 @@ export default function UnifiedInbox() {
           </form>
           <button
             className="fi-icon-button"
-            title="Refresh cached mail"
-            aria-label="Refresh cached mail"
-            onClick={() => void refresh()}
-            disabled={list.isFetching}
+            title="Check for new mail"
+            aria-label="Check for new mail"
+            onClick={() => void checkForMail()}
+            disabled={checking || list.isFetching}
           >
             <ArrowClockwiseIcon size={19} />
           </button>
@@ -603,7 +704,7 @@ export default function UnifiedInbox() {
           <div className="fi-provider-errors" role="status">
             <strong>
               {issues.length === 1
-                ? `${accounts.find((a) => a.id === issues[0].accountId)?.email ?? issues[0].provider} ${ISSUE_TEXT[issues[0].error] ?? ISSUE_TEXT.account_unavailable}.`
+                ? `${accounts.find((a) => a.id === issues[0].accountId)?.email ?? issues[0].provider} ${issueText(issues[0])}.`
                 : `${issues.length} inboxes are unavailable; the rest of your mail is shown.`}
             </strong>
             {issues.length > 1 && (
@@ -614,12 +715,18 @@ export default function UnifiedInbox() {
             {issuesOpen && issues.length > 1 && (
               <ul>
                 {issues.map((i, index) => (
-                  <li key={index}>{accounts.find((a) => a.id === i.accountId)?.email ?? i.provider} {ISSUE_TEXT[i.error] ?? ISSUE_TEXT.account_unavailable}</li>
+                  <li key={index}>{accounts.find((a) => a.id === i.accountId)?.email ?? i.provider} {issueText(i)}</li>
                 ))}
               </ul>
             )}
-            <button className="fi-text-button" onClick={() => void refresh()}>Retry</button>{" "}
-            · <Link to="/accounts">Manage connections</Link>
+            {issues.some(needsPassword) && (
+              <><Link className="fi-text-button" to={`/settings/accounts/${encodeURIComponent(issues.find(needsPassword)!.accountId ?? "")}`}>Enter a new app password</Link>{" "}· </>
+            )}
+            {issues.some(needsReconnect) && (
+              <><a className="fi-text-button" href={reconnectPath(issues.find(needsReconnect)!)} target="_blank" rel="noreferrer">Reconnect in browser ↗</a>{" "}· </>
+            )}
+            <button className="fi-text-button" disabled={checking} onClick={() => void checkForMail()}>Retry</button>{" "}
+            · <Link to={settingsPath("accounts", issues.length === 1 ? issues[0].accountId : null)}>Why, and what to do</Link>
           </div>
         )}
         {stuck.length > 0 && (
@@ -647,7 +754,7 @@ export default function UnifiedInbox() {
             setSelected(null);
             setNotice(`Deleted ${r.deleted} message${r.deleted === 1 ? "" : "s"} from Spam.`
               + (r.failed ? ` ${r.failed} address${r.failed === 1 ? "" : "es"} could not be emptied; try again.` : "")
-              + " Gmail empties its own Spam after 30 days.");
+              + " Gmail and IMAP accounts keep their own Spam, which their provider empties.");
           })} />
         )}
         <div className="fi-content">
@@ -659,8 +766,12 @@ export default function UnifiedInbox() {
                   : folders.find((f) => f[0] === folder)?.[1]}
               </strong>
               <span>
-                {list.isFetching
+                {checking
+                  ? "Checking for new mail…"
+                  : list.isFetching
                   ? "Updating…"
+                  : checkedAt && Date.now() - checkedAt < 60_000
+                    ? "Updated just now"
                   : view === "focus"
                     ? "Important first"
                     : "Newest first"}
@@ -827,8 +938,9 @@ export default function UnifiedInbox() {
                     <ArrowLeftIcon size={18} />
                   </button>
                   <span>{owner?.email ?? rawAccount(selected.accountId)}</span>
-                  <MessageActions message={selected} folder={folder as InboxFolder}
-                    busy={busy || !detail.data} run={perform}
+                  <MessageActions message={selected} folder={folder as InboxFolder} capabilities={owner?.capabilities}
+                    busy={busy || !detail.data}
+                    run={(action, after, change) => perform(action, after, change && ("removed" in change ? { id: change.id, removed: true } : { id: change.id, patch: { starred: change.starred } }))}
                     onChanged={change => {
                       // Guard: only the message that was acted on moves the selection on.
                       if ("removed" in change) {
@@ -837,24 +949,25 @@ export default function UnifiedInbox() {
                       }
                       else setSelected(current => applyMessageChange(current, change));
                     }} />
-                  <button
+                  {owner?.capabilities?.archive !== false && <button
                     className="fi-icon-button"
                     aria-label="Archive message"
                     disabled={busy || !detail.data}
                     onClick={() =>
                       void perform(
                         () =>
-                          selected.provider === "gmail"
+                          isRemote(selected.provider)
                             ? fabric(messagePath(selected) + "/archive", {})
                             : fabric(messagePath(selected) + "/move", {
                                 folderId: "archive",
                               }),
                         () => selectNextAfter(selected.id),
+                        { id: selected.id, removed: true },
                       )
                     }
                   >
                     <ArchiveIcon size={19} />
-                  </button>
+                  </button>}
                   <button
                     className="fi-icon-button"
                     aria-label={
@@ -863,7 +976,7 @@ export default function UnifiedInbox() {
                     disabled={busy || !detail.data}
                     onClick={() =>
                       void perform(() =>
-                        selected.provider === "gmail"
+                        isRemote(selected.provider)
                           ? fabric(messagePath(selected) + "/read", {
                               read: !detail.data?.read,
                             })
@@ -872,6 +985,8 @@ export default function UnifiedInbox() {
                               { read: !detail.data?.read },
                               "PUT",
                             ),
+                        undefined,
+                        { id: selected.id, patch: { read: !detail.data?.read } },
                       )
                     }
                   >
@@ -899,9 +1014,9 @@ export default function UnifiedInbox() {
                       <div className="fi-reader-scroll">
                         <header className="fi-message-header">
                           <span className="fi-eyebrow">
-                            {selected.provider === "gmail"
-                              ? "GMAIL"
-                              : "CLOUDFLARE"}
+                            {selected.provider === "cloudflare"
+                              ? "CLOUDFLARE"
+                              : (owner?.providerName ?? (selected.provider === "gmail" ? "Gmail" : "IMAP")).toUpperCase()}
                             <span className="fi-account-pill">
                               {owner?.email ?? rawAccount(selected.accountId)}
                             </span>
@@ -957,13 +1072,13 @@ export default function UnifiedInbox() {
                       <footer className="fi-reply-bar">
                         <button
                           className="fi-primary"
-                          onClick={() => compose("reply")}
+                          onClick={() => void compose("reply")}
                         >
                           <ArrowBendUpLeftIcon size={17} /> Reply
                         </button>
                         <button
                           className="fi-secondary"
-                          onClick={() => compose("forward")}
+                          onClick={() => void compose("forward")}
                         >
                           <ArrowBendUpRightIcon size={17} /> Forward
                         </button>
@@ -989,6 +1104,8 @@ export default function UnifiedInbox() {
       {draftsOpen && (
         <DraftsDialog
           drafts={saved.drafts}
+          server={serverDrafts.data?.drafts ?? []}
+          serverState={{ loading: serverDrafts.isFetching && !serverDrafts.data, failed: serverDrafts.data?.failed ?? [] }}
           accounts={accounts}
           statuses={saved.statuses}
           onClose={() => setDraftsOpen(false)}
@@ -998,9 +1115,17 @@ export default function UnifiedInbox() {
               setComposeOpen(true);
             }
           }}
+          onOpenServer={(row) => {
+            void saved.openServer(row).then((opened) => {
+              if (opened) {
+                setDraftsOpen(false);
+                setComposeOpen(true);
+              }
+            });
+          }}
           onCompose={() => {
             setDraftsOpen(false);
-            compose("new");
+            void compose("new");
           }}
         />
       )}
@@ -1010,6 +1135,10 @@ export default function UnifiedInbox() {
           draft={draft}
           storageError={saved.error}
           saving={saved.saving}
+          sync={saved.sync}
+          onFlush={saved.flush}
+          onResync={saved.resync}
+          onResolve={saved.resolve}
           onLock={saved.lock}
           onSettle={saved.settle}
           onDiscard={saved.discard}

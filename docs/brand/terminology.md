@@ -12,7 +12,8 @@ Contract: brand-contract v1
 | Project address | Alias, forwarding address | An address on a served project domain, received by the Worker |
 | Reply policy | Auto-reply settings | What an agent may send without the operator: mode, allowed intents, daily limit |
 | Answer | AI response (in run history) | One agent run for one incoming message |
-| Domains & addresses | Project addresses (screen name, since 0.3) | The screen managing the connected Cloudflare account's domains and their addresses |
+| Settings | Manage accounts, Mailboxes screen, Accounts and rules, Server settings, Domains & addresses (screen names before 0.11) | The one screen for everything set up rather than read, with its sections: Addresses, Domains, Accounts, Forwarding destinations, Categories, Spam rules, Agents, Knowledge, Agent access, App; a section is named "Settings → Domains" |
+| Server address | Server settings (the Mac app's menu item) | The address of the server the Mac app opens, chosen in its own window (Fabric Inbox → Server address…) |
 | Receive mail here | Connect domain, Import domain | Moving a domain's mail to the server, keeping each old destination as a copy |
 | Forwarding destination | Forward target, verified email | An outside address a copy may go to, confirmed through Cloudflare's link |
 | Your server | Backend, instance, origin (to a user) | The Fabric Inbox Worker in the person's own Cloudflare account |
@@ -29,10 +30,18 @@ Contract: brand-contract v1
 | Spam rules | Spam settings, filters | The screen with what goes to Spam and the Always spam / Never spam lists |
 | Agent access | API access, integrations, MCP settings | The screen where the owner gives outside agents their keys and sees what they changed |
 | Agent key | API key, agent token, access token, credential (to a user) | One outside agent's way in: a Client ID and a Client Secret, with a level and a sending mode |
-| Cloudflare API token | API key, Cloudflare key, credential (to a user) | What a person creates in Cloudflare (My Profile or Manage Account → API Tokens) and gives the server: one for the server's own account, one for each other account connected on Domains & addresses; "token" alone once the context has named it (operator, 2026-10-01) |
+| Cloudflare API token | API key, Cloudflare key, credential (to a user) | What a person creates in Cloudflare (My Profile or Manage Account → API Tokens) and gives the server: one for the server's own account, one for each other account connected in Settings → Accounts; "token" alone once the context has named it (operator, 2026-10-01) |
 | Outside agent | Bot, integration, app (for a keyed agent) | An AI agent the owner runs elsewhere (Claude Code, Cursor, their own) that works with Fabric Inbox through its key; never an Agent that answers an address |
 | Drafts only / Can send | Read-write, full access (for sending) | Whether an agent key's mail waits in Drafts for the owner or leaves, within its daily number |
 | Revoke | Delete key, disable | Ending an agent key: it stops working at once |
+| App password | Mail password, IMAP password | A password the person makes at their mail provider for one app (Apple names it app-specific password in its own menus); checked with the provider, then kept encrypted on the server and never shown again |
+| IMAP account | IMAP connection, mail connector | A mail account read over IMAP and sent over SMTP with an app password (iCloud Mail, Yahoo Mail, Fastmail…); named `imap:<id>` to agents |
+| Other mail | Other accounts, generic mail | The Settings card ("Other mail (IMAP)") and the sidebar group for IMAP accounts |
+| Enter a new app password | Reconnect (for an IMAP account), re-authenticate | What fixes an IMAP account whose provider refused the app password |
+| Outlook account | Hotmail account, Exchange account, Microsoft account (for the mailbox) | An Outlook.com, Hotmail, Live or Microsoft 365 mailbox read and sent through Microsoft Graph with the person's own Microsoft sign-in; named `outlook:<id>` to agents |
+| App registration | Azure app, Microsoft app, OAuth app (for Microsoft) | The owner's own application in Microsoft Entra that Outlook accounts sign in through, by Microsoft's own name |
+| Client secret | Microsoft password, app key | The app registration's secret Value, saved on the server with the date it expires; never the Secret ID |
+| Administrator's approval | Admin consent (to a user), tenant approval | What an organization that lets only administrators allow apps needs before its people can connect: the link the person sends their administrator |
 
 ## Entity and tier names — exact spelling
 | Name | Wrong forms seen |
@@ -43,10 +52,24 @@ Contract: brand-contract v1
 | Spam | spam (the folder's name) |
 | Gmail | GMail |
 | Google | google (provider name) |
+| Google Cloud | google cloud, GCP (to a user) |
+| Testing | testing (the publishing status of a Google Cloud app, by its own name) |
 | OAuth | Oauth |
 | Cloudflare | CloudFlare |
 | Mac | mac (device name) |
 | Outlook | outlook (provider name) |
+| Microsoft | microsoft (company name) |
+| Hotmail | hotmail (the service's name) |
+| Live | live (the service's name, in Outlook.com, Hotmail and Live) |
+| Microsoft 365 | Office 365, O365, M365 (to a user) |
+| Microsoft Entra | Azure AD, Azure Active Directory, Entra ID (outside Microsoft's own menu name) |
+| Outlook.com | outlook.com, Outlook (for the consumer service alone, where it must be told apart) |
+| IMAP | Imap, imap (to a user) |
+| SMTP | Smtp, smtp (to a user) |
+| iCloud Mail | iCloud mail, ICloud |
+| Fastmail | FastMail |
+| Mail.ru | mail.ru (the provider's name) |
+| GMX | Gmx |
 | Drafts | drafts (navigation label) |
 | MiB | Mib, MB (when the bound is 1,048,576-byte units) |
 | Claude | claude (the assistant's name) |
@@ -87,5 +110,5 @@ Contract: brand-contract v1
 |---|---|
 | Continue draft | Reopen the selected saved workbench draft, retaining its sender and send recovery |
 | Retry same attempt | Reconcile or retry the locked send with its existing recovery key and unchanged content |
-| Refresh cached mail | Reload the combined cached list; not a promise to sync the entire provider mailbox |
+| Check for new mail | Read Gmail's new mail and changes now for the Gmail accounts in view, then reload the combined list; it does not import a whole mailbox, and names any account it could not read |
 | Light theme / Dark theme | Appearance preference; no change to message, account or send state |

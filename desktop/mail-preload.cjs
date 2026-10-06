@@ -1,9 +1,17 @@
 'use strict';
-// The mail window loads the configured server. It gets exactly one capability:
-// reading (once) the setup chosen in the first-run window. main.cjs answers only
-// the configured origin's main frame (policy.isMailSender).
+// The mail window loads the configured server. It gets exactly two capabilities: reading (once)
+// the setup chosen in the first-run window, and hearing that the Mac woke from sleep so it can
+// read new mail at once (P1-4). main.cjs answers only the configured origin's main frame
+// (policy.isMailSender) and sends the wake signal only to the mail window.
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('fabricDesktop', Object.freeze({
   pendingSetup: () => ipcRenderer.invoke('fabric:pending-setup'),
   pendingSetupDone: () => ipcRenderer.invoke('fabric:pending-setup-done'),
+  // Receive-only: the page passes a callback and gets back its unsubscribe; no data crosses.
+  onResume: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = () => callback();
+    ipcRenderer.on('fabric:resumed', listener);
+    return () => ipcRenderer.removeListener('fabric:resumed', listener);
+  },
 }));

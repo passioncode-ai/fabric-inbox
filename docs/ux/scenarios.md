@@ -56,6 +56,16 @@
 | SCN-048 | Turn the anonymous usage counts off or on | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
 | SCN-049 | The app keeps itself up to date | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
 | SCN-050 | Remove or reinstall the app and lose nothing | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
+| SCN-051 | Set up Gmail on my server | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-052 | Connect Gmail with an app password | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-053 | Connect another mail account with an app password | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-054 | Give an IMAP account a new app password | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-055 | Disconnect an IMAP account | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-056 | An IMAP connection is refused | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-057 | Set up Outlook on my server | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-058 | Connect an Outlook or Microsoft 365 account | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-059 | My organization's administrator must allow Fabric Inbox | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-060 | An Outlook account needs a reconnect or a new client secret | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -98,9 +108,11 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **UI elements:** SCR-02; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Cancel leaves no connected account; unavailable configuration shows setup needed; provider refusal offers reconnect.
+- **Refinement (2026-10-06, WS6 Gmail):** With Gmail not set up, choosing Gmail opens its setup (SCN-051) instead of "not configured". Once set up, the connect step says before it opens that Google's sign-in happens in the browser (Google forbids it inside apps) and, in the Mac app, that the browser first asks for the server's emailed code. If Google would refuse the redirect URI or the client, the server says so before the person leaves for Google. The browser ends on a page for every outcome — connected (with a warning when Google limited the access to 7 days), Cancel, unticked Gmail box, Gmail API off, unknown redirect URI, refused client, expired sign-in — never raw JSON. Evidence: `tests/gmail-callback-pages.test.ts`, `tests/gmail-setup-ui.test.ts`.
+- **Refinement (2026-10-06, mail refresh):** A connected Gmail account syncs at once, not a poll interval later. Its sidebar row says "importing 40%" (or "importing" until Gmail reports the mailbox size) while older mail is imported; new mail already arrives during the import. Only a revoked grant asks for a reconnect; Gmail being down or refusing one request waits and retries (60 s doubling to 15 min). Evidence: `tests/gmail-scheduler.test.ts` ("a new connection syncs now…"), `tests/feed-freshness.test.ts` ("a Gmail account importing says so…"), `tests/gmail-sync.test.ts` (P2-9 tests).
 - **Audit refinement (2026-09-28):** Until the account list loads, Accounts shows "Checking Gmail setup…" instead of claiming Gmail is not configured; a failed load says setup is unknown beside the Retry alert. Evidence: `tests/frontend-states.test.ts` ("Gmail is only called 'not configured'…").
 - **Status:** validated
-- **Coverage:** app/routes/fabric-accounts.tsx:61, app/lib/account-status.ts, workers/routes/accounts.ts:83, desktop/main.cjs:151
+- **Coverage:** app/components/settings/sections/AccountsSection.tsx, app/components/settings/sections/GmailSetup.tsx, app/lib/account-status.ts, workers/routes/accounts.ts, workers/gmail-setup/result-page.ts, desktop/main.cjs:151; workers/providers/gmail-scheduler.ts (`connected`); app/components/inbox/AccountSidebar.tsx (`syncLabel`)
 - **Product:** unobserved
 - **Today:** Partial. Accounts lists Gmail and Cloudflare separately; the configured Gmail link starts at the server in a browser. The not_configured state was reported from the running app (RE-006). No real OAuth grant, mailbox synchronization or send acceptance was performed. Outlook/IMAP are explicitly unavailable.
 
@@ -118,8 +130,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **UI elements:** SCR-02; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** No adapter or credentials: keep capability unavailable, never simulate a connected account.
+- **Refinement (2026-10-06, WS6 reconnect with reasons):** A Gmail account that stops working keeps why — Google ended a Testing app's access after 7 days, access removed, Gmail box not ticked, Gmail API off, the server's Google client refused, saved access unreadable — whether a sync or a mail action met it, and the inbox banner and the account's panel say it with one action: Reconnect in browser, Enable the Gmail API then Retry, or Check the Gmail setup. Gmail's quota 403 waits and retries. Evidence: `tests/gmail-reasons.test.ts`, `tests/gmail-setup-ui.test.ts`.
 - **Status:** draft
-- **Coverage:** app/routes/fabric-accounts.tsx:61, app/routes/fabric-accounts.tsx:76, app/routes/fabric-accounts.tsx:134
+- **Coverage:** app/components/settings/sections/AccountsSection.tsx, app/components/settings/sections/GmailSetup.tsx, app/routes/unified-inbox.tsx, shared/mail/gmail-reasons.ts, workers/providers/account-service.ts, workers/providers/gmail-client.ts
 - **Product:** unobserved
 - **Today:** Partial. Missing configuration and unsupported providers have visible text; account status and sync errors have source coverage. A real revoked-token/reconnect walkthrough is not recorded. Disconnect is two-step — "Disconnect…" arms it for one account, then "Disconnect <email>" confirms or "Keep" (default focus, also Escape) backs out — and reports whether provider revocation succeeded.
 
@@ -137,8 +150,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **UI elements:** SCR-03, SCR-04; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** One account sync failure is shown separately; initial loading is not an empty inbox.
+- **Refinement (2026-10-06, mail refresh):** "Check for new mail" reads Gmail now for the Gmail accounts in view (none for a Cloudflare address or domain, whose mail arrives by push), then the list and categories; it says "Updated just now" or names each account not read and why (busy until a time, needs reconnecting, Gmail error, not reached in time). The list keeps updating every minute while the window is active, also after Load older (the first page is read and joined to the pages already loaded), and at once when the window comes back or the Mac wakes. A count the server could not read stays as last known, dimmed, "may be out of date". A large Gmail cache never makes its account vanish. Evidence: `tests/mail-refresh.test.ts`, `tests/gmail-cache.test.ts`, `tests/gmail-scheduler.test.ts`, `tests/feed-freshness.test.ts`.
 - **Status:** validated
-- **Coverage:** app/routes/unified-inbox.tsx (`UnifiedInbox`, `scope`, detail query); app/components/inbox/model.ts (`messagePath`); workers/routes/inbox.ts
+- **Coverage:** app/routes/unified-inbox.tsx (`UnifiedInbox`, `scope`, detail query, `checkForMail`, head query); app/components/inbox/model.ts (`messagePath`); workers/routes/inbox.ts (`/api/inbox/refresh`); app/lib/mail-refresh.ts; workers/providers/gmail-cache.ts
 - **Product:** unobserved
 - **Today:** Partial. The unified workbench shows all-account mail with source labels and filters one account in place through URL scope. Root observed three synthetic accounts, six messages and a one-account view with two messages (RE-009). Detail queries retain account and provider message identity. Individual-message reading exists; full threads, real multi-account synchronization and live account acceptance remain unverified.
 
@@ -169,19 +183,21 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** SCR-05
 - **Preconditions:** User session and relevant account or fixture available; capabilities are checked before action.
 - **Steps:**
-  1. Choose Compose -> sender, recipients, subject and body are editable.
-  2. Select the sender and save -> draft save state is shown.
-  3. Reopen the draft -> stored fields and account are restored.
+  1. Choose Compose -> sender, recipients, subject and body are editable; a Cloudflare address's signature is already in the body once.
+  2. Select the sender and type -> the draft is kept on this device at once and saved to that account's server shortly after; the composer says "Saved to your server" or why it is not yet.
+  3. Reopen the draft from Drafts, on this device or another -> stored fields, account and files are restored.
+  4. Open an agent's draft from Drafts -> it opens to edit and send like any other (B-09).
 - **Release refinement (REL-03):** Compose starts an independent draft; Drafts reopens a selected saved item. Each sender, reply context and uncertain attempt survives separately. A blocked attempt does not block a new message. Concurrent edits must report conflict rather than overwrite another window.
+- **Release refinement (0.11, B-52):** The server's draft (a Cloudflare mailbox's Drafts, Gmail's own drafts) is the source of truth; the device keeps a cache that survives no network and a crash. A change made elsewhere — another window or device, an agent, Gmail — is shown as a conflict with "Show the saved version" and "Keep my version", never overwritten. Drafts made before this release are saved up on first run and kept on the device until the server confirms.
 - **Expected result:** A draft is associated with its selected account and is never silently sent.
 - **Alt paths:** Return to the previous surface without causing an external action; preserve confirmed saved work.
 - **UI elements:** SCR-05; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Save failure preserves current input and does not claim it was saved.
 - **Status:** validated
-- **Coverage:** app/components/inbox/draft-store.ts; app/components/inbox/use-drafts.ts; app/components/inbox/DraftsDialog.tsx; tests/inbox-drafts.test.ts
+- **Coverage:** app/components/inbox/server-drafts.ts; app/components/inbox/use-drafts.ts; app/components/inbox/draft-store.ts; app/components/inbox/DraftsDialog.tsx; workers/lib/mailbox-drafts.ts; tests/server-drafts-sync.test.ts; tests/server-drafts.test.ts; tests/gmail-drafts.test.ts; tests/inbox-drafts.test.ts
 - **Product:** unobserved
-- **Today:** Partial. Independent versioned local drafts retain sender, reply context and recovery key. Compose creates a new item; Drafts reopens a selected item. Root observed two different senders/content surviving reload at the synthetic 5190 fixture. Web Locks and revisions refuse conflicting writes; unknown attempts remain immutable. Storage failure is explicit. Cross-device drafts and a fully offline renderer remain unavailable.
+- **Today:** Partial. Drafts are saved to their account's server under a revision and listed across accounts with agents' drafts; the device copy keeps typing safe offline and after a crash, and a conflicting change elsewhere is reported, not overwritten (`tests/server-drafts-sync.test.ts`, `tests/server-drafts.test.ts`, `tests/gmail-drafts.test.ts`). A Gmail draft waits on the device until it has a valid recipient. No live provider round trip or second-device reopen was observed in this change.
 
 
 ### SCN-007: Send from the chosen identity
@@ -200,9 +216,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Invalid recipient blocks send inline; rejection preserves draft; unknown outcome is SCN-020.
 - **Status:** validated
-- **Coverage:** app/components/inbox/Composer.tsx (`send`); app/components/inbox/send-state.ts (`sendRecovery`)
+- **Coverage:** app/components/inbox/Composer.tsx (`send`); app/components/inbox/send-state.ts (`sendRecovery`); app/components/inbox/server-drafts.ts (`sendSavedDraft`); workers/durableObject/index.ts (`sendDraft`)
 - **Product:** unobserved
-- **Today:** Partial. Compose requires an explicit sender, saves a locked attempt before transport and reports accepted only after provider acceptance. An uncertain attempt locks its fields and exposes Retry same attempt with the same recovery key; a later request refusal alone cannot unlock an earlier uncertain send. No actual provider send or recipient delivery was exercised.
+- **Today:** Partial. Compose requires an explicit sender, saves the draft to the server, saves a locked attempt, then sends the server's draft as it is (one signature, the mailbox's display name) and reports accepted only after provider acceptance; the draft leaves Drafts once accepted, and a change made elsewhere just before sending stops the send with nothing sent. An uncertain attempt locks its fields and exposes Retry same attempt with the same recovery key; a later request refusal alone cannot unlock an earlier uncertain send. No actual provider send or recipient delivery was exercised.
 
 ### SCN-008: Reply to a thread
 - **Persona:** P-01
@@ -240,7 +256,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** validated
 - **Coverage:** app/routes/unified-inbox.tsx (`compose`); app/components/inbox/Composer.tsx (forward notice); app/routes/automation.tsx:273
 - **Product:** unobserved
-- **Today:** Partial. Forward prepares a draft with source account and original-file metadata. Explicit original inclusion captures all files or refuses incomplete forwarding; files persist on this device and share the 10-file/5-MiB bound. New/reply drafts support Cc/Bcc and added files. Legacy uncertain attempts retain their original request identity. Automated attachment tests pass; synthetic browser draft reload preserved a selected file and Cc/Bcc. Live original attachment forwarding remains unobserved; automation retains its separate text-only boundary. Evidence: `tests/attachment-composer.test.ts`, `docs/app-store/verification.md`.
+- **Today:** Partial. Forward prepares a draft with source account and original-file metadata. Explicit original inclusion captures all files or refuses incomplete forwarding; files are kept on this device until they are saved with the draft on the server, and files on both sides share the 10-file/5-MiB bound. New/reply drafts support Cc/Bcc and added files. Legacy uncertain attempts retain their original request identity. Automated attachment tests pass; synthetic browser draft reload preserved a selected file and Cc/Bcc. Live original attachment forwarding remains unobserved; automation retains its separate text-only boundary. Evidence: `tests/attachment-composer.test.ts`, `docs/app-store/verification.md`.
 
 ### SCN-010: Read and download an attachment
 - **Persona:** P-01
@@ -277,9 +293,10 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **UI elements:** SCR-03, SCR-04; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** On failure restore the previous visible state; undo only when supported by the provider.
+- **Refinement (2026-10-06, mail refresh):** In the unified inbox, archive, trash, spam, star and read show at once in the list and are put back exactly when the server refuses, with the reason in the notice; opening an unread message marks its row read at once the same way. A change in one mailbox's own view refreshes the unified inbox too. Evidence: `tests/optimistic-feed.test.ts`.
 - **Audit refinement (2026-09-28), Cloudflare mailbox view:** Delete outside Trash moves the message to Trash and offers Undo (back to the folder it came from). Inside Trash the control reads "Delete permanently" and a dialog titled "Delete permanently?" must be confirmed. Moving a message out of Trash restores it — the Trash empty state says exactly this. A failed star, read change, move, delete or folder create raises an error toast announced as an alert; a failed folder load shows an error with Retry, never "Your inbox is empty". Row actions appear on keyboard focus as well as hover; the star has an accessible name. Evidence: `tests/delete-policy.test.ts`, `tests/mutation-errors.test.ts`, `tests/frontend-states.test.ts`.
 - **Status:** draft
-- **Coverage:** app/routes/unified-inbox.tsx (`perform`, reader toolbar); app/routes/email-list.tsx; app/components/EmailPanel.tsx; app/hooks/useDeleteMessage.ts; app/lib/delete-policy.ts; app/components/MutationErrorToasts.tsx; tests/automation-integration.test.ts:170
+- **Coverage:** app/routes/unified-inbox.tsx (`perform`, `showChange`, reader toolbar); app/lib/mail-refresh.ts (`showFeedChange`); app/routes/email-list.tsx; app/components/EmailPanel.tsx; app/hooks/useDeleteMessage.ts; app/lib/delete-policy.ts; app/components/MutationErrorToasts.tsx; tests/automation-integration.test.ts:170
 - **Product:** unobserved
 - **Today:** Partial. The unified reader offers read/unread, archive, star/unstar, soft trash and restore. Provider mutations precede visible confirmation; late completion cannot clear another selected message. Synthetic browser acceptance exercised star/unstar and trash/restore for Gmail and Cloudflare. Gmail untrash does not promise Inbox. Live organization, bulk controls and permanent deletion remain unverified or absent. Evidence: `tests/mail-actions.test.ts`; `docs/app-store/verification.md`.
 
@@ -287,22 +304,23 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Persona:** P-01
 - **Feature:** Resume and manage preferences
 - **Traces:** ST-007, FLW-07, JTBD-03, JRN-03; RE-001, RE-003
-- **Entry point:** SCR-06
+- **Entry point:** SCR-02 (Settings → App, and an address's Name & signature)
 - **Preconditions:** User session and relevant account or fixture available; capabilities are checked before action.
 - **Steps:**
-  1. Open Settings -> current saved values load.
-  2. Change values and save -> success appears only after persistence.
-  3. Switch the workbench between light and dark -> the choice survives reload if device storage succeeds; a storage failure names the window-only change.
+  1. Open Settings (the gear in the sidebar, or Settings… ⌘, in the Mac app) -> the section list is on the left and the last section opens; nothing moves when an item is chosen.
+  2. On an address, Name & signature -> change the display name or the signature, Save changes -> success appears only after persistence; leaving with unsaved changes asks first.
+  3. App → Appearance -> Light theme or Dark theme; the choice survives reload if device storage succeeds; a storage failure says it lasts until the app is closed.
 - **Expected result:** Settings can be reviewed and saved without losing the inbox context.
 - **Alt paths:** Return to the previous surface without causing an external action; preserve confirmed saved work.
-- **UI elements:** SCR-06; named actions and fields in the steps; visible state and recovery control.
+- **UI elements:** SCR-02; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Validation identifies the field; save failure retains edits and offers retry.
-- **Audit refinement (2026-09-28):** Mailbox settings that fail to load show "Couldn't load settings" with Retry instead of an endless spinner.
+- **Audit refinement (2026-09-28):** Mailbox settings that fail to load show what could not load, with Retry, instead of an endless spinner.
+- **Settings refinement (2026-10-06, WS1):** One screen instead of separate pages; the legacy mailbox gear and /mailbox/:id/settings open the address's Name & signature tab. Evidence: `tests/settings-ui.test.ts`, `scripts/settings-scroll-check.mjs`.
 - **Status:** draft
-- **Coverage:** app/routes/unified-inbox.tsx (`toggleTheme`); app/root.tsx (theme bootstrap); app/routes/settings.tsx:15; desktop/setup.js (theme control)
+- **Coverage:** app/routes/settings.tsx; app/components/settings/sections/AppSection.tsx (AppearancePanel); app/lib/theme.ts; app/components/settings/sections/SignatureForm.tsx; app/routes/unified-inbox.tsx (`toggleTheme`); app/root.tsx (theme bootstrap); desktop/main.cjs (openSettings); desktop/setup.js (theme control)
 - **Product:** unobserved
-- **Today:** Partial. The workbench defaults to white/light and offers dark with a device-stored preference. Root observed dark toggle and persistence after reload on the synthetic app (RE-009). Storage failure reports a window-only change. Existing mailbox preferences and native server settings remain separate; full settings acceptance is not re-run.
+- **Today:** Partial. The workbench defaults to white/light and offers dark with a device-stored preference. Root observed dark toggle and persistence after reload on the synthetic app (RE-009). Storage failure reports a window-only change. Settings is one screen since 0.11; the Mac app's own switches stay in its app menu and Settings → App explains them. Full settings acceptance on a live server is not re-run.
 
 ### SCN-013: Ask AI for an explanation or draft
 - **Persona:** P-01
@@ -434,8 +452,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **UI elements:** SCR-01, SCR-03, SCR-05; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Expired session offers sign-in; unavailable attachment remains unavailable; unsaved content is never claimed durable.
+- **Refinement (2026-10-06, mail refresh):** After the Mac wakes from sleep the open mail window reads new mail at once (the desktop app's `powerMonitor` resume, sent only to the mail window). A page older than an updated server shows "A new version of Fabric Inbox is on the server. Reload to update"; a page whose code can no longer be fetched after an update reloads once by itself. Evidence: `tests/desktop-policy.test.ts` (bridge IPC list, resume), `tests/build-version.test.ts`.
 - **Status:** validated
-- **Coverage:** desktop/main.cjs:90, desktop/setup.html:27, app/routes/gmail-inbox.tsx:41
+- **Coverage:** desktop/main.cjs:90, desktop/setup.html:27, app/routes/gmail-inbox.tsx:41; desktop/mail-preload.cjs (`onResume`); app/lib/build-version.ts; app/root.tsx (`UpdateNotice`)
 - **Product:** unobserved
 - **Today:** Partial. Native connection-refused/retry behavior and session partition restart were observed. Gmail localStorage draft/recovery code now exists, but no runtime draft-restoration receipt is recorded. There is no offline mailbox cache or bundled renderer to read it; this original requirement remains open.
 
@@ -464,7 +483,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Persona:** P-01
 - **Feature:** Put an agent on a project address
 - **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001
-- **Entry point:** SCR-09
+- **Entry point:** SCR-02 (Settings → Domains or Addresses)
 - **Preconditions:** User session available; the project domain uses Cloudflare Email Routing and the operator can change its routing.
 - **Steps:**
   1. Choose a project domain and type the local part (support, hello, billing) -> the full address and its project are previewed.
@@ -472,11 +491,11 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   3. Send the test message offered on the screen -> it appears in the new mailbox within the page.
 - **Expected result:** A new project address receives mail in minutes, and the screen says whether routing is verified, missing or unknown.
 - **Alt paths:** Cancel before confirming leaves no mailbox; an address that already exists opens instead of being duplicated.
-- **UI elements:** SCR-09; named actions and fields in the steps; visible state and recovery control.
+- **UI elements:** SCR-02; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Routing that cannot be read is shown as unknown with the dashboard step to fix it, never as working; a domain not routed to the service cannot be chosen without that warning.
 - **Status:** draft
-- **Coverage:** app/routes/project-addresses.tsx (ProjectAddressesPage), workers/routes/agents.ts (/api/project-addresses), workers/routing/email-routing.ts (EmailRoutingClient), tests/project-addresses.test.ts
+- **Coverage:** app/components/settings/sections/AddressesSection.tsx (AddressesSection), workers/routes/agents.ts (/api/project-addresses), workers/routing/email-routing.ts (EmailRoutingClient), tests/project-addresses.test.ts
 - **Product:** unobserved
 - **Today:** Partial. **Project addresses** creates an address on any served domain with its agent; with `CLOUDFLARE_EMAIL_ROUTING_TOKEN` it creates the Email Routing rule first (a refused rule leaves no mailbox) and shows routing as verified, missing or unknown with the fix; **Send test message** sends from the address to itself. Observed on the local Worker without a token (routing unknown). Project labels from Fabric's registry are not read yet; no live zone was exercised.
 
@@ -496,7 +515,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A tool whose host is not allowed, or whose schema cannot be read, blocks saving with the reason; a failed save keeps the input.
 - **Status:** draft
-- **Coverage:** app/routes/agents.tsx (AgentEditor), workers/agents/definition.ts (AGENT_TEMPLATES), workers/agents/registry.ts (createAgent, updateAgent), tests/agents-registry.test.ts
+- **Coverage:** app/components/settings/sections/AgentsSection.tsx (AgentEditor), workers/agents/definition.ts (AGENT_TEMPLATES), workers/agents/registry.ts (createAgent, updateAgent), tests/agents-registry.test.ts
 - **Product:** unobserved
 - **Today:** Partial. **Agents** creates an agent from the Support, Sales or Billing template or blank, with instructions, knowledge, tool grants and reply policy; every save is a new version, a stale edit is refused, a disallowed tool host blocks saving with the reason. Tool schemas are not read from the server yet. Observed on the local Worker.
 
@@ -504,7 +523,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Persona:** P-01
 - **Feature:** Put an agent on a project address
 - **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001
-- **Entry point:** SCR-09
+- **Entry point:** SCR-02 (Settings → Domains or Addresses)
 - **Preconditions:** User session available; the project domain uses Cloudflare Email Routing and the operator can change its routing.
 - **Steps:**
   1. Open an address and choose an agent -> the address shows the agent and its policy.
@@ -512,7 +531,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   3. Switch an address to Off -> new mail stays in the mailbox for the operator and the agent does nothing there.
 - **Expected result:** One agent definition serves many addresses, and every address shows who answers it.
 - **Alt paths:** Changing an agent later applies to new mail only; mail already handled keeps its record of the agent version used.
-- **UI elements:** SCR-09; named actions and fields in the steps; visible state and recovery control.
+- **UI elements:** SCR-02; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Assignment that fails to save keeps the previous agent visibly; an agent removed from the registry leaves its addresses Off, never silently answered by another agent.
 - **Status:** draft
@@ -536,7 +555,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A model or tool failure produces a draft or an unknown outcome, never a guessed send; a send whose acceptance is unknown is not repeated automatically; text in the mail cannot widen the grants of the agent.
 - **Status:** draft
-- **Coverage:** workers/agents/prefilter.ts (prefilter), workers/agents/policy.ts (decide), workers/agents/runner.ts (runAgent), workers/agents/dedupe.ts (electAnswerer, decideClaim), app/routes/agents.tsx (Recent answers), tests/agents-runner.test.ts, tests/agents-registry.test.ts, tests/agents-dedupe.test.ts
+- **Coverage:** workers/agents/prefilter.ts (prefilter), workers/agents/policy.ts (decide), workers/agents/runner.ts (runAgent), workers/agents/dedupe.ts (electAnswerer, decideClaim), app/components/settings/sections/AgentsSection.tsx (Recent answers), tests/agents-runner.test.ts, tests/agents-registry.test.ts, tests/agents-dedupe.test.ts
 - **Product:** unobserved
 - **Today:** Implemented and tested without a live model. No-reply, bulk, list, automatic and already-answered mail is skipped before any model call; an allowed grounded answer is sent once through the outbox; limits, disallowed intents, ungrounded answers and tool failures become drafts with the reason; an unknown send is recorded and not retried; a failed safety check is recorded as such. A message delivered to several agent addresses is answered once per workspace (B-22): a copy that is not chosen waits up to 20 minutes for the chosen address, then shows as a skipped duplicate naming it, or answers itself if that address never took the message. Runs are listed on **Agents → Recent answers** rather than SCR-08. No real model call or delivery observed.
 
@@ -544,18 +563,18 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Persona:** P-01
 - **Feature:** Put an agent on a project address
 - **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001
-- **Entry point:** SCR-09
+- **Entry point:** SCR-02 (Settings → Domains or Addresses)
 - **Preconditions:** User session available; the project domain uses Cloudflare Email Routing and the operator can change its routing.
 - **Steps:**
   1. Mail arrives for an address on a project domain that has no mailbox -> the address policy of that domain decides: reject, or deliver to the domain catch-all mailbox.
   2. Open the domain -> recent unknown recipients are listed with a one-click Create address.
 - **Expected result:** No inbound mail is lost silently.
 - **Alt paths:** A domain without a catch-all rejects with a clear bounce so the sender knows.
-- **UI elements:** SCR-09; named actions and fields in the steps; visible state and recovery control.
+- **UI elements:** SCR-02; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** If neither rejecting nor storing is possible, the failure is logged with the recipient and time.
 - **Status:** draft
-- **Coverage:** workers/index.ts (resolveRecipient), app/routes/project-addresses.tsx (unknown recipients), tests/incoming-routing.test.ts, tests/project-addresses.test.ts
+- **Coverage:** workers/index.ts (resolveRecipient), app/components/settings/sections/DomainsSection.tsx (unknown recipients), tests/incoming-routing.test.ts, tests/project-addresses.test.ts
 - **Product:** unobserved
 - **Today:** Implemented. Unknown addresses are rejected with "Address not found" or kept in a per-domain catch-all, recorded without sender or body, and listed on **Project addresses** with **Create address** (observed on the local Worker with a synthetic message).
 
@@ -614,7 +633,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A file that is not a setup names its problems and nothing is saved; an unreachable server keeps the choice and offers Retry; a partly applied setup can be applied again safely.
 - **Status:** validated
-- **Coverage:** desktop/setup.html, desktop/setup.js, desktop/main.cjs, deployments/setup.example.json, desktop/dist-mac.mjs, app/routes/setup.tsx, workers/routes/setup.ts
+- **Coverage:** desktop/setup.html, desktop/setup.js, desktop/main.cjs, deployments/setup.example.json, desktop/dist-mac.mjs, app/components/settings/sections/AppSection.tsx (SetupPanel), workers/routes/setup.ts
 - **Product:** unobserved
 - **Today:** Built in this change; checked with a local server, not with the deployed one.
 
@@ -633,7 +652,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A refused forward keeps the mail and is shown on the address; routing rules are not changed by applying a setup.
 - **Status:** validated
-- **Coverage:** workers/routes/setup.ts, workers/routing/to-setup.ts, tests/setup.test.ts, app/routes/setup.tsx
+- **Coverage:** workers/routes/setup.ts, workers/routing/to-setup.ts, tests/setup.test.ts, app/components/settings/sections/AppSection.tsx (SetupPanel)
 - **Product:** unobserved
 - **Today:** Server side built and tested in workerd; switching each routing rule to the Worker is a separate operator step.
 
@@ -647,9 +666,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   1. Choose Create my server on Cloudflare -> the app lists the permissions for one Custom Token and opens Cloudflare's API Tokens page.
   2. Paste the token, Continue -> the account is found; if it already has a server the app says it will be updated and keep its mail.
   3. Enter the email that signs in (and, the first time, names for the workers.dev address and the sign-in page), Create my server -> eight steps are shown as they run: web address, storage, sign-in page, codes by email, only you can open it, upload, start, publish.
-  4. The server opens in the app -> sign in with the emailed code -> Domains & addresses opens.
+  4. The server opens in the app -> sign in with the emailed code -> Settings → Domains opens.
 - **Expected result:** A person with only a Cloudflare account has their own server running and is signed in, without a terminal.
-- **Alt paths:** Fabric Inbox → Connect Cloudflare account… runs the same flow for an existing server, which is updated in place (only missing storage migrations; DOMAINS, secrets and sign-in rules kept).
+- **Alt paths:** Fabric Inbox → Connect Cloudflare account… runs the same flow for an existing server, which is updated in place (only missing storage migrations; DOMAINS, secrets and sign-in rules kept). Then set up Gmail (optional), ticked before Create my server, opens the Gmail setup (SCN-051) after sign-in instead of Domains.
 - **UI elements:** SCR-01 (Create my server: token, details, progress).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A token Cloudflare does not accept, a missing permission (named), R2 or Zero Trust not turned on yet (the dashboard step is named) or a taken name stop at that step; Continue runs the rest again and what is done stays done; a server newer than the app is refused.
@@ -662,19 +681,19 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Persona:** P-01
 - **Feature:** Put an agent on a project address
 - **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001
-- **Entry point:** SCR-09
+- **Entry point:** SCR-02 (Settings → Domains or Addresses)
 - **Preconditions:** The server has the Cloudflare token.
 - **Steps:**
-  1. Open Domains & addresses -> every domain of the account; the ones receiving here first.
+  1. Settings → Domains -> every domain of the shown accounts: Receiving here first, then the others; a domain keeps its place while the section is open.
   2. Receive mail here on a domain -> if another provider's MX records are on it, the app names them and asks before replacing them.
   3. The steps run and are listed: Email Routing on, domain served, each existing address brought in keeping its old destination as a copy, rules pointed here, sending on, DMARC added where missing.
 - **Expected result:** The domain's mail arrives here, nothing that used to reach a person stops reaching them, and replies can leave from the domain.
 - **Alt paths:** On a domain already receiving, Bring them here moves addresses that still go elsewhere; Turn on sending alone; Stop receiving here sends every address back to its copy and keeps the mail. A domain in another Cloudflare account than the server's gets one more step, Carry the mail from its account: the server installs its relay Worker there (once per account), and the domain's rules point at it; sending goes through that account's Email Sending API.
-- **UI elements:** SCR-09; Receive mail here, the MX confirmation, the step list, Bring them here, Turn on sending, Stop receiving here; the account named on each domain.
+- **UI elements:** SCR-02; Receive mail here, the MX confirmation, the step list, Bring them here, Turn on sending, Stop receiving here; the account named on each domain.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A missing permission is named; a failure stops at that step with what was already done, and running it again continues; sending and DMARC failures do not undo receiving. A relay that cannot be installed stops before any rule moves, leaving no sign-in behind.
 - **Status:** validated
-- **Coverage:** workers/routing/domains.ts, workers/routes/domains.ts, workers/relay/install.ts, workers/relay/ingress.ts, app/components/domains/DomainCard.tsx, app/routes/project-addresses.tsx, tests/domains.test.ts, tests/cloudflare-relay.test.ts
+- **Coverage:** workers/routing/domains.ts, workers/routes/domains.ts, workers/relay/install.ts, workers/relay/ingress.ts, app/components/settings/sections/DomainsSection.tsx, app/components/settings/sections/AddressesSection.tsx, tests/domains.test.ts, tests/cloudflare-relay.test.ts
 - **Product:** unobserved
 - **Today:** Built and tested in workerd against a stateful fake Cloudflare; the owner's 19 domains were moved by hand earlier the same day with the same steps. 0.8.0: turning Email Routing on sends no domain name (Cloudflare refused the apex as "must be a subdomains", seen on an owner domain 2026-09-30); the relay step for another account (operator decision 2026-09-30).
 
@@ -682,37 +701,37 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Persona:** P-01
 - **Feature:** Put an agent on a project address
 - **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001
-- **Entry point:** SCR-09
+- **Entry point:** SCR-02 (Settings → Domains or Addresses)
 - **Preconditions:** The domain receives here.
 - **Steps:**
-  1. Open the domain, type the name before @, choose who answers and optionally a copy to a confirmed destination, Add -> the routing rule and the address are created; Send test message proves it.
-  2. Remove… on an address -> confirm -> its rule, then the address and its mail are deleted; the answer says where new mail to it goes now.
+  1. Settings → Addresses → Add address (or + / Add address in the inbox sidebar, or Add an address on a domain) -> type the name before @, choose the domain, who answers and optionally a copy to a confirmed destination, Add -> the routing rule and the address are created and the new address opens; Send test message on its Routing & test tab proves it.
+  2. ⋯ → Remove … on an address -> confirm in the dialog -> its rule, then the address and its mail are deleted; the answer says where new mail to it goes now, and the focus moves to the row that took its place.
 - **Expected result:** Addresses for a new account or project exist in seconds and go away cleanly.
-- **Alt paths:** From Mail for addresses that do not exist, Use this name fills the form.
-- **UI elements:** SCR-09; per-domain add form, Remove… with its confirmation.
+- **Alt paths:** From recent mail to an address that does not exist (the domain's panel, or the names offered in the dialog), the form is filled with that name.
+- **UI elements:** SCR-02; Add address dialog, ⋯ Remove … with the shared confirmation.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A refused rule creates no address; a copy to an unconfirmed destination or to a served domain is refused with the reason; the catch-all address cannot be removed until another one (or none) is chosen.
 - **Status:** validated
-- **Coverage:** workers/lib/address-ops.ts, workers/routes/agents.ts, workers/routing/email-routing.ts, app/components/domains/AddressRow.tsx, app/components/domains/DomainCard.tsx, app/routes/home.tsx, tests/domains.test.ts
+- **Coverage:** workers/lib/address-ops.ts, workers/routes/agents.ts, workers/routing/email-routing.ts, app/components/settings/sections/AddressesSection.tsx, app/components/settings/sections/DomainsSection.tsx, app/components/settings/sections/ConfiguredAddresses.tsx, tests/domains.test.ts
 - **Product:** unobserved
-- **Today:** Built and tested in workerd against a fake Cloudflare. The Mailboxes screen creates and removes through the same steps; on 2026-09-29 an address created there got its rule and, removed, lost it, with the answer naming the catch-all that now keeps its mail. An existing address's copy is changed with Change.
+- **Today:** Built and tested in workerd against a fake Cloudflare. On 2026-09-29 an address created this way got its rule and, removed, lost it, with the answer naming the catch-all that now keeps its mail. Since 0.11 Settings → Addresses is the one path (the Mailboxes screen is gone); an existing address's copy is changed on its Copy tab. Add and remove were driven in a browser against a local server on 2026-10-06.
 
 ### SCN-033: Keep copies and unknown addresses somewhere
 - **Persona:** P-01
 - **Feature:** Put an agent on a project address
 - **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001
-- **Entry point:** SCR-09
+- **Entry point:** SCR-02 (Settings → Domains or Addresses)
 - **Preconditions:** The server has the Cloudflare token.
 - **Steps:**
   1. Forwarding destinations -> add an outside address -> Cloudflare sends it a confirmation link; it is listed as waiting until opened.
   2. On a domain, Mail for an address that does not exist -> keep it in one of the domain's addresses, or refuse it so the sender is told.
 - **Expected result:** Copies go only where someone confirmed them, and mail to a mistyped address is either kept or refused, never silently dropped.
 - **Alt paths:** A copy that fails later is shown on the address with its reason, and the mail itself is kept.
-- **UI elements:** SCR-09; Forwarding destinations, the catch-all choice.
+- **UI elements:** SCR-02; Forwarding destinations, the catch-all choice.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A destination on a served domain is refused (it would loop); choosing a catch-all points Cloudflare's catch-all here and reports if Cloudflare refused.
 - **Status:** validated
-- **Coverage:** workers/routing/domains.ts, workers/routes/domains.ts, app/components/domains/Destinations.tsx, app/components/domains/DomainCard.tsx, tests/domains.test.ts
+- **Coverage:** workers/routing/domains.ts, workers/routes/domains.ts, app/components/settings/sections/DestinationsSection.tsx, app/components/settings/sections/DomainsSection.tsx, tests/domains.test.ts
 - **Product:** unobserved
 - **Today:** Built and tested in workerd against a fake Cloudflare.
 
@@ -733,7 +752,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A document over the limit or with no text is refused alone with its reason; an agent cannot be saved with a collection that no longer exists.
 - **Status:** validated
-- **Coverage:** app/routes/knowledge.tsx, app/routes/agents.tsx (KnowledgeGrants), workers/routes/knowledge.ts, workers/knowledge/store.ts, tests/knowledge.test.ts
+- **Coverage:** app/components/settings/sections/KnowledgeSection.tsx, app/components/settings/sections/AgentsSection.tsx (KnowledgeGrants), workers/routes/knowledge.ts, workers/knowledge/store.ts, tests/knowledge.test.ts
 - **Product:** unobserved
 - **Today:** Built, tested in workerd, and used live on 2026-09-29 with a throwaway collection (removed after).
 
@@ -774,7 +793,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A model that is down or over the daily budget leaves messages waiting with the count and the reason ("wait for tomorrow's model budget", "could not be sorted"), never silently dropped; a message moved to Trash leaves the view.
 - **Status:** validated
-- **Coverage:** app/routes/categories.tsx, app/components/inbox/CategorySidebar.tsx, app/routes/unified-inbox.tsx, workers/categories/store.ts (CategoriesDO), workers/categories/classify.ts, workers/routes/categories.ts, workers/routes/inbox.ts (readCategory), tests/categories.test.ts, tests/inbox-ui.test.ts
+- **Coverage:** app/components/settings/sections/CategoriesSection.tsx, app/components/inbox/CategorySidebar.tsx, app/routes/unified-inbox.tsx, workers/categories/store.ts (CategoriesDO), workers/categories/classify.ts, workers/routes/categories.ts, workers/routes/inbox.ts (readCategory), tests/categories.test.ts, tests/inbox-ui.test.ts
 - **Product:** unobserved
 - **Today:** Live on 2026-09-29: "Refund requests" over all inboxes sorted 27 messages (no match), then matched a refund request in under 15 s with its reason; the message left the view when trashed. A message restored from Trash returns only when the category next changes (board B-26).
 
@@ -794,7 +813,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A project a category uses cannot be deleted, and the screen says why; an inbox that fails to load is named above the list as in All inboxes.
 - **Status:** validated
-- **Coverage:** workers/categories/definition.ts (inScope), workers/routes/inbox.ts (readCategory), app/routes/categories.tsx, tests/categories.test.ts
+- **Coverage:** workers/categories/definition.ts (inScope), workers/routes/inbox.ts (readCategory), app/components/settings/sections/CategoriesSection.tsx, tests/categories.test.ts
 - **Product:** unobserved
 - **Today:** Built and tested in workerd; no project was created on the owner's server (no Acme domain is served there yet).
 
@@ -871,7 +890,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** An entry that is not an address or a domain is refused with the reason; two changes at once both land.
 - **Status:** validated
-- **Coverage:** app/routes/spam.tsx, workers/routes/spam.ts, tests/spam-workerd.test.ts
+- **Coverage:** app/components/settings/sections/SpamSection.tsx, workers/routes/spam.ts, tests/spam-workerd.test.ts
 - **Product:** unobserved
 - **Today:** Built and seen in the installed app on 2026-09-29.
 
@@ -882,16 +901,16 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** SCR-03
 - **Preconditions:** More addresses than the operator reads.
 - **Steps:**
-  1. The sidebar lists addresses with mail, catch-alls and the one open (With mail); "N without mail not listed" says how many are left out.
+  1. The sidebar lists addresses with mail, catch-alls and the one open (With mail); "N without mail not listed" says how many are left out. Choosing a domain selects it and folds no other group; only the caret opens or folds one, and a selection is scrolled into view once, not on every refresh.
   2. Hide them… -> confirm -> the addresses with no mail are hidden; or the eye next to one address hides just it.
   3. Hidden (N) -> open one on its own, or Show again.
 - **Expected result:** The sidebar and All inboxes hold the addresses the operator uses; nothing stops receiving.
 - **Alt paths:** All lists every address again; the choice is remembered on the device, the hidden list on the server.
-- **UI elements:** SCR-03 (With mail / All, the eye on each address, Hide them…, Hidden list, the stuck-mail banner with Retry).
+- **UI elements:** SCR-03 (With mail / All, the eye on each address, Hide them…, Hidden list, the stuck-mail banner with Retry; + and Add address open Settings → Addresses, Connect Gmail opens Settings → Accounts).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A change that cannot be saved says so and changes nothing; mail that reached an address but not its rules, agents or categories is shown with its last error and Retry.
 - **Status:** validated
-- **Coverage:** app/components/inbox/AccountSidebar.tsx, app/components/inbox/account-groups.ts (sidebarAccounts), workers/routes/inbox.ts (hidden, counts), workers/lib/hidden-accounts.ts, tests/inbox.test.ts, tests/inbox-ui.test.ts, tests/spam-workerd.test.ts
+- **Coverage:** app/components/inbox/AccountSidebar.tsx (isOpen, scrolledFor), app/components/inbox/account-groups.ts (sidebarAccounts), tests/settings-ui.test.ts, workers/routes/inbox.ts (hidden, counts), workers/lib/hidden-accounts.ts, tests/inbox.test.ts, tests/inbox-ui.test.ts, tests/spam-workerd.test.ts
 - **Product:** unobserved
 - **Today:** Built and seen on the owner's server on 2026-09-29 (36 addresses, 8 listed with mail); nothing was hidden there.
 
@@ -911,7 +930,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A token without the permission names it; a key Cloudflare made but the server could not save is deleted again, and the error says to try again.
 - **Status:** draft
-- **Coverage:** app/routes/agent-access.tsx, workers/routes/agent-keys.ts, workers/mcp/access.ts, workers/mcp/scope.ts, tests/mcp-auth.test.ts, tests/mcp-scope.test.ts, tests/mcp-workerd.test.ts, tests/agent-access-ui.test.ts
+- **Coverage:** app/components/settings/sections/AgentAccessSection.tsx, workers/routes/agent-keys.ts, workers/mcp/access.ts, workers/mcp/scope.ts, tests/mcp-auth.test.ts, tests/mcp-scope.test.ts, tests/mcp-workerd.test.ts, tests/agent-access-ui.test.ts
 - **Product:** unobserved
 - **Today:** Built in 0.7.0; the first live key is made at the release.
 
@@ -930,7 +949,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A list that cannot load offers Retry; nothing older says so.
 - **Status:** draft
-- **Coverage:** app/routes/agent-access.tsx, workers/routes/agent-keys.ts, workers/mcp/ledger.ts, tests/mcp-workerd.test.ts
+- **Coverage:** app/components/settings/sections/AgentAccessSection.tsx, workers/routes/agent-keys.ts, workers/mcp/ledger.ts, tests/mcp-workerd.test.ts
 - **Product:** unobserved
 - **Today:** Built in 0.7.0.
 
@@ -938,18 +957,18 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Persona:** P-01
 - **Feature:** Put an agent on a project address
 - **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001
-- **Entry point:** SCR-09
+- **Entry point:** SCR-02 (Settings → Domains or Addresses)
 - **Preconditions:** The server has its Cloudflare token; the owner has more than one Cloudflare account.
 - **Steps:**
-  1. Open Domains & addresses -> Cloudflare accounts lists every account the server has a token for: its name, whether it has mail, how many domains and how many receive here, how it is reached (the server's token or its own), and whether its relay is installed.
-  2. The server's account and every account with mail (or whose mail could not be read) are shown; an account without mail is listed as not shown -> Show puts its domains in the list below; Hide takes them out; Default goes back to the rule.
+  1. Settings → Accounts -> the Cloudflare group lists every account the server has a token for: its name, whether it has mail, how many domains and how many receive here, how it is reached (the server's token or its own), and whether its relay is installed.
+  2. The server's account and every account with mail (or whose mail could not be read) are shown; an account without mail is marked Hidden -> in its panel Show puts its domains on Domains; Hide takes them out; Default goes back to the rule.
 - **Expected result:** Every account where the owner has mail is on the screen without asking, and nothing else crowds it.
 - **Alt paths:** An account whose saved token no longer works is listed with the reason, with Remove…, and Connect another account with a new token replaces it; its domains are not guessed; the other accounts still list.
-- **UI elements:** SCR-09; Cloudflare accounts (one row per account, Show / Hide / Default).
+- **UI elements:** SCR-02; Accounts → Cloudflare (one row per account; Show / Hide / Default in its panel).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Hiding an account whose domains receive here is refused and names them; an account that cannot be read shows why, the rest still list.
 - **Status:** validated
-- **Coverage:** workers/routing/accounts.ts, workers/routing/domains.ts, workers/routes/cloudflare-accounts.ts, workers/routes/domains.ts, app/components/domains/Accounts.tsx, tests/cloudflare-accounts.test.ts
+- **Coverage:** workers/routing/accounts.ts, workers/routing/domains.ts, workers/routes/cloudflare-accounts.ts, workers/routes/domains.ts, app/components/settings/sections/AccountsSection.tsx, tests/cloudflare-accounts.test.ts
 - **Product:** unobserved
 - **Today:** Operator, 2026-09-30: "every account there is must be visible by default where it has mail". Built in 0.8.0.
 
@@ -957,20 +976,20 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Persona:** P-01
 - **Feature:** Put an agent on a project address
 - **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001
-- **Entry point:** SCR-09
+- **Entry point:** SCR-02 (Settings → Domains or Addresses)
 - **Preconditions:** The server has its own Cloudflare token.
 - **Steps:**
-  1. Connect another account -> the window says what the token needs (the permissions table) and where to create it, in the other account.
+  1. Settings → Accounts → Connect account → Cloudflare -> the dialog says what the token needs (the permissions table) and where to create it, in the other account.
   2. Paste the token, Connect -> the server checks it, keeps it as its own secret for each account it sees that has no token yet, and lists them; the token is never shown again.
-  3. The account appears in Cloudflare accounts within seconds; Receive mail here on one of its domains installs the relay there (SCN-031).
-  4. Remove… on an account connected this way -> confirm -> its relay and the relay's sign-in are removed, then its token.
+  3. The account appears under Cloudflare within seconds; Receive mail here on one of its domains installs the relay there (SCN-031).
+  4. ⋯ → Remove … on an account connected this way -> confirm -> its relay and the relay's sign-in are removed, then its token.
 - **Expected result:** Domains from any of the owner's Cloudflare accounts receive here, not only the one the server runs in.
 - **Alt paths:** A token that reaches several accounts connects each one it sees; the server's own account keeps its own token and is skipped.
-- **UI elements:** SCR-09; Connect another account (permissions, token field, Connect), Remove… with its confirmation.
+- **UI elements:** SCR-02; Connect account dialog (Cloudflare card: permissions, token field, Connect), ⋯ Remove … with the shared confirmation.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A token Cloudflare does not accept, or one without Account Settings: Read, is refused with the reason and nothing is saved; an account whose domains receive here cannot be removed until they stop; a new account not yet visible after saving says the server is starting to use it and reads again.
 - **Status:** validated
-- **Coverage:** workers/routes/cloudflare-accounts.ts, workers/relay/install.ts, app/components/domains/Accounts.tsx, tests/cloudflare-accounts.test.ts, tests/cloudflare-relay.test.ts
+- **Coverage:** workers/routes/cloudflare-accounts.ts, workers/relay/install.ts, app/components/settings/sections/AccountsSection.tsx, tests/cloudflare-accounts.test.ts, tests/cloudflare-relay.test.ts
 - **Product:** unobserved
 - **Today:** Operator, 2026-09-30: "the ones that are missing are connected from the connection window". Built in 0.8.0.
 
@@ -1052,3 +1071,203 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** desktop/backup.cjs, desktop/main.cjs, desktop/profile.cjs, tests/desktop-updates.test.ts, tests/desktop-profile.test.ts
 - **Product:** unobserved
 - **Today:** Built 2026-10-05 for 0.10.1 (docs/desktop-data-and-updates.md).
+
+### SCN-051: Set up Gmail on my server
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01, JRN-01; RE-001; operator request 2026-10-06 ("work out connecting Gmail accounts")
+- **Entry point:** SCR-02 (Settings → Accounts → Connect account → Gmail), or the Mac app right after Create my server with Then set up Gmail (optional) ticked
+- **Preconditions:** The server runs with its own Cloudflare API token (Create my server writes it); Gmail is not set up, or the owner chose Use another Google client…
+- **Steps:**
+  1. Choose Gmail -> seven numbered steps, each opening its Google Cloud page: create a project, turn on the Gmail API, Branding (app name and authorized domain, each with Copy), Audience (Internal for Google Workspace, External then Publish app for a personal account, and why: a Testing app loses access after 7 days), Data Access (the scope, with Copy), the Web application client (the redirect URI of this server, with Copy).
+  2. Paste the client ID and the client secret, Save and check -> the server asks Google whether it accepts the pair and knows the redirect URI, makes a credential key if it has none, and saves the four settings itself.
+  3. "Saved. Your server starts using it within a few seconds…" -> the dialog moves on to the connect step (SCN-002).
+- **Expected result:** A person with a Google account sets Gmail up from the app, without a terminal, with Google's 7-day Testing expiry avoided before it happens.
+- **Alt paths:** Later closes the dialog; nothing is saved until Save and check. Check the setup in the connect step re-runs the checks at any time. A server without its own Cloudflare token says it cannot save and points to setting the values by hand.
+- **UI elements:** SCR-02; Connect account dialog → Gmail: the steps with External links and Copy buttons, Client ID and Client secret fields, Save and check, Later, Back; the checks' verdicts (OK / Not right / Not checked).
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** A client ID that is not one, or a pair Google refuses (unknown client, wrong secret) is refused with the fix and its Google Cloud page, and nothing is written; a token without Workers Scripts: Edit is named and nothing changes; a redirect URI Google does not know yet is saved and said (Google can take minutes); Google out of reach does not block saving and the checks say Not checked; a server that has not started using the settings after 30 seconds says to reload in a minute. An existing credential key is never replaced.
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/GmailSetup.tsx, app/components/settings/sections/AccountsSection.tsx, workers/routes/gmail-setup.ts, workers/gmail-setup/google-check.ts, workers/gmail-setup/server-settings.ts, shared/mail/gmail-setup.ts, desktop/setup.html, desktop/policy.cjs, tests/gmail-setup.test.ts, tests/gmail-setup-ui.test.ts, tests/desktop-policy.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS6) and tested against fakes of Google and Cloudflare. Not yet walked against a real Google Cloud project; the redirect-URI check reads Google's error page, observed 2026-10-06, not a documented API.
+
+### SCN-052: Connect Gmail with an app password
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01, JRN-01; RE-003
+- **Entry point:** SCR-02 (Settings → Accounts → Connect account → Gmail with an app password)
+- **Preconditions:** A personal Google account with 2-Step Verification; the server holds a credential key (Create my server makes one; MAIL_CREDENTIAL_KEY on a server deployed by hand).
+- **Steps:**
+  1. Choose Gmail with an app password -> what it needs (2-Step Verification, not a work or school account), Google's help page, and what it gives up next to connecting through Google (labels appear as folders).
+  2. Make an app password in the Google account and paste it with the address -> "Checking with Gmail (app password)…": the server signs in to imap.gmail.com and smtp.gmail.com, then keeps the password, encrypted.
+  3. The account opens in Settings with its sync -> its mail arrives in All inboxes under Other mail, older mail is imported while new mail already arrives.
+- **Expected result:** A person who does not want a Google Cloud project still reads and sends their Gmail here, also while the Mac is closed.
+- **Alt paths:** Back returns to the provider cards; connecting through Google stays available beside it. An address already connected through Google sign-in is refused (it would be read twice).
+- **UI elements:** SCR-02; the provider card with its trade-off line and help link; the address and app password form (SCN-053).
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** As SCN-056: a normal password is "needs an app password here", a wrong one names Gmail and the help page. A server without a credential key says so and how to get one; the card is "Not set up on this server".
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/providers.ts, app/components/settings/sections/ImapAccount.tsx, shared/mail/imap-presets.ts, workers/providers/imap/, tests/gmail-setup-ui.test.ts, tests/imap-provider.test.ts, tests/imap-connect-ui.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS4). Gmail keeps the Sent copy itself (support.google.com/mail/answer/78892), so none is appended; Archive moves to All Mail, which this server does not read, so an archived message leaves the app's lists. Checked against imap.gmail.com and smtp.gmail.com from workerd with a made-up account (both refused the sign-in, 2026-10-06); not yet walked with a real app password.
+
+### SCN-053: Connect another mail account with an app password
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01, JRN-01; RE-003; operator decision 2026-10-05/06 ("connect popular email providers besides Gmail; credentials live on the server, encrypted")
+- **Entry point:** SCR-02 (Settings → Accounts → Connect account → Other mail (IMAP)), or the sidebar's Connect other mail
+- **Preconditions:** The server holds a credential key; the person can make an app password at their provider (and switch IMAP on where it is off: GMX, Zoho, Yandex).
+- **Steps:**
+  1. Choose Other mail (IMAP) -> a card per provider (iCloud Mail, Yahoo Mail, AOL Mail, Fastmail, Zoho Mail and Zoho Mail for a domain, Yandex Mail, Mail.ru, GMX for gmx.com and for gmx.net, Other).
+  2. Choose one -> what to do at the provider first, in its own words (two-factor authentication, where its app passwords are, IMAP to switch on), and its help page.
+  3. Enter the address and paste the app password (Other: the IMAP server and port, the SMTP server with SSL/TLS on 465 or STARTTLS on 587, a user name when it is not the address) -> Connect: "Checking with <provider>…".
+  4. The server signs in to IMAP over TLS, reads the folder list and opens the Inbox, then signs in to SMTP; only then is the password kept, encrypted -> the account opens in Settings with "Older mail is being read: N%. New mail already arrives."
+- **Expected result:** Mail of any provider with IMAP and SMTP is read and sent here like Gmail's, with rules, agents, categories and spam, also while the Mac is closed.
+- **Alt paths:** An address of another provider's domain is said before connecting ("This looks like an iCloud Mail address"). Connecting the same address again with a new password keeps the account and its mail. Back returns to the provider cards. A server with no credential key yet offers **Make the key**: the server makes one and saves it in its own settings, the dialog waits until the server uses it (a few seconds) and then shows the connect form; a server without its own Cloudflare token says how to set the key instead (`tests/credential-key.test.ts`).
+- **UI elements:** SCR-02; provider cards; the form (Address, App password, the server fields for Other, Connect, Back); the account panel (Sync, Servers, Open its mail, Rules and history).
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** SCN-056. Nothing is kept until both servers took the password.
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/ImapAccount.tsx, app/components/settings/sections/AccountsSection.tsx, app/components/settings/sections/providers.ts, shared/mail/imap-presets.ts, workers/providers/imap/connect.ts, workers/providers/imap/provider.ts, workers/providers/account-service.ts, workers/routes/accounts.ts, tests/imap-provider.test.ts, tests/imap-routes.test.ts, tests/imap-connect-ui.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS4) and tested against in-process IMAP and SMTP servers. Every preset's servers were reached from workerd on 2026-10-06 with a made-up account (each refused the sign-in); not yet walked with a real app password at any provider.
+
+### SCN-054: Give an IMAP account a new app password
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01; operator request 2026-10-06 ("Edit (change password)")
+- **Entry point:** SCR-02 (the account's panel → More actions → Enter a new app password…, opened by itself when the account needs one), or the inbox banner's Enter a new app password
+- **Preconditions:** An IMAP account whose app password was deleted or changed at the provider (status "reconnect required"), or one the person wants to replace.
+- **Steps:**
+  1. The panel says the provider no longer accepts the app password this server has -> the New app password block.
+  2. Make a new one at the provider (its help page is linked) and paste it -> Save: "Checking with <provider>…".
+  3. "<provider> took the new app password. Mail is read again now." -> the status returns to connected and the sync resumes where it stopped.
+- **Expected result:** A refused password is fixed in one step, without losing the account's mail, rules or history.
+- **Alt paths:** Close leaves the old password in place.
+- **UI elements:** SCR-02; the account panel's callout, the New app password block (App password, Save, Close).
+- **States covered:** loading, error, success
+- **Errors & recovery:** A new password the provider refuses is said as in SCN-056, and the one the server has stays; nothing changes until both servers took the new one.
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/ImapAccount.tsx, app/routes/unified-inbox.tsx, workers/providers/account-service.ts (updateImapPassword), workers/routes/accounts.ts, tests/imap-provider.test.ts, tests/imap-routes.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS4); tested against fakes.
+
+### SCN-055: Disconnect an IMAP account
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01
+- **Entry point:** SCR-02 (the account's panel → More actions → Disconnect…)
+- **Preconditions:** A connected IMAP account.
+- **Steps:**
+  1. Disconnect… -> "Disconnect <address>?": its app password is deleted from your server and its synced mail leaves this app; its mail stays with the provider; to end the app password itself, delete it at the provider.
+  2. Confirm -> "<address> was disconnected. Delete its app password at <provider> too." and the list without it.
+- **Expected result:** The server forgets the account and its password; nothing at the provider is changed.
+- **Alt paths:** Cancel keeps everything. An outside agent with an admin key can do the same with disconnect_account (two calls).
+- **UI elements:** SCR-02; the confirmation dialog.
+- **States covered:** loading, success, error
+- **Errors & recovery:** A failure is said in the panel and the account stays; send receipts are kept, so a retry of an unknown send can never send twice.
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/ImapAccount.tsx, workers/providers/account-service.ts (disconnect), workers/mcp/tools.ts (disconnect_account), tests/imap-provider.test.ts, tests/imap-routes.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS4); tested against fakes.
+
+### SCN-056: An IMAP connection is refused
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01; RE-003
+- **Entry point:** SCR-02 (connecting, or a new app password), the account panel, the inbox banner
+- **Preconditions:** A provider refused, or could not be reached.
+- **Steps:**
+  1. Connect or Save -> the answer names who refused and the one thing to do, with the provider's help page:
+     a wrong password ("refused the address or the app password … it takes an app password, not the password you sign in with"); a normal password where an app password is needed (Gmail, Mail.ru); IMAP switched off (GMX, Zoho); Yandex's one answer for both; a sign-in on the provider's website wanted first; the sending server refusing a password the incoming one took; no TLS on that port; a server that does not answer; Port 25; port 143 or POP.
+  2. Later, during a sync: a refused password stops the account ("reconnect required") until SCN-054; a server out of reach is tried again on its own, 60 seconds doubling to 15 minutes, and the panel offers Retry now.
+- **Expected result:** The person knows what to change, and never finds an account half connected.
+- **Alt paths:** Back to the provider cards; Other for a server the presets do not have.
+- **UI elements:** SCR-02; the form's error callout with the help link; the panel's callout; the inbox banner.
+- **States covered:** error
+- **Errors & recovery:** This scenario is the recovery: nothing is stored on a refused connect, and a refused new password leaves the old one.
+- **Status:** validated
+- **Coverage:** app/lib/imap-errors.ts, app/components/settings/sections/ImapAccount.tsx, workers/providers/imap/client.ts (loginFailure), workers/providers/imap/smtp.ts, workers/routes/accounts.ts, tests/imap-client.test.ts, tests/smtp.test.ts, tests/imap-connect-ui.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS4). The login answers of Yandex, Mail.ru, Gmail and Yahoo were read from their servers on 2026-10-06 and are in the tests; the others are matched by their common wording.
+
+### SCN-057: Set up Outlook on my server
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01, JRN-01; operator decision 2026-10-06 ("Outlook.com and Microsoft 365 accounts are connected in 0.11.0, through Microsoft Graph with the owner's own Entra app registration")
+- **Entry point:** SCR-02 (Settings → Accounts → Connect account → Outlook), or a result page's Open the Outlook setup
+- **Preconditions:** The server runs with its own Cloudflare API token; Outlook is not set up, or the owner chose Use another client secret…; the owner can register apps in Microsoft Entra (a work or school account, or a personal account with a free Azure account's directory).
+- **Steps:**
+  1. Choose Outlook -> five numbered steps: open App registrations in Microsoft Entra (and, for a personal account without a directory, the free Azure account); register the app with the name, the supported account types "Any Entra ID Tenant + Personal Microsoft accounts" and the Web redirect URI of this server, each with Copy; add the delegated permissions Mail.ReadWrite, Mail.Send, User.Read and offline_access; make a client secret (at most 24 months) and copy its Value, not its Secret ID, and its Expires date.
+  2. Paste the Application (client) ID, the secret's Value and its date, Save -> the server checks their shape and the date, makes a credential key if it has none, and saves the five settings itself.
+  3. "Saved. … Microsoft checks the client ID and secret when the first account connects." -> the dialog moves on to the connect step (SCN-058).
+- **Expected result:** An owner sets Outlook up from the app, without a terminal, and is reminded 30 days before the client secret ends rather than finding out when mail stops.
+- **Alt paths:** Later closes the dialog; nothing is saved until Save. Check the setup in the connect step says whether the app is at the address Outlook was set up for, when the secret ends, and — once an account is connected — whether Microsoft accepts the client ID and secret (one account's access is renewed). Use another client secret… replaces the secret the same way. A server without its own Cloudflare token says it cannot save and points to setting the values by hand.
+- **UI elements:** SCR-02; Connect account dialog → Outlook: the steps with External links and Copy buttons, Application (client) ID, Client secret Value and Expires fields, Save, Later, Back; the secret's end warning; the checks' verdicts (OK / Not right / Not checked).
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** A client ID that is not a GUID, a Secret ID pasted for the Value, a date that has passed or lies beyond 24 months is refused with the fix and nothing is written; a token without Workers Scripts: Edit is named and nothing changes; a server that has not started using the settings after 30 seconds says to reload in a minute. An existing credential key is never replaced.
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/OutlookSetup.tsx, app/components/settings/sections/AccountsSection.tsx, app/components/settings/sections/providers.ts, workers/routes/microsoft-setup.ts, workers/gmail-setup/server-settings.ts, shared/mail/microsoft-setup.ts, tests/outlook-routes.test.ts, tests/outlook-setup-ui.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS5) and tested against fakes of Microsoft and Cloudflare. Registering the app stays the owner's step in Microsoft's portal (docs/desktop-mail/setup.md → Outlook → Human steps). Microsoft checks a sign-in code's shape before the client (a made-up code is refused with AADSTS9002313 for any client, observed 2026-10-06), so the client ID and secret are proved only by the first real sign-in. Not yet walked against a real app registration.
+
+### SCN-058: Connect an Outlook or Microsoft 365 account
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01, JRN-01; operator decision 2026-10-06
+- **Entry point:** SCR-02 (Settings → Accounts → Connect account → Outlook, once set up), the account panel's Reconnect, or the address from outlook_connect_link
+- **Preconditions:** Outlook is set up on this server (SCN-057); the person has an Outlook.com, Hotmail, Live or Microsoft 365 mailbox.
+- **Steps:**
+  1. Connect Outlook in browser -> the system browser opens Microsoft's sign-in with the account picker; the person chooses the account and reads what Fabric Inbox asks for (read, change and send mail, and keep that access while they are away).
+  2. Accept -> Microsoft sends the browser back; the server checks the sign-in is this browser's, redeems Microsoft's code, reads the account's address and its folders (which proves it has a mailbox), and keeps the access sealed.
+  3. "Outlook is connected" page -> back in the app, the account is under Outlook with "importing"; the Inbox comes first, newest first, and new mail arrives while the import runs.
+- **Expected result:** Outlook.com and Microsoft 365 mail is read, triaged, answered and sent here like Gmail's, with rules, agents, categories and spam, also while the Mac is closed.
+- **Alt paths:** Connecting the same account again keeps its mail and where its sync stands; another Microsoft user with the same address starts over. An address already connected as an IMAP or Gmail account is refused (it would be read twice).
+- **UI elements:** SCR-02; the connect step (Connect Outlook in browser, Check the setup, Use another client secret…); the browser's result page; the account panel (Sync, importing percentage, Open its mail, Rules and history, Disconnect…).
+- **States covered:** loading, error, success
+- **Errors & recovery:** Every refusal ends on a page with the one next step and nothing kept: Cancel on Microsoft's page; an organization that needs its administrator (SCN-059); a redirect URI Microsoft does not know (the exact URI to add); an expired or refused client secret (Open the Outlook setup); an account type the app registration does not accept; a sign-in step not finished; a permission not given; a Microsoft account with no Outlook mailbox; a sign-in older than ten minutes or from another browser. Disconnect deletes the access here and says to remove Fabric Inbox in the Microsoft account too (Microsoft has no way for an app to give it back).
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/OutlookSetup.tsx, app/components/settings/sections/AccountsSection.tsx, workers/routes/accounts.ts, workers/microsoft-setup/result-page.ts, workers/providers/outlook/, workers/providers/account-service.ts, tests/outlook-provider.test.ts, tests/outlook-routes.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS5) and tested against a fake of Microsoft's identity platform and Graph that answers as their documented contracts do; not yet walked against a real Microsoft account.
+
+### SCN-059: My organization's administrator must allow Fabric Inbox
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01; operator decision 2026-10-06 (admin consent)
+- **Entry point:** The browser's result page after a Microsoft 365 sign-in that Microsoft stopped; Settings → Accounts → Outlook's connect step (A work or school account whose organization lets only administrators allow apps)
+- **Preconditions:** A work or school account in an organization that lets only administrators allow apps to read mail.
+- **Steps:**
+  1. Connect Outlook in browser -> Microsoft says an administrator must approve; returning to the app ends on "Your organization's administrator must allow Fabric Inbox first", with the approval link to forward.
+  2. The administrator opens the link, signs in, reads what Fabric Inbox asks for, and chooses Accept -> the browser comes back to "Your organization allows Fabric Inbox now".
+  3. The person connects again (SCN-058).
+- **Expected result:** A person in a locked-down organization knows exactly what to send to whom, and nothing is kept until their own sign-in succeeds.
+- **Alt paths:** The administrator declines -> "The administrator did not allow Fabric Inbox". Personal accounts never meet this. The owner finds the same link in the connect step, and outside agents in microsoft_setup_status.
+- **UI elements:** The result pages; the connect step's details block with the link and Copy.
+- **States covered:** error, success
+- **Errors & recovery:** This scenario is the recovery. The administrator's return carries Microsoft's tenant, which is never read (Microsoft's own warning); nothing is stored by it.
+- **Status:** validated
+- **Coverage:** workers/routes/accounts.ts, workers/microsoft-setup/result-page.ts, workers/providers/outlook/oauth.ts (authorizeOutcome), shared/mail/microsoft-setup.ts (adminConsentUrl), app/components/settings/sections/OutlookSetup.tsx, tests/outlook-routes.test.ts, tests/outlook-provider.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS5). Microsoft's answer is read from its `error` field, and from the AADSTS number in its description only to choose this page (Microsoft asks apps not to depend on those numbers; a number that changes falls back to the generic page). Not yet walked with a real organization.
+
+### SCN-060: An Outlook account needs a reconnect or a new client secret
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01; operator decision 2026-10-06
+- **Entry point:** SCR-02 (the account's panel), the inbox banner, a result page
+- **Preconditions:** A connected Outlook account whose access Microsoft no longer renews.
+- **Steps:**
+  1. A sync is refused -> the account's panel and the inbox banner say why, in words:
+     the access was taken back (removed in the Microsoft account, a password change, long unused) or Microsoft wants another sign-in step: Reconnect in browser; the server's client secret ended or the app registration was changed: Open the Outlook setup, save a new secret, no reconnect.
+  2. The person reconnects (SCN-058) or the owner saves a new client secret (SCN-057) -> the next sync works and the account's mail, rules and history are as they were.
+- **Expected result:** The person knows whether they or the owner must act, before mail is missed; the client secret's end is warned about 30 days ahead.
+- **Alt paths:** Microsoft busy or throttling: nothing to do; the account waits as long as Microsoft said (Retry-After) or 60 seconds doubling to 15 minutes, and the panel offers Retry now.
+- **UI elements:** SCR-02; the panel's callout with its one action; the secret's end warning; the inbox banner's Reconnect in browser.
+- **States covered:** error, success
+- **Errors & recovery:** This scenario is the recovery. Only Microsoft's invalid_grant and interaction_required stop the account for a reconnect; a refused client stops it for the owner's setup; anything else only waits.
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/OutlookSetup.tsx, app/components/settings/sections/AccountsSection.tsx, app/routes/unified-inbox.tsx, shared/mail/gmail-reasons.ts, workers/providers/outlook/oauth.ts, workers/providers/account-service.ts (accountProblem), tests/outlook-provider.test.ts, tests/outlook-setup-ui.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS5); tested against fakes.

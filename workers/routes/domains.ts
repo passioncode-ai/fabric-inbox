@@ -9,7 +9,7 @@ import { effectiveCatchAll } from "../lib/address-ops";
 import { DomainManager, type ConnectResult, type Step } from "../routing/domains";
 
 /**
- * Domains & addresses (CF-2/CF-3, SCR-09). Behind the same Access and
+ * Settings → Domains (CF-2/CF-3, SCR-02). Behind the same Access and
  * same-origin boundary as every /api route. Without a Cloudflare token every
  * route answers what to create and where, and nothing else is claimed.
  */
@@ -110,8 +110,9 @@ domainsRouter.get("/api/domains/destinations", async (c) => {
   catch (error) { return failure(c, error, "destinations_read_failed"); }
 });
 
+export const DestinationInput = z.object({ email: z.string().trim().toLowerCase().email().max(90) }).strict();
 domainsRouter.post("/api/domains/destinations", async (c) => {
-  const parsed = z.object({ email: z.string().trim().toLowerCase().email().max(90) }).strict().safeParse(await c.req.json().catch(() => null));
+  const parsed = DestinationInput.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Enter an email address" }, 400);
   const account = accountParam(c);
   if (account === null) return c.json({ error: "Not a Cloudflare account id" }, 400);
@@ -140,7 +141,7 @@ domainsRouter.get("/api/domains/:domain", async (c) => {
   } catch (error) { return failure(c, error, "domain_read_failed"); }
 });
 
-const ConnectInput = z.object({ replaceMx: z.boolean().default(false), sending: z.boolean().default(true) }).strict();
+export const ConnectInput = z.object({ replaceMx: z.boolean().default(false), sending: z.boolean().default(true) }).strict();
 
 domainsRouter.post("/api/domains/:domain/connect", async (c) => {
   const domain = domainParam(c);
@@ -185,10 +186,11 @@ domainsRouter.post("/api/domains/:domain/sending", async (c) => {
   } catch (error) { return failure(c, error, "domain_sending_failed"); }
 });
 
+export const CatchAllInput = z.object({ mailbox: z.string().trim().toLowerCase().email().nullable() }).strict();
 domainsRouter.put("/api/domains/:domain/catch-all", async (c) => {
   const domain = domainParam(c);
   if (!domain) return c.json({ error: "Not a domain name" }, 400);
-  const parsed = z.object({ mailbox: z.string().trim().toLowerCase().email().nullable() }).strict().safeParse(await c.req.json().catch(() => null));
+  const parsed = CatchAllInput.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Choose an address on this domain, or none" }, 400);
   const mailbox = parsed.data.mailbox;
   if (!(await allServedDomains(c.env)).includes(domain)) return c.json({ error: `${domain} is not served here` }, 400);

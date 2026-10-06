@@ -3,6 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import type { Email, Folder, Mailbox } from "~/types";
+import { noteServerBuild } from "../lib/build-version";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -40,6 +41,7 @@ async function request<T>(
 			},
 		});
 
+		noteServerBuild(res.headers);
 		if (!res.ok) {
 			const body = await res.json().catch(() => ({}));
 			throw new ApiError(res.status, body as Record<string, unknown>);
@@ -148,6 +150,9 @@ const api = {
 			draft_id?: string;
 		},
 	) => post<{ draft_id: string }>(`/api/v1/mailboxes/${mailboxId}/drafts`, draft),
+	/** Sends a saved draft as it is, as a reply when it answers a message, and removes it once accepted (B-50). */
+	sendDraft: (mailboxId: string, draftId: string, idempotencyKey: string) =>
+		sendConfirmed(`/api/v1/mailboxes/${mailboxId}/drafts/${encodeURIComponent(draftId)}/send`, { idempotencyKey }),
 	replyToEmail: (mailboxId: string, emailId: string, email: unknown) =>
 		sendConfirmed(`/api/v1/mailboxes/${mailboxId}/emails/${emailId}/reply`, email),
 	forwardEmail: (mailboxId: string, emailId: string, email: unknown) =>

@@ -8,23 +8,24 @@ import {
 	route,
 } from "@react-router/dev/routes";
 
+/**
+ * The addresses of the settings pages before Settings became one screen (SCR-02, 0.11). Each one
+ * still works: it answers with a redirect into its section (app/components/settings/paths.ts).
+ * (`/agents` is not one: the Worker gives that path to the Agents SDK, which is why the old page was
+ * `/ai-agents`.)
+ */
+const LEGACY_SETTINGS = ["mailboxes", "accounts", "ai-agents", "knowledge", "categories", "spam", "agent-access", "projects", "setup"];
+
 export default [
 	index("routes/unified-inbox.tsx"),
-	route("mailboxes", "routes/home.tsx"),
-	route("accounts", "routes/fabric-accounts.tsx"),
+	route("settings/:section?/:id?/:tab?", "routes/settings.tsx"),
+	...LEGACY_SETTINGS.map((path) => route(path, "routes/settings-redirect.tsx", { id: `legacy-${path}` })),
 	route("accounts/:accountId", "routes/gmail-inbox.tsx"),
 	route("automation/:account", "routes/automation.tsx"),
-	route("ai-agents", "routes/agents.tsx"),
-	route("knowledge", "routes/knowledge.tsx"),
-	route("categories", "routes/categories.tsx"),
-	route("spam", "routes/spam.tsx"),
-	route("agent-access", "routes/agent-access.tsx"),
-	route("projects", "routes/project-addresses.tsx"),
-	route("setup", "routes/setup.tsx"),
 	route("mailbox/:mailboxId", "routes/mailbox.tsx", [
 		index("routes/mailbox-index.tsx"),
 		route("emails/:folder", "routes/email-list.tsx"),
-		route("settings", "routes/settings.tsx"),
+		route("settings", "routes/settings-redirect.tsx", { id: "legacy-mailbox-settings" }),
 		route("search", "routes/search-results.tsx"),
 	]),
 	route("*", "routes/not-found.tsx"),

@@ -1,58 +1,101 @@
-import { triage } from "../../shared/mail/triage";
+/**
+ * The accounts the server keeps for its providers (docs/architecture.md → "Mail providers"): the
+ * records, their sealed credentials, the message cache every provider shares, sends with their
+ * idempotent receipts, the incoming-event queue, status and backoff. The provider's own work runs
+ * through a `ProviderSession` (provider.ts): Gmail in gmail-provider.ts, IMAP/SMTP in imap/, Outlook
+ * (Microsoft Graph) in outlook/.
+ *
+ * Records live under `account:<id>`; the world names an account `<provider>:<id>` (shared/mail/
+ * accounts.ts). Gmail records written before 0.11 are read as they are: same key, same id, same cache.
+ */
 import { validateAttachments } from '../../shared/mail/attachments';
+import type { RemoteProvider } from "../../shared/mail/accounts";
 import {
   configuration,
   createAuthorization,
   consumeState,
-  seal,
-  unseal,
   pkceChallenge,
-  type Envelope,
   type GmailEnvironment,
   type Store,
 } from "./google-oauth";
-import {
-  GmailClient,
-  ProviderError,
-  exchangeCode,
-  makeMime,
-  normalizeMessage,
-  type Credentials,
-  type Fetcher,
-  type Message,
-  type SendInput,
-} from "./gmail-client";
-import { inboxIdentity, inboxPage, type InboxReadOptions, type InboxMessage } from "../../shared/mail/inbox";
-export interface AccountRecord {
-  id: string;
-  provider: "gmail";
-  email: string;
-  runtime: "cloud";
-  status:
-    | "connected"
-    | "syncing"
-    | "reconnect_required"
-    | "rate_limited"
-    | "error";
-  createdAt: number;
-  lastSyncAt?: number;
-  error?: string;
-  retryAt?: number;
-  credentials: Envelope;
-  sync: {
-    mode: "initial" | "history";
-    historyId?: string;
-    pageToken?: string;
-    baseline?: string;
-    generation?: string;
-  };
+import { GmailClient, ProviderError, exchangeCode, makeMime, type Fetcher, type Message, type SendInput } from "./gmail-client";
+import type { InboxReadOptions, InboxMessage } from "../../shared/mail/inbox";
+import { isGmailReason, type GmailReason } from "../../shared/mail/gmail-reasons";
+import { GMAIL_FOLDERS, GmailCache, gmailInboxMessage, inFolder, keyPart, msgKey, type GmailFolder, type InboxCounts, type StoredMessage } from "./gmail-cache";
+export { GMAIL_FOLDERS, type GmailFolder } from "./gmail-cache";
+import { credentialKeys, hasCredentialKey, openCredentials, sealCredentials, type CredentialEnvironment, type CredentialKeys } from "./credentials";
+import { GmailProvider, type GmailAccount } from "./gmail-provider";
+import { normalizeSync } from "./gmail-sync";
+import { NotSentError, type DraftUpdate, type MailProvider, type MessageChange, type ProviderCapabilities, type ProviderSession } from "./provider";
+import type { ImapAccount, ImapCredentials } from "./imap/types";
+import { ImapProvider, type ImapDeps } from "./imap/provider";
+import { serverSettings, type ImapConnectInput } from "./imap/connect";
+import type { OutlookAccount, OutlookCredentials } from "./outlook/types";
+import { OutlookProvider, type OutlookSession } from "./outlook/provider";
+import { GraphClient } from "./outlook/graph";
+import { createMicrosoftAuthorization, exchangeMicrosoftCode, microsoftConfiguration, type MicrosoftEnvironment } from "./outlook/oauth";
+import { CUSTOM, PRESETS } from "../../shared/mail/imap-presets";
+export { importPercent, type SyncState } from "./gmail-sync";
+
+/** How a sync runs: until when it may start pages, whether it imports, and under whose lock. */
+export interface SyncOptions {
+  /** No page is started after this (epoch ms); history's first page and the import's next page always run. */
+  deadline?: number;
+  /** Read new mail and changes only (Refresh): no import page. */
+  historyOnly?: boolean;
+  /** Import pages only: history was read a moment ago by the same tick. */
+  importOnly?: boolean;
+  /** Runs each page under the caller's lock, so other work interleaves between pages. */
+  lock?: <T>(fn: () => Promise<T>) => Promise<T>;
 }
+/** Work is still waiting: an import not finished, or a history page in progress. */
+export function syncPending(account: Pick<AccountRecord, "sync">) {
+  const sync = account.sync as { mode: string; historyPageToken?: string; more?: boolean };
+  return sync.mode === "initial" || !!sync.historyPageToken || !!sync.more;
+}
+const RETRY_MS = 60_000, MAX_RETRY_MS = 900_000;
+
+export type AccountRecord = GmailAccount | ImapAccount | OutlookAccount;
 export type PublicAccount = Omit<AccountRecord, "credentials">;
-interface StoredMessage {
-  message: Omit<Message, "text" | "html">;
-  parts: number;
-  blobId: string;
-  generation?: string;
+const DAY = 86_400_000;
+/**
+ * Google's answer to a refresh, "invalid_grant", says only that the grant is gone. A grant that ends
+ * about 7 days after it was given is a Testing app's (Google's stated expiry); one that ends on the
+ * date Google gave is too. Anything else was removed: in the Google account, by a password change,
+ * or after six months unused.
+ */
+export function grantEndReason(account: Pick<AccountRecord, "connectedAt" | "accessUntil">, now = Date.now()): GmailReason {
+  if (account.accessUntil && now >= account.accessUntil - 3_600_000) return "testing_expiry";
+  const age = account.connectedAt ? now - account.connectedAt : -1;
+  return age >= 7 * DAY - 2 * 3_600_000 && age <= 9 * DAY ? "testing_expiry" : "access_revoked";
+}
+/**
+ * What a failure says about the account itself, or null when it concerns one request only (a
+ * message gone, the provider busy). The same answer is kept on the account by a sync and by a write.
+ */
+export function accountProblem(error: unknown, account: Pick<AccountRecord, "connectedAt" | "accessUntil">, now = Date.now()):
+  { status: AccountRecord["status"]; error: string; reason?: GmailReason } | null {
+  if (!(error instanceof ProviderError)) return null;
+  switch (error.code) {
+    case "reconnect_required":
+      return { status: "reconnect_required", error: "reconnect_required",
+        reason: error.reason === "invalid_grant" ? grantEndReason(account, now) : isGmailReason(error.reason) ? error.reason : undefined };
+    case "insufficient_scope":
+      return { status: "reconnect_required", error: "reconnect_required", reason: "insufficient_scope" };
+    case "gmail_api_disabled":
+      return { status: "error", error: "gmail_api_disabled", reason: "gmail_api_disabled" };
+    case "google_client_rejected":
+      return { status: "error", error: "google_client_rejected", reason: "client_rejected" };
+    // The server's Microsoft app registration: its client secret ended, or Microsoft refuses the client.
+    case "microsoft_secret_expired":
+      return { status: "error", error: "microsoft_secret_expired", reason: "microsoft_secret_expired" };
+    case "microsoft_client_rejected":
+      return { status: "error", error: "microsoft_client_rejected", reason: "microsoft_client_rejected" };
+    case "mailbox_unavailable":
+      return { status: "error", error: "mailbox_unavailable" };
+    default:
+      return null;
+  }
 }
 export interface SendRequest extends SendInput {
   idempotencyKey: string;
@@ -91,31 +134,7 @@ function publicAccount(record: AccountRecord): PublicAccount {
   const { credentials: _, ...account } = record;
   return account;
 }
-/** One cached Gmail message as the unified feed shows it. */
-function gmailInboxMessage(accountId: string, m: StoredMessage["message"], ownDomains: string[] = []): InboxMessage {
-  const id = "gmail:" + accountId;
-  const labels = m.labels;
-  const timestamp = Number.isFinite(m.timestamp) && m.timestamp > 0 ? m.timestamp : Date.parse(m.date) || 0;
-  return { id: inboxIdentity(id, m.providerMessageId), accountId: id, provider: "gmail", providerMessageId: m.providerMessageId,
-    subject: m.subject, sender: m.from, recipient: m.to, date: new Date(timestamp).toISOString(), timestamp,
-    read: m.read, starred: labels.includes("STARRED"), snippet: m.snippet, threadId: m.threadId,
-    ...(m.rfcMessageId ? { rfcMessageId: m.rfcMessageId.replace(/^<|>$/g, "").toLowerCase() } : {}),
-    ...(labels.includes("SPAM") ? { spamReason: "Gmail marked it as spam" } : {}),
-    triage: triage({ sender: m.from, subject: m.subject, read: m.read, starred: labels.includes("STARRED"), labels, signals: m.signals, ownDomains }) };
-}
-/** The folders a Gmail search can name; they are views over labels, as the feed shows them. */
-export const GMAIL_FOLDERS = ["inbox", "sent", "archive", "starred", "spam", "trash", "draft"] as const;
-export type GmailFolder = (typeof GMAIL_FOLDERS)[number];
-function inFolder(labels: string[], folder: GmailFolder) {
-  const trash = labels.includes("TRASH"), spam = labels.includes("SPAM"), draft = labels.includes("DRAFT");
-  if (folder === "trash") return trash;
-  if (folder === "spam") return spam && !trash;
-  if (folder === "draft") return draft && !trash;
-  if (trash || spam || draft) return false;
-  return folder === "inbox" ? labels.includes("INBOX") : folder === "sent" ? labels.includes("SENT")
-    : folder === "starred" ? labels.includes("STARRED") : !labels.includes("INBOX") && !labels.includes("SENT");
-}
-/** A search of one Gmail account's cache: every field is its own filter, and all of them apply. */
+/** A search of one account's cache: every field is its own filter, and all of them apply. */
 export interface MessageFilters {
   cursor?: string; limit?: number;
   /** Text in the subject, sender, recipients or snippet. */
@@ -123,9 +142,11 @@ export interface MessageFilters {
   /** Epoch ms, both inclusive. */
   after?: number; before?: number;
   unread?: boolean; starred?: boolean; hasAttachment?: boolean; folder?: GmailFolder;
+  /** One conversation's messages (read_thread for Gmail and IMAP accounts). */
+  threadId?: string;
 }
 function checkFilters(f: MessageFilters) {
-  const bad = (["query", "from", "to", "subject"] as const).some((k) => f[k] !== undefined && typeof f[k] !== "string")
+  const bad = (["query", "from", "to", "subject", "threadId"] as const).some((k) => f[k] !== undefined && typeof f[k] !== "string")
     || (["after", "before"] as const).some((k) => f[k] !== undefined && !Number.isFinite(f[k]))
     || (["unread", "starred", "hasAttachment"] as const).some((k) => f[k] !== undefined && typeof f[k] !== "boolean");
   if (bad) throw new ProviderError("invalid_filter", 400);
@@ -137,40 +158,92 @@ function matches(m: Omit<Message, "text" | "html">, f: MessageFilters) {
   return has([m.subject, m.from, m.to, m.cc, m.snippet].join(" "), f.query) && has(m.from, f.from) && has([m.to, m.cc].join(" "), f.to)
     && has(m.subject, f.subject) && (f.after === undefined || timestamp >= f.after) && (f.before === undefined || timestamp <= f.before)
     && (f.unread === undefined || f.unread === !m.read) && (f.starred === undefined || f.starred === m.labels.includes("STARRED"))
-    && (f.hasAttachment === undefined || f.hasAttachment === (m.attachments?.length ?? 0) > 0) && (!f.folder || inFolder(m.labels, f.folder));
+    && (f.hasAttachment === undefined || f.hasAttachment === (m.attachments?.length ?? 0) > 0) && (!f.folder || inFolder(m.labels, f.folder))
+    && (f.threadId === undefined || m.threadId === f.threadId);
 }
-function keyPart(value: string) {
-  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value))
-    throw new ProviderError("invalid_id", 400);
-  return value;
+/** How long one read may spend moving an account's cache to the current layout before it answers from the old one. */
+const MIGRATE_ON_READ_MS = 5_000;
+/** Rows of the first layout that it already hid: an earlier import's leftovers once history took over. */
+function hiddenByFirstLayout(account: AccountRecord, row: StoredMessage) {
+  return account.provider === "gmail" && account.sync.mode === "history" && row.generation !== account.sync.generation;
 }
-function msgKey(accountId: string, messageId: string) {
-  return "message:" + keyPart(accountId) + ":" + keyPart(messageId);
+const IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{1,128}$/;
+
+/** How providers reach their servers; the tests give in-process fakes. */
+export interface ProviderDeps {
+  imap?: ImapDeps;
 }
+export type AccountsEnvironment = GmailEnvironment & CredentialEnvironment & MicrosoftEnvironment & { MAIL_POLL_SECONDS?: string };
+
+/** The poll interval of every provider: MAIL_POLL_SECONDS, else GMAIL_POLL_SECONDS, else 300 s (60 s … 1 h). */
+export function pollInterval(env: AccountsEnvironment) {
+  const seconds = Number(env.MAIL_POLL_SECONDS || env.GMAIL_POLL_SECONDS || 300);
+  return Math.max(60, Math.min(3600, Number.isFinite(seconds) ? seconds : 300)) * 1000;
+}
+
 export class AccountService {
+  readonly cache: GmailCache;
+  private gmail: GmailProvider;
+  private imap: ImapProvider;
+  private outlook: OutlookProvider;
+  private keys?: Promise<CredentialKeys | null>;
+  private renewed = new Map<string, AccountRecord["credentials"]>();
   constructor(
     private store: Store,
-    private env: GmailEnvironment,
+    private env: AccountsEnvironment,
     private http: Fetcher = fetch,
-  ) {}
+    deps: ProviderDeps = {},
+  ) {
+    this.cache = new GmailCache(store);
+    this.gmail = new GmailProvider(store, this.cache, env, http);
+    this.imap = new ImapProvider(store, this.cache, env, deps.imap);
+    this.outlook = new OutlookProvider(store, this.cache, env, http);
+  }
+  /** The provider of an account (or of a provider id). */
+  provider(of: RemoteProvider | Pick<AccountRecord, "provider">): MailProvider<AccountRecord> {
+    const id = typeof of === "string" ? of : of.provider;
+    const provider = id === "gmail" ? this.gmail : id === "imap" ? this.imap : id === "outlook" ? this.outlook : undefined;
+    if (!provider) throw new ProviderError("not_configured", 503);
+    return provider as unknown as MailProvider<AccountRecord>;
+  }
+  /** Whether an account's provider is set up on this server, so its sync can run. */
+  ready(account: Pick<AccountRecord, "provider">) {
+    try { return this.provider(account).configured(); } catch { return false; }
+  }
+  capabilities(account: AccountRecord): ProviderCapabilities {
+    return this.provider(account).capabilities(account);
+  }
   config() {
     const config = configuration(this.env);
     if (config.status !== "configured")
       throw new ProviderError("not_configured", 503);
     return config;
   }
+  protected credentialKeys() {
+    this.keys ??= credentialKeys(this.env);
+    return this.keys;
+  }
+  protected async seal(accountId: string, value: unknown) {
+    const keys = await this.credentialKeys();
+    if (!keys) throw new ProviderError("not_configured", 503);
+    return sealCredentials(keys, accountId, value);
+  }
   async listAccounts() {
+    const accounts = [...(await this.store.list<AccountRecord>({ prefix: "account:" })).values()];
     return {
       configuration: configuration(this.env).status,
-      accounts: [
-        ...(
-          await this.store.list<AccountRecord>({ prefix: "account:" })
-        ).values(),
-      ].map(publicAccount),
+      accounts: accounts.map((a) => {
+        let capabilities: ProviderCapabilities | undefined, importing: number | undefined;
+        try {
+          capabilities = this.capabilities(a);
+          if (a.sync.mode === "initial") importing = this.provider(a).progress(a);
+        } catch { /* a provider this build does not carry */ }
+        return { ...publicAccount(a), providerName: this.providerName(a), ...(capabilities ? { capabilities } : {}), ...(importing !== undefined ? { importing } : {}) };
+      }),
       providers: [
         { id: "gmail", status: configuration(this.env).status },
-        { id: "imap", status: "not_configured" },
-        { id: "outlook", status: "not_configured" },
+        { id: "imap", status: hasCredentialKey(this.env) ? "configured" : "not_configured" },
+        { id: "outlook", status: microsoftConfiguration(this.env).status },
       ],
     };
   }
@@ -207,114 +280,284 @@ export class AccountService {
       ...(
         await this.store.list<AccountRecord>({ prefix: "account:" })
       ).values(),
-    ].find((a) => a.email.toLowerCase() === profile.emailAddress.toLowerCase());
+    ].find((a) => a.provider === "gmail" && a.email.toLowerCase() === profile.emailAddress.toLowerCase()) as GmailAccount | undefined;
     const identityKey =
       "identity:" + (await pkceChallenge(profile.emailAddress.toLowerCase()));
     const id =
       existing?.id ||
       (await this.store.get<string>(identityKey)) ||
       crypto.randomUUID();
-    const account: AccountRecord = {
+    const account: GmailAccount = {
       id,
       provider: "gmail",
       email: profile.emailAddress,
       runtime: "cloud",
       status: "connected",
       createdAt: existing?.createdAt || Date.now(),
-      credentials: await seal(config.encryptionKey, id, credentials),
+      connectedAt: Date.now(),
+      ...(credentials.refreshExpiresAt ? { accessUntil: credentials.refreshExpiresAt } : {}),
+      credentials: await this.seal(id, credentials),
       sync: existing?.sync || { mode: "initial" },
     };
     await this.store.put("account:" + id, account);
     await this.store.put(identityKey, id);
     return publicAccount(account);
   }
-  private async account(id: string) {
+  /**
+   * The providers this server can connect, with the IMAP presets and their help pages (no secret,
+   * nothing about any account): what Settings → Accounts and the agent tool list_mail_providers show.
+   */
+  mailProviders() {
+    return {
+      providers: [
+        { id: "gmail", name: "Gmail", auth: "oauth", status: configuration(this.env).status },
+        { id: "imap", name: "Other mail (IMAP)", auth: "app-password", status: hasCredentialKey(this.env) ? "configured" : "not_configured" },
+        { id: "outlook", name: "Outlook", auth: "oauth", status: microsoftConfiguration(this.env).status },
+      ],
+      presets: [...PRESETS, { ...CUSTOM }].map((p) => ({
+        id: p.id, name: p.name, domains: p.domains, steps: p.steps, source: p.source || null, appPasswordUrl: p.appPasswordUrl || null, sentCopy: p.sentCopy,
+        ...("imap" in p ? { imap: p.imap, smtp: p.smtp } : {}),
+      })),
+    };
+  }
+  /** The server's Microsoft setup, or not_configured. */
+  outlookConfig() {
+    const config = microsoftConfiguration(this.env);
+    if (config.status !== "configured") throw new ProviderError("not_configured", 503);
+    return config;
+  }
+  /** Starts connecting an Outlook account: Microsoft's sign-in address and the browser's token. */
+  async outlookConnect() {
+    return createMicrosoftAuthorization(this.store, this.outlookConfig());
+  }
+  /**
+   * The end of connecting an Outlook account (SCN-058): the state is this browser's and Outlook's,
+   * Microsoft's code is redeemed, the person and the mailbox are read (a Microsoft account without
+   * an Outlook mailbox is refused here, before anything is kept), then the tokens are sealed and the
+   * account stored. `outcome` is the result page's word for an error Microsoft sent back instead.
+   */
+  async outlookCallback(state: string, browserToken: string, code: string, outcome?: string) {
+    const config = this.outlookConfig();
+    const saved = await consumeState(this.store, state, browserToken, Date.now(), "outlook");
+    if (outcome) throw new ProviderError(outcome, 400);
+    if (!code || code.length > 4096) throw new ProviderError("oauth_failed", 400);
+    let credentials: OutlookCredentials = await exchangeMicrosoftCode(config, code, saved.verifier, this.http);
+    const graph = new GraphClient(config, credentials, async (next) => { credentials = next; }, this.http);
+    const me = await graph.json<{ id?: string; mail?: string | null; userPrincipalName?: string }>("/me?$select=id,mail,userPrincipalName");
+    const email = (me?.mail || me?.userPrincipalName || "").trim();
+    if (!me?.id || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ProviderError("invalid_profile", 502);
+    const accounts = [...(await this.store.list<AccountRecord>({ prefix: "account:" })).values()];
+    if (accounts.some((a) => a.provider !== "outlook" && a.email.toLowerCase() === email.toLowerCase())) throw new ProviderError("already_connected", 409);
+    const existing = accounts.find((a) => a.provider === "outlook" && a.email.toLowerCase() === email.toLowerCase()) as OutlookAccount | undefined;
+    const id = existing?.id ?? crypto.randomUUID();
+    const same = !!existing && existing.userId === me.id;
+    const account: OutlookAccount = {
+      id, provider: "outlook", email, runtime: "cloud", status: "syncing", createdAt: existing?.createdAt ?? Date.now(), connectedAt: Date.now(), userId: me.id,
+      credentials: existing?.credentials ?? { version: 1, iv: "", ciphertext: "" },
+      // The same Microsoft user again keeps the cache and where the sync stands; another one starts over.
+      sync: same ? existing!.sync : { mode: "initial", folders: [], since: Date.now() },
+    };
+    try {
+      // The folders, read now: this also proves the account has an Outlook mailbox Graph can reach.
+      await this.outlook.syncer.discover(account, graph, Date.now() + 15_000);
+    } catch (error) {
+      if (error instanceof ProviderError && (error.code === "mailbox_unavailable" || error.code === "not_found")) throw new ProviderError("mailbox_unavailable", 404);
+      throw error;
+    }
+    if (existing && !same) await this.cache.clear(id);
+    account.credentials = await this.seal(id, credentials);
+    account.status = account.sync.mode === "initial" ? "syncing" : "connected";
+    this.renewed.delete(id);
+    await this.store.put("account:" + id, account);
+    console.log(JSON.stringify({ event: "outlook_connected", again: !!existing, kept: same }));
+    return publicAccount(account);
+  }
+  /**
+   * The self-test of the server's Microsoft client with a real request: one connected Outlook
+   * account's token renewed now, which Microsoft answers only for a client ID and secret it accepts.
+   * Without an Outlook account nothing can be asked (Microsoft checks a sign-in code's shape before the
+   * client, so a made-up code proves nothing): the answer says so.
+   */
+  async microsoftClientCheck(): Promise<{ status: "ok" | "failed" | "unknown"; code?: string; email?: string }> {
+    const accounts = [...(await this.store.list<AccountRecord>({ prefix: "account:" })).values()].filter((a): a is OutlookAccount => a.provider === "outlook");
+    const account = accounts.find((a) => a.status !== "reconnect_required") ?? accounts[0];
+    if (!account) return { status: "unknown", code: "no_account" };
+    try {
+      await this.withSession(account, (s) => (s as OutlookSession).graph.token(true));
+      return { status: "ok", email: account.email };
+    } catch (error) {
+      const code = error instanceof ProviderError ? error.code : "provider_unavailable";
+      return { status: code === "microsoft_secret_expired" || code === "microsoft_client_rejected" ? "failed" : "unknown", code, email: account.email };
+    }
+  }
+  /**
+   * Connects an IMAP account (or connects one again with new settings): its IMAP login, folders and
+   * SMTP login are checked first, and only then is the password sealed and the account stored. An
+   * address already connected through Google sign-in is refused, so no mail is read twice.
+   */
+  async connectImap(input: ImapConnectInput) {
+    if (!hasCredentialKey(this.env)) throw new ProviderError("not_configured", 503);
+    const settings = serverSettings(input);
+    const accounts = [...(await this.store.list<AccountRecord>({ prefix: "account:" })).values()];
+    // An address already read through Google or Microsoft sign-in is not read a second time.
+    if (accounts.some((a) => (a.provider === "gmail" || a.provider === "outlook") && a.email.toLowerCase() === input.email)) throw new ProviderError("already_connected", 409);
+    const checked = await this.imap.verify(settings, input.password, input.email);
+    const existing = accounts.find((a) => a.provider === "imap" && a.email.toLowerCase() === input.email) as ImapAccount | undefined;
+    const id = existing?.id ?? crypto.randomUUID();
+    const sameServer = existing && existing.server.imap.host === checked.settings.imap.host && existing.server.imapUser === checked.settings.imapUser;
+    const account: ImapAccount = {
+      id, provider: "imap", preset: input.preset, email: input.email, runtime: "cloud", status: "syncing",
+      createdAt: existing?.createdAt ?? Date.now(),
+      credentials: await this.seal(id, { password: input.password } satisfies ImapCredentials),
+      server: checked.settings,
+      // The same mailbox again keeps its cache and where its sync stands; another one starts over.
+      sync: sameServer ? existing!.sync : {
+        mode: "initial", condstore: checked.condstore, listedAt: 0, targets: checked.folders.targets,
+        folders: (Object.entries(checked.folders.roles) as [ImapAccount["sync"]["folders"][number]["role"], string][])
+          .map(([role, path]) => ({ role, path, uidValidity: 0, top: 0, known: 0 })),
+      },
+    };
+    if (existing && !sameServer) await this.cache.clear(id);
+    await this.putAccount(account);
+    console.log(JSON.stringify({ event: "imap_connected", preset: input.preset, again: !!existing }));
+    return publicAccount(account);
+  }
+  /** A new app password for an IMAP account, checked against both servers before it replaces the old one. */
+  async updateImapPassword(accountId: string, password: string) {
+    const account = await this.account(accountId);
+    if (account.provider !== "imap") throw new ProviderError("not_supported", 400);
+    if (typeof password !== "string" || !password || password.length > 512) throw new ProviderError("invalid_password", 400);
+    const checked = await this.imap.verify(account.server, password, account.email);
+    account.server = checked.settings;
+    account.credentials = await this.seal(account.id, { password } satisfies ImapCredentials);
+    this.renewed.delete(account.id);
+    account.status = account.sync.mode === "initial" ? "syncing" : "connected";
+    delete account.error;
+    delete account.retryAt;
+    delete account.failures;
+    await this.store.put("account:" + account.id, account);
+    console.log(JSON.stringify({ event: "imap_password_changed", preset: account.preset }));
+    return publicAccount(account);
+  }
+  protected async account(id: string) {
     const account = await this.store.get<AccountRecord>(
       "account:" + keyPart(id),
     );
     if (!account) throw new ProviderError("account_not_found", 404);
     return account;
   }
-  private async client(account: AccountRecord) {
-    const config = this.config();
-    let credentials: Credentials;
+  /**
+   * Opens an account's provider session with its credentials. An envelope sealed before 0.11, or
+   * with a key since rotated, is sealed again with the current key on the way (credentials.ts).
+   */
+  protected async session(account: AccountRecord): Promise<ProviderSession> {
+    const provider = this.provider(account);
+    if (!provider.configured()) throw new ProviderError("not_configured", 503);
+    const keys = await this.credentialKeys();
+    if (!keys) throw new ProviderError("not_configured", 503);
+    let opened: { value: unknown; stale: boolean };
     try {
-      credentials = await unseal<Credentials>(
-        config.encryptionKey,
-        account.id,
-        account.credentials,
-      );
+      opened = await openCredentials(keys, account.id, account.credentials);
     } catch {
-      throw new ProviderError("credential_store_unavailable", 503);
+      // The keys the server holds cannot open what was sealed for this account: only a reconnect
+      // (or, for IMAP, the password entered again) gives it access again.
+      throw new ProviderError("reconnect_required", 401, "credentials_unreadable");
     }
-    return new GmailClient(
-      this.env,
-      credentials,
-      async (next) => {
-        account.credentials = await seal(
-          config.encryptionKey,
-          account.id,
-          next,
-        );
-        await this.store.put("account:" + account.id, account);
-      },
-      this.http,
-    );
+    // Renewed credentials (an OAuth refresh) go into the stored record and into every copy of it a
+    // caller writes later in this object's life (putAccount), so no page writes an older envelope back.
+    const persist = async (next: unknown) => {
+      const sealed = await this.seal(account.id, next);
+      account.credentials = sealed;
+      this.renewed.set(account.id, sealed);
+      const latest = await this.store.get<AccountRecord>("account:" + account.id);
+      if (latest) await this.store.put("account:" + account.id, { ...latest, credentials: sealed });
+    };
+    if (opened.stale) {
+      try { await persist(opened.value); }
+      catch (error) { console.warn(JSON.stringify({ event: "credential_reseal_failed", error: (error as Error)?.message?.slice(0, 100) })); }
+    }
+    return provider.open(account, opened.value, persist);
   }
-  private async saveMessage(account: AccountRecord, message: Message) {
-    const key = msgKey(account.id, message.providerMessageId),
-      { text, html, ...metadata } = message;
-    // KV values are limited to 128 KiB. Unicode JSON is split below that byte bound.
-    const previous = await this.store.get<StoredMessage>(key);
-    const blobId = crypto.randomUUID();
-    const data = JSON.stringify({ text, html }),
-      parts = Math.max(1, Math.ceil(data.length / 24000));
-    for (let i = 0; i < parts; i++)
-      await this.store.put(
-        key + ":body:" + blobId + ":" + i,
-        data.slice(i * 24000, (i + 1) * 24000),
-      );
-    await this.store.put<StoredMessage>(key, {
-      message: metadata,
-      parts,
-      blobId,
-      generation: account.sync.generation,
+  /**
+   * Runs work in the account's provider session. A failure that is about the account rather than
+   * this one request (the grant gone, the Gmail API off, the client refused, a password refused) is
+   * kept on the account, so the inbox and Settings say why, the same as when a sync meets it.
+   */
+  protected async withSession<T>(account: AccountRecord, work: (session: ProviderSession) => Promise<T>): Promise<T> {
+    return this.noting(account.id, async () => {
+      const session = await this.session(account);
+      try { return await work(session); }
+      finally { await session.close().catch(() => undefined); }
     });
-    if (previous)
-      for (let i = 0; i < previous.parts; i++)
-        await this.store.delete(key + ":body:" + previous.blobId + ":" + i);
+  }
+  private async noting<T>(accountId: string, work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      await this.noteProblem(accountId, error);
+      throw error;
+    }
+  }
+  private async noteProblem(accountId: string, error: unknown) {
+    const current = await this.store.get<AccountRecord>("account:" + accountId);
+    if (!current) return;
+    const problem = accountProblem(error, current);
+    if (!problem || (current.status === problem.status && current.error === problem.error && current.reason === problem.reason)) return;
+    current.status = problem.status;
+    current.error = problem.error;
+    if (problem.reason) current.reason = problem.reason; else delete current.reason;
+    await this.store.put("account:" + accountId, current);
+    console.warn(JSON.stringify({ event: current.provider === "gmail" ? "gmail_account_problem" : "mail_account_problem", provider: current.provider, error: problem.error, reason: problem.reason ?? null }));
+  }
+  /** Writes an account record, with credentials renewed meanwhile by a session kept over its newer ones. */
+  protected async putAccount(account: AccountRecord) {
+    const renewed = this.renewed.get(account.id);
+    if (renewed) account.credentials = renewed;
+    await this.store.put("account:" + account.id, account);
+  }
+  /** How a person knows the account's provider: "Gmail", or the IMAP preset's name. */
+  providerName(account: Pick<AccountRecord, "provider"> & { preset?: string }): string {
+    return account.provider === "gmail" ? "Gmail" : account.provider === "outlook" ? "Outlook" : this.imap.presetName(account.preset);
+  }
+  private async saveMessage(account: AccountRecord, message: Message, options: { bodyless?: boolean } = {}) {
+    await this.cache.save(account.id, message, (account.sync as { generation?: string }).generation, options);
+  }
+  /** Moves the account's cache to the current layout within `budgetMs`; true once it is there. */
+  async migrateCache(accountId: string, budgetMs = MIGRATE_ON_READ_MS) {
+    const account = await this.account(accountId);
+    return this.cache.migrate(account.id, (row) => hiddenByFirstLayout(account, row), Date.now() + budgetMs);
+  }
+  /** The id a message has now: an IMAP move gives it a new one, kept as an alias for a while. */
+  protected async currentId(accountId: string, messageId: string) {
+    const alias = await this.store.get<{ to: string; at: number }>("moved:" + accountId + ":" + messageId);
+    return alias && alias.at > Date.now() - 7 * 86_400_000 ? alias.to : messageId;
   }
   async getMessage(accountId: string, messageId: string): Promise<Message> {
-    const account = await this.account(accountId),
-      key = msgKey(accountId, messageId);
+    const account = await this.account(accountId);
+    keyPart(messageId);
+    messageId = await this.currentId(account.id, messageId);
+    const key = msgKey(accountId, messageId);
     const row = await this.store.get<StoredMessage>(key);
-    if (
-      !row ||
-      (account.sync.mode === "history" &&
-        row.generation !== account.sync.generation)
-    )
+    if (!row || hiddenByFirstLayout(account, row))
       throw new ProviderError("message_not_found", 404);
+    // Imported with its headers only (older mail): its body is read from the provider when first opened.
+    if (row.bodyless) {
+      const fresh = await this.withSession(account, (s) => s.message(messageId));
+      await this.saveMessage(account, fresh);
+      return fresh;
+    }
     // Cached before Cc and Reply-To were kept: read it once more from Gmail so a reply reaches
     // the right people. Gmail out of reach is no reason to fail the read; the cached copy stands.
     if (!("cc" in row.message)) {
       try {
-        const fresh = normalizeMessage(accountId, await (await this.client(account)).message(messageId));
+        const fresh = await this.withSession(account, (s) => s.message(messageId));
         await this.saveMessage(account, fresh);
         return fresh;
       } catch (error) {
         console.warn(JSON.stringify({ event: "gmail_message_refresh_failed", error: error instanceof ProviderError ? error.code : "unknown" }));
       }
     }
-    let body = "";
-    for (let i = 0; i < row.parts; i++) {
-      const part = await this.store.get<string>(
-        key + ":body:" + row.blobId + ":" + i,
-      );
-      if (part === undefined)
-        throw new ProviderError("message_store_unavailable", 503);
-      body += part;
-    }
-    return { ...row.message, ...JSON.parse(body) };
+    return { ...row.message, ...(await this.cache.body(account.id, messageId, row)) };
   }
   async listMessages(accountId: string, options: MessageFilters = {}) {
     checkFilters(options);
@@ -324,7 +567,7 @@ export class AccountService {
     // Metadata rows use a separate prefix from body chunks at read time. Cursor is a provider id, never an arbitrary storage key.
     if (options.cursor) keyPart(options.cursor);
     let after = options.cursor
-      ? prefix + options.cursor + ":\uffff"
+      ? prefix + options.cursor + ":￿"
       : undefined;
     const messages: Omit<Message, "text" | "html">[] = [];
     let nextCursor: string | undefined;
@@ -340,11 +583,7 @@ export class AccountService {
         after = key;
         if (typeof row === "string") continue;
         nextCursor = row.message.providerMessageId;
-        if (
-          account.sync.mode === "history" &&
-          row.generation !== account.sync.generation
-        )
-          continue;
+        if (hiddenByFirstLayout(account, row)) continue;
         if (!matches(row.message, options)) continue;
         messages.push(row.message);
         if (messages.length >= limit) break;
@@ -356,28 +595,17 @@ export class AccountService {
     }
     return { messages, nextCursor, sync: account.sync, status: account.status };
   }
-  /** Date order requires reading the cache, not a page in provider-id order.
-   * Refuse an incomplete scan rather than quietly hiding newer messages.
-   * Bodies are never reconstructed and no provider request is made here.
+  /**
+   * One page of the account's feed, newest first, from the cache's date index: about one page
+   * of rows is read however large the cache is. While the cache is still being moved to the
+   * current layout, the old full scan answers. No request is made to the provider here.
    */
-  async listInboxMessages(accountId: string, options: InboxReadOptions) {
+  async listInboxMessages(accountId: string, options: InboxReadOptions): Promise<InboxMessage[]> {
     const account = await this.account(accountId);
-    const prefix = "message:" + keyPart(accountId) + ":";
-    let messages: InboxMessage[] = [];
-    let after: string | undefined;
-    for (let batch = 0; batch < 200; batch++) {
-      const rows = await this.store.list<StoredMessage | string>({ prefix, limit: 100, startAfter: after });
-      for (const [key, row] of rows) {
-        after = key;
-        if (typeof row === "string" || (account.sync.mode === "history" && row.generation !== account.sync.generation)) continue;
-        const m = row.message;
-        if (!inFolder(m.labels, options.folder) || (options.unread && m.read) || (options.query && ![m.subject, m.from, m.to, m.snippet].join(" ").toLowerCase().includes(options.query.toLowerCase()))) continue;
-        messages.push(gmailInboxMessage(accountId, m, options.ownDomains));
-      }
-      messages = inboxPage(messages, options);
-      if (rows.size < 100) return messages;
-    }
-    throw new ProviderError("cache_scan_limit", 503);
+    const feed = { provider: account.provider, providerName: this.providerName(account) };
+    if (await this.cache.migrate(account.id, (row) => hiddenByFirstLayout(account, row), Date.now() + MIGRATE_ON_READ_MS))
+      return this.cache.inboxPage(account.id, options, feed);
+    return this.cache.legacyInboxPage(account.id, options, (row) => !hiddenByFirstLayout(account, row), feed);
   }
   /**
    * The cached messages with these ids, in the feed's shape, leaving out trash,
@@ -390,170 +618,101 @@ export class AccountService {
       let key: string;
       try { key = msgKey(accountId, messageId); } catch { continue; }
       const row = await this.store.get<StoredMessage>(key);
-      if (!row || (account.sync.mode === "history" && row.generation !== account.sync.generation)) continue;
+      if (!row || hiddenByFirstLayout(account, row)) continue;
       const labels = row.message.labels;
       if (labels.includes("TRASH") || labels.includes("SPAM") || labels.includes("DRAFT")) continue;
-      out.push(gmailInboxMessage(accountId, row.message, ownDomains));
+      out.push(gmailInboxMessage(accountId, row.message, ownDomains, { provider: account.provider, providerName: this.providerName(account) }));
     }
     return out;
   }
-  /** Unread inbox messages in the local cache (the same cache listInboxMessages reads). */
-  /** Unread and total mail in the Gmail inbox, from the cache. */
-  async countInbox(accountId: string): Promise<{ unread: number; total: number }> {
+  /** Unread and total mail in the account's inbox: counters kept with every cached change. */
+  async countInbox(accountId: string): Promise<InboxCounts> {
     const account = await this.account(accountId);
-    const prefix = "message:" + keyPart(accountId) + ":";
-    let unread = 0, total = 0;
-    let after: string | undefined;
-    for (let batch = 0; batch < 200; batch++) {
-      const rows = await this.store.list<StoredMessage | string>({ prefix, limit: 100, startAfter: after });
-      for (const [key, row] of rows) {
-        after = key;
-        if (typeof row === "string" || (account.sync.mode === "history" && row.generation !== account.sync.generation)) continue;
-        const labels = row.message.labels;
-        if (!labels.includes("INBOX") || labels.includes("TRASH") || labels.includes("SPAM")) continue;
-        total++;
-        if (!row.message.read) unread++;
-      }
-      if (rows.size < 100) return { unread, total };
-    }
-    throw new ProviderError("cache_scan_limit", 503);
+    if (await this.cache.migrate(account.id, (row) => hiddenByFirstLayout(account, row), Date.now() + MIGRATE_ON_READ_MS))
+      return this.cache.counts(account.id);
+    return this.cache.legacyCounts(account.id, (row) => !hiddenByFirstLayout(account, row));
   }
   async countUnreadInbox(accountId: string): Promise<number> {
-    const account = await this.account(accountId);
-    const prefix = "message:" + keyPart(accountId) + ":";
-    let count = 0;
-    let after: string | undefined;
-    for (let batch = 0; batch < 200; batch++) {
-      const rows = await this.store.list<StoredMessage | string>({ prefix, limit: 100, startAfter: after });
-      for (const [key, row] of rows) {
-        after = key;
-        if (typeof row === "string" || (account.sync.mode === "history" && row.generation !== account.sync.generation)) continue;
-        const labels = row.message.labels;
-        if (labels.includes("INBOX") && !row.message.read && !labels.includes("TRASH") && !labels.includes("SPAM")) count++;
-      }
-      if (rows.size < 100) return count;
-    }
-    throw new ProviderError("cache_scan_limit", 503);
+    return (await this.countInbox(accountId)).unread;
   }
-  async sync(accountId: string) {
+  /**
+   * Brings an account's cache up to date: history first, to its last page (new mail is never
+   * behind the import), then import pages until `deadline`. Each page runs under `lock`; the
+   * provider session (an IMAP connection) is opened once for the whole sync and always closed.
+   * Throws the first failure after recording it on the account (status, error, when to retry).
+   */
+  async sync(accountId: string, options: SyncOptions = {}): Promise<PublicAccount> {
+    const lock = options.lock ?? (<T>(fn: () => Promise<T>) => fn());
+    const deadline = options.deadline ?? Date.now();
+    let step = { account: publicAccount(await this.account(accountId)), more: false };
+    const sessions: { current?: ProviderSession } = {};
+    try {
+      if (!options.importOnly) {
+        step = await lock(() => this.syncPage(accountId, "history", deadline, sessions));
+        while (step.more && Date.now() < deadline) step = await lock(() => this.syncPage(accountId, "history", deadline, sessions));
+      }
+      if (options.historyOnly) return step.account;
+      step = await lock(() => this.syncPage(accountId, "import", deadline, sessions));
+      while (step.more && Date.now() < deadline) step = await lock(() => this.syncPage(accountId, "import", deadline, sessions));
+      return step.account;
+    } finally {
+      await sessions.current?.close().catch(() => undefined);
+    }
+  }
+  /** One page of history or of the import, with the account's status kept true either way. */
+  private async syncPage(accountId: string, kind: "history" | "import", deadline: number, sessions: { current?: ProviderSession }): Promise<{ account: PublicAccount; more: boolean }> {
     const account = await this.account(accountId);
     if (account.status === "reconnect_required")
       throw new ProviderError("reconnect_required", 401);
     if (account.retryAt && account.retryAt > Date.now())
-      throw new ProviderError(
-        account.status === "rate_limited" ? "rate_limited" : "sync_backoff",
-        429,
-      );
-    const client = await this.client(account);
+      throw new ProviderError(account.status === "rate_limited" ? "rate_limited" : "sync_backoff", 429);
+    const provider = this.provider(account);
+    if (account.provider === "gmail") {
+      account.sync = normalizeSync(account.sync);
+      // History starts with the import, which records where it begins; an imported account has no import page.
+      if (kind === "history" && !account.sync.historyId) return { account: publicAccount(account), more: false };
+    }
+    if (kind === "import" && account.sync.mode === "history") return { account: publicAccount(account), more: false };
+    let more: boolean;
     try {
-      if (account.sync.mode === "initial") {
-        if (!account.sync.baseline) {
-          account.sync.baseline = (await client.profile()).historyId;
-          account.sync.generation = crypto.randomUUID();
-          await this.store.put("account:" + accountId, account);
-        }
-        const page = await client.list(account.sync.pageToken);
-        for (const item of page.messages || []) {
-          try {
-            await this.saveMessage(
-              account,
-              normalizeMessage(accountId, await client.message(item.id)),
-            );
-          } catch (error) {
-            if (!(error instanceof ProviderError && error.code === "not_found"))
-              throw error;
-          }
-        }
-        if (page.nextPageToken) account.sync.pageToken = page.nextPageToken;
-        else
-          account.sync = {
-            mode: "history",
-            historyId: account.sync.baseline,
-            generation: account.sync.generation,
-          };
-      } else {
-        const page = await client.history(
-          account.sync.historyId!,
-          account.sync.pageToken,
-        );
-        const ids = new Set<string>(),
-          added = new Set<string>();
-        for (const item of page.history || []) {
-          for (const message of item.messages || []) ids.add(message.id);
-          for (const change of [
-            ...(item.messagesAdded || []),
-            ...(item.messagesDeleted || []),
-            ...(item.labelsAdded || []),
-            ...(item.labelsRemoved || []),
-          ])
-            ids.add(change.message.id);
-          for (const change of item.messagesAdded || [])
-            added.add(change.message.id);
-        }
-        for (const id of ids) {
-          try {
-            const message = normalizeMessage(
-              accountId,
-              await client.message(id),
-            );
-            await this.saveMessage(account, message);
-            // Stable event key survives history replay and is retained after acknowledgement.
-            if (
-              added.has(id) &&
-              !message.labels.includes("SENT") &&
-              !message.labels.includes("DRAFT")
-            ) {
-              const eventKey =
-                "event:" + keyPart(accountId) + ":" + keyPart(id);
-              await this.store.transaction(async (tx) => {
-                const old = await tx.get<PendingEvent>(eventKey);
-                if (!old || !old.delivered) {
-                  const event = { accountId, messageId: id, delivered: false };
-                  await tx.put(eventKey, event);
-                  await tx.put("pending:" + eventKey, event);
-                }
-              });
-            }
-          } catch (error) {
-            if (error instanceof ProviderError && error.code === "not_found")
-              await this.store.delete(msgKey(accountId, id));
-            else throw error;
-          }
-        }
-        if (page.nextPageToken) account.sync.pageToken = page.nextPageToken;
-        else {
-          account.sync.historyId = page.historyId;
-          delete account.sync.pageToken;
-        }
-      }
-      account.status =
-        account.sync.mode === "initial" ? "syncing" : "connected";
+      const session = sessions.current ??= await this.session(account);
+      const page = await session.syncPage(account, kind, deadline);
+      more = page.more;
+      if (page.skipped) account.skipped = (account.skipped ?? 0) + page.skipped;
+      account.status = account.sync.mode === "initial" ? "syncing" : "connected";
       account.lastSyncAt = Date.now();
       delete account.error;
+      delete account.reason;
       delete account.retryAt;
+      delete account.failures;
     } catch (error) {
       if (error instanceof ProviderError && error.code === "history_expired") {
-        account.sync = { mode: "initial" };
+        // The provider no longer has history from there: import again under a new generation. The
+        // cache stays visible meanwhile, and the sweep removes what the new import does not find.
+        provider.restartSync(account);
         account.status = "syncing";
         account.error = "history_expired";
-        await this.store.put("account:" + accountId, account);
-        return publicAccount(account);
+        await this.putAccount(account);
+        console.warn(JSON.stringify({ event: "gmail_history_expired", provider: account.provider }));
+        return { account: publicAccount(account), more: true };
       }
-      account.error =
-        error instanceof ProviderError ? error.code : "sync_failed";
-      account.status =
-        account.error === "reconnect_required"
-          ? "reconnect_required"
-          : account.error === "rate_limited"
-            ? "rate_limited"
-            : "error";
-      account.retryAt =
-        Date.now() + (account.status === "rate_limited" ? 900000 : 60000);
-      await this.store.put("account:" + accountId, account);
+      // A session that failed is not reused: the next page opens a fresh one.
+      if (sessions.current) { await sessions.current.close().catch(() => undefined); delete sessions.current; }
+      const problem = accountProblem(error, account);
+      account.error = problem?.error ?? (error instanceof ProviderError ? error.code : "sync_failed");
+      account.status = problem?.status ?? (account.error === "rate_limited" ? "rate_limited" : "error");
+      if (problem?.reason) account.reason = problem.reason; else delete account.reason;
+      account.failures = (account.failures ?? 0) + 1;
+      // A provider that said when to come back (Retry-After) is believed, within an hour.
+      const said = error instanceof ProviderError && error.retryAt ? Math.min(Math.max(error.retryAt, Date.now() + 1000), Date.now() + 3_600_000) : 0;
+      account.retryAt = said || Date.now() + (account.status === "rate_limited" ? MAX_RETRY_MS
+        : Math.min(RETRY_MS * 2 ** (account.failures - 1), MAX_RETRY_MS));
+      await this.putAccount(account);
+      console.warn(JSON.stringify({ event: account.provider === "gmail" ? "gmail_sync_failed" : "mail_sync_failed", provider: account.provider, kind, error: account.error, reason: account.reason ?? null, failures: account.failures }));
       throw error;
     }
-    await this.store.put("account:" + accountId, account);
-    return publicAccount(account);
+    await this.putAccount(account);
+    return { account: publicAccount(account), more };
   }
   send(accountId: string, request: SendRequest) {
     return this.submit("send", accountId, request);
@@ -573,7 +732,7 @@ export class AccountService {
     idempotencyKey: string,
   ): Promise<SendReceipt> {
     await this.account(accountId);
-    if (!/^[A-Za-z0-9_.:-]{1,128}$/.test(idempotencyKey))
+    if (!IDEMPOTENCY_KEY.test(idempotencyKey))
       throw new ProviderError("idempotency_key_required", 400);
     const key = kind + ":" + keyPart(accountId) + ":" + idempotencyKey;
     const receipt = await this.store.get<StoredSend>(key);
@@ -595,12 +754,13 @@ export class AccountService {
     const { idempotencyKey, ...input } = request;
     if (
       typeof idempotencyKey !== "string" ||
-      !/^[A-Za-z0-9_.:-]{1,128}$/.test(idempotencyKey)
+      !IDEMPOTENCY_KEY.test(idempotencyKey)
     )
       throw new ProviderError("idempotency_key_required", 400);
     // Validate before reserving; hash a canonical representation, not random MIME boundaries.
     input.attachments = validateAttachments(input.attachments);
-    const raw = makeMime(account.email, input);
+    makeMime(account.email, input);
+    if (kind === "draft" && !this.capabilities(account).drafts) throw new ProviderError("not_supported", 400);
     const digest = await pkceChallenge(
       JSON.stringify({
         to: input.to,
@@ -639,25 +799,22 @@ export class AccountService {
       return publicReceipt;
     }
     try {
-      const client = await this.client(account);
-      if (kind === "draft") {
-        const result = await client.createDraft(raw, input.threadId);
-        if (!result.id || !result.message?.id)
-          throw new ProviderError("invalid_send_receipt");
-        receipt.providerDraftId = result.id;
-        receipt.providerMessageId = result.message.id;
-        receipt.threadId = result.message.threadId;
-      } else {
-        const result = await client.send(raw, input.threadId);
-        if (!result.id) throw new ProviderError("invalid_send_receipt");
-        receipt.providerMessageId = result.id;
-        receipt.threadId = result.threadId;
-      }
+      const result = await this.withSession(account, (s) => kind === "draft" ? s.createDraft(input) : s.send(input));
+      if (kind === "draft") receipt.providerDraftId = result.draftId;
+      receipt.providerMessageId = result.id;
+      receipt.threadId = result.threadId;
       receipt.status = "accepted";
     } catch (error) {
+      // Refused before anything was handed over (a wrong password, a rejected recipient, a server
+      // out of reach): nothing left, so the reservation goes and the same key may try again.
+      if (error instanceof NotSentError) {
+        await this.store.delete(key);
+        throw new ProviderError(error.code, error.status);
+      }
       receipt.status = "unknown";
       receipt.error =
         error instanceof ProviderError ? error.code : "send_outcome_unknown";
+      await this.noteProblem(account.id, error);
     }
     // A failed durable receipt write leaves 'sending'; future attempts resolve to unknown, never resend.
     await this.store.put(key, receipt);
@@ -667,63 +824,58 @@ export class AccountService {
   async setRead(accountId: string, messageId: string, read: boolean) {
     if (typeof read !== "boolean")
       throw new ProviderError("invalid_read_state", 400);
-    return this.modify(
-      accountId,
-      messageId,
-      read ? [] : ["UNREAD"],
-      read ? ["UNREAD"] : [],
-    );
+    return this.changeMessage(accountId, messageId, { read });
   }
   async setStarred(accountId: string, messageId: string, starred: boolean) {
     if (typeof starred !== "boolean")
       throw new ProviderError("invalid_starred_state", 400);
-    return this.changeMessage(accountId, messageId, client => client.setStarred(messageId, starred));
+    return this.changeMessage(accountId, messageId, { starred });
   }
   async setTrashed(accountId: string, messageId: string, trashed: boolean) {
     if (typeof trashed !== "boolean")
       throw new ProviderError("invalid_trashed_state", 400);
-    return this.changeMessage(accountId, messageId, client => client.setTrashed(messageId, trashed));
+    return this.changeMessage(accountId, messageId, { trashed });
   }
   async archive(accountId: string, messageId: string) {
-    return this.modify(accountId, messageId, [], ["INBOX"]);
+    return this.changeMessage(accountId, messageId, { archive: true });
   }
-  /** Back to the Inbox from the archive, Trash or Spam: untrash only removes TRASH, so INBOX is added too. */
+  /** Back to the Inbox from the archive, Trash or Spam. */
   async moveToInbox(accountId: string, messageId: string) {
-    return this.changeMessage(accountId, messageId, async (client) => {
-      if ((await client.message(messageId)).labelIds?.includes("TRASH")) await client.setTrashed(messageId, false);
-      await client.modify(messageId, ["INBOX"], ["SPAM"]);
-    });
+    return this.changeMessage(accountId, messageId, { inbox: true });
   }
-  /** Report spam or Not spam through Gmail's own label, which also trains Gmail (SP-3). */
+  /** Report spam or Not spam through the provider's own spam folder, which also trains its filter (SP-3). */
   async setSpam(accountId: string, messageId: string, spam: boolean) {
     if (typeof spam !== "boolean") throw new ProviderError("invalid_spam_state", 400);
-    return this.modify(accountId, messageId, spam ? ["SPAM"] : ["INBOX"], spam ? ["INBOX"] : ["SPAM"]);
+    return this.changeMessage(accountId, messageId, { spam });
   }
-  private async modify(
-    accountId: string,
-    messageId: string,
-    add: string[],
-    remove: string[],
-  ) {
-    return this.changeMessage(accountId, messageId, client => client.modify(messageId, add, remove));
-  }
-  private async changeMessage(
-    accountId: string,
-    messageId: string,
-    change: (client: GmailClient) => Promise<unknown>,
-  ) {
+  private async changeMessage(accountId: string, messageId: string, change: MessageChange) {
     keyPart(messageId);
     const account = await this.account(accountId);
-    const client = await this.client(account);
-    await change(client);
+    const capabilities = this.capabilities(account);
+    if (("archive" in change && !capabilities.archive) || ("spam" in change && !capabilities.spam) || ("trashed" in change && !capabilities.trash))
+      throw new ProviderError("not_supported", 400);
+    const id = await this.currentId(account.id, messageId);
     // Read full provider state after acknowledgement; never optimistically cache labels.
     // A timeout or a failed read rejects and leaves the previous cache intact.
-    const message = normalizeMessage(
-      accountId,
-      await client.message(messageId),
-    );
-    await this.saveMessage(account, message);
-    return message;
+    const message = await this.withSession(account, (s) => s.change(id, change));
+    if (!message) {
+      // It left the folders this server reads (or its new place is known only after the next sync).
+      const row = await this.cache.row(account.id, id);
+      await this.cache.remove(account.id, id);
+      if (!row) throw new ProviderError("message_not_found", 404);
+      return { ...row.message, text: "", html: "", labels: [], read: true, archived: true } as Message;
+    }
+    if (message.providerMessageId !== id) {
+      // Moved (IMAP): the message has a new id in its new folder. The old id keeps answering for a
+      // week, so an Undo or a second action from a list read before the move still finds it.
+      await this.cache.remove(account.id, id);
+      const moved = { to: message.providerMessageId, at: Date.now() };
+      await this.store.put("moved:" + account.id + ":" + id, moved);
+      if (messageId !== id) await this.store.put("moved:" + account.id + ":" + messageId, moved);
+    }
+    const { bodyless, ...saved } = message;
+    await this.saveMessage(account, saved, { bodyless });
+    return saved;
   }
   async getAttachment(
     accountId: string,
@@ -734,32 +886,31 @@ export class AccountService {
     keyPart(messageId);
     if (!attachmentId || attachmentId.length > 2048)
       throw new ProviderError("invalid_id", 400);
-    return (await this.client(account)).attachment(messageId, attachmentId);
+    const id = await this.currentId(account.id, messageId);
+    return this.withSession(account, (s) => s.attachment(id, attachmentId));
   }
   async disconnect(accountId: string) {
     const account = await this.account(accountId);
     let revoked = false;
     try {
-      const credentials = await unseal<Credentials>(
-        this.config().encryptionKey,
-        accountId,
-        account.credentials,
-      );
-      const result = await this.http("https://oauth2.googleapis.com/revoke", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ token: credentials.refreshToken }),
-        signal: AbortSignal.timeout(20000),
-      });
-      revoked = result.ok;
+      const keys = await this.credentialKeys();
+      if (keys) {
+        const { value } = await openCredentials(keys, account.id, account.credentials);
+        revoked = await this.provider(account).revoke(account, value);
+      }
     } catch {
-      /* Local removal is still possible when Google or the encryption key is unavailable. */
+      /* Local removal is still possible when the provider or the encryption key is unavailable. */
     }
     await this.store.delete("account:" + accountId);
+    await this.cache.clear(keyPart(accountId));
     for (const prefix of [
-      "message:" + accountId + ":",
+      "attempts:" + accountId + ":",
+      "skipped:" + accountId + ":",
       "event:" + accountId + ":",
       "pending:event:" + accountId + ":",
+      "moved:" + accountId + ":",
+      "draft:" + accountId + ":",
+      "gid:" + accountId + ":",
     ]) {
       for (;;) {
         const rows = await this.store.list({ prefix, limit: 100 });
@@ -767,24 +918,28 @@ export class AccountService {
         for (const key of rows.keys()) await this.store.delete(key);
       }
     }
+    console.log(JSON.stringify({ event: "account_disconnected", provider: account.provider, revoked }));
     // Preserve send receipts so reconnect/replay can never erase uncertainty.
-    return { status: "disconnected", revoked };
+    return { status: "disconnected", revoked, provider: account.provider };
   }
   /**
-   * Hands pending Gmail events to their consumers, each on its own: one that fails waits its
+   * Hands pending incoming events to their consumers, each on its own: one that fails waits its
    * backoff (30 s doubling to 1 h) and, after MAX_EVENT_ATTEMPTS, is set aside under
    * `dead:event:` with its error, so it never holds back the events behind it.
    */
   async drainEvents(deliver: (event: IncomingEvent) => Promise<unknown>, now = Date.now()): Promise<{ delivered: number; failed: number; dead: number }> {
     const result = { delivered: 0, failed: 0, dead: 0 };
     let handled = 0;
+    const providers = new Map<string, string>();
     for (const [key, event] of await this.store.list<PendingEvent>({ prefix: "pending:event:", limit: 500 })) {
       if (handled >= 25) break;
       if (event.nextAt && event.nextAt > now) continue;
       handled++;
       try {
         let message: Message;
+        let provider = providers.get(event.accountId);
         try {
+          if (!provider) providers.set(event.accountId, provider = (await this.account(event.accountId)).provider);
           message = await this.getMessage(event.accountId, event.messageId);
         } catch (error) {
           if (error instanceof ProviderError && error.status === 404) {
@@ -797,7 +952,7 @@ export class AccountService {
           throw error;
         }
         await deliver({
-          account: "gmail:" + event.accountId,
+          account: provider + ":" + event.accountId,
           emailId: message.providerMessageId,
           threadId: message.threadId,
           subject: message.subject,
@@ -828,5 +983,83 @@ export class AccountService {
       }
     }
     return result;
+  }
+  // ── Composing and reading in full ──
+  /** Every header of one message, read from the provider (the cache keeps only those the feed needs). */
+  async getHeaders(accountId: string, messageId: string) {
+    keyPart(messageId);
+    const account = await this.account(accountId);
+    const id = await this.currentId(account.id, messageId);
+    return { headers: await this.withSession(account, (s) => s.headers(id)) };
+  }
+  /**
+   * The account's own drafts (B-50, B-52), read and changed at the provider so they show there
+   * too. A save or a send that names the revision it read is refused when the draft moved on
+   * (`draft_conflict`).
+   */
+  async listDrafts(accountId: string, pageToken?: string) {
+    const account = await this.account(accountId);
+    if (!this.capabilities(account).drafts) return { drafts: [], nextCursor: null };
+    return this.withSession(account, (s) => s.listDrafts(pageToken));
+  }
+  async getDraft(accountId: string, draftId: string) {
+    keyPart(draftId);
+    const account = await this.account(accountId);
+    return this.withSession(account, (s) => s.getDraft(draftId));
+  }
+  async updateDraft(accountId: string, draftId: string, request: DraftUpdate) {
+    keyPart(draftId);
+    const account = await this.account(accountId);
+    return this.withSession(account, (s) => s.updateDraft(draftId, request));
+  }
+  async deleteDraft(accountId: string, draftId: string) {
+    keyPart(draftId);
+    const account = await this.account(accountId);
+    await this.withSession(account, (s) => s.deleteDraft(draftId));
+    return { deleted: draftId };
+  }
+  /** Sends a draft as the provider holds it, once per idempotency key (its receipt is a send receipt). */
+  async sendDraft(accountId: string, draftId: string, idempotencyKey: string, expectedRevision?: string): Promise<SendReceipt> {
+    keyPart(draftId);
+    const account = await this.account(accountId);
+    if (typeof idempotencyKey !== "string" || !IDEMPOTENCY_KEY.test(idempotencyKey)) throw new ProviderError("idempotency_key_required", 400);
+    const key = "send:" + keyPart(accountId) + ":" + idempotencyKey;
+    const digest = await pkceChallenge(JSON.stringify({ draft: draftId }));
+    const answer = async (receipt: StoredSend) => {
+      if (receipt.status === "sending") { receipt.status = "unknown"; receipt.error = "send_outcome_unknown"; await this.store.put(key, receipt); }
+      const { digest: _, ...publicReceipt } = receipt;
+      return publicReceipt;
+    };
+    // A retry after the draft went out (and the provider removed it) answers the first attempt.
+    const old = await this.store.get<StoredSend>(key);
+    if (old) { if (old.digest !== digest) throw new ProviderError("idempotency_conflict", 409); return answer(old); }
+    return this.withSession(account, async (session) => {
+      const current = await session.draftRevision(draftId);
+      if (expectedRevision !== undefined && current !== expectedRevision) throw new ProviderError("draft_conflict", 409);
+      const reservation = await this.store.transaction(async (tx) => {
+        const existing = await tx.get<StoredSend>(key);
+        if (existing) { if (existing.digest !== digest) throw new ProviderError("idempotency_conflict", 409); return { fresh: false, receipt: existing }; }
+        const receipt: StoredSend = { status: "sending", idempotencyKey, digest };
+        await tx.put(key, receipt);
+        return { fresh: true, receipt };
+      });
+      if (!reservation.fresh) return answer(reservation.receipt);
+      const receipt = reservation.receipt;
+      try {
+        const sent = await session.sendDraft(draftId);
+        receipt.status = "accepted"; receipt.providerMessageId = sent.id; receipt.threadId = sent.threadId;
+      } catch (error) {
+        if (error instanceof NotSentError) {
+          await this.store.delete(key);
+          throw new ProviderError(error.code, error.status);
+        }
+        receipt.status = "unknown";
+        receipt.error = error instanceof ProviderError ? error.code : "send_outcome_unknown";
+        await this.noteProblem(account.id, error);
+      }
+      await this.store.put(key, receipt);
+      const { digest: _, ...publicReceipt } = receipt;
+      return publicReceipt;
+    });
   }
 }

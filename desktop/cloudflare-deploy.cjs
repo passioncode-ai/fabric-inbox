@@ -20,6 +20,7 @@
  *  POST /accounts/{a}/workers/scripts/{s}/subdomain       serve on workers.dev
  */
 const fs = require('node:fs/promises');
+const crypto = require('node:crypto');
 const path = require('node:path');
 
 const API = 'https://api.cloudflare.com/client/v4';
@@ -163,12 +164,18 @@ async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, mani
     const current = scripts.find((s) => s.id === SCRIPT);
     let domains = '';
     let running = '';
+    let hasCredentialKey = false;
     if (current) {
       const settings = await c.call(`${a}/workers/scripts/${SCRIPT}/settings`, { what: 'read the server settings (Workers Scripts: Edit)' });
       const found = settings.result?.bindings || [];
       domains = found.find((b) => b.type === 'plain_text' && b.name === 'DOMAINS')?.text || '';
       running = found.find((b) => b.type === 'plain_text' && b.name === 'FABRIC_SERVER_VERSION')?.text || '';
+      hasCredentialKey = found.some((b) => b.type === 'secret_text' && (b.name === 'MAIL_CREDENTIAL_KEY' || b.name === 'GMAIL_TOKEN_ENCRYPTION_KEY'));
     }
+    // The key the server seals mail-account passwords and tokens with (workers/providers/credentials.ts).
+    // Made once, here, and never sent again: a new key would leave every connected account unreadable.
+    // The app keeps no copy; losing it means entering each app password again (docs/desktop-mail/setup.md).
+    const credentialKey = hasCredentialKey ? null : crypto.randomBytes(32).toString('base64url');
     // An older server over a newer one would run code that does not know the newer data
     // (deploy audit M1): refused unless asked for on purpose.
     if (running && compareVersions(running, manifest.version) > 0 && !allowDowngrade)
@@ -196,6 +203,7 @@ async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, mani
       { type: 'plain_text', name: 'CLOUDFLARE_ACCOUNT_ID', text: accountId },
       { type: 'plain_text', name: 'FABRIC_SERVER_VERSION', text: manifest.version },
       { type: 'secret_text', name: 'CLOUDFLARE_API_TOKEN', text: c.token },
+      ...(credentialKey ? [{ type: 'secret_text', name: 'MAIL_CREDENTIAL_KEY', text: credentialKey }] : []),
     ];
     const metadata = {
       main_module: manifest.worker.main_module,
@@ -217,7 +225,8 @@ async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, mani
       form.set(m.name, new File([bytes], m.name, { type: 'application/javascript+module' }));
     }
     await c.call(`${a}/workers/scripts/${SCRIPT}`, { method: 'PUT', form, what: 'upload the server (Workers Scripts: Edit)' });
-    report('server', 'Start the server', current ? 'done' : 'done', current ? `Updated your server to ${manifest.version}; your mail and settings are kept.` : `Your server ${manifest.version} is running.`);
+    const keyNote = credentialKey ? ' It made its key for keeping app passwords; the key stays on your server.' : '';
+    report('server', 'Start the server', current ? 'done' : 'done', (current ? `Updated your server to ${manifest.version}; your mail and settings are kept.` : `Your server ${manifest.version} is running.`) + keyNote);
   });
 
 }

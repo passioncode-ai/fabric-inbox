@@ -5,10 +5,12 @@ import { inboxSources } from "../lib/inbox-sources";
 import { inScope } from "../categories/definition";
 import { allServedDomains, storedCatchAll } from "../lib/mailbox-store";
 import { changeHidden, HiddenConflict, readHidden } from "../lib/hidden-accounts";
+import { REMOTE_ACCOUNT, parseRemoteAccount } from "../../shared/mail/accounts";
 
 export interface InboxSources {
   cloudflareAccounts(): Promise<InboxAccount[]>;
-  gmailAccounts(): Promise<InboxAccount[]>;
+  /** Gmail, IMAP and Outlook accounts: the accounts object's. */
+  remoteAccounts(): Promise<InboxAccount[]>;
   messages(account: InboxAccount, options: InboxReadOptions): Promise<InboxMessage[]>;
   /** Unread messages in the account's inbox; optional, a failure leaves the count out. */
   unreadCount?(account: InboxAccount): Promise<number>;
@@ -75,9 +77,9 @@ export async function readInbox(params: URLSearchParams, sources: InboxSources, 
   // A whole project domain: every account whose address is on it.
   const domain = (params.get("domain") || "").trim().toLowerCase();
   if (domain && !DOMAIN.test(domain)) throw new InboxRequestError("invalid_filter");
-  // Every inbox of one provider (the sidebar's Gmail group).
+  // Every inbox of one provider (the sidebar's Gmail, Outlook or IMAP group).
   const provider = params.get("provider") || "";
-  if (provider && provider !== "gmail" && provider !== "cloudflare") throw new InboxRequestError("invalid_filter");
+  if (provider && provider !== "gmail" && provider !== "imap" && provider !== "outlook" && provider !== "cloudflare") throw new InboxRequestError("invalid_filter");
   const limit = Number(params.get("limit") || 50);
   if (!INBOX_FOLDERS.includes(folder as InboxReadOptions["folder"]) || !Number.isInteger(limit) || limit < 1 || limit > 100 || query.length > 500 || account.length > 512)
     throw new InboxRequestError("invalid_filter");
@@ -86,7 +88,7 @@ export async function readInbox(params: URLSearchParams, sources: InboxSources, 
   const options: InboxReadOptions = { folder: folder as InboxReadOptions["folder"], query, limit, before, ...(unread ? { unread } : {}),
     ...(extra.ownDomains?.length ? { ownDomains: extra.ownDomains } : {}) };
   const issues: InboxIssue[] = [], accounts: InboxAccount[] = [];
-  const discoveries = await Promise.allSettled([sources.cloudflareAccounts(), sources.gmailAccounts()]);
+  const discoveries = await Promise.allSettled([sources.cloudflareAccounts(), sources.remoteAccounts()]);
   for (const [i, result] of discoveries.entries()) {
     const provider = i === 0 ? "cloudflare" : "gmail";
     if (result.status === "rejected") issues.push({ provider, error: publicError(result.reason) });
@@ -107,7 +109,7 @@ export async function readInbox(params: URLSearchParams, sources: InboxSources, 
   const messages: InboxMessage[] = [];
   // Bound concurrent DO calls and total account fan-out; never omit that limit.
   if (selected.length > 100) {
-    for (const provider of ["cloudflare", "gmail"] as const)
+    for (const provider of ["cloudflare", "gmail", "imap", "outlook"] as const)
       if (selected.slice(100).some(a => a.provider === provider)) issues.push({ provider, error: "account_limit" });
   }
   const reading = selected.slice(0, 100);
@@ -119,7 +121,7 @@ export async function readInbox(params: URLSearchParams, sources: InboxSources, 
     while (next < reading.length) {
       const a = reading[next++];
       if (a.error || ["reconnect_required", "rate_limited", "error"].includes(a.status))
-        issues.push({ accountId: a.id, provider: a.provider, error: a.error || a.status });
+        issues.push({ accountId: a.id, provider: a.provider, error: a.error || a.status, ...(a.reason ? { reason: a.reason } : {}) });
       try { messages.push(...await sources.messages(a, options)); }
       catch (error) {
         a.error = publicError(error);
@@ -135,12 +137,17 @@ export async function readInbox(params: URLSearchParams, sources: InboxSources, 
     await Promise.all(Array.from({ length: Math.min(8, counting.length) }, async () => {
       while (n < counting.length) {
         const a = counting[n++];
+        // A count that cannot be read is said to be stale, never silently left as it was (P2-11).
+        const stale = (error: unknown) => {
+          a.countsStale = true;
+          console.warn(JSON.stringify({ event: "inbox_count_failed", provider: a.provider, error: publicError(error) }));
+        };
         if (sources.counts) await sources.counts(a).then((c) => {
           a.unread = c.unread;
           if (typeof c.total === "number") a.total = c.total;
           if (c.stuck && (c.stuck.dead || c.stuck.retrying)) a.stuck = c.stuck;
-        }).catch(() => undefined);
-        else await sources.unreadCount!(a).then(count => { a.unread = count; }).catch(() => undefined);
+        }).catch(stale);
+        else await sources.unreadCount!(a).then(count => { a.unread = count; }).catch(stale);
       }
     }));
   }
@@ -204,6 +211,29 @@ inboxRouter.put("/api/inbox/hidden", async (c) => {
     return c.json({ error: (error as Error).message }, error instanceof HiddenConflict ? 409 : 503);
   }
 });
+/**
+ * Refresh (P1-5): reads Gmail, IMAP and Outlook accounts now — new mail, changes and deletions — for the
+ * accounts in `accounts` (feed ids, "gmail:<id>" or "imap:<id>"; every one when it is absent),
+ * within about 20 s, and says what happened to each. Cloudflare mailboxes receive by push and need
+ * no refresh. The accounts' regular sync is not moved.
+ */
+inboxRouter.post("/api/inbox/refresh", async (c) => {
+  c.header("Cache-Control", "no-store");
+  const body = (await c.req.json().catch(() => ({}))) as { accounts?: unknown } | null;
+  const raw = body?.accounts;
+  if (raw !== undefined && (!Array.isArray(raw) || raw.length > 200 || raw.some((x) => typeof x !== "string" || x.length > 512)))
+    return c.json({ error: "invalid_filter" }, 400);
+  const remote = raw === undefined ? undefined : (raw as string[]).filter((x) => REMOTE_ACCOUNT.test(x));
+  const refreshedAt = Date.now();
+  if (!c.env.GMAIL_ACCOUNTS || (remote && !remote.length)) return c.json({ accounts: [], refreshedAt });
+  try {
+    return c.json({ accounts: await c.env.GMAIL_ACCOUNTS.getByName("workspace").refresh(remote), refreshedAt });
+  } catch (error) {
+    console.error(JSON.stringify({ event: "inbox_refresh_failed", error: (error as Error)?.message?.slice(0, 200) }));
+    return c.json({ error: "refresh_unavailable" }, 503);
+  }
+});
+
 inboxRouter.get("/api/inbox", async c => {
   c.header("Cache-Control", "no-store");
   try {
@@ -272,7 +302,7 @@ async function readCategory(env: Env, id: string, params: URLSearchParams, ownDo
   const pageRows = rows.slice(0, limit);
   const issues: InboxIssue[] = [];
   const accounts = await (async () => {
-    const found = await Promise.allSettled([sources.cloudflareAccounts(), sources.gmailAccounts()]);
+    const found = await Promise.allSettled([sources.cloudflareAccounts(), sources.remoteAccounts()]);
     return found.flatMap((r, i) => {
       if (r.status === "rejected") { issues.push({ provider: i === 0 ? "cloudflare" : "gmail", error: publicError(r.reason) }); return []; }
       return r.value;
@@ -286,8 +316,9 @@ async function readCategory(env: Env, id: string, params: URLSearchParams, ownDo
     const account = accounts.find((a) => a.id === accountId);
     if (!account) return; // an inbox that is no longer here; its rows stay until it is back or removed
     try {
-      const found = account.provider === "gmail"
-        ? await env.GMAIL_ACCOUNTS.getByName("workspace").inboxMessagesByIds(accountId.slice(6), ids, ownDomains)
+      const remote = parseRemoteAccount(accountId);
+      const found = remote
+        ? await env.GMAIL_ACCOUNTS.getByName("workspace").inboxMessagesByIds(remote.id, ids, ownDomains)
         : await env.MAILBOX.get(env.MAILBOX.idFromName(accountId.slice(11))).inboxMessagesByIds(accountId.slice(11), ids, ownDomains);
       const have = new Set(found.map((m) => m.providerMessageId));
       for (const id of ids) if (!have.has(id)) gone.push({ accountId, messageId: id });

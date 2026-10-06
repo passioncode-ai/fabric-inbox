@@ -39,7 +39,7 @@ export function validateNewKey(raw: unknown): { ok: true; value: NewKeyInput } |
   const accounts: string[] = [];
   for (const a of asked) {
     const id = normaliseAccountId(a);
-    if (!id) return { ok: false, error: `${JSON.stringify(a.slice(0, 80))} is not an account: use "cloudflare:<address>" or "gmail:<id>".` };
+    if (!id) return { ok: false, error: `${JSON.stringify(a.slice(0, 80))} is not an account: use "cloudflare:<address>", "gmail:<id>" or "imap:<id>".` };
     if (!accounts.includes(id)) accounts.push(id);
   }
   return { ok: true, value: { ...rest, accounts } };

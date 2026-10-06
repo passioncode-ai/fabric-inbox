@@ -36,6 +36,8 @@ import {
 import { useFolders } from "~/queries/folders";
 import { queryKeys } from "~/queries/keys";
 import { useUIStore } from "~/hooks/useUIStore";
+import { useWindowActive } from "~/hooks/useWindowActive";
+import { pollInterval } from "~/lib/window-activity";
 import type { Email } from "~/types";
 
 const PAGE_SIZE = 25;
@@ -173,13 +175,15 @@ export default function EmailListRoute() {
 		[folder, page],
 	);
 
+	// Read again every 30 s while this window is active; never while it is hidden or in the background.
+	const windowActive = useWindowActive();
 	const {
 		data: emailData,
 		error: loadError,
 		isError: loadFailed,
 		isFetching: isRefreshing,
 		refetch: refetchEmails,
-	} = useEmails(mailboxId, params, { refetchInterval: 30_000 });
+	} = useEmails(mailboxId, params, { refetchInterval: pollInterval(windowActive, 30_000) });
 
 	const emails = emailData?.emails ?? [];
 	const totalCount = emailData?.totalCount ?? 0;

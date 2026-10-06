@@ -34,7 +34,7 @@ export interface Category extends CategoryInput {
 export interface CategoryList {
   categories: Category[];
   projects: Project[];
-  accounts: { id: string; email: string; provider: "cloudflare" | "gmail" }[];
+  accounts: { id: string; email: string; provider: "cloudflare" | "gmail" | "imap" | "outlook" }[];
   limits: { backfill: number; dailyModelCalls: number };
 }
 
@@ -49,7 +49,7 @@ export function scopeSummary(c: Pick<Category, "scope">, projects: Project[]): s
   const parts = [
     ...c.scope.projects.map((id) => projects.find((p) => p.id === id)?.name ?? id),
     ...c.scope.domains,
-    ...c.scope.accounts.map((a) => a.replace(/^(cloudflare|gmail):/, "")),
+    ...c.scope.accounts.map((a) => a.replace(/^(cloudflare|gmail|imap|outlook):/, "")),
   ];
   return parts.length > 3 ? `${parts.slice(0, 3).join(", ")} and ${parts.length - 3} more` : parts.join(", ");
 }

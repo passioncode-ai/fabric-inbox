@@ -14,6 +14,7 @@ import {
 } from "./definition";
 import { classify, DEFAULT_CATEGORY_MODEL, SPAM_CATEGORY, SPAM_ID, type DescribedCategory } from "./classify";
 import { tooLittleToJudge } from "../../shared/mail/spam";
+import { parseRemoteAccount } from "../../shared/mail/accounts";
 
 /**
  * Categories (CAT-1..CAT-4): one store per workspace (`getByName("workspace")`).
@@ -478,7 +479,10 @@ export class CategoriesDO extends DurableObject<Env> {
       const email = await this.env.MAILBOX.get(this.env.MAILBOX.idFromName(m.accountId.slice(11))).getEmail(m.providerMessageId);
       return stripHtmlToText(email?.body ?? m.snippet).slice(0, TEXT_CHARS);
     }
-    const full = await this.env.GMAIL_ACCOUNTS.getByName("workspace").getMessage(m.accountId.slice(6), m.providerMessageId) as { text?: string; html?: string };
+    // A Gmail or IMAP account: "<provider>:<id>", where the prefix's length differs by provider.
+    const remote = parseRemoteAccount(m.accountId);
+    if (!remote) return m.snippet.slice(0, TEXT_CHARS);
+    const full = await this.env.GMAIL_ACCOUNTS.getByName("workspace").getMessage(remote.id, m.providerMessageId) as { text?: string; html?: string };
     return (full.text || stripHtmlToText(full.html ?? "") || m.snippet).slice(0, TEXT_CHARS);
   }
 

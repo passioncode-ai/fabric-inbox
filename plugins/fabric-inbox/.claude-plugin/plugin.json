@@ -2,8 +2,8 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "fabric-inbox",
   "displayName": "Fabric Inbox",
-  "description": "Work with a Fabric Inbox server through its MCP agent protocol: read, search, draft and send mail across Cloudflare addresses and Gmail, and administer addresses, domains, forwarding, spam lists, reply agents, categories, knowledge and rules — within the level of the agent's key, with two-step confirmation for irreversible actions.",
-  "version": "0.10.1",
+  "description": "Work with a Fabric Inbox server through its MCP agent protocol: read, search, draft and send mail across Cloudflare addresses, Gmail, IMAP and Outlook accounts, and administer addresses, domains, forwarding, spam lists, reply agents, categories, knowledge and rules — within the level of the agent's key, with two-step confirmation for irreversible actions.",
+  "version": "0.11.0",
   "author": {
     "name": "PassionCode.ai",
     "url": "https://passioncode.ai/"
@@ -11,5 +11,5 @@
   "homepage": "https://github.com/passioncode-ai/fabric-inbox",
   "repository": "https://github.com/passioncode-ai/fabric-inbox",
   "license": "AGPL-3.0-only OR LicenseRef-PassionCode-Commercial",
-  "keywords": ["fabric", "inbox", "email", "mcp", "cloudflare", "gmail", "agent"]
+  "keywords": ["fabric", "inbox", "email", "mcp", "cloudflare", "gmail", "outlook", "imap", "agent"]
 }

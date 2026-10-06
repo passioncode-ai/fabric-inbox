@@ -123,12 +123,13 @@ agentsRouter.get("/api/agent-runs", async (c) => {
 
 const LOCAL_PART = /^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$/;
 const Assignment = z.union([z.literal("off"), z.object({ id: z.string().min(1).max(100) })]);
-const CreateAddress = z.object({
+export const CreateAddress = z.object({
   localPart: z.string().trim().toLowerCase().regex(LOCAL_PART, "Use letters, digits, dots, dashes or plus"),
   domain: z.string().trim().toLowerCase().min(3).max(253),
   name: z.string().trim().max(80).optional(),
   agent: Assignment.optional(),
-  createRoute: z.boolean().default(false),
+  /** "auto" makes the rule when the server can (it has a routing token); a zone the token cannot see gets a warning. */
+  createRoute: z.union([z.boolean(), z.literal("auto")]).default(false),
   /** Keep forwarding a copy of each message here; must be a verified Email Routing destination. */
   forwardTo: z.string().trim().toLowerCase().email().max(90).optional(),
 }).strict();
@@ -243,15 +244,17 @@ agentsRouter.delete("/api/project-addresses/:email", async (c) => {
   return c.json(result.body, result.status);
 });
 
+export const CopyInput = z.object({ forwardTo: z.string().trim().toLowerCase().email().max(90).nullable() }).strict();
 agentsRouter.put("/api/project-addresses/:email/copy", async (c) => {
-  const parsed = z.object({ forwardTo: z.string().trim().toLowerCase().email().max(90).nullable() }).strict().safeParse(await c.req.json().catch(() => null));
+  const parsed = CopyInput.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Choose a forwarding destination, or no copy" }, 400);
   const result = await setForwardCopy(c.env, c.req.param("email"), parsed.data.forwardTo);
   return c.json(result.body, result.status);
 });
 
+export const AgentAssignmentInput = z.object({ agent: Assignment }).strict();
 agentsRouter.put("/api/project-addresses/:email/agent", async (c) => {
-  const parsed = z.object({ agent: Assignment }).strict().safeParse(await c.req.json().catch(() => null));
+  const parsed = AgentAssignmentInput.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Choose an agent or Off" }, 400);
   if (c.env.AGENT_REGISTRY) {
     const missing = await checkAgentExists(c, parsed.data.agent);

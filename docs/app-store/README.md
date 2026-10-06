@@ -167,7 +167,7 @@ app. Nothing is half-done in the tree.
    fine-grained token with Contents: read on `passioncode-ai/fabric-inbox`, entered in your own
    terminal (`gh secret set MEMBERS_READ_TOKEN -R passioncode-ai/passioncode`), never in a chat.
 3. **0.8.0 in your app** (B-39): quit and reopen Fabric Inbox (the open window keeps the page it
-   loaded before the deploy), open Domains & addresses, and **Receive mail here** on the domain
+   loaded before the deploy), open Settings → Domains, and **Receive mail here** on the domain
    that failed with "must be a subdomains". Then say which domain of another account should be the
    first to receive through the relay: its routing changes.
 4. **The private history in the public repository.** Commits of the private history (up to the
@@ -182,7 +182,7 @@ app. Nothing is half-done in the tree.
 6. ~~**Create the App Store Connect app record**~~ — done 2026-10-03: "Fabric Inbox", Apple id `6818818207`, SKU `fabric-inbox`, en-US, macOS.
    The API cannot create a record; a publishing run's `mas` job checks for it first.
 
-Exact next task: **accept 0.8.0 live (B-39)** — after human step 3, read the Cloudflare accounts
+Exact next task: **publish 0.11.0 and accept it live** — a member of `release-approvers` approves the `v0.11.0` release run (`docs/release.md` step 6); then the download and upgrade checks of step 7 (cookie encryption B-42, the first store upload B-47, and an installed copy updating itself on the next release B-51), and the live acceptances that need a person's accounts: the Gmail setup wizard (B-55), Outlook after the Entra registration (B-56) and IMAP accounts with real app passwords (B-57). The 0.10.1 release run (37304655707) was never approved and may be cancelled: 0.11.0 contains it. Before 0.11.0, the next task was: **accept 0.8.0 live (B-39)** — after human step 3, read the Cloudflare accounts
 section (three accounts, all with mail), the failed domain's steps, and for the chosen domain of
 another account the `relay` step, a real message arriving through it and a reply leaving; record
 the receipt in the [accounts brief](tasks/2026-09-30-cloudflare-accounts.md). Then merge the door's

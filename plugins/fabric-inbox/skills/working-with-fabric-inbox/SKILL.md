@@ -20,7 +20,9 @@ metadata:
 
 # Working with Fabric Inbox
 
-Fabric Inbox is one triaged inbox over a person's Cloudflare addresses and Gmail accounts, with
+Fabric Inbox is one triaged inbox over a person's Cloudflare addresses, Gmail accounts, IMAP
+accounts (iCloud, Yahoo, Fastmail and others, `imap:<id>`) and Outlook accounts (Outlook.com and
+Microsoft 365, `outlook:<id>`), with
 reply agents, categories, spam filtering and rules. Its MCP server at `https://<server>/mcp` gives
 an agent the whole app, limited by the agent's key. The live server is the contract: its tool list
 and input schemas are current; this skill is how to use them well.
@@ -54,7 +56,7 @@ exactly the ones you may call.
 |---|---|
 | only `list_*`, `read_*`, `search_*`, `get_*` | `read` — report, never change |
 | `save_draft`, `move_messages`, no `send_email` | `mail`, **Drafts only** — a person sends |
-| `send_email`, `reply`, `forward` | `mail` or `admin`, **Can send** — within a daily limit |
+| `send_email`, `reply`, `forward`, `send_draft` | `mail` or `admin`, **Can send** — within a daily limit |
 | `create_address`, `save_agent`, `connect_domain` … | `admin` |
 
 A key can also be **limited to mailboxes**: the instructions then say "Your key is limited to …".
@@ -75,7 +77,8 @@ mailboxes your key names.
 - **Every send carries your own `idempotencyKey`** — stable for that one message (e.g.
   `reply-<messageId>`). Unsure whether it went out → call again with the **same** key, or
   `get_send_status`; a failed send's `details` carry its `outboxId` (Cloudflare) or
-  `idempotencyKey` (Gmail) for it. Never send again under a new key.
+  `idempotencyKey` (Gmail, IMAP, Outlook) for it. A receipt `unknown` means the connection went after the
+  message was handed over: check Sent, never send again under a new key.
 - **Two steps are for the person, not for you.** A call that returns `needsConfirmation` changed
   nothing. Show the `summary` to the person; only on their yes, call again with the same arguments
   and `confirm: "<code>"` (valid 5 minutes, once). Never confirm on your own judgement, never
@@ -89,21 +92,35 @@ mailboxes your key names.
 **Triage.** `list_accounts` → `list_messages` (default: every inbox, newest first; `unread: true`,
 `accountId`, `domain`, `categoryId`, `query` narrow it; `cursor` pages) → `read_message` for the
 ones that matter. Report per message: who, what they want, what you suggest. Do not mark read
-unless asked (`update_messages`).
+unless asked (`update_messages`). Gmail, IMAP and Outlook accounts are read on a schedule (every few minutes); when the person
+expects mail that just arrived, `refresh_inbox` first — it says per account whether it synced.
 
-**Answer.** `read_message` (or `read_thread` for a Cloudflare conversation) → write the answer →
+**Answer.** `read_message` (or `read_thread` for the whole conversation) → write the answer →
 `reply` with `idempotencyKey`, or `save_draft` with `replyToMessageId` when drafting. `reply` goes
 to the message's `replyTo` when it has one, else its sender; `replyAll` copies the rest of To and Cc
 but never you. The address's display name and signature are added for you (`signature: false` to skip).
+`to`, `cc`, `bcc` and `subject` replace what would be chosen; `html` keeps the signature and quote.
+
+**Drafts.** Drafts live on the server and show in the app's Drafts, a person's and agents' alike.
+`list_drafts` (every account, or one) → `read_draft` → change one with `save_draft` + `draftId` +
+`expectedRevision` (a change made meanwhile is refused, not overwritten; read it again) → when the
+person approves, `send_draft` with `expectedRevision` and an `idempotencyKey`: it goes out as it is,
+as a reply when it answers a message, and leaves Drafts. A new draft with your own `idempotencyKey`
+is made once however often you save it. `delete_draft` is two-step.
+
+**Files.** `send_email`, `reply`, `forward` and `save_draft` take `attachments:
+[{ filename, type, base64 }]` (10 files, 5 MB together). `get_attachment` returns a file in that
+form; `forward` carries the original's files unless `includeOriginalAttachments: false`.
 
 **Find.** `list_messages` with `query` searches every inbox; `search_mailbox` searches one account
 by sender, recipient, subject, dates, read, starred, attachments and folder — every field applies,
-and one it cannot apply is refused (Gmail pages with `cursor`, Cloudflare with `page`).
+and one it cannot apply is refused (Gmail, IMAP and Outlook page with `cursor`, Cloudflare with `page`).
 
 **Tidy.** `move_messages` (inbox, archive, trash, a Cloudflare folder) and `mark_spam` (spam or not,
 and by default remembers the sender) act on up to 100 messages; each answer lists what failed, and
 one where nothing was changed is an error with the failures in its `details`.
-`delete_message` is permanent and two-step — prefer trash.
+`delete_message` is permanent and two-step — prefer trash. An IMAP account offers only what its
+server has: `list_accounts` gives each account's `capabilities` (no Archive folder → no archive).
 
 ## 5. Administration workflows (`admin` keys)
 
@@ -118,7 +135,13 @@ MX is two-step).
 | Symptom | Do |
 |---|---|
 | `list_accounts` shows `stuck` on an address | mail reached the inbox but not its rules or agent; `retry_incoming` (admin) or tell the owner |
-| a Gmail account has `error` / `reconnect_required` | only the owner can reconnect it in the app |
+| a Gmail account has `error` / `reconnect_required` | its `reason` says why (`testing_expiry`: the owner publishes the Google Cloud app, then reconnects; `gmail_api_disabled`: the owner enables the Gmail API, no reconnect). Only the owner can reconnect; an admin key can hand them the address from `gmail_connect_link` |
+| Gmail is not set up (`gmail_connect_link` answers 503) | `gmail_setup_status` lists what is missing and the values to copy; the owner pastes the client secret in Settings → Accounts → Gmail; `check_gmail_setup` checks it with Google |
+| an Outlook account has `error` / `reconnect_required` | its `reason` says why (`microsoft_access_revoked`, `microsoft_signin_required`: only the person reconnects, from `outlook_connect_link`; `microsoft_secret_expired`: the owner saves a new client secret in Settings → Accounts → Outlook, no reconnect). `check_microsoft_setup` says when the secret ends |
+| Outlook is not set up (`outlook_connect_link` answers 503), or a person's organization needs its administrator | `microsoft_setup_status` lists what is missing, the values for the Microsoft Entra app registration, and `adminConsentUrl`, the link an administrator opens to allow the app for the organization |
+| `list_mail_providers` says IMAP is not configured | the server has no credential key yet: `create_credential_key` (admin) makes one in the server's own settings; IMAP accounts can be connected a few seconds later |
+| an IMAP account is `reconnect_required` | its server refused the app password (changed, deleted, or IMAP switched off at the provider). Only the person enters a new one, in Settings → Accounts; `list_mail_providers` gives the provider's help page |
+| `refresh_inbox` answers `backoff` for an account | the provider failed a moment ago; it retries by itself at `retryAt` — say when, do not loop |
 | "The Cloudflare token is not allowed to …" | the owner adds the named permission to the server's token |
 | a tool times out | retry once with the same arguments (and the same `idempotencyKey`); then report |
 

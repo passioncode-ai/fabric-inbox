@@ -32,6 +32,8 @@ export const emails = sqliteTable("emails", {
 	spam_reason: text("spam_reason"),
 	spam_at: text("spam_at"),
 	body_key: text("body_key"),
+	/** Drafts only: raised by each save (workers/lib/mailbox-drafts.ts); NULL reads as 1. */
+	draft_revision: integer("draft_revision"),
 });
 
 export const attachments = sqliteTable("attachments", {

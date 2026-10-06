@@ -9,14 +9,14 @@ import { currentRelay, readRelays, removeRelay } from "../relay/install";
 
 /**
  * The Cloudflare accounts of this server (MA-2, MA-3, MA-5, SCR-09): which ones there are, which
- * show on Domains & addresses, connecting one more with its own token, and removing it. A token is
+ * show on Settings → Domains, connecting one more with its own token, and removing it. A token is
  * kept as the server's own Worker secret `CLOUDFLARE_API_TOKEN_<account id>`; it is never echoed,
  * logged or stored anywhere else.
  */
 export const cloudflareAccountsRouter = new Hono<{ Bindings: Env }>();
 type C = Context<{ Bindings: Env }>;
 
-const NOT_CONNECTED = "This server has no Cloudflare token of its own yet; connect Cloudflare first (Domains & addresses).";
+const NOT_CONNECTED = "This server has no Cloudflare token of its own yet; connect Cloudflare first (Settings → Domains).";
 const TOKEN = /^[A-Za-z0-9._-]{20,300}$/;
 const SECRETS_WHAT = "keep a token on your server (Workers Scripts: Edit on the server's account)";
 
@@ -53,10 +53,11 @@ cloudflareAccountsRouter.get("/api/cloudflare/accounts", async (c) => {
   } catch (error) { return failure(c, error, "cloudflare_accounts_read_failed"); }
 });
 
+export const ShownInput = z.object({ shown: z.boolean().nullable() }).strict();
 cloudflareAccountsRouter.put("/api/cloudflare/accounts/:id", async (c) => {
   const id = c.req.param("id");
   if (!isAccountId(id)) return c.json({ error: "Not a Cloudflare account id" }, 400);
-  const parsed = z.object({ shown: z.boolean().nullable() }).strict().safeParse(await c.req.json().catch(() => null));
+  const parsed = ShownInput.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Say whether the account is shown (true, false, or null for the default)" }, 400);
   const accounts = new CloudflareAccounts(c.env);
   if (!accounts.connected) return c.json({ error: NOT_CONNECTED }, 503);

@@ -58,6 +58,7 @@
 		"dompurify": "^3.3.3",
 		"drizzle-orm": "^0.45.1",
 		"hono": "^4.7.11",
+		"imapflow": "2.2.5",
 		"isbot": "^5.1.27",
 		"jose": "^6.2.1",
 		"postal-mime": "^2.6.1",
@@ -124,5 +125,5 @@
 		"vite-tsconfig-paths": "^5.1.4",
 		"wrangler": "^4.74.0"
 	},
-	"version": "0.10.1"
+	"version": "0.11.0"
 }

@@ -7,7 +7,7 @@ import { cors } from "hono/cors";
 import PostalMime from "postal-mime";
 import { z } from "zod";
 import { type StoredAttachment } from "./lib/attachments";
-import { storedAttachmentName } from "../shared/mail/attachments";
+import { AttachmentValidationError, MAX_ATTACHMENTS, storedAttachmentName, validateAttachments } from "../shared/mail/attachments";
 import { allServedDomains, createMailbox, deleteMailbox, listMailboxAddresses, readSettings, storedCatchAll, updateSettings, readAllSettings, allowedAddresses as allowedAddressList } from "./lib/mailbox-store";
 import { createAddress, removeAddress } from "./lib/address-ops";
 import { routingClient } from "./routing/email-routing";
@@ -22,13 +22,13 @@ type AppContext = Context<MailboxContext>;
 
 // -- Request body schemas (kept for validation) ---------------------
 
-const CreateMailboxBody = z.object({
+export const CreateMailboxBody = z.object({
 	email: z.string().email(),
 	name: z.string().min(1),
 	settings: z.record(z.any()).optional(), // unvalidated — agentSystemPrompt goes straight to AI
 });
 
-const DraftBody = z.object({
+export const DraftBody = z.object({
 	to: z.string().optional(),
 	cc: z.string().optional(),
 	bcc: z.string().optional(),
@@ -98,7 +98,7 @@ app.get("/api/v1/mailboxes", async (c) => {
 });
 
 // Mailboxes screen (MB-1): creating and removing go through the same operations as
-// Domains & addresses, so Cloudflare's rule and the catch-all are kept right.
+// Settings → Addresses, so Cloudflare's rule and the catch-all are kept right.
 app.post("/api/v1/mailboxes", async (c) => {
 	const parsed = CreateMailboxBody.safeParse(await c.req.json().catch(() => null));
 	if (!parsed.success) return c.json({ error: "Invalid mailbox: email and name are required" }, 400);
@@ -120,7 +120,7 @@ app.get("/api/v1/mailboxes/:mailboxId", async (c) => {
  * Settings (MB-2): only what the Settings page edits is changed, merged into what is
  * stored, so an agent or a forwarding copy set elsewhere meanwhile is kept.
  */
-const MailboxSettingsPatch = z.object({
+export const MailboxSettingsPatch = z.object({
 	fromName: z.string().trim().min(1, "A display name is needed").max(80).optional(),
 	signature: z.object({ enabled: z.boolean(), text: z.string().max(2000) }).strict().optional(),
 	agentSystemPrompt: z.string().max(20000).nullable().optional(),
@@ -211,6 +211,111 @@ app.post("/api/v1/mailboxes/:mailboxId/drafts", async (c: AppContext) => {
 	}, []);
 	if (previous) await stub.deleteEmail(previous.id);
 	return c.json({ id: messageId, status: "draft", subject: subject || "", recipient: to || "", date: now }, 201);
+});
+
+// -- Drafts on the server (B-52): one id for a draft's life, saved in place under a revision --
+
+const DRAFT_ID = /^[A-Za-z0-9_.:-]{1,160}$/;
+/** PUT /drafts/:id — the whole draft as the writer has it, and which revision it read. */
+export const DraftSaveBody = z.object({
+	to: z.string().max(10_000).default(""),
+	cc: z.string().max(10_000).optional(),
+	bcc: z.string().max(10_000).optional(),
+	subject: z.string().max(998).default(""),
+	body: z.string().max(2_000_000),
+	/** The message this draft answers: its id in this mailbox. */
+	in_reply_to: z.string().max(300).optional(),
+	thread_id: z.string().max(300).optional(),
+	/** New files: `{content (base64), filename, type, disposition}` as a send takes them. */
+	attachments: z.array(z.unknown()).max(MAX_ATTACHMENTS).optional(),
+	/** Ids of the draft's files to keep; absent keeps them all. */
+	keep_attachments: z.array(z.string().max(300)).max(MAX_ATTACHMENTS).optional(),
+	/** The revision this writer read; absent overwrites whatever is there. 0 means "a new draft". */
+	expected_revision: z.number().int().min(0).optional(),
+}).strict();
+/** POST /drafts/:id/send. */
+export const DraftSendBody = z.object({ idempotencyKey: z.string().min(1).max(200), expected_revision: z.number().int().min(1).optional() }).strict();
+
+const draftAnswer = (d: Record<string, any>) => ({
+	id: d.id, revision: Number(d.draft_revision ?? 1), to: d.recipient ?? "", cc: d.cc || null, bcc: d.bcc || null, subject: d.subject ?? "",
+	date: d.date ?? "", inReplyTo: d.in_reply_to || null, threadId: d.thread_id || null, body: d.body ?? "",
+	attachments: (d.attachments ?? []).map((a: Record<string, unknown>) => ({ id: a.id, filename: a.filename, mimetype: a.mimetype, size: a.size })),
+});
+
+app.get("/api/v1/mailboxes/:mailboxId/drafts", async (c: AppContext) => c.json({ drafts: await c.var.mailboxStub.listDrafts() }));
+
+app.get("/api/v1/mailboxes/:mailboxId/drafts/:id", async (c: AppContext) => {
+	const draft = await c.var.mailboxStub.getEmail(c.req.param("id")!);
+	if (!draft || draft.folder_id !== Folders.DRAFT) return c.json({ error: "Draft not found", code: "draft_not_found" }, 404);
+	return c.json(draftAnswer(draft));
+});
+
+app.put("/api/v1/mailboxes/:mailboxId/drafts/:id", async (c: AppContext) => {
+	const mailboxId = c.req.param("mailboxId")!.toLowerCase();
+	const id = c.req.param("id")!;
+	if (!DRAFT_ID.test(id)) return c.json({ error: "A draft id is letters, digits and _ . : - (up to 160)" }, 400);
+	const parsed = DraftSaveBody.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid draft" }, 400);
+	const input = parsed.data;
+	let files: ReturnType<typeof validateAttachments>;
+	try { files = validateAttachments(input.attachments); }
+	catch (error) {
+		if (error instanceof AttachmentValidationError) return c.json({ error: error.code === "message_too_large" ? "Files are limited to 10 and 5 MB together" : "A file is not valid", code: error.code }, error.status);
+		throw error;
+	}
+	// The files' bytes go to R2 first, under this draft; a refused save takes them away again.
+	const added: { id: string; email_id: string; filename: string; mimetype: string; size: number; content_id: string | null; disposition: string }[] = [];
+	for (const f of files) {
+		const attId = `${id}-${crypto.randomUUID().slice(0, 8)}`;
+		const filename = storedAttachmentName(f.filename);
+		const bytes = Uint8Array.from(atob(f.content), (ch) => ch.charCodeAt(0));
+		await c.env.BUCKET.put(`attachments/${id}/${attId}/${filename}`, bytes);
+		added.push({ id: attId, email_id: id, filename, mimetype: f.type, size: bytes.length, content_id: f.contentId ?? null, disposition: f.disposition });
+	}
+	const result = await c.var.mailboxStub.saveDraft({
+		id, sender: mailboxId, expectedRevision: input.expected_revision, to: input.to.toLowerCase(), cc: input.cc?.toLowerCase() || null,
+		bcc: input.bcc?.toLowerCase() || null, subject: input.subject, body: input.body, inReplyTo: input.in_reply_to || null, threadId: input.thread_id || null,
+		keep: input.keep_attachments, added,
+	});
+	if (!result.ok) {
+		if (added.length) await c.env.BUCKET.delete(added.map((a) => `attachments/${id}/${a.id}/${a.filename}`)).catch(() => undefined);
+		if (result.code === "too_large") return c.json({ error: "Files are limited to 10 and 5 MB together", code: "message_too_large" }, 413);
+		const message = result.code === "conflict" ? `The draft changed meanwhile (it is at revision ${result.revision}); open it again to see the change`
+			: result.code === "gone" ? "The draft was sent or deleted meanwhile" : "That id is a message, not a draft";
+		return c.json({ error: message, code: result.code === "conflict" ? "draft_conflict" : result.code === "gone" ? "draft_gone" : "not_a_draft",
+			...(result.revision ? { revision: result.revision } : {}) }, 409);
+	}
+	console.log(JSON.stringify({ event: "draft_saved", created: result.created, revision: result.draft.revision, files: result.draft.attachments.length }));
+	return c.json(result.draft, result.created ? 201 : 200);
+});
+
+app.delete("/api/v1/mailboxes/:mailboxId/drafts/:id", async (c: AppContext) => {
+	const id = c.req.param("id")!;
+	const attachments = await c.var.mailboxStub.deleteDraft(id);
+	if (attachments === null) return c.json({ error: "Draft not found", code: "draft_not_found" }, 404);
+	if (attachments.length) await c.env.BUCKET.delete(attachments.map((a: { id: string; filename: string }) => `attachments/${id}/${a.id}/${a.filename}`))
+		.catch((error: unknown) => console.warn(JSON.stringify({ event: "draft_cleanup_failed", error: (error as Error).message })));
+	return c.body(null, 204);
+});
+
+/** Sends the draft as it is, from the mailbox's display name, and removes it once accepted. */
+app.post("/api/v1/mailboxes/:mailboxId/drafts/:id/send", async (c: AppContext) => {
+	const mailboxId = c.req.param("mailboxId")!.toLowerCase();
+	const raw = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+	const parsed = DraftSendBody.safeParse({ ...(raw ?? {}), idempotencyKey: c.req.header("Idempotency-Key") ?? raw?.idempotencyKey });
+	if (!parsed.success) return c.json({ error: "Give the send an idempotencyKey", code: "INVALID_REQUEST" }, 400);
+	const settings = await readSettings(c.env.BUCKET, mailboxId).catch(() => null);
+	const fromName = typeof settings?.fromName === "string" ? settings.fromName.trim() : "";
+	const from = fromName && fromName !== mailboxId ? { email: mailboxId, name: fromName } : mailboxId;
+	const result = await c.var.mailboxStub.sendDraft({ mailboxId, draftId: c.req.param("id")!, idempotencyKey: parsed.data.idempotencyKey, from,
+		expectedRevision: parsed.data.expected_revision });
+	if ("error" in result) {
+		const status = result.code === "IDEMPOTENCY_CONFLICT" || result.code === "DRAFT_CONFLICT" ? 409 : result.code === "NOT_FOUND" ? 404 : 400;
+		return c.json(result, status);
+	}
+	if (result.status === "unknown") return c.json({ ...result, error: "Send outcome is unknown; do not resend automatically" }, 409);
+	if (result.status === "failed") return c.json({ ...result, error: "Email was not accepted by the transport" }, result.errorCode === "RATE_LIMIT" ? 429 : 502);
+	return c.json(result, result.status === "accepted" ? 200 : 202);
 });
 
 app.get("/api/v1/mailboxes/:mailboxId/emails/:id", async (c: AppContext) => {

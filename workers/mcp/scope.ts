@@ -11,13 +11,16 @@
  */
 import { ApiError, type Api, type ApiResponse, type ToolDef } from "./protocol";
 import type { Principal } from "./keys";
+import { parseRemoteAccount } from "../../shared/mail/accounts";
 
-/** "cloudflare:<address>" (a bare address counts) or "gmail:<id>", the way list_accounts names it; null otherwise. */
+/** "cloudflare:<address>" (a bare address counts), "gmail:<id>" or "imap:<id>", the way list_accounts names it; null otherwise. */
 export function normaliseAccountId(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const v = value.trim();
   if (v.startsWith("cloudflare:")) return cloudflareId(v.slice(11));
-  if (v.startsWith("gmail:")) return /^[A-Za-z0-9_-]{1,128}$/.test(v.slice(6)) ? v : null;
+  const remote = parseRemoteAccount(v);
+  if (remote) return v;
+  if (/^(gmail|imap|outlook):/.test(v)) return null;
   return cloudflareId(v);
 }
 // No "%": the mailbox routes decode their parameter once more, so "x%40y@d.com" would name another mailbox.
@@ -34,7 +37,7 @@ export function normaliseAccounts(raw: unknown): string[] | null {
   return [...new Set(raw.map(normaliseAccountId).filter((a): a is string => !!a))];
 }
 
-/** How a limit reads to a person: its addresses and Gmail ids. */
+/** How a limit reads to a person: its addresses and its Gmail and IMAP account ids. */
 export const describeScope = (accounts: readonly string[]) =>
   accounts.length ? accounts.map((a) => a.replace(/^cloudflare:/, "")).join(", ") : "no mailbox";
 
@@ -48,12 +51,20 @@ export function toolFitsScope(tool: Pick<ToolDef, "routes">): boolean {
   return tool.routes.length > 0 && tool.routes.every((r) => FEED_ROUTES.has(r) || MAILBOX_ROUTE.test(r) || GMAIL_ROUTE.test(r));
 }
 
-/** The mailbox a concrete path is about, or null when it is not about exactly one. */
-function accountOfPath(pathname: string): string | null {
+/**
+ * The mailbox a concrete path is about, or null when it is not about exactly one. An
+ * `/api/accounts/<id>` path names the account by its own id, which is unique across Gmail and
+ * IMAP: it is about whichever of `gmail:<id>` and `imap:<id>` the key holds.
+ */
+function accountOfPath(pathname: string, allowed: ReadonlySet<string>): string | null {
   const parts = pathname.split("/");
   try {
     if (pathname.startsWith("/api/v1/mailboxes/") && parts[4]) return normaliseAccountId(`cloudflare:${decodeURIComponent(parts[4])}`);
-    if (pathname.startsWith("/api/accounts/") && parts[3]) return normaliseAccountId(`gmail:${decodeURIComponent(parts[3])}`);
+    if (pathname.startsWith("/api/accounts/") && parts[3]) {
+      const id = decodeURIComponent(parts[3]);
+      const candidates = [`gmail:${id}`, `imap:${id}`].map(normaliseAccountId).filter((a): a is string => !!a);
+      return candidates.find((a) => allowed.has(a)) ?? candidates[0] ?? null;
+    }
   } catch { return null; }
   return null;
 }
@@ -69,7 +80,7 @@ function cursorAccounts(cursor: unknown): string[] | null {
   if (typeof cursor !== "string") return [];
   try {
     const text = new TextDecoder().decode(Uint8Array.from(atob(cursor), (c) => c.charCodeAt(0)));
-    return [...text.matchAll(/"((?:cloudflare|gmail):[^"]+)"/g)].map((m) => m[1]!.toLowerCase());
+    return [...text.matchAll(/"((?:cloudflare|gmail|imap|outlook):[^"]+)"/g)].map((m) => m[1]!.toLowerCase());
   } catch { return null; }
 }
 
@@ -77,14 +88,13 @@ function cursorAccounts(cursor: unknown): string[] | null {
 export function scopedApi(api: Api, accounts: readonly string[]): Api {
   const allowed = new Set(accounts);
   const allowedLower = new Set(accounts.map((a) => a.toLowerCase()));
-  const gmailIds = new Set(accounts.filter((a) => a.startsWith("gmail:")).map((a) => a.slice(6)));
   const mine = (id: unknown) => allowed.has(String(id));
   return {
     async request(method, path, init = {}): Promise<ApiResponse> {
       const pathname = path.split("?")[0]!;
       const route = `${method} ${pathname}`;
       if (FEED_ROUTES.has(route)) return narrowFeed(route, init);
-      const account = accountOfPath(pathname);
+      const account = accountOfPath(pathname, allowed);
       if (!account || !allowed.has(account)) throw refuse(accounts);
       return api.request(method, path, init);
     },
@@ -147,9 +157,9 @@ export function scopedApi(api: Api, accounts: readonly string[]): Api {
       } };
     }
     const response = await api.request("GET", route.slice(4), init);
-    const data = response.data as { accounts?: { id?: unknown }[]; hidden?: unknown[] } | null;
+    const data = response.data as { accounts?: { id?: unknown; provider?: unknown }[]; hidden?: unknown[] } | null;
     if (!data || typeof data !== "object") return response;
-    if (route === "GET /api/accounts") return { ...response, data: { ...data, accounts: (data.accounts ?? []).filter((a) => gmailIds.has(String(a.id))) } };
+    if (route === "GET /api/accounts") return { ...response, data: { ...data, accounts: (data.accounts ?? []).filter((a) => mine(`${a.provider ?? "gmail"}:${a.id}`)) } };
     // Hidden entries are stored as lower-cased account ids (workers/lib/hidden-accounts.ts).
     return { ...response, data: { ...data, hidden: (data.hidden ?? []).filter((h) => allowedLower.has(String(h).toLowerCase())) } };
   }

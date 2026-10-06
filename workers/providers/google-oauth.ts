@@ -1,4 +1,5 @@
 /** Server-only Google OAuth primitives. No token or upstream error reaches a response. */
+import { hasCredentialKey } from "./credentials";
 export interface Store {
   get<T>(key: string): Promise<T | undefined>;
   put<T>(key: string, value: T): Promise<void>;
@@ -13,6 +14,9 @@ export interface Store {
 export interface GmailEnvironment {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  /** The credential key (credentials.ts); before 0.11 the only key, GMAIL_TOKEN_ENCRYPTION_KEY. */
+  MAIL_CREDENTIAL_KEY?: string;
+  MAIL_CREDENTIAL_KEY_PREVIOUS?: string;
   GMAIL_TOKEN_ENCRYPTION_KEY?: string;
   PUBLIC_APP_URL?: string;
   GMAIL_POLL_SECONDS?: string;
@@ -45,18 +49,10 @@ export function configuration(
   const required = [
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET",
-    "GMAIL_TOKEN_ENCRYPTION_KEY",
     "PUBLIC_APP_URL",
   ].filter((k) => !env[k as keyof GmailEnvironment]);
-  try {
-    if (
-      fromB64(env.GMAIL_TOKEN_ENCRYPTION_KEY || "").length !== 32 &&
-      !required.includes("GMAIL_TOKEN_ENCRYPTION_KEY")
-    )
-      required.push("GMAIL_TOKEN_ENCRYPTION_KEY");
-  } catch {
-    required.push("GMAIL_TOKEN_ENCRYPTION_KEY");
-  }
+  // Tokens are sealed with the server's credential key: MAIL_CREDENTIAL_KEY, or the older name.
+  if (!hasCredentialKey(env)) required.push("MAIL_CREDENTIAL_KEY");
   let origin = "";
   try {
     const url = new URL(env.PUBLIC_APP_URL!);
@@ -79,7 +75,7 @@ export function configuration(
     status: "configured",
     clientId: env.GOOGLE_CLIENT_ID!,
     clientSecret: env.GOOGLE_CLIENT_SECRET!,
-    encryptionKey: env.GMAIL_TOKEN_ENCRYPTION_KEY!,
+    encryptionKey: env.MAIL_CREDENTIAL_KEY || env.GMAIL_TOKEN_ENCRYPTION_KEY!,
     origin,
     redirectUri: origin + "/api/accounts/gmail/callback",
     pollMs:
@@ -144,6 +140,8 @@ export interface OAuthState {
   verifier: string;
   browserHash: string;
   expiresAt: number;
+  /** Whose sign-in it is ("outlook"); absent is Gmail's, as every state before 0.11 was. */
+  provider?: "gmail" | "outlook";
 }
 export async function createAuthorization(
   store: Store,
@@ -182,6 +180,8 @@ export async function consumeState(
   state: string,
   browserToken: string,
   now = Date.now(),
+  /** A state of another provider's sign-in is refused (and used up). */
+  provider: "gmail" | "outlook" = "gmail",
 ): Promise<OAuthState> {
   if (
     !state ||
@@ -201,7 +201,7 @@ export async function consumeState(
       return saved;
     })
     .then((saved) => {
-      if (saved.expiresAt <= now) throw new Error("invalid_state");
+      if (saved.expiresAt <= now || (saved.provider ?? "gmail") !== provider) throw new Error("invalid_state");
       return saved;
     });
 }

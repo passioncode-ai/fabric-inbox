@@ -40,15 +40,17 @@ and [your deployment](#configure-your-deployment).
 2. **Configure.** On first open choose **Create my server on Cloudflare**. You need a Cloudflare
    account (the free plan works) and an API token you create in its dashboard with the permissions
    the app lists ([setup → your own server](docs/desktop-mail/setup.md#your-own-server-created-by-the-mac-app-recommended)).
-   Gmail needs `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from your own Google Cloud OAuth
-   client, a `GMAIL_TOKEN_ENCRYPTION_KEY` you generate and `PUBLIC_APP_URL`
-   ([setup → Gmail](docs/desktop-mail/setup.md#gmail)). For `npm run dev`, copy
+   Gmail needs an OAuth client of your own in Google Cloud: **Settings → Accounts → Connect
+   account → Gmail** walks through it step by step with the values to copy, checks the client with
+   Google and saves it on your server itself (the Mac app offers it right after creating the
+   server). Publish the Google Cloud app (or make it Internal for Workspace): one left in Testing
+   loses Gmail access every 7 days ([setup → Gmail](docs/desktop-mail/setup.md#gmail)). For `npm run dev`, copy
    `.dev.vars.example` to `.dev.vars`; every setting is in the
    [configuration reference](docs/desktop-mail/setup.md#configuration-reference). Deploying by
    hand or making a personal build: [Configure your deployment](#configure-your-deployment).
 3. **MCP.** The installed app listens on no port and serves no MCP of its own: it
    opens your server, and agents connect to that server at **`<your server>/mcp`**, where
-   `<your server>` is the address in **Fabric Inbox → Server settings…** — for a server made by
+   `<your server>` is the address in **Fabric Inbox → Server address…** — for a server made by
    **Create my server**, `https://fabric-inbox.<your-workers-subdomain>.workers.dev/mcp`. In the app,
    **Settings → Agent access** makes a key and prints the whole command,
    `claude mcp add --transport http fabric-inbox https://<your-server>/mcp --header …`
@@ -69,13 +71,17 @@ and [your deployment](#configure-your-deployment).
 
 ## What it does today
 
-- **All inboxes, triaged.** Cloudflare mailboxes and Gmail accounts in one list. Focus shows
+- **All inboxes, triaged.** Cloudflare mailboxes, Gmail accounts and IMAP accounts in one list. Focus shows
   Important first (a person's unread mail, security and sign-in mail, monitoring alerts, app
   review rejections, failed payments, CI failures, starred); the rest sits in collapsed groups
   — people, security, alerts, app stores, billing, dev & CI, notifications, social,
   newsletters — with counts. Filters: unread only, one group, one account, search of cached
   mail. Placement is deterministic header and label rules, and each row says why.
-- **Domains & addresses.** Every domain of your Cloudflare account on one screen. **Receive
+- **Settings.** One screen (the gear in the sidebar, or **Settings…** ⌘, in the Mac app) with a
+  section list, a searchable list and the chosen item beside it; choosing an item never moves the
+  page. Sections: Addresses, Domains, Accounts, Forwarding destinations, Categories, Spam rules,
+  Agents, Knowledge, Agent access and App. Every older page address redirects into its section.
+- **Domains and addresses.** Every domain of your Cloudflare account in Settings → Domains. **Receive
   mail here** turns on Email Routing (asking before it replaces another provider's MX), brings
   in the addresses that already exist while each keeps forwarding a copy where it went before,
   points them here, and turns on sending with a DMARC record. Add and remove addresses, choose a
@@ -89,7 +95,22 @@ and [your deployment](#configure-your-deployment).
   records the version, the decision and exactly what was sent.
 - **Mail.** Read, reply, forward with attachments, To/Cc/Bcc, independent drafts with send
   recovery, star/archive/trash/restore, per-message external images, Gmail OAuth with cloud
-  polling. Rules: archive, mark read, draft, forward or call an MCP tool, with dry-run,
+  polling.
+- **Outlook.com and Microsoft 365.** Outlook, Hotmail, Live and Microsoft 365 mailboxes through
+  Microsoft Graph with the person's own Microsoft sign-in (Outlook.com no longer accepts
+  passwords from other mail apps since 2024-09-16). The owner registers an app in Microsoft
+  Entra once — Settings → Accounts → Connect account → Outlook lists every value to copy, saves
+  the client ID and secret on the server and warns 30 days before the secret ends — then each
+  account is connected in the browser. Read, triage, reply, forward with files, drafts, archive,
+  Junk Email and Deleted Items work as on Gmail; an organization that lets only its
+  administrators allow apps gets the approval link to send them
+  ([setup](docs/desktop-mail/setup.md#outlook-outlookcom-and-microsoft-365)).
+- **Other mail with an app password.** iCloud Mail, Yahoo, AOL, Fastmail, Zoho, Yandex, Mail.ru,
+  GMX, Gmail with an app password, or any IMAP/SMTP server: Settings → Accounts → Connect
+  account. The server checks the app password with the provider's IMAP and SMTP servers, keeps
+  it encrypted on your server (not on the Mac), and reads and sends the mail while the Mac is
+  closed; rules, agents, categories and spam work on it as on Gmail
+  ([setup](docs/desktop-mail/setup.md#imap-accounts-icloud-yahoo-fastmail-and-others)). Rules: archive, mark read, draft, forward or call an MCP tool, with dry-run,
   approval or automatic mode, pause and a daily cap.
 - **Desktop.** A signed universal macOS app installed from a disk image. First run offers
   **Create my server on Cloudflare**: paste one API token and the app creates the server,
@@ -100,8 +121,8 @@ and [your deployment](#configure-your-deployment).
   and catch-alls. Applying it is idempotent; the server can derive one from Cloudflare Email
   Routing so existing addresses keep forwarding to Gmail while their mail is collected here.
 
-Not yet: IMAP/Outlook and local sync of personal accounts (roadmap L1), bulk actions per group
-(L5), offline cache. See the [roadmap](docs/app-store/tasks/2026-09-28-roadmap.md).
+Not yet: push for IMAP and Outlook (IDLE, Graph change notifications; both are read every few minutes), bulk
+actions per group (L5), offline cache. See the [roadmap](docs/app-store/tasks/2026-09-28-roadmap.md).
 
 ## Run locally
 
