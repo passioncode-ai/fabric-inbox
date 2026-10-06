@@ -20,6 +20,7 @@
 import { triage } from "../../shared/mail/triage";
 import { compareInbox, inboxIdentity, inboxPage, type InboxFolder, type InboxMessage, type InboxReadOptions } from "../../shared/mail/inbox";
 import { ProviderError, type Message } from "./gmail-client";
+import type { RemoteProvider } from "../../shared/mail/accounts";
 import type { Store } from "./google-oauth";
 
 export interface StoredMessage {
@@ -88,16 +89,20 @@ function indexRow(m: StoredMessage["message"]): IndexRow {
 }
 const inInbox = (m: Pick<Message, "labels">) => inFolder(m.labels, "inbox");
 
-/** One cached Gmail message as the unified feed shows it. */
-export function gmailInboxMessage(accountId: string, m: IndexRow, ownDomains: string[] = []): InboxMessage {
-  const id = "gmail:" + accountId;
+/** Which provider a cached account belongs to, for the feed's account id and its wording. */
+export interface FeedSource { provider: RemoteProvider; providerName?: string }
+const GMAIL_FEED: FeedSource = { provider: "gmail", providerName: "Gmail" };
+
+/** One cached message (Gmail's, or an IMAP account's mapped onto the same labels) as the unified feed shows it. */
+export function gmailInboxMessage(accountId: string, m: IndexRow, ownDomains: string[] = [], feed: FeedSource = GMAIL_FEED): InboxMessage {
+  const id = feed.provider + ":" + accountId;
   const labels = m.labels;
   const timestamp = feedTimestamp(m);
-  return { id: inboxIdentity(id, m.providerMessageId), accountId: id, provider: "gmail", providerMessageId: m.providerMessageId,
+  return { id: inboxIdentity(id, m.providerMessageId), accountId: id, provider: feed.provider, providerMessageId: m.providerMessageId,
     subject: m.subject, sender: m.from, recipient: m.to, date: new Date(timestamp).toISOString(), timestamp,
     read: m.read, starred: labels.includes("STARRED"), snippet: m.snippet, threadId: m.threadId,
     ...(m.rfcMessageId ? { rfcMessageId: m.rfcMessageId.replace(/^<|>$/g, "").toLowerCase() } : {}),
-    ...(labels.includes("SPAM") ? { spamReason: "Gmail marked it as spam" } : {}),
+    ...(labels.includes("SPAM") ? { spamReason: `${feed.providerName ?? "The provider"} marked it as spam` } : {}),
     triage: triage({ sender: m.from, subject: m.subject, read: m.read, starred: labels.includes("STARRED"), labels, signals: m.signals, ownDomains }) };
 }
 const searchText = (m: Pick<Message, "subject" | "from" | "to" | "snippet">) => [m.subject, m.from, m.to, m.snippet].join(" ").toLowerCase();
@@ -268,7 +273,7 @@ export class GmailCache {
    * from the index. Without a search this reads about one page of rows however large the cache
    * is; a search reads the folder until it has a page, up to SEARCH_SCAN_LIMIT rows.
    */
-  async inboxPage(a: string, options: InboxReadOptions): Promise<InboxMessage[]> {
+  async inboxPage(a: string, options: InboxReadOptions, feed: FeedSource = GMAIL_FEED): Promise<InboxMessage[]> {
     const prefix = `idx:${a}:${options.folder}${options.unread ? "~u" : ""}:`;
     const need = options.limit + 1;
     const query = options.query ? options.query.toLowerCase() : "";
@@ -283,7 +288,7 @@ export class GmailCache {
         after = key;
         scanned++;
         if (query && !searchText(row).includes(query)) continue;
-        const m = gmailInboxMessage(a, row, options.ownDomains);
+        const m = gmailInboxMessage(a, row, options.ownDomains, feed);
         if (options.before && compareInbox(m, options.before) <= 0) continue;
         out.push(m);
         if (out.length >= need) return out;
@@ -302,7 +307,7 @@ export class GmailCache {
    * The first layout's read, used only while an account's migration is unfinished: the whole
    * cache in key order, sorted by date. Refuses an incomplete scan rather than hiding mail.
    */
-  async legacyInboxPage(a: string, options: InboxReadOptions, visible: (row: StoredMessage) => boolean): Promise<InboxMessage[]> {
+  async legacyInboxPage(a: string, options: InboxReadOptions, visible: (row: StoredMessage) => boolean, feed: FeedSource = GMAIL_FEED): Promise<InboxMessage[]> {
     let messages: InboxMessage[] = [];
     let after: string | undefined;
     for (let batch = 0; batch < 200; batch++) {
@@ -312,7 +317,7 @@ export class GmailCache {
         if (typeof row === "string" || !visible(row)) continue;
         const m = row.message;
         if (!inFolder(m.labels, options.folder) || (options.unread && m.read) || (options.query && !searchText(m).includes(options.query.toLowerCase()))) continue;
-        messages.push(gmailInboxMessage(a, m, options.ownDomains));
+        messages.push(gmailInboxMessage(a, m, options.ownDomains, feed));
       }
       messages = inboxPage(messages, options);
       if (rows.size < 100) return messages;
