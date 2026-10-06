@@ -52,7 +52,7 @@ export default function Automation() {
       fabric<OutboxEntry[]>(
         "/api/v1/mailboxes/" + encodeURIComponent(account) + "/outbox",
       ),
-    enabled: !account.startsWith("gmail:"),
+    enabled: !/^(gmail|imap):/.test(account),
     refetchInterval: pollInterval(active, AUTOMATION_POLL_MS),
   });
   const [editing, setEditing] = useState<Rule | null>(null);
@@ -97,7 +97,7 @@ export default function Automation() {
   }
   return (
     <main className="mx-auto max-w-5xl p-6 text-kumo-default">
-      <Link className="underline" to={account.startsWith("gmail:") ? `/settings/accounts/${encodeURIComponent(account)}` : `/settings/addresses/${encodeURIComponent(account)}/rules`}>
+      <Link className="underline" to={/^(gmail|imap):/.test(account) ? `/settings/accounts/${encodeURIComponent(account)}` : `/settings/addresses/${encodeURIComponent(account)}/rules`}>
         ← Settings
       </Link>
       <div className="my-6 flex flex-wrap items-center justify-between gap-4">
@@ -512,7 +512,7 @@ export default function Automation() {
           </article>
         ))}
       </section>
-      {!account.startsWith("gmail:") && (
+      {!/^(gmail|imap):/.test(account) && (
         <section className="mt-10">
           <h2 className="mb-4 text-xl font-semibold">Outbox</h2>
           <p className="text-kumo-subtle">
