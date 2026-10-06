@@ -3,7 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import {
-	ArrowBendUpRightIcon, AtIcon, BooksIcon, CaretLeftIcon, FunnelSimpleIcon, GearSixIcon, GlobeIcon, PlugIcon, ProhibitIcon,
+	ArrowBendUpRightIcon, AtIcon, BooksIcon, CaretLeftIcon, FunnelSimpleIcon, GearSixIcon, GlobeIcon, PlugIcon, ProhibitIcon, TrashSimpleIcon,
 	RobotIcon, UserCircleIcon, type Icon,
 } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
@@ -20,6 +20,7 @@ import AgentsSection from "~/components/settings/sections/AgentsSection";
 import KnowledgeSection from "~/components/settings/sections/KnowledgeSection";
 import CategoriesSection from "~/components/settings/sections/CategoriesSection";
 import SpamSection from "~/components/settings/sections/SpamSection";
+import DiscardSection from "~/components/settings/sections/DiscardSection";
 import AgentAccessSection from "~/components/settings/sections/AgentAccessSection";
 import AppSection from "~/components/settings/sections/AppSection";
 
@@ -29,7 +30,7 @@ export function meta() {
 
 const ICONS: Record<SectionId, Icon> = {
 	addresses: AtIcon, domains: GlobeIcon, accounts: UserCircleIcon, destinations: ArrowBendUpRightIcon,
-	categories: FunnelSimpleIcon, spam: ProhibitIcon, agents: RobotIcon, knowledge: BooksIcon, "agent-access": PlugIcon, app: GearSixIcon,
+	categories: FunnelSimpleIcon, spam: ProhibitIcon, discard: TrashSimpleIcon, agents: RobotIcon, knowledge: BooksIcon, "agent-access": PlugIcon, app: GearSixIcon,
 };
 
 const GROUP_LABEL = { mail: "Mail", agents: "Agents", app: "This app" } as const;
@@ -85,6 +86,7 @@ export default function Settings() {
 							{section === "knowledge" && <KnowledgeSection id={item} />}
 							{section === "categories" && <CategoriesSection id={item} />}
 							{section === "spam" && <SpamSection id={item} />}
+							{section === "discard" && <DiscardSection id={item} />}
 							{section === "agent-access" && <AgentAccessSection id={item} />}
 							{section === "app" && <AppSection id={item} />}
 						</WorkProvider>

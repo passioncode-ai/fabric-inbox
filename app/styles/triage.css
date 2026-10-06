@@ -1,0 +1,120 @@
+/* WS8 (operator, 2026-10-06): Refresh and its status under the title, several messages chosen
+   together, the Undo toast and the Keyboard shortcuts help. Tokens only (fabric-tokens.css). */
+
+/* ── Refresh and its status ───────────────────────────────────────── */
+.fi-sync {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 0 -6px;
+  min-width: 0;
+}
+.fi-sync .fi-refresh { min-width: 28px; min-height: 28px; }
+.fi-sync-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pc-text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.fi-sync-line > span:not(.fi-live-dot) { overflow: hidden; text-overflow: ellipsis; }
+.fi-sync-line:hover { background: var(--pc-panel); color: var(--pc-text); }
+.fi-sync[data-tone="error"] .fi-sync-line { color: var(--pc-negative); }
+.fi-live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pc-positive); flex: none; }
+.fi-spin { animation: fi-spin 0.9s linear infinite; }
+@keyframes fi-spin { to { transform: rotate(360deg); } }
+.fi-sync-details {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 15;
+  width: min(420px, calc(100vw - 32px));
+  padding: 12px 14px;
+  background: var(--pc-panel-raised);
+  border: 1px solid var(--pc-border);
+  border-radius: 10px;
+  box-shadow: var(--pc-shadow-overlay);
+  font-size: 12px;
+}
+.fi-sync-details ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.fi-sync-details li { display: grid; gap: 2px; }
+.fi-sync-details li strong { font-weight: 600; overflow-wrap: anywhere; }
+.fi-sync-details li span { color: var(--pc-text-muted); }
+.fi-sync-details li[data-state="failed"] span,
+.fi-sync-details li[data-state="reconnect"] span,
+.fi-sync-details li[data-state="password"] span { color: var(--pc-negative); }
+.fi-sync-details li[data-state="live"] span { color: var(--pc-positive); }
+.fi-sync-details .fi-text-button { justify-self: start; }
+.fi-sync-details .fi-hint { margin: 12px 0 0; font-size: 11px; color: var(--pc-text-muted); }
+
+/* ── Several messages chosen together ─────────────────────────────── */
+.fi-message.is-marked { background: var(--pc-accent-soft); }
+.fi-message.is-marked:after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pc-accent);
+}
+.fi-reader-empty .fi-buttons { justify-content: center; margin-top: 16px; }
+.fi-reader-empty kbd,
+.fi-nav-item kbd,
+.fi-shortcuts kbd {
+  font-family: var(--pc-font-data);
+  font-size: 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--pc-border);
+  border-radius: 4px;
+  color: var(--pc-text-muted);
+  background: var(--pc-panel);
+}
+.fi-nav-item kbd { margin-left: auto; }
+
+/* ── The Undo toast ───────────────────────────────────────────────── */
+.fi-toast {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 30;
+  max-width: min(460px, calc(100vw - 32px));
+  padding: 12px 36px 12px 16px;
+  background: var(--pc-panel-raised);
+  color: var(--pc-text);
+  border: 1px solid var(--pc-border);
+  border-radius: 10px;
+  box-shadow: var(--pc-shadow-overlay);
+  font-size: 13px;
+}
+.fi-toast p { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin: 0; }
+.fi-toast .fi-toast-notice { margin-top: 8px; color: var(--pc-text-muted); font-size: 12px; }
+.fi-toast-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--pc-text-muted);
+  font-size: 16px;
+}
+
+/* ── Keyboard shortcuts ───────────────────────────────────────────── */
+.fi-shortcuts h3 { font-size: 12px; font-weight: 600; color: var(--pc-text-muted); margin: 16px 0 6px; }
+.fi-shortcuts dl { margin: 0; display: grid; gap: 6px; }
+.fi-shortcuts dl > div { display: grid; grid-template-columns: minmax(150px, 1fr) 2fr; gap: 12px; font-size: 13px; }
+.fi-shortcuts dt { color: var(--pc-text-muted); }
+.fi-shortcuts dd { margin: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fi-spin { animation: none; }
+}

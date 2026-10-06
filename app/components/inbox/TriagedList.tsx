@@ -14,7 +14,10 @@ interface ListProps {
   messages: InboxMessage[];
   accounts: InboxAccount[];
   selectedId?: string;
-  onSelect: (message: InboxMessage) => void;
+  /** Messages chosen together (⌘/Ctrl-click, Shift-click, Shift+↓): the keys and the actions act on all of them. */
+  marked?: ReadonlySet<string>;
+  /** `how.add` toggles a message in the selection (⌘/Ctrl-click), `how.range` selects up to it (Shift-click). */
+  onSelect: (message: InboxMessage, how?: { add?: boolean; range?: boolean }) => void;
   view: ListView;
   group?: TriageGroup;
   /** Groups the operator opened; kept by the page for the session. */
@@ -27,22 +30,23 @@ interface ListProps {
   inSpam?: boolean;
 }
 
-function MessageRow({ message, account, selected, onSelect, showGroup, categoryId, inSpam }: {
-  message: InboxMessage; account?: InboxAccount; selected: boolean; onSelect: () => void; showGroup: boolean; categoryId?: string; inSpam?: boolean;
+function MessageRow({ message, account, selected, marked, onSelect, showGroup, categoryId, inSpam }: {
+  message: InboxMessage; account?: InboxAccount; selected: boolean; marked: boolean; onSelect: (how?: { add?: boolean; range?: boolean }) => void; showGroup: boolean; categoryId?: string; inSpam?: boolean;
 }) {
   const t = triageOf(message);
   const important = !inSpam && t.importance === "important";
   const chips = (message.categories ?? []).filter((c) => c.id !== categoryId);
   return (
     <button
-      className={"fi-message" + (selected ? " is-selected" : "") + (!message.read ? " is-unread" : "") + (important ? " is-important" : "")}
+      className={"fi-message" + (selected ? " is-selected" : "") + (marked ? " is-marked" : "") + (!message.read ? " is-unread" : "") + (important ? " is-important" : "")}
       aria-current={selected ? "true" : undefined}
-      onClick={onSelect}
+      data-message-id={message.id}
+      onClick={(e) => onSelect({ add: e.metaKey || e.ctrlKey, range: e.shiftKey })}
     >
       <div className="fi-row-top">
         <strong>
           {!message.read && <span className="fi-unread" aria-hidden="true" />}
-          <span className="fi-visually-hidden">{important ? "Important. " : ""}{!message.read ? "Unread. " : ""}</span>
+          <span className="fi-visually-hidden">{marked ? "Selected. " : ""}{important ? "Important. " : ""}{!message.read ? "Unread. " : ""}</span>
           {senderName(message.sender)}
         </strong>
         <time dateTime={message.date}>{listDate(message.date)}</time>
@@ -51,6 +55,7 @@ function MessageRow({ message, account, selected, onSelect, showGroup, categoryI
       <span className="fi-snippet">{message.snippet.replace(/\s+/g, " ").trim() || "Open message to read more"}</span>
       {message.categoryReason && <span className="fi-category-reason">Why: {message.categoryReason}</span>}
       {message.spamReason && <span className="fi-category-reason fi-spam-reason">Why in Spam: {message.spamReason}</span>}
+      {message.discardReason && <span className="fi-category-reason fi-spam-reason">Why discarded: {message.discardReason}</span>}
       <span className="fi-message-account">
         <EnvelopeIcon size={12} aria-hidden="true" />
         {account?.email ?? rawAccount(message.accountId)}
@@ -74,10 +79,10 @@ function MessageRow({ message, account, selected, onSelect, showGroup, categoryI
  * or Newest-first order; a group filter narrows both. Collapsing is a view
  * choice: nothing is marked read or moved by it.
  */
-export default function TriagedList({ messages, accounts, selectedId, onSelect, view, group, open, onToggleGroup, onClearGroup, categoryId, inSpam }: ListProps) {
+export default function TriagedList({ messages, accounts, selectedId, marked, onSelect, view, group, open, onToggleGroup, onClearGroup, categoryId, inSpam }: ListProps) {
   const account = (m: InboxMessage) => accounts.find((a) => a.id === m.accountId);
   const row = (m: InboxMessage, showGroup: boolean) => (
-    <MessageRow key={m.id} message={m} account={account(m)} selected={selectedId === m.id} onSelect={() => onSelect(m)} showGroup={showGroup} categoryId={categoryId} inSpam={inSpam} />
+    <MessageRow key={m.id} message={m} account={account(m)} selected={selectedId === m.id} marked={!!marked?.has(m.id)} onSelect={(how) => onSelect(m, how)} showGroup={showGroup} categoryId={categoryId} inSpam={inSpam} />
   );
   const groupLabel = TRIAGE_GROUPS.find((g) => g.id === group)?.label ?? group;
   const noneInGroup = (

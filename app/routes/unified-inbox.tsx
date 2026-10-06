@@ -7,13 +7,14 @@ import {
 } from "@tanstack/react-query";
 import {
   ArchiveIcon,
-  ArrowClockwiseIcon,
   ArrowLeftIcon,
+  ArrowUUpLeftIcon,
   ArrowBendUpLeftIcon,
   ArrowBendUpRightIcon,
   CaretRightIcon,
   EnvelopeIcon,
   GearSixIcon,
+  KeyboardIcon,
   TrayArrowDownIcon,
   MagnifyingGlassIcon,
   MoonIcon,
@@ -25,6 +26,7 @@ import {
   SunIcon,
   TrayIcon,
   TrashIcon,
+  TrashSimpleIcon,
   WarningOctagonIcon,
 } from "@phosphor-icons/react";
 import { fabric } from "~/services/fabric";
@@ -57,7 +59,12 @@ import { totalUnread } from "~/components/inbox/account-groups";
 import { displayOrder, groupCounts, isTriageGroup, listDate, nextAfter, pinTriage, triageOf, type ListView } from "~/components/inbox/triage-view";
 import type { Triage, TriageGroup } from "../../shared/mail/triage";
 import type { InboxFolder } from "../../shared/mail/inbox";
-import { showFeedChange, mergeHead, refreshScope, refreshSummary, WakeRefresh, type FeedChange, type RefreshResponse } from "~/lib/mail-refresh";
+import { showFeedChange, mergeHead, refreshScope, refreshSummary, WakeRefresh, type FeedChange, type RefreshOutcome, type RefreshResponse } from "~/lib/mail-refresh";
+import SyncStatus from "~/components/inbox/SyncStatus";
+import UndoToast from "~/components/inbox/UndoToast";
+import ShortcutsDialog from "~/components/inbox/ShortcutsDialog";
+import { isMacPlatform, mailKeyAction } from "~/lib/mail-keys";
+import { archiveMessages, canAct, discardMessages, doneText, learnedNotice, undoDone, type Done } from "~/components/inbox/triage-actions";
 import { useWindowActive } from "~/hooks/useWindowActive";
 import { settingsPath } from "~/components/settings/paths";
 import { GMAIL_REASON_TEXT, isGmailReason } from "../../shared/mail/gmail-reasons";
@@ -71,6 +78,7 @@ const folders = [
   ["archive", "Archive", TrayIcon],
   ["trash", "Trash", TrashIcon],
   ["spam", "Spam", WarningOctagonIcon],
+  ["discarded", "Discarded", TrashSimpleIcon],
 ] as const;
 export function meta() {
   return [{ title: "All inboxes · Fabric Inbox" }];
@@ -79,6 +87,7 @@ const time = (value: string) => listDate(value);
 /** What an empty folder means, in its own words (the inbox keeps the sync sentence). */
 const FOLDER_EMPTY: Record<string, [string, string]> = {
   spam: ["No spam", "Mail judged spam lands here with the reason, and is deleted after 30 days."],
+  discarded: ["Nothing discarded", "Discard a message with ⌘⌫ (Ctrl+Backspace) and it waits here 30 days; mail like it comes here on its own after that."],
   trash: ["Trash is empty", "Deleted mail waits here until you delete it for good."],
   sent: ["Nothing sent yet", "Mail you send from these inboxes appears here."],
   archive: ["Nothing archived", "Archive a message to keep it out of the inbox without deleting it."],
@@ -141,8 +150,17 @@ export default function UnifiedInbox() {
     [theme, setTheme] = useState("light"),
     [notice, setNotice] = useState(""),
     [checking, setChecking] = useState(false),
-    [checkedAt, setCheckedAt] = useState(0),
+    [outcomes, setOutcomes] = useState<RefreshOutcome[] | undefined>(undefined),
     [busy, setBusy] = useState(false),
+    // Messages chosen together (⌘/Ctrl-click, Shift-click, Shift+↓), and where a range starts.
+    [marked, setMarked] = useState<Set<string>>(() => new Set()),
+    [anchor, setAnchor] = useState<string | null>(null),
+    // The last archive or discard, with Undo, and the once-only notice of a rule it taught.
+    [toast, setToast] = useState<{ done?: Done; text: string; notice?: string; ruleIds?: string[]; undoing?: boolean } | null>(null),
+    [shortcutsOpen, setShortcutsOpen] = useState(false),
+    [mac, setMac] = useState(false),
+    // After Not discarded: the rules that would discard such mail again, to stop.
+    [restoredRules, setRestoredRules] = useState<{ ruleId: string; label: string }[]>([]),
     [composeOpen, setComposeOpen] = useState(false),
     [draftsOpen, setDraftsOpen] = useState(false),
     [rulesOpen, setRulesOpen] = useState(false);
@@ -187,7 +205,16 @@ export default function UnifiedInbox() {
   }, [search]);
   useEffect(() => {
     setSelected(null);
+    setMarked(new Set());
+    setRestoredRules([]);
   }, [accountId, domainFilter, providerFilter, categoryParam, folder, search, unreadOnly]);
+  useEffect(() => { setMac(isMacPlatform(navigator as unknown as { platform?: string })); }, []);
+  // A toast stays 10 seconds; the next action replaces it.
+  useEffect(() => {
+    if (!toast || toast.undoing) return;
+    const timer = setTimeout(() => setToast(null), 10_000);
+    return () => clearTimeout(timer);
+  }, [toast]);
   useEffect(() => {
     const el = rulesDialog.current;
     if (rulesOpen) el?.showModal();
@@ -317,7 +344,7 @@ export default function UnifiedInbox() {
       selected?.accountId,
       selected?.providerMessageId,
     ],
-    enabled: !!selected,
+    enabled: !!selected && marked.size < 2,
     queryFn: async () =>
       normalizeMessage(
         await fabric<Email | Mail>(messagePath(selected!)),
@@ -328,7 +355,7 @@ export default function UnifiedInbox() {
   // mail client does; a failure leaves it unread and says so.
   const markedRead = useRef<string | null>(null);
   useEffect(() => {
-    if (!selected || selected.read || !detail.data || detail.data.read || markedRead.current === selected.id) return;
+    if (!selected || marked.size > 1 || selected.read || !detail.data || detail.data.read || markedRead.current === selected.id) return;
     markedRead.current = selected.id;
     const key = ["unified-message", selected.accountId, selected.providerMessageId];
     // The row reads as read at once; it goes back to unread if the server refuses (P3-12).
@@ -359,6 +386,12 @@ export default function UnifiedInbox() {
   const scopeName = categoryParam
     ? activeCategory?.name ?? "Category"
     : active?.email || (accountId ? "Selected account" : domainFilter || (providerFilter === "imap" ? "Other mail" : providerFilter === "outlook" ? "Outlook" : providerFilter ? "Gmail" : "All inboxes"));
+  /** The accounts the list in view reads: the status beside Refresh speaks for these. */
+  const inScope = accounts.filter((a) => accountId ? a.id === accountId
+    : domainFilter ? a.provider === "cloudflare" && a.email.toLowerCase().endsWith("@" + domainFilter.toLowerCase())
+    : providerFilter ? a.provider === providerFilter
+    : categoryParam && activeCategory?.accountIds ? activeCategory.accountIds.includes(a.id)
+    : !hidden.has(a.id.toLowerCase()));
   /**
    * Changes what the list shows. Changing the order or the group keeps the open message;
    * changing where to look (inbox, folder, category, search) closes it and clears the group.
@@ -398,13 +431,14 @@ export default function UnifiedInbox() {
         try {
           const r = await fabric<RefreshResponse>("/api/inbox/refresh", scope ? { accounts: scope } : {});
           summary = refreshSummary(r.accounts);
+          setOutcomes(r.accounts);
         } catch (e) {
-          summary = { ok: false, text: `Gmail could not be checked: ${(e as Error).message} The list below is what the server had.` };
+          summary = { ok: false, text: `Gmail, IMAP and Outlook accounts could not be checked: ${(e as Error).message} The list below is what the server had.` };
         }
       }
       await Promise.all([refresh(), client.invalidateQueries({ queryKey: ["categories"] })]);
-      setCheckedAt(Date.now());
-      setNotice(summary.ok && summary.text === "Updated just now." ? "" : summary.text);
+      // The status beside Refresh says how each account went; the notice only what needs reading.
+      setNotice(summary.ok ? "" : summary.text);
     } finally {
       setChecking(false);
     }
@@ -432,6 +466,146 @@ export default function UnifiedInbox() {
       setBusy(false);
     }
   }
+  /** The messages an action is for: the ones chosen together, else the one open, in the order shown. */
+  function targets(): InboxMessage[] {
+    const order = displayOrder(messages, view, group, openGroups);
+    if (marked.size) return order.filter((m) => marked.has(m.id));
+    return selected ? [selected] : [];
+  }
+  /**
+   * Archive (Delete/Backspace: also marks read) or discard (⌘⌫): the rows leave at once, the next
+   * message opens, and a toast offers Undo; a refusal puts every row back and says why.
+   */
+  async function triageAction(kind: "archive" | "discard", list = targets()) {
+    if (!list.length || busy) return;
+    const owners = list.map((m) => accounts.find((a) => a.id === m.accountId));
+    const why = owners.map((o) => canAct(kind, folder, o?.capabilities)).find((x) => x);
+    if (why) { setNotice(why); return; }
+    setBusy(true);
+    setNotice("");
+    setRestoredRules([]);
+    const undo: (() => void)[] = [];
+    for (const m of list) undo.push(await showChange({ id: m.id, removed: true }));
+    const order = displayOrder(messages, view, group, openGroups);
+    const leaving = new Set(list.map((m) => m.id));
+    const after = order.slice(order.findIndex((m) => m.id === list[list.length - 1]!.id) + 1).find((m) => !leaving.has(m.id))
+      ?? [...order].reverse().find((m) => !leaving.has(m.id)) ?? null;
+    setMarked(new Set());
+    setSelected(after);
+    if (after) requestAnimationFrame(() => document.querySelector<HTMLElement>(".fi-message.is-selected")?.focus());
+    try {
+      const done = kind === "archive" ? await archiveMessages(list) : await discardMessages(list);
+      // What did not move comes back into the list.
+      for (const f of done.failed) undo[list.indexOf(f.message as InboxMessage)]?.();
+      if (!done.items.length) throw new Error(done.failed[0]?.error ?? "Nothing changed.");
+      const learned = learnedNotice(done);
+      setToast({ done, text: doneText(done), ...(learned ? { notice: learned.text, ruleIds: learned.ruleIds } : {}) });
+      if (kind === "discard") void client.invalidateQueries({ queryKey: ["discard-rules"] });
+    } catch (e) {
+      for (const u of undo) u();
+      setSelected(list[0] ?? null);
+      setNotice((e as Error).message);
+    } finally {
+      setBusy(false);
+      await refresh();
+      void client.invalidateQueries({ queryKey: ["categories"] });
+    }
+  }
+  /** Undo (the toast's button, ⌘Z): every message back where and as it was. */
+  async function undoLast() {
+    const done = toast?.done;
+    if (!done || toast?.undoing) return;
+    setToast({ ...toast!, undoing: true });
+    const result = await undoDone(done).catch((e: Error) => ({ restored: 0, failed: [e.message] }));
+    setToast(result.failed.length ? null : { text: result.restored === 1 ? "Undone." : `Undone: ${result.restored} messages are back.` });
+    if (result.failed.length) setNotice(`${result.restored ? `${result.restored} came back; ` : ""}${result.failed.length} could not: ${result.failed[0]}`);
+    await refresh();
+    void client.invalidateQueries({ queryKey: ["discard-rules"] });
+  }
+  /** Don't (the once-only notice): the rules that discard just taught are removed. */
+  async function forgetRules(ruleIds: string[], label?: string) {
+    try {
+      for (const id of ruleIds) await fabric(`/api/discard/rules/${encodeURIComponent(id)}`, undefined, "DELETE");
+      setToast((t) => (t ? { ...t, notice: undefined, ruleIds: undefined, text: t.text } : t));
+      setRestoredRules([]);
+      setNotice(`Mail${label ? ` from ${label}` : " like this"} will not be discarded on its own. Discarded mail stays where it is.`);
+      void client.invalidateQueries({ queryKey: ["discard-rules"] });
+    } catch (e) {
+      setNotice(`The rule could not be removed: ${(e as Error).message} Remove it in Settings → Discard rules.`);
+    }
+  }
+  /** Not discarded: back to the inbox; names the rules that would discard it again. */
+  async function restore(message: InboxMessage) {
+    await perform(async () => {
+      const r = await fabric<{ moved: number; rules: { ruleId: string; label: string }[] }>("/api/discard/restore", { messages: [{ accountId: message.accountId, providerMessageId: message.providerMessageId }] });
+      setRestoredRules(r.rules ?? []);
+      setNotice(r.rules?.length ? "" : "Back in the inbox.");
+    }, () => selectNextAfter(message.id), { id: message.id, removed: true });
+  }
+  /** One click or key on a row: open it, add it to the selection (⌘/Ctrl), or select up to it (Shift). */
+  function choose(m: InboxMessage, how: { add?: boolean; range?: boolean } = {}) {
+    if (how.range) {
+      const order = displayOrder(messages, view, group, openGroups);
+      const from = order.findIndex((x) => x.id === (anchor ?? selected?.id ?? m.id));
+      const to = order.findIndex((x) => x.id === m.id);
+      const [a, b] = from < 0 ? [to, to] : [Math.min(from, to), Math.max(from, to)];
+      setMarked(new Set(order.slice(a, b + 1).map((x) => x.id)));
+      setSelected(m);
+      return;
+    }
+    if (how.add) {
+      const next = new Set(marked.size ? marked : selected ? [selected.id] : []);
+      if (next.has(m.id)) next.delete(m.id); else next.add(m.id);
+      setMarked(next);
+      setAnchor(m.id);
+      if (next.size === 1) setSelected(messages.find((x) => next.has(x.id)) ?? null);
+      else setSelected(m);
+      return;
+    }
+    setMarked(new Set());
+    setAnchor(m.id);
+    setSelected(m);
+  }
+  /** ↓/↑ (j/k): the next or previous row in the order shown; with Shift it joins the selection. */
+  function step(by: 1 | -1, extend: boolean) {
+    const order = displayOrder(messages, view, group, openGroups);
+    if (!order.length) return;
+    const at = order.findIndex((m) => m.id === selected?.id);
+    const next = order[at < 0 ? (by > 0 ? 0 : order.length - 1) : Math.min(order.length - 1, Math.max(0, at + by))]!;
+    if (extend) {
+      const set = new Set(marked.size ? marked : selected ? [selected.id] : []);
+      set.add(next.id);
+      setMarked(set);
+      setSelected(next);
+    } else choose(next);
+    requestAnimationFrame(() => {
+      const row = document.querySelector<HTMLElement>(`.fi-message[data-message-id="${CSS.escape(next.id)}"]`);
+      row?.focus();
+      row?.scrollIntoView({ block: "nearest" });
+    });
+  }
+  // The list's keyboard (app/lib/mail-keys.ts): read through a ref so the listener is added once.
+  const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {});
+  keyHandler.current = (e: KeyboardEvent) => {
+    // A dialog (the composer, Drafts, Rules, this help) owns the keyboard while it is open.
+    if (composeOpen || document.querySelector("dialog[open]")) return;
+    const action = mailKeyAction({ key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey, isComposing: e.isComposing,
+      target: e.target as unknown as Parameters<typeof mailKeyAction>[0]["target"] }, mac);
+    if (!action) return;
+    e.preventDefault();
+    if (action === "archive" || action === "discard") void triageAction(action);
+    else if (action === "next" || action === "previous") step(action === "next" ? 1 : -1, false);
+    else if (action === "extendNext" || action === "extendPrevious") step(action === "extendNext" ? 1 : -1, true);
+    else if (action === "undo") void undoLast();
+    else if (action === "help") setShortcutsOpen(true);
+    else if (action === "refresh") { if (!checking) void checkForMail(); }
+    else if (action === "clear") { if (marked.size) setMarked(new Set()); else if (selected) setSelected(null); }
+  };
+  useEffect(() => {
+    const listen = (e: KeyboardEvent) => keyHandler.current(e);
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+  }, []);
   function toggleTheme() {
     const next = theme === "light" ? "dark" : "light";
     document.documentElement.dataset.theme = next;
@@ -617,6 +791,11 @@ export default function UnifiedInbox() {
             <GearSixIcon size={19} />
             <span>Settings</span>
           </Link>
+          <button className="fi-nav-item" onClick={() => setShortcutsOpen(true)} aria-keyshortcuts="?">
+            <KeyboardIcon size={19} />
+            <span>Keyboard shortcuts</span>
+            <kbd>?</kbd>
+          </button>
           <div className="fi-theme-row">
             <a
               href="https://passioncode.ai/inbox/"
@@ -650,6 +829,8 @@ export default function UnifiedInbox() {
               {categoryParam ? "CATEGORY" : accountId ? "ONE ADDRESS" : domainFilter ? "ONE DOMAIN" : providerFilter === "imap" ? "EVERY IMAP ACCOUNT" : providerFilter === "outlook" ? "EVERY OUTLOOK ACCOUNT" : providerFilter ? "EVERY GMAIL ACCOUNT" : "YOUR MAIL, TOGETHER"}
             </span>
             <h1>{scopeName}</h1>
+            <SyncStatus accounts={inScope} checking={checking} fetching={list.isFetching || head.isFetching} outcomes={outcomes} mac={mac}
+              onRefresh={() => void checkForMail()} />
             {categoryParam && activeCategory && (
               <p className="fi-category-summary">
                 <span title={activeCategory.description || undefined}>{activeCategory.description || scopeSummary(activeCategory, categoryList.data?.projects ?? [])}</span>
@@ -682,15 +863,6 @@ export default function UnifiedInbox() {
               <span>↵</span>
             </button>
           </form>
-          <button
-            className="fi-icon-button"
-            title="Check for new mail"
-            aria-label="Check for new mail"
-            onClick={() => void checkForMail()}
-            disabled={checking || list.isFetching}
-          >
-            <ArrowClockwiseIcon size={19} />
-          </button>
         </header>
         {notice && (
           <div className="fi-notice" role="status">
@@ -757,6 +929,22 @@ export default function UnifiedInbox() {
               + " Gmail and IMAP accounts keep their own Spam, which their provider empties.");
           })} />
         )}
+        {folder === "discarded" && (
+          <div className="fi-category-progress fi-spam-banner" role="note">
+            <span>Discarded mail is deleted after 30 days (in Gmail, IMAP and Outlook accounts it moves to their Trash). Nothing here reaches an agent, a rule or a category.</span>
+            <Link to={settingsPath("discard")}>Discard rules</Link>
+          </div>
+        )}
+        {restoredRules.length > 0 && (
+          <div className="fi-notice" role="status">
+            <span>Back in the inbox. Future mail from {restoredRules.map((r) => r.label).join(", ")} still goes to Discarded.{" "}
+              <button type="button" className="fi-text-button" onClick={() => void forgetRules(restoredRules.map((r) => r.ruleId), restoredRules.map((r) => r.label).join(", "))}>
+                Stop discarding mail like this
+              </button>
+            </span>
+            <button onClick={() => setRestoredRules([])} aria-label="Dismiss notice">×</button>
+          </div>
+        )}
         <div className="fi-content">
           <section className="fi-message-list" aria-label="Messages">
             <div className="fi-list-heading">
@@ -766,15 +954,7 @@ export default function UnifiedInbox() {
                   : folders.find((f) => f[0] === folder)?.[1]}
               </strong>
               <span>
-                {checking
-                  ? "Checking for new mail…"
-                  : list.isFetching
-                  ? "Updating…"
-                  : checkedAt && Date.now() - checkedAt < 60_000
-                    ? "Updated just now"
-                  : view === "focus"
-                    ? "Important first"
-                    : "Newest first"}
+                {marked.size > 1 ? `${marked.size} selected` : view === "focus" ? "Important first" : "Newest first"}
               </span>
             </div>
             <div className="fi-filter-bar" role="toolbar" aria-label="List view and filters">
@@ -881,7 +1061,8 @@ export default function UnifiedInbox() {
                 messages={messages}
                 accounts={accounts}
                 selectedId={selected?.id}
-                onSelect={setSelected}
+                marked={marked}
+                onSelect={choose}
                 view={view}
                 group={group}
                 open={openGroups}
@@ -914,7 +1095,26 @@ export default function UnifiedInbox() {
             </footer>
           </section>
           <section className="fi-reader" aria-label="Message reader">
-            {!selected ? (
+            {marked.size > 1 ? (
+              <div className="fi-reader-empty">
+                <div className="fi-empty-mark"><TrayArrowDownIcon size={35} weight="duotone" /></div>
+                <h2>{marked.size} messages selected</h2>
+                <p>Act on all of them at once, or press Esc to clear the selection.</p>
+                <div className="fi-buttons">
+                  {canAct("archive", folder, undefined) === null && (
+                    <button type="button" className="fi-secondary" disabled={busy} onClick={() => void triageAction("archive")}>
+                      <ArchiveIcon size={17} /> Archive <kbd>{mac ? "⌫" : "Delete"}</kbd>
+                    </button>
+                  )}
+                  {canAct("discard", folder, undefined) === null && (
+                    <button type="button" className="fi-secondary" disabled={busy} onClick={() => void triageAction("discard")}>
+                      <TrashSimpleIcon size={17} /> Discard <kbd>{mac ? "⌘⌫" : "Ctrl+Backspace"}</kbd>
+                    </button>
+                  )}
+                  <button type="button" className="fi-text-button" onClick={() => setMarked(new Set())}>Clear selection</button>
+                </div>
+              </div>
+            ) : !selected ? (
               <div className="fi-reader-empty">
                 <div className="fi-empty-mark">
                   <TrayArrowDownIcon size={35} weight="duotone" />
@@ -949,25 +1149,37 @@ export default function UnifiedInbox() {
                       }
                       else setSelected(current => applyMessageChange(current, change));
                     }} />
-                  {owner?.capabilities?.archive !== false && <button
+                  {owner?.capabilities?.archive !== false && folder !== "discarded" && folder !== "sent" && <button
                     className="fi-icon-button"
                     aria-label="Archive message"
+                    title={`Archive and mark read (${mac ? "⌫" : "Delete"})`}
                     disabled={busy || !detail.data}
                     onClick={() =>
-                      void perform(
-                        () =>
-                          isRemote(selected.provider)
-                            ? fabric(messagePath(selected) + "/archive", {})
-                            : fabric(messagePath(selected) + "/move", {
-                                folderId: "archive",
-                              }),
-                        () => selectNextAfter(selected.id),
-                        { id: selected.id, removed: true },
-                      )
+                      folder === "inbox" || folder === "starred"
+                        ? void triageAction("archive", [selected])
+                        : void perform(
+                          () =>
+                            isRemote(selected.provider)
+                              ? fabric(messagePath(selected) + "/archive", {})
+                              : fabric(messagePath(selected) + "/move", { folderId: "archive" }),
+                          () => selectNextAfter(selected.id),
+                          { id: selected.id, removed: true },
+                        )
                     }
                   >
                     <ArchiveIcon size={19} />
                   </button>}
+                  {folder === "discarded" ? (
+                    <button className="fi-icon-button" aria-label="Not discarded" title="Not discarded: back to the inbox"
+                      disabled={busy || !detail.data} onClick={() => void restore(selected)}>
+                      <ArrowUUpLeftIcon size={19} />
+                    </button>
+                  ) : folder !== "sent" && (
+                    <button className="fi-icon-button" aria-label="Discard message" title={`Discard: out of the inbox, and mail like it from now on (${mac ? "⌘⌫" : "Ctrl+Backspace"})`}
+                      disabled={busy || !detail.data} onClick={() => void triageAction("discard", [selected])}>
+                      <TrashSimpleIcon size={19} />
+                    </button>
+                  )}
                   <button
                     className="fi-icon-button"
                     aria-label={
@@ -1022,6 +1234,12 @@ export default function UnifiedInbox() {
                             </span>
                           </span>
                           <h2>{detail.data.subject || "(No subject)"}</h2>
+                          {selected.discardReason && (
+                            <p className="fi-category-reason fi-spam-reason">
+                              Why discarded: {selected.discardReason}{" "}
+                              {restoredRules.length === 0 && <Link to={settingsPath("discard")}>Discard rules</Link>}
+                            </p>
+                          )}
                           <div className="fi-sender">
                             <span className="fi-avatar">
                               {senderName(detail.data.from)
@@ -1158,6 +1376,13 @@ export default function UnifiedInbox() {
           }}
         />
       )}
+      {toast && (
+        <UndoToast text={toast.text} undoing={toast.undoing} undoKey={mac ? "⌘Z" : "Ctrl+Z"}
+          onUndo={toast.done ? () => void undoLast() : undefined}
+          notice={toast.notice} onDont={toast.ruleIds ? () => void forgetRules(toast.ruleIds!, toast.done?.learned.find((l) => l.created)?.label) : undefined}
+          onClose={() => setToast(null)} />
+      )}
+      <ShortcutsDialog open={shortcutsOpen} mac={mac} onClose={() => setShortcutsOpen(false)} />
       <dialog
         ref={rulesDialog}
         className="fi-rules-dialog"

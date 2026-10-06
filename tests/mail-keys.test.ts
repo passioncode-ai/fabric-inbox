@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { isMacPlatform, isTypingTarget, mailKeyAction, shortcutList, type KeyLike } from "../app/lib/mail-keys";
 
 // Keyboard actions in the message list and the open message (operator, 2026-10-06): Delete or
@@ -71,4 +72,16 @@ test("the platform is read from the browser, and the help names keys the way the
   const other = shortcutList(false).flatMap((g) => g.keys);
   assert.ok(other.some((k) => k.keys.includes("Ctrl+Backspace")));
   assert.ok(other.some((k) => k.keys.includes("Ctrl+Z")));
+});
+
+test("the workbench listens once on the window, gives the keyboard to an open dialog, and acts on every chosen message", () => {
+  const code = readFileSync("app/routes/unified-inbox.tsx", "utf8");
+  assert.match(code, /window\.addEventListener\("keydown", listen\)/);
+  assert.match(code, /if \(composeOpen \|\| document\.querySelector\("dialog\[open\]"\)\) return;/, "the composer, Drafts, Rules and the help own the keyboard while open");
+  assert.match(code, /if \(action === "archive" \|\| action === "discard"\) void triageAction\(action\);/);
+  assert.match(code, /if \(marked\.size\) return order\.filter\(\(m\) => marked\.has\(m\.id\)\);/, "a multi-selection is acted on whole, in the order shown");
+  assert.match(code, /else if \(action === "undo"\) void undoLast\(\);/);
+  // ⌘R stays the desktop menu's Retry connection; Refresh has its own key.
+  assert.match(readFileSync("desktop/main.cjs", "utf8"), /label: 'Retry connection', accelerator: 'CmdOrCtrl\+R'/);
+  assert.doesNotMatch(readFileSync("desktop/main.cjs", "utf8"), /CmdOrCtrl\+Shift\+N/);
 });

@@ -74,6 +74,20 @@ test("Refresh says Updated just now, or which account was not read and why (P1-5
 test("the inbox's refresh button reads Gmail, not only the browser's cache (P1-5)", () => {
   const code = readFileSync("app/routes/unified-inbox.tsx", "utf8");
   assert.match(code, /fabric<RefreshResponse>\("\/api\/inbox\/refresh"/);
-  assert.match(code, /aria-label="Check for new mail"[\s\S]{0,80}onClick=\{\(\) => void checkForMail\(\)\}/);
+  assert.match(code, /<SyncStatus [^>]*\n?[^>]*onRefresh=\{\(\) => void checkForMail\(\)\}/);
+  const status = readFileSync("app/components/inbox/SyncStatus.tsx", "utf8");
+  assert.match(status, /aria-label="Check for new mail"[\s\S]{0,200}onClick=\{onRefresh\}/);
   assert.doesNotMatch(code, /Refresh cached mail/);
+});
+
+test("Refresh sits on the left, under the list's title, before the folder and the search (operator, 2026-10-06)", () => {
+  const code = readFileSync("app/routes/unified-inbox.tsx", "utf8");
+  const toolbar = code.slice(code.indexOf('<header className="fi-toolbar">'), code.indexOf("</header>", code.indexOf('<header className="fi-toolbar">')));
+  const title = toolbar.indexOf("<h1>{scopeName}</h1>"), sync = toolbar.indexOf("<SyncStatus"), folder = toolbar.indexOf("fi-folder-select"), search = toolbar.indexOf('role="search"');
+  assert.ok(title > 0 && sync > title && sync < folder && sync < search, "title, then Refresh and its status, then the folder and the search");
+  assert.doesNotMatch(toolbar.slice(search), /Check for new mail/, "nothing of Refresh is left on the right");
+  // The status is the server's last read of each account in view, ticking only while visible.
+  const status = readFileSync("app/components/inbox/SyncStatus.tsx", "utf8");
+  assert.match(status, /useVisibleClock\(15_000\)/);
+  assert.match(code, /fetching=\{list\.isFetching \|\| head\.isFetching\}/);
 });
