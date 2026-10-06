@@ -851,7 +851,7 @@ const messageRefsOf = (messages: { accountId: string; messageId: string }[]) => 
 
 const discardMessages = defineTool({
   name: "discard_messages", title: "Discard messages", level: "mail", target: (a) => `${a.messages.length} message(s)${a.learn === false ? " (no rule)" : ""}`,
-  description: "Discards messages, as ⌘⌫ does in the app: each leaves the inbox for Discarded (a Cloudflare mailbox's Discarded folder, Gmail's own \"Discarded\" label, an IMAP or Outlook folder named Discarded, made when missing), marked read. Discarded counts as deleted — out of the inbox, its counts and categories — but is kept 30 days and can be brought back (restore_discarded). Each discard also learns a rule keyed on the message's mailing list (List-Id), else its sender, so future mail like it goes straight to Discarded; learned names each rule and created: true the first time. learn: false discards without teaching anything. Mail from someone any mailbox or account of the workspace wrote to, replies in a conversation it took part in, mail from the workspace's own domains, and allowed senders are never discarded on arrival. Discarding is undone with restore_discarded (unlearn: true takes the rule back too).",
+  description: "Discards messages, as ⌘⌫ does in the app: each leaves the inbox for Discarded (a Cloudflare mailbox's Discarded folder, Gmail's own \"Discarded\" label, an IMAP or Outlook folder named Discarded, made when missing), marked read. Discarded counts as deleted — out of the inbox, its counts and categories — but is kept 30 days and can be brought back (restore_discarded). Each discard also learns a rule keyed on the message's mailing list (List-Id), else its sender, so future mail like it goes straight to Discarded; learned names each rule and created: true the first time. learn: false discards without teaching anything. Mail from someone any mailbox or account of the workspace wrote to, replies in a conversation it took part in, mail from the workspace's own domains, and allowed senders are never discarded on arrival. Each moved message in results names learnedRuleId, the rule its discard taught (absent when it taught nothing). Discarding is undone with restore_discarded (unlearn: true with each message's ruleId takes that rule's lesson back).",
   input: { messages: messageRefs, learn: z.boolean().default(true).describe("Learn a rule from each message (the default)") },
   routes: ["POST /api/discard"],
   call: (a, ctx) => post(ctx, "/api/discard", { messages: messageRefsOf(a.messages), learn: a.learn }),
@@ -859,11 +859,15 @@ const discardMessages = defineTool({
 
 const restoreDiscarded = defineTool({
   name: "restore_discarded", title: "Bring back discarded messages", level: "mail", target: (a) => `${a.messages.length} message(s)${a.unlearn ? " (unlearn)" : ""}`,
-  description: "Not discarded: moves messages from Discarded back to the inbox. Answers rules: the discard rules that would discard such mail again (remove_discard_rule stops one). unlearn: true is an undo of the discard — the rule it made (or its count) is taken back too. read: false makes them unread again. A message gives its id in the inbox in results (an IMAP move gives it a new one).",
-  input: { messages: messageRefs, read: z.boolean().optional().describe("Unread again with false; left as it is when absent"),
-    unlearn: z.boolean().default(false).describe("Also take back what the discard taught (an undo)") },
+  description: "Not discarded: moves messages from Discarded back to the inbox. Answers rules: the discard rules that would discard such mail again (remove_discard_rule stops one). unlearn: true is an undo of the discard — for each message given with ruleId (the learnedRuleId discard_messages answered for it), that rule's count is taken back, and a rule the discard made goes; a message without ruleId forgets nothing, so a rule learned earlier is never removed by mistake. read: false makes them unread again. A message gives its id in the inbox in results (an IMAP move gives it a new one).",
+  input: { messages: z.array(z.object({ accountId, messageId,
+      ruleId: z.string().regex(/^[ls]-[0-9a-f]{8}$/).optional().describe("The rule this message's discard taught (learnedRuleId from discard_messages); taken back with unlearn") })).min(1).max(100),
+    read: z.boolean().optional().describe("Unread again with false; left as it is when absent"),
+    unlearn: z.boolean().default(false).describe("Also take back what each discard taught (an undo; needs each message's ruleId)") },
   routes: ["POST /api/discard/restore"],
-  call: (a, ctx) => post(ctx, "/api/discard/restore", { messages: messageRefsOf(a.messages), read: a.read, unlearn: a.unlearn }),
+  call: (a, ctx) => post(ctx, "/api/discard/restore", {
+    messages: a.messages.map((m) => ({ accountId: parseAccount(m.accountId).id, providerMessageId: m.messageId, ...(m.ruleId ? { ruleId: m.ruleId } : {}) })),
+    read: a.read, unlearn: a.unlearn }),
 });
 
 const listDiscardRules = defineTool({

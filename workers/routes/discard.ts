@@ -28,10 +28,13 @@ export const DiscardInput = z.object({
   learn: z.boolean().default(true),
 }).strict();
 export const RestoreInput = z.object({
-  messages: z.array(Message).min(1).max(100),
+  messages: z.array(Message.extend({
+    /** Undo: the rule this message's discard taught (`learnedRuleId` in the discard's answer); only it is taken back. */
+    ruleId: z.string().regex(/^[ls]-[0-9a-f]{8}$/).optional(),
+  })).min(1).max(100),
   /** Unread again (Undo of a discard of unread mail); left as it is when absent. */
   read: z.boolean().optional(),
-  /** Undo: the discard is taken back from what was learned too (a rule it made goes). */
+  /** Undo: what each discard taught (its message's ruleId) is taken back too (a rule it made goes); a message without one forgets nothing. */
   unlearn: z.boolean().default(false),
 }).strict();
 export const AllowEdit = z.object({ value: z.string().min(1).max(320), action: z.enum(["add", "remove"]) }).strict();
@@ -113,6 +116,8 @@ discardRouter.post("/api/discard", async (c) => {
   }));
   const done = results.filter((r) => r.ok);
   const learned = new Map<string, { rule: DiscardRule; created: boolean }>();
+  // The rule each message's discard was counted on: Undo takes back that, and nothing else.
+  const taught = new Map<object, string>();
   const skipped = new Set<string>();
   let ruleError: string | undefined;
   const teach = done.filter((r) => r.facts);
@@ -125,12 +130,15 @@ discardRouter.post("/api/discard", async (c) => {
       const ownDomains = await workspace.ownDomains().catch(() => [] as string[]);
       await updateDiscardStore(c.env.BUCKET, (store) => {
         // A retried write starts over: what was learned is what the last attempt saw.
-        learned.clear(); skipped.clear();
+        learned.clear(); skipped.clear(); taught.clear();
         let next = store;
         for (const r of teach) {
           const result = learnDiscard(next, r.facts!.facts, Date.now(), { known: r.facts!.known, ownDomains });
           next = result.store;
-          if (result.rule) learned.set(result.rule.id, { rule: result.rule, created: (learned.get(result.rule.id)?.created ?? false) || result.created });
+          if (result.rule) {
+            learned.set(result.rule.id, { rule: result.rule, created: (learned.get(result.rule.id)?.created ?? false) || result.created });
+            taught.set(r, result.rule.id);
+          }
           if (result.skipped) skipped.add(result.skipped);
         }
         return next;
@@ -155,7 +163,8 @@ discardRouter.post("/api/discard", async (c) => {
   const failed = results.filter((r) => !r.ok).map((r) => ({ accountId: r.accountId, providerMessageId: r.providerMessageId, error: (r as { error?: string }).error }));
   return c.json({
     moved: done.length, failed,
-    results: done.map((r) => ({ accountId: r.accountId, providerMessageId: r.providerMessageId, id: (r as { id: string }).id, from: (r as { from: string }).from, unread: (r as { unread: boolean }).unread })),
+    results: done.map((r) => ({ accountId: r.accountId, providerMessageId: r.providerMessageId, id: (r as { id: string }).id, from: (r as { from: string }).from, unread: (r as { unread: boolean }).unread,
+      ...(taught.has(r) ? { learnedRuleId: taught.get(r) } : {}) })),
     learned: [...learned.values()].map(({ rule, created }) => ({ ruleId: rule.id, kind: rule.kind, label: rule.label, discards: rule.discards, created })),
     skipped: [...skipped],
     ...(ruleError ? { ruleError } : {}),
@@ -193,8 +202,8 @@ discardRouter.post("/api/discard/restore", async (c) => {
   let ruleError: string | undefined;
   let store;
   try {
-    store = unlearn && done.some((r) => r.facts)
-      ? await updateDiscardStore(c.env.BUCKET, (s) => done.reduce((acc, r) => (r.facts ? forgetDiscard(acc, r.facts.facts) : acc), s))
+    store = unlearn && done.some((r) => r.ruleId)
+      ? await updateDiscardStore(c.env.BUCKET, (s) => done.reduce((acc, r) => (r.ruleId ? forgetDiscard(acc, r.ruleId) : acc), s))
       : await readDiscardStore(c.env.BUCKET);
   } catch (error) {
     ruleError = `The messages are back in the inbox, but the rules could not be read: ${(error as Error).message}`;

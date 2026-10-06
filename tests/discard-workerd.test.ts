@@ -134,7 +134,7 @@ test("discarding moves a message to Discarded read, learns its list at once, and
     const discarded = await call("/api/discard", "POST", { messages: [ref(first.emailId)] });
     assert.equal(discarded.status, 200);
     assert.equal(discarded.body.moved, 1);
-    assert.deepEqual(discarded.body.results[0], { ...ref(first.emailId), id: first.emailId, from: "inbox", unread: true });
+    assert.deepEqual(discarded.body.results[0], { ...ref(first.emailId), id: first.emailId, from: "inbox", unread: true, learnedRuleId: discarded.body.learned[0].ruleId });
     assert.deepEqual(discarded.body.learned.map((l: any) => [l.kind, l.label, l.created, l.discards]), [["list", "Weekly Digest", true, 1]], "learned at once, said once");
     const row = (await call("/row", "POST", { id: first.emailId })).body;
     assert.equal(row.folder_id, "discarded");
@@ -204,7 +204,7 @@ test("Not discarded brings a message back and names the rule to stop; Undo forge
     const b = await receive("Another promo", { from: "deals@shop-deals.example" });
     const d = await call("/api/discard", "POST", { messages: [ref(b.emailId)] });
     assert.equal(d.body.learned[0].created, true);
-    const undo = await call("/api/discard/restore", "POST", { messages: [ref(b.emailId)], read: false, unlearn: true });
+    const undo = await call("/api/discard/restore", "POST", { messages: [{ ...ref(b.emailId), ruleId: d.body.results[0].learnedRuleId }], read: false, unlearn: true });
     assert.deepEqual(undo.body.rules, [], "the rule its discard made is gone");
     assert.equal((await call("/api/discard/rules")).body.rules.length, 0);
     assert.equal((await call("/row", "POST", { id: b.emailId })).body.read, 0, "unread again");
@@ -373,5 +373,38 @@ test("a connected account's own domain is the workspace's own: never learned, ne
     const stranger = await receive("Hello", { from: "stranger@gmail.com" });
     assert.equal((await call("/api/discard", "POST", { messages: [ref(stranger.emailId)] })).body.learned.length, 1, "gmail.com is no one's own domain");
     assert.match((await receive("Hello again", { from: "stranger@gmail.com" })).discarded ?? "", /Discarded automatically/);
+  } finally { await mf.dispose(); }
+});
+
+test("Undo takes back only what that discard taught: a discard that learned nothing never removes a rule learned before", async () => {
+  const { mf, call, receive, ref } = await fixture();
+  try {
+    const a = await receive("Promo", { from: "deals@shop-deals.example" });
+    const first = await call("/api/discard", "POST", { messages: [ref(a.emailId)] });
+    const ruleId = first.body.learned[0].ruleId;
+    assert.equal(first.body.results[0].learnedRuleId, ruleId, "each moved message names the rule its discard taught");
+    // Back, then discarded again without learning: Undo of that must leave the rule alone.
+    await call("/api/discard/restore", "POST", { messages: [ref(a.emailId)] });
+    const quiet = await call("/api/discard", "POST", { messages: [ref(a.emailId)], learn: false });
+    assert.equal(quiet.body.results[0].learnedRuleId, undefined);
+    await call("/api/discard/restore", "POST", { messages: [ref(a.emailId)], unlearn: true });
+    assert.deepEqual((await call("/api/discard/rules")).body.rules.map((r: any) => [r.id, r.discards]), [[ruleId, 1]], "the earlier rule stays");
+    // A sender put on Always allow since: the discard is not learned, so Undo forgets nothing.
+    await call("/api/discard/allowed", "POST", { value: "deals@shop-deals.example", action: "add" });
+    const b = await receive("Promo 2", { from: "deals@shop-deals.example" });
+    const skipped = await call("/api/discard", "POST", { messages: [ref(b.emailId)] });
+    assert.deepEqual(skipped.body.skipped, ["The sender is on the Always allow list"]);
+    assert.equal(skipped.body.results[0].learnedRuleId, undefined);
+    await call("/api/discard/restore", "POST", { messages: [ref(b.emailId)], unlearn: true });
+    assert.deepEqual((await call("/api/discard/rules")).body.rules.map((r: any) => [r.id, r.discards]), [[ruleId, 1]]);
+    // Undo of a discard that did teach, naming its rule: the count goes down.
+    await call("/api/discard/allowed", "POST", { value: "deals@shop-deals.example", action: "remove" });
+    const c = await receive("Promo 3", { from: "deals@shop-deals.example" });
+    const counted = await call("/api/discard", "POST", { messages: [ref(c.emailId)] });
+    assert.equal(counted.body.results[0].learnedRuleId, ruleId);
+    assert.equal((await call("/api/discard/rules")).body.rules[0].discards, 2);
+    await call("/api/discard/restore", "POST", { messages: [{ ...ref(c.emailId), ruleId }], unlearn: true });
+    assert.equal((await call("/api/discard/rules")).body.rules[0].discards, 1);
+    assert.equal((await call("/api/discard/restore", "POST", { messages: [{ ...ref(c.emailId), ruleId: "nope" }], unlearn: true })).status, 400);
   } finally { await mf.dispose(); }
 });
