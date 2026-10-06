@@ -1462,7 +1462,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Alt paths:** Don't removes the rule; a sender any address of the workspace wrote to, one on the workspace's own domains, or one on Always allow is not learned (the mail is still discarded); agents discard with discard_messages, learn: false for a one-off.
 - **UI elements:** SCR-03 toast with Undo and Don't; SCR-04 Discard.
 - **States covered:** loading, error, success
-- **Errors & recovery:** A rule that cannot be saved still discards the mail and says nothing was learned; a server that refuses to make the IMAP folder says so (make a folder named Discarded there and try again).
+- **Errors & recovery:** Mail in a Gmail, IMAP or Outlook account's Spam is not discarded, and the toast says why (moving it out would teach the provider's filter it is not spam; Spam is emptied on its own). A rule that cannot be saved still discards the mail and says nothing was learned; a server that refuses to make the IMAP folder says so (make a folder named Discarded there and try again).
 - **Status:** validated
 - **Coverage:** shared/mail/discard.ts, workers/routes/discard.ts, workers/discard/store.ts, workers/durableObject/index.ts (discardMessages), workers/providers/account-service.ts (discard, discardFacts), workers/providers/gmail-provider.ts, workers/providers/imap/provider.ts, workers/providers/outlook/provider.ts, tests/discard.test.ts, tests/discard-workerd.test.ts, tests/discard-providers.test.ts
 - **Product:** unobserved

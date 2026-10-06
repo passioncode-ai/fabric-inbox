@@ -922,6 +922,9 @@ export class AccountService {
     const account = await this.account(accountId);
     const row = await this.cache.row(account.id, await this.currentId(account.id, keyPart(messageId)));
     if (row && (row.message.labels.includes("SENT") || row.message.labels.includes("DRAFT"))) throw new ProviderError("not_discardable", 400);
+    // Out of the provider's Spam is how a person tells Gmail (and an IMAP or Outlook server's filter)
+    // "not spam": a discard must not say that. Spam is emptied by the provider on its own.
+    if (row && inFolder(row.message.labels, "spam")) throw new ProviderError("spam_not_discardable", 400);
     const labels = row?.message.labels ?? [];
     const from = (["trash", "spam", "discarded", "inbox"] as const).find((f) => inFolder(labels, f)) ?? "archive";
     const unread = !!row && !row.message.read;

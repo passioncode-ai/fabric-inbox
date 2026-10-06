@@ -83,10 +83,17 @@ async function factsOf(env: Env, ref: Ref, category?: string): Promise<Facts | n
   return { facts: discardFacts({ sender: row.sender, headers: row.headers, category }), known: row.known, inThread: row.inThread, subject: row.subject };
 }
 
-const errorText = (error: unknown) => {
-  const message = (error as Error)?.message ?? "unknown error";
-  return message === "message_not_found" ? "It is no longer here" : message === "not_supported" ? "This account cannot do that" : message.slice(0, 200);
+const ERROR_TEXT: Record<string, string> = {
+  message_not_found: "It is no longer here",
+  not_supported: "This account cannot do that",
+  spam_not_discardable: "It is in Spam: moving it out would teach the account's spam filter that it is not spam. Spam is emptied on its own",
 };
+/** What a refused discard or restore says to the person, from the provider's code or the error's own words. */
+export const discardErrorText = (error: unknown) => {
+  const message = (error as Error)?.message ?? "unknown error";
+  return ERROR_TEXT[message] ?? message.slice(0, 200);
+};
+const errorText = discardErrorText;
 
 /**
  * Discard: each message leaves the inbox for Discarded, read, and its rule is learned (or counted).

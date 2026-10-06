@@ -10,6 +10,7 @@ import { FakeImap, type FakeImapOptions } from "./fake-imap";
 import { FakeSmtp, nodeSockets } from "./fake-smtp";
 import { FakeGraph } from "./fake-graph";
 import { DISCARD_RETENTION_MS } from "../shared/mail/discard";
+import { discardErrorText } from "../workers/routes/discard";
 
 /**
  * Discarded in each remote provider (operator, 2026-10-06): a message discarded goes to the
@@ -367,6 +368,19 @@ test("Gmail: discard puts the account's own Discarded label on (made once), out 
   gmail.seen.length = 0;
   await service.discard("a", "m1", "You discarded it");
   assert.ok(!gmail.seen.some((s) => s.startsWith("GET labels") || s.startsWith("POST labels")));
+});
+
+test("Gmail, IMAP, Outlook: mail in the account's Spam is not discarded — moving it out would teach the provider it is not spam", async (t) => {
+  quiet(t);
+  const { gmail, service } = await gmailFixture();
+  gmail.labels.set("m1", ["SPAM", "UNREAD"]);
+  const row = (await service.cache.row("a", "m1"))!;
+  await service.cache.save("a", { ...row.message, text: "", html: "", labels: ["SPAM", "UNREAD"] } as never, "g");
+  await assert.rejects(service.discard("a", "m1", "You discarded it"), (e: ProviderError) => e.code === "spam_not_discardable" && e.status === 400);
+  assert.ok(!gmail.seen.some((s) => s.includes("/modify")), "nothing was asked of Gmail");
+  assert.deepEqual(gmail.labels.get("m1"), ["SPAM", "UNREAD"], "still Spam, as Gmail judged it");
+  assert.equal(discardErrorText(new ProviderError("spam_not_discardable", 400)),
+    "It is in Spam: moving it out would teach the account's spam filter that it is not spam. Spam is emptied on its own");
 });
 
 test("Gmail: a label deleted in Gmail since is made again, once; one the person made by hand is found by name", async (t) => {
