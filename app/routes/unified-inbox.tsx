@@ -58,6 +58,8 @@ import type { Triage, TriageGroup } from "../../shared/mail/triage";
 import type { InboxFolder } from "../../shared/mail/inbox";
 import { showFeedChange, mergeHead, refreshScope, refreshSummary, WakeRefresh, type FeedChange, type RefreshResponse } from "~/lib/mail-refresh";
 import { useWindowActive } from "~/hooks/useWindowActive";
+import { settingsPath } from "~/components/settings/paths";
+import { GMAIL_REASON_TEXT, isGmailReason } from "../../shared/mail/gmail-reasons";
 import { pollInterval, subscribeWindowActivity } from "~/lib/window-activity";
 /** How often the list in view is read again while the window is active. */
 const INBOX_POLL_MS = 60_000;
@@ -81,9 +83,11 @@ const FOLDER_EMPTY: Record<string, [string, string]> = {
   archive: ["Nothing archived", "Archive a message to keep it out of the inbox without deleting it."],
   starred: ["No starred mail", "Star a message to find it here."],
 };
-/** Plain words for a provider problem, instead of its code. */
+/** Plain words for a provider problem, instead of its code; an account's own reason says more (issueText). */
 const ISSUE_TEXT: Record<string, string> = {
   reconnect_required: "needs to be connected again",
+  gmail_api_disabled: GMAIL_REASON_TEXT.gmail_api_disabled.short,
+  google_client_rejected: GMAIL_REASON_TEXT.client_rejected.short,
   rate_limited: "is busy right now; its mail loads on the next refresh",
   cache_scan_limit: "has more cached mail than one read can scan",
   account_not_found: "is no longer here",
@@ -91,6 +95,11 @@ const ISSUE_TEXT: Record<string, string> = {
   account_limit: "is beyond the 100 inboxes one view reads",
   account_unavailable: "could not be read",
 };
+const issueText = (issue: { error: string; reason?: string }) =>
+  (isGmailReason(issue.reason) ? GMAIL_REASON_TEXT[issue.reason].short : ISSUE_TEXT[issue.error]) ?? ISSUE_TEXT.account_unavailable;
+/** An issue a sign-in on Google's page fixes: the banner offers it in one click. */
+const needsReconnect = (issue: { error: string; reason?: string }) =>
+  isGmailReason(issue.reason) ? GMAIL_REASON_TEXT[issue.reason].action === "reconnect" : issue.error === "reconnect_required";
 const OPEN_GROUPS_KEY = "fabric-inbox:open-groups";
 function readOpenGroups(): Set<TriageGroup> {
   try {
@@ -690,7 +699,7 @@ export default function UnifiedInbox() {
           <div className="fi-provider-errors" role="status">
             <strong>
               {issues.length === 1
-                ? `${accounts.find((a) => a.id === issues[0].accountId)?.email ?? issues[0].provider} ${ISSUE_TEXT[issues[0].error] ?? ISSUE_TEXT.account_unavailable}.`
+                ? `${accounts.find((a) => a.id === issues[0].accountId)?.email ?? issues[0].provider} ${issueText(issues[0])}.`
                 : `${issues.length} inboxes are unavailable; the rest of your mail is shown.`}
             </strong>
             {issues.length > 1 && (
@@ -701,12 +710,15 @@ export default function UnifiedInbox() {
             {issuesOpen && issues.length > 1 && (
               <ul>
                 {issues.map((i, index) => (
-                  <li key={index}>{accounts.find((a) => a.id === i.accountId)?.email ?? i.provider} {ISSUE_TEXT[i.error] ?? ISSUE_TEXT.account_unavailable}</li>
+                  <li key={index}>{accounts.find((a) => a.id === i.accountId)?.email ?? i.provider} {issueText(i)}</li>
                 ))}
               </ul>
             )}
+            {issues.some(needsReconnect) && (
+              <><a className="fi-text-button" href="/api/accounts/gmail/connect" target="_blank" rel="noreferrer">Reconnect in browser ↗</a>{" "}· </>
+            )}
             <button className="fi-text-button" disabled={checking} onClick={() => void checkForMail()}>Retry</button>{" "}
-            · <Link to="/accounts">Manage connections</Link>
+            · <Link to={settingsPath("accounts", issues.length === 1 ? issues[0].accountId : null)}>Why, and what to do</Link>
           </div>
         )}
         {stuck.length > 0 && (

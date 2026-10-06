@@ -376,6 +376,21 @@ select.fi-input { padding-right: 28px; }
 .fi-provider-card:disabled { opacity: 0.6; }
 .fi-provider-card:not(:disabled):hover { background: var(--pc-panel); }
 
+/* Gmail setup (SCN-051): numbered steps in Google Cloud, values to copy, the checks' verdicts. */
+.fi-setup-steps { display: grid; gap: 14px; margin: 14px 0 0; padding-left: 22px; font-size: 13px; }
+.fi-setup-steps > li > ul { margin: 6px 0 0; padding-left: 18px; }
+.fi-setup-steps .fi-hint { margin: 6px 0 0; }
+.fi-copy-value { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; }
+.fi-copy-value > .fi-hint:first-child { flex-basis: 100%; }
+.fi-copy-value code {
+  font-family: var(--pc-font-data); font-size: 12px; padding: 4px 8px; border-radius: var(--pc-radius-control);
+  border: 1px solid var(--pc-border); background: var(--pc-bg); overflow-wrap: anywhere; user-select: all; max-width: 100%;
+}
+.fi-checks { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.fi-checks li.is-ok strong { color: var(--pc-positive); }
+.fi-checks li.is-failed strong { color: var(--pc-negative); }
+.fi-checks li.is-unknown strong { color: var(--pc-warning); }
+
 /* Phone and narrow windows: the panel takes the list's place, with Back. Both stay in the
    same grid cell so the hidden list keeps its scroll position. */
 @media (max-width: 1150px) {

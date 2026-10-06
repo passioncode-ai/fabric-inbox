@@ -44,6 +44,8 @@ Contract: brand-contract v1
 | Spam | spam (the folder's name) |
 | Gmail | GMail |
 | Google | google (provider name) |
+| Google Cloud | google cloud, GCP (to a user) |
+| Testing | testing (the publishing status of a Google Cloud app, by its own name) |
 | OAuth | Oauth |
 | Cloudflare | CloudFlare |
 | Mac | mac (device name) |

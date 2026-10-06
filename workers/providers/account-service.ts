@@ -23,6 +23,7 @@ import {
   type SendInput,
 } from "./gmail-client";
 import type { InboxReadOptions, InboxMessage } from "../../shared/mail/inbox";
+import { isGmailReason, type GmailReason } from "../../shared/mail/gmail-reasons";
 import { GMAIL_FOLDERS, GmailCache, gmailInboxMessage, inFolder, keyPart, msgKey, type GmailFolder, type InboxCounts, type StoredMessage } from "./gmail-cache";
 export { GMAIL_FOLDERS, type GmailFolder } from "./gmail-cache";
 import { GmailSync, normalizeSync, type SyncState } from "./gmail-sync";
@@ -64,8 +65,47 @@ export interface AccountRecord {
   failures?: number;
   /** Messages set aside after failing MAX_MESSAGE_ATTEMPTS times (kept under `skipped:`). */
   skipped?: number;
+  /** Why it stopped working, in a word the app turns into a sentence (shared/mail/gmail-reasons.ts). */
+  reason?: GmailReason;
+  /** When access was last given on Google's page (connect or reconnect): dates a 7-day Testing expiry. */
+  connectedAt?: number;
+  /** When Google said this access ends, if it gave an end (time-limited access, a Testing app). */
+  accessUntil?: number;
 }
 export type PublicAccount = Omit<AccountRecord, "credentials">;
+const DAY = 86_400_000;
+/**
+ * Google's answer to a refresh, "invalid_grant", says only that the grant is gone. A grant that ends
+ * about 7 days after it was given is a Testing app's (Google's stated expiry); one that ends on the
+ * date Google gave is too. Anything else was removed: in the Google account, by a password change,
+ * or after six months unused.
+ */
+export function grantEndReason(account: Pick<AccountRecord, "connectedAt" | "accessUntil">, now = Date.now()): GmailReason {
+  if (account.accessUntil && now >= account.accessUntil - 3_600_000) return "testing_expiry";
+  const age = account.connectedAt ? now - account.connectedAt : -1;
+  return age >= 7 * DAY - 2 * 3_600_000 && age <= 9 * DAY ? "testing_expiry" : "access_revoked";
+}
+/**
+ * What a failure says about the account itself, or null when it concerns one request only (a
+ * message gone, Gmail busy). The same answer is kept on the account by a sync and by a write.
+ */
+export function accountProblem(error: unknown, account: Pick<AccountRecord, "connectedAt" | "accessUntil">, now = Date.now()):
+  { status: AccountRecord["status"]; error: string; reason?: GmailReason } | null {
+  if (!(error instanceof ProviderError)) return null;
+  switch (error.code) {
+    case "reconnect_required":
+      return { status: "reconnect_required", error: "reconnect_required",
+        reason: error.reason === "invalid_grant" ? grantEndReason(account, now) : isGmailReason(error.reason) ? error.reason : undefined };
+    case "insufficient_scope":
+      return { status: "reconnect_required", error: "reconnect_required", reason: "insufficient_scope" };
+    case "gmail_api_disabled":
+      return { status: "error", error: "gmail_api_disabled", reason: "gmail_api_disabled" };
+    case "google_client_rejected":
+      return { status: "error", error: "google_client_rejected", reason: "client_rejected" };
+    default:
+      return null;
+  }
+}
 export interface SendRequest extends SendInput {
   idempotencyKey: string;
 }
@@ -212,6 +252,8 @@ export class AccountService {
       runtime: "cloud",
       status: "connected",
       createdAt: existing?.createdAt || Date.now(),
+      connectedAt: Date.now(),
+      ...(credentials.refreshExpiresAt ? { accessUntil: credentials.refreshExpiresAt } : {}),
       credentials: await seal(config.encryptionKey, id, credentials),
       sync: existing?.sync || { mode: "initial" },
     };
@@ -236,7 +278,9 @@ export class AccountService {
         account.credentials,
       );
     } catch {
-      throw new ProviderError("credential_store_unavailable", 503);
+      // The key the server holds cannot open what was sealed for this account: only a reconnect
+      // gives it access again (a missing key is not_configured, above).
+      throw new ProviderError("reconnect_required", 401, "credentials_unreadable");
     }
     return new GmailClient(
       this.env,
@@ -251,6 +295,33 @@ export class AccountService {
       },
       this.http,
     );
+  }
+  /**
+   * Runs work against Gmail for one account. A failure that is about the account rather than this
+   * one request (the grant gone, the Gmail API off, the client refused) is kept on the account, so
+   * the inbox and Settings say why, the same as when a sync meets it.
+   */
+  private withGmail<T>(account: AccountRecord, work: (client: GmailClient) => Promise<T>): Promise<T> {
+    return this.noting(account.id, async () => work(await this.client(account)));
+  }
+  private async noting<T>(accountId: string, work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      await this.noteProblem(accountId, error);
+      throw error;
+    }
+  }
+  private async noteProblem(accountId: string, error: unknown) {
+    const current = await this.store.get<AccountRecord>("account:" + accountId);
+    if (!current) return;
+    const problem = accountProblem(error, current);
+    if (!problem || (current.status === problem.status && current.error === problem.error && current.reason === problem.reason)) return;
+    current.status = problem.status;
+    current.error = problem.error;
+    if (problem.reason) current.reason = problem.reason; else delete current.reason;
+    await this.store.put("account:" + accountId, current);
+    console.warn(JSON.stringify({ event: "gmail_account_problem", error: problem.error, reason: problem.reason ?? null }));
   }
   private async saveMessage(account: AccountRecord, message: Message, options: { bodyless?: boolean } = {}) {
     await this.cache.save(account.id, message, account.sync.generation, options);
@@ -268,7 +339,7 @@ export class AccountService {
       throw new ProviderError("message_not_found", 404);
     // Imported with its headers only (older mail): its body is read from Gmail when first opened.
     if (row.bodyless) {
-      const fresh = normalizeMessage(accountId, await (await this.client(account)).message(messageId));
+      const fresh = normalizeMessage(accountId, await this.withGmail(account, (client) => client.message(messageId)));
       await this.saveMessage(account, fresh);
       return fresh;
     }
@@ -276,7 +347,7 @@ export class AccountService {
     // the right people. Gmail out of reach is no reason to fail the read; the cached copy stands.
     if (!("cc" in row.message)) {
       try {
-        const fresh = normalizeMessage(accountId, await (await this.client(account)).message(messageId));
+        const fresh = normalizeMessage(accountId, await this.withGmail(account, (client) => client.message(messageId)));
         await this.saveMessage(account, fresh);
         return fresh;
       } catch (error) {
@@ -389,9 +460,9 @@ export class AccountService {
     // History starts with the import, which records where it begins; an imported account has no import page.
     if ((kind === "history" && !account.sync.historyId) || (kind === "import" && account.sync.mode === "history"))
       return { account: publicAccount(account), more: false };
-    const client = await this.client(account);
     let more: boolean;
     try {
+      const client = await this.client(account);
       const page = kind === "history"
         ? await this.syncer.historyPage(account.id, account.sync, client)
         : await this.syncer.importPage(account.id, account.sync, client, deadline);
@@ -400,6 +471,7 @@ export class AccountService {
       account.status = account.sync.mode === "initial" ? "syncing" : "connected";
       account.lastSyncAt = Date.now();
       delete account.error;
+      delete account.reason;
       delete account.retryAt;
       delete account.failures;
     } catch (error) {
@@ -413,14 +485,15 @@ export class AccountService {
         console.warn(JSON.stringify({ event: "gmail_history_expired" }));
         return { account: publicAccount(account), more: true };
       }
-      account.error = error instanceof ProviderError ? error.code : "sync_failed";
-      account.status = account.error === "reconnect_required" ? "reconnect_required"
-        : account.error === "rate_limited" ? "rate_limited" : "error";
+      const problem = accountProblem(error, account);
+      account.error = problem?.error ?? (error instanceof ProviderError ? error.code : "sync_failed");
+      account.status = problem?.status ?? (account.error === "rate_limited" ? "rate_limited" : "error");
+      if (problem?.reason) account.reason = problem.reason; else delete account.reason;
       account.failures = (account.failures ?? 0) + 1;
       account.retryAt = Date.now() + (account.status === "rate_limited" ? MAX_RETRY_MS
         : Math.min(RETRY_MS * 2 ** (account.failures - 1), MAX_RETRY_MS));
       await this.store.put("account:" + accountId, account);
-      console.warn(JSON.stringify({ event: "gmail_sync_failed", kind, error: account.error, failures: account.failures }));
+      console.warn(JSON.stringify({ event: "gmail_sync_failed", kind, error: account.error, reason: account.reason ?? null, failures: account.failures }));
       throw error;
     }
     await this.store.put("account:" + accountId, account);
@@ -529,6 +602,7 @@ export class AccountService {
       receipt.status = "unknown";
       receipt.error =
         error instanceof ProviderError ? error.code : "send_outcome_unknown";
+      await this.noteProblem(account.id, error);
     }
     // A failed durable receipt write leaves 'sending'; future attempts resolve to unknown, never resend.
     await this.store.put(key, receipt);
@@ -585,14 +659,12 @@ export class AccountService {
   ) {
     keyPart(messageId);
     const account = await this.account(accountId);
-    const client = await this.client(account);
-    await change(client);
     // Read full provider state after acknowledgement; never optimistically cache labels.
     // A timeout or a failed read rejects and leaves the previous cache intact.
-    const message = normalizeMessage(
-      accountId,
-      await client.message(messageId),
-    );
+    const message = await this.withGmail(account, async (client) => {
+      await change(client);
+      return normalizeMessage(accountId, await client.message(messageId));
+    });
     await this.saveMessage(account, message);
     return message;
   }
@@ -605,7 +677,7 @@ export class AccountService {
     keyPart(messageId);
     if (!attachmentId || attachmentId.length > 2048)
       throw new ProviderError("invalid_id", 400);
-    return (await this.client(account)).attachment(messageId, attachmentId);
+    return this.withGmail(account, (client) => client.attachment(messageId, attachmentId));
   }
   async disconnect(accountId: string) {
     const account = await this.account(accountId);
@@ -708,7 +780,7 @@ export class AccountService {
     keyPart(messageId);
     const account = await this.account(accountId);
     try {
-      const raw = await (await this.client(account)).messageHeaders(messageId);
+      const raw = await this.withGmail(account, (client) => client.messageHeaders(messageId));
       return { headers: (raw.payload?.headers ?? []).map((h) => ({ key: h.name, value: h.value })) };
     } catch (error) {
       if (error instanceof ProviderError && error.code === "not_found") throw new ProviderError("message_not_found", 404);
@@ -723,24 +795,28 @@ export class AccountService {
   async listDrafts(accountId: string, pageToken?: string) {
     const account = await this.account(accountId);
     if (pageToken !== undefined && !/^[A-Za-z0-9_-]{1,200}$/.test(pageToken)) throw new ProviderError("invalid_filter", 400);
-    const client = await this.client(account);
-    const page = await client.listDrafts(pageToken);
-    const drafts: ReturnType<typeof gmailDraft>[] = [];
-    for (const d of page.drafts ?? []) {
-      try { drafts.push(gmailDraft(accountId, await client.getDraft(d.id), false)); }
-      catch (error) { if (!(error instanceof ProviderError && error.code === "not_found")) throw error; /* sent or deleted meanwhile */ }
-    }
-    return { drafts, nextCursor: page.nextPageToken ?? null };
+    return this.withGmail(account, async (client) => {
+      const page = await client.listDrafts(pageToken);
+      const drafts: ReturnType<typeof gmailDraft>[] = [];
+      for (const d of page.drafts ?? []) {
+        try { drafts.push(gmailDraft(accountId, await client.getDraft(d.id), false)); }
+        catch (error) { if (!(error instanceof ProviderError && error.code === "not_found")) throw error; /* sent or deleted meanwhile */ }
+      }
+      return { drafts, nextCursor: page.nextPageToken ?? null };
+    });
   }
   async getDraft(accountId: string, draftId: string) {
     keyPart(draftId);
     const account = await this.account(accountId);
-    return gmailDraft(accountId, await draftOrMissing((await this.client(account)).getDraft(draftId)), true);
+    return gmailDraft(accountId, await this.withGmail(account, (client) => draftOrMissing(client.getDraft(draftId))), true);
   }
   async updateDraft(accountId: string, draftId: string, request: SendInput & { expectedRevision?: string; keepAttachments?: string[] }) {
     keyPart(draftId);
     const account = await this.account(accountId);
-    const client = await this.client(account);
+    return this.withGmail(account, (client) => this.replaceDraft(account, client, draftId, request));
+  }
+  private async replaceDraft(account: AccountRecord, client: GmailClient, draftId: string, request: SendInput & { expectedRevision?: string; keepAttachments?: string[] }) {
+    const accountId = account.id;
     const { expectedRevision, keepAttachments, ...input } = request;
     const current = await draftOrMissing(client.getDraft(draftId));
     if (expectedRevision !== undefined && current.message.id !== expectedRevision) throw new ProviderError("draft_conflict", 409);
@@ -760,7 +836,7 @@ export class AccountService {
   async deleteDraft(accountId: string, draftId: string) {
     keyPart(draftId);
     const account = await this.account(accountId);
-    await draftOrMissing((await this.client(account)).deleteDraft(draftId));
+    await this.withGmail(account, (client) => draftOrMissing(client.deleteDraft(draftId)));
     return { deleted: draftId };
   }
   /** Sends a draft as Gmail holds it, once per idempotency key (its receipt is a send receipt). */
@@ -778,8 +854,8 @@ export class AccountService {
     // A retry after the draft went out (and Gmail removed it) answers the first attempt.
     const old = await this.store.get<StoredSend>(key);
     if (old) { if (old.digest !== digest) throw new ProviderError("idempotency_conflict", 409); return answer(old); }
-    const client = await this.client(account);
-    const current = await draftOrMissing(client.getDraft(draftId, "minimal"));
+    const client = await this.noting(account.id, () => this.client(account));
+    const current = await this.noting(account.id, () => draftOrMissing(client.getDraft(draftId, "minimal")));
     if (expectedRevision !== undefined && current.message.id !== expectedRevision) throw new ProviderError("draft_conflict", 409);
     const reservation = await this.store.transaction(async (tx) => {
       const existing = await tx.get<StoredSend>(key);
@@ -797,6 +873,7 @@ export class AccountService {
     } catch (error) {
       receipt.status = "unknown";
       receipt.error = error instanceof ProviderError ? error.code : "send_outcome_unknown";
+      await this.noteProblem(account.id, error);
     }
     await this.store.put(key, receipt);
     const { digest: _, ...publicReceipt } = receipt;

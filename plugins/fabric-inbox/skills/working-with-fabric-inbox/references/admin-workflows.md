@@ -106,8 +106,11 @@ account's Email Routing rules. `apply_setup` applies one — two-step, never del
 
 ## What a person does
 
-Connecting a Gmail account, issuing or revoking an agent key, and pasting a Cloudflare token are
-the person's own acts. `gmail_connect_link` gives the address they open to connect Gmail;
+Connecting a Gmail account, setting Gmail up on the server (the Google client secret), issuing or
+revoking an agent key, and pasting a Cloudflare token are the person's own acts.
+`gmail_setup_status` says what the Gmail setup lacks and the exact values the owner copies into
+Google Cloud; `check_gmail_setup` checks the saved client with Google and names what to fix.
+`gmail_connect_link` gives the address they open to connect Gmail;
 `list_agent_keys` lists the keys (no secrets); keys are made in Settings → Agent access and tokens
 pasted in Settings → Accounts.
 

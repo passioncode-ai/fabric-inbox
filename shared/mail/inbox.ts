@@ -9,6 +9,8 @@ export interface InboxAccount {
   name: string;
   status: string;
   error?: string;
+  /** Why a Gmail account stopped working (shared/mail/gmail-reasons.ts); absent while it works. */
+  reason?: string;
   lastSyncAt?: number;
   /** Unread messages in this account's inbox; sent with the first page only. */
   unread?: number;
@@ -57,6 +59,8 @@ export interface InboxIssue {
   accountId?: string;
   provider: InboxProvider;
   error: string;
+  /** The account's own reason, when it has one (shared/mail/gmail-reasons.ts). */
+  reason?: string;
 }
 export interface InboxResponse {
   accounts: InboxAccount[];

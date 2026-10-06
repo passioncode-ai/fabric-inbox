@@ -5,6 +5,22 @@ const require = createRequire(import.meta.url);
 const { serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, partitionFor, isSetupSender } = require('../desktop/policy.cjs');
 const config = validateConfig({ origin: 'https://mail.example.com', accessOrigin: 'https://team.cloudflareaccess.com' });
 
+test('Create my server offers the Gmail setup next, off by default and skippable (SCN-030, SCN-051)', async () => {
+  const { afterDeployPage } = require('../desktop/policy.cjs');
+  assert.equal(afterDeployPage({ gmail: true }), '/settings/accounts?connect=gmail');
+  assert.equal(afterDeployPage({ gmail: false }), '/settings/domains');
+  assert.equal(afterDeployPage({ gmail: 'yes' }), '/settings/domains', 'only a real choice opens it');
+  assert.equal(afterDeployPage(undefined), '/settings/domains');
+  const { readFile } = await import('node:fs/promises');
+  const html = await readFile(new URL('../desktop/setup.html', import.meta.url), 'utf8');
+  assert.match(html, /<input id="cf-gmail" type="checkbox" aria-describedby="cf-gmail-help">/, 'unchecked unless the person ticks it');
+  assert.match(html, /Then set up Gmail \(optional\)/);
+  const js = await readFile(new URL('../desktop/setup.js', import.meta.url), 'utf8');
+  assert.match(js, /gmail: \$\('#cf-gmail'\)\.checked/);
+  const main = await readFile(new URL('../desktop/main.cjs', import.meta.url), 'utf8');
+  assert.match(main, /openAfterSignIn = policy\.afterDeployPage\(input\)/);
+});
+
 test('settings reject credentials, paths and nonlocal cleartext', () => {
   for (const value of ['http://mail.example.com', 'file:///etc/passwd', 'javascript:alert(1)', 'https://a:b@mail.example.invalid', 'https://mail.example.com/settings', 'https://mail.example.com?token=x', 'https://mail.example.com#x', 'https://mail.example.com\\@evil.example', 'https://mail.example.com\n.evil.example']) {
     assert.throws(() => serverOrigin(value), value);

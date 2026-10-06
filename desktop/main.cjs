@@ -470,7 +470,7 @@ function installIPC() {
       cloudflareToken = null;
       await saveConfig(policy.validateConfig({ origin: result.origin, accessOrigin: result.accessOrigin }));
       track('server_connected', { method: 'created' });
-      openAfterSignIn = '/settings/domains';
+      openAfterSignIn = policy.afterDeployPage(input);
       loadMail();
       return { ok: true, origin: result.origin };
     } catch (error) {

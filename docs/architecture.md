@@ -96,6 +96,16 @@ layout, index, counters, migration), `gmail-sync.ts` (one page of history or of 
 `gmail-scheduler.ts` (when each account syncs), `account-service.ts` (accounts, credentials,
 actions, sends) and `accounts-do.ts` (the object and its lock).
 
+**Setup and reasons** (0.11). The server sets up its own Google client from Settings
+(`workers/routes/gmail-setup.ts`: a check with Google's token endpoint and sign-in page in
+`workers/gmail-setup/google-check.ts`, one settings change with its own Cloudflare token in
+`workers/gmail-setup/server-settings.ts`). Connecting ends on a page per outcome
+(`workers/gmail-setup/result-page.ts`). A failure about the account itself — the grant gone (7
+days after connecting is a Testing app's expiry), the Gmail API off, the scope missing, the client
+refused, the saved access unreadable — is kept on the account as `reason`, from a sync
+(`syncPage`) and from a write (`withGmail`) alike (`accountProblem` in `account-service.ts`); the
+words for each are in `shared/mail/gmail-reasons.ts`. Setup steps: [setup → Gmail](desktop-mail/setup.md#gmail).
+
 **Sync model** (`gmail-sync.ts`). Connecting an account records Gmail's `historyId` before
 anything is listed, and every sync reads history first, to its last page: new mail, label changes
 and deletions reach the cache even while an import runs, and history no longer falls behind into
@@ -351,9 +361,10 @@ read with a default where it is missing, never assumed present.
 | `workers/knowledge/` | knowledge store (`KnowledgeDO`) and pure text work (chunking, FTS query quoting) |
 | `workers/automation/` | rules engine, policy, MCP client |
 | `workers/providers/` | Gmail OAuth, client, cache, sync loop, scheduler, account service, `GmailAccountsDO` |
+| `workers/gmail-setup/` | the Gmail setup: the self-test against Google, the server's own settings write, the connect result page |
 | `workers/routing/` | Cloudflare API client, the accounts the tokens reach (`accounts.ts`), Email Routing status, `DomainManager` (domains, rules, catch-all, sending, destinations), setup from routing |
 | `workers/relay/` | the relay Worker's source, installing it in another account, and where it hands mail over |
-| `workers/routes/` | accounts, unified inbox, agents and project addresses, categories and projects, domains, setups |
+| `workers/routes/` | accounts, Gmail setup, unified inbox, agents and project addresses, categories and projects, domains, setups |
 | `workers/lib/` | mailbox store (settings, served domains, catch-alls, delete), applying a setup, security headers |
 | `workers/mcp/` | the agent protocol: identity and keys, Access service tokens, tools, the ledger, instructions |
 | `workers/api.ts` | every JSON route as one app, mounted by `workers/app.ts` and called in-process by the agent protocol |

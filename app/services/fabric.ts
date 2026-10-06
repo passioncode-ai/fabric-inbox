@@ -45,6 +45,12 @@ export type Account = {
   status: string;
   lastSyncAt?: number;
   error?: string;
+  /** Why it stopped working (shared/mail/gmail-reasons.ts). */
+  reason?: string;
+  /** When access was last given on Google's page. */
+  connectedAt?: number;
+  /** When Google said this access ends (a Testing app's 7 days), if it gave an end. */
+  accessUntil?: number;
 };
 export type AccountList = {
   configuration: string;

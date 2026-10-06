@@ -119,7 +119,7 @@ export async function readInbox(params: URLSearchParams, sources: InboxSources, 
     while (next < reading.length) {
       const a = reading[next++];
       if (a.error || ["reconnect_required", "rate_limited", "error"].includes(a.status))
-        issues.push({ accountId: a.id, provider: a.provider, error: a.error || a.status });
+        issues.push({ accountId: a.id, provider: a.provider, error: a.error || a.status, ...(a.reason ? { reason: a.reason } : {}) });
       try { messages.push(...await sources.messages(a, options)); }
       catch (error) {
         a.error = publicError(error);

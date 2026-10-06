@@ -14,15 +14,15 @@ import {
 import { DOMAINS_KEY, GMAIL_KEY, refreshMail, useDomains, useGmailAccounts } from "./data";
 import { PermissionTable } from "./DomainsSection";
 import { AVAILABILITY_TEXT, PROVIDERS, availability, type ProviderEntry, type ProviderId } from "./providers";
+import { GmailConnectStep, GmailProblem, GmailSetupWizard, useGmailSetup } from "./GmailSetup";
 
 /** Where a person creates a token; an account-owned one is under the account's own Manage Account page. */
 const TOKEN_PAGE = "https://dash.cloudflare.com/profile/api-tokens";
-const GMAIL_CONNECT = "/api/accounts/gmail/connect";
 
 type AccountEntry = ListEntry & ({ kind: "cloudflare"; account: CloudflareAccount } | { kind: "gmail"; account: Account });
 
 const GROUPS = [{ id: "cloudflare", label: "Cloudflare" }, { id: "gmail", label: "Gmail" }];
-const ICONS: Record<ProviderId, typeof CloudIcon> = { cloudflare: CloudIcon, gmail: GoogleLogoIcon, imap: EnvelopeSimpleIcon, microsoft: MicrosoftOutlookLogoIcon };
+const ICONS: Record<ProviderId, typeof CloudIcon> = { cloudflare: CloudIcon, gmail: GoogleLogoIcon, "gmail-app-password": GoogleLogoIcon, imap: EnvelopeSimpleIcon, microsoft: MicrosoftOutlookLogoIcon };
 
 export function describeCloudflare(a: CloudflareAccount): string {
   const mail = a.hasMail === true ? "Has mail" : a.hasMail === false ? "No mail yet" : "Mail not checked";
@@ -90,7 +90,7 @@ export default function AccountsSection({ id }: { id: string | null }) {
     <CloudflarePanel key={selected.key} account={selected.account} entryKey={selected.key}
       onRemoved={() => navigate(settingsPath("accounts"), { replace: true, preventScrollReset: true })} />
   ) : (
-    <GmailPanel key={selected.key} account={selected.account} entryKey={selected.key}
+    <GmailPanel key={selected.key} account={selected.account} entryKey={selected.key} onSetup={() => setConnecting("gmail")}
       onRemoved={() => navigate(settingsPath("accounts"), { replace: true, preventScrollReset: true })} />
   );
 
@@ -183,10 +183,19 @@ function CloudflarePanel({ account: a, entryKey, onRemoved }: { account: Cloudfl
   );
 }
 
-function GmailPanel({ account: a, entryKey, onRemoved }: { account: Account; entryKey: string; onRemoved: () => void }) {
+function GmailPanel({ account: a, entryKey, onRemoved, onSetup }: { account: Account; entryKey: string; onRemoved: () => void; onSetup: () => void }) {
   const client = useQueryClient();
   const confirm = useConfirm();
   const work = useWork(entryKey);
+  const setup = useGmailSetup(!!a.reason);
+  const retry = () => void work.run("Retrying…", async () => {
+    try {
+      await fabric(accountPath(a.id) + "/sync", {});
+      return `${a.email} synced.`;
+    } finally {
+      await Promise.all([client.invalidateQueries({ queryKey: GMAIL_KEY }), client.invalidateQueries({ queryKey: ["unified-inbox"] })]);
+    }
+  });
   const disconnect = async () => {
     const ok = await confirm({
       title: `Disconnect ${a.email}?`,
@@ -209,12 +218,7 @@ function GmailPanel({ account: a, entryKey, onRemoved }: { account: Account; ent
       menu={<ActionMenu label={`More actions for ${a.email}`} actions={[{ label: `Disconnect ${a.email}…`, danger: true, onSelect: () => void disconnect() }]} />}>
       <PanelBlock title="Sync">
         <p>{a.lastSyncAt ? `Last sync ${new Date(a.lastSyncAt).toLocaleString()}.` : "Waiting for the first sync."}</p>
-        {a.error && (
-          <div className="fi-callout is-bad" role="alert">
-            <p>{a.error}</p>
-            <p><a href={GMAIL_CONNECT} target="_blank" rel="noreferrer">Connect it again in the browser ↗</a></p>
-          </div>
-        )}
+        <GmailProblem account={a} projectNumber={setup.data?.projectNumber ?? null} onRetry={retry} onSetup={onSetup} busy={!!work.busy} />
         <div className="fi-buttons">
           <Link className="fi-secondary" to={"/?account=" + encodeURIComponent("gmail:" + a.id)}>Open its mail</Link>
           <Link className="fi-secondary" to={"/automation/" + encodeURIComponent("gmail:" + a.id)}>Rules and history</Link>
@@ -240,12 +244,14 @@ function ConnectDialog({ open, provider, onChoose, onClose, list, gmailState }: 
           {PROVIDERS.map((p) => <ProviderCard key={p.id} provider={p} state={availability(p, state)} onChoose={() => onChoose(p.id)} />)}
         </div>
       ) : chosen.id === "gmail" ? (
-        <ConnectGmail state={gmailState} onBack={() => onChoose("")} />
+        <ConnectGmail state={gmailState} onBack={() => onChoose("")} onClose={onClose} />
       ) : chosen.id === "cloudflare" ? (
         <ConnectCloudflareAccount list={list} onBack={() => onChoose("")} onClose={onClose} />
       ) : (
         <>
           <p>{chosen.name} connections are not available in this build. {chosen.summary}</p>
+          {chosen.tradeoff && <p className="fi-hint">Compared with connecting through Google: {chosen.tradeoff}</p>}
+          {chosen.helpUrl && <p><a href={chosen.helpUrl} target="_blank" rel="noreferrer">What it needs, on the provider's help page ↗</a></p>}
           <div className="fi-dialog-actions"><button type="button" className="fi-secondary" data-autofocus onClick={() => onChoose("")}>Back</button></div>
         </>
       )}
@@ -265,21 +271,37 @@ function ProviderCard({ provider, state, onChoose }: { provider: ProviderEntry; 
   );
 }
 
-function ConnectGmail({ state, onBack }: { state: ReturnType<typeof gmailSetupState>; onBack: () => void }) {
+/**
+ * SCN-051 then SCN-002: a server without Google set up shows the setup steps; one with it set up
+ * connects an account in the browser. "Use another Google client…" opens the steps again.
+ */
+function ConnectGmail({ state, onBack, onClose }: { state: ReturnType<typeof gmailSetupState>; onBack: () => void; onClose: () => void }) {
+  const client = useQueryClient();
+  const setup = useGmailSetup(state === "configured" || state === "not-configured");
+  const [replacing, setReplacing] = useState(false);
+  if (state === "loading" || (state !== "unavailable" && setup.isPending))
+    return <p role="status">Checking Gmail setup…</p>;
+  if (state === "unavailable" || setup.isError)
+    return (
+      <>
+        <p role="alert">Gmail setup is unknown: {setup.isError ? errorText(setup.error) : "the accounts did not load."}</p>
+        <div className="fi-dialog-actions"><button type="button" className="fi-secondary" data-autofocus onClick={onBack}>Back</button></div>
+      </>
+    );
+  const data = setup.data!;
+  if (state === "configured" && data.configured && !replacing)
+    return (
+      <>
+        <GmailConnectStep setup={data} onReplace={() => setReplacing(true)} />
+        <div className="fi-dialog-actions"><button type="button" className="fi-secondary" onClick={onBack}>Back</button></div>
+      </>
+    );
   return (
     <>
-      {state === "configured" ? (
-        <p>Gmail is connected in your browser: sign in with Google there and allow access. Each Google account is connected separately; it appears here when the browser is done.</p>
-      ) : state === "not-configured" ? (
-        <p>Gmail connection is not configured on this server. Set up Google OAuth to enable it.</p>
-      ) : state === "loading" ? (
-        <p role="status">Checking Gmail setup…</p>
-      ) : (
-        <p>Gmail setup is unknown until accounts load.</p>
-      )}
+      <GmailSetupWizard setup={data} onSaved={() => { setReplacing(false); void client.invalidateQueries({ queryKey: GMAIL_KEY }); }} />
       <div className="fi-dialog-actions">
-        <button type="button" className="fi-secondary" onClick={onBack}>Back</button>
-        {state === "configured" && <a className="fi-primary" data-autofocus href={GMAIL_CONNECT} target="_blank" rel="noreferrer">Connect Gmail in browser ↗</a>}
+        <button type="button" className="fi-secondary" onClick={replacing ? () => setReplacing(false) : onBack}>Back</button>
+        <button type="button" className="fi-secondary" onClick={onClose}>Later</button>
       </div>
     </>
   );
