@@ -248,8 +248,11 @@ export function WorkProvider({ children }: { children: ReactNode }) {
     setResults((r) => { const { [at]: _gone, ...rest } = r; return rest; });
     try {
       const text = await action();
-      setResults((r) => ({ ...r, [at]: { tone: "ok", text } }));
-      notify(text);
+      // An empty answer means the action stopped to ask something; there is nothing to report yet.
+      if (text) {
+        setResults((r) => ({ ...r, [at]: { tone: "ok", text } }));
+        notify(text);
+      }
       return true;
     } catch (error) {
       const text = errorText(error);
