@@ -24,7 +24,8 @@ works; the live tool schemas have every input.
   `state` says whether the domain receives here (`can_receive` means `connect_domain` first;
   `needs_fix` means its Email Routing must be fixed — `connect_domain` again); each name is
   `available`, `exists`, `elsewhere` (a Cloudflare rule sends it somewhere else — tell the person
-  where, do not override it) or `invalid` (with why). Read its `notes` to the person: the catch-all
+  where, do not override it), `invalid` (with why) or `restricted` (the server creates only the
+  addresses its `EMAIL_ADDRESSES` setting lists). Read its `notes` to the person: the catch-all
   keeping that address's mail today, mail that arrived for it recently, role names.
 - **Create:** `create_address` with `localPart`, `domain`, optionally `name` (default: the name,
   capitalised), `signature`, `agent`, `forwardTo`; several at once: `create_addresses` with

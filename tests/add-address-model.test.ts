@@ -144,6 +144,8 @@ test("every entry point opens the one dialog, and the dialog keeps the keyboard 
   assert.match(dialog, /role="combobox"/, "the domain choice is a searchable combobox");
   assert.match(dialog, /aria-activedescendant/);
   assert.match(dialog, /TEST_POLL_MS/, "the test is polled");
+  assert.match(dialog, /ref=\{namesField\}/, "the names box can take the focus");
+  assert.match(dialog, /\(mode === "one" \? nameField : namesField\)\.current\?\.focus\(\)/, "Add another puts the focus in the field of the mode in use");
   assert.match(dialog, /FIXABLE\.has\(s\.outcome\)/, "a step's fix is offered whenever its outcome is fixable");
   assert.match(readFileSync("app/components/settings/sections/add-address-model.ts", "utf8"), /FIXABLE = new Set<UiOutcome>\(\["failed", "skipped", "not_receiving"\]\)/,
     "Not receiving yet carries its fix like a failed step");

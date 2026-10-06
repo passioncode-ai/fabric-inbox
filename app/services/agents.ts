@@ -59,7 +59,7 @@ export type DomainState = "receiving" | "can_receive" | "needs_fix" | "no_token"
 export interface NameCheck {
   localPart: string;
   email: string;
-  status: "available" | "exists" | "elsewhere" | "invalid";
+  status: "available" | "exists" | "elsewhere" | "invalid" | "restricted";
   detail: string;
   notes: string[];
 }

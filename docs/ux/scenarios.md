@@ -1294,7 +1294,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** The dialog is open on a domain.
 - **Steps:**
   1. Type the part before @ -> letters are kept lower case, and the field says at once what is wrong: a character that is not a letter, digit, dot, dash, underscore or plus; a dot or symbol at the start or end; two dots together; more than 64 characters.
-  2. Pause typing -> the server checks the address: free here; already an address here (Open it); a Cloudflare rule already sends it somewhere else (where, and what to do); Cloudflare already sends it here; the domain's catch-all keeps its mail today; mail arrived for it recently.
+  2. Pause typing -> the server checks the address: free here; already an address here (Open it); a Cloudflare rule already sends it somewhere else (where, and what to do); this server creates only the addresses its EMAIL_ADDRESSES lists and this is not one (the same refusal Create would give); Cloudflare already sends it here; the domain's catch-all keeps its mail today; mail arrived for it recently.
   3. Type a role name (postmaster, abuse, hostmaster, webmaster, security, mailer-daemon) -> the field says who writes to that address, and Create still works.
 - **Expected result:** Before Create, the person knows whether the address can be made and what changes for mail already sent to it.
 - **Alt paths:** The names of recent mail to addresses that do not exist are offered as buttons that fill the field.
@@ -1318,7 +1318,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   3. It arrives -> Arrived, with the time and the folder it landed in; the new address is already selected in the list behind the dialog.
   4. Done -> the dialog closes and the focus moves to the address's panel.
 - **Expected result:** One surface shows that the address exists, that Cloudflare sends its mail here, and that a real message arrived — or exactly which of the three did not happen.
-- **Alt paths:** Add another keeps the domain and the settings and starts a new address; a test that is not ticked is offered again as Send a test message.
+- **Alt paths:** Add another keeps the domain and the settings and starts a new address, with the focus in the name field (in Several, the names box); a test that is not ticked is offered again as Send a test message.
 - **UI elements:** SCR-02; the step list (Done, Already so, Skipped, Not done, Not receiving yet, Waiting), Send a test message, Done, Add another.
 - **States covered:** loading, error, success
 - **Errors & recovery:** Every failed step says what happened, what was kept and the one action that fixes it; a test not arrived after 3 minutes is reported as not arrived with Check routing; a test the provider refused names the provider's reason.
@@ -1358,7 +1358,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   2. Set who answers, a copy, the signature and the test once -> they apply to every address; each address gets its own display name from its name (Support, Sales, Hello) unless one is typed for all.
   3. Create N addresses -> one row per address with its own steps; a failure on one never stops the others. The server creates as many as fit one request and hands the rest back; the dialog sends them again on its own (Creating the rest…) until every name is answered.
 - **Expected result:** A new project's usual addresses exist in one pass, and each one says whether it receives.
-- **Alt paths:** A name that is invalid or already taken is listed with its reason and skipped; Create counts only the names that can be made.
+- **Alt paths:** A name that is invalid or already taken is listed with its reason and skipped; Create counts only the names that can be made, and only those count toward the 50 (names past it are left out and said once, with how many).
 - **UI elements:** SCR-02; the names box, the per-name checks, the result table.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Each row carries its own failure and fix; up to 50 names at once. If the server's answer does not arrive (a timeout, no connection, a server error), the dialog reads the names back and lists which exist now (with their rule) and which do not — never "Nothing was created" — and when even that cannot be read, it says so and points to Addresses.

@@ -322,7 +322,10 @@ the rule exists but Email Routing is off or misconfigured for the domain, so a r
 done while no mail can arrive); with `createRoute: "auto"` a rule that cannot be
 made no longer costs the address (with `true` it still does). `checkAddresses`
 (`GET /api/project-addresses/check`) reads Cloudflare once for a domain and several names
-(`EmailRoutingClient.routingFor`) and says per name available, exists, elsewhere or invalid;
+(`EmailRoutingClient.routingFor`) and says per name available, exists, elsewhere, invalid or
+restricted (not in the deployment's `EMAIL_ADDRESSES`, which creating refuses too); it takes the
+names as a JSON array (`check_address`; a name is never split at a comma) or, from the dialog, a
+comma-separated list;
 `createAddresses` (`POST /api/project-addresses/batch`) creates up to 50 one after another with one
 routing client, so the zone, Email Routing's state and the rules are read once
 (`EmailRoutingClient` remembers them for the request and keeps them current as it changes rules)

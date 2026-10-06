@@ -66,6 +66,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
   const [sendTest, setSendTest] = useState<boolean | null>(null);
   const [run, setRun] = useState<Run | null>(null);
   const nameField = useRef<HTMLInputElement>(null);
+  const namesField = useRef<HTMLTextAreaElement>(null);
   const ids = { name: useId(), nameMsg: useId(), domain: useId(), domainMsg: useId(), names: useId(), live: useId() };
   const ready = open && options.length > 0;
 
@@ -220,7 +221,8 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
   const again = () => {
     setForm((f) => ({ ...EMPTY_FORM(f.domain), agent: f.agent, copy: f.copy, signatureOn: f.signatureOn, signature: f.signature, makeRule: f.makeRule }));
     setSeveral(""); setRun(null);
-    requestAnimationFrame(() => nameField.current?.focus());
+    // The form comes back in the mode in use: the focus goes to its field, never to the page.
+    requestAnimationFrame(() => (mode === "one" ? nameField : namesField).current?.focus());
   };
 
   const finished = !!run && !run.working && run.rows.some((r) => r.created);
@@ -279,7 +281,7 @@ export default function AddAddressDialog({ open, onClose, list, agents, data, in
               </div>
               <div className="fi-field">
                 <label htmlFor={ids.names}>{T.namesLabel}</label>
-                <textarea id={ids.names} className="fi-input" data-autofocus rows={4} value={several} placeholder={T.namesPlaceholder}
+                <textarea ref={namesField} id={ids.names} className="fi-input" data-autofocus rows={4} value={several} placeholder={T.namesPlaceholder}
                   spellCheck={false} aria-describedby={ids.live} onChange={(e) => setSeveral(e.target.value)} />
                 <span className="fi-hint">{T.namesHint}</span>
               </div>

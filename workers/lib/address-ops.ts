@@ -259,8 +259,11 @@ export async function removeAddress(env: Env, rawEmail: string): Promise<OpResul
  */
 export type DomainState = "receiving" | "can_receive" | "needs_fix" | "no_token" | "not_visible" | "unknown" | "unavailable";
 
-/** One name's answer: it can be created, it already exists here, a rule sends it elsewhere, or it is not a valid name. */
-export type NameStatus = "available" | "exists" | "elsewhere" | "invalid";
+/**
+ * One name's answer: it can be created, it already exists here, a rule sends it elsewhere, it is not
+ * a valid name, or this server creates only the addresses its EMAIL_ADDRESSES lists (restricted).
+ */
+export type NameStatus = "available" | "exists" | "elsewhere" | "invalid" | "restricted";
 
 export interface NameCheck {
   localPart: string;
@@ -346,6 +349,8 @@ export async function checkAddresses(env: Env, rawDomain: string, rawNames: stri
       : cfProblem ? `Cloudflare could not be read (${cfProblem}); the rule is tried when the address is created.`
         : `No rule can be made: none of this server's Cloudflare tokens can see ${domain}.`;
   const catchAllHere = !!cf?.catchAll?.enabled && cf.catchAll.toHere;
+  // The same rule creating applies (createAddress, createMailbox): a name the server would refuse is never shown free.
+  const allowed = allowedAddresses(env);
 
   const exists = await Promise.all(emails.map(async (e) => [e, !!(await env.BUCKET.head(settingsKey(e)))] as const));
   const existing = new Set(exists.filter(([, yes]) => yes).map(([e]) => e));
@@ -359,6 +364,9 @@ export async function checkAddresses(env: Env, rawDomain: string, rawNames: stri
     const email = `${c.value}@${domain}`;
     if (!c.valid) return { localPart: c.value, email, status: "invalid", detail: c.problem!, notes: [] };
     if (existing.has(email)) return { localPart: c.value, email, status: "exists", detail: `${email} already exists here.`, notes: [] };
+    if (allowed.length && !allowed.includes(email))
+      return { localPart: c.value, email, status: "restricted", notes: [],
+        detail: `This server creates only the addresses listed in EMAIL_ADDRESSES, and ${email} is not one of them. Add it there (the server's settings), then create it.` };
     const rule = cf?.rules.find((r) => r.address === email);
     if (rule && !rule.toHere)
       return { localPart: c.value, email, status: "elsewhere", notes: [],

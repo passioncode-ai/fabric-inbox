@@ -69,7 +69,21 @@ test("several names are read from lines, commas or spaces; duplicates, other dom
   assert.match(parsed.skipped[1]!.reason, /other\.test, not acme\.test/);
   const many = parseLocalParts(Array.from({ length: BATCH_MAX + 2 }, (_, i) => `n${i}`).join(","), "acme.test");
   assert.equal(many.entries.length, BATCH_MAX);
-  assert.equal(many.skipped.length, 2);
-  assert.match(many.skipped[0]!.reason, /At most 50/);
+  assert.equal(many.skipped.length, 1, "the names past the 50th are said once, with how many");
+  assert.match(many.skipped[0]!.reason, /2 more names were left out: at most 50 at once/);
   assert.deepEqual(parseLocalParts("  \n , ", "acme.test"), { entries: [], skipped: [] });
+});
+
+test("only names that can be created count toward the 50; the invalid ones are listed with why, and the overflow says how many", () => {
+  // Review F2 (20): invalid names used to take places in the 50, setting valid ones aside.
+  const valid = Array.from({ length: BATCH_MAX }, (_, i) => `v${i}`);
+  const parsed = parseLocalParts([...valid.slice(0, 10), "bad!", "-x", ...valid.slice(10), "late1", "late2", "late3"].join(" "), "acme.test");
+  const ok = parsed.entries.filter((e) => e.check.valid).map((e) => e.check.value);
+  assert.deepEqual(ok, valid, "all 50 valid names are kept although two invalid ones came first");
+  assert.deepEqual(parsed.entries.filter((e) => !e.check.valid).map((e) => e.input), ["bad!", "-x"], "invalid names are listed, with their reason");
+  assert.equal(parsed.skipped.length, 1);
+  assert.match(parsed.skipped[0]!.reason, /^3 more names were left out: at most 50 at once\.$/);
+  const flood = parseLocalParts(Array.from({ length: 200 }, (_, i) => `bad${i}!`).join(" "), "acme.test");
+  assert.equal(flood.entries.length, BATCH_MAX, "the list itself stays bounded");
+  assert.match(flood.skipped[0]!.reason, /^150 more names were left out/);
 });

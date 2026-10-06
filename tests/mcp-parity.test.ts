@@ -299,7 +299,7 @@ test("check_address asks the server about a domain and several names at once", a
   const { api, calls } = fakeApi({ "GET /api/project-addresses/check": ok(answer) });
   const r = await call(api, "check_address", { domain: "Shop.invalid", localParts: ["help", "sales"] });
   assert.equal(r.isError, false, JSON.stringify(r.data));
-  assert.deepEqual(calls[0]!.query, { domain: "shop.invalid", names: "help,sales" });
+  assert.deepEqual(calls[0]!.query, { domain: "shop.invalid", names: JSON.stringify(["help", "sales"]) }, "a JSON array: a name is never split");
   assert.deepEqual(r.data, answer);
   assert.throws(() => z.object(TOOLS.find((t) => t.name === "check_address")!.input).parse({ domain: "shop.invalid", localParts: Array.from({ length: 51 }, (_, i) => `n${i}`) }));
 });

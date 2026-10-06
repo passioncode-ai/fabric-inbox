@@ -268,17 +268,32 @@ agentsRouter.post("/api/project-addresses/batch", async (c) => {
 });
 
 /**
- * SCN-061: before creating, what the dialog and check_address say about a domain and some names
- * (`names`, comma-separated, up to 50). Read-only.
+ * The names of a check: a JSON array of strings (check_address; a name is never split, so one with a
+ * comma is checked as the one invalid name it is), or a comma-separated list (the dialog, whose names
+ * are already valid). An error, in words, when it is not a list of up to 50 names.
  */
+export function checkNames(raw: string | undefined): { names: string[] } | { error: string } {
+  const text = (raw ?? "").trim();
+  let names: unknown;
+  if (text.startsWith("[")) {
+    try { names = JSON.parse(text); } catch { return { error: "names must be a JSON array of strings, or names separated by commas" }; }
+    if (!Array.isArray(names) || !names.every((n) => typeof n === "string" && n.length <= 320))
+      return { error: "names must be a JSON array of strings (each at most 320 characters)" };
+  } else names = text.split(",");
+  const list = (names as string[]).map((n) => n.trim()).filter(Boolean);
+  if (list.length > BATCH_MAX) return { error: `At most ${BATCH_MAX} names at once` };
+  return { names: list };
+}
+
+/** SCN-061: before creating, what the dialog and check_address say about a domain and some names (checkNames). Read-only. */
 agentsRouter.get("/api/project-addresses/check", async (c) => {
   c.header("Cache-Control", "no-store");
   const domain = (c.req.query("domain") ?? "").trim().toLowerCase();
   if (!isDomainName(domain)) return c.json({ error: "Give the domain, e.g. domain=example.com" }, 400);
-  const names = (c.req.query("names") ?? "").split(",").map((n) => n.trim()).filter(Boolean);
-  if (names.length > BATCH_MAX) return c.json({ error: `At most ${BATCH_MAX} names at once` }, 400);
+  const parsed = checkNames(c.req.query("names"));
+  if ("error" in parsed) return c.json({ error: parsed.error }, 400);
   try {
-    return c.json(await checkAddresses(c.env, domain, names));
+    return c.json(await checkAddresses(c.env, domain, parsed.names));
   } catch (error) {
     console.error(JSON.stringify({ event: "address_check_error", domain, error: (error as Error).message }));
     return c.json({ error: "The address could not be checked right now. Try again." }, 503);

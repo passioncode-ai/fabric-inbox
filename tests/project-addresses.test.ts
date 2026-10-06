@@ -373,6 +373,30 @@ test("several addresses are created one by one, each with its own result; a bad 
 const names = (n: number) => Array.from({ length: n }, (_, i) => `n${i}`);
 const external = (cf: { calls: unknown[] }) => cf.calls.length;
 
+test("check says a name this server would refuse (EMAIL_ADDRESSES) cannot be created, as creating does (review 20)", async () => {
+  const h = environment();
+  (h.env as any).EMAIL_ADDRESSES = ["support@project.invalid"];
+  const r = await h.call("GET", "/api/project-addresses/check?domain=project.invalid&names=support,sales");
+  const n = byName(r.body);
+  assert.equal(n.support.status, "available");
+  assert.equal(n.sales.status, "restricted");
+  assert.match(n.sales.detail, /only the addresses listed in EMAIL_ADDRESSES/);
+  assert.equal((await h.call("POST", "/api/project-addresses", { localPart: "sales", domain: "project.invalid" })).status, 403, "and creating refuses it");
+});
+
+test("check takes the names as a JSON array, so a name with a comma is checked as one name, not split (review 20)", async () => {
+  const h = environment();
+  const q = encodeURIComponent(JSON.stringify(["a,b", "hello"]));
+  const r = await h.call("GET", `/api/project-addresses/check?domain=project.invalid&names=${q}`);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.names.map((x: any) => [x.localPart, x.status]), [["a,b", "invalid"], ["hello", "available"]]);
+  assert.match(r.body.names[0].detail, /“,” is not allowed/);
+  for (const bad of ["[1,2]", "[\"a\"", JSON.stringify(Array.from({ length: 51 }, (_, i) => `n${i}`)), JSON.stringify(["x".repeat(321)])])
+    assert.equal((await h.call("GET", `/api/project-addresses/check?domain=project.invalid&names=${encodeURIComponent(bad)}`)).status, 400, bad.slice(0, 20));
+  // The dialog's comma list of names it already checked still works.
+  assert.equal((await h.call("GET", "/api/project-addresses/check?domain=project.invalid&names=a,b")).body.names.length, 2);
+});
+
 test("a batch reads the zone, Email Routing and the rules once, then costs one Cloudflare call per address (SCN-064)", async () => {
   const h = environment({ token: true });
   const cf = cloudflare({});
