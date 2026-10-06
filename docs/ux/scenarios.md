@@ -66,6 +66,12 @@
 | SCN-058 | Connect an Outlook or Microsoft 365 account | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
 | SCN-059 | My organization's administrator must allow Fabric Inbox | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
 | SCN-060 | An Outlook account needs a reconnect or a new client secret | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-061 | Check an address before creating it | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
+| SCN-062 | Create an address and watch it receive | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
+| SCN-063 | Create an address on a domain that does not receive here yet | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
+| SCN-064 | Create several addresses at once | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
+| SCN-065 | An address whose rule could not be made | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
+| SCN-066 | An agent creates addresses | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -482,22 +488,23 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 ### SCN-021: Connect a project address
 - **Persona:** P-01
 - **Feature:** Put an agent on a project address
-- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001
-- **Entry point:** SCR-02 (Settings → Domains or Addresses)
-- **Preconditions:** User session available; the project domain uses Cloudflare Email Routing and the operator can change its routing.
+- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001; operator request 2026-10-06
+- **Entry point:** SCR-02 (Settings → Addresses → Add address; a domain's Add an address on <domain>; the inbox sidebar's Add address; an empty list's Add the first address)
+- **Preconditions:** User session available; at least one domain receives here, or the server has a Cloudflare token that sees one.
 - **Steps:**
-  1. Choose a project domain and type the local part (support, hello, billing) -> the full address and its project are previewed.
-  2. Confirm -> the mailbox exists and the routing check shows whether mail for this address reaches the service.
-  3. Send the test message offered on the screen -> it appears in the new mailbox within the page.
-- **Expected result:** A new project address receives mail in minutes, and the screen says whether routing is verified, missing or unknown.
-- **Alt paths:** Cancel before confirming leaves no mailbox; an address that already exists opens instead of being duplicated.
-- **UI elements:** SCR-02; named actions and fields in the steps; visible state and recovery control.
+  1. Add address -> one dialog opens with the focus in the field for the part before @; the domain is the one the entry point named, or the first receiving here.
+  2. Type the part before @ (support, hello, billing) -> the full address is previewed as you type and checked: allowed characters and length, free here, and what Cloudflare does with it today (SCN-061).
+  3. Create (or Enter) -> the steps run in the same dialog: the address is created, the Cloudflare rule sends its mail here (or the dialog says why not and offers the one fix), and a test message is sent and watched until it arrives (SCN-062).
+  4. Done -> the dialog closes on the new address, selected in the list with its panel open.
+- **Expected result:** A new project address receives mail in minutes, and the dialog says whether its rule was made, whether routing is verified, missing or unknown, and whether the test message arrived.
+- **Alt paths:** Cancel or Esc before Create leaves nothing; an address that already exists is named with Open it, never duplicated; Add another starts the form again on the same domain.
+- **UI elements:** SCR-02; Add address dialog (domain, address, display name, signature, who answers, copy, Cloudflare rule, send a test message), its step list, Done, Add another.
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** Routing that cannot be read is shown as unknown with the dashboard step to fix it, never as working; a domain not routed to the service cannot be chosen without that warning.
+- **Errors & recovery:** Routing that cannot be read is shown as unknown with the step to fix it, never as working; a domain that does not receive here says what choosing it will do before Create; a test that has not arrived after 3 minutes says so and points to the address's routing.
 - **Status:** draft
-- **Coverage:** app/components/settings/sections/AddressesSection.tsx (AddressesSection), workers/routes/agents.ts (/api/project-addresses), workers/routing/email-routing.ts (EmailRoutingClient), tests/project-addresses.test.ts
+- **Coverage:** app/components/settings/sections/AddressesSection.tsx (AddressesSection), workers/routes/agents.ts (/api/project-addresses), workers/lib/address-ops.ts (createAddress), workers/routing/email-routing.ts (EmailRoutingClient), tests/project-addresses.test.ts
 - **Product:** unobserved
-- **Today:** Partial. **Project addresses** creates an address on any served domain with its agent; with `CLOUDFLARE_EMAIL_ROUTING_TOKEN` it creates the Email Routing rule first (a refused rule leaves no mailbox) and shows routing as verified, missing or unknown with the fix; **Send test message** sends from the address to itself. Observed on the local Worker without a token (routing unknown). Project labels from Fabric's registry are not read yet; no live zone was exercised.
+- **Today:** Reworked in 0.12 (WS7, operator request 2026-10-06: "where we create mailboxes on our domains the interface is not worked out at all"). Before it, Add address was a four-field dialog that closed on Add and reported in a toast, made no rule without a token and said nothing about it, and offered no test. Observed on a local server without a Cloudflare token; no live zone was exercised.
 
 ### SCN-022: Create a reusable agent
 - **Persona:** P-01
@@ -702,19 +709,19 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Feature:** Put an agent on a project address
 - **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001
 - **Entry point:** SCR-02 (Settings → Domains or Addresses)
-- **Preconditions:** The domain receives here.
+- **Preconditions:** The domain receives here, or can (SCN-063).
 - **Steps:**
-  1. Settings → Addresses → Add address (or + / Add address in the inbox sidebar, or Add an address on a domain) -> type the name before @, choose the domain, who answers and optionally a copy to a confirmed destination, Add -> the routing rule and the address are created and the new address opens; Send test message on its Routing & test tab proves it.
+  1. Settings → Addresses → Add address (or Add address in the inbox sidebar, Add an address on <domain> on a domain's panel, or Add the first address on an empty list) -> choose the domain, type the part before @, set the display name, signature, who answers and optionally a copy to a confirmed destination, Create -> the steps run in the dialog (SCN-062), and Done opens the new address.
   2. ⋯ → Remove … on an address -> confirm in the dialog -> its rule, then the address and its mail are deleted; the answer says where new mail to it goes now, and the focus moves to the row that took its place.
 - **Expected result:** Addresses for a new account or project exist in seconds and go away cleanly.
-- **Alt paths:** From recent mail to an address that does not exist (the domain's panel, or the names offered in the dialog), the form is filled with that name.
-- **UI elements:** SCR-02; Add address dialog, ⋯ Remove … with the shared confirmation.
+- **Alt paths:** From recent mail to an address that does not exist (the domain's panel, or the names offered in the dialog), the form is filled with that name. Several at once: SCN-064.
+- **UI elements:** SCR-02; Add address dialog and its step list, ⋯ Remove … with the shared confirmation.
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** A refused rule creates no address; a copy to an unconfirmed destination or to a served domain is refused with the reason; the catch-all address cannot be removed until another one (or none) is chosen.
+- **Errors & recovery:** A rule Cloudflare refuses no longer costs the address: it is created, marked Not receiving yet, and Fix it makes the rule again (SCN-065); an agent that asks for the rule to be required (createRoute true) still gets no address when the rule is refused. A copy to an unconfirmed destination or to a served domain is refused with the reason; the catch-all address cannot be removed until another one (or none) is chosen.
 - **Status:** validated
-- **Coverage:** workers/lib/address-ops.ts, workers/routes/agents.ts, workers/routing/email-routing.ts, app/components/settings/sections/AddressesSection.tsx, app/components/settings/sections/DomainsSection.tsx, app/components/settings/sections/ConfiguredAddresses.tsx, tests/domains.test.ts
+- **Coverage:** workers/lib/address-ops.ts, workers/routes/agents.ts, workers/routing/email-routing.ts, app/components/settings/sections/AddressesSection.tsx, app/components/settings/sections/DomainsSection.tsx, app/components/settings/sections/ConfiguredAddresses.tsx, tests/domains.test.ts, tests/project-addresses.test.ts
 - **Product:** unobserved
-- **Today:** Built and tested in workerd against a fake Cloudflare. On 2026-09-29 an address created this way got its rule and, removed, lost it, with the answer naming the catch-all that now keeps its mail. Since 0.11 Settings → Addresses is the one path (the Mailboxes screen is gone); an existing address's copy is changed on its Copy tab. Add and remove were driven in a browser against a local server on 2026-10-06.
+- **Today:** Built and tested in workerd against a fake Cloudflare. On 2026-09-29 an address created this way got its rule and, removed, lost it, with the answer naming the catch-all that now keeps its mail. Since 0.11 Settings → Addresses is the one path (the Mailboxes screen is gone); an existing address's copy is changed on its Copy tab. 0.12 (WS7): the dialog keeps its steps, sets the name and signature, and creates several at once; driven in a browser against a local server.
 
 ### SCN-033: Keep copies and unknown addresses somewhere
 - **Persona:** P-01
@@ -725,15 +732,16 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Steps:**
   1. Forwarding destinations -> add an outside address -> Cloudflare sends it a confirmation link; it is listed as waiting until opened.
   2. On a domain, Mail for an address that does not exist -> keep it in one of the domain's addresses, or refuse it so the sender is told.
+  3. Add address -> Forward a copy to offers only the confirmed destinations of the domain's own Cloudflare account; with none, it says so and links to Add a forwarding destination.
 - **Expected result:** Copies go only where someone confirmed them, and mail to a mistyped address is either kept or refused, never silently dropped.
-- **Alt paths:** A copy that fails later is shown on the address with its reason, and the mail itself is kept.
-- **UI elements:** SCR-02; Forwarding destinations, the catch-all choice.
+- **Alt paths:** A copy that fails later is shown on the address with its reason, and the mail itself is kept. While adding an address, the dialog says when the domain's catch-all keeps that address's mail today, so creating it moves that mail to its own mailbox.
+- **UI elements:** SCR-02; Forwarding destinations, the catch-all choice, the copy choice in Add address.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A destination on a served domain is refused (it would loop); choosing a catch-all points Cloudflare's catch-all here and reports if Cloudflare refused.
 - **Status:** validated
-- **Coverage:** workers/routing/domains.ts, workers/routes/domains.ts, app/components/settings/sections/DestinationsSection.tsx, app/components/settings/sections/DomainsSection.tsx, tests/domains.test.ts
+- **Coverage:** workers/routing/domains.ts, workers/routes/domains.ts, app/components/settings/sections/DestinationsSection.tsx, app/components/settings/sections/DomainsSection.tsx, app/components/settings/sections/AddressesSection.tsx, tests/domains.test.ts
 - **Product:** unobserved
-- **Today:** Built and tested in workerd against a fake Cloudflare.
+- **Today:** Built and tested in workerd against a fake Cloudflare. 0.12 (WS7): the copy choice and the catch-all note in Add address.
 
 ### SCN-034: Give an agent a knowledge collection
 - **Persona:** P-01
@@ -1271,3 +1279,124 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** app/components/settings/sections/OutlookSetup.tsx, app/components/settings/sections/AccountsSection.tsx, app/routes/unified-inbox.tsx, shared/mail/gmail-reasons.ts, workers/providers/outlook/oauth.ts, workers/providers/account-service.ts (accountProblem), tests/outlook-provider.test.ts, tests/outlook-setup-ui.test.ts
 - **Product:** unobserved
 - **Today:** Built in 0.11.0 (WS5); tested against fakes.
+
+### SCN-061: Check an address before creating it
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001; operator request 2026-10-06
+- **Entry point:** SCR-02 (the Add address dialog)
+- **Preconditions:** The dialog is open on a domain.
+- **Steps:**
+  1. Type the part before @ -> letters are kept lower case, and the field says at once what is wrong: a character that is not a letter, digit, dot, dash, underscore or plus; a dot or symbol at the start or end; two dots together; more than 64 characters.
+  2. Pause typing -> the server checks the address: free here; already an address here (Open it); a Cloudflare rule already sends it somewhere else (where, and what to do); Cloudflare already sends it here; the domain's catch-all keeps its mail today; mail arrived for it recently.
+  3. Type a role name (postmaster, abuse, hostmaster, webmaster, security, mailer-daemon) -> the field says who writes to that address, and Create still works.
+- **Expected result:** Before Create, the person knows whether the address can be made and what changes for mail already sent to it.
+- **Alt paths:** The names of recent mail to addresses that do not exist are offered as buttons that fill the field.
+- **UI elements:** SCR-02; the address field with its live message (aria-live), the full-address preview, the availability line, Open it.
+- **States covered:** loading, error, success
+- **Errors & recovery:** A check that cannot reach Cloudflare says routing is unknown and does not block Create; an invalid or taken name disables Create and the message says why.
+- **Status:** draft
+- **Coverage:** shared/address-name.ts, workers/lib/address-ops.ts (checkAddresses), workers/routes/agents.ts (/api/project-addresses/check), tests/project-addresses.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS7); tested against a fake Cloudflare and driven in a browser on a local server without a token.
+
+### SCN-062: Create an address and watch it receive
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001; operator request 2026-10-06
+- **Entry point:** SCR-02 (the Add address dialog)
+- **Preconditions:** A valid, free address is typed on a domain that receives here.
+- **Steps:**
+  1. Create -> the form is replaced by its steps, one line each, announced as they change: Create the address; Send its mail here (the Cloudflare rule); Send a test message (when ticked: ticked by default when a rule can be made or the catch-all already sends mail here).
+  2. The test is sent -> its line says it was accepted and is waiting; the dialog asks the server every 5 seconds whether it has arrived.
+  3. It arrives -> Arrived, with the time and the folder it landed in; the new address is already selected in the list behind the dialog.
+  4. Done -> the dialog closes and the focus moves to the address's panel.
+- **Expected result:** One surface shows that the address exists, that Cloudflare sends its mail here, and that a real message arrived — or exactly which of the three did not happen.
+- **Alt paths:** Add another keeps the domain and the settings and starts a new address; a test that is not ticked is offered again as Send a test message.
+- **UI elements:** SCR-02; the step list (Done, Already so, Nothing to do, Not done, Waiting), Send a test message, Done, Add another.
+- **States covered:** loading, error, success
+- **Errors & recovery:** Every failed step says what happened, what was kept and the one action that fixes it; a test not arrived after 3 minutes is reported as not arrived with Check routing; a test the provider refused names the provider's reason.
+- **Status:** draft
+- **Coverage:** app/components/settings/sections/AddAddress.tsx, app/components/settings/sections/add-address-model.ts, workers/lib/address-ops.ts (createAddress, routingTestStatus), workers/routes/agents.ts (/api/project-addresses/:email/test), tests/project-addresses.test.ts, tests/add-address-model.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS7). Without a token the local server makes no rule and the test is sent through the local Email binding; arrival was exercised with a message delivered to the local Worker.
+
+### SCN-063: Create an address on a domain that does not receive here yet
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001; operator request 2026-10-06
+- **Entry point:** SCR-02 (the Add address dialog's domain choice)
+- **Preconditions:** The server has a Cloudflare token that sees a domain that is not received here.
+- **Steps:**
+  1. Open the domain choice and type part of a name -> the list narrows; Receiving here comes first, then Can receive here; a domain whose Email Routing needs fixing says Needs Fix it once it is checked.
+  2. Choose a domain that can receive here -> the dialog says that Create first receives its mail here: Email Routing on, its existing addresses brought in keeping their copies, sending on.
+  3. Create -> the first step, Receive mail for <domain> here, runs and lists its own result; then the address steps run.
+- **Expected result:** An address on any domain of the person's Cloudflare account is one dialog away, and nothing about the domain changes without being said first.
+- **Alt paths:** When another provider's MX records are on the domain, the step stops before changing anything and offers Replace and continue, or Cancel.
+- **UI elements:** SCR-02; the searchable domain choice with each domain's state, the receive step, Replace and continue.
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** A failed receive step stops before the address is created and says how to continue (running it again continues from there, as on Domains); a domain that needs fixing offers Fix it, which runs Receive mail here again.
+- **Status:** draft
+- **Coverage:** app/components/settings/sections/AddAddress.tsx, app/components/settings/sections/add-address-model.ts, workers/routes/domains.ts (/api/domains/:domain/connect), tests/add-address-model.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS7); the receive step is the Domains action (SCN-031), already tested against a fake Cloudflare. Not exercised on a live account.
+
+### SCN-064: Create several addresses at once
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001; operator request 2026-10-06
+- **Entry point:** SCR-02 (the Add address dialog, Several)
+- **Preconditions:** The dialog is open on a domain.
+- **Steps:**
+  1. Choose Several -> one box for names, one per line or separated by commas or spaces (support, sales, hello); each name is listed below with its own check.
+  2. Set who answers, a copy, the signature and the test once -> they apply to every address; each address gets its own display name from its name (Support, Sales, Hello) unless one is typed for all.
+  3. Create N addresses -> one row per address with its own steps; a failure on one never stops the others.
+- **Expected result:** A new project's usual addresses exist in one pass, and each one says whether it receives.
+- **Alt paths:** A name that is invalid or already taken is listed with its reason and skipped; Create counts only the names that can be made.
+- **UI elements:** SCR-02; the names box, the per-name checks, the result table.
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** Each row carries its own failure and fix; up to 50 names at once.
+- **Status:** draft
+- **Coverage:** shared/address-name.ts (parseLocalParts), workers/routes/agents.ts (/api/project-addresses/batch), app/components/settings/sections/AddAddress.tsx, tests/project-addresses.test.ts, tests/address-name.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS7); tested against a fake Cloudflare and driven in a browser on a local server.
+
+### SCN-065: An address whose rule could not be made
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001; operator request 2026-10-06
+- **Entry point:** SCR-02 (the step list; the address's Routing & test tab)
+- **Preconditions:** An address was created and its rule was not made: the server has no token, none of its tokens sees the zone, or Cloudflare refused.
+- **Steps:**
+  1. The rule step reads Not done (or Nothing to do) with the reason in words: no token yet; the token cannot see <domain>; Cloudflare's own message.
+  2. Its one fix is beside it: Connect Cloudflare, Connect its account, or Fix it, which makes the rule again.
+  3. The address in the list and on its panel shows Not receiving yet until routing is verified.
+- **Expected result:** Nothing half-done is left silent: the address is kept, it says it does not receive yet, and one action fixes it.
+- **Alt paths:** The domain's catch-all already sends its mail here: the step says no rule was needed and the address receives.
+- **UI elements:** SCR-02; the rule step, Fix it, the Not receiving yet badge, Routing & test.
+- **States covered:** error, success
+- **Errors & recovery:** This scenario is the recovery.
+- **Status:** draft
+- **Coverage:** workers/lib/address-ops.ts (createAddress), app/components/settings/sections/AddAddress.tsx, app/components/settings/sections/AddressesSection.tsx (RoutingTab), tests/project-addresses.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS7); the no-token and refused cases tested against a fake Cloudflare and seen on a local server without a token.
+
+### SCN-066: An agent creates addresses
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001; AP-5 (every function of the app is an agent tool)
+- **Entry point:** The agent protocol (`/mcp`) with an admin key
+- **Preconditions:** An outside agent has an admin key that sees the whole workspace.
+- **Steps:**
+  1. check_address with a domain and one or several names -> the same checks the dialog shows, per name, and the domain's state.
+  2. create_address (one, with name, signature, agent, copy) or create_addresses (several) -> the same steps the dialog lists, per address.
+  3. send_test_message, then check_test_message until it reads arrived or not_arrived.
+- **Expected result:** An agent can do everything the person can in the dialog, and reads the same results.
+- **Alt paths:** connect_domain first for a domain that does not receive here.
+- **UI elements:** none (agent protocol); docs/agents/mcp.md.
+- **States covered:** error, success
+- **Errors & recovery:** The tools answer the routes' own refusals and steps.
+- **Status:** draft
+- **Coverage:** workers/mcp/tools.ts, docs/agents/mcp.md, tests/mcp-parity.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS7); tested against the recording API.
