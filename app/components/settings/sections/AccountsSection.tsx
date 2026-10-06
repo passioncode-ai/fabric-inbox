@@ -320,10 +320,13 @@ function ConnectDialog({ open, provider, onChoose, onClose, list, gmailState, im
         </>
       ) : chosen.connect === "app-password" ? (
         <>
-          <p role={imapState === "loading" ? "status" : "alert"}>{imapState === "loading" ? "Checking your server…"
-            : imapState === "not-configured" ? "Your server has no credential key yet, so it cannot keep an app password. Update the server from the Mac app, which adds one, or set MAIL_CREDENTIAL_KEY on a server deployed by hand."
-            : "Whether your server can keep IMAP accounts is unknown: the accounts did not load."}</p>
-          <div className="fi-dialog-actions"><button type="button" className="fi-secondary" data-autofocus onClick={() => onChoose("")}>Back</button></div>
+          {imapState === "not-configured" ? <CreateCredentialKey onBack={() => onChoose("")} /> : (
+            <>
+              <p role={imapState === "loading" ? "status" : "alert"}>{imapState === "loading" ? "Checking your server…"
+                : "Whether your server can keep IMAP accounts is unknown: the accounts did not load."}</p>
+              <div className="fi-dialog-actions"><button type="button" className="fi-secondary" data-autofocus onClick={() => onChoose("")}>Back</button></div>
+            </>
+          )}
         </>
       ) : (
         <>
@@ -334,6 +337,47 @@ function ConnectDialog({ open, provider, onChoose, onClose, list, gmailState, im
         </>
       )}
     </Dialog>
+  );
+}
+
+/**
+ * A server without a credential key cannot keep an app password (SCN-053). The server makes its own
+ * key and writes it into its settings (POST /api/credential-key); the dialog then waits until the
+ * server reports IMAP as available, which takes a few seconds while Cloudflare applies the change.
+ */
+function CreateCredentialKey({ onBack }: { onBack: () => void }) {
+  const client = useQueryClient();
+  const [state, setState] = useState<"idle" | "saving" | "waiting" | "failed">("idle");
+  const [error, setError] = useState("");
+  const create = async () => {
+    setState("saving"); setError("");
+    try {
+      await fabric<{ created: boolean }>("/api/credential-key", {});
+      setState("waiting");
+      for (let attempt = 0; attempt < 10; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const fresh = await client.fetchQuery({ queryKey: GMAIL_KEY, queryFn: () => fabric<{ providers?: { id: string; status: string }[] }>("/api/accounts"), staleTime: 0 }).catch(() => null);
+        if (fresh?.providers?.find((p) => p.id === "imap")?.status === "configured") return;
+      }
+      setState("failed");
+      setError("The key was saved, but your server has not started using it yet. Close this and try again in a minute.");
+    } catch (e) {
+      setState("failed");
+      setError(e instanceof Error ? e.message : "Your server could not save its credential key. Nothing was changed; try again.");
+    }
+  };
+  return (
+    <>
+      <p>Your server needs a credential key before it can keep an app password: it seals every saved password and token with it. Your server can make one now and keep it in its own settings; the key never leaves the server.</p>
+      {state === "waiting" && <p role="status">Key saved. Waiting for your server to start using it…</p>}
+      {state === "failed" && <p role="alert">{error}</p>}
+      <div className="fi-dialog-actions">
+        <button type="button" className="fi-secondary" onClick={onBack}>Back</button>
+        <button type="button" className="fi-primary" data-autofocus disabled={state === "saving" || state === "waiting"} onClick={() => void create()}>
+          {state === "saving" ? "Saving…" : state === "waiting" ? "Waiting…" : "Make the key"}
+        </button>
+      </div>
+    </>
   );
 }
 

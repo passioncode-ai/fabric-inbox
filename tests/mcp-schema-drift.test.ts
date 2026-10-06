@@ -89,7 +89,7 @@ const NO_BODY = new Set([
   "POST /api/accounts/:accountId/sync", "POST /api/accounts/:accountId/disconnect", "POST /api/categories/:id/seen",
   "POST /api/automation/:account/runs/:id/approve", "POST /api/automation/:account/runs/:id/dismiss",
   "POST /api/project-addresses/:email/routing", "POST /api/project-addresses/:email/test", "POST /api/domains/:domain/sending",
-  "POST /api/spam/empty",
+  "POST /api/spam/empty", "POST /api/credential-key",
   "POST /api/setup/apply", // the setup document itself, passed whole as apply_setup's `setup`
 ]);
 

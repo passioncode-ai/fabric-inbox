@@ -125,7 +125,7 @@ Every name the Worker reads (`workers/types.ts`). None is in `wrangler.jsonc` (C
 | `SPAM_DAILY_LIMIT` | var | optional | `300` | strangers' messages the model reads for spam per UTC day on its own; a check made in the same call as a category does not count; beyond it new mail is not judged by the model |
 | `AUTOMATION_MCP_HOSTS` | var | agent or rule tools | empty → no tools | exact HTTPS hosts tools may call |
 | `AUTOMATION_TOOL_TOKENS` | secret | tools with credentials | `{}` | JSON map credential name → bearer token; agents and rules store only the name |
-| `MAIL_CREDENTIAL_KEY` | secret | Gmail, Outlook and IMAP accounts | — | the key every account's token or app password is sealed with: made once by Create my server (and by the Gmail or Outlook setup when the server has none), never replaced; see "The credential key" below |
+| `MAIL_CREDENTIAL_KEY` | secret | Gmail, Outlook and IMAP accounts | — | the key every account's token or app password is sealed with: made once by Create my server (and by the Gmail or Outlook setup, or Make the key in Settings, when the server has none), never replaced; see "The credential key" below |
 | `MAIL_CREDENTIAL_KEY_PREVIOUS` | secret | rotating the key | — | older keys, commas or spaces; what they sealed keeps opening and is sealed again with the new key on its next use |
 | `MAIL_POLL_SECONDS` | var | Gmail, Outlook and IMAP accounts | 300 | how often accounts are read, 60–3600 s; `GMAIL_POLL_SECONDS` is read when it is absent |
 | `GOOGLE_CLIENT_ID`, `PUBLIC_APP_URL`, `GMAIL_POLL_SECONDS` | var | Gmail | — / — / 300 | written by the server from Settings → Accounts → Gmail, or by hand; see Gmail below |
@@ -601,6 +601,13 @@ Every account's secret — a Gmail or Outlook refresh token, an IMAP app passwor
 (`workers/providers/credentials.ts`). Create my server makes the key the first time and never sends
 it again; the app keeps no copy, so the key exists only as a Worker secret, which Cloudflare does
 not show again.
+
+- **A server with no key** (deployed by hand, or created before 0.11) makes its own from the app:
+  Settings → Accounts → Connect account → Other mail → **Make the key** (`POST /api/credential-key`,
+  `workers/routes/credential-key.ts`; agents: `create_credential_key`). The server writes it into its
+  own settings with its Cloudflare token, keeping every other setting; it never replaces a key it
+  already has, and the value is never shown. Without a Cloudflare token of its own the server says
+  so, and the key is set with wrangler as below.
 
 - **Backup.** For a server deployed by hand, make the key yourself, keep it in your password
   manager, then set it: `openssl rand -base64 32 | tr '+/' '-_' | tr -d '=' > key.txt`, then

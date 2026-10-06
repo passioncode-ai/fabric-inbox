@@ -161,7 +161,7 @@ Locations name the source function while the integration branch is being formatt
 | field.account.app_password | App password | app/components/settings/sections/ImapAccount.tsx | SCN-053 | proposed |
 | action.account.new_app_password | Enter a new app password… | app/components/settings/sections/ImapAccount.tsx | SCN-054 | proposed |
 | state.account.app_password_hint | It is checked with | app/components/settings/sections/ImapAccount.tsx | SCN-054 | proposed |
-| state.account.imap_no_key | Your server has no credential key yet, so it cannot keep an app password. Update the server from the Mac app, which adds one, or set MAIL_CREDENTIAL_KEY on a server deployed by hand. | app/components/settings/sections/AccountsSection.tsx | SCN-056 | proposed |
+| state.account.imap_no_key | Your server needs a credential key before it can keep an app password: it seals every saved password and token with it. Your server can make one now and keep it in its own settings; the key never leaves the server. | app/components/settings/sections/AccountsSection.tsx | SCN-056 | proposed |
 | state.drafts.gone_elsewhere | This draft was sent or deleted elsewhere. Your text is kept here. | app/components/inbox/server-drafts.ts | SCN-006 | proposed |
 | action.composer.show_saved | Show the saved version | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
 | action.composer.keep_mine | Keep my version | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |

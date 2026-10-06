@@ -40,7 +40,7 @@ export function imapErrorText(code: string, c: ImapErrorContext): string | null 
     case "imap_tls_required": return "This app reads mail only over SSL/TLS, usually port 993. Port 143 and POP are not used.";
     case "port_blocked": return "Port 25 cannot be used: Cloudflare does not allow it. Use 465 (SSL/TLS) or 587 (STARTTLS).";
     case "already_connected": return "This address is already connected through Google sign-in. Disconnect that account first to use an app password instead.";
-    case "not_configured": return "Your server has no credential key yet, so it cannot keep an app password. Update the server from the Mac app, which adds one, or set MAIL_CREDENTIAL_KEY on a server deployed by hand.";
+    case "not_configured": return "Your server has no credential key yet, so it cannot keep an app password. Make one in Settings → Accounts → Connect account → Other mail, or set MAIL_CREDENTIAL_KEY on a server deployed by hand.";
     case "invalid_account_settings": return "Check the address, the app password and the server fields, then try again.";
     case "invalid_password": return "Paste the app password.";
     case "reconnect_required": return `${c.provider} no longer accepts the app password this server has. Enter a new one.`;

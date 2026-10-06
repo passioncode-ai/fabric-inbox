@@ -1340,6 +1340,14 @@ const checkGmailSetup = defineTool({
   call: (_a, ctx) => get(ctx, "/api/gmail-setup/check"),
 });
 
+const createCredentialKey = defineTool({
+  name: "create_credential_key", title: "Give the server its credential key", level: "admin", target: () => "MAIL_CREDENTIAL_KEY",
+  description: "Makes the key the server seals saved access with (IMAP app passwords, Gmail and Outlook tokens) and writes it into the server's own settings with its Cloudflare token, when the server has none; a key it already has is never replaced. The value is never returned. Needed before an IMAP account can be connected on a server that has no key (list_mail_providers says not_configured).",
+  input: {},
+  routes: ["POST /api/credential-key"],
+  call: (_a, ctx) => post(ctx, "/api/credential-key"),
+});
+
 const listAgentKeys = defineTool({
   name: "list_agent_keys", title: "List agent keys", level: "admin", readOnly: true,
   description: "The agent keys of this server, without secrets: each key's name, level, how it sends and its daily limit, the mailboxes it is limited to, when it was made and when it expires, and the address agents connect to. Keys are made and revoked by a person in Settings → Agent access.",
@@ -1369,7 +1377,7 @@ export const TOOLS: readonly ToolDef[] = [
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,
-  disconnectGmail, disconnectAccount, listMailProviders, gmailConnectLink, gmailSetupStatus, checkGmailSetup,
+  disconnectGmail, disconnectAccount, listMailProviders, gmailConnectLink, gmailSetupStatus, checkGmailSetup, createCredentialKey,
   outlookConnectLink, microsoftSetupStatus, checkMicrosoftSetup, listAgentKeys, agentActivity,
 ];
 
