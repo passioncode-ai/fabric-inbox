@@ -3,7 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import {
-	ArrowBendUpRightIcon, AtIcon, BooksIcon, CaretLeftIcon, FunnelSimpleIcon, GearSixIcon, GlobeIcon, PlugIcon, ProhibitIcon, TrashSimpleIcon,
+	ArrowBendUpRightIcon, AtIcon, BooksIcon, CaretLeftIcon, FunnelSimpleIcon, GearSixIcon, GlobeIcon, PlugIcon, ProhibitIcon, XCircleIcon,
 	RobotIcon, UserCircleIcon, type Icon,
 } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
@@ -30,7 +30,7 @@ export function meta() {
 
 const ICONS: Record<SectionId, Icon> = {
 	addresses: AtIcon, domains: GlobeIcon, accounts: UserCircleIcon, destinations: ArrowBendUpRightIcon,
-	categories: FunnelSimpleIcon, spam: ProhibitIcon, discard: TrashSimpleIcon, agents: RobotIcon, knowledge: BooksIcon, "agent-access": PlugIcon, app: GearSixIcon,
+	categories: FunnelSimpleIcon, spam: ProhibitIcon, discard: XCircleIcon, agents: RobotIcon, knowledge: BooksIcon, "agent-access": PlugIcon, app: GearSixIcon,
 };
 
 const GROUP_LABEL = { mail: "Mail", agents: "Agents", app: "This app" } as const;

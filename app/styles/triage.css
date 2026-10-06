@@ -71,8 +71,9 @@
 .fi-reader-empty kbd,
 .fi-nav-item kbd,
 .fi-shortcuts kbd {
-  font-family: var(--pc-font-data);
-  font-size: 10px;
+  /* The UI font: the data font has no ⌫ or ⌦ and draws them as boxes. */
+  font-family: var(--pc-font);
+  font-size: 11px;
   padding: 1px 5px;
   border: 1px solid var(--pc-border);
   border-radius: 4px;
@@ -114,6 +115,7 @@
 .fi-shortcuts dl > div { display: grid; grid-template-columns: minmax(150px, 1fr) 2fr; gap: 12px; font-size: 13px; }
 .fi-shortcuts dt { color: var(--pc-text-muted); }
 .fi-shortcuts dd { margin: 0; }
+.fi-shortcuts .fi-hint { margin: 18px 0 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .fi-spin { animation: none; }

@@ -26,7 +26,7 @@ import {
   SunIcon,
   TrayIcon,
   TrashIcon,
-  TrashSimpleIcon,
+  XCircleIcon,
   WarningOctagonIcon,
 } from "@phosphor-icons/react";
 import { fabric } from "~/services/fabric";
@@ -78,7 +78,7 @@ const folders = [
   ["archive", "Archive", TrayIcon],
   ["trash", "Trash", TrashIcon],
   ["spam", "Spam", WarningOctagonIcon],
-  ["discarded", "Discarded", TrashSimpleIcon],
+  ["discarded", "Discarded", XCircleIcon],
 ] as const;
 export function meta() {
   return [{ title: "All inboxes · Fabric Inbox" }];
@@ -1108,7 +1108,7 @@ export default function UnifiedInbox() {
                   )}
                   {canAct("discard", folder, undefined) === null && (
                     <button type="button" className="fi-secondary" disabled={busy} onClick={() => void triageAction("discard")}>
-                      <TrashSimpleIcon size={17} /> Discard <kbd>{mac ? "⌘⌫" : "Ctrl+Backspace"}</kbd>
+                      <XCircleIcon size={17} /> Discard <kbd>{mac ? "⌘⌫" : "Ctrl+Backspace"}</kbd>
                     </button>
                   )}
                   <button type="button" className="fi-text-button" onClick={() => setMarked(new Set())}>Clear selection</button>
@@ -1177,7 +1177,7 @@ export default function UnifiedInbox() {
                   ) : folder !== "sent" && (
                     <button className="fi-icon-button" aria-label="Discard message" title={`Discard: out of the inbox, and mail like it from now on (${mac ? "⌘⌫" : "Ctrl+Backspace"})`}
                       disabled={busy || !detail.data} onClick={() => void triageAction("discard", [selected])}>
-                      <TrashSimpleIcon size={19} />
+                      <XCircleIcon size={19} />
                     </button>
                   )}
                   <button
