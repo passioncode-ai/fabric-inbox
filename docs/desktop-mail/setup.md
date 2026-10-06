@@ -191,12 +191,19 @@ lists every domain of the connected account. Receiving here first:
 - An open domain shows receiving, addresses that still go elsewhere (**Bring them here, keeping a
   copy**), sending (**Turn on sending**), DMARC, and anything Cloudflare would not let the token
   read, in words.
-- **Add** an address: the name before @, who answers, and optionally a copy to a confirmed
-  forwarding destination. Everything is checked first, then the routing rule is created (a disabled
-  rule that points here is switched back on); if the mailbox cannot be saved, a rule made for it is
-  removed again. On a served domain the token cannot see, the address is made without a rule and
-  the screen says so. **Change** next to the copy picks another destination or none. **Send test
-  message** sends from the address to itself.
+- **Add address** (Settings → Addresses, a domain's **Add an address on <domain>**, the sidebar, or
+  an empty list) opens one dialog: the name before @ with the domain beside it (receiving here
+  first, then — with a token — the domains that can receive here), checked as you type (allowed
+  characters; already an address here; a Cloudflare rule that sends it elsewhere, named; the
+  catch-all that keeps its mail today), the display name, a signature, who answers, a copy to a
+  confirmed forwarding destination, the Cloudflare rule, and **Send a test message**. **Several**
+  creates up to 50 on one domain with the same settings. On **Create** the dialog lists what it did:
+  receiving the domain first when it was not (another provider's MX asks before it is replaced),
+  the address, its rule (a disabled rule that points here is switched back on; with no token, a
+  zone no token sees, or a rule Cloudflare refuses, the address is still made, marked **Not
+  receiving yet**, with the one fix), and the test message, checked every 5 seconds until it
+  arrives or 3 minutes pass. If the mailbox cannot be saved, a rule made for it is removed again.
+  **Change** next to the copy picks another destination or none.
 - **Remove…** deletes the address's rule, then the mailbox and its mail, after a confirmation, and
   says what Cloudflare now does with its mail. The domain's catch-all mailbox — chosen here or set by
   `UNKNOWN_ADDRESS_POLICY` — cannot be removed until another one (or none) is chosen. The

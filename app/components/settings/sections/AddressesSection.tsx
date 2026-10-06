@@ -304,7 +304,7 @@ function RoutingTab({ address: a, catchAll, connected }: { address: ProjectAddre
         )}
         <div className="fi-buttons">
           {connected && routing.data?.state === "missing" && !elsewhere && (
-            <button type="button" className="fi-primary" disabled={!!work.busy} onClick={sendHere} title="Makes or switches on the Cloudflare rule that sends its mail here">Fix it — send it here</button>
+            <button type="button" className="fi-primary" disabled={!!work.busy} onClick={sendHere} title="Makes or switches on the Cloudflare rule that sends its mail here">Fix it</button>
           )}
           <button type="button" className="fi-secondary" disabled={!!work.busy} onClick={test}>Send a test message</button>
         </div>

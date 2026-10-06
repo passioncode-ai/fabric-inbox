@@ -16,7 +16,7 @@ export const DOMAIN_STATE: Record<DomainState, { label: string; tone: Tone }> = 
   // Without a token every domain is the same: its line under the choice says no rule can be made.
   no_token: { label: "Receiving here", tone: "ok" },
   can_receive: { label: "Can receive here", tone: "neutral" },
-  needs_fix: { label: "Needs Fix it", tone: "bad" },
+  needs_fix: { label: "Needs fixing", tone: "bad" },
   not_visible: { label: "Token cannot see it", tone: "warn" },
   unknown: { label: "Routing unknown", tone: "warn" },
   unavailable: { label: "Not available", tone: "bad" },

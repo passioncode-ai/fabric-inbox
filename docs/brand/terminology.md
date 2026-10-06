@@ -42,6 +42,11 @@ Contract: brand-contract v1
 | App registration | Azure app, Microsoft app, OAuth app (for Microsoft) | The owner's own application in Microsoft Entra that Outlook accounts sign in through, by Microsoft's own name |
 | Client secret | Microsoft password, app key | The app registration's secret Value, saved on the server with the date it expires; never the Secret ID |
 | Administrator's approval | Admin consent (to a user), tenant approval | What an organization that lets only administrators allow apps needs before its people can connect: the link the person sends their administrator |
+| Address (the part before @) | Local part, username, mailbox name (to a user) | What is typed in Add address; the domain is chosen beside it |
+| Add address | New mailbox, Create alias, Add alias | The one dialog that creates addresses, from every entry point; its button reads Create <address> |
+| Test message | Routing test, ping (to a user) | The message an address sends to itself to prove mail reaches it; watched until it arrives or 3 minutes pass |
+| Fix it | Repair, Retry rule | The one action beside a step or state that did not happen (a rule not made, a domain whose Email Routing is off) |
+| Not receiving yet | Not arriving here (before 0.12), Broken | An address whose mail Cloudflare does not send here (routing missing); always shown with Fix it or the reason it cannot be fixed here |
 
 ## Entity and tier names — exact spelling
 | Name | Wrong forms seen |
@@ -102,7 +107,7 @@ Contract: brand-contract v1
 | Skipped | The agent did not answer (automated mail, answered thread, flagged text); the reason is shown |
 | Focus | List order with Important first and other groups collapsed |
 | Important | Raised by triage rules (a person's unread mail, security, alerts, store rejections, failed payments, CI failures, starred); each row names why |
-| Routing verified / missing / unknown | Email Routing sends the address to the Worker / does not / could not be read; unknown is never shown as working |
+| Routing verified / missing / unknown | Email Routing sends the address to the Worker / does not / could not be read; shown as Arriving here / Not receiving yet / Routing unknown; unknown is never shown as working |
 
 ## Workbench action terms
 

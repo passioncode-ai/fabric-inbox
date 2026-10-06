@@ -1328,7 +1328,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** SCR-02 (the Add address dialog's domain choice)
 - **Preconditions:** The server has a Cloudflare token that sees a domain that is not received here.
 - **Steps:**
-  1. Open the domain choice and type part of a name -> the list narrows; Receiving here comes first, then Can receive here; a domain whose Email Routing needs fixing says Needs Fix it once it is checked.
+  1. Open the domain choice and type part of a name -> the list narrows; Receiving here comes first, then Can receive here; a domain whose Email Routing needs fixing says Needs fixing once it is checked.
   2. Choose a domain that can receive here -> the dialog says that Create first receives its mail here: Email Routing on, its existing addresses brought in keeping their copies, sending on.
   3. Create -> the first step, Receive mail for <domain> here, runs and lists its own result; then the address steps run.
 - **Expected result:** An address on any domain of the person's Cloudflare account is one dialog away, and nothing about the domain changes without being said first.

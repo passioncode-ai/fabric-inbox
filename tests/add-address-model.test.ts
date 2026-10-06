@@ -28,7 +28,7 @@ test("the domain choice lists receiving domains first, then the ones that can re
   assert.deepEqual(options.map((o) => [o.domain, o.group, o.label]), [
     ["acme.test", "receiving", "Receiving here"],
     ["hidden.test", "receiving", "Token cannot see it"],
-    ["zeta.test", "receiving", "Needs Fix it"],
+    ["zeta.test", "receiving", "Needs fixing"],
     ["new.test", "can_receive", "Can receive here"],
   ]);
   const noToken = domainOptions(list({ connected: false }));
