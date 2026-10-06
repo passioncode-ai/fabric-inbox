@@ -5,7 +5,7 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 0.11.0 — 2026-10-06
 
 - **Settings is one screen, and nothing jumps.** Addresses, Domains, Accounts, Forwarding
   destinations, Agents, Knowledge, Categories, Spam rules, Agent access and App live under
@@ -34,11 +34,18 @@ is cut and published: [docs/release.md](docs/release.md).
   the Google client, creates its own credential key and saves its settings itself. Connecting ends
   on a page that says what happened, and an account that stops working says why (for example the
   7-day expiry of a Google app left in Testing) with the one action that fixes it.
+- **Outlook and Microsoft 365.** Connect through Microsoft Graph (OAuth with PKCE) after the owner
+  registers an app in Microsoft Entra, guided in Settings → Accounts → Outlook with every value to
+  copy; the server keeps the client secret and warns 30 days before it expires. Mail is read with
+  delta queries per folder (Inbox first), sent with files, Cc and Bcc, and drafts are editable; an
+  organization that needs its administrator gets the approval link to forward.
 - **More mail accounts: iCloud Mail, Yahoo, AOL, Fastmail, Zoho, Yandex, Mail.ru, GMX, Gmail with
   an app password, or any IMAP server.** Added in Settings → Accounts with an app password, checked
   before it is stored, kept encrypted on your server, and read and sent by the server, so they work
   with the Mac closed. Credentials use a versioned envelope with a rotatable key
-  (`MAIL_CREDENTIAL_KEY`).
+  (`MAIL_CREDENTIAL_KEY`); a server that has none makes its own from Settings (**Make the key**).
+- **The local dev server runs again with IMAP support** (`npm run dev`): imapflow's unused default
+  logger no longer stops the Worker in workerd.
 - **Usage counts carry `iid` and `environment`.** Every event repeats the shared installation id as
   `props.iid` and says `props.environment`: `production` for a release build, `sandbox` for a debug
   key or a pre-release version, the two values sshlg-growth counts (operator decision 2026-10-05).
