@@ -41,6 +41,18 @@ export interface DomainRouting {
   catchAll: { enabled: boolean; action: RouteAction } | null;
 }
 
+/** SCN-061: what Cloudflare does with some addresses of a domain, and with the rest (its catch-all). */
+export interface AddressRouting {
+  domain: string;
+  /** A token of this server can see the zone. */
+  visible: boolean;
+  enabled: boolean;
+  /** Email Routing's own status ("ready", "misconfigured"…); "unknown" when the zone is not visible. */
+  status: string;
+  rules: { address: string; enabled: boolean; toHere: boolean; action: RouteAction }[];
+  catchAll: { enabled: boolean; toHere: boolean; action: RouteAction } | null;
+}
+
 export class EmailRoutingClient {
   // A bare `fetch` stored on the instance throws "Illegal invocation" in workerd when called as this.fetcher.
   constructor(private token: string, private worker: string, private fetcher: Fetcher = (input, init) => fetch(input, init)) {}
@@ -137,6 +149,31 @@ export class EmailRoutingClient {
   }
 
   /**
+   * What Cloudflare does today with some addresses of one domain, read once for all of them
+   * (SCN-061): whether the zone is visible, Email Routing's state, each address's literal rule with
+   * whether it sends mail to this server's Worker, and the catch-all. Addresses without a rule are
+   * left out of `rules`. Throws RoutingError when Cloudflare cannot be read.
+   */
+  async routingFor(domain: string, addresses: string[]): Promise<AddressRouting> {
+    const name = domain.toLowerCase();
+    const zone = await this.zoneId(name);
+    if (!zone) return { domain: name, visible: false, enabled: false, status: "unknown", rules: [], catchAll: null };
+    const settings = await this.call<{ enabled?: boolean; status?: string }>(`/zones/${zone}/email/routing`);
+    const enabled = settings.enabled === true;
+    const status = settings.status ?? (enabled ? "ready" : "unconfigured");
+    if (!enabled) return { domain: name, visible: true, enabled, status, rules: [], catchAll: null };
+    const all = await this.rules(zone);
+    const action = (r: Rule): RouteAction => ({ type: (r.actions?.[0]?.type ?? "drop") as RouteAction["type"], value: r.actions?.[0]?.value?.[0] });
+    const rules = addresses.map((a) => a.toLowerCase()).flatMap((address) => {
+      const rule = this.literalRule(all, address);
+      return rule ? [{ address, enabled: rule.enabled !== false, toHere: this.toWorker(rule), action: action(rule) }] : [];
+    });
+    const catchAll = await this.call<Rule>(`/zones/${zone}/email/routing/rules/catch_all`);
+    return { domain: name, visible: true, enabled, status, rules,
+      catchAll: { enabled: catchAll.enabled === true, toHere: this.toWorker(catchAll), action: action(catchAll) } };
+  }
+
+  /**
    * The inverse of createRule, used when an address is removed: deletes its
    * literal rule when that rule sends mail here; a rule sending it elsewhere is
    * left alone. Returns what happened, in words.
@@ -191,7 +228,7 @@ export class EmailRoutingClient {
 }
 
 /** What callers use: the single-token client above, or one that finds each domain's account. */
-export type RoutingClient = Pick<EmailRoutingClient, "status" | "inventory" | "deleteRule" | "createRule" | "ensureRule">;
+export type RoutingClient = Pick<EmailRoutingClient, "status" | "inventory" | "deleteRule" | "createRule" | "ensureRule" | "routingFor">;
 
 /**
  * Email Routing across every account the server has a token for (MA-4): each address is worked on
@@ -221,6 +258,11 @@ export class AccountsRoutingClient implements RoutingClient {
   async inventory(domain: string): Promise<DomainRouting> {
     const client = await this.client(`x@${domain}`).catch((e) => { throw new RoutingError((e as Error).message); });
     return client ? client.inventory(domain) : { domain, visible: false, enabled: false, rules: [], catchAll: null };
+  }
+
+  async routingFor(domain: string, addresses: string[]): Promise<AddressRouting> {
+    const client = await this.client(`x@${domain}`).catch((e) => { throw new RoutingError((e as Error).message); });
+    return client ? client.routingFor(domain, addresses) : { domain: domain.toLowerCase(), visible: false, enabled: false, status: "unknown", rules: [], catchAll: null };
   }
 
   async deleteRule(address: string): Promise<string> {

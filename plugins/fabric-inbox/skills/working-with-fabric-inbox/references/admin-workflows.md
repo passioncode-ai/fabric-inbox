@@ -19,10 +19,20 @@ works; the live tool schemas have every input.
 
 ## Addresses
 
-- **Create:** `list_domains` (the domain must be served) → `create_address` with `localPart`,
-  `domain`, optionally `name`, `agent`, `forwardTo` (`createRoute` defaults to `"auto"`: the rule is
-  made when the server has a routing token; read the answer's `warning` when it was not) →
-  `check_address_routing` → optionally `send_test_message`.
+- **Check first:** `check_address` with the `domain` and the `localParts` you mean to create. Its
+  `state` says whether the domain receives here (`can_receive` means `connect_domain` first;
+  `needs_fix` means its Email Routing must be fixed — `connect_domain` again); each name is
+  `available`, `exists`, `elsewhere` (a Cloudflare rule sends it somewhere else — tell the person
+  where, do not override it) or `invalid` (with why). Read its `notes` to the person: the catch-all
+  keeping that address's mail today, mail that arrived for it recently, role names.
+- **Create:** `create_address` with `localPart`, `domain`, optionally `name` (default: the name,
+  capitalised), `signature`, `agent`, `forwardTo`; several at once: `create_addresses` with
+  `localParts` and the same settings for all. `createRoute` defaults to `"auto"`: the rule is made
+  when the server can, and when it cannot the address is still created — read its `steps`: a rule
+  step `skipped` or `failed` carries the reason and a `fix` (`route_address_here` makes the rule
+  again once the cause is gone).
+- **Prove it:** `send_test_message` → `check_test_message` every few seconds until its `state` is
+  `arrived` or `not_arrived` (after 3 minutes); `not_arrived` → `check_address_routing`.
 - **Change:** `update_address` — only the fields you pass change: `fromName`, `signature`,
   `assistantPrompt`, `agent` (`"off"` or `{ agentId }`), `forwardTo` (`null` stops forwarding).
 - **Remove:** `remove_address` is two-step and deletes the address's mail for good. Its summary

@@ -4,11 +4,14 @@ import type { Env } from "../types";
 import { AGENT_TEMPLATES, readAssignment } from "../agents/definition";
 import { registryError } from "../agents/errors";
 import { RUN_OUTCOMES, type RunOutcome } from "../agents/run";
-import { allServedDomains, createMailbox, deleteMailbox, readAllSettings, readSettings, settingsKey, storedCatchAll, updateSettings } from "../lib/mailbox-store";
+import { allServedDomains, createMailbox, deleteMailbox, isDomainName, readAllSettings, readSettings, settingsKey, storedCatchAll, updateSettings } from "../lib/mailbox-store";
 import { cloudflareApi, cloudflareToken } from "../routing/cloudflare-api";
 import { DomainManager } from "../routing/domains";
 import { knownCollections } from "./knowledge";
-import { createAddress, effectiveCatchAll, removeAddress, setForwardCopy } from "../lib/address-ops";
+import {
+  checkAddresses, createAddress, createAddresses, removeAddress, routingTestStatus, sendRoutingTest, setForwardCopy, effectiveCatchAll,
+} from "../lib/address-ops";
+import { BATCH_MAX, checkLocalPart } from "../../shared/address-name";
 import { ROUTING_NOT_CONFIGURED, routingClient, RoutingError, type RoutingStatus } from "../routing/email-routing";
 
 /**
@@ -121,17 +124,35 @@ agentsRouter.get("/api/agent-runs", async (c) => {
 
 // ── Project addresses (SCR-09) ─────────────────────────────────────
 
-const LOCAL_PART = /^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$/;
+/** The part before @, checked as the dialog checks it (shared/address-name.ts): a refusal says why in words. */
+const LocalPart = z.string().max(320).transform((v, ctx) => {
+  const check = checkLocalPart(v);
+  if (!check.valid) ctx.addIssue({ code: z.ZodIssueCode.custom, message: check.problem ?? "Not a valid name" });
+  return check.value;
+});
 const Assignment = z.union([z.literal("off"), z.object({ id: z.string().min(1).max(100) })]);
-export const CreateAddress = z.object({
-  localPart: z.string().trim().toLowerCase().regex(LOCAL_PART, "Use letters, digits, dots, dashes or plus"),
-  domain: z.string().trim().toLowerCase().min(3).max(253),
+const Domain = z.string().trim().toLowerCase().min(3).max(253);
+const Signature = z.object({ enabled: z.boolean(), text: z.string().max(2000) }).strict();
+/** The settings an address is created with, one at a time or several at once. */
+const AddressSettings = {
   name: z.string().trim().max(80).optional(),
   agent: Assignment.optional(),
-  /** "auto" makes the rule when the server can (it has a routing token); a zone the token cannot see gets a warning. */
+  /** Added to mail sent from the address; off unless enabled with text. */
+  signature: Signature.optional(),
+  /**
+   * "auto" makes the rule when the server can, and when it cannot (no token, a zone no token sees,
+   * Cloudflare refused) still creates the address and says why in its steps; true requires the rule.
+   */
   createRoute: z.union([z.boolean(), z.literal("auto")]).default(false),
   /** Keep forwarding a copy of each message here; must be a verified Email Routing destination. */
   forwardTo: z.string().trim().toLowerCase().email().max(90).optional(),
+};
+export const CreateAddress = z.object({ localPart: LocalPart, domain: Domain, ...AddressSettings }).strict();
+/** Several addresses on one domain with the same settings (SCN-064); each name is checked on its own. */
+export const CreateAddresses = z.object({
+  domain: Domain,
+  localParts: z.array(z.string().max(320)).min(1, "Give at least one name").max(BATCH_MAX, `At most ${BATCH_MAX} addresses at once`),
+  ...AddressSettings,
 }).strict();
 
 async function checkAgentExists(c: C, assignment: z.infer<typeof Assignment> | undefined) {
@@ -229,10 +250,39 @@ agentsRouter.post("/api/project-addresses", async (c) => {
   const parsed = CreateAddress.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid address" }, 400);
   const input = parsed.data;
-  const agentProblem = c.env.AGENT_REGISTRY ? await checkAgentExists(c, input.agent) : input.agent && input.agent !== "off" ? "Agents are not configured" : null;
   const result = await createAddress(c.env, { email: `${input.localPart}@${input.domain}`, name: input.name, agent: input.agent,
-    createRoute: input.createRoute, forwardTo: input.forwardTo }, agentProblem);
+    signature: input.signature, createRoute: input.createRoute, forwardTo: input.forwardTo }, await agentProblemOf(c, input.agent));
   return c.json(result.body, result.status);
+});
+
+const agentProblemOf = async (c: C, agent: z.infer<typeof Assignment> | undefined) =>
+  c.env.AGENT_REGISTRY ? await checkAgentExists(c, agent) : agent && agent !== "off" ? "Agents are not configured" : null;
+
+/** SCN-064: several addresses on one domain, each with its own result and steps. */
+agentsRouter.post("/api/project-addresses/batch", async (c) => {
+  const parsed = CreateAddresses.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid request" }, 400);
+  const { localParts, domain, ...settings } = parsed.data;
+  const result = await createAddresses(c.env, { domain, localParts, ...settings }, await agentProblemOf(c, settings.agent));
+  return c.json(result.body, result.status);
+});
+
+/**
+ * SCN-061: before creating, what the dialog and check_address say about a domain and some names
+ * (`names`, comma-separated, up to 50). Read-only.
+ */
+agentsRouter.get("/api/project-addresses/check", async (c) => {
+  c.header("Cache-Control", "no-store");
+  const domain = (c.req.query("domain") ?? "").trim().toLowerCase();
+  if (!isDomainName(domain)) return c.json({ error: "Give the domain, e.g. domain=example.com" }, 400);
+  const names = (c.req.query("names") ?? "").split(",").map((n) => n.trim()).filter(Boolean);
+  if (names.length > BATCH_MAX) return c.json({ error: `At most ${BATCH_MAX} names at once` }, 400);
+  try {
+    return c.json(await checkAddresses(c.env, domain, names));
+  } catch (error) {
+    console.error(JSON.stringify({ event: "address_check_error", domain, error: (error as Error).message }));
+    return c.json({ error: "The address could not be checked right now. Try again." }, 503);
+  }
 });
 
 /**
@@ -270,16 +320,13 @@ agentsRouter.put("/api/project-addresses/:email/agent", async (c) => {
  * the operator sees routing work end to end. The agent skips its own address.
  */
 agentsRouter.post("/api/project-addresses/:email/test", async (c) => {
-  const email = c.req.param("email").toLowerCase();
-  const settings = await readSettings(c.env.BUCKET, email);
-  if (!settings) return c.json({ error: "Address not found" }, 404);
-  const subject = `Fabric Inbox routing test ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`;
-  const result = await c.env.MAILBOX.get(c.env.MAILBOX.idFromName(email)).sendMail({
-    mailboxId: email,
-    idempotencyKey: `routing-test-${subject}`,
-    kind: "send",
-    request: { from: email, to: email, subject, text: "If this message appears in the address's inbox, routing works." },
-  });
-  if ("error" in result) return c.json({ error: result.error }, 400);
-  return c.json({ subject, status: result.status, errorCode: result.errorCode });
+  const result = await sendRoutingTest(c.env, c.req.param("email"));
+  return c.json(result.body, result.status);
+});
+
+/** SCN-062: the last test message of the address and whether it has arrived; the dialog asks every 5 s. */
+agentsRouter.get("/api/project-addresses/:email/test", async (c) => {
+  c.header("Cache-Control", "no-store");
+  const result = await routingTestStatus(c.env, c.req.param("email"));
+  return c.json(result.body, result.status);
 });
