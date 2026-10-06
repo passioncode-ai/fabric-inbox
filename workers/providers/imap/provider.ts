@@ -22,7 +22,7 @@ import { hasCredentialKey, type CredentialEnvironment } from "../credentials";
 import { NotSentError, type DraftUpdate, type DraftView, type MailProvider, type MessageChange, type PageResult, type ProviderCapabilities, type ProviderSession, type SendResult } from "../provider";
 import { ImapConnection, TLS_TRANSPORT, type ImapTransport } from "./client";
 import { attachmentFromRaw, labelsFor, messageFromRaw, messageKey, parseMessageKey, rawHeaders, threadKey } from "./mime";
-import { preset, presetName } from "./presets";
+import { preset, presetName } from "../../../shared/mail/imap-presets";
 import { sendSmtp, verifySmtp } from "./smtp";
 import { cloudflareSockets, type SocketFactory } from "./sockets";
 import { ImapSync, mapFolders } from "./sync";

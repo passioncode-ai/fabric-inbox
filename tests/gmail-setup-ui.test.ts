@@ -94,10 +94,12 @@ test("an account that stopped working says why, with one action that fixes it", 
   assert.match(limited, /Google ends this access on/);
 });
 
-test("Gmail with an app password is a marked card this build cannot connect yet (WS4 wires it)", () => {
+test("Gmail with an app password is the IMAP preset gmail, connectable where the server can keep an app password (WS4)", () => {
   const card = PROVIDERS.find((p) => p.id === "gmail-app-password")!;
-  assert.equal(card.connect, "none");
-  assert.equal(availability(card, { cloudflareConnected: true, gmail: "configured" }), "unavailable");
+  assert.equal(card.connect, "app-password");
+  assert.equal(card.preset, "gmail");
+  assert.equal(availability(card, { cloudflareConnected: true, gmail: "not-configured", imap: "configured" }), "available", "no Google Cloud project needed");
+  assert.equal(availability(card, { cloudflareConnected: true, gmail: "configured", imap: "not-configured" }), "not-configured");
   assert.match(card.summary, /2-Step Verification/);
   assert.match(card.summary, /not for work or school/);
   assert.match(card.tradeoff!, /labels appear as folders/);

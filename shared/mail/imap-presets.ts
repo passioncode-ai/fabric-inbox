@@ -11,7 +11,7 @@
  * server is put in Sent by the provider (Gmail); everywhere else this server appends the copy,
  * after checking Sent for one the server may have made itself (imap/provider.ts).
  *
- * Plain module: the Worker, the app (Settings → Accounts) and the tests read it.
+ * Plain module: the Worker (workers/providers/imap/), the app (Settings → Accounts) and the tests read it.
  */
 export type PresetId = "icloud" | "yahoo" | "aol" | "fastmail" | "zoho" | "zoho-org" | "yandex" | "mailru" | "gmx-com" | "gmx-net" | "gmail" | "custom";
 

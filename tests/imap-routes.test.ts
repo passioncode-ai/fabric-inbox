@@ -6,7 +6,7 @@ import { normaliseAccountId, scopedApi, toolFitsScope } from "../workers/mcp/sco
 import { NOT_TOOLS, TOOLS, parseAccount } from "../workers/mcp/tools";
 import { call, fakeApi, gmailMessage, ledger, ok, owner } from "./mcp-fake-api";
 import { runTool } from "../workers/mcp/protocol";
-import { PRESETS } from "../workers/providers/imap/presets";
+import { PRESETS } from "../shared/mail/imap-presets";
 
 /** The IMAP routes (WS4) and the agent protocol over IMAP accounts. */
 const SERVER = "https://inbox.example.org";

@@ -5,7 +5,7 @@
  */
 import { z } from "zod";
 import { ProviderError } from "../gmail-client";
-import { PRESETS, preset, type PresetId } from "./presets";
+import { PRESETS, preset, type PresetId } from "../../../shared/mail/imap-presets";
 import { BLOCKED_PORTS } from "./sockets";
 import type { ServerSettings } from "./types";
 

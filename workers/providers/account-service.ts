@@ -29,7 +29,7 @@ import { NotSentError, type DraftUpdate, type MailProvider, type MessageChange, 
 import type { ImapAccount, ImapCredentials } from "./imap/types";
 import { ImapProvider, type ImapDeps } from "./imap/provider";
 import { serverSettings, type ImapConnectInput } from "./imap/connect";
-import { CUSTOM, PRESETS } from "./imap/presets";
+import { CUSTOM, PRESETS } from "../../shared/mail/imap-presets";
 export { importPercent, type SyncState } from "./gmail-sync";
 
 /** How a sync runs: until when it may start pages, whether it imports, and under whose lock. */
