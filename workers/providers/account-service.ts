@@ -1104,8 +1104,14 @@ export class AccountService {
             return null;
           })
           : null;
-        if (verdict) {
-          await this.discard(event.accountId, event.messageId, verdict.reason);
+        // A discard the provider refuses (a folder it will not make, a label it rejects, an outage)
+        // must not cost the message its delivery: it stays in the inbox and is handed on below.
+        const discarded = verdict ? await this.discard(event.accountId, event.messageId, verdict.reason).then(() => true, (error: unknown) => {
+          console.warn(JSON.stringify({ event: "discard_arrival_failed", provider, rule: verdict.ruleId,
+            error: error instanceof ProviderError ? error.code : (error as Error)?.message?.slice(0, 120) ?? "unknown" }));
+          return false;
+        }) : false;
+        if (verdict && discarded) {
           await this.store.transaction(async (tx) => {
             await tx.put(key.slice("pending:".length), { ...event, delivered: true });
             await tx.delete(key);

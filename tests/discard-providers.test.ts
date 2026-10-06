@@ -136,6 +136,27 @@ test("IMAP: new mail a rule matches is discarded on arrival, before rules, agent
   assert.equal((await service.drainEvents(async () => {}, Date.now(), filter)).discarded, 0, "never twice");
 });
 
+test("IMAP: a discard that fails on arrival (the server refuses to make Discarded) still delivers the message, once, to rules, agents and categories", async (t) => {
+  const { imap, service } = await imapFixture(t, { createRefused: true });
+  const { id } = await service.connectImap({ preset: "fastmail", email: EMAIL, password: PASS });
+  await settle(service, id);
+  imap.deliver("INBOX", mail("Digest 3", { extra: "List-Id: <weekly.news.example.org>\r\n" }));
+  await service.sync(id, { historyOnly: true, deadline: Date.now() + 10_000 });
+  const filter: ArrivalFilter = async () => ({ reason: "Discarded automatically: you discarded 1 message from this newsletter (Weekly)", ruleId: "l-00000001" });
+  const delivered: string[] = [], applied: string[] = [];
+  const warnings: string[] = [];
+  console.warn = (line: string) => { warnings.push(line); };
+  const result = await service.drainEvents(async (e) => { delivered.push(e.subject); }, Date.now(), filter, async (rule) => { applied.push(rule); });
+  assert.deepEqual(result, { delivered: 1, failed: 0, dead: 0, discarded: 0 });
+  assert.deepEqual(delivered, ["Digest 3"], "it reaches its consumers as if no rule matched");
+  assert.deepEqual(applied, [], "the rule did not take it");
+  assert.equal(imap.folder("INBOX").messages.length, 1, "it stays in the inbox");
+  const logged = warnings.map((w) => JSON.parse(w)).find((w) => w.event === "discard_arrival_failed");
+  assert.equal(logged?.error, "folder_create_refused");
+  assert.equal(logged?.rule, "l-00000001");
+  assert.deepEqual(await service.drainEvents(async (e) => { delivered.push(e.subject); }, Date.now(), filter), { delivered: 0, failed: 0, dead: 0, discarded: 0 }, "never again");
+});
+
 test("IMAP: Discarded mail goes to Trash after 30 days; younger mail stays", async (t) => {
   const { imap, store, service } = await imapFixture(t);
   imap.deliver("INBOX", mail("Old"));
