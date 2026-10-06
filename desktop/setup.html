@@ -82,6 +82,8 @@
         <input id="cf-team" autocomplete="off" spellcheck="false" aria-describedby="cf-team-help">
         <p id="cf-team-help" class="help">You will sign in at <code><span id="cf-team-preview">name</span>.cloudflareaccess.com</code>.</p>
       </div>
+      <label class="check" for="cf-gmail"><input id="cf-gmail" type="checkbox" aria-describedby="cf-gmail-help"> Then set up Gmail (optional)</label>
+      <p id="cf-gmail-help" class="help">After you sign in, the Gmail setup opens: a Google Cloud app of your own, about ten minutes once. Leave it off to start with your domains; Gmail can be set up any time in Settings → Accounts.</p>
       <p id="cf-details-error" class="error" role="alert" hidden></p>
       <div class="actions"><button type="button" id="cf-deploy">Create my server</button><button type="button" class="secondary" id="cf-back-token">Back</button></div>
     </div>
@@ -91,6 +93,7 @@
       <ol id="cf-steps" class="steps" aria-live="polite"></ol>
       <p id="cf-progress-error" class="error" role="alert" hidden></p>
       <p id="cf-done" class="notice" hidden>Your server is ready. Sign in with the code Cloudflare emails you; then add your domains on Settings → Domains.</p>
+      <p id="cf-done-gmail" class="notice" hidden>Your server is ready. Sign in with the code Cloudflare emails you; the Gmail setup opens next.</p>
       <div class="actions"><button type="button" id="cf-retry" hidden>Continue</button><button type="button" class="secondary" id="cf-back-details" hidden>Back</button></div>
     </div>
   </section>
