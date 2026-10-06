@@ -55,6 +55,7 @@ const BODIES: Record<string, string[]> = {
   "POST /api/knowledge/collections": keys(CollectionInput),
   "PUT /api/knowledge/collections/:id": keys(CollectionChange),
   "POST /api/knowledge/collections/:id/documents": keys(DocumentsInput),
+  "POST /api/inbox/refresh": ["accounts"], // hand-read in workers/routes/inbox.ts
   "POST /api/spam/report": keys(Report),
   "POST /api/spam/release": keys(Report),
   "POST /api/spam/lists": keys(ListEdit),
@@ -140,6 +141,7 @@ const MAP: Record<string, Record<string, Record<string, string> & { via?: string
   save_category: { "POST /api/categories": { via: "category" }, "PUT /api/categories/:id": { via: "category" } },
   save_rule: { "PUT /api/automation/:account/rules": { via: "rule", version: "set by the server, one more on each save" } },
   dry_run_rule: { "POST /api/automation/:account/dry-run": { emailId: "messageId" } },
+  refresh_inbox: { "POST /api/inbox/refresh": { accounts: "accountIds" } },
 };
 
 const inputKeys = (shape: Record<string, Any>, via?: string): string[] => {
