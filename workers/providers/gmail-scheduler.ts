@@ -23,6 +23,8 @@ export interface AlarmStorage {
 export interface SyncingService {
   listAccounts(): Promise<{ accounts: PublicAccount[] }>;
   sync(accountId: string, options: SyncOptions): Promise<PublicAccount>;
+  /** Whether the account's provider is set up on this server; an account whose provider is not is left alone. */
+  ready?(account: PublicAccount): boolean;
 }
 type Lock = <T>(fn: () => Promise<T>) => Promise<T>;
 
@@ -35,9 +37,9 @@ export const REFRESH_BUDGET_MS = 20_000;
 /** Any one account's history in a tick, when several share it. */
 const MIN_SLICE_MS = 2_000;
 
-/** What Refresh did for one Gmail account. */
+/** What Refresh did for one account. */
 export interface RefreshOutcome {
-  /** "gmail:<id>", as the feed names it. */
+  /** "gmail:<id>" or "imap:<id>", as the feed names it. */
   accountId: string;
   email: string;
   /**
@@ -52,7 +54,9 @@ export interface RefreshOutcome {
   importing?: number;
 }
 
-const due = (a: PublicAccount, now: number) => a.status !== "reconnect_required" && !(a.retryAt && a.retryAt > now);
+const waiting = (a: PublicAccount, now: number) => a.status === "reconnect_required" || !!(a.retryAt && a.retryAt > now);
+/** "gmail:<id>" or "imap:<id>", as the feed names it. */
+const feedId = (a: PublicAccount) => a.provider + ":" + a.id;
 const quiet = (error: unknown) => (error as { code?: string })?.code ?? (error as Error)?.message ?? "sync_failed";
 
 export class GmailScheduler {
@@ -88,7 +92,7 @@ export class GmailScheduler {
       return { backlog: false };
     }
     const offset = ((await this.storage.get<number>("poll:offset")) || 0) % accounts.length;
-    const order = [...accounts.slice(offset), ...accounts.slice(0, offset)].filter((a) => due(a, start));
+    const order = [...accounts.slice(offset), ...accounts.slice(0, offset)].filter((a) => !waiting(a, start) && (this.service.ready?.(a) ?? true));
     const deadline = start + TICK_BUDGET_MS;
     let backlog = false;
     const pending: PublicAccount[] = [];
@@ -136,12 +140,12 @@ export class GmailScheduler {
    */
   async refresh(accountIds: string[] | undefined, budgetMs = REFRESH_BUDGET_MS): Promise<RefreshOutcome[]> {
     const { accounts } = await this.service.listAccounts();
-    const chosen = accountIds ? accounts.filter((a) => accountIds.includes("gmail:" + a.id)) : accounts;
+    const chosen = accountIds ? accounts.filter((a) => accountIds.includes(feedId(a))) : accounts;
     const deadline = Date.now() + budgetMs;
     const outcomes: RefreshOutcome[] = [];
     for (let i = 0; i < chosen.length; i++) {
       const a = chosen[i];
-      const base = { accountId: "gmail:" + a.id, email: a.email };
+      const base = { accountId: feedId(a), email: a.email };
       const now = Date.now();
       if (a.status === "reconnect_required") { outcomes.push({ ...base, result: "reconnect" }); continue; }
       if (a.retryAt && a.retryAt > now) { outcomes.push({ ...base, result: "backoff", retryAt: a.retryAt, ...(a.error ? { error: a.error } : {}) }); continue; }
@@ -149,14 +153,14 @@ export class GmailScheduler {
       const share = (deadline - now) / (chosen.length - i);
       try {
         const account = await this.service.sync(a.id, { historyOnly: true, deadline: now + share, lock: this.lock });
-        const importing = importPercent(account.sync);
+        const importing = importPercent(account.sync as Parameters<typeof importPercent>[0]);
         outcomes.push({ ...base, result: "synced", ...(account.sync.mode === "initial" ? { importing: importing ?? 0 } : {}) });
       } catch (error) {
         const code = quiet(error);
         outcomes.push(code === "reconnect_required" ? { ...base, result: "reconnect" } : { ...base, result: "failed", error: code });
       }
     }
-    console.log(JSON.stringify({ event: "gmail_refresh", accounts: outcomes.length, synced: outcomes.filter((o) => o.result === "synced").length }));
+    console.log(JSON.stringify({ event: "mail_refresh", accounts: outcomes.length, synced: outcomes.filter((o) => o.result === "synced").length }));
     return outcomes;
   }
 }

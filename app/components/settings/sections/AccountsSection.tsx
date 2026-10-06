@@ -4,7 +4,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { CloudIcon, EnvelopeSimpleIcon, GoogleLogoIcon, MicrosoftOutlookLogoIcon, PlusIcon } from "@phosphor-icons/react";
 import { fabric, accountPath, type Account } from "~/services/fabric";
 import type { CloudflareAccount, DomainList } from "~/services/domains";
-import { gmailSetupState } from "~/lib/account-status";
+import { gmailSetupState, imapSetupState } from "~/lib/account-status";
 import { count, groupRows, visibleRows, type ListEntry } from "../list-model";
 import { settingsPath } from "../paths";
 import {
@@ -15,13 +15,14 @@ import { DOMAINS_KEY, GMAIL_KEY, refreshMail, useDomains, useGmailAccounts } fro
 import { PermissionTable } from "./DomainsSection";
 import { AVAILABILITY_TEXT, PROVIDERS, availability, type ProviderEntry, type ProviderId } from "./providers";
 import { GmailConnectStep, GmailProblem, GmailSetupWizard, useGmailSetup } from "./GmailSetup";
+import { ConnectImap, ImapPanel } from "./ImapAccount";
 
 /** Where a person creates a token; an account-owned one is under the account's own Manage Account page. */
 const TOKEN_PAGE = "https://dash.cloudflare.com/profile/api-tokens";
 
-type AccountEntry = ListEntry & ({ kind: "cloudflare"; account: CloudflareAccount } | { kind: "gmail"; account: Account });
+type AccountEntry = ListEntry & ({ kind: "cloudflare"; account: CloudflareAccount } | { kind: "gmail" | "imap"; account: Account });
 
-const GROUPS = [{ id: "cloudflare", label: "Cloudflare" }, { id: "gmail", label: "Gmail" }];
+const GROUPS = [{ id: "cloudflare", label: "Cloudflare" }, { id: "gmail", label: "Gmail" }, { id: "imap", label: "Other mail" }];
 const ICONS: Record<ProviderId, typeof CloudIcon> = { cloudflare: CloudIcon, gmail: GoogleLogoIcon, "gmail-app-password": GoogleLogoIcon, imap: EnvelopeSimpleIcon, microsoft: MicrosoftOutlookLogoIcon };
 
 export function describeCloudflare(a: CloudflareAccount): string {
@@ -35,9 +36,9 @@ const gmailStatus = (a: Account) => a.status.replaceAll("_", " ");
 const gmailTone = (a: Account) => (a.error ? "bad" : a.status === "connected" ? "ok" : "warn") as "bad" | "ok" | "warn";
 
 /**
- * Settings → Accounts (SCR-02, SCN-002, SCN-003, SCN-045, SCN-046): the Cloudflare accounts the
- * server has a token for, and the connected Gmail accounts. Connecting one more opens a dialog with
- * a card per provider (providers.ts); providers this build cannot connect say so.
+ * Settings → Accounts (SCR-02, SCN-002, SCN-003, SCN-045, SCN-046, SCN-052…SCN-056): the Cloudflare
+ * accounts the server has a token for, and the connected Gmail and IMAP accounts. Connecting one more
+ * opens a dialog with a card per provider (providers.ts); providers this build cannot connect say so.
  */
 export default function AccountsSection({ id }: { id: string | null }) {
   const domains = useDomains();
@@ -48,7 +49,9 @@ export default function AccountsSection({ id }: { id: string | null }) {
 
   const entries = useMemo<AccountEntry[]>(() => [
     ...(domains.data?.accounts ?? []).map((a): AccountEntry => ({ key: `cloudflare:${a.id}`, group: "cloudflare", kind: "cloudflare", account: a, text: `${a.name} cloudflare` })),
-    ...(gmail.data?.accounts ?? []).map((a): AccountEntry => ({ key: `gmail:${a.id}`, group: "gmail", kind: "gmail", account: a, text: `${a.email} gmail google` })),
+    ...(gmail.data?.accounts ?? []).map((a): AccountEntry => a.provider === "imap"
+      ? { key: `imap:${a.id}`, group: "imap", kind: "imap", account: a, text: `${a.email} imap ${a.providerName ?? ""}` }
+      : { key: `gmail:${a.id}`, group: "gmail", kind: "gmail", account: a, text: `${a.email} gmail google` }),
   ], [domains.data, gmail.data]);
   const groups = groupRows(visibleRows(entries, query, id), GROUPS);
   const selected = id ? entries.find((e) => e.key === id) ?? null : null;
@@ -63,11 +66,11 @@ export default function AccountsSection({ id }: { id: string | null }) {
   const listView = loading ? <SkeletonRows label="Loading your accounts…" /> : (
     <>
       {domains.isError && <LoadFailure what="Cloudflare accounts" error={domains.error} onRetry={() => void domains.refetch()} retrying={domains.isFetching} />}
-      {gmail.isError && <LoadFailure what="Gmail accounts" error={gmail.error} onRetry={() => void gmail.refetch()} retrying={gmail.isFetching} />}
+      {gmail.isError && <LoadFailure what="Gmail and IMAP accounts" error={gmail.error} onRetry={() => void gmail.refetch()} retrying={gmail.isFetching} />}
       <SelectableList label="Accounts" groups={groups} selected={id} hrefFor={(e) => settingsPath("accounts", e.key)}
         renderRow={(e) => <AccountRowContent entry={e} />}
         empty={<div className="fi-list-empty">
-          <p>{query ? `No account matches “${query}”.` : "No account is connected yet. Connect Cloudflare for your own domains, or a Gmail account."}</p>
+          <p>{query ? `No account matches “${query}”.` : "No account is connected yet. Connect Cloudflare for your own domains, Gmail, or another mail account."}</p>
           {!query && <button type="button" className="fi-primary" onClick={() => setConnecting("")}>Connect an account</button>}
         </div>} />
       {domains.data?.problems?.map((p) => <p key={p} className="fi-load-failure" role="alert">{p}</p>)}
@@ -89,6 +92,9 @@ export default function AccountsSection({ id }: { id: string | null }) {
   ) : selected.kind === "cloudflare" ? (
     <CloudflarePanel key={selected.key} account={selected.account} entryKey={selected.key}
       onRemoved={() => navigate(settingsPath("accounts"), { replace: true, preventScrollReset: true })} />
+  ) : selected.kind === "imap" ? (
+    <ImapPanel key={selected.key} account={selected.account} entryKey={selected.key}
+      onRemoved={() => navigate(settingsPath("accounts"), { replace: true, preventScrollReset: true })} />
   ) : (
     <GmailPanel key={selected.key} account={selected.account} entryKey={selected.key} onSetup={() => setConnecting("gmail")}
       onRemoved={() => navigate(settingsPath("accounts"), { replace: true, preventScrollReset: true })} />
@@ -102,7 +108,9 @@ export default function AccountsSection({ id }: { id: string | null }) {
           <button type="button" className="fi-primary" onClick={() => setConnecting("")}><PlusIcon size={16} /> Connect account</button>
         </>} />
       <ConnectDialog open={connecting !== null} provider={connecting || null} onChoose={(p) => setConnecting(p)}
-        onClose={() => setConnecting(null)} list={domains.data} gmailState={gmailSetupState(gmail.data, gmail.error)} />
+        onClose={() => setConnecting(null)} list={domains.data} gmailState={gmailSetupState(gmail.data, gmail.error)}
+        imapState={imapSetupState(gmail.data, gmail.error)}
+        onConnected={(key) => { setConnecting(null); navigate(settingsPath("accounts", key), { replace: true, preventScrollReset: true }); }} />
     </>
   );
 }
@@ -231,11 +239,11 @@ function GmailPanel({ account: a, entryKey, onRemoved, onSetup }: { account: Acc
 
 /* ------------------------------------------------------------ connecting */
 
-function ConnectDialog({ open, provider, onChoose, onClose, list, gmailState }: {
+function ConnectDialog({ open, provider, onChoose, onClose, list, gmailState, imapState, onConnected }: {
   open: boolean; provider: ProviderId | null; onChoose: (p: ProviderId | "") => void; onClose: () => void;
-  list?: DomainList; gmailState: ReturnType<typeof gmailSetupState>;
+  list?: DomainList; gmailState: ReturnType<typeof gmailSetupState>; imapState: ReturnType<typeof imapSetupState>; onConnected: (accountKey: string) => void;
 }) {
-  const state = { cloudflareConnected: list ? list.connected : null, gmail: gmailState };
+  const state = { cloudflareConnected: list ? list.connected : null, gmail: gmailState, imap: imapState };
   const chosen = PROVIDERS.find((p) => p.id === provider) ?? null;
   return (
     <Dialog open={open} title={chosen ? `Connect ${chosen.name}` : "Connect an account"} onClose={onClose} wide>
@@ -247,6 +255,18 @@ function ConnectDialog({ open, provider, onChoose, onClose, list, gmailState }: 
         <ConnectGmail state={gmailState} onBack={() => onChoose("")} onClose={onClose} />
       ) : chosen.id === "cloudflare" ? (
         <ConnectCloudflareAccount list={list} onBack={() => onChoose("")} onClose={onClose} />
+      ) : chosen.connect === "app-password" && availability(chosen, state) === "available" ? (
+        <>
+          {chosen.tradeoff && <p className="fi-hint">Compared with connecting through Google: {chosen.tradeoff}</p>}
+          <ConnectImap fixed={chosen.preset} onBack={() => onChoose("")} onConnected={onConnected} />
+        </>
+      ) : chosen.connect === "app-password" ? (
+        <>
+          <p role={imapState === "loading" ? "status" : "alert"}>{imapState === "loading" ? "Checking your server…"
+            : imapState === "not-configured" ? "Your server has no credential key yet, so it cannot keep an app password. Update the server from the Mac app, which adds one, or set MAIL_CREDENTIAL_KEY on a server deployed by hand."
+            : "Whether your server can keep IMAP accounts is unknown: the accounts did not load."}</p>
+          <div className="fi-dialog-actions"><button type="button" className="fi-secondary" data-autofocus onClick={() => onChoose("")}>Back</button></div>
+        </>
       ) : (
         <>
           <p>{chosen.name} connections are not available in this build. {chosen.summary}</p>

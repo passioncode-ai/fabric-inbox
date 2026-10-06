@@ -125,8 +125,11 @@ Every name the Worker reads (`workers/types.ts`). None is in `wrangler.jsonc` (C
 | `SPAM_DAILY_LIMIT` | var | optional | `300` | strangers' messages the model reads for spam per UTC day on its own; a check made in the same call as a category does not count; beyond it new mail is not judged by the model |
 | `AUTOMATION_MCP_HOSTS` | var | agent or rule tools | empty → no tools | exact HTTPS hosts tools may call |
 | `AUTOMATION_TOOL_TOKENS` | secret | tools with credentials | `{}` | JSON map credential name → bearer token; agents and rules store only the name |
+| `MAIL_CREDENTIAL_KEY` | secret | Gmail and IMAP accounts | — | the key every account's token or app password is sealed with: made once by Create my server (and by the Gmail setup when the server has none), never replaced; see "The credential key" below |
+| `MAIL_CREDENTIAL_KEY_PREVIOUS` | secret | rotating the key | — | older keys, commas or spaces; what they sealed keeps opening and is sealed again with the new key on its next use |
+| `MAIL_POLL_SECONDS` | var | Gmail and IMAP accounts | 300 | how often accounts are read, 60–3600 s; `GMAIL_POLL_SECONDS` is read when it is absent |
 | `GOOGLE_CLIENT_ID`, `PUBLIC_APP_URL`, `GMAIL_POLL_SECONDS` | var | Gmail | — / — / 300 | written by the server from Settings → Accounts → Gmail, or by hand; see Gmail below |
-| `GOOGLE_CLIENT_SECRET`, `GMAIL_TOKEN_ENCRYPTION_KEY` | secret | Gmail | — | the same; the key is made by the server when missing and never replaced; see Gmail below |
+| `GOOGLE_CLIENT_SECRET`, `GMAIL_TOKEN_ENCRYPTION_KEY` | secret | Gmail | — | the same; `GMAIL_TOKEN_ENCRYPTION_KEY` is the credential key's name before 0.11, still read when `MAIL_CREDENTIAL_KEY` is absent; see Gmail below |
 
 Bindings in `wrangler.jsonc`: `BUCKET` (R2), `AI` (Workers AI), `EMAIL` (send_email), Durable Objects `MAILBOX`, `AUTOMATIONS`, `GMAIL_ACCOUNTS`, `AGENT_REGISTRY`, `KNOWLEDGE`, `CATEGORIES`, `EMAIL_AGENT`, `EMAIL_MCP`. Migrations: `fabric-v2` adds `AgentRegistryDO`, `fabric-v3` `KnowledgeDO`, `fabric-v4` `CategoriesDO`.
 
@@ -322,12 +325,12 @@ the category is next changed (board B-26).
 
 ## Gmail
 
-Two routes. **Through Google** (OAuth, the one built today): your own Google Cloud app, set up once
-from the app in about ten minutes, then each Gmail account is a sign-in on Google's page. **With an
-app password** (IMAP, no Google Cloud): a provider card stub until the IMAP/SMTP providers land
-(0.11.0 WS4); it needs 2-Step Verification on the Google account, is not offered for work or school
-accounts ([Google](https://support.google.com/accounts/answer/185833)), and shows Gmail's labels
-as folders.
+Two routes. **Through Google** (OAuth): your own Google Cloud app, set up once from the app in
+about ten minutes, then each Gmail account is a sign-in on Google's page. **With an app password**
+(IMAP, no Google Cloud): an IMAP account with the Gmail preset (see "IMAP accounts" below); it
+needs 2-Step Verification on the Google account, is not offered for work or school accounts
+([Google](https://support.google.com/accounts/answer/185833)), shows Gmail's labels as folders and
+does not read All Mail.
 
 ### Set up Gmail from the app (recommended)
 
@@ -351,7 +354,7 @@ API makes a Google Cloud OAuth client on their behalf.
 **What the server does with them** (`workers/routes/gmail-setup.ts`). It checks the pair with
 Google's token endpoint (a code that cannot be valid: `invalid_grant` means the client is right,
 `invalid_client` that it is not) and refuses a pair Google refuses, with nothing written. It makes a
-credential key only when it has none: a valid `GMAIL_TOKEN_ENCRYPTION_KEY` is never replaced, since
+credential key (`MAIL_CREDENTIAL_KEY`) only when it has none: a valid key under either name is never replaced, since
 every account's access is sealed with it. It then writes `GOOGLE_CLIENT_ID` and `PUBLIC_APP_URL`
 (vars, the latter the address the app is open at) and `GOOGLE_CLIENT_SECRET` and the key (secrets)
 in one change to its own Worker settings, with its own token (`CLOUDFLARE_API_TOKEN`, written by
@@ -377,7 +380,7 @@ For a server without its own Cloudflare token, set the same values with wrangler
 |---|---|---|
 | `GOOGLE_CLIENT_ID` | var | OAuth web application client ID |
 | `GOOGLE_CLIENT_SECRET` | secret | OAuth client secret, server only |
-| `GMAIL_TOKEN_ENCRYPTION_KEY` | secret | Base64url-encoded 32-byte AES-GCM key (`openssl rand -base64 32 \| tr '+/' '-_' \| tr -d '='`); back it up before connecting accounts — a new key makes every account reconnect |
+| `MAIL_CREDENTIAL_KEY` (or, before 0.11, `GMAIL_TOKEN_ENCRYPTION_KEY`) | secret | Base64url-encoded 32-byte AES-GCM key (`openssl rand -base64 32 \| tr '+/' '-_' \| tr -d '='`); back it up before connecting accounts — a lost key makes every account reconnect (see "The credential key") |
 | `PUBLIC_APP_URL` | var | Exact HTTPS application origin; no path/query/credentials |
 | `GMAIL_POLL_SECONDS` | var | Optional poll interval, default 300 seconds; clamped to 60–3600. While an import or a history page is unfinished the next sync is 10 s away instead; a new account syncs at once, and Check for new mail reads Gmail on demand ([architecture](../architecture.md#gmail-sync-cache-and-refresh)) |
 
@@ -417,6 +420,68 @@ Gmail's 403 `userRateLimitExceeded` is a rate limit (back off), not a failure. A
 there marks the account as above.
 
 Tokens are encrypted server-side and omitted from account responses. Initial/history-expiry import does not run rules against historical messages. Incremental incoming events use a durable acknowledgement outbox (`workers/providers/account-service.ts`, provider tests). Polling continues in Durable Object alarms after the desktop closes, once deployed/configured. Pub/Sub is not implemented.
+
+## IMAP accounts (iCloud, Yahoo, Fastmail and others)
+
+**Settings → Accounts → Connect account → Other mail (IMAP)** (or **Gmail with an app password**):
+choose the provider, do what its card says at the provider (an app password; IMAP switched on where
+it is off), enter the address and paste the app password. Your server signs in to the provider's
+IMAP server over TLS, reads the folders, opens the Inbox and signs in to its SMTP server; only then
+is the password kept, sealed with the credential key, on your server. Mail is then read every few
+minutes and sent from your server, with the Mac closed. Nothing about IMAP accounts is kept on the
+Mac (no Keychain item): operator decision 2026-10-05/06.
+
+| Preset | IMAP (TLS) | SMTP | Sent copy | Read from | App password |
+|---|---|---|---|---|---|
+| iCloud Mail | imap.mail.me.com:993 (user: the name before @) | smtp.mail.me.com:587 STARTTLS | appended | [Apple](https://support.apple.com/en-us/102525) | [Apple](https://support.apple.com/en-us/102654) |
+| Yahoo Mail | imap.mail.yahoo.com:993 | smtp.mail.yahoo.com:465 | appended | [Yahoo](https://help.yahoo.com/kb/SLN4075.html) | [Yahoo](https://help.yahoo.com/kb/SLN15241.html) |
+| AOL Mail | imap.aol.com:993 | smtp.aol.com:465 | appended | [AOL](https://help.aol.com/articles/how-do-i-use-other-email-applications-to-send-and-receive-my-aol-mail) | [AOL](https://help.aol.com/articles/create-and-manage-app-password) |
+| Fastmail | imap.fastmail.com:993 | smtp.fastmail.com:465 | appended | [Fastmail](https://www.fastmail.help/hc/en-us/articles/1500000278342-Server-names-and-ports) | [Fastmail](https://www.fastmail.help/hc/en-us/articles/360058752854-App-passwords) |
+| Zoho Mail / for a domain | imap.zoho.com / imappro.zoho.com:993 | smtp.zoho.com / smtppro.zoho.com:465 | appended | [Zoho](https://www.zoho.com/mail/help/imap-access.html) (IMAP must be switched on) | [Zoho](https://www.zoho.com/mail/help/adminconsole/two-factor-authentication.html) |
+| Yandex Mail | imap.yandex.com:993 | smtp.yandex.com:465 | appended | [Yandex](https://yandex.com/support/yandex-360/customers/mail/en/mail-clients/others) (IMAP must be allowed) | [Yandex](https://yandex.com/support/id/en/authorization/app-passwords) (works within 2–3 hours) |
+| Mail.ru | imap.mail.ru:993 | smtp.mail.ru:465 | appended | [Mail.ru](https://help.mail.ru/mail/login/mailer/) | [Mail.ru](https://help.mail.ru/mail/login/mailer/#password) |
+| GMX (gmx.com) | imap.gmx.com:993 | mail.gmx.com:465 | appended | [GMX](https://support.gmx.com/pop-imap/imap/server.html) | [switch IMAP on](https://support.gmx.com/pop-imap/toggle.html) |
+| GMX (gmx.net, gmx.de) | imap.gmx.net:993 | mail.gmx.net:465 | appended | [GMX](https://hilfe.gmx.net/pop-imap/imap/imap-serverdaten.html) | [switch IMAP on](https://hilfe.gmx.net/pop-imap/einschalten.html) |
+| Gmail with an app password | imap.gmail.com:993 | smtp.gmail.com:465 | kept by Gmail ([Google](https://support.google.com/mail/answer/78892)) | [Google](https://developers.google.com/workspace/gmail/imap/imap-smtp) | [Google](https://support.google.com/accounts/answer/185833) |
+| Other | the server the provider names, SSL/TLS (993) | 465 SSL/TLS or 587 STARTTLS | appended | — | — |
+
+Every server was read from the page linked, on 2026-10-06, and reached from the built Worker in
+workerd the same day: each IMAP server and each SMTP server refused a made-up account's sign-in
+over TLS (iCloud's SMTP after STARTTLS). "Appended" means your server puts the sent message in Sent
+itself, unless Sent already holds one with its Message-ID. IMAP STARTTLS (port 143), plain text and
+port 25 are never used; Workers cannot reach port 25.
+
+**When it stops working.** A refused app password (deleted at the provider, IMAP switched off,
+the account's password changed) stops the account with "reconnect required"; the account's panel
+in Settings asks for a new app password and checks it before replacing the old one. A server out
+of reach is tried again on its own (60 seconds doubling to 15 minutes); the panel offers Retry now.
+
+**Disconnecting** deletes the app password and the synced mail from your server; the mail stays at
+the provider. Delete the app password at the provider too: your server cannot revoke it.
+
+**What it does not do yet.** No IDLE (new mail arrives on the poll interval or Check for new mail);
+searches read the mail synced here, not the provider's search; Gmail through IMAP does not read All
+Mail, so an archived message leaves the app's lists.
+
+## The credential key
+
+Every account's secret — a Gmail refresh token, an IMAP app password — is sealed with
+`MAIL_CREDENTIAL_KEY` (AES-256-GCM, bound to its account) and kept only on your server
+(`workers/providers/credentials.ts`). Create my server makes the key the first time and never sends
+it again; the app keeps no copy, so the key exists only as a Worker secret, which Cloudflare does
+not show again.
+
+- **Backup.** For a server deployed by hand, make the key yourself, keep it in your password
+  manager, then set it: `openssl rand -base64 32 | tr '+/' '-_' | tr -d '=' > key.txt`, then
+  `npx wrangler secret put MAIL_CREDENTIAL_KEY < key.txt` and delete `key.txt`. A key made by the
+  Mac app cannot be read back; losing it (deleting the Worker) means entering each app password
+  again and reconnecting each Gmail account — no mail is lost, it stays at the providers.
+- **Rotation.** Set the new key as `MAIL_CREDENTIAL_KEY` and the old one in
+  `MAIL_CREDENTIAL_KEY_PREVIOUS`; each account is sealed again with the new key on its next sync
+  (within the poll interval, default 5 minutes), after which the old key can be removed.
+- **Before 0.11** the key was `GMAIL_TOKEN_ENCRYPTION_KEY`; it is still read when
+  `MAIL_CREDENTIAL_KEY` is absent, and a `MAIL_CREDENTIAL_KEY` that is not 32 bytes is no key at
+  all (never a silent fall back to the old one).
 
 Cloudflare Access email-code authentication can remain inside the app when its exact team origin is configured. External identity-provider SSO currently opens the system browser and does not transfer cookies back; that handoff remains open.
 

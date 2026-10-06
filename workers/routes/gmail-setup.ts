@@ -1,3 +1,4 @@
+import { hasCredentialKey } from "../providers/credentials";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { Env } from "../types";
@@ -5,7 +6,7 @@ import { configuration } from "../providers/google-oauth";
 import { CloudflareAccounts } from "../routing/accounts";
 import { CloudflareApiError } from "../routing/cloudflare-api";
 import { checkGoogleClient, type Check } from "../gmail-setup/google-check";
-import { newCredentialKey, validCredentialKey, writeGmailSettings } from "../gmail-setup/server-settings";
+import { newCredentialKey, writeGmailSettings } from "../gmail-setup/server-settings";
 import { GOOGLE_CONSOLE, GOOGLE_HELP, gmailSetupValues } from "../../shared/mail/gmail-setup";
 import { gmailApiUrl, projectNumberOf } from "../../shared/mail/gmail-reasons";
 
@@ -42,7 +43,7 @@ gmailSetupRouter.get("/api/gmail-setup", (c) => {
     values: gmailSetupValues(origin),
     clientId,
     projectNumber,
-    credentialKey: validCredentialKey(c.env.GMAIL_TOKEN_ENCRYPTION_KEY) ? "present" : "missing",
+    credentialKey: hasCredentialKey(c.env) ? "present" : "missing",
     publicAppUrl: c.env.PUBLIC_APP_URL?.trim() || null,
     // Connecting works only at the address the server was set up with (the redirect URI's origin).
     addressMatches: config.status === "configured" ? config.origin === origin : null,
@@ -76,7 +77,8 @@ gmailSetupRouter.put("/api/gmail-setup", async (c) => {
     return c.json({ error: `${refused.message} ${refused.fix ?? ""}`.trim(), checks: check.checks }, 400);
   }
   const pending = check.checks.find((x) => x.status === "failed");
-  const credentialKey = validCredentialKey(c.env.GMAIL_TOKEN_ENCRYPTION_KEY) ? undefined : newCredentialKey();
+  // The server's credential key (MAIL_CREDENTIAL_KEY, or the older GMAIL_TOKEN_ENCRYPTION_KEY) is never replaced.
+  const credentialKey = hasCredentialKey(c.env) ? undefined : newCredentialKey();
   try {
     const accountId = await accounts.serverAccountId();
     await writeGmailSettings(api, { accountId, script: accounts.script }, {

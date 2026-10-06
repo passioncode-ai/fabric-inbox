@@ -12,7 +12,8 @@ reinstalling the app, and every downloaded copy must update itself by default). 
 | What | Where | Survives dragging the app to the Trash | Survives an uninstaller that also deletes `~/Library/Application Support/Fabric Inbox` |
 |---|---|---|---|
 | Mail, folders, categories, spam lists | your server: Durable Objects and R2 in your Cloudflare account | yes | yes |
-| Gmail accounts (their refresh tokens) | your server (`GmailAccountsDO`; tokens encrypted with the server secret `GMAIL_TOKEN_ENCRYPTION_KEY`, `workers/providers/google-oauth.ts`) | yes | yes |
+| Gmail accounts (their refresh tokens) | your server (`GmailAccountsDO`; tokens encrypted with the server secret `MAIL_CREDENTIAL_KEY`, before 0.11 `GMAIL_TOKEN_ENCRYPTION_KEY`; `workers/providers/credentials.ts`) | yes | yes |
+| IMAP accounts (iCloud, Yahoo, Fastmail…): their app passwords and server names | your server only (`GmailAccountsDO`; the app password encrypted with `MAIL_CREDENTIAL_KEY`, never in the Mac's Keychain or profile) | yes | yes |
 | Cloudflare accounts and their tokens, domains, addresses, routing | your server and Cloudflare itself | yes | yes |
 | Agents, knowledge, rules, agent keys, the audit journal | your server | yes | yes |
 | The server's address | `~/Library/Application Support/Fabric Inbox/server.json`, **and a copy in** `~/Library/Application Support/PassionCode/backups/fabric-inbox.json` | yes | yes: the copy is read back at the next start (`settings_restored` in the log) |

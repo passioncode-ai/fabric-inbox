@@ -31,7 +31,7 @@ export interface Project extends ProjectInput { id: string; createdAt: string; u
 export const ScopeSchema = z.object({
   /** Every inbox, present and future. */
   all: z.boolean().default(false),
-  /** Account ids as the feed uses them: `cloudflare:<address>`, `gmail:<id>`. */
+  /** Account ids as the feed uses them: `cloudflare:<address>`, `gmail:<id>`, `imap:<id>`. */
   accounts: unique(z.string().min(3).max(300), 200),
   domains: unique(Domain, 50),
   projects: unique(Id, 20),

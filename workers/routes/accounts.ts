@@ -10,6 +10,7 @@ import { ProviderError } from "../providers/gmail-client";
 import { renderResult } from "../gmail-setup/result-page";
 import { authorizationProblem } from "../gmail-setup/google-check";
 import { projectNumberOf } from "../../shared/mail/gmail-reasons";
+import { ImapConnectBody, ImapPasswordBody } from "../providers/imap/connect";
 
 /** Mount behind the app's Cloudflare Access middleware, before the SSR fallback. */
 export const accountsRouter = new Hono<{ Bindings: GmailBindings }>();
@@ -19,10 +20,14 @@ accountsRouter.use("/api/accounts/*", async (c, next) => {
   c.header("Referrer-Policy", "no-referrer");
   if (c.req.method !== "GET") {
     const config = configuration(c.env);
-    if (config.status !== "configured")
+    // Connecting Gmail needs Google's setup; every other change (an IMAP account, a mail action on
+    // any account) does not.
+    if (config.status !== "configured" && new URL(c.req.url).pathname.startsWith("/api/accounts/gmail/"))
       return c.json({ error: "not_configured", configuration: config }, 503);
-    // Browser mutations require the configured origin; server tools use DO RPC.
-    if (c.req.header("Origin") !== config.origin)
+    // Browser mutations require the app's own origin: Gmail's configured one, else the server's.
+    // Server tools use DO RPC or set it themselves (mcp/handler.ts).
+    const expected = config.status === "configured" ? config.origin : new URL(c.req.url).origin;
+    if (c.req.header("Origin") !== expected)
       return c.json({ error: "invalid_origin" }, 403);
     const length = Number(c.req.header("Content-Length") || 0);
     if (length > MAX_SEND_REQUEST_BYTES) return c.json({ error: "message_too_large" }, 413);
@@ -75,6 +80,35 @@ accountsRouter.onError((error, c) => {
     google_client_rejected: 502,
     redirect_uri_mismatch: 400,
     invalid_profile: 502,
+    // Connecting an IMAP account, or giving it a new password (imap/client.ts, imap/smtp.ts): what
+    // the person changes (400), what the server could not reach (502), what is already there (409).
+    auth_failed: 400,
+    app_password_required: 400,
+    imap_disabled: 400,
+    auth_or_imap_disabled: 400,
+    web_login_required: 400,
+    smtp_auth_failed: 400,
+    smtp_auth_unsupported: 502,
+    tls_failed: 502,
+    host_unreachable: 502,
+    smtp_unreachable: 502,
+    smtp_tls_failed: 502,
+    smtp_refused: 502,
+    invalid_server: 400,
+    imap_tls_required: 400,
+    port_blocked: 400,
+    invalid_password: 400,
+    already_connected: 409,
+    not_supported: 400,
+    // Sending through SMTP: refused before anything left (safe to retry with the same key).
+    recipient_rejected: 400,
+    sender_rejected: 400,
+    message_rejected: 400,
+    smtputf8_unsupported: 400,
+    smtp_temporary_failure: 503,
+    smtp_connection_lost: 503,
+    attachment_not_found: 404,
+    folder_missing: 404,
   };
   const code = error instanceof ProviderError ? error.code : error.message;
   return c.json(
@@ -102,6 +136,30 @@ accountsRouter.get("/api/accounts", async (c) => {
   const config = configuration(c.env);
   return c.json({ ...(await stub(c.env).listAccounts()),
     ...(config.status === "configured" ? { connectUrl: new URL("/api/accounts/gmail/connect", config.origin).href } : {}) });
+});
+/**
+ * The providers this server can connect and the IMAP presets with their help pages: no account,
+ * no secret. Settings → Accounts reads it for its cards, list_mail_providers for agents.
+ */
+accountsRouter.get("/api/accounts/providers", async (c) => {
+  if (!c.env.GMAIL_ACCOUNTS) return c.json({ providers: [], presets: [] });
+  return c.json(await stub(c.env).mailProviders());
+});
+/**
+ * Connects an IMAP account with an app password (SCN-053): checked with the provider's IMAP and
+ * SMTP servers before it is kept, sealed, on this server. Not an agent tool: an agent never
+ * receives a person's password (mcp/tools.ts NOT_TOOLS).
+ */
+accountsRouter.post("/api/accounts/imap", async (c) => {
+  const parsed = ImapConnectBody.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "invalid_account_settings" }, 400);
+  return c.json(await stub(c.env).connectImap(parsed.data), 201);
+});
+/** A new app password for an IMAP account, checked before it replaces the old one. Not an agent tool either. */
+accountsRouter.put("/api/accounts/:accountId/password", async (c) => {
+  const parsed = ImapPasswordBody.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "invalid_password" }, 400);
+  return c.json(await stub(c.env).updateImapPassword(c.req.param("accountId"), parsed.data.password));
 });
 /** The browser's side of connecting: every answer is a page a person can act on (result-page.ts). */
 const pageFor = (c: Context<{ Bindings: GmailBindings }>, outcome: string, extra: { email?: string; accessUntil?: number; googleError?: string } = {}) => {
@@ -205,6 +263,7 @@ accountsRouter.get("/api/accounts/:accountId/messages", async (c) => {
       after: date("after"), before: date("before"),
       unread: flag("unread"), starred: flag("starred"), hasAttachment: flag("hasAttachment"),
       folder: text("folder") as GmailFolder | undefined,
+      ...(text("threadId") ? { threadId: text("threadId") } : {}),
     }),
   );
 });

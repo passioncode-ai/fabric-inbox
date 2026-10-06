@@ -102,7 +102,7 @@ test("GET /api/gmail-setup says what is missing, what to copy and whether the se
   assert.equal(response.headers.get("Cache-Control"), "no-store");
   const body = (await response.json()) as Record<string, any>;
   assert.equal(body.configured, false);
-  assert.deepEqual(body.missing.sort(), ["GMAIL_TOKEN_ENCRYPTION_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "PUBLIC_APP_URL"]);
+  assert.deepEqual(body.missing.sort(), ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "MAIL_CREDENTIAL_KEY", "PUBLIC_APP_URL"]);
   assert.equal(body.values.redirectUri, ORIGIN + "/api/accounts/gmail/callback");
   assert.equal(body.canSave, true);
   assert.equal(body.credentialKey, "missing");
@@ -145,8 +145,8 @@ test("PUT checks the client with Google, makes a credential key, and writes the 
   assert.deepEqual(by.GOOGLE_CLIENT_ID, { type: "plain_text", name: "GOOGLE_CLIENT_ID", text: CLIENT_ID });
   assert.deepEqual(by.PUBLIC_APP_URL, { type: "plain_text", name: "PUBLIC_APP_URL", text: ORIGIN });
   assert.deepEqual(by.GOOGLE_CLIENT_SECRET, { type: "secret_text", name: "GOOGLE_CLIENT_SECRET", text: SECRET });
-  assert.equal(by.GMAIL_TOKEN_ENCRYPTION_KEY.type, "secret_text");
-  assert.equal(fromB64(by.GMAIL_TOKEN_ENCRYPTION_KEY.text!).length, 32, "a 32-byte key, base64url");
+  assert.equal(by.MAIL_CREDENTIAL_KEY.type, "secret_text");
+  assert.equal(fromB64(by.MAIL_CREDENTIAL_KEY.text!).length, 32, "a 32-byte key, base64url");
   assert.equal(bindings.filter((b) => b.name === "GOOGLE_CLIENT_ID").length, 1, "the old client ID is replaced, not doubled");
   // Google was asked with this server's redirect URI.
   const token = calls.find((c) => c.url.startsWith("https://oauth2.googleapis.com"))!;

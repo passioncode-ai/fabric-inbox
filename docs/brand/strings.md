@@ -154,8 +154,14 @@ Locations name the source function while the integration branch is being formatt
 | state.drafts.not_on_server | Kept on this device; not on your server yet | app/components/inbox/use-drafts.ts | SCN-019 | proposed |
 | state.drafts.offline | Not saved to your server yet; it is kept on this device and saved when the server answers. | app/components/inbox/server-drafts.ts | SCN-019 | proposed |
 | state.drafts.no_sender | Choose a sender to save this draft to your server; until then it is kept on this device. | app/components/inbox/server-drafts.ts | SCN-006 | proposed |
-| state.drafts.gmail_incomplete | Gmail saves a draft once it has a recipient with a valid address; until then it is kept on this device. | app/components/inbox/server-drafts.ts | SCN-006 | proposed |
-| state.drafts.changed_elsewhere | This draft was changed elsewhere (another window or device, an agent, or Gmail). Your text is kept here. | app/components/inbox/server-drafts.ts | SCN-006 | proposed |
+| state.drafts.gmail_incomplete | saves a draft once it has a recipient with a valid address; until then it is kept on this device. | app/components/inbox/server-drafts.ts | SCN-006 | proposed |
+| state.drafts.changed_elsewhere | This draft was changed elsewhere (another window or device, an agent, or the mail account itself). Your text is kept here. | app/components/inbox/server-drafts.ts | SCN-006 | proposed |
+| action.account.connect_other_mail | Connect other mail | app/components/inbox/AccountSidebar.tsx | SCN-053 | proposed |
+| state.account.imap_intro | Choose who keeps the mail. Every one of them needs an app password: a password made for one app, which you can delete there at any time. | app/components/settings/sections/ImapAccount.tsx | SCN-053 | proposed |
+| field.account.app_password | App password | app/components/settings/sections/ImapAccount.tsx | SCN-053 | proposed |
+| action.account.new_app_password | Enter a new app password… | app/components/settings/sections/ImapAccount.tsx | SCN-054 | proposed |
+| state.account.app_password_hint | It is checked with | app/components/settings/sections/ImapAccount.tsx | SCN-054 | proposed |
+| state.account.imap_no_key | Your server has no credential key yet, so it cannot keep an app password. Update the server from the Mac app, which adds one, or set MAIL_CREDENTIAL_KEY on a server deployed by hand. | app/components/settings/sections/AccountsSection.tsx | SCN-056 | proposed |
 | state.drafts.gone_elsewhere | This draft was sent or deleted elsewhere. Your text is kept here. | app/components/inbox/server-drafts.ts | SCN-006 | proposed |
 | action.composer.show_saved | Show the saved version | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
 | action.composer.keep_mine | Keep my version | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |

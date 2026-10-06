@@ -6,12 +6,11 @@ import {
   type IncomingEvent,
   type MessageFilters,
 } from "./account-service";
-import {
-  configuration,
-  type GmailEnvironment,
-  type Store,
-} from "./google-oauth";
+import type { Store } from "./google-oauth";
+import { hasCredentialKey } from "./credentials";
+import { pollInterval, type AccountsEnvironment } from "./account-service";
 import { GmailScheduler, type AlarmStorage } from "./gmail-scheduler";
+import type { ImapConnectInput } from "./imap/connect";
 
 interface AutomationStub {
   ingest(
@@ -26,7 +25,7 @@ interface AutomationStub {
     },
   ): Promise<void>;
 }
-export interface GmailBindings extends GmailEnvironment {
+export interface GmailBindings extends AccountsEnvironment {
   GMAIL_ACCOUNTS: DurableObjectNamespace<GmailAccountsDO>;
   AUTOMATIONS?: { getByName(name: string): AutomationStub };
   CATEGORIES?: { getByName(name: string): { ingest(account: { id: string; email: string }, event: { id: string; sender: string; subject: string; body: string; date: string }): Promise<void> } };
@@ -39,10 +38,11 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
   constructor(ctx: DurableObjectState, env: GmailBindings) {
     super(ctx, env);
     this.service = new AccountService(ctx.storage as unknown as Store, env);
-    this.scheduler = new GmailScheduler(ctx.storage as unknown as AlarmStorage, this.service, (fn) => this.serial(fn), () => {
-      const config = configuration(this.env);
-      return config.status === "configured" ? config.pollMs : null;
-    });
+    this.scheduler = new GmailScheduler(ctx.storage as unknown as AlarmStorage, {
+      listAccounts: () => this.service.listAccounts(),
+      sync: (id, options) => this.service.sync(id, options),
+      ready: (account) => this.service.ready(account),
+    }, (fn) => this.serial(fn), () => (hasCredentialKey(this.env) ? pollInterval(this.env) : null));
   }
   // Serialize network-spanning operations as well as storage writes. A durable
   // sending receipt handles process death while this in-memory lock is held.
@@ -59,7 +59,7 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
       const payload = { id: event.emailId, sender: event.sender, subject: event.subject, body: event.body, date: event.date, thread_id: event.threadId };
       if (this.env.AUTOMATIONS) await this.env.AUTOMATIONS.getByName(event.account).ingest(event.account, payload);
       if (this.env.CATEGORIES) {
-        emails ??= new Map((await this.service.listAccounts()).accounts.map((a) => ["gmail:" + a.id, a.email] as [string, string]));
+        emails ??= new Map((await this.service.listAccounts()).accounts.map((a) => [a.provider + ":" + a.id, a.email] as [string, string]));
         await this.env.CATEGORIES.getByName("workspace").ingest({ id: event.account, email: emails.get(event.account) ?? "" }, payload);
       }
     });
@@ -75,6 +75,24 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     await this.drain().catch((error: unknown) =>
       console.warn(JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
     return outcomes;
+  }
+  /** The providers and IMAP presets this server offers (no account, no secret). */
+  mailProviders() {
+    return this.service.mailProviders();
+  }
+  /**
+   * Connects an IMAP account. Checking the servers takes seconds and runs outside the object's lock,
+   * so mail actions and syncs go on meanwhile; the first sync starts at once.
+   */
+  async connectImap(input: ImapConnectInput) {
+    const account = await this.service.connectImap(input);
+    await this.scheduler.connected();
+    return account;
+  }
+  async updateImapPassword(accountId: string, password: string) {
+    const account = await this.service.updateImapPassword(accountId, password);
+    await this.scheduler.connected();
+    return account;
   }
   beginConnect() {
     return this.serial(() => this.service.connect());

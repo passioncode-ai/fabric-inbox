@@ -3,7 +3,7 @@ import { z } from "zod";
 
 export const LIST_NAMES = ["blockedSenders", "blockedDomains", "allowedSenders", "allowedDomains"] as const;
 const Message = z.object({
-  accountId: z.string().regex(/^(cloudflare|gmail):.+$/).max(320),
+  accountId: z.string().regex(/^(cloudflare|gmail|imap):.+$/).max(320),
   providerMessageId: z.string().min(1).max(256),
   sender: z.string().max(320).default(""),
 });

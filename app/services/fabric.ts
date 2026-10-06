@@ -51,6 +51,18 @@ export type Account = {
   connectedAt?: number;
   /** When Google said this access ends (a Testing app's 7 days), if it gave an end. */
   accessUntil?: number;
+  /** "gmail" (Google sign-in) or "imap" (an app password); absent on a server before 0.11: Gmail. */
+  provider?: "gmail" | "imap";
+  /** "Gmail", "iCloud Mail", "Fastmail"… */
+  providerName?: string;
+  /** The IMAP preset it was connected with (shared/mail/imap-presets.ts), or "custom". */
+  preset?: string;
+  /** An IMAP account's servers (no secret). */
+  server?: { imap: { host: string; port: number }; smtp: { host: string; port: number; security: "tls" | "starttls" }; imapUser: string; smtpUser: string };
+  /** What the account can do (workers/providers/provider.ts). */
+  capabilities?: { archive: boolean; spam: boolean; trash: boolean; drafts: boolean; organization: "labels" | "folders" };
+  /** The first import's progress in percent, while it runs. */
+  importing?: number;
 };
 export type AccountList = {
   configuration: string;

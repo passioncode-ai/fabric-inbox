@@ -15,7 +15,7 @@ const accounts: InboxAccount[] = [
 test("a count that cannot be read is marked stale, never silently kept (P2-11)", async () => {
   const sources = {
     cloudflareAccounts: async () => [],
-    gmailAccounts: async () => structuredClone(accounts),
+    remoteAccounts: async () => structuredClone(accounts),
     messages: async () => [],
     counts: async (a: InboxAccount) => { if (a.id === "gmail:b") throw new Error("cache_scan_limit"); return { unread: 3, total: 9 }; },
   };
@@ -31,7 +31,7 @@ test("a Gmail account importing says so, with its progress when known (P2-10)", 
     { id: "b", email: "b@example.invalid", status: "syncing", sync: { mode: "initial", phase: "recent" } },
     { id: "c", email: "c@example.invalid", status: "connected", sync: { mode: "history", historyId: "9" } },
   ] }) }) } };
-  const listed = await inboxSources(env as never).gmailAccounts();
+  const listed = await inboxSources(env as never).remoteAccounts();
   assert.deepEqual(listed.map((a) => [a.status, a.importing]), [["syncing", 25], ["syncing", undefined], ["connected", undefined]]);
   assert.deepEqual(listed.map((a) => syncLabel(a)), ["importing 25%", "importing", ""]);
 });

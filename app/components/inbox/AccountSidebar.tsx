@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { CaretDownIcon, CaretRightIcon, AtIcon, EyeIcon, EyeSlashIcon, GoogleLogoIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, CaretRightIcon, AtIcon, EnvelopeSimpleIcon, EyeIcon, EyeSlashIcon, GoogleLogoIcon } from "@phosphor-icons/react";
 import type { InboxAccount } from "./model";
 import { addressLabel, groupAccounts, sidebarAccounts, type AddressFilter } from "./account-groups";
 
@@ -98,7 +98,7 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
       <nav ref={nav} className="fi-account-list" aria-label="Addresses by domain">
         {groups.map((g) => {
           const expanded = isOpen(g.key, g.accounts);
-          const selectedGroup = (g.kind === "domain" && domain === g.key) || (g.kind === "gmail" && provider === "gmail");
+          const selectedGroup = (g.kind === "domain" && domain === g.key) || (g.kind !== "domain" && provider === g.kind);
           return (
             <div key={g.key} className="fi-account-group">
               <div className={"fi-domain-row" + (selectedGroup ? " is-active" : "")}>
@@ -107,9 +107,9 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
                   {expanded ? <CaretDownIcon size={12} /> : <CaretRightIcon size={12} />}
                 </button>
                 <button type="button" className="fi-domain-name" aria-pressed={selectedGroup}
-                  title={g.kind === "gmail" ? "Every Gmail account" : `Every address on ${g.label}`}
-                  onClick={() => g.kind === "gmail" ? onScope({ provider: "gmail", domain: "", account: "" }) : onScope({ domain: g.key, account: "", provider: "" })}>
-                  {g.kind === "gmail" ? <GoogleLogoIcon size={14} /> : <AtIcon size={14} />}
+                  title={g.kind === "gmail" ? "Every Gmail account" : g.kind === "imap" ? "Every IMAP account" : `Every address on ${g.label}`}
+                  onClick={() => g.kind !== "domain" ? onScope({ provider: g.kind, domain: "", account: "" }) : onScope({ domain: g.key, account: "", provider: "" })}>
+                  {g.kind === "gmail" ? <GoogleLogoIcon size={14} /> : g.kind === "imap" ? <EnvelopeSimpleIcon size={14} /> : <AtIcon size={14} />}
                   <span>{g.label}</span>
                   <Count n={g.unread} label={g.label} />
                 </button>
@@ -125,7 +125,7 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
                         {(a.error || !["connected", "syncing"].includes(a.status)) ? (
                           <span className="fi-address-alert" title={a.error || a.status}>needs attention</span>
                         ) : syncLabel(a) && (
-                          <span className="fi-address-sync" title="Older Gmail mail is still being imported; new mail already arrives">{syncLabel(a)}</span>
+                          <span className="fi-address-sync" title="Older mail is still being imported; new mail already arrives">{syncLabel(a)}</span>
                         )}
                         <Count n={a.unread} label={a.email} stale={a.countsStale} />
                       </button>
@@ -195,6 +195,7 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
       <div className="fi-add-links">
         <Link className="fi-add-account" to="/settings/addresses?add=1"><AtIcon size={15} /> Add address</Link>
         <Link className="fi-add-account" to="/settings/accounts?connect=gmail"><GoogleLogoIcon size={15} /> Connect Gmail</Link>
+        <Link className="fi-add-account" to="/settings/accounts?connect=imap"><EnvelopeSimpleIcon size={15} /> Connect other mail</Link>
       </div>
     </>
   );

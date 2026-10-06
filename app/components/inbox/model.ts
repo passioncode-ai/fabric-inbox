@@ -1,9 +1,13 @@
 import type { Email } from "~/types";
 import type { Mail } from "~/services/fabric";
 import type { Triage } from "../../../shared/mail/triage";
+/** "cloudflare" (a mailbox on a served domain), "gmail" (Google sign-in) or "imap" (an app password). */
+export type MailProvider = "cloudflare" | "gmail" | "imap";
+/** Gmail and IMAP accounts: kept by the server's accounts object and reached at /api/accounts/<id>. */
+export const isRemote = (provider: MailProvider | string) => provider === "gmail" || provider === "imap";
 export type InboxAccount = {
   id: string;
-  provider: "cloudflare" | "gmail";
+  provider: MailProvider;
   email: string;
   name: string;
   status: string;
@@ -19,13 +23,17 @@ export type InboxAccount = {
   stuck?: { dead: number; retrying: number; lastError: string | null };
   /** Its counts could not be read just now; the ones shown are the last known. */
   countsStale?: boolean;
-  /** A Gmail account's first import in percent, while it runs. */
+  /** A Gmail or IMAP account's first import in percent, while it runs. */
   importing?: number;
+  /** "Gmail", "iCloud Mail", "Fastmail"… for Gmail and IMAP accounts. */
+  providerName?: string;
+  /** What a Gmail or IMAP account can do; the actions it cannot are not offered. */
+  capabilities?: { archive: boolean; spam: boolean; trash: boolean; drafts: boolean; organization: "labels" | "folders" };
 };
 export type InboxMessage = {
   id: string;
   accountId: string;
-  provider: "cloudflare" | "gmail";
+  provider: MailProvider;
   providerMessageId: string;
   subject: string;
   sender: string;
@@ -73,13 +81,13 @@ export type OpenMessage = {
 };
 export const rawAccount = (id: string) => id.slice(id.indexOf(":") + 1);
 export const messagePath = (message: InboxMessage) =>
-  message.provider === "gmail"
+  isRemote(message.provider)
     ? `/api/accounts/${encodeURIComponent(rawAccount(message.accountId))}/messages/${encodeURIComponent(message.providerMessageId)}`
     : `/api/v1/mailboxes/${encodeURIComponent(rawAccount(message.accountId))}/emails/${encodeURIComponent(message.providerMessageId)}`;
 export const rulesPath = (account: InboxAccount) =>
   "/automation/" +
   encodeURIComponent(
-    account.provider === "gmail" ? account.id : rawAccount(account.id),
+    isRemote(account.provider) ? account.id : rawAccount(account.id),
   );
 export const senderName = (sender: string) =>
   sender.replace(/\s*<[^>]+>/, "").replace(/^"|"$/g, "") || sender;
@@ -87,7 +95,7 @@ export function normalizeMessage(
   value: Email | Mail,
   provider: InboxMessage["provider"],
 ): OpenMessage {
-  if (provider === "gmail") {
+  if (isRemote(provider)) {
     const m = value as Mail;
     return {
       subject: m.subject,

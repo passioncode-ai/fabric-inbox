@@ -35,7 +35,7 @@ function fixtureBundle() {
   return { out, manifest };
 }
 
-interface FakeOptions { subdomain?: string | null; org?: string | null; script?: { migration_tag: string; domains?: string; vars?: Record<string, string> } | null; deny?: RegExp; r2Disabled?: boolean }
+interface FakeOptions { subdomain?: string | null; org?: string | null; script?: { migration_tag: string; domains?: string; vars?: Record<string, string>; secrets?: string[] } | null; deny?: RegExp; r2Disabled?: boolean }
 
 function fakeCloudflare(o: FakeOptions = {}) {
   const state = {
@@ -83,13 +83,16 @@ function fakeCloudflare(o: FakeOptions = {}) {
       case "GET /accounts/acc/workers/scripts": return paged(state.script ? [{ id: "fabric-inbox", migration_tag: state.script.migration_tag }] : []);
       case "GET /accounts/acc/workers/scripts/fabric-inbox/settings":
         return ok({ bindings: [{ type: "plain_text", name: "DOMAINS", text: state.script?.domains ?? "" },
-          ...Object.entries(state.script?.vars ?? {}).map(([name, text]) => ({ type: "plain_text", name, text }))] });
+          ...Object.entries(state.script?.vars ?? {}).map(([name, text]) => ({ type: "plain_text", name, text })),
+          ...(state.script?.secrets ?? []).map((name) => ({ type: "secret_text", name }))] });
       case "PUT /accounts/acc/workers/scripts/fabric-inbox": {
         const form = init.body as FormData; const parts: Record<string, { type: string; text: string }> = {};
         for (const [k, v] of form.entries()) if (k !== "metadata") parts[k] = { type: (v as File).type, text: await (v as File).text() };
         const metadata = JSON.parse(form.get("metadata") as string);
         state.put = { metadata, parts };
-        state.script = { migration_tag: metadata.migrations?.new_tag ?? state.script?.migration_tag, domains: metadata.bindings.find((b: any) => b.name === "DOMAINS")?.text };
+        // Secrets survive an update (keep_bindings); the ones sent are added.
+        const secrets = [...new Set([...(state.script?.secrets ?? []), ...metadata.bindings.filter((b: any) => b.type === "secret_text").map((b: any) => b.name)])];
+        state.script = { migration_tag: metadata.migrations?.new_tag ?? state.script?.migration_tag, domains: metadata.bindings.find((b: any) => b.name === "DOMAINS")?.text, secrets };
         return ok({ id: "fabric-inbox" });
       }
       case "POST /accounts/acc/workers/scripts/fabric-inbox/subdomain": state.workersDev = body.enabled; return ok(body);
@@ -165,6 +168,26 @@ test("running it again updates the server in place and keeps its domains, secret
   assert.deepEqual(metadata.keep_bindings, ["secret_text", "secret_key", "plain_text", "json"]);
   assert.equal(metadata.bindings.find((b: any) => b.name === "DOMAINS").text, "mine.example");
   assert.equal(fake.state.apps.length, 1);
+  assert.equal(metadata.bindings.find((b: any) => b.name === "MAIL_CREDENTIAL_KEY"), undefined, "the credential key made the first time is never sent again");
+});
+
+test("a new server gets its credential key once; a server with a key (either name) never gets another", async () => {
+  const { out } = fixtureBundle();
+  const fresh = fakeCloudflare();
+  const first = await run(fresh, out);
+  const key = fresh.state.put!.metadata.bindings.find((b: any) => b.name === "MAIL_CREDENTIAL_KEY");
+  assert.equal(key.type, "secret_text");
+  assert.equal(Buffer.from(key.text, "base64url").length, 32, "32 random bytes, base64url");
+  assert.ok(!JSON.stringify(first.steps).includes(key.text), "no step shows the key");
+  assert.match(first.steps.find((s: any) => s.id === "server").detail, /key for keeping app passwords/);
+  const second = fakeCloudflare();
+  await run(second, out);
+  assert.notEqual(second.state.put!.metadata.bindings.find((b: any) => b.name === "MAIL_CREDENTIAL_KEY").text, key.text, "each server its own key");
+  for (const name of ["MAIL_CREDENTIAL_KEY", "GMAIL_TOKEN_ENCRYPTION_KEY"]) {
+    const old = fakeCloudflare({ subdomain: "someone", org: "t.cloudflareaccess.com", script: { migration_tag: "v2", secrets: [name] } });
+    await run(old, out, { subdomain: undefined, team: undefined });
+    assert.equal(old.state.put!.metadata.bindings.find((b: any) => b.name === "MAIL_CREDENTIAL_KEY"), undefined, `${name} is kept, not replaced`);
+  }
 });
 
 test("an older server gets only the storage steps it lacks; a newer one is refused", async () => {

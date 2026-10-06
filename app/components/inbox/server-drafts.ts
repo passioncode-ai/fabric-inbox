@@ -21,7 +21,11 @@ export type Request = <T>(url: string, body?: unknown, method?: string) => Promi
 export interface HttpError { status: number; body: Record<string, unknown> }
 const isHttp = (e: unknown): e is HttpError => !!e && typeof e === "object" && typeof (e as HttpError).status === "number" && typeof (e as HttpError).body === "object";
 
-const provider = (accountId: string) => (accountId.startsWith("gmail:") ? "gmail" : accountId.startsWith("cloudflare:") ? "cloudflare" : null);
+/** "cloudflare" (a mailbox's Drafts), "gmail" (Gmail's own drafts) or "imap" (the account's Drafts folder); the last two share their routes. */
+const provider = (accountId: string) => (accountId.startsWith("gmail:") ? "gmail" : accountId.startsWith("imap:") ? "imap" : accountId.startsWith("cloudflare:") ? "cloudflare" : null);
+const remote = (accountId: string) => provider(accountId) === "gmail" || provider(accountId) === "imap";
+/** Who keeps a remote account's drafts, in a sentence. */
+const keeper = (accountId: string) => (provider(accountId) === "gmail" ? "Gmail" : "Your mail server");
 const cfBox = (accountId: string) => `/api/v1/mailboxes/${encodeURIComponent(rawAccount(accountId))}`;
 const gmailBase = (accountId: string) => `/api/accounts/${encodeURIComponent(rawAccount(accountId))}`;
 const list = (header: string | undefined) => (header ?? "").split(",").map((x) => x.trim()).filter(Boolean);
@@ -33,7 +37,7 @@ export type SyncResult =
   | { ok: false; reason: "pending"; patch: Partial<Draft>; message: string }
   | { ok: false; reason: "no_sender" | "incomplete" | "offline" | "refused" | "conflict" | "gone"; message: string };
 
-const CONFLICT = "This draft was changed elsewhere (another window or device, an agent, or Gmail). Your text is kept here.";
+const CONFLICT = "This draft was changed elsewhere (another window or device, an agent, or the mail account itself). Your text is kept here.";
 const GONE = "This draft was sent or deleted elsewhere. Your text is kept here.";
 
 /** What the server said, in the sync's own terms. */
@@ -95,7 +99,7 @@ export async function syncDraft(draft: Draft, files: AttachmentStorage, request:
     cc = draft.cc?.trim() ? recipientAddresses(draft.cc) : [];
     bcc = draft.bcc?.trim() ? recipientAddresses(draft.bcc) : [];
   } catch {
-    return { ok: false, reason: "incomplete", message: "Gmail saves a draft once it has a recipient with a valid address; until then it is kept on this device." };
+    return { ok: false, reason: "incomplete", message: `${keeper(draft.accountId)} saves a draft once it has a recipient with a valid address; until then it is kept on this device.` };
   }
   const message = { to, cc, bcc, subject: draft.subject, text: draft.text,
     ...(draft.threadId ? { threadId: draft.threadId } : {}), ...(draft.inReplyTo ? { inReplyTo: draft.inReplyTo } : {}), ...(draft.references ? { references: draft.references } : {}) };
@@ -108,11 +112,11 @@ export async function syncDraft(draft: Draft, files: AttachmentStorage, request:
           .catch((error: unknown) => { if (isHttp(error) && error.status === 404) return null; throw error; });
         if (receipt?.status === "accepted" && receipt.providerDraftId) { serverId = receipt.providerDraftId; serverRevision = receipt.providerMessageId; }
         else if (receipt) return { ok: false, reason: "pending", patch: { pendingCreateKey: `draft-${draft.id}-${crypto.randomUUID().slice(0, 8)}` },
-          message: "Gmail did not confirm the last save; it is tried again." };
+          message: `${keeper(draft.accountId)} did not confirm the last save; it is tried again.` };
       }
       if (!serverId) {
         const key = draft.pendingCreateKey ?? `draft-${draft.id}-${crypto.randomUUID().slice(0, 8)}`;
-        if (!draft.pendingCreateKey) return { ok: false, reason: "pending", patch: { pendingCreateKey: key }, message: "Saving to Gmail…" };
+        if (!draft.pendingCreateKey) return { ok: false, reason: "pending", patch: { pendingCreateKey: key }, message: provider(draft.accountId) === "gmail" ? "Saving to Gmail…" : "Saving to your mail server…" };
         const receipt = await request<{ status: string; providerDraftId?: string; providerMessageId?: string }>(`${base}/drafts`, { idempotencyKey: key, ...message,
           ...(local.length ? { attachments: local } : {}) }).catch((error: unknown) => {
           // An unconfirmed creation, or this key used for other text: a fresh key next time (Gmail may keep a second draft).
@@ -120,8 +124,8 @@ export async function syncDraft(draft: Draft, files: AttachmentStorage, request:
           throw error;
         });
         if (receipt.status === "retry") return { ok: false, reason: "pending", patch: { pendingCreateKey: `draft-${draft.id}-${crypto.randomUUID().slice(0, 8)}` },
-          message: "Gmail did not confirm the last save; it is tried again." };
-        if (receipt.status !== "accepted" || !receipt.providerDraftId) return { ok: false, reason: "offline", message: "Gmail did not confirm the save; it is tried again." };
+          message: `${keeper(draft.accountId)} did not confirm the last save; it is tried again.` };
+        if (receipt.status !== "accepted" || !receipt.providerDraftId) return { ok: false, reason: "offline", message: `${keeper(draft.accountId)} did not confirm the save; it is tried again.` };
         return { ok: true, serverId: receipt.providerDraftId, serverRevision: receipt.providerMessageId!, serverFiles: await gmailFiles(base, receipt.providerDraftId, request, before, draft.attachments),
           uploaded: (draft.attachments ?? []).map((a) => a.id) };
       }
@@ -214,7 +218,7 @@ export async function listServerDrafts(accountIds: string[], request: Request): 
       if (provider(accountId) === "cloudflare") {
         const data = await request<{ drafts: { id: string; revision: number; to: string; subject: string; date: string; snippet: string; attachments: unknown[] }[] }>(`${cfBox(accountId)}/drafts`);
         for (const d of data.drafts) drafts.push({ accountId, serverId: d.id, revision: d.revision, to: d.to, subject: d.subject, date: d.date, snippet: d.snippet, files: d.attachments.length });
-      } else if (provider(accountId) === "gmail") {
+      } else if (remote(accountId)) {
         const data = await request<{ drafts: { draftId: string; revision: string; to: string; subject: string; date: string; snippet: string; attachments: unknown[] }[] }>(`${gmailBase(accountId)}/drafts`);
         for (const d of data.drafts) drafts.push({ accountId, serverId: d.draftId, revision: d.revision, to: d.to, subject: d.subject, date: d.date, snippet: d.snippet, files: d.attachments.length });
       }
@@ -251,7 +255,7 @@ export async function refreshFromServer(draft: Draft, request: Request): Promise
   const rest = [...(server.serverFiles ?? [])];
   const matchedFiles: ServerFile[] = [];
   for (const mine of draft.serverFiles ?? []) {
-    const i = rest.findIndex((f) => f.id === mine.id || (provider(draft.accountId) === "gmail" && f.filename === mine.filename && f.size === mine.size));
+    const i = rest.findIndex((f) => f.id === mine.id || (remote(draft.accountId) && f.filename === mine.filename && f.size === mine.size));
     if (i >= 0) matchedFiles.push({ ...rest.splice(i, 1)[0]!, ...(mine.sourceId ? { sourceId: mine.sourceId } : {}) });
   }
   return { draft: server, matchedFiles };

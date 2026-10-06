@@ -4,7 +4,9 @@
  * `tests/mcp-coverage.test.ts` compares with every route the Worker serves.
  *
  * Accounts are named as the feed names them: `cloudflare:<address>` for a Cloudflare mailbox,
- * `gmail:<id>` for a Gmail account (`list_accounts`). A message is its account plus `messageId`.
+ * `gmail:<id>` for a Gmail account, `imap:<id>` for an IMAP account (`list_accounts`). A message is
+ * its account plus `messageId`. Gmail and IMAP accounts share their routes (`/api/accounts/<id>`);
+ * what one of them cannot do (an IMAP server without an Archive folder) is refused by the route.
  *
  * Adding or changing a route means adding or changing its tool here in the same change, then
  * `npm run mcp:docs` (docs/agents/mcp.md). The tests fail until both are done.
@@ -13,34 +15,36 @@ import { z } from "zod";
 import { ApiError, defineTool, unwrap, type ToolContext, type ToolDef } from "./protocol";
 import { appendHtml, clip, forwardedBlock, forwardedHtml, htmlToText, quotedBlock, quotedHtml, signatureHtml, textToHtml } from "./mail-text";
 import { headerValue, parseStoredHeaders } from "../agents/prefilter";
-import { GMAIL_FOLDERS } from "../providers/account-service";
+import { GMAIL_FOLDERS } from "../providers/gmail-cache";
+import { parseRemoteAccount, type RemoteProvider } from "../../shared/mail/accounts";
 import { AttachmentValidationError, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, validateAttachments, type MailAttachment } from "../../shared/mail/attachments";
 
 // ── Shared pieces ──────────────────────────────────────────────────
 
 const enc = encodeURIComponent;
-type Account = { provider: "cloudflare"; mailbox: string; id: string } | { provider: "gmail"; gmailId: string; id: string };
+type Account = { provider: "cloudflare"; mailbox: string; id: string } | { provider: RemoteProvider; remoteId: string; id: string };
 
 export function parseAccount(accountId: string): Account {
   const value = accountId.trim();
   if (value.startsWith("cloudflare:") && /^[^@\s/]+@[^@\s/]+$/.test(value.slice(11))) return { provider: "cloudflare", mailbox: value.slice(11).toLowerCase(), id: `cloudflare:${value.slice(11).toLowerCase()}` };
-  if (value.startsWith("gmail:") && /^[A-Za-z0-9_-]{1,128}$/.test(value.slice(6))) return { provider: "gmail", gmailId: value.slice(6), id: value };
+  const remoteAccount = parseRemoteAccount(value);
+  if (remoteAccount) return { provider: remoteAccount.provider, remoteId: remoteAccount.id, id: value };
   if (/^[^@\s]+@[^@\s]+$/.test(value)) return { provider: "cloudflare", mailbox: value.toLowerCase(), id: `cloudflare:${value.toLowerCase()}` };
-  throw new ApiError(400, `accountId must be "cloudflare:<address>" or "gmail:<id>", as list_accounts and list_messages return it`, null);
+  throw new ApiError(400, `accountId must be "cloudflare:<address>", "gmail:<id>" or "imap:<id>", as list_accounts and list_messages return it`, null);
 }
 const cloudflareOnly = (account: Account, what: string) => {
   if (account.provider !== "cloudflare") throw new ApiError(400, `${what} is available for Cloudflare mailboxes only`, null);
   return account;
 };
 const box = (mailbox: string) => `/api/v1/mailboxes/${enc(mailbox)}`;
-const gmail = (id: string) => `/api/accounts/${enc(id)}`;
+const remote = (id: string) => `/api/accounts/${enc(id)}`;
 
 async function get(ctx: ToolContext, path: string, query?: Record<string, unknown>) { return unwrap(await ctx.api.request("GET", path, { query })); }
 async function post(ctx: ToolContext, path: string, body?: unknown) { return unwrap(await ctx.api.request("POST", path, { body: body ?? {} })); }
 async function put(ctx: ToolContext, path: string, body: unknown) { return unwrap(await ctx.api.request("PUT", path, { body })); }
 async function del(ctx: ToolContext, path: string) { return unwrap(await ctx.api.request("DELETE", path)); }
 
-const accountId = z.string().min(3).max(400).describe('The account: "cloudflare:<address>" or "gmail:<id>" (from list_accounts or list_messages)');
+const accountId = z.string().min(3).max(400).describe('The account: "cloudflare:<address>", "gmail:<id>" or "imap:<id>" (from list_accounts or list_messages)');
 const messageId = z.string().min(1).max(300).describe("The message id within its account (messageId from list_messages)");
 const address = z.string().email().max(320).describe("A mailbox address on one of your Cloudflare domains, e.g. support@example.com");
 const domain = z.string().min(3).max(253).describe("A domain in your Cloudflare account, e.g. example.com");
@@ -99,11 +103,11 @@ async function readMessage(ctx: ToolContext, account: Account, id: string, max =
       attachments: (e.attachments ?? []).map((a) => ({ attachmentId: String(a.id), filename: String(a.filename), type: String(a.mimetype), size: Number(a.size) })),
     };
   }
-  const m = (await get(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}`)) as Record<string, unknown> & { labels?: string[]; attachments?: Record<string, unknown>[] };
+  const m = (await get(ctx, `${remote(account.remoteId)}/messages/${enc(id)}`)) as Record<string, unknown> & { labels?: string[]; attachments?: Record<string, unknown>[] };
   const body = clip(String(m.text || "") || htmlToText(String(m.html ?? "")), max);
   const labels = m.labels ?? [];
   const headers = includeHeaders
-    ? ((await get(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}/headers`)) as { headers?: { key: string; value: string }[] }).headers?.map((h) => ({ name: h.key, value: h.value })) ?? []
+    ? ((await get(ctx, `${remote(account.remoteId)}/messages/${enc(id)}/headers`)) as { headers?: { key: string; value: string }[] }).headers?.map((h) => ({ name: h.key, value: h.value })) ?? []
     : undefined;
   return {
     accountId: account.id, messageId: String(m.providerMessageId ?? id), threadId: (m.threadId as string) ?? null, rfcMessageId: (m.rfcMessageId as string) || null,
@@ -111,7 +115,7 @@ async function readMessage(ctx: ToolContext, account: Account, id: string, max =
     subject: String(m.subject ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""),
     cc: (m.cc as string) || null, bcc: (m.bcc as string) || null, replyTo: (m.replyTo as string) || null,
     date: String(m.date ?? ""), folder: labels.includes("SPAM") ? "spam" : labels.includes("TRASH") ? "trash" : labels.includes("DRAFT") ? "draft" : labels.includes("INBOX") ? "inbox" : labels.includes("SENT") ? "sent" : "archive",
-    read: !!m.read, starred: labels.includes("STARRED"), spamReason: labels.includes("SPAM") ? "Gmail put it in Spam" : null,
+    read: !!m.read, starred: labels.includes("STARRED"), spamReason: labels.includes("SPAM") ? (account.provider === "gmail" ? "Gmail put it in Spam" : "It is in the account's spam folder") : null,
     text: body.text, truncated: body.truncated, ...(includeHtml ? { html: String(m.html ?? "") } : {}), ...(headers ? { headers } : {}),
     attachments: (m.attachments ?? []).map((a) => ({ attachmentId: String(a.providerAttachmentId), filename: String(a.filename), type: String(a.mimeType), size: Number(a.size) })),
   };
@@ -147,12 +151,12 @@ function addresses(value: string | null | undefined): string[] {
   return out;
 }
 
-/** The address an account sends as: the mailbox, or the Gmail account's own address. */
+/** The address an account sends as: the mailbox, or the Gmail or IMAP account's own address. */
 async function ownAddress(ctx: ToolContext, account: Account): Promise<string> {
   if (account.provider === "cloudflare") return account.mailbox;
   const data = (await get(ctx, "/api/accounts")) as { accounts?: { id?: unknown; email?: unknown }[] };
-  const email = data.accounts?.find((a) => a.id === account.gmailId)?.email;
-  if (typeof email !== "string" || !email) throw new ApiError(404, `${account.id} is not a connected Gmail account (list_accounts)`, null);
+  const email = data.accounts?.find((a) => a.id === account.remoteId)?.email;
+  if (typeof email !== "string" || !email) throw new ApiError(404, `${account.id} is not a connected account (list_accounts)`, null);
   return email.toLowerCase();
 }
 
@@ -160,17 +164,18 @@ async function ownAddress(ctx: ToolContext, account: Account): Promise<string> {
 
 const listAccounts = defineTool({
   name: "list_accounts", title: "List accounts", level: "read", readOnly: true,
-  description: "Every mailbox this Fabric Inbox reads: Cloudflare addresses and Gmail accounts, with unread and total counts, whether each is hidden or a catch-all, and any delivery problem. Start here: the accountId values are what every other mail tool takes.",
+  description: "Every mailbox this Fabric Inbox reads: Cloudflare addresses, Gmail accounts and IMAP accounts (iCloud, Yahoo, Fastmail and others), with unread and total counts, whether each is hidden or a catch-all, any delivery problem, and for Gmail and IMAP accounts their sync state and what they can do (capabilities: archive, spam, drafts). Start here: the accountId values are what every other mail tool takes.",
   input: {},
   routes: ["GET /api/inbox", "GET /api/accounts", "GET /api/inbox/hidden"],
   async call(_args, ctx) {
     const feed = (await get(ctx, "/api/inbox", { limit: 1 })) as { accounts: Record<string, unknown>[]; issues: unknown[] };
-    const gmailAccounts = (await get(ctx, "/api/accounts")) as { configuration?: string; accounts?: Record<string, unknown>[] };
+    const remoteAccounts = (await get(ctx, "/api/accounts")) as { configuration?: string; accounts?: Record<string, unknown>[] };
     const hidden = (await get(ctx, "/api/inbox/hidden")) as { hidden: string[] };
     return {
       accounts: feed.accounts.map((a) => ({ accountId: a.id, provider: a.provider, email: a.email, name: a.name, status: a.status,
-        unread: a.unread ?? 0, total: a.total ?? 0, hidden: !!a.hidden, catchAll: !!a.catchAll, ...(a.error ? { error: a.error } : {}), ...(a.stuck ? { stuck: a.stuck } : {}) })),
-      gmail: { configuration: gmailAccounts.configuration ?? "configured", accounts: (gmailAccounts.accounts ?? []).map((a) => ({ accountId: `gmail:${a.id}`, email: a.email, status: a.status, lastSyncAt: a.lastSyncAt ?? null, error: a.error ?? null })) },
+        unread: a.unread ?? 0, total: a.total ?? 0, hidden: !!a.hidden, catchAll: !!a.catchAll, ...(a.error ? { error: a.error } : {}), ...(a.stuck ? { stuck: a.stuck } : {}),
+        ...(a.providerName ? { providerName: a.providerName } : {}), ...(a.capabilities ? { capabilities: a.capabilities } : {}), ...(a.importing !== undefined ? { importing: a.importing } : {}) })),
+      gmail: { configuration: remoteAccounts.configuration ?? "configured", accounts: (remoteAccounts.accounts ?? []).filter((a) => (a.provider ?? "gmail") === "gmail").map((a) => ({ accountId: `gmail:${a.id}`, email: a.email, status: a.status, lastSyncAt: a.lastSyncAt ?? null, error: a.error ?? null })) },
       hidden: hidden.hidden,
       issues: feed.issues,
     };
@@ -182,7 +187,7 @@ const listMessages = defineTool({
   description: "The triaged feed across every mailbox, newest first, as the app's All inboxes reads it (the app then groups it by triage; here it is one list). Narrow it to one account, a domain, a provider, a folder, unread mail, a category, or text in the subject, sender or body (query). Page with cursor. Hidden addresses are left out unless you name the account. folder \"draft\" lists the drafts kept on the server (as list_drafts does; unread and categoryId do not apply).",
   input: {
     accountId: accountId.optional(), domain: z.string().max(253).optional().describe("Only Cloudflare addresses on this domain"),
-    provider: z.enum(["cloudflare", "gmail"]).optional(), folder: z.enum(["inbox", "sent", "archive", "trash", "starred", "spam", "draft"]).default("inbox"),
+    provider: z.enum(["cloudflare", "gmail", "imap"]).optional(), folder: z.enum(["inbox", "sent", "archive", "trash", "starred", "spam", "draft"]).default("inbox"),
     unread: z.boolean().optional(), query: z.string().max(500).optional().describe("Text to find in subject, sender, recipient or body"),
     categoryId: z.string().max(100).optional().describe("Only messages in this category (list_categories)"),
     limit: z.number().int().min(1).max(100).default(25), cursor: z.string().max(2000).optional().describe("From the previous page's nextCursor"),
@@ -221,11 +226,11 @@ const searchMailbox = defineTool({
     for (const [name, value] of [["after", a.after], ["before", a.before]] as const)
       if (value !== undefined && !Number.isFinite(Date.parse(value))) throw new ApiError(400, `${name} must be an ISO date, such as 2026-05-01`, null);
     const flag = (value: boolean | undefined) => (value === undefined ? undefined : String(value));
-    if (account.provider === "gmail") {
-      if (a.page !== 1) throw new ApiError(400, "A Gmail search pages with cursor (nextCursor of the previous page), not page", null);
+    if (account.provider !== "cloudflare") {
+      if (a.page !== 1) throw new ApiError(400, "A Gmail or IMAP search pages with cursor (nextCursor of the previous page), not page", null);
       if (a.folder !== undefined && !(GMAIL_FOLDERS as readonly string[]).includes(a.folder))
-        throw new ApiError(400, `A Gmail search takes folder ${GMAIL_FOLDERS.join(", ")}; Gmail's own labels cannot be searched here`, null);
-      const data = (await get(ctx, `${gmail(account.gmailId)}/messages`, { q: a.query, from: a.from, to: a.to, subject: a.subject, after: a.after, before: a.before,
+        throw new ApiError(400, `A Gmail or IMAP search takes folder ${GMAIL_FOLDERS.join(", ")}; the account's other labels and folders cannot be searched here`, null);
+      const data = (await get(ctx, `${remote(account.remoteId)}/messages`, { q: a.query, from: a.from, to: a.to, subject: a.subject, after: a.after, before: a.before,
         unread: flag(a.unread), starred: flag(a.starred), hasAttachment: flag(a.hasAttachment), folder: a.folder, limit: a.limit, cursor: a.cursor })) as { messages: Record<string, unknown>[]; nextCursor?: string };
       return { messages: data.messages.map((m) => ({ accountId: account.id, messageId: m.providerMessageId, threadId: m.threadId, subject: m.subject, from: m.from, to: m.to, date: m.date, read: m.read, snippet: m.snippet })), nextCursor: data.nextCursor ?? null };
     }
@@ -265,11 +270,31 @@ const readMessageTool = defineTool({
 
 const readThread = defineTool({
   name: "read_thread", title: "Read a conversation", level: "read", readOnly: true,
-  description: "Every message of a Cloudflare conversation, oldest first, as plain text. For Gmail, read the messages one by one with read_message.",
+  description: "Every message of a conversation, oldest first, as plain text: a Cloudflare mailbox's, or a Gmail or IMAP account's as synced here (IMAP conversations are put together from Message-ID, In-Reply-To and References). threadId comes from list_messages or read_message.",
   input: { accountId, threadId: z.string().min(1).max(300), maxChars: z.number().int().min(500).max(50_000).default(8000).describe("Longest body returned per message") },
-  routes: ["GET /api/v1/mailboxes/:mailboxId/threads/:threadId"],
+  routes: ["GET /api/v1/mailboxes/:mailboxId/threads/:threadId", "GET /api/accounts/:accountId/messages", "GET /api/accounts/:accountId/messages/:messageId"],
   async call(a, ctx) {
-    const account = cloudflareOnly(parseAccount(a.accountId), "Reading a conversation");
+    const parsed = parseAccount(a.accountId);
+    if (parsed.provider !== "cloudflare") {
+      // The synced mail of the account, a page at a time, then each message of the conversation read in full.
+      const found: Record<string, unknown>[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 20; page++) {
+        const data = (await get(ctx, `${remote(parsed.remoteId)}/messages`, { threadId: a.threadId, limit: 100, cursor })) as { messages: Record<string, unknown>[]; nextCursor?: string };
+        found.push(...data.messages);
+        if (!data.nextCursor || found.length >= 100) break;
+        cursor = data.nextCursor;
+      }
+      if (!found.length) throw new ApiError(404, `No message of conversation ${a.threadId} is synced in ${parsed.id}`, null);
+      found.sort((x, y) => Number(x.timestamp ?? 0) - Number(y.timestamp ?? 0));
+      const messages: Record<string, unknown>[] = [];
+      for (const m of found.slice(0, 50)) {
+        const full = await readMessage(ctx, parsed, String(m.providerMessageId), a.maxChars);
+        messages.push({ messageId: full.messageId, subject: full.subject, from: full.from, to: full.to, date: full.date, folder: full.folder, read: full.read, text: full.text, truncated: full.truncated });
+      }
+      return { messages, ...(found.length > 50 ? { more: found.length - 50 } : {}) };
+    }
+    const account = cloudflareOnly(parsed, "Reading a conversation");
     const emails = (await get(ctx, `${box(account.mailbox)}/threads/${enc(a.threadId)}`)) as Record<string, unknown>[];
     return { messages: emails.map((e) => { const body = clip(htmlToText(String(e.body ?? "")), a.maxChars);
       return { messageId: e.id, subject: e.subject, from: e.sender, to: e.recipient, date: e.date, folder: e.folder_id, read: !!e.read, text: body.text, truncated: body.truncated }; }) };
@@ -286,8 +311,8 @@ const getAttachment = defineTool({
   routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId", "GET /api/accounts/:accountId/messages/:messageId/attachments/:attachmentId"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
-    if (account.provider === "gmail") {
-      const data = (await get(ctx, `${gmail(account.gmailId)}/messages/${enc(a.messageId)}/attachments/${enc(a.attachmentId)}`)) as { data: string; size: number };
+    if (account.provider !== "cloudflare") {
+      const data = (await get(ctx, `${remote(account.remoteId)}/messages/${enc(a.messageId)}/attachments/${enc(a.attachmentId)}`)) as { data: string; size: number };
       if (data.size > MAX_ATTACHMENT_BYTES) throw new ApiError(413, "The attachment is larger than 5 MB; open it in the app", null);
       return { size: data.size, base64: fromBase64Url(data.data) };
     }
@@ -309,15 +334,15 @@ const listFolders = defineTool({
 
 const getSendStatus = defineTool({
   name: "get_send_status", title: "Check what was sent", level: "read", readOnly: true,
-  description: "Whether a message you sent went out. For a Cloudflare mailbox: one outbox entry by its id, or the latest entries. For Gmail: the receipt of a send or a draft by the idempotencyKey you gave it.",
-  input: { accountId, outboxId: z.string().max(200).optional().describe("Cloudflare: the id send_email returned"), idempotencyKey: idempotencyKey.optional().describe("Gmail: the key you sent with"),
-    kind: z.enum(["send", "draft"]).default("send").describe("Gmail: which receipt"), limit: z.number().int().min(1).max(100).default(20) },
+  description: "Whether a message you sent went out. For a Cloudflare mailbox: one outbox entry by its id, or the latest entries. For a Gmail or IMAP account: the receipt of a send or a draft by the idempotencyKey you gave it (accepted, or unknown when the connection was lost after the message was handed over: check Sent before sending again).",
+  input: { accountId, outboxId: z.string().max(200).optional().describe("Cloudflare: the id send_email returned"), idempotencyKey: idempotencyKey.optional().describe("Gmail or IMAP: the key you sent with"),
+    kind: z.enum(["send", "draft"]).default("send").describe("Gmail or IMAP: which receipt"), limit: z.number().int().min(1).max(100).default(20) },
   routes: ["GET /api/v1/mailboxes/:mailboxId/outbox", "GET /api/v1/mailboxes/:mailboxId/outbox/:actionId", "GET /api/accounts/:accountId/sends/:idempotencyKey", "GET /api/accounts/:accountId/drafts/:idempotencyKey"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
-    if (account.provider === "gmail") {
-      if (!a.idempotencyKey) throw new ApiError(400, "Give the idempotencyKey the Gmail message was sent with", null);
-      return get(ctx, `${gmail(account.gmailId)}/${a.kind === "draft" ? "drafts" : "sends"}/${enc(a.idempotencyKey)}`);
+    if (account.provider !== "cloudflare") {
+      if (!a.idempotencyKey) throw new ApiError(400, "Give the idempotencyKey the message was sent with", null);
+      return get(ctx, `${remote(account.remoteId)}/${a.kind === "draft" ? "drafts" : "sends"}/${enc(a.idempotencyKey)}`);
     }
     return a.outboxId ? get(ctx, `${box(account.mailbox)}/outbox/${enc(a.outboxId)}`) : { outbox: await get(ctx, `${box(account.mailbox)}/outbox`, { limit: a.limit }) };
   },
@@ -494,14 +519,14 @@ async function listDraftRows(ctx: ToolContext, accountId: string | undefined, cu
       const data = (await get(ctx, `${box(account.mailbox)}/drafts`)) as { drafts: Record<string, unknown>[] };
       return { drafts: data.drafts.map((d) => cfDraft(account, d)), nextCursor: null as string | null };
     }
-    const data = (await get(ctx, `${gmail(account.gmailId)}/drafts`, { cursor })) as { drafts: Record<string, unknown>[]; nextCursor?: string | null };
+    const data = (await get(ctx, `${remote(account.remoteId)}/drafts`, { cursor })) as { drafts: Record<string, unknown>[]; nextCursor?: string | null };
     return { drafts: data.drafts.map((d) => gmailDraftRow(account, d)), nextCursor: data.nextCursor ?? null };
   };
   if (accountId) {
     const page = await one(parseAccount(accountId));
     return { drafts: page.drafts, nextCursor: page.nextCursor, issues: [] as { accountId: string; error: string }[] };
   }
-  if (cursor) throw new ApiError(400, "cursor pages one Gmail account's drafts: give its accountId too", null);
+  if (cursor) throw new ApiError(400, "cursor pages one account's drafts: give its accountId too", null);
   const feed = (await get(ctx, "/api/inbox", { limit: 1 })) as { accounts: { id: string }[] };
   const drafts: DraftRow[] = [], issues: { accountId: string; error: string }[] = [];
   for (const a of feed.accounts) {
@@ -514,7 +539,7 @@ async function listDraftRows(ctx: ToolContext, accountId: string | undefined, cu
 
 const listDraftsTool = defineTool({
   name: "list_drafts", title: "List drafts", level: "read", readOnly: true,
-  description: "Drafts kept on the server, across every account or in one: Cloudflare mailboxes' Drafts and Gmail's own drafts, newest first, each with its draftId, revision, recipients, subject, the message it answers and its files. These are the drafts the app's Drafts list shows, a person's and agents' alike. read_draft gives one in full; send_draft sends one.",
+  description: "Drafts kept on the server, across every account or in one: Cloudflare mailboxes' Drafts, Gmail's own drafts and IMAP accounts' Drafts folders, newest first, each with its draftId, revision, recipients, subject, the message it answers and its files. These are the drafts the app's Drafts list shows, a person's and agents' alike. read_draft gives one in full; send_draft sends one.",
   input: { accountId: accountId.optional(), cursor: z.string().max(200).optional().describe("Gmail: nextCursor of the previous page of this account") },
   routes: [...DRAFT_ROUTES],
   call: (a, ctx) => listDraftRows(ctx, a.accountId, a.cursor),
@@ -533,7 +558,7 @@ const readDraft = defineTool({
       const body = clip(htmlToText(html), a.maxChars);
       return { ...cfDraft(account, d), text: body.text, truncated: body.truncated, ...(a.includeHtml ? { html } : {}) };
     }
-    const d = (await get(ctx, `${gmail(account.gmailId)}/drafts/${enc(a.draftId)}/content`)) as Record<string, unknown>;
+    const d = (await get(ctx, `${remote(account.remoteId)}/drafts/${enc(a.draftId)}/content`)) as Record<string, unknown>;
     const body = clip(String(d.text || "") || htmlToText(String(d.html ?? "")), a.maxChars);
     return { ...gmailDraftRow(account, d), text: body.text, truncated: body.truncated, ...(a.includeHtml ? { html: String(d.html ?? "") } : {}) };
   },
@@ -548,7 +573,7 @@ const saveDraft = defineTool({
     attachments, keepAttachments: z.array(z.string().max(2048)).max(MAX_ATTACHMENTS).optional().describe("A changed draft: ids of its files to keep (list_drafts); left out keeps them all"),
     quote: z.boolean().default(true).describe("Quote the message it answers below your text"),
     signature: z.boolean().default(true).describe("Add the address's signature (Cloudflare)"),
-    idempotencyKey: idempotencyKey.optional().describe("Your stable id for a new draft: saving again with it changes that draft, never makes a second. Required for a new Gmail draft") },
+    idempotencyKey: idempotencyKey.optional().describe("Your stable id for a new draft: saving again with it changes that draft, never makes a second. Required for a new Gmail or IMAP draft") },
   routes: ["PUT /api/v1/mailboxes/:mailboxId/drafts/:id", "GET /api/v1/mailboxes/:mailboxId/drafts/:id", "GET /api/v1/mailboxes/:mailboxId",
     "GET /api/v1/mailboxes/:mailboxId/emails/:id", "POST /api/v1/mailboxes/:mailboxId/drafts",
     "POST /api/accounts/:accountId/drafts", "PUT /api/accounts/:accountId/drafts/:draftId", "GET /api/accounts/:accountId/drafts/:draftId/content",
@@ -573,9 +598,9 @@ const saveDraft = defineTool({
         ...(a.expectedRevision !== undefined ? { expected_revision: a.expectedRevision } : {}) })) as Record<string, unknown>;
       return cfDraft(account, saved);
     }
-    if (typeof a.expectedRevision === "number") throw new ApiError(400, "A Gmail draft's revision is its message id, a string (list_drafts)", null);
+    if (typeof a.expectedRevision === "number") throw new ApiError(400, "A Gmail or IMAP draft's revision is its message id, a string (list_drafts)", null);
     const current = a.draftId && !a.replyToMessageId
-      ? (await get(ctx, `${gmail(account.gmailId)}/drafts/${enc(a.draftId)}/content`)) as { threadId?: string; inReplyTo?: string | null; references?: string | null }
+      ? (await get(ctx, `${remote(account.remoteId)}/drafts/${enc(a.draftId)}/content`)) as { threadId?: string; inReplyTo?: string | null; references?: string | null }
       : null;
     const original = a.replyToMessageId ? await readMessage(ctx, account, a.replyToMessageId, 20_000) : null;
     const quote = original && a.quote ? { text: quotedBlock(original), html: quotedHtml(original) } : null;
@@ -584,12 +609,12 @@ const saveDraft = defineTool({
       threadId: original?.threadId ?? current?.threadId ?? undefined, inReplyTo: original?.rfcMessageId ?? current?.inReplyTo ?? undefined,
       references: original ? [original.references, original.rfcMessageId].filter(Boolean).join(" ") || undefined : current?.references ?? undefined, ...withFiles(files) };
     if (a.draftId) {
-      const saved = (await put(ctx, `${gmail(account.gmailId)}/drafts/${enc(a.draftId)}`, { ...message,
+      const saved = (await put(ctx, `${remote(account.remoteId)}/drafts/${enc(a.draftId)}`, { ...message,
         ...(a.keepAttachments ? { keepAttachments: a.keepAttachments } : {}), ...(a.expectedRevision !== undefined ? { expectedRevision: a.expectedRevision } : {}) })) as Record<string, unknown>;
       return { accountId: account.id, draftId: a.draftId, revision: saved.revision, messageId: saved.messageId, threadId: saved.threadId };
     }
-    if (!a.idempotencyKey) throw new ApiError(400, "A new Gmail draft needs an idempotencyKey", null);
-    const receipt = (await post(ctx, `${gmail(account.gmailId)}/drafts`, { idempotencyKey: a.idempotencyKey, ...message })) as Record<string, unknown>;
+    if (!a.idempotencyKey) throw new ApiError(400, "A new Gmail or IMAP draft needs an idempotencyKey", null);
+    const receipt = (await post(ctx, `${remote(account.remoteId)}/drafts`, { idempotencyKey: a.idempotencyKey, ...message })) as Record<string, unknown>;
     return { accountId: account.id, draftId: receipt.providerDraftId ?? null, revision: receipt.providerMessageId ?? null, messageId: receipt.providerMessageId ?? null,
       threadId: receipt.threadId ?? null, status: receipt.status, idempotencyKey: a.idempotencyKey };
   },
@@ -606,14 +631,14 @@ const sendDraft = defineTool({
       if (typeof a.expectedRevision === "string") throw new ApiError(400, "A Cloudflare draft's revision is a number (list_drafts)", null);
       return post(ctx, `${box(account.mailbox)}/drafts/${enc(a.draftId)}/send`, { idempotencyKey: a.idempotencyKey, ...(a.expectedRevision !== undefined ? { expected_revision: a.expectedRevision } : {}) });
     }
-    if (typeof a.expectedRevision === "number") throw new ApiError(400, "A Gmail draft's revision is its message id, a string (list_drafts)", null);
-    return post(ctx, `${gmail(account.gmailId)}/drafts/${enc(a.draftId)}/send`, { idempotencyKey: a.idempotencyKey, ...(a.expectedRevision !== undefined ? { expectedRevision: a.expectedRevision } : {}) });
+    if (typeof a.expectedRevision === "number") throw new ApiError(400, "A Gmail or IMAP draft's revision is its message id, a string (list_drafts)", null);
+    return post(ctx, `${remote(account.remoteId)}/drafts/${enc(a.draftId)}/send`, { idempotencyKey: a.idempotencyKey, ...(a.expectedRevision !== undefined ? { expectedRevision: a.expectedRevision } : {}) });
   },
 });
 
 const deleteDraft = defineTool({
   name: "delete_draft", title: "Delete a draft", level: "mail", target: (a) => `${a.accountId} ${a.draftId}`,
-  description: "Deletes a draft and its files, from the app's Drafts and (for Gmail) from Gmail. It cannot be restored. Two calls: the first says which draft and gives a code.",
+  description: "Deletes a draft and its files, from the app's Drafts and (for Gmail and IMAP) from the account itself. It cannot be restored. Two calls: the first says which draft and gives a code.",
   input: { accountId, draftId },
   confirm: async (a, ctx) => {
     const d = (await readDraft.call({ accountId: a.accountId, draftId: a.draftId, maxChars: 500, includeHtml: false }, ctx)) as DraftRow;
@@ -623,12 +648,12 @@ const deleteDraft = defineTool({
     "GET /api/v1/mailboxes/:mailboxId/drafts/:id", "GET /api/accounts/:accountId/drafts/:draftId/content"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
-    await del(ctx, account.provider === "cloudflare" ? `${box(account.mailbox)}/drafts/${enc(a.draftId)}` : `${gmail(account.gmailId)}/drafts/${enc(a.draftId)}`);
+    await del(ctx, account.provider === "cloudflare" ? `${box(account.mailbox)}/drafts/${enc(a.draftId)}` : `${remote(account.remoteId)}/drafts/${enc(a.draftId)}`);
     return { deleted: a.draftId };
   },
 });
 
-/** What sendNew sends: one message, from a Cloudflare address or a Gmail account. */
+/** What sendNew sends: one message, from a Cloudflare address or a Gmail or IMAP account. */
 interface Outgoing {
   to: string | string[]; cc?: string | string[]; bcc?: string | string[]; subject: string; text: string; html?: string;
   idempotencyKey: string; signature: boolean; attachments?: MailAttachment[];
@@ -641,14 +666,14 @@ async function sendNew(ctx: ToolContext, account: Account, a: Outgoing, thread?:
     return post(ctx, `${box(account.mailbox)}/emails`, { to: list(a.to), cc: list(a.cc), bcc: list(a.bcc), from: fromFor(account.mailbox, settings), subject: a.subject, text, html,
       idempotencyKey: a.idempotencyKey, ...withFiles(a.attachments ?? []) });
   }
-  return post(ctx, `${gmail(account.gmailId)}/send`, { idempotencyKey: a.idempotencyKey, to: list(a.to), cc: list(a.cc), bcc: list(a.bcc), subject: a.subject, text: a.text, html: a.html,
+  return post(ctx, `${remote(account.remoteId)}/send`, { idempotencyKey: a.idempotencyKey, to: list(a.to), cc: list(a.cc), bcc: list(a.bcc), subject: a.subject, text: a.text, html: a.html,
     ...(thread ? { threadId: thread.threadId ?? undefined, inReplyTo: thread.rfcMessageId ?? undefined, references: [thread.references, thread.rfcMessageId].filter(Boolean).join(" ") || undefined } : {}),
     ...withFiles(a.attachments ?? []) });
 }
 
 const sendEmail = defineTool({
   name: "send_email", title: "Send a new message", level: "mail", sends: true, target: (a) => `${a.accountId} → ${[a.to].flat().join(", ")}`,
-  description: "Sends a new message from one of your addresses or Gmail accounts, with files if you give them. It really leaves: confirm the recipients and text with the person you work for unless they asked you to send. The idempotencyKey makes a retry safe. Counts against this key's daily sends.",
+  description: "Sends a new message from one of your addresses or Gmail or IMAP accounts, with files if you give them. It really leaves: confirm the recipients and text with the person you work for unless they asked you to send. The idempotencyKey makes a retry safe. Counts against this key's daily sends.",
   input: { accountId, to: recipients, cc: recipients.optional(), bcc: recipients.optional(), subject: z.string().min(1).max(998), ...body, attachments, idempotencyKey,
     signature: z.boolean().default(true).describe("Add the address's signature (Cloudflare)") },
   routes: ["POST /api/v1/mailboxes/:mailboxId/emails", "POST /api/accounts/:accountId/send"],
@@ -776,8 +801,8 @@ const updateMessages = defineTool({
     if (a.read === undefined && a.starred === undefined) throw new ApiError(400, "Say read, starred or both", null);
     return eachMessage(a.messages, async (account, id) => {
       if (account.provider === "cloudflare") return put(ctx, `${box(account.mailbox)}/emails/${enc(id)}`, { read: a.read, starred: a.starred });
-      if (a.read !== undefined) await post(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}/read`, { read: a.read });
-      if (a.starred !== undefined) await post(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}/starred`, { starred: a.starred });
+      if (a.read !== undefined) await post(ctx, `${remote(account.remoteId)}/messages/${enc(id)}/read`, { read: a.read });
+      if (a.starred !== undefined) await post(ctx, `${remote(account.remoteId)}/messages/${enc(id)}/starred`, { starred: a.starred });
     });
   },
 });
@@ -792,17 +817,17 @@ const moveMessages = defineTool({
     if (a.to === "spam") throw new ApiError(400, "Use mark_spam to move mail to Spam", null);
     return eachMessage(a.messages, async (account, id) => {
       if (account.provider === "cloudflare") return post(ctx, `${box(account.mailbox)}/emails/${enc(id)}/move`, { folderId: a.to });
-      if (a.to === "archive") return post(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}/archive`);
-      if (a.to === "trash") return post(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}/trashed`, { trashed: true });
-      if (a.to === "inbox") return post(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}/inbox`);
-      throw new ApiError(400, "A Gmail message moves to inbox, archive or trash", null);
+      if (a.to === "archive") return post(ctx, `${remote(account.remoteId)}/messages/${enc(id)}/archive`);
+      if (a.to === "trash") return post(ctx, `${remote(account.remoteId)}/messages/${enc(id)}/trashed`, { trashed: true });
+      if (a.to === "inbox") return post(ctx, `${remote(account.remoteId)}/messages/${enc(id)}/inbox`);
+      throw new ApiError(400, "A Gmail or IMAP message moves to inbox, archive or trash", null);
     });
   },
 });
 
 const markSpam = defineTool({
   name: "mark_spam", title: "Report spam or not spam", level: "mail", target: (a) => `${a.messages.length} message(s) spam=${a.spam}`,
-  description: "Moves messages to Spam (spam: true) or back to the Inbox (spam: false), and by default puts the sender on the Always spam or Never spam list so their next mail is judged the same way. For Gmail it also tells Gmail.",
+  description: "Moves messages to Spam (spam: true) or back to the Inbox (spam: false), and by default puts the sender on the Always spam or Never spam list so their next mail is judged the same way. For Gmail and IMAP accounts it uses the account's own spam folder, which also teaches the provider's filter.",
   input: { messages: messageRefs, spam: z.boolean(),
     list: z.enum(["sender", "domain", "none"]).default("sender").describe("What to remember: each message's sender, their whole domain, or nothing") },
   routes: ["POST /api/spam/report", "POST /api/spam/release"],
@@ -829,17 +854,17 @@ const deleteMessage = defineTool({
 });
 
 const syncAccount = defineTool({
-  name: "sync_account", title: "Sync a Gmail account", level: "mail", target: (a) => a.accountId,
-  description: "Fetches new mail from Gmail now instead of at the next scheduled sync.",
+  name: "sync_account", title: "Sync a Gmail or IMAP account", level: "mail", target: (a) => a.accountId,
+  description: "Fetches new mail and changes for one Gmail or IMAP account now instead of at the next scheduled sync.",
   input: { accountId },
   routes: ["POST /api/accounts/:accountId/sync"],
-  async call(a, ctx) { const account = parseAccount(a.accountId); if (account.provider !== "gmail") throw new ApiError(400, "Only Gmail accounts sync; Cloudflare mail arrives as it is sent", null); return post(ctx, `${gmail(account.gmailId)}/sync`); },
+  async call(a, ctx) { const account = parseAccount(a.accountId); if (account.provider === "cloudflare") throw new ApiError(400, "Only Gmail and IMAP accounts sync; Cloudflare mail arrives as it is sent", null); return post(ctx, `${remote(account.remoteId)}/sync`); },
 });
 
 const refreshInbox = defineTool({
-  name: "refresh_inbox", title: "Fetch new Gmail mail now", level: "mail", target: (a) => (a.accountIds ?? ["every Gmail account"]).join(" "),
-  description: "Reads Gmail now for new mail, changes and deletions (every Gmail account, or the ones named), within about 20 seconds, and says per account: synced, backoff (with retryAt), reconnect, failed (with error) or not_reached; importing gives a first import's progress in percent. Cloudflare mail arrives as it is sent and needs no refresh.",
-  input: { accountIds: z.array(accountId).max(100).optional().describe('Gmail accounts ("gmail:<id>") to refresh; every Gmail account when left out') },
+  name: "refresh_inbox", title: "Fetch new mail now", level: "mail", target: (a) => (a.accountIds ?? ["every Gmail and IMAP account"]).join(" "),
+  description: "Reads Gmail and IMAP accounts now for new mail, changes and deletions (every one, or the ones named), within about 20 seconds, and says per account: synced, backoff (with retryAt), reconnect, failed (with error) or not_reached; importing gives a first import's progress in percent. Cloudflare mail arrives as it is sent and needs no refresh.",
+  input: { accountIds: z.array(accountId).max(100).optional().describe('Gmail or IMAP accounts ("gmail:<id>", "imap:<id>") to refresh; every one when left out') },
   routes: ["POST /api/inbox/refresh"],
   async call(a, ctx) { return post(ctx, "/api/inbox/refresh", a.accountIds ? { accounts: a.accountIds.map((id) => parseAccount(id).id) } : {}); },
 });
@@ -1220,11 +1245,40 @@ const applySetup = defineTool({
 
 const disconnectGmail = defineTool({
   name: "disconnect_gmail", title: "Disconnect a Gmail account", level: "admin", target: (a) => a.accountId,
-  description: "Revokes this server's access to a Gmail account and forgets its synced mail here (Gmail itself keeps everything). Reconnecting needs a person in the app. Two calls.",
+  description: "Revokes this server's access to a Gmail account and forgets its synced mail here (Gmail itself keeps everything). Reconnecting needs a person in the app. Two calls. disconnect_account does the same for Gmail and IMAP accounts.",
   input: { accountId },
   confirm: (a) => `Disconnect ${a.accountId}: Google access is revoked and the mail synced here is forgotten. Gmail keeps it; reconnecting needs the owner in the app.`,
   routes: ["POST /api/accounts/:accountId/disconnect"],
-  async call(a, ctx) { const account = parseAccount(a.accountId); if (account.provider !== "gmail") throw new ApiError(400, "Only a Gmail account is disconnected; remove a Cloudflare address with remove_address", null); return post(ctx, `${gmail(account.gmailId)}/disconnect`); },
+  async call(a, ctx) { const account = parseAccount(a.accountId); if (account.provider !== "gmail") throw new ApiError(400, "Only a Gmail account is disconnected; remove a Cloudflare address with remove_address", null); return post(ctx, `${remote(account.remoteId)}/disconnect`); },
+});
+
+const disconnectAccount = defineTool({
+  name: "disconnect_account", title: "Disconnect a mail account", level: "admin", target: (a) => a.accountId,
+  description: "Disconnects a Gmail or IMAP account and forgets its synced mail here (the account itself keeps everything): Google's access is revoked; an IMAP account's app password is deleted from this server (revoke it at the provider too). Reconnecting needs a person in the app. Two calls.",
+  input: { accountId },
+  confirm: (a) => `Disconnect ${a.accountId}: its access is removed from this server and the mail synced here is forgotten. The account keeps its mail; reconnecting needs the owner in the app.`,
+  routes: ["POST /api/accounts/:accountId/disconnect"],
+  async call(a, ctx) {
+    const account = parseAccount(a.accountId);
+    if (account.provider === "cloudflare") throw new ApiError(400, "Only a Gmail or IMAP account is disconnected; remove a Cloudflare address with remove_address", null);
+    return post(ctx, `${remote(account.remoteId)}/disconnect`);
+  },
+});
+
+const listMailProviders = defineTool({
+  name: "list_mail_providers", title: "Mail providers and their setup", level: "admin", readOnly: true,
+  description: "The mail providers this server can connect and whether each is set up (Gmail through Google sign-in; IMAP with an app password), the IMAP presets (iCloud Mail, Yahoo, AOL, Fastmail, Zoho, Yandex, Mail.ru, GMX, Gmail with an app password, Other) with their servers, what the person does first and the provider's own help page, and every connected Gmail and IMAP account with its status and what it can do. Connecting an IMAP account takes the person's app password, which an agent never receives: give the person settingsUrl.",
+  input: {},
+  routes: ["GET /api/accounts/providers", "GET /api/accounts"],
+  async call(_a, ctx) {
+    const providers = (await get(ctx, "/api/accounts/providers")) as Record<string, unknown>;
+    const data = (await get(ctx, "/api/accounts")) as { accounts?: Record<string, unknown>[] };
+    return { ...providers,
+      accounts: (data.accounts ?? []).map((a) => ({ accountId: `${a.provider ?? "gmail"}:${a.id}`, provider: a.provider ?? "gmail", providerName: a.providerName ?? null, email: a.email,
+        status: a.status, lastSyncAt: a.lastSyncAt ?? null, error: a.error ?? null, ...(a.importing !== undefined ? { importing: a.importing } : {}), capabilities: a.capabilities ?? null })),
+      settingsUrl: "/settings/accounts?connect=imap",
+      next: "To connect an IMAP account, the person opens Settings → Accounts → Connect account in the app and enters the address and an app password there." };
+  },
 });
 
 const gmailConnectLink = defineTool({
@@ -1285,7 +1339,7 @@ export const TOOLS: readonly ToolDef[] = [
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,
-  disconnectGmail, gmailConnectLink, gmailSetupStatus, checkGmailSetup, listAgentKeys, agentActivity,
+  disconnectGmail, disconnectAccount, listMailProviders, gmailConnectLink, gmailSetupStatus, checkGmailSetup, listAgentKeys, agentActivity,
 ];
 
 /**
@@ -1295,6 +1349,8 @@ export const NOT_TOOLS: Readonly<Record<string, string>> = {
   "GET /api/accounts/gmail/connect": "Connecting Gmail is a person's consent in a browser (Google's OAuth page and a cookie); gmail_connect_link gives the person this address",
   "POST /api/accounts/gmail/connect": "Connecting Gmail is a person's consent in a browser (Google's OAuth page and a cookie)",
   "GET /api/accounts/gmail/callback": "Google's OAuth redirect back to the browser",
+  "POST /api/accounts/imap": "Connecting an IMAP account takes the person's app password: an agent must never receive a person's password, so the person enters it in Settings → Accounts; list_mail_providers gives the presets and where to go",
+  "PUT /api/accounts/:accountId/password": "A new app password is the person's secret, entered in Settings → Accounts: an agent must never receive a person's password; list_mail_providers says which accounts need one (status reconnect_required)",
   "POST /api/agent-keys": "Agent keys are issued by a person in the app (its answer carries the key's secret); an agent cannot mint keys. list_agent_keys reads them",
   "DELETE /api/agent-keys/:id": "Agent keys are revoked by a person in the app (Settings → Agent access); list_agent_keys reads them",
   "POST /api/cloudflare/accounts": "A Cloudflare token is a secret: a person pastes it in Settings → Accounts, so it never passes through an agent's transcript",

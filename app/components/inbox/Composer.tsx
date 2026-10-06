@@ -144,7 +144,8 @@ export default function Composer({
     }
     setNotice("");
     try {
-      const isGmail = account.provider === "gmail";
+      // Gmail and IMAP accounts send through /api/accounts/<id>/send; a Cloudflare mailbox through its own route.
+      const isGmail = account.provider === "gmail" || account.provider === "imap";
       if (!legacy) {
         const result = await sendSavedDraft(fixed, fabric);
         if (result.status === "accepted") {
@@ -264,7 +265,7 @@ export default function Composer({
       const source = draft.forwardSource;
       const missing = missingOriginals(draft);
       const prefix =
-        source.provider === "gmail"
+        source.provider !== "cloudflare"
           ? `${accountPath(rawAccount(source.accountId))}/messages/${encodeURIComponent(source.originalId)}`
           : `/api/v1/mailboxes/${encodeURIComponent(rawAccount(source.accountId))}/emails/${encodeURIComponent(source.originalId)}`;
       const files: Parameters<typeof captureFiles>[2] = missing.map((file) => ({
@@ -275,7 +276,7 @@ export default function Composer({
         arrayBuffer: async () => {
           const path = `${prefix}/attachments/${encodeURIComponent(file.id)}`;
           let bytes: ArrayBuffer;
-          if (source.provider === "gmail") {
+          if (source.provider !== "cloudflare") {
             const result = await fabric<{ data: string }>(path);
             if (typeof result.data !== "string")
               throw new Error("The original file is unavailable.");
@@ -395,7 +396,7 @@ export default function Composer({
             )}
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.email} · {a.provider === "gmail" ? "Gmail" : "Cloudflare"}
+                {a.email} · {a.provider === "cloudflare" ? "Cloudflare" : a.providerName ?? (a.provider === "gmail" ? "Gmail" : "IMAP")}
               </option>
             ))}
           </select>

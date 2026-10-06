@@ -71,7 +71,7 @@ and [your deployment](#configure-your-deployment).
 
 ## What it does today
 
-- **All inboxes, triaged.** Cloudflare mailboxes and Gmail accounts in one list. Focus shows
+- **All inboxes, triaged.** Cloudflare mailboxes, Gmail accounts and IMAP accounts in one list. Focus shows
   Important first (a person's unread mail, security and sign-in mail, monitoring alerts, app
   review rejections, failed payments, CI failures, starred); the rest sits in collapsed groups
   — people, security, alerts, app stores, billing, dev & CI, notifications, social,
@@ -95,7 +95,13 @@ and [your deployment](#configure-your-deployment).
   records the version, the decision and exactly what was sent.
 - **Mail.** Read, reply, forward with attachments, To/Cc/Bcc, independent drafts with send
   recovery, star/archive/trash/restore, per-message external images, Gmail OAuth with cloud
-  polling. Rules: archive, mark read, draft, forward or call an MCP tool, with dry-run,
+  polling.
+- **Other mail with an app password.** iCloud Mail, Yahoo, AOL, Fastmail, Zoho, Yandex, Mail.ru,
+  GMX, Gmail with an app password, or any IMAP/SMTP server: Settings → Accounts → Connect
+  account. The server checks the app password with the provider's IMAP and SMTP servers, keeps
+  it encrypted on your server (not on the Mac), and reads and sends the mail while the Mac is
+  closed; rules, agents, categories and spam work on it as on Gmail
+  ([setup](docs/desktop-mail/setup.md#imap-accounts-icloud-yahoo-fastmail-and-others)). Rules: archive, mark read, draft, forward or call an MCP tool, with dry-run,
   approval or automatic mode, pause and a daily cap.
 - **Desktop.** A signed universal macOS app installed from a disk image. First run offers
   **Create my server on Cloudflare**: paste one API token and the app creates the server,
@@ -106,8 +112,8 @@ and [your deployment](#configure-your-deployment).
   and catch-alls. Applying it is idempotent; the server can derive one from Cloudflare Email
   Routing so existing addresses keep forwarding to Gmail while their mail is collected here.
 
-Not yet: IMAP/Outlook and local sync of personal accounts (roadmap L1), bulk actions per group
-(L5), offline cache. See the [roadmap](docs/app-store/tasks/2026-09-28-roadmap.md).
+Not yet: Outlook (Microsoft), IMAP push (IDLE; IMAP accounts are read every few minutes), bulk
+actions per group (L5), offline cache. See the [roadmap](docs/app-store/tasks/2026-09-28-roadmap.md).
 
 ## Run locally
 

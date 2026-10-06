@@ -11,6 +11,8 @@ export interface MessageActionsProps {
   /** Runs the action; `optimistic` is what the list may show before the server answers (P3-12). */
   run: (action: () => Promise<unknown>, after?: () => void, optimistic?: MessageChange) => Promise<unknown>;
   onChanged: (change: MessageChange) => void;
+  /** What the message's account can do (an IMAP server with no Spam or Trash folder): absent is everything. */
+  capabilities?: { spam: boolean; trash: boolean };
 }
 type Request = (url: string, body: unknown, method?: string) => Promise<unknown>;
 
@@ -25,7 +27,8 @@ export async function changeMessage(
     throw new Error("Message account is unavailable. Refresh and try again.");
   const account = encodeURIComponent(message.accountId.slice(prefix.length));
   const id = encodeURIComponent(message.providerMessageId);
-  const gmail = message.provider === "gmail";
+  // Gmail and IMAP accounts share their routes (/api/accounts/<id>); a Cloudflare mailbox has its own.
+  const gmail = message.provider === "gmail" || message.provider === "imap";
   const path = gmail ? `/api/accounts/${account}/messages/${id}` : `/api/v1/mailboxes/${account}/emails/${id}`;
   if ("starred" in change) {
     const result = await request(gmail ? path + "/starred" : path, change, gmail ? "POST" : "PUT") as { labels?: string[]; starred?: boolean };
@@ -68,11 +71,11 @@ export async function changeSpam(message: ActionMessage, spam: boolean, request:
   return { id: message.id, removed: true, notice };
 }
 
-export default function MessageActions({ message, folder, busy, run, onChanged }: MessageActionsProps) {
+export default function MessageActions({ message, folder, busy, run, onChanged, capabilities }: MessageActionsProps) {
   const restoring = folder === "trash";
   const starLabel = message.starred ? "Unstar message" : "Star message";
   const trashLabel = restoring
-    ? message.provider === "gmail" ? "Restore message" : "Restore to inbox"
+    ? message.provider !== "cloudflare" ? "Restore message" : "Restore to inbox"
     : "Move to trash";
   function perform(change: { starred: boolean } | { trashed: boolean }) {
     let result: MessageChange | undefined;
@@ -82,7 +85,8 @@ export default function MessageActions({ message, folder, busy, run, onChanged }
     }, expectedChange(message, change));
   }
   const inSpam = folder === "spam";
-  const canReport = !inSpam && folder !== "sent" && folder !== "trash";
+  const canReport = !inSpam && folder !== "sent" && folder !== "trash" && capabilities?.spam !== false;
+  const canTrash = capabilities?.trash !== false;
   function spam(toSpam: boolean) {
     let result: MessageChange | undefined;
     void run(async () => { result = await changeSpam(message, toSpam); }, () => {
@@ -100,10 +104,12 @@ export default function MessageActions({ message, folder, busy, run, onChanged }
       aria-pressed={message.starred} disabled={busy} onClick={() => perform({ starred: !message.starred })}>
       <StarIcon size={19} weight={message.starred ? "fill" : "regular"} />
     </button>
-    <button type="button" className="fi-icon-button" aria-label={trashLabel} title={trashLabel}
-      disabled={busy} onClick={() => perform({ trashed: !restoring })}>
-      {restoring ? <ArrowUUpLeftIcon size={19} /> : <TrashIcon size={19} />}
-    </button>
+    {canTrash && (
+      <button type="button" className="fi-icon-button" aria-label={trashLabel} title={trashLabel}
+        disabled={busy} onClick={() => perform({ trashed: !restoring })}>
+        {restoring ? <ArrowUUpLeftIcon size={19} /> : <TrashIcon size={19} />}
+      </button>
+    )}
     {canReport && (
       <button type="button" className="fi-icon-button" aria-label="Report spam" title="Report spam: move it and its sender to Spam"
         disabled={busy} onClick={() => spam(true)}>

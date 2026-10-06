@@ -10,7 +10,7 @@ import { GOOGLE_CONSOLE, GOOGLE_HELP, gmailSetupValues } from "../shared/mail/gm
 /** SCN-051 / SCN-002 / SCN-003 in the interface: the setup steps, the connect step, and an account's reason. */
 const ORIGIN = "https://fabric-inbox.owner.workers.dev";
 const setup = (over: Partial<GmailSetup> = {}): GmailSetup => ({
-  configured: false, missing: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GMAIL_TOKEN_ENCRYPTION_KEY", "PUBLIC_APP_URL"],
+  configured: false, missing: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "MAIL_CREDENTIAL_KEY", "PUBLIC_APP_URL"],
   values: gmailSetupValues(ORIGIN), clientId: null, projectNumber: null, credentialKey: "missing", publicAppUrl: null,
   addressMatches: null, canSave: true, links: { ...GOOGLE_CONSOLE }, help: { ...GOOGLE_HELP }, ...over,
 });
@@ -94,10 +94,12 @@ test("an account that stopped working says why, with one action that fixes it", 
   assert.match(limited, /Google ends this access on/);
 });
 
-test("Gmail with an app password is a marked card this build cannot connect yet (WS4 wires it)", () => {
+test("Gmail with an app password is the IMAP preset gmail, connectable where the server can keep an app password (WS4)", () => {
   const card = PROVIDERS.find((p) => p.id === "gmail-app-password")!;
-  assert.equal(card.connect, "none");
-  assert.equal(availability(card, { cloudflareConnected: true, gmail: "configured" }), "unavailable");
+  assert.equal(card.connect, "app-password");
+  assert.equal(card.preset, "gmail");
+  assert.equal(availability(card, { cloudflareConnected: true, gmail: "not-configured", imap: "configured" }), "available", "no Google Cloud project needed");
+  assert.equal(availability(card, { cloudflareConnected: true, gmail: "configured", imap: "not-configured" }), "not-configured");
   assert.match(card.summary, /2-Step Verification/);
   assert.match(card.summary, /not for work or school/);
   assert.match(card.tradeoff!, /labels appear as folders/);

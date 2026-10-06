@@ -23,7 +23,8 @@ flowchart LR
   REG -->|queue + alarm → runAgent| RUN["runner: prefilter → model + granted tools → policy"]
   RUN -->|draft| MB
   RUN -->|send, idempotent| OUT["MailboxDO outbox → EMAIL binding"]
-  G["Gmail API"] <-->|OAuth, poll| GA["GmailAccountsDO (workspace)"]
+  G["Gmail API"] <-->|OAuth, poll| GA["GmailAccountsDO (workspace): Gmail and IMAP accounts"]
+  IM["IMAP over TLS / SMTP submission"] <-->|app password, poll| GA
   GA -->|incoming events| AUTO
   UI["Unified inbox /"] -->|/api/inbox + triage| MB
   UI --> GA
@@ -88,13 +89,46 @@ is involved. The client (`app/components/inbox/TriagedList.tsx`, `triage-view.ts
 selected message keeps its section until the selection changes, and Archive/Trash selects the next
 one in the order shown.
 
+## Mail providers (0.11)
+
+Every account the server keeps for a provider — Gmail through Google sign-in, any IMAP/SMTP
+mailbox through an app password — lives in one `GmailAccountsDO` (`workspace`; the class and its
+binding `GMAIL_ACCOUNTS` keep their first provider's name, since renaming a bound class is a
+destructive storage step). The world names an account `<provider>:<id>` (`gmail:<id>`,
+`imap:<id>`, `shared/mail/accounts.ts`); its record is `account:<id>` with a `provider` field, so
+Gmail records of 0.10 are read as they are, with the same ids and cache.
+
+| Part | Where | Contract |
+|---|---|---|
+| Shared by every provider | `workers/providers/account-service.ts (AccountService)` | records, sealed credentials, the message cache (`gmail-cache.ts`: one layout, providers map their state onto its labels), idempotent sends with `sending`/`accepted`/`unknown` receipts, the incoming-event queue for rules, agents and categories, status, backoff and reasons (`accountProblem`) |
+| The provider's own work | `workers/providers/provider.ts (MailProvider, ProviderSession)` | a session per sync or action (`syncPage`, `message`, `change`, `attachment`, `headers`, `send`, drafts, `close`); `NotSentError` for a send refused before anything left (its reservation is removed, the same key may retry), any other failure after the hand-over is an unknown outcome |
+| What an account can do | `ProviderCapabilities` (per account, in `GET /api/accounts`, the feed's accounts and `list_accounts`) | `organization` labels or folders, `threads` provider or headers, `drafts`, `archive`, `spam`, `trash`, `search` (cache), `sentCopy`, `auth`, `delivery` (poll); the app and the agent tools offer only what is true, and the routes refuse the rest (`not_supported`) |
+| Gmail | `gmail-provider.ts` over `gmail-client.ts`, `gmail-sync.ts` | 0.10's behaviour, unchanged (below) |
+| IMAP/SMTP | `workers/providers/imap/` | see "IMAP accounts" |
+| An OAuth provider to come (Microsoft, WS5) | the same interface | `open()` gets the opened credentials and a `persist` that seals renewed tokens into the record (and into every copy a sync writes later, `putAccount`); a refused grant is `reconnect_required` |
+
+**Credentials** (`workers/providers/credentials.ts`). AES-256-GCM, bound to the account by the
+additional data. The key is `MAIL_CREDENTIAL_KEY` (32 bytes, base64 or base64url), falling back
+to `GMAIL_TOKEN_ENCRYPTION_KEY`, the only key before 0.11; a malformed `MAIL_CREDENTIAL_KEY` is no
+key (never a silent fallback). Envelope version 2 (`{ version: 2, kid, iv, ciphertext }`) names
+its key by fingerprint (first 9 bytes of SHA-256); version 1 envelopes and keys listed in
+`MAIL_CREDENTIAL_KEY_PREVIOUS` keep opening and are sealed again with the current key the next
+time the account is used, which is how the key is rotated. An envelope no key opens is
+`reconnect_required` (`credentials_unreadable`). Create my server makes `MAIL_CREDENTIAL_KEY` once
+(`desktop/cloudflare-deploy.cjs`); the Gmail setup wizard makes it when the server has none.
+
+**Schedule.** One alarm serves every account of every provider (`gmail-scheduler.ts`, below);
+`MAIL_POLL_SECONDS` (else `GMAIL_POLL_SECONDS`, default 300) sets the interval; an account whose
+provider is not set up on this server is left alone.
+
 ## Gmail sync, cache and refresh
 
-All Gmail accounts live in one `GmailAccountsDO` (`workspace`). Its code is split so another
-provider can take Gmail's place: `gmail-client.ts` (HTTP to Google), `gmail-cache.ts` (storage
-layout, index, counters, migration), `gmail-sync.ts` (one page of history or of the import),
-`gmail-scheduler.ts` (when each account syncs), `account-service.ts` (accounts, credentials,
-actions, sends) and `accounts-do.ts` (the object and its lock).
+Gmail's code is split from what every provider shares: `gmail-client.ts` (HTTP to Google),
+`gmail-cache.ts` (storage layout, index, counters, migration — the cache every provider uses),
+`gmail-sync.ts` (one page of history or of the import), `gmail-scheduler.ts` (when each account
+syncs, Gmail and IMAP alike), `gmail-provider.ts` (Gmail as a `MailProvider`),
+`account-service.ts` (accounts, credentials, actions, sends) and `accounts-do.ts` (the object and
+its lock).
 
 **Setup and reasons** (0.11). The server sets up its own Google client from Settings
 (`workers/routes/gmail-setup.ts`: a check with Google's token endpoint and sign-in page in
@@ -157,6 +191,30 @@ trash, spam, star and read show at once in every cached list and roll back if th
 Every API answer carries `X-Fabric-Build` (one id per build, `shared/build.ts`); a page with
 another id offers "Reload to update", and a page that cannot load its own code after an update
 reloads once (`app/lib/build-version.ts`).
+
+## IMAP accounts (0.11, WS4)
+
+An IMAP account is read with imapflow 2.2.5 over TLS from the first byte (port 993; IMAP STARTTLS
+is never used) and written with this server's own SMTP submission client over `cloudflare:sockets`
+(TLS on 465, STARTTLS on 587; never plain, never port 25), both measured in workerd: nodemailer
+does not run there (2026-10-05 spike), and every preset's servers answered the built Worker on
+2026-10-06 (IMAP and SMTP each refused a made-up account's sign-in over TLS).
+
+| Part | Where | Contract |
+|---|---|---|
+| Presets | `shared/mail/imap-presets.ts` | iCloud Mail, Yahoo Mail, AOL Mail, Fastmail, Zoho Mail (personal and own domain), Yandex Mail, Mail.ru, GMX (gmx.com, gmx.net), Gmail with an app password, Other; each with the provider's page its servers were read from and its app-password page; `sentCopy` is "provider" only where the provider says it keeps sent mail (Gmail) |
+| Connecting | `imap/connect.ts`, `ImapProvider.verify`, `AccountService.connectImap`, `POST /api/accounts/imap` | the IMAP login, the folder list and the Inbox, then the SMTP login, all before the password is sealed and the account stored; iCloud's IMAP takes the name before @ (Apple's page), the whole address is tried when that is refused; an address connected through Google sign-in is refused (`already_connected`); the same address again keeps its id and, on the same server, its cache |
+| A new password | `AccountService.updateImapPassword`, `PUT /api/accounts/:id/password` | checked with both servers first; the old one stays until then |
+| Errors | `imap/client.ts (loginFailure, connectionFailure)`, `imap/smtp.ts` | public codes only, server text never leaves: `auth_failed`, `app_password_required`, `imap_disabled`, `auth_or_imap_disabled` (Yandex says one sentence for both), `web_login_required`, `smtp_auth_failed`, `tls_failed`, `host_unreachable`, `smtp_unreachable`, `smtp_tls_failed`, `port_blocked`, `imap_tls_required`; during a sync a refused login is `reconnect_required`, an unreachable server `provider_unavailable` (backoff) |
+| Identity | `imap/mime.ts (messageKey)` | a message is its folder's role key, the folder's UIDVALIDITY and its UID (`i-1712345678-42`); folders by role from SPECIAL-USE, else by the usual names in several languages (`imap/sync.ts mapFolders`); Gmail's All Mail is an archive target, not read |
+| Labels | `imap/mime.ts (labelsFor)` | Inbox, Sent, Drafts, Trash, Junk → INBOX, SENT, DRAFT, TRASH, SPAM; Archive → none; no \Seen → UNREAD; \Flagged → STARRED; so the cache, the feed, triage, counts and search work unchanged |
+| Threads | `imap/mime.ts (threadKey)` | the root Message-ID (first of References, else In-Reply-To, else its own), hashed to `t` + 16 hex |
+| Sync | `imap/sync.ts (ImapSync)` | per folder: a changed UIDVALIDITY drops the folder's rows and starts it again; new mail (UIDs above `top`) is read whole (up to 2 MiB, else headers) and, in the Inbox, queued once for rules, agents and categories; flags from CONDSTORE (`CHANGEDSINCE` the last HIGHESTMODSEQ) where offered, else the newest 300 UIDs; deletions and moves by comparing the server's UID list with the cache when the folder's count differs (and every 6 hours); the import newest first by sequence number, 100 a step, headers only except the Inbox of the last 30 days; every step checks its deadline; a message that cannot be read is set aside under `skipped:` |
+| Connections | `imap/provider.ts (ImapSession)` | one connection per sync (all its pages) and per action, logged out on `close()`; no IDLE in this release |
+| Actions | `ImapSession.change` | read and star are flags; archive, trash, spam and back are moves (MOVE, else COPY + delete); the new UID comes from COPYUID or a Message-ID search; the old id answers for a week (`moved:<acc>:<old>`), so Undo from a list read before the move works; a target folder the server lacks is `not_supported` |
+| Sending | `ImapSession.send` | Date and Message-ID added; Bcc only in the kept copy; after the server's 2xx the copy is appended to Sent (`\Seen`) unless the preset says the provider keeps it or Sent already has that Message-ID; a failed append never turns a sent message into a failure |
+| Drafts | `ImapSession` drafts | the Drafts folder; a draft keeps its first message's id for life (`draft:<acc>:<draftId>` → current message), each save appends the new version and then deletes the old; its revision is the current message id; sending reads the draft, sends it through SMTP and deletes it |
+| Attachments, headers | `imap/mime.ts` | read from the message's source when asked (attachment ids are their index) |
 
 ## Spam (SP-1…SP-6)
 
@@ -275,7 +333,8 @@ safe offline and after a crash, never the source of truth.
 | Part | Where | Contract |
 |---|---|---|
 | Cloudflare draft | `workers/lib/mailbox-drafts.ts`, `MailboxDO.saveDraft/listDrafts/deleteDraft`, routes in `workers/index.ts` | one id for a draft's life; saved in place in one transaction; `emails.draft_revision` (migration `16_draft_revision`, NULL reads as 1) rises by one each save; a save naming another revision is refused (`409 draft_conflict`), one for a draft gone (`draft_gone`), one for a non-draft id (`not_a_draft`); files are `attachments` rows with bytes in R2 under the draft, kept or removed by id, 10 files and 5 MB together; a long body goes to R2 under a key of its own for that save |
-| Gmail draft | `workers/providers/account-service.ts (listDrafts, getDraft, updateDraft, deleteDraft, sendDraft)`, `workers/routes/accounts.ts` | Gmail's drafts API; a draft's revision is its message id (Gmail gives a new one on each change), checked before the change; kept files are read and written again with the new message; creation keeps its idempotent receipt |
+| IMAP draft | `workers/providers/imap/provider.ts (ImapSession)`, the same routes as Gmail's | the account's Drafts folder: one draft id for life, a new message (and revision) each save, the old one deleted after the new one is there; see "IMAP accounts" |
+| Gmail draft | `workers/providers/account-service.ts (listDrafts, getDraft, updateDraft, deleteDraft, sendDraft)`, `workers/providers/gmail-provider.ts`, `workers/routes/accounts.ts` | Gmail's drafts API; a draft's revision is its message id (Gmail gives a new one on each change), checked before the change; kept files are read and written again with the new message; creation keeps its idempotent receipt |
 | Send a draft | `MailboxDO.sendDraft` (`POST …/drafts/:id/send`); `AccountService.sendDraft` (`drafts.send`) | the draft goes out as it is — no signature or quote added — as a reply in its conversation when it answers a message, from the mailbox's display name; it leaves Drafts once accepted; the same idempotency key answers the first send after the draft is gone; a stale `expected_revision` is refused (`DRAFT_CONFLICT`) and nothing is sent |
 | Main window | `app/components/inbox/server-drafts.ts`, `use-drafts.ts`, `Composer.tsx`, `DraftsDialog.tsx` | each change is kept on the device at once and saved to the server 1.5 s later under the revision it read; a conflict is shown with "Show the saved version" / "Keep my version"; Send saves first and sends the server's draft; Drafts lists every account's server drafts (agents' too) beside the ones still only here; drafts kept only on the device before 0.11 are saved up on first run and stay until the server confirms; a Gmail draft waits for a valid recipient |
 
@@ -330,7 +389,9 @@ flowchart LR
 | A body too large for a row | R2 `bodies/<id>.html` (`emails.body_key`) |
 | Addresses hidden from the sidebar and All inboxes | R2 `config/hidden-accounts.json` |
 | Rules, rule runs | `AutomationDO` storage, one per account |
-| Gmail tokens (AES-GCM), message cache (layout 2: rows, bodies, date index, inbox counters; see "Gmail sync, cache and refresh"), set-aside messages, send and draft receipts | `GmailAccountsDO` (`workspace`) |
+| Gmail tokens and IMAP app passwords (AES-GCM envelopes, version 2 names its key; see "Mail providers"), IMAP server names and folder state, message cache of both (layout 2: rows, bodies, date index, inbox counters; see "Gmail sync, cache and refresh"), set-aside messages, send and draft receipts, moved-message aliases, IMAP draft ids | `GmailAccountsDO` (`workspace`) |
+| The key credentials are sealed with | Worker secret `MAIL_CREDENTIAL_KEY` (or `GMAIL_TOKEN_ENCRYPTION_KEY`), older keys in `MAIL_CREDENTIAL_KEY_PREVIOUS` |
+| IMAP drafts | the IMAP account's Drafts folder, read live |
 | Gmail drafts | the Gmail account itself (drafts API), read live, not cached |
 | Chat history | `EmailAgent` per mailbox |
 | Agent keys (no secrets: id, Client ID, name, level, sending, limit, dates) | R2 `config/agent-keys.json` |
@@ -360,7 +421,8 @@ read with a default where it is missing, never assumed present.
 | `workers/spam/`, `shared/mail/spam.ts` | spam lists in R2; the verdict on arrival |
 | `workers/knowledge/` | knowledge store (`KnowledgeDO`) and pure text work (chunking, FTS query quoting) |
 | `workers/automation/` | rules engine, policy, MCP client |
-| `workers/providers/` | Gmail OAuth, client, cache, sync loop, scheduler, account service, `GmailAccountsDO` |
+| `workers/providers/` | the provider interface, credentials, account service, `GmailAccountsDO`, scheduler, cache; Gmail OAuth, client, sync loop and provider |
+| `workers/providers/imap/` | IMAP/SMTP: the imapflow connection, the SMTP client and its sockets, MIME and labels, the sync, the provider and session, connect input |
 | `workers/gmail-setup/` | the Gmail setup: the self-test against Google, the server's own settings write, the connect result page |
 | `workers/routing/` | Cloudflare API client, the accounts the tokens reach (`accounts.ts`), Email Routing status, `DomainManager` (domains, rules, catch-all, sending, destinations), setup from routing |
 | `workers/relay/` | the relay Worker's source, installing it in another account, and where it hands mail over |
@@ -389,6 +451,10 @@ read with a default where it is missing, never assumed present.
   key is limited by level and sending mode, not by mailbox.
 - Tool output reaches the model and the run record (bounded), never the rule journal.
 - `checkSendRateLimit` reads the same budget the outbox enforces (20/hour, 100/day per address).
+- An IMAP account is read on the poll interval (default 5 minutes) or Refresh: no IDLE, so new
+  mail is not instant. Searches read the mail synced here, not the provider's own search. Gmail
+  through IMAP shows labels as folders and does not read All Mail, so an archived message leaves
+  the app's lists (connect Gmail through Google for labels).
 - A Gmail import of a large mailbox still takes a while (about 100 headers-only messages per
   page, six requests in flight, ticks 10 s apart while it runs); new mail is unaffected because
   history runs from the start. A search over more than 50,000 cached rows of one folder answers
