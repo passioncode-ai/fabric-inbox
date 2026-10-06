@@ -1,5 +1,5 @@
 /**
- * Why an OAuth account (Gmail, SCN-003; Outlook, SCN-059) stopped working, and what the person does
+ * Why an OAuth account (Gmail, SCN-003; Outlook, SCN-060) stopped working, and what the person does
  * about it. One source for the inbox banner, Settings → Accounts, the agent protocol and the OAuth
  * result pages; the Microsoft reasons start with `microsoft_`.
  *

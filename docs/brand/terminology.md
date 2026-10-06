@@ -38,6 +38,10 @@ Contract: brand-contract v1
 | IMAP account | IMAP connection, mail connector | A mail account read over IMAP and sent over SMTP with an app password (iCloud Mail, Yahoo Mail, Fastmail…); named `imap:<id>` to agents |
 | Other mail | Other accounts, generic mail | The Settings card ("Other mail (IMAP)") and the sidebar group for IMAP accounts |
 | Enter a new app password | Reconnect (for an IMAP account), re-authenticate | What fixes an IMAP account whose provider refused the app password |
+| Outlook account | Hotmail account, Exchange account, Microsoft account (for the mailbox) | An Outlook.com, Hotmail, Live or Microsoft 365 mailbox read and sent through Microsoft Graph with the person's own Microsoft sign-in; named `outlook:<id>` to agents |
+| App registration | Azure app, Microsoft app, OAuth app (for Microsoft) | The owner's own application in Microsoft Entra that Outlook accounts sign in through, by Microsoft's own name |
+| Client secret | Microsoft password, app key | The app registration's secret Value, saved on the server with the date it expires; never the Secret ID |
+| Administrator's approval | Admin consent (to a user), tenant approval | What an organization that lets only administrators allow apps needs before its people can connect: the link the person sends their administrator |
 
 ## Entity and tier names — exact spelling
 | Name | Wrong forms seen |
@@ -54,6 +58,12 @@ Contract: brand-contract v1
 | Cloudflare | CloudFlare |
 | Mac | mac (device name) |
 | Outlook | outlook (provider name) |
+| Microsoft | microsoft (company name) |
+| Hotmail | hotmail (the service's name) |
+| Live | live (the service's name, in Outlook.com, Hotmail and Live) |
+| Microsoft 365 | Office 365, O365, M365 (to a user) |
+| Microsoft Entra | Azure AD, Azure Active Directory, Entra ID (outside Microsoft's own menu name) |
+| Outlook.com | outlook.com, Outlook (for the consumer service alone, where it must be told apart) |
 | IMAP | Imap, imap (to a user) |
 | SMTP | Smtp, smtp (to a user) |
 | iCloud Mail | iCloud mail, ICloud |

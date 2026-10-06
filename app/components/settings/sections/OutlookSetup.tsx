@@ -9,7 +9,7 @@ import { errorText } from "../ui";
 import { CopyValue } from "./GmailSetup";
 
 /**
- * Outlook on this server (SCN-057, SCN-058, SCN-059): the owner's one-time app registration in
+ * Outlook on this server (SCN-057…SCN-060): the owner's one-time app registration in
  * Microsoft Entra when the server has none yet, step by step with the exact values; the connect step
  * once it has one; and what a connected account that stopped working needs. Registering the app is
  * the owner's own act in Microsoft's portal (Microsoft offers no way to do it for them); the server
@@ -140,7 +140,7 @@ export function OutlookSetupWizard({ setup, onSaved }: { setup: MicrosoftSetup; 
         </li>
         <li>
           <strong>Make a client secret.</strong> Certificates &amp; secrets → Client secrets → <strong>New client secret</strong>. Choose when it expires (at most 24 months), then Add.
-          <p className="fi-hint">Copy its <strong>Value</strong> at once — not the Secret ID — and note the date in its <strong>Expires</strong> column: Microsoft shows the Value only once (<External href={setup.help.clientSecret}>Microsoft</External>). Fabric Inbox reminds you 30 days before it ends.</p>
+          <p className="fi-hint">Copy its <strong>Value</strong> at once, not the Secret ID, and note the date in its <strong>Expires</strong> column: Microsoft shows the Value only once (<External href={setup.help.clientSecret}>Microsoft</External>). Fabric Inbox reminds you 30 days before it ends.</p>
         </li>
         <li>
           <strong>Paste them here.</strong> The Application (client) ID is on the app's Overview page. Your server keeps them in its own settings; the secret is never shown again.
@@ -209,7 +209,7 @@ export function OutlookConnectStep({ setup, onReplace }: { setup?: MicrosoftSetu
 }
 
 /**
- * Why a connected Outlook account stopped working, and the one action that fixes it (SCN-059):
+ * Why a connected Outlook account stopped working, and the one action that fixes it (SCN-060):
  * reconnect in the browser, or a new client secret saved in the setup.
  */
 export function OutlookProblem({ account, onRetry, onSetup, busy }: { account: Account; onRetry: () => void; onSetup: () => void; busy: boolean }) {

@@ -62,6 +62,10 @@
 | SCN-054 | Give an IMAP account a new app password | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
 | SCN-055 | Disconnect an IMAP account | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
 | SCN-056 | An IMAP connection is refused | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-057 | Set up Outlook on my server | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-058 | Connect an Outlook or Microsoft 365 account | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-059 | My organization's administrator must allow Fabric Inbox | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-060 | An Outlook account needs a reconnect or a new client secret | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1187,3 +1191,83 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** app/lib/imap-errors.ts, app/components/settings/sections/ImapAccount.tsx, workers/providers/imap/client.ts (loginFailure), workers/providers/imap/smtp.ts, workers/routes/accounts.ts, tests/imap-client.test.ts, tests/smtp.test.ts, tests/imap-connect-ui.test.ts
 - **Product:** unobserved
 - **Today:** Built in 0.11.0 (WS4). The login answers of Yandex, Mail.ru, Gmail and Yahoo were read from their servers on 2026-10-06 and are in the tests; the others are matched by their common wording.
+
+### SCN-057: Set up Outlook on my server
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01, JRN-01; operator decision 2026-10-06 ("Outlook.com and Microsoft 365 accounts are connected in 0.11.0, through Microsoft Graph with the owner's own Entra app registration")
+- **Entry point:** SCR-02 (Settings → Accounts → Connect account → Outlook), or a result page's Open the Outlook setup
+- **Preconditions:** The server runs with its own Cloudflare API token; Outlook is not set up, or the owner chose Use another client secret…; the owner can register apps in Microsoft Entra (a work or school account, or a personal account with a free Azure account's directory).
+- **Steps:**
+  1. Choose Outlook -> five numbered steps: open App registrations in Microsoft Entra (and, for a personal account without a directory, the free Azure account); register the app with the name, the supported account types "Any Entra ID Tenant + Personal Microsoft accounts" and the Web redirect URI of this server, each with Copy; add the delegated permissions Mail.ReadWrite, Mail.Send, User.Read and offline_access; make a client secret (at most 24 months) and copy its Value, not its Secret ID, and its Expires date.
+  2. Paste the Application (client) ID, the secret's Value and its date, Save -> the server checks their shape and the date, makes a credential key if it has none, and saves the five settings itself.
+  3. "Saved. … Microsoft checks the client ID and secret when the first account connects." -> the dialog moves on to the connect step (SCN-058).
+- **Expected result:** An owner sets Outlook up from the app, without a terminal, and is reminded 30 days before the client secret ends rather than finding out when mail stops.
+- **Alt paths:** Later closes the dialog; nothing is saved until Save. Check the setup in the connect step says whether the app is at the address Outlook was set up for, when the secret ends, and — once an account is connected — whether Microsoft accepts the client ID and secret (one account's access is renewed). Use another client secret… replaces the secret the same way. A server without its own Cloudflare token says it cannot save and points to setting the values by hand.
+- **UI elements:** SCR-02; Connect account dialog → Outlook: the steps with External links and Copy buttons, Application (client) ID, Client secret Value and Expires fields, Save, Later, Back; the secret's end warning; the checks' verdicts (OK / Not right / Not checked).
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** A client ID that is not a GUID, a Secret ID pasted for the Value, a date that has passed or lies beyond 24 months is refused with the fix and nothing is written; a token without Workers Scripts: Edit is named and nothing changes; a server that has not started using the settings after 30 seconds says to reload in a minute. An existing credential key is never replaced.
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/OutlookSetup.tsx, app/components/settings/sections/AccountsSection.tsx, app/components/settings/sections/providers.ts, workers/routes/microsoft-setup.ts, workers/gmail-setup/server-settings.ts, shared/mail/microsoft-setup.ts, tests/outlook-routes.test.ts, tests/outlook-setup-ui.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS5) and tested against fakes of Microsoft and Cloudflare. Registering the app stays the owner's step in Microsoft's portal (docs/desktop-mail/setup.md → Outlook → Human steps). Microsoft checks a sign-in code's shape before the client (a made-up code is refused with AADSTS9002313 for any client, observed 2026-10-06), so the client ID and secret are proved only by the first real sign-in. Not yet walked against a real app registration.
+
+### SCN-058: Connect an Outlook or Microsoft 365 account
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01, JRN-01; operator decision 2026-10-06
+- **Entry point:** SCR-02 (Settings → Accounts → Connect account → Outlook, once set up), the account panel's Reconnect, or the address from outlook_connect_link
+- **Preconditions:** Outlook is set up on this server (SCN-057); the person has an Outlook.com, Hotmail, Live or Microsoft 365 mailbox.
+- **Steps:**
+  1. Connect Outlook in browser -> the system browser opens Microsoft's sign-in with the account picker; the person chooses the account and reads what Fabric Inbox asks for (read, change and send mail, and keep that access while they are away).
+  2. Accept -> Microsoft sends the browser back; the server checks the sign-in is this browser's, redeems Microsoft's code, reads the account's address and its folders (which proves it has a mailbox), and keeps the access sealed.
+  3. "Outlook is connected" page -> back in the app, the account is under Outlook with "importing"; the Inbox comes first, newest first, and new mail arrives while the import runs.
+- **Expected result:** Outlook.com and Microsoft 365 mail is read, triaged, answered and sent here like Gmail's, with rules, agents, categories and spam, also while the Mac is closed.
+- **Alt paths:** Connecting the same account again keeps its mail and where its sync stands; another Microsoft user with the same address starts over. An address already connected as an IMAP or Gmail account is refused (it would be read twice).
+- **UI elements:** SCR-02; the connect step (Connect Outlook in browser, Check the setup, Use another client secret…); the browser's result page; the account panel (Sync, importing percentage, Open its mail, Rules and history, Disconnect…).
+- **States covered:** loading, error, success
+- **Errors & recovery:** Every refusal ends on a page with the one next step and nothing kept: Cancel on Microsoft's page; an organization that needs its administrator (SCN-059); a redirect URI Microsoft does not know (the exact URI to add); an expired or refused client secret (Open the Outlook setup); an account type the app registration does not accept; a sign-in step not finished; a permission not given; a Microsoft account with no Outlook mailbox; a sign-in older than ten minutes or from another browser. Disconnect deletes the access here and says to remove Fabric Inbox in the Microsoft account too (Microsoft has no way for an app to give it back).
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/OutlookSetup.tsx, app/components/settings/sections/AccountsSection.tsx, workers/routes/accounts.ts, workers/microsoft-setup/result-page.ts, workers/providers/outlook/, workers/providers/account-service.ts, tests/outlook-provider.test.ts, tests/outlook-routes.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS5) and tested against a fake of Microsoft's identity platform and Graph that answers as their documented contracts do; not yet walked against a real Microsoft account.
+
+### SCN-059: My organization's administrator must allow Fabric Inbox
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01; operator decision 2026-10-06 (admin consent)
+- **Entry point:** The browser's result page after a Microsoft 365 sign-in that Microsoft stopped; Settings → Accounts → Outlook's connect step (A work or school account whose organization lets only administrators allow apps)
+- **Preconditions:** A work or school account in an organization that lets only administrators allow apps to read mail.
+- **Steps:**
+  1. Connect Outlook in browser -> Microsoft says an administrator must approve; returning to the app ends on "Your organization's administrator must allow Fabric Inbox first", with the approval link to forward.
+  2. The administrator opens the link, signs in, reads what Fabric Inbox asks for, and chooses Accept -> the browser comes back to "Your organization allows Fabric Inbox now".
+  3. The person connects again (SCN-058).
+- **Expected result:** A person in a locked-down organization knows exactly what to send to whom, and nothing is kept until their own sign-in succeeds.
+- **Alt paths:** The administrator declines -> "The administrator did not allow Fabric Inbox". Personal accounts never meet this. The owner finds the same link in the connect step, and outside agents in microsoft_setup_status.
+- **UI elements:** The result pages; the connect step's details block with the link and Copy.
+- **States covered:** error, success
+- **Errors & recovery:** This scenario is the recovery. The administrator's return carries Microsoft's tenant, which is never read (Microsoft's own warning); nothing is stored by it.
+- **Status:** validated
+- **Coverage:** workers/routes/accounts.ts, workers/microsoft-setup/result-page.ts, workers/providers/outlook/oauth.ts (authorizeOutcome), shared/mail/microsoft-setup.ts (adminConsentUrl), app/components/settings/sections/OutlookSetup.tsx, tests/outlook-routes.test.ts, tests/outlook-provider.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS5). Microsoft's answer is read from its `error` field, and from the AADSTS number in its description only to choose this page (Microsoft asks apps not to depend on those numbers; a number that changes falls back to the generic page). Not yet walked with a real organization.
+
+### SCN-060: An Outlook account needs a reconnect or a new client secret
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01, JTBD-01; operator decision 2026-10-06
+- **Entry point:** SCR-02 (the account's panel), the inbox banner, a result page
+- **Preconditions:** A connected Outlook account whose access Microsoft no longer renews.
+- **Steps:**
+  1. A sync is refused -> the account's panel and the inbox banner say why, in words:
+     the access was taken back (removed in the Microsoft account, a password change, long unused) or Microsoft wants another sign-in step: Reconnect in browser; the server's client secret ended or the app registration was changed: Open the Outlook setup, save a new secret, no reconnect.
+  2. The person reconnects (SCN-058) or the owner saves a new client secret (SCN-057) -> the next sync works and the account's mail, rules and history are as they were.
+- **Expected result:** The person knows whether they or the owner must act, before mail is missed; the client secret's end is warned about 30 days ahead.
+- **Alt paths:** Microsoft busy or throttling: nothing to do; the account waits as long as Microsoft said (Retry-After) or 60 seconds doubling to 15 minutes, and the panel offers Retry now.
+- **UI elements:** SCR-02; the panel's callout with its one action; the secret's end warning; the inbox banner's Reconnect in browser.
+- **States covered:** error, success
+- **Errors & recovery:** This scenario is the recovery. Only Microsoft's invalid_grant and interaction_required stop the account for a reconnect; a refused client stops it for the owner's setup; anything else only waits.
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/OutlookSetup.tsx, app/components/settings/sections/AccountsSection.tsx, app/routes/unified-inbox.tsx, shared/mail/gmail-reasons.ts, workers/providers/outlook/oauth.ts, workers/providers/account-service.ts (accountProblem), tests/outlook-provider.test.ts, tests/outlook-setup-ui.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.11.0 (WS5); tested against fakes.

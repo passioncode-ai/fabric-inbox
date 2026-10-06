@@ -13,6 +13,8 @@ reinstalling the app, and every downloaded copy must update itself by default). 
 |---|---|---|---|
 | Mail, folders, categories, spam lists | your server: Durable Objects and R2 in your Cloudflare account | yes | yes |
 | Gmail accounts (their refresh tokens) | your server (`GmailAccountsDO`; tokens encrypted with the server secret `MAIL_CREDENTIAL_KEY`, before 0.11 `GMAIL_TOKEN_ENCRYPTION_KEY`; `workers/providers/credentials.ts`) | yes | yes |
+| Outlook accounts (Outlook.com, Microsoft 365): their Microsoft access and refresh tokens, and where each folder's sync stands | your server only (`GmailAccountsDO`; tokens encrypted with `MAIL_CREDENTIAL_KEY`, a rotated refresh token sealed the moment Microsoft returns it; never on the Mac) | yes | yes |
+| The Outlook app registration's client secret | your server only (Worker secret `MICROSOFT_CLIENT_SECRET`; its end date in the var `MICROSOFT_CLIENT_SECRET_EXPIRES`) | yes | yes |
 | IMAP accounts (iCloud, Yahoo, Fastmail…): their app passwords and server names | your server only (`GmailAccountsDO`; the app password encrypted with `MAIL_CREDENTIAL_KEY`, never in the Mac's Keychain or profile) | yes | yes |
 | Cloudflare accounts and their tokens, domains, addresses, routing | your server and Cloudflare itself | yes | yes |
 | Agents, knowledge, rules, agent keys, the audit journal | your server | yes | yes |

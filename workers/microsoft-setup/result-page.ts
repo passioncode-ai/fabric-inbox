@@ -1,6 +1,6 @@
 /**
- * The page a person sees in the browser at the end of connecting an Outlook account (SCN-057,
- * SCN-058, SCN-059): for a connected account and for every way it can fail, what happened and the
+ * The page a person sees in the browser at the end of connecting an Outlook account (SCN-058,
+ * SCN-059, SCN-060): for a connected account and for every way it can fail, what happened and the
  * one thing to do next — never raw JSON. The sign-in runs in the system browser, so the page also
  * says to go back to the app. The same shell as Gmail's (workers/gmail-setup/result-page.ts):
  * inline styles, no script, nothing loaded from elsewhere, every value escaped.

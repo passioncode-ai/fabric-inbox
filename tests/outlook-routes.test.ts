@@ -7,7 +7,7 @@ import { ProviderError } from "../workers/providers/gmail-client";
 import { adminConsentUrl, microsoftSetupValues, parseSecretExpiry, secretExpiry, secretExpiryProblem } from "../shared/mail/microsoft-setup";
 
 /**
- * SCN-057…SCN-059: connecting Outlook in the browser ends on a page for success and for every
+ * SCN-057…SCN-060: connecting Outlook in the browser ends on a page for success and for every
  * failure (an organization that needs its administrator, a refused consent, a wrong redirect URI, an
  * expired client secret…), never raw JSON; the owner's setup is written by the server itself and
  * checked with Microsoft. Microsoft and Cloudflare are fakes.

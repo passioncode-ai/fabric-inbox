@@ -37,7 +37,7 @@ const gmailStatus = (a: Account) => a.status.replaceAll("_", " ");
 const gmailTone = (a: Account) => (a.error ? "bad" : a.status === "connected" ? "ok" : "warn") as "bad" | "ok" | "warn";
 
 /**
- * Settings → Accounts (SCR-02, SCN-002, SCN-003, SCN-045, SCN-046, SCN-052…SCN-059): the Cloudflare
+ * Settings → Accounts (SCR-02, SCN-002, SCN-003, SCN-045, SCN-046, SCN-052…SCN-060): the Cloudflare
  * accounts the server has a token for, and the connected Gmail, Outlook and IMAP accounts. Connecting one more
  * opens a dialog with a card per provider (providers.ts); providers this build cannot connect say so.
  */
@@ -243,7 +243,7 @@ function GmailPanel({ account: a, entryKey, onRemoved, onSetup }: { account: Acc
   );
 }
 
-/** An Outlook account (SCN-057…SCN-059): its sync, why it stopped, and disconnecting it. */
+/** An Outlook account (SCN-058, SCN-060): its sync, why it stopped, and disconnecting it. */
 function OutlookPanel({ account: a, entryKey, onRemoved, onSetup }: { account: Account; entryKey: string; onRemoved: () => void; onSetup: () => void }) {
   const client = useQueryClient();
   const confirm = useConfirm();
@@ -268,7 +268,7 @@ function OutlookPanel({ account: a, entryKey, onRemoved, onSetup }: { account: A
     const done = await work.run("Disconnecting…", async () => {
       try {
         await fabric(accountPath(a.id) + "/disconnect", {});
-        return `${a.email} was removed here. Remove Fabric Inbox's access in your Microsoft account too${help ? `: ${help.personalAppAccess} for a personal account, ${help.workAppAccess} for a work or school one` : ""}.`;
+        return `${a.email} was removed here. Remove Fabric Inbox in your Microsoft account too${help ? `: ${help.personalAppAccess} for a personal account, ${help.workAppAccess} for a work or school one` : ""}.`;
       } finally {
         await Promise.all([client.invalidateQueries({ queryKey: GMAIL_KEY }), client.invalidateQueries({ queryKey: ["unified-inbox"] })]);
       }
@@ -386,7 +386,7 @@ function ConnectGmail({ state, onBack, onClose }: { state: ReturnType<typeof gma
 }
 
 /**
- * SCN-057: a server without Microsoft set up shows the app registration steps; one with it set up
+ * SCN-057, SCN-058: a server without Microsoft set up shows the app registration steps; one with it set up
  * connects an account in the browser. "Use another client secret…" opens the steps again (a secret
  * that ends, or one that leaked, is replaced the same way).
  */

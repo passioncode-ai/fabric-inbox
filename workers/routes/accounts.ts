@@ -259,7 +259,7 @@ const outlookPage = (c: Context<{ Bindings: GmailBindings }>, outcome: string, e
   return c.body(page.html, page.status as 200, page.headers);
 };
 const browserCookie = { httpOnly: true, secure: true, sameSite: "Lax" as const, path: "/", maxAge: 600 };
-/** SCN-057: opens Microsoft's sign-in for a new (or the same) Outlook account. */
+/** SCN-058: opens Microsoft's sign-in for a new (or the same) Outlook account. */
 accountsRouter.get("/api/accounts/outlook/connect", async (c) => {
   const config = microsoftConfiguration(c.env);
   if (config.status !== "configured") return outlookPage(c, "not_configured");
@@ -279,7 +279,7 @@ accountsRouter.post("/api/accounts/outlook/connect", async (c) => {
   return c.json({ authorizationUrl: result.authorizationUrl });
 });
 /**
- * Microsoft's redirect back (SCN-057, SCN-058): a code to redeem, an error instead of one (read into
+ * Microsoft's redirect back (SCN-058, SCN-059): a code to redeem, an error instead of one (read into
  * the page's outcome, never shown as Microsoft wrote it), or the end of an administrator's approval
  * (`admin_consent=True`), which keeps nothing and says to connect now.
  */

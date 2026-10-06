@@ -9,7 +9,7 @@ import { outlookSetupState } from "../app/lib/account-status";
 import { groupAccounts } from "../app/components/inbox/account-groups";
 import { MICROSOFT_ENTRA, MICROSOFT_HELP, MICROSOFT_PERMISSIONS, adminConsentUrl, microsoftSetupValues } from "../shared/mail/microsoft-setup";
 
-/** SCN-057…SCN-059 in the interface: the Outlook card, the setup steps, the connect step, and an account's reason. */
+/** SCN-057…SCN-060 in the interface: the Outlook card, the setup steps, the connect step, and an account's reason. */
 const ORIGIN = "https://fabric-inbox.owner.workers.dev";
 const CLIENT_ID = "11111111-2222-4333-8444-555555555555";
 const setup = (over: Partial<MicrosoftSetup> = {}): MicrosoftSetup => ({

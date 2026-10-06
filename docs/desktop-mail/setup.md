@@ -125,11 +125,13 @@ Every name the Worker reads (`workers/types.ts`). None is in `wrangler.jsonc` (C
 | `SPAM_DAILY_LIMIT` | var | optional | `300` | strangers' messages the model reads for spam per UTC day on its own; a check made in the same call as a category does not count; beyond it new mail is not judged by the model |
 | `AUTOMATION_MCP_HOSTS` | var | agent or rule tools | empty → no tools | exact HTTPS hosts tools may call |
 | `AUTOMATION_TOOL_TOKENS` | secret | tools with credentials | `{}` | JSON map credential name → bearer token; agents and rules store only the name |
-| `MAIL_CREDENTIAL_KEY` | secret | Gmail and IMAP accounts | — | the key every account's token or app password is sealed with: made once by Create my server (and by the Gmail setup when the server has none), never replaced; see "The credential key" below |
+| `MAIL_CREDENTIAL_KEY` | secret | Gmail, Outlook and IMAP accounts | — | the key every account's token or app password is sealed with: made once by Create my server (and by the Gmail or Outlook setup when the server has none), never replaced; see "The credential key" below |
 | `MAIL_CREDENTIAL_KEY_PREVIOUS` | secret | rotating the key | — | older keys, commas or spaces; what they sealed keeps opening and is sealed again with the new key on its next use |
-| `MAIL_POLL_SECONDS` | var | Gmail and IMAP accounts | 300 | how often accounts are read, 60–3600 s; `GMAIL_POLL_SECONDS` is read when it is absent |
+| `MAIL_POLL_SECONDS` | var | Gmail, Outlook and IMAP accounts | 300 | how often accounts are read, 60–3600 s; `GMAIL_POLL_SECONDS` is read when it is absent |
 | `GOOGLE_CLIENT_ID`, `PUBLIC_APP_URL`, `GMAIL_POLL_SECONDS` | var | Gmail | — / — / 300 | written by the server from Settings → Accounts → Gmail, or by hand; see Gmail below |
 | `GOOGLE_CLIENT_SECRET`, `GMAIL_TOKEN_ENCRYPTION_KEY` | secret | Gmail | — | the same; `GMAIL_TOKEN_ENCRYPTION_KEY` is the credential key's name before 0.11, still read when `MAIL_CREDENTIAL_KEY` is absent; see Gmail below |
+| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET_EXPIRES` | var | Outlook | — | written by the server from Settings → Accounts → Outlook, or by hand; see Outlook below |
+| `MICROSOFT_CLIENT_SECRET` | secret | Outlook | — | the app registration's client secret Value; see Outlook below |
 
 Bindings in `wrangler.jsonc`: `BUCKET` (R2), `AI` (Workers AI), `EMAIL` (send_email), Durable Objects `MAILBOX`, `AUTOMATIONS`, `GMAIL_ACCOUNTS`, `AGENT_REGISTRY`, `KNOWLEDGE`, `CATEGORIES`, `EMAIL_AGENT`, `EMAIL_MCP`. Migrations: `fabric-v2` adds `AgentRegistryDO`, `fabric-v3` `KnowledgeDO`, `fabric-v4` `CategoriesDO`.
 
@@ -421,6 +423,135 @@ there marks the account as above.
 
 Tokens are encrypted server-side and omitted from account responses. Initial/history-expiry import does not run rules against historical messages. Incremental incoming events use a durable acknowledgement outbox (`workers/providers/account-service.ts`, provider tests). Polling continues in Durable Object alarms after the desktop closes, once deployed/configured. Pub/Sub is not implemented.
 
+## Outlook (Outlook.com and Microsoft 365)
+
+Outlook.com, Hotmail and Live mailboxes, and Microsoft 365 work or school mailboxes, are read and
+sent through **Microsoft Graph** with the person's own Microsoft sign-in. Not over IMAP: Microsoft
+ended basic authentication for Outlook.com on 2024-09-16 ("Starting September 16th, Microsoft
+personal email account users … will need to move to Modern Authentication",
+[Microsoft](https://support.microsoft.com/en-us/office/modern-authentication-methods-now-needed-to-continue-syncing-outlook-email-in-non-microsoft-email-apps-c5d65390-9676-4763-b41f-d7986499a90d)),
+so an app password no longer opens these mailboxes. Like Gmail, it is your own app: the server
+signs in through **an app registration you make once in Microsoft Entra**, and each account is then
+a sign-in in the browser.
+
+### Set up Outlook from the app (recommended)
+
+**Settings → Accounts → Connect account → Outlook** on a server without Microsoft set up shows the
+steps (`app/components/settings/sections/OutlookSetup.tsx`, SCN-057), every value with a Copy
+button, computed from the address the app is open at (`shared/mail/microsoft-setup.ts`).
+
+**Human steps (Microsoft Entra, once per server).** Only the owner can do these: registering an app
+is a person's act in Microsoft's portal, and a server cannot do it for them. All of it is read from
+Microsoft's own pages on 2026-10-06.
+
+1. **Have a directory to register apps in.** A work or school account that may register apps
+   (at least the Application Developer role) works as it is. With only a personal account
+   (Outlook.com, Hotmail), make a [free Azure account](https://azure.microsoft.com/pricing/purchase-options/azure-account)
+   first: it gives the personal account a directory ("An Azure account that has an active
+   subscription", [Microsoft](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app)).
+2. **Open App registrations** — sign in to the [Microsoft Entra admin center](https://entra.microsoft.com),
+   **Entra ID → App registrations → New registration** ([App registrations](https://go.microsoft.com/fwlink/?linkid=2083908)).
+3. **Register the app.** Name `Fabric Inbox`. Supported account types: **Any Entra ID Tenant +
+   Personal Microsoft accounts** (both personal and work or school accounts can then connect; the
+   server signs in on the `common` endpoint, which a single-tenant app refuses with AADSTS50194).
+   Redirect URI: platform **Web**, `<server origin>/api/accounts/outlook/callback` exactly. Register.
+   A redirect URI added later goes under **Authentication → Add Redirect URI → Web**
+   ([Microsoft](https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-redirect-uri)).
+4. **Copy the Application (client) ID** from the app's **Overview** page.
+5. **API permissions → Add a permission → Microsoft Graph → Delegated permissions**: add
+   `Mail.ReadWrite`, `Mail.Send`, `User.Read` and `offline_access`. None needs an administrator's
+   consent, and all work with personal accounts ([Microsoft](https://learn.microsoft.com/en-us/graph/permissions-reference));
+   the server asks for exactly these at each sign-in.
+6. **Certificates & secrets → Client secrets → New client secret.** A description, then an
+   expiry: at most 24 months; Microsoft recommends less than 12
+   ([Microsoft](https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-credentials)).
+   **Add**, then copy the secret's **Value** — not the Secret ID — at once ("This secret value is
+   never displayed again after you leave this page"), and note the date in its **Expires** column.
+7. **Paste the client ID, the secret's Value and its Expires date into the app**, then **Save**.
+8. **Connect an account** (below). Its first sign-in is what proves the client ID and secret.
+9. **Before the secret ends** (Settings warns 30 days ahead, and `check_microsoft_setup` says the
+   date): make a new client secret (step 6), save it with **Use another client secret…**, and only
+   then delete the old one in Microsoft Entra. Connected accounts keep working; none needs a
+   reconnect.
+
+**What the server does with them** (`workers/routes/microsoft-setup.ts`). It checks their shape — a
+client ID is a GUID; a pasted Secret ID (also a GUID) is refused with "copy the Value"; the date is
+in the future and within 24 months — and refuses what cannot work, with nothing written. It makes
+a credential key only when it has none (never replacing one), then writes `MICROSOFT_CLIENT_ID`,
+`MICROSOFT_CLIENT_SECRET_EXPIRES` and `PUBLIC_APP_URL` (vars) and `MICROSOFT_CLIENT_SECRET` and the
+key (secrets) in one change to its own Worker settings, with its own token (the writer the Gmail
+setup uses, `writeWorkerSettings` in `workers/gmail-setup/server-settings.ts`; every other binding
+is inherited). It cannot ask Microsoft beforehand whether the client ID and secret are right:
+Microsoft's token endpoint checks a sign-in code's shape before the client, so a made-up code is
+refused (`invalid_grant`, AADSTS9002313) whatever the client and secret (observed 2026-10-06).
+
+**Self-test** — **Check the setup** in the connect step, `GET /api/microsoft-setup/check`, tool
+`check_microsoft_setup`: the app is open at the address Outlook was set up for; the client secret's
+end date (failed when it has passed or is within 30 days); and, once an Outlook account is
+connected, one account's access renewed now — Microsoft does that only for a client ID and secret it
+accepts, and an expired secret answers `invalid_client` with AADSTS7000222. `GET /api/microsoft-setup`
+(tool `microsoft_setup_status`) answers what is missing, the values to copy, the secret's end date,
+and the administrator's approval link; the secret is never returned. `PUT /api/microsoft-setup` has
+no tool: the secret is pasted by the owner only.
+
+### Set up Outlook by hand
+
+For a server without its own Cloudflare token, set the same values with wrangler
+(`workers/providers/outlook/oauth.ts` validates them):
+
+| Setting | Kind | Meaning |
+|---|---|---|
+| `MICROSOFT_CLIENT_ID` | var | the Application (client) ID |
+| `MICROSOFT_CLIENT_SECRET` | secret | the client secret's Value, server only |
+| `MICROSOFT_CLIENT_SECRET_EXPIRES` | var | its Expires date, `YYYY-MM-DD`; Settings warns 30 days before |
+| `PUBLIC_APP_URL` | var | the exact HTTPS origin (shared with Gmail) |
+| `MAIL_CREDENTIAL_KEY` | secret | the credential key (see "The credential key") |
+
+### Connecting an account
+
+**Connect Outlook in browser** (Settings → Accounts) opens `/api/accounts/outlook/connect` in the
+system browser, which binds the sign-in to that browser (its own cookie,
+`__Host-fabric-outlook-state`) and goes to Microsoft's sign-in with the account picker: the
+authorization code flow with PKCE (S256) on `https://login.microsoftonline.com/common/oauth2/v2.0`,
+`response_mode=query`, scopes `offline_access Mail.ReadWrite Mail.Send User.Read`
+([Microsoft](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow)).
+Back at `/api/accounts/outlook/callback`, the server redeems the code with the PKCE verifier and
+the client secret, reads the address (`GET /me`: `mail`, else `userPrincipalName`) and the
+account's folders — which proves Graph reaches a mailbox — and keeps the tokens sealed. The browser
+ends on a page for every outcome (`workers/microsoft-setup/result-page.ts`): connected; Cancel on
+Microsoft's page; **an organization that lets only administrators allow apps** (SCN-059: the page
+gives the link the person sends to an administrator —
+`https://login.microsoftonline.com/organizations/v2.0/adminconsent?client_id=…&scope=…&redirect_uri=…`
+([Microsoft](https://learn.microsoft.com/en-us/entra/identity-platform/v2-admin-consent)) — and the
+administrator's return lands on "Your organization allows Fabric Inbox now", storing nothing); an
+unknown redirect URI; an expired (AADSTS7000222) or refused client secret; an account type the app
+registration does not accept; an unfinished sign-in step; a permission not given; a Microsoft account
+without an Outlook mailbox; an address already connected as an IMAP or Gmail account; an expired
+sign-in. Microsoft's own error text is never shown.
+
+### When an account stops working
+
+| Reason | Cause, as Microsoft answers | What fixes it |
+|---|---|---|
+| `microsoft_access_revoked` | `invalid_grant` at the token endpoint (access removed, password changed, refresh token expired from inactivity) | Reconnect |
+| `microsoft_signin_required` | `interaction_required` or `consent_required` (multi-factor sign-in, an organization's sign-in rule, consent to give again) | Reconnect and finish every step |
+| `microsoft_secret_expired` | `invalid_client` with AADSTS7000222 | a new client secret in the Outlook setup; no reconnect |
+| `microsoft_client_rejected` | `invalid_client` / `unauthorized_client` otherwise | save the client again in the Outlook setup, then Reconnect |
+| `credentials_unreadable` | the credential key cannot open the saved access | Reconnect |
+
+Only those stop the account. Microsoft busy (5xx, `temporarily_unavailable`) or throttling (429/503
+with Retry-After) only waits: as long as Microsoft said, else 60 seconds doubling to 15 minutes.
+
+**Disconnecting** deletes the tokens and the synced mail from your server; the mail stays in
+Outlook. Microsoft has no request an app can make to give back a person's grant, so remove Fabric
+Inbox in the Microsoft account too: [account.live.com/consent/Manage](https://account.live.com/consent/Manage)
+for a personal account, [My Apps](https://myapps.microsoft.com) for a work or school one.
+
+**What it does not do yet.** No push (Graph change notifications need a public webhook and
+subscription renewal; mail is read on the poll interval or Check for new mail); searches read the
+mail synced here; folders other than Inbox, Sent Items, Drafts, Deleted Items, Junk Email and
+Archive are not read; older mail is imported without its body, read when first opened.
+
 ## IMAP accounts (iCloud, Yahoo, Fastmail and others)
 
 **Settings → Accounts → Connect account → Other mail (IMAP)** (or **Gmail with an app password**):
@@ -465,7 +596,7 @@ Mail, so an archived message leaves the app's lists.
 
 ## The credential key
 
-Every account's secret — a Gmail refresh token, an IMAP app password — is sealed with
+Every account's secret — a Gmail or Outlook refresh token, an IMAP app password — is sealed with
 `MAIL_CREDENTIAL_KEY` (AES-256-GCM, bound to its account) and kept only on your server
 (`workers/providers/credentials.ts`). Create my server makes the key the first time and never sends
 it again; the app keeps no copy, so the key exists only as a Worker secret, which Cloudflare does
@@ -475,7 +606,7 @@ not show again.
   manager, then set it: `openssl rand -base64 32 | tr '+/' '-_' | tr -d '=' > key.txt`, then
   `npx wrangler secret put MAIL_CREDENTIAL_KEY < key.txt` and delete `key.txt`. A key made by the
   Mac app cannot be read back; losing it (deleting the Worker) means entering each app password
-  again and reconnecting each Gmail account — no mail is lost, it stays at the providers.
+  again and reconnecting each Gmail and Outlook account — no mail is lost, it stays at the providers.
 - **Rotation.** Set the new key as `MAIL_CREDENTIAL_KEY` and the old one in
   `MAIL_CREDENTIAL_KEY_PREVIOUS`; each account is sealed again with the new key on its next sync
   (within the poll interval, default 5 minutes), after which the old key can be removed.

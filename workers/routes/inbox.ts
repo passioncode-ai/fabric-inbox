@@ -9,7 +9,7 @@ import { REMOTE_ACCOUNT, parseRemoteAccount } from "../../shared/mail/accounts";
 
 export interface InboxSources {
   cloudflareAccounts(): Promise<InboxAccount[]>;
-  /** Gmail and IMAP accounts: the accounts object's. */
+  /** Gmail, IMAP and Outlook accounts: the accounts object's. */
   remoteAccounts(): Promise<InboxAccount[]>;
   messages(account: InboxAccount, options: InboxReadOptions): Promise<InboxMessage[]>;
   /** Unread messages in the account's inbox; optional, a failure leaves the count out. */
@@ -77,7 +77,7 @@ export async function readInbox(params: URLSearchParams, sources: InboxSources, 
   // A whole project domain: every account whose address is on it.
   const domain = (params.get("domain") || "").trim().toLowerCase();
   if (domain && !DOMAIN.test(domain)) throw new InboxRequestError("invalid_filter");
-  // Every inbox of one provider (the sidebar's Gmail or IMAP group).
+  // Every inbox of one provider (the sidebar's Gmail, Outlook or IMAP group).
   const provider = params.get("provider") || "";
   if (provider && provider !== "gmail" && provider !== "imap" && provider !== "outlook" && provider !== "cloudflare") throw new InboxRequestError("invalid_filter");
   const limit = Number(params.get("limit") || 50);
@@ -212,7 +212,7 @@ inboxRouter.put("/api/inbox/hidden", async (c) => {
   }
 });
 /**
- * Refresh (P1-5): reads Gmail and IMAP accounts now — new mail, changes and deletions — for the
+ * Refresh (P1-5): reads Gmail, IMAP and Outlook accounts now — new mail, changes and deletions — for the
  * accounts in `accounts` (feed ids, "gmail:<id>" or "imap:<id>"; every one when it is absent),
  * within about 20 s, and says what happened to each. Cloudflare mailboxes receive by push and need
  * no refresh. The accounts' regular sync is not moved.

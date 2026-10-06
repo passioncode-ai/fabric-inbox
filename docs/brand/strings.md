@@ -180,7 +180,7 @@ Locations name the source function while the integration branch is being formatt
 - Workbench cached search means stored provider data in the selected account/folder scope. It must not imply full provider history or an offline desktop mailbox (SCN-005, SCN-019).
 - The workbench stores independent drafts on this device with their selected accounts. Save-failure text appears inside the composer and overrides the saved-state label. Synthetic browser reload preserved three drafts, including sender, Cc/Bcc and one file (SCN-006, SCN-019); live provider acceptance remains unverified.
 - Workbench uncertain sending uses Retry same attempt with locked content and the same recovery key. This is distinct from creating a fresh send; later transport refusal alone is not proof that the earlier attempt failed (SCN-007, SCN-020).
-- Disabled/unconfigured providers stay visibly unavailable. No registry copy claims Outlook or IMAP support (SCN-003).
+- Disabled/unconfigured providers stay visibly unavailable. Outlook (SCN-057…SCN-060) and IMAP (SCN-052…SCN-056) are connected in 0.11; a card whose provider is not set up on the server says so and opens its setup, never a simulated account (SCN-003).
 - Dry-run preview names no mail mutations; enabling does not currently enforce a successful preview. Copy is guidance, not proof of a policy gate (SCN-014).
 - Device-waiting reconnect copy remains a future target because this build has no local tool runner (SCN-018).
 
@@ -293,6 +293,28 @@ Humanization: on; own advisory read of the registered labels and state messages.
 | title.gmail_result.redirect | Google does not know this server's redirect URI | workers/gmail-setup/result-page.ts | SCN-002 | proposed |
 | label.desktop.then_gmail | Then set up Gmail (optional) | desktop/setup.html | SCN-030 | proposed |
 | label.provider.gmail_app_password | Gmail with an app password | app/components/settings/sections/providers.ts | SCN-052 | proposed |
+| label.provider.outlook | Outlook | app/components/settings/sections/providers.ts | SCN-057 | proposed |
+| hint.provider.outlook | Outlook.com, Hotmail and Microsoft 365 mail, read and sent through Microsoft. Each account is connected separately. | app/components/settings/sections/providers.ts | SCN-058 | proposed |
+| state.outlook_setup.intro | Outlook is connected through an app registration of your own in Microsoft Entra, so your mail goes only between Microsoft and your server. | app/components/settings/sections/OutlookSetup.tsx | SCN-057 | proposed |
+| hint.outlook_setup.secret_value | Fabric Inbox reminds you 30 days before it ends. | app/components/settings/sections/OutlookSetup.tsx | SCN-057 | proposed |
+| action.outlook_setup.save | Save | app/components/settings/sections/OutlookSetup.tsx | SCN-057 | proposed |
+| action.outlook_setup.replace | Use another client secret… | app/components/settings/sections/OutlookSetup.tsx | SCN-057 | proposed |
+| state.outlook_setup.secret_soon | Outlook accounts stop syncing that day. | app/components/settings/sections/OutlookSetup.tsx | SCN-060 | proposed |
+| action.account.connect_outlook | Connect Outlook in browser ↗ | app/components/settings/sections/OutlookSetup.tsx | SCN-058 | proposed |
+| state.outlook_connect.browser | Microsoft's sign-in opens in your browser. | app/components/settings/sections/OutlookSetup.tsx | SCN-058 | proposed |
+| label.outlook_connect.admin_link | Link for an administrator | app/components/settings/sections/OutlookSetup.tsx | SCN-059 | proposed |
+| action.outlook.open_setup | Open the Outlook setup | app/components/settings/sections/OutlookSetup.tsx | SCN-060 | proposed |
+| state.outlook.access_revoked | needs to be reconnected: Microsoft no longer accepts its access | shared/mail/gmail-reasons.ts | SCN-060 | proposed |
+| state.outlook.signin_required | needs you to sign in to Microsoft again | shared/mail/gmail-reasons.ts | SCN-060 | proposed |
+| state.outlook.secret_expired | cannot be read: the Microsoft client secret on your server has expired | shared/mail/gmail-reasons.ts | SCN-060 | proposed |
+| state.outlook.client_rejected | cannot be read: Microsoft refused this server's app registration | shared/mail/gmail-reasons.ts | SCN-060 | proposed |
+| state.outlook.disconnected | was removed here. Remove Fabric Inbox in your Microsoft account too | app/components/settings/sections/AccountsSection.tsx | SCN-058 | proposed |
+| navigation.inbox.outlook_group | Every Outlook account | app/components/inbox/AccountSidebar.tsx | SCN-058 | proposed |
+| title.outlook_result.connected | Outlook is connected | workers/microsoft-setup/result-page.ts | SCN-058 | proposed |
+| title.outlook_result.admin_consent | Your organization's administrator must allow Fabric Inbox first | workers/microsoft-setup/result-page.ts | SCN-059 | proposed |
+| title.outlook_result.admin_consented | Your organization allows Fabric Inbox now | workers/microsoft-setup/result-page.ts | SCN-059 | proposed |
+| title.outlook_result.secret_expired | The client secret on your server has expired | workers/microsoft-setup/result-page.ts | SCN-060 | proposed |
+| title.outlook_result.no_mailbox | This Microsoft account has no Outlook mailbox to read | workers/microsoft-setup/result-page.ts | SCN-058 | proposed |
 | action.account.disconnect | Disconnect | app/components/settings/sections/AccountsSection.tsx | SCN-003 | proposed |
 | label.agent.image_link | Image from | app/components/AgentMarkdown.tsx | SCN-013 | proposed |
 | state.mailbox.update_failed | Couldn't update the message. | app/lib/mutation-errors.ts | SCN-011 | proposed |

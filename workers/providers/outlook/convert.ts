@@ -10,7 +10,7 @@
  * | `isRead: false` | UNREAD |
  * | `flag.flagStatus: "flagged"` | STARRED |
  * | `conversationId` | the thread id, hashed (`c` + 22 characters) |
- * | `id` (immutable, about 150 characters) | the message id here, hashed (`o` + 24 characters); the Graph id is kept as `remoteId` |
+ * | `id` (immutable, longer than 128 characters) | the message id here, hashed (`o` + 24 characters); the Graph id is kept as `remoteId` |
  *
  * Graph's ids are longer than a storage key may be (128 characters), so the ids here are hashes of
  * them; the hash is the same every time, so a message synced twice is one row.

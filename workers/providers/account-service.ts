@@ -331,7 +331,7 @@ export class AccountService {
     return createMicrosoftAuthorization(this.store, this.outlookConfig());
   }
   /**
-   * The end of connecting an Outlook account (SCN-057): the state is this browser's and Outlook's,
+   * The end of connecting an Outlook account (SCN-058): the state is this browser's and Outlook's,
    * Microsoft's code is redeemed, the person and the mailbox are read (a Microsoft account without
    * an Outlook mailbox is refused here, before anything is kept), then the tokens are sealed and the
    * account stored. `outcome` is the result page's word for an error Microsoft sent back instead.
