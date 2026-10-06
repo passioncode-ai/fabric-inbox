@@ -19,15 +19,22 @@ const bundle = await build({
       import { MailboxDO } from './workers/durableObject/index';
       import { inboxRouter } from './workers/routes/inbox';
       import { discardRouter } from './workers/routes/discard';
-      import { receiveEmail } from './workers/index';
+      import { receiveEmail, app as mainApp } from './workers/index';
       import { applyMigrations, mailboxMigrations } from './workers/durableObject/migrations';
       const forbidden = () => { throw new Error('External AI is forbidden in this test'); };
       export class TestMailbox extends MailboxDO {
-        constructor(ctx, env) { super(ctx, {...env, AI:{run:forbidden}, EMAIL:{send: forbidden}}); }
+        constructor(ctx, env) {
+          // LEGACY_MAILBOX: a mailbox as 0.11 left it (migrations before 17_discarded); upgrade() deploys the rest.
+          const held = env.LEGACY_MAILBOX ? mailboxMigrations.splice(16) : [];
+          try { super(ctx, {...env, AI:{run:forbidden}, EMAIL:{send: forbidden}}); } finally { mailboxMigrations.push(...held); }
+        }
+        async upgrade(n) { applyMigrations(this.ctx.storage.sql, mailboxMigrations.slice(0, n ?? mailboxMigrations.length), this.ctx.storage); }
+        async legacyMessage(id, folder) { this.ctx.storage.sql.exec("INSERT INTO emails (id, folder_id, subject, sender, recipient, date, read, starred, body) VALUES (?, ?, 'Kept by hand', 'friend@example.org', 'support@shop.invalid', ?, 1, 0, 'mine')", id, folder, new Date().toISOString()); }
+        async dropFolder(id) { this.ctx.storage.sql.exec("UPDATE emails SET folder_id = 'inbox' WHERE folder_id = ?", id); this.ctx.storage.sql.exec('DELETE FROM folders WHERE id = ?', id); }
         async row(id) { return this.ctx.storage.sql.exec('SELECT folder_id, read, discard_reason, discarded_at FROM emails WHERE id = ?', id).toArray()[0] ?? null; }
         async sent(to, threadId) { await this.createEmail('sent', { id: 'sent-' + to + (threadId || ''), subject: 'Hello', sender: 'support@shop.invalid', recipient: to, date: new Date().toISOString(), body: 'hi', thread_id: threadId || null }, []); }
         async backdateDiscarded(days) { this.ctx.storage.sql.exec("UPDATE emails SET discarded_at = ? WHERE folder_id = 'discarded'", new Date(Date.now() - days * 86400000).toISOString()); }
-        async folders() { return this.ctx.storage.sql.exec('SELECT id, name FROM folders ORDER BY id').toArray(); }
+        async folders() { return this.ctx.storage.sql.exec('SELECT id, name, is_deletable FROM folders ORDER BY id').toArray(); }
       }
       export class TestAgents extends DurableObject {
         async enqueue(mailboxId, emailId) { const seen = (await this.ctx.storage.get('seen')) || []; await this.ctx.storage.put('seen', [...seen, emailId]); }
@@ -59,11 +66,18 @@ const bundle = await build({
       app.post('/backdate', async (c) => { await box(c.env).backdateDiscarded((await c.req.json()).days); return c.json({ ok: true }); });
       app.post('/purge', async (c) => c.json(await box(c.env).purgeDiscarded({})));
       app.get('/folders', async (c) => c.json(await box(c.env).folders()));
+      app.post('/upgrade', async (c) => { await box(c.env).upgrade((await c.req.json()).n); return c.json({ ok: true }); });
+      app.post('/legacy-message', async (c) => { const b = await c.req.json(); await box(c.env).legacyMessage(b.id, b.folder); return c.json({ ok: true }); });
+      // The folder API before 0.12: createFolder(slug of the name, name), with nothing reserved.
+      app.post('/legacy-folder', async (c) => { const { name } = await c.req.json(); const slug = name.toLowerCase().split(' ').join('-').split('!').join(''); return c.json(await box(c.env).createFolder(slug, name), 201); });
+      app.post('/drop-folder', async (c) => { await box(c.env).dropFolder((await c.req.json()).id); return c.json({ ok: true }); });
       app.get('/legacy', async (c) => c.json(await c.env.LEGACY.getByName('x').run()));
       app.get('/store', async (c) => { const o = await c.env.BUCKET.get('config/discard.json'); return c.json(o ? await o.json() : null); });
       app.get('/r2', async (c) => c.json((await c.env.BUCKET.list({ prefix: 'attachments/' })).objects.map((o) => o.key)));
       app.route('/', inboxRouter);
       app.route('/', discardRouter);
+      // The app's own routes (folders, moves) as the browser calls them.
+      app.all('/api/v1/*', (c) => mainApp.fetch(c.req.raw, c.env, c.executionCtx));
       export default { fetch: (r, env, ctx) => app.fetch(r, env, ctx) };
     `,
     resolveDir: process.cwd(), loader: "ts",
@@ -73,11 +87,11 @@ const bundle = await build({
 
 const NEWS = "List-Id: Weekly Digest <weekly.news.example.org>\r\nList-Unsubscribe: <https://news.example.org/u>\r\n";
 
-async function fixture() {
+async function fixture(options: { legacy?: boolean } = {}) {
   const mf = new Miniflare({
     modules: true, script: bundle.outputFiles[0].text, compatibilityDate: "2026-09-01", compatibilityFlags: ["nodejs_compat"],
     durableObjects: { MAILBOX: { className: "TestMailbox", useSQLite: true }, AGENT_REGISTRY: { className: "TestAgents", useSQLite: true }, LEGACY: { className: "LegacyFolders", useSQLite: true } },
-    r2Buckets: ["BUCKET"], bindings: { DOMAINS: "shop.invalid" },
+    r2Buckets: ["BUCKET"], bindings: { DOMAINS: "shop.invalid", ...(options.legacy ? { LEGACY_MAILBOX: "1" } : {}) },
     outboundService: () => new Response("External network disabled for tests", { status: 503 }),
   });
   const call = async (path: string, method = "GET", body?: unknown) => {
@@ -221,5 +235,86 @@ test("Discarded mail is deleted 30 days after it was discarded; a folder the per
     assert.ok((await call("/folders")).body.some((f: any) => f.id === "discarded" && f.name === "Discarded"));
     assert.deepEqual((await call("/legacy")).body.filter((f: any) => f.id === "mine" || f.id === "discarded"),
       [{ id: "discarded", name: "Discarded" }, { id: "mine", name: "Discarded (your folder)" }]);
+  } finally { await mf.dispose(); }
+});
+
+const BOX = "/api/v1/mailboxes/support@shop.invalid";
+
+test("a folder the person named Discarded before 0.12 stays theirs: the system folder takes the id back, cannot be deleted, and rule mail keeps arriving", async () => {
+  const { mf, call, receive, ref, feed } = await fixture({ legacy: true });
+  try {
+    // Made through the folder API as it was before 0.12: "Discarded" became the id "discarded".
+    assert.equal((await call(`${BOX}/folders`, "POST", { name: "Discarded" })).status, 409, "the API now refuses a built-in folder's id");
+    const made = await call("/legacy-folder", "POST", { name: "Discarded" });
+    assert.equal(made.status, 201);
+    assert.equal(made.body.id, "discarded");
+    await call("/legacy-message", "POST", { id: "kept-1", folder: "discarded" });
+    await call("/upgrade", "POST", {});
+    const folders = (await call("/folders")).body as { id: string; name: string; is_deletable: number }[];
+    assert.deepEqual(folders.filter((f) => f.id.startsWith("discarded")),
+      [{ id: "discarded", name: "Discarded", is_deletable: 0 }, { id: "discarded-yours", name: "Discarded (your folder)", is_deletable: 1 }]);
+    assert.equal((await call("/row", "POST", { id: "kept-1" })).body.folder_id, "discarded-yours", "their mail stays in their folder");
+    assert.deepEqual((await feed("discarded")).messages, [], "never shown as discarded");
+    // The system folder cannot be deleted.
+    const refused = await call(`${BOX}/folders/discarded`, "DELETE");
+    assert.equal(refused.status, 400);
+    assert.ok((await call("/folders")).body.some((f: any) => f.id === "discarded"));
+    // A name that comes out as "discarded" names the system folder, not a new one.
+    assert.equal((await call(`${BOX}/folders`, "POST", { name: "discarded!" })).status, 409);
+    // A rule learned now applies, and its mail is delivered into Discarded.
+    const first = await receive("Digest #1", { headers: NEWS });
+    await call("/api/discard", "POST", { messages: [ref(first.emailId)] });
+    const second = await receive("Digest #2", { headers: NEWS });
+    assert.match(second.discarded ?? "", /Discarded automatically/);
+    assert.equal((await call("/row", "POST", { id: second.emailId })).body.folder_id, "discarded");
+    // Their own folder can still be deleted; its mail goes to the inbox.
+    assert.equal((await call(`${BOX}/folders/discarded-yours`, "DELETE")).status, 204);
+    assert.equal((await call("/row", "POST", { id: "kept-1" })).body.folder_id, "inbox");
+  } finally { await mf.dispose(); }
+});
+
+test("a mailbox the first 0.12 migration left with the person's folder as Discarded is repaired: their mail goes back to their folder, discarded mail stays", async () => {
+  const { mf, call, receive, ref } = await fixture({ legacy: true });
+  try {
+    await call("/legacy-folder", "POST", { name: "discarded!!" });
+    await call("/legacy-message", "POST", { id: "kept-2", folder: "discarded" });
+    // 17_discarded alone (as 0.12 first shipped it): the person's row kept the id and stayed deletable.
+    await call("/upgrade", "POST", { n: 17 });
+    const first = await receive("Digest #1", { headers: NEWS });
+    await call("/api/discard", "POST", { messages: [ref(first.emailId)] });
+    await call("/upgrade", "POST", {});
+    const folders = (await call("/folders")).body as { id: string; name: string; is_deletable: number }[];
+    assert.deepEqual(folders.filter((f) => f.id.startsWith("discarded")),
+      [{ id: "discarded", name: "Discarded", is_deletable: 0 }, { id: "discarded-yours", name: "discarded!!", is_deletable: 1 }], "their folder keeps the name they gave it");
+    assert.equal((await call("/row", "POST", { id: "kept-2" })).body.folder_id, "discarded-yours");
+    assert.equal((await call("/row", "POST", { id: first.emailId })).body.folder_id, "discarded");
+  } finally { await mf.dispose(); }
+});
+
+test("Discarded missing from a mailbox is made again: by the repair, and on arrival — delivery never fails for it", async () => {
+  const legacy = await fixture({ legacy: true });
+  try {
+    await legacy.call("/legacy-folder", "POST", { name: "Discarded" });
+    await legacy.call("/upgrade", "POST", { n: 17 });
+    // Deleted while it was still deletable (0.12 as first shipped).
+    await legacy.call("/drop-folder", "POST", { id: "discarded" });
+    await legacy.call("/upgrade", "POST", {});
+    assert.ok((await legacy.call("/folders")).body.some((f: any) => f.id === "discarded" && f.name === "Discarded" && f.is_deletable === 0));
+  } finally { await legacy.mf.dispose(); }
+
+  const { mf, call, receive, ref } = await fixture();
+  try {
+    const first = await receive("Digest #1", { headers: NEWS });
+    await call("/api/discard", "POST", { messages: [ref(first.emailId)] });
+    await call("/drop-folder", "POST", { id: "discarded" });
+    const second = await receive("Digest #2", { headers: NEWS });
+    assert.match(second.discarded ?? "", /Discarded automatically/, "delivered, not failed");
+    assert.equal((await call("/row", "POST", { id: second.emailId })).body.folder_id, "discarded");
+    assert.ok((await call("/folders")).body.some((f: any) => f.id === "discarded" && f.name === "Discarded" && f.is_deletable === 0));
+    // A discard by hand makes it again too.
+    await call("/drop-folder", "POST", { id: "discarded" });
+    const third = await receive("Hello", { from: "someone@else.example" });
+    assert.equal((await call("/api/discard", "POST", { messages: [ref(third.emailId)] })).body.moved, 1);
+    assert.equal((await call("/row", "POST", { id: third.emailId })).body.folder_id, "discarded");
   } finally { await mf.dispose(); }
 });

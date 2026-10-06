@@ -12,7 +12,7 @@ import { allServedDomains, createMailbox, deleteMailbox, listMailboxAddresses, r
 import { createAddress, removeAddress } from "./lib/address-ops";
 import { routingClient } from "./routing/email-routing";
 import { handleSendEmail, handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
-import { Folders } from "../shared/folders";
+import { Folders, isBuiltInFolder } from "../shared/folders";
 import { spamCheck, type SpamVerdict } from "../shared/mail/spam";
 import { readSpamLists } from "./spam/lists";
 import { autoReason, discardFacts, discardSafety, matchDiscard, recordApplied } from "../shared/mail/discard";
@@ -372,6 +372,8 @@ app.post("/api/v1/mailboxes/:mailboxId/folders", async (c: AppContext) => {
 	const { name } = (await c.req.json()) as { name: string };
 	const slug = slugify(name);
 	if (!slug) return c.json({ error: "Folder name must contain alphanumeric characters" }, 400);
+	// "Discarded", "spam!"…: the id is a built-in folder's, which the mailbox already has.
+	if (isBuiltInFolder(slug)) return c.json({ error: "Folder with this name already exists" }, 409);
 	const f = await c.var.mailboxStub.createFolder(slug, name);
 	return f ? c.json(f, 201) : c.json({ error: "Folder with this name already exists" }, 409);
 });
@@ -383,6 +385,7 @@ app.put("/api/v1/mailboxes/:mailboxId/folders/:id", async (c: AppContext) => {
 });
 
 app.delete("/api/v1/mailboxes/:mailboxId/folders/:id", async (c: AppContext) => {
+	if (isBuiltInFolder(c.req.param("id")!)) return c.json({ error: "This folder is part of every mailbox and cannot be deleted" }, 400);
 	const ok = await c.var.mailboxStub.deleteFolder(c.req.param("id")!);
 	return ok ? c.body(null, 204) : c.json({ error: "Folder not found or cannot be deleted" }, 400);
 });

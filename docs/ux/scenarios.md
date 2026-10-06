@@ -1481,7 +1481,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Alt paths:** Never on arrival: mail from someone the account wrote to, a reply in a conversation it took part in, mail from the workspace's own domains, senders on Always allow or Never spam. Gmail, IMAP and Outlook mail is filed when its sync is handed on (seconds after it is read), before rules, agents and categories.
 - **UI elements:** SCR-03 Discarded folder, its banner, Why discarded.
 - **States covered:** empty, success
-- **Errors & recovery:** Rules that cannot be read, or a check that fails, leave the mail in the inbox and deliver it as before.
+- **Errors & recovery:** Rules that cannot be read, or a check that fails, leave the mail in the inbox and deliver it as before. A Cloudflare mailbox whose Discarded folder is missing gets it made again before the mail is stored, so delivery never fails for it; Discarded cannot be deleted, and a person's own folder that once held its name keeps their mail as "Discarded (your folder)".
 - **Status:** validated
 - **Coverage:** workers/index.ts (discardVerdict), workers/durableObject/index.ts (receiveEmailOnce), workers/providers/accounts-do.ts (arrivalFilter), workers/providers/account-service.ts (drainEvents, sentContact), tests/discard-workerd.test.ts, tests/discard-providers.test.ts
 - **Product:** unobserved
