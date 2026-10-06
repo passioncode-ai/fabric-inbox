@@ -91,11 +91,12 @@ one in the order shown.
 
 ## Mail providers (0.11)
 
-Every account the server keeps for a provider — Gmail through Google sign-in, any IMAP/SMTP
-mailbox through an app password — lives in one `GmailAccountsDO` (`workspace`; the class and its
+Every account the server keeps for a provider — Gmail through Google sign-in, Outlook.com and
+Microsoft 365 through Microsoft sign-in, any IMAP/SMTP mailbox through an app password — lives in
+one `GmailAccountsDO` (`workspace`; the class and its
 binding `GMAIL_ACCOUNTS` keep their first provider's name, since renaming a bound class is a
 destructive storage step). The world names an account `<provider>:<id>` (`gmail:<id>`,
-`imap:<id>`, `shared/mail/accounts.ts`); its record is `account:<id>` with a `provider` field, so
+`imap:<id>`, `outlook:<id>`, `shared/mail/accounts.ts`); its record is `account:<id>` with a `provider` field, so
 Gmail records of 0.10 are read as they are, with the same ids and cache.
 
 | Part | Where | Contract |
@@ -105,7 +106,7 @@ Gmail records of 0.10 are read as they are, with the same ids and cache.
 | What an account can do | `ProviderCapabilities` (per account, in `GET /api/accounts`, the feed's accounts and `list_accounts`) | `organization` labels or folders, `threads` provider or headers, `drafts`, `archive`, `spam`, `trash`, `search` (cache), `sentCopy`, `auth`, `delivery` (poll); the app and the agent tools offer only what is true, and the routes refuse the rest (`not_supported`) |
 | Gmail | `gmail-provider.ts` over `gmail-client.ts`, `gmail-sync.ts` | 0.10's behaviour, unchanged (below) |
 | IMAP/SMTP | `workers/providers/imap/` | see "IMAP accounts" |
-| An OAuth provider to come (Microsoft, WS5) | the same interface | `open()` gets the opened credentials and a `persist` that seals renewed tokens into the record (and into every copy a sync writes later, `putAccount`); a refused grant is `reconnect_required` |
+| Outlook (Microsoft Graph) | `workers/providers/outlook/` | see "Outlook accounts": `open()` gets the opened tokens and a `persist` that seals renewed (rotated) tokens into the record (and into every copy a sync writes later, `putAccount`); a refused grant is `reconnect_required`; a `retryAt` on a throttled answer is kept as the account's next try |
 
 **Credentials** (`workers/providers/credentials.ts`). AES-256-GCM, bound to the account by the
 additional data. The key is `MAIL_CREDENTIAL_KEY` (32 bytes, base64 or base64url), falling back
@@ -115,7 +116,7 @@ its key by fingerprint (first 9 bytes of SHA-256); version 1 envelopes and keys 
 `MAIL_CREDENTIAL_KEY_PREVIOUS` keep opening and are sealed again with the current key the next
 time the account is used, which is how the key is rotated. An envelope no key opens is
 `reconnect_required` (`credentials_unreadable`). Create my server makes `MAIL_CREDENTIAL_KEY` once
-(`desktop/cloudflare-deploy.cjs`); the Gmail setup wizard makes it when the server has none.
+(`desktop/cloudflare-deploy.cjs`); the Gmail and Outlook setups make it when the server has none.
 
 **Schedule.** One alarm serves every account of every provider (`gmail-scheduler.ts`, below);
 `MAIL_POLL_SECONDS` (else `GMAIL_POLL_SECONDS`, default 300) sets the interval; an account whose
@@ -215,6 +216,33 @@ does not run there (2026-10-05 spike), and every preset's servers answered the b
 | Sending | `ImapSession.send` | Date and Message-ID added; Bcc only in the kept copy; after the server's 2xx the copy is appended to Sent (`\Seen`) unless the preset says the provider keeps it or Sent already has that Message-ID; a failed append never turns a sent message into a failure |
 | Drafts | `ImapSession` drafts | the Drafts folder; a draft keeps its first message's id for life (`draft:<acc>:<draftId>` → current message), each save appends the new version and then deletes the old; its revision is the current message id; sending reads the draft, sends it through SMTP and deletes it |
 | Attachments, headers | `imap/mime.ts` | read from the message's source when asked (attachment ids are their index) |
+
+## Outlook accounts (0.11, WS5)
+
+Outlook.com and Microsoft 365 mailboxes (`outlook:<id>`) are reached through Microsoft Graph v1.0
+with the person's delegated consent; IMAP is not an option, since Outlook.com ended basic
+authentication on 2024-09-16. Every endpoint, scope and limit below was read on learn.microsoft.com
+on 2026-10-06 (the pages are cited in the module headers).
+
+| Part | Where | Contract |
+|---|---|---|
+| Sign-in | `outlook/oauth.ts` | authorization code with PKCE (S256) on `login.microsoftonline.com/common/oauth2/v2.0` (work, school and personal accounts), the owner's app registration (`MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`); scopes `offline_access Mail.ReadWrite Mail.Send User.Read`; the state under `oauth:` marked `provider: "outlook"` (a Gmail callback cannot use it), bound to the browser by `__Host-fabric-outlook-state`; a grant without a refresh token or without both mail permissions is refused (`insufficient_scope`) |
+| Tokens | `outlook/graph.ts (GraphClient.token)`, `AccountService.session` | renewed a minute before they end; the refresh token Microsoft returns replaces the old one and is sealed into the record at once (`persist`); `invalid_grant` → `reconnect_required` (`microsoft_access_revoked`), `interaction_required`/`consent_required` → `reconnect_required` (`microsoft_signin_required`), `invalid_client` with AADSTS7000222 → `microsoft_secret_expired`, other `invalid_client`/`unauthorized_client` → `microsoft_client_rejected` (both `error`, fixed in the setup without a reconnect); 5xx and `temporarily_unavailable` → backoff |
+| Requests | `outlook/graph.ts` | every request sends `Prefer: IdType="ImmutableId"` (a message keeps its id across folders); only Graph's own nextLink/deltaLink URLs are followed; 401 on a read refreshes once; 429 (and 503/504 with Retry-After) → `rate_limited` with `retryAt` from Retry-After (seconds or a date, within an hour), waited in place during a sync when it is at most 5 s and fits the deadline, else kept on the account; 410 or `syncStateNotFound` → `delta_reset`; `MailboxNotEnabledForRESTAPI` → `mailbox_unavailable` |
+| Identity | `outlook/convert.ts` | Graph ids are longer than a storage key may be (128 characters): a message's id here is `o` + 24 characters of the SHA-256 of its immutable id (the Graph id kept as `remoteId` on the row, and under `gid:<acc>:<id>` for drafts and sends); a thread is `c` + 22 characters of the SHA-256 of `conversationId`; an attachment id is its Graph id in base64url |
+| Labels | `outlook/convert.ts (labelsFor)` | Inbox, Sent Items, Drafts, Deleted Items, Junk Email → INBOX, SENT, DRAFT, TRASH, SPAM; Archive → none; `isRead: false` → UNREAD; `flag.flagStatus: flagged` → STARRED |
+| Folders | `outlook/sync.ts (discover)` | the six by well-known name (`/me/mailFolders/{inbox,sentitems,drafts,deleteditems,junkemail,archive}`), listed at connect (which proves the mailbox exists) and daily; an account without an Archive folder has no archive capability |
+| Sync | `outlook/sync.ts (OutlookSync)` | a delta query per folder (`/me/mailFolders/{id}/messages/delta`, `$select` of the cached properties, `Prefer: odata.maxpagesize=50`): the first round is the import, newest first (`$orderby=receivedDateTime desc`), Inbox, Sent, Archive, Drafts, Junk, Deleted Items, properties only (the body is read when opened); its nextLink is kept between ticks and its deltaLink starts history. History runs first every tick: each imported folder's delta round (new mail read whole — properties, MIME via `$value`, attachment list — and queued once for rules, agents and categories when it lands in the Inbox; changes relabelled; an `@removed` asked for once: gone → removed, in another synced folder → relabelled, elsewhere → removed), and for a folder still importing its newest 20 (mail received since connecting is news). A reset (410) imports the folder again under a new generation and then removes its rows the new round did not see |
+| Actions | `OutlookSession.change` | read and flag are `PATCH` (`isRead`, `flag`); archive, trash, spam and back are `POST /me/messages/{id}/move` with the well-known name; the id stays |
+| Sending | `OutlookSession.send` | the RFC 5322 text every provider makes (`rawMime`, with its own Message-ID; Bcc kept, Graph sends to it), created as a draft (`POST /me/messages`, `text/plain`, base64) and sent (`POST /me/messages/{id}/send`, 202; Graph keeps the copy in Sent Items, whose id is the draft's); MIME over 3 MB is created without its files, which are attached one by one: under 3 MB in one request, larger through an upload session in ranges under 4 MB to the pre-authenticated URL with no Authorization header; anything refused before `/send` (and `/send` refused with 4xx or 429) is `NotSentError` and the draft is deleted; `/send` with no answer is an unknown outcome |
+| Drafts | `OutlookSession` drafts | the Drafts folder's messages; a draft's id is its message's for life, its revision a hash of `changeKey`; a save is `PATCH` of subject, body and recipients, then files deleted (not in `keepAttachments`) and added; sending a draft is `/send` on it; In-Reply-To and References are those it was created with |
+| Attachments, headers | `OutlookSession` | a file by `/attachments/{id}/$value` (raw, up to 30 MB); headers from `internetMessageHeaders`, else the MIME source's (drafts and sent copies have none in Graph) |
+| Setup | `workers/routes/microsoft-setup.ts`, `shared/mail/microsoft-setup.ts` | the values for the app registration, the secret's end date (`MICROSOFT_CLIENT_SECRET_EXPIRES`, warned 30 days ahead), the administrator's approval link (`organizations/v2.0/adminconsent`), the server's own settings written with `writeWorkerSettings`; the self-test renews one connected account's token (Microsoft checks a sign-in code's shape before the client, so nothing proves a client before its first sign-in) |
+| Revoking | `OutlookProvider.revoke` | none: Microsoft has no request an app makes to give back one delegated grant; disconnecting deletes the tokens here and says where the person removes the app |
+
+Throughput: Outlook allows one app 10,000 requests per 10 minutes and four concurrent requests per
+mailbox, and 150 MB of uploads per 5 minutes; a session makes one request at a time, a tick reads
+at most a few pages per folder, and Retry-After is honoured.
 
 ## Spam (SP-1…SP-6)
 
@@ -389,7 +417,9 @@ flowchart LR
 | A body too large for a row | R2 `bodies/<id>.html` (`emails.body_key`) |
 | Addresses hidden from the sidebar and All inboxes | R2 `config/hidden-accounts.json` |
 | Rules, rule runs | `AutomationDO` storage, one per account |
-| Gmail tokens and IMAP app passwords (AES-GCM envelopes, version 2 names its key; see "Mail providers"), IMAP server names and folder state, message cache of both (layout 2: rows, bodies, date index, inbox counters; see "Gmail sync, cache and refresh"), set-aside messages, send and draft receipts, moved-message aliases, IMAP draft ids | `GmailAccountsDO` (`workspace`) |
+| Gmail and Outlook tokens and IMAP app passwords (AES-GCM envelopes, version 2 names its key; see "Mail providers"), IMAP server names and folder state, Outlook folder ids and delta links, message cache of all three (layout 2: rows, bodies, date index, inbox counters; see "Gmail sync, cache and refresh"), set-aside messages, send and draft receipts, moved-message aliases, IMAP draft ids, Outlook Graph ids of drafts and sends (`gid:`) | `GmailAccountsDO` (`workspace`) |
+| The Outlook app registration's client secret, and its end date | Worker secret `MICROSOFT_CLIENT_SECRET`, var `MICROSOFT_CLIENT_SECRET_EXPIRES` |
+| Outlook drafts | the Outlook account's Drafts folder, read live |
 | The key credentials are sealed with | Worker secret `MAIL_CREDENTIAL_KEY` (or `GMAIL_TOKEN_ENCRYPTION_KEY`), older keys in `MAIL_CREDENTIAL_KEY_PREVIOUS` |
 | IMAP drafts | the IMAP account's Drafts folder, read live |
 | Gmail drafts | the Gmail account itself (drafts API), read live, not cached |
@@ -423,10 +453,12 @@ read with a default where it is missing, never assumed present.
 | `workers/automation/` | rules engine, policy, MCP client |
 | `workers/providers/` | the provider interface, credentials, account service, `GmailAccountsDO`, scheduler, cache; Gmail OAuth, client, sync loop and provider |
 | `workers/providers/imap/` | IMAP/SMTP: the imapflow connection, the SMTP client and its sockets, MIME and labels, the sync, the provider and session, connect input |
+| `workers/providers/outlook/` | Outlook through Microsoft Graph: sign-in and tokens, the Graph client (immutable ids, throttling), ids and labels, the delta sync, the provider and session |
+| `workers/microsoft-setup/` | the Outlook connect result page |
 | `workers/gmail-setup/` | the Gmail setup: the self-test against Google, the server's own settings write, the connect result page |
 | `workers/routing/` | Cloudflare API client, the accounts the tokens reach (`accounts.ts`), Email Routing status, `DomainManager` (domains, rules, catch-all, sending, destinations), setup from routing |
 | `workers/relay/` | the relay Worker's source, installing it in another account, and where it hands mail over |
-| `workers/routes/` | accounts, Gmail setup, unified inbox, agents and project addresses, categories and projects, domains, setups |
+| `workers/routes/` | accounts, Gmail setup, Outlook setup, unified inbox, agents and project addresses, categories and projects, domains, setups |
 | `workers/lib/` | mailbox store (settings, served domains, catch-alls, delete), applying a setup, security headers |
 | `workers/mcp/` | the agent protocol: identity and keys, Access service tokens, tools, the ledger, instructions |
 | `workers/api.ts` | every JSON route as one app, mounted by `workers/app.ts` and called in-process by the agent protocol |
@@ -455,6 +487,9 @@ read with a default where it is missing, never assumed present.
   mail is not instant. Searches read the mail synced here, not the provider's own search. Gmail
   through IMAP shows labels as folders and does not read All Mail, so an archived message leaves
   the app's lists (connect Gmail through Google for labels).
+- An Outlook account is read on the poll interval too (no Graph change notifications: they need
+  a public webhook and renewing subscriptions); its older mail is imported without bodies, 50
+  messages a page; folders besides the six well-known ones are not read.
 - A Gmail import of a large mailbox still takes a while (about 100 headers-only messages per
   page, six requests in flight, ticks 10 s apart while it runs); new mail is unaffected because
   history runs from the start. A search over more than 50,000 cached rows of one folder answers

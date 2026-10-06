@@ -1,9 +1,12 @@
 /**
- * The server writes its own Gmail settings (SCN-051), with the Cloudflare API token it already
- * holds (`CLOUDFLARE_API_TOKEN`, written by Create my server). One change to the Worker's settings:
+ * The server writes its own Gmail settings (SCN-051) and Outlook settings (SCN-057), with the
+ * Cloudflare API token it already holds (`CLOUDFLARE_API_TOKEN`, written by Create my server). One
+ * change to the Worker's settings each:
  *
- *   GOOGLE_CLIENT_ID, PUBLIC_APP_URL                 plain text variables
- *   GOOGLE_CLIENT_SECRET, MAIL_CREDENTIAL_KEY        secrets (the key only when the server has none)
+ *   Gmail:   GOOGLE_CLIENT_ID, PUBLIC_APP_URL             plain text variables
+ *            GOOGLE_CLIENT_SECRET, MAIL_CREDENTIAL_KEY    secrets (the key only when the server has none)
+ *   Outlook: MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET_EXPIRES, PUBLIC_APP_URL   plain text variables
+ *            MICROSOFT_CLIENT_SECRET, MAIL_CREDENTIAL_KEY                          secrets (the key as above)
  *
  * Every other binding is carried over unchanged as `{ type: "inherit", name }`, so the change
  * neither drops nor rewrites anything else whether Cloudflare reads the list as the whole set or as
@@ -36,25 +39,36 @@ export function newCredentialKey(): string {
 type Binding = { name: string; type: string; text?: string };
 
 /**
+ * Writes some of the Worker's own settings in one change: `plain` as plain text variables, `secret`
+ * as secrets; every other binding is inherited unchanged. The Gmail and Outlook setups both use it.
+ */
+export async function writeWorkerSettings(api: CloudflareApi, target: { accountId: string; script: string }, values: {
+  plain: Record<string, string>; secret: Record<string, string>;
+}): Promise<void> {
+  const path = `/accounts/${target.accountId}/workers/scripts/${encodeURIComponent(target.script)}/settings`;
+  const settings = await api.call<{ bindings?: Binding[] }>(path, { what: WHAT_READ });
+  const replaced = new Set<string>([...Object.keys(values.plain), ...Object.keys(values.secret)]);
+  const bindings: Binding[] = (settings.bindings ?? [])
+    .filter((b) => typeof b?.name === "string" && !replaced.has(b.name))
+    .map((b) => ({ type: "inherit", name: b.name }));
+  bindings.push(
+    ...Object.entries(values.plain).map(([name, text]) => ({ type: "plain_text", name, text })),
+    ...Object.entries(values.secret).map(([name, text]) => ({ type: "secret_text", name, text })),
+  );
+  const form = new FormData();
+  form.set("settings", new Blob([JSON.stringify({ bindings })], { type: "application/json" }));
+  await api.call(path, { method: "PATCH", form, what: WHAT_WRITE });
+}
+
+/**
  * Writes the Gmail settings in one change. `credentialKey` is set only when the server makes a new
  * key; otherwise the one the Worker has is inherited untouched.
  */
 export async function writeGmailSettings(api: CloudflareApi, target: { accountId: string; script: string }, values: {
   clientId: string; clientSecret: string; publicAppUrl: string; credentialKey?: string;
 }): Promise<void> {
-  const path = `/accounts/${target.accountId}/workers/scripts/${encodeURIComponent(target.script)}/settings`;
-  const settings = await api.call<{ bindings?: Binding[] }>(path, { what: WHAT_READ });
-  const replaced = new Set<string>(["GOOGLE_CLIENT_ID", "PUBLIC_APP_URL", "GOOGLE_CLIENT_SECRET", ...(values.credentialKey ? ["MAIL_CREDENTIAL_KEY"] : [])]);
-  const bindings: Binding[] = (settings.bindings ?? [])
-    .filter((b) => typeof b?.name === "string" && !replaced.has(b.name))
-    .map((b) => ({ type: "inherit", name: b.name }));
-  bindings.push(
-    { type: "plain_text", name: "GOOGLE_CLIENT_ID", text: values.clientId },
-    { type: "plain_text", name: "PUBLIC_APP_URL", text: values.publicAppUrl },
-    { type: "secret_text", name: "GOOGLE_CLIENT_SECRET", text: values.clientSecret },
-    ...(values.credentialKey ? [{ type: "secret_text", name: "MAIL_CREDENTIAL_KEY", text: values.credentialKey }] : []),
-  );
-  const form = new FormData();
-  form.set("settings", new Blob([JSON.stringify({ bindings })], { type: "application/json" }));
-  await api.call(path, { method: "PATCH", form, what: WHAT_WRITE });
+  await writeWorkerSettings(api, target, {
+    plain: { GOOGLE_CLIENT_ID: values.clientId, PUBLIC_APP_URL: values.publicAppUrl },
+    secret: { GOOGLE_CLIENT_SECRET: values.clientSecret, ...(values.credentialKey ? { MAIL_CREDENTIAL_KEY: values.credentialKey } : {}) },
+  });
 }

@@ -11,22 +11,30 @@ import { renderResult } from "../gmail-setup/result-page";
 import { authorizationProblem } from "../gmail-setup/google-check";
 import { projectNumberOf } from "../../shared/mail/gmail-reasons";
 import { ImapConnectBody, ImapPasswordBody } from "../providers/imap/connect";
+import { authorizeOutcome, microsoftConfiguration } from "../providers/outlook/oauth";
+import { renderOutlookResult } from "../microsoft-setup/result-page";
+import { OUTLOOK_CONNECT_PATH } from "../../shared/mail/microsoft-setup";
 
 /** Mount behind the app's Cloudflare Access middleware, before the SSR fallback. */
 export const accountsRouter = new Hono<{ Bindings: GmailBindings }>();
 const cookie = "__Host-fabric-gmail-state";
+const outlookCookie = "__Host-fabric-outlook-state";
 accountsRouter.use("/api/accounts/*", async (c, next) => {
   c.header("Cache-Control", "no-store");
   c.header("Referrer-Policy", "no-referrer");
   if (c.req.method !== "GET") {
     const config = configuration(c.env);
-    // Connecting Gmail needs Google's setup; every other change (an IMAP account, a mail action on
-    // any account) does not.
-    if (config.status !== "configured" && new URL(c.req.url).pathname.startsWith("/api/accounts/gmail/"))
+    const microsoft = microsoftConfiguration(c.env);
+    const path = new URL(c.req.url).pathname;
+    // Connecting Gmail needs Google's setup, connecting Outlook Microsoft's; every other change (an
+    // IMAP account, a mail action on any account) needs neither.
+    if (config.status !== "configured" && path.startsWith("/api/accounts/gmail/"))
       return c.json({ error: "not_configured", configuration: config }, 503);
-    // Browser mutations require the app's own origin: Gmail's configured one, else the server's.
-    // Server tools use DO RPC or set it themselves (mcp/handler.ts).
-    const expected = config.status === "configured" ? config.origin : new URL(c.req.url).origin;
+    if (microsoft.status !== "configured" && path.startsWith("/api/accounts/outlook/"))
+      return c.json({ error: "not_configured", configuration: microsoft }, 503);
+    // Browser mutations require the app's own origin: the configured one (PUBLIC_APP_URL, which Gmail
+    // and Outlook share), else the server's. Server tools use DO RPC or set it themselves (mcp/handler.ts).
+    const expected = config.status === "configured" ? config.origin : microsoft.status === "configured" ? microsoft.origin : new URL(c.req.url).origin;
     if (c.req.header("Origin") !== expected)
       return c.json({ error: "invalid_origin" }, 403);
     const length = Number(c.req.header("Content-Length") || 0);
@@ -109,6 +117,14 @@ accountsRouter.onError((error, c) => {
     smtp_connection_lost: 503,
     attachment_not_found: 404,
     folder_missing: 404,
+    // Outlook (Microsoft Graph): the server's app registration, the mailbox, Graph's refusals.
+    microsoft_secret_expired: 502,
+    microsoft_client_rejected: 502,
+    mailbox_unavailable: 404,
+    admin_consent_required: 403,
+    access_denied: 403,
+    provider_rejected: 400,
+    delta_reset: 503,
   };
   const code = error instanceof ProviderError ? error.code : error.message;
   return c.json(
@@ -132,10 +148,13 @@ accountsRouter.get("/api/accounts", async (c) => {
         { id: "outlook", status: "not_configured" },
       ],
     });
-  // Where a person connects another Gmail account (gmail_connect_link): the configured origin only.
+  // Where a person connects another Gmail (gmail_connect_link) or Outlook account
+  // (outlook_connect_link): the configured origin only.
   const config = configuration(c.env);
+  const microsoft = microsoftConfiguration(c.env);
   return c.json({ ...(await stub(c.env).listAccounts()),
-    ...(config.status === "configured" ? { connectUrl: new URL("/api/accounts/gmail/connect", config.origin).href } : {}) });
+    ...(config.status === "configured" ? { connectUrl: new URL("/api/accounts/gmail/connect", config.origin).href } : {}),
+    ...(microsoft.status === "configured" ? { outlookConnectUrl: new URL(OUTLOOK_CONNECT_PATH, microsoft.origin).href } : {}) });
 });
 /**
  * The providers this server can connect and the IMAP presets with their help pages: no account,
@@ -230,6 +249,62 @@ accountsRouter.get("/api/accounts/gmail/callback", async (c) => {
     const code = codeOf(error);
     console.warn(JSON.stringify({ event: "gmail_connect_failed", error: code, googleError: known ?? null }));
     return pageFor(c, code, { googleError: known });
+  }
+});
+// ── Outlook (Microsoft Graph): the same browser flow as Gmail's, against Microsoft's sign-in ──
+const outlookPage = (c: Context<{ Bindings: GmailBindings }>, outcome: string, extra: { email?: string } = {}) => {
+  const config = microsoftConfiguration(c.env);
+  const page = renderOutlookResult({ outcome, ...extra,
+    ...(config.status === "configured" ? { origin: config.origin, redirectUri: config.redirectUri, clientId: config.clientId } : {}) });
+  return c.body(page.html, page.status as 200, page.headers);
+};
+const browserCookie = { httpOnly: true, secure: true, sameSite: "Lax" as const, path: "/", maxAge: 600 };
+/** SCN-058: opens Microsoft's sign-in for a new (or the same) Outlook account. */
+accountsRouter.get("/api/accounts/outlook/connect", async (c) => {
+  const config = microsoftConfiguration(c.env);
+  if (config.status !== "configured") return outlookPage(c, "not_configured");
+  if (new URL(c.req.url).origin !== config.origin) return outlookPage(c, "invalid_origin");
+  let result: { authorizationUrl: string; browserToken: string };
+  try {
+    result = await stub(c.env).beginOutlookConnect();
+  } catch (error) {
+    return outlookPage(c, codeOf(error));
+  }
+  setCookie(c, outlookCookie, result.browserToken, browserCookie);
+  return c.redirect(result.authorizationUrl, 302);
+});
+accountsRouter.post("/api/accounts/outlook/connect", async (c) => {
+  const result = await stub(c.env).beginOutlookConnect();
+  setCookie(c, outlookCookie, result.browserToken, browserCookie);
+  return c.json({ authorizationUrl: result.authorizationUrl });
+});
+/**
+ * Microsoft's redirect back (SCN-058, SCN-059): a code to redeem, an error instead of one (read into
+ * the page's outcome, never shown as Microsoft wrote it), or the end of an administrator's approval
+ * (`admin_consent=True`), which keeps nothing and says to connect now.
+ */
+accountsRouter.get("/api/accounts/outlook/callback", async (c) => {
+  const config = microsoftConfiguration(c.env);
+  if (config.status !== "configured") return outlookPage(c, "not_configured");
+  if (new URL(c.req.url).origin !== config.origin) return outlookPage(c, "invalid_origin");
+  const error = c.req.query("error");
+  if (c.req.query("admin_consent") !== undefined) {
+    // Microsoft's own warning: the tenant on this redirect is never proof of anything, so it is not read.
+    const approved = /^true$/i.test(c.req.query("admin_consent") ?? "") && !error;
+    console.log(JSON.stringify({ event: "outlook_admin_consent", approved }));
+    return outlookPage(c, approved ? "admin_consented" : "admin_consent_declined");
+  }
+  const browserToken = getCookie(c, outlookCookie) || "";
+  deleteCookie(c, outlookCookie, { path: "/", secure: true });
+  const outcome = error ? authorizeOutcome(error.slice(0, 64), (c.req.query("error_description") ?? "").slice(0, 2000)) : undefined;
+  try {
+    const account = await stub(c.env).outlookCallback(c.req.query("state") || "", browserToken, c.req.query("code") || "", outcome);
+    // A fixed page, not a redirect: OAuth parameters cannot choose where the browser goes next.
+    return outlookPage(c, "connected", { email: account.email });
+  } catch (failure) {
+    const code = codeOf(failure);
+    console.warn(JSON.stringify({ event: "outlook_connect_failed", error: code }));
+    return outlookPage(c, code);
   }
 });
 accountsRouter.post("/api/accounts/:accountId/disconnect", async (c) =>

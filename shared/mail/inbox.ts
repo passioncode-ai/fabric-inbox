@@ -1,7 +1,7 @@
 import type { Triage } from "./triage";
 export const INBOX_FOLDERS = ["inbox", "sent", "archive", "trash", "starred", "spam"] as const;
 export type InboxFolder = (typeof INBOX_FOLDERS)[number];
-export type InboxProvider = "cloudflare" | "gmail" | "imap";
+export type InboxProvider = "cloudflare" | "gmail" | "imap" | "outlook";
 export interface InboxAccount {
   id: string;
   provider: InboxProvider;

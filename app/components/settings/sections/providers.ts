@@ -4,16 +4,16 @@
  * This list is the extension point for more providers: a provider becomes available by giving its
  * entry a `connect` kind the Accounts section knows how to run, and a server answer that says it is
  * configured. IMAP accounts (`app-password`) connect with an address and an app password checked
- * on the server; Microsoft is listed as unavailable until it has its own kind: the app never
- * simulates an account it cannot reach.
+ * on the server; Gmail (`browser-oauth`) and Outlook (`microsoft-oauth`, SCN-057) with a sign-in in
+ * the browser, after the owner's one-time setup. The app never simulates an account it cannot reach.
  *
  * Plain module: the tests load it directly.
  */
 
 export type ProviderId = "cloudflare" | "gmail" | "gmail-app-password" | "imap" | "microsoft";
 
-/** How the Accounts section connects one: a token pasted here, a sign-in in the browser, or an app password typed here. */
-export type ConnectKind = "cloudflare-token" | "browser-oauth" | "app-password" | "none";
+/** How the Accounts section connects one: a token pasted here, a sign-in in the browser (Google's or Microsoft's), or an app password typed here. */
+export type ConnectKind = "cloudflare-token" | "browser-oauth" | "microsoft-oauth" | "app-password" | "none";
 
 export interface ProviderEntry {
   id: ProviderId;
@@ -42,22 +42,27 @@ export const PROVIDERS: readonly ProviderEntry[] = [
     helpUrl: "https://support.google.com/accounts/answer/185833" },
   { id: "imap", name: "Other mail (IMAP)", connect: "app-password",
     summary: "iCloud, Yahoo, AOL, Fastmail, Zoho, Yandex, Mail.ru, GMX or your own server, with an app password. Each account is connected separately." },
-  { id: "microsoft", name: "Outlook", connect: "none",
-    summary: "Microsoft 365 and Outlook.com mail." },
+  { id: "microsoft", name: "Outlook", connect: "microsoft-oauth",
+    summary: "Outlook.com, Hotmail and Microsoft 365 mail, read and sent through Microsoft. Each account is connected separately.",
+    helpUrl: "https://support.microsoft.com/en-us/office/modern-authentication-methods-now-needed-to-continue-syncing-outlook-email-in-non-microsoft-email-apps-c5d65390-9676-4763-b41f-d7986499a90d" },
 ];
 
 export type Availability = "available" | "not-configured" | "checking" | "unknown" | "unavailable";
 
 /**
- * Whether a card can connect now. Gmail needs the server's Google sign-in setup, an IMAP account the
- * server's credential key, each known only once the server has answered; a provider with no way to
- * connect in this build is unavailable.
+ * Whether a card can connect now. Gmail needs the server's Google sign-in setup, Outlook its
+ * Microsoft setup, an IMAP account the server's credential key, each known only once the server has
+ * answered; a provider with no way to connect in this build is unavailable.
  */
 export type SetupState = "loading" | "unavailable" | "configured" | "not-configured";
 export function availability(provider: Pick<ProviderEntry, "id" | "connect">, state: {
-  cloudflareConnected: boolean | null; gmail: SetupState; imap?: SetupState;
+  cloudflareConnected: boolean | null; gmail: SetupState; imap?: SetupState; outlook?: SetupState;
 }): Availability {
   if (provider.connect === "none") return "unavailable";
+  if (provider.connect === "microsoft-oauth") {
+    const outlook = state.outlook ?? "loading";
+    return outlook === "configured" ? "available" : outlook === "not-configured" ? "not-configured" : outlook === "loading" ? "checking" : "unknown";
+  }
   if (provider.connect === "app-password") {
     const imap = state.imap ?? "loading";
     return imap === "configured" ? "available" : imap === "not-configured" ? "not-configured" : imap === "loading" ? "checking" : "unknown";

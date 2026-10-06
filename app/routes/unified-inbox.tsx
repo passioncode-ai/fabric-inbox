@@ -102,6 +102,8 @@ const issueText = (issue: { error: string; reason?: string }) =>
 const needsReconnect = (issue: { error: string; reason?: string; provider?: string }) => issue.provider !== "imap" &&
   (isGmailReason(issue.reason) ? GMAIL_REASON_TEXT[issue.reason].action === "reconnect" : issue.error === "reconnect_required");
 const needsPassword = (issue: { error: string; provider?: string }) => issue.provider === "imap" && issue.error === "reconnect_required";
+/** Where a sign-in fixes an account: Microsoft's for an Outlook account, Google's for a Gmail one. */
+const reconnectPath = (issue: { provider?: string }) => (issue.provider === "outlook" ? "/api/accounts/outlook/connect" : "/api/accounts/gmail/connect");
 const OPEN_GROUPS_KEY = "fabric-inbox:open-groups";
 function readOpenGroups(): Set<TriageGroup> {
   try {
@@ -118,7 +120,8 @@ export default function UnifiedInbox() {
     search = params.get("query") ?? "";
   const domainFilter = params.get("domain") ?? "";
   const categoryParam = params.get("category") ?? "";
-  const providerFilter = params.get("provider") === "gmail" ? "gmail" : params.get("provider") === "imap" ? "imap" : "";
+  const providerParam = params.get("provider");
+  const providerFilter = providerParam === "gmail" || providerParam === "imap" || providerParam === "outlook" ? providerParam : "";
   const unreadOnly = params.get("unread") === "1",
     groupParam = params.get("group"),
     group = isTriageGroup(groupParam) ? groupParam : undefined,
@@ -355,7 +358,7 @@ export default function UnifiedInbox() {
   });
   const scopeName = categoryParam
     ? activeCategory?.name ?? "Category"
-    : active?.email || (accountId ? "Selected account" : domainFilter || (providerFilter === "imap" ? "Other mail" : providerFilter ? "Gmail" : "All inboxes"));
+    : active?.email || (accountId ? "Selected account" : domainFilter || (providerFilter === "imap" ? "Other mail" : providerFilter === "outlook" ? "Outlook" : providerFilter ? "Gmail" : "All inboxes"));
   /**
    * Changes what the list shows. Changing the order or the group keeps the open message;
    * changing where to look (inbox, folder, category, search) closes it and clears the group.
@@ -644,7 +647,7 @@ export default function UnifiedInbox() {
         <header className="fi-toolbar">
           <div>
             <span className="fi-eyebrow">
-              {categoryParam ? "CATEGORY" : accountId ? "ONE ADDRESS" : domainFilter ? "ONE DOMAIN" : providerFilter === "imap" ? "EVERY IMAP ACCOUNT" : providerFilter ? "EVERY GMAIL ACCOUNT" : "YOUR MAIL, TOGETHER"}
+              {categoryParam ? "CATEGORY" : accountId ? "ONE ADDRESS" : domainFilter ? "ONE DOMAIN" : providerFilter === "imap" ? "EVERY IMAP ACCOUNT" : providerFilter === "outlook" ? "EVERY OUTLOOK ACCOUNT" : providerFilter ? "EVERY GMAIL ACCOUNT" : "YOUR MAIL, TOGETHER"}
             </span>
             <h1>{scopeName}</h1>
             {categoryParam && activeCategory && (
@@ -720,7 +723,7 @@ export default function UnifiedInbox() {
               <><Link className="fi-text-button" to={`/settings/accounts/${encodeURIComponent(issues.find(needsPassword)!.accountId ?? "")}`}>Enter a new app password</Link>{" "}· </>
             )}
             {issues.some(needsReconnect) && (
-              <><a className="fi-text-button" href="/api/accounts/gmail/connect" target="_blank" rel="noreferrer">Reconnect in browser ↗</a>{" "}· </>
+              <><a className="fi-text-button" href={reconnectPath(issues.find(needsReconnect)!)} target="_blank" rel="noreferrer">Reconnect in browser ↗</a>{" "}· </>
             )}
             <button className="fi-text-button" disabled={checking} onClick={() => void checkForMail()}>Retry</button>{" "}
             · <Link to={settingsPath("accounts", issues.length === 1 ? issues[0].accountId : null)}>Why, and what to do</Link>

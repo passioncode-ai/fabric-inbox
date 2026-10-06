@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { CaretDownIcon, CaretRightIcon, AtIcon, EnvelopeSimpleIcon, EyeIcon, EyeSlashIcon, GoogleLogoIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, CaretRightIcon, AtIcon, EnvelopeSimpleIcon, EyeIcon, EyeSlashIcon, GoogleLogoIcon, MicrosoftOutlookLogoIcon } from "@phosphor-icons/react";
 import type { InboxAccount } from "./model";
 import { addressLabel, groupAccounts, sidebarAccounts, type AddressFilter } from "./account-groups";
 
@@ -107,9 +107,9 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
                   {expanded ? <CaretDownIcon size={12} /> : <CaretRightIcon size={12} />}
                 </button>
                 <button type="button" className="fi-domain-name" aria-pressed={selectedGroup}
-                  title={g.kind === "gmail" ? "Every Gmail account" : g.kind === "imap" ? "Every IMAP account" : `Every address on ${g.label}`}
+                  title={g.kind === "gmail" ? "Every Gmail account" : g.kind === "outlook" ? "Every Outlook account" : g.kind === "imap" ? "Every IMAP account" : `Every address on ${g.label}`}
                   onClick={() => g.kind !== "domain" ? onScope({ provider: g.kind, domain: "", account: "" }) : onScope({ domain: g.key, account: "", provider: "" })}>
-                  {g.kind === "gmail" ? <GoogleLogoIcon size={14} /> : g.kind === "imap" ? <EnvelopeSimpleIcon size={14} /> : <AtIcon size={14} />}
+                  {g.kind === "gmail" ? <GoogleLogoIcon size={14} /> : g.kind === "outlook" ? <MicrosoftOutlookLogoIcon size={14} /> : g.kind === "imap" ? <EnvelopeSimpleIcon size={14} /> : <AtIcon size={14} />}
                   <span>{g.label}</span>
                   <Count n={g.unread} label={g.label} />
                 </button>

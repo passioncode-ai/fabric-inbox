@@ -4,7 +4,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { CloudIcon, EnvelopeSimpleIcon, GoogleLogoIcon, MicrosoftOutlookLogoIcon, PlusIcon } from "@phosphor-icons/react";
 import { fabric, accountPath, type Account } from "~/services/fabric";
 import type { CloudflareAccount, DomainList } from "~/services/domains";
-import { gmailSetupState, imapSetupState } from "~/lib/account-status";
+import { gmailSetupState, imapSetupState, outlookSetupState } from "~/lib/account-status";
 import { count, groupRows, visibleRows, type ListEntry } from "../list-model";
 import { settingsPath } from "../paths";
 import {
@@ -16,13 +16,14 @@ import { PermissionTable } from "./DomainsSection";
 import { AVAILABILITY_TEXT, PROVIDERS, availability, type ProviderEntry, type ProviderId } from "./providers";
 import { GmailConnectStep, GmailProblem, GmailSetupWizard, useGmailSetup } from "./GmailSetup";
 import { ConnectImap, ImapPanel } from "./ImapAccount";
+import { MICROSOFT_SETUP_KEY, OutlookConnectStep, OutlookProblem, OutlookSetupWizard, SecretExpiryNotice, useMicrosoftSetup } from "./OutlookSetup";
 
 /** Where a person creates a token; an account-owned one is under the account's own Manage Account page. */
 const TOKEN_PAGE = "https://dash.cloudflare.com/profile/api-tokens";
 
-type AccountEntry = ListEntry & ({ kind: "cloudflare"; account: CloudflareAccount } | { kind: "gmail" | "imap"; account: Account });
+type AccountEntry = ListEntry & ({ kind: "cloudflare"; account: CloudflareAccount } | { kind: "gmail" | "imap" | "outlook"; account: Account });
 
-const GROUPS = [{ id: "cloudflare", label: "Cloudflare" }, { id: "gmail", label: "Gmail" }, { id: "imap", label: "Other mail" }];
+const GROUPS = [{ id: "cloudflare", label: "Cloudflare" }, { id: "gmail", label: "Gmail" }, { id: "outlook", label: "Outlook" }, { id: "imap", label: "Other mail" }];
 const ICONS: Record<ProviderId, typeof CloudIcon> = { cloudflare: CloudIcon, gmail: GoogleLogoIcon, "gmail-app-password": GoogleLogoIcon, imap: EnvelopeSimpleIcon, microsoft: MicrosoftOutlookLogoIcon };
 
 export function describeCloudflare(a: CloudflareAccount): string {
@@ -36,8 +37,8 @@ const gmailStatus = (a: Account) => a.status.replaceAll("_", " ");
 const gmailTone = (a: Account) => (a.error ? "bad" : a.status === "connected" ? "ok" : "warn") as "bad" | "ok" | "warn";
 
 /**
- * Settings → Accounts (SCR-02, SCN-002, SCN-003, SCN-045, SCN-046, SCN-052…SCN-056): the Cloudflare
- * accounts the server has a token for, and the connected Gmail and IMAP accounts. Connecting one more
+ * Settings → Accounts (SCR-02, SCN-002, SCN-003, SCN-045, SCN-046, SCN-052…SCN-060): the Cloudflare
+ * accounts the server has a token for, and the connected Gmail, Outlook and IMAP accounts. Connecting one more
  * opens a dialog with a card per provider (providers.ts); providers this build cannot connect say so.
  */
 export default function AccountsSection({ id }: { id: string | null }) {
@@ -51,7 +52,9 @@ export default function AccountsSection({ id }: { id: string | null }) {
     ...(domains.data?.accounts ?? []).map((a): AccountEntry => ({ key: `cloudflare:${a.id}`, group: "cloudflare", kind: "cloudflare", account: a, text: `${a.name} cloudflare` })),
     ...(gmail.data?.accounts ?? []).map((a): AccountEntry => a.provider === "imap"
       ? { key: `imap:${a.id}`, group: "imap", kind: "imap", account: a, text: `${a.email} imap ${a.providerName ?? ""}` }
-      : { key: `gmail:${a.id}`, group: "gmail", kind: "gmail", account: a, text: `${a.email} gmail google` }),
+      : a.provider === "outlook"
+        ? { key: `outlook:${a.id}`, group: "outlook", kind: "outlook", account: a, text: `${a.email} outlook microsoft` }
+        : { key: `gmail:${a.id}`, group: "gmail", kind: "gmail", account: a, text: `${a.email} gmail google` }),
   ], [domains.data, gmail.data]);
   const groups = groupRows(visibleRows(entries, query, id), GROUPS);
   const selected = id ? entries.find((e) => e.key === id) ?? null : null;
@@ -66,11 +69,11 @@ export default function AccountsSection({ id }: { id: string | null }) {
   const listView = loading ? <SkeletonRows label="Loading your accounts…" /> : (
     <>
       {domains.isError && <LoadFailure what="Cloudflare accounts" error={domains.error} onRetry={() => void domains.refetch()} retrying={domains.isFetching} />}
-      {gmail.isError && <LoadFailure what="Gmail and IMAP accounts" error={gmail.error} onRetry={() => void gmail.refetch()} retrying={gmail.isFetching} />}
+      {gmail.isError && <LoadFailure what="Gmail, Outlook and IMAP accounts" error={gmail.error} onRetry={() => void gmail.refetch()} retrying={gmail.isFetching} />}
       <SelectableList label="Accounts" groups={groups} selected={id} hrefFor={(e) => settingsPath("accounts", e.key)}
         renderRow={(e) => <AccountRowContent entry={e} />}
         empty={<div className="fi-list-empty">
-          <p>{query ? `No account matches “${query}”.` : "No account is connected yet. Connect Cloudflare for your own domains, Gmail, or another mail account."}</p>
+          <p>{query ? `No account matches “${query}”.` : "No account is connected yet. Connect Cloudflare for your own domains, Gmail, Outlook, or another mail account."}</p>
           {!query && <button type="button" className="fi-primary" onClick={() => setConnecting("")}>Connect an account</button>}
         </div>} />
       {domains.data?.problems?.map((p) => <p key={p} className="fi-load-failure" role="alert">{p}</p>)}
@@ -92,6 +95,9 @@ export default function AccountsSection({ id }: { id: string | null }) {
   ) : selected.kind === "cloudflare" ? (
     <CloudflarePanel key={selected.key} account={selected.account} entryKey={selected.key}
       onRemoved={() => navigate(settingsPath("accounts"), { replace: true, preventScrollReset: true })} />
+  ) : selected.kind === "outlook" ? (
+    <OutlookPanel key={selected.key} account={selected.account} entryKey={selected.key} onSetup={() => setConnecting("microsoft")}
+      onRemoved={() => navigate(settingsPath("accounts"), { replace: true, preventScrollReset: true })} />
   ) : selected.kind === "imap" ? (
     <ImapPanel key={selected.key} account={selected.account} entryKey={selected.key}
       onRemoved={() => navigate(settingsPath("accounts"), { replace: true, preventScrollReset: true })} />
@@ -109,7 +115,7 @@ export default function AccountsSection({ id }: { id: string | null }) {
         </>} />
       <ConnectDialog open={connecting !== null} provider={connecting || null} onChoose={(p) => setConnecting(p)}
         onClose={() => setConnecting(null)} list={domains.data} gmailState={gmailSetupState(gmail.data, gmail.error)}
-        imapState={imapSetupState(gmail.data, gmail.error)}
+        imapState={imapSetupState(gmail.data, gmail.error)} outlookState={outlookSetupState(gmail.data, gmail.error)}
         onConnected={(key) => { setConnecting(null); navigate(settingsPath("accounts", key), { replace: true, preventScrollReset: true }); }} />
     </>
   );
@@ -237,13 +243,63 @@ function GmailPanel({ account: a, entryKey, onRemoved, onSetup }: { account: Acc
   );
 }
 
+/** An Outlook account (SCN-058, SCN-060): its sync, why it stopped, and disconnecting it. */
+function OutlookPanel({ account: a, entryKey, onRemoved, onSetup }: { account: Account; entryKey: string; onRemoved: () => void; onSetup: () => void }) {
+  const client = useQueryClient();
+  const confirm = useConfirm();
+  const work = useWork(entryKey);
+  const setup = useMicrosoftSetup();
+  const retry = () => void work.run("Retrying…", async () => {
+    try {
+      await fabric(accountPath(a.id) + "/sync", {});
+      return `${a.email} synced.`;
+    } finally {
+      await Promise.all([client.invalidateQueries({ queryKey: GMAIL_KEY }), client.invalidateQueries({ queryKey: ["unified-inbox"] })]);
+    }
+  });
+  const disconnect = async () => {
+    const ok = await confirm({
+      title: `Disconnect ${a.email}?`,
+      body: <p>Its access is deleted from your server and its cached mail leaves this app. Its mail stays in Outlook. Microsoft has no way for an app to give its access back, so remove Fabric Inbox in your Microsoft account too; connecting it again starts a new sync.</p>,
+      confirmLabel: `Disconnect ${a.email}`, danger: true,
+    });
+    if (!ok) return;
+    const help = setup.data?.help;
+    const done = await work.run("Disconnecting…", async () => {
+      try {
+        await fabric(accountPath(a.id) + "/disconnect", {});
+        return `${a.email} was removed here. Remove Fabric Inbox in your Microsoft account too${help ? `: ${help.personalAppAccess} for a personal account, ${help.workAppAccess} for a work or school one` : ""}.`;
+      } finally {
+        await Promise.all([client.invalidateQueries({ queryKey: GMAIL_KEY }), client.invalidateQueries({ queryKey: ["unified-inbox"] })]);
+      }
+    });
+    if (done) onRemoved();
+  };
+  return (
+    <Panel title={a.email} subtitle="Outlook" closeTo={settingsPath("accounts")} badges={<Badge tone={gmailTone(a)}>{gmailStatus(a)}</Badge>}
+      menu={<ActionMenu label={`More actions for ${a.email}`} actions={[{ label: `Disconnect ${a.email}…`, danger: true, onSelect: () => void disconnect() }]} />}>
+      <PanelBlock title="Sync">
+        <p>{a.lastSyncAt ? `Last sync ${new Date(a.lastSyncAt).toLocaleString()}.` : "Waiting for the first sync."}{a.importing !== undefined ? ` Importing: ${a.importing}%.` : ""}</p>
+        <OutlookProblem account={a} onRetry={retry} onSetup={onSetup} busy={!!work.busy} />
+        <SecretExpiryNotice expiry={setup.data?.secretExpiry ?? null} />
+        <div className="fi-buttons">
+          <Link className="fi-secondary" to={"/?account=" + encodeURIComponent("outlook:" + a.id)}>Open its mail</Link>
+          <Link className="fi-secondary" to={"/automation/" + encodeURIComponent("outlook:" + a.id)}>Rules and history</Link>
+        </div>
+        <ActionResult result={work.result} />
+      </PanelBlock>
+    </Panel>
+  );
+}
+
 /* ------------------------------------------------------------ connecting */
 
-function ConnectDialog({ open, provider, onChoose, onClose, list, gmailState, imapState, onConnected }: {
+function ConnectDialog({ open, provider, onChoose, onClose, list, gmailState, imapState, outlookState, onConnected }: {
   open: boolean; provider: ProviderId | null; onChoose: (p: ProviderId | "") => void; onClose: () => void;
-  list?: DomainList; gmailState: ReturnType<typeof gmailSetupState>; imapState: ReturnType<typeof imapSetupState>; onConnected: (accountKey: string) => void;
+  list?: DomainList; gmailState: ReturnType<typeof gmailSetupState>; imapState: ReturnType<typeof imapSetupState>;
+  outlookState: ReturnType<typeof outlookSetupState>; onConnected: (accountKey: string) => void;
 }) {
-  const state = { cloudflareConnected: list ? list.connected : null, gmail: gmailState, imap: imapState };
+  const state = { cloudflareConnected: list ? list.connected : null, gmail: gmailState, imap: imapState, outlook: outlookState };
   const chosen = PROVIDERS.find((p) => p.id === provider) ?? null;
   return (
     <Dialog open={open} title={chosen ? `Connect ${chosen.name}` : "Connect an account"} onClose={onClose} wide>
@@ -253,6 +309,8 @@ function ConnectDialog({ open, provider, onChoose, onClose, list, gmailState, im
         </div>
       ) : chosen.id === "gmail" ? (
         <ConnectGmail state={gmailState} onBack={() => onChoose("")} onClose={onClose} />
+      ) : chosen.id === "microsoft" ? (
+        <ConnectOutlook state={outlookState} onBack={() => onChoose("")} onClose={onClose} />
       ) : chosen.id === "cloudflare" ? (
         <ConnectCloudflareAccount list={list} onBack={() => onChoose("")} onClose={onClose} />
       ) : chosen.connect === "app-password" && availability(chosen, state) === "available" ? (
@@ -319,6 +377,43 @@ function ConnectGmail({ state, onBack, onClose }: { state: ReturnType<typeof gma
   return (
     <>
       <GmailSetupWizard setup={data} onSaved={() => { setReplacing(false); void client.invalidateQueries({ queryKey: GMAIL_KEY }); }} />
+      <div className="fi-dialog-actions">
+        <button type="button" className="fi-secondary" onClick={replacing ? () => setReplacing(false) : onBack}>Back</button>
+        <button type="button" className="fi-secondary" onClick={onClose}>Later</button>
+      </div>
+    </>
+  );
+}
+
+/**
+ * SCN-057, SCN-058: a server without Microsoft set up shows the app registration steps; one with it set up
+ * connects an account in the browser. "Use another client secret…" opens the steps again (a secret
+ * that ends, or one that leaked, is replaced the same way).
+ */
+function ConnectOutlook({ state, onBack, onClose }: { state: ReturnType<typeof outlookSetupState>; onBack: () => void; onClose: () => void }) {
+  const client = useQueryClient();
+  const setup = useMicrosoftSetup(state === "configured" || state === "not-configured");
+  const [replacing, setReplacing] = useState(false);
+  if (state === "loading" || (state !== "unavailable" && setup.isPending))
+    return <p role="status">Checking the Outlook setup…</p>;
+  if (state === "unavailable" || setup.isError)
+    return (
+      <>
+        <p role="alert">The Outlook setup is unknown: {setup.isError ? errorText(setup.error) : "the accounts did not load."}</p>
+        <div className="fi-dialog-actions"><button type="button" className="fi-secondary" data-autofocus onClick={onBack}>Back</button></div>
+      </>
+    );
+  const data = setup.data!;
+  if (state === "configured" && data.configured && !replacing)
+    return (
+      <>
+        <OutlookConnectStep setup={data} onReplace={() => setReplacing(true)} />
+        <div className="fi-dialog-actions"><button type="button" className="fi-secondary" onClick={onBack}>Back</button></div>
+      </>
+    );
+  return (
+    <>
+      <OutlookSetupWizard setup={data} onSaved={() => { setReplacing(false); void client.invalidateQueries({ queryKey: GMAIL_KEY }); void client.invalidateQueries({ queryKey: MICROSOFT_SETUP_KEY }); }} />
       <div className="fi-dialog-actions">
         <button type="button" className="fi-secondary" onClick={replacing ? () => setReplacing(false) : onBack}>Back</button>
         <button type="button" className="fi-secondary" onClick={onClose}>Later</button>

@@ -2,7 +2,8 @@
  * The accounts the server keeps for its providers (docs/architecture.md → "Mail providers"): the
  * records, their sealed credentials, the message cache every provider shares, sends with their
  * idempotent receipts, the incoming-event queue, status and backoff. The provider's own work runs
- * through a `ProviderSession` (provider.ts): Gmail in gmail-provider.ts, IMAP/SMTP in imap/.
+ * through a `ProviderSession` (provider.ts): Gmail in gmail-provider.ts, IMAP/SMTP in imap/, Outlook
+ * (Microsoft Graph) in outlook/.
  *
  * Records live under `account:<id>`; the world names an account `<provider>:<id>` (shared/mail/
  * accounts.ts). Gmail records written before 0.11 are read as they are: same key, same id, same cache.
@@ -29,6 +30,10 @@ import { NotSentError, type DraftUpdate, type MailProvider, type MessageChange, 
 import type { ImapAccount, ImapCredentials } from "./imap/types";
 import { ImapProvider, type ImapDeps } from "./imap/provider";
 import { serverSettings, type ImapConnectInput } from "./imap/connect";
+import type { OutlookAccount, OutlookCredentials } from "./outlook/types";
+import { OutlookProvider, type OutlookSession } from "./outlook/provider";
+import { GraphClient } from "./outlook/graph";
+import { createMicrosoftAuthorization, exchangeMicrosoftCode, microsoftConfiguration, type MicrosoftEnvironment } from "./outlook/oauth";
 import { CUSTOM, PRESETS } from "../../shared/mail/imap-presets";
 export { importPercent, type SyncState } from "./gmail-sync";
 
@@ -50,7 +55,7 @@ export function syncPending(account: Pick<AccountRecord, "sync">) {
 }
 const RETRY_MS = 60_000, MAX_RETRY_MS = 900_000;
 
-export type AccountRecord = GmailAccount | ImapAccount;
+export type AccountRecord = GmailAccount | ImapAccount | OutlookAccount;
 export type PublicAccount = Omit<AccountRecord, "credentials">;
 const DAY = 86_400_000;
 /**
@@ -81,6 +86,13 @@ export function accountProblem(error: unknown, account: Pick<AccountRecord, "con
       return { status: "error", error: "gmail_api_disabled", reason: "gmail_api_disabled" };
     case "google_client_rejected":
       return { status: "error", error: "google_client_rejected", reason: "client_rejected" };
+    // The server's Microsoft app registration: its client secret ended, or Microsoft refuses the client.
+    case "microsoft_secret_expired":
+      return { status: "error", error: "microsoft_secret_expired", reason: "microsoft_secret_expired" };
+    case "microsoft_client_rejected":
+      return { status: "error", error: "microsoft_client_rejected", reason: "microsoft_client_rejected" };
+    case "mailbox_unavailable":
+      return { status: "error", error: "mailbox_unavailable" };
     default:
       return null;
   }
@@ -161,7 +173,7 @@ const IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{1,128}$/;
 export interface ProviderDeps {
   imap?: ImapDeps;
 }
-export type AccountsEnvironment = GmailEnvironment & CredentialEnvironment & { MAIL_POLL_SECONDS?: string };
+export type AccountsEnvironment = GmailEnvironment & CredentialEnvironment & MicrosoftEnvironment & { MAIL_POLL_SECONDS?: string };
 
 /** The poll interval of every provider: MAIL_POLL_SECONDS, else GMAIL_POLL_SECONDS, else 300 s (60 s … 1 h). */
 export function pollInterval(env: AccountsEnvironment) {
@@ -173,6 +185,7 @@ export class AccountService {
   readonly cache: GmailCache;
   private gmail: GmailProvider;
   private imap: ImapProvider;
+  private outlook: OutlookProvider;
   private keys?: Promise<CredentialKeys | null>;
   private renewed = new Map<string, AccountRecord["credentials"]>();
   constructor(
@@ -184,11 +197,12 @@ export class AccountService {
     this.cache = new GmailCache(store);
     this.gmail = new GmailProvider(store, this.cache, env, http);
     this.imap = new ImapProvider(store, this.cache, env, deps.imap);
+    this.outlook = new OutlookProvider(store, this.cache, env, http);
   }
   /** The provider of an account (or of a provider id). */
   provider(of: RemoteProvider | Pick<AccountRecord, "provider">): MailProvider<AccountRecord> {
     const id = typeof of === "string" ? of : of.provider;
-    const provider = id === "gmail" ? this.gmail : id === "imap" ? this.imap : undefined;
+    const provider = id === "gmail" ? this.gmail : id === "imap" ? this.imap : id === "outlook" ? this.outlook : undefined;
     if (!provider) throw new ProviderError("not_configured", 503);
     return provider as unknown as MailProvider<AccountRecord>;
   }
@@ -229,7 +243,7 @@ export class AccountService {
       providers: [
         { id: "gmail", status: configuration(this.env).status },
         { id: "imap", status: hasCredentialKey(this.env) ? "configured" : "not_configured" },
-        { id: "outlook", status: "not_configured" },
+        { id: "outlook", status: microsoftConfiguration(this.env).status },
       ],
     };
   }
@@ -298,13 +312,83 @@ export class AccountService {
       providers: [
         { id: "gmail", name: "Gmail", auth: "oauth", status: configuration(this.env).status },
         { id: "imap", name: "Other mail (IMAP)", auth: "app-password", status: hasCredentialKey(this.env) ? "configured" : "not_configured" },
-        { id: "outlook", name: "Outlook", auth: "oauth", status: "not_configured" },
+        { id: "outlook", name: "Outlook", auth: "oauth", status: microsoftConfiguration(this.env).status },
       ],
       presets: [...PRESETS, { ...CUSTOM }].map((p) => ({
         id: p.id, name: p.name, domains: p.domains, steps: p.steps, source: p.source || null, appPasswordUrl: p.appPasswordUrl || null, sentCopy: p.sentCopy,
         ...("imap" in p ? { imap: p.imap, smtp: p.smtp } : {}),
       })),
     };
+  }
+  /** The server's Microsoft setup, or not_configured. */
+  outlookConfig() {
+    const config = microsoftConfiguration(this.env);
+    if (config.status !== "configured") throw new ProviderError("not_configured", 503);
+    return config;
+  }
+  /** Starts connecting an Outlook account: Microsoft's sign-in address and the browser's token. */
+  async outlookConnect() {
+    return createMicrosoftAuthorization(this.store, this.outlookConfig());
+  }
+  /**
+   * The end of connecting an Outlook account (SCN-058): the state is this browser's and Outlook's,
+   * Microsoft's code is redeemed, the person and the mailbox are read (a Microsoft account without
+   * an Outlook mailbox is refused here, before anything is kept), then the tokens are sealed and the
+   * account stored. `outcome` is the result page's word for an error Microsoft sent back instead.
+   */
+  async outlookCallback(state: string, browserToken: string, code: string, outcome?: string) {
+    const config = this.outlookConfig();
+    const saved = await consumeState(this.store, state, browserToken, Date.now(), "outlook");
+    if (outcome) throw new ProviderError(outcome, 400);
+    if (!code || code.length > 4096) throw new ProviderError("oauth_failed", 400);
+    let credentials: OutlookCredentials = await exchangeMicrosoftCode(config, code, saved.verifier, this.http);
+    const graph = new GraphClient(config, credentials, async (next) => { credentials = next; }, this.http);
+    const me = await graph.json<{ id?: string; mail?: string | null; userPrincipalName?: string }>("/me?$select=id,mail,userPrincipalName");
+    const email = (me?.mail || me?.userPrincipalName || "").trim();
+    if (!me?.id || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ProviderError("invalid_profile", 502);
+    const accounts = [...(await this.store.list<AccountRecord>({ prefix: "account:" })).values()];
+    if (accounts.some((a) => a.provider !== "outlook" && a.email.toLowerCase() === email.toLowerCase())) throw new ProviderError("already_connected", 409);
+    const existing = accounts.find((a) => a.provider === "outlook" && a.email.toLowerCase() === email.toLowerCase()) as OutlookAccount | undefined;
+    const id = existing?.id ?? crypto.randomUUID();
+    const same = !!existing && existing.userId === me.id;
+    const account: OutlookAccount = {
+      id, provider: "outlook", email, runtime: "cloud", status: "syncing", createdAt: existing?.createdAt ?? Date.now(), connectedAt: Date.now(), userId: me.id,
+      credentials: existing?.credentials ?? { version: 1, iv: "", ciphertext: "" },
+      // The same Microsoft user again keeps the cache and where the sync stands; another one starts over.
+      sync: same ? existing!.sync : { mode: "initial", folders: [], since: Date.now() },
+    };
+    try {
+      // The folders, read now: this also proves the account has an Outlook mailbox Graph can reach.
+      await this.outlook.syncer.discover(account, graph, Date.now() + 15_000);
+    } catch (error) {
+      if (error instanceof ProviderError && (error.code === "mailbox_unavailable" || error.code === "not_found")) throw new ProviderError("mailbox_unavailable", 404);
+      throw error;
+    }
+    if (existing && !same) await this.cache.clear(id);
+    account.credentials = await this.seal(id, credentials);
+    account.status = account.sync.mode === "initial" ? "syncing" : "connected";
+    this.renewed.delete(id);
+    await this.store.put("account:" + id, account);
+    console.log(JSON.stringify({ event: "outlook_connected", again: !!existing, kept: same }));
+    return publicAccount(account);
+  }
+  /**
+   * The self-test of the server's Microsoft client with a real request: one connected Outlook
+   * account's token renewed now, which Microsoft answers only for a client ID and secret it accepts.
+   * Without an Outlook account nothing can be asked (Microsoft checks a sign-in code's shape before the
+   * client, so a made-up code proves nothing): the answer says so.
+   */
+  async microsoftClientCheck(): Promise<{ status: "ok" | "failed" | "unknown"; code?: string; email?: string }> {
+    const accounts = [...(await this.store.list<AccountRecord>({ prefix: "account:" })).values()].filter((a): a is OutlookAccount => a.provider === "outlook");
+    const account = accounts.find((a) => a.status !== "reconnect_required") ?? accounts[0];
+    if (!account) return { status: "unknown", code: "no_account" };
+    try {
+      await this.withSession(account, (s) => (s as OutlookSession).graph.token(true));
+      return { status: "ok", email: account.email };
+    } catch (error) {
+      const code = error instanceof ProviderError ? error.code : "provider_unavailable";
+      return { status: code === "microsoft_secret_expired" || code === "microsoft_client_rejected" ? "failed" : "unknown", code, email: account.email };
+    }
   }
   /**
    * Connects an IMAP account (or connects one again with new settings): its IMAP login, folders and
@@ -315,7 +399,8 @@ export class AccountService {
     if (!hasCredentialKey(this.env)) throw new ProviderError("not_configured", 503);
     const settings = serverSettings(input);
     const accounts = [...(await this.store.list<AccountRecord>({ prefix: "account:" })).values()];
-    if (accounts.some((a) => a.provider === "gmail" && a.email.toLowerCase() === input.email)) throw new ProviderError("already_connected", 409);
+    // An address already read through Google or Microsoft sign-in is not read a second time.
+    if (accounts.some((a) => (a.provider === "gmail" || a.provider === "outlook") && a.email.toLowerCase() === input.email)) throw new ProviderError("already_connected", 409);
     const checked = await this.imap.verify(settings, input.password, input.email);
     const existing = accounts.find((a) => a.provider === "imap" && a.email.toLowerCase() === input.email) as ImapAccount | undefined;
     const id = existing?.id ?? crypto.randomUUID();
@@ -432,7 +517,7 @@ export class AccountService {
   }
   /** How a person knows the account's provider: "Gmail", or the IMAP preset's name. */
   providerName(account: Pick<AccountRecord, "provider"> & { preset?: string }): string {
-    return account.provider === "gmail" ? "Gmail" : this.imap.presetName(account.preset);
+    return account.provider === "gmail" ? "Gmail" : account.provider === "outlook" ? "Outlook" : this.imap.presetName(account.preset);
   }
   private async saveMessage(account: AccountRecord, message: Message, options: { bodyless?: boolean } = {}) {
     await this.cache.save(account.id, message, (account.sync as { generation?: string }).generation, options);
@@ -618,7 +703,9 @@ export class AccountService {
       account.status = problem?.status ?? (account.error === "rate_limited" ? "rate_limited" : "error");
       if (problem?.reason) account.reason = problem.reason; else delete account.reason;
       account.failures = (account.failures ?? 0) + 1;
-      account.retryAt = Date.now() + (account.status === "rate_limited" ? MAX_RETRY_MS
+      // A provider that said when to come back (Retry-After) is believed, within an hour.
+      const said = error instanceof ProviderError && error.retryAt ? Math.min(Math.max(error.retryAt, Date.now() + 1000), Date.now() + 3_600_000) : 0;
+      account.retryAt = said || Date.now() + (account.status === "rate_limited" ? MAX_RETRY_MS
         : Math.min(RETRY_MS * 2 ** (account.failures - 1), MAX_RETRY_MS));
       await this.putAccount(account);
       console.warn(JSON.stringify({ event: account.provider === "gmail" ? "gmail_sync_failed" : "mail_sync_failed", provider: account.provider, kind, error: account.error, reason: account.reason ?? null, failures: account.failures }));
@@ -823,6 +910,7 @@ export class AccountService {
       "pending:event:" + accountId + ":",
       "moved:" + accountId + ":",
       "draft:" + accountId + ":",
+      "gid:" + accountId + ":",
     ]) {
       for (;;) {
         const rows = await this.store.list({ prefix, limit: 100 });

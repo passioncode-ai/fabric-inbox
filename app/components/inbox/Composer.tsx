@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { fabric, accountPath } from "~/services/fabric";
 import { ApiError } from "~/services/api";
 import { sendRecovery } from "./send-state";
-import { rawAccount, type InboxAccount } from "./model";
+import { isRemote, rawAccount, type InboxAccount } from "./model";
 import type { Draft } from "./draft-store";
 import {
   attachmentsOnDevice,
@@ -144,8 +144,8 @@ export default function Composer({
     }
     setNotice("");
     try {
-      // Gmail and IMAP accounts send through /api/accounts/<id>/send; a Cloudflare mailbox through its own route.
-      const isGmail = account.provider === "gmail" || account.provider === "imap";
+      // Gmail, IMAP and Outlook accounts send through /api/accounts/<id>/send; a Cloudflare mailbox through its own route.
+      const isGmail = isRemote(account.provider);
       if (!legacy) {
         const result = await sendSavedDraft(fixed, fabric);
         if (result.status === "accepted") {

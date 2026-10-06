@@ -27,11 +27,12 @@ export interface ResultInput {
   projectNumber?: string | null;
 }
 
-const esc = (value: string) => value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-const link = (href: string, text: string, external = false) =>
+export const esc = (value: string) => value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+export const link = (href: string, text: string, external = false) =>
   `<a href="${esc(href)}"${external ? ' target="_blank" rel="noreferrer noopener"' : ""}>${esc(text)}${external ? " ↗" : ""}</a>`;
 
-interface Page { status: number; title: string; tone: "ok" | "warn" | "bad"; body: string[]; actions: string[] }
+/** One result page: its status, title, tone, lines (already escaped HTML) and action links. */
+export interface Page { status: number; title: string; tone: "ok" | "warn" | "bad"; body: string[]; actions: string[] }
 
 const CONNECT = "/api/accounts/gmail/connect";
 const ACCOUNTS = "/settings/accounts";
@@ -127,12 +128,16 @@ export function resultPage(input: ResultInput): Response {
 
 /** The page's parts, for a route that adds headers of its own (a cleared cookie). */
 export function renderResult(input: ResultInput): { html: string; status: number; headers: Record<string, string> } {
-  const p = page(input);
+  return renderPage(page(input), "Gmail");
+}
+
+/** Any provider's result page in the same shell: `mark` names the provider ("Gmail", "Outlook"). */
+export function renderPage(p: Page, mark: string): { html: string; status: number; headers: Record<string, string> } {
   const tone = p.tone === "ok" ? "var(--ok)" : p.tone === "warn" ? "var(--warn)" : "var(--bad)";
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><title>${esc(p.title)} · Fabric Inbox</title><style>${STYLE}</style></head>
-<body><main style="--tone:${tone}" role="${p.tone === "ok" ? "status" : "alert"}"><p class="mark">Fabric Inbox · Gmail</p><h1>${esc(p.title)}</h1>
+<body><main style="--tone:${tone}" role="${p.tone === "ok" ? "status" : "alert"}"><p class="mark">Fabric Inbox · ${esc(mark)}</p><h1>${esc(p.title)}</h1>
 ${p.body.map((line) => `<p>${line}</p>`).join("\n")}
 ${p.actions.length ? `<div class="actions">${p.actions.join("")}</div>` : ""}
 </main></body></html>`;

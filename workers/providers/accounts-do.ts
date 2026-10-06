@@ -110,6 +110,22 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
       return account;
     });
   }
+  /** Starts connecting an Outlook account (Microsoft's sign-in address and this browser's token). */
+  beginOutlookConnect() {
+    return this.serial(() => this.service.outlookConnect());
+  }
+  /** The end of connecting an Outlook account; its first sync starts at once. */
+  outlookCallback(state: string, browserToken: string, code: string, outcome?: string) {
+    return this.serial(async () => {
+      const account = await this.service.outlookCallback(state, browserToken, code, outcome);
+      await this.scheduler.connected();
+      return account;
+    });
+  }
+  /** Asks Microsoft whether it accepts the server's client now (one Outlook account's token renewed). */
+  checkMicrosoftClient() {
+    return this.serial(() => this.service.microsoftClientCheck());
+  }
   /** History then import pages for one account now; the shared alarm is never moved later (P1-6). */
   async sync(accountId: string) {
     const result = await this.scheduler.syncNow(accountId);

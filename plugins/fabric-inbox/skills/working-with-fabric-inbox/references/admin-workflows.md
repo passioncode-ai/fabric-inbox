@@ -106,15 +106,19 @@ account's Email Routing rules. `apply_setup` applies one — two-step, never del
 
 ## What a person does
 
-Connecting a Gmail account, connecting an IMAP account (its app password), setting Gmail up on the
-server (the Google client secret), issuing or
+Connecting a Gmail or Outlook account, connecting an IMAP account (its app password), setting Gmail
+or Outlook up on the server (the Google client secret; the Microsoft Entra app registration and its
+client secret), issuing or
 revoking an agent key, and pasting a Cloudflare token are the person's own acts.
 `gmail_setup_status` says what the Gmail setup lacks and the exact values the owner copies into
 Google Cloud; `check_gmail_setup` checks the saved client with Google and names what to fix.
-`gmail_connect_link` gives the address they open to connect Gmail; `list_mail_providers` lists the
+`gmail_connect_link` gives the address they open to connect Gmail. `microsoft_setup_status` and
+`check_microsoft_setup` do the same for Outlook (the redirect URI, account types and permissions of
+the app registration, the client secret's end date), and `outlook_connect_link` gives the address
+they open to connect Outlook; `list_mail_providers` lists the
 IMAP presets (servers, the first step at the provider, its help page) and where in the app the
 person enters the password — an agent never receives one. `disconnect_account` (two-step)
-disconnects a Gmail or IMAP account;
+disconnects a Gmail, IMAP or Outlook account;
 `list_agent_keys` lists the keys (no secrets); keys are made in Settings → Agent access and tokens
 pasted in Settings → Accounts.
 

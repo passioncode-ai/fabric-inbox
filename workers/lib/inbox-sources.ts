@@ -6,7 +6,7 @@ import { importPercent } from "../providers/gmail-sync";
 
 /**
  * The feed's providers, read the same way by the /api/inbox route and by background work (a
- * category's first classification): Cloudflare mailboxes listed from R2; Gmail and IMAP accounts
+ * category's first classification): Cloudflare mailboxes listed from R2; Gmail, IMAP and Outlook accounts
  * from the accounts object (GmailAccountsDO, named for its first provider).
  */
 export function inboxSources(env: Env): InboxSources {

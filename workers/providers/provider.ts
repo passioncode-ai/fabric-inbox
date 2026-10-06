@@ -7,9 +7,10 @@
  * asks a `MailProvider` for the provider's own work through a `ProviderSession`: one page of sync,
  * a message read fresh, a change to a message, a file, a send, drafts, revoking access.
  *
- * Gmail (`gmail-provider.ts`) and IMAP/SMTP (`imap/provider.ts`) implement it. An OAuth provider
- * (Microsoft, WS5) plugs into the same seams: `open()` refreshes its token through `persist`, and
- * a refused grant is `reconnect_required`, which stops syncing until the person connects again.
+ * Gmail (`gmail-provider.ts`), IMAP/SMTP (`imap/provider.ts`) and Outlook through Microsoft Graph
+ * (`outlook/provider.ts`) implement it. An OAuth provider's `open()` renews its token through
+ * `persist`, and a refused grant is `reconnect_required`, which stops syncing until the person
+ * connects again.
  *
  * The capability matrix (`ProviderCapabilities`) is answered per account, because two IMAP
  * servers differ (one has an Archive folder, one does not); the app and the agent protocol read it
@@ -23,7 +24,7 @@ import type { GmailReason } from "../../shared/mail/gmail-reasons";
 
 /** What one account's provider can do. Every field is a fact about this account, not a promise. */
 export interface ProviderCapabilities {
-  /** Gmail labels (a message can be in several) or IMAP folders (a message is in exactly one). */
+  /** Gmail labels (a message can be in several) or IMAP and Outlook folders (a message is in exactly one). */
   organization: "labels" | "folders";
   /** Conversations as the provider keeps them, or derived here from Message-ID, In-Reply-To and References. */
   threads: "provider" | "headers";
@@ -39,7 +40,7 @@ export interface ProviderCapabilities {
   search: "cache";
   /** Who keeps the copy of sent mail in Sent: the provider itself, or this server (IMAP APPEND). */
   sentCopy: "provider" | "server";
-  /** How the person signs in: Google's consent page, or an app password typed once into Settings. */
+  /** How the person signs in: the provider's consent page (Google's, Microsoft's), or an app password typed once into Settings. */
   auth: "oauth" | "app-password";
   /** How new mail reaches this server: read on a schedule (no push in this release). */
   delivery: "poll";

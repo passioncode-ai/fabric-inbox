@@ -96,6 +96,15 @@ and [your deployment](#configure-your-deployment).
 - **Mail.** Read, reply, forward with attachments, To/Cc/Bcc, independent drafts with send
   recovery, star/archive/trash/restore, per-message external images, Gmail OAuth with cloud
   polling.
+- **Outlook.com and Microsoft 365.** Outlook, Hotmail, Live and Microsoft 365 mailboxes through
+  Microsoft Graph with the person's own Microsoft sign-in (Outlook.com no longer accepts
+  passwords from other mail apps since 2024-09-16). The owner registers an app in Microsoft
+  Entra once — Settings → Accounts → Connect account → Outlook lists every value to copy, saves
+  the client ID and secret on the server and warns 30 days before the secret ends — then each
+  account is connected in the browser. Read, triage, reply, forward with files, drafts, archive,
+  Junk Email and Deleted Items work as on Gmail; an organization that lets only its
+  administrators allow apps gets the approval link to send them
+  ([setup](docs/desktop-mail/setup.md#outlook-outlookcom-and-microsoft-365)).
 - **Other mail with an app password.** iCloud Mail, Yahoo, AOL, Fastmail, Zoho, Yandex, Mail.ru,
   GMX, Gmail with an app password, or any IMAP/SMTP server: Settings → Accounts → Connect
   account. The server checks the app password with the provider's IMAP and SMTP servers, keeps
@@ -112,7 +121,7 @@ and [your deployment](#configure-your-deployment).
   and catch-alls. Applying it is idempotent; the server can derive one from Cloudflare Email
   Routing so existing addresses keep forwarding to Gmail while their mail is collected here.
 
-Not yet: Outlook (Microsoft), IMAP push (IDLE; IMAP accounts are read every few minutes), bulk
+Not yet: push for IMAP and Outlook (IDLE, Graph change notifications; both are read every few minutes), bulk
 actions per group (L5), offline cache. See the [roadmap](docs/app-store/tasks/2026-09-28-roadmap.md).
 
 ## Run locally
