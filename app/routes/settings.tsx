@@ -7,7 +7,7 @@ import {
 	RobotIcon, UserCircleIcon, type Icon,
 } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
-import { Link, Navigate, useParams } from "react-router";
+import { Link, Navigate, useParams, type MetaArgs } from "react-router";
 import { DEFAULT_SECTION, SECTIONS, isSection, settingsPath, type SectionId } from "~/components/settings/paths";
 import { ConfirmProvider, WorkProvider } from "~/components/settings/ui";
 import { StepMemory } from "~/components/settings/sections/data";
@@ -23,9 +23,12 @@ import SpamSection from "~/components/settings/sections/SpamSection";
 import DiscardSection from "~/components/settings/sections/DiscardSection";
 import AgentAccessSection from "~/components/settings/sections/AgentAccessSection";
 import AppSection from "~/components/settings/sections/AppSection";
+import { metaT, useT } from "~/lib/i18n";
+import { msg } from "../../shared/i18n";
 
-export function meta() {
-	return [{ title: "Settings · Fabric Inbox" }];
+export function meta({ matches }: MetaArgs) {
+	const t = metaT(matches);
+	return [{ title: t("Settings · Fabric Inbox") }];
 }
 
 const ICONS: Record<SectionId, Icon> = {
@@ -33,7 +36,7 @@ const ICONS: Record<SectionId, Icon> = {
 	categories: FunnelSimpleIcon, spam: ProhibitIcon, discard: XCircleIcon, agents: RobotIcon, knowledge: BooksIcon, "agent-access": PlugIcon, app: GearSixIcon,
 };
 
-const GROUP_LABEL = { mail: "Mail", agents: "Agents", app: "This app" } as const;
+const GROUP_LABEL = { mail: msg("Mail"), agents: msg("Agents"), app: msg("This app") } as const;
 
 /**
  * SCR-02 Settings: one screen at /settings/:section/:id?/:tab?. The section list on the left is
@@ -42,6 +45,7 @@ const GROUP_LABEL = { mail: "Mail", agents: "Agents", app: "This app" } as const
  * page itself never scrolls (the 2026-10-06 audit: choosing a domain jumped to the top).
  */
 export default function Settings() {
+	const t = useT();
 	const { section, id, tab } = useParams();
 	// Steps of the last action on each domain outlive its panel and the section (DomainsSection).
 	const [steps, setSteps] = useState<Record<string, Step[]>>({});
@@ -59,17 +63,17 @@ export default function Settings() {
 		<ConfirmProvider>
 			<StepMemory.Provider value={memory}>
 				<div className="fi-settings">
-					<nav className="fi-settings-nav" aria-label="Settings sections">
-						<Link to="/" className="fi-nav-item fi-settings-back"><CaretLeftIcon size={16} /><span>Back to mail</span></Link>
+					<nav className="fi-settings-nav" aria-label={t("Settings sections")}>
+						<Link to="/" className="fi-nav-item fi-settings-back"><CaretLeftIcon size={16} /><span>{t("Back to mail")}</span></Link>
 						{(["mail", "agents", "app"] as const).map((group) => (
-							<div key={group} role="group" aria-label={GROUP_LABEL[group]} style={{ display: "contents" }}>
-								<div className="fi-settings-nav-group" aria-hidden="true">{GROUP_LABEL[group]}</div>
+							<div key={group} role="group" aria-label={t.text(GROUP_LABEL[group])} style={{ display: "contents" }}>
+								<div className="fi-settings-nav-group" aria-hidden="true">{t.text(GROUP_LABEL[group])}</div>
 								{SECTIONS.filter((s) => s.group === group).map((s) => {
 									const Icon = ICONS[s.id];
 									return (
 										<Link key={s.id} to={settingsPath(s.id)} preventScrollReset className="fi-nav-item"
 											aria-current={s.id === section ? "page" : undefined}>
-											<Icon size={18} aria-hidden="true" /><span>{s.label}</span>
+											<Icon size={18} aria-hidden="true" /><span>{t.text(s.label)}</span>
 										</Link>
 									);
 								})}

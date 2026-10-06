@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('fabricSetup', Object.freeze({
   retry: () => ipcRenderer.invoke('fabric:setup-retry'),
   openFile: () => ipcRenderer.invoke('fabric:setup-open-file'),
   connect: (id) => ipcRenderer.invoke('fabric:setup-connect', id),
+  // The interface language and its words (L10N-01): this window has no other way to know them.
+  locale: () => ipcRenderer.invoke('fabric:setup-locale'),
   // Creating a server in the person's own Cloudflare account (CF-5).
   cloudflare: Object.freeze({
     intro: () => ipcRenderer.invoke('fabric:cf-intro'),

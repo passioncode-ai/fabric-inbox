@@ -3,8 +3,10 @@
  * desktop menu and an old bookmark reaches a section through these helpers, so a link and the
  * redirect that keeps an old address working can never disagree.
  *
- * Plain module, no `~/` imports: the tests load it directly.
+ * Plain module, no `~/` imports: the tests load it directly. Labels are English, marked with
+ * `msg()`; the interface shows them through `t.text()`.
  */
+import { msg } from "../../../shared/i18n";
 
 export const SECTION_IDS = [
   "addresses", "domains", "accounts", "destinations", "agents", "knowledge", "categories", "spam", "discard", "agent-access", "app",
@@ -23,28 +25,28 @@ export interface SectionInfo {
 }
 
 export const SECTIONS: readonly SectionInfo[] = [
-  { id: "addresses", label: "Addresses", group: "mail",
-    description: "The addresses that receive mail here, who answers each one, and where its copy goes." },
-  { id: "domains", label: "Domains", group: "mail",
-    description: "Your domains on Cloudflare: the ones receiving mail here, and the rest one action away." },
-  { id: "accounts", label: "Accounts", group: "mail",
-    description: "Your mail accounts, and the Cloudflare accounts that hold your domains." },
-  { id: "destinations", label: "Forwarding destinations", group: "mail",
-    description: "Outside addresses a copy of each message may go to, once they confirm it." },
-  { id: "categories", label: "Categories", group: "mail",
-    description: "Views of the mail that matters, and the projects they can look at." },
-  { id: "spam", label: "Spam rules", group: "mail",
-    description: "What goes to Spam, and your lists of senders and domains." },
-  { id: "discard", label: "Discard rules", group: "mail",
-    description: "What you discarded teaches: mail like it goes straight to Discarded. Remove a rule, or always allow a sender." },
-  { id: "agents", label: "Agents", group: "agents",
-    description: "Agents answer mail on the addresses you give them, within their reply policy." },
-  { id: "knowledge", label: "Knowledge", group: "agents",
-    description: "Collections of documents your agents search when they answer." },
-  { id: "agent-access", label: "Agent access", group: "agents",
-    description: "Keys for AI agents you run elsewhere, and what they changed." },
-  { id: "app", label: "App", group: "app",
-    description: "Theme, your server, setups, and the desktop app." },
+  { id: "addresses", label: msg("Addresses"), group: "mail",
+    description: msg("The addresses that receive mail here, who answers each one, and where its copy goes.") },
+  { id: "domains", label: msg("Domains"), group: "mail",
+    description: msg("Your domains on Cloudflare: the ones receiving mail here, and the rest one action away.") },
+  { id: "accounts", label: msg("Accounts"), group: "mail",
+    description: msg("Your mail accounts, and the Cloudflare accounts that hold your domains.") },
+  { id: "destinations", label: msg("Forwarding destinations"), group: "mail",
+    description: msg("Outside addresses a copy of each message may go to, once they confirm it.") },
+  { id: "categories", label: msg("Categories"), group: "mail",
+    description: msg("Views of the mail that matters, and the projects they can look at.") },
+  { id: "spam", label: msg("Spam rules"), group: "mail",
+    description: msg("What goes to Spam, and your lists of senders and domains.") },
+  { id: "discard", label: msg("Discard rules"), group: "mail",
+    description: msg("What you discarded teaches: mail like it goes straight to Discarded. Remove a rule, or always allow a sender.") },
+  { id: "agents", label: msg("Agents"), group: "agents",
+    description: msg("Agents answer mail on the addresses you give them, within their reply policy.") },
+  { id: "knowledge", label: msg("Knowledge"), group: "agents",
+    description: msg("Collections of documents your agents search when they answer.") },
+  { id: "agent-access", label: msg("Agent access"), group: "agents",
+    description: msg("Keys for AI agents you run elsewhere, and what they changed.") },
+  { id: "app", label: msg("App"), group: "app",
+    description: msg("Theme, your server, setups, and the desktop app.") },
 ];
 
 export const isSection = (value: unknown): value is SectionId =>
