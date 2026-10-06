@@ -201,7 +201,8 @@ lists every domain of the connected account. Receiving here first:
   receiving the domain first when it was not (another provider's MX asks before it is replaced),
   the address, its rule (a disabled rule that points here is switched back on; with no token, a
   zone no token sees, or a rule Cloudflare refuses, the address is still made, marked **Not
-  receiving yet**, with the one fix), and the test message, checked every 5 seconds until it
+  receiving yet**, with the one fix; a rule made while the domain's Email Routing is off or
+  misconfigured reads **Not receiving yet** too, with **Fix it**, which turns it on again), and the test message, checked every 5 seconds until it
   arrives or 3 minutes pass. If the mailbox cannot be saved, a rule made for it is removed again.
   **Change** next to the copy picks another destination or none.
 - **Remove…** deletes the address's rule, then the mailbox and its mail, after a confirmation, and

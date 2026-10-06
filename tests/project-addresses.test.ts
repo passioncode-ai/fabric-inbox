@@ -319,6 +319,29 @@ test("created addresses carry their steps; with auto a refused rule keeps the ad
   assert.match(dots.body.error, /Two dots in a row/);
 });
 
+test("a rule made while Email Routing is off or broken for the domain says Not receiving yet with its fix, never done (SCN-062, SCN-065)", async () => {
+  const h = environment({ token: true });
+  for (const [state, pattern] of [[{ enabled: false }, /Email Routing is off/], [{ status: "misconfigured" }, /misconfigured/]] as const) {
+    const cf = cloudflare(state);
+    await withFetch(cf.fetcher, async () => {
+      const local = "enabled" in state ? "support" : "sales";
+      const r = await h.call("POST", "/api/project-addresses", { localPart: local, domain: "project.invalid", createRoute: "auto" });
+      assert.equal(r.status, 201, JSON.stringify(r.body));
+      const rule = r.body.steps.find((s: any) => s.id === "rule");
+      assert.equal(rule.outcome, "not_receiving", JSON.stringify(rule));
+      assert.match(rule.detail, pattern);
+      assert.deepEqual(rule.fix, { action: "open_domain", label: "Fix it" });
+      assert.ok(cf.calls.some((c) => c.method === "POST" && c.path === "/zones/zone1/email/routing/rules"), "the rule itself was made");
+    });
+  }
+  // A rule that already existed and receives is still "already", with no fix.
+  await withFetch(cloudflare({ rules: [literal("hello@project.invalid", toWorker)] }).fetcher, async () => {
+    const r = await h.call("POST", "/api/project-addresses", { localPart: "hello", domain: "project.invalid", createRoute: "auto" });
+    const rule = r.body.steps.find((s: any) => s.id === "rule");
+    assert.deepEqual([rule.outcome, rule.fix], ["already", undefined]);
+  });
+});
+
 test("several addresses are created one by one, each with its own result; a bad name never stops the others (SCN-064)", async () => {
   const h = environment();
   await h.call("POST", "/api/project-addresses", { localPart: "support", domain: "project.invalid" });

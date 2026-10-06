@@ -78,7 +78,8 @@ export interface StepFix { action: "route_here" | "connect_cloudflare" | "connec
 export interface AddressStep {
   id: "address" | "rule";
   label: string;
-  outcome: "done" | "already" | "skipped" | "failed";
+  /** not_receiving: the rule exists but the domain does not route mail here yet (Email Routing off or broken). */
+  outcome: "done" | "already" | "skipped" | "failed" | "not_receiving";
   detail: string;
   fix?: StepFix;
 }

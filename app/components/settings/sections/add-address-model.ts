@@ -154,6 +154,9 @@ export interface UiStep { id: string; label: string; outcome: UiOutcome; detail:
 
 export const STEP_MARK: Record<UiOutcome, string> = T.mark;
 
+/** The outcomes whose step offers its one fix beside it (SCN-065). */
+export const FIXABLE = new Set<UiOutcome>(["failed", "skipped", "not_receiving"]);
+
 /** The first step on a domain that does not receive here yet (SCN-063). */
 export function receiveStep(domain: string, state: { running: boolean; steps: Step[] | null; foreignMx: string[] | null; error: string | null }): UiStep {
   const label = T.stepReceive(domain);
@@ -196,6 +199,8 @@ export function stepsSentence(email: string, steps: UiStep[]): string {
   const address = steps.find((s) => s.id === "address");
   if (!address || address.outcome === "failed") return T.sentenceNotCreated(email, failed?.detail ?? "");
   if (failed) return T.sentencePartly(email, failed.label, failed.fix?.label ?? null);
+  const notReceiving = steps.find((s) => s.outcome === "not_receiving");
+  if (notReceiving) return T.sentenceNotReceiving(email, notReceiving.fix?.label ?? null);
   if (steps.some((s) => s.outcome === "running" || s.outcome === "waiting")) return T.sentenceWaiting(email);
   const test = steps.find((s) => s.id === "test");
   return test?.outcome === "done" ? T.sentenceReady(email) : T.sentenceCreated(email);

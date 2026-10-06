@@ -118,6 +118,11 @@ test("each step says what happened; the test is watched until it arrives (SCN-06
   assert.match(stepsSentence("a@acme.test", [done, { id: "rule", label: "Send its mail here", outcome: "failed", detail: "No.", fix: { action: "route_here", label: "Fix it" } }]),
     /was created; send its mail here did not happen\. Fix it fixes it\./);
   assert.match(stepsSentence("a@acme.test", [{ ...done, outcome: "failed", detail: "Taken." }]), /was not created\. Taken\./);
+  // A rule that exists while the domain does not route mail here is not a success (SCN-065).
+  const notReceiving = { id: "rule", label: "Send its mail here", outcome: "not_receiving" as const, detail: "Email Routing is off for acme.test.", fix: { action: "open_domain" as const, label: "Fix it" } };
+  assert.equal(ADD_ADDRESS_TEXT.mark.not_receiving, "Not receiving yet");
+  assert.match(stepsSentence("a@acme.test", [done, notReceiving]), /a@acme\.test was created; its mail does not arrive here yet\. Fix it fixes it\./);
+  assert.match(stepsSentence("a@acme.test", [done, notReceiving, testStep("off", null)]), /does not arrive here yet/, "an unasked test does not hide it");
   assert.match(stepsSentence("a@acme.test", [done, testStep("sent", t({}))]), /Waiting for the test message/);
 });
 
@@ -139,4 +144,7 @@ test("every entry point opens the one dialog, and the dialog keeps the keyboard 
   assert.match(dialog, /role="combobox"/, "the domain choice is a searchable combobox");
   assert.match(dialog, /aria-activedescendant/);
   assert.match(dialog, /TEST_POLL_MS/, "the test is polled");
+  assert.match(dialog, /FIXABLE\.has\(s\.outcome\)/, "a step's fix is offered whenever its outcome is fixable");
+  assert.match(readFileSync("app/components/settings/sections/add-address-model.ts", "utf8"), /FIXABLE = new Set<UiOutcome>\(\["failed", "skipped", "not_receiving"\]\)/,
+    "Not receiving yet carries its fix like a failed step");
 });

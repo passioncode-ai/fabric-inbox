@@ -11,7 +11,7 @@ import { settingsPath } from "../paths";
 import { Badge, Dialog, errorText, useNotify } from "../ui";
 import { refreshMail, useDestinations } from "./data";
 import {
-  DOMAIN_GROUPS, NAME_HINT, STEP_MARK, TEST_POLL_MS, agentLine, batchBody, createBody, displayNameOf, domainOptions, filterDomains,
+  DOMAIN_GROUPS, FIXABLE, NAME_HINT, STEP_MARK, TEST_POLL_MS, agentLine, batchBody, createBody, displayNameOf, domainOptions, filterDomains,
   nameView, receiveStep, startDomain, stepsSentence, testStep, testWaiting, type AddressForm, type DomainOption, type TestPhase, type UiStep,
 } from "./add-address-model";
 import { ADD_ADDRESS_TEXT as T } from "./add-address-text";
@@ -513,7 +513,7 @@ function RowSteps({ row, onFix, onTest, onClose, compact = false }: {
   const t = testStep(row.test, test.data ?? null, row.testError);
   const steps = row.created ? [...row.steps, t] : row.steps;
   const actionFor = (s: UiStep) =>
-    s.fix && (s.outcome === "failed" || s.outcome === "skipped") ? <FixButton fix={s.fix} onRun={() => onFix(row, s.fix!)} onClose={onClose} /> :
+    s.fix && FIXABLE.has(s.outcome) ? <FixButton fix={s.fix} onRun={() => onFix(row, s.fix!)} onClose={onClose} /> :
     s.id === "test" && s.outcome === "not_asked" ? <button type="button" className="fi-text-button" onClick={() => onTest(row.email)}>{T.sendTest}</button> :
     s.id === "test" && s.outcome === "failed" ? <>
       <button type="button" className="fi-text-button" onClick={() => onTest(row.email)}>{T.sendAgain}</button>
@@ -538,7 +538,7 @@ function RowSteps({ row, onFix, onTest, onClose, compact = false }: {
 }
 
 const OUTCOME_TONE: Record<UiStep["outcome"], "ok" | "warn" | "bad" | "busy" | "neutral"> = {
-  done: "ok", already: "ok", skipped: "warn", failed: "bad", waiting: "busy", running: "busy", not_asked: "neutral",
+  done: "ok", already: "ok", skipped: "warn", failed: "bad", not_receiving: "warn", waiting: "busy", running: "busy", not_asked: "neutral",
 };
 
 function FixButton({ fix, onRun, onClose }: { fix: StepFix; onRun: () => void; onClose: () => void }) {

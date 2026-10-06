@@ -1319,7 +1319,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   4. Done -> the dialog closes and the focus moves to the address's panel.
 - **Expected result:** One surface shows that the address exists, that Cloudflare sends its mail here, and that a real message arrived — or exactly which of the three did not happen.
 - **Alt paths:** Add another keeps the domain and the settings and starts a new address; a test that is not ticked is offered again as Send a test message.
-- **UI elements:** SCR-02; the step list (Done, Already so, Nothing to do, Not done, Waiting), Send a test message, Done, Add another.
+- **UI elements:** SCR-02; the step list (Done, Already so, Skipped, Not done, Not receiving yet, Waiting), Send a test message, Done, Add another.
 - **States covered:** loading, error, success
 - **Errors & recovery:** Every failed step says what happened, what was kept and the one action that fixes it; a test not arrived after 3 minutes is reported as not arrived with Check routing; a test the provider refused names the provider's reason.
 - **Status:** draft
@@ -1374,8 +1374,8 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** SCR-02 (the step list; the address's Routing & test tab)
 - **Preconditions:** An address was created and its rule was not made: the server has no token, none of its tokens sees the zone, or Cloudflare refused.
 - **Steps:**
-  1. The rule step reads Not done (or Nothing to do) with the reason in words: no token yet; the token cannot see <domain>; Cloudflare's own message.
-  2. Its one fix is beside it: Connect Cloudflare, Connect its account, or Fix it, which makes the rule again.
+  1. The rule step reads Not done (or Skipped) with the reason in words: no token yet; the token cannot see <domain>; Cloudflare's own message. When the rule was made but Email Routing is off or misconfigured for the domain, it reads Not receiving yet — never Done — and says so.
+  2. Its one fix is beside it: Connect Cloudflare, Connect its account, or Fix it, which makes the rule again (or, for Not receiving yet, runs Receive mail here for the domain again).
   3. The address in the list and on its panel shows Not receiving yet until routing is verified.
 - **Expected result:** Nothing half-done is left silent: the address is kept, it says it does not receive yet, and one action fixes it.
 - **Alt paths:** The domain's catch-all already sends its mail here: the step says no rule was needed and the address receives.

@@ -418,4 +418,5 @@ The one dialog that creates addresses (SCN-021, SCN-061…065): the live check, 
 | action.address.try_again | Change and try again | app/components/settings/sections/add-address-text.ts | SCN-062 | proposed |
 | action.address.add_another | Add another | app/components/settings/sections/add-address-text.ts | SCN-062 | proposed |
 | state.routing.missing | Not receiving yet | app/components/settings/sections/data.ts | SCN-065 | proposed |
+| state.address.rule_not_receiving | Not receiving yet | app/components/settings/sections/add-address-text.ts | SCN-065 | proposed |
 | action.routing.fix | Fix it | app/components/settings/sections/add-address-text.ts | SCN-065 | proposed |

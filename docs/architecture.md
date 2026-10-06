@@ -317,7 +317,9 @@ call made is removed again when the mailbox cannot be saved; a zone the token ca
 address with a warning; the catch-all in effect (the deployment's `UNKNOWN_ADDRESS_POLICY` wins
 over the stored choice) cannot be removed; what happens to the next message is read from
 Cloudflare after the rule is gone. Since 0.12 (WS7) creating answers its `steps` (address, rule —
-each done, already, skipped or failed with a `fix`); with `createRoute: "auto"` a rule that cannot be
+each done, already, skipped or failed with a `fix`, or `not_receiving` with the domain's fix when
+the rule exists but Email Routing is off or misconfigured for the domain, so a rule is never shown
+done while no mail can arrive); with `createRoute: "auto"` a rule that cannot be
 made no longer costs the address (with `true` it still does). `checkAddresses`
 (`GET /api/project-addresses/check`) reads Cloudflare once for a domain and several names
 (`EmailRoutingClient.routingFor`) and says per name available, exists, elsewhere or invalid;

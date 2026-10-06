@@ -44,7 +44,11 @@ export async function effectiveCatchAll(env: Env, domain: string): Promise<{ mai
 export interface AddressStep {
   id: "address" | "rule";
   label: string;
-  outcome: "done" | "already" | "skipped" | "failed";
+  /**
+   * not_receiving: the rule was made (or was there) but the domain does not route mail here
+   * (Email Routing off or misconfigured), so the address receives nothing until that is fixed.
+   */
+  outcome: "done" | "already" | "skipped" | "failed" | "not_receiving";
   detail: string;
   /** The one action that fixes a step that did not happen (SCN-065). */
   fix?: StepFix;
@@ -105,7 +109,9 @@ export async function createAddress(env: Env, input: CreateAddressInput, agentPr
       const ensured = await client.ensureRule(email);
       routing = ensured.status;
       madeRule = ensured.created;
-      rule = { id: "rule", label: RULE_LABEL, outcome: ensured.created ? "done" : "already", detail: routing.detail,
+      // A rule that exists while the domain does not route mail here is not a success: say so,
+      // with the fix that turns Email Routing on again (SCN-065).
+      rule = { id: "rule", label: RULE_LABEL, outcome: routing.state === "missing" ? "not_receiving" : ensured.created ? "done" : "already", detail: routing.detail,
         ...(routing.state === "verified" ? {} : { fix: { action: "open_domain" as const, label: "Fix it" } }) };
     } catch (error) {
       if (error instanceof ZoneNotVisible) {
