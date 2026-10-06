@@ -296,6 +296,21 @@ inbox, its counts and categories; kept 30 days.
 | Routes and tools | `workers/routes/discard.ts`; tools `discard_messages`, `restore_discarded`, `list_discard_rules`, `remove_discard_rule`, `update_discard_allow_list`, `list_messages` folder `discarded` | the shared routes are outside a mailbox-limited key's reach (they teach the whole workspace) |
 | Screens | the Discarded folder in the unified feed; Settings → Discard rules (`app/components/settings/sections/DiscardSection.tsx`, SCR-16) | each row says why it is there; Not discarded names the rule to stop |
 
+## Languages (0.12, WS9)
+
+The interface speaks English and Russian (fabric-workspace knowledge/localization.md, L10N-01…06).
+English is the source text and the key; nothing a server stores or an agent reads changes language.
+
+| Piece | Where | What it guarantees |
+|---|---|---|
+| The core | `shared/i18n/index.ts` | `t("Refresh")`, named placeholders, `t.plural` with `Intl.PluralRules` (Russian one/few/many from one dictionary entry `a|b|c`), `t.rich` for elements inside a sentence, dates/numbers/lists through `Intl` in `ru-RU` (English output unchanged), `msg()` to mark English written outside `t()`, `t.text()` to show a finished English sentence in the language (exact entry, else the template it was filled from, its values translated too); a missing entry shows English, never a key; `[menu] Edit`-style context keys for one word with two meanings |
+| The dictionary | `shared/i18n/ru/*.ts`, merged in `ru/index.ts` | English → Russian, one file per part of the product, a key in exactly one file; terms from `docs/brand/terminology.md` (Russian) |
+| Choosing the language | `app/root.tsx` (loader, `shouldRevalidate` false), `shared/i18n/server.ts`, `app/lib/i18n.tsx`, Settings → App → Language | the server renders the first page in `?lang=`, else the `fabric-inbox-locale` cookie, else Accept-Language (first preferred language `ru`/`ru-*` → Russian); `<html lang>` follows; a choice is kept per device in localStorage and mirrored in the cookie and the Mac app's file, and the page reloads once to show it |
+| The server's words | `msg()` in `workers/` and `shared/`; `t.text()` where `app/` shows them | a refusal, a step's detail, a stored reason is English on the wire, in MCP answers and in logs, and Russian where a person reads it (L10N-04) |
+| The server's own pages | `workers/gmail-setup/result-page.ts`, `workers/microsoft-setup/result-page.ts` | the page after a Gmail or Outlook sign-in renders in the language the connect started with (kept beside the sign-in's state; the system browser has none of the app's cookies), else the browser's |
+| The Mac app | `desktop/i18n.cjs`, `desktop/locales/ru.json` (generated), `desktop/setup.js` (`data-i18n` in `setup.html`), `fabric:locale`/`fabric:locale-set` (mail window) and `fabric:setup-locale` (first-run window) | menus, dialogs, connect prompts, server creation and the first-run window follow `<userData>/locale.json` (written when the person chooses in Settings), else the system's preferred languages; the menus are rebuilt at once |
+| The guard | `scripts/check-locale.mjs`, `tests/i18n.test.ts`, `tests/i18n-render.test.ts` | every wrapped string has a Russian entry with the same placeholders (and HTML tags), plural entries have three forms, no unused entry, the Mac app's copy is current, and no English literal sits in JSX text or in `title`, `aria-label`, `placeholder`, `alt`, `label` of `app/**/*.tsx` |
+
 ## Delivery guarantees
 
 | Path | Guarantee | Where |

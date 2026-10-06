@@ -78,6 +78,7 @@
 | SCN-073 | Mail like discarded mail goes to Discarded on arrival | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
 | SCN-074 | Bring a discarded message back | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
 | SCN-075 | Keep the discard rules | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
+| SCN-076 | Use the app in Russian or English | Resume and manage preferences | P-01 | ST-007, FLW-07 | validated | not audited |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1525,3 +1526,24 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** app/components/settings/sections/DiscardSection.tsx, workers/routes/discard.ts, tests/discard-workerd.test.ts, tests/triage-text.test.ts
 - **Product:** unobserved
 - **Today:** Built in 0.12 (WS8); seen in the local Worker on 2026-10-06.
+
+### SCN-076: Use the app in Russian or English
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07, JTBD-01; operator decision 2026-10-06 ("Нужен перевод на русский"); fabric-workspace knowledge/localization.md L10N-01…06
+- **Entry point:** SCR-02 (Settings → App → Language)
+- **Preconditions:** None.
+- **Steps:**
+  1. Open the app on a device whose first preferred language is Russian (ru, ru-*) -> the mail list, Settings, the dialogs, the Mac app's menus and first-run window, and the pages the server shows after a Gmail or Outlook sign-in are in Russian; on any other language they are in English.
+  2. Open Settings → App → Language -> System (with the language it resolves to), English, Русский; the current choice is ticked.
+  3. Choose one -> the choice is kept on this device, the page reloads in that language; in the Mac app its menus follow at once and its first-run window on next open.
+  4. Choose System -> the device's language decides again.
+- **Expected result:** Every word a person reads is in the chosen language: counts with their real plural forms («1 письмо, 2 письма, 5 писем»), dates and numbers in its format, the server's refusals shown in it. What is sent and stored does not change language: mail, agents' answers, what agents read (MCP), logs.
+- **Alt paths:** A word the dictionary does not have shows in English, never as a key. A sign-in in the system browser, which has none of the app's cookies, follows the language the connect started with, else the browser's own languages.
+- **UI elements:** SCR-02 App → Language (radio group); the Mac app's menus.
+- **States covered:** success, error
+- **Errors & recovery:** A device that cannot keep the choice says so and stays in its current language; a page rendered in another language than the choice reloads once to follow it.
+- **Status:** validated
+- **Coverage:** shared/i18n/index.ts, shared/i18n/server.ts, shared/i18n/ru/, app/lib/i18n.tsx, app/root.tsx (loader, useLocaleSync), app/components/settings/sections/AppSection.tsx (LanguagePanel), desktop/i18n.cjs, desktop/main.cjs (fabric:locale, fabric:locale-set), desktop/setup.js, scripts/check-locale.mjs, tests/i18n.test.ts, tests/i18n-render.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS9); walked in Russian in the local Worker on 2026-10-07.

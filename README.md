@@ -127,6 +127,11 @@ and [your deployment](#configure-your-deployment).
   storage and sign-in in your own account, then opens it. A setup file or an existing server's
   address also works (a personal build can carry its owner's setup);
   native menus, per-server session and connection recovery; a Mac App Store packaging path.
+- **English and Russian.** Every screen, dialog and message, the Mac app's menus and first-run
+  window, and the pages after a Gmail or Outlook sign-in follow the device's language (Russian for
+  `ru`, `ru-*`, English otherwise); Settings → App → Language chooses System, English or Русский
+  per device. Counts, dates and numbers follow the language; the server's refusals are shown in it.
+  Mail, agents' answers and what agents read keep their own language.
 - **Setups.** One file brings a server up: domains, addresses, their agents, forwarding copies
   and catch-alls. Applying it is idempotent; the server can derive one from Cloudflare Email
   Routing so existing addresses keep forwarding to Gmail while their mail is collected here.

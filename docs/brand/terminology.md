@@ -129,3 +129,59 @@ Contract: brand-contract v1
 | Archive (from the keyboard) | Delete or Backspace: out of the inbox into Archive and marked read |
 | Keyboard shortcuts | The help (?) listing every key the mail list answers to |
 | Light theme / Dark theme | Appearance preference; no change to message, account or send state |
+
+## Russian (locale ru)
+
+One Russian word per product term, used in every screen, the Mac app and the server's pages
+([locales/ru.md](locales/ru.md); the shared organization terms come from fabric-workspace
+knowledge/localization.md and are identical across products: аккаунт, вход, правило, «Устанавливать
+обновления автоматически», «Перезапустить для обновления», «Завершить», «Связка ключей», «Терминал»).
+A new term joins this table before its first use in `shared/i18n/ru/`.
+
+| English | Русский | Never write |
+|---|---|---|
+| Inbox / All inboxes | Входящие / Все входящие | Инбокс |
+| Archive (folder / action) | Архив / Архивировать | |
+| Discarded / Discard (⌘⌫) | Выброшенные / Выбросить | Отброшенные, Корзина (for this folder) |
+| Not discarded (bring back) | Вернуть | |
+| Discard rule(s) | правило выбрасывания / Правила выбрасывания | |
+| Stop discarding mail like this | Больше не выбрасывать такую почту | |
+| Always allow | Всегда пропускать | белый список |
+| Spam / Report spam / Not spam | Спам / Это спам / Не спам | Нежелательная почта |
+| Always spam / Never spam | Всегда спам / Никогда не спам | |
+| Spam rules | Правила спама | |
+| Trash / Sent / Drafts | Корзина / Отправленные / Черновики | |
+| Focus / Important | Фокус / Важное | |
+| Your addresses | Ваши адреса | |
+| Settings | Настройки | Параметры |
+| Addresses / Add address | Адреса / Добавить адрес | Создать алиас, ящик |
+| Domains | Домены | |
+| Accounts / account | Аккаунты / аккаунт | учётная запись (in running text) |
+| Connect account / Disconnect | Подключить аккаунт / Отключить | |
+| Forwarding destination | адрес пересылки | |
+| Agents / Agent | Агенты / агент | бот |
+| Agent access / Agent key | Доступ агентов / ключ агента | API-ключ, токен (for an agent key) |
+| Outside agent | внешний агент | интеграция |
+| Drafts only / Can send | Только черновики / Может отправлять | |
+| Revoke | Отозвать | Удалить ключ |
+| Reply policy | правила ответа | автоответ |
+| Rule / Run / Dry-run | правило / запуск / Пробный запуск | рецепт |
+| Knowledge / Knowledge collection / Passage | Знания / коллекция знаний / фрагмент | база знаний (for one set), чанк |
+| Category / Project | категория / проект | фильтр, ярлык |
+| App password | пароль приложения | пароль почты |
+| IMAP account / Other mail (IMAP) | аккаунт IMAP / Другая почта (IMAP) | |
+| Outlook account / App registration / Client secret | аккаунт Outlook / регистрация приложения / секрет клиента | |
+| Administrator's approval | одобрение администратора | admin consent |
+| Test message | тестовое письмо | пинг |
+| Fix it | Исправить | Починить |
+| Arriving here / Not receiving yet / Routing unknown | Приходит сюда / Пока не получает / Маршрут неизвестен | |
+| Receive mail here / Bring them here | Получать почту здесь / Перенести сюда | |
+| Catch-all | общий ящик | catch-all (to a user) |
+| Check for new mail / Live | Проверить почту / Сразу | Синхронизировать |
+| Keyboard shortcuts | Сочетания клавиш | Горячие клавиши |
+| Your server / Server address | ваш сервер / Адрес сервера | бэкенд, инстанс |
+| Cloudflare API token | API-токен Cloudflare | ключ Cloudflare |
+| Setup (the setup file) | конфигурация | сетап |
+| Queued / Sent / Accepted / Outcome unknown | В очереди / Отправлено / Принято / Результат неизвестен | Доставлено (for Accepted) |
+| Usage counts | счётчики использования | телеметрия |
+| Language: System / English / Русский | Язык: Системный / English / Русский | the language names are written in their own language |

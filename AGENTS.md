@@ -79,6 +79,13 @@ npm run mcp:docs                                       # the agent protocol's to
   the skill in `plugins/fabric-inbox/` is updated when a workflow changes. `npm test` fails until
   all three agree (`tests/mcp-coverage.test.ts`, `tests/mcp-docs.test.ts`, `tests/mcp-skill.test.ts`).
   The plugin's version is the app's version; a release ships both.
+- **Every word a person reads goes through the dictionary, in the same change** (operator, 2026-10-06;
+  fabric-workspace knowledge/localization.md). Write English inside `t("…")` (React: `useT()`), counts
+  with `t.plural`, server sentences with `msg("…", { value })` shown through `t.text()`, and add the
+  Russian to its file in `shared/i18n/ru/` following `docs/brand/locales/ru.md` and the Russian terms in
+  `docs/brand/terminology.md`. `node scripts/check-locale.mjs` (run by `npm test`) fails on a missing or
+  mismatched entry and on an English literal left in JSX; `--write` refreshes the Mac app's copy
+  (`desktop/locales/ru.json`). MCP tool texts, logs and code stay English.
 - The local backlog is the P6/L/W status authority; the audit board owns B-series rows. The T, REQ and R tables in older packets are frozen
   (`docs/DOCMAP.md`).
 - Signing and notarization keys stay outside Git (`README.md`, "Install on a Mac").
