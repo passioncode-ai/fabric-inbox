@@ -8,6 +8,7 @@ import { CloudflareApiError } from "../routing/cloudflare-api";
 import { checkGoogleClient, type Check } from "../gmail-setup/google-check";
 import { newCredentialKey, writeGmailSettings } from "../gmail-setup/server-settings";
 import { GOOGLE_CONSOLE, GOOGLE_HELP, gmailSetupValues } from "../../shared/mail/gmail-setup";
+import { msg } from "../../shared/i18n";
 import { gmailApiUrl, projectNumberOf } from "../../shared/mail/gmail-reasons";
 
 /**
@@ -19,8 +20,8 @@ import { gmailApiUrl, projectNumberOf } from "../../shared/mail/gmail-reasons";
 export const gmailSetupRouter = new Hono<{ Bindings: Env }>();
 type C = Context<{ Bindings: Env }>;
 
-const NO_TOKEN = "This server has no Cloudflare API token of its own, so it cannot change its own settings. Set the Gmail settings with wrangler instead (docs/desktop-mail/setup.md → Gmail).";
-const NOT_HTTPS = "Gmail needs this server's HTTPS address. Open the app at its https:// address and set up Gmail there.";
+const NO_TOKEN = msg("This server has no Cloudflare API token of its own, so it cannot change its own settings. Set the Gmail settings with wrangler instead (docs/desktop-mail/setup.md → Gmail).");
+const NOT_HTTPS = msg("Gmail needs this server's HTTPS address. Open the app at its https:// address and set up Gmail there.");
 
 const originOf = (c: C) => new URL(c.req.url).origin;
 const httpsOrigin = (c: C) => new URL(c.req.url).protocol === "https:";
@@ -62,7 +63,7 @@ export const GmailSetupInput = z.object({
 /** Checks the client with Google, then keeps it (and a credential key if the server has none). */
 gmailSetupRouter.put("/api/gmail-setup", async (c) => {
   const parsed = GmailSetupInput.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: "Paste the client ID and the client secret of your Google OAuth client." }, 400);
+  if (!parsed.success) return c.json({ error: msg("Paste the client ID and the client secret of your Google OAuth client.") }, 400);
   if (!httpsOrigin(c)) return c.json({ error: NOT_HTTPS }, 400);
   const accounts = new CloudflareAccounts(c.env);
   const api = accounts.primary();
@@ -86,15 +87,15 @@ gmailSetupRouter.put("/api/gmail-setup", async (c) => {
   } catch (error) {
     console.error(JSON.stringify({ event: "gmail_setup_write_failed", error: (error as Error).message }));
     if (error instanceof CloudflareApiError)
-      return c.json({ error: `${error.message} Nothing was changed on your server.` }, error.isPermission ? 403 : 502);
-    return c.json({ error: "Your server could not save the Gmail settings. Nothing was changed; try again." }, 502);
+      return c.json({ error: msg("{error} Nothing was changed on your server.", { error: error.message }) }, error.isPermission ? 403 : 502);
+    return c.json({ error: msg("Your server could not save the Gmail settings. Nothing was changed; try again.") }, 502);
   }
   console.log(JSON.stringify({ event: "gmail_setup_saved", keyCreated: !!credentialKey, checks: summary(check.checks) }));
   return c.json({
     saved: true,
     keyCreated: !!credentialKey,
     checks: check.checks,
-    note: "Your server starts using the Gmail settings within a few seconds.",
+    note: msg("Your server starts using the Gmail settings within a few seconds."),
     ...(pending ? { warning: `${pending.message} ${pending.fix ?? ""}`.trim() } : {}),
   }, 202);
 });
@@ -108,8 +109,8 @@ gmailSetupRouter.get("/api/gmail-setup/check", async (c) => {
   const checks: Check[] = [...check.checks];
   if (config.origin !== originOf(c))
     checks.push({ id: "redirect_uri", status: "failed",
-      message: `Gmail is set up for ${config.origin}, but this app is open at ${originOf(c)}; connecting works only at the address Gmail was set up for.`,
-      fix: "Open the app at that address, or save the Gmail setup again from here (and add this address's redirect URI to the client)." });
+      message: msg("Gmail is set up for {origin}, but this app is open at {current}; connecting works only at the address Gmail was set up for.", { origin: config.origin, current: originOf(c) }),
+      fix: msg("Open the app at that address, or save the Gmail setup again from here (and add this address's redirect URI to the client).") });
   const ok = checks.every((x) => x.status === "ok");
   console.log(JSON.stringify({ event: "gmail_setup_checked", ok, checks: summary(checks) }));
   return c.json({ configured: true, ok, checks });

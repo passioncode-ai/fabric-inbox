@@ -245,3 +245,24 @@ test("the self-test reports the address, the secret's date and Microsoft's own a
   const unset = (await (await setup("/api/microsoft-setup/check", {})).json()) as { configured: boolean };
   assert.equal(unset.configured, false);
 });
+
+test("an Outlook sign-in keeps its language for the page Microsoft sends the person back to", async () => {
+  const stub = { beginOutlookConnect: async () => ({ authorizationUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?x=1", browserToken: "tok" }),
+    outlookCallback: async () => ({ id: "o1", email: "me@example.invalid" }) };
+  const start = await accountsRouter.request(`${ORIGIN}/api/accounts/outlook/connect?lang=ru`, {}, env(stub) as never);
+  assert.equal(start.status, 302);
+  assert.match(start.headers.get("Set-Cookie")!, /__Host-fabric-outlook-lang=ru; Max-Age=600; Path=\/; HttpOnly; Secure; SameSite=Lax/);
+  const ru = await callback("state=s&code=c", stub, "__Host-fabric-outlook-state=b; __Host-fabric-outlook-lang=ru");
+  assert.match(ru.html, /<html lang="ru">/);
+  assert.match(ru.html, /Outlook подключён/);
+  const denied = await callback("state=s&error=access_denied", { outlookCallback: fail("oauth_denied") }, "__Host-fabric-outlook-state=b; __Host-fabric-outlook-lang=ru");
+  assert.match(denied.html, /Outlook не подключён/);
+  assert.match(denied.html, /href="\/api\/accounts\/outlook\/connect\?lang=ru"/, "connecting again keeps the language");
+  const en = await callback("state=s&code=c", stub);
+  assert.match(en.html, /<html lang="en">/);
+  assert.match(en.html, /Outlook is connected/);
+  // An administrator's approval ends in their own browser: its language decides.
+  const admin = await accountsRouter.request(`${ORIGIN}/api/accounts/outlook/callback?admin_consent=True&tenant=t`,
+    { headers: { "Accept-Language": "ru" } }, env(stub) as never);
+  assert.match(await admin.text(), /Ваша организация теперь разрешает Fabric Inbox/);
+});

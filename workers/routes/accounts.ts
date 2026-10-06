@@ -14,11 +14,21 @@ import { ImapConnectBody, ImapPasswordBody } from "../providers/imap/connect";
 import { authorizeOutcome, microsoftConfiguration } from "../providers/outlook/oauth";
 import { renderOutlookResult } from "../microsoft-setup/result-page";
 import { OUTLOOK_CONNECT_PATH } from "../../shared/mail/microsoft-setup";
+import { createT, type Locale, type T } from "../../shared/i18n";
+import { requestLocale } from "../../shared/i18n/server";
 
 /** Mount behind the app's Cloudflare Access middleware, before the SSR fallback. */
 export const accountsRouter = new Hono<{ Bindings: GmailBindings }>();
 const cookie = "__Host-fabric-gmail-state";
 const outlookCookie = "__Host-fabric-outlook-state";
+/**
+ * The language a sign-in started in, kept beside its state cookie for the same ten minutes: the
+ * callback's page speaks it (L10N-01). Google and Microsoft send the person back to the callback
+ * with no language of their own, and the system browser has none of the app's cookies, so the
+ * connect request's `?lang=`, `fabric-inbox-locale` cookie or Accept-Language is what is kept.
+ */
+const gmailLocaleCookie = "__Host-fabric-gmail-lang";
+const outlookLocaleCookie = "__Host-fabric-outlook-lang";
 accountsRouter.use("/api/accounts/*", async (c, next) => {
   c.header("Cache-Control", "no-store");
   c.header("Referrer-Policy", "no-referrer");
@@ -181,30 +191,44 @@ accountsRouter.put("/api/accounts/:accountId/password", async (c) => {
   return c.json(await stub(c.env).updateImapPassword(c.req.param("accountId"), parsed.data.password));
 });
 /** The browser's side of connecting: every answer is a page a person can act on (result-page.ts). */
-const pageFor = (c: Context<{ Bindings: GmailBindings }>, outcome: string, extra: { email?: string; accessUntil?: number; googleError?: string } = {}) => {
+const pageFor = (c: Context<{ Bindings: GmailBindings }>, t: T, outcome: string, extra: { email?: string; accessUntil?: number; googleError?: string } = {}) => {
   const config = configuration(c.env);
   const page = renderResult({ outcome, ...extra, projectNumber: projectNumberOf(c.env.GOOGLE_CLIENT_ID),
-    ...(config.status === "configured" ? { origin: config.origin, redirectUri: config.redirectUri } : {}) });
+    ...(config.status === "configured" ? { origin: config.origin, redirectUri: config.redirectUri } : {}) }, t);
   // Through the context, so a cookie set or cleared on it travels with the page.
   return c.body(page.html, page.status as 200, page.headers);
 };
+/** The translator for this request's own language (`?lang=`, the app's cookie, Accept-Language). */
+const requestT = (c: Context<{ Bindings: GmailBindings }>) => createT(requestLocale(c.req.raw));
+/** Keeps the language a sign-in starts in, beside its state cookie. */
+const keepLocale = (c: Context<{ Bindings: GmailBindings }>, name: string) => setCookie(c, name, requestLocale(c.req.raw), browserCookie);
+/**
+ * The language a sign-in started in; the callback request's own when none was kept (another
+ * browser, more than ten minutes) or the value is not a language this app speaks.
+ */
+const startedT = (c: Context<{ Bindings: GmailBindings }>, name: string, clear: boolean): T => {
+  const kept = getCookie(c, name);
+  if (clear) deleteCookie(c, name, { path: "/", secure: true });
+  return kept === "en" || kept === "ru" ? createT(kept satisfies Locale) : requestT(c);
+};
 const codeOf = (error: unknown) => (error instanceof ProviderError ? error.code : (error as Error)?.message) || "account_service_unavailable";
 accountsRouter.get("/api/accounts/gmail/connect", async (c) => {
+  const t = requestT(c);
   const config = configuration(c.env);
-  if (config.status !== "configured") return pageFor(c, "not_configured");
-  if (new URL(c.req.url).origin !== config.origin) return pageFor(c, "invalid_origin");
+  if (config.status !== "configured") return pageFor(c, t, "not_configured");
+  if (new URL(c.req.url).origin !== config.origin) return pageFor(c, t, "invalid_origin");
   let result: { authorizationUrl: string; browserToken: string };
   try {
     result = await stub(c.env).beginConnect();
   } catch (error) {
-    return pageFor(c, codeOf(error));
+    return pageFor(c, t, codeOf(error));
   }
   // Google shows a dead end of its own for a redirect URI or client it does not know; this server
   // says what to change instead, before the person leaves for Google.
   const problem = await authorizationProblem(result.authorizationUrl);
   if (problem) {
     console.warn(JSON.stringify({ event: "gmail_connect_blocked", problem }));
-    return pageFor(c, problem);
+    return pageFor(c, t, problem);
   }
   setCookie(c, cookie, result.browserToken, {
     httpOnly: true,
@@ -213,6 +237,7 @@ accountsRouter.get("/api/accounts/gmail/connect", async (c) => {
     path: "/",
     maxAge: 600,
   });
+  keepLocale(c, gmailLocaleCookie);
   return c.redirect(result.authorizationUrl, 302);
 });
 accountsRouter.post("/api/accounts/gmail/connect", async (c) => {
@@ -224,14 +249,16 @@ accountsRouter.post("/api/accounts/gmail/connect", async (c) => {
     path: "/",
     maxAge: 600,
   });
+  keepLocale(c, gmailLocaleCookie);
   return c.json({ authorizationUrl: result.authorizationUrl });
 });
 accountsRouter.get("/api/accounts/gmail/callback", async (c) => {
   const config = configuration(c.env);
-  if (config.status !== "configured") return pageFor(c, "not_configured");
-  if (new URL(c.req.url).origin !== config.origin) return pageFor(c, "invalid_origin");
+  if (config.status !== "configured") return pageFor(c, startedT(c, gmailLocaleCookie, false), "not_configured");
+  if (new URL(c.req.url).origin !== config.origin) return pageFor(c, startedT(c, gmailLocaleCookie, false), "invalid_origin");
   const browserToken = getCookie(c, cookie) || "";
   deleteCookie(c, cookie, { path: "/", secure: true });
+  const t = startedT(c, gmailLocaleCookie, true);
   // Google's own word for a refusal, shown only from a fixed list: the query is not page content.
   const googleError = c.req.query("error");
   const known = googleError && /^[a-z_]{1,40}$/.test(googleError) ? googleError : googleError ? "unknown_error" : undefined;
@@ -244,38 +271,41 @@ accountsRouter.get("/api/accounts/gmail/callback", async (c) => {
     );
     console.log(JSON.stringify({ event: "gmail_connected", limited: !!account.accessUntil }));
     // A fixed page, not a redirect: OAuth parameters cannot choose where the browser goes next.
-    return pageFor(c, "connected", { email: account.email, accessUntil: account.accessUntil });
+    return pageFor(c, t, "connected", { email: account.email, accessUntil: account.accessUntil });
   } catch (error) {
     const code = codeOf(error);
     console.warn(JSON.stringify({ event: "gmail_connect_failed", error: code, googleError: known ?? null }));
-    return pageFor(c, code, { googleError: known });
+    return pageFor(c, t, code, { googleError: known });
   }
 });
 // ── Outlook (Microsoft Graph): the same browser flow as Gmail's, against Microsoft's sign-in ──
-const outlookPage = (c: Context<{ Bindings: GmailBindings }>, outcome: string, extra: { email?: string } = {}) => {
+const outlookPage = (c: Context<{ Bindings: GmailBindings }>, t: T, outcome: string, extra: { email?: string } = {}) => {
   const config = microsoftConfiguration(c.env);
   const page = renderOutlookResult({ outcome, ...extra,
-    ...(config.status === "configured" ? { origin: config.origin, redirectUri: config.redirectUri, clientId: config.clientId } : {}) });
+    ...(config.status === "configured" ? { origin: config.origin, redirectUri: config.redirectUri, clientId: config.clientId } : {}) }, t);
   return c.body(page.html, page.status as 200, page.headers);
 };
 const browserCookie = { httpOnly: true, secure: true, sameSite: "Lax" as const, path: "/", maxAge: 600 };
 /** SCN-058: opens Microsoft's sign-in for a new (or the same) Outlook account. */
 accountsRouter.get("/api/accounts/outlook/connect", async (c) => {
+  const t = requestT(c);
   const config = microsoftConfiguration(c.env);
-  if (config.status !== "configured") return outlookPage(c, "not_configured");
-  if (new URL(c.req.url).origin !== config.origin) return outlookPage(c, "invalid_origin");
+  if (config.status !== "configured") return outlookPage(c, t, "not_configured");
+  if (new URL(c.req.url).origin !== config.origin) return outlookPage(c, t, "invalid_origin");
   let result: { authorizationUrl: string; browserToken: string };
   try {
     result = await stub(c.env).beginOutlookConnect();
   } catch (error) {
-    return outlookPage(c, codeOf(error));
+    return outlookPage(c, t, codeOf(error));
   }
   setCookie(c, outlookCookie, result.browserToken, browserCookie);
+  keepLocale(c, outlookLocaleCookie);
   return c.redirect(result.authorizationUrl, 302);
 });
 accountsRouter.post("/api/accounts/outlook/connect", async (c) => {
   const result = await stub(c.env).beginOutlookConnect();
   setCookie(c, outlookCookie, result.browserToken, browserCookie);
+  keepLocale(c, outlookLocaleCookie);
   return c.json({ authorizationUrl: result.authorizationUrl });
 });
 /**
@@ -285,26 +315,28 @@ accountsRouter.post("/api/accounts/outlook/connect", async (c) => {
  */
 accountsRouter.get("/api/accounts/outlook/callback", async (c) => {
   const config = microsoftConfiguration(c.env);
-  if (config.status !== "configured") return outlookPage(c, "not_configured");
-  if (new URL(c.req.url).origin !== config.origin) return outlookPage(c, "invalid_origin");
+  if (config.status !== "configured") return outlookPage(c, startedT(c, outlookLocaleCookie, false), "not_configured");
+  if (new URL(c.req.url).origin !== config.origin) return outlookPage(c, startedT(c, outlookLocaleCookie, false), "invalid_origin");
   const error = c.req.query("error");
   if (c.req.query("admin_consent") !== undefined) {
     // Microsoft's own warning: the tenant on this redirect is never proof of anything, so it is not read.
     const approved = /^true$/i.test(c.req.query("admin_consent") ?? "") && !error;
     console.log(JSON.stringify({ event: "outlook_admin_consent", approved }));
-    return outlookPage(c, approved ? "admin_consented" : "admin_consent_declined");
+    // An administrator's approval usually ends in their own browser: its language, unless this one kept one.
+    return outlookPage(c, startedT(c, outlookLocaleCookie, false), approved ? "admin_consented" : "admin_consent_declined");
   }
   const browserToken = getCookie(c, outlookCookie) || "";
   deleteCookie(c, outlookCookie, { path: "/", secure: true });
+  const t = startedT(c, outlookLocaleCookie, true);
   const outcome = error ? authorizeOutcome(error.slice(0, 64), (c.req.query("error_description") ?? "").slice(0, 2000)) : undefined;
   try {
     const account = await stub(c.env).outlookCallback(c.req.query("state") || "", browserToken, c.req.query("code") || "", outcome);
     // A fixed page, not a redirect: OAuth parameters cannot choose where the browser goes next.
-    return outlookPage(c, "connected", { email: account.email });
+    return outlookPage(c, t, "connected", { email: account.email });
   } catch (failure) {
     const code = codeOf(failure);
     console.warn(JSON.stringify({ event: "outlook_connect_failed", error: code }));
-    return outlookPage(c, code);
+    return outlookPage(c, t, code);
   }
 });
 accountsRouter.post("/api/accounts/:accountId/disconnect", async (c) =>

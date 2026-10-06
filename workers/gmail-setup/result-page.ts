@@ -7,7 +7,12 @@
  *
  * Self-contained: inline styles in the Fabric palette, no script, nothing loaded from elsewhere;
  * every value is escaped. The response forbids framing and scripts outright.
+ *
+ * In the person's language (`t`, L10N-01): the callback renders in the language the connect started
+ * with (workers/routes/accounts.ts keeps it beside the sign-in's state); `<html lang>` follows.
+ * The dictionary's sentences are trusted text; every value put into them is escaped as before.
  */
+import { englishT, type T } from "../../shared/i18n";
 import { GMAIL_REASON_TEXT, gmailApiUrl } from "../../shared/mail/gmail-reasons";
 import { GOOGLE_CONSOLE } from "../../shared/mail/gmail-setup";
 
@@ -36,75 +41,87 @@ export interface Page { status: number; title: string; tone: "ok" | "warn" | "ba
 
 const CONNECT = "/api/accounts/gmail/connect";
 const ACCOUNTS = "/settings/accounts";
-const again = () => link(CONNECT, "Connect Gmail again");
-const backToApp = "You can close this tab and go back to Fabric Inbox.";
+/**
+ * The connect address for a page in `t`'s language: a Russian page asks for its language again
+ * (`?lang=ru`), since the system browser carries none of the app's cookies; English stays bare.
+ */
+export const withLang = (path: string, t: T) => (t.locale === "en" ? path : `${path}?lang=${t.locale}`);
 
-function page(input: ResultInput): Page {
+function page(input: ResultInput, t: T): Page {
+  const again = () => link(withLang(CONNECT, t), t("Connect Gmail again"));
+  const backToApp = t("You can close this tab and go back to Fabric Inbox.");
+  const accounts = () => link(ACCOUNTS, t("Open Settings → Accounts here"));
   switch (input.outcome) {
     case "connected": {
-      const body = [`<strong>${esc(input.email ?? "Your Gmail account")}</strong> is connected. Your server is importing its mail now; new mail arrives while the import runs.`];
+      const body = [t("{email} is connected. Your server is importing its mail now; new mail arrives while the import runs.",
+        { email: `<strong>${esc(input.email ?? t("Your Gmail account"))}</strong>` })];
       if (input.accessUntil) {
-        const until = new Date(input.accessUntil).toUTCString();
-        body.push(`<span class="callout">Google gave this access only until ${esc(until)}. ${esc(GMAIL_REASON_TEXT.testing_expiry.explain)} ${link(GOOGLE_CONSOLE.audience, "Open Audience in Google Cloud", true)}, choose Publish app, then reconnect the account: access then lasts until it is removed.</span>`);
+        const at = new Date(input.accessUntil);
+        const until = t.locale === "en" ? at.toUTCString()
+          : t.dateTime(at, { timeZone: "UTC", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+        body.push(`<span class="callout">${t("Google gave this access only until {until}. {why} {audience}, choose Publish app, then reconnect the account: access then lasts until it is removed.", {
+          until: esc(until), why: esc(t.text(GMAIL_REASON_TEXT.testing_expiry.explain)), audience: link(GOOGLE_CONSOLE.audience, t("Open Audience in Google Cloud"), true) })}</span>`);
       }
-      return { status: 200, title: "Gmail is connected", tone: input.accessUntil ? "warn" : "ok", body: [...body, backToApp],
-        actions: [link(ACCOUNTS, "Open Settings → Accounts here")] };
+      return { status: 200, title: t("Gmail is connected"), tone: input.accessUntil ? "warn" : "ok", body: [...body, backToApp],
+        actions: [accounts()] };
     }
     case "oauth_denied":
       return input.googleError && input.googleError !== "access_denied"
-        ? { status: 400, title: "Google stopped the sign-in", tone: "bad",
-            body: [`Google ended it with “${esc(input.googleError)}”, so Fabric Inbox has no access and nothing was saved.`,
-              "A Google Workspace administrator may have to allow the app for your organization."], actions: [again()] }
-        : { status: 400, title: "Gmail was not connected", tone: "warn",
-            body: ["You chose not to allow access on Google's page, so nothing was saved.",
-              `If Google said the app “has not completed the Google verification process” or that you have no access: in Google Cloud, ${link(GOOGLE_CONSOLE.audience, "open Audience", true)} and add this Google account under Test users, or choose Publish app. On “Google hasn't verified this app”, choose Advanced, then continue: it is your own app.`],
+        ? { status: 400, title: t("Google stopped the sign-in"), tone: "bad",
+            body: [t("Google ended it with “{error}”, so Fabric Inbox has no access and nothing was saved.", { error: esc(input.googleError) }),
+              t("A Google Workspace administrator may have to allow the app for your organization.")], actions: [again()] }
+        : { status: 400, title: t("Gmail was not connected"), tone: "warn",
+            body: [t("You chose not to allow access on Google's page, so nothing was saved."),
+              t("If Google said the app “has not completed the Google verification process” or that you have no access: in Google Cloud, {audience} and add this Google account under Test users, or choose Publish app. On “Google hasn't verified this app”, choose Advanced, then continue: it is your own app.",
+                { audience: link(GOOGLE_CONSOLE.audience, t("open Audience"), true) })],
             actions: [again()] };
     case "insufficient_scope":
-      return { status: 403, title: "The Gmail box was not ticked", tone: "warn",
-        body: [esc(GMAIL_REASON_TEXT.insufficient_scope.explain) + " The account was not connected.",
-          "Connect again, and on Google's page tick the box for reading, composing and sending your email."], actions: [again()] };
+      return { status: 403, title: t("The Gmail box was not ticked"), tone: "warn",
+        body: [esc(t.text(GMAIL_REASON_TEXT.insufficient_scope.explain)) + " " + t("The account was not connected."),
+          t("Connect again, and on Google's page tick the box for reading, composing and sending your email.")], actions: [again()] };
     case "gmail_api_disabled":
-      return { status: 403, title: "The Gmail API is off in your Google Cloud project", tone: "bad",
-        body: [esc(GMAIL_REASON_TEXT.gmail_api_disabled.explain),
-          `${link(gmailApiUrl(input.projectNumber), "Enable the Gmail API", true)}, wait a minute, then connect again.`], actions: [again()] };
+      return { status: 403, title: t("The Gmail API is off in your Google Cloud project"), tone: "bad",
+        body: [esc(t.text(GMAIL_REASON_TEXT.gmail_api_disabled.explain)),
+          t("{enable}, wait a minute, then connect again.", { enable: link(gmailApiUrl(input.projectNumber), t("Enable the Gmail API"), true) })], actions: [again()] };
     case "redirect_uri_mismatch":
-      return { status: 400, title: "Google does not know this server's redirect URI", tone: "bad",
-        body: [`Your OAuth client in Google Cloud needs this address under Authorized redirect URIs:`,
-          `<code>${esc(input.redirectUri ?? "(the server's address)/api/accounts/gmail/callback")}</code>`,
-          `${link(GOOGLE_CONSOLE.clients, "Open Clients in Google Cloud", true)}, open your client, add it exactly, and save. Google can take a few minutes to apply it; then connect again.`],
+      return { status: 400, title: t("Google does not know this server's redirect URI"), tone: "bad",
+        body: [t("Your OAuth client in Google Cloud needs this address under Authorized redirect URIs:"),
+          `<code>${esc(input.redirectUri ?? t("(the server's address)/api/accounts/gmail/callback"))}</code>`,
+          t("{clients}, open your client, add it exactly, and save. Google can take a few minutes to apply it; then connect again.",
+            { clients: link(GOOGLE_CONSOLE.clients, t("Open Clients in Google Cloud"), true) })],
         actions: [again()] };
     case "google_client_rejected":
-      return { status: 502, title: "Google refused this server's OAuth client", tone: "bad",
-        body: [esc(GMAIL_REASON_TEXT.client_rejected.explain),
-          "In Fabric Inbox, open Settings → Accounts → Connect account → Gmail and save the client ID and secret again; then connect."],
-        actions: [link(ACCOUNTS, "Open Settings → Accounts here")] };
+      return { status: 502, title: t("Google refused this server's OAuth client"), tone: "bad",
+        body: [esc(t.text(GMAIL_REASON_TEXT.client_rejected.explain)),
+          t("In Fabric Inbox, open Settings → Accounts → Connect account → Gmail and save the client ID and secret again; then connect.")],
+        actions: [accounts()] };
     case "invalid_state":
-      return { status: 403, title: "This sign-in has expired", tone: "warn",
-        body: ["It was started more than ten minutes ago, was already used, or was opened in another browser than the one that started it. Nothing was saved."],
+      return { status: 403, title: t("This sign-in has expired"), tone: "warn",
+        body: [t("It was started more than ten minutes ago, was already used, or was opened in another browser than the one that started it.") + " " + t("Nothing was saved.")],
         actions: [again()] };
     case "oauth_failed":
-      return { status: 400, title: "Google did not finish the sign-in", tone: "warn",
-        body: ["Google's answer could not be used: it came too late or was used already. Nothing was saved."], actions: [again()] };
+      return { status: 400, title: t("Google did not finish the sign-in"), tone: "warn",
+        body: [t("Google's answer could not be used: it came too late or was used already.") + " " + t("Nothing was saved.")], actions: [again()] };
     case "invalid_profile":
-      return { status: 502, title: "Google did not say which Gmail account this is", tone: "bad",
-        body: ["Nothing was saved. Connect again; if it happens again, this Google account may have no Gmail."], actions: [again()] };
+      return { status: 502, title: t("Google did not say which Gmail account this is"), tone: "bad",
+        body: [t("Nothing was saved.") + " " + t("Connect again; if it happens again, this Google account may have no Gmail.")], actions: [again()] };
     case "not_configured":
-      return { status: 503, title: "Gmail is not set up on this server", tone: "warn",
-        body: ["Set it up in Fabric Inbox: Settings → Accounts → Connect account → Gmail walks through Google Cloud step by step."],
-        actions: [link(ACCOUNTS + "?connect=gmail", "Set up Gmail")] };
+      return { status: 503, title: t("Gmail is not set up on this server"), tone: "warn",
+        body: [t("Set it up in Fabric Inbox: Settings → Accounts → Connect account → Gmail walks through Google Cloud step by step.")],
+        actions: [link(ACCOUNTS + "?connect=gmail", t("Set up Gmail"))] };
     case "invalid_origin":
-      return { status: 403, title: "Open this from your server's own address", tone: "warn",
-        body: [`Gmail is set up for ${esc(input.origin ?? "another address")}; connecting works only there.`],
-        actions: input.origin ? [link(input.origin + CONNECT, "Connect Gmail at " + input.origin)] : [] };
+      return { status: 403, title: t("Open this from your server's own address"), tone: "warn",
+        body: [t("Gmail is set up for {origin}; connecting works only there.", { origin: esc(input.origin ?? t("another address")) })],
+        actions: input.origin ? [link(withLang(input.origin + CONNECT, t), t("Connect Gmail at {origin}", { origin: input.origin }))] : [] };
     case "too_many_connections":
-      return { status: 429, title: "Too many sign-ins are waiting", tone: "warn",
-        body: ["Each one expires after ten minutes. Wait, then connect again."], actions: [again()] };
+      return { status: 429, title: t("Too many sign-ins are waiting"), tone: "warn",
+        body: [t("Each one expires after ten minutes. Wait, then connect again.")], actions: [again()] };
     case "provider_unavailable":
-      return { status: 503, title: "Google could not be reached", tone: "warn",
-        body: ["Nothing was saved. Connect again in a minute."], actions: [again()] };
+      return { status: 503, title: t("Google could not be reached"), tone: "warn",
+        body: [t("Nothing was saved.") + " " + t("Connect again in a minute.")], actions: [again()] };
     default:
-      return { status: 502, title: "Gmail was not connected", tone: "bad",
-        body: [`Your server could not finish connecting (${esc(input.outcome)}). Nothing was saved.`], actions: [again()] };
+      return { status: 502, title: t("Gmail was not connected"), tone: "bad",
+        body: [t("Your server could not finish connecting ({outcome}).", { outcome: esc(input.outcome) }) + " " + t("Nothing was saved.")], actions: [again()] };
   }
 }
 
@@ -121,21 +138,21 @@ a{color:var(--link)}.callout{display:block;border:1px solid var(--border);border
 .actions a:focus-visible{outline:2px solid var(--text);outline-offset:2px}`;
 
 /** The result page as a Response, with headers that let it do nothing but show itself. */
-export function resultPage(input: ResultInput): Response {
-  const { html, status, headers } = renderResult(input);
+export function resultPage(input: ResultInput, t: T = englishT): Response {
+  const { html, status, headers } = renderResult(input, t);
   return new Response(html, { status, headers });
 }
 
 /** The page's parts, for a route that adds headers of its own (a cleared cookie). */
-export function renderResult(input: ResultInput): { html: string; status: number; headers: Record<string, string> } {
-  return renderPage(page(input), "Gmail");
+export function renderResult(input: ResultInput, t: T = englishT): { html: string; status: number; headers: Record<string, string> } {
+  return renderPage(page(input, t), "Gmail", t);
 }
 
-/** Any provider's result page in the same shell: `mark` names the provider ("Gmail", "Outlook"). */
-export function renderPage(p: Page, mark: string): { html: string; status: number; headers: Record<string, string> } {
+/** Any provider's result page in the same shell: `mark` names the provider ("Gmail", "Outlook"); `t` its language. */
+export function renderPage(p: Page, mark: string, t: T = englishT): { html: string; status: number; headers: Record<string, string> } {
   const tone = p.tone === "ok" ? "var(--ok)" : p.tone === "warn" ? "var(--warn)" : "var(--bad)";
   const html = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="${t.locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><title>${esc(p.title)} · Fabric Inbox</title><style>${STYLE}</style></head>
 <body><main style="--tone:${tone}" role="${p.tone === "ok" ? "status" : "alert"}"><p class="mark">Fabric Inbox · ${esc(mark)}</p><h1>${esc(p.title)}</h1>
 ${p.body.map((line) => `<p>${line}</p>`).join("\n")}

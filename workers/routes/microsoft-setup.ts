@@ -7,6 +7,7 @@ import { CloudflareAccounts } from "../routing/accounts";
 import { CloudflareApiError } from "../routing/cloudflare-api";
 import { newCredentialKey, writeWorkerSettings } from "../gmail-setup/server-settings";
 import type { GmailAccountsDO } from "../providers/accounts-do";
+import { msg } from "../../shared/i18n";
 import {
   MICROSOFT_CLIENT_ID_PATTERN, MICROSOFT_ENTRA, MICROSOFT_HELP, MICROSOFT_PERMISSIONS, MICROSOFT_SECRET_PATTERN,
   adminConsentUrl, microsoftSetupValues, secretExpiry, secretExpiryProblem,
@@ -27,8 +28,8 @@ import {
 export const microsoftSetupRouter = new Hono<{ Bindings: Env }>();
 type C = Context<{ Bindings: Env }>;
 
-const NO_TOKEN = "This server has no Cloudflare API token of its own, so it cannot change its own settings. Set the Outlook settings with wrangler instead (docs/desktop-mail/setup.md → Outlook).";
-const NOT_HTTPS = "Outlook needs this server's HTTPS address. Open the app at its https:// address and set up Outlook there.";
+const NO_TOKEN = msg("This server has no Cloudflare API token of its own, so it cannot change its own settings. Set the Outlook settings with wrangler instead (docs/desktop-mail/setup.md → Outlook).");
+const NOT_HTTPS = msg("Outlook needs this server's HTTPS address. Open the app at its https:// address and set up Outlook there.");
 
 const originOf = (c: C) => new URL(c.req.url).origin;
 const httpsOrigin = (c: C) => new URL(c.req.url).protocol === "https:";
@@ -83,14 +84,14 @@ export const MicrosoftSetupInput = z.object({
 export function pastedChecks(input: { clientId: string; clientSecret: string; secretExpires: string }, now = Date.now()): MicrosoftCheck[] {
   const checks: MicrosoftCheck[] = [];
   if (!MICROSOFT_CLIENT_ID_PATTERN.test(input.clientId))
-    checks.push({ id: "client_id", status: "failed", message: "This is not an Application (client) ID.",
-      fix: "Copy it from the Overview page of the app registration: it looks like 1a2b3c4d-… (a GUID).", link: MICROSOFT_ENTRA.appRegistrations });
+    checks.push({ id: "client_id", status: "failed", message: msg("This is not an Application (client) ID."),
+      fix: msg("Copy it from the Overview page of the app registration: it looks like 1a2b3c4d-… (a GUID)."), link: MICROSOFT_ENTRA.appRegistrations });
   if (MICROSOFT_CLIENT_ID_PATTERN.test(input.clientSecret))
-    checks.push({ id: "client_secret", status: "failed", message: "This is the client secret's Secret ID, not its Value.",
-      fix: "Copy the Value column of the client secret. Microsoft shows it only once: if it is hidden now, make a new client secret.", link: MICROSOFT_ENTRA.appRegistrations });
+    checks.push({ id: "client_secret", status: "failed", message: msg("This is the client secret's Secret ID, not its Value."),
+      fix: msg("Copy the Value column of the client secret. Microsoft shows it only once: if it is hidden now, make a new client secret."), link: MICROSOFT_ENTRA.appRegistrations });
   else if (!MICROSOFT_SECRET_PATTERN.test(input.clientSecret))
-    checks.push({ id: "client_secret", status: "failed", message: "This is not a client secret's Value.",
-      fix: "Copy the Value column of the client secret in Certificates & secrets.", link: MICROSOFT_ENTRA.appRegistrations });
+    checks.push({ id: "client_secret", status: "failed", message: msg("This is not a client secret's Value."),
+      fix: msg("Copy the Value column of the client secret in Certificates & secrets."), link: MICROSOFT_ENTRA.appRegistrations });
   const problem = secretExpiryProblem(input.secretExpires, now);
   if (problem) checks.push({ id: "secret_expiry", status: "failed", message: problem });
   return checks;
@@ -99,7 +100,7 @@ export function pastedChecks(input: { clientId: string; clientSecret: string; se
 /** Keeps the client (and a credential key if the server has none) in the server's own settings. */
 microsoftSetupRouter.put("/api/microsoft-setup", async (c) => {
   const parsed = MicrosoftSetupInput.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: "Paste the Application (client) ID, the client secret's Value and the date it expires." }, 400);
+  if (!parsed.success) return c.json({ error: msg("Paste the Application (client) ID, the client secret's Value and the date it expires.") }, 400);
   if (!httpsOrigin(c)) return c.json({ error: NOT_HTTPS }, 400);
   const checks = pastedChecks(parsed.data);
   if (checks.length) {
@@ -120,15 +121,15 @@ microsoftSetupRouter.put("/api/microsoft-setup", async (c) => {
   } catch (error) {
     console.error(JSON.stringify({ event: "microsoft_setup_write_failed", error: (error as Error).message }));
     if (error instanceof CloudflareApiError)
-      return c.json({ error: `${error.message} Nothing was changed on your server.` }, error.isPermission ? 403 : 502);
-    return c.json({ error: "Your server could not save the Outlook settings. Nothing was changed; try again." }, 502);
+      return c.json({ error: msg("{error} Nothing was changed on your server.", { error: error.message }) }, error.isPermission ? 403 : 502);
+    return c.json({ error: msg("Your server could not save the Outlook settings. Nothing was changed; try again.") }, 502);
   }
   console.log(JSON.stringify({ event: "microsoft_setup_saved", keyCreated: !!credentialKey }));
   return c.json({
     saved: true,
     keyCreated: !!credentialKey,
     secretExpiry: secretExpiry(parsed.data.secretExpires),
-    note: "Your server starts using the Outlook settings within a few seconds. Microsoft checks the client ID and secret when the first account connects.",
+    note: msg("Your server starts using the Outlook settings within a few seconds. Microsoft checks the client ID and secret when the first account connects."),
   }, 202);
 });
 
@@ -143,18 +144,20 @@ microsoftSetupRouter.get("/api/microsoft-setup/check", async (c) => {
   const checks: MicrosoftCheck[] = [];
   const origin = originOf(c);
   checks.push(config.origin === origin
-    ? { id: "redirect_uri", status: "ok", message: `Microsoft sends sign-ins back to ${config.redirectUri}, this app's own address.` }
-    : { id: "redirect_uri", status: "failed", message: `Outlook is set up for ${config.origin}, but this app is open at ${origin}; connecting works only at the address Outlook was set up for.`,
-        fix: "Open the app at that address, or save the Outlook setup again from here (and add this address's redirect URI to the app registration)." });
+    ? { id: "redirect_uri", status: "ok", message: msg("Microsoft sends sign-ins back to {uri}, this app's own address.", { uri: config.redirectUri }) }
+    : { id: "redirect_uri", status: "failed", message: msg("Outlook is set up for {origin}, but this app is open at {current}; connecting works only at the address Outlook was set up for.", { origin: config.origin, current: origin }),
+        fix: msg("Open the app at that address, or save the Outlook setup again from here (and add this address's redirect URI to the app registration).") });
   const expiry = secretExpiry(c.env.MICROSOFT_CLIENT_SECRET_EXPIRES);
   checks.push(!expiry
-    ? { id: "secret_expiry", status: "unknown", message: "The date the client secret ends is not saved, so no warning comes before it does.", fix: "Save the setup again with the date from the Expires column." }
+    ? { id: "secret_expiry", status: "unknown", message: msg("The date the client secret ends is not saved, so no warning comes before it does."), fix: msg("Save the setup again with the date from the Expires column.") }
     : expiry.state === "expired"
-      ? { id: "secret_expiry", status: "failed", message: `The client secret ended on ${expiry.date}.`, fix: "Add a new client secret in Certificates & secrets and save it here.", link: MICROSOFT_ENTRA.appRegistrations }
+      ? { id: "secret_expiry", status: "failed", message: msg("The client secret ended on {date}.", { date: expiry.date }), fix: msg("Add a new client secret in Certificates & secrets and save it here."), link: MICROSOFT_ENTRA.appRegistrations }
       : expiry.state === "soon"
-        ? { id: "secret_expiry", status: "failed", message: `The client secret ends on ${expiry.date}, in ${expiry.daysLeft} day${expiry.daysLeft === 1 ? "" : "s"}.`,
-            fix: "Add a new client secret in Certificates & secrets now and save it here; Outlook accounts stop syncing the day it ends.", link: MICROSOFT_ENTRA.appRegistrations }
-        : { id: "secret_expiry", status: "ok", message: `The client secret ends on ${expiry.date}.` });
+        ? { id: "secret_expiry", status: "failed", message: expiry.daysLeft === 1
+            ? msg("The client secret ends on {date}, in 1 day.", { date: expiry.date })
+            : msg("The client secret ends on {date}, in {days} days.", { date: expiry.date, days: expiry.daysLeft }),
+            fix: msg("Add a new client secret in Certificates & secrets now and save it here; Outlook accounts stop syncing the day it ends."), link: MICROSOFT_ENTRA.appRegistrations }
+        : { id: "secret_expiry", status: "ok", message: msg("The client secret ends on {date}.", { date: expiry.date }) });
   const accounts = (c.env as unknown as { GMAIL_ACCOUNTS?: DurableObjectNamespace<GmailAccountsDO> }).GMAIL_ACCOUNTS;
   let client: { status: "ok" | "failed" | "unknown"; code?: string; email?: string } = { status: "unknown", code: "no_account" };
   if (accounts) {
@@ -162,14 +165,14 @@ microsoftSetupRouter.get("/api/microsoft-setup/check", async (c) => {
     catch { client = { status: "unknown", code: "account_service_unavailable" }; }
   }
   checks.push(client.status === "ok"
-    ? { id: "client", status: "ok", message: `Microsoft accepts this server's client ID and secret (checked with ${client.email}).` }
+    ? { id: "client", status: "ok", message: msg("Microsoft accepts this server's client ID and secret (checked with {email}).", { email: client.email ?? "" }) }
     : client.code === "no_account"
-      ? { id: "client", status: "unknown", message: "Microsoft checks the client ID and secret when the first Outlook account connects.", fix: "Connect an account to check them." }
+      ? { id: "client", status: "unknown", message: msg("Microsoft checks the client ID and secret when the first Outlook account connects."), fix: msg("Connect an account to check them.") }
       : client.code === "microsoft_secret_expired"
-        ? { id: "client", status: "failed", message: "Microsoft says the client secret has expired.", fix: "Add a new client secret in Certificates & secrets and save it here.", link: MICROSOFT_ENTRA.appRegistrations }
+        ? { id: "client", status: "failed", message: msg("Microsoft says the client secret has expired."), fix: msg("Add a new client secret in Certificates & secrets and save it here."), link: MICROSOFT_ENTRA.appRegistrations }
         : client.code === "microsoft_client_rejected"
-          ? { id: "client", status: "failed", message: "Microsoft refuses this client ID or secret.", fix: "Check the app registration still exists, then save its client ID and a new client secret here.", link: MICROSOFT_ENTRA.appRegistrations }
-          : { id: "client", status: "unknown", message: "Microsoft could not be asked just now.", fix: "Check again in a minute." });
+          ? { id: "client", status: "failed", message: msg("Microsoft refuses this client ID or secret."), fix: msg("Check the app registration still exists, then save its client ID and a new client secret here."), link: MICROSOFT_ENTRA.appRegistrations }
+          : { id: "client", status: "unknown", message: msg("Microsoft could not be asked just now."), fix: msg("Check again in a minute.") });
   const ok = checks.every((x) => x.status === "ok");
   console.log(JSON.stringify({ event: "microsoft_setup_checked", ok, checks: checks.map((x) => `${x.id}:${x.status}`) }));
   return c.json({ configured: true, ok, checks });

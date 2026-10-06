@@ -16,8 +16,10 @@
  * deleted_client…). That page is Google's interface, not a documented API (observed 2026-10-06):
  * when it cannot be read the check says "unknown", never "ok".
  *
- * Nothing here is stored or logged with a secret in it.
+ * Nothing here is stored or logged with a secret in it. The sentences are English marked with msg();
+ * Settings shows them in its language with t.text() (shared/i18n).
  */
+import { msg } from "../../shared/i18n";
 import { CLIENT_ID_PATTERN, CLIENT_SECRET_PATTERN, GMAIL_SCOPE, GOOGLE_CONSOLE } from "../../shared/mail/gmail-setup";
 
 export type CheckId = "client_id" | "client_secret" | "token_endpoint" | "redirect_uri";
@@ -87,29 +89,29 @@ async function tokenCheck(clientId: string, clientSecret: string, redirectUri: s
       signal: AbortSignal.timeout(15_000),
     });
   } catch {
-    return [{ id: "token_endpoint", status: "unknown", message: "Google's token service did not answer.", fix: "Check again in a minute." }];
+    return [{ id: "token_endpoint", status: "unknown", message: msg("Google's token service did not answer."), fix: msg("Check again in a minute.") }];
   }
   let data: { error?: string; error_description?: string } = {};
   try { data = (await response.json()) as typeof data; } catch { /* a page, not JSON */ }
   if (data.error === "invalid_grant")
-    return [{ id: "token_endpoint", status: "ok", message: "Google accepts this client ID and secret together." }];
+    return [{ id: "token_endpoint", status: "ok", message: msg("Google accepts this client ID and secret together.") }];
   if (data.error === "invalid_client") {
     // Google says "The OAuth client was not found." for an unknown ID and "Unauthorized" for a wrong secret.
     return /not found/i.test(data.error_description ?? "")
-      ? [{ id: "client_id", status: "failed", message: "Google does not know this client ID.",
-          fix: "Copy the client ID again from Google Auth Platform → Clients; the client may also have been deleted.", link: GOOGLE_CONSOLE.clients }]
-      : [{ id: "client_secret", status: "failed", message: "Google does not accept this client secret for this client ID.",
-          fix: "Open the client in Google Auth Platform → Clients, add a new secret, and paste it here.", link: GOOGLE_CONSOLE.clients }];
+      ? [{ id: "client_id", status: "failed", message: msg("Google does not know this client ID."),
+          fix: msg("Copy the client ID again from Google Auth Platform → Clients; the client may also have been deleted."), link: GOOGLE_CONSOLE.clients }]
+      : [{ id: "client_secret", status: "failed", message: msg("Google does not accept this client secret for this client ID."),
+          fix: msg("Open the client in Google Auth Platform → Clients, add a new secret, and paste it here."), link: GOOGLE_CONSOLE.clients }];
   }
   if (data.error === "unauthorized_client")
-    return [{ id: "client_id", status: "failed", message: "This client cannot sign in to a web server.",
-      fix: "Create a client of the type Web application and use its ID and secret.", link: GOOGLE_CONSOLE.createClient }];
+    return [{ id: "client_id", status: "failed", message: msg("This client cannot sign in to a web server."),
+      fix: msg("Create a client of the type Web application and use its ID and secret."), link: GOOGLE_CONSOLE.createClient }];
   if (data.error === "redirect_uri_mismatch")
-    return [{ id: "redirect_uri", status: "failed", message: "Google does not have this server's redirect URI for the client.",
-      fix: "Add the redirect URI shown above under Authorized redirect URIs of the client.", link: GOOGLE_CONSOLE.clients }];
+    return [{ id: "redirect_uri", status: "failed", message: msg("Google does not have this server's redirect URI for the client."),
+      fix: msg("Add the redirect URI shown above under Authorized redirect URIs of the client."), link: GOOGLE_CONSOLE.clients }];
   return [{ id: "token_endpoint", status: "unknown",
-    message: response.status >= 500 ? "Google's token service is having problems." : `Google answered ${data.error ?? "HTTP " + response.status}.`,
-    fix: "Check again in a minute." }];
+    message: response.status >= 500 ? msg("Google's token service is having problems.") : msg("Google answered {answer}.", { answer: data.error ?? "HTTP " + response.status }),
+    fix: msg("Check again in a minute.") }];
 }
 
 async function redirectCheck(clientId: string, redirectUri: string, http: Fetcher): Promise<Check> {
@@ -120,22 +122,22 @@ async function redirectCheck(clientId: string, redirectUri: string, http: Fetche
   try {
     response = await http(url.href, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(15_000) });
   } catch {
-    return { id: "redirect_uri", status: "unknown", message: "Google's sign-in page did not answer, so the redirect URI was not checked.", fix: "Check again in a minute." };
+    return { id: "redirect_uri", status: "unknown", message: msg("Google's sign-in page did not answer, so the redirect URI was not checked."), fix: msg("Check again in a minute.") };
   }
   const location = response.headers.get("Location") ?? "";
   const failure = response.status >= 300 && response.status < 400 && /\/signin\/oauth\/error/.test(location) ? authErrorName(location) : null;
   if (failure === "redirect_uri_mismatch")
-    return { id: "redirect_uri", status: "failed", message: "Google does not have this server's redirect URI for the client.",
-      fix: "Add the redirect URI shown above under Authorized redirect URIs of the client. Google can take a few minutes to apply it.", link: GOOGLE_CONSOLE.clients };
+    return { id: "redirect_uri", status: "failed", message: msg("Google does not have this server's redirect URI for the client."),
+      fix: msg("Add the redirect URI shown above under Authorized redirect URIs of the client. Google can take a few minutes to apply it."), link: GOOGLE_CONSOLE.clients };
   if (failure === "invalid_client" || failure === "deleted_client" || failure === "disabled_client")
-    return { id: "client_id", status: "failed", message: failure === "invalid_client" ? "Google does not know this client ID." : `Google says this client is ${failure === "deleted_client" ? "deleted" : "disabled"}.`,
-      fix: "Create a Web application client in Google Auth Platform → Clients and use its ID and secret.", link: GOOGLE_CONSOLE.clients };
+    return { id: "client_id", status: "failed", message: failure === "invalid_client" ? msg("Google does not know this client ID.") : failure === "deleted_client" ? msg("Google says this client is deleted.") : msg("Google says this client is disabled."),
+      fix: msg("Create a Web application client in Google Auth Platform → Clients and use its ID and secret."), link: GOOGLE_CONSOLE.clients };
   if (failure)
-    return { id: "redirect_uri", status: "unknown", message: `Google's sign-in page answered ${failure}.`, fix: "Connect an account to see Google's own page." };
+    return { id: "redirect_uri", status: "unknown", message: msg("Google's sign-in page answered {answer}.", { answer: failure }), fix: msg("Connect an account to see Google's own page.") };
   // Google sends a request it can serve on to its sign-in page (accounts.google.com).
   if (response.status >= 300 && response.status < 400 && /^https:\/\/accounts\.google\.com\//.test(location))
-    return { id: "redirect_uri", status: "ok", message: "Google knows this server's redirect URI for the client." };
-  return { id: "redirect_uri", status: "unknown", message: "Google's sign-in page answered in a way this check cannot read.", fix: "Connect an account to see Google's own page." };
+    return { id: "redirect_uri", status: "ok", message: msg("Google knows this server's redirect URI for the client.") };
+  return { id: "redirect_uri", status: "unknown", message: msg("Google's sign-in page answered in a way this check cannot read."), fix: msg("Connect an account to see Google's own page.") };
 }
 
 /** Runs every check; a malformed client ID or secret stops before anything is sent to Google. */
@@ -143,11 +145,11 @@ export async function checkGoogleClient(input: { clientId: string; clientSecret:
   const clientId = input.clientId.trim(), clientSecret = input.clientSecret.trim();
   const checks: Check[] = [];
   if (!CLIENT_ID_PATTERN.test(clientId))
-    checks.push({ id: "client_id", status: "failed", message: "This is not an OAuth client ID.",
-      fix: "Copy the client ID from Google Auth Platform → Clients: it ends in .apps.googleusercontent.com.", link: GOOGLE_CONSOLE.clients });
+    checks.push({ id: "client_id", status: "failed", message: msg("This is not an OAuth client ID."),
+      fix: msg("Copy the client ID from Google Auth Platform → Clients: it ends in .apps.googleusercontent.com."), link: GOOGLE_CONSOLE.clients });
   if (!CLIENT_SECRET_PATTERN.test(clientSecret))
-    checks.push({ id: "client_secret", status: "failed", message: "This is not an OAuth client secret.",
-      fix: "Copy the secret from the client in Google Auth Platform → Clients (it starts with GOCSPX-).", link: GOOGLE_CONSOLE.clients });
+    checks.push({ id: "client_secret", status: "failed", message: msg("This is not an OAuth client secret."),
+      fix: msg("Copy the secret from the client in Google Auth Platform → Clients (it starts with GOCSPX-)."), link: GOOGLE_CONSOLE.clients });
   if (!checks.length) {
     const [token, redirect] = await Promise.all([tokenCheck(clientId, clientSecret, input.redirectUri, http), redirectCheck(clientId, input.redirectUri, http)]);
     checks.push(...token);

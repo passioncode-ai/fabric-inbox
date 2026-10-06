@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { accountsRouter } from "../workers/routes/accounts";
 import { resultPage } from "../workers/gmail-setup/result-page";
 import { ProviderError } from "../workers/providers/gmail-client";
+import { createT } from "../shared/i18n";
 
 /**
  * SCN-002 / SCN-003: the end of connecting Gmail is a page in the app's style for success and for
@@ -175,4 +176,51 @@ test("when Google's page cannot be asked, the person goes to Google as before", 
   assert.equal(response.status, 302);
   assert.match(response.headers.get("Location")!, /^https:\/\/accounts\.google\.com\//);
   assert.match(response.headers.get("Set-Cookie")!, /__Host-fabric-gmail-state=opaque/);
+});
+
+// ── The person's language (L10N-01) ─────────────────────────────────────────────
+
+test("a result page speaks Russian for a Russian sign-in and stays English otherwise, values still escaped", async () => {
+  const ru = await resultPage({ outcome: "connected", email: "<b>x</b>@example.invalid" }, createT("ru")).text();
+  assert.match(ru, /<html lang="ru">/);
+  assert.match(ru, /Gmail подключён/);
+  assert.match(ru, /Можно закрыть эту вкладку/);
+  assert.ok(ru.includes("&lt;b&gt;x&lt;/b&gt;@example.invalid"), "the address is escaped in Russian too");
+  const failed = await resultPage({ outcome: "invalid_state" }, createT("ru")).text();
+  assert.match(failed, /href="\/api\/accounts\/gmail\/connect\?lang=ru"/, "connecting again keeps the language");
+  assert.match(failed, /Ничего не сохранено\./);
+  const en = await resultPage({ outcome: "invalid_state" }).text();
+  assert.match(en, /<html lang="en">/);
+  assert.match(en, /This sign-in has expired/);
+  assert.match(en, /href="\/api\/accounts\/gmail\/connect"/, "English links stay bare");
+});
+
+test("connecting keeps the language it started in beside the sign-in's state, and the callback renders in it", async () => {
+  googleAnswers(null, true);
+  const ru = await accountsRouter.request(`${ORIGIN}/api/accounts/gmail/connect?lang=ru`, {}, connectEnv() as never);
+  assert.equal(ru.status, 302, "an extra query changes nothing about connecting");
+  assert.match(ru.headers.get("Set-Cookie")!, /__Host-fabric-gmail-lang=ru; Max-Age=600; Path=\/; HttpOnly; Secure; SameSite=Lax/);
+  const byHeader = await accountsRouter.request(`${ORIGIN}/api/accounts/gmail/connect`, { headers: { "Accept-Language": "ru-RU,ru;q=0.9" } }, connectEnv() as never);
+  assert.match(byHeader.headers.get("Set-Cookie")!, /__Host-fabric-gmail-lang=ru/, "without ?lang= the browser's language is kept");
+  const unknown = await accountsRouter.request(`${ORIGIN}/api/accounts/gmail/connect?lang=xx`, {}, connectEnv() as never);
+  assert.equal(unknown.status, 302);
+  assert.match(unknown.headers.get("Set-Cookie")!, /__Host-fabric-gmail-lang=en/, "a language this app does not speak is English");
+
+  const back = async (cookie: string, headers: Record<string, string> = {}) => {
+    const response = await accountsRouter.request(`${ORIGIN}/api/accounts/gmail/callback?state=s&code=c`,
+      { headers: { Cookie: cookie, ...headers } }, callbackEnv(async () => ({ id: "g1", email: "me@example.invalid", status: "connected" })) as never);
+    return { response, html: await response.text() };
+  };
+  const kept = await back("__Host-fabric-gmail-state=b; __Host-fabric-gmail-lang=ru", { "Accept-Language": "en-US" });
+  assert.match(kept.html, /<html lang="ru">/, "the kept language wins over the callback browser's");
+  assert.match(kept.html, /Gmail подключён/);
+  assert.match(kept.response.headers.get("Set-Cookie")!, /__Host-fabric-gmail-lang=;.*Max-Age=0/, "and is cleared with the state");
+  const english = await back("__Host-fabric-gmail-state=b; __Host-fabric-gmail-lang=en", { "Accept-Language": "ru" });
+  assert.match(english.html, /<html lang="en">/);
+  assert.match(english.html, /Gmail is connected/);
+  const lost = await back("__Host-fabric-gmail-state=b", { "Accept-Language": "ru-RU" });
+  assert.match(lost.html, /<html lang="ru">/, "with no kept language, the callback request's own decides");
+  const none = await back("__Host-fabric-gmail-state=b");
+  assert.match(none.html, /<html lang="en">/);
+  assert.match(none.html, /Gmail is connected/);
 });

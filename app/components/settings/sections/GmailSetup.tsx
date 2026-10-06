@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { fabric, type Account } from "../../../services/fabric";
 import { GMAIL_REASON_TEXT, gmailApiUrl, gmailReason } from "../../../../shared/mail/gmail-reasons";
+import type { T } from "../../../../shared/i18n";
+import { useT } from "../../../lib/i18n";
 import { errorText } from "../ui";
 
 /**
@@ -16,7 +18,13 @@ import { errorText } from "../ui";
 export const GMAIL_CONNECT = "/api/accounts/gmail/connect";
 export const GMAIL_SETUP_KEY = ["gmail-setup"];
 
-interface Check { id: string; status: "ok" | "failed" | "unknown"; message: string; fix?: string; link?: string }
+/**
+ * A sign-in link for the system browser, which has none of this app's cookies: in Russian it says
+ * its language (`?lang=ru`) so the server's pages after the sign-in speak it; English stays bare.
+ */
+export const connectHref = (path: string, t: T) => (t.locale === "en" ? path : `${path}?lang=${t.locale}`);
+
+export interface Check { id: string; status: "ok" | "failed" | "unknown"; message: string; fix?: string; link?: string }
 export interface GmailSetup {
   configured: boolean;
   missing: string[];
@@ -37,14 +45,44 @@ export const useGmailSetup = (enabled = true) => useQuery({
   queryFn: () => fabric<GmailSetup>("/api/gmail-setup"),
 });
 
+/**
+ * Google Cloud's own names for the places and choices the person clicks: they stay exactly as
+ * Google shows them, in every language of this app, so the person finds them on Google's pages.
+ */
+const GOOGLE_NAMES = {
+  gmailApi: "Gmail API", branding: "Branding", audience: "Audience", internal: "Internal", external: "External",
+  publishApp: "Publish app", dataAccess: "Data Access", createClient: "Create client", webApplication: "Web application",
+} as const;
+/** The shape of a client ID, as an example in its field. */
+const CLIENT_ID_EXAMPLE = "…apps.googleusercontent.com";
+
 const isDesktop = () => typeof window !== "undefined" && !!(window as { fabricDesktop?: unknown }).fabricDesktop;
 
 function External({ href, children }: { href: string; children: ReactNode }) {
   return <a href={href} target="_blank" rel="noreferrer">{children} ↗</a>;
 }
 
+/**
+ * A sentence the server built from its checks (each check's message and fix, joined) in the
+ * interface's language: the whole sentence when the dictionary knows it, else each check's own words
+ * translated where they stand. English comes back unchanged.
+ */
+export function checkedText(text: string, checks: readonly Check[] | undefined, t: T): string {
+  const whole = t.text(text);
+  if (whole !== text || !checks?.length) return whole;
+  let out = text;
+  for (const c of checks) for (const part of [c.message, c.fix]) if (part) out = out.replace(part, () => t.text(part));
+  return out;
+}
+
+/** A failed request's words (with the checks it carried), in the interface's language. */
+export function failureText(error: unknown, t: T): string {
+  return checkedText(errorText(error), (error as { body?: { checks?: Check[] } } | null)?.body?.checks, t);
+}
+
 /** A value the person copies into Google Cloud, with a Copy button that says whether it worked. */
 export function CopyValue({ label, value }: { label: string; value: string }) {
+  const t = useT();
   const [state, setState] = useState<"" | "copied" | "failed">("");
   const copy = () => {
     const done = navigator.clipboard?.writeText(value);
@@ -55,23 +93,24 @@ export function CopyValue({ label, value }: { label: string; value: string }) {
     <span className="fi-copy-value">
       <span className="fi-hint">{label}</span>
       <code>{value}</code>
-      <button type="button" className="fi-text-button" onClick={copy} aria-label={`Copy ${label}`}>
-        {state === "copied" ? "Copied" : "Copy"}
+      <button type="button" className="fi-text-button" onClick={copy} aria-label={t("Copy {label}", { label })}>
+        {state === "copied" ? t("Copied") : t("Copy")}
       </button>
-      {state === "failed" && <span className="fi-hint" role="status">Copying is blocked here: select the text and copy it.</span>}
+      {state === "failed" && <span className="fi-hint" role="status">{t("Copying is blocked here: select the text and copy it.")}</span>}
     </span>
   );
 }
 
 function Checks({ checks }: { checks: Check[] }) {
+  const t = useT();
   if (!checks.length) return null;
   return (
     <ul className="fi-checks">
       {checks.map((c, i) => (
         <li key={i} className={`is-${c.status}`}>
-          <strong>{c.status === "ok" ? "OK" : c.status === "failed" ? "Not right" : "Not checked"}</strong> {c.message}
-          {c.fix && <> {c.fix}</>}
-          {c.link && <> <External href={c.link}>Open in Google Cloud</External></>}
+          <strong>{c.status === "ok" ? t("OK") : c.status === "failed" ? t("Not right") : t("Not checked")}</strong> {t.text(c.message)}
+          {c.fix && <> {t.text(c.fix)}</>}
+          {c.link && <> <External href={c.link}>{t("Open in Google Cloud")}</External></>}
         </li>
       ))}
     </ul>
@@ -83,6 +122,7 @@ function Checks({ checks }: { checks: Check[] }) {
  * client ID and secret pasted here. Shown when Gmail is not set up, and again to replace a client.
  */
 export function GmailSetupWizard({ setup, onSaved }: { setup: GmailSetup; onSaved: () => void }) {
+  const t = useT();
   const client = useQueryClient();
   const [clientId, setClientId] = useState("");
   const [secret, setSecret] = useState("");
@@ -100,8 +140,9 @@ export function GmailSetupWizard({ setup, onSaved }: { setup: GmailSetup; onSave
       const r = await fabric<{ keyCreated: boolean; checks: Check[]; warning?: string }>("/api/gmail-setup", { clientId, clientSecret: secret }, "PUT");
       setSecret("");
       setWorking("starting");
-      const kept = r.keyCreated ? " The server made its own key to keep each account's access sealed." : "";
-      setResult({ tone: r.warning ? "alert" : "status", text: `Saved.${kept} Your server starts using it within a few seconds…${r.warning ? ` One thing is left: ${r.warning}` : ""}`, checks: r.checks });
+      const kept = r.keyCreated ? " " + t("The server made its own key to keep each account's access sealed.") : "";
+      const left = r.warning ? " " + t("One thing is left: {warning}", { warning: checkedText(r.warning, r.checks, t) }) : "";
+      setResult({ tone: r.warning ? "alert" : "status", text: `${t("Saved.")}${kept} ${t("Your server starts using it within a few seconds…")}${left}`, checks: r.checks });
       // The settings are a new version of the server: read until it answers with them.
       for (let attempt = 0; attempt < 10 && alive.current; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -112,55 +153,72 @@ export function GmailSetupWizard({ setup, onSaved }: { setup: GmailSetup; onSave
           return;
         }
       }
-      if (alive.current) setResult({ tone: "alert", text: "Saved, but your server has not started using the Gmail settings yet. Reload this page in a minute.", checks: r.checks });
+      if (alive.current) setResult({ tone: "alert", text: t("Saved, but your server has not started using the Gmail settings yet. Reload this page in a minute."), checks: r.checks });
     } catch (error) {
       const body = (error as { body?: { checks?: Check[] } }).body;
-      setResult({ tone: "alert", text: errorText(error), checks: body?.checks });
+      setResult({ tone: "alert", text: failureText(error, t), checks: body?.checks });
       field.current?.focus();
     } finally { if (alive.current) setWorking(""); }
   }
 
   return (
     <form className="fi-gmail-setup" onSubmit={(e) => { e.preventDefault(); void save(); }}>
-      <p>Gmail is connected through a Google Cloud app of your own, so your mail goes only between Google and your server. Setting it up takes about ten minutes, once; then every Gmail account is connected with a sign-in.</p>
-      {!setup.canSave && setup.cannotSave && <div className="fi-callout is-warn" role="status"><p>{setup.cannotSave}</p></div>}
+      <p>{t("Gmail is connected through a Google Cloud app of your own, so your mail goes only between Google and your server. Setting it up takes about ten minutes, once; then every Gmail account is connected with a sign-in.")}</p>
+      {!setup.canSave && setup.cannotSave && <div className="fi-callout is-warn" role="status"><p>{t.text(setup.cannotSave)}</p></div>}
       <ol className="fi-setup-steps">
         <li>
-          <strong>Create a project.</strong> <External href={l.createProject}>New project in Google Cloud</External>. Any name; use it only for Fabric Inbox.
+          {t.rich("{title} {link}. Any name; use it only for Fabric Inbox.", {
+            title: <strong key="title">{t("Create a project.")}</strong>,
+            link: <External key="link" href={l.createProject}>{t("New project in Google Cloud")}</External> })}
         </li>
         <li>
-          <strong>Turn on the Gmail API.</strong> <External href={l.gmailApi}>Gmail API</External>, check that your new project is selected at the top, and choose Enable.
+          {t.rich("{title} {link}, check that your new project is selected at the top, and choose Enable.", {
+            title: <strong key="title">{t("Turn on the Gmail API.")}</strong>,
+            link: <External key="link" href={l.gmailApi}>{GOOGLE_NAMES.gmailApi}</External> })}
         </li>
         <li>
-          <strong>Describe the app.</strong> <External href={l.branding}>Branding</External> (choose Get started if Google asks): the app name and your email as the support email, then under Authorized domains add this server's domain.
-          <CopyValue label="App name" value={v.appName} />
-          <CopyValue label="Authorized domain" value={v.authorizedDomain} />
+          {t.rich("{title} {link} (choose Get started if Google asks): the app name and your email as the support email, then under Authorized domains add this server's domain.", {
+            title: <strong key="title">{t("Describe the app.")}</strong>,
+            link: <External key="link" href={l.branding}>{GOOGLE_NAMES.branding}</External> })}
+          <CopyValue label={t("App name")} value={v.appName} />
+          <CopyValue label={t("Authorized domain")} value={v.authorizedDomain} />
         </li>
         <li>
-          <strong>Choose who can connect.</strong> <External href={l.audience}>Audience</External>:
+          {t.rich("{title} {link}:", {
+            title: <strong key="title">{t("Choose who can connect.")}</strong>,
+            link: <External key="link" href={l.audience}>{GOOGLE_NAMES.audience}</External> })}
           <ul>
-            <li>A Google Workspace account (your company's): choose <strong>Internal</strong>.</li>
-            <li>A personal Gmail account: choose <strong>External</strong>, then <strong>Publish app</strong>.</li>
+            <li>{t.rich("A Google Workspace account (your company's): choose {internal}.", { internal: <strong key="internal">{GOOGLE_NAMES.internal}</strong> })}</li>
+            <li>{t.rich("A personal Gmail account: choose {external}, then {publish}.", { external: <strong key="external">{GOOGLE_NAMES.external}</strong>, publish: <strong key="publish">{GOOGLE_NAMES.publishApp}</strong> })}</li>
           </ul>
-          <p className="fi-hint">Why: Google ends a Testing app's access after 7 days, and the account would need connecting again every week (<External href={setup.help.testingExpiry}>Google</External>). Your own app with fewer than 100 users needs no verification (<External href={setup.help.personalUse}>Google</External>); when you connect, Google says it “hasn't verified this app”: choose Advanced, then continue.</p>
+          <p className="fi-hint">{t.rich("Why: Google ends a Testing app's access after 7 days, and the account would need connecting again every week ({expiry}). Your own app with fewer than 100 users needs no verification ({personal}); when you connect, Google says it “hasn't verified this app”: choose Advanced, then continue.", {
+            expiry: <External key="expiry" href={setup.help.testingExpiry}>Google</External>,
+            personal: <External key="personal" href={setup.help.personalUse}>Google</External> })}</p>
         </li>
         <li>
-          <strong>Allow Gmail.</strong> <External href={l.dataAccess}>Data Access</External> → Add or remove scopes → add this scope by hand, then Update and Save.
-          <CopyValue label="Scope" value={v.scope} />
-          <p className="fi-hint">Google lists it as restricted (<External href={setup.help.restrictedScope}>Google</External>); that limits apps published to the public, not your own.</p>
+          {t.rich("{title} {link} → Add or remove scopes → add this scope by hand, then Update and Save.", {
+            title: <strong key="title">{t("Allow Gmail.")}</strong>,
+            link: <External key="link" href={l.dataAccess}>{GOOGLE_NAMES.dataAccess}</External> })}
+          <CopyValue label={t("Scope")} value={v.scope} />
+          <p className="fi-hint">{t.rich("Google lists it as restricted ({link}); that limits apps published to the public, not your own.", {
+            link: <External key="link" href={setup.help.restrictedScope}>Google</External> })}</p>
         </li>
         <li>
-          <strong>Create the OAuth client.</strong> <External href={l.createClient}>Create client</External>: type <strong>Web application</strong>, any name, and under Authorized redirect URIs add exactly:
-          <CopyValue label="Redirect URI" value={v.redirectUri} />
-          Then Create; Google shows the client ID and the client secret.
+          {t.rich("{title} {link}: type {type}, any name, and under Authorized redirect URIs add exactly:", {
+            title: <strong key="title">{t("Create the OAuth client.")}</strong>,
+            link: <External key="link" href={l.createClient}>{GOOGLE_NAMES.createClient}</External>,
+            type: <strong key="type">{GOOGLE_NAMES.webApplication}</strong> })}
+          <CopyValue label={t("Redirect URI")} value={v.redirectUri} />
+          {t("Then Create; Google shows the client ID and the client secret.")}
         </li>
         <li>
-          <strong>Paste them here.</strong> Your server checks them with Google and keeps them in its own settings; the secret is never shown again.
-          <label className="fi-field">Client ID
-            <input ref={field} className="fi-input" autoComplete="off" spellCheck={false} required placeholder="…apps.googleusercontent.com"
+          {t.rich("{title} Your server checks them with Google and keeps them in its own settings; the secret is never shown again.", {
+            title: <strong key="title">{t("Paste them here.")}</strong> })}
+          <label className="fi-field">{t("Client ID")}
+            <input ref={field} className="fi-input" autoComplete="off" spellCheck={false} required placeholder={CLIENT_ID_EXAMPLE}
               value={clientId} onChange={(e) => setClientId(e.target.value)} disabled={!!working} />
           </label>
-          <label className="fi-field">Client secret
+          <label className="fi-field">{t("Client secret")}
             <input className="fi-input" type="password" autoComplete="off" spellCheck={false} required
               value={secret} onChange={(e) => setSecret(e.target.value)} disabled={!!working} />
           </label>
@@ -174,7 +232,7 @@ export function GmailSetupWizard({ setup, onSaved }: { setup: GmailSetup; onSave
       )}
       <div className="fi-dialog-actions">
         <button type="submit" className="fi-primary" disabled={!!working || !setup.canSave || !clientId.trim() || !secret.trim()}>
-          {working === "saving" ? "Checking with Google…" : working === "starting" ? "Starting…" : "Save and check"}
+          {working === "saving" ? t("Checking with Google…") : working === "starting" ? t("Starting…") : t("Save and check")}
         </button>
       </div>
     </form>
@@ -183,32 +241,34 @@ export function GmailSetupWizard({ setup, onSaved }: { setup: GmailSetup; onSave
 
 /** The connect step, once Gmail is set up: what happens in the browser, said before it happens. */
 export function GmailConnectStep({ setup, onReplace }: { setup?: GmailSetup; onReplace: () => void }) {
+  const t = useT();
   const [checking, setChecking] = useState(false);
   const [check, setCheck] = useState<{ ok: boolean; checks: Check[] } | { error: string } | null>(null);
   async function runCheck() {
     setChecking(true); setCheck(null);
     try { setCheck(await fabric<{ ok: boolean; checks: Check[] }>("/api/gmail-setup/check")); }
-    catch (error) { setCheck({ error: errorText(error) }); }
+    catch (error) { setCheck({ error: t.text(errorText(error)) }); }
     finally { setChecking(false); }
   }
   return (
     <>
-      <p>Google's sign-in opens in your browser: Google does not allow it inside apps. Choose the Google account, tick the Gmail box, and allow access. The account appears here when the browser says it is connected.</p>
+      <p>{t("Google's sign-in opens in your browser: Google does not allow it inside apps. Choose the Google account, tick the Gmail box, and allow access. The account appears here when the browser says it is connected.")}</p>
       {isDesktop() && (
         <div className="fi-callout" role="note">
-          <p><strong>The first time, your browser asks you to sign in to your server</strong> with a code Cloudflare emails you, as this app did. It is the same server; after that, Google's page follows.</p>
+          <p>{t.rich("{first} with a code Cloudflare emails you, as this app did. It is the same server; after that, Google's page follows.", {
+            first: <strong key="first">{t("The first time, your browser asks you to sign in to your server")}</strong> })}</p>
         </div>
       )}
       {setup?.addressMatches === false && (
-        <div className="fi-callout is-warn" role="alert"><p>Gmail is set up for {setup.publicAppUrl}; connecting works only there. Open the app at that address, or set Gmail up again from here.</p></div>
+        <div className="fi-callout is-warn" role="alert"><p>{t("Gmail is set up for {address}; connecting works only there. Open the app at that address, or set Gmail up again from here.", { address: setup.publicAppUrl ?? "" })}</p></div>
       )}
       {check && ("error" in check
         ? <p className="fi-action-result is-error" role="alert">{check.error}</p>
-        : <div className="fi-action-result" role="status"><p>{check.ok ? "Google accepts this server's client and redirect URI." : "Something in the setup needs attention:"}</p><Checks checks={check.checks} /></div>)}
+        : <div className="fi-action-result" role="status"><p>{check.ok ? t("Google accepts this server's client and redirect URI.") : t("Something in the setup needs attention:")}</p><Checks checks={check.checks} /></div>)}
       <div className="fi-dialog-actions">
-        <button type="button" className="fi-secondary" onClick={() => void runCheck()} disabled={checking}>{checking ? "Checking with Google…" : "Check the setup"}</button>
-        <button type="button" className="fi-secondary" onClick={onReplace}>Use another Google client…</button>
-        <a className="fi-primary" data-autofocus href={GMAIL_CONNECT} target="_blank" rel="noreferrer">Connect Gmail in browser ↗</a>
+        <button type="button" className="fi-secondary" onClick={() => void runCheck()} disabled={checking}>{checking ? t("Checking with Google…") : t("Check the setup")}</button>
+        <button type="button" className="fi-secondary" onClick={onReplace}>{t("Use another Google client…")}</button>
+        <a className="fi-primary" data-autofocus href={connectHref(GMAIL_CONNECT, t)} target="_blank" rel="noreferrer">{t("Connect Gmail in browser ↗")}</a>
       </div>
     </>
   );
@@ -221,32 +281,33 @@ export function GmailConnectStep({ setup, onReplace }: { setup?: GmailSetup; onR
 export function GmailProblem({ account, projectNumber, onRetry, onSetup, busy }: {
   account: Account; projectNumber: string | null; onRetry: () => void; onSetup: () => void; busy: boolean;
 }) {
+  const t = useT();
   const reason = gmailReason(account);
   const until = account.accessUntil && account.accessUntil > Date.now() ? new Date(account.accessUntil) : null;
   if (!reason && !account.error && !until) return null;
   if (!reason && !account.error && until)
     return (
       <div className="fi-callout is-warn" role="note">
-        <p>Google ends this access on {until.toLocaleString()}: {GMAIL_REASON_TEXT.testing_expiry.explain}</p>
-        <p>Publish the app in Google Cloud → Audience, then reconnect it, and it will last.</p>
+        <p>{t("Google ends this access on {date}: {why}", { date: t.dateTime(until), why: t.text(GMAIL_REASON_TEXT.testing_expiry.explain) })}</p>
+        <p>{t("Publish the app in Google Cloud → Audience, then reconnect it, and it will last.")}</p>
       </div>
     );
   return (
     <div className="fi-callout is-bad" role="alert">
-      {reason ? (<><p>{reason.explain}</p><p>{reason.fix}</p></>)
-        : <p>{account.status === "reconnect_required" ? "Google no longer accepts this account's access. Reconnect it." : `The last sync failed (${account.error}). It is tried again on its own.`}</p>}
+      {reason ? (<><p>{t.text(reason.explain)}</p><p>{t.text(reason.fix)}</p></>)
+        : <p>{account.status === "reconnect_required" ? t("Google no longer accepts this account's access. Reconnect it.") : t("The last sync failed ({error}). It is tried again on its own.", { error: account.error ?? "" })}</p>}
       <div className="fi-buttons">
         {(!reason || reason.action === "reconnect") && account.status === "reconnect_required" && (
-          <a className="fi-primary" href={GMAIL_CONNECT} target="_blank" rel="noreferrer">Reconnect in browser ↗</a>
+          <a className="fi-primary" href={connectHref(GMAIL_CONNECT, t)} target="_blank" rel="noreferrer">{t("Reconnect in browser ↗")}</a>
         )}
         {reason?.action === "enable_api" && (
           <>
-            <a className="fi-primary" href={gmailApiUrl(projectNumber)} target="_blank" rel="noreferrer">Enable the Gmail API ↗</a>
-            <button type="button" className="fi-secondary" onClick={onRetry} disabled={busy}>Retry</button>
+            <a className="fi-primary" href={gmailApiUrl(projectNumber)} target="_blank" rel="noreferrer">{t("Enable the Gmail API ↗")}</a>
+            <button type="button" className="fi-secondary" onClick={onRetry} disabled={busy}>{t("Retry")}</button>
           </>
         )}
-        {reason?.action === "setup" && <button type="button" className="fi-primary" onClick={onSetup}>Check the Gmail setup</button>}
-        {!reason && account.status !== "reconnect_required" && <button type="button" className="fi-secondary" onClick={onRetry} disabled={busy}>Retry now</button>}
+        {reason?.action === "setup" && <button type="button" className="fi-primary" onClick={onSetup}>{t("Check the Gmail setup")}</button>}
+        {!reason && account.status !== "reconnect_required" && <button type="button" className="fi-secondary" onClick={onRetry} disabled={busy}>{t("Retry now")}</button>}
       </div>
     </div>
   );

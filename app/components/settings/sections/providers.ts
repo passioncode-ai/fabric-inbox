@@ -7,8 +7,12 @@
  * on the server; Gmail (`browser-oauth`) and Outlook (`microsoft-oauth`, SCN-057) with a sign-in in
  * the browser, after the owner's one-time setup. The app never simulates an account it cannot reach.
  *
+ * Names, summaries and the availability words are English marked with msg(); the cards show them
+ * in the interface's language with t.text() (shared/i18n).
+ *
  * Plain module: the tests load it directly.
  */
+import { englishT, msg, type T } from "../../../../shared/i18n";
 
 export type ProviderId = "cloudflare" | "gmail" | "gmail-app-password" | "imap" | "microsoft";
 
@@ -31,19 +35,19 @@ export interface ProviderEntry {
 
 export const PROVIDERS: readonly ProviderEntry[] = [
   { id: "cloudflare", name: "Cloudflare", connect: "cloudflare-token",
-    summary: "Your domains and the addresses on them. One more account, with its own token." },
+    summary: msg("Your domains and the addresses on them. One more account, with its own token.") },
   { id: "gmail", name: "Gmail", connect: "browser-oauth",
-    summary: "A Google account's mail, read and sent through Google. Each account is connected separately." },
+    summary: msg("A Google account's mail, read and sent through Google. Each account is connected separately.") },
   // Gmail over IMAP with an app password: the route that needs no Google Cloud project (the IMAP
   // preset "gmail": imap.gmail.com and smtp.gmail.com, shared/mail/imap-presets.ts).
-  { id: "gmail-app-password", name: "Gmail with an app password", connect: "app-password", preset: "gmail",
-    summary: "Gmail without Google Cloud: an app password from your Google account. Needs 2-Step Verification; not for work or school accounts.",
-    tradeoff: "Gmail's labels appear as folders, and mail is read over IMAP rather than through Google's API.",
+  { id: "gmail-app-password", name: msg("Gmail with an app password"), connect: "app-password", preset: "gmail",
+    summary: msg("Gmail without Google Cloud: an app password from your Google account. Needs 2-Step Verification; not for work or school accounts."),
+    tradeoff: msg("Gmail's labels appear as folders, and mail is read over IMAP rather than through Google's API."),
     helpUrl: "https://support.google.com/accounts/answer/185833" },
-  { id: "imap", name: "Other mail (IMAP)", connect: "app-password",
-    summary: "iCloud, Yahoo, AOL, Fastmail, Zoho, Yandex, Mail.ru, GMX or your own server, with an app password. Each account is connected separately." },
+  { id: "imap", name: msg("Other mail (IMAP)"), connect: "app-password",
+    summary: msg("iCloud, Yahoo, AOL, Fastmail, Zoho, Yandex, Mail.ru, GMX or your own server, with an app password. Each account is connected separately.") },
   { id: "microsoft", name: "Outlook", connect: "microsoft-oauth",
-    summary: "Outlook.com, Hotmail and Microsoft 365 mail, read and sent through Microsoft. Each account is connected separately.",
+    summary: msg("Outlook.com, Hotmail and Microsoft 365 mail, read and sent through Microsoft. Each account is connected separately."),
     helpUrl: "https://support.microsoft.com/en-us/office/modern-authentication-methods-now-needed-to-continue-syncing-outlook-email-in-non-microsoft-email-apps-c5d65390-9676-4763-b41f-d7986499a90d" },
 ];
 
@@ -75,8 +79,24 @@ export function availability(provider: Pick<ProviderEntry, "id" | "connect">, st
 
 export const AVAILABILITY_TEXT: Record<Availability, string> = {
   available: "",
-  "not-configured": "Not set up on this server",
-  checking: "Checking…",
-  unknown: "Unknown until the accounts load",
-  unavailable: "Not available in this build",
+  "not-configured": msg("Not set up on this server"),
+  checking: msg("Checking…"),
+  unknown: msg("Unknown until the accounts load"),
+  unavailable: msg("Not available in this build"),
 };
+
+/**
+ * An account's state as its badge says it (`reconnect_required` → "reconnect required"), in the
+ * language of `t`; a state this list does not know is shown as the server named it.
+ */
+export function accountStatusText(status: string, t: T = englishT): string {
+  switch (status) {
+    case "connected": return t("connected");
+    case "syncing": return t("syncing");
+    case "reconnect_required": return t("reconnect required");
+    case "error": return t("error");
+    case "rate_limited": return t("rate limited");
+    case "disconnected": return t("disconnected");
+    default: return status.replaceAll("_", " ");
+  }
+}

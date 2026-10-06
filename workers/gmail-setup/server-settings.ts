@@ -18,12 +18,13 @@
  * The credential key is never replaced once it is valid: every connected account's access is
  * sealed with it, and a new key would leave them all unreadable.
  */
+import { msg } from "../../shared/i18n";
 import { b64url, fromB64 } from "../providers/google-oauth";
 import type { CloudflareApi } from "../routing/cloudflare-api";
 
 export const GMAIL_SETTING_NAMES = ["GOOGLE_CLIENT_ID", "PUBLIC_APP_URL", "GOOGLE_CLIENT_SECRET", "MAIL_CREDENTIAL_KEY"] as const;
-const WHAT_READ = "read your server's settings (Workers Scripts: Edit)";
-const WHAT_WRITE = "change your server's settings (Workers Scripts: Edit)";
+const WHAT_READ = msg("read your server's settings (Workers Scripts: Edit)");
+const WHAT_WRITE = msg("change your server's settings (Workers Scripts: Edit)");
 
 /** True when the value is a key the server can use: base64url of exactly 32 bytes. */
 export function validCredentialKey(value: string | undefined): boolean {
