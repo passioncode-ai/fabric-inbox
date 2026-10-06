@@ -7,6 +7,29 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **Refresh sits on the left, with how fresh the mail is.** Beside it: "Updated 3 min ago" (the
+  server's last successful read of the Gmail, IMAP and Outlook accounts in view), "Live" for
+  Cloudflare addresses, "Updating…" while it runs, and the account that failed with its fix. A click
+  shows every account's state. ⌘⇧N refreshes (⌘R stays Retry connection).
+- **Delete or Backspace archives and marks read; ⌘⌫ (Ctrl+Backspace) discards.** Both work on
+  several selected messages, open the next one and offer Undo (also ⌘Z). Arrows and j/k move;
+  ? lists the shortcuts. Keys never fire while typing or with a dialog open.
+- **Discarded: deleted, but recoverable.** A discarded message goes to its account's Discarded
+  folder (a Cloudflare folder, a Gmail label, an IMAP folder, an Outlook folder), out of the inbox,
+  counts and categories, and is removed after 30 days. Each discard records why and teaches a rule
+  (the mailing list, else the sender), so mail like it goes straight to Discarded on arrival — never
+  mail from someone you wrote to, replies in your conversations, your own domains or senders on the
+  Always allow list. "Not discarded" brings a message back and can drop the rule. Settings →
+  Discard rules lists them. Agents: `discard_messages`, `restore_discarded`, `list_discard_rules`,
+  `remove_discard_rule`, `update_discard_allow_list`.
+- **Adding an address is one worked-out dialog.** A live check as you type (allowed characters,
+  role names, already here, already routed elsewhere in Cloudflare, the catch-all), a domain picker
+  with each domain's state, a display name and signature, who answers, a forwarding copy, then the
+  steps in place: receive the domain if needed, create the address, make the Cloudflare rule (or say
+  why not with its fix), and a test message watched until it arrives. "Add several" creates many at
+  once. A rule Cloudflare refuses no longer costs the address: it shows "Not receiving yet" with
+  Fix it. Agents: `check_address`, `create_addresses`, `check_test_message`; `create_address`
+  takes a signature.
 - **Usage counts no longer wait for the Keychain.** They are sent with Node's `fetch` in the main
   process instead of Chromium's network stack, which waits for the cookie key; a pending Keychain
   prompt held every count back on the owner's Mac (0.11.0).
