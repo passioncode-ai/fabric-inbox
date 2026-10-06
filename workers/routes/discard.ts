@@ -6,7 +6,7 @@ import {
 } from "../../shared/mail/discard";
 import { DiscardStoreConflict, explainDiscard, readDiscardStore, updateDiscardStore } from "../discard/store";
 import { readSpamLists } from "../spam/lists";
-import { allServedDomains } from "../lib/mailbox-store";
+import { cloudflareWorkspace } from "../discard/workspace";
 import { parseRemoteAccount } from "../../shared/mail/accounts";
 
 /**
@@ -118,7 +118,11 @@ discardRouter.post("/api/discard", async (c) => {
   const teach = done.filter((r) => r.facts);
   if (teach.length) {
     try {
-      const ownDomains = await allServedDomains(c.env).catch(() => [] as string[]);
+      // "Written to" and "own domains" are the workspace's (every mailbox and account), as on arrival;
+      // a sender that cannot be cleared counts as written to, so no rule is learned that would hold back anyway.
+      const workspace = cloudflareWorkspace(c.env);
+      for (const r of teach) if (!r.facts!.known && r.facts!.facts.sender) r.facts!.known = await workspace.known(r.facts!.facts.sender);
+      const ownDomains = await workspace.ownDomains().catch(() => [] as string[]);
       await updateDiscardStore(c.env.BUCKET, (store) => {
         // A retried write starts over: what was learned is what the last attempt saw.
         learned.clear(); skipped.clear();

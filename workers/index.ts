@@ -17,6 +17,7 @@ import { spamCheck, type SpamVerdict } from "../shared/mail/spam";
 import { readSpamLists } from "./spam/lists";
 import { autoReason, discardFacts, discardSafety, matchDiscard, recordApplied } from "../shared/mail/discard";
 import { readDiscardStore, updateDiscardStore } from "./discard/store";
+import { cloudflareWorkspace } from "./discard/workspace";
 import type { Env } from "./types";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
 
@@ -654,8 +655,9 @@ async function spamVerdict(env: Env, stub: { knownCorrespondent(address: string)
 /**
  * Whether a discard rule takes the arriving message (shared/mail/discard.ts): it matches by its
  * List-Id or its sender, and nothing stops it — the sender is not on an Always allow or Never spam
- * list, not on one of the workspace's own domains, not someone this mailbox wrote to, and the message
- * is not in a conversation this mailbox took part in. Any failure to decide leaves it in the inbox.
+ * list, not on one of the workspace's own domains (served, or a connected account's own), not someone
+ * any mailbox or account of the workspace wrote to, and the message is not in a conversation this
+ * mailbox took part in. Any failure to decide leaves it in the inbox.
  */
 async function discardVerdict(env: Env, stub: { knownCorrespondent(address: string): Promise<boolean>; threadHasSent(threadId: string): Promise<boolean> },
   sender: string, headers: { key: string; value: string }[], threadId: string): Promise<{ ruleId: string; reason: string } | null> {
@@ -666,8 +668,10 @@ async function discardVerdict(env: Env, stub: { knownCorrespondent(address: stri
     const lists = await readSpamLists(env.BUCKET);
     const rule = matchDiscard(store, facts, lists);
     if (!rule) return null;
+    // Rules apply workspace-wide, so "written to" and "own domains" are the workspace's: every mailbox, every account.
+    const workspace = cloudflareWorkspace(env);
     const [known, inThread, ownDomains] = await Promise.all([
-      sender ? stub.knownCorrespondent(sender) : Promise.resolve(false), stub.threadHasSent(threadId), allServedDomains(env),
+      sender ? workspace.known(sender) : Promise.resolve(false), stub.threadHasSent(threadId), workspace.ownDomains(),
     ]);
     const held = discardSafety({ sender, known, inThread, ownDomains });
     if (held) {

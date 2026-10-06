@@ -999,6 +999,15 @@ export class AccountService {
     }
     return { known, inThread };
   }
+  /** Whether any connected account wrote to `sender` (sentContact over each account's Sent index). */
+  async knownAnywhere(sender: string): Promise<boolean> {
+    if (!addressOf(sender)) return false;
+    for (const key of (await this.store.list<AccountRecord>({ prefix: "account:" })).keys()) {
+      const id = key.slice("account:".length);
+      if ((await this.sentContact(id, sender, undefined)).known) return true;
+    }
+    return false;
+  }
   /**
    * Discarded mail older than DISCARD_RETENTION_MS goes to the account's Trash (the provider empties
    * it on its own schedule), at most `limit` a run; a message gone meanwhile only loses its record. An

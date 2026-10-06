@@ -207,6 +207,9 @@ test("a sender the account wrote to in Cc or Bcc is known, as in To — also fro
   }
   assert.equal((await service.sentContact(id, "carol@example.org", undefined)).known, true);
   assert.equal((await service.sentContact(id, "erin@example.org", undefined)).known, true);
+  // The workspace's question: any connected account.
+  assert.equal(await service.knownAnywhere("Erin <erin@example.org>"), true);
+  assert.equal(await service.knownAnywhere("nobody@example.org"), false);
 });
 
 test("IMAP: Discarded mail goes to Trash after 30 days; younger mail stays", async (t) => {

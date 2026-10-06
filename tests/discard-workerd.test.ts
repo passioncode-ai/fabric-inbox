@@ -40,6 +40,13 @@ const bundle = await build({
         async enqueue(mailboxId, emailId) { const seen = (await this.ctx.storage.get('seen')) || []; await this.ctx.storage.put('seen', [...seen, emailId]); }
         async seen() { return (await this.ctx.storage.get('seen')) || []; }
       }
+      // A connected Gmail account, as the workspace's accounts object answers for it (fixture accounts: true).
+      export class TestAccounts extends DurableObject {
+        async set(state) { await this.ctx.storage.put('state', state); }
+        async state() { return (await this.ctx.storage.get('state')) || { wrote: [], accounts: [], down: false }; }
+        async knownSender(address) { const s = await this.state(); if (s.down) throw new Error('accounts down'); return s.wrote.includes(address); }
+        async listAccounts() { const s = await this.state(); if (s.down) throw new Error('accounts down'); return { accounts: s.accounts.map((email, i) => ({ id: 'g' + i, provider: 'gmail', email })) }; }
+      }
       export class LegacyFolders extends DurableObject {
         async run() {
           const sql = this.ctx.storage.sql;
@@ -62,7 +69,9 @@ const bundle = await build({
       });
       app.get('/agents', async (c) => c.json(await c.env.AGENT_REGISTRY.getByName('workspace').seen()));
       app.post('/row', async (c) => c.json(await box(c.env).row((await c.req.json()).id)));
-      app.post('/sent', async (c) => { const b = await c.req.json(); await box(c.env).sent(b.to, b.threadId); return c.json({ ok: true }); });
+      app.post('/sent', async (c) => { const b = await c.req.json(); const stub = b.mailbox ? c.env.MAILBOX.get(c.env.MAILBOX.idFromName(b.mailbox)) : box(c.env); await stub.sent(b.to, b.threadId); return c.json({ ok: true }); });
+      app.post('/second-mailbox', async (c) => { await c.env.BUCKET.put('mailboxes/other@shop.invalid.json', JSON.stringify({ agent: 'off' })); return c.json({ ok: true }); });
+      app.post('/accounts', async (c) => { await c.env.GMAIL_ACCOUNTS.getByName('workspace').set(await c.req.json()); return c.json({ ok: true }); });
       app.post('/backdate', async (c) => { await box(c.env).backdateDiscarded((await c.req.json()).days); return c.json({ ok: true }); });
       app.post('/purge', async (c) => c.json(await box(c.env).purgeDiscarded({})));
       app.get('/folders', async (c) => c.json(await box(c.env).folders()));
@@ -87,10 +96,11 @@ const bundle = await build({
 
 const NEWS = "List-Id: Weekly Digest <weekly.news.example.org>\r\nList-Unsubscribe: <https://news.example.org/u>\r\n";
 
-async function fixture(options: { legacy?: boolean } = {}) {
+async function fixture(options: { legacy?: boolean; accounts?: boolean } = {}) {
   const mf = new Miniflare({
     modules: true, script: bundle.outputFiles[0].text, compatibilityDate: "2026-09-01", compatibilityFlags: ["nodejs_compat"],
-    durableObjects: { MAILBOX: { className: "TestMailbox", useSQLite: true }, AGENT_REGISTRY: { className: "TestAgents", useSQLite: true }, LEGACY: { className: "LegacyFolders", useSQLite: true } },
+    durableObjects: { MAILBOX: { className: "TestMailbox", useSQLite: true }, AGENT_REGISTRY: { className: "TestAgents", useSQLite: true }, LEGACY: { className: "LegacyFolders", useSQLite: true },
+      ...(options.accounts ? { GMAIL_ACCOUNTS: { className: "TestAccounts", useSQLite: true } } : {}) },
     r2Buckets: ["BUCKET"], bindings: { DOMAINS: "shop.invalid", ...(options.legacy ? { LEGACY_MAILBOX: "1" } : {}) },
     outboundService: () => new Response("External network disabled for tests", { status: 503 }),
   });
@@ -316,5 +326,52 @@ test("Discarded missing from a mailbox is made again: by the repair, and on arri
     const third = await receive("Hello", { from: "someone@else.example" });
     assert.equal((await call("/api/discard", "POST", { messages: [ref(third.emailId)] })).body.moved, 1);
     assert.equal((await call("/row", "POST", { id: third.emailId })).body.folder_id, "discarded");
+  } finally { await mf.dispose(); }
+});
+
+test("someone any address of the workspace wrote to is never learned or discarded: another mailbox, a Gmail account; unreadable means known", async () => {
+  const { mf, call, receive, ref } = await fixture({ accounts: true });
+  try {
+    await call("/second-mailbox", "POST");
+    // Written to from another Cloudflare mailbox of the workspace.
+    await call("/sent", "POST", { mailbox: "other@shop.invalid", to: "carol@partner.example" });
+    const carol = await receive("From Carol", { from: "carol@partner.example" });
+    const learnt = await call("/api/discard", "POST", { messages: [ref(carol.emailId)] });
+    assert.equal(learnt.body.moved, 1);
+    assert.deepEqual(learnt.body.learned, [], "not learned");
+    assert.deepEqual(learnt.body.skipped, ["You have written to this sender, so their mail is never discarded on its own"]);
+    // Written to from Gmail: not learned.
+    await call("/accounts", "POST", { wrote: ["xavier@partner.example"], accounts: [], down: false });
+    const xavier = await receive("From Xavier", { from: "xavier@partner.example" });
+    assert.deepEqual((await call("/api/discard", "POST", { messages: [ref(xavier.emailId)] })).body.learned, []);
+    // A rule learned before anyone wrote to them stops applying once the Gmail account has.
+    const dan = await receive("From Dan", { from: "dan@partner.example" });
+    assert.equal((await call("/api/discard", "POST", { messages: [ref(dan.emailId)] })).body.learned.length, 1);
+    assert.match((await receive("Dan again", { from: "dan@partner.example" })).discarded ?? "", /Discarded automatically/);
+    await call("/accounts", "POST", { wrote: ["xavier@partner.example", "dan@partner.example"], accounts: [], down: false });
+    assert.equal((await receive("Dan, written to", { from: "dan@partner.example" })).discarded, undefined, "held: the Gmail account wrote to him");
+    // The accounts cannot answer: known, so the rule holds back.
+    const erin = await receive("From Erin", { from: "erin@partner.example" });
+    assert.equal((await call("/api/discard", "POST", { messages: [ref(erin.emailId)] })).body.learned.length, 1);
+    await call("/accounts", "POST", { wrote: [], accounts: [], down: true });
+    assert.equal((await receive("Erin again", { from: "erin@partner.example" })).discarded, undefined, "not discarded when it cannot tell");
+  } finally { await mf.dispose(); }
+});
+
+test("a connected account's own domain is the workspace's own: never learned, never discarded; a shared personal domain is not", async () => {
+  const { mf, call, receive, ref } = await fixture({ accounts: true });
+  try {
+    await call("/accounts", "POST", { wrote: [], accounts: [], down: false });
+    const boss = await receive("Report", { from: "noreply@corp.example" });
+    assert.equal((await call("/api/discard", "POST", { messages: [ref(boss.emailId)] })).body.learned.length, 1, "learned while no account had that domain");
+    await call("/accounts", "POST", { wrote: [], accounts: ["me@corp.example", "me@gmail.com"], down: false });
+    assert.equal((await receive("Report 2", { from: "noreply@corp.example" })).discarded, undefined, "held: corp.example is the workspace's own now");
+    const colleague = await receive("Hi", { from: "kim@corp.example" });
+    const skipped = await call("/api/discard", "POST", { messages: [ref(colleague.emailId)] });
+    assert.deepEqual(skipped.body.learned, []);
+    assert.deepEqual(skipped.body.skipped, ["It is from your own domain, whose mail is never discarded on its own"]);
+    const stranger = await receive("Hello", { from: "stranger@gmail.com" });
+    assert.equal((await call("/api/discard", "POST", { messages: [ref(stranger.emailId)] })).body.learned.length, 1, "gmail.com is no one's own domain");
+    assert.match((await receive("Hello again", { from: "stranger@gmail.com" })).discarded ?? "", /Discarded automatically/);
   } finally { await mf.dispose(); }
 });

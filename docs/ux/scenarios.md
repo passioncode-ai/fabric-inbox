@@ -1459,7 +1459,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   2. The server records why: its mailing list (List-Id) or newsletter mark (List-Unsubscribe), its sender, the sender's domain only for bulk senders and never a shared personal domain, the category it was in, and a model's one-line guess when the server has one; a rule is kept on the list, else the sender.
   3. The first discard of a list or sender -> the toast adds once "Future mail from Weekly Digest will go to Discarded · Don't".
 - **Expected result:** One keystroke removes the message and teaches the inbox; the person sees what was learned and can refuse it at once.
-- **Alt paths:** Don't removes the rule; a sender the mailbox wrote to, one on its own domains, or one on Always allow is not learned (the mail is still discarded); agents discard with discard_messages, learn: false for a one-off.
+- **Alt paths:** Don't removes the rule; a sender any address of the workspace wrote to, one on the workspace's own domains, or one on Always allow is not learned (the mail is still discarded); agents discard with discard_messages, learn: false for a one-off.
 - **UI elements:** SCR-03 toast with Undo and Don't; SCR-04 Discard.
 - **States covered:** loading, error, success
 - **Errors & recovery:** A rule that cannot be saved still discards the mail and says nothing was learned; a server that refuses to make the IMAP folder says so (make a folder named Discarded there and try again).
@@ -1478,7 +1478,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   1. New mail arrives that matches a rule by its List-Id or its sender -> after the spam check, it goes straight to Discarded, read; no rule, agent or category sees it, and no forwarding copy is sent.
   2. Open Discarded -> it says "Why discarded: Discarded automatically: you discarded 3 messages from this newsletter (Weekly Digest)".
 - **Expected result:** What the person threw away once does not come back to the inbox.
-- **Alt paths:** Never on arrival: mail from someone the account wrote to, a reply in a conversation it took part in, mail from the workspace's own domains, senders on Always allow or Never spam. Gmail, IMAP and Outlook mail is filed when its sync is handed on (seconds after it is read), before rules, agents and categories.
+- **Alt paths:** Never on arrival: mail from someone any address of the workspace wrote to (any Cloudflare mailbox or connected account, in To, Cc or Bcc), a reply in a conversation the account took part in, mail from the workspace's own domains (its served domains, and a connected account's own domain unless it is a shared provider such as gmail.com), senders on Always allow or Never spam; when that cannot be checked, the mail stays in the inbox. Gmail, IMAP and Outlook mail is filed when its sync is handed on (seconds after it is read), before rules, agents and categories.
 - **UI elements:** SCR-03 Discarded folder, its banner, Why discarded.
 - **States covered:** empty, success
 - **Errors & recovery:** Rules that cannot be read, or a check that fails, leave the mail in the inbox and deliver it as before. A Cloudflare mailbox whose Discarded folder is missing gets it made again before the mail is stored, so delivery never fails for it; Discarded cannot be deleted, and a person's own folder that once held its name keeps their mail as "Discarded (your folder)".

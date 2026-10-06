@@ -14,7 +14,7 @@ import type { ImapConnectInput } from "./imap/connect";
 import { autoReason, discardFacts, discardSafety, matchDiscard, recordApplied } from "../../shared/mail/discard";
 import { readDiscardStore, updateDiscardStore } from "../discard/store";
 import { readSpamLists } from "../spam/lists";
-import { allServedDomains } from "../lib/mailbox-store";
+import { cloudflareSources, readWorkspaceOwnDomains, workspaceKnown, type MailboxNamespace } from "../discard/workspace";
 
 interface AutomationStub {
   ingest(
@@ -34,6 +34,8 @@ export interface GmailBindings extends AccountsEnvironment {
   /** The workspace's R2 bucket: the discard rules (config/discard.json), the spam lists and the served domains. */
   BUCKET?: R2Bucket;
   DOMAINS?: string;
+  /** The Cloudflare mailboxes, asked whether one of them wrote to a sender a discard rule matches. */
+  MAILBOX?: MailboxNamespace;
   AUTOMATIONS?: { getByName(name: string): AutomationStub };
   CATEGORIES?: { getByName(name: string): { ingest(account: { id: string; email: string }, event: { id: string; sender: string; subject: string; body: string; date: string }): Promise<void> } };
 }
@@ -77,8 +79,9 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
   /**
    * The discard rules applied to new inbox mail of Gmail, IMAP and Outlook accounts (after the
    * provider's own spam filter, which has already kept spam out of the inbox): a match goes to
-   * Discarded unless the account wrote to the sender, took part in the conversation, the sender is
-   * on one of the workspace's own domains, or is allowed (Always allow, Never spam). No rules, or rules
+   * Discarded unless any account or Cloudflare mailbox of the workspace wrote to the sender, this
+   * account took part in the conversation, the sender is on one of the workspace's own domains (served,
+   * or a connected account's own), or is allowed (Always allow, Never spam). No rules, or rules
    * that cannot be read: no filter, and the mail is delivered as before.
    */
   private async arrivalFilter() {
@@ -94,6 +97,9 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     const rules = store;
     let lists: Awaited<ReturnType<typeof readSpamLists>> | undefined;
     let own: string[] | undefined;
+    // Rules apply workspace-wide: "written to" spans every account here and every Cloudflare mailbox,
+    // asked once per sender in this drain; what cannot be read counts as written to.
+    const knownElsewhere = workspaceKnown({ ...cloudflareSources(bucket, this.env.MAILBOX), accountsKnow: (address) => this.service.knownAnywhere(address) });
     return async (event: { accountId: string }, message: { from: string; threadId: string; signals?: { list?: string; listUnsubscribe?: boolean; precedence?: string } }) => {
       const headers = [
         ...(message.signals?.list ? [{ key: "List-Id", value: message.signals.list }] : []),
@@ -104,9 +110,11 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
       lists ??= await readSpamLists(bucket).catch(() => undefined);
       const rule = matchDiscard(rules, facts, lists);
       if (!rule) return null;
-      own ??= await allServedDomains({ BUCKET: bucket, DOMAINS: this.env.DOMAINS } as never).catch(() => [] as string[]);
+      own ??= await readWorkspaceOwnDomains({ BUCKET: bucket, DOMAINS: this.env.DOMAINS },
+        async () => (await this.service.listAccounts()).accounts.map((a) => a.email));
       const contact = await this.service.sentContact(event.accountId, message.from, message.threadId);
-      const held = discardSafety({ sender: message.from, ...contact, ownDomains: own });
+      const known = contact.known || await knownElsewhere(message.from);
+      const held = discardSafety({ sender: message.from, known, inThread: contact.inThread, ownDomains: own });
       if (held) {
         console.log(JSON.stringify({ event: "discard_held", provider: "remote", rule: rule.id, why: held }));
         return null;
@@ -239,6 +247,10 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
   /** Not discarded: back to the inbox. */
   restoreDiscarded(accountId: string, messageId: string, read?: boolean) {
     return this.serial(() => this.service.restoreDiscarded(accountId, messageId, read));
+  }
+  /** Whether any connected account wrote to this sender (a read: no lock, like the feed). */
+  knownSender(address: string) {
+    return this.service.knownAnywhere(address);
   }
   /** What a message says about itself for a discard rule. */
   discardFacts(accountId: string, messageId: string) {
