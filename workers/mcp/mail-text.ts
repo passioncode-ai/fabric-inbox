@@ -57,3 +57,30 @@ export function forwardedBlock(original: { from: string; to: string; date: strin
 export function quotedBlock(original: { from: string; date: string; text: string }): string {
   return `On ${original.date}, ${original.from} wrote:\n${original.text.split("\n").map((l) => `> ${l}`).join("\n")}`;
 }
+
+/** The address's signature as an HTML block, set apart from the text above it. */
+export function signatureHtml(signature: string): string {
+  return `<div class="fabric-signature" style="white-space:pre-wrap;margin-top:16px">${escape(signature.trim()).replace(/\n/g, "<br>")}</div>`;
+}
+
+/** The quote of the message being answered, as HTML: its header line, then its text in a blockquote. */
+export function quotedHtml(original: { from: string; date: string; text: string }): string {
+  return `<div class="fabric-quote" style="margin-top:16px"><div>On ${escape(original.date)}, ${escape(original.from)} wrote:</div>`
+    + `<blockquote style="margin:0 0 0 0.8ex;border-left:1px solid #ccc;padding-left:1ex;white-space:pre-wrap">${escape(original.text).replace(/\n/g, "<br>")}</blockquote></div>`;
+}
+
+/** The forwarded message, as HTML. */
+export function forwardedHtml(original: { from: string; to: string; date: string; subject: string; text: string }): string {
+  return `<div class="fabric-forward" style="margin-top:16px;white-space:pre-wrap">${escape(forwardedBlock(original)).replace(/\n/g, "<br>")}</div>`;
+}
+
+/**
+ * Blocks added after a message's own HTML (its signature, the quoted original): inside its `<body>`
+ * when it has one, so a full HTML document stays one document; after it otherwise.
+ */
+export function appendHtml(html: string, ...blocks: string[]): string {
+  const extra = blocks.filter(Boolean).join("");
+  if (!extra) return html;
+  const close = html.search(/<\/body\s*>/i);
+  return close >= 0 ? html.slice(0, close) + extra + html.slice(close) : html + extra;
+}

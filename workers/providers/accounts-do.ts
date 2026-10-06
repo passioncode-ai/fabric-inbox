@@ -147,6 +147,9 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
   disconnect(accountId: string) {
     return this.serial(() => this.service.disconnect(accountId));
   }
+  getHeaders(accountId: string, messageId: string) {
+    return this.serial(() => this.service.getHeaders(accountId, messageId));
+  }
   async alarm() {
     await this.serial(async () => {
       const config = configuration(this.env);

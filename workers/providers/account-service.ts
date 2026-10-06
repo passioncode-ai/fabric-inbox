@@ -829,4 +829,17 @@ export class AccountService {
     }
     return result;
   }
+  // ── Composing and reading in full: self-contained additions (0.11) ──
+  /** Every header of one message, read from Gmail (the cache keeps only those the feed needs). */
+  async getHeaders(accountId: string, messageId: string) {
+    keyPart(messageId);
+    const account = await this.account(accountId);
+    try {
+      const raw = await (await this.client(account)).messageHeaders(messageId);
+      return { headers: (raw.payload?.headers ?? []).map((h) => ({ key: h.name, value: h.value })) };
+    } catch (error) {
+      if (error instanceof ProviderError && error.code === "not_found") throw new ProviderError("message_not_found", 404);
+      throw error;
+    }
+  }
 }

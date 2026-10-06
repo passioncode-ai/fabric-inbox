@@ -174,6 +174,10 @@ accountsRouter.get("/api/accounts/:accountId/messages/:messageId", async (c) =>
     ),
   ),
 );
+// Every header of the message, for an agent's read_message with includeHeaders ("View source").
+accountsRouter.get("/api/accounts/:accountId/messages/:messageId/headers", async (c) =>
+  c.json(await stub(c.env).getHeaders(c.req.param("accountId"), c.req.param("messageId"))),
+);
 accountsRouter.post("/api/accounts/:accountId/send", async (c) => {
   const body = await c.req.text();
   if (new TextEncoder().encode(body).length > MAX_SEND_REQUEST_BYTES) return c.json({ error: "message_too_large" }, 413);

@@ -52,6 +52,9 @@ export interface Message {
   /** Cc and Reply-To header values ("" when none); absent on messages cached before 2026-10-05. */
   cc?: string;
   replyTo?: string;
+  /** Bcc (on your own sent mail and drafts) and In-Reply-To ("" when none); absent on messages cached before 2026-10-06. */
+  bcc?: string;
+  inReplyTo?: string;
   date: string;
   rfcMessageId: string;
   references: string;
@@ -101,6 +104,8 @@ export function normalizeMessage(
     to: header("to"),
     cc: header("cc"),
     replyTo: header("reply-to"),
+    bcc: header("bcc"),
+    inReplyTo: header("in-reply-to"),
     date: header("date"),
     rfcMessageId: header("message-id"),
     references: header("references"),
@@ -380,6 +385,12 @@ export class GmailClient {
   message(id: string) {
     return this.request<GmailMessage>(
       "messages/" + encodeURIComponent(id) + "?format=full",
+    );
+  }
+  /** Every header of one message, as Gmail has it (format=metadata carries no body). */
+  messageHeaders(id: string) {
+    return this.request<GmailMessage>(
+      "messages/" + encodeURIComponent(id) + "?format=metadata",
     );
   }
   history(startHistoryId: string, pageToken?: string) {

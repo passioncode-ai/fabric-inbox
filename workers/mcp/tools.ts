@@ -11,9 +11,10 @@
  */
 import { z } from "zod";
 import { ApiError, defineTool, unwrap, type ToolContext, type ToolDef } from "./protocol";
-import { clip, forwardedBlock, htmlToText, quotedBlock, textToHtml } from "./mail-text";
+import { appendHtml, clip, forwardedBlock, forwardedHtml, htmlToText, quotedBlock, quotedHtml, signatureHtml, textToHtml } from "./mail-text";
 import { headerValue, parseStoredHeaders } from "../agents/prefilter";
 import { GMAIL_FOLDERS } from "../providers/account-service";
+import { AttachmentValidationError, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, validateAttachments, type MailAttachment } from "../../shared/mail/attachments";
 
 // ── Shared pieces ──────────────────────────────────────────────────
 
@@ -54,41 +55,64 @@ async function mailboxSettings(ctx: ToolContext, mailbox: string): Promise<Mailb
   const data = (await get(ctx, box(mailbox))) as { settings?: MailboxSettings };
   return data.settings ?? {};
 }
-const signed = (text: string, settings: MailboxSettings, use: boolean) =>
-  use && settings.signature?.enabled && settings.signature.text?.trim() ? `${text.trim()}\n\n${settings.signature.text.trim()}` : text;
+/** The signature text to add, or "" when the address has none or the caller said signature: false. */
+const signatureOf = (settings: MailboxSettings, use: boolean) =>
+  use && settings.signature?.enabled && settings.signature.text?.trim() ? settings.signature.text.trim() : "";
+const signed = (text: string, settings: MailboxSettings, use: boolean) => {
+  const signature = signatureOf(settings, use);
+  return signature ? [text.trim(), signature].filter(Boolean).join("\n\n") : text;
+};
+/** The same signature as an HTML block, for a message given as HTML. */
+const signedHtml = (settings: MailboxSettings, use: boolean) => { const s = signatureOf(settings, use); return s ? signatureHtml(s) : ""; };
 const fromFor = (mailbox: string, settings: MailboxSettings) =>
   settings.fromName && settings.fromName !== mailbox ? { email: mailbox, name: settings.fromName } : mailbox;
 
 /** One message, the same shape for both providers. */
 interface ReadMessage {
-  accountId: string; messageId: string; threadId: string | null; rfcMessageId: string | null; references: string | null;
-  subject: string; from: string; to: string; cc: string | null; replyTo: string | null; date: string; folder: string | null;
+  accountId: string; messageId: string; threadId: string | null; rfcMessageId: string | null; references: string | null; inReplyTo: string | null;
+  subject: string; from: string; to: string; cc: string | null; bcc: string | null; replyTo: string | null; date: string; folder: string | null;
   read: boolean; starred: boolean; spamReason: string | null; text: string; truncated: boolean; html?: string;
+  headers?: { name: string; value: string }[];
   attachments: { attachmentId: string; filename: string; type: string; size: number }[];
 }
-async function readMessage(ctx: ToolContext, account: Account, id: string, max = 20_000, includeHtml = false): Promise<ReadMessage> {
+/** A stored message's headers, or (mail kept before they were stored, and your own drafts) the fields the app knows. */
+function cloudflareHeaders(e: Record<string, unknown>): { name: string; value: string }[] {
+  const stored = parseStoredHeaders(e.raw_headers as string | null);
+  if (stored.length) return stored.map((h) => ({ name: h.key, value: h.value }));
+  const fields: [string, unknown][] = [["From", e.sender], ["To", e.recipient], ["Cc", e.cc], ["Bcc", e.bcc], ["Subject", e.subject], ["Date", e.date],
+    ["Message-ID", e.message_id], ["In-Reply-To", e.in_reply_to], ["References", e.email_references]];
+  return fields.filter(([, v]) => typeof v === "string" && v).map(([name, value]) => ({ name, value: String(value) }));
+}
+async function readMessage(ctx: ToolContext, account: Account, id: string, max = 20_000, includeHtml = false, includeHeaders = false): Promise<ReadMessage> {
   if (account.provider === "cloudflare") {
     const e = (await get(ctx, `${box(account.mailbox)}/emails/${enc(id)}`)) as Record<string, unknown> & { attachments?: Record<string, unknown>[] };
     const html = String(e.body ?? "");
     const body = clip(htmlToText(html), max);
     return {
       accountId: account.id, messageId: String(e.id), threadId: (e.thread_id as string) ?? null, rfcMessageId: (e.message_id as string) ?? null,
-      references: (e.email_references as string) ?? null, subject: String(e.subject ?? ""), from: String(e.sender ?? ""), to: String(e.recipient ?? ""),
-      cc: (e.cc as string) || null, replyTo: headerValue(parseStoredHeaders(e.raw_headers as string | null), "reply-to")?.trim() || null, date: String(e.date ?? ""), folder: (e.folder_id as string) ?? null, read: !!e.read, starred: !!e.starred,
+      references: (e.email_references as string) ?? null, inReplyTo: (e.in_reply_to as string) || null,
+      subject: String(e.subject ?? ""), from: String(e.sender ?? ""), to: String(e.recipient ?? ""),
+      cc: (e.cc as string) || null, bcc: (e.bcc as string) || null,
+      replyTo: headerValue(parseStoredHeaders(e.raw_headers as string | null), "reply-to")?.trim() || null, date: String(e.date ?? ""), folder: (e.folder_id as string) ?? null, read: !!e.read, starred: !!e.starred,
       spamReason: (e.spam_reason as string) ?? null, text: body.text, truncated: body.truncated, ...(includeHtml ? { html } : {}),
+      ...(includeHeaders ? { headers: cloudflareHeaders(e) } : {}),
       attachments: (e.attachments ?? []).map((a) => ({ attachmentId: String(a.id), filename: String(a.filename), type: String(a.mimetype), size: Number(a.size) })),
     };
   }
   const m = (await get(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}`)) as Record<string, unknown> & { labels?: string[]; attachments?: Record<string, unknown>[] };
   const body = clip(String(m.text || "") || htmlToText(String(m.html ?? "")), max);
   const labels = m.labels ?? [];
+  const headers = includeHeaders
+    ? ((await get(ctx, `${gmail(account.gmailId)}/messages/${enc(id)}/headers`)) as { headers?: { key: string; value: string }[] }).headers?.map((h) => ({ name: h.key, value: h.value })) ?? []
+    : undefined;
   return {
     accountId: account.id, messageId: String(m.providerMessageId ?? id), threadId: (m.threadId as string) ?? null, rfcMessageId: (m.rfcMessageId as string) || null,
-    references: (m.references as string) || null, subject: String(m.subject ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""),
-    cc: (m.cc as string) || null, replyTo: (m.replyTo as string) || null,
-    date: String(m.date ?? ""), folder: labels.includes("SPAM") ? "spam" : labels.includes("TRASH") ? "trash" : labels.includes("INBOX") ? "inbox" : labels.includes("SENT") ? "sent" : "archive",
+    references: (m.references as string) || null, inReplyTo: (m.inReplyTo as string) || null,
+    subject: String(m.subject ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""),
+    cc: (m.cc as string) || null, bcc: (m.bcc as string) || null, replyTo: (m.replyTo as string) || null,
+    date: String(m.date ?? ""), folder: labels.includes("SPAM") ? "spam" : labels.includes("TRASH") ? "trash" : labels.includes("DRAFT") ? "draft" : labels.includes("INBOX") ? "inbox" : labels.includes("SENT") ? "sent" : "archive",
     read: !!m.read, starred: labels.includes("STARRED"), spamReason: labels.includes("SPAM") ? "Gmail put it in Spam" : null,
-    text: body.text, truncated: body.truncated, ...(includeHtml ? { html: String(m.html ?? "") } : {}),
+    text: body.text, truncated: body.truncated, ...(includeHtml ? { html: String(m.html ?? "") } : {}), ...(headers ? { headers } : {}),
     attachments: (m.attachments ?? []).map((a) => ({ attachmentId: String(a.providerAttachmentId), filename: String(a.filename), type: String(a.mimeType), size: Number(a.size) })),
   };
 }
@@ -222,10 +246,11 @@ const listMailboxMessages = defineTool({
 
 const readMessageTool = defineTool({
   name: "read_message", title: "Read a message", level: "read", readOnly: true,
-  description: "One message in full: headers, the body as plain text, its attachments (ids for get_attachment) and why it is in Spam if it is. Reading does not mark it read; use update_messages for that.",
-  input: { accountId, messageId, maxChars, includeHtml: z.boolean().default(false).describe("Also return the original HTML") },
-  routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/accounts/:accountId/messages/:messageId"],
-  call: (a, ctx) => readMessage(ctx, parseAccount(a.accountId), a.messageId, a.maxChars, a.includeHtml),
+  description: "One message in full: From, To, Cc, Bcc (your own sent mail and drafts), Reply-To, In-Reply-To and References, the body as plain text, its attachments (ids for get_attachment) and why it is in Spam if it is. includeHeaders adds every header, as the app's View source shows them. Reading does not mark it read; use update_messages for that.",
+  input: { accountId, messageId, maxChars, includeHtml: z.boolean().default(false).describe("Also return the original HTML"),
+    includeHeaders: z.boolean().default(false).describe("Also return every header of the message (View source)") },
+  routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/accounts/:accountId/messages/:messageId", "GET /api/accounts/:accountId/messages/:messageId/headers"],
+  call: (a, ctx) => readMessage(ctx, parseAccount(a.accountId), a.messageId, a.maxChars, a.includeHtml, a.includeHeaders),
 });
 
 const readThread = defineTool({
@@ -241,11 +266,12 @@ const readThread = defineTool({
   },
 });
 
-const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const toBase64 = (bytes: Uint8Array) => { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); };
+/** Gmail's base64url, unpadded, as the standard padded base64 every other part of the app takes. */
+const fromBase64Url = (data: string) => { const s = data.replace(/-/g, "+").replace(/_/g, "/"); return s + "=".repeat((4 - (s.length % 4)) % 4); };
 const getAttachment = defineTool({
   name: "get_attachment", title: "Get an attachment", level: "read", readOnly: true,
-  description: "The bytes of one attachment, base64-encoded, up to 5 MB. The attachmentId comes from read_message.",
+  description: "The bytes of one attachment, base64-encoded (standard alphabet, padded). Only attachments up to 5 MB come back; a larger one is refused with 413 and is opened in the app. The attachmentId comes from read_message.",
   input: { accountId, messageId, attachmentId: z.string().min(1).max(2048) },
   routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId", "GET /api/accounts/:accountId/messages/:messageId/attachments/:attachmentId"],
   async call(a, ctx) {
@@ -253,7 +279,7 @@ const getAttachment = defineTool({
     if (account.provider === "gmail") {
       const data = (await get(ctx, `${gmail(account.gmailId)}/messages/${enc(a.messageId)}/attachments/${enc(a.attachmentId)}`)) as { data: string; size: number };
       if (data.size > MAX_ATTACHMENT_BYTES) throw new ApiError(413, "The attachment is larger than 5 MB; open it in the app", null);
-      return { size: data.size, base64: data.data.replace(/-/g, "+").replace(/_/g, "/") };
+      return { size: data.size, base64: fromBase64Url(data.data) };
     }
     const response = await ctx.api.request("GET", `${box(account.mailbox)}/emails/${enc(a.messageId)}/attachments/${enc(a.attachmentId)}`);
     if (response.status !== 200) unwrap(response);
@@ -399,7 +425,32 @@ const listRules = defineTool({
 
 // ── Mail ───────────────────────────────────────────────────────────
 
-const body = { text: z.string().min(1).max(1_000_000).describe("The message as plain text"), html: z.string().max(1_000_000).optional().describe("Optional HTML version; otherwise made from the text") };
+const body = { text: z.string().min(1).max(1_000_000).describe("The message as plain text"),
+  html: z.string().max(1_000_000).optional().describe("Optional HTML version of the text; the signature and the quoted or forwarded original are added to it as to the text. Otherwise made from the text") };
+
+const fileInput = z.object({
+  filename: z.string().min(1).max(255).describe("The file's name, e.g. invoice.pdf"),
+  type: z.string().min(3).max(127).describe("Its MIME type, e.g. application/pdf"),
+  base64: z.string().max(7_000_000).describe("Its bytes, base64 (standard alphabet, padded)"),
+});
+type FileInput = z.infer<typeof fileInput>;
+const attachments = z.array(fileInput).max(MAX_ATTACHMENTS).optional().describe("Files to attach: up to 10, 5 MB together (get_attachment returns files in this form)");
+
+const toMail = (files: readonly FileInput[] | undefined): MailAttachment[] =>
+  (files ?? []).map((f) => ({ content: f.base64.replace(/\s+/g, ""), filename: f.filename, type: f.type, disposition: "attachment" as const }));
+/** Files checked here as the routes check them, so a bad one is refused before anything is sent. */
+function checkFiles(files: MailAttachment[]): MailAttachment[] {
+  if (!files.length) return files;
+  try { return validateAttachments(files); }
+  catch (error) {
+    if (!(error instanceof AttachmentValidationError)) throw error;
+    throw new ApiError(error.status, error.code === "message_too_large"
+      ? `Attachments are limited to ${MAX_ATTACHMENTS} files and 5 MB together`
+      : "An attachment is not valid: give its filename (no / or \\), a MIME type such as application/pdf, and its bytes as padded base64", null);
+  }
+}
+const withFiles = (files: MailAttachment[]) => (files.length ? { attachments: files } : {});
+
 
 const saveDraft = defineTool({
   name: "save_draft", title: "Save a draft", level: "mail", target: (a) => `${a.accountId}`,
@@ -415,7 +466,7 @@ const saveDraft = defineTool({
       const settings = await mailboxSettings(ctx, account.mailbox);
       const original = a.replyToMessageId ? await readMessage(ctx, account, a.replyToMessageId, 1) : null;
       const text = signed(a.text, settings, a.signature);
-      return post(ctx, `${box(account.mailbox)}/drafts`, { body: a.html ?? textToHtml(text), to: list(a.to)?.join(", "), cc: list(a.cc)?.join(", "), bcc: list(a.bcc)?.join(", "),
+      return post(ctx, `${box(account.mailbox)}/drafts`, { body: a.html !== undefined ? appendHtml(a.html, signedHtml(settings, a.signature)) : textToHtml(text), to: list(a.to)?.join(", "), cc: list(a.cc)?.join(", "), bcc: list(a.bcc)?.join(", "),
         subject: a.subject, in_reply_to: original?.messageId, thread_id: original?.threadId ?? undefined, draft_id: a.draftId });
     }
     if (!a.idempotencyKey) throw new ApiError(400, "A Gmail draft needs an idempotencyKey", null);
@@ -425,82 +476,117 @@ const saveDraft = defineTool({
   },
 });
 
-async function sendNew(ctx: ToolContext, account: Account, a: { to: string | string[]; cc?: string | string[]; bcc?: string | string[]; subject: string; text: string; html?: string; idempotencyKey: string; signature: boolean },
-  thread?: { threadId?: string | null; rfcMessageId?: string | null; references?: string | null }) {
+/** What sendNew sends: one message, from a Cloudflare address or a Gmail account. */
+interface Outgoing {
+  to: string | string[]; cc?: string | string[]; bcc?: string | string[]; subject: string; text: string; html?: string;
+  idempotencyKey: string; signature: boolean; attachments?: MailAttachment[];
+}
+async function sendNew(ctx: ToolContext, account: Account, a: Outgoing, thread?: { threadId?: string | null; rfcMessageId?: string | null; references?: string | null }) {
   if (account.provider === "cloudflare") {
     const settings = await mailboxSettings(ctx, account.mailbox);
     const text = signed(a.text, settings, a.signature);
-    return post(ctx, `${box(account.mailbox)}/emails`, { to: list(a.to), cc: list(a.cc), bcc: list(a.bcc), from: fromFor(account.mailbox, settings), subject: a.subject, text, html: a.html ?? textToHtml(text), idempotencyKey: a.idempotencyKey });
+    const html = a.html !== undefined ? appendHtml(a.html, signedHtml(settings, a.signature)) : textToHtml(text);
+    return post(ctx, `${box(account.mailbox)}/emails`, { to: list(a.to), cc: list(a.cc), bcc: list(a.bcc), from: fromFor(account.mailbox, settings), subject: a.subject, text, html,
+      idempotencyKey: a.idempotencyKey, ...withFiles(a.attachments ?? []) });
   }
   return post(ctx, `${gmail(account.gmailId)}/send`, { idempotencyKey: a.idempotencyKey, to: list(a.to), cc: list(a.cc), bcc: list(a.bcc), subject: a.subject, text: a.text, html: a.html,
-    ...(thread ? { threadId: thread.threadId ?? undefined, inReplyTo: thread.rfcMessageId ?? undefined, references: [thread.references, thread.rfcMessageId].filter(Boolean).join(" ") || undefined } : {}) });
+    ...(thread ? { threadId: thread.threadId ?? undefined, inReplyTo: thread.rfcMessageId ?? undefined, references: [thread.references, thread.rfcMessageId].filter(Boolean).join(" ") || undefined } : {}),
+    ...withFiles(a.attachments ?? []) });
 }
 
 const sendEmail = defineTool({
   name: "send_email", title: "Send a new message", level: "mail", sends: true, target: (a) => `${a.accountId} → ${[a.to].flat().join(", ")}`,
-  description: "Sends a new message from one of your addresses or Gmail accounts. It really leaves: confirm the recipients and text with the person you work for unless they asked you to send. The idempotencyKey makes a retry safe. Counts against this key's daily sends.",
-  input: { accountId, to: recipients, cc: recipients.optional(), bcc: recipients.optional(), subject: z.string().min(1).max(998), ...body, idempotencyKey,
+  description: "Sends a new message from one of your addresses or Gmail accounts, with files if you give them. It really leaves: confirm the recipients and text with the person you work for unless they asked you to send. The idempotencyKey makes a retry safe. Counts against this key's daily sends.",
+  input: { accountId, to: recipients, cc: recipients.optional(), bcc: recipients.optional(), subject: z.string().min(1).max(998), ...body, attachments, idempotencyKey,
     signature: z.boolean().default(true).describe("Add the address's signature (Cloudflare)") },
   routes: ["POST /api/v1/mailboxes/:mailboxId/emails", "POST /api/accounts/:accountId/send"],
-  call: (a, ctx) => sendNew(ctx, parseAccount(a.accountId), a),
+  call: (a, ctx) => sendNew(ctx, parseAccount(a.accountId), { ...a, attachments: checkFiles(toMail(a.attachments)) }),
 });
 
 const reply = defineTool({
   name: "reply", title: "Reply to a message", level: "mail", sends: true, target: (a) => `${a.accountId} ${a.messageId}`,
-  description: "Answers a message in its conversation: to its Reply-To address when it has one, otherwise its sender (with replyAll also everyone else in To and Cc except you), subject Re:, threaded, with the original quoted. It really leaves; counts against this key's daily sends.",
+  description: "Answers a message in its conversation: to its Reply-To address when it has one, otherwise its sender (with replyAll also everyone else in To and Cc except you), subject Re:, threaded, with the original quoted and the address's signature. to, cc, bcc and subject replace what would be chosen; attachments adds files. It really leaves; counts against this key's daily sends.",
   input: { accountId, messageId, ...body, idempotencyKey, replyAll: z.boolean().default(false), to: recipients.optional().describe("Answer these addresses instead"),
+    cc: recipients.optional().describe("Copy these addresses (instead of those replyAll would copy)"), bcc: recipients.optional(),
+    subject: z.string().min(1).max(998).optional().describe("Instead of Re: and the original's subject"), attachments,
     quote: z.boolean().default(true).describe("Quote the original below your text"), signature: z.boolean().default(true).describe("Add the address's signature (Cloudflare)") },
   routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/v1/mailboxes/:mailboxId", "POST /api/v1/mailboxes/:mailboxId/emails/:id/reply",
     "GET /api/accounts/:accountId/messages/:messageId", "GET /api/accounts", "POST /api/accounts/:accountId/send"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
+    const files = checkFiles(toMail(a.attachments));
     const original = await readMessage(ctx, account, a.messageId, 20_000);
     // Reply-To names where answers go (a help desk, a list); one with no address in it is ignored.
     const replyTargets = addresses(original.replyTo);
     const to = list(a.to) ?? (replyTargets.length ? replyTargets : [firstAddress(original.from)]);
-    let cc: string[] | undefined;
-    if (!a.to && a.replyAll) {
+    let cc = list(a.cc);
+    if (!cc && !a.to && a.replyAll) {
       const self = await ownAddress(ctx, account);
       const skip = new Set([self, firstAddress(original.from).toLowerCase(), ...to.map((x) => x.toLowerCase())]);
       const others = [...new Set([...addresses(original.to), ...addresses(original.cc)])].filter((x) => !skip.has(x));
       cc = others.length ? others : undefined;
     }
-    const subject = /^re:/i.test(original.subject) ? original.subject : `Re: ${original.subject}`;
-    const text = a.quote ? `${a.text}\n\n${quotedBlock({ from: original.from, date: original.date, text: original.text })}` : a.text;
+    const subject = a.subject ?? (/^re:/i.test(original.subject) ? original.subject : `Re: ${original.subject}`);
+    const quoteText = a.quote ? quotedBlock({ from: original.from, date: original.date, text: original.text }) : "";
+    const quoteHtml = a.quote ? quotedHtml({ from: original.from, date: original.date, text: original.text }) : "";
     if (account.provider === "cloudflare") {
       const settings = await mailboxSettings(ctx, account.mailbox);
-      const finalText = a.quote ? `${signed(a.text, settings, a.signature)}\n\n${quotedBlock({ from: original.from, date: original.date, text: original.text })}` : signed(a.text, settings, a.signature);
-      return post(ctx, `${box(account.mailbox)}/emails/${enc(a.messageId)}/reply`, { to, cc, from: fromFor(account.mailbox, settings), subject, text: finalText, html: a.html ?? textToHtml(finalText), idempotencyKey: a.idempotencyKey });
+      const text = [signed(a.text, settings, a.signature), quoteText].filter(Boolean).join("\n\n");
+      const html = a.html !== undefined ? appendHtml(a.html, signedHtml(settings, a.signature), quoteHtml) : textToHtml(text);
+      return post(ctx, `${box(account.mailbox)}/emails/${enc(a.messageId)}/reply`, { to, cc, bcc: list(a.bcc), from: fromFor(account.mailbox, settings), subject, text, html,
+        idempotencyKey: a.idempotencyKey, ...withFiles(files) });
     }
-    return sendNew(ctx, account, { to, cc, subject, text, html: a.html, idempotencyKey: a.idempotencyKey, signature: false }, original);
+    const text = [a.text, quoteText].filter(Boolean).join("\n\n");
+    const html = a.html !== undefined ? appendHtml(a.html, quoteHtml) : undefined;
+    return sendNew(ctx, account, { to, cc, bcc: a.bcc, subject, text, html, idempotencyKey: a.idempotencyKey, signature: false, attachments: files }, original);
   },
 });
 
+/** The original's files, read once each, after their total was checked against the limits. */
+async function originalFiles(ctx: ToolContext, account: Account, messageId: string, files: ReadMessage["attachments"], extra: MailAttachment[]): Promise<MailAttachment[]> {
+  const bytes = files.reduce((n, f) => n + f.size, 0) + extra.reduce((n, f) => n + Math.floor((f.content.length * 3) / 4), 0);
+  if (bytes > MAX_ATTACHMENT_BYTES || files.length + extra.length > MAX_ATTACHMENTS)
+    throw new ApiError(413, `The original's attachments${extra.length ? " and your files" : ""} are more than 5 MB or ${MAX_ATTACHMENTS} files; forward with includeOriginalAttachments: false`, null);
+  const out: MailAttachment[] = [];
+  for (const f of files) {
+    const got = (await getAttachment.call({ accountId: account.id, messageId, attachmentId: f.attachmentId }, ctx)) as { base64: string };
+    out.push({ content: got.base64, filename: f.filename || "attachment", type: f.type || "application/octet-stream", disposition: "attachment" });
+  }
+  return out;
+}
+
 const forward = defineTool({
   name: "forward", title: "Forward a message", level: "mail", sends: true, target: (a) => `${a.accountId} ${a.messageId} → ${[a.to].flat().join(", ")}`,
-  description: "Forwards a message with its text (and, from a Cloudflare mailbox, its attachments up to 5 MB) and your note on top. It really leaves; counts against this key's daily sends.",
-  input: { accountId, messageId, to: recipients, text: z.string().max(100_000).default("").describe("Your note above the forwarded message"), idempotencyKey,
-    attachments: z.boolean().default(true).describe("Include the original's attachments (Cloudflare, up to 5 MB)") },
+  description: "Forwards a message with its text and its attachments (up to 10 files, 5 MB together with any files you add), your note and the address's signature on top. cc, bcc and subject replace what would be chosen. It really leaves; counts against this key's daily sends.",
+  input: { accountId, messageId, to: recipients, cc: recipients.optional(), bcc: recipients.optional(),
+    subject: z.string().min(1).max(998).optional().describe("Instead of Fwd: and the original's subject"),
+    text: z.string().max(100_000).default("").describe("Your note above the forwarded message"),
+    html: z.string().max(1_000_000).optional().describe("Optional HTML version of your note; the signature and the forwarded message are added to it"),
+    idempotencyKey,
+    attachments: z.union([z.array(fileInput).max(MAX_ATTACHMENTS), z.boolean()]).optional()
+      .describe("Files to add (as send_email takes them). A boolean is the older spelling of includeOriginalAttachments"),
+    includeOriginalAttachments: z.boolean().optional().describe("Include the original's attachments (true unless you say false)"),
+    signature: z.boolean().default(true).describe("Add the address's signature below your note (Cloudflare)") },
   routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/v1/mailboxes/:mailboxId", "GET /api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId",
-    "POST /api/v1/mailboxes/:mailboxId/emails/:id/forward", "GET /api/accounts/:accountId/messages/:messageId", "POST /api/accounts/:accountId/send"],
+    "POST /api/v1/mailboxes/:mailboxId/emails/:id/forward", "GET /api/accounts/:accountId/messages/:messageId", "GET /api/accounts/:accountId/messages/:messageId/attachments/:attachmentId",
+    "POST /api/accounts/:accountId/send"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
+    const added = checkFiles(toMail(Array.isArray(a.attachments) ? a.attachments : undefined));
+    const includeOriginals = a.includeOriginalAttachments ?? (typeof a.attachments === "boolean" ? a.attachments : true);
     const original = await readMessage(ctx, account, a.messageId, 200_000);
-    const subject = /^fwd?:/i.test(original.subject) ? original.subject : `Fwd: ${original.subject}`;
-    const text = [a.text.trim(), forwardedBlock(original)].filter(Boolean).join("\n\n");
+    const subject = a.subject ?? (/^fwd?:/i.test(original.subject) ? original.subject : `Fwd: ${original.subject}`);
+    const files = checkFiles([...(includeOriginals ? await originalFiles(ctx, account, a.messageId, original.attachments, added) : []), ...added]);
     if (account.provider === "cloudflare") {
       const settings = await mailboxSettings(ctx, account.mailbox);
-      const files: { content: string; filename: string; type: string; disposition: "attachment" }[] = [];
-      let total = 0;
-      if (a.attachments) for (const f of original.attachments) {
-        total += f.size;
-        if (total > MAX_ATTACHMENT_BYTES || files.length >= 10) throw new ApiError(413, "The original's attachments are more than 5 MB or 10 files; forward with attachments: false", null);
-        const got = (await getAttachment.call({ accountId: account.id, messageId: a.messageId, attachmentId: f.attachmentId }, ctx)) as { base64: string };
-        files.push({ content: got.base64, filename: f.filename, type: f.type, disposition: "attachment" });
-      }
-      return post(ctx, `${box(account.mailbox)}/emails/${enc(a.messageId)}/forward`, { to: list(a.to), from: fromFor(account.mailbox, settings), subject, text, html: textToHtml(text), idempotencyKey: a.idempotencyKey, ...(files.length ? { attachments: files } : {}) });
+      const text = [signed(a.text.trim(), settings, a.signature), forwardedBlock(original)].filter(Boolean).join("\n\n");
+      const html = a.html !== undefined ? appendHtml(a.html, signedHtml(settings, a.signature), forwardedHtml(original)) : textToHtml(text);
+      return post(ctx, `${box(account.mailbox)}/emails/${enc(a.messageId)}/forward`, { to: list(a.to), cc: list(a.cc), bcc: list(a.bcc), from: fromFor(account.mailbox, settings), subject, text, html,
+        idempotencyKey: a.idempotencyKey, ...withFiles(files) });
     }
-    return sendNew(ctx, account, { to: a.to, subject, text, idempotencyKey: a.idempotencyKey, signature: false });
+    const text = [a.text.trim(), forwardedBlock(original)].filter(Boolean).join("\n\n");
+    const html = a.html !== undefined ? appendHtml(a.html, forwardedHtml(original)) : undefined;
+    return sendNew(ctx, account, { to: a.to, cc: a.cc, bcc: a.bcc, subject, text, html, idempotencyKey: a.idempotencyKey, signature: false, attachments: files });
   },
 });
 
