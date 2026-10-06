@@ -12,7 +12,7 @@ Contract: brand-contract v1
 | Project address | Alias, forwarding address | An address on a served project domain, received by the Worker |
 | Reply policy | Auto-reply settings | What an agent may send without the operator: mode, allowed intents, daily limit |
 | Answer | AI response (in run history) | One agent run for one incoming message |
-| Settings | Manage accounts, Mailboxes, Accounts and rules, Server settings, Domains & addresses (screen names before 0.11) | The one screen for everything set up rather than read, with its sections: Addresses, Domains, Accounts, Forwarding destinations, Categories, Spam rules, Agents, Knowledge, Agent access, App; a section is named "Settings → Domains" |
+| Settings | Manage accounts, Mailboxes screen, Accounts and rules, Server settings, Domains & addresses (screen names before 0.11) | The one screen for everything set up rather than read, with its sections: Addresses, Domains, Accounts, Forwarding destinations, Categories, Spam rules, Agents, Knowledge, Agent access, App; a section is named "Settings → Domains" |
 | Server address | Server settings (the Mac app's menu item) | The address of the server the Mac app opens, chosen in its own window (Fabric Inbox → Server address…) |
 | Receive mail here | Connect domain, Import domain | Moving a domain's mail to the server, keeping each old destination as a copy |
 | Forwarding destination | Forward target, verified email | An outside address a copy may go to, confirmed through Cloudflare's link |

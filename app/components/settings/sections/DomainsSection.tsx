@@ -333,4 +333,3 @@ export function PermissionTable({ permissions }: { permissions: DomainList["perm
     </table>
   );
 }
-
