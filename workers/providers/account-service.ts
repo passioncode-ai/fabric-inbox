@@ -32,6 +32,8 @@ export interface SyncOptions {
   deadline?: number;
   /** Read new mail and changes only (Refresh): no import page. */
   historyOnly?: boolean;
+  /** Import pages only: history was read a moment ago by the same tick. */
+  importOnly?: boolean;
   /** Runs each page under the caller's lock, so other work interleaves between pages. */
   lock?: <T>(fn: () => Promise<T>) => Promise<T>;
 }
@@ -365,8 +367,11 @@ export class AccountService {
   async sync(accountId: string, options: SyncOptions = {}): Promise<PublicAccount> {
     const lock = options.lock ?? (<T>(fn: () => Promise<T>) => fn());
     const deadline = options.deadline ?? Date.now();
-    let step = await lock(() => this.syncPage(accountId, "history", deadline));
-    while (step.more && Date.now() < deadline) step = await lock(() => this.syncPage(accountId, "history", deadline));
+    let step = { account: publicAccount(await this.account(accountId)), more: false };
+    if (!options.importOnly) {
+      step = await lock(() => this.syncPage(accountId, "history", deadline));
+      while (step.more && Date.now() < deadline) step = await lock(() => this.syncPage(accountId, "history", deadline));
+    }
     if (options.historyOnly) return step.account;
     step = await lock(() => this.syncPage(accountId, "import", deadline));
     while (step.more && Date.now() < deadline) step = await lock(() => this.syncPage(accountId, "import", deadline));
