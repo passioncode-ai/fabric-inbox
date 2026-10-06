@@ -150,6 +150,9 @@ const api = {
 			draft_id?: string;
 		},
 	) => post<{ draft_id: string }>(`/api/v1/mailboxes/${mailboxId}/drafts`, draft),
+	/** Sends a saved draft as it is, as a reply when it answers a message, and removes it once accepted (B-50). */
+	sendDraft: (mailboxId: string, draftId: string, idempotencyKey: string) =>
+		sendConfirmed(`/api/v1/mailboxes/${mailboxId}/drafts/${encodeURIComponent(draftId)}/send`, { idempotencyKey }),
 	replyToEmail: (mailboxId: string, emailId: string, email: unknown) =>
 		sendConfirmed(`/api/v1/mailboxes/${mailboxId}/emails/${emailId}/reply`, email),
 	forwardEmail: (mailboxId: string, emailId: string, email: unknown) =>

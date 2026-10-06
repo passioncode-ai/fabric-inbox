@@ -67,6 +67,9 @@ export interface Message {
   /** Cc and Reply-To header values ("" when none); absent on messages cached before 2026-10-05. */
   cc?: string;
   replyTo?: string;
+  /** Bcc (on your own sent mail and drafts) and In-Reply-To ("" when none); absent on messages cached before 2026-10-06. */
+  bcc?: string;
+  inReplyTo?: string;
   date: string;
   rfcMessageId: string;
   references: string;
@@ -99,6 +102,14 @@ export interface SendInput {
   from?: string;
   attachments?: MailAttachment[];
 }
+/**
+ * Every field of SendInput, for the agent protocol's schema-drift test (tests/mcp-schema-drift.test.ts):
+ * the compile-time check below fails when SendInput gains a field this list does not name.
+ */
+export const SEND_INPUT_FIELDS = ["to", "cc", "bcc", "subject", "text", "html", "threadId", "inReplyTo", "references", "from", "attachments"] as const;
+type MissingSendField = Exclude<keyof SendInput, (typeof SEND_INPUT_FIELDS)[number]>;
+const _everySendField: [MissingSendField] extends [never] ? true : never = true;
+void _everySendField;
 export function normalizeMessage(
   accountId: string,
   raw: GmailMessage,
@@ -116,6 +127,8 @@ export function normalizeMessage(
     to: header("to"),
     cc: header("cc"),
     replyTo: header("reply-to"),
+    bcc: header("bcc"),
+    inReplyTo: header("in-reply-to"),
     date: header("date"),
     rfcMessageId: header("message-id"),
     references: header("references"),
@@ -385,6 +398,8 @@ export class GmailClient {
               : "provider_failed",
         response.status === 429 ? 429 : response.status === 404 ? 404 : response.status === 401 ? 401 : 502,
       );
+    // A DELETE answers 204 with no body.
+    if (response.status === 204) return undefined as T;
     try {
       return (await response.json()) as T;
     } catch {
@@ -411,6 +426,12 @@ export class GmailClient {
     if (format === "metadata") for (const h of METADATA_HEADERS) q.append("metadataHeaders", h);
     return this.request<GmailMessage>(
       "messages/" + encodeURIComponent(id) + "?" + q,
+    );
+  }
+  /** Every header of one message, as Gmail has it (format=metadata carries no body). */
+  messageHeaders(id: string) {
+    return this.request<GmailMessage>(
+      "messages/" + encodeURIComponent(id) + "?format=metadata",
     );
   }
   history(startHistoryId: string, pageToken?: string) {
@@ -452,6 +473,30 @@ export class GmailClient {
       },
       false,
     );
+  }
+  // ── Drafts (B-50/B-52): Gmail's own drafts, so they show in Gmail too ──
+  listDrafts(pageToken?: string) {
+    const q = new URLSearchParams({ maxResults: "25" });
+    if (pageToken) q.set("pageToken", pageToken);
+    return this.request<{ drafts?: { id: string; message: { id: string; threadId: string } }[]; nextPageToken?: string }>("drafts?" + q);
+  }
+  getDraft(id: string, format: "full" | "minimal" = "full") {
+    return this.request<{ id: string; message: GmailMessage }>("drafts/" + encodeURIComponent(id) + "?format=" + format);
+  }
+  /** Replaces the draft's message; Gmail gives the new message a new id (the draft's revision here). */
+  updateDraft(id: string, raw: string, threadId?: string) {
+    return this.request<{ id: string; message: { id: string; threadId: string } }>(
+      "drafts/" + encodeURIComponent(id),
+      { method: "PUT", body: JSON.stringify({ id, message: { raw, ...(threadId ? { threadId } : {}) } }) },
+      false,
+    );
+  }
+  deleteDraft(id: string) {
+    return this.request<void>("drafts/" + encodeURIComponent(id), { method: "DELETE" }, false);
+  }
+  /** Sends the draft as Gmail holds it; Gmail removes the draft. */
+  sendDraft(id: string) {
+    return this.request<{ id: string; threadId: string }>("drafts/send", { method: "POST", body: JSON.stringify({ id }) }, false);
   }
   modify(id: string, addLabelIds: string[], removeLabelIds: string[]) {
     return this.request<GmailMessage>(

@@ -1,6 +1,7 @@
 import { bodyLimit } from 'hono/body-limit';
 import { MAX_SEND_REQUEST_BYTES } from '../../shared/mail/attachments';
 import { Hono } from "hono";
+import { z } from "zod";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { configuration } from "../providers/google-oauth";
 import type { GmailBindings } from "../providers/accounts-do";
@@ -41,6 +42,8 @@ accountsRouter.onError((error, c) => {
     insufficient_scope: 403,
     account_not_found: 404,
     message_not_found: 404,
+    draft_not_found: 404,
+    draft_conflict: 409,
     invalid_id: 400,
     invalid_address: 400,
     invalid_header: 400,
@@ -87,7 +90,10 @@ accountsRouter.get("/api/accounts", async (c) => {
         { id: "outlook", status: "not_configured" },
       ],
     });
-  return c.json(await stub(c.env).listAccounts());
+  // Where a person connects another Gmail account (gmail_connect_link): the configured origin only.
+  const config = configuration(c.env);
+  return c.json({ ...(await stub(c.env).listAccounts()),
+    ...(config.status === "configured" ? { connectUrl: new URL("/api/accounts/gmail/connect", config.origin).href } : {}) });
 });
 accountsRouter.get("/api/accounts/gmail/connect", async (c) => {
   const config = configuration(c.env);
@@ -174,6 +180,10 @@ accountsRouter.get("/api/accounts/:accountId/messages/:messageId", async (c) =>
       c.req.param("messageId"),
     ),
   ),
+);
+// Every header of the message, for an agent's read_message with includeHeaders ("View source").
+accountsRouter.get("/api/accounts/:accountId/messages/:messageId/headers", async (c) =>
+  c.json(await stub(c.env).getHeaders(c.req.param("accountId"), c.req.param("messageId"))),
 );
 accountsRouter.post("/api/accounts/:accountId/send", async (c) => {
   const body = await c.req.text();
@@ -281,6 +291,42 @@ accountsRouter.post("/api/accounts/:accountId/drafts", async (c) => {
         ? 409
         : 400,
   );
+});
+
+// ── Gmail's own drafts (B-50, B-52): listed, read, changed, deleted and sent in Gmail ──
+/** PUT /drafts/:draftId — the whole message (as a send takes it), the revision read, the files kept. */
+export const GmailDraftUpdateBody = z.object({
+  to: z.array(z.string()).max(100).default([]), cc: z.array(z.string()).max(100).optional(), bcc: z.array(z.string()).max(100).optional(),
+  subject: z.string().max(998).default(""), text: z.string().max(1_000_000), html: z.string().max(1_000_000).optional(),
+  threadId: z.string().max(200).optional(), inReplyTo: z.string().max(998).optional(), references: z.string().max(998).optional(),
+  attachments: z.array(z.unknown()).max(10).optional(),
+  /** The draft's message id when it was read; absent overwrites. */
+  expectedRevision: z.string().max(200).optional(),
+  /** Ids of the draft's files to keep; absent keeps them all. */
+  keepAttachments: z.array(z.string().max(2048)).max(10).optional(),
+}).strict();
+export const GmailDraftSendBody = z.object({ idempotencyKey: z.string().min(1).max(128), expectedRevision: z.string().max(200).optional() }).strict();
+
+accountsRouter.get("/api/accounts/:accountId/drafts", async (c) =>
+  c.json(await stub(c.env).listDrafts(c.req.param("accountId"), c.req.query("cursor") || undefined)),
+);
+// One draft in full; "/content" because /drafts/:idempotencyKey is a draft's creation receipt.
+accountsRouter.get("/api/accounts/:accountId/drafts/:draftId/content", async (c) =>
+  c.json(await stub(c.env).getDraft(c.req.param("accountId"), c.req.param("draftId"))),
+);
+accountsRouter.put("/api/accounts/:accountId/drafts/:draftId", async (c) => {
+  const parsed = GmailDraftUpdateBody.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "invalid_message" }, 400);
+  return c.json(await stub(c.env).updateDraft(c.req.param("accountId"), c.req.param("draftId"), parsed.data as never));
+});
+accountsRouter.delete("/api/accounts/:accountId/drafts/:draftId", async (c) =>
+  c.json(await stub(c.env).deleteDraft(c.req.param("accountId"), c.req.param("draftId"))),
+);
+accountsRouter.post("/api/accounts/:accountId/drafts/:draftId/send", async (c) => {
+  const parsed = GmailDraftSendBody.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "idempotency_key_required" }, 400);
+  const result = await stub(c.env).sendDraft(c.req.param("accountId"), c.req.param("draftId"), parsed.data.idempotencyKey, parsed.data.expectedRevision);
+  return c.json(result, result.status === "accepted" ? 200 : result.status === "unknown" ? 409 : 400);
 });
 
 for (const field of ["starred", "trashed"] as const) {

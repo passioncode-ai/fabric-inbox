@@ -45,7 +45,7 @@ knowledgeRouter.get("/api/knowledge/collections", async (c) => {
   } catch (error) { return failure(c, error); }
 });
 
-const CollectionInput = z.object({
+export const CollectionInput = z.object({
   name: z.string().trim().min(1, "A collection needs a name").max(80),
   description: z.string().trim().max(500).optional(),
   source: z.union([
@@ -74,8 +74,9 @@ knowledgeRouter.get("/api/knowledge/collections/:id", async (c) => {
   } catch (error) { return failure(c, error); }
 });
 
+export const CollectionChange = z.object({ name: z.string().trim().min(1).max(80).optional(), description: z.string().trim().max(500).optional() }).strict();
 knowledgeRouter.put("/api/knowledge/collections/:id", async (c) => {
-  const parsed = z.object({ name: z.string().trim().min(1).max(80).optional(), description: z.string().trim().max(500).optional() }).strict()
+  const parsed = CollectionChange
     .safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Name up to 80 characters, description up to 500" }, 400);
   try { return c.json(await store(c).updateCollection(c.req.param("id"), parsed.data)); }
@@ -99,8 +100,9 @@ const DocumentInput = z.object({
 }).strict();
 
 /** Add or replace documents. `prune: true` makes the batch the whole collection (a sync). */
+export const DocumentsInput = z.object({ documents: z.array(DocumentInput).min(1).max(LIMITS.batchDocuments), prune: z.boolean().default(false) }).strict();
 knowledgeRouter.post("/api/knowledge/collections/:id/documents", async (c) => {
-  const parsed = z.object({ documents: z.array(DocumentInput).min(1).max(LIMITS.batchDocuments), prune: z.boolean().default(false) }).strict()
+  const parsed = DocumentsInput
     .safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid documents" }, 400);
   try {

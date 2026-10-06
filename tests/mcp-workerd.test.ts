@@ -132,6 +132,57 @@ test("each level sees only its tools, and a Drafts only key sees no sending tool
   } finally { await mf.dispose(); }
 });
 
+test("an agent's draft is listed, changed under its revision and sent as it is, once, then leaves Drafts (parity gap 1, B-50)", async () => {
+  const { mf, as, call, sent } = await fixture();
+  try {
+    const drafter = await as("drafts.access");
+    assert.ok(!(await names(drafter)).includes("send_draft"), "a Drafts only key cannot send a draft");
+    const admin = await as("admin.access");
+    const inbox = await mf.dispatchFetch("http://localhost/test/inbox", { method: "POST", body: JSON.stringify({ mailbox: MAILBOX, sender: "ann@customer.invalid", subject: "Order" }) });
+    const original = ((await inbox.json()) as { id: string }).id;
+    const draft = await call(drafter, "save_draft", { accountId: `cloudflare:${MAILBOX}`, to: "ann@customer.invalid", subject: "Re: Order", text: "Soon.", replyToMessageId: original, idempotencyKey: "reply-1" });
+    assert.equal(draft.isError, false, JSON.stringify(draft.data));
+    assert.deepEqual([draft.data.revision, draft.data.replyToMessageId], [1, original]);
+    const again = await call(drafter, "save_draft", { accountId: `cloudflare:${MAILBOX}`, to: "ann@customer.invalid", subject: "Re: Order", text: "Soon.", replyToMessageId: original, idempotencyKey: "reply-1" });
+    assert.equal(again.data.draftId, draft.data.draftId, "the same key changes the same draft");
+    const listed = await call(admin, "list_drafts", {});
+    assert.deepEqual(listed.data.drafts.map((d: { draftId: string }) => d.draftId), [draft.data.draftId]);
+    const viaFeed = await call(admin, "list_messages", { folder: "draft" });
+    assert.equal(viaFeed.data.messages[0].draftId, draft.data.draftId);
+
+    const edited = await call(admin, "save_draft", { accountId: `cloudflare:${MAILBOX}`, draftId: draft.data.draftId, expectedRevision: 2, to: "ann@customer.invalid",
+      subject: "Re: Order", text: "It ships Monday." });
+    assert.equal(edited.isError, false, JSON.stringify(edited.data));
+    assert.deepEqual([edited.data.revision, edited.data.replyToMessageId], [3, original], "a change keeps the message it answers");
+    const stale = await call(admin, "save_draft", { accountId: `cloudflare:${MAILBOX}`, draftId: draft.data.draftId, expectedRevision: 2, to: "ann@customer.invalid", text: "Lost" });
+    assert.equal(stale.data.status, 409);
+    const read = await call(admin, "read_draft", { accountId: `cloudflare:${MAILBOX}`, draftId: draft.data.draftId });
+    assert.equal(read.data.text.split("— Shop").length - 1, 1, "one signature");
+    assert.match(read.data.text, /wrote:\n> hello/, "the original is quoted");
+
+    const out = await call(admin, "send_draft", { accountId: `cloudflare:${MAILBOX}`, draftId: draft.data.draftId, expectedRevision: 3, idempotencyKey: "send-reply-1" });
+    assert.equal(out.isError, false, JSON.stringify(out.data));
+    assert.equal(out.data.status, "accepted");
+    assert.deepEqual((await sent()).map((m) => m.subject), ["Re: Order"]);
+    const retry = await call(admin, "send_draft", { accountId: `cloudflare:${MAILBOX}`, draftId: draft.data.draftId, idempotencyKey: "send-reply-1" });
+    assert.equal(retry.data.id, out.data.id, "a retry answers the first send");
+    assert.equal((await sent()).length, 1);
+    assert.deepEqual((await call(admin, "list_drafts", {})).data.drafts, [], "the sent draft left Drafts");
+    const sentFolder = await call(admin, "list_mailbox_messages", { accountId: `cloudflare:${MAILBOX}`, folder: "sent" });
+    const sentMail = await call(admin, "read_message", { accountId: `cloudflare:${MAILBOX}`, messageId: sentFolder.data.messages[0].messageId });
+    assert.equal(sentMail.data.text.split("— Shop").length - 1, 1, "sent with one signature, as the draft held it");
+    assert.equal(sentMail.data.threadId, original, "in the conversation of the message it answers");
+
+    const throwaway = await call(admin, "save_draft", { accountId: `cloudflare:${MAILBOX}`, to: "x@customer.invalid", subject: "Scrap", text: "x" });
+    const asked = await call(admin, "delete_draft", { accountId: `cloudflare:${MAILBOX}`, draftId: throwaway.data.draftId });
+    assert.equal(asked.data.needsConfirmation, true);
+    assert.match(asked.data.summary, /Scrap/);
+    const gone = await call(admin, "delete_draft", { accountId: `cloudflare:${MAILBOX}`, draftId: throwaway.data.draftId, confirm: asked.data.confirm });
+    assert.equal(gone.isError, false, JSON.stringify(gone.data));
+    assert.deepEqual((await call(admin, "list_drafts", {})).data.drafts, []);
+  } finally { await mf.dispose(); }
+});
+
 test("an agent drafts, sends once per key per day, and every change is journalled with its key (AP-3, AP-6)", async () => {
   const { mf, as, call, sent } = await fixture();
   try {
@@ -178,14 +229,14 @@ test("an irreversible action takes two calls, and its code works once, for the s
     const admin = await as("admin.access");
     const draft = await call(admin, "save_draft", { accountId: `cloudflare:${MAILBOX}`, to: "ann@customer.invalid", subject: "Delete me", text: "x" });
     const other = await call(admin, "save_draft", { accountId: `cloudflare:${MAILBOX}`, to: "ann@customer.invalid", subject: "Keep me", text: "y" });
-    const args = { accountId: `cloudflare:${MAILBOX}`, messageId: draft.data.id };
+    const args = { accountId: `cloudflare:${MAILBOX}`, messageId: draft.data.draftId };
     const asked = await call(admin, "delete_message", args);
     assert.equal(asked.data.needsConfirmation, true);
     assert.match(asked.data.summary, /Delete for good the message "Delete me"/);
     const listed = async () => (await call(admin, "list_mailbox_messages", { accountId: `cloudflare:${MAILBOX}`, folder: "draft" })).data.messages.map((m: { subject: string }) => m.subject).sort();
     assert.deepEqual(await listed(), ["Delete me", "Keep me"], "the first call changes nothing");
 
-    const wrongArgs = await call(admin, "delete_message", { accountId: `cloudflare:${MAILBOX}`, messageId: other.data.id, confirm: asked.data.confirm });
+    const wrongArgs = await call(admin, "delete_message", { accountId: `cloudflare:${MAILBOX}`, messageId: other.data.draftId, confirm: asked.data.confirm });
     assert.equal(wrongArgs.isError, true, "a code is for the arguments it was issued for");
     const otherKey = await as("drafts.access");
     const wrongKey = await call(otherKey, "delete_message", { ...args, confirm: asked.data.confirm });
@@ -208,7 +259,7 @@ test("an agent reads what the app shows: accounts, the feed, one message, with t
     assert.equal(accounts.isError, false, JSON.stringify(accounts.data));
     assert.deepEqual(accounts.data.accounts.map((a: { accountId: string }) => a.accountId), [`cloudflare:${MAILBOX}`]);
     const draft = await call(admin, "save_draft", { accountId: `cloudflare:${MAILBOX}`, to: "ann@customer.invalid", subject: "Signed", text: "Body line" });
-    const read = await call(admin, "read_message", { accountId: `cloudflare:${MAILBOX}`, messageId: draft.data.id });
+    const read = await call(admin, "read_message", { accountId: `cloudflare:${MAILBOX}`, messageId: draft.data.draftId });
     assert.equal(read.isError, false, JSON.stringify(read.data));
     assert.match(read.data.text, /Body line\s+— Shop/);
     const bad = await call(admin, "read_message", { accountId: "not-an-account", messageId: "x" });

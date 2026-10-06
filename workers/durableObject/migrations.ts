@@ -202,4 +202,11 @@ export const mailboxMigrations: Migration[] = [
 		name: "15_forward_status",
 		sql: txn(`ALTER TABLE incoming_receipts ADD COLUMN forward_status TEXT;`),
 	},
+	{
+		// B-52: a draft is changed in place; each save raises its revision, so a save that read an
+		// older one is refused instead of overwriting another window's or an agent's change. NULL
+		// (drafts saved before) reads as revision 1.
+		name: "16_draft_revision",
+		sql: txn(`ALTER TABLE emails ADD COLUMN draft_revision INTEGER;`),
+	},
 ];

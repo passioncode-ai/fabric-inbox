@@ -11,14 +11,21 @@ import {
 } from "./attachment-store";
 import {
   MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS,
   validateAttachments,
 } from "../../../shared/mail/attachments";
 import { missingOriginals, prepareMessage } from "./compose-payload";
+import { sendSavedDraft, signatureFor, swapSignature } from "./server-drafts";
+import type { SyncStatus } from "./use-drafts";
 export type { Draft } from "./draft-store";
 export default function Composer({
   draft,
   storageError,
   saving,
+  sync,
+  onFlush,
+  onResync,
+  onResolve,
   onLock,
   onSettle,
   onDiscard,
@@ -33,6 +40,11 @@ export default function Composer({
   draft: Draft;
   storageError: string;
   saving: boolean;
+  /** How the server's copy stands (B-52). */
+  sync: SyncStatus | null;
+  onFlush: (d: Draft) => Promise<Draft | null>;
+  onResync: (d: Draft) => Promise<void>;
+  onResolve: (d: Draft, choice: "theirs" | "mine") => Promise<void>;
   onLock: (d: Draft) => Promise<Draft>;
   onSettle: (
     d: Draft,
@@ -53,6 +65,14 @@ export default function Composer({
   const [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [loadingFiles, setLoadingFiles] = useState(false);
+  // A send stopped because the draft was not saved says so until the draft is saved again.
+  const unsavedNotice = useRef("");
+  useEffect(() => {
+    if (sync?.state === "saved" && unsavedNotice.current) {
+      setNotice((n) => (n === unsavedNotice.current ? "" : n));
+      unsavedNotice.current = "";
+    }
+  }, [sync?.state]);
   useEffect(() => {
     const el = dialog.current;
     const previous = document.activeElement as HTMLElement;
@@ -66,6 +86,16 @@ export default function Composer({
   const account = accounts.find((a) => a.id === draft.accountId);
   function change(patch: Partial<Draft>) {
     onChange({ ...draft, ...patch });
+  }
+  /** A new message's sender changed: its signature follows the sender. */
+  async function changeSender(accountId: string) {
+    let signature = "";
+    try {
+      signature = accountId ? await signatureFor(accountId, fabric) : "";
+    } catch {
+      setNotice("The sender's signature could not be loaded; add it to the message if you need it.");
+    }
+    change({ accountId, text: swapSignature(draft.text, draft.signature, signature), signature });
   }
   async function send() {
     if (
@@ -87,9 +117,23 @@ export default function Composer({
       setBusy(false);
       return;
     }
+    // A draft is sent from the server (B-52); an attempt begun before drafts lived there keeps its route.
+    const legacy = !!draft.locked && !draft.serverId;
+    let target = draft;
+    if (!legacy && !draft.locked) {
+      const saved = await onFlush(draft);
+      if (!saved?.synced || !saved.serverId) {
+        sending.current = false;
+        setBusy(false);
+        unsavedNotice.current = "The draft could not be saved to your server, so it was not sent. Check the connection and try again.";
+        setNotice(unsavedNotice.current);
+        return;
+      }
+      target = saved;
+    }
     let fixed: Draft;
     try {
-      fixed = await onLock(draft);
+      fixed = draft.locked ? draft : await onLock(target);
     } catch {
       sending.current = false;
       setBusy(false);
@@ -101,6 +145,16 @@ export default function Composer({
     setNotice("");
     try {
       const isGmail = account.provider === "gmail";
+      if (!legacy) {
+        const result = await sendSavedDraft(fixed, fabric);
+        if (result.status === "accepted") {
+          await onSettle(fixed, "accepted");
+          onSent();
+          onClose();
+        } else
+          setNotice("Acceptance is not confirmed. Keep this attempt unchanged and check again.");
+        return;
+      }
       const path = isGmail
         ? accountPath(rawAccount(account.id)) + "/send"
         : `/api/v1/mailboxes/${encodeURIComponent(rawAccount(account.id))}/emails` +
@@ -125,7 +179,14 @@ export default function Composer({
           "Acceptance is not confirmed. Keep this attempt unchanged and check again.",
         );
     } catch (error) {
-      if (
+      const code = error instanceof ApiError ? String(error.body.code ?? error.body.error ?? "") : "";
+      if (error instanceof ApiError && error.status === 409 && /^(DRAFT_CONFLICT|draft_conflict)$/.test(code)) {
+        // Changed elsewhere between saving and sending: nothing went out; the person decides.
+        if (!(await recover(fixed, "editable"))) return;
+        // Saving again meets the change and offers the choice between the two versions.
+        void onResync(draft);
+        setNotice("This draft was changed elsewhere just before sending, so it was not sent. Check it, then send again.");
+      } else if (
         error instanceof ApiError &&
         sendRecovery(!!draft.locked, error.status, error.body) === "failed"
       ) {
@@ -154,6 +215,14 @@ export default function Composer({
   }
   async function addFiles(files: File[]) {
     if (fileWork.current || sending.current || draft.locked) return;
+    // Files already saved with the draft count toward the same limits.
+    const saved = draft.serverFiles ?? [];
+    const count = saved.length + (draft.attachments?.length ?? 0) + files.length;
+    const bytes = [...saved, ...(draft.attachments ?? []), ...files].reduce((n, f) => n + f.size, 0);
+    if (count > MAX_ATTACHMENTS || bytes > MAX_ATTACHMENT_BYTES) {
+      setNotice("A message can carry up to 10 files, 5 MiB together. Remove a file before adding another.");
+      return;
+    }
     fileWork.current = true;
     setLoadingFiles(true);
     setNotice("");
@@ -315,8 +384,8 @@ export default function Composer({
           <select
             required
             value={draft.accountId}
-            disabled={busy || draft.locked || draft.mode !== "new"}
-            onChange={(e) => change({ accountId: e.target.value })}
+            disabled={busy || draft.locked || draft.mode !== "new" || !!draft.serverId}
+            onChange={(e) => void changeSender(e.target.value)}
           >
             <option value="">Choose a sender</option>
             {!account && draft.accountId && (
@@ -395,8 +464,29 @@ export default function Composer({
             />
           </label>
           <p id="attachment-limits" className="fi-muted">
-            Up to 10 files, 5 MiB total. Files are saved on this device.
+            Up to 10 files, 5 MiB total. Files are saved with the draft on your server.
           </p>
+          {!!draft.serverFiles?.length && (
+            <ul aria-label="Files saved with the draft">
+              {draft.serverFiles.map((file) => (
+                <li key={file.id}>
+                  <span>
+                    {file.filename}{" "}
+                    <small>{file.size.toLocaleString()} bytes · Saved</small>
+                  </span>
+                  <button
+                    type="button"
+                    className="fi-text-button"
+                    disabled={busy || loadingFiles || draft.locked}
+                    aria-label={`Remove ${file.filename}`}
+                    onClick={() => change({ serverFiles: draft.serverFiles?.filter((f) => f.id !== file.id) })}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           {!!draft.attachments?.length && (
             <ul>
               {draft.attachments.map((file) => (
@@ -486,6 +576,22 @@ export default function Composer({
             {notice}
           </p>
         )}
+        {sync && (sync.state === "conflict" || sync.state === "gone") && (
+          <div role="alert" className="fi-notice">
+            <p>{sync.message}</p>
+            {sync.state === "conflict" && (
+              <button type="button" className="fi-text-button" disabled={busy} onClick={() => {
+                if (window.confirm("Replace your text with the version saved on your server? Copy any text you need before continuing."))
+                  void onResolve(draft, "theirs");
+              }}>
+                Show the saved version
+              </button>
+            )}
+            <button type="button" className="fi-text-button" disabled={busy} onClick={() => void onResolve(draft, "mine")}>
+              {sync.state === "conflict" ? "Keep my version" : "Save it again as a new draft"}
+            </button>
+          </div>
+        )}
         {storageError && !saving && (
           <button
             type="button"
@@ -522,14 +628,20 @@ export default function Composer({
               Discard draft
             </button>
           )}
-          <span className="fi-muted">
+          <span className="fi-muted" role="status">
             {storageError
               ? storageError
               : saving
                 ? "Saving draft…"
                 : draft.locked
                   ? "Send recovery saved on this device"
-                  : "Draft kept on this device"}
+                  : sync && sync.state !== "conflict" && sync.state !== "gone"
+                    ? sync.message
+                    : sync
+                      ? "Kept on this device; not saved to your server"
+                      : draft.synced
+                        ? "Saved to your server"
+                        : "Kept on this device; saving to your server…"}
           </span>
           <button
             type="submit"

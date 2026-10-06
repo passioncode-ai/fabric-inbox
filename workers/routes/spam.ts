@@ -5,6 +5,7 @@ import { listEntry, type SpamLists } from "../../shared/mail/spam";
 import { listChange, readSpamLists, SpamListConflict, updateSpamLists } from "../spam/lists";
 import { listMailboxAddresses } from "../lib/mailbox-store";
 import { DEFAULT_SPAM_DAILY_CALLS } from "../categories/store";
+import { ListEdit, Report } from "../spam/inputs";
 
 /**
  * Spam (SP-3, SP-4, SP-6): the operator's lists, Report spam / Not spam for both
@@ -15,23 +16,6 @@ import { DEFAULT_SPAM_DAILY_CALLS } from "../categories/store";
 export const spamRouter = new Hono<{ Bindings: Env }>();
 type C = Context<{ Bindings: Env }>;
 export const SPAM_RETENTION_DAYS = 30;
-
-const LIST_NAMES = ["blockedSenders", "blockedDomains", "allowedSenders", "allowedDomains"] as const;
-const Message = z.object({
-  accountId: z.string().regex(/^(cloudflare|gmail):.+$/).max(320),
-  providerMessageId: z.string().min(1).max(256),
-  sender: z.string().max(320).default(""),
-});
-const Report = z.object({
-  messages: z.array(Message).min(1).max(100),
-  /** What else goes on the list: the sender, the sender's whole domain, or nothing. */
-  list: z.enum(["sender", "domain", "none"]).default("sender"),
-}).strict();
-const ListEdit = z.object({
-  list: z.enum(LIST_NAMES),
-  value: z.string().min(1).max(320),
-  action: z.enum(["add", "remove"]),
-}).strict();
 
 function failure(c: C, error: unknown, action: string) {
   if (error instanceof SpamListConflict) return c.json({ error: error.message }, 409);

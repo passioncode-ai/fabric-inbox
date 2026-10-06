@@ -26,7 +26,32 @@ export type Draft = {
   inReplyTo?: string;
   references?: string;
   locked?: boolean;
+  /**
+   * The draft on the server (B-52): its id there (a Cloudflare draft's id is this draft's id; a
+   * Gmail draft's is Gmail's), the revision this copy was saved from, and the files already
+   * there. `synced` says this copy is the server's revision; anything else is still to be saved.
+   */
+  serverId?: string;
+  serverRevision?: number | string;
+  serverFiles?: ServerFile[];
+  synced?: boolean;
+  /** A Gmail draft being made: its creation key, so a retry finds it instead of making two. */
+  pendingCreateKey?: string;
+  /** The signature added to the text when the draft was made, so a change of sender can swap it. */
+  signature?: string;
 };
+/** A file already kept with the draft on the server; its bytes are not on this device. */
+export type ServerFile = { id: string; filename: string; mimetype: string; size: number; sourceId?: string };
+function serverFiles(value: unknown): ServerFile[] | undefined {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.length > 10) throw new Error("Invalid draft");
+  return value.map((f) => {
+    if (!f || typeof f.id !== "string" || !f.id || typeof f.filename !== "string" || typeof f.mimetype !== "string" ||
+      !Number.isSafeInteger(f.size) || f.size < 0 || (f.sourceId !== undefined && typeof f.sourceId !== "string"))
+      throw new Error("Invalid draft");
+    return { id: f.id, filename: f.filename, mimetype: f.mimetype, size: f.size, ...(f.sourceId ? { sourceId: f.sourceId } : {}) };
+  });
+}
 export type ForwardSource = {
   accountId: string;
   originalId: string;
@@ -108,6 +133,11 @@ function content(value: unknown, legacy = false): Omit<Draft, "id"> {
       throw new Error("Invalid draft");
   if (d.locked !== undefined && typeof d.locked !== "boolean")
     throw new Error("Invalid draft");
+  for (const key of ["serverId", "pendingCreateKey", "signature"])
+    if (d[key] !== undefined && typeof d[key] !== "string") throw new Error("Invalid draft");
+  if (d.serverRevision !== undefined && typeof d.serverRevision !== "string" && !Number.isSafeInteger(d.serverRevision))
+    throw new Error("Invalid draft");
+  if (d.synced !== undefined && typeof d.synced !== "boolean") throw new Error("Invalid draft");
   const refs =
     legacy || d.attachments === undefined
       ? undefined
@@ -145,6 +175,12 @@ function content(value: unknown, legacy = false): Omit<Draft, "id"> {
               ? undefined
               : [...(d.pendingAttachments as string[])],
           forwardSource: forwardSource(d.forwardSource),
+          serverId: d.serverId as string | undefined,
+          serverRevision: d.serverRevision as number | string | undefined,
+          serverFiles: serverFiles(d.serverFiles),
+          synced: d.synced as boolean | undefined,
+          pendingCreateKey: d.pendingCreateKey as string | undefined,
+          signature: d.signature as string | undefined,
         }
       : {}),
   };

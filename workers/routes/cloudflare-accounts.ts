@@ -53,10 +53,11 @@ cloudflareAccountsRouter.get("/api/cloudflare/accounts", async (c) => {
   } catch (error) { return failure(c, error, "cloudflare_accounts_read_failed"); }
 });
 
+export const ShownInput = z.object({ shown: z.boolean().nullable() }).strict();
 cloudflareAccountsRouter.put("/api/cloudflare/accounts/:id", async (c) => {
   const id = c.req.param("id");
   if (!isAccountId(id)) return c.json({ error: "Not a Cloudflare account id" }, 400);
-  const parsed = z.object({ shown: z.boolean().nullable() }).strict().safeParse(await c.req.json().catch(() => null));
+  const parsed = ShownInput.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Say whether the account is shown (true, false, or null for the default)" }, 400);
   const accounts = new CloudflareAccounts(c.env);
   if (!accounts.connected) return c.json({ error: NOT_CONNECTED }, 503);
