@@ -6,6 +6,7 @@ import { reactRouter } from "@react-router/dev/vite";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
@@ -16,6 +17,8 @@ const buildId = process.env.FABRIC_BUILD_ID || `${version}+${Date.now().toString
 
 export default defineConfig({
   define: { __FABRIC_BUILD__: JSON.stringify(buildId) },
+  // imapflow's default logger (pino) cannot load in workerd; ours is never used (workers/providers/imap/pino-stub.ts).
+  resolve: { alias: { pino: fileURLToPath(new URL("./workers/providers/imap/pino-stub.ts", import.meta.url)) } },
   plugins: [
     cloudflare({ remoteBindings: process.env.FABRIC_REMOTE_BINDINGS === "1", viteEnvironment: { name: "ssr" } }),
     tailwindcss(),

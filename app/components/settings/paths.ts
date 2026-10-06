@@ -28,7 +28,7 @@ export const SECTIONS: readonly SectionInfo[] = [
   { id: "domains", label: "Domains", group: "mail",
     description: "Your domains on Cloudflare: the ones receiving mail here, and the rest one action away." },
   { id: "accounts", label: "Accounts", group: "mail",
-    description: "The Cloudflare and Gmail accounts this app works with." },
+    description: "Your mail accounts, and the Cloudflare accounts that hold your domains." },
   { id: "destinations", label: "Forwarding destinations", group: "mail",
     description: "Outside addresses a copy of each message may go to, once they confirm it." },
   { id: "categories", label: "Categories", group: "mail",
