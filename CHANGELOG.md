@@ -5,8 +5,17 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 0.12.0 — 2026-10-07
 
+- **Fabric Inbox in Russian.** The app opens in Russian when the Mac's first language is Russian,
+  and **Settings → App → Language** chooses System, English or Русский on this device. Everything a
+  person reads is translated — the mail list, the reader and composer, Settings, the setup and
+  connect pages, the Mac app's menus and dialogs, and the server's messages where they are shown —
+  with real Russian plurals and dates. Agent tools and logs stay English. A check fails the build
+  on any English sentence without a Russian entry.
+- **Connecting a hub names the app that will get the key.** The `fabric-inbox://connect` dialog
+  shows the process listening for the key, not only the name the link gives itself; it refuses
+  when nothing listens or another process took the port, and an Admin key needs your own tick.
 - **Refresh sits on the left, with how fresh the mail is.** Beside it: "Updated 3 min ago" (the
   server's last successful read of the Gmail, IMAP and Outlook accounts in view), "Live" for
   Cloudflare addresses, "Updating…" while it runs, and the account that failed with its fix. A click
