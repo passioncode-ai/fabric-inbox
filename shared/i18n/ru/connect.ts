@@ -512,4 +512,7 @@ export const CONNECT: Readonly<Record<string, string>> = {
 	"Microsoft refuses this client ID or secret.": "Microsoft отклоняет этот идентификатор или секрет клиента.",
 	"Check the app registration still exists, then save its client ID and a new client secret here.": "Проверьте, что регистрация приложения ещё существует, затем сохраните здесь её идентификатор клиента и новый секрет клиента.",
 	"Microsoft could not be asked just now.": "Сейчас не удалось обратиться к Microsoft.",
+	"{app} asks to work with your mail on {host}.": "{app} просит доступ к вашей почте на {host}.",
+	"It calls itself “{client}” and listens on this Mac as {app} (process {pid}). Its own key is sent only to that process. You can see and revoke it in Settings → Agent access.": "Называет себя «{client}» и работает на этом Mac как {app} (процесс {pid}). Собственный ключ получит только этот процесс. Увидеть и отозвать его можно в «Настройки → Доступ агентов».",
+	"I started this connection from {app}": "Это подключение начал я сам из {app}",
 };

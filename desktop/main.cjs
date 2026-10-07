@@ -17,6 +17,7 @@ const updateVerify = require('./update-verify.cjs');
 const { createLog } = require('./log.cjs');
 const { randomUUID } = require('node:crypto');
 const { execFile } = require('node:child_process');
+const execFileAsync = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10000, maxBuffer: 1024 * 1024 }, (error, stdout) => (error ? reject(error) : resolve({ stdout }))));
 const { createWriteStream, constants: fsConstants } = require('node:fs');
 
 // A development run (`npm run desktop`) is its own app to macOS: its own name, so Chromium keeps its
@@ -407,7 +408,8 @@ async function handleConnectLink(url) {
   const ses = config ? session.fromPartition(policy.partitionFor(config)) : null;
   const out = await connector.connect({
     request, config,
-    confirm: async (prompt) => (await box({ type: 'question', ...prompt })).response === 1,
+    confirm: async (prompt) => box({ type: 'question', ...prompt }),
+    identify: connector.listenerWith(execFileAsync),
     mint: ses ? connector.mintWith(ses, config.origin) : async () => ({ ok: false, error: t('No server') }),
     revoke: ses ? connector.revokeWith(ses, config.origin) : async () => false,
     deliver: connector.deliverTo(request.callback),

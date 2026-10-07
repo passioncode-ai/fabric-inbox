@@ -5,7 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-const { parseConnectLink, promptFor, connect, mintWith, deliverTo } = require("../desktop/connect.cjs");
+const { parseConnectLink, promptFor, connect, mintWith, deliverTo, listenerWith } = require("../desktop/connect.cjs");
 
 const STATE = "s".repeat(32);
 const link = (over: Record<string, string> = {}) => {
@@ -30,24 +30,44 @@ test("a connect link is read strictly: loopback callback, a known level, a singl
   for (const host of ["localhost", "[::1]"]) assert.equal(parseConnectLink(link({ callback: `http://${host}:9/cb` })).ok, true, host);
 });
 
-test("the prompt names who asks, what it may do in plain words, where the key goes, and Deny is the default", () => {
-  const p = promptFor(parseConnectLink(link()).value, config);
+const HUB = { pid: 4242, name: "Fabric", path: "/Applications/Fabric.app/Contents/MacOS/Fabric" };
+
+test("the prompt names the app that will receive the key, what it may do in plain words, and Deny is the default", () => {
+  const p = promptFor(parseConnectLink(link({ level: "mail" })).value, config, HUB);
   assert.equal(p.title, "Connect Fabric?");
   assert.match(p.message, /Fabric asks to work with your mail on inbox\.example\.com/);
-  assert.match(p.detail, /Admin/);
-  assert.match(p.detail, /addresses and domains/);
-  assert.match(p.detail, /only to this Mac \(127\.0\.0\.1:47123\)/);
+  assert.match(p.detail, /Mail/);
+  assert.match(p.detail, /calls itself “Fabric” and listens on this Mac as Fabric \(process 4242\)/);
+  assert.match(p.detail, /sent only to that process/);
   assert.match(p.detail, /Agent access/);
   assert.deepEqual(p.buttons, ["Deny", "Allow"]);
   assert.equal(p.defaultId, 0);
   assert.equal(p.cancelId, 0);
+  assert.equal(p.checkboxLabel, undefined, "a Mail key needs no extra tick");
+});
+
+test("the prompt shows the real process when the link's own name differs from it", () => {
+  const p = promptFor(parseConnectLink(link({ client: "Fabric" })).value, config, { pid: 77, name: "Terminal", path: "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal" });
+  assert.match(p.message, /^Terminal asks/, "the name a person sees is the listening app's, not the link's");
+  assert.match(p.detail, /calls itself “Fabric” and listens on this Mac as Terminal \(process 77\)/);
+});
+
+test("an Admin key is a warning that needs the person's own tick", () => {
+  const p = promptFor(request(), config, HUB);
+  assert.equal(p.type, "warning");
+  assert.match(p.detail, /addresses and domains/);
+  assert.equal(p.checkboxLabel, "I started this connection from Fabric");
+  assert.equal(p.checkboxChecked, false);
 });
 
 /** A fake world: what was minted, revoked, delivered and logged. */
-function world(over: Partial<Record<"mint" | "deliver" | "revoke" | "confirm", unknown>> = {}) {
-  const seen = { minted: [] as unknown[], revoked: [] as string[], delivered: [] as Record<string, unknown>[], logs: [] as string[], signIn: 0 };
+function world(over: Partial<Record<"mint" | "deliver" | "revoke" | "confirm" | "identify" | "sleep" | "self", unknown>> = {}) {
+  const seen = { minted: [] as unknown[], revoked: [] as string[], delivered: [] as Record<string, unknown>[], logs: [] as string[], signIn: 0, slept: 0, prompts: [] as Record<string, unknown>[] };
   const deps = {
-    confirm: async () => true,
+    confirm: async (prompt: Record<string, unknown>) => { seen.prompts.push(prompt); return { response: 1, checkboxChecked: true }; },
+    identify: async () => HUB,
+    sleep: async () => { seen.slept++; },
+    self: 1,
     mint: async (input: unknown) => { seen.minted.push(input); return { ok: true, data: { key: { id: "tok-9", clientId: "cid.access", level: "admin", send: "send", expiresAt: "2027-10-03T00:00:00Z" }, clientSecret: "SECRET-VALUE", mcpUrl: "https://inbox.example.com/mcp" } }; },
     revoke: async (id: string) => { seen.revoked.push(id); return true; },
     deliver: async (body: Record<string, unknown>) => { seen.delivered.push(body); return true; },
@@ -71,7 +91,7 @@ test("Allow makes the key with the owner's session and hands it to the callback 
 });
 
 test("Deny tells the hub and makes nothing", async () => {
-  const { seen, deps } = world({ confirm: async () => false });
+  const { seen, deps } = world({ confirm: async () => ({ response: 0, checkboxChecked: false }) });
   const out = await connect({ request: request(), config, ...deps });
   assert.equal(out.outcome, "denied");
   assert.deepEqual(seen.minted, []);
@@ -100,6 +120,59 @@ test("with no server set up yet, nothing is asked and the hub hears why", async 
   const out = await connect({ request: request(), config: null, ...deps });
   assert.equal(out.reason, "no_server");
   assert.deepEqual(seen.delivered, [{ state: STATE, outcome: "failed", error: "no_server" }]);
+});
+
+test("Allow on an Admin request without the tick is a Deny", async () => {
+  const { seen, deps } = world({ confirm: async () => ({ response: 1, checkboxChecked: false }) });
+  const out = await connect({ request: request(), config, ...deps });
+  assert.equal(out.outcome, "denied");
+  assert.deepEqual(seen.minted, []);
+  assert.deepEqual(seen.delivered, [{ state: STATE, outcome: "denied" }]);
+  assert.ok(seen.logs.some((l) => l.includes("admin_not_confirmed")));
+});
+
+test("when nothing listens on the callback, nothing is asked or made, after a short wait", async () => {
+  const { seen, deps } = world({ identify: async () => null });
+  const out = await connect({ request: request(), config, ...deps });
+  assert.deepEqual([out.outcome, out.reason], ["failed", "no_listener"]);
+  assert.equal(seen.prompts.length, 0);
+  assert.deepEqual(seen.minted, []);
+  assert.deepEqual(seen.delivered, []);
+  assert.equal(seen.slept, 5, "five one-second waits for a hub that binds its port late");
+  let calls = 0;
+  const late = world({ identify: async () => (++calls >= 3 ? HUB : null) });
+  assert.equal((await connect({ request: request(), config, ...late.deps })).outcome, "connected");
+});
+
+test("a callback held by this app itself is refused", async () => {
+  const { seen, deps } = world({ self: HUB.pid });
+  const out = await connect({ request: request(), config, ...deps });
+  assert.deepEqual([out.outcome, out.reason], ["failed", "listener_is_self"]);
+  assert.deepEqual(seen.minted, []);
+});
+
+test("a key is revoked, not delivered, when another process took the port meanwhile", async () => {
+  let calls = 0;
+  const { seen, deps } = world({ identify: async () => (++calls === 1 ? HUB : { pid: 999, name: "Other", path: "/tmp/other" }) });
+  const out = await connect({ request: request(), config, ...deps });
+  assert.deepEqual([out.outcome, out.reason], ["failed", "listener_changed"]);
+  assert.deepEqual(seen.revoked, ["tok-9"]);
+  assert.deepEqual(seen.delivered, []);
+});
+
+test("the listener is read from lsof and ps: the app bundle's name, else the command", async () => {
+  const runs: string[] = [];
+  const exec = async (file: string, args: string[]) => {
+    runs.push(`${file} ${args.join(" ")}`);
+    if (file.endsWith("lsof")) return { stdout: "p4242\ncFabric\n" };
+    return { stdout: "/Applications/Fabric.app/Contents/MacOS/Fabric\n" };
+  };
+  assert.deepEqual(await listenerWith(exec)(47123), { pid: 4242, name: "Fabric", path: "/Applications/Fabric.app/Contents/MacOS/Fabric" });
+  assert.match(runs[0], /^\/usr\/sbin\/lsof -nP -iTCP:47123 -sTCP:LISTEN -Fpc$/);
+  const bare = listenerWith(async (file: string) => (file.endsWith("lsof") ? { stdout: "p51\ncnode\n" } : { stdout: "/opt/homebrew/bin/node\n" }));
+  assert.deepEqual(await bare(1), { pid: 51, name: "node", path: "/opt/homebrew/bin/node" });
+  assert.equal(await listenerWith(async () => { throw Object.assign(new Error("exit 1"), { code: 1 }); })(1), null, "lsof finds nothing: exit 1");
+  assert.equal(await listenerWith(async () => ({ stdout: "" }))(1), null);
 });
 
 test("minting reads the server's answer: 201 is a key, a redirect or an HTML page is a lapsed sign-in", async () => {

@@ -100,8 +100,6 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"The link has no callback on this Mac.": "В ссылке нет адреса возврата на этом Mac.",
 	"The link asks to send the key somewhere other than this Mac.": "Ссылка просит отправить ключ не на этот Mac.",
 	"Connect {client}?": "Подключить {client}?",
-	"{client} asks to work with your mail on {host}.": "{client} просит доступ к вашей почте на {host}.",
-	"It gets its own key, which is sent only to this Mac ({target}). You can see and revoke it in Settings → Agent access.": "Он получит собственный ключ, который отправляется только на этот Mac ({target}). Ключ можно посмотреть и отозвать в «Настройки → Доступ агентов».",
 	"The server answered {status}.": "Сервер ответил {status}.",
 
 	// Server addresses and setup files (desktop/policy.cjs)
