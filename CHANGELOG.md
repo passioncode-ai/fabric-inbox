@@ -7,14 +7,63 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **Refresh sits on the left, with how fresh the mail is.** Beside it: "Updated 3 min ago" (the
+  server's last successful read of the Gmail, IMAP and Outlook accounts in view), "Live" for
+  Cloudflare addresses, "Updating…" while it runs, and the account that failed with its fix. A click
+  shows every account's state. ⌘⇧N refreshes (⌘R stays Retry connection).
+- **Delete or Backspace archives and marks read; ⌘⌫ (Ctrl+Backspace) discards.** Both work on
+  several selected messages, open the next one and offer Undo (also ⌘Z). Arrows and j/k move;
+  ? lists the shortcuts. Keys never fire while typing or with a dialog open.
+- **Discarded: deleted, but recoverable.** A discarded message goes to its account's Discarded
+  folder (a Cloudflare folder, a Gmail label, an IMAP folder, an Outlook folder), out of the inbox,
+  counts and categories, and is removed after 30 days. Each discard records why and teaches a rule
+  (the mailing list, else the sender), so mail like it goes straight to Discarded on arrival — never
+  mail from someone you wrote to, replies in your conversations, your own domains or senders on the
+  Always allow list. "Not discarded" brings a message back and can drop the rule. Settings →
+  Discard rules lists them. Agents: `discard_messages`, `restore_discarded`, `list_discard_rules`,
+  `remove_discard_rule`, `update_discard_allow_list`.
+- **Adding an address is one worked-out dialog.** A live check as you type (allowed characters,
+  role names, already here, already routed elsewhere in Cloudflare, the catch-all), a domain picker
+  with each domain's state, a display name and signature, who answers, a forwarding copy, then the
+  steps in place: receive the domain if needed, create the address, make the Cloudflare rule (or say
+  why not with its fix), and a test message watched until it arrives. "Add several" creates many at
+  once. A rule Cloudflare refuses no longer costs the address: it shows "Not receiving yet" with
+  Fix it. Agents: `check_address`, `create_addresses`, `check_test_message`; `create_address`
+  takes a signature.
 - **Usage counts no longer wait for the Keychain.** They are sent with Node's `fetch` in the main
   process instead of Chromium's network stack, which waits for the cookie key; a pending Keychain
   prompt held every count back on the owner's Mac (0.11.0).
 - **A development run is "Fabric Inbox Development"** to macOS, with its own Keychain item for its
   cookie key, so it can never leave the installed app an item it has to ask for.
-- **An update is never a downgrade.** The app reads the update feed's version first and hands
-  Squirrel.Mac only a strictly newer release; the release build also sets
-  `ElectronSquirrelPreventDowngrades`. A feed naming no release version is a failed check.
+- **Automatic updates behave as in every PassionCode.ai product (LC-16).** The first check runs
+  90 s after start, then every 6 h while the app runs, window or not; a failed check is retried
+  once within the hour. The switch is the file `auto-update` in the profile (absent = on, `off` =
+  off); the 0.10.1–0.11.0 `updates.json` choice is carried over.
+- **An update is verified by the app before anything can replace it.** The release's
+  `SHA256SUMS` must carry the organization's pinned GPG signature and list the feed itself; the
+  zip must have the signed digest and size; the app inside must be signed by a Developer ID of team
+  `KJ35UYYL22` and carry the announced version. Only then is Squirrel.Mac handed the verified zip.
+  Before, Squirrel.Mac checked only the signing team, and the docs wrongly said it checked the
+  digest.
+- **An update is never a downgrade or a reinstall**: only a strictly newer release is offered, and
+  the release build sets `ElectronSquirrelPreventDowngrades`.
+- **A release can be held for a step a person takes** (`migration` in its feed): it is downloaded
+  and verified, not installed, and Check for Updates… names its runbook.
+- **The app keeps a log**, `~/Library/Logs/Fabric Inbox/fabric-inbox.log` (codes only, about 2 MB
+  at most), with the shared update events.
+- **An update never loops or waits forever.** A version macOS refuses, or that Squirrel.Mac does not
+  take within 15 minutes, is not downloaded again for a day; a held release is downloaded once; a
+  copy this Mac account cannot replace says so and downloads nothing. Turning automatic updates off
+  stops a check that is running from handing anything over (an update already downloaded still
+  installs at quit). A failed Restart to Install Update can be chosen again.
+- **The release refuses a bad update before publishing it.** A new `update-precheck` job runs the
+  app's own checks on the built feed and zip, and `publish` waits for it; the signed set is checked
+  again after publishing.
+- **Creating a server never puts a prerelease over its release**, and `npm run deploy` records the
+  server's version as the app's own deploy does.
+- **A `DevToolsActivePort` left by a debugging run is removed** from the profile at the next start.
+- **Corrected:** the first published release that updates itself is 0.11.0; 0.10.1 was never
+  published.
 
 ## 0.11.0 — 2026-10-06
 

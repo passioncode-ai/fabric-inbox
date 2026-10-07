@@ -5,7 +5,7 @@
  * produce words take the interface's translator (`t`, English by default); words the server or
  * shared/address-name.ts wrote go through `t.text()` where a sentence here carries them.
  */
-import type { AddressCheck, AddressStep, AgentInput, DomainState, NameCheck, StepFix, TestStatus } from "../../../services/agents";
+import type { AddressCheck, AddressStep, AgentInput, BatchResult, DomainState, NameCheck, RoutingStatus, StepFix, TestStatus } from "../../../services/agents";
 import type { DomainList, Step } from "../../../services/domains";
 import { checkLocalPart, suggestDisplayName, type LocalPartCheck } from "../../../../shared/address-name";
 import { englishT, type T } from "../../../../shared/i18n";
@@ -173,6 +173,9 @@ export interface UiStep { id: string; label: string; outcome: UiOutcome; detail:
 export const stepMark = (t: T = englishT): Record<UiOutcome, string> => addAddressText(t).mark;
 export const STEP_MARK: Record<UiOutcome, string> = stepMark();
 
+/** The outcomes whose step offers its one fix beside it (SCN-065). */
+export const FIXABLE = new Set<UiOutcome>(["failed", "skipped", "not_receiving"]);
+
 /** The first step on a domain that does not receive here yet (SCN-063). */
 export function receiveStep(domain: string, state: { running: boolean; steps: Step[] | null; foreignMx: string[] | null; error: string | null }, t: T = englishT): UiStep {
   const X = addAddressText(t);
@@ -211,6 +214,52 @@ export function testStep(phase: TestPhase, test: TestStatus | null, error?: stri
 export const TEST_POLL_MS = 5_000;
 export const testWaiting = (test: TestStatus | null | undefined) => !test || test.state === "waiting";
 
+/* ------------------------------------------- continuing, and a lost answer */
+
+/**
+ * Several: the names to send next. The server does only what fits one request and hands the rest
+ * back (SCN-064); a call that hands everything back made no progress, and the dialog stops there
+ * rather than loop.
+ */
+export function continueBatch(sent: string[], result: BatchResult): string[] {
+  const rest = result.remaining ?? [];
+  return rest.length && rest.length < sent.length ? rest : [];
+}
+
+/**
+ * Whether Create's answer may have been lost while the server kept working: no answer at all (a
+ * timeout, no connection: status 0 or not the server's error) or a server failure (5xx). A refusal
+ * (4xx) is an answer: nothing was done.
+ */
+export const answerLost = (status: number | null) => status === null || status === 0 || status >= 500;
+
+const RULE_FIX: StepFix = { action: "route_here", label: "Fix it" };
+
+/** The rule step of an address found to exist after a lost answer, from its routing read again. */
+function ruleAfterLoss(routing: RoutingStatus | null | undefined): UiStep {
+  const base = { id: "rule", label: ADD_ADDRESS_TEXT.stepRule };
+  if (routing?.state === "verified") return { ...base, outcome: "done", detail: routing.detail };
+  if (routing?.state === "missing") return { ...base, outcome: "failed", detail: routing.detail, fix: RULE_FIX };
+  return { ...base, outcome: "skipped", detail: routing?.detail ? `${routing.detail} ${ADD_ADDRESS_TEXT.ruleUnread}` : ADD_ADDRESS_TEXT.ruleUnread, fix: RULE_FIX };
+}
+
+/**
+ * The rows to show when Create's answer did not arrive (answerLost): each name asked for is looked up
+ * again — it exists now (with its rule as Cloudflare reads it) or it does not — and when that cannot
+ * be read either, one row says so. Never "Nothing was created": that is not known.
+ */
+export function lostAnswerRows(fallbackEmail: string, localParts: string[], check: AddressCheck | null,
+  routing: Record<string, RoutingStatus | null>, why: string): { email: string; created: boolean; steps: UiStep[] }[] {
+  if (!check) return [{ email: fallbackEmail, created: false, steps: [{ id: "address", label: ADD_ADDRESS_TEXT.stepAddress, outcome: "failed", detail: ADD_ADDRESS_TEXT.lostUnknown(why) }] }];
+  return localParts.map((localPart) => {
+    const email = `${localPart}@${check.domain}`;
+    const exists = check.names.some((n) => n.localPart === localPart && n.status === "exists");
+    return exists
+      ? { email, created: true, steps: [{ id: "address", label: ADD_ADDRESS_TEXT.stepAddress, outcome: "done", detail: ADD_ADDRESS_TEXT.lostExists(email) }, ruleAfterLoss(routing[email])] }
+      : { email, created: false, steps: [{ id: "address", label: ADD_ADDRESS_TEXT.stepAddress, outcome: "failed", detail: ADD_ADDRESS_TEXT.lostMissing(email, why) }] };
+  });
+}
+
 /** One sentence for the dialog's live status and the toast. */
 export function stepsSentence(email: string, steps: UiStep[], t: T = englishT): string {
   const X = addAddressText(t);
@@ -218,6 +267,8 @@ export function stepsSentence(email: string, steps: UiStep[], t: T = englishT): 
   const address = steps.find((s) => s.id === "address");
   if (!address || address.outcome === "failed") return X.sentenceNotCreated(email, failed?.detail ?? "");
   if (failed) return X.sentencePartly(email, failed.label, failed.fix?.label ?? null);
+  const notReceiving = steps.find((s) => s.outcome === "not_receiving");
+  if (notReceiving) return X.sentenceNotReceiving(email, notReceiving.fix?.label ?? null);
   if (steps.some((s) => s.outcome === "running" || s.outcome === "waiting")) return X.sentenceWaiting(email);
   const test = steps.find((s) => s.id === "test");
   return test?.outcome === "done" ? X.sentenceReady(email) : X.sentenceCreated(email);

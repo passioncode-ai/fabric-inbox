@@ -1,4 +1,5 @@
-import { hasCredentialKey } from "../providers/credentials";
+import { hasCredentialKey, unusableCredentialKey } from "../providers/credentials";
+import { SettingsBusy } from "../lib/settings-lock";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { Env } from "../types";
@@ -80,20 +81,24 @@ gmailSetupRouter.put("/api/gmail-setup", async (c) => {
   const pending = check.checks.find((x) => x.status === "failed");
   // The server's credential key (MAIL_CREDENTIAL_KEY, or the older GMAIL_TOKEN_ENCRYPTION_KEY) is never replaced.
   const credentialKey = hasCredentialKey(c.env) ? undefined : newCredentialKey();
+  let keyCreated = false;
   try {
     const accountId = await accounts.serverAccountId();
-    await writeGmailSettings(api, { accountId, script: accounts.script }, {
-      clientId: parsed.data.clientId, clientSecret: parsed.data.clientSecret, publicAppUrl: originOf(c), credentialKey });
+    const result = await writeGmailSettings(api, { accountId, script: accounts.script }, {
+      clientId: parsed.data.clientId, clientSecret: parsed.data.clientSecret, publicAppUrl: originOf(c), credentialKey },
+      { bucket: c.env.BUCKET, unusableKey: unusableCredentialKey(c.env) });
+    keyCreated = result.written.includes("MAIL_CREDENTIAL_KEY");
   } catch (error) {
     console.error(JSON.stringify({ event: "gmail_setup_write_failed", error: (error as Error).message }));
+    if (error instanceof SettingsBusy) return c.json({ error: error.message }, 409);
     if (error instanceof CloudflareApiError)
       return c.json({ error: msg("{error} Nothing was changed on your server.", { error: error.message }) }, error.isPermission ? 403 : 502);
     return c.json({ error: msg("Your server could not save the Gmail settings. Nothing was changed; try again.") }, 502);
   }
-  console.log(JSON.stringify({ event: "gmail_setup_saved", keyCreated: !!credentialKey, checks: summary(check.checks) }));
+  console.log(JSON.stringify({ event: "gmail_setup_saved", keyCreated, checks: summary(check.checks) }));
   return c.json({
     saved: true,
-    keyCreated: !!credentialKey,
+    keyCreated,
     checks: check.checks,
     note: msg("Your server starts using the Gmail settings within a few seconds."),
     ...(pending ? { warning: `${pending.message} ${pending.fix ?? ""}`.trim() } : {}),

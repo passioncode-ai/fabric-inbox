@@ -10,6 +10,7 @@ import { FakeImap, type FakeImapOptions } from "./fake-imap";
 import { FakeSmtp, nodeSockets } from "./fake-smtp";
 import { FakeGraph } from "./fake-graph";
 import { DISCARD_RETENTION_MS } from "../shared/mail/discard";
+import { discardErrorText } from "../workers/routes/discard";
 
 /**
  * Discarded in each remote provider (operator, 2026-10-06): a message discarded goes to the
@@ -136,6 +137,153 @@ test("IMAP: new mail a rule matches is discarded on arrival, before rules, agent
   assert.equal((await service.drainEvents(async () => {}, Date.now(), filter)).discarded, 0, "never twice");
 });
 
+test("IMAP: a discard that fails on arrival (the server refuses to make Discarded) still delivers the message, once, to rules, agents and categories", async (t) => {
+  const { imap, service } = await imapFixture(t, { createRefused: true });
+  const { id } = await service.connectImap({ preset: "fastmail", email: EMAIL, password: PASS });
+  await settle(service, id);
+  imap.deliver("INBOX", mail("Digest 3", { extra: "List-Id: <weekly.news.example.org>\r\n" }));
+  await service.sync(id, { historyOnly: true, deadline: Date.now() + 10_000 });
+  const filter: ArrivalFilter = async () => ({ reason: "Discarded automatically: you discarded 1 message from this newsletter (Weekly)", ruleId: "l-00000001" });
+  const delivered: string[] = [], applied: string[] = [];
+  const warnings: string[] = [];
+  console.warn = (line: string) => { warnings.push(line); };
+  const result = await service.drainEvents(async (e) => { delivered.push(e.subject); }, Date.now(), filter, async (rule) => { applied.push(rule); });
+  assert.deepEqual(result, { delivered: 1, failed: 0, dead: 0, discarded: 0 });
+  assert.deepEqual(delivered, ["Digest 3"], "it reaches its consumers as if no rule matched");
+  assert.deepEqual(applied, [], "the rule did not take it");
+  assert.equal(imap.folder("INBOX").messages.length, 1, "it stays in the inbox");
+  const logged = warnings.map((w) => JSON.parse(w)).find((w) => w.event === "discard_arrival_failed");
+  assert.equal(logged?.error, "folder_create_refused");
+  assert.equal(logged?.rule, "l-00000001");
+  assert.deepEqual(await service.drainEvents(async (e) => { delivered.push(e.subject); }, Date.now(), filter), { delivered: 0, failed: 0, dead: 0, discarded: 0 }, "never again");
+});
+
+test("a discard on arrival runs under the object's lock, never alongside a sync page or a mail action", async (t) => {
+  const { imap, service } = await imapFixture(t);
+  const { id } = await service.connectImap({ preset: "fastmail", email: EMAIL, password: PASS });
+  await settle(service, id);
+  imap.deliver("INBOX", mail("Digest 4", { extra: "List-Id: <weekly.news.example.org>\r\n" }));
+  await service.sync(id, { historyOnly: true, deadline: Date.now() + 10_000 });
+  // The object's lock, as GmailAccountsDO.serial chains it: one holder at a time.
+  let held = 0, overlapped = false, locked = 0;
+  let tail: Promise<unknown> = Promise.resolve();
+  const serial = <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = tail.then(async () => { held++; locked++; try { return await fn(); } finally { held--; } });
+    tail = run.catch(() => {});
+    return run;
+  };
+  const discard = service.discard.bind(service);
+  let discardsLocked = 0;
+  service.discard = async (...args: Parameters<typeof discard>) => { if (held === 1) discardsLocked++; if (held > 1) overlapped = true; return discard(...args); };
+  // A mail action that holds the lock while the drain wants it.
+  let release!: () => void;
+  const action = serial(() => new Promise<void>((resolve) => { release = resolve; }));
+  const filter: ArrivalFilter = async () => ({ reason: "Discarded automatically", ruleId: "l-00000001" });
+  const drained = service.drainEvents(async () => {}, Date.now(), filter, undefined, serial);
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(imap.folder("INBOX").messages.length, 1, "the discard waits for the action holding the lock");
+  release();
+  await action;
+  assert.equal((await drained).discarded, 1);
+  assert.equal(discardsLocked, 1, "the discard ran holding the lock");
+  assert.equal(overlapped, false);
+  assert.equal(locked, 2);
+});
+
+test("a sender the account wrote to in Cc or Bcc is known, as in To — also from Sent rows indexed before Cc and Bcc were kept", async (t) => {
+  const { imap, store, service } = await imapFixture(t);
+  const sent = (subject: string, header: string) =>
+    mail(subject, { from: EMAIL }).replace(`To: ${EMAIL}\r\n`, `To: Someone <someone@example.org>\r\n${header}\r\n`);
+  imap.deliver("Sent", sent("Copy to Carol", "Cc: Carol <carol@example.org>, dave@example.org"), { flags: ["\\Seen"] });
+  imap.deliver("Sent", sent("Blind to Erin", "Bcc: erin@example.org"), { flags: ["\\Seen"] });
+  const { id } = await service.connectImap({ preset: "fastmail", email: EMAIL, password: PASS });
+  await settle(service, id);
+  for (const who of ["someone@example.org", "Carol <carol@example.org>", "dave@example.org", "erin@example.org"])
+    assert.equal((await service.sentContact(id, who, undefined)).known, true, who);
+  assert.equal((await service.sentContact(id, "arol@example.org", undefined)).known, false, "the whole address, never a part");
+  // Index rows written before 0.12 kept To only: the message row says the rest.
+  for (const [key, row] of await store.list<Record<string, unknown>>({ prefix: `idx:${id}:sent:` })) {
+    const { cc: _cc, bcc: _bcc, ...old } = row;
+    await store.put(key, old);
+  }
+  assert.equal((await service.sentContact(id, "carol@example.org", undefined)).known, true);
+  assert.equal((await service.sentContact(id, "erin@example.org", undefined)).known, true);
+  // The workspace's question: any connected account.
+  assert.equal(await service.knownAnywhere("Erin <erin@example.org>"), true);
+  assert.equal(await service.knownAnywhere("nobody@example.org"), false);
+});
+
+test("remote purge reads every record, not the first thousand, and takes the oldest due first", async (t) => {
+  const { imap, store, service } = await imapFixture(t);
+  imap.deliver("INBOX", mail("Older"));
+  imap.deliver("INBOX", mail("Newer"));
+  const { id } = await service.connectImap({ preset: "fastmail", email: EMAIL, password: PASS });
+  await settle(service, id);
+  const [a, b] = await page(service, id, "inbox");
+  const first = await service.discard(id, a!.providerMessageId, "You discarded it");
+  const second = await service.discard(id, b!.providerMessageId, "You discarded it");
+  // 1,200 younger records whose keys sort before the real ones (other mail discarded since).
+  for (let i = 0; i < 1200; i++) await store.put(`discarded:${id}:a${String(i).padStart(5, "0")}`, { reason: "You discarded it", at: Date.now() });
+  await store.put(`discarded:${id}:${second.id}`, { reason: "You discarded it", at: Date.now() - DISCARD_RETENTION_MS - 120_000 });
+  await store.put(`discarded:${id}:${first.id}`, { reason: "You discarded it", at: Date.now() - DISCARD_RETENTION_MS - 60_000 });
+  assert.deepEqual(await service.purgeDiscarded(Date.now(), 1), { trashed: 1, deleted: 0, forgotten: 0 });
+  assert.equal(await store.get(`discarded:${id}:${second.id}`), undefined, "the one due longest went first");
+  assert.ok(await store.get(`discarded:${id}:${first.id}`));
+  assert.deepEqual(await service.purgeDiscarded(Date.now(), 1), { trashed: 1, deleted: 0, forgotten: 0 });
+  assert.equal(imap.folder("Trash").messages.length, 2);
+});
+
+test("IMAP without UIDPLUS: a message with no Message-ID is found in Discarded by its headers, so Undo and the 30-day purge reach it", async (t) => {
+  const { imap, store, service } = await imapFixture(t, { uidplus: false });
+  imap.deliver("INBOX", mail("No id").replace(/Message-ID: [^\r]*\r\n/, ""));
+  const { id } = await service.connectImap({ preset: "fastmail", email: EMAIL, password: PASS });
+  await settle(service, id);
+  const m = (await page(service, id, "inbox"))[0]!;
+  const moved = await service.discard(id, m.providerMessageId, "You discarded it");
+  assert.match(moved.id, /^x-\d+-\d+$/, "its id in Discarded, found without UIDPLUS or a Message-ID");
+  assert.ok(await store.get(`discarded:${id}:${moved.id}`), "its record is under the id it has now");
+  await service.restoreDiscarded(id, moved.id);
+  assert.equal(imap.folder("INBOX").messages.length, 1, "Undo reached it");
+  await settle(service, id);
+  const again = await service.discard(id, (await page(service, id, "inbox"))[0]!.providerMessageId, "You discarded it");
+  await store.put(`discarded:${id}:${again.id}`, { reason: "You discarded it", at: Date.now() - DISCARD_RETENTION_MS - 60_000 });
+  assert.deepEqual(await service.purgeDiscarded(), { trashed: 1, deleted: 0, forgotten: 0 });
+  assert.equal(imap.folder("Trash").messages.length, 1);
+});
+
+test("a discard whose new place the provider could not say is resolved from the next sync: Undo and the purge still reach it", async (t) => {
+  const { imap, store, service } = await imapFixture(t);
+  imap.deliver("INBOX", mail("Lost and found"));
+  const { id } = await service.connectImap({ preset: "fastmail", email: EMAIL, password: PASS });
+  await settle(service, id);
+  const m = (await page(service, id, "inbox"))[0]!;
+  const moved = await service.discard(id, m.providerMessageId, "You discarded it");
+  // As if the move had not said where it went: the record is kept under the old id, marked lost.
+  const row = (await service.cache.row(id, moved.id))!;
+  await store.delete(`discarded:${id}:${moved.id}`);
+  await store.put(`discarded:${id}:${m.providerMessageId}`, { reason: "You discarded it", at: Date.now(),
+    lost: { rfcMessageId: row.message.rfcMessageId, from: row.message.from, subject: row.message.subject, timestamp: row.message.timestamp } });
+  assert.deepEqual(await service.purgeDiscarded(), { trashed: 0, deleted: 0, forgotten: 0 });
+  assert.deepEqual(await store.get(`discarded:${id}:${moved.id}`), { reason: "You discarded it", at: (await store.get<{ at: number }>(`discarded:${id}:${moved.id}`))!.at }, "found: kept under its id now");
+  assert.equal(await store.get(`discarded:${id}:${m.providerMessageId}`), undefined);
+  // Undo by the id the app knew finds it too.
+  await service.restoreDiscarded(id, m.providerMessageId);
+  assert.equal(imap.folder("INBOX").messages.length, 1);
+});
+
+test("IMAP without a Trash folder: Discarded mail is deleted for good after 30 days, not kept forever", async (t) => {
+  const { imap, store, service } = await imapFixture(t, { folders: [{ path: "Sent", specialUse: "\\Sent" }] });
+  imap.deliver("INBOX", mail("Gone in 30"));
+  const { id } = await service.connectImap({ preset: "fastmail", email: EMAIL, password: PASS });
+  await settle(service, id);
+  const moved = await service.discard(id, (await page(service, id, "inbox"))[0]!.providerMessageId, "You discarded it");
+  await store.put(`discarded:${id}:${moved.id}`, { reason: "You discarded it", at: Date.now() - DISCARD_RETENTION_MS - 60_000 });
+  assert.deepEqual(await service.purgeDiscarded(), { trashed: 0, deleted: 1, forgotten: 0 });
+  assert.equal(imap.folder("Discarded").messages.length, 0, "expunged");
+  assert.equal(await store.get(`discarded:${id}:${moved.id}`), undefined);
+  assert.deepEqual(await page(service, id, "discarded"), [], "out of the cache too");
+});
+
 test("IMAP: Discarded mail goes to Trash after 30 days; younger mail stays", async (t) => {
   const { imap, store, service } = await imapFixture(t);
   imap.deliver("INBOX", mail("Old"));
@@ -147,10 +295,10 @@ test("IMAP: Discarded mail goes to Trash after 30 days; younger mail stays", asy
   await service.discard(id, b!.providerMessageId, "You discarded it");
   await store.put(`discarded:${id}:${oldOne.id}`, { reason: "You discarded it", at: Date.now() - DISCARD_RETENTION_MS - 60_000 });
   const result = await service.purgeDiscarded();
-  assert.deepEqual(result, { trashed: 1, forgotten: 0 });
+  assert.deepEqual(result, { trashed: 1, deleted: 0, forgotten: 0 });
   assert.equal(imap.folder("Trash").messages.length, 1);
   assert.equal(imap.folder("Discarded").messages.length, 1);
-  assert.deepEqual(await service.purgeDiscarded(), { trashed: 0, forgotten: 0 }, "nothing else is due");
+  assert.deepEqual(await service.purgeDiscarded(), { trashed: 0, deleted: 0, forgotten: 0 }, "nothing else is due");
 });
 
 // ── Outlook ──────────────────────────────────────────────────────────────────────
@@ -291,6 +439,47 @@ test("Gmail: discard puts the account's own Discarded label on (made once), out 
   gmail.seen.length = 0;
   await service.discard("a", "m1", "You discarded it");
   assert.ok(!gmail.seen.some((s) => s.startsWith("GET labels") || s.startsWith("POST labels")));
+});
+
+test("Gmail, IMAP, Outlook: mail in the account's Spam is not discarded — moving it out would teach the provider it is not spam", async (t) => {
+  quiet(t);
+  const { gmail, service } = await gmailFixture();
+  gmail.labels.set("m1", ["SPAM", "UNREAD"]);
+  const row = (await service.cache.row("a", "m1"))!;
+  await service.cache.save("a", { ...row.message, text: "", html: "", labels: ["SPAM", "UNREAD"] } as never, "g");
+  await assert.rejects(service.discard("a", "m1", "You discarded it"), (e: ProviderError) => e.code === "spam_not_discardable" && e.status === 400);
+  assert.ok(!gmail.seen.some((s) => s.includes("/modify")), "nothing was asked of Gmail");
+  assert.deepEqual(gmail.labels.get("m1"), ["SPAM", "UNREAD"], "still Spam, as Gmail judged it");
+  assert.equal(discardErrorText(new ProviderError("spam_not_discardable", 400)),
+    "It is in Spam: moving it out would teach the account's spam filter that it is not spam. Spam is emptied on its own");
+});
+
+test("Gmail, IMAP: restore takes a discarded message back to the place it was discarded from — archive or Trash", async (t) => {
+  quiet(t);
+  const { gmail, service } = await gmailFixture();
+  await service.discard("a", "m1", "You discarded it");
+  gmail.seen.length = 0;
+  await service.restoreDiscarded("a", "m1", undefined, "archive");
+  assert.deepEqual(gmail.seen.filter((x) => x.includes("/modify")), ['POST messages/m1/modify {"addLabelIds":[],"removeLabelIds":["Label_7"]}'], "out of Discarded, not into the inbox");
+  assert.equal((await service.listInboxMessages("a", { folder: "archive", query: "", limit: 10 })).length, 1);
+  await service.discard("a", "m1", "You discarded it");
+  await service.restoreDiscarded("a", "m1", undefined, "trash");
+  assert.ok(gmail.labels.get("m1")!.includes("TRASH"));
+  assert.ok(!gmail.labels.get("m1")!.includes("Label_7"));
+  assert.equal((await service.listInboxMessages("a", { folder: "trash", query: "", limit: 10 })).length, 1);
+
+  const imap = await imapFixture(t);
+  imap.imap.deliver("INBOX", mail("Filed"));
+  const { id } = await imap.service.connectImap({ preset: "fastmail", email: EMAIL, password: PASS });
+  await settle(imap.service, id);
+  const m = (await page(imap.service, id, "inbox"))[0]!;
+  const archived = await imap.service.archive(id, m.providerMessageId);
+  const moved = await imap.service.discard(id, archived.providerMessageId, "You discarded it");
+  assert.equal(moved.from, "archive");
+  await imap.service.restoreDiscarded(id, moved.id, undefined, "archive");
+  assert.equal(imap.imap.folder("Archive").messages.length, 1);
+  assert.equal(imap.imap.folder("Discarded").messages.length, 0);
+  assert.equal(imap.imap.folder("INBOX").messages.length, 0);
 });
 
 test("Gmail: a label deleted in Gmail since is made again, once; one the person made by hand is found by name", async (t) => {

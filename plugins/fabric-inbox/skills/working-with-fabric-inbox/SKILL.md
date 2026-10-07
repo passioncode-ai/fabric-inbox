@@ -123,8 +123,9 @@ one where nothing was changed is an error with the failures in its `details`.
 learns a rule from each message (its List-Id, else its sender) so mail like it skips the inbox from
 then on; `learned` says which rule, `created: true` the first time — tell the person. Discard only
 what the person asked to throw away; `learn: false` when it is a one-off. `restore_discarded` brings
-mail back (`unlearn: true` undoes the discard's lesson too) and names the rules that would discard it
-again; `list_messages` with `folder: "discarded"` lists Discarded with each `discardReason`.
+mail back (`unlearn: true`, with each message's `ruleId` from the discard's `learnedRuleId`,
+undoes that discard's lesson too; `to`, the discard's `from`, puts it back where it was) and names
+the rules that would discard it again; `list_messages` with `folder: "discarded"` lists Discarded with each `discardReason`.
 `delete_message` is permanent and two-step — prefer trash. An IMAP account offers only what its
 server has: `list_accounts` gives each account's `capabilities` (no Archive folder → no archive).
 

@@ -239,4 +239,11 @@ export const SETTINGS: Readonly<Record<string, string>> = {
 	"{domain}: done, {n} steps changed.": "{domain}: готово, изменён {n} шаг.|{domain}: готово, изменено {n} шага.|{domain}: готово, изменено {n} шагов.",
 	"{domain}: already so, nothing changed.": "{domain}: уже так, ничего не изменилось.",
 	"What was done": "Что сделано",
+	"Creating the rest…": "Создаём остальные…",
+	"{email} exists now (read again: the server's answer did not arrive).": "{email} теперь существует (проверено заново: ответ сервера не пришёл).",
+	"{email} does not exist. {why} If it does not appear in the address list in a moment, create it again.": "{email} не существует. {why} Если он не появится в списке адресов через минуту, создайте его снова.",
+	"{why} What was created could not be read: the address list shows which addresses exist.": "{why} Не удалось прочитать, что создано: какие адреса есть, видно в списке адресов.",
+	"Its rule could not be read. Fix it checks the rule and makes it if it is missing.": "Правило адреса не удалось прочитать. «Исправить» проверит правило и создаст его, если его нет.",
+	"{email} was created; its mail does not arrive here yet. {fix} fixes it.": "{email} создан, но почта на него сюда пока не приходит. Исправит: «{fix}».",
+	"{email} was created; its mail does not arrive here yet.": "{email} создан, но почта на него сюда пока не приходит.",
 };

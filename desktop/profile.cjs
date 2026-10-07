@@ -13,7 +13,7 @@
 //   (release review 2026-10-05). The next start's sweep removes the directory.
 // - sweepProfile: at start, before any window, every server partition other than the configured
 //   one is removed, with leftovers of server.json / pending-setup.json (`*.tmp` from an interrupted
-//   atomic write, backups). Chromium may write a few bytes into a retired directory before it exits;
+//   atomic write, backups), and a DevToolsActivePort a debugging run left. Chromium may write a few bytes into a retired directory before it exits;
 //   the next start's sweep removes them.
 //
 // Only directories this app names (fabric-<24 hex>) and files next to its own two settings files
@@ -23,6 +23,10 @@ const path = require('node:path');
 const PARTITION = /^persist:(fabric-[0-9a-f]{24})$/;
 const PARTITION_DIR = /^fabric-[0-9a-f]{24}$/;
 const LEFTOVER = /^(?:server|pending-setup)\.json\..+$/;
+// Chromium writes DevToolsActivePort (the debugging port, mode 0644) when a run had
+// --remote-debugging-port; a leftover in the real profile names a port anyone on the Mac could try
+// (LC-14). It is kept only while this run itself is being debugged.
+const DEVTOOLS_PORT = 'DevToolsActivePort';
 
 function defaultLog(event) { console.error(JSON.stringify(event)); }
 
@@ -41,7 +45,7 @@ async function entries(fs, dir) {
  * Removes every server partition except `keepPartition` (null keeps none; `keepPartitions` keeps
  * all, for a start with no server known) and the leftovers of the app's settings files. Returns what it removed; a failure is logged and returns what was done.
  */
-async function sweepProfile({ fs, userData, keepPartition, keepPartitions = false, log = defaultLog }) {
+async function sweepProfile({ fs, userData, keepPartition, keepPartitions = false, debugging = false, log = defaultLog }) {
   const keep = keepPartition ? partitionDirName(keepPartition) : null;
   const removed = { partitions: [], files: [] };
   try {
@@ -51,7 +55,7 @@ async function sweepProfile({ fs, userData, keepPartition, keepPartitions = fals
       removed.partitions.push(entry.name);
     }
     for (const entry of await entries(fs, userData)) {
-      if (!entry.isFile() || !LEFTOVER.test(entry.name)) continue;
+      if (!entry.isFile() || !(LEFTOVER.test(entry.name) || (entry.name === DEVTOOLS_PORT && !debugging))) continue;
       await fs.rm(path.join(userData, entry.name), { force: true });
       removed.files.push(entry.name);
     }

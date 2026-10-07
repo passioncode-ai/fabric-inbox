@@ -247,6 +247,16 @@ test("an update keeps every setting on the Worker, records the version, and refu
   assert.ifError(allowed.error);
 });
 
+test("a prerelease server is older than its release, and rc numbers compare as numbers", () => {
+  const { compareVersions } = require("../desktop/cloudflare-deploy.cjs");
+  assert.ok(compareVersions("0.12.0", "0.12.0-rc.1") > 0, "a release over its rc is an update");
+  assert.ok(compareVersions("0.12.0-rc.1", "0.12.0") < 0, "an rc over its release is a downgrade");
+  assert.ok(compareVersions("0.12.0-rc.10", "0.12.0-rc.2") > 0);
+  assert.ok(compareVersions("0.12.0-rc.1", "0.11.9") > 0);
+  assert.equal(compareVersions("0.10.0", "0.10.0"), 0);
+  assert.ok(compareVersions("0.10.0", "0.9.12") > 0);
+});
+
 test("a storage step that would delete or move data is never sent (deploy audit M2)", async () => {
   const { out } = fixtureBundle();
   const manifestPath = path.join(out, "manifest.json");

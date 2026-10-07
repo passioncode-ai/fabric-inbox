@@ -56,9 +56,28 @@ export interface AddressRouting {
   catchAll: { enabled: boolean; toHere: boolean; action: RouteAction } | null;
 }
 
+/**
+ * One client serves one request. What it reads — a domain's zone, a zone's Email Routing state and
+ * its rules — is remembered for the length of it and kept true as the client changes rules, so
+ * creating many addresses on one domain reads them once and then costs one call per rule (a Worker
+ * on the free plan may make 50 subrequests per request). A read that fails is not remembered.
+ */
 export class EmailRoutingClient {
+  private zoneIds = new Map<string, Promise<string | null>>();
+  private routingSettings = new Map<string, Promise<{ enabled?: boolean; status?: string }>>();
+  private ruleLists = new Map<string, Promise<Rule[]>>();
+
   // A bare `fetch` stored on the instance throws "Illegal invocation" in workerd when called as this.fetcher.
   constructor(private token: string, private worker: string, private fetcher: Fetcher = (input, init) => fetch(input, init)) {}
+
+  private memo<T>(map: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> {
+    let hit = map.get(key);
+    if (!hit) {
+      map.set(key, (hit = load()));
+      hit.catch(() => map.delete(key));
+    }
+    return hit;
+  }
 
   private async call<T>(path: string, init: RequestInit = {}): Promise<T> {
     let response: Response;
@@ -79,19 +98,30 @@ export class EmailRoutingClient {
     return body.result as T;
   }
 
-  async zoneId(domain: string): Promise<string | null> {
-    const zones = await this.call<{ id: string; name: string }[]>(`/zones?name=${encodeURIComponent(domain)}&per_page=5`);
-    return zones.find((z) => z.name.toLowerCase() === domain.toLowerCase())?.id ?? null;
+  zoneId(domain: string): Promise<string | null> {
+    const name = domain.toLowerCase();
+    return this.memo(this.zoneIds, name, async () => {
+      const zones = await this.call<{ id: string; name: string }[]>(`/zones?name=${encodeURIComponent(name)}&per_page=5`);
+      return zones.find((z) => z.name.toLowerCase() === name)?.id ?? null;
+    });
   }
 
-  private async rules(zone: string): Promise<Rule[]> {
-    const all: Rule[] = [];
-    for (let page = 1; page <= 10; page++) {
-      const batch = await this.call<Rule[]>(`/zones/${zone}/email/routing/rules?per_page=50&page=${page}`);
-      all.push(...batch);
-      if (batch.length < 50) return all;
-    }
-    return all;
+  /** Whether Email Routing is on for the zone, and its status ("ready", "misconfigured"…). */
+  private settings(zone: string): Promise<{ enabled?: boolean; status?: string }> {
+    return this.memo(this.routingSettings, zone, () => this.call<{ enabled?: boolean; status?: string }>(`/zones/${zone}/email/routing`));
+  }
+
+  /** The zone's rules; the list returned is the one remembered, and the changes below keep it current. */
+  private rules(zone: string): Promise<Rule[]> {
+    return this.memo(this.ruleLists, zone, async () => {
+      const all: Rule[] = [];
+      for (let page = 1; page <= 10; page++) {
+        const batch = await this.call<Rule[]>(`/zones/${zone}/email/routing/rules?per_page=50&page=${page}`);
+        all.push(...batch);
+        if (batch.length < 50) return all;
+      }
+      return all;
+    });
   }
 
   private toWorker(rule: Rule): boolean {
@@ -108,7 +138,7 @@ export class EmailRoutingClient {
     try {
       const zone = await this.zoneId(domain);
       if (!zone) return { state: "unknown", detail: msg("The token cannot see the zone {domain}. Give it Zone read and Email Routing edit on this zone.", { domain }) };
-      const settings = await this.call<{ enabled?: boolean; status?: string }>(`/zones/${zone}/email/routing`);
+      const settings = await this.settings(zone);
       if (!settings.enabled) return { state: "missing", detail: msg("Email Routing is off for {domain}. Enable it in the dashboard (Email → Email Routing).", { domain }) };
       if (settings.status && settings.status !== "ready")
         return { state: "missing", detail: msg("Email Routing for {domain} is {status}: its DNS records need fixing in the dashboard.", { domain, status: settings.status }) };
@@ -138,7 +168,7 @@ export class EmailRoutingClient {
   async inventory(domain: string): Promise<DomainRouting> {
     const zone = await this.zoneId(domain);
     if (!zone) return { domain, visible: false, enabled: false, rules: [], catchAll: null };
-    const settings = await this.call<{ enabled?: boolean }>(`/zones/${zone}/email/routing`);
+    const settings = await this.settings(zone);
     if (!settings.enabled) return { domain, visible: true, enabled: false, rules: [], catchAll: null };
     const action = (r: Rule) => {
       const a = r.actions?.[0];
@@ -162,7 +192,7 @@ export class EmailRoutingClient {
     const name = domain.toLowerCase();
     const zone = await this.zoneId(name);
     if (!zone) return { domain: name, visible: false, enabled: false, status: "unknown", rules: [], catchAll: null };
-    const settings = await this.call<{ enabled?: boolean; status?: string }>(`/zones/${zone}/email/routing`);
+    const settings = await this.settings(zone);
     const enabled = settings.enabled === true;
     const status = settings.status ?? (enabled ? "ready" : "unconfigured");
     if (!enabled) return { domain: name, visible: true, enabled, status, rules: [], catchAll: null };
@@ -187,10 +217,12 @@ export class EmailRoutingClient {
     const domain = email.slice(email.lastIndexOf("@") + 1);
     const zone = await this.zoneId(domain);
     if (!zone) throw new ZoneNotVisible(msg("The token cannot see the zone {domain}", { domain }));
-    const rule = this.literalRule(await this.rules(zone), email);
+    const rules = await this.rules(zone);
+    const rule = this.literalRule(rules, email);
     if (!rule) return msg("No routing rule named {email}.", { email });
     if (!this.toWorker(rule)) return msg("The routing rule for {email} sends mail elsewhere; it was left as it is.", { email });
     await this.call(`/zones/${zone}/email/routing/rules/${rule.id}`, { method: "DELETE" });
+    rules.splice(rules.indexOf(rule), 1);
     return msg("The routing rule for {email} was removed.", { email });
   }
 
@@ -209,24 +241,27 @@ export class EmailRoutingClient {
     const domain = email.slice(email.lastIndexOf("@") + 1);
     const zone = await this.zoneId(domain);
     if (!zone) throw new ZoneNotVisible(msg("The token cannot see the zone {domain}", { domain }));
-    const existing = this.literalRule(await this.rules(zone), email);
+    const rules = await this.rules(zone);
+    const existing = this.literalRule(rules, email);
     if (existing) {
       if (!this.toWorker(existing))
         throw new RoutingError(msg("A routing rule for {email} already exists and sends mail elsewhere; change it in the dashboard", { email }));
-      if (existing.enabled === false)
+      if (existing.enabled === false) {
         await this.call(`/zones/${zone}/email/routing/rules/${existing.id}`, { method: "PUT", body: JSON.stringify({
           name: existing.name || `Fabric Inbox: ${email}`, enabled: true, priority: existing.priority ?? 0, matchers: existing.matchers, actions: existing.actions }) });
+        existing.enabled = true;
+      }
       return { status: await this.status(email), created: false, ruleId: existing.id };
     }
-    const made = await this.call<{ id?: string }>(`/zones/${zone}/email/routing/rules`, {
-      method: "POST",
-      body: JSON.stringify({
-        name: `Fabric Inbox: ${email}`,
-        enabled: true,
-        matchers: [{ type: "literal", field: "to", value: email }],
-        actions: [{ type: "worker", value: [this.worker] }],
-      }),
-    });
+    const rule: Rule = {
+      name: `Fabric Inbox: ${email}`,
+      enabled: true,
+      matchers: [{ type: "literal", field: "to", value: email }],
+      actions: [{ type: "worker", value: [this.worker] }],
+    };
+    const made = await this.call<{ id?: string }>(`/zones/${zone}/email/routing/rules`, { method: "POST", body: JSON.stringify(rule) });
+    rules.push({ ...rule, id: made?.id });
+    // Read from what is remembered: no further call for the status of a rule just made.
     return { status: await this.status(email), created: true, ruleId: made?.id };
   }
 }
@@ -240,12 +275,20 @@ export type RoutingClient = Pick<EmailRoutingClient, "status" | "inventory" | "d
  * — the server in its own, the relay in any other.
  */
 export class AccountsRoutingClient implements RoutingClient {
+  /** One client per token (its API object) and Worker, so what it read is reused for every address of the request. */
+  private clients = new Map<object, Map<string, EmailRoutingClient>>();
+
   constructor(private accounts: CloudflareAccounts, private fetcher?: Fetcher) {}
 
   private async client(address: string): Promise<EmailRoutingClient | null> {
     const email = address.toLowerCase();
     const ctx = await this.accounts.zone(email.slice(email.lastIndexOf("@") + 1));
-    return ctx ? new EmailRoutingClient(ctx.token, ctx.worker, this.fetcher) : null;
+    if (!ctx) return null;
+    let byWorker = this.clients.get(ctx.api);
+    if (!byWorker) this.clients.set(ctx.api, (byWorker = new Map()));
+    let client = byWorker.get(ctx.worker);
+    if (!client) byWorker.set(ctx.worker, (client = new EmailRoutingClient(ctx.token, ctx.worker, this.fetcher)));
+    return client;
   }
 
   async status(address: string): Promise<RoutingStatus> {

@@ -35,7 +35,9 @@ export interface StoredMessage {
   bodyless?: boolean;
 }
 /** What the feed shows of a message: the index row's value. */
-export type IndexRow = Pick<Message, "providerMessageId" | "threadId" | "subject" | "from" | "to" | "snippet" | "date" | "timestamp" | "read" | "labels" | "signals" | "rfcMessageId">;
+export type IndexRow = Pick<Message, "providerMessageId" | "threadId" | "subject" | "from" | "to" | "snippet" | "date" | "timestamp" | "read" | "labels" | "signals" | "rfcMessageId">
+  /** Sent mail only: its Cc and Bcc ("" when none), for "has this account written to them"; absent on rows indexed before 0.12. */
+  & Partial<Pick<Message, "cc" | "bcc">>;
 export interface InboxCounts { unread: number; total: number }
 interface CacheState { layout: 1 | 2; after?: string }
 
@@ -93,7 +95,7 @@ const idxKey = (a: string, view: string, m: IndexRow) => `idx:${a}:${view}:${rev
 function indexRow(m: StoredMessage["message"]): IndexRow {
   return { providerMessageId: m.providerMessageId, threadId: m.threadId, subject: m.subject, from: m.from, to: m.to, snippet: m.snippet,
     date: m.date, timestamp: m.timestamp, read: m.read, labels: m.labels, ...(m.signals ? { signals: m.signals } : {}),
-    rfcMessageId: m.rfcMessageId ?? "" };
+    rfcMessageId: m.rfcMessageId ?? "", ...(m.labels.includes("SENT") ? { cc: m.cc ?? "", bcc: m.bcc ?? "" } : {}) };
 }
 const inInbox = (m: Pick<Message, "labels">) => inFolder(m.labels, "inbox");
 

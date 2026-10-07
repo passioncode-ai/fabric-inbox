@@ -284,21 +284,28 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Restart Now": "Перезапустить сейчас",
 	"This copy of Fabric Inbox does not update itself.": "Эта копия Fabric Inbox не обновляется сама.",
 	"Only the released app from GitHub or passioncode.ai checks for updates. Builds from source and the Mac App Store version are updated another way.": "Обновления проверяет только выпущенное приложение с GitHub или passioncode.ai. Сборки из исходного кода и версия из Mac App Store обновляются иначе.",
+	"Downloading Update…": "Загрузка обновления…",
+	"This Mac account cannot replace the app in Applications (it was installed by another account, or the folder is read-only). Install the new version from passioncode.ai/inbox, or update it from the account that installed it.": "Эта учётная запись Mac не может заменить приложение в «Программах» (его установила другая учётная запись, или папка доступна только для чтения). Установите новую версию с passioncode.ai/inbox или обновите приложение из той учётной записи, которая его установила.",
+	"The update did not pass verification and was not installed.": "Обновление не прошло проверку и не установлено.",
+	"{error} Fabric Inbox keeps running this version and checks again later; you can also download the latest version from passioncode.ai/inbox.": "{error} Fabric Inbox продолжает работать на этой версии и проверит обновления позже; последнюю версию можно также скачать на passioncode.ai/inbox.",
+	"It is not the release the organization signed.": "Это не тот выпуск, который подписала организация.",
+	"A new version needs a step before it is installed.": "Перед установкой новой версии нужен ещё один шаг.",
+	"Fabric Inbox {version} is downloaded and verified, but it is not installed until the step in its release notes is done: {runbook}.": "Fabric Inbox {version} загружен и проверен, но установится только после шага из примечаний к выпуску: {runbook}.",
+	"see the release notes": "см. примечания к выпуску",
+	"The update feed names no release version.": "Лента обновлений не называет версию выпуска.",
+	"The update feed is not JSON.": "Лента обновлений повреждена.",
+	"The update feed names a file that is not this release's.": "Лента обновлений указывает на файл не из этого выпуска.",
+	"The update feed is not the one this release signed.": "Лента обновлений не та, что подписана в этом выпуске.",
+	"The update's digest is not the one this release signed.": "Контрольная сумма обновления не совпадает с подписанной в выпуске.",
+	"The update is larger than its release says.": "Обновление больше, чем указано в выпуске.",
+	"The update's size is not the one its release says.": "Размер обновления не совпадает с указанным в выпуске.",
+	"The update's bytes are not the ones its release signed.": "Содержимое обновления не совпадает с подписанным в выпуске.",
+	"The update's version is not the one its release announced.": "Версия внутри обновления не та, что объявлена в выпуске.",
+	"The update is another app.": "Обновление — это другое приложение.",
+	"Squirrel.Mac did not accept the verified update.": "Squirrel.Mac не принял проверенное обновление.",
+	"Squirrel.Mac did not answer.": "Squirrel.Mac не ответил.",
+	"This version was not accepted by macOS before; it is tried again later.": "macOS уже не принял эту версию; попытка повторится позже.",
 };
 
-/**
- * Entries no code wraps yet: the update texts of desktop/updater.cjs and its dialogs, which the
- * release integrator wraps with `t()` from desktop/i18n.cjs. The check keeps them and copies them
- * to the Mac app.
- */
-export const RESERVED: readonly string[] = [
-	"Updates", "You have the latest version.", "Fabric Inbox {version} is the newest release.", "A new version is downloading.",
-	"It will be installed when you quit Fabric Inbox, or you can restart once it is ready (Fabric Inbox menu).",
-	"Updates are not available for this copy.", "Move Fabric Inbox to the Applications folder, open it from there, and it will update itself.",
-	"This copy cannot update itself.", "The update check did not finish.",
-	"{error}. It will try again later; you can also download the latest version from passioncode.ai/inbox.", "Unknown error",
-	"Fabric Inbox {version} is ready to install.", "It will be installed when you quit Fabric Inbox. Restart now to use it at once.",
-	"Later", "Restart Now", "This copy of Fabric Inbox does not update itself.",
-	"Only the released app from GitHub or passioncode.ai checks for updates. Builds from source and the Mac App Store version are updated another way.",
-	"Restart to Install Update",
-];
+/** Every update text is wrapped in desktop/main.cjs now (LC-16); nothing is reserved. */
+export const RESERVED: readonly string[] = [];

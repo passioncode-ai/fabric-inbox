@@ -61,7 +61,7 @@ export type DomainState = "receiving" | "can_receive" | "needs_fix" | "no_token"
 export interface NameCheck {
   localPart: string;
   email: string;
-  status: "available" | "exists" | "elsewhere" | "invalid";
+  status: "available" | "exists" | "elsewhere" | "invalid" | "restricted";
   detail: string;
   notes: string[];
 }
@@ -80,7 +80,8 @@ export interface StepFix { action: "route_here" | "connect_cloudflare" | "connec
 export interface AddressStep {
   id: "address" | "rule";
   label: string;
-  outcome: "done" | "already" | "skipped" | "failed";
+  /** not_receiving: the rule exists but the domain does not route mail here yet (Email Routing off or broken). */
+  outcome: "done" | "already" | "skipped" | "failed" | "not_receiving";
   detail: string;
   fix?: StepFix;
 }
@@ -90,6 +91,10 @@ export interface BatchResult {
   created: number;
   failed: number;
   results: ({ email: string; status: number; error?: string } & Partial<CreatedAddress>)[];
+  /** The names one request did not start (its Cloudflare budget ran out): send them again to continue. */
+  remaining?: string[];
+  complete?: boolean;
+  note?: string;
 }
 /** GET /api/project-addresses/:email/test (SCN-062). */
 export interface TestStatus {

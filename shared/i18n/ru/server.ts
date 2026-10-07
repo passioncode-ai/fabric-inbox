@@ -180,8 +180,6 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Routing could not be created": "Не удалось создать маршрутизацию",
 	"Routing could not be created ({error})": "Не удалось создать маршрутизацию ({error})",
 	"{reason}. The address was kept; it receives nothing until its mail is sent here.": "{reason}. Адрес сохранён, но он ничего не получит, пока его почта не будет направлена сюда.",
-	"The address could not be saved ({error}). Its new routing rule was removed again.": "Не удалось сохранить адрес ({error}). Его новое правило маршрутизации удалено.",
-	"The address could not be saved ({error}).": "Не удалось сохранить адрес ({error}).",
 	"{email} keeps its mail here and forwards a copy to {address}.": "{email} хранит почту здесь и пересылает копию на {address}.",
 	"{email} keeps its mail here.": "{email} хранит почту здесь.",
 	"{address} has not confirmed yet: Cloudflare sent it a link. Confirm it, then choose it again.": "{address} ещё не подтверждён: Cloudflare отправил на него ссылку. Подтвердите его, затем выберите снова.",
@@ -261,7 +259,6 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Two dots in a row are not allowed.": "Две точки подряд использовать нельзя.",
 	"{address} is on {domain}, not {wanted}.": "{address} на домене {domain}, а не {wanted}.",
 	"{name} is listed already.": "{name} уже есть в списке.",
-	"At most {max} addresses at once.": "Не больше {max} адресов за раз.",
 
 	// Setup files (shared/setup.ts, workers/routing/to-setup.ts)
 	"{address}: its domain is not in domains": "{address}: его домена нет в domains",
@@ -620,4 +617,15 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"The server's tokens cannot see the zone {domain}. Connect its account in Settings → Accounts.": "Токены сервера не видят зону {domain}. Подключите её аккаунт в разделе «Настройки → Аккаунты».",
 	"The server's tokens cannot see the zone {domain}": "Токены сервера не видят зону {domain}",
 	"Routing cannot be read: this server has no Cloudflare token yet (Settings → Domains → Connect Cloudflare). In the Cloudflare dashboard open the domain → Email → Email Routing → Routing rules, and send this address to the Worker.": "Маршрутизацию не прочитать: у этого сервера пока нет токена Cloudflare («Настройки → Домены → Подключить Cloudflare»). В панели Cloudflare откройте домен → Email → Email Routing → Routing rules и направьте этот адрес в Worker.",
+	"1 more name was left out: at most {max} at once.": "Ещё одно имя не вошло: не больше {max} за раз.",
+	"{count} more names were left out: at most {max} at once.": "Не вошли ещё имена ({count}): не больше {max} за раз.",
+	"The address could not be saved ({error}). Nothing was created; try again.": "Адрес не удалось сохранить ({error}). Ничего не создано; попробуйте ещё раз.",
+	"{reason}. The address was not kept.": "{reason}. Адрес не сохранён.",
+	"{reason}. {email} was created without its rule and could not be taken away again ({error}): remove it, or make its rule with Fix it.": "{reason}. {email} создан без правила, и убрать его не удалось ({error}): удалите его или создайте правило кнопкой «Исправить».",
+	"This server creates only the addresses listed in EMAIL_ADDRESSES, and {email} is not one of them. Add it there (the server's settings), then create it.": "Этот сервер создаёт только адреса из EMAIL_ADDRESSES, а {email} в нём нет. Добавьте его туда (в настройках сервера), затем создайте.",
+	"{count} of the {all} names were not started: one request may make only so many Cloudflare calls. Send the names in remaining again to continue.": "Не начаты имена: {count} из {all} — один запрос может сделать лишь ограниченное число вызовов Cloudflare. Отправьте имена из remaining ещё раз, чтобы продолжить.",
+	"names must be a JSON array of strings, or names separated by commas": "names — это JSON-массив строк или имена через запятую",
+	"names must be a JSON array of strings (each at most 320 characters)": "names — это JSON-массив строк (каждая не длиннее 320 символов)",
+	"It is in Spam: moving it out would teach the account's spam filter that it is not spam. Spam is emptied on its own": "Письмо в «Спаме»: если его оттуда убрать, спам-фильтр аккаунта решит, что это не спам. «Спам» очищается сам",
+	"A Gmail, IMAP or Outlook message goes back to the inbox, the archive or Trash": "Письмо Gmail, IMAP или Outlook возвращается во «Входящие», в «Архив» или в «Корзину»",
 };

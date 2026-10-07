@@ -189,11 +189,11 @@ export function learnDiscard(store: DiscardStore, facts: DiscardFacts, now: numb
   return { store: normaliseDiscardStore({ ...store, rules }), rule, created: !old };
 }
 
-/** Undo of a discard: its rule's count goes down, and a rule that discard made goes. */
-export function forgetDiscard(store: DiscardStore, facts: DiscardFacts): DiscardStore {
-  const key = ruleFor(facts);
-  if (!key) return store;
-  const id = ruleId(key.kind, key.value);
+/**
+ * Undo of a discard that taught `id` (the rule learnDiscard counted it on): its count goes down, and
+ * a rule that discard made goes. A discard that taught nothing names no rule, so it forgets nothing.
+ */
+export function forgetDiscard(store: DiscardStore, id: string): DiscardStore {
   const old = store.rules.find((r) => r.id === id);
   if (!old) return store;
   const rules = old.discards <= 1 ? store.rules.filter((r) => r.id !== id) : store.rules.map((r) => (r.id === id ? { ...r, discards: r.discards - 1 } : r));

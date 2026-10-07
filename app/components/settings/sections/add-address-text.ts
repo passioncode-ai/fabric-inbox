@@ -123,9 +123,16 @@ function build(t: T) {
     notCreated: t("It could not be created."),
     /** A failure's own words, then that nothing was made. */
     nothingCreated: (error: string) => t("{error} Nothing was created.", { error: t.text(error) }),
+    creatingRest: t("Creating the rest…"),
+    // When the server's answer did not arrive, what exists is read again (never "Nothing was created").
+    lostExists: (email: string) => t("{email} exists now (read again: the server's answer did not arrive).", { email }),
+    lostMissing: (email: string, why: string) =>
+      t("{email} does not exist. {why} If it does not appear in the address list in a moment, create it again.", { email, why: t.text(why) }),
+    lostUnknown: (why: string) => t("{why} What was created could not be read: the address list shows which addresses exist.", { why: t.text(why) }),
+    ruleUnread: t("Its rule could not be read. Fix it checks the rule and makes it if it is missing."),
 
     mark: {
-      done: t("Done"), already: t("Already so"), skipped: t("Skipped"), failed: t("Not done"), waiting: t("Waiting"),
+      done: t("Done"), already: t("Already so"), skipped: t("Skipped"), failed: t("Not done"), not_receiving: t("Not receiving yet"), waiting: t("Waiting"),
       running: t("Working…"), not_asked: t("Not asked"),
     },
     details: t("Details"),
@@ -162,6 +169,9 @@ function build(t: T) {
         ? t("{email} was created; {step} did not happen. {fix} fixes it.", { email, step: name, fix: t.text(fix) })
         : t("{email} was created; {step} did not happen.", { email, step: name });
     },
+    sentenceNotReceiving: (email: string, fix: string | null) => (fix
+      ? t("{email} was created; its mail does not arrive here yet. {fix} fixes it.", { email, fix: t.text(fix) })
+      : t("{email} was created; its mail does not arrive here yet.", { email })),
     sentenceWaiting: (email: string) => t("{email} was created. Waiting for the test message…", { email }),
     sentenceReady: (email: string) => t("{email} is ready: the test message arrived.", { email }),
     sentenceCreated: (email: string) => t("{email} was created.", { email }),

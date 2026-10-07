@@ -1,7 +1,8 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { Env } from "../types";
-import { hasCredentialKey } from "../providers/credentials";
+import { hasCredentialKey, unusableCredentialKey } from "../providers/credentials";
+import { SettingsBusy } from "../lib/settings-lock";
 import { microsoftConfiguration } from "../providers/outlook/oauth";
 import { CloudflareAccounts } from "../routing/accounts";
 import { CloudflareApiError } from "../routing/cloudflare-api";
@@ -112,22 +113,25 @@ microsoftSetupRouter.put("/api/microsoft-setup", async (c) => {
   if (!api) return c.json({ error: NO_TOKEN }, 503);
   // The server's credential key (MAIL_CREDENTIAL_KEY, or the older GMAIL_TOKEN_ENCRYPTION_KEY) is never replaced.
   const credentialKey = hasCredentialKey(c.env) ? undefined : newCredentialKey();
+  let keyCreated = false;
   try {
     const accountId = await accounts.serverAccountId();
-    await writeWorkerSettings(api, { accountId, script: accounts.script }, {
+    const result = await writeWorkerSettings(api, { accountId, script: accounts.script }, {
       plain: { MICROSOFT_CLIENT_ID: parsed.data.clientId.toLowerCase(), MICROSOFT_CLIENT_SECRET_EXPIRES: parsed.data.secretExpires, PUBLIC_APP_URL: originOf(c) },
       secret: { MICROSOFT_CLIENT_SECRET: parsed.data.clientSecret, ...(credentialKey ? { MAIL_CREDENTIAL_KEY: credentialKey } : {}) },
-    });
+    }, { bucket: c.env.BUCKET, unusableKey: unusableCredentialKey(c.env) });
+    keyCreated = result.written.includes("MAIL_CREDENTIAL_KEY");
   } catch (error) {
     console.error(JSON.stringify({ event: "microsoft_setup_write_failed", error: (error as Error).message }));
+    if (error instanceof SettingsBusy) return c.json({ error: error.message }, 409);
     if (error instanceof CloudflareApiError)
       return c.json({ error: msg("{error} Nothing was changed on your server.", { error: error.message }) }, error.isPermission ? 403 : 502);
     return c.json({ error: msg("Your server could not save the Outlook settings. Nothing was changed; try again.") }, 502);
   }
-  console.log(JSON.stringify({ event: "microsoft_setup_saved", keyCreated: !!credentialKey }));
+  console.log(JSON.stringify({ event: "microsoft_setup_saved", keyCreated }));
   return c.json({
     saved: true,
-    keyCreated: !!credentialKey,
+    keyCreated,
     secretExpiry: secretExpiry(parsed.data.secretExpires),
     note: msg("Your server starts using the Outlook settings within a few seconds. Microsoft checks the client ID and secret when the first account connects."),
   }, 202);

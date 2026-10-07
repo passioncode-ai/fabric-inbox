@@ -207,10 +207,34 @@ jobs:
       - if: always()
         uses: passioncode-ai/.github/actions/apple-signing/cleanup@v1
 
+  # The update every installed copy will read, checked before anything is published (LC-16): the
+  # built feed names this release's own zip, the zip has the feed's digest and size, and the app
+  # inside is the pinned team's, of this version. The signature is checked again after publish.
+  update-precheck:
+    needs: [gate, macos]
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-macos
+          path: built
+      - name: The built update passes the app's checks, before signing
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: node scripts/check-update-release.mjs --before-signing --dir built --version "$VERSION" --repository "$GITHUB_REPOSITORY"
+
   # The Developer ID release. The store job does not hold it: a store upload Apple refuses (for
   # example while the app record is missing) fails its own job and leaves the disk image released.
   publish:
-    needs: [gate, macos]
+    needs: [gate, macos, update-precheck]
     permissions:
       contents: write
       id-token: write
@@ -220,3 +244,43 @@ jobs:
     with:
       publish: ${{ github.event_name == 'push' || inputs.publish }}
     secrets: inherit
+
+  # After publish, the signed set (LC-16): verified exactly as an installed copy
+  # verifies an update — the GPG-signed SHA256SUMS lists the feed, the feed names only this release's
+  # zip, the zip has the signed digest and size, and the app inside is the pinned team's, of this
+  # version. A release that fails here would be refused by every copy; the run says so first.
+  update-check:
+    needs: [gate, publish]
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      # A rehearsal keeps the signed set as an artifact (files under dist/); a published release
+      # holds the same files as its assets.
+      - if: ${{ !(github.event_name == 'push' || inputs.publish) }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: signed-release-${{ github.ref_name }}
+          path: rehearsal
+      - name: The signed release set
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISHED: ${{ github.event_name == 'push' || inputs.publish }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ "$PUBLISHED" = "true" ]; then
+            gh release download "$TAG" -R "$GITHUB_REPOSITORY" -D signed -p update-mac.json -p SHA256SUMS -p SHA256SUMS.asc -p '*-mac.zip'
+          else
+            mv rehearsal/dist signed
+          fi
+          ls -l signed
+      - name: The update every installed copy will read passes the app's own verification
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: node scripts/check-update-release.mjs --dir signed --version "$VERSION" --repository "$GITHUB_REPOSITORY"

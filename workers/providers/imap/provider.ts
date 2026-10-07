@@ -208,7 +208,7 @@ class ImapSession implements ProviderSession {
       return this.fromCache(messageId, { id: messageId, role: at.role, flags: now.flags });
     }
     const target: FolderRole = "trashed" in change ? (change.trashed ? "trash" : "inbox")
-      : "archive" in change ? "archive" : "inbox" in change ? "inbox" : "discarded" in change ? (change.discarded ? "discarded" : "inbox")
+      : "archive" in change ? "archive" : "inbox" in change ? "inbox" : "discarded" in change ? (change.discarded ? "discarded" : change.to ?? "inbox")
       : change.spam ? "junk" : "inbox";
     // Discarded mail is read: marked before the move, so the copy in its new folder carries it.
     if ("discarded" in change && change.discarded) await at.conn.setFlags(at.uid, ["\\Seen"], []);
@@ -230,12 +230,30 @@ class ImapSession implements ProviderSession {
     if (!dest) return null;
     const opened = await at.conn.open(dest.path, true);
     if (!newUid && rfcId) newUid = (await at.conn.findMessageId(rfcId)).sort((x, y) => y - x)[0];
-    // Not found (no UIDPLUS and no Message-ID): the next sync reads it in its new folder.
+    // No UIDPLUS and no Message-ID: the message just moved is the folder's newest, when its headers say so.
+    if (!newUid && !rfcId && cached) newUid = await this.newestMatching(at.conn, cached.message);
+    // Not found: the next sync reads it in its new folder (AccountService keeps what it needs to find it there).
     if (!newUid) return null;
     // A Discarded folder made just now holds only this message: its sync starts after it, with nothing to import.
     if (dest.role === "discarded" && this.madeDiscarded && !dest.uidValidity) Object.assign(dest, { uidValidity: opened.uidValidity, top: newUid, known: 1 });
     const [now] = await at.conn.fetch(String(newUid), {});
     return this.fromCache(messageId, { id: messageKey(target, opened.uidValidity, newUid), role: target, flags: now?.flags ?? before?.flags ?? [] });
+  }
+
+  /** The UID of the open folder's newest message when its From and Subject are those of `wanted`. */
+  private async newestMatching(conn: ImapConnection, wanted: Pick<Message, "from" | "subject">): Promise<number | undefined> {
+    const [last] = await conn.fetch("*", { headers: true });
+    if (!last?.headers) return undefined;
+    const parsed = await new PostalMime().parse(last.headers);
+    const address = (value: string) => (value.match(/<([^<>]+)>/)?.[1] ?? value).trim().toLowerCase();
+    const sameFrom = address(parsed.from?.address ?? "") === address(wanted.from);
+    return sameFrom && (parsed.subject ?? "").trim() === wanted.subject.trim() ? last.uid : undefined;
+  }
+
+  /** Deletes one message for good (\Deleted, then EXPUNGE): Discarded mail of an account with no Trash, after its 30 days. */
+  async expunge(messageId: string): Promise<void> {
+    const at = await this.locate(messageId);
+    await at.conn.remove(at.uid);
   }
 
   /**

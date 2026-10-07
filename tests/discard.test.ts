@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   DISCARD_RULE_LIMIT, EMPTY_DISCARD_STORE, autoReason, discardFacts, discardSafety, forgetDiscard, learnDiscard, listIdOf, matchDiscard,
-  normaliseDiscardStore, recordApplied, ruleFor, ruleSubject, isPersonalDomain, type DiscardStore,
+  normaliseDiscardStore, recordApplied, ruleFor, ruleIdOf, ruleSubject, isPersonalDomain, type DiscardStore,
 } from "../shared/mail/discard";
 
 // The learning behind Discarded (operator, 2026-10-06): each discard records why, keyed on the
@@ -119,12 +119,12 @@ test("the reason shown on mail discarded automatically counts the discards; appl
 test("Undo forgets a discard: the count goes down and a rule it created goes", () => {
   const facts = discardFacts({ sender: "bob@shop.example", headers: [] });
   const one = learnDiscard(EMPTY_DISCARD_STORE, facts, 1).store;
-  assert.equal(forgetDiscard(one, facts).rules.length, 0, "the discard that made the rule took it back");
+  assert.equal(forgetDiscard(one, ruleIdOf(facts)!).rules.length, 0, "the discard that made the rule took it back");
   const two = learnDiscard(one, facts, 2).store;
-  const back = forgetDiscard(two, facts);
+  const back = forgetDiscard(two, ruleIdOf(facts)!);
   assert.equal(back.rules.length, 1);
   assert.equal(back.rules[0]!.discards, 1);
-  assert.equal(forgetDiscard(EMPTY_DISCARD_STORE, facts), EMPTY_DISCARD_STORE);
+  assert.equal(forgetDiscard(EMPTY_DISCARD_STORE, ruleIdOf(facts)!), EMPTY_DISCARD_STORE);
 });
 
 test("a stored file is cleaned: unknown shapes dropped, bounded, the most recently used rules kept", () => {

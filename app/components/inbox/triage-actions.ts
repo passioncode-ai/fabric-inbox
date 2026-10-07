@@ -12,8 +12,12 @@ type Request = (url: string, body: unknown, method?: string) => Promise<unknown>
 export interface Learned { ruleId: string; kind: "list" | "sender"; label: string; discards: number; created: boolean }
 export interface Done {
   kind: "archive" | "discard";
-  /** What moved: each message with the id it has now (an IMAP move gives a new one) and whether it was unread. */
-  items: { message: ActMessage; id: string; unread: boolean }[];
+  /**
+   * What moved: each message with the id it has now (an IMAP move gives a new one), whether it was
+   * unread, the folder a discard took it from (Undo puts it back there), and the rule its discard
+   * taught (Undo takes back that alone).
+   */
+  items: { message: ActMessage; id: string; unread: boolean; learnedRuleId?: string; from?: string }[];
   failed: { message: ActMessage; error: string }[];
   learned: Learned[];
   ruleError?: string;
@@ -42,21 +46,21 @@ export async function archiveMessages(messages: ActMessage[], request: Request =
 /** Discard in one request: the server moves each message, says what it learned, and why any did not move. */
 export async function discardMessages(messages: ActMessage[], request: Request = fabric): Promise<Done> {
   const answer = (await request("/api/discard", { messages: messages.map((m) => ({ accountId: m.accountId, providerMessageId: m.providerMessageId })) })) as {
-    results?: { accountId: string; providerMessageId: string; id: string; unread: boolean }[];
+    results?: { accountId: string; providerMessageId: string; id: string; unread: boolean; from?: string; learnedRuleId?: string }[];
     failed?: { accountId: string; providerMessageId: string; error?: string }[];
     learned?: Learned[]; ruleError?: string;
   };
   const find = (r: { accountId: string; providerMessageId: string }) => messages.find((m) => m.accountId === r.accountId && m.providerMessageId === r.providerMessageId);
   return {
     kind: "discard",
-    items: (answer.results ?? []).flatMap((r) => { const m = find(r); return m ? [{ message: m, id: r.id, unread: r.unread }] : []; }),
+    items: (answer.results ?? []).flatMap((r) => { const m = find(r); return m ? [{ message: m, id: r.id, unread: r.unread, ...(r.from ? { from: r.from } : {}), ...(r.learnedRuleId ? { learnedRuleId: r.learnedRuleId } : {}) }] : []; }),
     failed: (answer.failed ?? []).flatMap((f) => { const m = find(f); return m ? [{ message: m, error: f.error ?? TRIAGE_TEXT.notDiscardedAny }] : []; }),
     learned: answer.learned ?? [],
     ...(answer.ruleError ? { ruleError: answer.ruleError } : {}),
   };
 }
 
-/** Undo: each message back to the inbox, unread again if it was; a discard's lesson is taken back. */
+/** Undo: each message back where it was (a discard's from the folder it left), unread again if it was; a discard's lesson is taken back. */
 export async function undoDone(done: Done, request: Request = fabric): Promise<{ restored: number; failed: string[] }> {
   const failed: string[] = [];
   let restored = 0;
@@ -66,7 +70,7 @@ export async function undoDone(done: Done, request: Request = fabric): Promise<{
       const items = done.items.filter((i) => i.unread === unread);
       if (!items.length) continue;
       try {
-        const r = (await request("/api/discard/restore", { messages: items.map((i) => ({ accountId: i.message.accountId, providerMessageId: i.id })), ...(unread ? { read: false } : {}), unlearn: true })) as { moved?: number; failed?: { error?: string }[] };
+        const r = (await request("/api/discard/restore", { messages: items.map((i) => ({ accountId: i.message.accountId, providerMessageId: i.id, ...(i.from ? { to: i.from } : {}), ...(i.learnedRuleId ? { ruleId: i.learnedRuleId } : {}) })), ...(unread ? { read: false } : {}), unlearn: true })) as { moved?: number; failed?: { error?: string }[] };
         restored += r?.moved ?? items.length;
         for (const f of r?.failed ?? []) failed.push(f.error ?? TRIAGE_TEXT.notRestored);
       } catch (error) { failed.push((error as Error).message); }

@@ -6,6 +6,7 @@ import { validCredentialKey, writeGmailSettings } from "../workers/gmail-setup/s
 import { CloudflareApi } from "../workers/routing/cloudflare-api";
 import { GMAIL_SCOPE as SERVER_SCOPE, fromB64 } from "../workers/providers/google-oauth";
 import { GMAIL_SCOPE, authorizedDomainOf, gmailSetupValues } from "../shared/mail/gmail-setup";
+import { fakeBucket } from "./fake-r2";
 
 /**
  * SCN-051: the Gmail setup wizard's server side. The server checks a Google OAuth client with Google
@@ -30,7 +31,8 @@ const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; });
 
 /** Google and Cloudflare as one fake network; every request is recorded (bodies of PATCH parsed). */
-function network(google: Google = {}, cloudflare: { settings?: "ok" | "forbidden"; patch?: "ok" | "forbidden" } = {}) {
+/** `keyBound`: the live settings hold the older credential key binding (as a server that has its key does). */
+function network(google: Google = {}, cloudflare: { settings?: "ok" | "forbidden"; patch?: "ok" | "forbidden"; keyBound?: boolean } = {}) {
   const calls: Recorded[] = [];
   const handler = async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -63,7 +65,7 @@ function network(google: Google = {}, cloudflare: { settings?: "ok" | "forbidden
           { type: "plain_text", name: "DOMAINS", text: "example.com" },
           { type: "secret_text", name: "CLOUDFLARE_API_TOKEN" },
           { type: "plain_text", name: "GOOGLE_CLIENT_ID", text: "old-client" },
-          { type: "secret_text", name: "GMAIL_TOKEN_ENCRYPTION_KEY" },
+          ...(cloudflare.keyBound === false ? [] : [{ type: "secret_text", name: "GMAIL_TOKEN_ENCRYPTION_KEY" }]),
           { type: "r2_bucket", name: "BUCKET", bucket_name: "fabric-inbox" },
         ] });
       if (url.pathname.endsWith("/settings") && method === "PATCH") {
@@ -78,7 +80,7 @@ function network(google: Google = {}, cloudflare: { settings?: "ok" | "forbidden
   return { calls, handler };
 }
 
-const baseEnv = { CLOUDFLARE_API_TOKEN: "t".repeat(40), CLOUDFLARE_ACCOUNT_ID: ACCOUNT };
+const baseEnv = { CLOUDFLARE_API_TOKEN: "t".repeat(40), CLOUDFLARE_ACCOUNT_ID: ACCOUNT, BUCKET: fakeBucket() };
 const request = (path: string, env: Record<string, unknown>, init: RequestInit = {}, origin = ORIGIN) =>
   gmailSetupRouter.request(origin + path, init, env as never);
 const put = (env: Record<string, unknown>, body: unknown, origin = ORIGIN) =>
@@ -129,7 +131,7 @@ test("without its own Cloudflare token the server says it cannot save, and how t
 // ── Saving ──────────────────────────────────────────────────────────────────────
 
 test("PUT checks the client with Google, makes a credential key, and writes the four settings in one change", async () => {
-  const { calls } = network();
+  const { calls } = network({}, { keyBound: false });
   const response = await put(baseEnv, { clientId: ` ${CLIENT_ID} `, clientSecret: SECRET });
   assert.equal(response.status, 202, await response.clone().text());
   const body = (await response.json()) as Record<string, any>;
@@ -160,6 +162,14 @@ test("a credential key the server already has is never replaced: every account's
   assert.equal(((await response.json()) as { keyCreated: boolean }).keyCreated, false);
   const bindings = (calls.find((c) => c.method === "PATCH")!.body as { bindings: { type: string; name: string }[] }).bindings;
   assert.deepEqual(bindings.find((b) => b.name === "GMAIL_TOKEN_ENCRYPTION_KEY"), { type: "inherit", name: "GMAIL_TOKEN_ENCRYPTION_KEY" });
+  // A key bound a moment ago (by Settings or an agent) is not in this Worker's environment yet: the
+  // live settings are read just before writing, and it is kept, not replaced (L2).
+  const live = network();
+  const fresh = await put(baseEnv, { clientId: CLIENT_ID, clientSecret: SECRET });
+  assert.equal(((await fresh.json()) as { keyCreated: boolean }).keyCreated, false);
+  const kept = (live.calls.find((c) => c.method === "PATCH")!.body as { bindings: { type: string; name: string }[] }).bindings;
+  assert.equal(kept.some((b) => b.name === "MAIL_CREDENTIAL_KEY"), false, "no new key beside the bound one");
+  assert.deepEqual(kept.find((b) => b.name === "GMAIL_TOKEN_ENCRYPTION_KEY"), { type: "inherit", name: "GMAIL_TOKEN_ENCRYPTION_KEY" });
   assert.equal(validCredentialKey(KEY), true);
   assert.equal(validCredentialKey("short"), false);
   assert.equal(validCredentialKey(undefined), false);
@@ -255,6 +265,6 @@ test("Google's error page is read by the error's name; a deleted client is said 
 test("writeGmailSettings sends one multipart change and inherits everything it does not set", async () => {
   const { calls, handler } = network();
   await writeGmailSettings(new CloudflareApi("t".repeat(40), handler as typeof fetch), { accountId: ACCOUNT, script: "fabric-inbox" },
-    { clientId: CLIENT_ID, clientSecret: SECRET, publicAppUrl: ORIGIN });
+    { clientId: CLIENT_ID, clientSecret: SECRET, publicAppUrl: ORIGIN }, { bucket: fakeBucket() as never });
   assert.deepEqual(calls.map((c) => c.method), ["GET", "PATCH"]);
 });

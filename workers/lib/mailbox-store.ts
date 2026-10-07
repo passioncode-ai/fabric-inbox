@@ -188,9 +188,14 @@ export async function createMailbox(env: Env, rawEmail: string, name: string, se
     agent: "off",
     ...settings,
   };
-  await env.BUCKET.put(settingsKey(email), JSON.stringify(finalSettings));
-  // Creating the folders now makes the mailbox usable before its first message.
-  await env.MAILBOX.get(env.MAILBOX.idFromName(email)).getFolders();
+  // Written only if no other request wrote it since the check above: of two creates at once, one
+  // wins and the other is told the address exists.
+  const written = await env.BUCKET.put(settingsKey(email), JSON.stringify(finalSettings), { onlyIf: new Headers({ "If-None-Match": "*" }) });
+  if (written === null) return { status: "exists" };
+  // Creating the folders now makes the mailbox usable before its first message; the mailbox makes
+  // them itself on first use, so a failure here does not undo the address.
+  await env.MAILBOX.get(env.MAILBOX.idFromName(email)).getFolders().catch((error: unknown) =>
+    console.warn(JSON.stringify({ event: "mailbox_folders_deferred", error: (error as Error).message })));
   return { status: "created", settings: finalSettings };
 }
 
