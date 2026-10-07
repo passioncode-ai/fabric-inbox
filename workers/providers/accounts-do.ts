@@ -11,6 +11,11 @@ import { hasCredentialKey } from "./credentials";
 import { pollInterval, type AccountsEnvironment } from "./account-service";
 import { GmailScheduler, type AlarmStorage } from "./gmail-scheduler";
 import type { ImapConnectInput } from "./imap/connect";
+import type { DiscardRestoreTarget } from "./provider";
+import { autoReason, discardFacts, discardSafety, matchDiscard, recordApplied } from "../../shared/mail/discard";
+import { readDiscardStore, updateDiscardStore } from "../discard/store";
+import { readSpamLists } from "../spam/lists";
+import { cloudflareSources, readWorkspaceOwnDomains, workspaceKnown, type MailboxNamespace } from "../discard/workspace";
 
 interface AutomationStub {
   ingest(
@@ -27,6 +32,11 @@ interface AutomationStub {
 }
 export interface GmailBindings extends AccountsEnvironment {
   GMAIL_ACCOUNTS: DurableObjectNamespace<GmailAccountsDO>;
+  /** The workspace's R2 bucket: the discard rules (config/discard.json), the spam lists and the served domains. */
+  BUCKET?: R2Bucket;
+  DOMAINS?: string;
+  /** The Cloudflare mailboxes, asked whether one of them wrote to a sender a discard rule matches. */
+  MAILBOX?: MailboxNamespace;
   AUTOMATIONS?: { getByName(name: string): AutomationStub };
   CATEGORIES?: { getByName(name: string): { ingest(account: { id: string; email: string }, event: { id: string; sender: string; subject: string; body: string; date: string }): Promise<void> } };
 }
@@ -52,7 +62,7 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     return result;
   }
   private async drain() {
-    if (!this.env.AUTOMATIONS && !this.env.CATEGORIES) return;
+    if (!this.env.AUTOMATIONS && !this.env.CATEGORIES && !this.env.BUCKET) return;
     // Categories scope by the inbox's address, which the event does not carry.
     let emails: Map<string, string> | undefined;
     await this.service.drainEvents(async (event: IncomingEvent) => {
@@ -62,7 +72,56 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
         emails ??= new Map((await this.service.listAccounts()).accounts.map((a) => [a.provider + ":" + a.id, a.email] as [string, string]));
         await this.env.CATEGORIES.getByName("workspace").ingest({ id: event.account, email: emails.get(event.account) ?? "" }, payload);
       }
-    });
+    }, Date.now(), await this.arrivalFilter(), (ruleId) => updateDiscardStore(this.env.BUCKET!, (store) => recordApplied(store, ruleId, Date.now())),
+    // drain() never runs inside serial (a consumer may call back into this object), so taking the
+    // lock here for the discard alone cannot deadlock; it keeps the discard off a sync page's back.
+    (fn) => this.serial(fn));
+  }
+  /**
+   * The discard rules applied to new inbox mail of Gmail, IMAP and Outlook accounts (after the
+   * provider's own spam filter, which has already kept spam out of the inbox): a match goes to
+   * Discarded unless any account or Cloudflare mailbox of the workspace wrote to the sender, this
+   * account took part in the conversation, the sender is on one of the workspace's own domains (served,
+   * or a connected account's own), or is allowed (Always allow, Never spam). No rules, or rules
+   * that cannot be read: no filter, and the mail is delivered as before.
+   */
+  private async arrivalFilter() {
+    const bucket = this.env.BUCKET;
+    if (!bucket) return undefined;
+    let store;
+    try { store = await readDiscardStore(bucket); }
+    catch (error) {
+      console.warn(JSON.stringify({ event: "discard_check_failed", error: (error as Error)?.message?.slice(0, 120) }));
+      return undefined;
+    }
+    if (!store.rules.length) return undefined;
+    const rules = store;
+    let lists: Awaited<ReturnType<typeof readSpamLists>> | undefined;
+    let own: string[] | undefined;
+    // Rules apply workspace-wide: "written to" spans every account here and every Cloudflare mailbox,
+    // asked once per sender in this drain; what cannot be read counts as written to.
+    const knownElsewhere = workspaceKnown({ ...cloudflareSources(bucket, this.env.MAILBOX), accountsKnow: (address) => this.service.knownAnywhere(address) });
+    return async (event: { accountId: string }, message: { from: string; threadId: string; signals?: { list?: string; listUnsubscribe?: boolean; precedence?: string } }) => {
+      const headers = [
+        ...(message.signals?.list ? [{ key: "List-Id", value: message.signals.list }] : []),
+        ...(message.signals?.listUnsubscribe ? [{ key: "List-Unsubscribe", value: "yes" }] : []),
+        ...(message.signals?.precedence ? [{ key: "Precedence", value: message.signals.precedence }] : []),
+      ];
+      const facts = discardFacts({ sender: message.from, headers });
+      lists ??= await readSpamLists(bucket).catch(() => undefined);
+      const rule = matchDiscard(rules, facts, lists);
+      if (!rule) return null;
+      own ??= await readWorkspaceOwnDomains({ BUCKET: bucket, DOMAINS: this.env.DOMAINS },
+        async () => (await this.service.listAccounts()).accounts.map((a) => a.email));
+      const contact = await this.service.sentContact(event.accountId, message.from, message.threadId);
+      const known = contact.known || await knownElsewhere(message.from);
+      const held = discardSafety({ sender: message.from, known, inThread: contact.inThread, ownDomains: own });
+      if (held) {
+        console.log(JSON.stringify({ event: "discard_held", provider: "remote", rule: rule.id, why: held }));
+        return null;
+      }
+      return { reason: autoReason(rule), ruleId: rule.id };
+    };
   }
   // Reads take no lock: every cached change is one transaction, and a read is about one page of
   // rows, so the feed never waits behind a sync page or a mail action.
@@ -182,6 +241,22 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
   moveToInbox(accountId: string, messageId: string) {
     return this.serial(() => this.service.moveToInbox(accountId, messageId));
   }
+  /** Discards a message in its account (Discarded label or folder, read), with why. */
+  discardMessage(accountId: string, messageId: string, reason: string) {
+    return this.serial(() => this.service.discard(accountId, messageId, reason));
+  }
+  /** Not discarded: back to the inbox, or (Undo) to the archive or Trash it was discarded from. */
+  restoreDiscarded(accountId: string, messageId: string, read?: boolean, to?: DiscardRestoreTarget) {
+    return this.serial(() => this.service.restoreDiscarded(accountId, messageId, read, to));
+  }
+  /** Whether any connected account wrote to this sender (a read: no lock, like the feed). */
+  knownSender(address: string) {
+    return this.service.knownAnywhere(address);
+  }
+  /** What a message says about itself for a discard rule. */
+  discardFacts(accountId: string, messageId: string) {
+    return this.serial(() => this.service.discardFacts(accountId, messageId));
+  }
   getAttachment(accountId: string, messageId: string, attachmentId: string) {
     return this.serial(() =>
       this.service.getAttachment(accountId, messageId, attachmentId),
@@ -216,6 +291,9 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     }
     // Each sync page takes the lock on its own; mail actions and reads go on between pages.
     await this.scheduler.tick();
+    // Discarded mail past its 30 days goes to its account's Trash, a few messages a tick.
+    await this.serial(() => this.service.purgeDiscarded()).catch((error: unknown) =>
+      console.warn(JSON.stringify({ event: "discarded_purge_failed", error: (error as Error)?.message?.slice(0, 200) })));
     // Release the account lock before invoking automations: a rule may RPC back
     // into this object to read or send mail. Holding it would deadlock the rule.
     try {

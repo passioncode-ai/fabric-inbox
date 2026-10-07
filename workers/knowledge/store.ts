@@ -3,6 +3,7 @@ import { migrateSchema } from "../lib/do-schema";
 import { KNOWLEDGE_STEPS } from "./schema";
 import type { Env } from "../types";
 import { chunkText, COLLECTION_ID, ftsQuery, LIMITS, sha256Hex } from "./text";
+import { msg } from "../../shared/i18n";
 export { COLLECTION_ID, LIMITS } from "./text";
 
 /**
@@ -94,9 +95,9 @@ export class KnowledgeDO extends DurableObject<Env> {
 
   async createCollection(input: { name: string; description?: string; source?: CollectionSource }): Promise<Collection> {
     const name = String(input.name ?? "").trim().slice(0, 80);
-    if (!name) throw new KnowledgeError("A collection needs a name", "invalid");
+    if (!name) throw new KnowledgeError(msg("A collection needs a name"), "invalid");
     const count = Number((this.sql.exec("SELECT COUNT(*) AS n FROM collections").one() as Row).n);
-    if (count >= LIMITS.collections) throw new KnowledgeError(`At most ${LIMITS.collections} collections`, "limit");
+    if (count >= LIMITS.collections) throw new KnowledgeError(msg("At most {max} collections", { max: LIMITS.collections }), "limit");
     const base = slug(name) || "collection";
     let id = base;
     for (let i = 2; this.sql.exec("SELECT 1 FROM collections WHERE id = ?", id).toArray().length; i++) id = `${base}-${i}`;
@@ -111,9 +112,9 @@ export class KnowledgeDO extends DurableObject<Env> {
 
   async updateCollection(id: string, patch: { name?: string; description?: string }): Promise<Collection> {
     const current = await this.getCollection(id);
-    if (!current) throw new KnowledgeError("No such collection", "not_found");
+    if (!current) throw new KnowledgeError(msg("No such collection"), "not_found");
     const name = patch.name === undefined ? current.name : String(patch.name).trim().slice(0, 80);
-    if (!name) throw new KnowledgeError("A collection needs a name", "invalid");
+    if (!name) throw new KnowledgeError(msg("A collection needs a name"), "invalid");
     const description = patch.description === undefined ? current.description : String(patch.description).trim().slice(0, 500);
     this.sql.exec("UPDATE collections SET name = ?, description = ?, updated_at = ? WHERE id = ?", name, description, new Date().toISOString(), id);
     return (await this.getCollection(id))!;
@@ -132,7 +133,7 @@ export class KnowledgeDO extends DurableObject<Env> {
   }
 
   async listDocuments(collectionId: string): Promise<KnowledgeDocument[]> {
-    if (!(await this.getCollection(collectionId))) throw new KnowledgeError("No such collection", "not_found");
+    if (!(await this.getCollection(collectionId))) throw new KnowledgeError(msg("No such collection"), "not_found");
     return (this.sql.exec("SELECT * FROM documents WHERE collection_id = ? ORDER BY title COLLATE NOCASE LIMIT ?", collectionId, LIMITS.documentsPerCollection).toArray() as Row[])
       .map((r) => ({ id: String(r.id), collectionId, sourceUri: String(r.source_uri), title: String(r.title), revision: String(r.revision),
         chars: Number(r.chars), chunks: Number(r.chunks), updatedAt: String(r.updated_at) }));
@@ -154,8 +155,8 @@ export class KnowledgeDO extends DurableObject<Env> {
    * is refused alone, with its reason; the others still land.
    */
   async upsertDocuments(collectionId: string, docs: DocumentInput[], options: { prune?: boolean } = {}): Promise<UpsertResult> {
-    if (!(await this.getCollection(collectionId))) throw new KnowledgeError("No such collection", "not_found");
-    if (docs.length > LIMITS.batchDocuments) throw new KnowledgeError(`At most ${LIMITS.batchDocuments} documents per call`, "limit");
+    if (!(await this.getCollection(collectionId))) throw new KnowledgeError(msg("No such collection"), "not_found");
+    if (docs.length > LIMITS.batchDocuments) throw new KnowledgeError(msg("At most {max} documents per call", { max: LIMITS.batchDocuments }), "limit");
     const result: UpsertResult = { added: 0, updated: 0, unchanged: 0, removed: 0, refused: [] };
     const seen = new Set<string>();
     const prepared: { d: DocumentInput & { revision: string }; hash: string; chunks: ReturnType<typeof chunkText> }[] = [];
@@ -163,12 +164,12 @@ export class KnowledgeDO extends DurableObject<Env> {
       const sourceUri = String(raw?.sourceUri ?? "").trim().slice(0, 500);
       const text = String(raw?.text ?? "");
       const title = String(raw?.title ?? "").trim().slice(0, 200) || sourceUri.split("/").pop() || "Untitled";
-      if (!sourceUri) { result.refused.push({ sourceUri: "", reason: "A document needs a source (a file name, a URL or a Fabric reference)" }); continue; }
-      if (seen.has(sourceUri)) { result.refused.push({ sourceUri, reason: "Named twice in one batch" }); continue; }
+      if (!sourceUri) { result.refused.push({ sourceUri: "", reason: msg("A document needs a source (a file name, a URL or a Fabric reference)") }); continue; }
+      if (seen.has(sourceUri)) { result.refused.push({ sourceUri, reason: msg("Named twice in one batch") }); continue; }
       seen.add(sourceUri);
-      if (text.length > LIMITS.documentChars) { result.refused.push({ sourceUri, reason: `Longer than ${LIMITS.documentChars.toLocaleString("en")} characters; split it` }); continue; }
+      if (text.length > LIMITS.documentChars) { result.refused.push({ sourceUri, reason: msg("Longer than {max} characters; split it", { max: LIMITS.documentChars.toLocaleString("en") }) }); continue; }
       const chunks = chunkText(text);
-      if (!chunks.length) { result.refused.push({ sourceUri, reason: "No text" }); continue; }
+      if (!chunks.length) { result.refused.push({ sourceUri, reason: msg("No text") }); continue; }
       const hash = await sha256Hex(title + "\u0000" + text);
       prepared.push({ d: { sourceUri, title, text, revision: String(raw.revision ?? "").slice(0, 100) || hash.slice(0, 12) }, hash, chunks });
     }
@@ -179,7 +180,7 @@ export class KnowledgeDO extends DurableObject<Env> {
       for (const { d, hash, chunks } of prepared) {
         const row = this.sql.exec("SELECT id, content_hash, revision FROM documents WHERE collection_id = ? AND source_uri = ?", collectionId, d.sourceUri).toArray()[0] as Row | undefined;
         if (row && row.content_hash === hash && row.revision === d.revision) { result.unchanged++; continue; }
-        if (!row && count >= LIMITS.documentsPerCollection) { result.refused.push({ sourceUri: d.sourceUri, reason: `The collection holds its limit of ${LIMITS.documentsPerCollection} documents` }); continue; }
+        if (!row && count >= LIMITS.documentsPerCollection) { result.refused.push({ sourceUri: d.sourceUri, reason: msg("The collection holds its limit of {max} documents", { max: LIMITS.documentsPerCollection }) }); continue; }
         const id = row ? String(row.id) : crypto.randomUUID();
         if (row) {
           this.sql.exec("DELETE FROM chunks_fts WHERE rowid IN (SELECT id FROM chunks WHERE document_id = ?)", id);

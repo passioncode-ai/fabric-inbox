@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { validateToolUrl, type Rule } from "./policy";
+import { msg } from "../../shared/i18n";
 
 export interface McpCall {
   endpoint: string;
@@ -63,6 +64,6 @@ export async function invokeTool(
   tokens: Record<string, string>,
 ): Promise<string> {
   const result = await callMcpTool(action, hosts, tokens);
-  if (result.isError) throw new Error("Tool returned an error");
-  return "Tool completed";
+  if (result.isError) throw new Error(msg("Tool returned an error"));
+  return msg("Tool completed");
 }

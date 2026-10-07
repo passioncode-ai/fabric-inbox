@@ -68,8 +68,10 @@ All PassionCode apps share one file:
 
 ## Delivery
 
-- Batches of at most 25 to `POST /api/v0/events` with the `App-Key` header, through Electron's
-  network stack. A send never blocks the window or a mail operation.
+- Batches of at most 25 to `POST /api/v0/events` with the `App-Key` header, through Node's `fetch`
+  in the main process (since 0.12). Chromium's network stack, used before, waits for the cookie key
+  from the Keychain, so a pending Keychain prompt held every count back (seen on the owner's Mac with
+  0.11.0). A send never blocks the window or a mail operation.
 - Transport errors, `429` and `5xx` keep the batch; the next try waits 60 s, then 10 min. `400` and
   `404` drop it. At most 200 events wait in memory; anything older than 23 hours is dropped (the
   server refuses events older than a day). Nothing but the small state file is written to disk.

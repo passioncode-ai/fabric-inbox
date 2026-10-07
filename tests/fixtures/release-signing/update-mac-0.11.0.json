@@ -1,0 +1,17 @@
+{
+  "currentRelease": "0.11.0",
+  "releases": [
+    {
+      "version": "0.11.0",
+      "updateTo": {
+        "version": "0.11.0",
+        "name": "0.11.0",
+        "notes": "Fabric Inbox 0.11.0: https://github.com/passioncode-ai/fabric-inbox/releases/tag/v0.11.0",
+        "pub_date": "2026-10-06T10:45:18.881Z",
+        "url": "https://github.com/passioncode-ai/fabric-inbox/releases/download/v0.11.0/Fabric-Inbox-0.11.0-mac.zip",
+        "sha256": "f3b91a4c18be38d3fd8aacbffa97092dd5dc5507d4ddaa7abf91ebfe4996e3ee",
+        "size": 232270551
+      }
+    }
+  ]
+}

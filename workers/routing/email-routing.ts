@@ -9,6 +9,7 @@
  * A rule is {matchers:[{type:"literal",field:"to",value}], actions:[{type:"worker",value:[name]}], enabled}.
  */
 import { CloudflareAccounts, type AccountsEnv } from "./accounts";
+import { msg } from "../../shared/i18n";
 
 export type RoutingState = "verified" | "missing" | "unknown";
 export interface RoutingStatus {
@@ -25,7 +26,9 @@ interface Rule { id?: string; enabled?: boolean; matchers?: Matcher[]; actions?:
 type Fetcher = typeof fetch;
 
 const API = "https://api.cloudflare.com/client/v4";
-const DASHBOARD_STEP = "In the Cloudflare dashboard open the domain → Email → Email Routing → Routing rules, and send this address to the Worker.";
+/** A failure to read routing, with the step that fixes it by hand: one sentence, so it translates (L10N-04). */
+const withDashboardStep = (error: string) =>
+  msg("{error}. In the Cloudflare dashboard open the domain → Email → Email Routing → Routing rules, and send this address to the Worker.", { error });
 
 export class RoutingError extends Error {}
 /** The token cannot see the domain's zone: nothing can be read or changed there. */
@@ -41,9 +44,40 @@ export interface DomainRouting {
   catchAll: { enabled: boolean; action: RouteAction } | null;
 }
 
+/** SCN-061: what Cloudflare does with some addresses of a domain, and with the rest (its catch-all). */
+export interface AddressRouting {
+  domain: string;
+  /** A token of this server can see the zone. */
+  visible: boolean;
+  enabled: boolean;
+  /** Email Routing's own status ("ready", "misconfigured"…); "unknown" when the zone is not visible. */
+  status: string;
+  rules: { address: string; enabled: boolean; toHere: boolean; action: RouteAction }[];
+  catchAll: { enabled: boolean; toHere: boolean; action: RouteAction } | null;
+}
+
+/**
+ * One client serves one request. What it reads — a domain's zone, a zone's Email Routing state and
+ * its rules — is remembered for the length of it and kept true as the client changes rules, so
+ * creating many addresses on one domain reads them once and then costs one call per rule (a Worker
+ * on the free plan may make 50 subrequests per request). A read that fails is not remembered.
+ */
 export class EmailRoutingClient {
+  private zoneIds = new Map<string, Promise<string | null>>();
+  private routingSettings = new Map<string, Promise<{ enabled?: boolean; status?: string }>>();
+  private ruleLists = new Map<string, Promise<Rule[]>>();
+
   // A bare `fetch` stored on the instance throws "Illegal invocation" in workerd when called as this.fetcher.
   constructor(private token: string, private worker: string, private fetcher: Fetcher = (input, init) => fetch(input, init)) {}
+
+  private memo<T>(map: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> {
+    let hit = map.get(key);
+    if (!hit) {
+      map.set(key, (hit = load()));
+      hit.catch(() => map.delete(key));
+    }
+    return hit;
+  }
 
   private async call<T>(path: string, init: RequestInit = {}): Promise<T> {
     let response: Response;
@@ -54,7 +88,7 @@ export class EmailRoutingClient {
         signal: AbortSignal.timeout(15_000),
       });
     } catch (error) {
-      throw new RoutingError(`Cloudflare API unreachable: ${(error as Error).message}`);
+      throw new RoutingError(msg("Cloudflare API unreachable: {error}", { error: (error as Error).message }));
     }
     const body = (await response.json().catch(() => null)) as { success?: boolean; result?: T; errors?: { message?: string }[] } | null;
     if (!response.ok || !body?.success) {
@@ -64,19 +98,30 @@ export class EmailRoutingClient {
     return body.result as T;
   }
 
-  async zoneId(domain: string): Promise<string | null> {
-    const zones = await this.call<{ id: string; name: string }[]>(`/zones?name=${encodeURIComponent(domain)}&per_page=5`);
-    return zones.find((z) => z.name.toLowerCase() === domain.toLowerCase())?.id ?? null;
+  zoneId(domain: string): Promise<string | null> {
+    const name = domain.toLowerCase();
+    return this.memo(this.zoneIds, name, async () => {
+      const zones = await this.call<{ id: string; name: string }[]>(`/zones?name=${encodeURIComponent(name)}&per_page=5`);
+      return zones.find((z) => z.name.toLowerCase() === name)?.id ?? null;
+    });
   }
 
-  private async rules(zone: string): Promise<Rule[]> {
-    const all: Rule[] = [];
-    for (let page = 1; page <= 10; page++) {
-      const batch = await this.call<Rule[]>(`/zones/${zone}/email/routing/rules?per_page=50&page=${page}`);
-      all.push(...batch);
-      if (batch.length < 50) return all;
-    }
-    return all;
+  /** Whether Email Routing is on for the zone, and its status ("ready", "misconfigured"…). */
+  private settings(zone: string): Promise<{ enabled?: boolean; status?: string }> {
+    return this.memo(this.routingSettings, zone, () => this.call<{ enabled?: boolean; status?: string }>(`/zones/${zone}/email/routing`));
+  }
+
+  /** The zone's rules; the list returned is the one remembered, and the changes below keep it current. */
+  private rules(zone: string): Promise<Rule[]> {
+    return this.memo(this.ruleLists, zone, async () => {
+      const all: Rule[] = [];
+      for (let page = 1; page <= 10; page++) {
+        const batch = await this.call<Rule[]>(`/zones/${zone}/email/routing/rules?per_page=50&page=${page}`);
+        all.push(...batch);
+        if (batch.length < 50) return all;
+      }
+      return all;
+    });
   }
 
   private toWorker(rule: Rule): boolean {
@@ -92,26 +137,27 @@ export class EmailRoutingClient {
     const domain = email.slice(email.lastIndexOf("@") + 1);
     try {
       const zone = await this.zoneId(domain);
-      if (!zone) return { state: "unknown", detail: `The token cannot see the zone ${domain}. Give it Zone read and Email Routing edit on this zone.` };
-      const settings = await this.call<{ enabled?: boolean; status?: string }>(`/zones/${zone}/email/routing`);
-      if (!settings.enabled) return { state: "missing", detail: `Email Routing is off for ${domain}. Enable it in the dashboard (Email → Email Routing).` };
+      if (!zone) return { state: "unknown", detail: msg("The token cannot see the zone {domain}. Give it Zone read and Email Routing edit on this zone.", { domain }) };
+      const settings = await this.settings(zone);
+      if (!settings.enabled) return { state: "missing", detail: msg("Email Routing is off for {domain}. Enable it in the dashboard (Email → Email Routing).", { domain }) };
       if (settings.status && settings.status !== "ready")
-        return { state: "missing", detail: `Email Routing for ${domain} is ${settings.status}: its DNS records need fixing in the dashboard.` };
+        return { state: "missing", detail: msg("Email Routing for {domain} is {status}: its DNS records need fixing in the dashboard.", { domain, status: settings.status }) };
       const rule = this.literalRule(await this.rules(zone), email);
       // A disabled rule matches nothing: the catch-all decides (seen on the owner's
       // contact@ addresses, whose old forward rules were switched off, 2026-09-29).
       if (rule && rule.enabled !== false) {
-        if (!this.toWorker(rule)) return { state: "missing", detail: `A routing rule sends ${email} somewhere else. Point it at the Worker ${this.worker}.`, via: "rule", ruleId: rule.id };
-        return { state: "verified", detail: `Mail for ${email} goes to ${this.worker}.`, via: "rule", ruleId: rule.id };
+        if (!this.toWorker(rule)) return { state: "missing", detail: msg("A routing rule sends {email} somewhere else. Point it at the Worker {worker}.", { email, worker: this.worker }), via: "rule", ruleId: rule.id };
+        return { state: "verified", detail: msg("Mail for {email} goes to {worker}.", { email, worker: this.worker }), via: "rule", ruleId: rule.id };
       }
-      const off = rule ? ` (its own rule is disabled)` : "";
       const catchAll = await this.call<Rule>(`/zones/${zone}/email/routing/rules/catch_all`);
       if (catchAll.enabled && this.toWorker(catchAll))
-        return { state: "verified", detail: `Mail for ${email} reaches ${this.worker} through the catch-all rule${off}.`, via: "catch_all" };
-      if (rule) return { state: "missing", detail: `The routing rule for ${email} is disabled and the catch-all does not send mail here.`, via: "rule", ruleId: rule.id };
-      return { state: "missing", detail: `No routing rule sends ${email} to ${this.worker}. Create one here or in the dashboard.` };
+        return { state: "verified", detail: rule
+          ? msg("Mail for {email} reaches {worker} through the catch-all rule (its own rule is disabled).", { email, worker: this.worker })
+          : msg("Mail for {email} reaches {worker} through the catch-all rule.", { email, worker: this.worker }), via: "catch_all" };
+      if (rule) return { state: "missing", detail: msg("The routing rule for {email} is disabled and the catch-all does not send mail here.", { email }), via: "rule", ruleId: rule.id };
+      return { state: "missing", detail: msg("No routing rule sends {email} to {worker}. Create one here or in the dashboard.", { email, worker: this.worker }) };
     } catch (error) {
-      return { state: "unknown", detail: `${(error as Error).message}. ${DASHBOARD_STEP}` };
+      return { state: "unknown", detail: withDashboardStep((error as Error).message) };
     }
   }
 
@@ -122,7 +168,7 @@ export class EmailRoutingClient {
   async inventory(domain: string): Promise<DomainRouting> {
     const zone = await this.zoneId(domain);
     if (!zone) return { domain, visible: false, enabled: false, rules: [], catchAll: null };
-    const settings = await this.call<{ enabled?: boolean }>(`/zones/${zone}/email/routing`);
+    const settings = await this.settings(zone);
     if (!settings.enabled) return { domain, visible: true, enabled: false, rules: [], catchAll: null };
     const action = (r: Rule) => {
       const a = r.actions?.[0];
@@ -137,6 +183,31 @@ export class EmailRoutingClient {
   }
 
   /**
+   * What Cloudflare does today with some addresses of one domain, read once for all of them
+   * (SCN-061): whether the zone is visible, Email Routing's state, each address's literal rule with
+   * whether it sends mail to this server's Worker, and the catch-all. Addresses without a rule are
+   * left out of `rules`. Throws RoutingError when Cloudflare cannot be read.
+   */
+  async routingFor(domain: string, addresses: string[]): Promise<AddressRouting> {
+    const name = domain.toLowerCase();
+    const zone = await this.zoneId(name);
+    if (!zone) return { domain: name, visible: false, enabled: false, status: "unknown", rules: [], catchAll: null };
+    const settings = await this.settings(zone);
+    const enabled = settings.enabled === true;
+    const status = settings.status ?? (enabled ? "ready" : "unconfigured");
+    if (!enabled) return { domain: name, visible: true, enabled, status, rules: [], catchAll: null };
+    const all = await this.rules(zone);
+    const action = (r: Rule): RouteAction => ({ type: (r.actions?.[0]?.type ?? "drop") as RouteAction["type"], value: r.actions?.[0]?.value?.[0] });
+    const rules = addresses.map((a) => a.toLowerCase()).flatMap((address) => {
+      const rule = this.literalRule(all, address);
+      return rule ? [{ address, enabled: rule.enabled !== false, toHere: this.toWorker(rule), action: action(rule) }] : [];
+    });
+    const catchAll = await this.call<Rule>(`/zones/${zone}/email/routing/rules/catch_all`);
+    return { domain: name, visible: true, enabled, status, rules,
+      catchAll: { enabled: catchAll.enabled === true, toHere: this.toWorker(catchAll), action: action(catchAll) } };
+  }
+
+  /**
    * The inverse of createRule, used when an address is removed: deletes its
    * literal rule when that rule sends mail here; a rule sending it elsewhere is
    * left alone. Returns what happened, in words.
@@ -145,12 +216,14 @@ export class EmailRoutingClient {
     const email = address.toLowerCase();
     const domain = email.slice(email.lastIndexOf("@") + 1);
     const zone = await this.zoneId(domain);
-    if (!zone) throw new ZoneNotVisible(`The token cannot see the zone ${domain}`);
-    const rule = this.literalRule(await this.rules(zone), email);
-    if (!rule) return `No routing rule named ${email}.`;
-    if (!this.toWorker(rule)) return `The routing rule for ${email} sends mail elsewhere; it was left as it is.`;
+    if (!zone) throw new ZoneNotVisible(msg("The token cannot see the zone {domain}", { domain }));
+    const rules = await this.rules(zone);
+    const rule = this.literalRule(rules, email);
+    if (!rule) return msg("No routing rule named {email}.", { email });
+    if (!this.toWorker(rule)) return msg("The routing rule for {email} sends mail elsewhere; it was left as it is.", { email });
     await this.call(`/zones/${zone}/email/routing/rules/${rule.id}`, { method: "DELETE" });
-    return `The routing rule for ${email} was removed.`;
+    rules.splice(rules.indexOf(rule), 1);
+    return msg("The routing rule for {email} was removed.", { email });
   }
 
   /** Creates the literal rule unless one for the address already exists (duplicates shadow each other). */
@@ -167,31 +240,34 @@ export class EmailRoutingClient {
     const email = address.toLowerCase();
     const domain = email.slice(email.lastIndexOf("@") + 1);
     const zone = await this.zoneId(domain);
-    if (!zone) throw new ZoneNotVisible(`The token cannot see the zone ${domain}`);
-    const existing = this.literalRule(await this.rules(zone), email);
+    if (!zone) throw new ZoneNotVisible(msg("The token cannot see the zone {domain}", { domain }));
+    const rules = await this.rules(zone);
+    const existing = this.literalRule(rules, email);
     if (existing) {
       if (!this.toWorker(existing))
-        throw new RoutingError(`A routing rule for ${email} already exists and sends mail elsewhere; change it in the dashboard`);
-      if (existing.enabled === false)
+        throw new RoutingError(msg("A routing rule for {email} already exists and sends mail elsewhere; change it in the dashboard", { email }));
+      if (existing.enabled === false) {
         await this.call(`/zones/${zone}/email/routing/rules/${existing.id}`, { method: "PUT", body: JSON.stringify({
           name: existing.name || `Fabric Inbox: ${email}`, enabled: true, priority: existing.priority ?? 0, matchers: existing.matchers, actions: existing.actions }) });
+        existing.enabled = true;
+      }
       return { status: await this.status(email), created: false, ruleId: existing.id };
     }
-    const made = await this.call<{ id?: string }>(`/zones/${zone}/email/routing/rules`, {
-      method: "POST",
-      body: JSON.stringify({
-        name: `Fabric Inbox: ${email}`,
-        enabled: true,
-        matchers: [{ type: "literal", field: "to", value: email }],
-        actions: [{ type: "worker", value: [this.worker] }],
-      }),
-    });
+    const rule: Rule = {
+      name: `Fabric Inbox: ${email}`,
+      enabled: true,
+      matchers: [{ type: "literal", field: "to", value: email }],
+      actions: [{ type: "worker", value: [this.worker] }],
+    };
+    const made = await this.call<{ id?: string }>(`/zones/${zone}/email/routing/rules`, { method: "POST", body: JSON.stringify(rule) });
+    rules.push({ ...rule, id: made?.id });
+    // Read from what is remembered: no further call for the status of a rule just made.
     return { status: await this.status(email), created: true, ruleId: made?.id };
   }
 }
 
 /** What callers use: the single-token client above, or one that finds each domain's account. */
-export type RoutingClient = Pick<EmailRoutingClient, "status" | "inventory" | "deleteRule" | "createRule" | "ensureRule">;
+export type RoutingClient = Pick<EmailRoutingClient, "status" | "inventory" | "deleteRule" | "createRule" | "ensureRule" | "routingFor">;
 
 /**
  * Email Routing across every account the server has a token for (MA-4): each address is worked on
@@ -199,22 +275,30 @@ export type RoutingClient = Pick<EmailRoutingClient, "status" | "inventory" | "d
  * — the server in its own, the relay in any other.
  */
 export class AccountsRoutingClient implements RoutingClient {
+  /** One client per token (its API object) and Worker, so what it read is reused for every address of the request. */
+  private clients = new Map<object, Map<string, EmailRoutingClient>>();
+
   constructor(private accounts: CloudflareAccounts, private fetcher?: Fetcher) {}
 
   private async client(address: string): Promise<EmailRoutingClient | null> {
     const email = address.toLowerCase();
     const ctx = await this.accounts.zone(email.slice(email.lastIndexOf("@") + 1));
-    return ctx ? new EmailRoutingClient(ctx.token, ctx.worker, this.fetcher) : null;
+    if (!ctx) return null;
+    let byWorker = this.clients.get(ctx.api);
+    if (!byWorker) this.clients.set(ctx.api, (byWorker = new Map()));
+    let client = byWorker.get(ctx.worker);
+    if (!client) byWorker.set(ctx.worker, (client = new EmailRoutingClient(ctx.token, ctx.worker, this.fetcher)));
+    return client;
   }
 
   async status(address: string): Promise<RoutingStatus> {
     const domain = address.slice(address.lastIndexOf("@") + 1).toLowerCase();
     try {
       const client = await this.client(address);
-      if (!client) return { state: "unknown", detail: `The server's tokens cannot see the zone ${domain}. Connect its account in Settings → Accounts.` };
+      if (!client) return { state: "unknown", detail: msg("The server's tokens cannot see the zone {domain}. Connect its account in Settings → Accounts.", { domain }) };
       return client.status(address);
     } catch (error) {
-      return { state: "unknown", detail: `${(error as Error).message}. ${DASHBOARD_STEP}` };
+      return { state: "unknown", detail: withDashboardStep((error as Error).message) };
     }
   }
 
@@ -223,9 +307,14 @@ export class AccountsRoutingClient implements RoutingClient {
     return client ? client.inventory(domain) : { domain, visible: false, enabled: false, rules: [], catchAll: null };
   }
 
+  async routingFor(domain: string, addresses: string[]): Promise<AddressRouting> {
+    const client = await this.client(`x@${domain}`).catch((e) => { throw new RoutingError((e as Error).message); });
+    return client ? client.routingFor(domain, addresses) : { domain: domain.toLowerCase(), visible: false, enabled: false, status: "unknown", rules: [], catchAll: null };
+  }
+
   async deleteRule(address: string): Promise<string> {
     const client = await this.client(address).catch((e) => { throw new RoutingError((e as Error).message); });
-    if (!client) throw new ZoneNotVisible(`The server's tokens cannot see the zone ${address.slice(address.lastIndexOf("@") + 1)}`);
+    if (!client) throw new ZoneNotVisible(msg("The server's tokens cannot see the zone {domain}", { domain: address.slice(address.lastIndexOf("@") + 1) }));
     return client.deleteRule(address);
   }
 
@@ -235,7 +324,7 @@ export class AccountsRoutingClient implements RoutingClient {
 
   async ensureRule(address: string): Promise<{ status: RoutingStatus; created: boolean; ruleId?: string }> {
     const client = await this.client(address).catch((e) => { throw new RoutingError((e as Error).message); });
-    if (!client) throw new ZoneNotVisible(`The server's tokens cannot see the zone ${address.slice(address.lastIndexOf("@") + 1)}`);
+    if (!client) throw new ZoneNotVisible(msg("The server's tokens cannot see the zone {domain}", { domain: address.slice(address.lastIndexOf("@") + 1) }));
     return client.ensureRule(address);
   }
 }
@@ -247,5 +336,5 @@ export function routingClient(env: AccountsEnv, fetcher?: Fetcher): RoutingClien
 
 export const ROUTING_NOT_CONFIGURED: RoutingStatus = {
   state: "unknown",
-  detail: `Routing cannot be read: this server has no Cloudflare token yet (Settings → Domains → Connect Cloudflare). ${DASHBOARD_STEP}`,
+  detail: msg("Routing cannot be read: this server has no Cloudflare token yet (Settings → Domains → Connect Cloudflare). In the Cloudflare dashboard open the domain → Email → Email Routing → Routing rules, and send this address to the Worker."),
 };

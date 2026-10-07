@@ -1,4 +1,5 @@
 import type { Env } from "../types";
+import { msg } from "../../shared/i18n";
 
 /**
  * Cloudflare mailbox records: `mailboxes/<address>.json` in R2 holds the
@@ -172,10 +173,10 @@ export type CreateMailboxResult =
 export async function createMailbox(env: Env, rawEmail: string, name: string, settings: Record<string, unknown> = {}): Promise<CreateMailboxResult> {
   const email = rawEmail.trim().toLowerCase();
   const allowed = allowedAddresses(env);
-  if (allowed.length && !allowed.includes(email)) return { status: "forbidden", reason: "Mailbox creation is restricted to configured EMAIL_ADDRESSES" };
+  if (allowed.length && !allowed.includes(email)) return { status: "forbidden", reason: msg("Mailbox creation is restricted to configured EMAIL_ADDRESSES") };
   const domains = await allServedDomains(env);
   if (domains.length && !domains.includes(email.slice(email.lastIndexOf("@") + 1)))
-    return { status: "forbidden", reason: `The domain is not served here; add it to DOMAINS first (${domains.join(", ")})` };
+    return { status: "forbidden", reason: msg("The domain is not served here; add it to DOMAINS first ({domains})", { domains: domains.join(", ") }) };
   if (await env.BUCKET.head(settingsKey(email))) return { status: "exists" };
   const finalSettings = {
     fromName: name,
@@ -187,9 +188,14 @@ export async function createMailbox(env: Env, rawEmail: string, name: string, se
     agent: "off",
     ...settings,
   };
-  await env.BUCKET.put(settingsKey(email), JSON.stringify(finalSettings));
-  // Creating the folders now makes the mailbox usable before its first message.
-  await env.MAILBOX.get(env.MAILBOX.idFromName(email)).getFolders();
+  // Written only if no other request wrote it since the check above: of two creates at once, one
+  // wins and the other is told the address exists.
+  const written = await env.BUCKET.put(settingsKey(email), JSON.stringify(finalSettings), { onlyIf: new Headers({ "If-None-Match": "*" }) });
+  if (written === null) return { status: "exists" };
+  // Creating the folders now makes the mailbox usable before its first message; the mailbox makes
+  // them itself on first use, so a failure here does not undo the address.
+  await env.MAILBOX.get(env.MAILBOX.idFromName(email)).getFolders().catch((error: unknown) =>
+    console.warn(JSON.stringify({ event: "mailbox_folders_deferred", error: (error as Error).message })));
   return { status: "created", settings: finalSettings };
 }
 
@@ -206,5 +212,5 @@ export async function updateSettings(
     const next = change(await object.json<Record<string, unknown>>());
     if (await bucket.put(settingsKey(email), JSON.stringify(next), { onlyIf: { etagMatches: object.etag } })) return next;
   }
-  throw new Error(`The settings of ${email} changed several times at once; try again`);
+  throw new Error(msg("The settings of {email} changed several times at once; try again", { email }));
 }

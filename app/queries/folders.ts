@@ -3,6 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { msg } from "../../shared/i18n";
 import api from "~/services/api";
 import type { Folder } from "~/types";
 import { queryKeys } from "./keys";
@@ -21,7 +22,7 @@ export function useFolders(mailboxId: string | undefined) {
 export function useCreateFolder() {
 	const qc = useQueryClient();
 	return useMutation({
-		meta: { errorMessage: "Couldn't create the folder." },
+		meta: { errorMessage: msg("Couldn't create the folder.") },
 		mutationFn: ({
 			mailboxId,
 			name,
@@ -36,7 +37,7 @@ export function useCreateFolder() {
 export function useUpdateFolder() {
 	const qc = useQueryClient();
 	return useMutation({
-		meta: { errorMessage: "Couldn't rename the folder." },
+		meta: { errorMessage: msg("Couldn't rename the folder.") },
 		mutationFn: ({
 			mailboxId,
 			id,
@@ -52,7 +53,7 @@ export function useUpdateFolder() {
 export function useDeleteFolder() {
 	const qc = useQueryClient();
 	return useMutation({
-		meta: { errorMessage: "Couldn't delete the folder." },
+		meta: { errorMessage: msg("Couldn't delete the folder.") },
 		mutationFn: ({
 			mailboxId,
 			id,

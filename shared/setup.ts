@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { msg } from "./i18n";
 
 /**
  * A setup: everything needed to bring a Fabric Inbox up in one step — which
@@ -9,7 +10,7 @@ import { z } from "zod";
  */
 export const SETUP_FORMAT = "fabric-inbox-setup/1";
 
-const domain = z.string().trim().toLowerCase().regex(/^(?=.{3,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/, "Not a domain name");
+const domain = z.string().trim().toLowerCase().regex(/^(?=.{3,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/, msg("Not a domain name"));
 const address = z.string().trim().toLowerCase().email().max(254);
 const origin = z.string().trim().url().max(2048);
 
@@ -42,16 +43,16 @@ export const SetupSchema = z.object({
   const seen = new Set<string>();
   setup.mailboxes.forEach((m, i) => {
     const d = m.address.slice(m.address.lastIndexOf("@") + 1);
-    if (!served.has(d)) ctx.addIssue({ code: "custom", path: ["mailboxes", i, "address"], message: `${m.address}: its domain is not in domains` });
-    if (seen.has(m.address)) ctx.addIssue({ code: "custom", path: ["mailboxes", i, "address"], message: `${m.address} appears twice` });
+    if (!served.has(d)) ctx.addIssue({ code: "custom", path: ["mailboxes", i, "address"], message: msg("{address}: its domain is not in domains", { address: m.address }) });
+    if (seen.has(m.address)) ctx.addIssue({ code: "custom", path: ["mailboxes", i, "address"], message: msg("{address} appears twice", { address: m.address }) });
     seen.add(m.address);
     if (m.forwardTo && served.has(m.forwardTo.slice(m.forwardTo.lastIndexOf("@") + 1)))
-      ctx.addIssue({ code: "custom", path: ["mailboxes", i, "forwardTo"], message: `${m.address}: forwarding to a served domain would loop` });
+      ctx.addIssue({ code: "custom", path: ["mailboxes", i, "forwardTo"], message: msg("{address}: forwarding to a served domain would loop", { address: m.address }) });
   });
   setup.catchAll.forEach((c, i) => {
-    if (!served.has(c.domain)) ctx.addIssue({ code: "custom", path: ["catchAll", i, "domain"], message: `${c.domain} is not in domains` });
-    if (!seen.has(c.mailbox)) ctx.addIssue({ code: "custom", path: ["catchAll", i, "mailbox"], message: `${c.mailbox} is not one of the mailboxes` });
-    if (!c.mailbox.endsWith("@" + c.domain)) ctx.addIssue({ code: "custom", path: ["catchAll", i, "mailbox"], message: `${c.mailbox} is not on ${c.domain}` });
+    if (!served.has(c.domain)) ctx.addIssue({ code: "custom", path: ["catchAll", i, "domain"], message: msg("{domain} is not in domains", { domain: c.domain }) });
+    if (!seen.has(c.mailbox)) ctx.addIssue({ code: "custom", path: ["catchAll", i, "mailbox"], message: msg("{mailbox} is not one of the mailboxes", { mailbox: c.mailbox }) });
+    if (!c.mailbox.endsWith("@" + c.domain)) ctx.addIssue({ code: "custom", path: ["catchAll", i, "mailbox"], message: msg("{mailbox} is not on {domain}", { mailbox: c.mailbox, domain: c.domain }) });
   });
 });
 export type Setup = z.infer<typeof SetupSchema>;

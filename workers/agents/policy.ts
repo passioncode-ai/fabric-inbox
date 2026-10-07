@@ -1,4 +1,5 @@
 import type { ReplyPolicy } from "./definition";
+import { msg } from "../../shared/i18n";
 
 /** What the model proposes; the policy below decides what actually happens. */
 export interface ModelDecision {
@@ -34,19 +35,19 @@ const normalize = (value: string) => value.trim().toLowerCase();
  */
 export function decide(policy: ReplyPolicy, proposal: ModelDecision, context: PolicyContext): PolicyOutcome {
   if (proposal.decision === "skip")
-    return { action: "skip", reason: proposal.reason.trim() || "The agent found nothing to answer" };
-  if (!proposal.body.trim()) return { action: "skip", reason: "The agent produced no answer" };
-  if (policy.mode === "draft") return { action: "draft", reason: "This agent drafts only" };
-  if (context.knowledgeProblem) return { action: "draft", reason: `The knowledge could not be searched (${context.knowledgeProblem})` };
+    return { action: "skip", reason: proposal.reason.trim() || msg("The agent found nothing to answer") };
+  if (!proposal.body.trim()) return { action: "skip", reason: msg("The agent produced no answer") };
+  if (policy.mode === "draft") return { action: "draft", reason: msg("This agent drafts only") };
+  if (context.knowledgeProblem) return { action: "draft", reason: msg("The knowledge could not be searched ({problem})", { problem: context.knowledgeProblem }) };
   if (proposal.decision === "draft")
-    return { action: "draft", reason: proposal.reason.trim() || "The agent asked for review" };
-  if (context.toolFailures > 0) return { action: "draft", reason: "A tool call failed during this answer" };
-  if (!proposal.grounded) return { action: "draft", reason: "The answer is not grounded in the agent's knowledge" };
+    return { action: "draft", reason: proposal.reason.trim() || msg("The agent asked for review") };
+  if (context.toolFailures > 0) return { action: "draft", reason: msg("A tool call failed during this answer") };
+  if (!proposal.grounded) return { action: "draft", reason: msg("The answer is not grounded in the agent's knowledge") };
   const allowed = policy.allowedIntents.map(normalize);
   if (allowed.length && !allowed.includes(normalize(proposal.intent)))
-    return { action: "draft", reason: `Intent "${proposal.intent || "unknown"}" is not allowed to send` };
+    return { action: "draft", reason: proposal.intent ? msg('Intent "{intent}" is not allowed to send', { intent: proposal.intent }) : msg('Intent "unknown" is not allowed to send') };
   if (context.sentToday >= policy.dailySendLimit)
-    return { action: "draft", reason: `Daily send limit of ${policy.dailySendLimit} reached` };
+    return { action: "draft", reason: msg("Daily send limit of {limit} reached", { limit: policy.dailySendLimit }) };
   if (context.rateLimited) return { action: "draft", reason: context.rateLimited };
-  return { action: "send", reason: `Allowed: ${proposal.intent || "grounded answer"}` };
+  return { action: "send", reason: proposal.intent ? msg("Allowed: {intent}", { intent: proposal.intent }) : msg("Allowed: grounded answer") };
 }

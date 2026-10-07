@@ -3,18 +3,23 @@ import type { InboxAccount, InboxMessage } from "./model";
 import { rawAccount, senderName } from "./model";
 import { focusSections, listDate, triageOf, type ListView } from "./triage-view";
 import { TRIAGE_GROUPS, type Triage, type TriageGroup } from "../../../shared/mail/triage";
+import { triageText } from "./triage-text";
+import { useT, type T } from "../../lib/i18n";
 
 /** The group, or the specific reason an automated message was raised (e.g. "Payment problem"). */
-function tagText(t: Triage): string {
-  if (t.importance === "important" && t.group !== "people" && t.reasons.length > 1) return t.reasons[1];
-  return TRIAGE_GROUPS.find((g) => g.id === t.group)?.label ?? t.group;
+function tagText(tri: Triage, t: T): string {
+  if (tri.importance === "important" && tri.group !== "people" && tri.reasons.length > 1) return t.text(tri.reasons[1]);
+  return t.text(TRIAGE_GROUPS.find((g) => g.id === tri.group)?.label ?? tri.group);
 }
 
 interface ListProps {
   messages: InboxMessage[];
   accounts: InboxAccount[];
   selectedId?: string;
-  onSelect: (message: InboxMessage) => void;
+  /** Messages chosen together (⌘/Ctrl-click, Shift-click, Shift+↓): the keys and the actions act on all of them. */
+  marked?: ReadonlySet<string>;
+  /** `how.add` toggles a message in the selection (⌘/Ctrl-click), `how.range` selects up to it (Shift-click). */
+  onSelect: (message: InboxMessage, how?: { add?: boolean; range?: boolean }) => void;
   view: ListView;
   group?: TriageGroup;
   /** Groups the operator opened; kept by the page for the session. */
@@ -27,43 +32,46 @@ interface ListProps {
   inSpam?: boolean;
 }
 
-function MessageRow({ message, account, selected, onSelect, showGroup, categoryId, inSpam }: {
-  message: InboxMessage; account?: InboxAccount; selected: boolean; onSelect: () => void; showGroup: boolean; categoryId?: string; inSpam?: boolean;
+function MessageRow({ message, account, selected, marked, onSelect, showGroup, categoryId, inSpam }: {
+  message: InboxMessage; account?: InboxAccount; selected: boolean; marked: boolean; onSelect: (how?: { add?: boolean; range?: boolean }) => void; showGroup: boolean; categoryId?: string; inSpam?: boolean;
 }) {
-  const t = triageOf(message);
-  const important = !inSpam && t.importance === "important";
+  const t = useT();
+  const tri = triageOf(message);
+  const important = !inSpam && tri.importance === "important";
   const chips = (message.categories ?? []).filter((c) => c.id !== categoryId);
   return (
     <button
-      className={"fi-message" + (selected ? " is-selected" : "") + (!message.read ? " is-unread" : "") + (important ? " is-important" : "")}
+      className={"fi-message" + (selected ? " is-selected" : "") + (marked ? " is-marked" : "") + (!message.read ? " is-unread" : "") + (important ? " is-important" : "")}
       aria-current={selected ? "true" : undefined}
-      onClick={onSelect}
+      data-message-id={message.id}
+      onClick={(e) => onSelect({ add: e.metaKey || e.ctrlKey, range: e.shiftKey })}
     >
       <div className="fi-row-top">
         <strong>
           {!message.read && <span className="fi-unread" aria-hidden="true" />}
-          <span className="fi-visually-hidden">{important ? "Important. " : ""}{!message.read ? "Unread. " : ""}</span>
+          <span className="fi-visually-hidden">{[marked && t("Selected."), important && t("Important."), !message.read && t("Unread.")].filter(Boolean).map((s) => s + " ").join("")}</span>
           {senderName(message.sender)}
         </strong>
-        <time dateTime={message.date}>{listDate(message.date)}</time>
+        <time dateTime={message.date}>{listDate(message.date, undefined, t)}</time>
       </div>
-      <span className="fi-subject">{message.subject || "(No subject)"}</span>
-      <span className="fi-snippet">{message.snippet.replace(/\s+/g, " ").trim() || "Open message to read more"}</span>
-      {message.categoryReason && <span className="fi-category-reason">Why: {message.categoryReason}</span>}
-      {message.spamReason && <span className="fi-category-reason fi-spam-reason">Why in Spam: {message.spamReason}</span>}
+      <span className="fi-subject">{message.subject || t("(No subject)")}</span>
+      <span className="fi-snippet">{message.snippet.replace(/\s+/g, " ").trim() || t("Open message to read more")}</span>
+      {message.categoryReason && <span className="fi-category-reason">{t("Why: {reason}", { reason: t.text(message.categoryReason) })}</span>}
+      {message.spamReason && <span className="fi-category-reason fi-spam-reason">{t("Why in Spam: {reason}", { reason: t.text(message.spamReason) })}</span>}
+      {message.discardReason && <span className="fi-category-reason fi-spam-reason">{triageText(t).whyDiscarded} {t.text(message.discardReason)}</span>}
       <span className="fi-message-account">
         <EnvelopeIcon size={12} aria-hidden="true" />
         {account?.email ?? rawAccount(message.accountId)}
         {!!message.alsoIn?.length && (
-          <span className="fi-also-in" title={"Also in " + message.alsoIn.map(rawAccount).join(", ")}>+{message.alsoIn.length}</span>
+          <span className="fi-also-in" title={t("Also in {addresses}", { addresses: message.alsoIn.map(rawAccount).join(", ") })}>+{message.alsoIn.length}</span>
         )}
         {showGroup && !inSpam && (
-          <span className={"fi-triage-tag tag-" + t.group} title={t.reasons.join(" · ")}>{tagText(t)}</span>
+          <span className={"fi-triage-tag tag-" + tri.group} title={tri.reasons.map((r) => t.text(r)).join(" · ")}>{tagText(tri, t)}</span>
         )}
         {chips.map((c) => (
-          <span key={c.id} className="fi-category-chip" title={c.reason}>{c.name}</span>
+          <span key={c.id} className="fi-category-chip" title={t.text(c.reason)}>{c.name}</span>
         ))}
-        {message.starred && <StarIcon size={12} weight="fill" role="img" aria-label="Starred" />}
+        {message.starred && <StarIcon size={12} weight="fill" role="img" aria-label={t("Starred")} />}
       </span>
     </button>
   );
@@ -74,15 +82,19 @@ function MessageRow({ message, account, selected, onSelect, showGroup, categoryI
  * or Newest-first order; a group filter narrows both. Collapsing is a view
  * choice: nothing is marked read or moved by it.
  */
-export default function TriagedList({ messages, accounts, selectedId, onSelect, view, group, open, onToggleGroup, onClearGroup, categoryId, inSpam }: ListProps) {
+export default function TriagedList({ messages, accounts, selectedId, marked, onSelect, view, group, open, onToggleGroup, onClearGroup, categoryId, inSpam }: ListProps) {
+  const t = useT();
   const account = (m: InboxMessage) => accounts.find((a) => a.id === m.accountId);
   const row = (m: InboxMessage, showGroup: boolean) => (
-    <MessageRow key={m.id} message={m} account={account(m)} selected={selectedId === m.id} onSelect={() => onSelect(m)} showGroup={showGroup} categoryId={categoryId} inSpam={inSpam} />
+    <MessageRow key={m.id} message={m} account={account(m)} selected={selectedId === m.id} marked={!!marked?.has(m.id)} onSelect={(how) => onSelect(m, how)} showGroup={showGroup} categoryId={categoryId} inSpam={inSpam} />
   );
-  const groupLabel = TRIAGE_GROUPS.find((g) => g.id === group)?.label ?? group;
+  const groupLabel = t.text(TRIAGE_GROUPS.find((g) => g.id === group)?.label ?? group ?? "");
   const noneInGroup = (
     <div className="fi-section-empty">
-      No {groupLabel} mail here. <button type="button" className="fi-text-button" onClick={onClearGroup}>Show all</button>
+      {t.rich("No {group} mail here. {showAll}", {
+        group: groupLabel,
+        showAll: <button key="show-all" type="button" className="fi-text-button" onClick={onClearGroup}>{t("Show all")}</button>,
+      })}
     </div>
   );
   if (view === "newest") {
@@ -96,10 +108,10 @@ export default function TriagedList({ messages, accounts, selectedId, onSelect, 
     <div className="fi-message-rows">
       <section aria-labelledby="fi-important-heading">
         <h3 id="fi-important-heading" className="fi-section-heading">
-          Important <span>{important.length}</span>
+          {t("Important")} <span>{important.length}</span>
         </h3>
         {important.length ? important.map((m) => row(m, true)) : (
-          <p className="fi-section-empty">{groups.length ? "Nothing needs you in the loaded mail. The groups below hold the rest." : "Nothing needs you in the loaded mail."}</p>
+          <p className="fi-section-empty">{t(groups.length ? "Nothing needs you in the loaded mail. The groups below hold the rest." : "Nothing needs you in the loaded mail.")}</p>
         )}
       </section>
       {groups.map((g) => {
@@ -110,10 +122,10 @@ export default function TriagedList({ messages, accounts, selectedId, onSelect, 
               <button type="button" aria-expanded={expanded} aria-controls={"fi-group-list-" + g.id} onClick={() => onToggleGroup(g.id)} disabled={!!group}>
                 {expanded ? <CaretDownIcon size={13} aria-hidden="true" /> : <CaretRightIcon size={13} aria-hidden="true" />}
                 <span className={"fi-group-dot tag-" + g.id} aria-hidden="true" />
-                {g.label}
+                {t.text(g.label)}
                 <span className="fi-group-count">
                   {g.messages.length}
-                  {g.unread ? ` · ${g.unread} unread` : ""}
+                  {g.unread ? " · " + t.plural(g.unread, { one: "{n} unread", other: "{n} unread" }) : ""}
                 </span>
               </button>
             </h3>

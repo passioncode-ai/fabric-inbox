@@ -21,7 +21,9 @@ reinstalling the app, and every downloaded copy must update itself by default). 
 | The server's address | `~/Library/Application Support/Fabric Inbox/server.json`, **and a copy in** `~/Library/Application Support/PassionCode/backups/fabric-inbox.json` | yes | yes: the copy is read back at the next start (`settings_restored` in the log) |
 | The sign-in (Cloudflare Access cookie) | the server's partition in the profile, encrypted under the Keychain item "Fabric Inbox Safe Storage" | yes | no: sign in again with the code sent by email (30 days at most anyway, B-43) |
 | Unsent drafts and their attachments | the server's partition (local storage and IndexedDB) | yes | no: drafts are kept on the Mac only (REL-03; server draft sync is not built) |
-| Usage counts state, update switch | `analytics-state.json`, `updates.json` in the profile | yes | no; both start fresh (counting resumes, updates are on) |
+| Usage counts state, update switch, the last install | `analytics-state.json`, `auto-update` (only when updates were turned off), `update-install.json` (between an install and the next start) in the profile | yes | no; both start fresh (counting resumes, updates are on) |
+| The app's log | `~/Library/Logs/Fabric Inbox/fabric-inbox.log` (and `.1.log`, about 2 MB at most) | yes | no |
+| A verified update waiting for Squirrel.Mac | `~/Library/Caches/Fabric Inbox/updates/` (removed once Squirrel.Mac has its copy, or after a failure) | yes | no |
 | Shared PassionCode installation id and analytics switch | `~/Library/Application Support/PassionCode/installation.json` | yes | yes |
 
 Reinstalling the same app (same bundle id `ai.passioncode.fabric-inbox`, same Developer ID team)
@@ -41,23 +43,72 @@ server's storage only after the new server answers ([AGENTS.md → Lifecycle](..
 
 ## Updates
 
-**On by default** in every copy downloaded from GitHub or passioncode.ai, from 0.10.1 on. Copies
-of 0.10.0 and earlier have no updater: they are updated once by hand, and from then on by
-themselves.
+**On by default** in every copy downloaded from GitHub or passioncode.ai. The first published
+release that updates itself is **0.11.0**: 0.10.1 carried the updater but was never published (its
+release run was cancelled), so copies of 0.10.0 and earlier are updated once by hand, and from then
+on by themselves. 0.11.0 hands the feed to Squirrel.Mac directly; from 0.12.0 every step below
+applies.
 
-1. At launch, and when a window comes forward if six hours have passed, the app reads
-   `https://github.com/passioncode-ai/fabric-inbox/releases/latest/download/update-mac.json`, the
-   feed the latest published release carries (Squirrel.Mac's static `serverType: 'json'` format).
-   No timer runs and nothing is checked with no window open (lifecycle LC-08).
-2. When the feed names a newer version, Squirrel.Mac (Electron's `autoUpdater`) downloads
-   `Fabric-Inbox-<version>-mac.zip` in the background. Before unpacking, it checks the zip's
-   sha256 and size from the feed. After unpacking, it checks that the new app is signed by the
-   same Developer ID team as the running one, and refuses anything else.
-3. The new version is installed when the person quits the app. The **Fabric Inbox** menu then
-   reads **Restart to Install Update** for anyone who wants it at once.
-4. **Fabric Inbox → Install Updates Automatically** turns the checks off (kept in
-   `<profile>/updates.json`). **Check for Updates…** checks at once whatever the switch says, and
-   says what happened: up to date, downloading, ready, or why not.
+Fabric Inbox follows the organization's one update behaviour for every product (LC-16 in
+fabric-workspace `knowledge/lifecycle.md`): the same switch, cadence, verification and log codes
+as Fabric Switchboard, Fabric and Fabric Dashboards.
+
+1. **Cadence.** The first check runs 90 s after the app starts, then every 6 h while it runs,
+   with or without a window (one timer, which never holds the app open; `desktop/updater.cjs`).
+   After a failed check one retry follows within the hour, then the 6-hour rhythm again. Each
+   check reads `https://github.com/passioncode-ai/fabric-inbox/releases/latest/download/update-mac.json`,
+   the feed the latest published release carries. No environment variable can point a released
+   copy at another feed: the address is written into the app by the release workflow.
+2. **Only newer.** The feed's `currentRelease` is compared with the app's version, numerically.
+   An older or equal release is logged (`update_check current`) and nothing is downloaded; a feed
+   that names no `X.Y.Z` version is a failed check. The release build also sets
+   `ElectronSquirrelPreventDowngrades`, so Squirrel.Mac itself refuses an older bundle.
+3. **Verified by the app before anything can replace it** (`desktop/update-verify.cjs`). Squirrel.Mac
+   checks only that a new bundle satisfies the running app's designated requirement; it does not
+   check the zip's sha256 or size. So the app does the rest itself, and the first failure stops the
+   update (`update_check signature_failed`, nothing installed, the app keeps running):
+   - the release's `SHA256SUMS` must carry a valid signature by the organization's release key,
+     pinned in the app (`desktop/release-key.asc`, fingerprint
+     `63B3 0DC3 24BD 6974 87AA 3194 4FAF B8AE C803 B6A7`, checked with Node's own Ed25519 in
+     `desktop/pgp-verify.cjs`; no OpenPGP library is bundled);
+   - the feed itself must be listed in that `SHA256SUMS` with its own digest, so the version, the
+     file it names and a held-for-migration mark are all covered by the signature;
+   - the zip must be this product's file of that same release, and the downloaded bytes must have
+     the signed digest and size;
+   - the app inside, unpacked with `ditto` into a scratch folder, must pass
+     `codesign --verify --deep --strict` against a Developer ID requirement of the pinned team
+     `KJ35UYYL22` (never "whoever signed this copy"), its `CFBundleShortVersionString` must be the
+     announced version and its bundle id this app's (`plutil`).
+4. **Handed over, then installed at a safe point.** Only the verified zip reaches Squirrel.Mac,
+   through a local feed (`file://`) in `~/Library/Caches/Fabric Inbox/updates/`, so it installs
+   the very bytes that were checked. Squirrel.Mac's `ShipIt` installs it when the person quits;
+   the menu reads **Restart to Install Update** for anyone who wants it at once. A running session
+   is never stopped for an update. The next start logs whether the install happened
+   (`update_install installed` or `failed`, from `update-install.json`).
+5. **Held releases.** A release whose feed marks `migration` (a runbook URL; `feedFor` in
+   `desktop/updater.cjs`) is downloaded and verified once but not installed: **Check for Updates…**
+   names the step and its runbook, and the log says `update_check needs_migration`. Later checks
+   do not download it again while the feed still offers it. The desktop app keeps no data that
+   needs a migration today, so no Inbox release has used it.
+   **Refused by Squirrel.Mac.** A verified version Squirrel.Mac refuses (`install_failed`), or that
+   it does not answer within 15 minutes, is not downloaded again for 24 hours. A copy this Mac
+   account cannot replace (installed by another account, a read-only folder) never downloads and
+   says why (`not_replaceable`).
+6. **The switch** is the file `auto-update` in the profile: absent means on, only the word `off`
+   turns checks and downloads off, and a check already running hands nothing to Squirrel.Mac.
+   **Fabric Inbox → Install Updates Automatically** writes `off` or removes the file; an update or
+   a reinstall never touches it. The `updates.json` of 0.11.0 is carried over once and removed.
+   One exception, recorded in `AGENTS.md` → Lifecycle as LC-16 asks: an update Squirrel.Mac
+   already downloaded before the switch went off still installs when the app quits, because
+   Squirrel.Mac offers no way to withdraw a staged update. **Check for Updates…** checks at once
+   whatever the switch says, and says what happened: up to date, downloading, ready, held,
+   refused by verification, or why not.
+7. **The log** is `~/Library/Logs/Fabric Inbox/fabric-inbox.log` (`desktop/log.cjs`), JSON lines
+   with codes only: `update_check` (`current`, `ready`, `check_failed`, `download_failed`,
+   `signature_failed`, `install_failed`, `needs_migration`, with a short `reason` code such as
+   `zip_sha256` or `codesign`), `update_download` (`started`, `done`), `update_install`
+   (`started`, `installed`, `failed`, `timeout`), `update_restart` (`requested`, `refused`),
+   `auto_update` (`on`, `off`).
 
 Copies that never check, with the reason the log and **Check for Updates…** give:
 
@@ -70,7 +121,7 @@ Copies that never check, with the reason the log and **Check for Updates…** gi
 The release publishes the update with the disk image ([release.md](release.md)). The `macos` job
 zips the stapled app (`ditto -c -k --sequesterRsrc --keepParent`), unpacks the zip again and
 checks the unpacked app's signature and staple, then writes `update-mac.json` with the zip's
-sha256 and size. Both files are release assets, covered by the attestations and the GPG-signed
+sha256 and size. Both are listed in the GPG-signed `SHA256SUMS`, which is what the app checks. Both files are release assets, covered by the attestations and the GPG-signed
 `SHA256SUMS` like every other. Only a published release (not an rc rehearsal) is "latest", so no
 rehearsal is ever offered as an update. A release that is pulled back is replaced by publishing a newer
 version; a published release is never rewritten.

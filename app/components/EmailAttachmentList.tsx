@@ -3,6 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import { PaperclipIcon, FileIcon, ImageIcon } from "@phosphor-icons/react";
+import { useT } from "../lib/i18n";
 import { formatBytes, getAttachmentUrl, getNonInlineAttachments } from "~/lib/utils";
 import type { Attachment } from "~/types";
 
@@ -23,6 +24,7 @@ export default function EmailAttachmentList({
 	className,
 	showHeading = false,
 }: EmailAttachmentListProps) {
+	const t = useT();
 	if (!mailboxId) return null;
 
 	const files = getNonInlineAttachments(attachments);
@@ -34,7 +36,7 @@ export default function EmailAttachmentList({
 				<div className="flex items-center gap-2 mb-2">
 					<PaperclipIcon size={14} className="text-kumo-subtle" />
 					<span className="text-sm font-medium text-kumo-default">
-						{files.length} attachment{files.length !== 1 ? "s" : ""}
+						{t.plural(files.length, { one: "{n} attachment", other: "{n} attachments" })}
 					</span>
 				</div>
 			)}
@@ -55,7 +57,7 @@ export default function EmailAttachmentList({
 								<span className="text-kumo-default font-medium truncate max-w-[140px]">
 									{attachment.filename}
 								</span>
-								<span className="text-kumo-subtle">{formatBytes(attachment.size)}</span>
+								<span className="text-kumo-subtle">{formatBytes(attachment.size, 1, t)}</span>
 							</button>
 						);
 					}
@@ -72,7 +74,7 @@ export default function EmailAttachmentList({
 							<span className="text-kumo-default font-medium truncate max-w-[140px]">
 								{attachment.filename}
 							</span>
-							<span className="text-kumo-subtle">{formatBytes(attachment.size)}</span>
+							<span className="text-kumo-subtle">{formatBytes(attachment.size, 1, t)}</span>
 						</a>
 					);
 				})}

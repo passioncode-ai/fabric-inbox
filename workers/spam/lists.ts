@@ -1,4 +1,5 @@
 import { normaliseLists, type SpamLists } from "../../shared/mail/spam";
+import { msg } from "../../shared/i18n";
 
 /**
  * The operator's spam lists (SP-1, SP-3, SP-6): one R2 object for the workspace.
@@ -28,7 +29,7 @@ export async function updateSpamLists(bucket: R2Bucket, change: (lists: SpamList
     });
     if (written) return next;
   }
-  throw new SpamListConflict("The spam lists changed several times at once; try again");
+  throw new SpamListConflict(msg("The spam lists changed several times at once; try again"));
 }
 
 /** Blocking puts the entry on the blocked list and takes it off the allowed one, and the reverse. */

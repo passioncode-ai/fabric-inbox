@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams, Link } from "react-router";
+import { useParams, Link, type MetaArgs } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@cloudflare/kumo";
+import { metaT, useT, type T } from "../lib/i18n";
 import { fabric } from "~/services/fabric";
+import { msg } from "../../shared/i18n";
 import { useWindowActive } from "~/hooks/useWindowActive";
 import { AUTOMATION_POLL_MS, pollInterval } from "~/lib/window-activity";
 import type { OutboxEntry } from "../../shared/mail/outbox";
@@ -19,10 +21,49 @@ const fresh = (): Rule => ({
   action: { type: "archive" },
   dailyLimit: 20,
 });
-export function meta() {
-  return [{ title: "Rules · Fabric Inbox" }];
+/** A run's status in words; an unknown one shows as it came. */
+function runStatusText(status: string, t: T): string {
+  switch (status) {
+    case "pending": return t("[run] pending");
+    case "running": return t("[run] running");
+    case "waiting_approval": return t("[run] waiting approval");
+    case "waiting_device": return t("[run] waiting device");
+    case "succeeded": return t("[run] succeeded");
+    case "skipped": return t("[run] skipped");
+    case "failed": return t("[run] failed");
+    case "unknown": return t("[run] unknown");
+    case "cancelled": return t("[run] cancelled");
+    default: return status.replaceAll("_", " ");
+  }
+}
+/** A rule's action in words. */
+function actionText(type: string, t: T): string {
+  switch (type) {
+    case "archive": return t("[action] archive");
+    case "mark_read": return t("[action] mark read");
+    case "draft": return t("[action] draft");
+    case "forward": return t("[action] forward");
+    case "mcp": return t("[action] mcp");
+    default: return type.replaceAll("_", " ");
+  }
+}
+/** An outbox entry's status in words. */
+function outboxStatusText(status: string, t: T): string {
+  switch (status) {
+    case "pending": return t("[outbox] pending");
+    case "sending": return t("[outbox] sending");
+    case "accepted": return t("[outbox] accepted");
+    case "failed": return t("[outbox] failed");
+    case "unknown": return t("[outbox] unknown");
+    default: return status;
+  }
+}
+export function meta({ matches }: MetaArgs) {
+  const t = metaT(matches);
+  return [{ title: t("Rules · Fabric Inbox") }];
 }
 export default function Automation() {
+  const t = useT();
   const { account = "" } = useParams();
   const base = "/api/automation/" + encodeURIComponent(account);
   // Runs and the outbox poll every 30 s, and only while this window is visible and focused
@@ -74,7 +115,7 @@ export default function Automation() {
     setNotice("");
   }
   function value() {
-    if (!editing) throw Error("Choose a rule");
+    if (!editing) throw Error(msg("Choose a rule"));
     return {
       ...editing,
       action:
@@ -90,7 +131,7 @@ export default function Automation() {
       await fn();
       await Promise.all([rules.refetch(), runs.refetch()]);
     } catch (e) {
-      setNotice((e as Error).message);
+      setNotice(t.text((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -98,30 +139,28 @@ export default function Automation() {
   return (
     <main className="mx-auto max-w-5xl p-6 text-kumo-default">
       <Link className="underline" to={/^(gmail|imap|outlook):/.test(account) ? `/settings/accounts/${encodeURIComponent(account)}` : `/settings/addresses/${encodeURIComponent(account)}/rules`}>
-        ← Settings
+        {t("← Settings")}
       </Link>
       <div className="my-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold">Rules and history</h1>
+          <h1 className="text-3xl font-semibold">{t("Rules and history")}</h1>
           <p className="mt-2 text-kumo-subtle break-all">{account}</p>
         </div>
-        <Button onClick={() => edit(fresh())}>New rule</Button>
+        <Button onClick={() => edit(fresh())}>{t("New rule")}</Button>
       </div>
       <p className="mb-6 text-kumo-subtle">
-        Rules apply to new incoming mail. Start with approval, preview a
-        message, then enable the rule. Pausing stops new actions; it cannot undo
-        completed work.
+        {t("Rules apply to new incoming mail. Start with approval, preview a message, then enable the rule. Pausing stops new actions; it cannot undo completed work.")}
       </p>
       {(rules.error || runs.error) && (
         <p role="alert">
-          Rules or history could not load.{" "}
+          {t("Rules or history could not load.")}{" "}
           <button
             onClick={() => {
               rules.refetch();
               runs.refetch();
             }}
           >
-            Retry
+            {t("Retry")}
           </button>
         </p>
       )}
@@ -130,8 +169,8 @@ export default function Automation() {
           {notice}
         </p>
       )}
-      <section aria-label="Saved rules" className="space-y-3">
-        {rules.data?.length === 0 && <p>No rules yet.</p>}
+      <section aria-label={t("Saved rules")} className="space-y-3">
+        {rules.data?.length === 0 && <p>{t("No rules yet.")}</p>}
         {rules.data?.map((rule) => (
           <div
             className="rounded-xl border border-kumo-line p-4 flex flex-wrap items-center justify-between gap-4"
@@ -140,9 +179,9 @@ export default function Automation() {
             <div>
               <h2 className="font-semibold">{rule.name}</h2>
               <p className="text-sm text-kumo-subtle">
-                {rule.enabled ? "Enabled" : "Paused"} ·{" "}
-                {rule.mode === "approval" ? "Requires approval" : "Automatic"} ·{" "}
-                {rule.action.type.replaceAll("_", " ")} · {rule.dailyLimit}/day
+                {rule.enabled ? t("Enabled") : t("Paused")} ·{" "}
+                {rule.mode === "approval" ? t("Requires approval") : t("Automatic")} ·{" "}
+                {actionText(rule.action.type, t)} · {t("{limit}/day", { limit: rule.dailyLimit })}
               </p>
             </div>
             <div className="flex gap-3">
@@ -159,10 +198,10 @@ export default function Automation() {
                   )
                 }
               >
-                {rule.enabled ? "Pause" : "Enable"}
+                {rule.enabled ? t("Pause") : t("Enable")}
               </Button>
               <Button variant="secondary" onClick={() => edit(rule)}>
-                Edit
+                {t("Edit")}
               </Button>
             </div>
           </div>
@@ -179,9 +218,9 @@ export default function Automation() {
             });
           }}
         >
-          <h2 className="text-xl font-semibold">Rule settings</h2>
+          <h2 className="text-xl font-semibold">{t("Rule settings")}</h2>
           <label className="block">
-            Name
+            {t("Name")}
             <input
               required
               maxLength={100}
@@ -192,7 +231,7 @@ export default function Automation() {
           </label>
           <div className="grid gap-4 sm:grid-cols-2">
             <label>
-              From address (optional)
+              {t("From address (optional)")}
               <input
                 type="email"
                 className={input}
@@ -208,7 +247,7 @@ export default function Automation() {
               />
             </label>
             <label>
-              Subject contains (optional)
+              {t("Subject contains (optional)")}
               <input
                 maxLength={200}
                 className={input}
@@ -225,11 +264,11 @@ export default function Automation() {
             </label>
           </div>
           <label className="block">
-            AI condition (optional)
+            {t("AI condition (optional)")}
             <textarea
               className={input}
               maxLength={1000}
-              placeholder="For example: a customer is asking to reschedule a meeting"
+              placeholder={t("For example: a customer is asking to reschedule a meeting")}
               value={editing.conditions.ai ?? ""}
               onChange={(e) =>
                 change({
@@ -242,7 +281,7 @@ export default function Automation() {
             />
           </label>
           <label className="block">
-            Action
+            {t("Action")}
             <select
               className={input}
               value={editing.action.type}
@@ -264,16 +303,16 @@ export default function Automation() {
                 });
               }}
             >
-              <option value="archive">Archive</option>
-              <option value="mark_read">Mark read</option>
-              <option value="draft">Prepare a reply draft</option>
-              <option value="forward">Forward message</option>
-              <option value="mcp">Call a cloud tool (MCP)</option>
+              <option value="archive">{t("Archive")}</option>
+              <option value="mark_read">{t("Mark read")}</option>
+              <option value="draft">{t("Prepare a reply draft")}</option>
+              <option value="forward">{t("Forward message")}</option>
+              <option value="mcp">{t("Call a cloud tool (MCP)")}</option>
             </select>
           </label>
           {editing.action.type === "forward" && (
             <label className="block">
-              Forward to
+              {t("Forward to")}
               <input
                 required
                 type="email"
@@ -284,15 +323,14 @@ export default function Automation() {
                 }
               />
               <span className="text-sm text-kumo-subtle">
-                Forwards message text. Messages with attachments require manual
-                handling.
+                {t("Forwards message text. Messages with attachments require manual handling.")}
               </span>
             </label>
           )}
           {editing.action.type === "mcp" && (
             <>
               <label className="block">
-                Tool server URL
+                {t("Tool server URL")}
                 <input
                   type="url"
                   required
@@ -307,7 +345,7 @@ export default function Automation() {
                 />
               </label>
               <label className="block">
-                Tool name
+                {t("Tool name")}
                 <input
                   required
                   className={input}
@@ -321,7 +359,7 @@ export default function Automation() {
                 />
               </label>
               <label className="block">
-                Arguments (JSON)
+                {t("Arguments (JSON)")}
                 <textarea
                   rows={4}
                   className={input}
@@ -330,12 +368,15 @@ export default function Automation() {
                 />
               </label>
               <p className="text-sm text-kumo-subtle">
-                Use {"{{email.subject}}"}, {"{{email.sender}}"},{" "}
-                {"{{email.body}}"} or {"{{email.id}}"} in string values. The
-                server host must be allowed by your workspace administrator.
+                {t("Use {subject}, {sender}, {body} or {id} in string values. The server host must be allowed by your workspace administrator.", {
+                  subject: "{{email.subject}}",
+                  sender: "{{email.sender}}",
+                  body: "{{email.body}}",
+                  id: "{{email.id}}",
+                })}
               </p>
               <label className="block">
-                Credential name (optional)
+                {t("Credential name (optional)")}
                 <input
                   className={input}
                   value={editing.action.tokenRef ?? ""}
@@ -354,7 +395,7 @@ export default function Automation() {
           )}
           <div className="grid gap-4 sm:grid-cols-2">
             <label>
-              Execution
+              {t("Execution")}
               <select
                 className={input}
                 value={editing.mode}
@@ -362,12 +403,12 @@ export default function Automation() {
                   change({ mode: e.target.value as Rule["mode"] })
                 }
               >
-                <option value="approval">Ask for approval</option>
-                <option value="automatic">Automatic</option>
+                <option value="approval">{t("Ask for approval")}</option>
+                <option value="automatic">{t("Automatic")}</option>
               </select>
             </label>
             <label>
-              Daily action limit
+              {t("Daily action limit")}
               <input
                 type="number"
                 required
@@ -385,11 +426,11 @@ export default function Automation() {
               checked={editing.enabled}
               onChange={(e) => change({ enabled: e.target.checked })}
             />
-            Enable for new incoming mail
+            {t("Enable for new incoming mail")}
           </label>
           <div className="border-t border-kumo-line pt-4">
             <label className="block">
-              Preview message ID
+              {t("Preview message ID")}
               <input
                 className={input}
                 value={messageId}
@@ -415,10 +456,10 @@ export default function Automation() {
                 )
               }
             >
-              Dry-run
+              {t("Dry-run")}
             </Button>
             <p className="mt-2 text-sm text-kumo-subtle">
-              Preview only. No message is sent, moved or changed.
+              {t("Preview only. No message is sent, moved or changed.")}
             </p>
             {preview && (
               <pre
@@ -431,42 +472,43 @@ export default function Automation() {
           </div>
           <div className="flex gap-3">
             <Button type="submit" disabled={busy}>
-              Save rule
+              {t("Save rule")}
             </Button>
             <Button
               type="button"
               variant="secondary"
               onClick={() => setEditing(null)}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
           </div>
         </form>
       )}
       <section className="mt-10">
-        <h2 className="mb-4 text-xl font-semibold">Recent runs</h2>
+        <h2 className="mb-4 text-xl font-semibold">{t("Recent runs")}</h2>
         {runs.data?.length === 0 && (
           <p className="text-kumo-subtle">
-            No runs yet. History appears when an enabled rule matches new mail.
+            {t("No runs yet. History appears when an enabled rule matches new mail.")}
           </p>
         )}
         {runs.data?.map((run) => (
           <article className="border-b border-kumo-line py-4" key={run.id}>
             <div className="flex flex-wrap justify-between gap-2">
               <h3 className="font-semibold">
-                {run.rule.name} · {run.subject || "(No subject)"}
+                {run.rule.name} · {run.subject || t("(No subject)")}
               </h3>
-              <span>{run.status.replaceAll("_", " ")}</span>
+              <span>{runStatusText(run.status, t)}</span>
             </div>
             <p className="my-2 text-sm text-kumo-subtle">
-              {new Date(run.createdAt).toLocaleString()} ·{" "}
+              {t.dateTime(run.createdAt)} ·{" "}
               {run.rule.action.type === "forward"
-                ? "Forward to " + run.rule.action.to
+                ? t("Forward to {address}", { address: run.rule.action.to })
                 : run.rule.action.type === "mcp"
-                  ? run.rule.action.tool +
-                    " at " +
-                    new URL(run.rule.action.endpoint).host
-                  : run.rule.action.type.replaceAll("_", " ")}
+                  ? t("{tool} at {host}", {
+                      tool: run.rule.action.tool,
+                      host: new URL(run.rule.action.endpoint).host,
+                    })
+                  : actionText(run.rule.action.type, t)}
             </p>
             {run.proposal && run.status === "waiting_approval" && (
               <pre className="my-3 whitespace-pre-wrap break-words text-sm">
@@ -479,7 +521,7 @@ export default function Automation() {
                 {run.analysis.draft}
               </pre>
             )}
-            {run.detail && <p>{run.detail}</p>}
+            {run.detail && <p>{t.text(run.detail)}</p>}
             {run.status === "waiting_approval" && (
               <Button
                 className="mt-3"
@@ -490,7 +532,7 @@ export default function Automation() {
                   )
                 }
               >
-                Approve this action
+                {t("Approve this action")}
               </Button>
             )}
             {["pending", "waiting_approval", "waiting_device"].includes(
@@ -506,7 +548,7 @@ export default function Automation() {
                   )
                 }
               >
-                Cancel run
+                {t("Cancel run")}
               </Button>
             )}
           </article>
@@ -514,17 +556,16 @@ export default function Automation() {
       </section>
       {!/^(gmail|imap|outlook):/.test(account) && (
         <section className="mt-10">
-          <h2 className="mb-4 text-xl font-semibold">Outbox</h2>
+          <h2 className="mb-4 text-xl font-semibold">{t("Outbox")}</h2>
           <p className="text-kumo-subtle">
-            Accepted means the email provider took the message. Recipient
-            delivery remains unconfirmed.
+            {t("Accepted means the email provider took the message. Recipient delivery remains unconfirmed.")}
           </p>
-          {outbox.error && <p role="alert">Outbox could not load.</p>}
-          {outbox.data?.length === 0 && <p>No outgoing actions yet.</p>}
+          {outbox.error && <p role="alert">{t("Outbox could not load.")}</p>}
+          {outbox.data?.length === 0 && <p>{t("No outgoing actions yet.")}</p>}
           {outbox.data?.map((item) => (
             <div key={item.id} className="border-b border-kumo-line py-3">
               <p>
-                {item.status} · {new Date(item.createdAt).toLocaleString()}
+                {outboxStatusText(item.status, t)} · {t.dateTime(item.createdAt)}
               </p>
               <p className="text-sm break-all">{item.id}</p>
               {item.errorCode && <p>{item.errorCode}</p>}

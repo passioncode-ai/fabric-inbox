@@ -8,7 +8,7 @@ import { drizzle } from "drizzle-orm/durable-sqlite";
 import { eq, and, or, asc, desc, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import * as schema from "../db/schema";
-import { Folders } from "../../shared/folders";
+import { Folders, isBuiltInFolder, FOLDER_DISPLAY_NAMES } from "../../shared/folders";
 import type { Env } from "../types";
 import { applyMigrations, mailboxMigrations } from "./migrations";
 import { IncomingJournal } from '../actions/incoming';
@@ -23,8 +23,11 @@ import { verifyDraft } from '../lib/ai';
 import type { SendMailCommand, SendMailResult, SendMailRequest } from '../../shared/mail/send';
 import type { InboxReadOptions } from '../../shared/mail/inbox';
 import { mailboxInboxQuery, mailboxInboxMessage, type MailboxInboxRow } from '../lib/inbox-query';
+import { parseStoredHeaders } from '../agents/prefilter';
+import { DISCARD_RETENTION_MS } from '../../shared/mail/discard';
 import { listDrafts as listDraftRows, saveDraft as saveDraftRows, type DraftSql, type DraftSummary, type SaveDraftInput, type SaveDraftResult } from '../lib/mailbox-drafts';
 import { htmlToText } from '../../shared/mail/text';
+import { msg } from "../../shared/i18n";
 
 
 /** Reject control characters before durable reservation and after reply-header derivation. */
@@ -128,6 +131,8 @@ interface EmailData {
 	raw_headers?: string | null;
 	spam_reason?: string | null;
 	spam_at?: string | null;
+	discard_reason?: string | null;
+	discarded_at?: string | null;
 	body_key?: string | null;
 }
 
@@ -196,9 +201,9 @@ export class MailboxDO extends DurableObject<Env> {
       validateSender(request.to, request.from, mailboxId);
       validateSendHeaders(request);
       const key = command.idempotencyKey ?? crypto.randomUUID();
-      if (typeof key !== 'string' || !key || key.length > 200 || /[\r\n]/.test(key)) return { error: 'Invalid idempotency key', code: 'INVALID_REQUEST' };
+      if (typeof key !== 'string' || !key || key.length > 200 || /[\r\n]/.test(key)) return { error: msg('Invalid idempotency key'), code: 'INVALID_REQUEST' };
       const kind = command.kind || 'send';
-      if (!['send', 'reply', 'forward'].includes(kind)) return { error: 'Invalid send operation', code: 'INVALID_REQUEST' };
+      if (!['send', 'reply', 'forward'].includes(kind)) return { error: msg('Invalid send operation'), code: 'INVALID_REQUEST' };
       const identity = { mailboxId, request: structuredClone(request), kind, originalEmailId: command.originalEmailId, verifyContent: !!command.verifyContent };
       const existing = this.outbox.find(mailboxId, key, await payloadHash(identity));
       // Arm before creating durable pending state. A crash after this point leaves
@@ -207,12 +212,12 @@ export class MailboxDO extends DurableObject<Env> {
       if (existing) return await this.sender.process(existing.id);
       if (kind !== 'send') {
         let original = command.originalEmailId ? await this.getEmail(command.originalEmailId) : null;
-        if (!original) return { error: 'Original email not found', code: 'NOT_FOUND' };
+        if (!original) return { error: msg('Original email not found'), code: 'NOT_FOUND' };
         if (original.folder_id === Folders.DRAFT && original.in_reply_to) original = await this.getEmail(original.in_reply_to) || original;
         if (kind === 'reply') {
           const chain = buildReferencesChain(original as EmailFull);
           // Never thread against an internal UUID if a sent provider receipt was opaque.
-          if (!original.message_id && original.folder_id === Folders.SENT) return { error: 'Provider RFC Message-ID unavailable for this reply', code: 'INVALID_REQUEST' };
+          if (!original.message_id && original.folder_id === Folders.SENT) return { error: msg('Provider RFC Message-ID unavailable for this reply'), code: 'INVALID_REQUEST' };
           if (chain.originalMsgId) { request.in_reply_to = chain.originalMsgId; request.references = chain.references; }
           else { delete request.in_reply_to; if (chain.references.length) request.references = chain.references; else delete request.references; }
           request.thread_id = chain.threadId;
@@ -223,7 +228,7 @@ export class MailboxDO extends DurableObject<Env> {
       }
       if (command.verifyContent && request.html) {
         const verified = await verifyDraft(this.env.AI, request.html);
-        if (!verified) return { error: 'Draft verification failed', code: 'INVALID_REQUEST' };
+        if (!verified) return { error: msg('Draft verification failed'), code: 'INVALID_REQUEST' };
         request.html = verified;
       }
       await this.armRecovery();
@@ -232,7 +237,7 @@ export class MailboxDO extends DurableObject<Env> {
     } catch (error) {
       if (error instanceof AttachmentValidationError) return { error: error.code, code: 'INVALID_REQUEST' };
       if (error instanceof IdempotencyConflict) return { error: error.message, code: 'IDEMPOTENCY_CONFLICT' };
-      if (error instanceof Error && (error.name === 'ZodError' || error.name === 'SenderValidationError')) return { error: 'Invalid send request or sender', code: 'INVALID_REQUEST' };
+      if (error instanceof Error && (error.name === 'ZodError' || error.name === 'SenderValidationError')) return { error: msg('Invalid send request or sender'), code: 'INVALID_REQUEST' };
       throw error;
     }
   }
@@ -255,8 +260,9 @@ export class MailboxDO extends DurableObject<Env> {
     const rows = this.outbox.recoverable();
     if (rows.length) await this.armRecovery();
     for (const row of rows) await this.sender.process(row.id);
-    // Spam past its 30 days goes; the next wake-up is set for the oldest left.
+    // Spam and Discarded past their 30 days go; the next wake-up is set for the oldest left.
     await this.purgeSpam();
+    await this.purgeDiscarded();
   }
 
 	// ── Email CRUD (Drizzle) ───────────────────────────────────────
@@ -339,7 +345,7 @@ export class MailboxDO extends DurableObject<Env> {
     return this.ctx.storage.sql.exec<MailboxInboxRow>(
       `SELECT id, subject, sender, recipient, date, read, starred, thread_id, folder_id, raw_headers, message_id, substr(body,1,2000) AS snippet,
          coalesce(cast(round((julianday(date)-2440587.5)*86400000) AS INTEGER),0) AS timestamp
-       FROM emails WHERE id IN (${wanted.map(() => "?").join(",")}) AND folder_id NOT IN ('trash', 'spam', 'draft')`, ...wanted)
+       FROM emails WHERE id IN (${wanted.map(() => "?").join(",")}) AND folder_id NOT IN ('trash', 'spam', 'draft', 'discarded')`, ...wanted)
       .toArray().map(row => mailboxInboxMessage(accountId, row, ownDomains));
   }
 
@@ -809,18 +815,18 @@ export class MailboxDO extends DurableObject<Env> {
 		if (!draft || draft.folder_id !== Folders.DRAFT) {
 			const prior = this.ctx.storage.sql.exec("SELECT id FROM outbox WHERE mailbox_id = ? AND idempotency_key = ?", mailboxId, command.idempotencyKey).toArray()[0];
 			if (prior) return this.sender.process(String(prior.id));
-			return { error: "Draft not found: it was sent or deleted", code: "NOT_FOUND" };
+			return { error: msg("Draft not found: it was sent or deleted"), code: "NOT_FOUND" };
 		}
 		const revision = Number(draft.draft_revision ?? 1);
 		if (command.expectedRevision !== undefined && command.expectedRevision !== revision)
-			return { error: `The draft changed since revision ${command.expectedRevision} (now ${revision}); read it again before sending`, code: "DRAFT_CONFLICT" };
+			return { error: msg("The draft changed since revision {expected} (now {revision}); read it again before sending", { expected: command.expectedRevision, revision }), code: "DRAFT_CONFLICT" };
 		const split = (value: string | null | undefined) => (value ?? "").split(",").map((x) => x.trim()).filter(Boolean);
 		const to = split(draft.recipient);
-		if (!to.length) return { error: "The draft has no recipient", code: "INVALID_REQUEST" };
+		if (!to.length) return { error: msg("The draft has no recipient"), code: "INVALID_REQUEST" };
 		const files: MailAttachment[] = [];
 		for (const a of draft.attachments ?? []) {
 			const object = await (this.env as Env).BUCKET.get(`attachments/${draft.id}/${a.id}/${a.filename}`);
-			if (!object) return { error: `The draft's file ${a.filename} could not be read; remove it and add it again`, code: "INVALID_REQUEST" };
+			if (!object) return { error: msg("The draft's file {file} could not be read; remove it and add it again", { file: a.filename }), code: "INVALID_REQUEST" };
 			const bytes = new Uint8Array(await object.arrayBuffer());
 			let binary = "";
 			for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -892,7 +898,9 @@ export class MailboxDO extends DurableObject<Env> {
 			.where(eq(schema.folders.id, id))
 			.get();
 
-		if (!folder || folder.is_deletable === 0) {
+		// A built-in folder is never deleted, whatever its row says (a person's folder once held the
+		// id 'discarded' as deletable: deleting it broke every delivery a discard rule took).
+		if (!folder || folder.is_deletable === 0 || isBuiltInFolder(id)) {
 			return false;
 		}
 
@@ -934,16 +942,20 @@ export class MailboxDO extends DurableObject<Env> {
 
 		if (!folder) return false;
 
-		// Moved into Spam by hand: say so; moved out: the reason no longer applies.
+		// Moved into Spam or Discarded by hand: say so; moved out: the reason no longer applies.
+		const now = new Date().toISOString();
 		const moved = this.db
 			.update(schema.emails)
-			.set({ folder_id: folderId, spam_reason: folderId === Folders.SPAM ? "You moved it to Spam" : null,
-				spam_at: folderId === Folders.SPAM ? new Date().toISOString() : null })
+			.set({ folder_id: folderId, spam_reason: folderId === Folders.SPAM ? msg("You moved it to Spam") : null,
+				spam_at: folderId === Folders.SPAM ? now : null,
+				discard_reason: folderId === Folders.DISCARDED ? msg("You moved it to Discarded") : null,
+				discarded_at: folderId === Folders.DISCARDED ? now : null })
 			.where(eq(schema.emails.id, id))
 			.returning({ id: schema.emails.id })
 			.get();
 
 		if (moved && folderId === Folders.SPAM) await this.armSpamPurge();
+		if (moved && folderId === Folders.DISCARDED) await this.armDiscardPurge();
 		return !!moved;
 	}
 
@@ -1100,8 +1112,8 @@ export class MailboxDO extends DurableObject<Env> {
 		const now = Date.now();
 		const count = (since: number) => Number([...this.ctx.storage.sql.exec(
 			"SELECT COUNT(*) AS n FROM outbox WHERE attempts > 0 AND attempted_at >= ?", since)][0].n);
-		if (count(now - 3_600_000) >= 20) return "Rate limit exceeded: max 20 emails per hour per mailbox";
-		if (count(now - 86_400_000) >= 100) return "Rate limit exceeded: max 100 emails per day per mailbox";
+		if (count(now - 3_600_000) >= 20) return msg("Rate limit exceeded: max {n} emails per hour per mailbox", { n: 20 });
+		if (count(now - 86_400_000) >= 100) return msg("Rate limit exceeded: max {n} emails per day per mailbox", { n: 100 });
 		return null;
 	}
 
@@ -1143,22 +1155,29 @@ export class MailboxDO extends DurableObject<Env> {
    * spam later (SP-2).
    */
   async receiveEmailOnce(email: EmailData, attachments: AttachmentData[], mailboxId: string,
-    verdict: { spam?: string | null; screen?: boolean; copyOwed?: boolean } = {}) {
+    verdict: { spam?: string | null; discard?: string | null; screen?: boolean; copyOwed?: boolean } = {}) {
     // The alarm is durable before the event; inbox insertion and automation intent
     // share a transaction, so a crash cannot create an unqueued new message.
     await this.armRecovery();
     email = await this.spillBody(email);
     const spam = verdict.spam?.trim() ? verdict.spam.trim().slice(0, 300) : null;
+    // A discard rule matched (and spam did not): it goes to Discarded, read, as if deleted.
+    const discard = !spam && verdict.discard?.trim() ? verdict.discard.trim().slice(0, 300) : null;
+    const now = new Date().toISOString();
     const inserted = this.ctx.storage.transactionSync(() => {
       if (this.incoming.has(email.id)) return false;
-      this.insertEmail(spam ? Folders.SPAM : Folders.INBOX, { ...email, spam_reason: spam, spam_at: spam ? new Date().toISOString() : null }, attachments);
+      // A folder this delivery needs is made again if it is missing: a delivery never fails for it.
+      this.ensureBuiltInFolder(spam ? Folders.SPAM : discard ? Folders.DISCARDED : Folders.INBOX);
+      this.insertEmail(spam ? Folders.SPAM : discard ? Folders.DISCARDED : Folders.INBOX, { ...email, spam_reason: spam, spam_at: spam ? now : null,
+        discard_reason: discard, discarded_at: discard ? now : null, ...(discard ? { read: true } : {}) }, attachments);
       this.incoming.record(mailboxId, { id: email.id, sender: email.sender, subject: email.subject,
         body: email.body, date: email.date, thread_id: email.thread_id,
-        ...(spam ? { spam: true } : verdict.screen ? { screen: true } : {}) });
-      if (verdict.copyOwed && !spam) this.ctx.storage.sql.exec("UPDATE incoming_receipts SET forward_status = 'owed' WHERE delivery_id = ?", email.id);
+        ...(spam ? { spam: true } : discard ? { discarded: true } : verdict.screen ? { screen: true } : {}) });
+      if (verdict.copyOwed && !spam && !discard) this.ctx.storage.sql.exec("UPDATE incoming_receipts SET forward_status = 'owed' WHERE delivery_id = ?", email.id);
       return true;
     });
     if (inserted && spam) await this.armSpamPurge();
+    if (inserted && discard) await this.armDiscardPurge();
     await this.flushIncomingEvents();
     return inserted;
   }
@@ -1200,6 +1219,112 @@ export class MailboxDO extends DurableObject<Env> {
       if (row.length) moved.push(id);
     }
     return moved;
+  }
+
+  // ── Discarded (operator, 2026-10-06) ───────────────────────────
+
+  /**
+   * Discards messages: each moves to Discarded, read, with why. Sent mail and drafts stay. A message
+   * already in Discarded keeps its date there (a second discard does not restart its 30 days). Its
+   * spam reason and date stay on the row (read only in Spam), so Undo puts Spam mail back as it was.
+   * Returns each id that moved with the folder it left and whether it was unread, for Undo.
+   */
+  async discardMessages(ids: string[], reason: string): Promise<{ id: string; from: string; unread: boolean }[]> {
+    const moved: { id: string; from: string; unread: boolean }[] = [];
+    const now = new Date().toISOString();
+    this.ensureBuiltInFolder(Folders.DISCARDED);
+    for (const id of ids.slice(0, 200)) {
+      const before = this.ctx.storage.sql.exec<{ folder_id: string; read: number }>("SELECT folder_id, read FROM emails WHERE id = ? AND folder_id NOT IN ('sent', 'draft')", id).toArray()[0];
+      if (!before) continue;
+      this.ctx.storage.sql.exec(`UPDATE emails SET folder_id = 'discarded', read = 1, discard_reason = ?,
+        discarded_at = CASE WHEN folder_id = 'discarded' AND discarded_at IS NOT NULL THEN discarded_at ELSE ? END WHERE id = ?`, reason.slice(0, 300), now, id);
+      moved.push({ id, from: before.folder_id, unread: !before.read });
+    }
+    if (moved.length) await this.armDiscardPurge();
+    return moved;
+  }
+
+  /**
+   * Not discarded: messages back from Discarded to `to` — the inbox (Not discarded), or the folder the
+   * discard took them from (Undo) — unread again when `read` is false; returns the ids that moved.
+   * Never into Sent, Drafts or Discarded; a folder deleted since sends them to the inbox. Back in Spam
+   * they keep the reason and date they had there (30 days counted from then); anywhere else it goes.
+   */
+  async restoreDiscarded(ids: string[], read?: boolean, to: string = Folders.INBOX): Promise<string[]> {
+    const refused: string[] = [Folders.SENT, Folders.DRAFT, Folders.DISCARDED];
+    if (refused.includes(to)) throw new Error(`Discarded mail does not go back to ${to}`);
+    this.ensureBuiltInFolder(to);
+    const exists = this.ctx.storage.sql.exec("SELECT 1 FROM folders WHERE id = ?", to).toArray().length > 0;
+    const target = exists ? to : Folders.INBOX;
+    const spam = target === Folders.SPAM;
+    const moved: string[] = [];
+    const now = new Date().toISOString();
+    const readSet = read === undefined ? "" : ", read = " + (read ? 1 : 0);
+    for (const id of ids.slice(0, 200)) {
+      const row = (spam
+        ? this.ctx.storage.sql.exec(`UPDATE emails SET folder_id = 'spam', discard_reason = NULL, discarded_at = NULL,
+            spam_reason = COALESCE(spam_reason, 'You moved it to Spam'), spam_at = COALESCE(spam_at, ?)${readSet}
+            WHERE id = ? AND folder_id = 'discarded' RETURNING id`, now, id)
+        : this.ctx.storage.sql.exec(`UPDATE emails SET folder_id = ?, discard_reason = NULL, discarded_at = NULL, spam_reason = NULL, spam_at = NULL${readSet}
+            WHERE id = ? AND folder_id = 'discarded' RETURNING id`, target, id)).toArray();
+      if (row.length) moved.push(id);
+    }
+    if (moved.length && spam) await this.armSpamPurge();
+    return moved;
+  }
+
+  /** What a message says about itself for a discard rule: its sender, headers, conversation, and whether this address wrote to the sender. */
+  async discardFacts(id: string): Promise<{ sender: string; subject: string; headers: { key: string; value: string }[]; threadId: string | null; folder: string; known: boolean; inThread: boolean } | null> {
+    const row = this.ctx.storage.sql.exec<{ sender: string | null; subject: string | null; raw_headers: string | null; thread_id: string | null; folder_id: string }>(
+      "SELECT sender, subject, raw_headers, thread_id, folder_id FROM emails WHERE id = ?", id).toArray()[0];
+    if (!row) return null;
+    const sender = (row.sender ?? "").toLowerCase();
+    return { sender, subject: row.subject ?? "", headers: parseStoredHeaders(row.raw_headers), threadId: row.thread_id, folder: row.folder_id,
+      known: sender ? await this.knownCorrespondent(sender) : false, inThread: row.thread_id ? await this.threadHasSent(row.thread_id) : false };
+  }
+
+  /** Whether this address took part in the conversation (it sent a message in it). */
+  async threadHasSent(threadId: string): Promise<boolean> {
+    if (!threadId) return false;
+    return this.ctx.storage.sql.exec("SELECT 1 FROM emails WHERE thread_id = ? AND folder_id = 'sent' LIMIT 1", threadId).toArray().length > 0;
+  }
+
+  /**
+   * Deletes what has been in Discarded longer than DISCARD_RETENTION_MS (or all of it with `all`),
+   * with the attachments' bytes; the clock is `discarded_at`, never the arrival. Runs on the alarm.
+   */
+  async purgeDiscarded(options: { all?: boolean; now?: number } = {}): Promise<number> {
+    const cutoff = new Date((options.now ?? Date.now()) - DISCARD_RETENTION_MS).toISOString();
+    const rows = options.all
+      ? this.ctx.storage.sql.exec("SELECT id FROM emails WHERE folder_id = 'discarded' LIMIT 500").toArray()
+      : this.ctx.storage.sql.exec("SELECT id FROM emails WHERE folder_id = 'discarded' AND discarded_at IS NOT NULL AND discarded_at < ? LIMIT 500", cutoff).toArray();
+    const bucket = (this.env as Env).BUCKET;
+    let deleted = 0;
+    for (const { id } of rows) {
+      const attachments = await this.deleteEmail(String(id));
+      if (attachments === null) continue;
+      deleted++;
+      if (attachments.length && bucket)
+        await bucket.delete(attachments.map((a) => `attachments/${id}/${a.id}/${a.filename}`)).catch((error: unknown) =>
+          console.warn(JSON.stringify({ event: "discarded_attachment_delete_failed", error: (error as Error).message })));
+    }
+    if (deleted) console.log(JSON.stringify({ event: "discarded_purged", count: deleted, all: !!options.all }));
+    if (rows.length === 500) await this.ctx.storage.setAlarm(Date.now() + 1000);
+    else await this.armDiscardPurge();
+    return deleted;
+  }
+
+  async countDiscarded(): Promise<number> {
+    return Number((this.ctx.storage.sql.exec("SELECT COUNT(*) AS n FROM emails WHERE folder_id = 'discarded'").one() as { n: number }).n);
+  }
+
+  /** Wakes the mailbox when its oldest Discarded mail turns 30 days old. */
+  private async armDiscardPurge() {
+    const oldest = this.ctx.storage.sql.exec("SELECT MIN(discarded_at) AS d FROM emails WHERE folder_id = 'discarded'").one() as { d: string | null };
+    if (!oldest.d) return;
+    const due = Math.max(Date.now() + 1000, Date.parse(oldest.d) + DISCARD_RETENTION_MS + 60_000);
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > due) await this.ctx.storage.setAlarm(due);
   }
 
   /** Whether this address has sent mail to `address` (To, Cc or Bcc). */
@@ -1276,8 +1401,8 @@ export class MailboxDO extends DurableObject<Env> {
       try {
         this.incoming.attempted(item.delivery_id);
         const event = this.incoming.event(item.delivery_id);
-        // Spam reaches no rule, agent or category (SP-1).
-        if (!event.spam) {
+        // Spam, and mail a discard rule took on arrival, reach no rule, agent or category (SP-1).
+        if (!event.spam && !event.discarded) {
           if (env.AUTOMATIONS) await env.AUTOMATIONS.getByName(item.mailbox_id).ingest(item.mailbox_id, event);
           // A stranger's message waits for its spam check before its agent answers (B-30).
           if (env.AGENT_REGISTRY) await env.AGENT_REGISTRY.getByName("workspace").enqueue(item.mailbox_id, event.id,
@@ -1312,6 +1437,19 @@ export class MailboxDO extends DurableObject<Env> {
     await this.flushIncomingEvents();
     return revived;
   }
+
+	/**
+	 * Makes a built-in folder again when its row is missing (deleted by an older version, or never
+	 * made), with its own name — or, when a person's folder has that name, the name with "(system)".
+	 */
+	private ensureBuiltInFolder(id: string) {
+		if (!isBuiltInFolder(id)) return;
+		if (this.ctx.storage.sql.exec("SELECT 1 FROM folders WHERE id = ?", id).toArray().length) return;
+		const name = FOLDER_DISPLAY_NAMES[id] ?? id;
+		const taken = this.ctx.storage.sql.exec("SELECT 1 FROM folders WHERE name = ?", name).toArray().length > 0;
+		this.ctx.storage.sql.exec("INSERT INTO folders (id, name, is_deletable) VALUES (?, ?, 0)", id, taken ? `${name} (system)` : name);
+		console.warn(JSON.stringify({ event: "builtin_folder_recreated", folder: id }));
+	}
 
 	private insertEmail(
 		folder: string,
@@ -1359,6 +1497,8 @@ export class MailboxDO extends DurableObject<Env> {
 				raw_headers: email.raw_headers ?? null,
 				spam_reason: email.spam_reason ?? null,
 				spam_at: email.spam_at ?? null,
+				discard_reason: email.discard_reason ?? null,
+				discarded_at: email.discarded_at ?? null,
 				body_key: email.body_key ?? null,
 			})
 			.run();

@@ -12,9 +12,12 @@ import { allServedDomains, createMailbox, deleteMailbox, listMailboxAddresses, r
 import { createAddress, removeAddress } from "./lib/address-ops";
 import { routingClient } from "./routing/email-routing";
 import { handleSendEmail, handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
-import { Folders } from "../shared/folders";
+import { Folders, isBuiltInFolder } from "../shared/folders";
 import { spamCheck, type SpamVerdict } from "../shared/mail/spam";
 import { readSpamLists } from "./spam/lists";
+import { autoReason, discardFacts, discardSafety, matchDiscard, recordApplied } from "../shared/mail/discard";
+import { readDiscardStore, updateDiscardStore } from "./discard/store";
+import { cloudflareWorkspace } from "./discard/workspace";
 import type { Env } from "./types";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
 
@@ -370,6 +373,8 @@ app.post("/api/v1/mailboxes/:mailboxId/folders", async (c: AppContext) => {
 	const { name } = (await c.req.json()) as { name: string };
 	const slug = slugify(name);
 	if (!slug) return c.json({ error: "Folder name must contain alphanumeric characters" }, 400);
+	// "Discarded", "spam!"…: the id is a built-in folder's, which the mailbox already has.
+	if (isBuiltInFolder(slug)) return c.json({ error: "Folder with this name already exists" }, 409);
 	const f = await c.var.mailboxStub.createFolder(slug, name);
 	return f ? c.json(f, 201) : c.json({ error: "Folder with this name already exists" }, 409);
 });
@@ -381,6 +386,7 @@ app.put("/api/v1/mailboxes/:mailboxId/folders/:id", async (c: AppContext) => {
 });
 
 app.delete("/api/v1/mailboxes/:mailboxId/folders/:id", async (c: AppContext) => {
+	if (isBuiltInFolder(c.req.param("id")!)) return c.json({ error: "This folder is part of every mailbox and cannot be deleted" }, 400);
 	const ok = await c.var.mailboxStub.deleteFolder(c.req.param("id")!);
 	return ok ? c.body(null, 204) : c.json({ error: "Folder not found or cannot be deleted" }, 400);
 });
@@ -584,6 +590,8 @@ async function receiveEmail(event: IncomingEmailEvent, env: Env, ctx: ExecutionC
 	const originalMessageId = parsedEmail.messageId ? extractMsgId(parsedEmail.messageId) : null;
 	const sender = (parsedEmail.from?.address || "").toLowerCase();
 	const verdict = await spamVerdict(env, stub, sender, parsedEmail.headers ?? []);
+	// After spam: mail that matches a discard rule goes straight to Discarded (operator, 2026-10-06).
+	const discard = verdict.verdict === "spam" ? null : await discardVerdict(env, stub, sender, parsedEmail.headers ?? [], threadId);
 
 	const inserted = await stub.receiveEmailOnce({
 		id: messageId, subject: parsedEmail.subject || "",
@@ -594,6 +602,7 @@ async function receiveEmail(event: IncomingEmailEvent, env: Env, ctx: ExecutionC
 		in_reply_to: inReplyTo, email_references: emailReferences.length > 0 ? JSON.stringify(emailReferences) : null,
 		thread_id: threadId, message_id: originalMessageId, raw_headers: JSON.stringify(parsedEmail.headers),
 	}, attachmentData, mailboxId, verdict.verdict === "spam" ? { spam: verdict.reason }
+		: discard ? { discard: discard.reason }
 		: { screen: verdict.verdict === "screen", copyOwed: await wantsCopy(env, mailboxId) });
 
   // The mailbox's incoming-event journal hands the message to automation rules
@@ -604,6 +613,13 @@ async function receiveEmail(event: IncomingEmailEvent, env: Env, ctx: ExecutionC
     // Spam is kept here for 30 days and is not sent on as a copy (SP-1).
     console.log(JSON.stringify({ event: "spam_filtered", mailboxId, senderDomain: domainOf(sender || "@"), reason: verdict.reason }));
     return { mailboxId, emailId: messageId, inserted: true, spam: verdict.reason };
+  }
+  if (discard) {
+    // Discarded counts as deleted: no copy is forwarded, and no rule, agent or category sees it.
+    console.log(JSON.stringify({ event: "discard_applied", provider: "cloudflare", rule: discard.ruleId }));
+    await updateDiscardStore(env.BUCKET, (store) => recordApplied(store, discard.ruleId, Date.now())).catch((error: unknown) =>
+      console.warn(JSON.stringify({ event: "discard_count_failed", error: (error as Error).message })));
+    return { mailboxId, emailId: messageId, inserted: true, discarded: discard.reason };
   }
   const forwarded = await forwardCopy(event, env, mailboxId);
   if (forwarded && forwarded !== "deferred") await stub.forwardSettled(messageId);
@@ -633,6 +649,39 @@ async function spamVerdict(env: Env, stub: { knownCorrespondent(address: string)
     // for it. "screen" still delivers to the inbox, so no mail is lost to the filter.
     console.warn(JSON.stringify({ event: "spam_check_failed", error: (error as Error).message }));
     return { verdict: "screen", reason: "" };
+  }
+}
+
+/**
+ * Whether a discard rule takes the arriving message (shared/mail/discard.ts): it matches by its
+ * List-Id or its sender, and nothing stops it — the sender is not on an Always allow or Never spam
+ * list, not on one of the workspace's own domains (served, or a connected account's own), not someone
+ * any mailbox or account of the workspace wrote to, and the message is not in a conversation this
+ * mailbox took part in. Any failure to decide leaves it in the inbox.
+ */
+async function discardVerdict(env: Env, stub: { knownCorrespondent(address: string): Promise<boolean>; threadHasSent(threadId: string): Promise<boolean> },
+  sender: string, headers: { key: string; value: string }[], threadId: string): Promise<{ ruleId: string; reason: string } | null> {
+  try {
+    const store = await readDiscardStore(env.BUCKET);
+    if (!store.rules.length) return null;
+    const facts = discardFacts({ sender, headers });
+    const lists = await readSpamLists(env.BUCKET);
+    const rule = matchDiscard(store, facts, lists);
+    if (!rule) return null;
+    // Rules apply workspace-wide, so "written to" and "own domains" are the workspace's: every mailbox, every account.
+    const workspace = cloudflareWorkspace(env);
+    const [known, inThread, ownDomains] = await Promise.all([
+      sender ? workspace.known(sender) : Promise.resolve(false), stub.threadHasSent(threadId), workspace.ownDomains(),
+    ]);
+    const held = discardSafety({ sender, known, inThread, ownDomains });
+    if (held) {
+      console.log(JSON.stringify({ event: "discard_held", provider: "cloudflare", rule: rule.id, why: held }));
+      return null;
+    }
+    return { ruleId: rule.id, reason: autoReason(rule) };
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "discard_check_failed", error: (error as Error).message }));
+    return null;
   }
 }
 

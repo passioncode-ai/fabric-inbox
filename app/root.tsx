@@ -21,11 +21,33 @@ import {
 	Link as RouterLink,
 	Scripts,
 	ScrollRestoration,
+	useRouteLoaderData,
+	type LoaderFunctionArgs,
 } from "react-router";
 import MutationErrorToasts from "~/components/MutationErrorToasts";
 import { ApiError } from "~/services/api";
 import { reloadForMissingCode, UPDATE_EVENT } from "~/lib/build-version";
+import { I18nProvider, useLocaleSync, useT, type Locale, type LocaleChoice } from "~/lib/i18n";
+import { requestLocale, requestLocaleChoice } from "../shared/i18n/server";
 import "./index.css";
+
+/**
+ * The language of this render (L10N-01): the device's choice from its cookie, else the browser's
+ * languages. The client keeps what the server chose; Settings → App → Language reloads the page.
+ */
+export function loader({ request }: LoaderFunctionArgs): { locale: Locale; choice: LocaleChoice } {
+	return { locale: requestLocale(request), choice: requestLocaleChoice(request) };
+}
+
+/** The language never changes within a page: a change of choice reloads it. */
+export function shouldRevalidate() {
+	return false;
+}
+
+function useRootLocale(): { locale: Locale; choice: LocaleChoice } {
+	const data = useRouteLoaderData<typeof loader>("root");
+	return data ?? { locale: "en", choice: "system" };
+}
 
 function makeQueryClient() {
 	return new QueryClient({
@@ -79,8 +101,9 @@ const KumoLink = forwardRef<
 });
 
 export function Layout({ children }: { children: React.ReactNode }) {
+	const { locale, choice } = useRootLocale();
 	return (
-		<html lang="en" data-theme="light" suppressHydrationWarning>
+		<html lang={locale} data-theme="light" suppressHydrationWarning>
 			<head>
 				<meta charSet="UTF-8" />
                 <script dangerouslySetInnerHTML={{__html: `try{var t=localStorage.getItem("fabric-inbox:theme");document.documentElement.dataset.theme=t==="dark"?"dark":"light"}catch{}`}} />
@@ -91,7 +114,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 				<Links />
 			</head>
 			<body className="bg-kumo-recessed text-kumo-default antialiased">
-				{children}
+				<I18nProvider locale={locale} choice={choice}>{children}</I18nProvider>
 				<ScrollRestoration />
 				<Scripts />
 			</body>
@@ -112,6 +135,7 @@ export function HydrateFallback() {
  * itself when a piece of the old page's code can no longer be fetched.
  */
 function UpdateNotice() {
+	const t = useT();
 	const [available, setAvailable] = useState(false);
 	useEffect(() => {
 		const onUpdate = () => setAvailable(true);
@@ -131,8 +155,8 @@ function UpdateNotice() {
 	if (!available) return null;
 	return (
 		<div className="fi-update-notice" role="status">
-			A new version of Fabric Inbox is on the server.{" "}
-			<button type="button" className="fi-text-button" onClick={() => window.location.reload()}>Reload to update</button>
+			{t("A new version of Fabric Inbox is on the server.")}{" "}
+			<button type="button" className="fi-text-button" onClick={() => window.location.reload()}>{t("Reload to update")}</button>
 		</div>
 	);
 }
@@ -141,6 +165,7 @@ export default function App() {
 	// Use useState to ensure each SSR request gets a fresh client while the
 	// browser reuses the same singleton across navigations.
 	const [queryClient] = useState(getQueryClient);
+	useLocaleSync(useRootLocale());
 	return (
 		<QueryClientProvider client={queryClient}>
 			<LinkProvider component={KumoLink}>
@@ -157,19 +182,19 @@ export default function App() {
 }
 
 export function ErrorBoundary({ error }: { error: unknown }) {
-	let title = "Something went wrong";
-	let description = "An unexpected error occurred. Please try again.";
+	const t = useT();
+	let title = t("Something went wrong");
+	let description = t("An unexpected error occurred. Please try again.");
 	let status: number | null = null;
 
 	if (isRouteErrorResponse(error)) {
 		status = error.status;
 		if (error.status === 404) {
-			title = "Page not found";
-			description =
-				"The page you're looking for doesn't exist or has been moved.";
+			title = t("Page not found");
+			description = t("The page you're looking for doesn't exist or has been moved.");
 		} else {
-			title = `Error ${error.status}`;
-			description = error.statusText || description;
+			title = t("Error {status}", { status: String(error.status) });
+			description = error.statusText ? t.text(error.statusText) : description;
 		}
 	} else if (error instanceof Error && import.meta.env.DEV) {
 		description = error.message;
@@ -179,7 +204,7 @@ export function ErrorBoundary({ error }: { error: unknown }) {
 		<div className="flex items-center justify-center min-h-screen p-8">
 			<Empty
 				icon={<WarningIcon size={48} className="text-kumo-inactive" />}
-				title={status === 404 ? "404 — Page not found" : title}
+				title={status === 404 ? t("404 — Page not found") : title}
 				description={description}
 				contents={
 					<Button
@@ -188,7 +213,7 @@ export function ErrorBoundary({ error }: { error: unknown }) {
 							window.location.href = "/";
 						}}
 					>
-						Go Home
+						{t("Go Home")}
 					</Button>
 				}
 			/>

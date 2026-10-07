@@ -15,6 +15,7 @@ import {
 import { classify, DEFAULT_CATEGORY_MODEL, SPAM_CATEGORY, SPAM_ID, type DescribedCategory } from "./classify";
 import { tooLittleToJudge } from "../../shared/mail/spam";
 import { parseRemoteAccount } from "../../shared/mail/accounts";
+import { msg } from "../../shared/i18n";
 
 /**
  * Categories (CAT-1..CAT-4): one store per workspace (`getByName("workspace")`).
@@ -106,17 +107,17 @@ export class CategoriesDO extends DurableObject<Env> {
   }
   async createProject(input: unknown): Promise<Project> {
     const parsed = ProjectInputSchema.safeParse(input);
-    if (!parsed.success) throw new CategoryError(parsed.error.issues[0]?.message ?? "Invalid project", "invalid");
-    if (Number((this.sql.exec("SELECT COUNT(*) AS n FROM projects").one() as Row).n) >= MAX_PROJECTS) throw new CategoryError(`At most ${MAX_PROJECTS} projects`, "limit");
+    if (!parsed.success) throw new CategoryError(parsed.error.issues[0]?.message ?? msg("Invalid project"), "invalid");
+    if (Number((this.sql.exec("SELECT COUNT(*) AS n FROM projects").one() as Row).n) >= MAX_PROJECTS) throw new CategoryError(msg("At most {max} projects", { max: MAX_PROJECTS }), "limit");
     const id = this.freeId("projects", categoryId(parsed.data.name).replace(/^category$/, "project"));
     const now = new Date().toISOString();
     this.sql.exec("INSERT INTO projects (id, body, created_at, updated_at) VALUES (?, ?, ?, ?)", id, JSON.stringify(parsed.data), now, now);
     return this.projectRow(this.sql.exec("SELECT * FROM projects WHERE id = ?", id).one() as Row);
   }
   async updateProject(id: string, input: unknown): Promise<Project> {
-    if (!this.sql.exec("SELECT 1 FROM projects WHERE id = ?", id).toArray().length) throw new CategoryError("No such project", "not_found");
+    if (!this.sql.exec("SELECT 1 FROM projects WHERE id = ?", id).toArray().length) throw new CategoryError(msg("No such project"), "not_found");
     const parsed = ProjectInputSchema.safeParse(input);
-    if (!parsed.success) throw new CategoryError(parsed.error.issues[0]?.message ?? "Invalid project", "invalid");
+    if (!parsed.success) throw new CategoryError(parsed.error.issues[0]?.message ?? msg("Invalid project"), "invalid");
     this.sql.exec("UPDATE projects SET body = ?, updated_at = ? WHERE id = ?", JSON.stringify(parsed.data), new Date().toISOString(), id);
     // What the project covers changed: categories built on it start over.
     for (const c of await this.categories()) if (c.scope.projects.includes(id) && c.kind === "screened") await this.restart(c);
@@ -124,7 +125,7 @@ export class CategoriesDO extends DurableObject<Env> {
   }
   async deleteProject(id: string): Promise<boolean> {
     const users = (await this.categories()).filter((c) => c.scope.projects.includes(id)).map((c) => c.name);
-    if (users.length) throw new CategoryError(`Used by ${users.join(", ")}. Take it out of those categories first.`, "conflict");
+    if (users.length) throw new CategoryError(msg("Used by {categories}. Take it out of those categories first.", { categories: users.join(", ") }), "conflict");
     return this.sql.exec("DELETE FROM projects WHERE id = ? RETURNING id", id).toArray().length > 0;
   }
 
@@ -176,9 +177,9 @@ export class CategoriesDO extends DurableObject<Env> {
 
   async createCategory(input: unknown): Promise<CategoryView> {
     const parsed = CategoryInputSchema.safeParse(input);
-    if (!parsed.success) throw new CategoryError(parsed.error.issues[0]?.message ?? "Invalid category", "invalid");
+    if (!parsed.success) throw new CategoryError(parsed.error.issues[0]?.message ?? msg("Invalid category"), "invalid");
     await this.checkProjects(parsed.data);
-    if (Number((this.sql.exec("SELECT COUNT(*) AS n FROM categories").one() as Row).n) >= MAX_CATEGORIES) throw new CategoryError(`At most ${MAX_CATEGORIES} categories`, "limit");
+    if (Number((this.sql.exec("SELECT COUNT(*) AS n FROM categories").one() as Row).n) >= MAX_CATEGORIES) throw new CategoryError(msg("At most {max} categories", { max: MAX_CATEGORIES }), "limit");
     const id = this.freeId("categories", categoryId(parsed.data.name));
     const now = new Date().toISOString();
     this.sql.exec("INSERT INTO categories (id, version, body, seen_at, created_at, updated_at) VALUES (?, 1, ?, ?, ?, ?)", id, JSON.stringify(parsed.data), Date.now(), now, now);
@@ -190,9 +191,9 @@ export class CategoriesDO extends DurableObject<Env> {
   /** A change of what it selects starts over: new version, old verdicts dropped, a fresh first classification. */
   async updateCategory(id: string, input: unknown): Promise<CategoryView> {
     const current = await this.getCategory(id);
-    if (!current) throw new CategoryError("No such category", "not_found");
+    if (!current) throw new CategoryError(msg("No such category"), "not_found");
     const parsed = CategoryInputSchema.safeParse(input);
-    if (!parsed.success) throw new CategoryError(parsed.error.issues[0]?.message ?? "Invalid category", "invalid");
+    if (!parsed.success) throw new CategoryError(parsed.error.issues[0]?.message ?? msg("Invalid category"), "invalid");
     await this.checkProjects(parsed.data);
     const changed = selectionChanged(current, parsed.data) || (!current.enabled && parsed.data.enabled);
     this.sql.exec("UPDATE categories SET body = ?, version = version + ?, updated_at = ? WHERE id = ?",
@@ -227,7 +228,7 @@ export class CategoriesDO extends DurableObject<Env> {
   private async checkProjects(input: CategoryInput) {
     const known = new Set((await this.listProjects()).map((p) => p.id));
     const missing = input.scope.projects.filter((p) => !known.has(p));
-    if (missing.length) throw new CategoryError(`No such project: ${missing.join(", ")}`, "invalid");
+    if (missing.length) throw new CategoryError(msg("No such project: {names}", { names: missing.join(", ") }), "invalid");
   }
 
   // ── Arrival and the queue ─────────────────────────────────────
@@ -315,14 +316,14 @@ export class CategoriesDO extends DurableObject<Env> {
     const forModel: Category[] = [];
     for (const c of owed) {
       const rule = matchesConditions(c.conditions, { sender: item.sender, subject: item.subject, text: item.text });
-      if (!rule.ok) decided.push({ c, matched: false, reason: "Conditions did not match", source: "rule" });
-      else if (!c.description.trim()) decided.push({ c, matched: true, reason: rule.reason || "Matches the conditions", source: "rule" });
+      if (!rule.ok) decided.push({ c, matched: false, reason: msg("Conditions did not match"), source: "rule" });
+      else if (!c.description.trim()) decided.push({ c, matched: true, reason: rule.reason || msg("Matches the conditions"), source: "rule" });
       else forModel.push(c);
     }
     let spamOwed = !!item.screen && target === "*"
       && !this.sql.exec("SELECT 1 FROM spam_checks WHERE account_id = ? AND message_id = ?", item.accountId, item.messageId).toArray().length;
     if (spamOwed && tooLittleToJudge(item.text)) {
-      this.recordSpamCheck(item, "clean", "Too little text to judge", now);
+      this.recordSpamCheck(item, "clean", msg("Too little text to judge"), now);
       spamOwed = false;
     }
     let modelError = "";
@@ -337,7 +338,7 @@ export class CategoriesDO extends DurableObject<Env> {
       return;
     }
     const judgeSpam = spamOwed && (categoriesPaid || this.spendSpam());
-    if (spamOwed && !judgeSpam) this.recordSpamCheck(item, "skipped", "The day's spam budget was spent", now);
+    if (spamOwed && !judgeSpam) this.recordSpamCheck(item, "skipped", msg("The day's spam budget was spent"), now);
     const asked = [...(categoriesPaid ? forModel : []), ...(judgeSpam ? [SPAM_CATEGORY] : [])];
     let spam: { reason: string } | null = null;
     if (asked.length) {
@@ -346,12 +347,12 @@ export class CategoriesDO extends DurableObject<Env> {
           { sender: item.sender, subject: item.subject, text: item.text, to: item.accountEmail });
         for (const v of verdicts) {
           if (v.id === SPAM_ID) {
-            if (v.match) spam = { reason: v.reason || "The model judged it spam" };
+            if (v.match) spam = { reason: v.reason || msg("The model judged it spam") };
             else this.recordSpamCheck(item, "clean", v.reason, now);
             continue;
           }
           const c = forModel.find((x) => x.id === v.id)!;
-          decided.push({ c, matched: v.match, reason: v.reason || (v.match ? "The model placed it here" : "The model left it out"), source: "model" });
+          decided.push({ c, matched: v.match, reason: v.reason || (v.match ? msg("The model placed it here") : msg("The model left it out")), source: "model" });
         }
       } catch (error) {
         modelError = (error as Error).message.slice(0, 200);
@@ -386,8 +387,8 @@ export class CategoriesDO extends DurableObject<Env> {
     const attempts = Number(row.attempts) + 1;
     if (attempts >= MAX_ATTEMPTS) {
       // Given up: said on the category, never silently dropped; a spam check given up lets the agent run.
-      this.writeVerdicts(item, forModel.map((c) => ({ c, matched: false, reason: `Could not classify: ${modelError}`, source: "error" as const })), now);
-      if (spamOwed) this.recordSpamCheck(item, "error", `Could not be judged: ${modelError}`, now);
+      this.writeVerdicts(item, forModel.map((c) => ({ c, matched: false, reason: msg("Could not classify: {error}", { error: String(modelError) }), source: "error" as const })), now);
+      if (spamOwed) this.recordSpamCheck(item, "error", msg("Could not be judged: {error}", { error: String(modelError) }), now);
       this.sql.exec("DELETE FROM queue WHERE account_id = ? AND message_id = ? AND target = ?", item.accountId, item.messageId, target);
       console.error(JSON.stringify({ event: "category_classify_gave_up", account: item.accountId, error: modelError }));
     } else {
@@ -436,18 +437,18 @@ export class CategoriesDO extends DurableObject<Env> {
   /** Queues the last BACKFILL_MESSAGES messages in the category's scope; progress is counted as they are decided. */
   private async startBackfill(c: Category) {
     const now = Date.now();
-    this.sql.exec("INSERT OR REPLACE INTO backfills (category_id, version, total, done, state, detail, updated_at) VALUES (?, ?, 0, 0, 'running', 'Collecting messages', ?)",
-      c.id, c.version, now);
+    this.sql.exec("INSERT OR REPLACE INTO backfills (category_id, version, total, done, state, detail, updated_at) VALUES (?, ?, 0, 0, 'running', ?, ?)",
+      c.id, c.version, msg("Collecting messages"), now);
     let items: QueueItem[];
     try { items = await this.recentMessages(c); }
     catch (error) {
       this.sql.exec("UPDATE backfills SET state = 'failed', detail = ?, updated_at = ? WHERE category_id = ?",
-        `Could not read the mail in scope: ${(error as Error).message.slice(0, 200)}`, Date.now(), c.id);
+        msg("Could not read the mail in scope: {error}", { error: (error as Error).message.slice(0, 200) }), Date.now(), c.id);
       return;
     }
     for (const item of items) this.enqueue(item, c.id);
     this.sql.exec("UPDATE backfills SET total = ?, state = ?, detail = ? WHERE category_id = ?",
-      items.length, items.length ? "running" : "done", items.length ? "" : "No mail in scope yet", c.id);
+      items.length, items.length ? "running" : "done", items.length ? "" : msg("No mail in scope yet"), c.id);
     await this.arm(200);
   }
 
@@ -492,7 +493,7 @@ export class CategoriesDO extends DurableObject<Env> {
       const done = Math.max(0, Number(b.total) - left);
       const waiting = Number((this.sql.exec("SELECT COUNT(*) AS n FROM queue WHERE target = ? AND last_error = 'budget'", b.category_id).one() as Row).n);
       this.sql.exec("UPDATE backfills SET done = ?, state = ?, detail = ?, updated_at = ? WHERE category_id = ?",
-        done, left === 0 ? "done" : "running", waiting ? `${waiting} wait for tomorrow's model budget` : "", Date.now(), b.category_id);
+        done, left === 0 ? "done" : "running", waiting ? msg("{n} wait for tomorrow's model budget", { n: waiting }) : "", Date.now(), b.category_id);
     }
   }
 
@@ -501,7 +502,7 @@ export class CategoriesDO extends DurableObject<Env> {
   /** Matched messages of a screened category, newest first, after `before`. */
   async page(id: string, before: { timestamp: number; accountId: string; messageId: string } | null, limit: number): Promise<PageRow[]> {
     const c = await this.getCategory(id);
-    if (!c) throw new CategoryError("No such category", "not_found");
+    if (!c) throw new CategoryError(msg("No such category"), "not_found");
     const n = Math.max(1, Math.min(100, Math.floor(limit)));
     const rows = (before
       ? this.sql.exec(`SELECT account_id, message_id, timestamp, reason, source FROM verdicts

@@ -4,6 +4,7 @@
 
 import { Button } from "@cloudflare/kumo";
 import { ArrowsClockwiseIcon, WarningIcon } from "@phosphor-icons/react";
+import { useT } from "../lib/i18n";
 import { describeLoadError } from "~/lib/load-error";
 
 /**
@@ -27,7 +28,8 @@ export default function LoadError({
 	compact?: boolean;
 	extraAction?: React.ReactNode;
 }) {
-	const { description } = describeLoadError(error);
+	const t = useT();
+	const description = t.text(describeLoadError(error).description);
 
 	if (compact) {
 		return (
@@ -40,7 +42,7 @@ export default function LoadError({
 					{title} {description}
 				</span>
 				<Button variant="ghost" size="xs" onClick={onRetry} loading={retrying}>
-					Retry
+					{t("Retry")}
 				</Button>
 			</div>
 		);
@@ -64,7 +66,7 @@ export default function LoadError({
 					onClick={onRetry}
 					loading={retrying}
 				>
-					Retry
+					{t("Retry")}
 				</Button>
 				{extraAction}
 			</div>

@@ -81,7 +81,16 @@ and [your deployment](#configure-your-deployment).
 - **Settings.** One screen (the gear in the sidebar, or **Settings…** ⌘, in the Mac app) with a
   section list, a searchable list and the chosen item beside it; choosing an item never moves the
   page. Sections: Addresses, Domains, Accounts, Forwarding destinations, Categories, Spam rules,
-  Agents, Knowledge, Agent access and App. Every older page address redirects into its section.
+  Discard rules, Agents, Knowledge, Agent access and App. Every older page address redirects into its section.
+- **Keyboard triage.** Delete or Backspace archives and marks read; ⌘⌫ (Ctrl+Backspace) discards;
+  ⌘Z undoes either; ↓/J and ↑/K move, Shift and ⌘-click choose several; ? lists every key.
+- **Discarded.** Mail thrown away on purpose waits 30 days in Discarded (Gmail: a label of that name;
+  IMAP and Outlook: a folder of that name), apart from Trash and Spam. Each discard teaches a rule —
+  the newsletter, else the sender — and later mail like it goes straight there, never from someone
+  you wrote to or a conversation you are in. Not discarded brings one back; Settings → Discard rules
+  shows why each rule was learned.
+- **Freshness in view.** Refresh sits under the list's title with the server's last read of each
+  account in view, Live for Cloudflare addresses, and which account failed with its fix (⌘⇧N).
 - **Domains and addresses.** Every domain of your Cloudflare account in Settings → Domains. **Receive
   mail here** turns on Email Routing (asking before it replaces another provider's MX), brings
   in the addresses that already exist while each keeps forwarding a copy where it went before,
@@ -118,6 +127,11 @@ and [your deployment](#configure-your-deployment).
   storage and sign-in in your own account, then opens it. A setup file or an existing server's
   address also works (a personal build can carry its owner's setup);
   native menus, per-server session and connection recovery; a Mac App Store packaging path.
+- **English and Russian.** Every screen, dialog and message, the Mac app's menus and first-run
+  window, and the pages after a Gmail or Outlook sign-in follow the device's language (Russian for
+  `ru`, `ru-*`, English otherwise); Settings → App → Language chooses System, English or Русский
+  per device. Counts, dates and numbers follow the language; the server's refusals are shown in it.
+  Mail, agents' answers and what agents read keep their own language.
 - **Setups.** One file brings a server up: domains, addresses, their agents, forwarding copies
   and catch-alls. Applying it is idempotent; the server can derive one from Cloudflare Email
   Routing so existing addresses keep forwarding to Gmail while their mail is collected here.
@@ -169,10 +183,12 @@ and the workflow run that built it.
 
 ### Updates and your data
 
-From 0.10.1 a released copy in **Applications** updates itself: it checks the latest GitHub
-release at launch (and when you come back to it, at most every six hours), downloads the new
-signed version in the background and installs it when you quit, or at once with **Fabric Inbox →
-Restart to Install Update**. **Install Updates Automatically** in the same menu turns it off.
+From 0.11.0 a released copy in **Applications** updates itself: it checks the latest GitHub
+release 90 seconds after it starts and every six hours while it runs, downloads a newer version
+in the background, verifies it (the organization's signed `SHA256SUMS`, the file's digest, the
+Developer ID team and the version inside) and installs it when you quit, or at once with
+**Fabric Inbox → Restart to Install Update**. A version that fails any check is not installed.
+**Install Updates Automatically** in the same menu turns it off.
 Your accounts, addresses, agents, keys and mail live on your server, so removing or reinstalling
 the app loses none of them; the server's address is also kept in
 `~/Library/Application Support/PassionCode/backups/` and read back after an uninstaller removed

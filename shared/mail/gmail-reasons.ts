@@ -19,8 +19,12 @@
  *    https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes,
  *    https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-credentials
  *
+ * The sentences are English marked with msg(): the server keeps and returns them as they are, and
+ * the interface shows them in its language with t.text() (shared/i18n, L10N-04).
+ *
  * Plain module: the app, the Worker and the tests load it directly.
  */
+import { msg } from "../i18n";
 
 export const GMAIL_REASONS = [
   "testing_expiry",
@@ -54,63 +58,63 @@ export interface GmailReasonText {
 
 export const GMAIL_REASON_TEXT: Readonly<Record<GmailReason, GmailReasonText>> = Object.freeze({
   testing_expiry: {
-    short: "lost its Gmail access after 7 days",
-    explain: "Your Google Cloud app is in Testing, and Google ends a Testing app's access 7 days after it is given.",
-    fix: "In Google Cloud, open Audience and choose Publish app (or make the app Internal for a Google Workspace account), then reconnect. Access then stays until it is removed.",
+    short: msg("lost its Gmail access after 7 days"),
+    explain: msg("Your Google Cloud app is in Testing, and Google ends a Testing app's access 7 days after it is given."),
+    fix: msg("In Google Cloud, open Audience and choose Publish app (or make the app Internal for a Google Workspace account), then reconnect. Access then stays until it is removed."),
     action: "reconnect",
   },
   access_revoked: {
-    short: "needs to be reconnected: Google no longer accepts its access",
-    explain: "The access was removed in the Google account, its password changed, or it went unused for six months.",
-    fix: "Reconnect it. If this happens every week, your Google Cloud app is still in Testing: publish it in Audience.",
+    short: msg("needs to be reconnected: Google no longer accepts its access"),
+    explain: msg("The access was removed in the Google account, its password changed, or it went unused for six months."),
+    fix: msg("Reconnect it. If this happens every week, your Google Cloud app is still in Testing: publish it in Audience."),
     action: "reconnect",
   },
   insufficient_scope: {
-    short: "was connected without Gmail access",
-    explain: "On Google's page, the box that lets Fabric Inbox read, compose and send your Gmail was not ticked.",
-    fix: "Reconnect it and tick the Gmail box on Google's page.",
+    short: msg("was connected without Gmail access"),
+    explain: msg("On Google's page, the box that lets Fabric Inbox read, compose and send your Gmail was not ticked."),
+    fix: msg("Reconnect it and tick the Gmail box on Google's page."),
     action: "reconnect",
   },
   gmail_api_disabled: {
-    short: "cannot be read: the Gmail API is off in your Google Cloud project",
-    explain: "Google refuses Gmail requests until the Gmail API is enabled in the project that holds your OAuth client.",
-    fix: "Enable the Gmail API in that project, then choose Retry. The account does not need to be reconnected.",
+    short: msg("cannot be read: the Gmail API is off in your Google Cloud project"),
+    explain: msg("Google refuses Gmail requests until the Gmail API is enabled in the project that holds your OAuth client."),
+    fix: msg("Enable the Gmail API in that project, then choose Retry. The account does not need to be reconnected."),
     action: "enable_api",
   },
   client_rejected: {
-    short: "cannot be read: Google refused this server's OAuth client",
-    explain: "The OAuth client was deleted, or its secret was changed, in Google Cloud.",
-    fix: "Check the Gmail setup in Settings → Accounts and save the client again; then reconnect the account.",
+    short: msg("cannot be read: Google refused this server's OAuth client"),
+    explain: msg("The OAuth client was deleted, or its secret was changed, in Google Cloud."),
+    fix: msg("Check the Gmail setup in Settings → Accounts and save the client again; then reconnect the account."),
     action: "setup",
   },
   credentials_unreadable: {
-    short: "needs to be reconnected: its saved access cannot be opened",
-    explain: "The server's credential key changed, so the access saved for this account can no longer be read.",
-    fix: "Reconnect it.",
+    short: msg("needs to be reconnected: its saved access cannot be opened"),
+    explain: msg("The server's credential key changed, so the access saved for this account can no longer be read."),
+    fix: msg("Reconnect it."),
     action: "reconnect",
   },
   microsoft_access_revoked: {
-    short: "needs to be reconnected: Microsoft no longer accepts its access",
-    explain: "The access was removed in the Microsoft account, its password changed, or it went unused for a long time.",
-    fix: "Reconnect it with Microsoft.",
+    short: msg("needs to be reconnected: Microsoft no longer accepts its access"),
+    explain: msg("The access was removed in the Microsoft account, its password changed, or it went unused for a long time."),
+    fix: msg("Reconnect it with Microsoft."),
     action: "reconnect",
   },
   microsoft_signin_required: {
-    short: "needs you to sign in to Microsoft again",
-    explain: "Microsoft asks for another sign-in step: a new sign-in rule of your organization, multi-factor sign-in, or a permission that needs approving again.",
-    fix: "Reconnect it with Microsoft and finish every step Microsoft shows.",
+    short: msg("needs you to sign in to Microsoft again"),
+    explain: msg("Microsoft asks for another sign-in step: a new sign-in rule of your organization, multi-factor sign-in, or a permission that needs approving again."),
+    fix: msg("Reconnect it with Microsoft and finish every step Microsoft shows."),
     action: "reconnect",
   },
   microsoft_secret_expired: {
-    short: "cannot be read: the Microsoft client secret on your server has expired",
-    explain: "Client secrets in Microsoft Entra end on the date chosen when they were made, at most two years later.",
-    fix: "In Microsoft Entra, add a new client secret to the app registration, then save it in Settings → Accounts → Outlook. The account does not need to be reconnected.",
+    short: msg("cannot be read: the Microsoft client secret on your server has expired"),
+    explain: msg("Client secrets in Microsoft Entra end on the date chosen when they were made, at most two years later."),
+    fix: msg("In Microsoft Entra, add a new client secret to the app registration, then save it in Settings → Accounts → Outlook. The account does not need to be reconnected."),
     action: "setup",
   },
   microsoft_client_rejected: {
-    short: "cannot be read: Microsoft refused this server's app registration",
-    explain: "The app registration was deleted, or its client secret was removed or changed, in Microsoft Entra.",
-    fix: "Check the Outlook setup in Settings → Accounts and save the client again; then reconnect the account.",
+    short: msg("cannot be read: Microsoft refused this server's app registration"),
+    explain: msg("The app registration was deleted, or its client secret was removed or changed, in Microsoft Entra."),
+    fix: msg("Check the Outlook setup in Settings → Accounts and save the client again; then reconnect the account."),
     action: "setup",
   },
 });

@@ -11,6 +11,7 @@
  * the copy lives here beside the rule it describes.
  */
 import { Folders } from "../../shared/folders";
+import { englishT, msg, type T } from "../../shared/i18n";
 
 export type DeleteMode = "trash" | "permanent";
 
@@ -23,27 +24,31 @@ export function restoreFolderFor(folderId: string | null | undefined): string {
 	return folderId && folderId !== Folders.TRASH ? folderId : Folders.INBOX;
 }
 
+/** English, marked with msg(): the interface shows each one through `t.text()`. */
 export const DELETE_COPY = {
 	trash: {
-		label: "Delete",
-		done: "Moved to trash",
-		undo: "Undo",
+		label: msg("Delete"),
+		done: msg("Moved to trash"),
+		undo: msg("Undo"),
 	},
 	permanent: {
-		label: "Delete permanently",
-		confirmTitle: "Delete permanently?",
-		confirmAction: "Delete permanently",
-		done: "Deleted permanently",
+		label: msg("Delete permanently"),
+		confirmTitle: msg("Delete permanently?"),
+		confirmAction: msg("Delete permanently"),
+		done: msg("Deleted permanently"),
 	},
 } as const;
 
-export function permanentDeleteDescription(subject: string | null | undefined): string {
-	const name = subject?.trim() ? `“${subject.trim()}”` : "This message";
-	return `${name} will be deleted permanently. It can't be restored afterwards.`;
+export function permanentDeleteDescription(subject: string | null | undefined, t: T = englishT): string {
+	return subject?.trim()
+		? t("“{subject}” will be deleted permanently. It can't be restored afterwards.", { subject: subject.trim() })
+		: t("This message will be deleted permanently. It can't be restored afterwards.");
 }
 
+/** English, marked with msg(): the interface shows it through `t.text()`. */
 export const TRASH_EMPTY_STATE = {
-	title: "Trash is empty",
-	description:
+	title: msg("Trash is empty"),
+	description: msg(
 		"Deleted emails will appear here. Move one to another folder to restore it, or delete it permanently.",
+	),
 } as const;

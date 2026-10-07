@@ -7,6 +7,7 @@ import {
   type RuleEmail,
   type Run,
 } from "./policy";
+import { msg } from "../../shared/i18n";
 export interface RunDependencies {
   save(run: Run): Promise<void>;
   start(run: Run): Promise<boolean>;
@@ -29,7 +30,7 @@ export async function processRun(
   const current = await deps.currentRule(run.rule.id);
   if (!current?.enabled || current.version !== run.rule.version) {
     run.status = "cancelled";
-    run.detail = "Rule paused or changed";
+    run.detail = msg("Rule paused or changed");
     await save();
     return run;
   }
@@ -40,14 +41,14 @@ export async function processRun(
     email = await deps.email(run.emailId);
     if (!matchesRule(current, email)) {
       run.status = "skipped";
-      run.detail = "Conditions did not match";
+      run.detail = msg("Conditions did not match");
       await save();
       return run;
     }
     const digest = await emailDigest(email);
     if (run.proposal && run.proposal.emailDigest !== digest) {
       run.status = "cancelled";
-      run.detail = "Message changed after the action was prepared";
+      run.detail = msg("Message changed after the action was prepared");
       await save();
       return run;
     }
@@ -65,7 +66,7 @@ export async function processRun(
     if (!run.analysis) run.analysis = await deps.analyze(current, email);
     if (!run.analysis.matches) {
       run.status = "skipped";
-      run.detail = "AI condition did not match";
+      run.detail = msg("AI condition did not match");
       await save();
       return run;
     }
@@ -76,14 +77,14 @@ export async function processRun(
     }
     if (current.action.type === "mcp" && current.action.location === "device") {
       run.status = "waiting_device";
-      run.detail = "Local tool runner is not connected";
+      run.detail = msg("Local tool runner is not connected");
       await save();
       return run;
     }
   } catch {
     run.status = "failed";
     run.detail =
-      "Could not read or analyze this message; no action was executed";
+      msg("Could not read or analyze this message; no action was executed");
     await save();
     return run;
   }
@@ -91,7 +92,7 @@ export async function processRun(
   const latest = await deps.currentRule(run.rule.id);
   if (!latest?.enabled || latest.version !== run.rule.version) {
     run.status = "cancelled";
-    run.detail = "Rule paused or changed";
+    run.detail = msg("Rule paused or changed");
     await save();
     return run;
   }
@@ -103,7 +104,7 @@ export async function processRun(
     run.detail =
       error instanceof ActionRejected
         ? error.message
-        : "Action outcome is uncertain. Check the provider before repeating it.";
+        : msg("Action outcome is uncertain. Check the provider before repeating it.");
   }
   await save();
   return run;

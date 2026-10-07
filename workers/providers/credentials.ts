@@ -45,6 +45,11 @@ export async function keyId(secret: string): Promise<string> {
 }
 
 /** Whether this server holds a usable key: without one no account can be connected. */
+/** MAIL_CREDENTIAL_KEY is set but is not a usable key (set by hand): the one case a bound key may be replaced. */
+export function unusableCredentialKey(env: CredentialEnvironment): boolean {
+  return env.MAIL_CREDENTIAL_KEY !== undefined && env.MAIL_CREDENTIAL_KEY !== "" && !keyBytes(env.MAIL_CREDENTIAL_KEY);
+}
+
 export function hasCredentialKey(env: CredentialEnvironment): boolean {
   if (env.MAIL_CREDENTIAL_KEY !== undefined && env.MAIL_CREDENTIAL_KEY !== "" && !keyBytes(env.MAIL_CREDENTIAL_KEY)) return false;
   return !!keyBytes(env.MAIL_CREDENTIAL_KEY ?? "") || !!keyBytes(env.GMAIL_TOKEN_ENCRYPTION_KEY ?? "");

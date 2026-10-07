@@ -62,6 +62,16 @@ test("with no server configured every server partition is an orphan; a profile w
   assert.deepEqual(await profile.sweepProfile({ fs: fsPromises, userData: empty, keepPartition: null, log() {} }), { partitions: [], files: [] });
 });
 
+test("a DevToolsActivePort left by a debugging run is removed at start, unless this run is debugged", async () => {
+  for (const [debugging, kept] of [[false, false], [true, true]] as const) {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "fabric-devtools-"));
+    writeFileSync(path.join(dir, "DevToolsActivePort"), "9222\n/devtools/browser/x\n", { mode: 0o644 });
+    const removed = await profile.sweepProfile({ fs: fsPromises, userData: dir, keepPartition: null, debugging, log() {} });
+    assert.equal(existsSync(path.join(dir, "DevToolsActivePort")), kept, `debugging=${debugging}`);
+    assert.equal(removed.files.includes("DevToolsActivePort"), !kept);
+  }
+});
+
 test("a failing sweep is logged and never stops the app from starting", async () => {
   const events: any[] = [];
   const broken = { readdir: async () => { throw Object.assign(new Error("EACCES"), { code: "EACCES" }); }, rm: async () => {} };

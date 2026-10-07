@@ -18,6 +18,8 @@ build that is never published, attached to a release or uploaded to App Store Co
 | `macos` | `release` | The Developer ID disk image (below) |
 | `mas` | `release` | The Mac App Store package, and its upload when publishing (below) |
 | `publish` | `release` (it holds the GPG key) | The organization's `release-publish.yml@v1`: attests every `release-*` file (Sigstore), writes `SHA256SUMS` and `SHA256SUMS.asc`, then creates the GitHub release with the notes of `## <version>` in [CHANGELOG.md](../CHANGELOG.md) |
+| `update-precheck` | none | Before `publish`, on macOS: the same script with `--before-signing` on the built `release-macos` files — the feed names this release's own zip, the zip has the feed's digest and size, the app inside is team `KJ35UYYL22`'s and this version — so a bad update stops the release before it is published; `publish` waits for it |
+| `update-check` | none | After `publish`, on macOS: `node scripts/check-update-release.mjs` runs the app's own update verification (`desktop/update-verify.cjs`) on the signed set — the rehearsal's `signed-release-<tag>` artifact or the published release's assets — so a feed naming another release's file, a digest the signature does not cover, or a zip whose app is not team `KJ35UYYL22`'s or not this version fails the run instead of every installed copy (LC-16). Checked by hand on 0.11.0: passes in 15 s; one changed byte in the zip fails with `zip_sha256` |
 
 `publish` waits for `gate` and `macos` only. The store job does not hold the disk image back: a
 store upload Apple refuses fails the `mas` job alone.
@@ -164,7 +166,13 @@ per package and has no checked universal path; Intel Macs install the universal 
    (attributes only, never `-w`) finds the item; and the mail window opened without a new sign-in.
    The first release with cookie encryption creates the item; the release after it proves an
    update reuses it. A dialog is a release blocker: the item's access list does not match the
-   signature (team and bundle id), so every update would ask again.
+   signature (team and bundle id), so every update would ask again. **An item made by another
+   binary also asks once:** on 2026-10-06 the owner's Mac had an item created the day before by a
+   local unsigned smoke build of 0.10 (same app name), so 0.11.0 showed one Keychain prompt; after
+   "Always Allow" the item lists the signed app. Never launch a local debug build of the packaged app
+   on a Mac whose upgrade check is still to come, and read the item's creation date
+   (`security find-generic-password -s "Fabric Inbox Safe Storage"`, `cdat`) before the check. Since
+   0.12 an unpackaged run (`npm run desktop`) is named "Fabric Inbox Development" and has its own item.
    **Rollback.** A version without cookie encryption (0.9.0 and earlier) cannot read the encrypted
    cookies: going back to it means signing in again. It does not crash and loses no server data.
    **Automatic update.** `curl -sL https://github.com/passioncode-ai/fabric-inbox/releases/latest/download/update-mac.json`

@@ -3,6 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import { Button, Dialog } from "@cloudflare/kumo";
+import { useT } from "../../lib/i18n";
 import { downloadFile } from "~/lib/utils";
 import type { Email } from "~/types";
 
@@ -61,6 +62,7 @@ export default function EmailPanelDialogs({
 	onCloseSource,
 	onClosePreview,
 }: EmailPanelDialogsProps) {
+	const t = useT();
 	const sourceHeaders = sourceViewEmail ? getSourceHeaders(sourceViewEmail) : [];
 
 	return (
@@ -73,7 +75,7 @@ export default function EmailPanelDialogs({
 			>
 				<Dialog size="lg">
 					<Dialog.Title>
-						Email Source Headers
+						{t("Email Source Headers")}
 						{sourceViewEmail && (
 							<span className="text-sm font-normal text-kumo-subtle ml-2">
 								{sourceViewEmail.subject}
@@ -101,7 +103,7 @@ export default function EmailPanelDialogs({
 							</table>
 							{sourceHeaders.length === 0 && (
 								<p className="text-sm text-kumo-subtle text-center py-8">
-									No header data available for this email.
+									{t("No header data available for this email.")}
 								</p>
 							)}
 						</div>
@@ -109,7 +111,7 @@ export default function EmailPanelDialogs({
 					<div className="flex justify-end mt-4">
 						<Dialog.Close>
 							<Button variant="secondary" size="sm">
-								Close
+								{t("Close")}
 							</Button>
 						</Dialog.Close>
 					</div>
@@ -143,11 +145,11 @@ export default function EmailPanelDialogs({
 								}
 							}}
 						>
-							Download Original
+							{t("Download Original")}
 						</Button>
 						<Dialog.Close>
 							<Button variant="primary" size="sm">
-								Close
+								{t("Close")}
 							</Button>
 						</Dialog.Close>
 					</div>

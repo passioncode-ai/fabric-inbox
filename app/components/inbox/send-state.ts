@@ -1,4 +1,5 @@
 import { addressParser } from "postal-mime";
+import { msg } from "../../../shared/i18n";
 /** A refusal of a later HTTP request says nothing about an earlier uncertain effect. */
 export function sendRecovery(
   wasLocked: boolean,
@@ -12,7 +13,7 @@ export function sendRecovery(
 }
 export function recipientAddresses(header: string): string[] {
   if (/[\r\n]/.test(header))
-    throw new Error("Recipients cannot contain line breaks.");
+    throw new Error(msg("Recipients cannot contain line breaks."));
   const addresses = addressParser(header, { flatten: true }).map(
     (a) => a.address ?? "",
   );
@@ -20,7 +21,7 @@ export function recipientAddresses(header: string): string[] {
     !addresses.length ||
     addresses.some((a) => !/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(a))
   )
-    throw new Error("Enter valid recipient email addresses.");
+    throw new Error(msg("Enter valid recipient email addresses."));
   return addresses;
 }
 export function replyRecipient(

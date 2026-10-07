@@ -11,8 +11,11 @@ import {
 } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useParams } from "react-router";
+import { useT } from "../lib/i18n";
+import { msg } from "../../shared/i18n";
 
 function CopyButton({ text }: { text: string }) {
+	const t = useT();
 	const [copied, setCopied] = useState(false);
 
 	const handleCopy = async () => {
@@ -26,7 +29,7 @@ function CopyButton({ text }: { text: string }) {
 	};
 
 	return (
-		<Tooltip content={copied ? "Copied!" : "Copy"} asChild>
+		<Tooltip content={copied ? t("Copied!") : t("Copy")} asChild>
 			<Button
 				variant="ghost"
 				shape="square"
@@ -39,26 +42,27 @@ function CopyButton({ text }: { text: string }) {
 					)
 				}
 				onClick={handleCopy}
-				aria-label="Copy to clipboard"
+				aria-label={t("Copy to clipboard")}
 			/>
 		</Tooltip>
 	);
 }
 
 const TOOLS = [
-	{ name: "list_mailboxes", desc: "List all mailboxes" },
-	{ name: "list_emails", desc: "List emails in a folder" },
-	{ name: "get_email", desc: "Read a full email with body" },
-	{ name: "get_thread", desc: "Load a conversation thread" },
-	{ name: "search_emails", desc: "Search emails by query" },
-	{ name: "draft_reply", desc: "Draft a reply to an email" },
-	{ name: "send_reply", desc: "Send a reply" },
-	{ name: "send_email", desc: "Send a new email" },
-	{ name: "mark_email_read", desc: "Mark email as read/unread" },
-	{ name: "move_email", desc: "Move email to a folder" },
+	{ name: "list_mailboxes", desc: msg("List all mailboxes") },
+	{ name: "list_emails", desc: msg("List emails in a folder") },
+	{ name: "get_email", desc: msg("Read a full email with body") },
+	{ name: "get_thread", desc: msg("Load a conversation thread") },
+	{ name: "search_emails", desc: msg("Search emails by query") },
+	{ name: "draft_reply", desc: msg("Draft a reply to an email") },
+	{ name: "send_reply", desc: msg("Send a reply") },
+	{ name: "send_email", desc: msg("Send a new email") },
+	{ name: "mark_email_read", desc: msg("Mark email as read/unread") },
+	{ name: "move_email", desc: msg("Move email to a folder") },
 ];
 
 export default function MCPPanel() {
+	const t = useT();
 	const { mailboxId } = useParams<{ mailboxId: string }>();
 	const baseUrl =
 		typeof window !== "undefined" ? window.location.origin : "https://your-app.workers.dev";
@@ -80,25 +84,22 @@ export default function MCPPanel() {
 						</div>
 						<div>
 							<h3 className="text-sm font-semibold text-kumo-default">
-								Connect via MCP
+								{t("Connect via MCP")}
 							</h3>
 							<p className="text-xs text-kumo-subtle">
-								Model Context Protocol
+								{t("Model Context Protocol")}
 							</p>
 						</div>
 					</div>
 					<p className="text-xs text-kumo-subtle leading-relaxed">
-						This email agent exposes an MCP server so AI coding
-						assistants can manage your inbox directly — read emails,
-						search, draft replies, and send messages using natural
-						language.
+						{t("This email agent exposes an MCP server so AI coding assistants can manage your inbox directly — read emails, search, draft replies, and send messages using natural language.")}
 					</p>
 				</div>
 
 				{/* MCP URL */}
 				<div className="space-y-1.5">
 					<label className="text-xs font-medium text-kumo-strong block">
-						Server URL
+						{t("Server URL")}
 					</label>
 					<div className="relative group">
 						<div className="absolute right-1.5 top-1/2 -translate-y-1/2">
@@ -113,7 +114,7 @@ export default function MCPPanel() {
 				{/* Available tools */}
 				<div className="space-y-2">
 					<h4 className="text-xs uppercase tracking-wider font-semibold text-kumo-subtle px-0.5">
-						Available Tools
+						{t("Available Tools")}
 					</h4>
 					<div className="border border-kumo-line rounded-lg divide-y divide-kumo-line">
 						{TOOLS.map((tool) => (
@@ -132,7 +133,7 @@ export default function MCPPanel() {
 									</span>
 								</div>
 								<span className="text-[11px] text-kumo-subtle shrink-0">
-									{tool.desc}
+									{t.text(tool.desc)}
 								</span>
 							</div>
 						))}

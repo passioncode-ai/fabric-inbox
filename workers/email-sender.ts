@@ -6,6 +6,7 @@ import type { MailAttachment } from '../shared/mail/attachments';
 import type { Env } from './types';
 import { CloudflareApiError } from './routing/cloudflare-api';
 import { CloudflareAccounts, readDomainAccounts, type AccountsEnv } from './routing/accounts';
+import { msg } from "../shared/i18n";
 /**
  * Email sending via Cloudflare Email Service binding.
  *
@@ -138,7 +139,7 @@ async function sendOverRest(accounts: CloudflareAccounts, accountId: string, par
 	let result: RestResult;
 	try {
 		result = await api.call<RestResult>(`/accounts/${accountId}/email/sending/send`, {
-			method: "POST", body, what: "send from the domain (Email Sending: Edit)", timeoutMs: 60_000,
+			method: "POST", body, what: msg("send from the domain (Email Sending: Edit)"), timeoutMs: 60_000,
 		});
 	} catch (error) {
 		// A 4xx is Cloudflare refusing before accepting anything: a definite failure. Anything else —

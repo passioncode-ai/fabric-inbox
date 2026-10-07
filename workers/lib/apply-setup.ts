@@ -1,6 +1,7 @@
 import type { Env } from "../types";
 import type { ApplyResult, Setup } from "../../shared/setup";
 import { addServedDomains, createMailbox, readSettings, setCatchAll, settingsKey } from "./mailbox-store";
+import { msg } from "../../shared/i18n";
 
 /**
  * Applies a setup (shared/setup.ts): serves its domains, creates missing
@@ -16,7 +17,7 @@ export async function applySetup(env: Env, setup: Setup): Promise<ApplyResult> {
     let agentProblem: string | undefined;
     if (box.agent && box.agent !== "off") {
       const exists = registry ? await registry.getAgent(box.agent.id).catch(() => null) : null;
-      if (!exists) agentProblem = `agent "${box.agent.id}" does not exist here; left as it was`;
+      if (!exists) agentProblem = msg('agent "{id}" does not exist here; left as it was', { id: box.agent.id });
     }
     const forwarding = box.forwardTo ? { enabled: true, email: box.forwardTo } : undefined;
     const current = await readSettings(env.BUCKET, box.address);

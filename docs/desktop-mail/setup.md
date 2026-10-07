@@ -36,8 +36,10 @@ account…**): only the storage migrations it lacks (a step that would delete or
 never sent); every setting on the Worker kept — secrets and plain vars such as
 `UNKNOWN_ADDRESS_POLICY` or `GOOGLE_CLIENT_ID` alike, with the values the app sets winning; its
 Access rules left alone, and a server signed in on its own domain keeps that sign-in. The server
-records its version (`FABRIC_SERVER_VERSION`); a server newer than the app — by that version or by
-its storage tag — is refused. The app only uploads the server built with it (the same version). The
+records its version (`FABRIC_SERVER_VERSION`; `npm run deploy` records it too, a bare `wrangler deploy`
+does not); a server newer than the app — by that version, a prerelease counting below its release, or
+by its storage tag — is refused. A server deployed without a recorded version is checked by its
+storage tag only. The app only uploads the server built with it (the same version). The
 token is held in the app's memory until the server has it and is never written on the Mac or into a
 log. Mailbox data moves forward by migrations that only add (`workers/durableObject/migrations.ts`,
 each in one transaction); nothing is rolled back.
@@ -50,8 +52,9 @@ organization, a bucket and a workers.dev name could not be exercised on an accou
 
 ## Deploying the server by hand
 
-1. `npm ci && npm test && npm run build`, then `CLOUDFLARE_ACCOUNT_ID=<account> npx wrangler deploy`
-   (applies Durable Object migrations up to `fabric-v4`). `wrangler.jsonc` names no account and no
+1. `npm ci && npm test`, then `CLOUDFLARE_ACCOUNT_ID=<account> npm run deploy` (builds, then
+   `wrangler deploy --var FABRIC_SERVER_VERSION:<version>`, so the server records its version as the
+   app's own deploy does; applies the Durable Object migrations). `wrangler.jsonc` names no account and no
    deployment's values; `keep_vars` keeps what is set on the Worker.
 2. Create a Cloudflare Access application for the Worker's hostname and set `POLICY_AUD` and
    `TEAM_DOMAIN` on the Worker once (dashboard, or `wrangler deploy --var POLICY_AUD:… --var
@@ -191,12 +194,23 @@ lists every domain of the connected account. Receiving here first:
 - An open domain shows receiving, addresses that still go elsewhere (**Bring them here, keeping a
   copy**), sending (**Turn on sending**), DMARC, and anything Cloudflare would not let the token
   read, in words.
-- **Add** an address: the name before @, who answers, and optionally a copy to a confirmed
-  forwarding destination. Everything is checked first, then the routing rule is created (a disabled
-  rule that points here is switched back on); if the mailbox cannot be saved, a rule made for it is
-  removed again. On a served domain the token cannot see, the address is made without a rule and
-  the screen says so. **Change** next to the copy picks another destination or none. **Send test
-  message** sends from the address to itself.
+- **Add address** (Settings → Addresses, a domain's **Add an address on <domain>**, the sidebar, or
+  an empty list) opens one dialog: the name before @ with the domain beside it (receiving here
+  first, then — with a token — the domains that can receive here), checked as you type (allowed
+  characters; already an address here; a Cloudflare rule that sends it elsewhere, named; the
+  catch-all that keeps its mail today), the display name, a signature, who answers, a copy to a
+  confirmed forwarding destination, the Cloudflare rule, and **Send a test message**. **Several**
+  creates up to 50 on one domain with the same settings; the server does as many as fit one request
+  and the dialog sends the rest again on its own until all are done. If the server's answer does not
+  arrive, the dialog reads back which addresses exist and says so. On **Create** the dialog lists what it did:
+  receiving the domain first when it was not (another provider's MX asks before it is replaced),
+  the address, its rule (a disabled rule that points here is switched back on; with no token, a
+  zone no token sees, or a rule Cloudflare refuses, the address is still made, marked **Not
+  receiving yet**, with the one fix; a rule made while the domain's Email Routing is off or
+  misconfigured reads **Not receiving yet** too, with **Fix it**, which turns it on again), and the test message, checked every 5 seconds until it
+  arrives or 3 minutes pass. The mailbox is saved before its rule, so no rule is ever left without
+  an address.
+  **Change** next to the copy picks another destination or none.
 - **Remove…** deletes the address's rule, then the mailbox and its mail, after a confirmation, and
   says what Cloudflare now does with its mail. The domain's catch-all mailbox — chosen here or set by
   `UNKNOWN_ADDRESS_POLICY` — cannot be removed until another one (or none) is chosen. The
@@ -270,6 +284,20 @@ acts on it and no forwarding copy is sent. An agent answers a stranger's message
 spam check (at most 15 minutes later if the model does not answer). Spam older than 30 days is deleted with its attachments;
 **Delete all now** empties it at once. Gmail keeps its own spam; Report spam and Not spam on a Gmail
 message use Gmail's own label. Mail that arrived before 0.6.0 is not re-checked.
+
+## Discarded
+
+⌘⌫ (Ctrl+Backspace) or Discard in the reader moves a message to **Discarded** and teaches a rule:
+its newsletter (List-Id), else its sender. Later mail that matches goes there on arrival, after the
+spam check, unless one of your addresses wrote to the sender, it answers a conversation you took
+part in, it comes from one of your own domains, or the sender is on **Always allow** (Settings →
+Discard rules) or a Never spam list. Discarded mail is deleted after 30 days; in Gmail, IMAP and
+Outlook accounts it is moved to the account's Trash then (an IMAP server with no Trash folder: deleted for good). Where Discarded lives: a folder of each
+Cloudflare address; Gmail's own label "Discarded" (made the first time); a top-level folder named
+Discarded in IMAP and Outlook accounts (made the first time; an IMAP server that does not let apps
+create folders says so — create a folder named Discarded there, and it is used). Nothing to set up:
+the rules live in the server's bucket (`config/discard.json`). A model's one-line guess at why a rule
+was learned is added when the server has Workers AI.
 
 ## Addresses in the sidebar
 
@@ -606,8 +634,11 @@ not show again.
   Settings → Accounts → Connect account → Other mail → **Make the key** (`POST /api/credential-key`,
   `workers/routes/credential-key.ts`; agents: `create_credential_key`). The server writes it into its
   own settings with its Cloudflare token, keeping every other setting; it never replaces a key it
-  already has, and the value is never shown. Without a Cloudflare token of its own the server says
-  so, and the key is set with wrangler as below.
+  already has, and the value is never shown. Changes to the server's own settings run one at a time
+  and read Cloudflare's current settings first, so a person in Settings and an agent asking at the
+  same moment (or the Gmail or Outlook setup) make one key, not two; the second is told the server
+  has one. Without a Cloudflare token of its own the server says so, and the key is set with
+  wrangler as below.
 
 - **Backup.** For a server deployed by hand, make the key yourself, keep it in your password
   manager, then set it: `openssl rand -base64 32 | tr '+/' '-_' | tr -d '=' > key.txt`, then

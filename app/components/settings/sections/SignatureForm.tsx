@@ -4,13 +4,15 @@
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
+import { useT } from "~/lib/i18n";
 import { useMailbox, useUpdateMailbox } from "~/queries/mailboxes";
 import { ActionResult, LoadFailure, SkeletonPanel, useWork } from "../ui";
 import { settingsPath } from "../paths";
 
-// Placeholder shown in the textarea when no custom prompt is set.
+// Placeholder shown in the textarea when no custom prompt is set: the start of the built-in prompt,
+// which stays English in every language (the agent reads it), then a note in the interface's language.
 // The authoritative default prompt lives in workers/agent/index.ts (DEFAULT_SYSTEM_PROMPT).
-const PROMPT_PLACEHOLDER = `You are an email assistant that helps manage this inbox. You read emails, draft replies, and help organize conversations.\n\nWrite like a real person. Short, direct, flowing prose. Plain text only.\n\n(Leave empty to use the full built-in default prompt)`;
+const PROMPT_START = `You are an email assistant that helps manage this inbox. You read emails, draft replies, and help organize conversations.\n\nWrite like a real person. Short, direct, flowing prose. Plain text only.`;
 
 interface Form { displayName: string; signatureOn: boolean; signature: string; prompt: string }
 
@@ -20,6 +22,7 @@ interface Form { displayName: string; signatureOn: boolean; signature: string; p
  * so an agent or a copy set elsewhere is kept.
  */
 export default function SignatureForm({ email }: { email: string }) {
+	const t = useT();
 	const mailbox = useMailbox(email);
 	const update = useUpdateMailbox();
 	const work = useWork(email, "signature");
@@ -43,16 +46,16 @@ export default function SignatureForm({ email }: { email: string }) {
 	}, [mailbox.data]);
 
 	if (!mailbox.data && mailbox.isError) {
-		return <LoadFailure what="This address's settings" error={mailbox.error} onRetry={() => void mailbox.refetch()} retrying={mailbox.isFetching} />;
+		return <LoadFailure what={t("This address's settings")} error={mailbox.error} onRetry={() => void mailbox.refetch()} retrying={mailbox.isFetching} />;
 	}
-	if (!form || !saved) return <SkeletonPanel label="Loading this address's settings…" />;
+	if (!form || !saved) return <SkeletonPanel label={t("Loading this address's settings…")} />;
 
 	const dirty = JSON.stringify(form) !== JSON.stringify(saved);
 	const nameMissing = !form.displayName.trim();
 	const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm({ ...form, [key]: value });
 
-	const save = () => void work.run("Saving…", async () => {
-		if (nameMissing) throw new Error("A display name is needed: it is the name your mail is sent with.");
+	const save = () => void work.run(t("Saving…"), async () => {
+		if (nameMissing) throw new Error(t("A display name is needed: it is the name your mail is sent with."));
 		await update.mutateAsync({
 			mailboxId: email,
 			settings: {
@@ -62,39 +65,40 @@ export default function SignatureForm({ email }: { email: string }) {
 			},
 		});
 		setSaved(form);
-		return `Saved the name and signature of ${email}.`;
+		return t("Saved the name and signature of {email}.", { email });
 	});
 
 	return (
-		<form onSubmit={(e) => { e.preventDefault(); save(); }} aria-label={`Name and signature of ${email}`}>
-			<label className="fi-field">Display name
-				<span className="fi-hint">The name your mail and an agent's answers are sent with.</span>
+		<form onSubmit={(e) => { e.preventDefault(); save(); }} aria-label={t("Name and signature of {email}", { email })}>
+			<label className="fi-field">{t("Display name")}
+				<span className="fi-hint">{t("The name your mail and an agent's answers are sent with.")}</span>
 				<input className="fi-input" required maxLength={120} value={form.displayName} aria-invalid={nameMissing}
 					onChange={(e) => set("displayName", e.target.value)} />
 			</label>
 			<label className="fi-check">
 				<input type="checkbox" checked={form.signatureOn} onChange={(e) => set("signatureOn", e.target.checked)} />
-				<span>Add a signature to mail sent from {email}</span>
+				<span>{t("Add a signature to mail sent from {who}", { who: email })}</span>
 			</label>
-			<label className="fi-field">Signature
+			<label className="fi-field">{t("Signature")}
 				<textarea className="fi-input" value={form.signature} onChange={(e) => set("signature", e.target.value)} maxLength={2000} rows={4}
-					disabled={!form.signatureOn} placeholder={"Alex Morgan\nSupport, Acme"} />
-				<span className="fi-hint">Added to new messages and replies you write here, and to the answers an agent sends or drafts from this address.</span>
+					disabled={!form.signatureOn} placeholder={t("Alex Morgan\nSupport, Acme")} />
+				<span className="fi-hint">{t("Added to new messages and replies you write here, and to the answers an agent sends or drafts from this address.")}</span>
 			</label>
-			<label className="fi-field">Chat assistant prompt
+			<label className="fi-field">{t("Chat assistant prompt")}
 				<span className="fi-hint">
-					Instructions for the assistant in this mailbox's Agent panel; empty uses the built-in prompt. Incoming mail is answered
-					by the agent chosen under Who answers, not by this prompt. <Link to={settingsPath("agents")}>Edit agents</Link>.
+					{t.rich("Instructions for the assistant in this mailbox's Agent panel; empty uses the built-in prompt. Incoming mail is answered by the agent chosen under Who answers, not by this prompt. {link}.", {
+						link: <Link key="agents" to={settingsPath("agents")}>{t("Edit agents")}</Link>,
+					})}
 				</span>
 				<textarea className="fi-input" value={form.prompt} onChange={(e) => set("prompt", e.target.value)} rows={8}
-					placeholder={PROMPT_PLACEHOLDER} style={{ fontFamily: "var(--pc-font-data)", fontSize: 12 }} />
+					placeholder={`${PROMPT_START}\n\n${t("(Leave empty to use the full built-in default prompt)")}`} style={{ fontFamily: "var(--pc-font-data)", fontSize: 12 }} />
 			</label>
 			{form.prompt.trim() && (
-				<p className="fi-hint">A custom prompt is set. <button type="button" className="fi-text-button" onClick={() => set("prompt", "")}>Use the default prompt</button></p>
+				<p className="fi-hint">{t("A custom prompt is set.")} <button type="button" className="fi-text-button" onClick={() => set("prompt", "")}>{t("Use the default prompt")}</button></p>
 			)}
 			<div className="fi-buttons">
-				<button type="submit" className="fi-primary" disabled={!!work.busy || !dirty || nameMissing}>{work.busy ? "Saving…" : "Save changes"}</button>
-				{dirty && <button type="button" className="fi-secondary" disabled={!!work.busy} onClick={() => setForm(saved)}>Undo changes</button>}
+				<button type="submit" className="fi-primary" disabled={!!work.busy || !dirty || nameMissing}>{work.busy ? t("Saving…") : t("Save changes")}</button>
+				{dirty && <button type="button" className="fi-secondary" disabled={!!work.busy} onClick={() => setForm(saved)}>{t("Undo changes")}</button>}
 			</div>
 			<ActionResult result={work.result} />
 		</form>

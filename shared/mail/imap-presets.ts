@@ -11,8 +11,13 @@
  * server is put in Sent by the provider (Gmail); everywhere else this server appends the copy,
  * after checking Sent for one the server may have made itself (imap/provider.ts).
  *
+ * `name` and `steps` are English marked with msg() where they hold words: the server and agents
+ * read them as they are, and Settings shows them in its language with t.text() (shared/i18n).
+ *
  * Plain module: the Worker (workers/providers/imap/), the app (Settings → Accounts) and the tests read it.
  */
+import { msg } from "../i18n";
+
 export type PresetId = "icloud" | "yahoo" | "aol" | "fastmail" | "zoho" | "zoho-org" | "yandex" | "mailru" | "gmx-com" | "gmx-net" | "gmail" | "custom";
 
 export interface Preset {
@@ -40,7 +45,7 @@ export const PRESETS: readonly Preset[] = [
     imap: { host: "imap.mail.me.com", port: 993 }, smtp: { host: "smtp.mail.me.com", port: 587, security: "starttls" },
     imapUser: "local-part", source: "https://support.apple.com/en-us/102525",
     appPasswordUrl: "https://support.apple.com/en-us/102654",
-    steps: ["Your Apple Account needs two-factor authentication.", "At account.apple.com, open Sign-In and Security, then App-Specific Passwords, and generate one."],
+    steps: [msg("Your Apple Account needs two-factor authentication."), msg("At account.apple.com, open Sign-In and Security, then App-Specific Passwords, and generate one.")],
     sentCopy: "server",
   },
   {
@@ -48,7 +53,7 @@ export const PRESETS: readonly Preset[] = [
     imap: { host: "imap.mail.yahoo.com", port: 993 }, smtp: { host: "smtp.mail.yahoo.com", port: 465, security: "tls" },
     imapUser: "address", source: "https://help.yahoo.com/kb/SLN4075.html",
     appPasswordUrl: "https://help.yahoo.com/kb/SLN15241.html",
-    steps: ["On your Yahoo Account Security page, under External connections, choose Create app password."],
+    steps: [msg("On your Yahoo Account Security page, under External connections, choose Create app password.")],
     sentCopy: "server",
   },
   {
@@ -56,7 +61,7 @@ export const PRESETS: readonly Preset[] = [
     imap: { host: "imap.aol.com", port: 993 }, smtp: { host: "smtp.aol.com", port: 465, security: "tls" },
     imapUser: "address", source: "https://help.aol.com/articles/how-do-i-use-other-email-applications-to-send-and-receive-my-aol-mail",
     appPasswordUrl: "https://help.aol.com/articles/create-and-manage-app-password",
-    steps: ["On your AOL Account Security page, choose Generate app password."],
+    steps: [msg("On your AOL Account Security page, choose Generate app password.")],
     sentCopy: "server",
   },
   {
@@ -64,7 +69,7 @@ export const PRESETS: readonly Preset[] = [
     imap: { host: "imap.fastmail.com", port: 993 }, smtp: { host: "smtp.fastmail.com", port: 465, security: "tls" },
     imapUser: "address", source: "https://www.fastmail.help/hc/en-us/articles/1500000278342-Server-names-and-ports",
     appPasswordUrl: "https://www.fastmail.help/hc/en-us/articles/360058752854-App-passwords",
-    steps: ["In Fastmail, open Settings → Privacy & Security → Manage app passwords and access, and make a new app password with access to Mail."],
+    steps: [msg("In Fastmail, open Settings → Privacy & Security → Manage app passwords and access, and make a new app password with access to Mail.")],
     sentCopy: "server",
   },
   {
@@ -72,15 +77,15 @@ export const PRESETS: readonly Preset[] = [
     imap: { host: "imap.zoho.com", port: 993 }, smtp: { host: "smtp.zoho.com", port: 465, security: "tls" },
     imapUser: "address", source: "https://www.zoho.com/mail/help/imap-access.html",
     appPasswordUrl: "https://www.zoho.com/mail/help/adminconsole/two-factor-authentication.html",
-    steps: ["In Zoho Mail, turn on IMAP access in Settings.", "With two-factor authentication on, make an app password in Zoho Accounts → Security → App passwords."],
+    steps: [msg("In Zoho Mail, turn on IMAP access in Settings."), msg("With two-factor authentication on, make an app password in Zoho Accounts → Security → App passwords.")],
     sentCopy: "server",
   },
   {
-    id: "zoho-org", name: "Zoho Mail (your domain)", domains: [],
+    id: "zoho-org", name: msg("Zoho Mail (your domain)"), domains: [],
     imap: { host: "imappro.zoho.com", port: 993 }, smtp: { host: "smtppro.zoho.com", port: 465, security: "tls" },
     imapUser: "address", source: "https://www.zoho.com/mail/help/imap-access.html",
     appPasswordUrl: "https://www.zoho.com/mail/help/adminconsole/two-factor-authentication.html",
-    steps: ["In Zoho Mail, turn on IMAP access in Settings.", "With two-factor authentication on, make an app password in Zoho Accounts → Security → App passwords."],
+    steps: [msg("In Zoho Mail, turn on IMAP access in Settings."), msg("With two-factor authentication on, make an app password in Zoho Accounts → Security → App passwords.")],
     sentCopy: "server",
   },
   {
@@ -88,7 +93,7 @@ export const PRESETS: readonly Preset[] = [
     imap: { host: "imap.yandex.com", port: 993 }, smtp: { host: "smtp.yandex.com", port: 465, security: "tls" },
     imapUser: "address", source: "https://yandex.com/support/yandex-360/customers/mail/en/mail-clients/others",
     appPasswordUrl: "https://yandex.com/support/id/en/authorization/app-passwords",
-    steps: ["In Yandex Mail settings, allow mail clients to read your mail from the imap.yandex.com server via IMAP.", "In Yandex ID → Security → App passwords, make one for mail. It starts working within 2 to 3 hours."],
+    steps: [msg("In Yandex Mail settings, allow mail clients to read your mail from the imap.yandex.com server via IMAP."), msg("In Yandex ID → Security → App passwords, make one for mail. It starts working within 2 to 3 hours.")],
     sentCopy: "server",
   },
   {
@@ -96,7 +101,7 @@ export const PRESETS: readonly Preset[] = [
     imap: { host: "imap.mail.ru", port: 993 }, smtp: { host: "smtp.mail.ru", port: 465, security: "tls" },
     imapUser: "address", source: "https://help.mail.ru/mail/login/mailer/",
     appPasswordUrl: "https://help.mail.ru/mail/login/mailer/#password",
-    steps: ["Your mailbox needs a phone number attached.", "In Mail.ru, open Settings → Security → Passwords for external applications, and make one with full access to Mail."],
+    steps: [msg("Your mailbox needs a phone number attached."), msg("In Mail.ru, open Settings → Security → Passwords for external applications, and make one with full access to Mail.")],
     sentCopy: "server",
   },
   {
@@ -104,7 +109,7 @@ export const PRESETS: readonly Preset[] = [
     imap: { host: "imap.gmx.com", port: 993 }, smtp: { host: "mail.gmx.com", port: 465, security: "tls" },
     imapUser: "address", source: "https://support.gmx.com/pop-imap/imap/server.html",
     appPasswordUrl: "https://support.gmx.com/pop-imap/toggle.html",
-    steps: ["IMAP is off at GMX until you switch it on: Email → Settings → POP3 & IMAP → Enable access to this account via POP3 and IMAP."],
+    steps: [msg("IMAP is off at GMX until you switch it on: Email → Settings → POP3 & IMAP → Enable access to this account via POP3 and IMAP.")],
     sentCopy: "server",
   },
   {
@@ -112,15 +117,15 @@ export const PRESETS: readonly Preset[] = [
     imap: { host: "imap.gmx.net", port: 993 }, smtp: { host: "mail.gmx.net", port: 465, security: "tls" },
     imapUser: "address", source: "https://hilfe.gmx.net/pop-imap/imap/imap-serverdaten.html",
     appPasswordUrl: "https://hilfe.gmx.net/pop-imap/einschalten.html",
-    steps: ["IMAP is off at GMX until you switch it on: E-Mail-Einstellungen → POP3/IMAP → POP3- und IMAP-Zugriff erlauben. GMX switches it off again after a long time unused."],
+    steps: [msg("IMAP is off at GMX until you switch it on: E-Mail-Einstellungen → POP3/IMAP → POP3- und IMAP-Zugriff erlauben. GMX switches it off again after a long time unused.")],
     sentCopy: "server",
   },
   {
-    id: "gmail", name: "Gmail (app password)", domains: ["gmail.com", "googlemail.com"],
+    id: "gmail", name: msg("Gmail (app password)"), domains: ["gmail.com", "googlemail.com"],
     imap: { host: "imap.gmail.com", port: 993 }, smtp: { host: "smtp.gmail.com", port: 465, security: "tls" },
     imapUser: "address", source: "https://developers.google.com/workspace/gmail/imap/imap-smtp",
     appPasswordUrl: "https://support.google.com/accounts/answer/185833",
-    steps: ["Your Google Account needs 2-Step Verification.", "Make an app password at myaccount.google.com/apppasswords. Signing in with Google (Connect Gmail) needs no password at all where this server has it set up."],
+    steps: [msg("Your Google Account needs 2-Step Verification."), msg("Make an app password at myaccount.google.com/apppasswords. Signing in with Google (Connect Gmail) needs no password at all where this server has it set up.")],
     // "Sent messages are automatically copied to the Gmail/Sent folder if your email client uses SMTP."
     // — https://support.google.com/mail/answer/78892
     sentCopy: "provider",
@@ -129,8 +134,8 @@ export const PRESETS: readonly Preset[] = [
 
 /** The custom server card: the person types the servers their provider names. */
 export const CUSTOM: Omit<Preset, "imap" | "smtp"> = {
-  id: "custom", name: "Other mail (IMAP)", domains: [], imapUser: "address",
-  source: "", appPasswordUrl: "", steps: ["Ask your provider for its IMAP server (with SSL/TLS, usually port 993) and its SMTP server (465 with SSL/TLS, or 587 with STARTTLS)."],
+  id: "custom", name: msg("Other mail (IMAP)"), domains: [], imapUser: "address",
+  source: "", appPasswordUrl: "", steps: [msg("Ask your provider for its IMAP server (with SSL/TLS, usually port 993) and its SMTP server (465 with SSL/TLS, or 587 with STARTTLS).")],
   sentCopy: "server",
 };
 

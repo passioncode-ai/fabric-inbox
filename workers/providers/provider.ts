@@ -78,7 +78,17 @@ export type MessageChange =
   | { trashed: boolean }
   | { archive: true }
   | { inbox: true }
-  | { spam: boolean };
+  | { spam: boolean }
+  /**
+   * Discarded (true): out of the inbox into the account's Discarded place — Gmail's "Discarded"
+   * label, an IMAP or Outlook folder named Discarded, made when missing — and read. Not discarded
+   * (false): out of that place, back to `to` (the inbox when absent; Undo names where it was).
+   */
+  | { discarded: boolean; to?: DiscardRestoreTarget };
+
+/** Where a remote account's discarded message can go back to (a discard from Spam is refused). */
+export type DiscardRestoreTarget = "inbox" | "archive" | "trash";
+export const DISCARD_RESTORE_TARGETS: readonly DiscardRestoreTarget[] = ["inbox", "archive", "trash"];
 
 /** The result of one unit of sync work. */
 export interface PageResult {
@@ -140,6 +150,11 @@ export interface ProviderSession {
   updateDraft(draftId: string, update: DraftUpdate): Promise<{ draftId: string; revision: string; messageId: string; threadId: string }>;
   deleteDraft(draftId: string): Promise<void>;
   sendDraft(draftId: string): Promise<SendResult>;
+  /**
+   * Deletes one message for good, where the account has no Trash to send it to (an IMAP server
+   * without one): Discarded mail past its 30 days. Absent where Trash always exists.
+   */
+  expunge?(messageId: string): Promise<void>;
   close(): Promise<void>;
 }
 

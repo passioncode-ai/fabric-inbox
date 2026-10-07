@@ -62,7 +62,7 @@ flowchart LR
 | Tools | `workers/automation/mcp.ts (callMcpTool)` | remote MCP over Streamable HTTP; host checked against `AUTOMATION_MCP_HOSTS` at save and at call; bounded result kept in the run |
 | Send | `MailboxDO.sendMail` | the one outgoing boundary: idempotency key = run id; accepted / failed / unknown; unknown is never retried |
 | Routing | `workers/routing/email-routing.ts (EmailRoutingClient)` | reads a rule/catch-all to the Worker as verified, missing or unknown; creates a literal rule without duplicating |
-| API | `workers/routes/agents.ts`, `workers/routes/knowledge.ts` | `/api/agents` (grants only existing collections), `/api/agent-runs` (`limit`, `before` = `createdAt|id` of the last run shown, `outcome` = answered / attention / skipped, `agent`, `mailbox`), `/api/project-addresses`, `/api/knowledge/*` (a collection in use cannot be deleted) |
+| API | `workers/routes/agents.ts`, `workers/routes/knowledge.ts` | `/api/agents` (grants only existing collections), `/api/agent-runs` (`limit`, `before` = `createdAt|id` of the last run shown, `outcome` = answered / attention / skipped, `agent`, `mailbox`), `/api/project-addresses` (with `/check`, `/batch` and `/:email/test`), `/api/knowledge/*` (a collection in use cannot be deleted) |
 
 The knowledge base the operator names as the single one is Fabric's project memory
 ([ADR-0069](https://github.com/passioncode-ai/fabric/blob/main/docs/adr/0069-project-memory-is-source-addressed-and-authority-bounded.md));
@@ -116,7 +116,16 @@ its key by fingerprint (first 9 bytes of SHA-256); version 1 envelopes and keys 
 `MAIL_CREDENTIAL_KEY_PREVIOUS` keep opening and are sealed again with the current key the next
 time the account is used, which is how the key is rotated. An envelope no key opens is
 `reconnect_required` (`credentials_unreadable`). Create my server makes `MAIL_CREDENTIAL_KEY` once
-(`desktop/cloudflare-deploy.cjs`); the Gmail and Outlook setups make it when the server has none.
+(`desktop/cloudflare-deploy.cjs`); the Gmail and Outlook setups, and `POST /api/credential-key`
+(Settings, `create_credential_key`), make it when the server has none. All three write through
+`writeWorkerSettings` (`workers/gmail-setup/server-settings.ts`), which runs under one R2 lock
+(`workers/lib/settings-lock.ts`, `config/worker-settings.lock`, taken with a conditional write,
+stale after 2 minutes) and reads the live bindings just before it writes: a credential key bound
+under either name is inherited, never written again, even before the new Worker version holding it
+runs — so two requests at once make exactly one key. Only a `MAIL_CREDENTIAL_KEY` the running Worker
+holds but cannot use (set by hand) is replaced, and not within 10 minutes of a key this server wrote
+(`config/credential-key.json`, a time, no value). A change that waits too long for the lock is
+refused with 409 and nothing written.
 
 **Schedule.** One alarm serves every account of every provider (`gmail-scheduler.ts`, below);
 `MAIL_POLL_SECONDS` (else `GMAIL_POLL_SECONDS`, default 300) sets the interval; an account whose
@@ -179,8 +188,18 @@ tick a few seconds per account; until an account is done its reads use the old f
 accounts in scope (every one, or the ones named; none for Cloudflare mail, which arrives by push)
 within about 20 s shared fairly, without moving the alarm, and answers per account `synced` (with
 `importing` percent while an import runs), `backoff` (with `retryAt`), `reconnect`, `failed` (with
-`error`) or `not_reached`. The inbox's "Check for new mail" button calls it, then reads the list and
-the categories again and shows "Updated just now" or which accounts were not read.
+`error`) or `not_reached`. Refresh — on the left of the toolbar, under the list's title, also ⌘⇧N
+(Ctrl+Shift+N; ⌘R stays the Mac menu's Retry connection) — calls it, then reads the list and the
+categories again.
+
+**The status beside Refresh** (`app/lib/sync-status.ts (syncStatus)`, `app/components/inbox/SyncStatus.tsx`)
+is the server's last successful read of each Gmail, IMAP and Outlook account in view (`lastSyncAt`;
+the headline is the oldest of them), "Live" for Cloudflare addresses (they receive by push),
+"Updating…" while Refresh or a read of the list runs, an import's percent, a wait the provider asked
+for (`retryAt`, now in the feed's accounts), and an error that names the account and its fix (also
+from the last Refresh's per-account outcomes). Its relative time ticks every 15 s only while the
+page is visible (`app/hooks/useVisibleClock.ts`), in its own component, so the list never re-renders
+for it.
 
 **Freshness in the app** (`app/routes/unified-inbox.tsx`, `app/lib/mail-refresh.ts`). The list
 polls every 60 s while the window is active (`pollInterval(useWindowActive())`); after Load older
@@ -189,6 +208,13 @@ window, or the Mac waking (`powerMonitor` `resume` → `fabric:resumed` on the m
 bridge), reads the list at once, at most every 10 s. Categories are read with each read of the
 list. A count the server could not read comes back `countsStale` and is drawn dimmed. Archive,
 trash, spam, star and read show at once in every cached list and roll back if the server refuses.
+**Keyboard** (`app/lib/mail-keys.ts`, `app/components/inbox/triage-actions.ts`): Delete or Backspace
+archives and marks read; ⌘⌫ (Ctrl+Backspace) discards; both act on every message chosen together
+(Shift+↓/↑, ⌘/Ctrl-click, Shift-click), move the rows out at once, open the next message and offer
+Undo (⌘Z) for 10 s, which moves each back and makes it unread again if it was. ↓/J and ↑/K move; Esc
+clears; ? shows the help. No key acts while the person types in a field or a dialog is open, and no
+undefined combination does anything. The words of these parts live in tables per component
+(`TRIAGE_TEXT`, `SYNC_TEXT`, `SHORTCUT_TEXT`, `DISCARD_SECTION_TEXT`) for localization.
 Every API answer carries `X-Fabric-Build` (one id per build, `shared/build.ts`); a page with
 another id offers "Reload to update", and a page that cannot load its own code after an update
 reloads once (`app/lib/build-version.ts`).
@@ -260,6 +286,42 @@ A stranger's message waits in the agent queue for its spam check (`AgentRegistry
 answer, so spam never gets a draft and a model that never answers delays an answer without
 dropping it. Agents skip a message that is in Spam or Trash by the time its run starts.
 
+## Discarded (0.12, WS8)
+
+Mail thrown away on purpose (⌘⌫, `discard_messages`), kept apart from Trash and Spam so a mistake can
+come back, and learned from (operator decision 2026-10-06). Discarded counts as deleted: out of the
+inbox, its counts and categories; kept 30 days.
+
+| Piece | Where | What it guarantees |
+|---|---|---|
+| Rules and why | `shared/mail/discard.ts` (pure), R2 `config/discard.json` (`workers/discard/store.ts`, written conditionally on its etag) | each discard records the message's mailing list (List-Id) or newsletter mark (List-Unsubscribe), its sender, the sender's domain only for bulk senders and never a shared personal domain (gmail.com, icloud.com…), the category it was in, and a model's one-line guess when the server has Workers AI (`explainDiscard`, after the answer, 8 s, optional); a rule is keyed on the List-Id, else the sender's address, learned at the first discard and counted after; a sender any mailbox or account of the workspace wrote to, one on the workspace's own domains (the served domains and each connected account's own address domain, never a shared personal provider such as gmail.com: `workers/discard/workspace.ts`), or one on Always allow is not learned (a list is); Undo (`unlearn`) takes back only what that discard taught: the discard answers each message's `learnedRuleId`, the restore sends it back as `ruleId`, and a message without one (learning skipped, `learn: false`, a rule that could not be saved) forgets nothing; at most 2000 rules, the least recently used dropped |
+| Cloudflare | `MailboxDO` (migrations `17_discarded`: folder `discarded`, `emails.discard_reason`, `emails.discarded_at`; `18_discarded_system_folder`); `discardMessages`, `restoreDiscarded`, `purgeDiscarded` on the alarm | read on discard; a second discard keeps its date; a folder the person had named Discarded keeps its mail under its own id — renamed "Discarded (your folder)", or, when the folder API had given it the id `discarded` (any name that slugs to it), moved to `discarded-yours` with its mail (mail without a `discarded_at`) and its own name; built-in folders (`shared/folders.ts isBuiltInFolder`) cannot be deleted, a new folder whose name slugs to one is refused (409), and a built-in folder found missing is made again before a delivery or a discard writes to it (`builtin_folder_recreated`), so delivery never fails for it |
+| Gmail | `gmail-provider.ts` (`discardLabel`), `gmail-client.ts` (`labelAliases`) | the account's own label "Discarded" (found by name or made, its id kept under `label:<acc>:discarded`, made again once if deleted in Gmail); INBOX and UNREAD removed; every message read through the client carries it as `DISCARDED` in the cache |
+| IMAP | `imap/provider.ts` (`makeDiscarded`), `imap/client.ts` (`create`) | a folder named Discarded (or Выброшенные) is used, else created at the top level; it joins the synced folders (role `discarded`, ids `x-…`); `\Seen` set before the move; a server that refuses CREATE answers `folder_create_refused` — the person makes the folder and tries again |
+| Outlook | `outlook/provider.ts` (`discardedFolder`), `outlook/sync.ts` (`findDiscarded`) | a top-level folder found by display name or made (`POST /me/mailFolders`), read (`isRead`), then moved; found at connect and daily like the well-known folders |
+| Spam of a remote account | `AccountService.discard` | not discarded (`spam_not_discardable`, 400: "It is in Spam: moving it out would teach the account's spam filter that it is not spam…"): taking mail out of the provider's Spam is how Gmail, and an IMAP or Outlook server's filter, learn "not spam" (SP-3), and the provider empties Spam on its own; a Cloudflare mailbox's Spam is this server's and can be discarded |
+| The cache | `gmail-cache.ts` (`DISCARDED_LABEL`, `inFolder`) | `DISCARDED` is in no other view; `discarded` is a feed folder with its own index; counters exclude it; `discarded:<acc>:<id>` keeps why and since when |
+| Arrival | `workers/index.ts (discardVerdict)` after `spamVerdict`; `accounts-do.ts (arrivalFilter)` in `AccountService.drainEvents`, the discard itself under the object's lock (`serial`), never alongside a sync page or a mail action | mail matching a rule goes to Discarded before any rule, agent or category, with "Discarded automatically: you discarded N messages from …"; never mail from someone any Cloudflare mailbox or connected account of the workspace wrote to (`workers/discard/workspace.ts workspaceKnown`: every mailbox through its object, every account's Sent index; at most 500 mailboxes, 10 at once, 5 s, once per sender per arrival batch; anything unread counts as written to; in To, Cc or Bcc — Cloudflare: its Sent; remote: the cached Sent index, newest 5,000, whose Sent rows keep Cc and Bcc; a row indexed before 0.12 is completed from its message row), a reply in a conversation it (that mailbox or account) took part in, the workspace's own domains (served, or a connected account's own), or Always allow / Never spam senders; any failure delivers it as before — including a discard the provider refuses (a folder it will not make, an outage: `discard_arrival_failed`, the message stays in the inbox and goes to rules, agents and categories); a Cloudflare copy is not forwarded |
+| Retention | `MailboxDO.purgeDiscarded`; `AccountService.purgeDiscarded` on the accounts alarm (25 a tick) | Cloudflare: deleted with attachments 30 days after `discarded_at`; Gmail, IMAP, Outlook: moved to the account's Trash, which the provider empties, or deleted for good on an IMAP server with no Trash folder. Every record is read (paged, not the first 1000), the longest due first; a message an IMAP server without UIDPLUS moved without its new id is found again in the cached Discarded index (Message-ID, else From, Subject and date) and given up, logged `discarded_lost`, after 48 runs |
+| Undo | `workers/routes/discard.ts` (restore `to`, `ruleId`), `app/components/inbox/triage-actions.ts (undoDone)` | the discard answers each message's `from`; Undo restores it there: Cloudflare to that folder (never Sent, Drafts or Discarded; a folder deleted since: the inbox; back in Spam with the reason and `spam_at` it had, which a discard keeps on the row), Gmail, IMAP and Outlook to the inbox, the archive or Trash (`MessageChange { discarded: false, to }`); Not discarded, with no `to`, is the inbox |
+| Routes and tools | `workers/routes/discard.ts`; tools `discard_messages`, `restore_discarded`, `list_discard_rules`, `remove_discard_rule`, `update_discard_allow_list`, `list_messages` folder `discarded` | the shared routes are outside a mailbox-limited key's reach (they teach the whole workspace) |
+| Screens | the Discarded folder in the unified feed; Settings → Discard rules (`app/components/settings/sections/DiscardSection.tsx`, SCR-16) | each row says why it is there; Not discarded names the rule to stop |
+
+## Languages (0.12, WS9)
+
+The interface speaks English and Russian (fabric-workspace knowledge/localization.md, L10N-01…06).
+English is the source text and the key; nothing a server stores or an agent reads changes language.
+
+| Piece | Where | What it guarantees |
+|---|---|---|
+| The core | `shared/i18n/index.ts` | `t("Refresh")`, named placeholders, `t.plural` with `Intl.PluralRules` (Russian one/few/many from one dictionary entry `a|b|c`), `t.rich` for elements inside a sentence, dates/numbers/lists through `Intl` in `ru-RU` (English output unchanged), `msg()` to mark English written outside `t()`, `t.text()` to show a finished English sentence in the language (exact entry, else the template it was filled from, its values translated too); a missing entry shows English, never a key; `[menu] Edit`-style context keys for one word with two meanings |
+| The dictionary | `shared/i18n/ru/*.ts`, merged in `ru/index.ts` | English → Russian, one file per part of the product, a key in exactly one file; terms from `docs/brand/terminology.md` (Russian) |
+| Choosing the language | `app/root.tsx` (loader, `shouldRevalidate` false), `shared/i18n/server.ts`, `app/lib/i18n.tsx`, Settings → App → Language | the server renders the first page in `?lang=`, else the `fabric-inbox-locale` cookie, else Accept-Language (first preferred language `ru`/`ru-*` → Russian); `<html lang>` follows; a choice is kept per device in localStorage and mirrored in the cookie and the Mac app's file, and the page reloads once to show it |
+| The server's words | `msg()` in `workers/` and `shared/`; `t.text()` where `app/` shows them | a refusal, a step's detail, a stored reason is English on the wire, in MCP answers and in logs, and Russian where a person reads it (L10N-04) |
+| The server's own pages | `workers/gmail-setup/result-page.ts`, `workers/microsoft-setup/result-page.ts` | the page after a Gmail or Outlook sign-in renders in the language the connect started with (kept beside the sign-in's state; the system browser has none of the app's cookies), else the browser's |
+| The Mac app | `desktop/i18n.cjs`, `desktop/locales/ru.json` (generated), `desktop/setup.js` (`data-i18n` in `setup.html`), `fabric:locale`/`fabric:locale-set` (mail window) and `fabric:setup-locale` (first-run window) | menus, dialogs, connect prompts, server creation and the first-run window follow `<userData>/locale.json` (written when the person chooses in Settings), else the system's preferred languages; the menus are rebuilt at once |
+| The guard | `scripts/check-locale.mjs`, `tests/i18n.test.ts`, `tests/i18n-render.test.ts` | every wrapped string has a Russian entry with the same placeholders (and HTML tags), plural entries have three forms, no unused entry, the Mac app's copy is current, and no English literal sits in JSX text or in `title`, `aria-label`, `placeholder`, `alt`, `label` of `app/**/*.tsx` |
+
 ## Delivery guarantees
 
 | Path | Guarantee | Where |
@@ -270,17 +332,47 @@ dropping it. Agents skip a message that is in Spam or Trash by the time its run 
 | Agents | one run per message; a message whose run was cut off waits in the queue until that run is stale; one message delivered to several agent addresses is answered once per workspace (B-22) | `workers/agents/registry.ts`, `workers/agents/dedupe.ts` |
 | Gmail events | each event its own backoff, `dead:event:` after 10 | `workers/providers/account-service.ts (drainEvents)` |
 | Outbox | an unknown outcome is never retried | `workers/actions/outbox*.ts` |
-| Bounded stores | Spam 30 days after it entered Spam; AutomationDO prunes daily | `MailboxDO.purgeSpam`, `AutomationDO.prune` |
+| Bounded stores | Spam 30 days after it entered Spam; Discarded 30 days after it was discarded (remote accounts: to their Trash); AutomationDO prunes daily | `MailboxDO.purgeSpam`, `MailboxDO.purgeDiscarded`, `AccountService.purgeDiscarded`, `AutomationDO.prune` |
 
 ## Addresses: one way to create and remove
 
 `workers/lib/address-ops.ts` (`createAddress`, `removeAddress`, `setForwardCopy`,
 `effectiveCatchAll`) is behind both Settings → Addresses (`/api/project-addresses`) and the legacy
 mailbox route (`/api/v1/mailboxes`, used for the addresses a deployment's `EMAIL_ADDRESSES` lists). Every check runs before Cloudflare is touched; a rule the
-call made is removed again when the mailbox cannot be saved; a zone the token cannot see gets its
+mailbox is saved before its rule (below), so no rule is left without a mailbox; a zone the token cannot see gets its
 address with a warning; the catch-all in effect (the deployment's `UNKNOWN_ADDRESS_POLICY` wins
 over the stored choice) cannot be removed; what happens to the next message is read from
-Cloudflare after the rule is gone. `DomainManager.connect` leaves rules to another Worker alone
+Cloudflare after the rule is gone. Since 0.12 (WS7) creating answers its `steps` (address, rule —
+each done, already, skipped or failed with a `fix`, or `not_receiving` with the domain's fix when
+the rule exists but Email Routing is off or misconfigured for the domain, so a rule is never shown
+done while no mail can arrive); with `createRoute: "auto"` a rule that cannot be
+made no longer costs the address (with `true` it still does). `checkAddresses`
+(`GET /api/project-addresses/check`) reads Cloudflare once for a domain and several names
+(`EmailRoutingClient.routingFor`) and says per name available, exists, elsewhere, invalid or
+restricted (not in the deployment's `EMAIL_ADDRESSES`, which creating refuses too); it takes the
+names as a JSON array (`check_address`; a name is never split at a comma) or, from the dialog, a
+comma-separated list;
+`createAddresses` (`POST /api/project-addresses/batch`) creates up to 50 one after another with one
+routing client, so the zone, Email Routing's state and the rules are read once
+(`EmailRoutingClient` remembers them for the request and keeps them current as it changes rules)
+and each address then costs one Cloudflare call; one request stops starting addresses when its
+Cloudflare calls near `BATCH_SUBREQUESTS` (40, under the free plan's 50 subrequests) or after
+`BATCH_TIME_MS` (15 s, inside the app's 30-second wait), and answers the names it did not start in
+`remaining` (`complete: false`), which the dialog and `create_addresses` send again. The mailbox is
+written before its rule, with a conditional write (`If-None-Match: *`): a request cut off between
+the two leaves an address that says it does not receive yet, never a rule without a mailbox, and of
+two creates of one address one wins and the other answers 409 without touching Cloudflare. With
+`createRoute: true` a rule Cloudflare refuses takes the new mailbox away again. When the dialog's
+answer is lost (a timeout, no connection, a 5xx) it reads the names back
+(`/api/project-addresses/check`, then each existing address's routing) and says which exist,
+never "Nothing was created";
+`sendRoutingTest` sends each test as its own message (a fresh idempotency key per send and an
+8-character nonce in the subject, so Send again within the same minute really sends) and keeps its
+subject in R2 (`routing-tests/<address>.json`); `routingTestStatus`
+(`GET /api/project-addresses/:email/test`) counts only a message with exactly that subject, received at or
+after the send, in any folder but Sent and Drafts (a reply or an earlier test does not count), or
+reports it not arrived after 3 minutes. The part before @ is checked by
+`shared/address-name.ts`, the same module the dialog uses. `DomainManager.connect` leaves rules to another Worker alone
 and keeps each address's agent and the chosen catch-all; `release` keeps serving when the zone
 cannot be looked up and asks before giving up a zone the token cannot see.
 
@@ -413,6 +505,9 @@ flowchart LR
 | Knowledge collections, documents, chunks, FTS5 index | `KnowledgeDO` SQLite (`workspace`), migration `fabric-v3` |
 | Projects, categories, verdicts, category queue, model budget, backfills, spam checks and their budget | `CategoriesDO` SQLite (`workspace`), migration `fabric-v4` |
 | Spam lists (blocked and allowed senders and domains) | R2 `config/spam.json` |
+| Discard rules (list or sender, why, counts) and the Always allow list | R2 `config/discard.json` |
+| Why a message is in Discarded, and since when | `MailboxDO` `emails.discard_reason`, `emails.discarded_at`; `GmailAccountsDO` `discarded:<acc>:<id>` |
+| A Gmail account's Discarded label id | `GmailAccountsDO` `label:<acc>:discarded` |
 | Why a message is in Spam, and since when | `MailboxDO` `emails.spam_reason`, `emails.spam_at` |
 | A body too large for a row | R2 `bodies/<id>.html` (`emails.body_key`) |
 | Addresses hidden from the sidebar and All inboxes | R2 `config/hidden-accounts.json` |
@@ -449,6 +544,7 @@ read with a default where it is missing, never assumed present.
 | `workers/agents/` | address agents: definition, registry, prefilter, runner, one answer per message (dedupe), policy, model |
 | `workers/categories/` | categories: definition and matching, the classifier, `CategoriesDO` (also the spam model) |
 | `workers/spam/`, `shared/mail/spam.ts` | spam lists in R2; the verdict on arrival |
+| `workers/discard/`, `shared/mail/discard.ts`, `workers/routes/discard.ts` | Discarded: rules in R2, why, matching and safety on arrival, the routes |
 | `workers/knowledge/` | knowledge store (`KnowledgeDO`) and pure text work (chunking, FTS query quoting) |
 | `workers/automation/` | rules engine, policy, MCP client |
 | `workers/providers/` | the provider interface, credentials, account service, `GmailAccountsDO`, scheduler, cache; Gmail OAuth, client, sync loop and provider |

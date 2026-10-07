@@ -7,8 +7,10 @@ import {
   type KeyboardEvent, type ReactNode, type RefObject,
 } from "react";
 import { Link, useBlocker, useNavigate } from "react-router";
+import { useT } from "../../lib/i18n";
 import { LIST_KEYS, nextIndex, type ListEntry, type ListGroup, type ListKey } from "./list-model";
 import { sectionInfo, type SectionId } from "./paths";
+import { msg } from "../../../shared/i18n";
 
 /* ------------------------------------------------------------------ toasts */
 
@@ -41,6 +43,7 @@ export function useConfirm() {
 }
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const t = useT();
   const dialog = useRef<HTMLDialogElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const accept = useRef<HTMLButtonElement>(null);
@@ -86,7 +89,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             {request.blocked && <p className="fi-dialog-blocked" role="note">{request.blocked}</p>}
             <div className="fi-dialog-actions">
               <button ref={cancel} type="button" className="fi-secondary" onClick={() => settle(false)}>
-                {request.cancelLabel ?? "Cancel"}
+                {request.cancelLabel ?? t("Cancel")}
               </button>
               {!request.blocked && (
                 <button ref={accept} type="button" className={request.danger ? "fi-danger" : "fi-primary"} onClick={() => settle(true)}>
@@ -106,30 +109,36 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
  * the Back button or Esc. Nothing is lost silently.
  */
 export function useDirtyGuard(dirty: boolean, what: string) {
+  const t = useT();
   const confirm = useConfirm();
   const blocker = useBlocker(({ currentLocation, nextLocation }) =>
     dirty && (currentLocation.pathname !== nextLocation.pathname));
   useEffect(() => {
     if (blocker.state !== "blocked") return;
     void confirm({
-      title: `Discard your changes to ${what}?`,
-      body: <p>They are not saved yet.</p>,
-      confirmLabel: "Discard changes", cancelLabel: "Keep editing", danger: true,
+      title: t("Discard your changes to {what}?", { what }),
+      body: <p>{t("They are not saved yet.")}</p>,
+      confirmLabel: t("Discard changes"), cancelLabel: t("Keep editing"), danger: true,
     }).then((ok) => (ok ? blocker.proceed?.() : blocker.reset?.()));
-  }, [blocker, confirm, what]);
+  }, [blocker, confirm, what, t]);
 }
 
 /* ------------------------------------------------------------ plain dialogs */
 
 /** A modal for a short task (add an address, connect an account, make a key). Esc closes it. */
-export function Dialog({ open, title, onClose, children, wide = false, busy = false }: {
+export function Dialog({ open, title, onClose, children, wide = false, busy = false, restoreFocus }: {
   open: boolean; title: string; onClose: () => void; children: ReactNode; wide?: boolean;
   /** While a request runs, Esc and Close wait for it. */
   busy?: boolean;
+  /** Where the focus goes on close when not back to what opened it (the panel of what was just made). */
+  restoreFocus?: () => HTMLElement | null;
 }) {
+  const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
   const returnTo = useRef<HTMLElement | null>(null);
   const titleId = useId();
+  const restore = useRef(restoreFocus);
+  restore.current = restoreFocus;
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -139,7 +148,7 @@ export function Dialog({ open, title, onClose, children, wide = false, busy = fa
       el.querySelector<HTMLElement>("[data-autofocus]")?.focus();
     } else if (!open && el.open) {
       el.close();
-      const back = returnTo.current;
+      const back = restore.current?.() ?? returnTo.current;
       if (back && back.isConnected) back.focus();
     }
   }, [open]);
@@ -150,7 +159,7 @@ export function Dialog({ open, title, onClose, children, wide = false, busy = fa
         <>
           <header className="fi-dialog-head">
             <h2 id={titleId}>{title}</h2>
-            <button type="button" className="fi-icon-button" aria-label="Close" disabled={busy} onClick={onClose}><XIcon size={16} /></button>
+            <button type="button" className="fi-icon-button" aria-label={t("Close")} disabled={busy} onClick={onClose}><XIcon size={16} /></button>
           </header>
           {children}
         </>
@@ -239,6 +248,7 @@ const WorkContext = createContext<WorkState | null>(null);
  * and is also announced as a toast.
  */
 export function WorkProvider({ children }: { children: ReactNode }) {
+  const t = useT();
   const notify = useNotify();
   const [busy, setBusy] = useState<Record<string, string>>({});
   const [results, setResults] = useState<Record<string, ActionOutcome>>({});
@@ -255,14 +265,15 @@ export function WorkProvider({ children }: { children: ReactNode }) {
       }
       return true;
     } catch (error) {
-      const text = errorText(error);
+      // The server's own words, in the interface's language where the dictionary knows them (L10N-04).
+      const text = t.text(errorText(error));
       setResults((r) => ({ ...r, [at]: { tone: "error", text } }));
       notify(text, "error");
       return false;
     } finally {
       setBusy((b) => { const { [key]: _done, ...rest } = b; return rest; });
     }
-  }, [notify]);
+  }, [notify, t]);
   const clear = useCallback((key: string, slot = "") => setResults((r) => { const { [resultKey(key, slot)]: _gone, ...rest } = r; return rest; }), []);
   const value = useMemo(() => ({ busy, results, run, clear }), [busy, results, run, clear]);
   return <WorkContext.Provider value={value}>{children}</WorkContext.Provider>;
@@ -292,14 +303,15 @@ export function useBusyRows(): Record<string, string> {
 export function errorText(error: unknown): string {
   const body = (error as { body?: { error?: unknown } } | null)?.body;
   if (body && typeof body.error === "string" && body.error) return body.error;
-  return (error as Error)?.message || "Something went wrong. Try again.";
+  return (error as Error)?.message || msg("Something went wrong. Try again.");
 }
 
 /** The last result of the work on one item, in a slot that never moves the content above it. */
 export function ActionResult({ result }: { result: ActionOutcome | null }) {
+  const t = useT();
   return (
     <p className={"fi-action-result" + (result?.tone === "error" ? " is-error" : "")} role={result?.tone === "error" ? "alert" : "status"}>
-      {result?.text ?? ""}
+      {result ? t.text(result.text) : ""}
     </p>
   );
 }
@@ -326,10 +338,11 @@ export function SkeletonPanel({ label }: { label: string }) {
 }
 
 export function LoadFailure({ what, error, onRetry, retrying = false }: { what: string; error: unknown; onRetry: () => void; retrying?: boolean }) {
+  const t = useT();
   return (
     <div className="fi-load-failure" role="alert">
-      <p><strong>{what} could not load.</strong> {errorText(error)}</p>
-      <button type="button" className="fi-secondary" disabled={retrying} onClick={onRetry}>{retrying ? "Retrying…" : "Retry"}</button>
+      <p><strong>{t("{what} could not load.", { what })}</strong> {t.text(errorText(error))}</p>
+      <button type="button" className="fi-secondary" disabled={retrying} onClick={onRetry}>{retrying ? t("Retrying…") : t("Retry")}</button>
     </div>
   );
 }
@@ -358,6 +371,7 @@ interface ListProps<T extends ListEntry> {
  * the panel closes the focus comes back to the row it was opened from.
  */
 export function SelectableList<T extends ListEntry>({ label, groups, selected, hrefFor, renderRow, empty, pinned = [] }: ListProps<T>) {
+  const t = useT();
   const root = useRef<HTMLDivElement>(null);
   const previous = useRef<string | null>(selected);
   const busy = useBusyRows();
@@ -397,7 +411,7 @@ export function SelectableList<T extends ListEntry>({ label, groups, selected, h
         className={"fi-list-row" + (key === selected ? " is-selected" : "") + (busy[key] ? " is-busy" : "")}
         aria-current={key === selected ? "true" : undefined} tabIndex={key === focusKey ? 0 : -1}>
         {content}
-        {busy[key] && <span className="fi-row-busy">{busy[key]}</span>}
+        {busy[key] && <span className="fi-row-busy">{t.text(busy[key])}</span>}
       </Link>
     </li>
   );
@@ -434,13 +448,14 @@ export function ListSearch({ value, onChange, placeholder, label }: { value: str
 export function SectionLayout({ section, toolbar, list, panel, hasSelection, footer }: {
   section: SectionId; toolbar?: ReactNode; list: ReactNode; panel: ReactNode; hasSelection: boolean; footer?: ReactNode;
 }) {
+  const t = useT();
   const info = sectionInfo(section);
   return (
     <div className={"fi-section" + (hasSelection ? " has-selection" : "")}>
       <div className="fi-section-list">
         <header className="fi-section-head">
-          <h1>{info.label}</h1>
-          <p>{info.description}</p>
+          <h1>{t.text(info.label)}</h1>
+          <p>{t.text(info.description)}</p>
           {toolbar && <div className="fi-section-tools">{toolbar}</div>}
         </header>
         <div className="fi-section-scroll" data-scroll="list">{list}</div>
@@ -464,6 +479,7 @@ export function Panel({ title, subtitle, closeTo, menu, children, headingRef, ba
   title: ReactNode; subtitle?: ReactNode; closeTo: string; menu?: ReactNode; children: ReactNode;
   headingRef?: RefObject<HTMLHeadingElement | null>; badges?: ReactNode;
 }) {
+  const t = useT();
   const navigate = useNavigate();
   const own = useRef<HTMLHeadingElement>(null);
   const heading = headingRef ?? own;
@@ -478,7 +494,7 @@ export function Panel({ title, subtitle, closeTo, menu, children, headingRef, ba
         close();
       }}>
       <header className="fi-panel-head">
-        <button type="button" className="fi-panel-back" onClick={close}><CaretLeftIcon size={14} /> Back</button>
+        <button type="button" className="fi-panel-back" onClick={close}><CaretLeftIcon size={14} /> {t("Back")}</button>
         <div className="fi-panel-title">
           <h2 ref={heading} tabIndex={-1}>{title}</h2>
           {subtitle && <p>{subtitle}</p>}
@@ -486,7 +502,7 @@ export function Panel({ title, subtitle, closeTo, menu, children, headingRef, ba
         </div>
         <div className="fi-panel-actions">
           {menu}
-          <button type="button" className="fi-icon-button fi-panel-close" aria-label="Close" onClick={close}><XIcon size={16} /></button>
+          <button type="button" className="fi-icon-button fi-panel-close" aria-label={t("Close")} onClick={close}><XIcon size={16} /></button>
         </div>
       </header>
       <div className="fi-panel-body">{children}</div>
@@ -498,10 +514,10 @@ export function Panel({ title, subtitle, closeTo, menu, children, headingRef, ba
 export function PanelTabs({ tabs, current, hrefFor, label }: { tabs: { id: string; label: string }[]; current: string; hrefFor: (id: string) => string; label: string }) {
   return (
     <nav className="fi-tabs" aria-label={label}>
-      {tabs.map((t) => (
-        <Link key={t.id} to={hrefFor(t.id)} replace preventScrollReset aria-current={t.id === current ? "page" : undefined}
-          className={t.id === current ? "is-current" : undefined}>
-          {t.label}
+      {tabs.map((tab) => (
+        <Link key={tab.id} to={hrefFor(tab.id)} replace preventScrollReset aria-current={tab.id === current ? "page" : undefined}
+          className={tab.id === current ? "is-current" : undefined}>
+          {tab.label}
         </Link>
       ))}
     </nav>

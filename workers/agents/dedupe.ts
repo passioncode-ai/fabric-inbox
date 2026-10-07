@@ -12,6 +12,7 @@
  * never claims the message (its copy was spam there, say), the waiting copy answers instead.
  */
 import { headerValue, parseStoredHeaders } from "./prefilter";
+import { msg } from "../../shared/i18n";
 
 /** How long a copy waits for the chosen address: its spam hold (B-30, 15 min) plus the queue's own delays. */
 export const CLAIM_WAIT_MS = 20 * 60_000;
@@ -110,5 +111,5 @@ export function decideClaim(row: ClaimRow | null, mailboxId: string, elected: st
 
 /** The reason on a copy that is not answered, as the history shows it. */
 export function duplicateReason(owner: string): string {
-  return `Duplicate: answered from ${owner}`;
+  return msg("Duplicate: answered from {owner}", { owner });
 }

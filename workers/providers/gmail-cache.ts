@@ -22,6 +22,7 @@ import { compareInbox, inboxIdentity, inboxPage, type InboxFolder, type InboxMes
 import { ProviderError, type Message } from "./gmail-client";
 import type { RemoteProvider } from "../../shared/mail/accounts";
 import type { Store } from "./google-oauth";
+import { msg } from "../../shared/i18n";
 
 export interface StoredMessage {
   message: Omit<Message, "text" | "html">;
@@ -34,20 +35,29 @@ export interface StoredMessage {
   bodyless?: boolean;
 }
 /** What the feed shows of a message: the index row's value. */
-export type IndexRow = Pick<Message, "providerMessageId" | "threadId" | "subject" | "from" | "to" | "snippet" | "date" | "timestamp" | "read" | "labels" | "signals" | "rfcMessageId">;
+export type IndexRow = Pick<Message, "providerMessageId" | "threadId" | "subject" | "from" | "to" | "snippet" | "date" | "timestamp" | "read" | "labels" | "signals" | "rfcMessageId">
+  /** Sent mail only: its Cc and Bcc ("" when none), for "has this account written to them"; absent on rows indexed before 0.12. */
+  & Partial<Pick<Message, "cc" | "bcc">>;
 export interface InboxCounts { unread: number; total: number }
 interface CacheState { layout: 1 | 2; after?: string }
 
 /** The folders a Gmail search can name; they are views over labels, as the feed shows them. */
-export const GMAIL_FOLDERS = ["inbox", "sent", "archive", "starred", "spam", "trash", "draft"] as const;
+export const GMAIL_FOLDERS = ["inbox", "sent", "archive", "starred", "spam", "trash", "draft", "discarded"] as const;
 export type GmailFolder = (typeof GMAIL_FOLDERS)[number];
-const FEED_FOLDERS: InboxFolder[] = ["inbox", "sent", "archive", "trash", "starred", "spam"];
+const FEED_FOLDERS: InboxFolder[] = ["inbox", "sent", "archive", "trash", "starred", "spam", "discarded"];
+/**
+ * The label every provider maps its Discarded place onto: Gmail's own "Discarded" label (whatever its
+ * id), an IMAP or Outlook folder named Discarded. Discarded counts as deleted: such a message is in
+ * no other view (inbox, archive, starred), and out of the inbox's counts.
+ */
+export const DISCARDED_LABEL = "DISCARDED";
 export function inFolder(labels: string[], folder: GmailFolder) {
-  const trash = labels.includes("TRASH"), spam = labels.includes("SPAM"), draft = labels.includes("DRAFT");
+  const trash = labels.includes("TRASH"), spam = labels.includes("SPAM"), draft = labels.includes("DRAFT"), discarded = labels.includes(DISCARDED_LABEL);
   if (folder === "trash") return trash;
   if (folder === "spam") return spam && !trash;
+  if (folder === "discarded") return discarded && !trash && !spam;
   if (folder === "draft") return draft && !trash;
-  if (trash || spam || draft) return false;
+  if (trash || spam || draft || discarded) return false;
   return folder === "inbox" ? labels.includes("INBOX") : folder === "sent" ? labels.includes("SENT")
     : folder === "starred" ? labels.includes("STARRED") : !labels.includes("INBOX") && !labels.includes("SENT");
 }
@@ -85,7 +95,7 @@ const idxKey = (a: string, view: string, m: IndexRow) => `idx:${a}:${view}:${rev
 function indexRow(m: StoredMessage["message"]): IndexRow {
   return { providerMessageId: m.providerMessageId, threadId: m.threadId, subject: m.subject, from: m.from, to: m.to, snippet: m.snippet,
     date: m.date, timestamp: m.timestamp, read: m.read, labels: m.labels, ...(m.signals ? { signals: m.signals } : {}),
-    rfcMessageId: m.rfcMessageId ?? "" };
+    rfcMessageId: m.rfcMessageId ?? "", ...(m.labels.includes("SENT") ? { cc: m.cc ?? "", bcc: m.bcc ?? "" } : {}) };
 }
 const inInbox = (m: Pick<Message, "labels">) => inFolder(m.labels, "inbox");
 
@@ -102,7 +112,7 @@ export function gmailInboxMessage(accountId: string, m: IndexRow, ownDomains: st
     subject: m.subject, sender: m.from, recipient: m.to, date: new Date(timestamp).toISOString(), timestamp,
     read: m.read, starred: labels.includes("STARRED"), snippet: m.snippet, threadId: m.threadId,
     ...(m.rfcMessageId ? { rfcMessageId: m.rfcMessageId.replace(/^<|>$/g, "").toLowerCase() } : {}),
-    ...(labels.includes("SPAM") ? { spamReason: `${feed.providerName ?? "The provider"} marked it as spam` } : {}),
+    ...(labels.includes("SPAM") ? { spamReason: feed.providerName ? msg("{provider} marked it as spam", { provider: feed.providerName }) : msg("The provider marked it as spam") } : {}),
     triage: triage({ sender: m.from, subject: m.subject, read: m.read, starred: labels.includes("STARRED"), labels, signals: m.signals, ownDomains }) };
 }
 const searchText = (m: Pick<Message, "subject" | "from" | "to" | "snippet">) => [m.subject, m.from, m.to, m.snippet].join(" ").toLowerCase();

@@ -1,6 +1,6 @@
 Contract: brand-contract v1
 Voice pack: custom
-Locales: en (primary)
+Locales: en (primary), ru
 Locale parity threshold: 80%
 Derived-from: P-01, JTBD-01, JTBD-02, JTBD-03
 Status: draft
@@ -34,7 +34,14 @@ Promise: show the account, action and current result; this is a target behavior,
 - Use one name for each action and no unsourced numbers.
 
 ## Reconsidered per locale
-Address form, idioms and line length; only English is currently specified.
+Address form, idioms and line length. English is the source and the key (fabric-workspace
+knowledge/localization.md, L10N-02); Russian is specified in [locales/ru.md](locales/ru.md): «вы» in
+lower case, buttons and menu items in the infinitive («Сохранить», «Добавить адрес»), instructions in the
+polite imperative («Выберите домен»), progress in the first person plural («Сохраняем…»), «ёлочки»
+quotes, ё where standard, real plural forms. The invariants above hold word for word in Russian:
+«Отправлено» only after the provider confirms, «Принято» is not «Отправлено», unknown is never shown
+as working. Mail the person sends, agents' answers and what agents read keep their own language; only
+the interface changes.
 
 ## Failure mode
 Over-compression: terse status labels omit what the user can do next. Keep the recovery action beside the state.

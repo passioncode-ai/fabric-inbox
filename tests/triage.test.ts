@@ -46,14 +46,14 @@ test("the same message always lands in the same place", () => {
   assert.deepEqual(triage(input), triage(structuredClone(input)));
 });
 
-test("header signals are compact and never carry values beyond what triage needs", () => {
+test("header signals are compact: the List-Id a discard rule needs, never the unsubscribe link (it may carry a token)", () => {
   assert.deepEqual(signalsFromHeaders([
     { key: "List-Id", value: "<news.x.invalid>" },
     { key: "list-unsubscribe", value: "<mailto:secret-token@x.invalid>" },
     { key: "Precedence", value: " Bulk " },
     { key: "Auto-Submitted", value: "auto-generated" },
     { key: "Subject", value: "private" },
-  ]), { listId: true, listUnsubscribe: true, precedence: "bulk", autoSubmitted: "auto-generated" });
+  ]), { listId: true, list: "<news.x.invalid>", listUnsubscribe: true, precedence: "bulk", autoSubmitted: "auto-generated" });
   assert.deepEqual(signalsFromHeaders([]), {});
 });
 

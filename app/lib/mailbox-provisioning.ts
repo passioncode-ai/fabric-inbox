@@ -6,6 +6,7 @@
  * Creating the mailboxes the server config lists but that do not exist yet.
  * Every address that could not be created is reported, never dropped.
  */
+import { msg } from "../../shared/i18n";
 import { errorDetail } from "./mutation-errors";
 
 export interface ProvisioningFailure {
@@ -36,7 +37,7 @@ export function provisioningFailures(
 		if (result.status === "rejected")
 			failures.push({
 				address: addresses[i],
-				reason: errorDetail(result.reason) ?? "Unknown error",
+				reason: errorDetail(result.reason) ?? msg("Unknown error"),
 			});
 	});
 	return failures;

@@ -1,6 +1,8 @@
 import { ArrowUUpLeftIcon, ShieldCheckIcon, StarIcon, TrashIcon, WarningOctagonIcon } from "@phosphor-icons/react";
 import type { InboxFolder, InboxMessage } from "../../../shared/mail/inbox";
 import { fabric } from "../../services/fabric";
+import { msg } from "../../../shared/i18n";
+import { useT } from "../../lib/i18n";
 import { isRemote } from "./model";
 
 export type ActionMessage = Pick<InboxMessage, "id" | "accountId" | "provider" | "providerMessageId" | "starred"> & { sender?: string };
@@ -25,7 +27,7 @@ export async function changeMessage(
 ): Promise<MessageChange> {
   const prefix = message.provider + ":";
   if (!message.accountId.startsWith(prefix) || !message.accountId.slice(prefix.length) || !message.providerMessageId)
-    throw new Error("Message account is unavailable. Refresh and try again.");
+    throw new Error(msg("Message account is unavailable. Refresh and try again."));
   const account = encodeURIComponent(message.accountId.slice(prefix.length));
   const id = encodeURIComponent(message.providerMessageId);
   // Gmail, IMAP and Outlook accounts share their routes (/api/accounts/<id>); a Cloudflare mailbox has its own.
@@ -34,7 +36,7 @@ export async function changeMessage(
   if ("starred" in change) {
     const result = await request(gmail ? path + "/starred" : path, change, gmail ? "POST" : "PUT") as { labels?: string[]; starred?: boolean };
     const starred = gmail && Array.isArray(result?.labels) ? result.labels.includes("STARRED") : result?.starred;
-    if (typeof starred !== "boolean") throw new Error("Message state could not be confirmed. Refresh and try again.");
+    if (typeof starred !== "boolean") throw new Error(msg("Message state could not be confirmed. Refresh and try again."));
     return { id: message.id, starred };
   }
   await request(gmail ? path + "/trashed" : path + "/move",
@@ -62,22 +64,23 @@ export async function changeSpam(message: ActionMessage, spam: boolean, request:
     messages: [{ accountId: message.accountId, providerMessageId: message.providerMessageId, sender: message.sender ?? "" }],
     list: "sender",
   }) as { moved?: number; listed?: string[]; listError?: string; failed?: { error?: string }[] };
-  if (!result?.moved) throw new Error(result?.failed?.[0]?.error || "The message could not be moved. Refresh and try again.");
+  if (!result?.moved) throw new Error(result?.failed?.[0]?.error || msg("The message could not be moved. Refresh and try again."));
   const who = result.listed?.[0];
   const notice = result.listError
     ? result.listError
     : spam
-      ? `Moved to Spam.${who ? ` New mail from ${who} goes to Spam too; change it on Spam rules.` : ""}`
-      : `Moved to the inbox.${who ? ` Mail from ${who} is no longer treated as spam.` : ""}`;
+      ? who ? msg("Moved to Spam. New mail from {who} goes to Spam too; change it on Spam rules.", { who }) : msg("Moved to Spam.")
+      : who ? msg("Moved to the inbox. Mail from {who} is no longer treated as spam.", { who }) : msg("Moved to the inbox.");
   return { id: message.id, removed: true, notice };
 }
 
 export default function MessageActions({ message, folder, busy, run, onChanged, capabilities }: MessageActionsProps) {
+  const t = useT();
   const restoring = folder === "trash";
-  const starLabel = message.starred ? "Unstar message" : "Star message";
-  const trashLabel = restoring
+  const starLabel = t(message.starred ? "Unstar message" : "Star message");
+  const trashLabel = t(restoring
     ? message.provider !== "cloudflare" ? "Restore message" : "Restore to inbox"
-    : "Move to trash";
+    : "Move to trash");
   function perform(change: { starred: boolean } | { trashed: boolean }) {
     let result: MessageChange | undefined;
     // Parent run surfaces errors and refreshes provider-backed lists before completion.
@@ -96,7 +99,7 @@ export default function MessageActions({ message, folder, busy, run, onChanged, 
   }
   return <>
     {inSpam && (
-      <button type="button" className="fi-icon-button" aria-label="Not spam" title="Not spam: back to the inbox"
+      <button type="button" className="fi-icon-button" aria-label={t("Not spam")} title={t("Not spam: back to the inbox")}
         disabled={busy} onClick={() => spam(false)}>
         <ShieldCheckIcon size={19} />
       </button>
@@ -112,7 +115,7 @@ export default function MessageActions({ message, folder, busy, run, onChanged, 
       </button>
     )}
     {canReport && (
-      <button type="button" className="fi-icon-button" aria-label="Report spam" title="Report spam: move it and its sender to Spam"
+      <button type="button" className="fi-icon-button" aria-label={t("Report spam")} title={t("Report spam: move it and its sender to Spam")}
         disabled={busy} onClick={() => spam(true)}>
         <WarningOctagonIcon size={19} />
       </button>

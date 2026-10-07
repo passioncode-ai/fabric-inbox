@@ -485,13 +485,32 @@ export class GmailClient {
       nextPageToken?: string;
     }>("messages?" + q);
   }
+  /**
+   * Gmail label ids read as the cache's own words: the account's "Discarded" label (a user label,
+   * `Label_…`) is DISCARDED here, so every message read through this client carries it as such.
+   */
+  labelAliases: Record<string, string> = {};
+  private aliased(message: GmailMessage): GmailMessage {
+    if (!message?.labelIds?.length || !Object.keys(this.labelAliases).length) return message;
+    return { ...message, labelIds: message.labelIds.map((l) => this.labelAliases[l] ?? l) };
+  }
   /** A message in full, or with only METADATA_HEADERS (labels, snippet and date, no body). */
-  message(id: string, format: "full" | "metadata" = "full") {
+  async message(id: string, format: "full" | "metadata" = "full") {
     const q = new URLSearchParams({ format });
     if (format === "metadata") for (const h of METADATA_HEADERS) q.append("metadataHeaders", h);
-    return this.request<GmailMessage>(
+    return this.aliased(await this.request<GmailMessage>(
       "messages/" + encodeURIComponent(id) + "?" + q,
-    );
+    ));
+  }
+  /** The account's labels (system and its own), by id and name. */
+  labels() {
+    return this.request<{ labels?: { id: string; name: string; type?: string }[] }>("labels");
+  }
+  /** Makes one of the account's own labels, shown in Gmail's list and on its messages. */
+  createLabel(name: string) {
+    return this.request<{ id: string; name: string }>("labels", {
+      method: "POST", body: JSON.stringify({ name, labelListVisibility: "labelShow", messageListVisibility: "show" }),
+    }, false);
   }
   /** Every header of one message, as Gmail has it (format=metadata carries no body). */
   messageHeaders(id: string) {

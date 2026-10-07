@@ -4,6 +4,7 @@ import {
   type AttachmentRef,
   type AttachmentStorage,
 } from "./attachment-store";
+import { msg } from "../../../shared/i18n";
 
 /** Per-draft records avoid whole-list lost updates. Web Locks serialize revision checks. */
 export const DRAFT_KEY = "fabric-inbox:workbench-draft:v1";
@@ -44,11 +45,11 @@ export type Draft = {
 export type ServerFile = { id: string; filename: string; mimetype: string; size: number; sourceId?: string };
 function serverFiles(value: unknown): ServerFile[] | undefined {
   if (value === undefined) return;
-  if (!Array.isArray(value) || value.length > 10) throw new Error("Invalid draft");
+  if (!Array.isArray(value) || value.length > 10) throw new Error(msg("Invalid draft"));
   return value.map((f) => {
     if (!f || typeof f.id !== "string" || !f.id || typeof f.filename !== "string" || typeof f.mimetype !== "string" ||
       !Number.isSafeInteger(f.size) || f.size < 0 || (f.sourceId !== undefined && typeof f.sourceId !== "string"))
-      throw new Error("Invalid draft");
+      throw new Error(msg("Invalid draft"));
     return { id: f.id, filename: f.filename, mimetype: f.mimetype, size: f.size, ...(f.sourceId ? { sourceId: f.sourceId } : {}) };
   });
 }
@@ -71,7 +72,7 @@ function forwardSource(value: unknown): ForwardSource | undefined {
     !Array.isArray(s.files) ||
     s.files.length > 1000
   )
-    throw new Error("Invalid forward source");
+    throw new Error(msg("Invalid forward source"));
   const ids = new Set<string>();
   const files = s.files.map((f) => {
     if (
@@ -84,7 +85,7 @@ function forwardSource(value: unknown): ForwardSource | undefined {
       !Number.isSafeInteger(f.size) ||
       f.size < 0
     )
-      throw new Error("Invalid forward source");
+      throw new Error(msg("Invalid forward source"));
     ids.add(f.id);
     return {
       id: f.id,
@@ -109,18 +110,19 @@ export type Exclusive = <T>(
   name: string,
   action: () => T | Promise<T>,
 ) => Promise<T>;
-const conflict =
-  "This draft changed in another window. Copy any unsaved text, then reopen the saved version from Drafts.";
+const conflict = msg(
+  "This draft changed in another window. Copy any unsaved text, then reopen the saved version from Drafts.",
+);
 function content(value: unknown, legacy = false): Omit<Draft, "id"> {
-  if (!value || typeof value !== "object") throw new Error("Invalid draft");
+  if (!value || typeof value !== "object") throw new Error(msg("Invalid draft"));
   const d = value as Record<string, unknown>;
   for (const key of ["accountId", "to", "subject", "text", "idempotencyKey"])
-    if (typeof d[key] !== "string") throw new Error("Invalid draft");
+    if (typeof d[key] !== "string") throw new Error(msg("Invalid draft"));
   if (
     !d.idempotencyKey ||
     !["new", "reply", "forward"].includes(d.mode as string)
   )
-    throw new Error("Invalid draft");
+    throw new Error(msg("Invalid draft"));
   for (const key of [
     "originalId",
     "threadId",
@@ -130,14 +132,14 @@ function content(value: unknown, legacy = false): Omit<Draft, "id"> {
     "bcc",
   ])
     if (d[key] !== undefined && typeof d[key] !== "string")
-      throw new Error("Invalid draft");
+      throw new Error(msg("Invalid draft"));
   if (d.locked !== undefined && typeof d.locked !== "boolean")
-    throw new Error("Invalid draft");
+    throw new Error(msg("Invalid draft"));
   for (const key of ["serverId", "pendingCreateKey", "signature"])
-    if (d[key] !== undefined && typeof d[key] !== "string") throw new Error("Invalid draft");
+    if (d[key] !== undefined && typeof d[key] !== "string") throw new Error(msg("Invalid draft"));
   if (d.serverRevision !== undefined && typeof d.serverRevision !== "string" && !Number.isSafeInteger(d.serverRevision))
-    throw new Error("Invalid draft");
-  if (d.synced !== undefined && typeof d.synced !== "boolean") throw new Error("Invalid draft");
+    throw new Error(msg("Invalid draft"));
+  if (d.synced !== undefined && typeof d.synced !== "boolean") throw new Error(msg("Invalid draft"));
   const refs =
     legacy || d.attachments === undefined
       ? undefined
@@ -151,7 +153,7 @@ function content(value: unknown, legacy = false): Omit<Draft, "id"> {
         (id) => typeof id !== "string" || !refs?.some((ref) => ref.id === id),
       ))
   )
-    throw new Error("Invalid pending attachments");
+    throw new Error(msg("Invalid pending attachments"));
   // Explicit allow-list: bytes and credentials never enter localStorage. Legacy attachment fields were never supported.
   return {
     accountId: d.accountId as string,
@@ -206,7 +208,7 @@ export class DraftStore {
       r.revision < 1 ||
       (r.draft !== null && r.draft?.id !== id)
     )
-      throw new Error("Invalid draft record");
+      throw new Error(msg("Invalid draft record"));
     return {
       version: 2,
       revision: r.revision,
@@ -246,7 +248,7 @@ export class DraftStore {
     const record = this.read(id);
     if (!record?.draft)
       throw new Error(
-        "This draft is no longer saved. Open another draft or compose a new message.",
+        msg("This draft is no longer saved. Open another draft or compose a new message."),
       );
     this.revisions.set(id, record.revision);
     return record.draft;
@@ -304,7 +306,7 @@ export class DraftStore {
     return this.mutate(draft.id, (current) => {
       if (current?.pendingAttachments?.length)
         throw new Error(
-          "Files are not ready. Wait for loading to finish before sending.",
+          msg("Files are not ready. Wait for loading to finish before sending."),
         );
       if (
         !current ||
@@ -335,7 +337,7 @@ export class DraftStore {
     return this.mutate(id, (current) => {
       if (current?.locked)
         throw new Error(
-          "An uncertain send cannot be discarded. Retry the same attempt to check its outcome.",
+          msg("An uncertain send cannot be discarded. Retry the same attempt to check its outcome."),
         );
       return null;
     });
@@ -348,7 +350,7 @@ export function browserDraftStore(): DraftStore {
       if (!navigator.locks)
         return Promise.reject(
           new Error(
-            "This browser cannot safely save drafts across windows. Keep this window open and use a browser with Web Locks support.",
+            msg("This browser cannot safely save drafts across windows. Keep this window open and use a browser with Web Locks support."),
           ),
         );
       return await navigator.locks.request(name, action);

@@ -119,6 +119,13 @@ and one it cannot apply is refused (Gmail, IMAP and Outlook page with `cursor`, 
 **Tidy.** `move_messages` (inbox, archive, trash, a Cloudflare folder) and `mark_spam` (spam or not,
 and by default remembers the sender) act on up to 100 messages; each answer lists what failed, and
 one where nothing was changed is an error with the failures in its `details`.
+`discard_messages` is the person's ⌘⌫: out of the inbox into Discarded (read, kept 30 days), and it
+learns a rule from each message (its List-Id, else its sender) so mail like it skips the inbox from
+then on; `learned` says which rule, `created: true` the first time — tell the person. Discard only
+what the person asked to throw away; `learn: false` when it is a one-off. `restore_discarded` brings
+mail back (`unlearn: true`, with each message's `ruleId` from the discard's `learnedRuleId`,
+undoes that discard's lesson too; `to`, the discard's `from`, puts it back where it was) and names
+the rules that would discard it again; `list_messages` with `folder: "discarded"` lists Discarded with each `discardReason`.
 `delete_message` is permanent and two-step — prefer trash. An IMAP account offers only what its
 server has: `list_accounts` gives each account's `capabilities` (no Archive folder → no archive).
 

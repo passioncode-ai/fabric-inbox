@@ -3,6 +3,7 @@ import { CloudflareApi, CloudflareApiError } from "../routing/cloudflare-api";
 import { RELAY_WORKER, type CloudflareAccounts } from "../routing/accounts";
 import { AgentAccess } from "../mcp/access";
 import { RELAY_COMPATIBILITY_DATE, RELAY_MODULE, RELAY_SOURCE, RELAY_VERSION } from "./script";
+import { msg } from "../../shared/i18n";
 
 /**
  * Installing the relay in another account (MA-6), and the registry of relays (R2 `config/relays.json`,
@@ -76,12 +77,12 @@ export async function updateRelays(bucket: R2Bucket, change: (relays: Relay[]) =
     });
     if (written) return next;
   }
-  throw new Error("The relay list changed several times at once; try again");
+  throw new Error(msg("The relay list changed several times at once; try again"));
 }
 
 export interface RelayInstallResult { outcome: "done" | "already" | "failed"; detail: string }
 
-const errorText = (e: unknown) => (e instanceof CloudflareApiError ? e.message : `Unexpected error: ${(e as Error).message}`);
+const errorText = (e: unknown) => (e instanceof CloudflareApiError ? e.message : msg("Unexpected error: {error}", { error: (e as Error).message }));
 const absent = (e: unknown) => e instanceof CloudflareApiError && (e.status === 404 || e.code === 10007);
 
 /** Runs `fn` alone among the changes to the server's Access policy; waits up to ~10 s for another to finish. */
@@ -101,7 +102,7 @@ export async function underAccessLock<T>(env: Env, fn: () => Promise<T>): Promis
 async function relayBindings(api: CloudflareApi, accountId: string): Promise<Record<string, string> | null> {
   try {
     const settings = await api.call<{ bindings?: { type?: string; name?: string; text?: string }[] }>(
-      `/accounts/${accountId}/workers/scripts/${RELAY_WORKER}/settings`, { what: "read the relay (Workers Scripts: Edit)" });
+      `/accounts/${accountId}/workers/scripts/${RELAY_WORKER}/settings`, { what: msg("read the relay (Workers Scripts: Edit)") });
     return Object.fromEntries((settings.bindings ?? []).filter((b) => b.type === "plain_text" && b.name).map((b) => [b.name!, b.text ?? ""]));
   } catch (error) {
     if (absent(error)) return null;
@@ -158,19 +159,19 @@ export async function tidyRelay(env: Env, accounts: CloudflareAccounts, accountI
  */
 export async function installRelay(input: { env: Env; accounts: CloudflareAccounts; accountId: string; api: CloudflareApi; origin?: string }): Promise<RelayInstallResult> {
   const result = await underAccessLock(input.env, () => install(input));
-  return result === "busy" ? { outcome: "failed", detail: "Another change to your server's sign-in is running (an agent key or a relay); try again in a moment." } : result;
+  return result === "busy" ? { outcome: "failed", detail: msg("Another change to your server's sign-in is running (an agent key or a relay); try again in a moment.") } : result;
 }
 
 async function install({ env, accounts, accountId, api, origin: requestOrigin }: { env: Env; accounts: CloudflareAccounts; accountId: string; api: CloudflareApi; origin?: string }): Promise<RelayInstallResult> {
   const current = currentRelay(await readRelays(env.BUCKET), accountId);
   const origin = relayOrigin(env, requestOrigin, current);
-  if (!origin) return { outcome: "failed", detail: "The relay needs your server's public https address; open Settings → Domains from the server (or set PUBLIC_APP_URL) and try again." };
+  if (!origin) return { outcome: "failed", detail: msg("The relay needs your server's public https address; open Settings → Domains from the server (or set PUBLIC_APP_URL) and try again.") };
   let bindings: Record<string, string> | null;
   try { bindings = await relayBindings(api, accountId); }
   catch (error) { return { outcome: "failed", detail: errorText(error) }; }
 
   const primary = accounts.primary();
-  if (!primary) return { outcome: "failed", detail: "This server has no Cloudflare token of its own, so it cannot give the relay a sign-in." };
+  if (!primary) return { outcome: "failed", detail: msg("This server has no Cloudflare token of its own, so it cannot give the relay a sign-in.") };
   let serverId: string;
   try { serverId = await accounts.serverAccountId(); }
   catch (error) { return { outcome: "failed", detail: errorText(error) }; }
@@ -178,7 +179,7 @@ async function install({ env, accounts, accountId, api, origin: requestOrigin }:
 
   if (bindings && current && bindings.RELAY_TOKEN_ID === current.tokenId && bindings.RELAY_VERSION === RELAY_VERSION && bindings.SERVER_URL === origin) {
     await revokeRetired(env, access, accountId);
-    return { outcome: "already", detail: `The relay ${RELAY_WORKER} in this account already carries its mail here.` };
+    return { outcome: "already", detail: msg("The relay {worker} in this account already carries its mail here.", { worker: RELAY_WORKER }) };
   }
   // Otherwise — no relay, another version or address, or a sign-in that is not the current one
   // (an upload that never applied) — this is a (re)install. An unconfirmed earlier upload that did
@@ -186,7 +187,7 @@ async function install({ env, accounts, accountId, api, origin: requestOrigin }:
   const name = (await accounts.list()).accounts.find((a) => a.id === accountId)?.name ?? accountId;
   let token: Awaited<ReturnType<AgentAccess["create"]>>;
   try { token = await access.create(name, "forever", "relay"); }
-  catch (error) { return { outcome: "failed", detail: `The relay's sign-in could not be made: ${errorText(error)}` }; }
+  catch (error) { return { outcome: "failed", detail: msg("The relay's sign-in could not be made: {error}", { error: errorText(error) }) }; }
 
   const now = new Date().toISOString();
   // The hourly limit on automatic upgrades is the account's: a new row carries the last attempt on.
@@ -199,7 +200,7 @@ async function install({ env, accounts, accountId, api, origin: requestOrigin }:
       ...list.map((r) => (r.accountId === accountId && !r.retiredAt ? { ...r, retiredAt: now } : r)), row]);
   } catch (error) {
     await access.revoke(token.id).catch(() => undefined);
-    return { outcome: "failed", detail: `The relay could not be recorded (${(error as Error).message}); nothing was changed. Try again.` };
+    return { outcome: "failed", detail: msg("The relay could not be recorded ({error}); nothing was changed. Try again.", { error: (error as Error).message }) };
   }
 
   try {
@@ -216,14 +217,14 @@ async function install({ env, accounts, accountId, api, origin: requestOrigin }:
       ],
     }));
     form.set(RELAY_MODULE, new File([RELAY_SOURCE], RELAY_MODULE, { type: "application/javascript+module" }));
-    await api.call(`/accounts/${accountId}/workers/scripts/${RELAY_WORKER}`, { method: "PUT", form, what: "install the relay (Workers Scripts: Edit)" });
+    await api.call(`/accounts/${accountId}/workers/scripts/${RELAY_WORKER}`, { method: "PUT", form, what: msg("install the relay (Workers Scripts: Edit)") });
   } catch (error) {
     // No answer, or a server error: the upload may have applied.
     if (error instanceof CloudflareApiError && (error.status === 0 || error.status >= 500)) {
       // No answer: the upload may have applied. Both sign-ins stay accepted; the next attempt reads
       // what the relay runs with and settles it. Nothing working is taken away.
       console.warn(JSON.stringify({ event: "relay_upload_unconfirmed", accountId }));
-      return { outcome: "failed", detail: `Cloudflare did not confirm the relay's upload (${error.message}). Your mail keeps arriving; run this again to finish.` };
+      return { outcome: "failed", detail: msg("Cloudflare did not confirm the relay's upload ({error}). Your mail keeps arriving; run this again to finish.", { error: error.message }) };
     }
     // Refused: the relay that was there (if any) still runs with its old sign-in, which becomes current
     // again — unless a newer install has registered its own since, which stays the current one.
@@ -233,14 +234,14 @@ async function install({ env, accounts, accountId, api, origin: requestOrigin }:
       return newer ? rest : rest.map((r) => (r.accountId === accountId && r.retiredAt === now ? { ...r, retiredAt: undefined } : r));
     }).catch(() => undefined);
     await access.revoke(token.id).catch((e: unknown) => console.error(JSON.stringify({ event: "relay_token_orphaned", accountId, error: (e as Error).message })));
-    return { outcome: "failed", detail: `The relay could not be installed: ${errorText(error)} Nothing was left behind; try again.` };
+    return { outcome: "failed", detail: msg("The relay could not be installed: {error} Nothing was left behind; try again.", { error: errorText(error) }) };
   }
 
   await revokeRetired(env, access, accountId);
   console.log(JSON.stringify({ event: "relay_installed", accountId, version: RELAY_VERSION, replaced: !!bindings }));
   return { outcome: "done", detail: bindings
-    ? `The relay ${RELAY_WORKER} in this account was updated; it carries the account's mail here.`
-    : `Installed the relay ${RELAY_WORKER} in this account: Cloudflare sends the domain's mail to it, and it hands each message to this server.` };
+    ? msg("The relay {worker} in this account was updated; it carries the account's mail here.", { worker: RELAY_WORKER })
+    : msg("Installed the relay {worker} in this account: Cloudflare sends the domain's mail to it, and it hands each message to this server.", { worker: RELAY_WORKER }) };
 }
 
 /**
@@ -267,21 +268,22 @@ export async function upgradeRelay(env: Env, accounts: CloudflareAccounts, accou
  */
 export async function removeRelay(input: { env: Env; accounts: CloudflareAccounts; accountId: string; api: CloudflareApi | null }): Promise<string | null> {
   const result = await underAccessLock(input.env, () => remove(input));
-  if (result === "busy") throw new CloudflareApiError("Another change to your server's sign-in is running (an agent key or a relay); try again in a moment.", 409);
+  if (result === "busy") throw new CloudflareApiError(msg("Another change to your server's sign-in is running (an agent key or a relay); try again in a moment."), 409);
   return result;
 }
 
 async function remove({ env, accounts, accountId, api }: { env: Env; accounts: CloudflareAccounts; accountId: string; api: CloudflareApi | null }): Promise<string | null> {
   const rows = (await readRelays(env.BUCKET)).filter((r) => r.accountId === accountId);
   if (!rows.length) return null;
-  let left = "";
+  // One whole sentence per outcome, so the interface can translate it (L10N-04).
+  let removed = msg("The relay was removed from the account.");
   if (api) {
     try {
-      await api.call(`/accounts/${accountId}/workers/scripts/${RELAY_WORKER}`, { method: "DELETE", what: "remove the relay (Workers Scripts: Edit)" });
+      await api.call(`/accounts/${accountId}/workers/scripts/${RELAY_WORKER}`, { method: "DELETE", what: msg("remove the relay (Workers Scripts: Edit)") });
     } catch (error) {
-      if (!absent(error)) left = ` Its Worker ${RELAY_WORKER} could not be deleted there (${errorText(error)}); it can no longer deliver anything, and you can delete it in that account's dashboard.`;
+      if (!absent(error)) removed = msg("The relay was removed from the account. Its Worker {worker} could not be deleted there ({error}); it can no longer deliver anything, and you can delete it in that account's dashboard.", { worker: RELAY_WORKER, error: errorText(error) });
     }
-  } else left = ` No token reaches that account any more, so its Worker ${RELAY_WORKER} stays there; it can no longer deliver anything.`;
+  } else removed = msg("The relay was removed from the account. No token reaches that account any more, so its Worker {worker} stays there; it can no longer deliver anything.", { worker: RELAY_WORKER });
   // The registry goes first: from here on its deliveries are refused, whatever happens to the tokens.
   await updateRelays(env.BUCKET, (relays) => relays.filter((r) => r.accountId !== accountId));
   const primary = accounts.primary();
@@ -290,5 +292,5 @@ async function remove({ env, accounts, accountId, api }: { env: Env; accounts: C
     for (const r of rows) await access.revoke(r.tokenId).catch((e: unknown) =>
       console.warn(JSON.stringify({ event: "relay_token_kept", accountId, error: (e as Error).message })));
   }
-  return `The relay was removed from the account.${left}`;
+  return removed;
 }

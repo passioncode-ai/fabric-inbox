@@ -81,7 +81,7 @@ Locations name the source function while the integration branch is being formatt
 | action.inbox.compose | Compose | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-006 | proposed |
 | action.inbox.search | Search | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-005 | proposed |
 | action.inbox.clear_search | Clear search | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-005 | proposed |
-| action.inbox.refresh | Check for new mail | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-004 | proposed |
+| action.inbox.refresh | Check for new mail | app/lib/sync-status.ts | SCN-070 | proposed |
 | label.inbox.cached_search | Search cached mail | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-005 | proposed |
 | state.inbox.partial | inboxes are unavailable; the rest of your mail is shown. | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-004 | proposed |
 | navigation.inbox.categories | CATEGORIES | app/components/inbox/CategorySidebar.tsx | SCN-036 | proposed |
@@ -364,3 +364,64 @@ One screen with a section list, a master list and a panel (SCR-02). Destructive 
 | action.settings.connect_account | Connect an account | app/components/settings/sections/AccountsSection.tsx | SCN-002 | proposed |
 | action.desktop.settings | Settings… | desktop/main.cjs | SCN-012 | proposed |
 | action.desktop.server_address | Server address… | desktop/main.cjs | SCN-001 | proposed |
+| navigation.inbox.discarded | Discarded | app/components/inbox/triage-text.ts | SCN-073 | proposed |
+| state.discarded.empty_title | Nothing discarded | app/components/inbox/triage-text.ts | SCN-072 | proposed |
+| state.discarded.banner | Discarded mail is deleted after 30 days (in Gmail, IMAP and Outlook accounts it moves to their Trash). Nothing here reaches an agent, a rule or a category. | app/components/inbox/triage-text.ts | SCN-073 | proposed |
+| label.inbox.discard_reason | Why discarded: | app/components/inbox/triage-text.ts | SCN-073 | proposed |
+| state.discarded.auto_reason | Discarded automatically: you discarded | shared/mail/discard.ts | SCN-073 | proposed |
+| action.message.discard | Discard message | app/components/inbox/triage-text.ts | SCN-072 | proposed |
+| action.message.not_discarded | Not discarded | app/components/inbox/triage-text.ts | SCN-074 | proposed |
+| action.discard.stop | Stop discarding mail like this | app/components/inbox/triage-text.ts | SCN-074 | proposed |
+| state.discard.learned | will go to Discarded. | app/components/inbox/triage-text.ts | SCN-072 | proposed |
+| action.discard.dont | Don't | app/components/inbox/triage-text.ts | SCN-072 | proposed |
+| state.toast.archived | Archived | app/components/inbox/triage-text.ts | SCN-071 | proposed |
+| state.toast.discarded | Discarded | app/components/inbox/triage-text.ts | SCN-071 | proposed |
+| action.toast.undo | Undo | app/components/inbox/triage-text.ts | SCN-071 | proposed |
+| state.toast.undone | Undone. | app/components/inbox/triage-text.ts | SCN-071 | proposed |
+| state.selection.count | messages selected | app/components/inbox/triage-text.ts | SCN-071 | proposed |
+| navigation.shortcuts | Keyboard shortcuts | app/lib/mail-keys.ts | SCN-071 | proposed |
+| state.sync.updated | Updated | app/lib/sync-status.ts | SCN-070 | proposed |
+| state.sync.live | Live | app/lib/sync-status.ts | SCN-070 | proposed |
+| state.sync.updating | Updating… | app/lib/sync-status.ts | SCN-070 | proposed |
+| state.sync.failed | needs to be connected again | app/lib/sync-status.ts | SCN-070 | proposed |
+| navigation.settings.discard | Discard rules | app/components/settings/paths.ts | SCN-075 | proposed |
+| label.discard.always_allow | Always allow | app/components/settings/sections/DiscardSection.tsx | SCN-075 | proposed |
+| action.discard.remove_rule | Remove rule | app/components/settings/sections/DiscardSection.tsx | SCN-075 | proposed |
+
+## Add address (0.12)
+
+The one dialog that creates addresses (SCN-021, SCN-061…065): the live check, then the steps of what Create did, each with its one fix. Every word of the dialog, its steps, the panel's routing block and the entry points is in `add-address-text.ts`, one module to translate; the server's sentences (a domain's state, a name's check, a step's detail) come from `workers/lib/address-ops.ts` and `shared/address-name.ts`.
+
+| Key | Text (primary) | Location | Scenario | Status |
+|---|---|---|---|---|
+| title.address.add | Add an address | app/components/settings/sections/add-address-text.ts | SCN-021 | proposed |
+| action.address.add_on_domain | Add an address on | app/components/settings/sections/add-address-text.ts | SCN-032 | proposed |
+| action.address.add_first | Add the first address | app/components/settings/sections/add-address-text.ts | SCN-032 | proposed |
+| label.address.mode_one | One address | app/components/settings/sections/add-address-text.ts | SCN-021 | proposed |
+| label.address.mode_several | Several | app/components/settings/sections/add-address-text.ts | SCN-064 | proposed |
+| label.address.names | Names before @ | app/components/settings/sections/add-address-text.ts | SCN-064 | proposed |
+| state.address.empty_name | Type the part before @, such as support. | shared/address-name.ts | SCN-061 | proposed |
+| state.address.two_dots | Two dots in a row are not allowed. | shared/address-name.ts | SCN-061 | proposed |
+| state.address.checking | Checking… | app/components/settings/sections/add-address-text.ts | SCN-061 | proposed |
+| state.address.free | is free. | app/components/settings/sections/add-address-text.ts | SCN-061 | proposed |
+| state.domain.receiving | Receiving here | app/components/settings/sections/add-address-text.ts | SCN-063 | proposed |
+| state.domain.can_receive | Can receive here | app/components/settings/sections/add-address-text.ts | SCN-063 | proposed |
+| state.domain.needs_fix | Needs fixing | app/components/settings/sections/add-address-text.ts | SCN-063 | proposed |
+| state.domain.not_visible | Token cannot see it | app/components/settings/sections/add-address-text.ts | SCN-065 | proposed |
+| label.address.rule | Make the Cloudflare rule that sends its mail here | app/components/settings/sections/add-address-text.ts | SCN-065 | proposed |
+| label.address.send_test | Send a test message once it is created, and watch it arrive | app/components/settings/sections/add-address-text.ts | SCN-062 | proposed |
+| step.address.create | Create the address | workers/lib/address-ops.ts | SCN-062 | proposed |
+| step.address.rule | Send its mail here | workers/lib/address-ops.ts | SCN-062 | proposed |
+| step.address.test | Send a test message | app/components/settings/sections/add-address-text.ts | SCN-062 | proposed |
+| state.address.test_not_arrived | The test message has not arrived after 3 minutes. | workers/lib/address-ops.ts | SCN-062 | proposed |
+| action.domain.replace_continue | Replace and continue | app/components/settings/sections/add-address-text.ts | SCN-063 | proposed |
+| action.address.try_again | Change and try again | app/components/settings/sections/add-address-text.ts | SCN-062 | proposed |
+| action.address.add_another | Add another | app/components/settings/sections/add-address-text.ts | SCN-062 | proposed |
+| state.routing.missing | Not receiving yet | app/components/settings/sections/data.ts | SCN-065 | proposed |
+| state.address.rule_not_receiving | Not receiving yet | app/components/settings/sections/add-address-text.ts | SCN-065 | proposed |
+| state.address.creating_rest | Creating the rest… | app/components/settings/sections/add-address-text.ts | SCN-064 | proposed |
+| state.address.lost_exists | exists now (read again: the server's answer did not arrive). | app/components/settings/sections/add-address-text.ts | SCN-064 | proposed |
+| state.address.lost_missing | If it does not appear in the address list in a moment, create it again. | app/components/settings/sections/add-address-text.ts | SCN-064 | proposed |
+| state.address.lost_unknown | What was created could not be read: the address list shows which addresses exist. | app/components/settings/sections/add-address-text.ts | SCN-064 | proposed |
+| state.address.rule_unread | Its rule could not be read. Fix it checks the rule and makes it if it is missing. | app/components/settings/sections/add-address-text.ts | SCN-065 | proposed |
+| action.routing.fix | Fix it | app/components/settings/sections/add-address-text.ts | SCN-065 | proposed |

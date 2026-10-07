@@ -19,8 +19,13 @@
  *  - Outlook.com ended basic authentication on 2024-09-16, so IMAP with a password no longer works:
  *    https://support.microsoft.com/en-us/office/modern-authentication-methods-now-needed-to-continue-syncing-outlook-email-in-non-microsoft-email-apps-c5d65390-9676-4763-b41f-d7986499a90d
  *
+ * Person-facing sentences are English marked with msg(); the interface shows them in its language
+ * with t.text() (shared/i18n, L10N-04).
+ *
  * Plain module: the app, the Worker and the tests load it directly.
  */
+import { msg } from "../i18n";
+
 export const MICROSOFT_APP_NAME = "Fabric Inbox";
 export const MICROSOFT_CALLBACK_PATH = "/api/accounts/outlook/callback";
 export const OUTLOOK_CONNECT_PATH = "/api/accounts/outlook/connect";
@@ -33,10 +38,10 @@ export const OUTLOOK_CONNECT_PATH = "/api/accounts/outlook/connect";
 export const MICROSOFT_SCOPES = ["offline_access", "Mail.ReadWrite", "Mail.Send", "User.Read"] as const;
 /** The same permissions as the API permissions page of the app registration lists them. */
 export const MICROSOFT_PERMISSIONS = [
-  { name: "Mail.ReadWrite", type: "Delegated", why: "read your mail, mark it read, flag, move and delete it, keep drafts" },
-  { name: "Mail.Send", type: "Delegated", why: "send mail as you" },
-  { name: "User.Read", type: "Delegated", why: "learn the address of the account that signed in" },
-  { name: "offline_access", type: "Delegated", why: "keep the access while you are away (a refresh token)" },
+  { name: "Mail.ReadWrite", type: "Delegated", why: msg("read your mail, mark it read, flag, move and delete it, keep drafts") },
+  { name: "Mail.Send", type: "Delegated", why: msg("send mail as you") },
+  { name: "User.Read", type: "Delegated", why: msg("learn the address of the account that signed in") },
+  { name: "offline_access", type: "Delegated", why: msg("keep the access while you are away (a refresh token)") },
 ] as const;
 /** The supported account types choice, exactly as Microsoft Entra names it. */
 export const MICROSOFT_ACCOUNT_TYPES = "Any Entra ID Tenant + Personal Microsoft accounts";
@@ -135,10 +140,10 @@ export function secretExpiry(value: string | null | undefined, now = Date.now())
 /** Why a pasted secret end date cannot be kept, or null when it can. */
 export function secretExpiryProblem(value: unknown, now = Date.now()): string | null {
   const at = parseSecretExpiry(value);
-  if (at === null) return "Enter the date in the Expires column of the client secret, as YYYY-MM-DD.";
-  if (at + 86_400_000 <= now) return "That date has passed: this client secret no longer works. Add a new client secret and paste it with its date.";
+  if (at === null) return msg("Enter the date in the Expires column of the client secret, as YYYY-MM-DD.");
+  if (at + 86_400_000 <= now) return msg("That date has passed: this client secret no longer works. Add a new client secret and paste it with its date.");
   const max = new Date(now);
   max.setUTCMonth(max.getUTCMonth() + SECRET_MAX_MONTHS + 1);
-  if (at > max.getTime()) return "Microsoft ends client secrets within 24 months. Copy the date from the Expires column again.";
+  if (at > max.getTime()) return msg("Microsoft ends client secrets within 24 months. Copy the date from the Expires column again.");
   return null;
 }

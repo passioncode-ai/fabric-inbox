@@ -1,4 +1,6 @@
 /** Client view of /api/agents, /api/agent-runs and /api/project-addresses (workers/routes/agents.ts). */
+import { englishT, type T } from "../../shared/i18n";
+
 export type ReplyMode = "draft" | "auto";
 export interface ToolGrant {
   name: string;
@@ -53,6 +55,57 @@ export interface RoutingStatus {
   detail: string;
   via?: "rule" | "catch_all";
 }
+
+/** GET /api/project-addresses/check (workers/lib/address-ops.ts checkAddresses, SCN-061). */
+export type DomainState = "receiving" | "can_receive" | "needs_fix" | "no_token" | "not_visible" | "unknown" | "unavailable";
+export interface NameCheck {
+  localPart: string;
+  email: string;
+  status: "available" | "exists" | "elsewhere" | "invalid" | "restricted";
+  detail: string;
+  notes: string[];
+}
+export interface AddressCheck {
+  domain: string;
+  served: boolean;
+  state: DomainState;
+  detail: string;
+  rule: { canMake: boolean; detail: string };
+  sendTestDefault: boolean;
+  catchAll: { mailbox: string; source: "deployment" | "stored" } | null;
+  names: NameCheck[];
+}
+export interface StepFix { action: "route_here" | "connect_cloudflare" | "connect_account" | "open_domain"; label: string }
+/** One line of what creating an address did (SCN-062). */
+export interface AddressStep {
+  id: "address" | "rule";
+  label: string;
+  /** not_receiving: the rule exists but the domain does not route mail here yet (Email Routing off or broken). */
+  outcome: "done" | "already" | "skipped" | "failed" | "not_receiving";
+  detail: string;
+  fix?: StepFix;
+}
+export interface CreatedAddress { email: string; routing: RoutingStatus | null; steps: AddressStep[]; warning?: string }
+export interface BatchResult {
+  domain: string;
+  created: number;
+  failed: number;
+  results: ({ email: string; status: number; error?: string } & Partial<CreatedAddress>)[];
+  /** The names one request did not start (its Cloudflare budget ran out): send them again to continue. */
+  remaining?: string[];
+  complete?: boolean;
+  note?: string;
+}
+/** GET /api/project-addresses/:email/test (SCN-062). */
+export interface TestStatus {
+  subject: string;
+  sentAt: string;
+  sendStatus: string;
+  state: "waiting" | "arrived" | "not_arrived" | "failed";
+  detail: string;
+  arrivedAt?: string;
+  folder?: string;
+}
 export type AgentRunStatus = "running" | "off" | "skipped" | "drafted" | "sent" | "send_failed" | "send_unknown" | "failed" | "interrupted";
 export interface AgentRun {
   id: string;
@@ -73,18 +126,23 @@ export interface AgentRun {
   createdAt: string;
 }
 
-/** One word per state, in the product's terms: "Sent" only after the provider accepted. */
-export const RUN_STATUS_TEXT: Record<AgentRunStatus, string> = {
-  running: "Working",
-  off: "Off",
-  skipped: "Skipped",
-  drafted: "Draft waiting",
-  sent: "Sent",
-  send_failed: "Not sent",
-  send_unknown: "Outcome unknown",
-  failed: "Failed",
-  interrupted: "Interrupted",
-};
+/**
+ * One word per state, in the product's terms: "Sent" only after the provider accepted. A run's
+ * "Sent" is a state, not the Sent folder, hence the context in its key.
+ */
+export function runStatusText(t: T = englishT): Record<AgentRunStatus, string> {
+  return {
+    running: t("Working"),
+    off: t("Off"),
+    skipped: t("Skipped"),
+    drafted: t("Draft waiting"),
+    sent: t("[run] Sent"),
+    send_failed: t("Not sent"),
+    send_unknown: t("Outcome unknown"),
+    failed: t("Failed"),
+    interrupted: t("Interrupted"),
+  };
+}
 
 export function blankAgent(): AgentInput {
   return { name: "", instructions: "", knowledge: "", collections: [], tools: [], replyPolicy: { mode: "draft", allowedIntents: [], dailySendLimit: 20 } };

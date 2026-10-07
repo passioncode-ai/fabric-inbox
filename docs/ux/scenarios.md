@@ -66,6 +66,19 @@
 | SCN-058 | Connect an Outlook or Microsoft 365 account | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
 | SCN-059 | My organization's administrator must allow Fabric Inbox | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
 | SCN-060 | An Outlook account needs a reconnect or a new client secret | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
+| SCN-061 | Check an address before creating it | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
+| SCN-062 | Create an address and watch it receive | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
+| SCN-063 | Create an address on a domain that does not receive here yet | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
+| SCN-064 | Create several addresses at once | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
+| SCN-065 | An address whose rule could not be made | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
+| SCN-066 | An agent creates addresses | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
+| SCN-070 | See how fresh the mail is, and check now | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
+| SCN-071 | Archive or discard from the keyboard, and undo | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
+| SCN-072 | Discard a message and stop mail like it | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
+| SCN-073 | Mail like discarded mail goes to Discarded on arrival | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
+| SCN-074 | Bring a discarded message back | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
+| SCN-075 | Keep the discard rules | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
+| SCN-076 | Use the app in Russian or English | Resume and manage preferences | P-01 | ST-007, FLW-07 | validated | not audited |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -482,22 +495,23 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 ### SCN-021: Connect a project address
 - **Persona:** P-01
 - **Feature:** Put an agent on a project address
-- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001
-- **Entry point:** SCR-02 (Settings → Domains or Addresses)
-- **Preconditions:** User session available; the project domain uses Cloudflare Email Routing and the operator can change its routing.
+- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001; operator request 2026-10-06
+- **Entry point:** SCR-02 (Settings → Addresses → Add address; a domain's Add an address on <domain>; the inbox sidebar's Add address; an empty list's Add the first address)
+- **Preconditions:** User session available; at least one domain receives here, or the server has a Cloudflare token that sees one.
 - **Steps:**
-  1. Choose a project domain and type the local part (support, hello, billing) -> the full address and its project are previewed.
-  2. Confirm -> the mailbox exists and the routing check shows whether mail for this address reaches the service.
-  3. Send the test message offered on the screen -> it appears in the new mailbox within the page.
-- **Expected result:** A new project address receives mail in minutes, and the screen says whether routing is verified, missing or unknown.
-- **Alt paths:** Cancel before confirming leaves no mailbox; an address that already exists opens instead of being duplicated.
-- **UI elements:** SCR-02; named actions and fields in the steps; visible state and recovery control.
+  1. Add address -> one dialog opens with the focus in the field for the part before @; the domain is the one the entry point named, or the first receiving here.
+  2. Type the part before @ (support, hello, billing) -> the full address is previewed as you type and checked: allowed characters and length, free here, and what Cloudflare does with it today (SCN-061).
+  3. Create (or Enter) -> the steps run in the same dialog: the address is created, the Cloudflare rule sends its mail here (or the dialog says why not and offers the one fix), and a test message is sent and watched until it arrives (SCN-062).
+  4. Done -> the dialog closes on the new address, selected in the list with its panel open.
+- **Expected result:** A new project address receives mail in minutes, and the dialog says whether its rule was made, whether routing is verified, missing or unknown, and whether the test message arrived.
+- **Alt paths:** Cancel or Esc before Create leaves nothing; an address that already exists is named with Open it, never duplicated; Add another starts the form again on the same domain.
+- **UI elements:** SCR-02; Add address dialog (domain, address, display name, signature, who answers, copy, Cloudflare rule, send a test message), its step list, Done, Add another.
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** Routing that cannot be read is shown as unknown with the dashboard step to fix it, never as working; a domain not routed to the service cannot be chosen without that warning.
+- **Errors & recovery:** Routing that cannot be read is shown as unknown with the step to fix it, never as working; a domain that does not receive here says what choosing it will do before Create; a test that has not arrived after 3 minutes says so and points to the address's routing.
 - **Status:** draft
-- **Coverage:** app/components/settings/sections/AddressesSection.tsx (AddressesSection), workers/routes/agents.ts (/api/project-addresses), workers/routing/email-routing.ts (EmailRoutingClient), tests/project-addresses.test.ts
+- **Coverage:** app/components/settings/sections/AddressesSection.tsx (AddressesSection), workers/routes/agents.ts (/api/project-addresses), workers/lib/address-ops.ts (createAddress), workers/routing/email-routing.ts (EmailRoutingClient), tests/project-addresses.test.ts
 - **Product:** unobserved
-- **Today:** Partial. **Project addresses** creates an address on any served domain with its agent; with `CLOUDFLARE_EMAIL_ROUTING_TOKEN` it creates the Email Routing rule first (a refused rule leaves no mailbox) and shows routing as verified, missing or unknown with the fix; **Send test message** sends from the address to itself. Observed on the local Worker without a token (routing unknown). Project labels from Fabric's registry are not read yet; no live zone was exercised.
+- **Today:** Reworked in 0.12 (WS7, operator request 2026-10-06: "where we create mailboxes on our domains the interface is not worked out at all"). Before it, Add address was a four-field dialog that closed on Add and reported in a toast, made no rule without a token and said nothing about it, and offered no test. Observed on a local server without a Cloudflare token; no live zone was exercised.
 
 ### SCN-022: Create a reusable agent
 - **Persona:** P-01
@@ -702,19 +716,19 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Feature:** Put an agent on a project address
 - **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001
 - **Entry point:** SCR-02 (Settings → Domains or Addresses)
-- **Preconditions:** The domain receives here.
+- **Preconditions:** The domain receives here, or can (SCN-063).
 - **Steps:**
-  1. Settings → Addresses → Add address (or + / Add address in the inbox sidebar, or Add an address on a domain) -> type the name before @, choose the domain, who answers and optionally a copy to a confirmed destination, Add -> the routing rule and the address are created and the new address opens; Send test message on its Routing & test tab proves it.
+  1. Settings → Addresses → Add address (or Add address in the inbox sidebar, Add an address on <domain> on a domain's panel, or Add the first address on an empty list) -> choose the domain, type the part before @, set the display name, signature, who answers and optionally a copy to a confirmed destination, Create -> the steps run in the dialog (SCN-062), and Done opens the new address.
   2. ⋯ → Remove … on an address -> confirm in the dialog -> its rule, then the address and its mail are deleted; the answer says where new mail to it goes now, and the focus moves to the row that took its place.
 - **Expected result:** Addresses for a new account or project exist in seconds and go away cleanly.
-- **Alt paths:** From recent mail to an address that does not exist (the domain's panel, or the names offered in the dialog), the form is filled with that name.
-- **UI elements:** SCR-02; Add address dialog, ⋯ Remove … with the shared confirmation.
+- **Alt paths:** From recent mail to an address that does not exist (the domain's panel, or the names offered in the dialog), the form is filled with that name. Several at once: SCN-064.
+- **UI elements:** SCR-02; Add address dialog and its step list, ⋯ Remove … with the shared confirmation.
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** A refused rule creates no address; a copy to an unconfirmed destination or to a served domain is refused with the reason; the catch-all address cannot be removed until another one (or none) is chosen.
+- **Errors & recovery:** A rule Cloudflare refuses no longer costs the address: it is created, marked Not receiving yet, and Fix it makes the rule again (SCN-065); an agent that asks for the rule to be required (createRoute true) still gets no address when the rule is refused. A copy to an unconfirmed destination or to a served domain is refused with the reason; the catch-all address cannot be removed until another one (or none) is chosen.
 - **Status:** validated
-- **Coverage:** workers/lib/address-ops.ts, workers/routes/agents.ts, workers/routing/email-routing.ts, app/components/settings/sections/AddressesSection.tsx, app/components/settings/sections/DomainsSection.tsx, app/components/settings/sections/ConfiguredAddresses.tsx, tests/domains.test.ts
+- **Coverage:** workers/lib/address-ops.ts, workers/routes/agents.ts, workers/routing/email-routing.ts, app/components/settings/sections/AddressesSection.tsx, app/components/settings/sections/DomainsSection.tsx, app/components/settings/sections/ConfiguredAddresses.tsx, tests/domains.test.ts, tests/project-addresses.test.ts
 - **Product:** unobserved
-- **Today:** Built and tested in workerd against a fake Cloudflare. On 2026-09-29 an address created this way got its rule and, removed, lost it, with the answer naming the catch-all that now keeps its mail. Since 0.11 Settings → Addresses is the one path (the Mailboxes screen is gone); an existing address's copy is changed on its Copy tab. Add and remove were driven in a browser against a local server on 2026-10-06.
+- **Today:** Built and tested in workerd against a fake Cloudflare. On 2026-09-29 an address created this way got its rule and, removed, lost it, with the answer naming the catch-all that now keeps its mail. Since 0.11 Settings → Addresses is the one path (the Mailboxes screen is gone); an existing address's copy is changed on its Copy tab. 0.12 (WS7): the dialog keeps its steps, sets the name and signature, and creates several at once; driven in a browser against a local server.
 
 ### SCN-033: Keep copies and unknown addresses somewhere
 - **Persona:** P-01
@@ -725,15 +739,16 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Steps:**
   1. Forwarding destinations -> add an outside address -> Cloudflare sends it a confirmation link; it is listed as waiting until opened.
   2. On a domain, Mail for an address that does not exist -> keep it in one of the domain's addresses, or refuse it so the sender is told.
+  3. Add address -> Forward a copy to offers only the confirmed destinations of the domain's own Cloudflare account; with none, it says so and links to Add a forwarding destination.
 - **Expected result:** Copies go only where someone confirmed them, and mail to a mistyped address is either kept or refused, never silently dropped.
-- **Alt paths:** A copy that fails later is shown on the address with its reason, and the mail itself is kept.
-- **UI elements:** SCR-02; Forwarding destinations, the catch-all choice.
+- **Alt paths:** A copy that fails later is shown on the address with its reason, and the mail itself is kept. While adding an address, the dialog says when the domain's catch-all keeps that address's mail today, so creating it moves that mail to its own mailbox.
+- **UI elements:** SCR-02; Forwarding destinations, the catch-all choice, the copy choice in Add address.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A destination on a served domain is refused (it would loop); choosing a catch-all points Cloudflare's catch-all here and reports if Cloudflare refused.
 - **Status:** validated
-- **Coverage:** workers/routing/domains.ts, workers/routes/domains.ts, app/components/settings/sections/DestinationsSection.tsx, app/components/settings/sections/DomainsSection.tsx, tests/domains.test.ts
+- **Coverage:** workers/routing/domains.ts, workers/routes/domains.ts, app/components/settings/sections/DestinationsSection.tsx, app/components/settings/sections/DomainsSection.tsx, app/components/settings/sections/AddressesSection.tsx, tests/domains.test.ts
 - **Product:** unobserved
-- **Today:** Built and tested in workerd against a fake Cloudflare.
+- **Today:** Built and tested in workerd against a fake Cloudflare. 0.12 (WS7): the copy choice and the catch-all note in Add address.
 
 ### SCN-034: Give an agent a knowledge collection
 - **Persona:** P-01
@@ -1038,20 +1053,20 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Feature:** Resume and manage preferences
 - **Traces:** ST-007, FLW-07, JTBD-03; operator request 2026-10-05
 - **Entry point:** Launching the app; the app menu, Fabric Inbox → Check for Updates…, Install Updates Automatically, Restart to Install Update
-- **Preconditions:** A released copy (0.10.1 or later) in Applications; a newer release is published.
+- **Preconditions:** A released copy (0.11.0 or later; 0.10.1 was never published) in Applications; a newer release is published.
 - **Steps:**
-  1. The person opens the app as usual -> it checks the latest release in the background; nothing is shown.
-  2. A newer version exists -> it downloads in the background; the menu item reads Restart to Install Update once it is ready.
+  1. The person opens the app as usual -> 90 s later, and every six hours while it runs, it checks the latest release in the background; nothing is shown.
+  2. A newer version exists -> it downloads in the background and is verified; the menu item reads Restart to Install Update once it is ready.
   3. The person quits the app whenever they like -> the new version is installed; the next start is the new version, signed in, with the same server.
 - **Expected result:** Every downloaded copy gets each release without anyone downloading anything.
-- **Alt paths:** Check for Updates… answers at once: up to date, downloading, ready (Restart Now / Later), or why not. Install Updates Automatically cleared: no checks until set again; Check for Updates… still works. Opened from the disk image or Downloads: no update; Check for Updates… says to move it to Applications. Build from source or Mac App Store copy: never checks and says why.
+- **Alt paths:** Check for Updates… answers at once: up to date, downloading, ready (Restart Now / Later), held for a step (with its runbook), refused by verification, or why not. Install Updates Automatically cleared: no checks, downloads or installs until set again (the `auto-update` file reads `off`); Check for Updates… still works. Opened from the disk image or Downloads: no update; Check for Updates… says to move it to Applications. Build from source or Mac App Store copy: never checks and says why.
 - **UI elements:** App menu items, native notices.
 - **States covered:** loading, error, success
-- **Errors & recovery:** The check or download fails (offline, GitHub unreachable): logged, retried at the next launch or six hours later; Check for Updates… quotes the reason and points to passioncode.ai/inbox. An update not signed by the same team, or whose sha256 or size differs: refused by Squirrel.Mac, nothing installed.
+- **Errors & recovery:** The check or download fails (offline, GitHub unreachable): logged, retried once within the hour, then every six hours; Check for Updates… quotes the reason and points to passioncode.ai/inbox. An update whose `SHA256SUMS` is not signed by the organization's key, whose bytes differ from the signed digest, that is not signed by the pinned Developer ID team, or whose version is not the announced one: refused by the app before Squirrel.Mac sees it, nothing installed, the app keeps running (`update_check signature_failed`).
 - **Status:** draft
-- **Coverage:** desktop/updater.cjs, desktop/main.cjs, desktop/dist-mac.mjs, .github/workflows/release.yml, tests/desktop-updates.test.ts, tests/desktop-profile.test.ts
+- **Coverage:** desktop/updater.cjs, desktop/update-verify.cjs, desktop/pgp-verify.cjs, desktop/log.cjs, desktop/main.cjs, desktop/dist-mac.mjs, .github/workflows/release.yml, tests/desktop-updates.test.ts, tests/desktop-update-verify.test.ts, tests/desktop-pgp-verify.test.ts, tests/desktop-log.test.ts, tests/desktop-profile.test.ts
 - **Product:** unobserved
-- **Today:** Built 2026-10-05 for 0.10.1 (docs/desktop-data-and-updates.md). 0.10.0 and earlier have no updater and are updated once by hand.
+- **Today:** Built 2026-10-05; first published in 0.11.0 (0.10.1 was never published); verification, cadence and the switch file of LC-16 from 0.12.0 (docs/desktop-data-and-updates.md). 0.10.0 and earlier have no updater and are updated once by hand.
 
 ### SCN-050: Remove or reinstall the app and lose nothing
 - **Persona:** P-01
@@ -1070,7 +1085,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** draft
 - **Coverage:** desktop/backup.cjs, desktop/main.cjs, desktop/profile.cjs, tests/desktop-updates.test.ts, tests/desktop-profile.test.ts
 - **Product:** unobserved
-- **Today:** Built 2026-10-05 for 0.10.1 (docs/desktop-data-and-updates.md).
+- **Today:** Built 2026-10-05 for 0.10.1, which was never published; first published in 0.11.0 (docs/desktop-data-and-updates.md).
 
 ### SCN-051: Set up Gmail on my server
 - **Persona:** P-01
@@ -1271,3 +1286,264 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** app/components/settings/sections/OutlookSetup.tsx, app/components/settings/sections/AccountsSection.tsx, app/routes/unified-inbox.tsx, shared/mail/gmail-reasons.ts, workers/providers/outlook/oauth.ts, workers/providers/account-service.ts (accountProblem), tests/outlook-provider.test.ts, tests/outlook-setup-ui.test.ts
 - **Product:** unobserved
 - **Today:** Built in 0.11.0 (WS5); tested against fakes.
+
+### SCN-061: Check an address before creating it
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001; operator request 2026-10-06
+- **Entry point:** SCR-02 (the Add address dialog)
+- **Preconditions:** The dialog is open on a domain.
+- **Steps:**
+  1. Type the part before @ -> letters are kept lower case, and the field says at once what is wrong: a character that is not a letter, digit, dot, dash, underscore or plus; a dot or symbol at the start or end; two dots together; more than 64 characters.
+  2. Pause typing -> the server checks the address: free here; already an address here (Open it); a Cloudflare rule already sends it somewhere else (where, and what to do); this server creates only the addresses its EMAIL_ADDRESSES lists and this is not one (the same refusal Create would give); Cloudflare already sends it here; the domain's catch-all keeps its mail today; mail arrived for it recently.
+  3. Type a role name (postmaster, abuse, hostmaster, webmaster, security, mailer-daemon) -> the field says who writes to that address, and Create still works.
+- **Expected result:** Before Create, the person knows whether the address can be made and what changes for mail already sent to it.
+- **Alt paths:** The names of recent mail to addresses that do not exist are offered as buttons that fill the field.
+- **UI elements:** SCR-02; the address field with its live message (aria-live), the full-address preview, the availability line, Open it.
+- **States covered:** loading, error, success
+- **Errors & recovery:** A check that cannot reach Cloudflare says routing is unknown and does not block Create; an invalid or taken name disables Create and the message says why.
+- **Status:** draft
+- **Coverage:** shared/address-name.ts, workers/lib/address-ops.ts (checkAddresses), workers/routes/agents.ts (/api/project-addresses/check), tests/project-addresses.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS7); tested against a fake Cloudflare and driven in a browser on a local server without a token.
+
+### SCN-062: Create an address and watch it receive
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001; operator request 2026-10-06
+- **Entry point:** SCR-02 (the Add address dialog)
+- **Preconditions:** A valid, free address is typed on a domain that receives here.
+- **Steps:**
+  1. Create -> the form is replaced by its steps, one line each, announced as they change: Create the address; Send its mail here (the Cloudflare rule); Send a test message (when ticked: ticked by default when a rule can be made or the catch-all already sends mail here).
+  2. The test is sent -> its line says it was accepted and is waiting; the dialog asks the server every 5 seconds whether it has arrived.
+  3. It arrives -> Arrived, with the time and the folder it landed in; the new address is already selected in the list behind the dialog.
+  4. Done -> the dialog closes and the focus moves to the address's panel.
+- **Expected result:** One surface shows that the address exists, that Cloudflare sends its mail here, and that a real message arrived — or exactly which of the three did not happen.
+- **Alt paths:** Add another keeps the domain and the settings and starts a new address, with the focus in the name field (in Several, the names box); a test that is not ticked is offered again as Send a test message.
+- **UI elements:** SCR-02; the step list (Done, Already so, Skipped, Not done, Not receiving yet, Waiting), Send a test message, Done, Add another.
+- **States covered:** loading, error, success
+- **Errors & recovery:** Every failed step says what happened, what was kept and the one action that fixes it; a test not arrived after 3 minutes is reported as not arrived with Check routing; a test the provider refused names the provider's reason. Send again always sends a new message, even within the same minute, and only that message arriving counts — not an earlier test, and not a reply to one.
+- **Status:** draft
+- **Coverage:** app/components/settings/sections/AddAddress.tsx, app/components/settings/sections/add-address-model.ts, workers/lib/address-ops.ts (createAddress, routingTestStatus), workers/routes/agents.ts (/api/project-addresses/:email/test), tests/project-addresses.test.ts, tests/add-address-model.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS7). Without a token the local server makes no rule and the test is sent through the local Email binding; arrival was exercised with a message delivered to the local Worker.
+
+### SCN-063: Create an address on a domain that does not receive here yet
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001; operator request 2026-10-06
+- **Entry point:** SCR-02 (the Add address dialog's domain choice)
+- **Preconditions:** The server has a Cloudflare token that sees a domain that is not received here.
+- **Steps:**
+  1. Open the domain choice and type part of a name -> the list narrows; Receiving here comes first, then Can receive here; a domain whose Email Routing needs fixing says Needs fixing once it is checked.
+  2. Choose a domain that can receive here -> the dialog says that Create first receives its mail here: Email Routing on, its existing addresses brought in keeping their copies, sending on.
+  3. Create -> the first step, Receive mail for <domain> here, runs and lists its own result; then the address steps run.
+- **Expected result:** An address on any domain of the person's Cloudflare account is one dialog away, and nothing about the domain changes without being said first.
+- **Alt paths:** When another provider's MX records are on the domain, the step stops before changing anything and offers Replace and continue, or Cancel.
+- **UI elements:** SCR-02; the searchable domain choice with each domain's state, the receive step, Replace and continue.
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** A failed receive step stops before the address is created and says how to continue (running it again continues from there, as on Domains); a domain that needs fixing offers Fix it, which runs Receive mail here again.
+- **Status:** draft
+- **Coverage:** app/components/settings/sections/AddAddress.tsx, app/components/settings/sections/add-address-model.ts, workers/routes/domains.ts (/api/domains/:domain/connect), tests/add-address-model.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS7); the receive step is the Domains action (SCN-031), already tested against a fake Cloudflare. Not exercised on a live account.
+
+### SCN-064: Create several addresses at once
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001; operator request 2026-10-06
+- **Entry point:** SCR-02 (the Add address dialog, Several)
+- **Preconditions:** The dialog is open on a domain.
+- **Steps:**
+  1. Choose Several -> one box for names, one per line or separated by commas or spaces (support, sales, hello); each name is listed below with its own check.
+  2. Set who answers, a copy, the signature and the test once -> they apply to every address; each address gets its own display name from its name (Support, Sales, Hello) unless one is typed for all.
+  3. Create N addresses -> one row per address with its own steps; a failure on one never stops the others. The server creates as many as fit one request and hands the rest back; the dialog sends them again on its own (Creating the rest…) until every name is answered.
+- **Expected result:** A new project's usual addresses exist in one pass, and each one says whether it receives.
+- **Alt paths:** A name that is invalid or already taken is listed with its reason and skipped; Create counts only the names that can be made, and only those count toward the 50 (names past it are left out and said once, with how many).
+- **UI elements:** SCR-02; the names box, the per-name checks, the result table.
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** Each row carries its own failure and fix; up to 50 names at once. If the server's answer does not arrive (a timeout, no connection, a server error), the dialog reads the names back and lists which exist now (with their rule) and which do not — never "Nothing was created" — and when even that cannot be read, it says so and points to Addresses.
+- **Status:** draft
+- **Coverage:** shared/address-name.ts (parseLocalParts), workers/routes/agents.ts (/api/project-addresses/batch), app/components/settings/sections/AddAddress.tsx, tests/project-addresses.test.ts, tests/address-name.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS7); tested against a fake Cloudflare and driven in a browser on a local server.
+
+### SCN-065: An address whose rule could not be made
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001; operator request 2026-10-06
+- **Entry point:** SCR-02 (the step list; the address's Routing & test tab)
+- **Preconditions:** An address was created and its rule was not made: the server has no token, none of its tokens sees the zone, or Cloudflare refused.
+- **Steps:**
+  1. The rule step reads Not done (or Skipped) with the reason in words: no token yet; the token cannot see <domain>; Cloudflare's own message. When the rule was made but Email Routing is off or misconfigured for the domain, it reads Not receiving yet — never Done — and says so.
+  2. Its one fix is beside it: Connect Cloudflare, Connect its account, or Fix it, which makes the rule again (or, for Not receiving yet, runs Receive mail here for the domain again).
+  3. The address in the list and on its panel shows Not receiving yet until routing is verified.
+- **Expected result:** Nothing half-done is left silent: the address is kept, it says it does not receive yet, and one action fixes it.
+- **Alt paths:** The domain's catch-all already sends its mail here: the step says no rule was needed and the address receives.
+- **UI elements:** SCR-02; the rule step, Fix it, the Not receiving yet badge, Routing & test.
+- **States covered:** error, success
+- **Errors & recovery:** This scenario is the recovery.
+- **Status:** draft
+- **Coverage:** workers/lib/address-ops.ts (createAddress), app/components/settings/sections/AddAddress.tsx, app/components/settings/sections/AddressesSection.tsx (RoutingTab), tests/project-addresses.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS7); the no-token and refused cases tested against a fake Cloudflare and seen on a local server without a token.
+
+### SCN-066: An agent creates addresses
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; RE-001; AP-5 (every function of the app is an agent tool)
+- **Entry point:** The agent protocol (`/mcp`) with an admin key
+- **Preconditions:** An outside agent has an admin key that sees the whole workspace.
+- **Steps:**
+  1. check_address with a domain and one or several names -> the same checks the dialog shows, per name, and the domain's state.
+  2. create_address (one, with name, signature, agent, copy) or create_addresses (several) -> the same steps the dialog lists, per address.
+  3. send_test_message, then check_test_message until it reads arrived or not_arrived.
+- **Expected result:** An agent can do everything the person can in the dialog, and reads the same results.
+- **Alt paths:** connect_domain first for a domain that does not receive here.
+- **UI elements:** none (agent protocol); docs/agents/mcp.md.
+- **States covered:** error, success
+- **Errors & recovery:** The tools answer the routes' own refusals and steps.
+- **Status:** draft
+- **Coverage:** workers/mcp/tools.ts, docs/agents/mcp.md, tests/mcp-parity.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS7); tested against the recording API.
+
+### SCN-070: See how fresh the mail is, and check now
+- **Persona:** P-01
+- **Feature:** Find and handle a conversation
+- **Traces:** ST-002, FLW-02, JTBD-01, JRN-01; operator decision 2026-10-06 (refresh on the left, with its status)
+- **Entry point:** SCR-03 (the toolbar, under the list's title)
+- **Preconditions:** At least one account is in view.
+- **Steps:**
+  1. Open any view -> under the title, Refresh and a status: "Updated 3 min ago" — the server's last successful read of the Gmail, IMAP and Outlook accounts in view (the oldest of them) — or "Live" when the view holds only Cloudflare addresses, which receive by push.
+  2. Click Refresh (or press ⌘⇧N, Ctrl+Shift+N elsewhere) -> the arrow turns and the status says "Updating…" until the accounts are read and the list is read again.
+  3. Click the status -> each account in view with its own line: Live, Updated 2 min ago, Importing older mail: 40%, asked to slow down until 14:05, or what failed with its fix (Reconnect in browser ↗, Enter a new app password, Why, and what to do).
+- **Expected result:** The person knows how old what they see is, and which account is behind and what fixes it, without leaving the inbox.
+- **Alt paths:** An import shows its progress beside the time; a refresh that could not reach an account keeps saying so until the next one; not reached in time is not a failure.
+- **UI elements:** SCR-03 (Refresh, the status line, its details).
+- **States covered:** loading, error, success
+- **Errors & recovery:** One failing account turns the line into "alex@gmail.example needs to be connected again" (or "could not be updated"); several into "2 accounts could not be updated"; each row carries its own fix. The relative time ticks every 15 seconds only while the window is visible, and never re-renders the list.
+- **Status:** validated
+- **Coverage:** app/components/inbox/SyncStatus.tsx, app/lib/sync-status.ts, app/hooks/useVisibleClock.ts, app/routes/unified-inbox.tsx (checkForMail, inScope), workers/lib/inbox-sources.ts (retryAt), tests/sync-status.test.ts, tests/mail-refresh.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS8) and walked against the local Worker with one synthetic Gmail account (idle, updating, error) on 2026-10-06; ⌘R stays the Mac menu's Retry connection.
+
+### SCN-071: Archive or discard from the keyboard, and undo
+- **Persona:** P-01
+- **Feature:** Find and handle a conversation
+- **Traces:** ST-002, FLW-02, JTBD-01, JRN-01; operator decision 2026-10-06; board B-25 (keyboard navigation)
+- **Entry point:** SCR-03 (the message list), SCR-04 (the open message)
+- **Preconditions:** A message is selected or open, or several are chosen; focus is not in a field.
+- **Steps:**
+  1. Press Delete or Backspace -> the message is archived and marked read; the next one opens; a toast says "Archived · Undo".
+  2. Press ⌘⌫ (Ctrl+Backspace elsewhere) -> it is discarded (SCN-072); the toast says "Discarded · Undo".
+  3. Press ⌘Z (Ctrl+Z), or Undo -> every message is back where it was, unread again if it was; a discard's lesson is taken back too.
+  4. ↓/J and ↑/K move; Shift with them, ⌘/Ctrl-click and Shift-click choose several, which the keys act on together; Esc clears; ? shows Keyboard shortcuts.
+- **Expected result:** Triage at the speed of the keyboard, with every step reversible for as long as the toast shows.
+- **Alt paths:** The reader's Archive and Discard buttons do the same; in Archive, Sent, Trash or Spam the keys say what they cannot do there instead of guessing.
+- **UI elements:** SCR-03 (rows chosen together, "N selected", the toast), SCR-04 (Archive, Discard), the Keyboard shortcuts help.
+- **States covered:** loading, error, success
+- **Errors & recovery:** The rows leave at once and come back if the server refuses; one message that fails is named and the others still move. Keys never fire while typing in a field, the composer, or with a dialog open, and Alt or other combinations do nothing.
+- **Status:** validated
+- **Coverage:** app/lib/mail-keys.ts, app/components/inbox/triage-actions.ts, app/components/inbox/UndoToast.tsx, app/components/inbox/ShortcutsDialog.tsx, app/components/inbox/TriagedList.tsx, app/routes/unified-inbox.tsx (triageAction, undoLast, choose, step), tests/mail-keys.test.ts, tests/triage-actions.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS8); archive, Undo and a three-message selection walked against the local Worker on 2026-10-06.
+
+### SCN-072: Discard a message and stop mail like it
+- **Persona:** P-01
+- **Feature:** Find and handle a conversation
+- **Traces:** ST-002, FLW-02, JTBD-01, JRN-01; operator decision 2026-10-06 ("we analyze why we delete it, and in the future put such messages straight into Discarded")
+- **Entry point:** SCR-03, SCR-04
+- **Preconditions:** A message that is not sent mail or a draft.
+- **Steps:**
+  1. ⌘⌫ (or Discard in the reader) -> the message goes to Discarded, read: a Cloudflare mailbox's Discarded folder, Gmail's own label "Discarded", an IMAP or Outlook folder named Discarded (made the first time).
+  2. The server records why: its mailing list (List-Id) or newsletter mark (List-Unsubscribe), its sender, the sender's domain only for bulk senders and never a shared personal domain, the category it was in, and a model's one-line guess when the server has one; a rule is kept on the list, else the sender.
+  3. The first discard of a list or sender -> the toast adds once "Future mail from Weekly Digest will go to Discarded · Don't".
+- **Expected result:** One keystroke removes the message and teaches the inbox; the person sees what was learned and can refuse it at once.
+- **Alt paths:** Don't removes the rule; a sender any address of the workspace wrote to, one on the workspace's own domains, or one on Always allow is not learned (the mail is still discarded); agents discard with discard_messages, learn: false for a one-off.
+- **UI elements:** SCR-03 toast with Undo and Don't; SCR-04 Discard.
+- **States covered:** loading, error, success
+- **Errors & recovery:** Mail in a Gmail, IMAP or Outlook account's Spam is not discarded, and the toast says why (moving it out would teach the provider's filter it is not spam; Spam is emptied on its own). A rule that cannot be saved still discards the mail and says nothing was learned; a server that refuses to make the IMAP folder says so (make a folder named Discarded there and try again).
+- **Status:** validated
+- **Coverage:** shared/mail/discard.ts, workers/routes/discard.ts, workers/discard/store.ts, workers/durableObject/index.ts (discardMessages), workers/providers/account-service.ts (discard, discardFacts), workers/providers/gmail-provider.ts, workers/providers/imap/provider.ts, workers/providers/outlook/provider.ts, tests/discard.test.ts, tests/discard-workerd.test.ts, tests/discard-providers.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS8); Cloudflare in workerd and the local Worker, Gmail, IMAP and Outlook against fakes.
+
+### SCN-073: Mail like discarded mail goes to Discarded on arrival
+- **Persona:** P-01
+- **Feature:** Find and handle a conversation
+- **Traces:** ST-002, FLW-02, JTBD-01, JRN-01; operator decision 2026-10-06
+- **Entry point:** SCR-03 (Discarded folder)
+- **Preconditions:** A discard rule exists.
+- **Steps:**
+  1. New mail arrives that matches a rule by its List-Id or its sender -> after the spam check, it goes straight to Discarded, read; no rule, agent or category sees it, and no forwarding copy is sent.
+  2. Open Discarded -> it says "Why discarded: Discarded automatically: you discarded 3 messages from this newsletter (Weekly Digest)".
+- **Expected result:** What the person threw away once does not come back to the inbox.
+- **Alt paths:** Never on arrival: mail from someone any address of the workspace wrote to (any Cloudflare mailbox or connected account, in To, Cc or Bcc), a reply in a conversation the account took part in, mail from the workspace's own domains (its served domains, and a connected account's own domain unless it is a shared provider such as gmail.com), senders on Always allow or Never spam; when that cannot be checked, the mail stays in the inbox. Gmail, IMAP and Outlook mail is filed when its sync is handed on (seconds after it is read), before rules, agents and categories.
+- **UI elements:** SCR-03 Discarded folder, its banner, Why discarded.
+- **States covered:** empty, success
+- **Errors & recovery:** Rules that cannot be read, or a check that fails, leave the mail in the inbox and deliver it as before. A Cloudflare mailbox whose Discarded folder is missing gets it made again before the mail is stored, so delivery never fails for it; Discarded cannot be deleted, and a person's own folder that once held its name keeps their mail as "Discarded (your folder)".
+- **Status:** validated
+- **Coverage:** workers/index.ts (discardVerdict), workers/durableObject/index.ts (receiveEmailOnce), workers/providers/accounts-do.ts (arrivalFilter), workers/providers/account-service.ts (drainEvents, sentContact), tests/discard-workerd.test.ts, tests/discard-providers.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS8); the next issue of a discarded newsletter was filed on arrival in the local Worker on 2026-10-06.
+
+### SCN-074: Bring a discarded message back
+- **Persona:** P-01
+- **Feature:** Find and handle a conversation
+- **Traces:** ST-002, FLW-02, JTBD-01, JRN-01; operator decision 2026-10-06 ("so it can be found and returned if it was thrown away by mistake")
+- **Entry point:** SCR-03 (Discarded folder), SCR-04
+- **Preconditions:** A message in Discarded (kept 30 days).
+- **Steps:**
+  1. Open Discarded, or search within it -> each message says why it is there.
+  2. Not discarded -> it is back in the inbox; when a rule would discard such mail again, the notice offers "Stop discarding mail like this".
+- **Expected result:** A mistake costs one click, and the rule behind it can go in the same breath.
+- **Alt paths:** Undo right after a discard puts each message back where it was — the inbox, Archive (still starred), Trash, Spam (with its reason and its 30 days), a folder of the person's — and takes back only what that discard taught; a folder deleted since sends it to the inbox.
+- **UI elements:** SCR-03 notice with Stop discarding mail like this; SCR-04 Not discarded.
+- **States covered:** loading, error, success
+- **Errors & recovery:** A message no longer in Discarded says so. After 30 days Discarded mail is deleted (Gmail, IMAP and Outlook: moved to their Trash, which the provider empties).
+- **Status:** validated
+- **Coverage:** workers/routes/discard.ts (restore), workers/durableObject/index.ts (restoreDiscarded, purgeDiscarded), workers/providers/account-service.ts (restoreDiscarded, purgeDiscarded), app/routes/unified-inbox.tsx (restore, forgetRules), tests/discard-workerd.test.ts, tests/discard-providers.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS8); restored with Stop discarding offered in the local Worker on 2026-10-06.
+
+### SCN-075: Keep the discard rules
+- **Persona:** P-01
+- **Feature:** Find and handle a conversation
+- **Traces:** ST-002, FLW-02, JTBD-01, JRN-01; operator decision 2026-10-06
+- **Entry point:** SCR-16
+- **Preconditions:** None.
+- **Steps:**
+  1. Open Settings → Discard rules -> How Discarded works, Always allow, and each rule with its kind and counts.
+  2. Open a rule -> why it was learned, discarded by you and on arrival, when; Remove rule, or Always allow its sender.
+  3. Always allow -> add or remove senders and domains no rule discards.
+- **Expected result:** Everything the inbox learned is visible and reversible.
+- **Alt paths:** Agents read the rules (list_discard_rules) and, with an admin key, remove one or change Always allow.
+- **UI elements:** SCR-16.
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** An entry that is not an address or a domain is refused with the reason; two changes at once both land; a rule removed elsewhere says it is gone.
+- **Status:** validated
+- **Coverage:** app/components/settings/sections/DiscardSection.tsx, workers/routes/discard.ts, tests/discard-workerd.test.ts, tests/triage-text.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS8); seen in the local Worker on 2026-10-06.
+
+### SCN-076: Use the app in Russian or English
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07, JTBD-01; operator decision 2026-10-06 ("Нужен перевод на русский"); fabric-workspace knowledge/localization.md L10N-01…06
+- **Entry point:** SCR-02 (Settings → App → Language)
+- **Preconditions:** None.
+- **Steps:**
+  1. Open the app on a device whose first preferred language is Russian (ru, ru-*) -> the mail list, Settings, the dialogs, the Mac app's menus and first-run window, and the pages the server shows after a Gmail or Outlook sign-in are in Russian; on any other language they are in English.
+  2. Open Settings → App → Language -> System (with the language it resolves to), English, Русский; the current choice is ticked.
+  3. Choose one -> the choice is kept on this device, the page reloads in that language; in the Mac app its menus follow at once and its first-run window on next open.
+  4. Choose System -> the device's language decides again.
+- **Expected result:** Every word a person reads is in the chosen language: counts with their real plural forms («1 письмо, 2 письма, 5 писем»), dates and numbers in its format, the server's refusals shown in it. What is sent and stored does not change language: mail, agents' answers, what agents read (MCP), logs.
+- **Alt paths:** A word the dictionary does not have shows in English, never as a key. A sign-in in the system browser, which has none of the app's cookies, follows the language the connect started with, else the browser's own languages.
+- **UI elements:** SCR-02 App → Language (radio group); the Mac app's menus.
+- **States covered:** success, error
+- **Errors & recovery:** A device that cannot keep the choice says so and stays in its current language; a page rendered in another language than the choice reloads once to follow it.
+- **Status:** validated
+- **Coverage:** shared/i18n/index.ts, shared/i18n/server.ts, shared/i18n/ru/, app/lib/i18n.tsx, app/root.tsx (loader, useLocaleSync), app/components/settings/sections/AppSection.tsx (LanguagePanel), desktop/i18n.cjs, desktop/main.cjs (fabric:locale, fabric:locale-set), desktop/setup.js, scripts/check-locale.mjs, tests/i18n.test.ts, tests/i18n-render.test.ts
+- **Product:** unobserved
+- **Today:** Built in 0.12 (WS9); walked in Russian in the local Worker on 2026-10-07.

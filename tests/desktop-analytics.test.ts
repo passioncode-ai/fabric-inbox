@@ -315,3 +315,15 @@ test("only the release workflow puts an App Key in the app, and the store packag
   assert.throws(() => analyticsBundle({ FABRIC_INBOX_ANALYTICS_APP_KEY: "A-SH-0123456789" }), /https origin/);
   assert.throws(() => analyticsBundle({ FABRIC_INBOX_ANALYTICS_APP_KEY: "wrong" }), /App Key/);
 });
+
+test("usage counts are sent with Node's fetch, so a pending Keychain prompt cannot hold them back (0.11.0)", async () => {
+  const main = readFileSync("desktop/main.cjs", "utf8");
+  const start = main.slice(main.indexOf("async function startAnalytics"), main.indexOf("async function startUpdates"));
+  assert.match(start, /const send = globalThis\.fetch;/);
+  assert.ok(!/net\.fetch/.test(start), "Chromium's fetch waits for the cookie key from the Keychain");
+});
+
+test("a development run has its own app name, so its cookie key lives in its own Keychain item", () => {
+  const main = readFileSync("desktop/main.cjs", "utf8");
+  assert.match(main, /app\.setName\(app\.isPackaged \? 'Fabric Inbox' : 'Fabric Inbox Development'\);/);
+});

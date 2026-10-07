@@ -40,7 +40,7 @@ export function inboxSources(env: Env): InboxSources {
         const importing = a.importing ?? importPercent(a.sync as Parameters<typeof importPercent>[0]);
         return { id: provider + ":" + a.id, provider, email: a.email, name: a.email,
           status: a.sync.mode === "initial" && a.status === "connected" ? "syncing" : a.status,
-          error: a.error, lastSyncAt: a.lastSyncAt, ...(a.reason ? { reason: a.reason } : {}),
+          error: a.error, lastSyncAt: a.lastSyncAt, ...(a.retryAt ? { retryAt: a.retryAt } : {}), ...(a.reason ? { reason: a.reason } : {}),
           ...(a.providerName ? { providerName: a.providerName } : {}),
           ...(c ? { capabilities: { archive: c.archive, spam: c.spam, trash: c.trash, drafts: c.drafts, organization: c.organization } } : {}),
           ...(a.sync.mode === "initial" && importing !== undefined ? { importing } : {}) };

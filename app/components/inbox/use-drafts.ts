@@ -19,9 +19,11 @@ import {
   type ServerDraftRow,
   type SyncResult,
 } from "./server-drafts";
+import { msg } from "../../../shared/i18n";
 
-const saveError =
-  "Draft could not be saved on this device. Keep this window open and copy your text before leaving.";
+const saveError = msg(
+  "Draft could not be saved on this device. Keep this window open and copy your text before leaving.",
+);
 /** How the server's copy of a draft stands, for the composer and the Drafts list. */
 export type SyncStatus = { state: "saving" | "saved" | "waiting" | "conflict" | "gone" | "refused"; message: string };
 const SYNC_DELAY = 1500, RETRY_DELAY = 30_000;
@@ -68,11 +70,11 @@ export function useDrafts() {
       ]);
       if (list.unreadable)
         setNotice(
-          "Some saved drafts could not be read. Their stored data has been kept. You can still compose a new message.",
+          msg("Some saved drafts could not be read. Their stored data has been kept. You can still compose a new message."),
         );
     } catch {
       setNotice(
-        "Saved drafts could not be read. Keep this window open and try opening Drafts again.",
+        msg("Saved drafts could not be read. Keep this window open and try opening Drafts again."),
       );
     }
   }
@@ -89,7 +91,7 @@ export function useDrafts() {
       } catch {
         if (live)
           setNotice(
-            "A saved draft could not be restored. Its stored data has been kept. You can still compose a new message.",
+            msg("A saved draft could not be restored. Its stored data has been kept. You can still compose a new message."),
           );
       }
       if (live) {
@@ -132,7 +134,7 @@ export function useDrafts() {
         const snapshot = currentDrafts.current.find((d) => d.id === id);
         if (!snapshot || snapshot.locked || snapshot.synced || !store.current) return;
         if (dirty.current.has(id)) { schedule(id); return; }
-        setStatus(id, { state: "saving", message: "Saving to your server…" });
+        setStatus(id, { state: "saving", message: msg("Saving to your server…") });
         const result: SyncResult = await syncDraft(snapshot, attachmentsOnDevice(), fabric);
         const current = currentDrafts.current.find((d) => d.id === id);
         if (!current || current.locked) return;
@@ -142,7 +144,7 @@ export function useDrafts() {
           for (const f of result.serverFiles) if (!known.has(f.id)) syncAdded.current.add(f.id);
           const merged = mergeSynced(current, snapshot, result);
           if (!(await persist(merged))) return;
-          setStatus(id, merged.synced ? { state: "saved", message: "Saved to your server" } : null);
+          setStatus(id, merged.synced ? { state: "saved", message: msg("Saved to your server") } : null);
           if (!merged.synced) schedule(id);
           return;
         }
@@ -255,10 +257,10 @@ export function useDrafts() {
       if (!(await persist(draft))) return false;
       versions.current.set(draft.id, 0);
       setActiveId(draft.id);
-      setStatus(draft.id, { state: "saved", message: "Saved to your server" });
+      setStatus(draft.id, { state: "saved", message: msg("Saved to your server") });
       return true;
     } catch (e) {
-      setNotice(e instanceof Error && e.message ? `This draft could not be opened: ${e.message}` : "This draft could not be opened. Try again.");
+      setNotice(e instanceof Error && e.message ? msg("This draft could not be opened: {error}", { error: e.message }) : msg("This draft could not be opened. Try again."));
       return false;
     }
   }
@@ -296,7 +298,7 @@ export function useDrafts() {
       setStatus(d.id, null);
       schedule(d.id, 0);
     } catch (e) {
-      setStatus(d.id, { state: sync[d.id]?.state ?? "refused", message: `The server's version could not be read: ${(e as Error).message}. Try again.` });
+      setStatus(d.id, { state: sync[d.id]?.state ?? "refused", message: msg("The server's version could not be read: {error}. Try again.", { error: (e as Error).message }) });
     }
   }
   async function lock(d: Draft) {
@@ -358,15 +360,15 @@ export function useDrafts() {
       drafts.map((d) => [
         d.id,
         errors[d.id]
-          ? "Not saved. Open to recover"
+          ? msg("Not saved. Open to recover")
           : pending[d.id]
-            ? "Saving draft…"
+            ? msg("Saving draft…")
             : d.pendingAttachments?.length
-              ? "Files pending. Open draft to recover"
+              ? msg("Files pending. Open draft to recover")
               : sync[d.id] && sync[d.id]!.state !== "saved" && sync[d.id]!.state !== "saving"
                 ? sync[d.id]!.message
                 : !d.synced && !d.locked
-                  ? "Kept on this device; not on your server yet"
+                  ? msg("Kept on this device; not on your server yet")
                   : "",
       ]),
     ),

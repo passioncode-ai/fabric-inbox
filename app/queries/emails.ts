@@ -7,6 +7,7 @@ import {
 	emailMoveErrorMessage,
 	emailUpdateErrorMessage,
 } from "~/lib/mutation-errors";
+import { msg } from "../../shared/i18n";
 import api from "~/services/api";
 import type { Email } from "~/types";
 import { queryKeys } from "./keys";
@@ -207,7 +208,7 @@ export function useUpdateEmail() {
 export function useMarkThreadRead() {
 	const qc = useQueryClient();
 	return useMutation({
-		meta: { errorMessage: "Couldn't mark the conversation as read." },
+		meta: { errorMessage: msg("Couldn't mark the conversation as read.") },
 		mutationFn: ({
 			mailboxId,
 			threadId,
@@ -227,7 +228,7 @@ export function useMarkThreadRead() {
 export function useDeleteEmail() {
 	const invalidate = useInvalidateEmailData();
 	return useMutation({
-		meta: { errorMessage: "Couldn't delete the message." },
+		meta: { errorMessage: msg("Couldn't delete the message.") },
 		mutationFn: ({
 			mailboxId,
 			id,

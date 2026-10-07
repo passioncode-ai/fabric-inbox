@@ -17,6 +17,7 @@ import {
 import { missingOriginals, prepareMessage } from "./compose-payload";
 import { sendSavedDraft, signatureFor, swapSignature } from "./server-drafts";
 import type { SyncStatus } from "./use-drafts";
+import { useT } from "../../lib/i18n";
 export type { Draft } from "./draft-store";
 export default function Composer({
   draft,
@@ -59,9 +60,13 @@ export default function Composer({
   onClose: () => void;
   onSent: () => void;
 }) {
+  const t = useT();
   const dialog = useRef<HTMLDialogElement>(null),
     sending = useRef(false),
-    fileWork = useRef(false);
+    fileWork = useRef(false),
+    // The native file input shows its own words in the browser's language, not the one chosen in
+    // Settings (L10N-01), so it stays hidden and a button of ours opens it.
+    filePicker = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [loadingFiles, setLoadingFiles] = useState(false);
@@ -84,6 +89,11 @@ export default function Composer({
     };
   }, []);
   const account = accounts.find((a) => a.id === draft.accountId);
+  /** A file's size: as before in English (the system's digit grouping), with the noun's form in Russian. */
+  const bytes = (size: number) =>
+    t.plural(size, { one: "{size} byte", other: "{size} bytes" }, {
+      size: t.locale === "en" ? size.toLocaleString() : t.number(size),
+    });
   function change(patch: Partial<Draft>) {
     onChange({ ...draft, ...patch });
   }
@@ -93,7 +103,7 @@ export default function Composer({
     try {
       signature = accountId ? await signatureFor(accountId, fabric) : "";
     } catch {
-      setNotice("The sender's signature could not be loaded; add it to the message if you need it.");
+      setNotice(t("The sender's signature could not be loaded; add it to the message if you need it."));
     }
     change({ accountId, text: swapSignature(draft.text, draft.signature, signature), signature });
   }
@@ -112,7 +122,7 @@ export default function Composer({
     try {
       prepared = await prepareMessage(draft, attachmentsOnDevice());
     } catch (error) {
-      setNotice((error as Error).message);
+      setNotice(t.text((error as Error).message));
       sending.current = false;
       setBusy(false);
       return;
@@ -125,7 +135,7 @@ export default function Composer({
       if (!saved?.synced || !saved.serverId) {
         sending.current = false;
         setBusy(false);
-        unsavedNotice.current = "The draft could not be saved to your server, so it was not sent. Check the connection and try again.";
+        unsavedNotice.current = t("The draft could not be saved to your server, so it was not sent. Check the connection and try again.");
         setNotice(unsavedNotice.current);
         return;
       }
@@ -138,7 +148,7 @@ export default function Composer({
       sending.current = false;
       setBusy(false);
       setNotice(
-        "Could not save send recovery information. Sending was not attempted.",
+        t("Could not save send recovery information. Sending was not attempted."),
       );
       return;
     }
@@ -153,7 +163,7 @@ export default function Composer({
           onSent();
           onClose();
         } else
-          setNotice("Acceptance is not confirmed. Keep this attempt unchanged and check again.");
+          setNotice(t("Acceptance is not confirmed. Keep this attempt unchanged and check again."));
         return;
       }
       const path = isGmail
@@ -177,7 +187,7 @@ export default function Composer({
         onClose();
       } else
         setNotice(
-          "Acceptance is not confirmed. Keep this attempt unchanged and check again.",
+          t("Acceptance is not confirmed. Keep this attempt unchanged and check again."),
         );
     } catch (error) {
       const code = error instanceof ApiError ? String(error.body.code ?? error.body.error ?? "") : "";
@@ -186,14 +196,14 @@ export default function Composer({
         if (!(await recover(fixed, "editable"))) return;
         // Saving again meets the change and offers the choice between the two versions.
         void onResync(draft);
-        setNotice("This draft was changed elsewhere just before sending, so it was not sent. Check it, then send again.");
+        setNotice(t("This draft was changed elsewhere just before sending, so it was not sent. Check it, then send again."));
       } else if (
         error instanceof ApiError &&
         sendRecovery(!!draft.locked, error.status, error.body) === "failed"
       ) {
         if (!(await recover(fixed, "failed"))) return;
         setNotice(
-          "The provider did not accept this attempt. Correct the draft and send again, or discard it.",
+          t("The provider did not accept this attempt. Correct the draft and send again, or discard it."),
         );
       } else if (
         error instanceof ApiError &&
@@ -201,13 +211,13 @@ export default function Composer({
       ) {
         if (!(await recover(fixed, "editable"))) return;
         setNotice(
-          "Send refused: " +
-            error.message.replace(/[.!?]+$/, "") +
-            ". Correct the message or reconnect.",
+          t("Send refused: {reason}. Correct the message or reconnect.", {
+            reason: t.text(error.message).replace(/[.!?]+$/, ""),
+          }),
         );
       } else
         setNotice(
-          "Acceptance is not confirmed. Retry the same attempt; its recovery key prevents a duplicate send.",
+          t("Acceptance is not confirmed. Retry the same attempt; its recovery key prevents a duplicate send."),
         );
     } finally {
       sending.current = false;
@@ -221,7 +231,7 @@ export default function Composer({
     const count = saved.length + (draft.attachments?.length ?? 0) + files.length;
     const bytes = [...saved, ...(draft.attachments ?? []), ...files].reduce((n, f) => n + f.size, 0);
     if (count > MAX_ATTACHMENTS || bytes > MAX_ATTACHMENT_BYTES) {
-      setNotice("A message can carry up to 10 files, 5 MiB together. Remove a file before adding another.");
+      setNotice(t("A message can carry up to 10 files, 5 MiB together. Remove a file before adding another."));
       return;
     }
     fileWork.current = true;
@@ -240,10 +250,12 @@ export default function Composer({
       );
     } catch (error) {
       setNotice(
-        "File loading failed. " +
-          (error instanceof Error
-            ? error.message
-            : "Check device storage and choose the files again."),
+        t("File loading failed. {reason}", {
+          reason:
+            error instanceof Error
+              ? t.text(error.message)
+              : t("Check device storage and choose the files again."),
+        }),
       );
     } finally {
       fileWork.current = false;
@@ -279,7 +291,7 @@ export default function Composer({
           if (source.provider !== "cloudflare") {
             const result = await fabric<{ data: string }>(path);
             if (typeof result.data !== "string")
-              throw new Error("The original file is unavailable.");
+              throw new Error(t("The original file is unavailable."));
             let content = result.data.replaceAll("-", "+").replaceAll("_", "/");
             content += "=".repeat((4 - (content.length % 4)) % 4);
             validateAttachments([
@@ -299,13 +311,13 @@ export default function Composer({
             });
             if (!response.ok)
               throw new Error(
-                "The original file could not be retrieved. Reconnect the source account and try again.",
+                t("The original file could not be retrieved. Reconnect the source account and try again."),
               );
             if (
               Number(response.headers.get("Content-Length")) >
               MAX_ATTACHMENT_BYTES
             )
-              throw new Error("An original file exceeds the 5 MiB limit.");
+              throw new Error(t("An original file exceeds the 5 MiB limit."));
             bytes = await response.arrayBuffer();
           }
           return bytes;
@@ -323,10 +335,12 @@ export default function Composer({
       );
     } catch (error) {
       setNotice(
-        "Original attachment loading failed. " +
-          (error instanceof Error
-            ? error.message
-            : "Try again before forwarding."),
+        t("Original attachment loading failed. {reason}", {
+          reason:
+            error instanceof Error
+              ? t.text(error.message)
+              : t("Try again before forwarding."),
+        }),
       );
     } finally {
       fileWork.current = false;
@@ -339,7 +353,7 @@ export default function Composer({
       return true;
     } catch {
       setNotice(
-        "Could not save the updated send result. Keep this attempt unchanged and retry the same attempt.",
+        t("Could not save the updated send result. Keep this attempt unchanged and retry the same attempt."),
       );
       return false;
     }
@@ -364,34 +378,34 @@ export default function Composer({
           <div>
             <span className="fi-eyebrow">
               {draft.mode === "reply"
-                ? "Reply"
+                ? t("[mode] Reply")
                 : draft.mode === "forward"
-                  ? "Forward"
-                  : "New message"}
+                  ? t("[mode] Forward")
+                  : t("New message")}
             </span>
-            <h2 id="compose-title">Write a message</h2>
+            <h2 id="compose-title">{t("Write a message")}</h2>
           </div>
           <button
             type="button"
             className="fi-icon-button"
-            aria-label="Close and keep draft"
+            aria-label={t("Close and keep draft")}
             onClick={onClose}
           >
             ×
           </button>
         </header>
         <label>
-          From
+          {t("From")}
           <select
             required
             value={draft.accountId}
             disabled={busy || draft.locked || draft.mode !== "new" || !!draft.serverId}
             onChange={(e) => void changeSender(e.target.value)}
           >
-            <option value="">Choose a sender</option>
+            <option value="">{t("Choose a sender")}</option>
             {!account && draft.accountId && (
               <option value={draft.accountId}>
-                {draft.accountId} · Account unavailable
+                {draft.accountId} · {t("Account unavailable")}
               </option>
             )}
             {accounts.map((a) => (
@@ -402,7 +416,7 @@ export default function Composer({
           </select>
         </label>
         <label>
-          To
+          {t("To")}
           <input
             required
             value={draft.to}
@@ -412,25 +426,25 @@ export default function Composer({
           />
         </label>
         <label>
-          Cc
+          {t("Cc")}
           <input
             value={draft.cc ?? ""}
-            placeholder="Optional recipients"
+            placeholder={t("Optional recipients")}
             disabled={busy || draft.locked}
             onChange={(e) => change({ cc: e.target.value })}
           />
         </label>
         <label>
-          Bcc
+          {t("Bcc")}
           <input
             value={draft.bcc ?? ""}
-            placeholder="Optional hidden recipients"
+            placeholder={t("Optional hidden recipients")}
             disabled={busy || draft.locked}
             onChange={(e) => change({ bcc: e.target.value })}
           />
         </label>
         <label>
-          Subject
+          {t("Subject")}
           <input
             value={draft.subject}
             disabled={busy || draft.locked}
@@ -438,7 +452,7 @@ export default function Composer({
           />
         </label>
         <label className="fi-body-label">
-          Message
+          {t("Message")}
           <textarea
             autoFocus
             value={draft.text}
@@ -448,41 +462,52 @@ export default function Composer({
         </label>
         <section
           className="fi-compose-attachments"
-          aria-label="Message attachments"
+          aria-label={t("Message attachments")}
         >
-          <label>
-            Add files
-            <input
-              type="file"
-              multiple
+          <div className="fi-compose-files">
+            <button
+              type="button"
+              className="fi-secondary"
               disabled={busy || loadingFiles || draft.locked}
               aria-describedby="attachment-limits"
+              onClick={() => filePicker.current?.click()}
+            >
+              {t("Add files…")}
+            </button>
+            <input
+              ref={filePicker}
+              type="file"
+              multiple
+              tabIndex={-1}
+              aria-hidden="true"
+              className="fi-visually-hidden"
+              disabled={busy || loadingFiles || draft.locked}
               onChange={(e) => {
                 const files = Array.from(e.currentTarget.files ?? []);
                 e.currentTarget.value = "";
                 if (files.length) void addFiles(files);
               }}
             />
-          </label>
+          </div>
           <p id="attachment-limits" className="fi-muted">
-            Up to 10 files, 5 MiB total. Files are saved with the draft on your server.
+            {t("Up to 10 files, 5 MiB total. Files are saved with the draft on your server.")}
           </p>
           {!!draft.serverFiles?.length && (
-            <ul aria-label="Files saved with the draft">
+            <ul aria-label={t("Files saved with the draft")}>
               {draft.serverFiles.map((file) => (
                 <li key={file.id}>
                   <span>
                     {file.filename}{" "}
-                    <small>{file.size.toLocaleString()} bytes · Saved</small>
+                    <small>{bytes(file.size)} · {t("Saved")}</small>
                   </span>
                   <button
                     type="button"
                     className="fi-text-button"
                     disabled={busy || loadingFiles || draft.locked}
-                    aria-label={`Remove ${file.filename}`}
+                    aria-label={t("Remove {name}", { name: file.filename })}
                     onClick={() => change({ serverFiles: draft.serverFiles?.filter((f) => f.id !== file.id) })}
                   >
-                    Remove
+                    {t("Remove")}
                   </button>
                 </li>
               ))}
@@ -495,9 +520,9 @@ export default function Composer({
                   <span>
                     {file.filename}{" "}
                     <small>
-                      {file.size.toLocaleString()} bytes
+                      {bytes(file.size)}
                       {draft.pendingAttachments?.includes(file.id)
-                        ? " · Pending"
+                        ? ` · ${t("Pending")}`
                         : ""}
                     </small>
                   </span>
@@ -505,7 +530,7 @@ export default function Composer({
                     type="button"
                     className="fi-text-button"
                     disabled={busy || loadingFiles || draft.locked}
-                    aria-label={`Remove ${file.filename}`}
+                    aria-label={t("Remove {name}", { name: file.filename })}
                     onClick={() =>
                       change({
                         attachments: draft.attachments?.filter(
@@ -517,7 +542,7 @@ export default function Composer({
                       })
                     }
                   >
-                    Remove
+                    {t("Remove")}
                   </button>
                 </li>
               ))}
@@ -527,14 +552,14 @@ export default function Composer({
             <>
               <p className="fi-muted">
                 {missingOriginals(draft).length
-                  ? "Original attachments are not included yet. Load all files below before forwarding."
+                  ? t("Original attachments are not included yet. Load all files below before forwarding.")
                   : draft.forwardSource?.files.length
-                    ? "Original files selected for this draft."
+                    ? t("Original files selected for this draft.")
                     : draft.forwardSource
-                      ? "The original message has no attachments."
+                      ? t("The original message has no attachments.")
                       : draft.locked
-                        ? "This saved attempt contains forwarded text only."
-                        : "Original attachment information is unavailable. Open the original message and start a new forward."}
+                        ? t("This saved attempt contains forwarded text only.")
+                        : t("Original attachment information is unavailable. Open the original message and start a new forward.")}
               </p>
               {!!missingOriginals(draft).length && (
                 <>
@@ -543,7 +568,7 @@ export default function Composer({
                       <li key={f.id}>
                         <span>
                           {f.filename}{" "}
-                          <small>{f.size.toLocaleString()} bytes</small>
+                          <small>{bytes(f.size)}</small>
                         </span>
                       </li>
                     ))}
@@ -554,7 +579,7 @@ export default function Composer({
                     disabled={busy || loadingFiles || draft.locked}
                     onClick={() => void includeOriginals()}
                   >
-                    Include original attachments
+                    {t("Include original attachments")}
                   </button>
                 </>
               )}
@@ -562,13 +587,12 @@ export default function Composer({
           )}
           {!!draft.pendingAttachments?.length && !loadingFiles && (
             <p role="status" className="fi-muted">
-              Files are not ready. Wait for loading to finish, or remove pending
-              files and add them again.
+              {t("Files are not ready. Wait for loading to finish, or remove pending files and add them again.")}
             </p>
           )}
           {loadingFiles && (
             <p role="status" className="fi-muted">
-              Loading and saving files… You can keep editing the message.
+              {t("Loading and saving files… You can keep editing the message.")}
             </p>
           )}
         </section>
@@ -579,17 +603,17 @@ export default function Composer({
         )}
         {sync && (sync.state === "conflict" || sync.state === "gone") && (
           <div role="alert" className="fi-notice">
-            <p>{sync.message}</p>
+            <p>{t.text(sync.message)}</p>
             {sync.state === "conflict" && (
               <button type="button" className="fi-text-button" disabled={busy} onClick={() => {
-                if (window.confirm("Replace your text with the version saved on your server? Copy any text you need before continuing."))
+                if (window.confirm(t("Replace your text with the version saved on your server? Copy any text you need before continuing.")))
                   void onResolve(draft, "theirs");
               }}>
-                Show the saved version
+                {t("Show the saved version")}
               </button>
             )}
             <button type="button" className="fi-text-button" disabled={busy} onClick={() => void onResolve(draft, "mine")}>
-              {sync.state === "conflict" ? "Keep my version" : "Save it again as a new draft"}
+              {t(sync.state === "conflict" ? "Keep my version" : "Save it again as a new draft")}
             </button>
           </div>
         )}
@@ -600,13 +624,13 @@ export default function Composer({
             onClick={() => {
               if (
                 window.confirm(
-                  "Replace unsaved changes with the saved version? Copy any text you need before continuing.",
+                  t("Replace unsaved changes with the saved version? Copy any text you need before continuing."),
                 )
               )
                 onReopen(draft);
             }}
           >
-            Reopen saved version
+            {t("Reopen saved version")}
           </button>
         )}
         <footer>
@@ -621,28 +645,28 @@ export default function Composer({
                   onClose();
                 } catch {
                   setNotice(
-                    "Draft could not be discarded. It has been kept; reopen Drafts to check the saved version.",
+                    t("Draft could not be discarded. It has been kept; reopen Drafts to check the saved version."),
                   );
                 }
               }}
             >
-              Discard draft
+              {t("Discard draft")}
             </button>
           )}
           <span className="fi-muted" role="status">
             {storageError
-              ? storageError
+              ? t.text(storageError)
               : saving
-                ? "Saving draft…"
+                ? t("Saving draft…")
                 : draft.locked
-                  ? "Send recovery saved on this device"
+                  ? t("Send recovery saved on this device")
                   : sync && sync.state !== "conflict" && sync.state !== "gone"
-                    ? sync.message
+                    ? t.text(sync.message)
                     : sync
-                      ? "Kept on this device; not saved to your server"
+                      ? t("Kept on this device; not saved to your server")
                       : draft.synced
-                        ? "Saved to your server"
-                        : "Kept on this device; saving to your server…"}
+                        ? t("Saved to your server")
+                        : t("Kept on this device; saving to your server…")}
           </span>
           <button
             type="submit"
@@ -658,10 +682,10 @@ export default function Composer({
             }
           >
             {busy
-              ? "Checking…"
+              ? t("Checking…")
               : draft.locked
-                ? "Retry same attempt"
-                : "Send message"}
+                ? t("Retry same attempt")
+                : t("Send message")}
           </button>
         </footer>
       </form>

@@ -10,6 +10,7 @@ works; the live tool schemas have every input.
 - [Domains](#domains)
 - [Forwarding copies](#forwarding-copies)
 - [Spam](#spam)
+- [Discard rules](#discard-rules)
 - [Reply agents](#reply-agents)
 - [Categories and projects](#categories-and-projects)
 - [Knowledge](#knowledge)
@@ -19,10 +20,25 @@ works; the live tool schemas have every input.
 
 ## Addresses
 
-- **Create:** `list_domains` (the domain must be served) → `create_address` with `localPart`,
-  `domain`, optionally `name`, `agent`, `forwardTo` (`createRoute` defaults to `"auto"`: the rule is
-  made when the server has a routing token; read the answer's `warning` when it was not) →
-  `check_address_routing` → optionally `send_test_message`.
+- **Check first:** `check_address` with the `domain` and the `localParts` you mean to create. Its
+  `state` says whether the domain receives here (`can_receive` means `connect_domain` first;
+  `needs_fix` means its Email Routing must be fixed — `connect_domain` again); each name is
+  `available`, `exists`, `elsewhere` (a Cloudflare rule sends it somewhere else — tell the person
+  where, do not override it), `invalid` (with why) or `restricted` (the server creates only the
+  addresses its `EMAIL_ADDRESSES` setting lists). Read its `notes` to the person: the catch-all
+  keeping that address's mail today, mail that arrived for it recently, role names.
+- **Create:** `create_address` with `localPart`, `domain`, optionally `name` (default: the name,
+  capitalised), `signature`, `agent`, `forwardTo`; several at once: `create_addresses` with
+  `localParts` and the same settings for all. One call does only what fits the server's Cloudflare
+  budget for a request: while `complete` is false, call `create_addresses` again with the names in
+  `remaining` (the same settings) until it is true. `createRoute` defaults to `"auto"`: the rule is
+  made when the server can, and when it cannot the address is still created — read its `steps`: a
+  rule step `skipped` or `failed` carries the reason and a `fix` (`route_address_here` makes the
+  rule again once the cause is gone); `not_receiving` means the rule exists but the domain's Email
+  Routing is off or broken (`connect_domain` turns it on again). If a call's answer is lost,
+  `check_address` with the same names says which exist now; never assume none were created.
+- **Prove it:** `send_test_message` → `check_test_message` every few seconds until its `state` is
+  `arrived` or `not_arrived` (after 3 minutes); `not_arrived` → `check_address_routing`.
 - **Change:** `update_address` — only the fields you pass change: `fromName`, `signature`,
   `assistantPrompt`, `agent` (`"off"` or `{ agentId }`), `forwardTo` (`null` stops forwarding).
 - **Remove:** `remove_address` is two-step and deletes the address's mail for good. Its summary
@@ -66,6 +82,13 @@ it) → once verified, `update_address` with `forwardTo`, or `create_address` wi
 `get_spam_settings` → `update_spam_list` (`blockedSenders`, `blockedDomains`, `allowedSenders`,
 `allowedDomains`; `add` or `remove`). Judging messages is `mark_spam` (mail level). `empty_spam` is
 two-step and permanent for Cloudflare mailboxes; Gmail's Spam is not touched.
+
+## Discard rules
+
+`list_discard_rules` (each rule with why and its counts, the Always allow list) → `remove_discard_rule`
+with its `ruleId` to stop discarding mail like it (what is in Discarded stays), or
+`update_discard_allow_list` (`add` or `remove` an address or a domain) so a sender is never discarded
+on arrival. Rules are learned by `discard_messages` (mail level), never written directly.
 
 ## Reply agents
 

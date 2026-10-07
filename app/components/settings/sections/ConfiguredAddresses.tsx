@@ -8,6 +8,7 @@ import { mailboxesToCreate, type ProvisioningFailure, provisioningFailures } fro
 import { useMailboxes } from "~/queries/mailboxes";
 import { queryKeys } from "~/queries/keys";
 import api from "~/services/api";
+import { useT } from "~/lib/i18n";
 
 /**
  * The addresses this server's configuration lists (EMAIL_ADDRESSES) are created once both the
@@ -16,6 +17,7 @@ import api from "~/services/api";
  * was the Mailboxes screen's job until Settings (0.11).
  */
 export default function ConfiguredAddresses() {
+	const t = useT();
 	const config = useQuery({ queryKey: queryKeys.config, queryFn: () => api.getConfig(), staleTime: 60_000 });
 	const mailboxes = useMailboxes();
 	const [failures, setFailures] = useState<ProvisioningFailure[]>([]);
@@ -43,15 +45,17 @@ export default function ConfiguredAddresses() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [configured.length, mailboxes.isSuccess, attempt]);
 
-	if (working) return <p role="status">Creating the addresses this server is configured with…</p>;
+	if (working) return <p role="status">{t("Creating the addresses this server is configured with…")}</p>;
 	if (!failures.length) return null;
 	return (
 		<div role="alert">
 			<p>
-				{failures.length === 1 ? "One configured address could not be created" : `${failures.length} configured addresses could not be created`}:{" "}
-				{failures.map((f) => `${f.address} (${f.reason})`).join("; ")}.
+				{t.plural(failures.length, {
+					one: "One configured address could not be created: {list}.",
+					other: "{n} configured addresses could not be created: {list}.",
+				}, { list: failures.map((f) => `${f.address} (${t.text(f.reason)})`).join("; ") })}
 			</p>
-			<button type="button" className="fi-secondary" onClick={() => { done.current = false; setFailures([]); setAttempt((n) => n + 1); }}>Retry</button>
+			<button type="button" className="fi-secondary" onClick={() => { done.current = false; setFailures([]); setAttempt((n) => n + 1); }}>{t("Retry")}</button>
 		</div>
 	);
 }

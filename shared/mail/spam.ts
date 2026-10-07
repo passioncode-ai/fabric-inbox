@@ -1,3 +1,4 @@
+import { msg } from "../i18n";
 /**
  * The spam verdict a Cloudflare message gets on arrival (SP-1). Pure: the operator's
  * lists, the authenticity results Cloudflare's MX wrote, and whether anyone here has
@@ -71,24 +72,26 @@ export function spamCheck(input: {
   // bank.com, not mail that bank.com's own DMARC says is not from it (2026-10-01 review).
   // A copy with no result from Cloudflare (local, relayed, a test) claims nothing.
   const ownAuthentic = !auth || auth.dmarc === "pass" || auth.dkimDomains.some((d) => under(d, input.ownDomains));
-  if (own && !ownAuthentic) return { verdict: "spam", reason: `Claims to be from your domain ${own} but failed its authenticity checks` };
+  if (own && !ownAuthentic) return { verdict: "spam", reason: msg("Claims to be from your domain {domain} but failed its authenticity checks", { domain: own }) };
   if (auth && auth.dmarc === "fail" && (auth.dmarcPolicy === "reject" || auth.dmarcPolicy === "quarantine"))
-    return { verdict: "spam", reason: `Failed DMARC for ${auth.fromDomain ?? domain}, whose owner asks to ${auth.dmarcPolicy} such mail` };
+    return { verdict: "spam", reason: auth.dmarcPolicy === "reject"
+      ? msg("Failed DMARC for {domain}, whose owner asks to reject such mail", { domain: auth.fromDomain ?? domain })
+      : msg("Failed DMARC for {domain}, whose owner asks to quarantine such mail", { domain: auth.fromDomain ?? domain }) };
 
-  if (lists.allowedSenders.includes(sender)) return { verdict: "clean", reason: "You marked this sender as not spam" };
+  if (lists.allowedSenders.includes(sender)) return { verdict: "clean", reason: msg("You marked this sender as not spam") };
   const allowedDomain = under(domain, lists.allowedDomains);
-  if (allowedDomain) return { verdict: "clean", reason: `You marked ${allowedDomain} as not spam` };
-  if (lists.blockedSenders.includes(sender)) return { verdict: "spam", reason: "You marked this sender as spam" };
+  if (allowedDomain) return { verdict: "clean", reason: msg("You marked {domain} as not spam", { domain: allowedDomain }) };
+  if (lists.blockedSenders.includes(sender)) return { verdict: "spam", reason: msg("You marked this sender as spam") };
   const blockedDomain = under(domain, lists.blockedDomains);
-  if (blockedDomain) return { verdict: "spam", reason: `You marked ${blockedDomain} as spam` };
+  if (blockedDomain) return { verdict: "spam", reason: msg("You marked {domain} as spam", { domain: blockedDomain }) };
 
-  if (own) return { verdict: "clean", reason: "From one of your own domains" };
+  if (own) return { verdict: "clean", reason: msg("From one of your own domains") };
   if (auth) {
     // Weaker than DMARC: a real sender with a broken SPF record is the operator's to allow (above).
     if (auth.spf === "fail" && !auth.dkimDomains.length && auth.dmarc !== "pass")
-      return { verdict: "spam", reason: `The sending server is not allowed to send for ${domain}, and the message carries no valid signature` };
+      return { verdict: "spam", reason: msg("The sending server is not allowed to send for {domain}, and the message carries no valid signature", { domain }) };
   }
-  if (input.known) return { verdict: "clean", reason: "You have written to this sender" };
+  if (input.known) return { verdict: "clean", reason: msg("You have written to this sender") };
   return { verdict: "screen", reason: "" };
 }
 

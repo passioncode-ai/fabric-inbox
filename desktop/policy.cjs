@@ -1,4 +1,5 @@
 'use strict';
+const { t } = require('./i18n.cjs');
 const { createHash } = require('node:crypto');
 
 function parseWebURL(value) {
@@ -15,21 +16,21 @@ function loopback(hostname) {
 function serverOrigin(value) {
   const url = parseWebURL(typeof value === 'string' ? value.trim() : value);
   if (!url || (url.protocol !== 'https:' && !loopback(url.hostname))) {
-    throw new Error('Use an HTTPS server address, or HTTP on localhost for development.');
+    throw new Error(t('Use an HTTPS server address, or HTTP on localhost for development.'));
   }
-  if (url.pathname !== '/' || url.search || url.hash) throw new Error('Enter the server origin without a path, query or fragment.');
+  if (url.pathname !== '/' || url.search || url.hash) throw new Error(t('Enter the server origin without a path, query or fragment.'));
   return url.origin;
 }
 function accessOrigin(value) {
   if (!value) return '';
   const url = parseWebURL(typeof value === 'string' ? value.trim() : value);
   if (!url || url.protocol !== 'https:' || url.port || !/^[a-z0-9-]+\.cloudflareaccess\.com$/.test(url.hostname) || url.pathname !== '/' || url.search || url.hash) {
-    throw new Error('Use your exact HTTPS Cloudflare Access team address.');
+    throw new Error(t('Use your exact HTTPS Cloudflare Access team address.'));
   }
   return url.origin;
 }
 function validateConfig(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Enter a server address.');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(t('Enter a server address.'));
   return { origin: serverOrigin(value.origin), accessOrigin: accessOrigin(value.accessOrigin) };
 }
 function navigation(urlString, config) {
@@ -58,18 +59,18 @@ const ADDRESS = /^[^\s@]{1,64}@[^\s@]{3,253}$/;
  * Returns { ok, summary, setup } or { ok: false, error }.
  */
 function readSetup(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return { ok: false, error: 'This file is not a Fabric Inbox setup.' };
-  if (value.format !== SETUP_FORMAT) return { ok: false, error: 'This file is not a Fabric Inbox setup (unknown format).' };
-  if (typeof value.name !== 'string' || !value.name.trim() || value.name.length > 100) return { ok: false, error: 'The setup has no name.' };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { ok: false, error: t('This file is not a Fabric Inbox setup.') };
+  if (value.format !== SETUP_FORMAT) return { ok: false, error: t('This file is not a Fabric Inbox setup (unknown format).') };
+  if (typeof value.name !== 'string' || !value.name.trim() || value.name.length > 100) return { ok: false, error: t('The setup has no name.') };
   let config;
   try { config = validateConfig({ origin: value.server?.origin, accessOrigin: value.server?.accessOrigin || '' }); }
-  catch (error) { return { ok: false, error: `Its server address cannot be used: ${error.message}` }; }
+  catch (error) { return { ok: false, error: t('Its server address cannot be used: {reason}', { reason: error.message }) }; }
   const domains = Array.isArray(value.domains) ? value.domains : [];
   const mailboxes = Array.isArray(value.mailboxes) ? value.mailboxes : [];
   const notServed = Array.isArray(value.notServed) ? value.notServed : [];
-  if (domains.length > 200 || mailboxes.length > 500) return { ok: false, error: 'The setup is larger than one server serves.' };
-  if (!domains.every(d => typeof d === 'string' && DOMAIN.test(d))) return { ok: false, error: 'The setup lists a domain that is not a domain name.' };
-  if (!mailboxes.every(m => m && typeof m.address === 'string' && ADDRESS.test(m.address))) return { ok: false, error: 'The setup lists an address that is not an email address.' };
+  if (domains.length > 200 || mailboxes.length > 500) return { ok: false, error: t('The setup is larger than one server serves.') };
+  if (!domains.every(d => typeof d === 'string' && DOMAIN.test(d))) return { ok: false, error: t('The setup lists a domain that is not a domain name.') };
+  if (!mailboxes.every(m => m && typeof m.address === 'string' && ADDRESS.test(m.address))) return { ok: false, error: t('The setup lists an address that is not an email address.') };
   const byDomain = domains.map(domain => ({
     domain,
     addresses: mailboxes.filter(m => m.address.toLowerCase().endsWith('@' + domain)).map(m => ({

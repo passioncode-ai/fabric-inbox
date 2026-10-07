@@ -393,6 +393,75 @@ select.fi-input { padding-right: 28px; }
 
 /* Phone and narrow windows: the panel takes the list's place, with Back. Both stay in the
    same grid cell so the hidden list keeps its scroll position. */
+/* Add address (SCN-021, SCN-061…065): one dialog, the form and then its steps. */
+.fi-add-address > .fi-field:first-of-type { margin-top: 14px; }
+.fi-segmented { display: inline-flex; padding: 2px; border: 1px solid var(--pc-border); border-radius: var(--pc-radius-pill); background: var(--pc-panel); font-size: 13px; }
+.fi-segmented label { position: relative; padding: 4px 14px; border-radius: var(--pc-radius-pill); cursor: pointer; color: var(--pc-text-muted); font-weight: 500; }
+.fi-segmented label.is-current { background: var(--pc-bg); color: var(--pc-text); box-shadow: 0 0 0 1px var(--pc-border); }
+.fi-segmented input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.fi-segmented label:has(input:focus-visible) { outline: 2px solid var(--pc-focus); outline-offset: 1px; }
+.fi-address-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr); align-items: center; gap: 6px; font-weight: 400; }
+.fi-address-at { color: var(--pc-text-muted); font-size: 15px; }
+.fi-field-message { margin: 2px 0 0; min-height: 1.5em; font-size: 12px; font-weight: 400; overflow-wrap: anywhere; }
+.fi-field-message.is-neutral { color: var(--pc-text-muted); }
+.fi-field-message.is-ok { color: var(--pc-positive); }
+.fi-field-message.is-warn { color: var(--pc-warning); }
+.fi-field-message.is-bad { color: var(--pc-negative); }
+.fi-address-preview { color: var(--pc-text); font-family: var(--pc-font-data); }
+.fi-field-note { margin: 0; }
+.fi-domain-line { margin: 4px 0 0; }
+.fi-domain-line.is-warn { color: var(--pc-warning); }
+.fi-combo { position: relative; display: flex; align-items: center; }
+.fi-combo > .fi-input { padding-right: 30px; }
+.fi-combo > .fi-badge { position: absolute; right: 30px; pointer-events: none; }
+.fi-combo-caret { position: absolute; right: 10px; color: var(--pc-text-muted); pointer-events: none; }
+.fi-combo-list {
+  position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; right: 0;
+  max-height: 260px; overflow-y: auto; margin: 0; padding: 4px; list-style: none;
+  border: 1px solid var(--pc-border); border-radius: var(--pc-radius-control); background: var(--pc-bg); box-shadow: var(--pc-shadow-overlay);
+  font-weight: 400;
+}
+.fi-combo-list ul { list-style: none; margin: 0; padding: 0; }
+.fi-combo-group { display: block; padding: 6px 8px 2px; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; color: var(--pc-text-muted); }
+.fi-combo-list [role="option"] { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; overflow-wrap: anywhere; }
+.fi-combo-list [role="option"].is-active { background: var(--pc-accent-soft); }
+.fi-combo-list [role="option"].is-chosen { font-weight: 600; }
+.fi-combo-empty { padding: 8px; color: var(--pc-text-muted); font-size: 13px; }
+.fi-signature-preview {
+  display: grid; gap: 2px; padding: 8px 10px; border: 1px dashed var(--pc-border); border-radius: var(--pc-radius-control);
+  background: var(--pc-panel); font-size: 12px; font-weight: 400; min-height: 86px;
+}
+.fi-signature-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.fi-advanced { margin-top: 12px; font-size: 13px; }
+.fi-advanced > summary { cursor: pointer; color: var(--pc-text-muted); font-weight: 600; }
+.fi-advanced > .fi-hint { margin: 4px 0 0; }
+.fi-name-checks { margin-top: 8px; max-height: 200px; overflow-y: auto; }
+.fi-name-checks .fi-field-message { min-height: 0; margin: 0; text-align: right; }
+.fi-steps-live .fi-step { grid-template-columns: 7.5em minmax(0, 1fr); }
+.fi-steps-live .fi-step.is-done .fi-step-mark,
+.fi-steps-live .fi-step.is-already .fi-step-mark { color: var(--pc-positive); }
+.fi-steps-live .fi-step.is-failed .fi-step-mark { color: var(--pc-negative); }
+.fi-steps-live .fi-step.is-waiting .fi-step-mark,
+.fi-steps-live .fi-step.is-running .fi-step-mark { color: var(--pc-info); }
+.fi-steps-live .fi-step.is-skipped .fi-step-mark { color: var(--pc-warning); }
+.fi-step-actions { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; margin-left: 4px; }
+.fi-steps.is-compact { margin-top: 4px; flex-basis: 100%; }
+.fi-run-rows > li { align-items: flex-start; }
+.fi-run-row { flex-basis: 100%; display: grid; gap: 4px; }
+.fi-run-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fi-run-details > summary { cursor: pointer; color: var(--pc-text-muted); font-size: 12px; }
+.fi-steps-live .fi-step.is-not_asked .fi-step-mark { color: var(--pc-text-muted); }
+.fi-add-address .fi-field :is(input, textarea, select) { font-weight: 400; }
+.fi-add-address textarea { display: block; }
+.fi-add-address .fi-field { align-content: start; }
+.fi-combo-list .fi-grow { flex: 1; min-width: 0; }
+.fi-empty-inline p { margin: 0 0 10px; }
+@media (prefers-reduced-motion: no-preference) {
+  .fi-steps-live .fi-step.is-running .fi-step-mark,
+  .fi-steps-live .fi-step.is-waiting .fi-step-mark { animation: fi-step-pulse 1.6s var(--pc-ease, ease-in-out) infinite; }
+}
+@keyframes fi-step-pulse { 50% { opacity: 0.45; } }
+
 @media (max-width: 1150px) {
   .fi-settings { grid-template-columns: 190px minmax(0, 1fr); }
   .fi-section { grid-template-columns: 290px minmax(0, 1fr); }
@@ -434,4 +503,9 @@ select.fi-input { padding-right: 28px; }
   .fi-panel-actions { margin-left: auto; }
   .fi-panel-close { display: none; }
   .fi-panel-body { padding: 14px 16px 32px; }
+  /* Add address in a narrow window: the dialog takes the width, the address stacks. */
+  .fi-dialog.is-wide { width: calc(100vw - 16px); padding: 16px; }
+  .fi-address-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .fi-address-row > .fi-combo { grid-column: 1 / -1; }
+  .fi-steps-live .fi-step { grid-template-columns: minmax(0, 1fr); gap: 0; }
 }

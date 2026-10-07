@@ -23,11 +23,14 @@ class FakeService implements SyncingService {
   importing = new Set<string>();
   failures = new Map<string, Error & { code?: string }>();
   delayMs = 0;
+  /** A fake clock's advance per sync, in place of a real wait (deterministic under load). */
+  advance: ((ms: number) => void) | null = null;
   constructor(public accounts: PublicAccount[]) {}
   async listAccounts() { return { accounts: this.accounts }; }
   async sync(id: string, options: SyncOptions) {
     this.calls.push(`${options.historyOnly ? "history" : options.importOnly ? "import" : "full"}:${id}`);
-    if (this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs));
+    if (this.delayMs && this.advance) this.advance(this.delayMs);
+    else if (this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs));
     const failure = this.failures.get(id);
     if (failure) throw failure;
     const a = this.accounts.find((x) => x.id === id)!;
@@ -130,9 +133,14 @@ test("POST /api/inbox/refresh passes the Gmail accounts in scope and answers per
   assert.ok(!(await failed.text()).includes("private"));
 });
 
-test("Refresh stops starting accounts when its budget is spent (P1-5)", async () => {
+test("Refresh stops starting accounts when its budget is spent (P1-5)", async (t) => {
+  // A fake clock: each sync takes 60 ms of it, whatever the machine's load (the real-time version
+  // failed under a full test run when the first sync's timer fired after 100 ms).
+  let clock = 1_000_000;
+  t.mock.method(Date, "now", () => clock);
   const service = new FakeService([account("a"), account("b"), account("c")]);
   service.delayMs = 60;
+  service.advance = (ms) => { clock += ms; };
   const { scheduler } = make(service);
   const outcomes = await scheduler.refresh(undefined, 100);
   assert.deepEqual(outcomes.map((o) => o.result), ["synced", "synced", "not_reached"]);

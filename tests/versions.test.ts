@@ -13,6 +13,13 @@ test("the server, the Mac app and the skill plugin carry one version", () => {
   if (existsSync("desktop/package-lock.json")) assert.equal(read("desktop/package-lock.json"), root, "desktop/package-lock.json");
 });
 
+// A server deployed by hand records its version like one the app deploys (cloudflare-deploy.cjs
+// reads FABRIC_SERVER_VERSION to refuse putting an older server over a newer one).
+test("npm run deploy records the server's version on the Worker", () => {
+  const scripts = JSON.parse(readFileSync("package.json", "utf8")).scripts;
+  assert.match(scripts.deploy, /wrangler deploy --var FABRIC_SERVER_VERSION:\$npm_package_version$/);
+});
+
 // The release notes come from CHANGELOG.md (desktop/dist-mac.mjs refuses a version without its
 // section), so its newest section is the version the manifests carry.
 test("CHANGELOG.md opens with the version the manifests carry", async () => {

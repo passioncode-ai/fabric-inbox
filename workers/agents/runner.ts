@@ -5,6 +5,7 @@ import { parseStoredHeaders, prefilter, replyToAddress, SKIP_TEXT } from "./pref
 import { RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type AwaitingAnswer, type ToolCallRecord } from "./run";
 import { answeringOrder, duplicateReason, electAnswerer, messageKey, type MessageClaim } from "./dedupe";
 import type { KnowledgeHit } from "../knowledge/store";
+import { msg } from "../../shared/i18n";
 
 export interface RunnerEmail {
   id: string;
@@ -216,7 +217,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     await deps.registry.saveRun(run);
     return run;
   };
-  if (resolveError || !agent) return finish("failed", `Could not read the agent for this address: ${resolveError}`);
+  if (resolveError || !agent) return finish("failed", msg("Could not read the agent for this address: {error}", { error: String(resolveError) }));
   run.agentId = agent.id;
   run.agentVersion = agent.version;
   if (answeredFrom) return finish("skipped", duplicateReason(answeredFrom));
@@ -226,8 +227,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     return await answer(agent, settings, email);
   } catch (error) {
     return sendStarted
-      ? finish("send_unknown", `The send may or may not have happened (${(error as Error).message}). Check Sent before answering again.`)
-      : finish("failed", `The answer could not be completed (${(error as Error).message}); the message is left for the operator`);
+      ? finish("send_unknown", msg("The send may or may not have happened ({error}). Check Sent before answering again.", { error: (error as Error).message }))
+      : finish("failed", msg("The answer could not be completed ({error}); the message is left for the operator", { error: (error as Error).message }));
   }
 
   async function answer(agent: AgentVersion, settings: Record<string, unknown> | null, email: RunnerEmail): Promise<AgentRun> {
@@ -248,8 +249,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
 
   const prompt = userPrompt(email, thread, mailboxId, deps.htmlToText);
   const scan = await deps.injection(prompt);
-  if (scan.error) return finish("failed", `The safety check could not run (${scan.error}); the message is left for the operator`);
-  if (scan.flagged) return finish("skipped", "The message may be trying to steer the agent; left for the operator");
+  if (scan.error) return finish("failed", msg("The safety check could not run ({error}); the message is left for the operator", { error: scan.error }));
+  if (scan.flagged) return finish("skipped", msg("The message may be trying to steer the agent; left for the operator"));
 
   // Knowledge (KN-4): passages from the agent's own collections, found before the
   // model runs; a failed search is recorded and keeps the answer a draft.
@@ -283,14 +284,14 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
         // A tool's output reaches the model like the email does: it is checked the same way.
         const scan = await deps.injection(text.slice(0, 8000));
         if (scan.flagged || scan.error) {
-          record.result = scan.error ? `Withheld: the safety check could not run (${scan.error})` : "Withheld: the output looked like instructions";
+          record.result = scan.error ? msg("Withheld: the safety check could not run ({error})", { error: scan.error }) : msg("Withheld: the output looked like instructions");
           return "The tool's output was withheld by the safety check. Do not guess its result; draft the answer instead.";
         }
         record.ok = true;
         record.result = text.slice(0, RESULT_PREVIEW_CHARS);
         return text.slice(0, 8000);
       } catch (error) {
-        record.result = `Error: ${(error as Error).message}`.slice(0, RESULT_PREVIEW_CHARS);
+        record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
         return `The tool failed: ${(error as Error).message}. Do not guess its result.`;
       } finally {
         record.ms = Date.now() - started;
@@ -314,11 +315,11 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
         const hits = await deps.knowledge.search(query, collections, PASSAGES);
         remember(hits);
         record.ok = true;
-        record.result = `${hits.length} passage(s) for "${query}": ${hits.map((h) => h.ref).join(", ")}`.slice(0, RESULT_PREVIEW_CHARS);
+        record.result = msg('{n} passage(s) for "{query}": {refs}', { n: hits.length, query, refs: hits.map((h) => h.ref).join(", ") }).slice(0, RESULT_PREVIEW_CHARS);
         return hits.length ? passagesBlock(hits) : "Nothing matched. Try other words, or say you will pass the question on.";
       } catch (error) {
         knowledgeProblem ??= (error as Error).message.slice(0, 200);
-        record.result = `Error: ${(error as Error).message}`.slice(0, RESULT_PREVIEW_CHARS);
+        record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
         return "The knowledge could not be searched. Do not guess; say you will pass the question on.";
       } finally {
         record.ms = Date.now() - started;
@@ -331,18 +332,18 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     const senderName = typeof settings?.fromName === "string" && settings.fromName.trim() && settings.fromName.trim().toLowerCase() !== mailboxId ? settings.fromName.trim() : "";
     response = await deps.model({ agent, system: systemPrompt(agent, mailboxId, tools, passages, senderName), prompt, tools });
   } catch (error) {
-    return finish("failed", `The model could not answer (${(error as Error).message}); the message is left for the operator`);
+    return finish("failed", msg("The model could not answer ({error}); the message is left for the operator", { error: (error as Error).message }));
   }
   // No structured answer and no text: nothing was decided, so the message waits for a person
   // instead of reading as a deliberate skip.
   if (!response.decision && !response.text.trim())
-    return finish("failed", "The agent did not produce an answer; the message is left for the operator");
+    return finish("failed", msg("The agent did not produce an answer; the message is left for the operator"));
   const proposal: ModelDecision = response.decision ?? {
     decision: "draft",
     intent: "",
     grounded: false,
     body: response.text.trim(),
-    reason: "The agent did not return a structured answer",
+    reason: msg("The agent did not return a structured answer"),
   };
   run.intent = proposal.intent;
   run.grounded = proposal.grounded;
@@ -370,9 +371,9 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   try {
     if (outcome.action === "draft") return await saveDraft(outcome.reason);
     if (!(await deps.registry.reserveSend(mailboxId, policy.dailySendLimit)))
-      return await saveDraft(`Daily send limit of ${policy.dailySendLimit} reached`);
+      return await saveDraft(msg("Daily send limit of {limit} reached", { limit: policy.dailySendLimit }));
   } catch (error) {
-    return finish("failed", `Could not save the answer: ${(error as Error).message}`);
+    return finish("failed", msg("Could not save the answer: {error}", { error: (error as Error).message }));
   }
 
   // The effect boundary. Anything after the call started is unknown unless the
@@ -398,16 +399,16 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       },
     });
   } catch (error) {
-    return finish("send_unknown", `The send may or may not have happened (${(error as Error).message}). Check Sent before answering again.`);
+    return finish("send_unknown", msg("The send may or may not have happened ({error}). Check Sent before answering again.", { error: (error as Error).message }));
   }
-  if ("error" in result) return saveDraft(`The send was refused (${result.error}); saved as a draft`);
+  if ("error" in result) return saveDraft(msg("The send was refused ({error}); saved as a draft", { error: result.error }));
   run.sent = { to: reply.to, subject: reply.subject, body: reply.text.slice(0, SENT_BODY_CHARS), outboxId: result.id };
   if (result.status === "accepted") return finish("sent", outcome.reason);
   if (result.status === "failed") {
     delete run.sent;
-    return saveDraft(`The provider rejected the send (${result.errorCode ?? "failed"}); saved as a draft`);
+    return saveDraft(msg("The provider rejected the send ({code}); saved as a draft", { code: result.errorCode ?? "failed" }));
   }
-  return finish("send_unknown", "The provider did not confirm the send. Check Sent before answering again.");
+  return finish("send_unknown", msg("The provider did not confirm the send. Check Sent before answering again."));
   }
 }
 
