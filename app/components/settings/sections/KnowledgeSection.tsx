@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { PlusIcon } from "@phosphor-icons/react";
 import { fabric } from "~/services/fabric";
@@ -129,6 +129,7 @@ function CollectionPanel({ collection, maxChars, onDeleted }: { collection: Coll
   const key = ["knowledge-collection", collection.id];
   const detail = useQuery({ queryKey: key, queryFn: () => fabric<{ documents: KnowledgeDocument[] }>(`/api/knowledge/collections/${collection.id}`) });
   const docsWork = useWork(collection.id, "documents");
+  const uploadPicker = useRef<HTMLInputElement>(null);
   const searchWork = useWork(collection.id, "search");
   const deleteWork = useWork(collection.id, "delete");
   const [paste, setPaste] = useState({ title: "", text: "" });
@@ -207,11 +208,15 @@ function CollectionPanel({ collection, maxChars, onDeleted }: { collection: Coll
         )}
         {!synced && (
           <>
-            <label className="fi-field">{t("Upload .md or .txt files")}
-              <input type="file" multiple accept=".md,.markdown,.txt,text/markdown,text/plain" disabled={!!docsWork.busy}
+            <div className="fi-field">
+              {/* Our button, not the native input's words, which follow the browser's language (L10N-01). */}
+              <button type="button" className="fi-secondary" disabled={!!docsWork.busy} aria-describedby="knowledge-upload-hint"
+                onClick={() => uploadPicker.current?.click()}>{t("Upload .md or .txt files…")}</button>
+              <input ref={uploadPicker} type="file" multiple accept=".md,.markdown,.txt,text/markdown,text/plain" disabled={!!docsWork.busy}
+                tabIndex={-1} aria-hidden="true" className="fi-visually-hidden"
                 onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
-              <span className="fi-hint">{t("A file with the same name replaces the one already here.")}</span>
-            </label>
+              <span id="knowledge-upload-hint" className="fi-hint">{t("A file with the same name replaces the one already here.")}</span>
+            </div>
             <form className="fi-callout" aria-label={t("Paste a document into {name}", { name: collection.name })} onSubmit={(e) => { e.preventDefault(); addPasted(); }}>
               <label className="fi-field" style={{ marginTop: 0 }}>{t("Title")}
                 <input className="fi-input" required maxLength={200} value={paste.title} onChange={(e) => setPaste({ ...paste, title: e.target.value })} />

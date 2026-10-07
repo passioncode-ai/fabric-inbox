@@ -63,7 +63,10 @@ export default function Composer({
   const t = useT();
   const dialog = useRef<HTMLDialogElement>(null),
     sending = useRef(false),
-    fileWork = useRef(false);
+    fileWork = useRef(false),
+    // The native file input shows its own words in the browser's language, not the one chosen in
+    // Settings (L10N-01), so it stays hidden and a button of ours opens it.
+    filePicker = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [loadingFiles, setLoadingFiles] = useState(false);
@@ -461,20 +464,31 @@ export default function Composer({
           className="fi-compose-attachments"
           aria-label={t("Message attachments")}
         >
-          <label>
-            {t("Add files")}
-            <input
-              type="file"
-              multiple
+          <div className="fi-compose-files">
+            <button
+              type="button"
+              className="fi-secondary"
               disabled={busy || loadingFiles || draft.locked}
               aria-describedby="attachment-limits"
+              onClick={() => filePicker.current?.click()}
+            >
+              {t("Add files…")}
+            </button>
+            <input
+              ref={filePicker}
+              type="file"
+              multiple
+              tabIndex={-1}
+              aria-hidden="true"
+              className="fi-visually-hidden"
+              disabled={busy || loadingFiles || draft.locked}
               onChange={(e) => {
                 const files = Array.from(e.currentTarget.files ?? []);
                 e.currentTarget.value = "";
                 if (files.length) void addFiles(files);
               }}
             />
-          </label>
+          </div>
           <p id="attachment-limits" className="fi-muted">
             {t("Up to 10 files, 5 MiB total. Files are saved with the draft on your server.")}
           </p>

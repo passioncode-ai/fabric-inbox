@@ -170,7 +170,6 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"Documents": "Документы",
 	"Loading documents…": "Загружаем документы…",
 	"No document yet.": "Документов пока нет.",
-	"Upload .md or .txt files": "Загрузить файлы .md или .txt",
 	"A file with the same name replaces the one already here.": "Файл с тем же именем заменит уже загруженный.",
 	"Paste a document into {name}": "Вставить документ в «{name}»",
 	"Title": "Заголовок",
@@ -307,4 +306,5 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"Available Tools": "Доступные инструменты",
 
 	// Words several settings sections share; kept here once (a second home fails the check)
+	"Upload .md or .txt files…": "Загрузить файлы .md или .txt…",
 };

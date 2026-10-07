@@ -829,6 +829,10 @@ body {
   gap: 12px;
   padding-top: 18px;
 }
+.fi-compose-files {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--pc-border);
+}
 .fi-compose-attachments ul {
   list-style: none;
   padding: 0;

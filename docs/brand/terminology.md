@@ -177,7 +177,7 @@ A new term joins this table before its first use in `shared/i18n/ru/`.
 | Arriving here / Not receiving yet / Routing unknown | Приходит сюда / Пока не получает / Маршрут неизвестен | |
 | Receive mail here / Bring them here | Получать почту здесь / Перенести сюда | |
 | Catch-all | общий ящик | catch-all (to a user) |
-| Check for new mail / Live | Проверить почту / Сразу | Синхронизировать |
+| Check for new mail / Live | Проверить почту / В реальном времени | Синхронизировать |
 | Keyboard shortcuts | Сочетания клавиш | Горячие клавиши |
 | Your server / Server address | ваш сервер / Адрес сервера | бэкенд, инстанс |
 | Cloudflare API token | API-токен Cloudflare | ключ Cloudflare |

@@ -40,7 +40,6 @@ export const COMPOSE: Readonly<Record<string, string>> = {
 	"Bcc": "Скрытая копия",
 	"Optional hidden recipients": "Скрытые получатели, необязательно",
 	"Message attachments": "Вложения письма",
-	"Add files": "Добавить файлы",
 	"Up to 10 files, 5 MiB total. Files are saved with the draft on your server.": "До 10 файлов, всего до 5 МиБ. Файлы сохраняются вместе с черновиком на вашем сервере.",
 	"Files saved with the draft": "Файлы, сохранённые с черновиком",
 	"Saved": "Сохранено",
@@ -151,4 +150,5 @@ export const COMPOSE: Readonly<Record<string, string>> = {
 	// The forwarded message's header, which the person's own forward carries in the interface language (L10N-05)
 	"Forwarded message:": "Пересланное письмо:",
 	"Date:": "Дата:",
+	"Add files…": "Добавить файлы…",
 };
