@@ -120,7 +120,10 @@ step; a collection's source is chosen when it is made) → `put_knowledge_docume
 `list_rules` for the account → `save_rule` (same `id` changes only the fields you give; a new rule
 needs `name`, `conditions`, `action` and starts off; the server numbers versions; `mode: approval`
 waits for `approve_rule_run`) → `dry_run_rule` on a real message before enabling. Runs waiting for
-approval appear in `list_rules`; `dismiss_rule_run` cancels one.
+approval appear in `list_rules`; `dismiss_rule_run` cancels one. A run whose status is `unknown`
+(its action may or may not have happened) is never retried by itself: `check_rule_run` reads the
+provider's or this server's record and settles it as succeeded (done) or failed (proven not done —
+only then repeat it by hand), or leaves it unknown with what it found. A tool call cannot be checked.
 
 ## Setup files
 

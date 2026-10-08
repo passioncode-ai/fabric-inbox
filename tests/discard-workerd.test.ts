@@ -29,6 +29,8 @@ const bundle = await build({
           try { super(ctx, {...env, AI:{run:forbidden}, EMAIL:{send: forbidden}}); } finally { mailboxMigrations.push(...held); }
         }
         async upgrade(n) { applyMigrations(this.ctx.storage.sql, mailboxMigrations.slice(0, n ?? mailboxMigrations.length), this.ctx.storage); }
+        // A message 0.12 itself discarded: written in the 17_discarded schema, before sender_name (19) existed.
+        async legacyDiscarded(id) { this.ctx.storage.sql.exec("INSERT INTO emails (id, folder_id, subject, sender, recipient, date, read, starred, body, discard_reason, discarded_at) VALUES (?, 'discarded', 'Digest #1', 'news@list.example', 'support@shop.invalid', ?, 0, 0, 'digest', 'Discarded automatically', ?)", id, new Date().toISOString(), new Date().toISOString()); }
         async legacyMessage(id, folder) { this.ctx.storage.sql.exec("INSERT INTO emails (id, folder_id, subject, sender, recipient, date, read, starred, body) VALUES (?, ?, 'Kept by hand', 'friend@example.org', 'support@shop.invalid', ?, 1, 0, 'mine')", id, folder, new Date().toISOString()); }
         async dropFolder(id) { this.ctx.storage.sql.exec("UPDATE emails SET folder_id = 'inbox' WHERE folder_id = ?", id); this.ctx.storage.sql.exec('DELETE FROM folders WHERE id = ?', id); }
         async row(id) { return this.ctx.storage.sql.exec('SELECT folder_id, read, starred, discard_reason, discarded_at, spam_reason, spam_at FROM emails WHERE id = ?', id).toArray()[0] ?? null; }
@@ -76,6 +78,7 @@ const bundle = await build({
       app.post('/purge', async (c) => c.json(await box(c.env).purgeDiscarded({})));
       app.get('/folders', async (c) => c.json(await box(c.env).folders()));
       app.post('/upgrade', async (c) => { await box(c.env).upgrade((await c.req.json()).n); return c.json({ ok: true }); });
+      app.post('/legacy-discarded', async (c) => { await box(c.env).legacyDiscarded((await c.req.json()).id); return c.json({ ok: true }); });
       app.post('/legacy-message', async (c) => { const b = await c.req.json(); await box(c.env).legacyMessage(b.id, b.folder); return c.json({ ok: true }); });
       // The folder API before 0.12: createFolder(slug of the name, name), with nothing reserved.
       app.post('/legacy-folder', async (c) => { const { name } = await c.req.json(); const slug = name.toLowerCase().split(' ').join('-').split('!').join(''); return c.json(await box(c.env).createFolder(slug, name), 201); });
@@ -284,20 +287,21 @@ test("a folder the person named Discarded before 0.12 stays theirs: the system f
 });
 
 test("a mailbox the first 0.12 migration left with the person's folder as Discarded is repaired: their mail goes back to their folder, discarded mail stays", async () => {
-  const { mf, call, receive, ref } = await fixture({ legacy: true });
+  const { mf, call } = await fixture({ legacy: true });
   try {
     await call("/legacy-folder", "POST", { name: "discarded!!" });
     await call("/legacy-message", "POST", { id: "kept-2", folder: "discarded" });
     // 17_discarded alone (as 0.12 first shipped it): the person's row kept the id and stayed deletable.
     await call("/upgrade", "POST", { n: 17 });
-    const first = await receive("Digest #1", { headers: NEWS });
-    await call("/api/discard", "POST", { messages: [ref(first.emailId)] });
+    // Mail 0.12 discarded while the schema stood at 17 (the code of that time wrote it; today's code
+    // writes columns added later, so it is inserted as 0.12 wrote it).
+    await call("/legacy-discarded", "POST", { id: "digest-1" });
     await call("/upgrade", "POST", {});
     const folders = (await call("/folders")).body as { id: string; name: string; is_deletable: number }[];
     assert.deepEqual(folders.filter((f) => f.id.startsWith("discarded")),
       [{ id: "discarded", name: "Discarded", is_deletable: 0 }, { id: "discarded-yours", name: "discarded!!", is_deletable: 1 }], "their folder keeps the name they gave it");
     assert.equal((await call("/row", "POST", { id: "kept-2" })).body.folder_id, "discarded-yours");
-    assert.equal((await call("/row", "POST", { id: first.emailId })).body.folder_id, "discarded");
+    assert.equal((await call("/row", "POST", { id: "digest-1" })).body.folder_id, "discarded");
   } finally { await mf.dispose(); }
 });
 

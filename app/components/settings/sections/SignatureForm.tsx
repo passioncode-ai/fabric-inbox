@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useT } from "~/lib/i18n";
 import { useMailbox, useUpdateMailbox } from "~/queries/mailboxes";
-import { ActionResult, LoadFailure, SkeletonPanel, useWork } from "../ui";
+import { ActionResult, LoadFailure, SkeletonPanel, useDirtyGuard, useWork } from "../ui";
 import { settingsPath } from "../paths";
 
 // Placeholder shown in the textarea when no custom prompt is set: the start of the built-in prompt,
@@ -28,6 +28,8 @@ export default function SignatureForm({ email }: { email: string }) {
 	const work = useWork(email, "signature");
 	const [saved, setSaved] = useState<Form | null>(null);
 	const [form, setForm] = useState<Form | null>(null);
+	const dirty = !!form && !!saved && JSON.stringify(form) !== JSON.stringify(saved);
+	useDirtyGuard(dirty && !work.busy, email);
 
 	useEffect(() => {
 		const m = mailbox.data;
@@ -50,7 +52,6 @@ export default function SignatureForm({ email }: { email: string }) {
 	}
 	if (!form || !saved) return <SkeletonPanel label={t("Loading this address's settings…")} />;
 
-	const dirty = JSON.stringify(form) !== JSON.stringify(saved);
 	const nameMissing = !form.displayName.trim();
 	const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm({ ...form, [key]: value });
 

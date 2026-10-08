@@ -64,6 +64,14 @@ export function settingsPath(section: SectionId, id?: string | null, tab?: strin
 }
 
 /**
+ * The Outlook setup opened in its replacing state, at the client secret's fields (SCN-060, B5-02):
+ * where "Open the Outlook setup" goes when the fix is a new secret — from an account's problem in
+ * Settings, or from the inbox's "the secret ends soon" notice.
+ */
+export const OUTLOOK_SECRET_QUERY = { connect: "microsoft", replace: "secret" } as const;
+export const outlookSecretSetupPath = (): string => settingsPath("accounts", null, null, { ...OUTLOOK_SECRET_QUERY });
+
+/**
  * Where an address of an older version of the app now lives (every one keeps working). Returns
  * null for an address that is not an old settings page.
  */

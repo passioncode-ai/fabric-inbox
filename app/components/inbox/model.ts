@@ -1,5 +1,6 @@
 import type { Email } from "~/types";
 import type { Mail } from "~/services/fabric";
+import { displaySender } from "../../../shared/mail/sender";
 import type { Triage } from "../../../shared/mail/triage";
 /** "cloudflare" (a mailbox on a served domain), "gmail" (Google sign-in), "imap" (an app password) or "outlook" (Microsoft sign-in). */
 export type MailProvider = "cloudflare" | "gmail" | "imap" | "outlook";
@@ -20,6 +21,8 @@ export type InboxAccount = {
   unread?: number;
   /** Every message in its inbox, when known (the "With mail" filter). */
   total?: number;
+  /** When the address was created or the account connected (epoch ms); unknown for older addresses. */
+  createdAt?: number;
   hidden?: boolean;
   /** Keeps mail for every other address on its domain. */
   catchAll?: boolean;
@@ -71,6 +74,7 @@ export type OpenMessage = {
   subject: string;
   from: string;
   to: string;
+  cc?: string;
   date: string;
   text?: string;
   html?: string;
@@ -102,11 +106,13 @@ export function normalizeMessage(
   provider: InboxMessage["provider"],
 ): OpenMessage {
   if (isRemote(provider)) {
-    const m = value as Mail;
+    // The server sends cc (absent on messages cached before 2026-10-05); the Mail type predates it.
+    const m = value as Mail & { cc?: string };
     return {
       subject: m.subject,
       from: m.from,
       to: m.to,
+      cc: m.cc,
       date: m.date,
       text: m.text,
       html: m.html,
@@ -125,8 +131,9 @@ export function normalizeMessage(
   const m = value as Email;
   return {
     subject: m.subject,
-    from: m.sender,
+    from: displaySender(m.sender, m.sender_name, m.raw_headers),
     to: m.recipient,
+    cc: m.cc ?? undefined,
     date: m.date,
     html: m.body ?? undefined,
     read: m.read,

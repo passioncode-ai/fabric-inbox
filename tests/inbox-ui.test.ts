@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
+  replyAllRecipients,
   replyRecipient,
   recipientAddresses,
   sendRecovery,
@@ -75,6 +77,55 @@ test("quoted recipient names with commas become valid bare send addresses", () =
   assert.throws(() =>
     recipientAddresses("maya@example.com\r\nBcc: other@example.com"),
   );
+});
+
+// B10-06: Reply all seeds every participant except the account itself — the sender and the other
+// To addresses in To, the other Cc addresses in Cc, each address once (as the server's reply-all,
+// tests/mcp-tools.test.ts). With no one else on the message there is no Reply all at all.
+test("reply all answers every participant except the account itself, once each (B10-06)", () => {
+  assert.deepEqual(
+    replyAllRecipients("Ann <ann@x.invalid>", "Me <me@x.invalid>, bob@x.invalid", "carol@x.invalid, ME@x.invalid", "me@x.invalid"),
+    { to: "ann@x.invalid, bob@x.invalid", cc: "carol@x.invalid" },
+  );
+  assert.deepEqual(
+    replyAllRecipients("ann@x.invalid", "bob@x.invalid", "bob@x.invalid, carol@x.invalid", "me@x.invalid"),
+    { to: "ann@x.invalid, bob@x.invalid", cc: "carol@x.invalid" },
+    "an address in To and Cc appears once, in To",
+  );
+  assert.deepEqual(
+    replyAllRecipients("Me <me@x.invalid>", "bob@x.invalid", "carol@x.invalid", "me@x.invalid"),
+    { to: "bob@x.invalid", cc: "carol@x.invalid" },
+    "a message the account sent is answered to its original recipients, as replyRecipient does",
+  );
+  assert.equal(replyAllRecipients("Me <me@x.invalid>", "me@x.invalid", "", "me@x.invalid"), null, "the account alone on the message: nothing to reply all to");
+  assert.equal(replyAllRecipients("ann@x.invalid", "me@x.invalid", "", "me@x.invalid")!.to, "ann@x.invalid");
+  assert.equal(replyAllRecipients("not an address", "bob@x.invalid", "", "me@x.invalid")!.to, "bob@x.invalid", "an unparseable sender is skipped, not kept");
+});
+
+test("the reader offers Reply all only when others are on the message, seeded and threaded like a reply (B10-06)", () => {
+  const code = readFileSync("app/routes/unified-inbox.tsx", "utf8");
+  assert.match(code, /const replyAll = detail\.data && owner \? replyAllRecipients\(detail\.data\.from, detail\.data\.to, detail\.data\.cc \?\? "", owner\.email\) : null;/);
+  assert.match(code, /\{offersReplyAll && \([\s\S]{0,300}compose\("reply", true\)/);
+  assert.match(code, /\.\.\.\(mode === "reply" && all && replyAll\?\.cc \? \{ cc: replyAll\.cc \} : \{\}\)/, "Cc is seeded on the same reply draft");
+  assert.match(code, /threadId: mode === "reply" \? m\?\.threadId : undefined/, "thread identity stays the reply's");
+  const model = readFileSync("app/components/inbox/model.ts", "utf8");
+  assert.match(model, /cc\?: string;/);
+});
+
+test("a download in flight says so in its button; a failed Cloudflare download names the file (B6-03, B6-04)", () => {
+  const code = readFileSync("app/routes/unified-inbox.tsx", "utf8");
+  assert.match(code, /t\("\{name\} could not be downloaded\.", \{ name: a\.filename \}\)/);
+  assert.match(code, /<span role="status">\{t\("Downloading…"\)\}<\/span>/);
+  assert.match(code, /setDownloading\(null\)/, "the in-flight state ends in finally, on success and failure alike");
+});
+
+test("the inbox warns about the Outlook client secret ending, with one action (B5-01)", () => {
+  const code = readFileSync("app/routes/unified-inbox.tsx", "utf8");
+  assert.match(code, /queryKey: \["microsoft-setup"\]/, "the same setup answer Settings reads");
+  assert.match(code, /secretExpiry\?\.state === "soon"/);
+  assert.match(code, /Open the Outlook setup/);
+  // It opens the Outlook setup at the secret fields (B5-02), not just the accounts list.
+  assert.match(code, /to=\{outlookSecretSetupPath\(\)\}>\{t\("Open the Outlook setup"\)\}/);
 });
 
 test("REQ-T2: Focus puts important mail first and keeps the rest in fixed-order groups, newest first inside", async () => {
@@ -182,4 +233,51 @@ test("the sidebar lists addresses with mail, catch-alls and the open one; hidden
   assert.deepEqual(r.hidden.map((x) => x.email), ["muted@x.invalid"]);
   assert.deepEqual(r.withoutMail.map((x) => x.email), ["empty@x.invalid", "open@x.invalid"], "a catch-all and an unknown count are never taken");
   assert.equal(sidebarAccounts(accounts, { filter: "all", hidden: new Set() }).visible.length, 6);
+});
+
+test("an address made in the last 7 days is listed before its first message; an older or undated empty one stays folded (2026-10-08)", async () => {
+  const { sidebarAccounts, isNewAccount, NEW_ACCOUNT_MS } = await import("../app/components/inbox/account-groups");
+  const now = Date.parse("2026-10-08T12:00:00Z");
+  const a = (email: string, over: Record<string, unknown> = {}) => ({ id: "cloudflare:" + email, provider: "cloudflare" as const, email, name: email, status: "connected", total: 0, unread: 0, ...over });
+  const accounts = [
+    a("j1@x.invalid", { createdAt: now - 60_000 }),
+    a("edge@x.invalid", { createdAt: now - NEW_ACCOUNT_MS + 1 }),
+    a("week@x.invalid", { createdAt: now - NEW_ACCOUNT_MS }),
+    a("legacy@x.invalid"),
+    a("ahead@x.invalid", { createdAt: now + 5_000 }),
+    { ...a("me@gmail.invalid", { createdAt: now - 3_600_000 }), id: "gmail:g1", provider: "gmail" as const },
+    a("muted@x.invalid", { createdAt: now - 60_000 }),
+  ];
+  const r = sidebarAccounts(accounts, { filter: "mail", hidden: new Set(["cloudflare:muted@x.invalid"]), now });
+  assert.deepEqual(r.visible.map((x) => x.email), ["j1@x.invalid", "edge@x.invalid", "ahead@x.invalid", "me@gmail.invalid"],
+    "just made, one millisecond inside the week, a clock a little ahead, a newly connected account");
+  assert.deepEqual(r.withoutMail.map((x) => x.email), ["week@x.invalid", "legacy@x.invalid"],
+    "exactly 7 days old folds; no creation time reads as old; a new address is never offered to Hide them…");
+  assert.deepEqual(r.hidden.map((x) => x.email), ["muted@x.invalid"], "hiding a new address still hides it");
+  assert.equal(isNewAccount(accounts[3], now), false);
+  assert.equal(sidebarAccounts(accounts, { filter: "all", hidden: new Set(), now }).visible.length, accounts.length);
+  // A week later the same address folds like any other without mail.
+  assert.deepEqual(sidebarAccounts([accounts[0]], { filter: "mail", hidden: new Set(), now: now + NEW_ACCOUNT_MS }).withoutMail.map((x) => x.email), ["j1@x.invalid"]);
+});
+
+test("UI walk 2026-10-08: the reader names Cc; the images notice shows only for remote content; a short address list has no dead collapse button", async () => {
+  const reader = readFileSync("app/routes/unified-inbox.tsx", "utf8");
+  assert.match(reader, /detail\.data\.cc \? <p>\{t\("Cc \{cc\}", \{ cc: detail\.data\.cc \}\)\}<\/p> : null/);
+  const { hasRemoteContent } = await import("../app/lib/mail-content");
+  assert.equal(hasRemoteContent("Plain text, no markup."), false);
+  assert.equal(hasRemoteContent('<p>Hi</p><img src="cid:logo">'), false, "an inline cid: image loads nothing from the network");
+  assert.equal(hasRemoteContent('<img src="https://example.net/x.png">'), true);
+  assert.equal(hasRemoteContent("<img src=//cdn.example.net/x.png>"), true);
+  assert.equal(hasRemoteContent('<td background="http://example.net/bg.png">'), true);
+  assert.equal(hasRemoteContent('<div style="background:url(\'https://example.net/a.png\')">'), true);
+  assert.equal(hasRemoteContent('<a href="https://example.net">a link</a>'), false, "a link is not loaded when shown");
+  const sidebar = readFileSync("app/components/inbox/AccountSidebar.tsx", "utf8");
+  assert.doesNotMatch(sidebar, /disabled=\{small\}/);
+  assert.match(sidebar, /small \? <span className="fi-domain-toggle" aria-hidden="true" \/>/);
+});
+
+test("UI walk 2026-10-08: Reply all is offered only when it reaches more than the sender", () => {
+  const reader = readFileSync("app/routes/unified-inbox.tsx", "utf8");
+  assert.match(reader, /const offersReplyAll = !!replyAll && \(replyAll\.cc !== "" \|\| replyAll\.to\.includes\(","\)\);/);
+  assert.match(reader, /\{offersReplyAll && \(/);
 });

@@ -13,7 +13,8 @@ import type { Env } from "../types";
 import { applyMigrations, mailboxMigrations } from "./migrations";
 import { IncomingJournal } from '../actions/incoming';
 import type { IncomingMailEvent } from '../../shared/mail/incoming';
-import { SqlOutboxStore, journal } from '../actions/outbox-store';
+import { SqlOutboxStore, journal, type OutboxRow } from '../actions/outbox-store';
+import type { OutboxEntry } from '../../shared/mail/outbox';
 import { OutboxCoordinator, IdempotencyConflict, payloadHash } from '../actions/outbox';
 import { sentProjection, transportParams, type PreparedMail } from '../actions/prepare-mail';
 import { sendFromAccount } from '../email-sender';
@@ -117,6 +118,8 @@ interface EmailData {
 	id: string;
 	subject: string;
 	sender: string;
+	/** The name the message gave its sender (From), shown beside the address. */
+	sender_name?: string | null;
 	recipient: string;
 	cc?: string | null;
 	bcc?: string | null;
@@ -244,6 +247,15 @@ export class MailboxDO extends DurableObject<Env> {
   async getOutboxAction(mailboxId: string, id: string) {
     const row = this.outbox.get(id);
     return row?.mailbox_id === mailboxId.toLowerCase() ? journal(row) : null;
+  }
+  /**
+   * The outbox entry an action was sent under, found by the idempotency key it used; null when
+   * nothing was ever handed to the outbox under that key. A read only: it never processes the
+   * entry, so checking an uncertain send cannot send it (SCN-020).
+   */
+  async outboxByKey(mailboxId: string, key: string): Promise<OutboxEntry | null> {
+    const row = [...this.ctx.storage.sql.exec('SELECT * FROM outbox WHERE mailbox_id = ? AND idempotency_key = ?', mailboxId.toLowerCase(), key)][0] as unknown as OutboxRow | undefined;
+    return row ? journal(row) : null;
   }
   async listOutbox(mailboxId: string, limit = 50, offset = 0) {
     return this.outbox.list(mailboxId.toLowerCase(), limit, offset);
@@ -1483,6 +1495,7 @@ export class MailboxDO extends DurableObject<Env> {
 				folder_id: folderId,
 				subject: email.subject,
 				sender: email.sender,
+				sender_name: email.sender_name ?? null,
 				recipient: email.recipient,
 				cc: email.cc ?? null,
 				bcc: email.bcc ?? null,

@@ -3,6 +3,7 @@ import type { InboxAccount } from "../../shared/mail/inbox";
 import { parseRemoteAccount } from "../../shared/mail/accounts";
 import type { InboxSources } from "../routes/inbox";
 import { importPercent } from "../providers/gmail-sync";
+import { readCreated } from "./address-created";
 
 /**
  * The feed's providers, read the same way by the /api/inbox route and by background work (a
@@ -18,6 +19,11 @@ export function inboxSources(env: Env): InboxSources {
   return {
     async cloudflareAccounts() {
       const accounts: InboxAccount[] = [];
+      // When each address was made (address-created.ts); unreadable, the addresses are listed without it.
+      const created = readCreated(env.BUCKET).catch((error: unknown) => {
+        console.warn(JSON.stringify({ event: "address_created_unreadable", error: (error as Error).message }));
+        return {} as Record<string, number>;
+      });
       let cursor: string | undefined;
       for (let page = 0; page < 10; page++) {
         const result = await env.BUCKET.list({ prefix: "mailboxes/", cursor });
@@ -26,9 +32,14 @@ export function inboxSources(env: Env): InboxSources {
           const email = object.key.slice("mailboxes/".length, -5);
           accounts.push({ id: "cloudflare:" + email, provider: "cloudflare", email, name: email, status: "connected" });
         }
-        if (!result.truncated) return accounts;
+        if (!result.truncated) {
+          const at = await created;
+          for (const a of accounts) if (at[a.email.toLowerCase()]) a.createdAt = at[a.email.toLowerCase()];
+          return accounts;
+        }
         cursor = result.cursor;
       }
+      await created;
       throw new Error("account_limit");
   },
     async remoteAccounts() {
@@ -40,7 +51,7 @@ export function inboxSources(env: Env): InboxSources {
         const importing = a.importing ?? importPercent(a.sync as Parameters<typeof importPercent>[0]);
         return { id: provider + ":" + a.id, provider, email: a.email, name: a.email,
           status: a.sync.mode === "initial" && a.status === "connected" ? "syncing" : a.status,
-          error: a.error, lastSyncAt: a.lastSyncAt, ...(a.retryAt ? { retryAt: a.retryAt } : {}), ...(a.reason ? { reason: a.reason } : {}),
+          error: a.error, lastSyncAt: a.lastSyncAt, ...(a.createdAt ? { createdAt: a.createdAt } : {}), ...(a.retryAt ? { retryAt: a.retryAt } : {}), ...(a.reason ? { reason: a.reason } : {}),
           ...(a.providerName ? { providerName: a.providerName } : {}),
           ...(c ? { capabilities: { archive: c.archive, spam: c.spam, trash: c.trash, drafts: c.drafts, organization: c.organization } } : {}),
           ...(a.sync.mode === "initial" && importing !== undefined ? { importing } : {}) };

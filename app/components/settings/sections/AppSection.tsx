@@ -109,6 +109,7 @@ function ServerPanel() {
     <Panel title={t("Your server")} closeTo={settingsPath("app")}>
       <PanelBlock>
         <p>{t("Your mail, agents and rules run on your server, a Worker in your own Cloudflare account. They keep running when this app is closed.")}</p>
+        <p className="fi-hint">{t("Drafts you are writing live on this device; an uninstaller that removes this app's data loses them.")}</p>
         <ul className="fi-facts">
           <li><strong>{t("Address")}</strong> <code>{origin || "…"}</code></li>
           <li><strong>{t("Domains in its configuration")}</strong> {config.isPending ? "…" : config.isError ? t("unknown ({error})", { error: t.text(errorText(config.error)) }) : config.data.domains.length ? t.list(config.data.domains) : t("none — domains are chosen on Domains")}</li>

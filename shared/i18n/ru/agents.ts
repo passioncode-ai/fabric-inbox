@@ -285,6 +285,25 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"Image: {name}": "Изображение: {name}",
 	"Image from {host}": "Изображение с {host}",
 	"Image": "Изображение",
+	"Read for this answer": "Прочитано для этого ответа",
+	"Message from {sender}": "Письмо от {sender}",
+	"A message in this mailbox": "Письмо в этом ящике",
+	"Open {message} in the reader": "Открыть «{message}» в окне чтения",
+	"and {n} more messages": "и ещё {n} письмо|и ещё {n} письма|и ещё {n} писем",
+	"The AI could not finish this answer.": "ИИ не смог закончить этот ответ.",
+	"Your mail is as it was, apart from any step above marked done.": "С почтой ничего не произошло, кроме шагов выше, отмеченных как выполненные.",
+	"Explain the open message “{subject}” (message id {id})": "Объясни открытое письмо «{subject}» (id письма {id})",
+	"Draft a reply to the open message “{subject}” (message id {id})": "Напиши черновик ответа на открытое письмо «{subject}» (id письма {id})",
+
+	// The AI panel on the unified inbox (app/components/inbox/AgentDock.tsx, app/routes/unified-inbox.tsx)
+	"AI panel": "Панель ИИ",
+	"Ask AI about your mail": "Спросить ИИ о почте",
+	"Ask AI": "Спросить ИИ",
+	"Reads {address}, where the open message is.": "Читает {address} — ящик открытого письма.",
+	"Reads {address}.": "Читает {address}.",
+	"Close AI panel": "Закрыть панель ИИ",
+	"The open message is in {account}. The AI panel reads only your Cloudflare addresses.": "Открытое письмо — в {account}. Панель ИИ читает только ваши адреса Cloudflare.",
+	"The AI panel reads mail on your Cloudflare addresses, and you have none yet. Gmail, Outlook and IMAP mail is not read by it.": "Панель ИИ читает почту ваших адресов Cloudflare, а их пока нет. Почту Gmail, Outlook и IMAP она не читает.",
 
 	// The agent protocol, as the mail window's side panel shows it (app/components/MCPPanel.tsx)
 	"Copied!": "Скопировано!",

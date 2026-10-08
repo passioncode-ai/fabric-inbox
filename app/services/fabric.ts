@@ -64,6 +64,8 @@ export type Account = {
   capabilities?: { archive: boolean; spam: boolean; trash: boolean; drafts: boolean; organization: "labels" | "folders" };
   /** The first import's progress in percent, while it runs. */
   importing?: number;
+  /** When the account is tried again on its own (a failure backs off, or a provider's Retry-After). */
+  retryAt?: number;
 };
 export type AccountList = {
   configuration: string;

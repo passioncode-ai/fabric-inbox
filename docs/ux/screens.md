@@ -9,11 +9,11 @@
 | SCR-01 | Startup and session | FLW-07 | deferred | built | desktop/main.cjs, desktop/setup.html, desktop/setup.js, desktop/cloudflare-deploy.cjs |
 | SCR-02 | Settings | FLW-01, FLW-07, FLW-08 | deferred | built | app/routes/settings.tsx, app/components/settings/, workers/routes/domains.ts, workers/routes/accounts.ts, desktop/main.cjs |
 | SCR-03 | Inbox and search | FLW-01, FLW-02, FLW-07 | deferred | built | app/routes/unified-inbox.tsx, app/components/inbox/TriagedList.tsx |
-| SCR-04 | Thread and AI | FLW-02, FLW-03, FLW-04 | deferred | designed | app/routes/gmail-inbox.tsx:428, app/components/EmailPanel.tsx:32, app/components/AgentPanel.tsx:296 |
+| SCR-04 | Thread and AI | FLW-02, FLW-03, FLW-04 | deferred | designed | app/routes/gmail-inbox.tsx:428, app/components/EmailPanel.tsx:32, app/components/inbox/AgentDock.tsx:48 |
 | SCR-05 | Compose and draft | FLW-03, FLW-04, FLW-07 | deferred | designed | app/routes/gmail-inbox.tsx:41, app/routes/gmail-inbox.tsx:141, app/routes/gmail-inbox.tsx:292 |
 | SCR-06 | Settings (mailbox page) | — | deferred | retired | merged into SCR-02 |
-| SCR-07 | Rules | FLW-05 | deferred | designed | app/routes/automation.tsx:121, app/routes/automation.tsx:168, app/routes/automation.tsx:390 |
-| SCR-08 | Run history and approval | FLW-03, FLW-06 | deferred | designed | app/routes/automation.tsx:433, workers/automation/engine.ts:20 |
+| SCR-07 | Rules | FLW-05 | deferred | designed | app/routes/automation.tsx:128, app/routes/automation.tsx:243, app/routes/automation.tsx:464 |
+| SCR-08 | Run history and approval | FLW-03, FLW-06 | deferred | designed | app/routes/automation.tsx:540, workers/automation/engine.ts:20 |
 | SCR-09 | Domains & addresses | — | deferred | retired | merged into SCR-02 |
 | SCR-10 | Settings → Agents | FLW-08 | deferred | built | app/components/settings/sections/AgentsSection.tsx, workers/agents/registry.ts |
 | SCR-11 | Settings → Setup | FLW-07, FLW-08 | deferred | built | app/components/settings/sections/AppSection.tsx, workers/routes/setup.ts |
@@ -65,7 +65,7 @@ Records retain designed status because their complete target state sets have not
   - **Addresses:** grouped by domain; each row: name, who answers, its copy, Copy failing / routing (Arriving here, Not receiving yet, Routing unknown) / Not received badges, unread. Add address opens the Add address dialog (below). Panel: Who answers (with the chosen agent's one line: what it does and its reply policy); tabs Routing & test (Check again, Fix it, Send a test message with its arrival watched), Copy (Forward a copy to, Save), Name & signature (display name, signature, chat assistant prompt, Save changes), Rules & history (Open rules and history); ⋯ Open its mail, Remove … (refused for the catch-all, with the reason). An empty list names the domains and offers Add the first address. The addresses in the server's configuration are created here once, with Retry for any that failed.
   - **Add address dialog** (one dialog for every entry point: Add address, Add an address on <domain>, the sidebar's Add address, Add the first address, Add this address): One address / Several; Domain (a searchable choice: Receiving here, then Can receive here, each with its state, Needs fixing once checked; a line under it says what choosing it does); Address (the part before @, focused on open, with the full address previewed, the live check announced in words, and the names of recent mail to missing addresses as buttons) — or, for Several, a names box with one checked row per name; Display name (filled from the name until edited); Signature (optional, with its preview); Who answers (Off, or an agent with its one line); Forward a copy to (confirmed destinations of the domain's account, or Add a forwarding destination); Cloudflare rule (shown when a rule can be made, or why it cannot); Send a test message once it is created; Cancel, Create <address> (Enter submits when valid, Esc closes). After Create the form gives way to the steps (Receive mail for the domain here, Create the address, Send its mail here, Send a test message — each Done, Already so, Nothing to do, Not done or Waiting, with its one fix), or one row of steps per address for Several; Add another, Done (closes on the new address, selected with its panel open). Below 930 px the dialog takes the window's width.
   - **Domains:** Receiving here, then Other domains on Cloudflare, with a search; Connect Cloudflare first in the list while there is no token (its permissions and where to save it). Panel: Receive mail here (MX confirmation), or In Cloudflare (receiving with Fix it, addresses still elsewhere with Bring them here, sending with Turn on sending, DMARC, problems), its addresses with Add an address on <domain> (and, with none yet, Add the first address on <domain>), the catch-all choice with Apply, recent mail for missing addresses with Add this address, and the step list of the last action, kept when the domain changes state; ⋯ Stop receiving … (and a second confirmation when the token cannot see it).
-  - **Accounts:** Cloudflare (Show / Hide / Default, ⋯ Remove … for one connected with its own token), Gmail, Outlook and Other mail (sync, the reason it stopped with its one fix, Open its mail, Rules and history, ⋯ Disconnect …). Connect account opens a card per provider (providers.ts): Cloudflare (the permissions, a token field, Connect), Gmail (its setup, then Connect Gmail in browser), Gmail with an app password, Other mail (IMAP), and Outlook (the Microsoft Entra setup with the client secret's end date, then Connect Outlook in browser; SCN-057, SCN-058).
+  - **Accounts:** Cloudflare (Show / Hide / Default, ⋯ Remove … for one connected with its own token), Gmail, Outlook and Other mail (sync, the reason it stopped with its one fix, Open its mail, Rules and history, the Servers block with the folders the provider lacks, the New app password block — the new one is checked with the provider before it replaces the current one — ⋯ Enter a new app password… and Disconnect …). Connect account opens a card per provider (providers.ts): Cloudflare (the permissions, a token field, Connect), Gmail (its setup, then Connect Gmail in browser), Gmail with an app password, Other mail (IMAP), and Outlook (the Microsoft Entra setup with the client secret's end date, then Connect Outlook in browser; SCN-057, SCN-058).
   - **Forwarding destinations:** per Cloudflare account; Confirmed / Waiting; Add (a dialog that sends Cloudflare's confirmation); the panel lists the addresses that copy there.
   - **App:** Appearance (Light theme / Dark theme), Language (System / English / Русский, SCN-076), Your server (its address and configured domains), Setup (SCR-11), Mac app (what lives in the app menu: Check for Updates…, Install Updates Automatically, Share Anonymous Usage Counts, Server address…, Connect Cloudflare account…, Settings… ⌘,).
   - **Agents, Knowledge, Categories, Spam rules, Agent access:** SCR-10, SCR-12, SCR-13, SCR-14 and SCR-15, each a section of this screen.
@@ -76,18 +76,18 @@ Records retain designed status because their complete target state sets have not
 | success | Available result | deferred | The section's list with the chosen item's panel; an action's result inline under it and as a toast. |
 | empty | No relevant data | deferred | Each list says what is missing and offers the one action that fills it (Add the first address, Go to Domains, Connect an account, Add a destination, Create the first one). With nothing chosen the panel says what opens there. |
 | loading | Pending operation | deferred | Skeleton rows and panels the size of the content; a running action names itself on its row and its button. |
-| error | Operation cannot complete | deferred | A failed load says what could not load and why, with Retry; a refused action keeps the input and says why under the action; an item that no longer exists says so with a link back to the list. |
+| error | Operation cannot complete | deferred | A failed load says what could not load and why, with Retry; a refused action keeps the input and says why under the action; closing the Connect dialog (Esc, Close, Back) with a typed address or app password asks first; an item that no longer exists says so with a link back to the list. |
 
-- **Coverage:** app/routes/settings.tsx (Settings); app/components/settings/ui.tsx (SelectableList, Panel, ActionMenu, ConfirmProvider, WorkProvider, useDirtyGuard); app/components/settings/list-model.ts; app/components/settings/paths.ts (legacyTarget); app/routes/settings-redirect.tsx; app/components/settings/sections/AddressesSection.tsx; app/components/settings/sections/DomainsSection.tsx; app/components/settings/sections/AccountsSection.tsx; app/components/settings/sections/providers.ts; app/components/settings/sections/DestinationsSection.tsx; app/components/settings/sections/AppSection.tsx; app/components/settings/sections/SignatureForm.tsx; app/styles/settings.css; workers/routes/domains.ts; workers/routes/agents.ts (/api/project-addresses); workers/routes/accounts.ts; desktop/main.cjs (openSettings)
+- **Coverage:** app/routes/settings.tsx (Settings); app/components/settings/ui.tsx (SelectableList, Panel, ActionMenu, ConfirmProvider, WorkProvider, useDirtyGuard); app/components/settings/list-model.ts; app/components/settings/paths.ts (legacyTarget, outlookSecretSetupPath); app/routes/settings-redirect.tsx; app/components/settings/sections/AddressesSection.tsx; app/components/settings/sections/AddAddress.tsx; app/components/settings/sections/DomainsSection.tsx; app/components/settings/sections/AccountsSection.tsx; app/components/settings/sections/ImapAccount.tsx (leaveConnectForm); app/components/settings/sections/OutlookSetup.tsx (ConnectOutlookView); app/components/settings/sections/providers.ts; app/components/settings/sections/DestinationsSection.tsx; app/components/settings/sections/AppSection.tsx; app/components/settings/sections/SignatureForm.tsx; app/styles/settings.css; workers/routes/domains.ts; workers/routes/agents.ts (/api/project-addresses); workers/routes/accounts.ts; desktop/main.cjs (openSettings)
 - **Scenarios:** SCN-002, SCN-003, SCN-012, SCN-021, SCN-023, SCN-025, SCN-031, SCN-032, SCN-033, SCN-045, SCN-046, SCN-051, SCN-052, SCN-053, SCN-054, SCN-055, SCN-056
 - **Resources:** [Flow specification](flows.md), [shared interaction requirements](scenarios.md); provider capability and action status contracts in [architecture](../desktop-mail/architecture.md).
 - **Status:** built
-- **Today:** Built in 0.11 (WS1). Every old address (/projects, /mailboxes, /accounts, /ai-agents, /knowledge, /categories, /spam, /agent-access, /setup, /mailbox/:id/settings) redirects into its section (`tests/settings-ui.test.ts`). Choosing a row deep in a 66-address list at 1360 px and 800 px left window.scrollY at 0, the list's scrollTop and the row's position unchanged, and Back at 800 px returned to the same scroll position with the focus on the row (`scripts/settings-scroll-check.mjs`, 25 checks, against a local dev server with 22 domains). No live Gmail or Cloudflare account was used; IMAP and Outlook cards are placeholders for another workstream.
+- **Today:** Built in 0.11 (WS1). Every old address (/projects, /mailboxes, /accounts, /ai-agents, /knowledge, /categories, /spam, /agent-access, /setup, /mailbox/:id/settings) redirects into its section (`tests/settings-ui.test.ts`). Choosing a row deep in a 66-address list at 1360 px and 800 px left window.scrollY at 0, the list's scrollTop and the row's position unchanged, and Back at 800 px returned to the same scroll position with the focus on the row (`scripts/settings-scroll-check.mjs`, 25 checks, against a local dev server with 22 domains). No live Gmail or Cloudflare account was used; IMAP app-password accounts and Outlook shipped in 0.11, with live provider acceptance (B-55, B-56, B-57) still open.
 
 ### SCR-03: Inbox and search
 - **Used by:** FLW-01, FLW-02, FLW-07
 - **Purpose:** Find source-labeled conversations.
-- **Elements:** Compose (primary); Drafts list with sender, subject and saved/uncertain status; All inboxes / domain / one address / every Gmail account scope; CATEGORIES in the sidebar with counts and +; a category's view (eyebrow CATEGORY, its description, Change, sorting progress, Why: on each row); search; Focus / Newest order (a described category reads newest first); Unread only; group chips with counts (All stays while a group is chosen); Important section; group headings the operator opens (kept for the session); a Spam folder (newest first, no triage marks, Why in Spam, a banner with Spam rules and Delete all now…); row reason tag, category chips, "+N" for a message in several inboxes; message list; unread/archive/delete (the next message is selected); account health (collapsed "N inboxes unavailable"); a folder select on a phone; addresses With mail / All with Hide on each, "Hide them…" for those without mail and a Hidden list; a banner when mail did not reach its rules, agents or categories, with Retry; one Settings entry in the sidebar (Add address and Connect Gmail open their sections; choosing a domain selects it and folds no other group); under the title, Refresh and its status (Updated 3 min ago, Live, Updating…, which account failed) with each account's details; a Discarded folder (Why discarded on each row, a banner with Discard rules) and Not discarded with Stop discarding mail like this; the keyboard (Delete/Backspace archive and mark read, ⌘⌫ discard, ⌘Z undo, ↓/J ↑/K, Shift and ⌘/Ctrl-click to choose several with "N messages selected", Esc, ? for Keyboard shortcuts, ⌘⇧N refresh); the Undo toast with the once-only "Future mail from X will go to Discarded · Don't"; Keyboard shortcuts in the sidebar.
+- **Elements:** Compose (primary); Drafts list with sender, subject and saved/uncertain status; All inboxes / domain / one address / every Gmail account scope; CATEGORIES in the sidebar with counts and +; a category's view (eyebrow CATEGORY, its description, Change, sorting progress, Why: on each row); search; Focus / Newest order (a described category reads newest first); Unread only; group chips with counts (All stays while a group is chosen); Important section; group headings the operator opens (kept for the session); a Spam folder (newest first, no triage marks, Why in Spam, a banner with Spam rules and Delete all now…); row reason tag, category chips, "+N" for a message in several inboxes; message list; unread/archive/delete (the next message is selected); account health (collapsed "N inboxes unavailable"); a folder select on a phone; addresses With mail / All (With mail also lists an address made in the last 7 days) with Hide on each, "Hide them…" for those without mail and a Hidden list; a banner when mail did not reach its rules, agents or categories, with Retry; one Settings entry in the sidebar (Add address and Connect Gmail open their sections; choosing a domain selects it and folds no other group); under the title, Refresh and its status (Updated 3 min ago, Live, Updating…, which account failed) with each account's details; a Discarded folder (Why discarded on each row, a banner with Discard rules) and Not discarded with Stop discarding mail like this; the keyboard (Delete/Backspace archive and mark read, ⌘⌫ discard, ⌘Z undo, ↓/J ↑/K, Shift and ⌘/Ctrl-click to choose several with "N messages selected", Esc, ? for Keyboard shortcuts, ⌘⇧N refresh); the Undo toast with the once-only "Future mail from X will go to Discarded · Don't"; Keyboard shortcuts in the sidebar.
 - **States:**
 
 | State | Trigger | Figma frame | Behavior |
@@ -106,7 +106,7 @@ Records retain designed status because their complete target state sets have not
 ### SCR-04: Thread and AI
 - **Used by:** FLW-02, FLW-03, FLW-04
 - **Purpose:** Read context and review a response.
-- **Elements:** Reply (primary); reply all; forward; attachments; per-message external-image permission; source identity; AI action; source links; archive/delete; Report spam (Not spam in Spam).
+- **Elements:** Reply (primary); reply all; forward; attachments; per-message external-image permission; source identity; archive/delete; Report spam (Not spam in Spam); Discard (Not discarded in Discarded); AI panel toggle in the workbench header (column on wide windows, sheet on narrow; B11-01); the AI's source links open the message here (B11-03).
 - **States:**
 
 | State | Trigger | Figma frame | Behavior |
@@ -116,11 +116,11 @@ Records retain designed status because their complete target state sets have not
 | loading | Pending operation | deferred | Thread/attachment/AI loading are separate. |
 | error | Operation cannot complete | deferred | Unavailable message or AI result; manual mail stays reachable. |
 
-- **Coverage:** app/routes/unified-inbox.tsx (detail query, reader toolbar, `download`); app/components/inbox/model.ts (`messagePath`); app/components/AgentPanel.tsx:296
-- **Scenarios:** SCN-004, SCN-008, SCN-009, SCN-010, SCN-011, SCN-013, SCN-040
+- **Coverage:** app/routes/unified-inbox.tsx (detail query, reader toolbar, `download`; AI panel toggle :953 and mount :1457); app/components/inbox/model.ts (`messagePath`); app/components/inbox/AgentDock.tsx; app/components/AgentPanel.tsx:147, :185; tests/agent-panel.test.ts
+- **Scenarios:** SCN-004, SCN-008, SCN-009, SCN-010, SCN-011, SCN-013, SCN-040, SCN-071, SCN-072, SCN-074
 - **Resources:** [Flow specification](flows.md), [shared interaction requirements](scenarios.md); provider capability and action status contracts in [architecture](../desktop-mail/architecture.md).
 - **Status:** designed
-- **Today:** The unified reader shows individual messages with account/provider identity, text or an isolated HTML body, attachments, reply and text-forward actions. Back to messages supports the narrow layout. Existing Cloudflare AI remains separate; interactive AI in this reader and complete threads remain open.
+- **Today:** The unified reader shows individual messages with account/provider identity, text or an isolated HTML body, attachments, and reply, reply all and forward actions (forward carries attachments, up to 10 files / 5 MiB; reply all is offered only when others besides the account are on the message, and a download in flight says so in its button). Back to messages supports the narrow layout. The header's AI panel (closed until opened) reads the open message's Cloudflare address, offers to explain it or draft a reply, shows a failed answer with Retry, lists the messages an answer read as links that open here, and opens a saved draft in the composer; Gmail, Outlook and IMAP messages are named as not readable by it. Complete threads remain open.
 
 ### SCR-05: Compose and draft
 - **Used by:** FLW-03, FLW-04, FLW-07
@@ -135,11 +135,11 @@ Records retain designed status because their complete target state sets have not
 | loading | Pending operation | deferred | Draft saving, attachment preparation and sending are distinct. |
 | error | Operation cannot complete | deferred | Inline validation, preserved input, failed and unknown transport states. |
 
-- **Coverage:** app/components/inbox/Composer.tsx (`Composer`, `send`); app/components/inbox/send-state.ts (`sendRecovery`, `replyRecipient`); app/routes/unified-inbox.tsx (`compose`)
+- **Coverage:** app/components/inbox/Composer.tsx (`Composer`, `send`); app/components/inbox/send-state.ts (`sendRecovery`, `replyRecipient`, `replyAllRecipients`); app/routes/unified-inbox.tsx (`compose`)
 - **Scenarios:** SCN-006, SCN-007, SCN-008, SCN-009, SCN-019, SCN-020
 - **Resources:** [Flow specification](flows.md), [shared interaction requirements](scenarios.md); provider capability and action status contracts in [architecture](../desktop-mail/architecture.md).
 - **Status:** designed
-- **Today:** The workbench composer selects a sender for new mail, fixes the reply account and reopens one existing local draft. Closing/Escape retains input; a save failure overrides the saved-state claim. Unknown sends keep their fields and recovery key locked for Retry same attempt. Reply all, Cc/Bcc, attachment compose and live provider sending remain open.
+- **Today:** The workbench composer selects a sender for new mail, fixes the reply account and reopens one existing local draft. Closing/Escape retains input; a save failure overrides the saved-state claim. Unknown sends keep their fields and recovery key locked for Retry same attempt. Cc/Bcc and attachment compose shipped (app/components/inbox/Composer.tsx), and reply all seeds the reply draft with every participant but the account itself; live provider sending remains open.
 
 ### SCR-06: Settings (mailbox page)
 - **Status:** retired
@@ -158,16 +158,16 @@ Records retain designed status because their complete target state sets have not
 | loading | Pending operation | deferred | Dry-run or save in progress with input retained. |
 | error | Operation cannot complete | deferred | Missing tool/grant/destination prevents enabling; last confirmed enabled state stays visible. |
 
-- **Coverage:** app/routes/automation.tsx:121, app/routes/automation.tsx:168, app/routes/automation.tsx:390
+- **Coverage:** app/routes/automation.tsx:128, app/routes/automation.tsx:243, app/routes/automation.tsx:464
 - **Scenarios:** SCN-014, SCN-015
 - **Resources:** [Flow specification](flows.md), [shared interaction requirements](scenarios.md); provider capability and action status contracts in [architecture](../desktop-mail/architecture.md).
 - **Status:** designed
-- **Today:** Rule edit, enable/pause and dry-run UI exist. Dry-run before enable is not enforced; local integration fixtures validate effect boundaries, not production cloud behavior.
+- **Today:** Rule edit, enable/pause and dry-run UI exist; the row and the editor show the rule version. Enable is gated on a successful dry-run of the current form values in the UI (any edit re-locks it; pausing or saving an unchanged enabled rule needs none); the server does not yet refuse an enable without a dry-run receipt. Local integration fixtures validate effect boundaries, not production cloud behavior.
 
 ### SCR-08: Run history and approval
 - **Used by:** FLW-03, FLW-06
 - **Purpose:** Understand external effects and resolve waiting work.
-- **Elements:** Open run (primary in list); filters; source; rule version; actions; result; attempts; cost availability; approve/reject when waiting.
+- **Elements:** Open run (primary in list); filters; source; rule version; actions; result; attempts; cost availability; approve/reject when waiting; Check status on a run whose outcome is unknown (Checking… while it reads; what it found under the card; when it was last checked), or, for a tool call, why it cannot be checked.
 - **States:**
 
 | State | Trigger | Figma frame | Behavior |
@@ -177,11 +177,11 @@ Records retain designed status because their complete target state sets have not
 | loading | Pending operation | deferred | History loading or reconciliation in progress. |
 | error | Operation cannot complete | deferred | Waiting approval/device, denied, failed and unknown each carry their own next step. |
 
-- **Coverage:** app/routes/automation.tsx:433, workers/automation/engine.ts:20
+- **Coverage:** app/routes/automation.tsx:540, workers/automation/engine.ts:20; app/routes/automation.tsx (`runCheckable`, `checkRun`); workers/automation/index.ts (`checkRun`); tests/automation-check.test.ts
 - **Scenarios:** SCN-016, SCN-017, SCN-018, SCN-020
 - **Resources:** [Flow specification](flows.md), [shared interaction requirements](scenarios.md); provider capability and action status contracts in [architecture](../desktop-mail/architecture.md).
 - **Status:** designed
-- **Today:** Recent run approval/cancel and Cloudflare outbox are wired. Local workerd effects/restart tests exist. Detailed version/attempt/cost/source display and real external-tool acceptance remain incomplete.
+- **Today:** Recent run approval/cancel and Cloudflare outbox are wired; the list has a loading branch, and each run card shows the rule version, the attempt count and an explicit "cost unavailable" label (runs created before attempts were counted report one attempt once processed). Local workerd effects/restart tests exist. A run whose outcome is unknown offers Check status, which settles it as succeeded or failed only on proof (an outbox entry, a provider receipt, the message's own state) and otherwise keeps it unknown with what was found; a tool call is named as uncheckable (SCN-020). A source link and real external-tool acceptance remain incomplete.
 
 ### SCR-09: Domains & addresses
 - **Status:** retired
@@ -205,7 +205,7 @@ Records retain designed status because their complete target state sets have not
 - **Scenarios:** SCN-022, SCN-024, SCN-034, SCN-035
 - **Resources:** [Flow specification](flows.md), [shared interaction requirements](scenarios.md).
 - **Status:** built
-- **Today:** Absent. Each mailbox has an implicit agent configured by one system-prompt field in Settings.
+- **Today:** Built: templates, versioned agents with knowledge and tool grants, reply policy (what may be sent, the daily limit, skip rules), addresses served and Recent answers with the passages each answer used (filters, Show older, Retry, Open the draft). A pre-registry mailbox migrates once to its own drafting agent, and its old system-prompt field then only instructs the chat assistant (SCN-023). Live model and delivery acceptance remain open.
 
 ### SCR-11: Settings → Setup
 - **Part of:** SCR-02 Settings (App → Setup section); the list, panel, ⋯ menu and confirmation follow SCR-02.
@@ -270,7 +270,7 @@ Records retain designed status because their complete target state sets have not
 - **Part of:** SCR-02 Settings (Spam rules section); the list, panel, ⋯ menu and confirmation follow SCR-02.
 - **Used by:** FLW-02
 - **Purpose:** Say what goes to Spam and keep the operator's lists.
-- **Elements:** What goes to Spam (four rules and what wins); today's checks, spam found and the model's allowance; Always spam: senders, Always spam: domains, Never spam: senders, Never spam: domains, each with Add and Remove and Show all past 20; Open Spam; Categories.
+- **Elements:** What goes to Spam (four rules and what wins); today's checks, spam found and the model's allowance; Always spam: senders, Always spam: domains, Never spam: senders, Never spam: domains, each with Add and Remove and Show all past 50; Open Spam; Categories.
 - **States:**
 
 | State | Trigger | Figma frame | Behavior |
@@ -298,7 +298,7 @@ Records retain designed status because their complete target state sets have not
 | success | Available result | deferred | Keys and the journal listed; a new key's secret shown once; a revoke says the key stopped working. |
 | empty | No relevant data | deferred | No agent has a key yet; no agent has changed anything yet. |
 | loading | Pending operation | deferred | Loading agent keys; Making the key… with the button disabled. |
-| error | Operation cannot complete | deferred | A failed load offers Retry; a refused key names the missing permission; a partial revoke names where to finish it. |
+| error | Operation cannot complete | deferred | A failed load offers Retry; a refused key names the missing permission; a key that could not be saved says to try again; a partial revoke names where to finish it. |
 
 ### SCR-16: Settings → Discard rules
 - **Part of:** SCR-02 Settings (Discard rules section); the list and panel follow SCR-02.

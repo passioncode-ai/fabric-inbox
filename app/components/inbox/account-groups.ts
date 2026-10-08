@@ -54,16 +54,30 @@ export function totalUnread(accounts: InboxAccount[]): number | undefined {
 
 export type AddressFilter = "mail" | "all";
 
+/** How long a new address or account is listed before its first message (2026-10-08). */
+export const NEW_ACCOUNT_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Created (or connected) less than 7 days ago. An account with no creation time — every
+ * Cloudflare address made before the server recorded it — is not new.
+ */
+export function isNewAccount(account: InboxAccount, now: number): boolean {
+  return typeof account.createdAt === "number" && now - account.createdAt < NEW_ACCOUNT_MS;
+}
+
 /**
  * What the sidebar lists (2026-09-29): hidden addresses apart; with "mail", an address is
  * listed when it has mail in its inbox, keeps mail for other addresses (catch-all), is the one
- * open, or its count is not known yet. `withoutMail` are the ones "Hide those without mail" takes.
+ * open, its count is not known yet, or it was created in the last 7 days (2026-10-08: an address
+ * just made must not vanish the moment it is made). `withoutMail` are the ones left out, which
+ * "Hide them…" takes; a new address is never among them.
  */
-export function sidebarAccounts(accounts: InboxAccount[], options: { filter: AddressFilter; hidden: Set<string>; selectedId?: string }) {
+export function sidebarAccounts(accounts: InboxAccount[], options: { filter: AddressFilter; hidden: Set<string>; selectedId?: string; now?: number }) {
+  const now = options.now ?? Date.now();
   const hidden = accounts.filter((a) => options.hidden.has(a.id.toLowerCase()));
   const shown = accounts.filter((a) => !options.hidden.has(a.id.toLowerCase()));
-  const hasMail = (a: InboxAccount) => typeof a.total !== "number" || a.total > 0 || (a.unread ?? 0) > 0 || !!a.catchAll;
-  const visible = options.filter === "all" ? shown : shown.filter((a) => hasMail(a) || a.id === options.selectedId);
-  const withoutMail = shown.filter((a) => !hasMail(a));
+  const listed = (a: InboxAccount) => typeof a.total !== "number" || a.total > 0 || (a.unread ?? 0) > 0 || !!a.catchAll || isNewAccount(a, now);
+  const visible = options.filter === "all" ? shown : shown.filter((a) => listed(a) || a.id === options.selectedId);
+  const withoutMail = shown.filter((a) => !listed(a));
   return { visible, hidden, withoutMail };
 }

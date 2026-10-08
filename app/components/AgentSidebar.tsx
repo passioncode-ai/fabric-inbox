@@ -6,11 +6,16 @@ import { Loader } from "@cloudflare/kumo";
 import { PlugsIcon, RobotIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import MCPPanel from "./MCPPanel";
+import type { AgentPanelProps } from "./AgentPanel";
 import { useT } from "../lib/i18n";
 
-function LazyAgentPanel() {
+/**
+ * The chat, loaded when the panel first shows: the agent client (and its socket) stays out of the
+ * page until someone opens the panel. The unified inbox mounts this directly (AgentDock.tsx).
+ */
+export function LazyAgentPanel(props: AgentPanelProps) {
 	const t = useT();
-	const [AgentChat, setAgentChat] = useState<React.ComponentType | null>(
+	const [AgentChat, setAgentChat] = useState<React.ComponentType<AgentPanelProps> | null>(
 		null,
 	);
 	const [loadFailed, setLoadFailed] = useState(false);
@@ -39,7 +44,7 @@ function LazyAgentPanel() {
 			</div>
 		);
 	}
-	return <AgentChat />;
+	return <AgentChat {...props} />;
 }
 
 export default function AgentSidebar() {

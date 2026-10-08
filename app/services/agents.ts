@@ -54,6 +54,8 @@ export interface RoutingStatus {
   state: "verified" | "missing" | "unknown";
   detail: string;
   via?: "rule" | "catch_all";
+  /** The problem is the domain's, not the address's rule: Email Routing is off or its records need fixing. */
+  domainProblem?: boolean;
 }
 
 /** GET /api/project-addresses/check (workers/lib/address-ops.ts checkAddresses, SCN-061). */

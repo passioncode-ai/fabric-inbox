@@ -50,6 +50,19 @@ const bundle = await build({
             try { const result = await handleIncomingEmail(event, flaky, ctx); return Response.json({threw:false, result, thrown}); }
             catch (e) { return Response.json({threw:true, message:e.message, thrown}); }
           }
+          if (c.op === 'runtime') {
+            // The runtime's ForwardableEmailMessage: forward and setReject live on its prototype,
+            // so a spread copy of it loses them (live bug 2026-10-08).
+            if (c.forwardTo) await env.BUCKET.put('mailboxes/'+c.mailboxes[0]+'.json', JSON.stringify({forwarding:{enabled:true,email:c.forwardTo}}));
+            const forwards = [];
+            class RuntimeMessage {
+              constructor() { this.to = c.to; this.from = 'sender@outside.invalid'; this.rawSize = bytes.length; this.raw = new Response(bytes).body; }
+              setReject(reason) { rejected = reason; }
+              async forward(to) { forwards.push(to); }
+            }
+            try { const result = await handleIncomingEmail(new RuntimeMessage(), testEnv, ctx); return Response.json({threw:false, result, rejected, forwards}); }
+            catch (e) { return Response.json({threw:true, message:e.message, rejected, forwards}); }
+          }
           if (c.op === 'broken') {
             const broken = {...testEnv, MAILBOX:{idFromName:()=>{throw new Error('storage unavailable')}, get:()=>{throw new Error('storage unavailable')}}};
             try { await handleIncomingEmail(event, broken, ctx); return Response.json({threw:false, rejected}); }
@@ -201,5 +214,20 @@ test("a Durable Object reset while a message arrives is retried once, and the me
     const twice = await command("flaky", { to: "support@shop.invalid", raw: mail("support@shop.invalid", "reset twice"), mailboxes: ["support@shop.invalid"], domains: "shop.invalid", failures: 2 });
     assert.equal(twice.threw, true, "a second failure is the platform's to retry");
     assert.match(twice.message, /exceeded timeout/);
+  } finally { await mf.dispose(); }
+});
+
+test("a message whose forward and setReject live on its prototype keeps both through the resilient path (live 2026-10-08)", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const copied = await command("runtime", { to: "support@shop.invalid", raw: mail("support@shop.invalid"), mailboxes: ["support@shop.invalid"],
+      domains: "shop.invalid", forwardTo: "copy@elsewhere.invalid" });
+    assert.equal(copied.threw, false, copied.message);
+    assert.equal(copied.result.inserted, true);
+    assert.equal(copied.result.forwarded, "sent", "the copy goes out instead of 'only possible for mail arriving through Email Routing'");
+    assert.deepEqual(copied.forwards, ["copy@elsewhere.invalid"]);
+    const refused = await command("runtime", { to: "nobody@shop.invalid", raw: mail("nobody@shop.invalid"), mailboxes: ["support@shop.invalid"], domains: "shop.invalid" });
+    assert.equal(refused.threw, false, refused.message);
+    assert.match(String(refused.rejected), /nobody@shop\.invalid|not|unknown/i, "an unknown address is refused, not failed");
   } finally { await mf.dispose(); }
 });

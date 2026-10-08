@@ -10,7 +10,8 @@ import { msg } from "../../shared/i18n";
 
 type Registry = RunnerDeps["registry"];
 
-function toolTokens(env: Env): Record<string, string> {
+/** The tool tokens keyed by their secret names (a grant's `tokenRef`); never the values out. */
+export function toolTokens(env: Env): Record<string, string> {
   try {
     const value = JSON.parse(env.AUTOMATION_TOOL_TOKENS || "{}");
     return value && typeof value === "object" ? value : {};

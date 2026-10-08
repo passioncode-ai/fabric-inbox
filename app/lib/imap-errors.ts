@@ -15,13 +15,15 @@ export interface ImapErrorContext {
   provider: string;
   imapHost?: string;
   smtpHost?: string;
+  /** When the account is tried again on its own (a backoff), if the caller knows it. */
+  retryAt?: number;
 }
 
 export const IMAP_ERROR_CODES = [
   "auth_failed", "app_password_required", "imap_disabled", "auth_or_imap_disabled", "web_login_required", "smtp_auth_failed",
   "smtp_auth_unsupported", "tls_failed", "host_unreachable", "smtp_unreachable", "smtp_tls_failed", "smtp_refused", "invalid_server",
   "imap_tls_required", "port_blocked", "already_connected", "not_configured", "invalid_account_settings", "invalid_password",
-  "reconnect_required", "provider_unavailable",
+  "reconnect_required", "provider_unavailable", "sync_backoff", "rate_limited",
 ] as const;
 
 /** The sentence for a code, or null for a code this module does not know (the caller shows the server's own text). */
@@ -29,6 +31,7 @@ export function imapErrorText(code: string, c: ImapErrorContext, t: T = englishT
   const provider = c.provider;
   const imap = c.imapHost ?? t("the incoming mail server");
   const smtp = c.smtpHost ?? t("the sending server");
+  const at = c.retryAt ? t.time(c.retryAt, { hour: "2-digit", minute: "2-digit" }) : null;
   switch (code) {
     case "auth_failed": return t("{provider} refused the address or the app password. Check both: it takes an app password, not the password you sign in with.", { provider });
     case "app_password_required": return t("{provider} needs an app password here, not the password you sign in with. Make one, then paste it here.", { provider });
@@ -51,6 +54,12 @@ export function imapErrorText(code: string, c: ImapErrorContext, t: T = englishT
     case "invalid_password": return t("Paste the app password.");
     case "reconnect_required": return t("{provider} no longer accepts the app password this server has. Enter a new one.", { provider });
     case "provider_unavailable": return t("{provider} could not be reached just now. It is tried again on its own.", { provider });
+    case "sync_backoff": return at
+      ? t("The last try failed a moment ago; the next one is tried on its own at {time}.", { time: at })
+      : t("The last try failed a moment ago; the next one is tried on its own.");
+    case "rate_limited": return at
+      ? t("{provider} asked to slow down; it is tried again on its own at {time}.", { provider, time: at })
+      : t("{provider} asked to slow down; it is tried again on its own.", { provider });
     default: return null;
   }
 }

@@ -110,6 +110,7 @@ export const COMMON: Readonly<Record<string, string>> = {
 	"Mail you send, agents' answers and what agents read stay as they are: only the interface changes language.": "Письма, которые вы отправляете, ответы агентов и то, что читают агенты, остаются как есть: язык меняется только у интерфейса.",
 
 	"Your mail, agents and rules run on your server, a Worker in your own Cloudflare account. They keep running when this app is closed.": "Ваша почта, агенты и правила работают на вашем сервере — воркере в вашем собственном аккаунте Cloudflare. Они продолжают работать, когда приложение закрыто.",
+	"Drafts you are writing live on this device; an uninstaller that removes this app's data loses them.": "Черновики, которые вы пишете, хранятся на этом устройстве; деинсталлятор, удаляющий данные этого приложения, удалит и их.",
 	"Domains in its configuration": "Домены в его конфигурации",
 	"unknown ({error})": "неизвестно ({error})",
 	"none — domains are chosen on Domains": "нет — домены выбираются в разделе «Домены»",

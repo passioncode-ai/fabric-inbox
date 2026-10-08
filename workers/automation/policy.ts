@@ -139,6 +139,10 @@ export type Run = {
   status: RunStatus;
   createdAt: string;
   updatedAt: string;
+  /** How many times the engine began processing this run; 0 while it waits in the queue. */
+  attempts?: number;
+  /** When a person last checked an uncertain run's outcome (SCN-020); absent if never checked. */
+  checkedAt?: string;
   analysis?: Analysis;
   detail?: string;
   approved?: boolean;

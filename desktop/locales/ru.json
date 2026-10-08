@@ -164,6 +164,8 @@
  "The connection could not be started. Try again.": "Не удалось начать подключение. Попробуйте ещё раз.",
  "The file could not be read. Try again.": "Не удалось прочитать файл. Попробуйте ещё раз.",
  "The key could not be made: {error}": "Не удалось создать ключ: {error}",
+ "The key was made but could not reach {client}, and it could not be revoked: revoke it in Settings → Agent access.": "Ключ создан, но не дошёл до {client}, и отозвать его не удалось — отзовите его в «Настройки → Доступ агентов».",
+ "The key was made but could not reach {client}, and was revoked again.": "Ключ создан, но не дошёл до {client} и снова отозван.",
  "The link asks for an unknown level.": "Ссылка просит неизвестный уровень доступа.",
  "The link asks to send the key somewhere other than this Mac.": "Ссылка просит отправить ключ не на этот Mac.",
  "The link carries no valid request id.": "В ссылке нет допустимого id запроса.",

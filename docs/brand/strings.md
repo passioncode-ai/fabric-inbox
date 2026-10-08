@@ -173,7 +173,7 @@ Locations name the source function while the integration branch is being formatt
 | action.composer.discard | Discard draft | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
 | action.composer.retry | Retry same attempt | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
 | action.composer.send | Send message | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
-| state.composer.checking | Checking… | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
+| state.composer.sending | Sending… | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
 ## State-message interpretation
 
 - Gmail accepted reports provider acceptance only, never recipient delivery. Unknown keeps send recovery locked; the next action is status inspection, not blind resend (SCN-007, SCN-020).

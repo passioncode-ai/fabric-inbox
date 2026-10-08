@@ -1,6 +1,8 @@
 // The message list's keyboard (operator, 2026-10-06; board B-25): Delete or Backspace archives and
 // marks read; with ⌘ on a Mac (Ctrl elsewhere) it discards; arrows and j/k move, Shift extends a
 // selection; ⌘Z undoes the last of these; ? shows the help; ⌘⇧N (Ctrl+Shift+N) checks for new mail.
+// Escape clears the selection — but first it cancels an inline confirmation that is open
+// (escapeCancelsConfirmation, board B-8-02: Spam's Delete all, the sidebar's Hide them).
 // ⌘R is not used: it is the desktop menu's Retry connection, which reloads the window
 // (desktop/main.cjs installMenu); ⌘⇧N is Apple Mail's own "Get All New Mail".
 // Nothing fires while the person types, and no combination that is not listed here does anything.
@@ -47,6 +49,14 @@ export function isTypingTarget(target: KeyTarget | null | undefined): boolean {
 export function isMacPlatform(nav: { platform?: string; userAgentData?: { platform?: string } } | undefined): boolean {
   const platform = nav?.userAgentData?.platform || nav?.platform || "";
   return /mac|iphone|ipad/i.test(platform);
+}
+
+/**
+ * Escape with no modifiers, not while typing: an inline confirmation that is open cancels itself
+ * (on a capture listener, before the list's own keydown clears the selection).
+ */
+export function escapeCancelsConfirmation(e: KeyLike): boolean {
+  return e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.isComposing && !isTypingTarget(e.target);
 }
 
 /** The action a key press means in the mail list, or null when it means nothing here. */

@@ -9,10 +9,12 @@ import {
   type AgentInput,
   type AgentSummary,
   type AgentVersion,
+  type ToolGrant,
 } from "./definition";
 import { RUN_OUTCOMES, runIdFor, type AgentRun, type RunOutcome } from "./run";
 import { runAgent, type RunnerDeps } from "./runner";
-import { productionDeps } from "./deps";
+import { productionDeps, toolTokens } from "./deps";
+import { readToolSchema } from "./tool-schema";
 import { CLAIM_POLL_MS, CLAIM_TTL_MS, decideClaim, type MessageClaim } from "./dedupe";
 
 
@@ -164,8 +166,13 @@ export class AgentRegistryDO extends DurableObject<Env> {
     return row ? (JSON.parse(String(row.body)) as AgentVersion) : null;
   }
 
-  /** Validates the definition and every tool host against the workspace allowlist. */
-  private validate(input: unknown): AgentInput {
+  /** Test seam: the granted tool's schema, read from its endpoint; production reads it over MCP. */
+  protected async toolSchema(grant: ToolGrant): Promise<unknown | null> {
+    return readToolSchema(grant, this.env.AUTOMATION_MCP_HOSTS ?? "", toolTokens(this.env));
+  }
+
+  /** Validates the definition, every tool host against the workspace allowlist and each granted tool's schema. */
+  private async validate(input: unknown): Promise<AgentInput> {
     const parsed = AgentInputSchema.safeParse(input);
     if (!parsed.success) throw new AgentInvalid(parsed.error.issues.map((i) => `${i.path.join(".") || "agent"}: ${i.message}`).join("; "));
     for (const grant of parsed.data.tools) {
@@ -174,6 +181,14 @@ export class AgentRegistryDO extends DurableObject<Env> {
       } catch (error) {
         throw new AgentInvalid(`${grant.name}: ${(error as Error).message}`);
       }
+      // The schema is checked at save time, not first at run time: an unreadable tool is refused with the reason.
+      let schema: unknown;
+      try {
+        schema = await this.toolSchema(grant);
+      } catch (error) {
+        throw new AgentInvalid(msg("The schema of the tool {tool} could not be read: {error}", { tool: grant.name, error: (error as Error).message }));
+      }
+      if (schema == null) throw new AgentInvalid(msg("The tool {tool} is not listed by its endpoint", { tool: grant.name }));
     }
     return parsed.data;
   }
@@ -197,7 +212,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
   }
 
   async createAgent(input: unknown, requestedId?: string): Promise<AgentVersion> {
-    const data = this.validate(input);
+    const data = await this.validate(input);
     return this.ctx.storage.transactionSync(() => {
       if (Number(this.rows("SELECT COUNT(*) AS n FROM agents WHERE deleted_at IS NULL")[0].n) >= MAX_AGENTS)
         throw new AgentInvalid(msg("At most {max} agents", { max: MAX_AGENTS }));
@@ -213,7 +228,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
    * A deleted id stays deleted: the operator's delete means Off, not "recreate".
    */
   async ensureAgent(id: string, input: unknown): Promise<AgentVersion | null> {
-    const data = this.validate(input);
+    const data = await this.validate(input);
     return this.ctx.storage.transactionSync(() => {
       const head = this.rows("SELECT current_version, deleted_at FROM agents WHERE id = ?", id)[0];
       if (head) return head.deleted_at ? null : this.version(id, Number(head.current_version));
@@ -223,7 +238,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
 
   /** Every save is a new immutable version; a stale editor cannot overwrite a newer one. */
   async updateAgent(id: string, input: unknown, expectedVersion: number): Promise<AgentVersion> {
-    const data = this.validate(input);
+    const data = await this.validate(input);
     return this.ctx.storage.transactionSync(() => {
       const head = this.rows("SELECT current_version, deleted_at FROM agents WHERE id = ?", id)[0];
       if (!head || head.deleted_at) throw new AgentNotFound(id);

@@ -17,6 +17,15 @@ const STATE = /^[A-Za-z0-9_-]{22,128}$/;
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
 /** One-second waits for a hub that opens the link a moment before it listens. */
 const LISTENER_WAITS = 5;
+/**
+ * While the prompt is open, the listener is looked up again every few seconds: a prompt must not
+ * outlive its requester (2026-10-08: a sheet on a background window sat unseen for 10 minutes,
+ * both hubs stopped listening, and the queue behind it waited). Two misses in a row mean it is
+ * gone (one lsof hiccup is not), and nobody answers for longer than the deadline closes it too.
+ */
+const PROMPT_POLL_MS = 3000;
+const PROMPT_MISSES = 2;
+const PROMPT_DEADLINE_MS = 120000;
 
 /** Reads a connect link strictly; anything unexpected is a refusal, never a guess. */
 function parseConnectLink(value) {
@@ -80,6 +89,74 @@ function listenerWith(exec) {
   };
 }
 
+/**
+ * Brings the app forward before the prompt so the person sees it even when another app is in
+ * front: the window is restored, shown and focused, macOS is asked to make the app active, and the
+ * Dock icon bounces until the prompt is answered — the signal that remains when macOS does not hand
+ * over focus (a bounce does nothing once the app is active). Returns the function that stops it.
+ */
+function attendWith(app, platform = process.platform) {
+  return (win) => {
+    try {
+      if (win && !win.isDestroyed()) {
+        if (typeof win.isMinimized === 'function' && win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+      }
+    } catch { /* a window closing under us still gets the prompt's own window */ }
+    try { if (typeof app.focus === 'function') app.focus(platform === 'darwin' ? { steal: true } : undefined); } catch { /* best effort */ }
+    let bounce = null;
+    try { if (app.dock && typeof app.dock.bounce === 'function') bounce = app.dock.bounce('critical'); } catch { bounce = null; }
+    return () => {
+      try { if (bounce !== null && bounce !== undefined && app.dock && typeof app.dock.cancelBounce === 'function') app.dock.cancelBounce(bounce); } catch { /* already stopped */ }
+    };
+  };
+}
+
+/** A wait that ends early when the signal aborts, leaving no timer behind. */
+function pauseFor(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal && signal.aborted) { resolve(); return; }
+    const timer = setTimeout(done, ms);
+    function done() { clearTimeout(timer); if (signal) signal.removeEventListener('abort', done); resolve(); }
+    if (signal) signal.addEventListener('abort', done, { once: true });
+  });
+}
+
+/**
+ * Asks while the requester still listens. The prompt gets an AbortSignal (Electron's
+ * showMessageBox `signal`, which closes it as if cancelled); the watch aborts it when the same
+ * process no longer holds the port, or when the deadline passes. Returns { answer } or { gone }.
+ */
+async function askWhileListening({ prompt, confirm, identify, port, listener, pause }) {
+  const controller = new AbortController();
+  const { signal } = controller;
+  let gone = null;
+  const watch = (async () => {
+    let misses = 0;
+    for (let waited = 0; !signal.aborted;) {
+      await pause(PROMPT_POLL_MS, signal);
+      if (signal.aborted) return;
+      waited += PROMPT_POLL_MS;
+      let now = null;
+      try { now = await identify(port); } catch { now = null; }
+      if (signal.aborted) return;
+      if (now && now.pid !== listener.pid) { gone = 'no_listener'; break; }
+      misses = now ? 0 : misses + 1;
+      if (misses >= PROMPT_MISSES) { gone = 'no_listener'; break; }
+      if (waited >= PROMPT_DEADLINE_MS) { gone = 'not_answered'; break; }
+    }
+    controller.abort();
+  })();
+  try {
+    const answer = await confirm(prompt, { signal });
+    return gone ? { gone } : { answer };
+  } finally {
+    controller.abort();
+    await watch;
+  }
+}
+
 /** Makes a key with the owner's session (the Agent access route); a redirect or a page means sign in again. */
 function mintWith(ses, origin) {
   return async (input) => {
@@ -116,9 +193,9 @@ function deliverTo(callback, { fetch: doFetch = fetch, timeoutMs = 10000 } = {})
 
 /**
  * The whole exchange. Returns { outcome: 'connected' | 'denied' | 'failed', reason? }.
- * The hub always hears the outcome; a secret is never logged.
+ * The hub hears the outcome whenever it still listens; a secret is never logged.
  */
-async function connect({ request, config, confirm, mint, revoke, deliver, signIn, identify, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), self = process.pid, log = () => {} }) {
+async function connect({ request, config, confirm, mint, revoke, deliver, signIn, identify, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), pause = pauseFor, self = process.pid, log = () => {} }) {
   const say = (event, extra = {}) => log(JSON.stringify({ event: `connect.${event}`, client: request.clientId, level: request.level, ...extra }));
   if (!config) {
     await deliver({ state: request.state, outcome: 'failed', error: 'no_server' });
@@ -137,7 +214,19 @@ async function connect({ request, config, confirm, mint, revoke, deliver, signIn
     return { outcome: 'failed', reason: 'listener_is_self' };
   }
   const prompt = promptFor(request, config, listener);
-  const answer = await confirm(prompt);
+  const asked = await askWhileListening({ prompt, confirm, identify, port, listener, pause });
+  if (asked.gone === 'no_listener') {
+    // The requester stopped listening while the prompt was open: it is closed, nothing is made,
+    // and there is nobody to tell — the queue moves on.
+    say('abandoned', { reason: 'no_listener' });
+    return { outcome: 'failed', reason: 'no_listener', abandoned: true };
+  }
+  if (asked.gone === 'not_answered') {
+    await deliver({ state: request.state, outcome: 'failed', error: 'not_answered' });
+    say('abandoned', { reason: 'not_answered' });
+    return { outcome: 'failed', reason: 'not_answered', abandoned: true };
+  }
+  const answer = asked.answer;
   const allowed = !!answer && answer.response === 1;
   if (!allowed || (prompt.checkboxLabel && !answer.checkboxChecked)) {
     await deliver({ state: request.state, outcome: 'denied' });
@@ -173,4 +262,5 @@ async function connect({ request, config, confirm, mint, revoke, deliver, signIn
   return { outcome: 'connected', keyId: key.id };
 }
 
-module.exports = { parseConnectLink, promptFor, listenerWith, mintWith, revokeWith, deliverTo, connect, SCHEME: 'fabric-inbox' };
+module.exports = { parseConnectLink, promptFor, listenerWith, mintWith, revokeWith, deliverTo, attendWith, pauseFor, connect,
+  PROMPT_POLL_MS, PROMPT_DEADLINE_MS, SCHEME: 'fabric-inbox' };

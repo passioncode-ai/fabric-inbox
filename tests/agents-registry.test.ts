@@ -26,6 +26,11 @@ const bundle = await build({
         async folder(name) { return this.getEmails({folder:name}); }
       }
       export class TestRegistry extends AgentRegistryDO {
+        async toolSchema(grant) {
+          const script = JSON.parse(await (await this.env.BUCKET.get('test/tool-schema.json'))?.text() || '{}');
+          if (script.throw) throw new Error(script.throw);
+          return 'schema' in script ? script.schema : {};
+        }
         deps(mailboxId) {
           const real = super.deps(mailboxId);
           const env = this.env;
@@ -76,6 +81,9 @@ const bundle = await build({
               case 'setup':
                 await env.BUCKET.put('mailboxes/' + c.mailbox + '.json', JSON.stringify(c.settings ?? {}));
                 await env.BUCKET.put('test/model.json', JSON.stringify(c.model ?? {}));
+                return Response.json(true);
+              case 'schema':
+                await env.BUCKET.put('test/tool-schema.json', JSON.stringify(c.script ?? {}));
                 return Response.json(true);
               case 'receive': {
                 const bytes = new TextEncoder().encode(c.raw);
@@ -169,6 +177,24 @@ test("tool grants are checked against the workspace host allowlist on save (REQ-
     assert.match(refused.message, /^agent_invalid: order_status: Tool host is not enabled/);
     const ok = await command("create", { input: { ...support, tools: [{ ...tool, endpoint: "https://tools.project.invalid/mcp" }] } });
     assert.equal(ok.tools[0].name, "order_status");
+  } finally { await mf.dispose(); }
+});
+
+test("a granted tool whose schema cannot be read is refused at save, with the reason (B12-01)", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const tool = { name: "order_status", description: "Look up an order", endpoint: "https://tools.project.invalid/mcp", tool: "order_status" };
+    await command("schema", { script: { throw: "connect ECONNREFUSED" } });
+    const unreadable = await command("create", { input: { ...support, tools: [tool] } });
+    assert.match(unreadable.message, /^agent_invalid: The schema of the tool order_status could not be read: connect ECONNREFUSED$/);
+    const notUpdated = await command("update", { id: "missing", input: { ...support, tools: [tool] }, expected: 1 });
+    assert.match(notUpdated.message, /^agent_invalid: The schema of the tool order_status could not be read/, "update is refused before the version check");
+    await command("schema", { script: { schema: null } });
+    const unlisted = await command("create", { input: { ...support, tools: [tool] } });
+    assert.match(unlisted.message, /^agent_invalid: The tool order_status is not listed by its endpoint$/);
+    await command("schema", { script: { schema: { type: "object" } } });
+    const saved = await command("create", { input: { ...support, tools: [tool] } });
+    assert.equal(saved.tools[0].name, "order_status", "a readable schema saves");
   } finally { await mf.dispose(); }
 });
 

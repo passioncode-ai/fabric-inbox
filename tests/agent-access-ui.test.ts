@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -7,6 +8,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { Toasty } from "@cloudflare/kumo";
 import AgentAccessSection, { JOURNAL, LEVELS, scopeText, sendingText } from "../app/components/settings/sections/AgentAccessSection";
 import { ConfirmProvider, WorkProvider } from "../app/components/settings/ui";
+import { msg, translateText } from "../shared/i18n";
 
 /** Settings → Agent access (SCR-15, SCN-043, SCN-044) rendered with the server's answers already in the cache. */
 function render(id: string | null, keys: unknown, journal?: unknown) {
@@ -68,4 +70,16 @@ test("a key says which mailboxes it reaches (AP-11)", () => {
   assert.equal(scopeText({ accounts: ["cloudflare:research@sshlg.me"] }), "Only research@sshlg.me");
   assert.equal(scopeText({ accounts: ["cloudflare:a@x.invalid", "gmail:g1"] }), "Only a@x.invalid, gmail:g1");
   assert.equal(scopeText({ accounts: [] }), "No mailbox");
+});
+
+test("the revoke confirmation keeps the key with Keep, and a failed save says to try again (B2-01, B2-02)", () => {
+  const section = readFileSync("app/components/settings/sections/AgentAccessSection.tsx", "utf8");
+  assert.match(section, /confirmLabel: t\("Revoke"\), cancelLabel: t\("Keep"\)/, "the cancel of a revoke reads Keep");
+  const route = readFileSync("workers/routes/agent-keys.ts", "utf8");
+  assert.match(route, /could not be completed: \{error\}\. Try again\./, "a failed save says to try again");
+  // What the key panel shows (t.text(errorText(error))), in both languages.
+  const answer = msg("{action} could not be completed: {error}. Try again.", { action: msg("Saving the key"), error: "R2 timed out" });
+  assert.equal(translateText("en", answer), "Saving the key could not be completed: R2 timed out. Try again.");
+  assert.match(translateText("ru", answer), /^Сохранение ключа: не удалось выполнить\. R2 timed out Попробуйте ещё раз\.$/);
+  assert.equal(translateText("ru", msg("Keep")), "Оставить", "the revoke's Keep has its Russian");
 });

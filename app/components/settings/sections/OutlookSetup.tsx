@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { fabric, type Account } from "../../../services/fabric";
 import { gmailReason } from "../../../../shared/mail/gmail-reasons";
 import { OUTLOOK_CONNECT_PATH, type SecretExpiry } from "../../../../shared/mail/microsoft-setup";
+import type { outlookSetupState } from "../../../lib/account-status";
 import { useT } from "../../../lib/i18n";
 import { errorText } from "../ui";
 import { CopyValue, checkedText, connectHref, failureText } from "./GmailSetup";
@@ -237,6 +238,51 @@ export function OutlookConnectStep({ setup, onReplace }: { setup?: MicrosoftSetu
         <button type="button" className="fi-secondary" onClick={() => void runCheck()} disabled={checking}>{checking ? t("Checking with Microsoft…") : t("Check the setup")}</button>
         <button type="button" className="fi-secondary" onClick={onReplace}>{t("Use another client secret…")}</button>
         <a className="fi-primary" data-autofocus href={connectHref(OUTLOOK_CONNECT, t)} target="_blank" rel="noreferrer">{t("Connect Outlook in browser ↗")}</a>
+      </div>
+    </>
+  );
+}
+
+/**
+ * SCN-057, SCN-058: a server without Microsoft set up shows the app registration steps; one with it set up
+ * connects an account in the browser. "Use another client secret…" opens the steps again (a secret
+ * that ends, or one that leaked, is replaced the same way). Opened from an account problem whose fix
+ * is a new secret (`replaceSecret`), it starts straight in that replacing state (B5-02).
+ * `onSaved` runs after a save lands, for the caller's caches.
+ */
+export function ConnectOutlookView({ state, replaceSecret = false, onSaved, onBack, onClose }: {
+  state: ReturnType<typeof outlookSetupState>;
+  replaceSecret?: boolean;
+  onSaved: () => void;
+  onBack: () => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const setup = useMicrosoftSetup(state === "configured" || state === "not-configured");
+  const [replacing, setReplacing] = useState(replaceSecret);
+  if (state === "loading" || (state !== "unavailable" && setup.isPending))
+    return <p role="status">{t("Checking the Outlook setup…")}</p>;
+  if (state === "unavailable" || setup.isError)
+    return (
+      <>
+        <p role="alert">{t("The Outlook setup is unknown: {reason}", { reason: setup.isError ? t.text(errorText(setup.error)) : t("the accounts did not load.") })}</p>
+        <div className="fi-dialog-actions"><button type="button" className="fi-secondary" data-autofocus onClick={onBack}>{t("Back")}</button></div>
+      </>
+    );
+  const data = setup.data!;
+  if (state === "configured" && data.configured && !replacing)
+    return (
+      <>
+        <OutlookConnectStep setup={data} onReplace={() => setReplacing(true)} />
+        <div className="fi-dialog-actions"><button type="button" className="fi-secondary" onClick={onBack}>{t("Back")}</button></div>
+      </>
+    );
+  return (
+    <>
+      <OutlookSetupWizard setup={data} onSaved={() => { setReplacing(false); onSaved(); }} />
+      <div className="fi-dialog-actions">
+        <button type="button" className="fi-secondary" onClick={replacing ? () => setReplacing(false) : onBack}>{t("Back")}</button>
+        <button type="button" className="fi-secondary" onClick={onClose}>{t("Later")}</button>
       </div>
     </>
   );

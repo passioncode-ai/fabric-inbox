@@ -34,6 +34,7 @@ export async function processRun(
     await save();
     return run;
   }
+  run.attempts = (run.attempts ?? 0) + 1;
   if (!(await deps.start(run))) return run;
   run.status = "running";
   let email: RuleEmail;

@@ -6,79 +6,79 @@
 
 | ID | Title | Feature | Persona | Traces | Status | Last audit |
 |---|---|---|---|---|---|---|
-| SCN-001 | Start the desktop app | Resume and manage preferences | P-01 | ST-007, FLW-07 | validated | not audited |
-| SCN-002 | Connect a supported provider | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
-| SCN-003 | Handle unsupported or revoked accounts | Connect an account | P-01 | ST-001, FLW-01 | draft | not audited |
-| SCN-004 | Read all accounts and one account | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-005 | Search and recover an empty result | Find and handle a conversation | P-01 | ST-002, FLW-02 | draft | not audited |
-| SCN-006 | Compose and save a draft | Write and send mail | P-01 | ST-003, FLW-03 | validated | not audited |
-| SCN-007 | Send from the chosen identity | Write and send mail | P-01 | ST-003, FLW-03 | validated | not audited |
-| SCN-008 | Reply to a thread | Write and send mail | P-01 | ST-003, FLW-03 | validated | not audited |
-| SCN-009 | Forward with attachments | Write and send mail | P-01 | ST-003, FLW-03 | validated | not audited |
-| SCN-010 | Read and download an attachment | Find and handle a conversation | P-01 | ST-002, FLW-02 | draft | not audited |
-| SCN-011 | Organize a message | Find and handle a conversation | P-01 | ST-002, FLW-02 | draft | not audited |
-| SCN-012 | Change mail settings | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
-| SCN-013 | Ask AI for an explanation or draft | Review AI help | P-01 | ST-004, FLW-04 | validated | not audited |
-| SCN-014 | Dry-run a rule | Set up a rule | P-01 | ST-005, FLW-05 | validated | not audited |
-| SCN-015 | Enable and pause a rule | Set up a rule | P-01 | ST-005, FLW-05 | validated | not audited |
-| SCN-016 | Inspect cloud run history | Inspect and control a run | P-01 | ST-006, FLW-06 | validated | not audited |
-| SCN-017 | Resolve an action approval | Inspect and control a run | P-01 | ST-006, FLW-06 | draft | not audited |
-| SCN-018 | Wait for a local tool or denied tool | Inspect and control a run | P-01 | ST-006, FLW-06 | draft | not audited |
-| SCN-019 | Resume offline or after restart | Resume and manage preferences | P-01 | ST-007, FLW-07 | validated | not audited |
-| SCN-020 | Resolve an unknown action outcome | Inspect and control a run | P-01 | ST-006, FLW-06 | draft | not audited |
-| SCN-021 | Connect a project address | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
-| SCN-022 | Create a reusable agent | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
-| SCN-023 | Put one agent on several addresses | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
-| SCN-024 | Agent answers within its policy | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
-| SCN-025 | Mail to an address with no mailbox | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
-| SCN-026 | See what matters first across accounts | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-027 | Open one group of automated mail | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-028 | First run with a ready setup | Resume and manage preferences | P-01 | ST-007, FLW-07 | validated | not audited |
-| SCN-029 | Bring existing Cloudflare addresses in | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | not audited |
-| SCN-030 | Create my server from the app | Resume and manage preferences | P-01 | ST-007, FLW-07 | validated | not audited |
-| SCN-031 | Receive a domain's mail here | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | not audited |
-| SCN-032 | Add or remove an address on a domain | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | not audited |
-| SCN-033 | Keep copies and unknown addresses somewhere | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | not audited |
-| SCN-034 | Give an agent a knowledge collection | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | not audited |
-| SCN-035 | An agent answers from its collections only | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | not audited |
-| SCN-036 | Keep a category of the mail that matters | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-037 | See one project's mail in one place | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-038 | Raise a category's mail to Important | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-039 | Spam stays out of the inbox | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-040 | Report spam, or bring a message back | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-041 | Keep the spam rules | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-042 | List only the addresses that matter | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-043 | Give an outside agent a key | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
-| SCN-044 | See what agents changed, and revoke a key | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
-| SCN-045 | Choose which Cloudflare accounts show | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | not audited |
-| SCN-046 | Connect another Cloudflare account | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | not audited |
-| SCN-047 | Connect a hub on this Mac by allowing it | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
-| SCN-048 | Turn the anonymous usage counts off or on | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
-| SCN-049 | The app keeps itself up to date | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
-| SCN-050 | Remove or reinstall the app and lose nothing | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not audited |
-| SCN-051 | Set up Gmail on my server | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
-| SCN-052 | Connect Gmail with an app password | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
-| SCN-053 | Connect another mail account with an app password | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
-| SCN-054 | Give an IMAP account a new app password | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
-| SCN-055 | Disconnect an IMAP account | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
-| SCN-056 | An IMAP connection is refused | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
-| SCN-057 | Set up Outlook on my server | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
-| SCN-058 | Connect an Outlook or Microsoft 365 account | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
-| SCN-059 | My organization's administrator must allow Fabric Inbox | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
-| SCN-060 | An Outlook account needs a reconnect or a new client secret | Connect an account | P-01 | ST-001, FLW-01 | validated | not audited |
-| SCN-061 | Check an address before creating it | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
-| SCN-062 | Create an address and watch it receive | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
-| SCN-063 | Create an address on a domain that does not receive here yet | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
-| SCN-064 | Create several addresses at once | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
-| SCN-065 | An address whose rule could not be made | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
-| SCN-066 | An agent creates addresses | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | not audited |
-| SCN-070 | See how fresh the mail is, and check now | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-071 | Archive or discard from the keyboard, and undo | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-072 | Discard a message and stop mail like it | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-073 | Mail like discarded mail goes to Discarded on arrival | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-074 | Bring a discarded message back | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-075 | Keep the discard rules | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | not audited |
-| SCN-076 | Use the app in Russian or English | Resume and manage preferences | P-01 | ST-007, FLW-07 | validated | not audited |
+| SCN-001 | Start the desktop app | Resume and manage preferences | P-01 | ST-007, FLW-07 | validated | 2026-10-07 PARTIAL |
+| SCN-002 | Connect a supported provider | Connect an account | P-01 | ST-001, FLW-01 | validated | 2026-10-07 PASS |
+| SCN-003 | Handle unsupported or revoked accounts | Connect an account | P-01 | ST-001, FLW-01 | draft | 2026-10-07 PASS |
+| SCN-004 | Read all accounts and one account | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PASS |
+| SCN-005 | Search and recover an empty result | Find and handle a conversation | P-01 | ST-002, FLW-02 | draft | 2026-10-07 PARTIAL |
+| SCN-006 | Compose and save a draft | Write and send mail | P-01 | ST-003, FLW-03 | validated | 2026-10-07 PASS |
+| SCN-007 | Send from the chosen identity | Write and send mail | P-01 | ST-003, FLW-03 | validated | 2026-10-07 PASS |
+| SCN-008 | Reply to a thread | Write and send mail | P-01 | ST-003, FLW-03 | validated | 2026-10-07 PARTIAL |
+| SCN-009 | Forward with attachments | Write and send mail | P-01 | ST-003, FLW-03 | validated | 2026-10-07 PASS |
+| SCN-010 | Read and download an attachment | Find and handle a conversation | P-01 | ST-002, FLW-02 | draft | 2026-10-07 PARTIAL |
+| SCN-011 | Organize a message | Find and handle a conversation | P-01 | ST-002, FLW-02 | draft | 2026-10-07 PASS |
+| SCN-012 | Change mail settings | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | 2026-10-07 PARTIAL |
+| SCN-013 | Ask AI for an explanation or draft | Review AI help | P-01 | ST-004, FLW-04 | validated | 2026-10-07 PARTIAL |
+| SCN-014 | Dry-run a rule | Set up a rule | P-01 | ST-005, FLW-05 | validated | 2026-10-07 PARTIAL |
+| SCN-015 | Enable and pause a rule | Set up a rule | P-01 | ST-005, FLW-05 | validated | 2026-10-07 PARTIAL |
+| SCN-016 | Inspect cloud run history | Inspect and control a run | P-01 | ST-006, FLW-06 | validated | 2026-10-07 PARTIAL |
+| SCN-017 | Resolve an action approval | Inspect and control a run | P-01 | ST-006, FLW-06 | draft | 2026-10-07 PASS |
+| SCN-018 | Wait for a local tool or denied tool | Inspect and control a run | P-01 | ST-006, FLW-06 | draft | 2026-10-07 PARTIAL |
+| SCN-019 | Resume offline or after restart | Resume and manage preferences | P-01 | ST-007, FLW-07 | validated | 2026-10-07 PARTIAL |
+| SCN-020 | Resolve an unknown action outcome | Inspect and control a run | P-01 | ST-006, FLW-06 | draft | 2026-10-07 PARTIAL |
+| SCN-021 | Connect a project address | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | 2026-10-07 PASS |
+| SCN-022 | Create a reusable agent | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | 2026-10-07 PARTIAL |
+| SCN-023 | Put one agent on several addresses | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | 2026-10-07 PASS |
+| SCN-024 | Agent answers within its policy | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | 2026-10-07 PASS |
+| SCN-025 | Mail to an address with no mailbox | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | 2026-10-07 PASS |
+| SCN-026 | See what matters first across accounts | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PARTIAL |
+| SCN-027 | Open one group of automated mail | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PASS |
+| SCN-028 | First run with a ready setup | Resume and manage preferences | P-01 | ST-007, FLW-07 | validated | 2026-10-07 PARTIAL |
+| SCN-029 | Bring existing Cloudflare addresses in | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | 2026-10-07 PASS |
+| SCN-030 | Create my server from the app | Resume and manage preferences | P-01 | ST-007, FLW-07 | validated | 2026-10-07 PARTIAL |
+| SCN-031 | Receive a domain's mail here | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | 2026-10-07 PASS |
+| SCN-032 | Add or remove an address on a domain | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | 2026-10-07 PASS |
+| SCN-033 | Keep copies and unknown addresses somewhere | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | 2026-10-07 PASS |
+| SCN-034 | Give an agent a knowledge collection | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | 2026-10-07 PASS |
+| SCN-035 | An agent answers from its collections only | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | 2026-10-07 PASS |
+| SCN-036 | Keep a category of the mail that matters | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PASS |
+| SCN-037 | See one project's mail in one place | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PASS |
+| SCN-038 | Raise a category's mail to Important | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PASS |
+| SCN-039 | Spam stays out of the inbox | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PARTIAL |
+| SCN-040 | Report spam, or bring a message back | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PARTIAL |
+| SCN-041 | Keep the spam rules | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PARTIAL |
+| SCN-042 | List only the addresses that matter | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PARTIAL |
+| SCN-043 | Give an outside agent a key | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | 2026-10-07 PASS |
+| SCN-044 | See what agents changed, and revoke a key | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | 2026-10-07 PASS |
+| SCN-045 | Choose which Cloudflare accounts show | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | 2026-10-07 PASS |
+| SCN-046 | Connect another Cloudflare account | Put an agent on a project address | P-01 | ST-008, FLW-08 | validated | 2026-10-07 PASS |
+| SCN-047 | Connect a hub on this Mac by allowing it | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | 2026-10-07 PASS |
+| SCN-048 | Turn the anonymous usage counts off or on | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | 2026-10-07 PASS |
+| SCN-049 | The app keeps itself up to date | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | 2026-10-07 PASS |
+| SCN-050 | Remove or reinstall the app and lose nothing | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | 2026-10-07 PASS |
+| SCN-051 | Set up Gmail on my server | Connect an account | P-01 | ST-001, FLW-01 | validated | 2026-10-07 PASS |
+| SCN-052 | Connect Gmail with an app password | Connect an account | P-01 | ST-001, FLW-01 | validated | 2026-10-07 PASS |
+| SCN-053 | Connect another mail account with an app password | Connect an account | P-01 | ST-001, FLW-01 | validated | 2026-10-07 PARTIAL |
+| SCN-054 | Give an IMAP account a new app password | Connect an account | P-01 | ST-001, FLW-01 | validated | 2026-10-07 PASS |
+| SCN-055 | Disconnect an IMAP account | Connect an account | P-01 | ST-001, FLW-01 | validated | 2026-10-07 PASS |
+| SCN-056 | An IMAP connection is refused | Connect an account | P-01 | ST-001, FLW-01 | validated | 2026-10-07 PARTIAL |
+| SCN-057 | Set up Outlook on my server | Connect an account | P-01 | ST-001, FLW-01 | validated | 2026-10-07 PASS |
+| SCN-058 | Connect an Outlook or Microsoft 365 account | Connect an account | P-01 | ST-001, FLW-01 | validated | 2026-10-07 PASS |
+| SCN-059 | My organization's administrator must allow Fabric Inbox | Connect an account | P-01 | ST-001, FLW-01 | validated | 2026-10-07 PASS |
+| SCN-060 | An Outlook account needs a reconnect or a new client secret | Connect an account | P-01 | ST-001, FLW-01 | validated | 2026-10-07 PASS |
+| SCN-061 | Check an address before creating it | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | 2026-10-07 PASS |
+| SCN-062 | Create an address and watch it receive | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | 2026-10-07 PASS |
+| SCN-063 | Create an address on a domain that does not receive here yet | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | 2026-10-07 PASS |
+| SCN-064 | Create several addresses at once | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | 2026-10-07 PASS |
+| SCN-065 | An address whose rule could not be made | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | 2026-10-07 PARTIAL |
+| SCN-066 | An agent creates addresses | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | 2026-10-07 PASS |
+| SCN-070 | See how fresh the mail is, and check now | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PASS |
+| SCN-071 | Archive or discard from the keyboard, and undo | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PASS |
+| SCN-072 | Discard a message and stop mail like it | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PASS |
+| SCN-073 | Mail like discarded mail goes to Discarded on arrival | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PASS |
+| SCN-074 | Bring a discarded message back | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PASS |
+| SCN-075 | Keep the discard rules | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PARTIAL |
+| SCN-076 | Use the app in Russian or English | Resume and manage preferences | P-01 | ST-007, FLW-07 | validated | 2026-10-07 PASS |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -125,7 +125,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Refinement (2026-10-06, mail refresh):** A connected Gmail account syncs at once, not a poll interval later. Its sidebar row says "importing 40%" (or "importing" until Gmail reports the mailbox size) while older mail is imported; new mail already arrives during the import. Only a revoked grant asks for a reconnect; Gmail being down or refusing one request waits and retries (60 s doubling to 15 min). Evidence: `tests/gmail-scheduler.test.ts` ("a new connection syncs now…"), `tests/feed-freshness.test.ts` ("a Gmail account importing says so…"), `tests/gmail-sync.test.ts` (P2-9 tests).
 - **Audit refinement (2026-09-28):** Until the account list loads, Accounts shows "Checking Gmail setup…" instead of claiming Gmail is not configured; a failed load says setup is unknown beside the Retry alert. Evidence: `tests/frontend-states.test.ts` ("Gmail is only called 'not configured'…").
 - **Status:** validated
-- **Coverage:** app/components/settings/sections/AccountsSection.tsx, app/components/settings/sections/GmailSetup.tsx, app/lib/account-status.ts, workers/routes/accounts.ts, workers/gmail-setup/result-page.ts, desktop/main.cjs:151; workers/providers/gmail-scheduler.ts (`connected`); app/components/inbox/AccountSidebar.tsx (`syncLabel`)
+- **Coverage:** app/components/settings/sections/AccountsSection.tsx, app/components/settings/sections/GmailSetup.tsx, app/lib/account-status.ts, workers/routes/accounts.ts, workers/gmail-setup/result-page.ts; workers/providers/gmail-scheduler.ts (`connected`); app/components/inbox/AccountSidebar.tsx (`syncLabel`)
 - **Product:** unobserved
 - **Today:** Partial. Accounts lists Gmail and Cloudflare separately; the configured Gmail link starts at the server in a browser. The not_configured state was reported from the running app (RE-006). No real OAuth grant, mailbox synchronization or send acceptance was performed. Outlook/IMAP are explicitly unavailable.
 
@@ -167,7 +167,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** validated
 - **Coverage:** app/routes/unified-inbox.tsx (`UnifiedInbox`, `scope`, detail query, `checkForMail`, head query); app/components/inbox/model.ts (`messagePath`); workers/routes/inbox.ts (`/api/inbox/refresh`); app/lib/mail-refresh.ts; workers/providers/gmail-cache.ts
 - **Product:** unobserved
-- **Today:** Partial. The unified workbench shows all-account mail with source labels and filters one account in place through URL scope. Root observed three synthetic accounts, six messages and a one-account view with two messages (RE-009). Detail queries retain account and provider message identity. Individual-message reading exists; full threads, real multi-account synchronization and live account acceptance remain unverified.
+- **Today:** Partial. The unified workbench shows all-account mail with source labels and filters one account in place through URL scope. Root observed three synthetic accounts, six messages and a one-account view with two messages (RE-009). Detail queries retain account and provider message identity. Individual-message reading exists; full threads, real multi-account synchronization and live account acceptance remain unverified. UI walk 2026-10-08: Cloudflare rows show the sender's name beside the address (`sender_name`, migration 19; older rows read their stored From header — `shared/mail/sender.ts`, `tests/sender-display.test.ts`), and the reader names Cc and shows the external-images notice only when the message has remote content (`app/lib/mail-content.ts`); a short address list shows no dead collapse control.
 
 ### SCN-005: Search and recover an empty result
 - **Persona:** P-01
@@ -185,9 +185,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Errors & recovery:** Search failure retains the query and offers retry; cached results are marked stale.
 - **Audit refinement (2026-09-28):** In a Cloudflare mailbox, a failed search shows "Search failed" with Retry (role="alert") instead of "No results found"; a failed refresh over shown results is a one-line Retry bar.
 - **Status:** draft
-- **Coverage:** app/routes/unified-inbox.tsx (`scope`, list query, search form); app/routes/search-results.tsx; app/components/LoadError.tsx; workers/routes/inbox.ts
+- **Coverage:** app/routes/unified-inbox.tsx (`scope`, list query, search form); app/routes/search-results.tsx; app/components/LoadError.tsx; workers/routes/inbox.ts; tests/c2-frontend.test.ts (search failure, failed refresh with results shown, no match, partial answer: AUD-B6-02)
 - **Product:** unobserved
-- **Today:** Partial. Search cached mail retains account/folder scope in the URL, distinguishes no matches from no accounts or failed load, and offers Clear search. Load older messages follows the API cursor. Search covers cached provider data, not all provider history or offline desktop mail. Live search completeness and stale-result labeling remain unverified.
+- **Today:** Partial. Search cached mail retains account/folder scope in the URL, distinguishes no matches from no accounts or failed load, and offers Clear search. Load older messages follows the API cursor. A failed refresh over shown results — in the unified inbox as in a Cloudflare mailbox's search — keeps the list and offers a one-line Retry bar instead of replacing it with the full error panel (`tests/mail-refresh.test.ts`). Search covers cached provider data, not all provider history or offline desktop mail. Live search completeness and stale-result labeling remain unverified. UI walk 2026-10-08: Cloudflare search folded ASCII only, so "привет" never found "Привет"; a query with other letters now also matches its lower, capitalised and upper forms (`searchVariants`, `workers/lib/inbox-query.ts`).
 
 ### SCN-006: Compose and save a draft
 - **Persona:** P-01
@@ -210,7 +210,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** validated
 - **Coverage:** app/components/inbox/server-drafts.ts; app/components/inbox/use-drafts.ts; app/components/inbox/draft-store.ts; app/components/inbox/DraftsDialog.tsx; workers/lib/mailbox-drafts.ts; tests/server-drafts-sync.test.ts; tests/server-drafts.test.ts; tests/gmail-drafts.test.ts; tests/inbox-drafts.test.ts
 - **Product:** unobserved
-- **Today:** Partial. Drafts are saved to their account's server under a revision and listed across accounts with agents' drafts; the device copy keeps typing safe offline and after a crash, and a conflicting change elsewhere is reported, not overwritten (`tests/server-drafts-sync.test.ts`, `tests/server-drafts.test.ts`, `tests/gmail-drafts.test.ts`). A Gmail draft waits on the device until it has a valid recipient. No live provider round trip or second-device reopen was observed in this change.
+- **Today:** Partial. Drafts are saved to their account's server under a revision and listed across accounts with agents' drafts; the device copy keeps typing safe offline and after a crash, and a conflicting change elsewhere is reported, not overwritten (`tests/server-drafts-sync.test.ts`, `tests/server-drafts.test.ts`, `tests/gmail-drafts.test.ts`). A Gmail draft waits on the device until it has a valid recipient. Once the draft is on the server the sender can no longer be changed, and the composer says so in a muted line beside From (`tests/attachment-composer.test.ts`). No live provider round trip or second-device reopen was observed in this change.
 
 
 ### SCN-007: Send from the chosen identity
@@ -231,7 +231,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** validated
 - **Coverage:** app/components/inbox/Composer.tsx (`send`); app/components/inbox/send-state.ts (`sendRecovery`); app/components/inbox/server-drafts.ts (`sendSavedDraft`); workers/durableObject/index.ts (`sendDraft`)
 - **Product:** unobserved
-- **Today:** Partial. Compose requires an explicit sender, saves the draft to the server, saves a locked attempt, then sends the server's draft as it is (one signature, the mailbox's display name) and reports accepted only after provider acceptance; the draft leaves Drafts once accepted, and a change made elsewhere just before sending stops the send with nothing sent. An uncertain attempt locks its fields and exposes Retry same attempt with the same recovery key; a later request refusal alone cannot unlock an earlier uncertain send. No actual provider send or recipient delivery was exercised.
+- **Today:** Partial. Compose requires an explicit sender, saves the draft to the server, saves a locked attempt, then sends the server's draft as it is (one signature, the mailbox's display name) and reports accepted only after provider acceptance; the draft leaves Drafts once accepted, and a change made elsewhere just before sending stops the send with nothing sent. An uncertain attempt locks its fields and exposes Retry same attempt with the same recovery key; a later request refusal alone cannot unlock an earlier uncertain send. While a send is in flight the button reads Sending…, and a validation failure moves focus to the recipient field that failed (To/Cc/Bcc) or to the alert itself (`tests/attachment-composer.test.ts`). No actual provider send or recipient delivery was exercised.
 
 ### SCN-008: Reply to a thread
 - **Persona:** P-01
@@ -248,9 +248,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Unsupported reply is explicitly unavailable; failed transport keeps the draft.
 - **Status:** validated
-- **Coverage:** app/routes/unified-inbox.tsx (`compose`); app/components/inbox/Composer.tsx (`send`, From selector); app/components/inbox/send-state.ts (`replyRecipient`)
+- **Coverage:** app/routes/unified-inbox.tsx (`compose`); app/components/inbox/Composer.tsx (`send`, From selector); app/components/inbox/send-state.ts (`replyRecipient`, `replyAllRecipients`)
 - **Product:** unobserved
-- **Today:** Partial. Reply prepares recipients from the selected message, keeps its account fixed and retains Gmail thread/message references. Replying to a sent message selects its original recipient. Reply all and complete-thread continuity remain open; no live reply acceptance is claimed.
+- **Today:** Partial. Reply prepares recipients from the selected message, keeps its account fixed and retains Gmail thread/message references. Replying to a sent message selects its original recipient. Reply all seeds To with the sender and the other original recipients and Cc with the other copied addresses, each address once and never the account itself, and is not offered when the account is the only participant (`tests/inbox-ui.test.ts`). Complete-thread continuity remains open; no live reply acceptance is claimed. UI walk 2026-10-08: Reply all is offered only when it reaches someone besides the sender (`offersReplyAll`, `tests/inbox-ui.test.ts`).
 
 ### SCN-009: Forward with attachments
 - **Persona:** P-01
@@ -289,7 +289,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** draft
 - **Coverage:** app/routes/unified-inbox.tsx (`download`, attachment controls); app/components/inbox/model.ts (`messagePath`); desktop/main.cjs:82
 - **Product:** unobserved
-- **Today:** Partial. Attachment controls request content through the selected account/provider message path and initiate a download; Electron asks for a save location. No real provider attachment or desktop download was exercised. Offline attachment availability is absent.
+- **Today:** Partial. Attachment controls request content through the selected account/provider message path and initiate a download; Electron asks for a save location. While a download is in flight its button reads Downloading… (role="status"), and a failed Cloudflare download names the file (`tests/inbox-ui.test.ts`). No real provider attachment or desktop download was exercised. Offline attachment availability is absent.
 
 ### SCN-011: Organize a message
 - **Persona:** P-01
@@ -351,9 +351,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Errors & recovery:** Model failure offers retry without sending; mail instructions do not expand permissions.
 - **Audit refinement (2026-09-28):** The chat agent's Markdown never renders images: Markdown image syntax becomes a visible "Image: alt (host)" link, so a hostile email cannot make a reply fetch an attacker URL on display. Evidence: `tests/agent-markdown.test.ts`.
 - **Status:** validated
-- **Coverage:** app/components/AgentPanel.tsx:296, app/components/AgentMarkdown.tsx, workers/automation/index.ts:180, app/routes/automation.tsx:433
+- **Coverage:** app/routes/unified-inbox.tsx:953 (header toggle), :1457 (`AgentDock` mount), :435 (`agentAccount`), :443 (`openAgentSource`), :450 (`editAgentDraft`), :657 (keys typed in the panel never act on mail); app/components/inbox/AgentDock.tsx:48; app/components/agent-chat.ts (`agentAccount`, `sourcesOf`, `draftOf`, `retryTurn`); app/components/AgentPanel.tsx:147 (`SourceLinks`), :185 (`ChatErrorBubble`), :447; app/components/AgentMarkdown.tsx, workers/automation/index.ts:180, app/routes/automation.tsx:433. Tests: tests/agent-panel.test.ts, tests/agent-markdown.test.ts
 - **Product:** unobserved
-- **Today:** Partial. Existing Cloudflare AI surface remains and rule analysis/draft output is rendered in history. Gmail has no equivalent interactive thread AI panel in its current view. No live model response, source-link completeness or editable-draft handoff was observed.
+- **Today:** Partial. The unified inbox has an AI panel behind a header toggle (`aria-expanded`), closed until opened: a fourth column on windows 1400 px and wider, a modal sheet that keeps focus and closes on Esc below that (B11-01, 2026-10-08). It reads one Cloudflare address and says which — the open message's, else the one picked in the panel, else the view's; a Gmail, Outlook or IMAP message is named as not readable by it. With a message open on that address, the first suggested prompts explain it or draft a reply. A failed model turn shows an error bubble whose Retry sends the last prompt again (B11-02); the messages an answer read are listed under it and open in the reader (B11-03, at most five, the rest counted); a saved draft opens in the composer from the server, nothing is sent. Rule analysis/draft output is rendered in history. Not yet observed against a live model.
 
 ### SCN-014: Dry-run a rule
 - **Persona:** P-01
@@ -370,9 +370,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Unknown destination, missing grant or tool schema blocks enable; dry-run failure preserves rule input.
 - **Status:** validated
-- **Coverage:** app/routes/automation.tsx:168, app/routes/automation.tsx:390, workers/automation/index.ts:206
+- **Coverage:** app/routes/automation.tsx:243, app/routes/automation.tsx:504, workers/automation/index.ts:212; tests/c2-automation.test.ts (dry-run returns executed:false with no mailbox, outbox, run, counter or network effect: AUD-B11-05)
 - **Product:** unobserved
-- **Today:** Partial. Rule fields and dry-run JSON preview are wired; preview text states no mail mutation. The save/enable control does not require a completed dry-run, so the target pre-enable review constraint is not fully met. Live AI/tool preview acceptance remains open.
+- **Today:** Partial. Rule fields and dry-run JSON preview are wired; preview text states no mail mutation, and a successful dry-run of the current form values is what unlocks Enable. Live AI/tool preview acceptance remains open. UI walk 2026-10-08: the gate had made Enable depend on typing an internal message id; the editor now offers this account's 20 newest inbox messages by sender and subject (newest preselected, a typed id only when the list cannot be read) and says the result in a sentence with the JSON under Details (`feedAccount`, `previewLabel`, `dryRunSentence`, `tests/automation-ui.test.ts`).
 
 ### SCN-015: Enable and pause a rule
 - **Persona:** P-01
@@ -389,9 +389,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Save or pause failure reports the last confirmed state; editing grants requires a new reviewed version.
 - **Status:** validated
-- **Coverage:** app/routes/automation.tsx:121, app/routes/automation.tsx:372, workers/automation/engine.ts:29, tests/automation-integration.test.ts:196
+- **Coverage:** app/routes/automation.tsx:464, app/routes/automation.tsx:519, workers/automation/engine.ts:29, tests/automation-integration.test.ts:196
 - **Product:** unobserved
-- **Today:** Partial. Enable/pause controls and durable version checks exist. The local workerd pause test verifies an approved pending action is cancelled before a synthetic mailbox mutation (RE-005). Continuous deployed execution with a Mac off is not observed.
+- **Today:** Partial. Enable/pause controls and durable version checks exist, and the row and editor show the rule version. Enable stays locked until a dry-run of the current form values succeeds, and any edit re-locks it; pausing or saving an unchanged enabled rule needs no dry-run (UI gate; the server does not yet refuse an enable without one). The local workerd pause test verifies an approved pending action is cancelled before a synthetic mailbox mutation (RE-005). Continuous deployed execution with a Mac off is not observed.
 
 ### SCN-016: Inspect cloud run history
 - **Persona:** P-01
@@ -408,9 +408,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** History failure offers retry, not an empty success list; unavailable cost is labeled unavailable.
 - **Status:** validated
-- **Coverage:** app/routes/automation.tsx:433, workers/automation/index.ts:60, tests/automation-integration.test.ts:239
+- **Coverage:** app/routes/automation.tsx:540, workers/automation/index.ts:62, tests/automation-integration.test.ts:239
 - **Product:** unobserved
-- **Today:** Partial. Recent runs show status, action destination, analysis and detail; Cloudflare also shows outbox states. Rule version, full source link, attempt and cost fields are not all surfaced. Workerd restart recovery is locally tested, not proof of production cloud history.
+- **Today:** Partial. Recent runs show status, action destination, analysis and detail; Cloudflare also shows outbox states. Each run card now shows the rule version, the attempt count and an explicit "cost unavailable" label, and the list has a loading branch. A full source link is still missing. Workerd restart recovery is locally tested, not proof of production cloud history.
 
 ### SCN-017: Resolve an action approval
 - **Persona:** P-01
@@ -446,7 +446,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Timeout remains failed or unknown according to evidence; no fallback tool silently receives data.
 - **Status:** draft
-- **Coverage:** workers/automation/engine.ts:77, workers/automation/mcp.ts:5, app/routes/automation.tsx:433
+- **Coverage:** workers/automation/engine.ts:77, workers/automation/mcp.ts:5, app/routes/automation.tsx:433; tests/c2-automation.test.ts (waiting_device calls nothing, is not retried and can be cancelled; a tool timeout ends unknown and is not retried: AUD-B11-11)
 - **Product:** unobserved
 - **Today:** Partial. Engine names waiting_device, while the UI currently configures cloud tools only. No local runner exists, so reconnect cannot fulfill this scenario. Cloud tool host/credential checks exist; no real permitted/denied/timeout tool acceptance is recorded.
 
@@ -467,7 +467,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Errors & recovery:** Expired session offers sign-in; unavailable attachment remains unavailable; unsaved content is never claimed durable.
 - **Refinement (2026-10-06, mail refresh):** After the Mac wakes from sleep the open mail window reads new mail at once (the desktop app's `powerMonitor` resume, sent only to the mail window). A page older than an updated server shows "A new version of Fabric Inbox is on the server. Reload to update"; a page whose code can no longer be fetched after an update reloads once by itself. Evidence: `tests/desktop-policy.test.ts` (bridge IPC list, resume), `tests/build-version.test.ts`.
 - **Status:** validated
-- **Coverage:** desktop/main.cjs:90, desktop/setup.html:27, app/routes/gmail-inbox.tsx:41; desktop/mail-preload.cjs (`onResume`); app/lib/build-version.ts; app/root.tsx (`UpdateNotice`)
+- **Coverage:** desktop/main.cjs:90, desktop/setup.html:27, app/routes/gmail-inbox.tsx:41; desktop/mail-preload.cjs (`onResume`); app/lib/build-version.ts; app/root.tsx (`UpdateNotice`); app/lib/gmail-draft.ts (`restoreGmailDraft`, `keepGmailDraft`); tests/c2-frontend.test.ts (draft and locked attempt restored per account; unreadable entry refused: AUD-B1-04)
 - **Product:** unobserved
 - **Today:** Partial. Native connection-refused/retry behavior and session partition restart were observed. Gmail localStorage draft/recovery code now exists, but no runtime draft-restoration receipt is recorded. There is no offline mailbox cache or bundled renderer to read it; this original requirement remains open.
 
@@ -486,9 +486,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Only a proven non-executed action may be retried; unresolved outcome retains history and a review path.
 - **Status:** draft
-- **Coverage:** app/routes/gmail-inbox.tsx:141, app/routes/gmail-inbox.tsx:193, workers/automation/index.ts:29, tests/automation-integration.test.ts:239
+- **Coverage:** app/routes/gmail-inbox.tsx:141, app/routes/gmail-inbox.tsx:193, workers/automation/index.ts:29, tests/automation-integration.test.ts:239; app/routes/automation.tsx (`runCheckable`, Check status on the run card); workers/automation/index.ts (`checkRun`, POST /api/automation/:account/runs/:id/check); workers/durableObject/index.ts (`outboxByKey`); workers/mcp/tools.ts (`check_rule_run`); tests/automation-check.test.ts
 - **Product:** unobserved
-- **Today:** Partial. Gmail unknown sends stay locked for status inspection; interrupted automation runs become unknown. Local workerd restart test verifies no automatic replay of an uncertain synthetic effect. Manual provider reconciliation and safe retry after proof of non-execution are not fully implemented/verified.
+- **Today:** Partial. Gmail unknown sends stay locked for status inspection; interrupted automation runs become unknown, and a local workerd restart test verifies no automatic replay of an uncertain synthetic effect. An unknown run's card shows its uncertainty, attempts and when it was last checked, with Check status (agents: `check_rule_run`): the check reads the record the action left under its own key — the Cloudflare outbox entry or saved draft, the Gmail/IMAP/Outlook send or draft receipt, the Cloudflare message's folder or read flag — and never repeats the action. Proven done becomes succeeded; proven not done becomes failed (the only state in which doing it again by hand is safe); anything else stays unknown with what was found. A Gmail/IMAP/Outlook archive or mark read can only be proven done from the server's synced copy, never not done; a tool call (MCP) leaves no receipt and is named as uncheckable on the card, with no button (`tests/automation-check.test.ts`). The run is not retried from the card; real provider receipts were not exercised.
 
 **Telemetry:** none declared; no analytics implementation or production signal is asserted.
 
@@ -565,7 +565,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   3. When it does not -> a draft waits for approval with the reason it was not sent.
 - **Expected result:** Routine mail is answered without the operator; everything outside the policy reaches the operator as a draft with its reason.
 - **Alt paths:** No-reply, bulk and automated senders are recorded as skipped; a thread the operator already answered is not answered again. One message sent to several agent addresses is answered once, from the first agent address in To (else the first in Cc, a Bcc copy last); every other copy is recorded as skipped with "Duplicate: answered from <address>".
-- **UI elements:** SCR-08; named actions and fields in the steps; visible state and recovery control.
+- **UI elements:** SCR-10 Recent answers (the current surface; SCR-08 run history remains the designed surface); named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A model or tool failure produces a draft or an unknown outcome, never a guessed send; a send whose acceptance is unknown is not repeated automatically; text in the mail cannot widen the grants of the agent.
 - **Status:** draft
@@ -588,9 +588,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** If neither rejecting nor storing is possible, the failure is logged with the recipient and time.
 - **Status:** draft
-- **Coverage:** workers/index.ts (resolveRecipient), app/components/settings/sections/DomainsSection.tsx (unknown recipients), tests/incoming-routing.test.ts, tests/project-addresses.test.ts
+- **Coverage:** workers/index.ts (resolveRecipient), app/components/settings/sections/DomainsSection.tsx (unknown recipients), tests/incoming-routing.test.ts, tests/project-addresses.test.ts, workers/incoming-log.ts, tests/incoming-failure-log.test.ts
 - **Product:** unobserved
-- **Today:** Implemented. Unknown addresses are rejected with "Address not found" or kept in a per-domain catch-all, recorded without sender or body, and listed on **Project addresses** with **Create address** (observed on the local Worker with a synthetic message).
+- **Today:** Implemented. Unknown addresses are rejected with "Address not found" or kept in a per-domain catch-all, recorded without sender or body, and listed on **Project addresses** with **Create address** (observed on the local Worker with a synthetic message). A message nothing could take is logged as one JSON line `incoming_failed` with the envelope recipient, the time, the size and the failure, never the sender, subject or body (2026-10-07, AUD-B12-03).
 
 ### SCN-026: See what matters first across accounts
 - **Persona:** P-01
@@ -608,7 +608,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** An account that fails to load is named above the list and its mail is absent, never shown as read; marking read that fails leaves the message unread and says so.
 - **Status:** validated
-- **Coverage:** shared/mail/triage.ts (triage), workers/lib/inbox-query.ts (mailboxInboxMessage), workers/providers/account-service.ts (listInboxMessages), app/components/inbox/TriagedList.tsx, app/routes/unified-inbox.tsx, tests/triage.test.ts, tests/inbox-integration.test.ts, tests/inbox-ui.test.ts
+- **Coverage:** shared/mail/triage.ts (triage), workers/lib/inbox-query.ts (mailboxInboxMessage), workers/providers/account-service.ts (listInboxMessages), app/components/inbox/TriagedList.tsx, app/routes/unified-inbox.tsx, tests/triage.test.ts, tests/inbox-integration.test.ts, tests/inbox-ui.test.ts, tests/c2-frontend.test.ts (mark-read refusal: Gmail refuses an unconfirmed write, the row goes back to unread with a notice: AUD-B7-01)
 - **Product:** unobserved
 - **Today:** Implemented for Cloudflare mailboxes and Gmail accounts by header and label rules, no model. Sections cover the loaded pages (50 at a time, Load older); personal accounts over IMAP arrive with roadmap L1. Observed with the synthetic fixture in light and dark.
 
@@ -748,7 +748,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** validated
 - **Coverage:** workers/routing/domains.ts, workers/routes/domains.ts, app/components/settings/sections/DestinationsSection.tsx, app/components/settings/sections/DomainsSection.tsx, app/components/settings/sections/AddressesSection.tsx, tests/domains.test.ts
 - **Product:** unobserved
-- **Today:** Built and tested in workerd against a fake Cloudflare. 0.12 (WS7): the copy choice and the catch-all note in Add address.
+- **Today:** Built and tested in workerd against a fake Cloudflare. 0.12 (WS7): the copy choice and the catch-all note in Add address. Live 2026-10-08: no copy had left any Cloudflare address since 0.8.2 — the delivery retry wrapper copied the runtime message with a spread, which drops `forward` and `setReject` from its prototype, so every copy was recorded as "only possible for mail arriving through Email Routing" (j1@sshlg.me: 5 failures) and an unknown address could not be refused. `replayEvent` (`workers/index.ts`) carries both, bound to the message; `tests/incoming-routing.test.ts` drives a prototype-shaped message through `handleIncomingEmail` and fails without the fix. Reaches the owner's server only with a deploy (it runs 0.9.0).
 
 ### SCN-034: Give an agent a knowledge collection
 - **Persona:** P-01
@@ -867,7 +867,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** If the lists cannot be read the message goes to the inbox; a model that is down or over its budget leaves the message where it is; a Spam that cannot be emptied in some addresses says how many.
 - **Status:** validated
-- **Coverage:** shared/mail/spam.ts, workers/index.ts (spamVerdict), workers/durableObject/index.ts (receiveEmailOnce, purgeSpam), workers/categories/store.ts, app/routes/unified-inbox.tsx (SpamBanner), tests/spam.test.ts, tests/spam-workerd.test.ts
+- **Coverage:** shared/mail/spam.ts, workers/index.ts (spamVerdict), workers/durableObject/index.ts (receiveEmailOnce, purgeSpam), workers/categories/store.ts, app/routes/unified-inbox.tsx (SpamBanner), tests/spam.test.ts, tests/spam-workerd.test.ts, tests/c2-spam-workerd.test.ts (lists unreadable: the message is screened by the model, not blocked; partial Delete all counts the failure), tests/c2-spam.test.ts
 - **Product:** unobserved
 - **Today:** Live on 2026-09-29; the first live verdict was a false positive on an almost empty message, which the model no longer reads.
 
@@ -886,7 +886,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, error, success
 - **Errors & recovery:** A message that is no longer there says so; if the lists cannot be changed the message still moves and the notice says the rule was not saved.
 - **Status:** validated
-- **Coverage:** app/components/inbox/MessageActions.tsx (changeSpam), workers/routes/spam.ts, workers/spam/lists.ts, tests/inbox-ui.test.ts, tests/spam-workerd.test.ts
+- **Coverage:** app/components/inbox/MessageActions.tsx (changeSpam), workers/routes/spam.ts, workers/spam/lists.ts, tests/inbox-ui.test.ts, tests/spam-workerd.test.ts, tests/c2-spam.test.ts (Gmail setSpam swaps INBOX and SPAM both ways, refuses a non-boolean, keeps the cache on a failed write), tests/c2-spam-workerd.test.ts (lists unwritable: the message still moves with `listError`)
 - **Product:** unobserved
 - **Today:** Run on a real message on 2026-09-29, both ways; the list entry was removed afterwards.
 
@@ -905,7 +905,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** An entry that is not an address or a domain is refused with the reason; two changes at once both land.
 - **Status:** validated
-- **Coverage:** app/components/settings/sections/SpamSection.tsx, workers/routes/spam.ts, tests/spam-workerd.test.ts
+- **Coverage:** app/components/settings/sections/SpamSection.tsx, workers/routes/spam.ts, tests/spam-workerd.test.ts, tests/c2-spam-workerd.test.ts (model count unreadable: `model.unavailable`, never zero; unreadable lists 502; lost write 409), tests/c2-spam.test.ts (Today says the count could not be read)
 - **Product:** unobserved
 - **Today:** Built and seen in the installed app on 2026-09-29.
 
@@ -916,18 +916,18 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** SCR-03
 - **Preconditions:** More addresses than the operator reads.
 - **Steps:**
-  1. The sidebar lists addresses with mail, catch-alls and the one open (With mail); "N without mail not listed" says how many are left out. Choosing a domain selects it and folds no other group; only the caret opens or folds one, and a selection is scrolled into view once, not on every refresh.
+  1. The sidebar lists addresses with mail, catch-alls, the one open and any address or account made in the last 7 days, so one just created is there before its first message (With mail); "N without mail not listed" says how many are left out. Choosing a domain selects it and folds no other group; only the caret opens or folds one, and a selection is scrolled into view once, not on every refresh.
   2. Hide them… -> confirm -> the addresses with no mail are hidden; or the eye next to one address hides just it.
   3. Hidden (N) -> open one on its own, or Show again.
 - **Expected result:** The sidebar and All inboxes hold the addresses the operator uses; nothing stops receiving.
-- **Alt paths:** All lists every address again; the choice is remembered on the device, the hidden list on the server.
+- **Alt paths:** All lists every address again; the choice is remembered on the device, the hidden list on the server. Escape cancels the Hide them… confirmation, as it does Spam's Delete all confirmation (`tests/mail-keys.test.ts`).
 - **UI elements:** SCR-03 (With mail / All, the eye on each address, Hide them…, Hidden list, the stuck-mail banner with Retry; + and Add address open Settings → Addresses, Connect Gmail opens Settings → Accounts).
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** A change that cannot be saved says so and changes nothing; mail that reached an address but not its rules, agents or categories is shown with its last error and Retry.
+- **Errors & recovery:** A change that cannot be saved says so and changes nothing; mail that reached an address but not its rules, agents or categories is shown with its last error and Retry. When the server cannot keep or read when an address was made, the address is still made and listed under All; under With mail it waits for its first message.
 - **Status:** validated
-- **Coverage:** app/components/inbox/AccountSidebar.tsx (isOpen, scrolledFor), app/components/inbox/account-groups.ts (sidebarAccounts), tests/settings-ui.test.ts, workers/routes/inbox.ts (hidden, counts), workers/lib/hidden-accounts.ts, tests/inbox.test.ts, tests/inbox-ui.test.ts, tests/spam-workerd.test.ts
+- **Coverage:** app/components/inbox/AccountSidebar.tsx (isOpen, scrolledFor), app/components/inbox/account-groups.ts (sidebarAccounts, isNewAccount), workers/lib/address-created.ts, tests/project-addresses.test.ts (creation time), tests/mcp-workerd.test.ts (list_accounts createdAt), tests/settings-ui.test.ts, workers/routes/inbox.ts (hidden, counts), workers/lib/hidden-accounts.ts, tests/inbox.test.ts, tests/inbox-ui.test.ts, tests/spam-workerd.test.ts, tests/c2-spam-workerd.test.ts (a hide that cannot be saved answers an error and changes nothing; stuck incoming mail revived by Retry reaches its consumers once and the count clears), tests/c2-spam.test.ts (failed-hide and Retry notices, source-read only)
 - **Product:** unobserved
-- **Today:** Built and seen on the owner's server on 2026-09-29 (36 addresses, 8 listed with mail); nothing was hidden there.
+- **Today:** Built and seen on the owner's server on 2026-09-29 (36 addresses, 8 listed with mail); nothing was hidden there. 2026-10-08: j1@sshlg.me, made with create_address, was missing from the sidebar (no mail yet); an address made in the last 7 days is now listed (tests only, not yet seen on the server; addresses made before this change carry no creation time and stay folded).
 
 ### SCN-043: Give an outside agent a key
 - **Persona:** P-01
@@ -947,7 +947,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** draft
 - **Coverage:** app/components/settings/sections/AgentAccessSection.tsx, workers/routes/agent-keys.ts, workers/mcp/access.ts, workers/mcp/scope.ts, tests/mcp-auth.test.ts, tests/mcp-scope.test.ts, tests/mcp-workerd.test.ts, tests/agent-access-ui.test.ts
 - **Product:** unobserved
-- **Today:** Built in 0.7.0; the first live key is made at the release.
+- **Today:** Built in 0.7.0; the first live key is made at the release. A failure the server cannot name reads "… could not be completed: …. Try again." in both languages (2026-10-07, AUD-B2-01, tests/agent-access-ui.test.ts).
 
 ### SCN-044: See what agents changed, and revoke a key
 - **Persona:** P-01
@@ -964,9 +964,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A list that cannot load offers Retry; nothing older says so.
 - **Status:** draft
-- **Coverage:** app/components/settings/sections/AgentAccessSection.tsx, workers/routes/agent-keys.ts, workers/mcp/ledger.ts, tests/mcp-workerd.test.ts
+- **Coverage:** app/components/settings/sections/AgentAccessSection.tsx, workers/routes/agent-keys.ts, workers/mcp/ledger.ts, tests/mcp-workerd.test.ts, tests/agent-access-ui.test.ts
 - **Product:** unobserved
-- **Today:** Built in 0.7.0.
+- **Today:** Built in 0.7.0. The revoke confirmation's cancel reads **Keep** (2026-10-07, AUD-B2-02).
 
 ### SCN-045: Choose which Cloudflare accounts show
 - **Persona:** P-01
@@ -1015,18 +1015,18 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** SCR-15
 - **Preconditions:** The app is set up with its server and signed in; a local hub (Fabric) opens a `fabric-inbox://connect` link with its name, the level it needs, a callback on this Mac and a one-time request id.
 - **Steps:**
-  1. The link opens Fabric Inbox -> a native prompt: "Connect Fabric?", who asks, on which server, the level in plain words, that the key goes only to this Mac (its loopback address) and that it is listed under Agent access; Deny is the default.
+  1. The link opens Fabric Inbox and brings it forward, even from behind another app (the Dock icon bounces until the prompt is answered) -> a native prompt: "Connect Fabric?", who asks, on which server, the level in plain words, that the key goes only to this Mac (its loopback address) and that it is listed under Agent access; Deny is the default.
   2. Allow -> the app makes the key with the owner's own session (the Agent access route) and hands it to the callback once -> "Fabric is connected".
   3. The key appears on SCR-15 under its name like any other key; Revoke… there ends it.
 - **Expected result:** A hub on this Mac gets its own key without anyone copying a Client ID or Secret. Every call the hub makes for one of its agents carries X-Fabric-Accounts, so it reaches only the mailboxes that agent was allowed.
-- **Alt paths:** Deny: nothing is made and the hub hears "denied". No server set up yet: the setup window opens and the hub hears why. The sign-in has lapsed: the mail window opens to sign in, nothing is made, and the person connects again from the hub. A link that is not a valid connect link (a callback off this Mac, an unknown level, no request id) is refused with the reason and nothing is asked.
+- **Alt paths:** Deny: nothing is made and the hub hears "denied". No server set up yet: the setup window opens and the hub hears why. The sign-in has lapsed: the mail window opens to sign in, nothing is made, and the person connects again from the hub. A link that is not a valid connect link (a callback off this Mac, an unknown level, no request id) is refused with the reason and nothing is asked. The hub stops waiting (nothing listens on its callback any more, or another process does): the open prompt closes by itself, nothing is made or sent, no notice is shown, and the next link's prompt follows. Nobody answers for 2 minutes: the prompt closes, nothing is made, and the hub hears "not answered".
 - **UI elements:** Native prompt (Deny, Allow), the "Connected" or "Not connected" notice, SCR-15 key list.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** The hub does not receive the key within 10 seconds: the key is revoked at once and the notice says so (or says to revoke it on SCR-15 if Cloudflare refused); the server refuses to make a key: the notice quotes its reason.
 - **Status:** draft
 - **Coverage:** desktop/connect.cjs, desktop/main.cjs, workers/mcp/scope.ts, workers/mcp/handler.ts, tests/desktop-connect.test.ts, tests/mcp-scope.test.ts, tests/mcp-workerd.test.ts
 - **Product:** unobserved
-- **Today:** Operator, 2026-10-03: "something pops up, you authorise, and it goes on" — the product connects without copying (ADR-0115 in passioncode-ai/fabric).
+- **Today:** Operator, 2026-10-03: "something pops up, you authorise, and it goes on" — the product connects without copying (ADR-0115 in passioncode-ai/fabric). A hub that changed between the question and the delivery (`listener_changed`) has its own notice: the key was made, did not reach the client and was revoked, or must be revoked on SCR-15 (2026-10-07, AUD-B2-03; desktop/main.cjs, tests/desktop-connect.test.ts).
 
 ### SCN-048: Turn the anonymous usage counts off or on
 - **Persona:** P-01
@@ -1083,9 +1083,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** empty, success
 - **Errors & recovery:** A damaged settings copy is ignored like a damaged server.json, and the app asks for the address. Drafts are kept only on the Mac: an uninstaller that removed the app's folder removed them.
 - **Status:** draft
-- **Coverage:** desktop/backup.cjs, desktop/main.cjs, desktop/profile.cjs, tests/desktop-updates.test.ts, tests/desktop-profile.test.ts
+- **Coverage:** desktop/backup.cjs, desktop/main.cjs, desktop/profile.cjs, tests/desktop-updates.test.ts, tests/desktop-profile.test.ts, app/components/settings/sections/AppSection.tsx, tests/settings-ui.test.ts
 - **Product:** unobserved
-- **Today:** Built 2026-10-05 for 0.10.1, which was never published; first published in 0.11.0 (docs/desktop-data-and-updates.md).
+- **Today:** Built 2026-10-05 for 0.10.1, which was never published; first published in 0.11.0 (docs/desktop-data-and-updates.md). Settings → App → Your server says drafts live on this device and an uninstaller that removes the app's data loses them (2026-10-07, AUD-B2-04).
 
 ### SCN-051: Set up Gmail on my server
 - **Persona:** P-01
@@ -1142,11 +1142,11 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Alt paths:** An address of another provider's domain is said before connecting ("This looks like an iCloud Mail address"). Connecting the same address again with a new password keeps the account and its mail. Back returns to the provider cards. A server with no credential key yet offers **Make the key**: the server makes one and saves it in its own settings, the dialog waits until the server uses it (a few seconds) and then shows the connect form; a server without its own Cloudflare token says how to set the key instead (`tests/credential-key.test.ts`).
 - **UI elements:** SCR-02; provider cards; the form (Address, App password, the server fields for Other, Connect, Back); the account panel (Sync, Servers, Open its mail, Rules and history).
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** SCN-056. Nothing is kept until both servers took the password.
+- **Errors & recovery:** SCN-056. Nothing is kept until both servers took the password. Esc, Close or Back with a typed address, app password or server asks "Discard your changes to the new account?" (Keep editing / Discard changes); an untouched form closes at once.
 - **Status:** validated
 - **Coverage:** app/components/settings/sections/ImapAccount.tsx, app/components/settings/sections/AccountsSection.tsx, app/components/settings/sections/providers.ts, shared/mail/imap-presets.ts, workers/providers/imap/connect.ts, workers/providers/imap/provider.ts, workers/providers/account-service.ts, workers/routes/accounts.ts, tests/imap-provider.test.ts, tests/imap-routes.test.ts, tests/imap-connect-ui.test.ts
 - **Product:** unobserved
-- **Today:** Built in 0.11.0 (WS4) and tested against in-process IMAP and SMTP servers. Every preset's servers were reached from workerd on 2026-10-06 with a made-up account (each refused the sign-in); not yet walked with a real app password at any provider.
+- **Today:** Built in 0.11.0 (WS4) and tested against in-process IMAP and SMTP servers. Every preset's servers were reached from workerd on 2026-10-06 with a made-up account (each refused the sign-in); not yet walked with a real app password at any provider. Typed credentials are no longer discarded silently on close (2026-10-07, AUD-B4-01; `leaveConnectForm`, tests/imap-connect-ui.test.ts).
 
 ### SCN-054: Give an IMAP account a new app password
 - **Persona:** P-01
@@ -1218,14 +1218,14 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   2. Paste the Application (client) ID, the secret's Value and its date, Save -> the server checks their shape and the date, makes a credential key if it has none, and saves the five settings itself.
   3. "Saved. … Microsoft checks the client ID and secret when the first account connects." -> the dialog moves on to the connect step (SCN-058).
 - **Expected result:** An owner sets Outlook up from the app, without a terminal, and is reminded 30 days before the client secret ends rather than finding out when mail stops.
-- **Alt paths:** Later closes the dialog; nothing is saved until Save. Check the setup in the connect step says whether the app is at the address Outlook was set up for, when the secret ends, and — once an account is connected — whether Microsoft accepts the client ID and secret (one account's access is renewed). Use another client secret… replaces the secret the same way. A server without its own Cloudflare token says it cannot save and points to setting the values by hand.
+- **Alt paths:** Later closes the dialog; nothing is saved until Save. Check the setup in the connect step says whether the app is at the address Outlook was set up for, when the secret ends, and — once an account is connected — whether Microsoft accepts the client ID and secret (one account's access is renewed). Use another client secret… replaces the secret the same way. A server without its own Cloudflare token says it cannot save and points to setting the values by hand. Once the secret's end is within 30 days, the inbox shows the same warning as a banner with Open the Outlook setup (app/routes/unified-inbox.tsx, `secretSoon`).
 - **UI elements:** SCR-02; Connect account dialog → Outlook: the steps with External links and Copy buttons, Application (client) ID, Client secret Value and Expires fields, Save, Later, Back; the secret's end warning; the checks' verdicts (OK / Not right / Not checked).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A client ID that is not a GUID, a Secret ID pasted for the Value, a date that has passed or lies beyond 24 months is refused with the fix and nothing is written; a token without Workers Scripts: Edit is named and nothing changes; a server that has not started using the settings after 30 seconds says to reload in a minute. An existing credential key is never replaced.
 - **Status:** validated
-- **Coverage:** app/components/settings/sections/OutlookSetup.tsx, app/components/settings/sections/AccountsSection.tsx, app/components/settings/sections/providers.ts, workers/routes/microsoft-setup.ts, workers/gmail-setup/server-settings.ts, shared/mail/microsoft-setup.ts, tests/outlook-routes.test.ts, tests/outlook-setup-ui.test.ts
+- **Coverage:** app/components/settings/sections/OutlookSetup.tsx, app/components/settings/sections/AccountsSection.tsx, app/components/settings/sections/providers.ts, app/routes/unified-inbox.tsx (`secretSoon`), workers/routes/microsoft-setup.ts, workers/gmail-setup/server-settings.ts, shared/mail/microsoft-setup.ts, tests/outlook-routes.test.ts, tests/outlook-setup-ui.test.ts
 - **Product:** unobserved
-- **Today:** Built in 0.11.0 (WS5) and tested against fakes of Microsoft and Cloudflare. Registering the app stays the owner's step in Microsoft's portal (docs/desktop-mail/setup.md → Outlook → Human steps). Microsoft checks a sign-in code's shape before the client (a made-up code is refused with AADSTS9002313 for any client, observed 2026-10-06), so the client ID and secret are proved only by the first real sign-in. Not yet walked against a real app registration.
+- **Today:** Built in 0.11.0 (WS5) and tested against fakes of Microsoft and Cloudflare. Registering the app stays the owner's step in Microsoft's portal (docs/desktop-mail/setup.md → Outlook → Human steps). Microsoft checks a sign-in code's shape before the client (a made-up code is refused with AADSTS9002313 for any client, observed 2026-10-06), so the client ID and secret are proved only by the first real sign-in. With an Outlook account connected, the inbox reads the same `/api/microsoft-setup` and shows the 30-day warning as a banner there too. Not yet walked against a real app registration.
 
 ### SCN-058: Connect an Outlook or Microsoft 365 account
 - **Persona:** P-01
@@ -1283,9 +1283,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** error, success
 - **Errors & recovery:** This scenario is the recovery. Only Microsoft's invalid_grant and interaction_required stop the account for a reconnect; a refused client stops it for the owner's setup; anything else only waits.
 - **Status:** validated
-- **Coverage:** app/components/settings/sections/OutlookSetup.tsx, app/components/settings/sections/AccountsSection.tsx, app/routes/unified-inbox.tsx, shared/mail/gmail-reasons.ts, workers/providers/outlook/oauth.ts, workers/providers/account-service.ts (accountProblem), tests/outlook-provider.test.ts, tests/outlook-setup-ui.test.ts
+- **Coverage:** app/components/settings/sections/OutlookSetup.tsx, app/components/settings/sections/AccountsSection.tsx, app/components/settings/paths.ts (`outlookSecretSetupPath`), app/routes/unified-inbox.tsx, shared/mail/gmail-reasons.ts, workers/providers/outlook/oauth.ts, workers/providers/account-service.ts (accountProblem), tests/outlook-provider.test.ts, tests/outlook-setup-ui.test.ts
 - **Product:** unobserved
-- **Today:** Built in 0.11.0 (WS5); tested against fakes.
+- **Today:** Built in 0.11.0 (WS5); tested against fakes. "Open the Outlook setup" on an account's problem opens the setup in its replacing state, at the client secret's fields, from the address `/settings/accounts?connect=microsoft&replace=secret` (2026-10-07, AUD-B5-02, tests/outlook-setup-ui.test.ts).
 
 ### SCN-061: Check an address before creating it
 - **Persona:** P-01
@@ -1404,7 +1404,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** error, success
 - **Errors & recovery:** The tools answer the routes' own refusals and steps.
 - **Status:** draft
-- **Coverage:** workers/mcp/tools.ts, docs/agents/mcp.md, tests/mcp-parity.test.ts
+- **Coverage:** workers/mcp/tools.ts, docs/agents/mcp.md, tests/mcp-parity.test.ts, tests/c2-mcp-test-message.test.ts (`send_test_message`: route, admin and send gates, daily limit, refusal refunds the send: AUD-B14-02)
 - **Product:** unobserved
 - **Today:** Built in 0.12 (WS7); tested against the recording API.
 
@@ -1523,7 +1523,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** An entry that is not an address or a domain is refused with the reason; two changes at once both land; a rule removed elsewhere says it is gone.
 - **Status:** validated
-- **Coverage:** app/components/settings/sections/DiscardSection.tsx, workers/routes/discard.ts, tests/discard-workerd.test.ts, tests/triage-text.test.ts
+- **Coverage:** app/components/settings/sections/DiscardSection.tsx, workers/routes/discard.ts, tests/discard-workerd.test.ts, tests/triage-text.test.ts, tests/c2-discard-race.test.ts (two concurrent store writes both land; `DiscardStoreConflict` after five attempts answers 409: AUD-B9-02)
 - **Product:** unobserved
 - **Today:** Built in 0.12 (WS8); seen in the local Worker on 2026-10-06.
 

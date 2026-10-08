@@ -5,6 +5,7 @@
 import DOMPurify from "dompurify";
 import { mailImagePolicy, type InlineAttachments } from "~/lib/mail-image-policy";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { hasRemoteContent } from "../lib/mail-content";
 import { useT } from "../lib/i18n";
 
 /**
@@ -179,12 +180,12 @@ ul, ol { padding-left: 20px; margin: 4px 0; }
 
 	return (
 		<div className={autoSize ? "" : "flex h-full min-h-0 flex-col"}>
-			<div className="flex flex-wrap items-center justify-between gap-2 border-b border-kumo-line p-3 text-sm text-kumo-subtle">
+			{(remoteImages || hasRemoteContent(body)) && <div className="flex flex-wrap items-center justify-between gap-2 border-b border-kumo-line p-3 text-sm text-kumo-subtle">
 				<span>{remoteImages ? t("External images enabled for this message.") : t("External images are blocked to protect your privacy.")}</span>
 				<button type="button" className="rounded px-2 py-1 font-medium text-kumo-default underline focus-visible:outline focus-visible:outline-2" onClick={() => setAllowedMessage(remoteImages ? null : identity)}>
 					{remoteImages ? t("Block external images") : t("Load external images")}
 				</button>
-			</div>
+			</div>}
 		<iframe
 			ref={iframeRef}
 			className="block w-full border-0"

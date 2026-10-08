@@ -1,14 +1,17 @@
+/** @jsxRuntime automatic @jsxImportSource react */
+// ^ pins the automatic JSX runtime so tests/automation-ui.test.ts (tsx) renders this file as the app does.
 import { useEffect, useRef, useState } from "react";
 import { useParams, Link, type MetaArgs } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@cloudflare/kumo";
 import { metaT, useT, type T } from "../lib/i18n";
-import { fabric } from "~/services/fabric";
+import { fabric } from "../services/fabric";
 import { msg } from "../../shared/i18n";
-import { useWindowActive } from "~/hooks/useWindowActive";
-import { AUTOMATION_POLL_MS, pollInterval } from "~/lib/window-activity";
+import { useWindowActive } from "../hooks/useWindowActive";
+import { AUTOMATION_POLL_MS, pollInterval } from "../lib/window-activity";
 import type { OutboxEntry } from "../../shared/mail/outbox";
 import type { Rule, Run } from "../../workers/automation/policy";
+import type { RunCheck } from "../../workers/automation/index";
 const input =
   "w-full rounded-md border border-kumo-line bg-kumo-base p-2 text-kumo-default";
 const fresh = (): Rule => ({
@@ -21,6 +24,59 @@ const fresh = (): Rule => ({
   action: { type: "archive" },
   dailyLimit: 20,
 });
+/** What a dry-run reviews: the whole rule but its saved version and whether it is enabled. */
+export function ruleReviewKey(rule: Rule): string {
+  return JSON.stringify({ ...rule, version: 0, enabled: false });
+}
+/**
+ * The pre-enable review gate (FLW-05): a new or edited rule can be enabled only after a
+ * dry-run of the current form values succeeded. An enabled rule saved unchanged — and any
+ * pause — needs no dry-run.
+ */
+export function enableLocked(
+  currentKey: string | null,
+  saved: { key: string; enabled: boolean } | null,
+  dryRunKey: string,
+): boolean {
+  if (currentKey !== null && saved?.enabled && saved.key === currentKey) return false;
+  return currentKey === null || currentKey !== dryRunKey;
+}
+
+/** What a dry-run answers (workers/automation/index.ts dryRun): nothing is executed. */
+export interface DryRunResult {
+  matched: boolean;
+  analysis: { matches: boolean; summary: string; draft: string };
+  action: { type: string };
+  executed: false;
+}
+
+function actionLabel(type: string, t: T): string {
+  switch (type) {
+    case "archive": return t("Archive");
+    case "mark_read": return t("Mark read");
+    case "draft": return t("Prepare a reply draft");
+    case "forward": return t("Forward message");
+    case "mcp": return t("Call a cloud tool (MCP)");
+    default: return type;
+  }
+}
+
+/** A dry-run said in a sentence instead of JSON (UI walk 2026-10-08); the JSON stays under Details. */
+export function dryRunSentence(result: DryRunResult, t: T): string {
+  if (!result.matched) return t("This message does not match: {reason}", { reason: t.text(result.analysis.summary) });
+  return t("This message matches. The rule would: {action}. Nothing was done.", { action: actionLabel(result.action.type, t) });
+}
+
+/** The unified feed names a Cloudflare mailbox `cloudflare:<address>`; other accounts already carry their provider. */
+export function feedAccount(account: string): string {
+  return /^(gmail|imap|outlook|cloudflare):/.test(account) ? account : `cloudflare:${account}`;
+}
+
+/** How a message is named in the dry-run picker: who sent it and its subject. */
+export function previewLabel(m: { sender: string; subject: string }, t: T): string {
+  const who = m.sender.replace(/\s*<[^>]+>/, "").replace(/^"|"$/g, "") || m.sender;
+  return `${who} — ${m.subject || t("No subject")}`;
+}
 /** A run's status in words; an unknown one shows as it came. */
 function runStatusText(status: string, t: T): string {
   switch (status) {
@@ -57,6 +113,13 @@ function outboxStatusText(status: string, t: T): string {
     case "unknown": return t("[outbox] unknown");
     default: return status;
   }
+}
+/**
+ * Whether a run card offers "Check status" (SCN-020): only an uncertain run, and only when its
+ * action leaves a record the server can read — a tool call (mcp) does not.
+ */
+export function runCheckable(run: Pick<Run, "status" | "rule" | "proposal">): boolean {
+  return run.status === "unknown" && (run.proposal?.action ?? run.rule.action).type !== "mcp";
 }
 export function meta({ matches }: MetaArgs) {
   const t = metaT(matches);
@@ -97,21 +160,51 @@ export default function Automation() {
     refetchInterval: pollInterval(active, AUTOMATION_POLL_MS),
   });
   const [editing, setEditing] = useState<Rule | null>(null);
+  // The messages a dry-run can preview with: this account's newest inbox mail, picked by name
+  // instead of a typed internal id (UI walk 2026-10-08 — the dry-run gate made the id a wall).
+  const previewMessages = useQuery({
+    queryKey: ["rule-preview-messages", account],
+    queryFn: () =>
+      fabric<{ messages: { providerMessageId: string; sender: string; subject: string }[] }>(
+        "/api/inbox?" + new URLSearchParams({ account: feedAccount(account), folder: "inbox", limit: "20" }),
+      ).then((r) => r.messages),
+    enabled: editing !== null,
+  });
   const [args, setArgs] = useState("{}");
   const [messageId, setMessageId] = useState("");
-  const [preview, setPreview] = useState("");
+  const [preview, setPreview] = useState<DryRunResult | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState<{ key: string; enabled: boolean } | null>(null);
+  const [dryRunKey, setDryRunKey] = useState("");
+  useEffect(() => {
+    const first = previewMessages.data?.[0]?.providerMessageId;
+    if (first && !previewMessages.data?.some((m) => m.providerMessageId === messageId)) setMessageId(first);
+  }, [previewMessages.data, messageId]);
+  // Per run: a check in flight, or what the last check found (or why it could not run).
+  const [checks, setChecks] = useState<Record<string, { busy: boolean; text?: string; failed?: boolean }>>({});
+  async function checkRun(id: string) {
+    setChecks((old) => ({ ...old, [id]: { busy: true } }));
+    try {
+      const result = await fabric<RunCheck>(base + "/runs/" + encodeURIComponent(id) + "/check", {});
+      setChecks((old) => ({ ...old, [id]: { busy: false, text: t.text(result.detail) } }));
+      await runs.refetch();
+    } catch (e) {
+      setChecks((old) => ({ ...old, [id]: { busy: false, failed: true, text: t.text((e as Error).message) } }));
+    }
+  }
   const change = (value: Partial<Rule>) =>
     setEditing((old) => (old ? { ...old, ...value } : old));
   function edit(rule: Rule) {
     setEditing(structuredClone(rule));
+    setSaved({ key: ruleReviewKey(rule), enabled: rule.enabled });
+    setDryRunKey("");
     setArgs(
       rule.action.type === "mcp"
         ? JSON.stringify(rule.action.arguments, null, 2)
         : "{}",
     );
-    setPreview("");
+    setPreview(null);
     setNotice("");
   }
   function value() {
@@ -136,6 +229,14 @@ export default function Automation() {
       setBusy(false);
     }
   }
+  // The key of the values on screen; invalid MCP arguments count as changed, so Enable stays locked.
+  let currentKey: string | null = null;
+  try {
+    currentKey = editing ? ruleReviewKey(value()) : null;
+  } catch {
+    currentKey = null;
+  }
+  const locked = enableLocked(currentKey, saved, dryRunKey);
   return (
     <main className="mx-auto max-w-5xl p-6 text-kumo-default">
       <Link className="underline" to={/^(gmail|imap|outlook):/.test(account) ? `/settings/accounts/${encodeURIComponent(account)}` : `/settings/addresses/${encodeURIComponent(account)}/rules`}>
@@ -180,6 +281,7 @@ export default function Automation() {
               <h2 className="font-semibold">{rule.name}</h2>
               <p className="text-sm text-kumo-subtle">
                 {rule.enabled ? t("Enabled") : t("Paused")} ·{" "}
+                {t("v{version}", { version: rule.version })} ·{" "}
                 {rule.mode === "approval" ? t("Requires approval") : t("Automatic")} ·{" "}
                 {actionText(rule.action.type, t)} · {t("{limit}/day", { limit: rule.dailyLimit })}
               </p>
@@ -218,7 +320,12 @@ export default function Automation() {
             });
           }}
         >
-          <h2 className="text-xl font-semibold">{t("Rule settings")}</h2>
+          <h2 className="text-xl font-semibold">
+            {t("Rule settings")}{" "}
+            <span className="text-sm font-normal text-kumo-subtle">
+              {t("v{version}", { version: editing.version })}
+            </span>
+          </h2>
           <label className="block">
             {t("Name")}
             <input
@@ -424,36 +531,62 @@ export default function Automation() {
             <input
               type="checkbox"
               checked={editing.enabled}
+              disabled={locked && !editing.enabled}
               onChange={(e) => change({ enabled: e.target.checked })}
             />
             {t("Enable for new incoming mail")}
           </label>
+          {locked && (
+            <p className="text-sm text-kumo-subtle">
+              {t("Preview the rule with a dry-run before enabling it.")}
+            </p>
+          )}
           <div className="border-t border-kumo-line pt-4">
-            <label className="block">
-              {t("Preview message ID")}
-              <input
-                className={input}
-                value={messageId}
-                onChange={(e) => setMessageId(e.target.value)}
-              />
-            </label>
+            {previewMessages.isError ? (
+              <label className="block">
+                {t("Preview message ID")}
+                <span className="block text-sm text-kumo-subtle">{t("Recent mail could not be read; enter a message ID instead.")}</span>
+                <input
+                  className={input}
+                  value={messageId}
+                  onChange={(e) => setMessageId(e.target.value)}
+                />
+              </label>
+            ) : previewMessages.isPending ? (
+              <p className="text-sm text-kumo-subtle">{t("Loading…")}</p>
+            ) : previewMessages.data.length === 0 ? (
+              <p className="text-sm text-kumo-subtle">{t("No mail here yet to preview the rule with.")}</p>
+            ) : (
+              <label className="block">
+                {t("Message to preview")}
+                <select
+                  className={input}
+                  value={messageId}
+                  onChange={(e) => setMessageId(e.target.value)}
+                >
+                  {previewMessages.data.map((m) => (
+                    <option key={m.providerMessageId} value={m.providerMessageId}>
+                      {previewLabel(m, t)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <Button
               type="button"
               variant="secondary"
               disabled={busy || !messageId}
               onClick={() =>
-                perform(async () =>
+                perform(async () => {
+                  const rule = value();
                   setPreview(
-                    JSON.stringify(
-                      await fabric(base + "/dry-run", {
-                        emailId: messageId,
-                        rule: value(),
-                      }),
-                      null,
-                      2,
-                    ),
-                  ),
-                )
+                    await fabric<DryRunResult>(base + "/dry-run", {
+                      emailId: messageId,
+                      rule,
+                    }),
+                  );
+                  setDryRunKey(ruleReviewKey(rule));
+                })
               }
             >
               {t("Dry-run")}
@@ -462,16 +595,20 @@ export default function Automation() {
               {t("Preview only. No message is sent, moved or changed.")}
             </p>
             {preview && (
-              <pre
-                aria-live="polite"
-                className="mt-3 whitespace-pre-wrap break-words text-sm"
-              >
-                {preview}
-              </pre>
+              <div className="mt-3 text-sm" aria-live="polite">
+                <p>{dryRunSentence(preview, t)}</p>
+                {preview.matched && preview.analysis.draft ? (
+                  <pre className="mt-2 whitespace-pre-wrap break-words">{preview.analysis.draft}</pre>
+                ) : null}
+                <details className="mt-2">
+                  <summary>{t("Details")}</summary>
+                  <pre className="whitespace-pre-wrap break-words">{JSON.stringify(preview, null, 2)}</pre>
+                </details>
+              </div>
             )}
           </div>
           <div className="flex gap-3">
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy || (editing.enabled && locked)}>
               {t("Save rule")}
             </Button>
             <Button
@@ -486,6 +623,7 @@ export default function Automation() {
       )}
       <section className="mt-10">
         <h2 className="mb-4 text-xl font-semibold">{t("Recent runs")}</h2>
+        {runs.isPending && <p className="text-kumo-subtle">{t("Loading…")}</p>}
         {runs.data?.length === 0 && (
           <p className="text-kumo-subtle">
             {t("No runs yet. History appears when an enabled rule matches new mail.")}
@@ -501,6 +639,9 @@ export default function Automation() {
             </div>
             <p className="my-2 text-sm text-kumo-subtle">
               {t.dateTime(run.createdAt)} ·{" "}
+              {t("v{version}", { version: run.rule.version })} ·{" "}
+              {t.plural(run.attempts ?? 0, { one: "{n} attempt", other: "{n} attempts" })} ·{" "}
+              {t("Cost unavailable")} ·{" "}
               {run.rule.action.type === "forward"
                 ? t("Forward to {address}", { address: run.rule.action.to })
                 : run.rule.action.type === "mcp"
@@ -522,6 +663,31 @@ export default function Automation() {
               </pre>
             )}
             {run.detail && <p>{t.text(run.detail)}</p>}
+            {run.status === "unknown" && !runCheckable(run) && (
+              <p role="note" className="mt-2 text-sm text-kumo-subtle">
+                {t("A tool call leaves no receipt on this server. Check the tool's own service before repeating it.")}
+              </p>
+            )}
+            {run.status === "unknown" && run.checkedAt && (
+              <p className="mt-2 text-sm text-kumo-subtle">
+                {t("Last checked {time}", { time: t.dateTime(run.checkedAt) })}
+              </p>
+            )}
+            {checks[run.id]?.text && (run.status === "unknown" || checks[run.id]?.failed) && (
+              <p role={checks[run.id]?.failed ? "alert" : "status"} className="mt-2 text-sm">
+                {checks[run.id]?.text}
+              </p>
+            )}
+            {runCheckable(run) && (
+              <Button
+                className="mt-3"
+                variant="secondary"
+                disabled={!!checks[run.id]?.busy}
+                onClick={() => checkRun(run.id)}
+              >
+                {checks[run.id]?.busy ? t("Checking…") : t("Check status")}
+              </Button>
+            )}
             {run.status === "waiting_approval" && (
               <Button
                 className="mt-3"

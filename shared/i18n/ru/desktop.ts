@@ -68,6 +68,8 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Sign in to Fabric Inbox in the window that opened, then connect again from {client}.": "Войдите в Fabric Inbox в открывшемся окне, затем снова подключитесь из {client}.",
 	"{client} did not receive the key, so it was revoked again.": "{client} не получил ключ, поэтому ключ снова отозван.",
 	"{client} did not receive the key, so it was made but could not be revoked: revoke it in Settings → Agent access.": "{client} не получил ключ: ключ создан, но отозвать его не удалось — отзовите его в «Настройки → Доступ агентов».",
+	"The key was made but could not reach {client}, and was revoked again.": "Ключ создан, но не дошёл до {client} и снова отозван.",
+	"The key was made but could not reach {client}, and it could not be revoked: revoke it in Settings → Agent access.": "Ключ создан, но не дошёл до {client}, и отозвать его не удалось — отзовите его в «Настройки → Доступ агентов».",
 	"The key could not be made: {error}": "Не удалось создать ключ: {error}",
 	"unknown error": "неизвестная ошибка",
 	"Set up your server, then connect again.": "Настройте сервер, затем подключитесь снова.",

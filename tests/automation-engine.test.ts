@@ -60,6 +60,26 @@ function setup() {
     },
   };
 }
+test("every processing pass counts as an attempt", async () => {
+  const s = setup();
+  s.run.rule.mode = "approval";
+  s.setRule({ ...rule, mode: "approval" });
+  await processRun(s.run, s.deps);
+  assert.equal(s.run.status, "waiting_approval");
+  assert.equal(s.run.attempts, 1);
+  s.run.status = "pending";
+  s.run.approved = true;
+  await processRun(s.run, s.deps);
+  assert.equal(s.run.status, "succeeded");
+  assert.equal(s.run.attempts, 2);
+});
+test("a run cancelled before it starts is not counted as an attempt", async () => {
+  const s = setup();
+  s.setRule({ ...rule, enabled: false });
+  await processRun(s.run, s.deps);
+  assert.equal(s.run.status, "cancelled");
+  assert.equal(s.run.attempts, undefined);
+});
 test("persist intent before effect and terminal replay does not execute", async () => {
   const s = setup();
   await processRun(s.run, s.deps);

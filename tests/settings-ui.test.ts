@@ -39,6 +39,11 @@ test("every old address is registered as a redirect route", () => {
   assert.match(routes, /route\("settings", "routes\/settings-redirect\.tsx"/, "the legacy mailbox settings redirect");
 });
 
+test("Settings → App says drafts live on this device (B2-04)", () => {
+  const section = readFileSync("app/components/settings/sections/AppSection.tsx", "utf8");
+  assert.match(section, /Drafts you are writing live on this device; an uninstaller that removes this app's data loses them\./);
+});
+
 test("a settings address is built and read back the same way", () => {
   assert.equal(settingsPath("addresses"), "/settings/addresses");
   assert.equal(settingsPath("addresses", "a+b@x.invalid", "copy"), "/settings/addresses/a%2Bb%40x.invalid/copy");

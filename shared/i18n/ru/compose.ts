@@ -34,6 +34,7 @@ export const COMPOSE: Readonly<Record<string, string>> = {
 	"Close and keep draft": "Закрыть и сохранить черновик",
 	"From": "От",
 	"Choose a sender": "Выберите отправителя",
+	"Sender is fixed once the draft is on your server; discard to start over.": "Отправителя нельзя изменить, когда черновик сохранён на вашем сервере; удалите черновик, чтобы начать заново.",
 	"Account unavailable": "Аккаунт недоступен",
 	"Cc": "Копия",
 	"Optional recipients": "Получатели копии, необязательно",

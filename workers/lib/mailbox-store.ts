@@ -1,5 +1,6 @@
 import type { Env } from "../types";
 import { msg } from "../../shared/i18n";
+import { forgetCreated, recordCreated } from "./address-created";
 
 /**
  * Cloudflare mailbox records: `mailboxes/<address>.json` in R2 holds the
@@ -106,6 +107,9 @@ export async function deleteMailbox(env: Pick<Env, "BUCKET" | "MAILBOX">, email:
   const attachmentKeys = await env.MAILBOX.get(env.MAILBOX.idFromName(email.toLowerCase())).purge();
   for (let i = 0; i < attachmentKeys.length; i += 1000) await env.BUCKET.delete(attachmentKeys.slice(i, i + 1000));
   await env.BUCKET.delete(key);
+  // Tidiness only: a re-created address gets its new time anyway.
+  await forgetCreated(env.BUCKET, email).catch((error: unknown) =>
+    console.warn(JSON.stringify({ event: "address_created_unforgotten", error: (error as Error).message })));
   return true;
 }
 
@@ -192,6 +196,10 @@ export async function createMailbox(env: Env, rawEmail: string, name: string, se
   // wins and the other is told the address exists.
   const written = await env.BUCKET.put(settingsKey(email), JSON.stringify(finalSettings), { onlyIf: new Headers({ "If-None-Match": "*" }) });
   if (written === null) return { status: "exists" };
+  // When it was made, so the sidebar lists it before its first message (address-created.ts). A
+  // failure leaves the address made and only unlisted until mail arrives; it is logged, not thrown.
+  await recordCreated(env.BUCKET, email, Date.now()).catch((error: unknown) =>
+    console.warn(JSON.stringify({ event: "address_created_unrecorded", error: (error as Error).message })));
   // Creating the folders now makes the mailbox usable before its first message; the mailbox makes
   // them itself on first use, so a failure here does not undo the address.
   await env.MAILBOX.get(env.MAILBOX.idFromName(email)).getFolders().catch((error: unknown) =>

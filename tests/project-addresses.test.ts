@@ -63,6 +63,18 @@ test("routing status: rule, catch-all, missing, disabled, elsewhere and unreadab
   assert.match(denied.detail, /Authentication error/);
 });
 
+test("a domain-level problem says so, so the panel offers the domain's Receive mail here, not a rule re-POST (B14-01)", async () => {
+  const a = "support@project.invalid";
+  const off = await cloudflare({ enabled: false }).client.status(a);
+  assert.deepEqual([off.state, off.domainProblem], ["missing", true], "Email Routing off is the domain's problem");
+  const misconfigured = await cloudflare({ status: "misconfigured" }).client.status(a);
+  assert.deepEqual([misconfigured.state, misconfigured.domainProblem], ["missing", true], "unready records are the domain's problem");
+  const noRule = await cloudflare({}).client.status(a);
+  assert.equal(noRule.domainProblem, undefined, "no rule is the address's problem: Fix it makes the rule");
+  const disabled = await cloudflare({ rules: [literal(a, toWorker, false)] }).client.status(a);
+  assert.equal(disabled.domainProblem, undefined, "a disabled rule is the address's problem");
+});
+
 test("creating a rule points the literal address at the Worker once, and refuses to override another rule", async () => {
   const cf = cloudflare({});
   const created = await cf.client.createRule("Support@Project.invalid");
@@ -531,4 +543,48 @@ test("a test message is kept and watched: waiting, arrived (not the sent copy), 
   assert.equal(r.body.test.state, "failed");
   assert.match(r.body.test.detail, /E_REFUSED/);
   assert.equal((await refused.call("GET", "/api/project-addresses/none@project.invalid/test")).status, 404);
+});
+
+test("creating an address records when it was made, and the inbox's account list carries it; an older address has none (2026-10-08)", async () => {
+  const { inboxSources } = await import("../workers/lib/inbox-sources");
+  const { CREATED_KEY } = await import("../workers/lib/address-created");
+  const h = environment();
+  // An address made before the server recorded creation times: no entry, so it reads as old.
+  h.objects.set(mailboxKey("old@project.invalid"), JSON.stringify({ agent: "off" }));
+  const before = Date.now();
+  assert.equal((await h.call("POST", "/api/project-addresses", { localPart: "j1", domain: "project.invalid" })).status, 201);
+  const batch = await h.call("POST", "/api/project-addresses/batch", { domain: "project.invalid", localParts: ["b1", "b2"] });
+  assert.equal(batch.body.created, 2, JSON.stringify(batch.body));
+  const after = Date.now();
+  const created = JSON.parse(h.objects.get(CREATED_KEY)!).created as Record<string, number>;
+  assert.deepEqual(Object.keys(created).sort(), ["b1@project.invalid", "b2@project.invalid", "j1@project.invalid"], "every way of creating records it, one entry each");
+  for (const at of Object.values(created)) assert.ok(at >= before && at <= after, "the time is the moment of creation");
+
+  const accounts = await inboxSources(h.env as never).cloudflareAccounts();
+  const byEmail = new Map(accounts.map((a) => [a.email, a]));
+  assert.equal(byEmail.get("j1@project.invalid")?.createdAt, created["j1@project.invalid"]);
+  assert.equal(byEmail.get("old@project.invalid")?.createdAt, undefined, "a legacy address carries no time");
+
+  assert.equal((await h.call("DELETE", "/api/project-addresses/j1@project.invalid")).status, 200);
+  assert.ok(!("j1@project.invalid" in JSON.parse(h.objects.get(CREATED_KEY)!).created), "a deleted address is forgotten");
+  assert.equal((await h.call("POST", "/api/project-addresses", { localPart: "j1", domain: "project.invalid" })).status, 201);
+  assert.ok(JSON.parse(h.objects.get(CREATED_KEY)!).created["j1@project.invalid"] >= created["j1@project.invalid"], "made again, it is new again");
+});
+
+test("an unreadable creation record never hides an address or fails its creation (2026-10-08)", async () => {
+  const { inboxSources } = await import("../workers/lib/inbox-sources");
+  const { CREATED_KEY } = await import("../workers/lib/address-created");
+  const h = environment();
+  h.objects.set(CREATED_KEY, "{not json");
+  assert.equal((await h.call("POST", "/api/project-addresses", { localPart: "j2", domain: "project.invalid" })).status, 201);
+  const accounts = await inboxSources(h.env as never).cloudflareAccounts();
+  assert.deepEqual(accounts.map((a) => a.email), ["j2@project.invalid"]);
+  assert.equal(typeof accounts[0].createdAt, "number", "an unreadable record is replaced by a good one on the next create");
+  const broken = environment();
+  broken.objects.set(mailboxKey("x@project.invalid"), "{}");
+  const get = broken.env.BUCKET.get;
+  broken.env.BUCKET.get = async (key: string) => { if (key === CREATED_KEY) throw new Error("R2 down"); return get(key); };
+  const listed = await inboxSources(broken.env as never).cloudflareAccounts();
+  assert.deepEqual(listed.map((a) => [a.email, a.createdAt]), [["x@project.invalid", undefined]], "listed without a time, never left out");
+  assert.equal((await broken.call("POST", "/api/project-addresses", { localPart: "y", domain: "project.invalid" })).status, 201, "the address is made even when its time cannot be kept");
 });

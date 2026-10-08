@@ -200,6 +200,7 @@ export const CONNECT: Readonly<Record<string, string>> = {
 	"Open the Outlook setup": "Открыть настройку Outlook",
 
 	// IMAP accounts (app/components/settings/sections/ImapAccount.tsx)
+	"the new account": "новый аккаунт",
 	"Choose who keeps the mail. Every one of them needs an app password: a password made for one app, which you can delete there at any time.": "Выберите, где хранится почта. Каждому из них нужен пароль приложения — пароль, созданный для одного приложения; его можно удалить там в любой момент.",
 	"Any provider that offers IMAP and SMTP": "Любой провайдер с IMAP и SMTP",
 	"Your own domain": "Ваш собственный домен",
@@ -277,6 +278,10 @@ export const CONNECT: Readonly<Record<string, string>> = {
 	"Paste the app password.": "Вставьте пароль приложения.",
 	"{provider} no longer accepts the app password this server has. Enter a new one.": "{provider} больше не принимает пароль приложения, сохранённый на этом сервере. Введите новый.",
 	"{provider} could not be reached just now. It is tried again on its own.": "Сейчас не удалось связаться с {provider}. Попытка повторится сама.",
+	"The last try failed a moment ago; the next one is tried on its own.": "Последняя попытка не удалась; следующая будет сделана сама.",
+	"The last try failed a moment ago; the next one is tried on its own at {time}.": "Последняя попытка не удалась; следующая будет сделана сама в {time}.",
+	"{provider} asked to slow down; it is tried again on its own.": "{provider} попросил снизить частоту запросов; попытка повторится сама.",
+	"{provider} asked to slow down; it is tried again on its own at {time}.": "{provider} попросил снизить частоту запросов; попытка повторится сама в {time}.",
 
 	// Why an account stopped working (shared/mail/gmail-reasons.ts)
 	"lost its Gmail access after 7 days": "потерял доступ к Gmail через 7 дней",

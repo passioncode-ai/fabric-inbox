@@ -134,7 +134,7 @@ function KeyPanel({ agentKey: k, mcpUrl, onRevoked }: { agentKey: AgentKey; mcpU
   const confirm = useConfirm();
   const work = useWork(k.id);
   const revoke = async () => {
-    const ok = await confirm({ title: t("Revoke the key of {name}?", { name: k.name }), body: <p>{t("{name} stops working at once. This cannot be undone; a new key can be made.", { name: k.name })}</p>, confirmLabel: t("Revoke"), danger: true });
+    const ok = await confirm({ title: t("Revoke the key of {name}?", { name: k.name }), body: <p>{t("{name} stops working at once. This cannot be undone; a new key can be made.", { name: k.name })}</p>, confirmLabel: t("Revoke"), cancelLabel: t("Keep"), danger: true });
     if (!ok) return;
     const done = await work.run(t("Revoking…"), async () => {
       try {

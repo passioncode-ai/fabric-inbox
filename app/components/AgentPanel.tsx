@@ -17,6 +17,8 @@ import {
 	CheckCircleIcon,
 	StopIcon,
 	PencilSimpleIcon,
+	WarningCircleIcon,
+	ArrowClockwiseIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
@@ -25,6 +27,22 @@ import { useT } from "../lib/i18n";
 import { msg } from "../../shared/i18n";
 import { useUIStore } from "~/hooks/useUIStore";
 import type { UIMessage } from "ai";
+import { draftOf, lastPrompt, MAX_SOURCES, retryTurn, sourcesOf, toolNameOf, turnFailed, usesDraftTool, type SavedDraft, type Source } from "./agent-chat";
+
+/**
+ * Where the panel sits decides what its links do: on the unified inbox a source opens in the reader
+ * and a saved draft opens in its composer; on the legacy mailbox page neither is given.
+ */
+export interface AgentPanelProps {
+	/** The Cloudflare mailbox the chat agent reads; the route's `:mailboxId` when absent. */
+	mailboxId?: string;
+	/** Opens a message an answer read (B11-03). Without it, sources are not listed. */
+	onOpenSource?: (source: Source) => void;
+	/** Opens a draft an answer saved in the composer. Without it, the legacy composer is used. */
+	onEditDraft?: (draft: SavedDraft) => void;
+	/** The message open in the reader, when it is on this mailbox: offered as the first prompts. */
+	focus?: { emailId: string; subject: string } | null;
+}
 
 const TOOL_LABELS: Record<string, { label: string; icon: React.ReactNode }> = {
 	list_emails: {
@@ -77,16 +95,20 @@ function ToolCallBadge({
 		label: toolName,
 		icon: <WrenchIcon size={14} weight="bold" />,
 	};
-	const isDone =
-		state === "output-available" ||
-		state === "result" ||
-		state === "output-error";
+	// A failed tool call is not a finished one: it shows a warning, never the success check.
+	const failed = state === "output-error";
+	const isDone = state === "output-available" || state === "result";
 
 	return (
 		<div className="flex items-center gap-1.5 py-1 px-2 rounded bg-kumo-fill/50 text-xs">
 			<span className="text-kumo-brand">{info.icon}</span>
 			<span className="text-kumo-strong">{t.text(info.label)}</span>
-			{isDone ? (
+			{failed ? (
+				<span className="ml-auto flex items-center gap-1 text-kumo-error">
+					<WarningCircleIcon size={12} weight="fill" aria-hidden="true" />
+					{t("Failed")}
+				</span>
+			) : isDone ? (
 				<CheckCircleIcon
 					size={12}
 					weight="fill"
@@ -97,19 +119,6 @@ function ToolCallBadge({
 			)}
 		</div>
 	);
-}
-
-function getToolNameFromPart(part: UIMessage["parts"][number]): string | null {
-	if (part.type === "dynamic-tool") return (part as any).toolName ?? null;
-	if (part.type.startsWith("tool-")) return part.type.replace("tool-", "");
-	return null;
-}
-
-function hasDraftReplyTool(message: UIMessage): boolean {
-	return message.parts.some((part) => {
-		const toolName = getToolNameFromPart(part);
-		return toolName === "draft_reply";
-	});
 }
 
 function DraftActions({
@@ -135,13 +144,77 @@ function DraftActions({
 	);
 }
 
-function MessageBubble({
+/**
+ * The messages an answer read, as links into the reader (SCN-013 step 2, B11-03). Listed only where
+ * the panel can open them; a source without a subject is named by its sender, then generically.
+ */
+export function SourceLinks({ sources, onOpen }: { sources: Source[]; onOpen: (source: Source) => void }) {
+	const t = useT();
+	if (!sources.length) return null;
+	const shown = sources.slice(0, MAX_SOURCES);
+	return (
+		<div className="flex flex-col gap-0.5 mt-1 w-full">
+			<span className="text-[11px] text-kumo-subtle">{t("Read for this answer")}</span>
+			<ul className="flex flex-col gap-0.5 list-none p-0 m-0">
+				{shown.map((source) => {
+					const label = source.subject || (source.sender ? t("Message from {sender}", { sender: source.sender }) : t("A message in this mailbox"));
+					return (
+						<li key={source.emailId} className="min-w-0">
+							<button
+								type="button"
+								onClick={() => onOpen(source)}
+								className="flex items-center gap-1.5 w-full min-w-0 text-left text-xs text-kumo-link hover:underline bg-transparent border-0 p-0 cursor-pointer"
+								aria-label={t("Open {message} in the reader", { message: label })}
+							>
+								<EnvelopeSimpleIcon size={12} className="shrink-0" />
+								<span className="truncate">{label}</span>
+							</button>
+						</li>
+					);
+				})}
+			</ul>
+			{sources.length > shown.length && (
+				<span className="text-[11px] text-kumo-subtle">
+					{t.plural(sources.length - shown.length, { one: "and {n} more message", other: "and {n} more messages" })}
+				</span>
+			)}
+		</div>
+	);
+}
+
+/**
+ * A turn that failed (B11-02): says so where the answer would be, keeps the question, and offers
+ * Retry, which sends the same prompt again. Nothing is sent from the mailbox either way.
+ */
+export function ChatErrorBubble({ canRetry, onRetry }: { canRetry: boolean; onRetry: () => void }) {
+	const t = useT();
+	return (
+		<div className="flex gap-2" role="alert">
+			<div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-kumo-fill text-kumo-error">
+				<WarningCircleIcon size={14} weight="bold" />
+			</div>
+			<div className="flex flex-col items-start gap-1.5 px-3 py-2 rounded-lg border border-kumo-line bg-kumo-elevated rounded-bl-sm max-w-[85%]">
+				<span className="text-[13px] text-kumo-default">{t("The AI could not finish this answer.")}</span>
+				<span className="text-xs text-kumo-subtle">{t("Your mail is as it was, apart from any step above marked done.")}</span>
+				{canRetry && (
+					<Button variant="secondary" size="sm" icon={<ArrowClockwiseIcon size={14} />} onClick={onRetry}>
+						{t("Retry")}
+					</Button>
+				)}
+			</div>
+		</div>
+	);
+}
+
+export function MessageBubble({
 	message,
 	onAction,
+	onOpenSource,
 	isStreaming,
 }: {
 	message: UIMessage;
 	onAction?: (action: string) => void;
+	onOpenSource?: (source: Source) => void;
 	isStreaming: boolean;
 }) {
 	const isUser = message.role === "user";
@@ -188,7 +261,7 @@ function MessageBubble({
 							</div>
 						);
 					}
-					const toolName = getToolNameFromPart(part);
+					const toolName = toolNameOf(part);
 					if (toolName) {
 						return (
 							<ToolCallBadge
@@ -201,22 +274,29 @@ function MessageBubble({
 					return null;
 				})}
 				{/* Show action buttons for draft replies */}
-				{!isUser && hasDraftReplyTool(message) && onAction && (
+				{!isUser && usesDraftTool(message) && onAction && (
 					<DraftActions
 						onEdit={() => onAction("edit")}
 						disabled={isStreaming}
 					/>
+				)}
+				{!isUser && onOpenSource && (
+					<SourceLinks sources={sourcesOf(message)} onOpen={onOpenSource} />
 				)}
 			</div>
 		</div>
 	);
 }
 
-function AgentChatConnected({
+/** The chat itself, given the agent client hooks (loaded lazily below; fakes in tests). */
+export function AgentChatConnected({
 	mailboxId,
 	useAgent,
 	useAgentChat,
-}: {
+	onOpenSource,
+	onEditDraft,
+	focus,
+}: Omit<AgentPanelProps, "mailboxId"> & {
 	mailboxId: string;
 	useAgent: typeof import("agents/react").useAgent;
 	useAgentChat: typeof import("@cloudflare/ai-chat/react").useAgentChat;
@@ -228,14 +308,18 @@ function AgentChatConnected({
 	const { startCompose } = useUIStore();
 
 	const agent = useAgent({ agent: "EmailAgent", name: mailboxId });
-	const { messages, sendMessage, status, setMessages, stop } =
+	const { messages, sendMessage, status, setMessages, stop, error, regenerate, clearError } =
 		useAgentChat({ agent });
 	const isStreaming = status === "streaming" || status === "submitted";
+	// A failed model turn (B11-02): an error bubble with Retry instead of silence.
+	const failed = turnFailed(status, error);
+	const retryable = lastPrompt(messages) !== null;
+	const retry = () => retryTurn({ streaming: isStreaming, messages, clearError, regenerate: () => regenerate() });
 
 	useEffect(() => {
 		const el = scrollRef.current;
 		if (el) el.scrollTop = el.scrollHeight;
-	}, [messages]);
+	}, [messages, failed]);
 
 	useEffect(() => {
 		inputRef.current?.focus();
@@ -258,6 +342,12 @@ function AgentChatConnected({
 
 	// What the person would type: sent to the agent as their own words, in their language.
 	const suggestedPrompts = [
+		...(focus
+			? [
+				t("Explain the open message “{subject}” (message id {id})", { subject: focus.subject || t("(No subject)"), id: focus.emailId }),
+				t("Draft a reply to the open message “{subject}” (message id {id})", { subject: focus.subject || t("(No subject)"), id: focus.emailId }),
+			]
+			: []),
 		t("Show me the latest inbox emails"),
 		t("Any unread emails?"),
 		t("Draft a response to the latest email"),
@@ -296,7 +386,7 @@ function AgentChatConnected({
 
 			{/* Messages */}
 			<div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-4">
-				{messages.length === 0 ? (
+				{messages.length === 0 && !failed ? (
 					<div className="flex flex-col items-center justify-center h-full gap-4">
 						<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-kumo-brand/10">
 							<RobotIcon
@@ -330,49 +420,35 @@ function AgentChatConnected({
 								key={msg.id}
 								message={msg}
 								isStreaming={isStreaming}
-							onAction={(action) => {
-								if (action === "edit") {
-										// Extract draft data from the draft_reply tool result
-										let draftData: {
-											to?: string;
-											subject?: string;
-											body?: string;
-											id?: string;
-										} | null = null;
-										for (const part of msg.parts) {
-											if (
-												(part as any).toolName === "draft_reply" &&
-												(part as any).result
-											) {
-												draftData = (part as any).result;
-												break;
-											}
-										}
-										if (draftData) {
-											const draftEmail = {
-												id: draftData.id || "",
-												subject: draftData.subject || "",
+								onOpenSource={onOpenSource}
+								onAction={(action) => {
+									if (action !== "edit") return;
+									const draft = draftOf(msg);
+									if (draft && onEditDraft) onEditDraft(draft);
+									else if (draft) {
+										startCompose({
+											mode: draft.originalEmailId ? "reply" : "new",
+											originalEmail: null,
+											draftEmail: {
+												id: draft.draftId,
+												subject: draft.subject,
 												sender: mailboxId,
-												recipient: draftData.to || "",
+												recipient: draft.to,
 												date: new Date().toISOString(),
 												read: true,
 												starred: false,
-												body: draftData.body || "",
-											};
-											startCompose({
-												mode: "reply",
-												originalEmail: null,
-												draftEmail,
-											});
-										} else {
-											sendMessage({
-												text: t("Let me edit this draft first. Show me what you have so I can modify it."),
-											});
-										}
+												body: draft.body,
+											},
+										});
+									} else {
+										sendMessage({
+											text: t("Let me edit this draft first. Show me what you have so I can modify it."),
+										});
 									}
 								}}
 							/>
 						))}
+						{failed && !isStreaming && <ChatErrorBubble canRetry={retryable} onRetry={retry} />}
 						{isStreaming && (
 							<div className="flex gap-2">
 								<div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-kumo-fill text-kumo-default">
@@ -441,9 +517,10 @@ function AgentChatConnected({
 	);
 }
 
-export default function AgentPanel() {
+export default function AgentPanel(props: AgentPanelProps = {}) {
 	const t = useT();
-	const { mailboxId } = useParams<{ mailboxId: string }>();
+	const params = useParams<{ mailboxId: string }>();
+	const mailboxId = props.mailboxId ?? params.mailboxId;
 	const [hooks, setHooks] = useState<{
 		useAgent: typeof import("agents/react").useAgent;
 		useAgentChat: typeof import("@cloudflare/ai-chat/react").useAgentChat;
@@ -490,6 +567,9 @@ export default function AgentPanel() {
 			mailboxId={mailboxId ?? "default"}
 			useAgent={hooks.useAgent}
 			useAgentChat={hooks.useAgentChat}
+			onOpenSource={props.onOpenSource}
+			onEditDraft={props.onEditDraft}
+			focus={props.focus}
 		/>
 	);
 }

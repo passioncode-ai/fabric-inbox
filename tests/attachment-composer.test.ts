@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   AttachmentCaptureError,
   attachmentRefs,
@@ -502,4 +503,17 @@ test("failed completion acknowledgement cannot expose ready files after reload",
     prepareMessage(tab().open(current.id), files),
     /Files are not ready/,
   );
+});
+
+// B10-01/02/03: the composer's honesty pass — a sending-worded busy state, the fixed-sender
+// explanation once the draft is on the server, and focus moved to a failed validation.
+test("the composer says Sending…, explains a fixed sender, and focuses a failed field (B10-01, B10-02, B10-03)", () => {
+  const code = readFileSync("app/components/inbox/Composer.tsx", "utf8");
+  assert.match(code, /\? t\("Sending…"\)/);
+  assert.doesNotMatch(code, /t\("Checking…"\)/);
+  assert.match(code, /t\("Loading and saving files… You can keep editing the message\."\)/, "the files state keeps its own words");
+  assert.match(code, /\{!!draft\.serverId && \(\s*<p className="fi-muted">\{t\("Sender is fixed once the draft is on your server; discard to start over\."\)\}<\/p>/);
+  assert.match(code, /focusProblem\(\);/, "a validation failure moves focus");
+  assert.match(code, /ref=\{alertRef\} tabIndex=\{-1\}/, "the alert itself is focusable");
+  for (const ref of ["toField", "ccField", "bccField"]) assert.match(code, new RegExp(`ref=\\{${ref}\\}`));
 });

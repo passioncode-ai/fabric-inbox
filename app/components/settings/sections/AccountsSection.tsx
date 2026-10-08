@@ -8,7 +8,7 @@ import { gmailSetupState, imapSetupState, outlookSetupState } from "~/lib/accoun
 import { useT } from "../../../lib/i18n";
 import { englishT, type T } from "../../../../shared/i18n";
 import { groupRows, visibleRows, type ListEntry } from "../list-model";
-import { settingsPath } from "../paths";
+import { OUTLOOK_SECRET_QUERY, settingsPath } from "../paths";
 import {
   ActionMenu, ActionResult, Badge, Dialog, ListSearch, LoadFailure, Panel, PanelBlock, PanelPlaceholder, SectionLayout,
   SelectableList, SkeletonPanel, SkeletonRows, errorText, useConfirm, useWork,
@@ -17,8 +17,8 @@ import { DOMAINS_KEY, GMAIL_KEY, refreshMail, useDomains, useGmailAccounts } fro
 import { PermissionTable } from "./DomainsSection";
 import { AVAILABILITY_TEXT, PROVIDERS, accountStatusText, availability, type ProviderEntry, type ProviderId } from "./providers";
 import { GmailConnectStep, GmailProblem, GmailSetupWizard, useGmailSetup } from "./GmailSetup";
-import { ConnectImap, ImapPanel } from "./ImapAccount";
-import { MICROSOFT_SETUP_KEY, OutlookConnectStep, OutlookProblem, OutlookSetupWizard, SecretExpiryNotice, useMicrosoftSetup } from "./OutlookSetup";
+import { ConnectImap, ImapPanel, leaveConnectForm } from "./ImapAccount";
+import { MICROSOFT_SETUP_KEY, ConnectOutlookView, OutlookProblem, SecretExpiryNotice, useMicrosoftSetup } from "./OutlookSetup";
 
 /** Where a person creates a token; an account-owned one is under the account's own Manage Account page. */
 const TOKEN_PAGE = "https://dash.cloudflare.com/profile/api-tokens";
@@ -74,9 +74,14 @@ export default function AccountsSection({ id }: { id: string | null }) {
   const groups = groupRows(visibleRows(entries, query, id), groupsFor(t));
   const selected = id ? entries.find((e) => e.key === id) ?? null : null;
   const connecting = params.get("connect") as ProviderId | null;
-  const setConnecting = (p: ProviderId | "" | null) => setParams((old) => {
+  // "Open the Outlook setup" (an account's problem, or the inbox's secret-ends-soon notice) asks for
+  // the setup in its replacing state, at the secret fields, not the connect step (B5-02). It is part
+  // of the address (`?connect=microsoft&replace=secret`), and every other path into the dialog drops it.
+  const replaceSecret = connecting === OUTLOOK_SECRET_QUERY.connect && params.get("replace") === OUTLOOK_SECRET_QUERY.replace;
+  const setConnecting = (p: ProviderId | "" | null, replace?: "secret") => setParams((old) => {
     const n = new URLSearchParams(old);
     if (p === null) n.delete("connect"); else n.set("connect", p);
+    if (replace) n.set("replace", replace); else n.delete("replace");
     return n;
   }, { replace: true, preventScrollReset: true });
 
@@ -111,7 +116,8 @@ export default function AccountsSection({ id }: { id: string | null }) {
     <CloudflarePanel key={selected.key} account={selected.account} entryKey={selected.key}
       onRemoved={() => navigate(settingsPath("accounts"), { replace: true, preventScrollReset: true })} />
   ) : selected.kind === "outlook" ? (
-    <OutlookPanel key={selected.key} account={selected.account} entryKey={selected.key} onSetup={() => setConnecting("microsoft")}
+    <OutlookPanel key={selected.key} account={selected.account} entryKey={selected.key}
+      onSetup={() => setConnecting("microsoft", "secret")}
       onRemoved={() => navigate(settingsPath("accounts"), { replace: true, preventScrollReset: true })} />
   ) : selected.kind === "imap" ? (
     <ImapPanel key={selected.key} account={selected.account} entryKey={selected.key}
@@ -128,7 +134,8 @@ export default function AccountsSection({ id }: { id: string | null }) {
           <ListSearch value={query} onChange={setQuery} placeholder={t("Find an account")} label={t("Find an account")} />
           <button type="button" className="fi-primary" onClick={() => setConnecting("")}><PlusIcon size={16} /> {t("Connect account")}</button>
         </>} />
-      <ConnectDialog open={connecting !== null} provider={connecting || null} onChoose={(p) => setConnecting(p)}
+      <ConnectDialog open={connecting !== null} provider={connecting || null} replaceSecret={replaceSecret}
+        onChoose={(p) => setConnecting(p)}
         onClose={() => setConnecting(null)} list={domains.data} gmailState={gmailSetupState(gmail.data, gmail.error)}
         imapState={imapSetupState(gmail.data, gmail.error)} outlookState={outlookSetupState(gmail.data, gmail.error)}
         onConnected={(key) => { setConnecting(null); navigate(settingsPath("accounts", key), { replace: true, preventScrollReset: true }); }} />
@@ -319,17 +326,23 @@ function OutlookPanel({ account: a, entryKey, onRemoved, onSetup }: { account: A
 
 /* ------------------------------------------------------------ connecting */
 
-function ConnectDialog({ open, provider, onChoose, onClose, list, gmailState, imapState, outlookState, onConnected }: {
-  open: boolean; provider: ProviderId | null; onChoose: (p: ProviderId | "") => void; onClose: () => void;
+function ConnectDialog({ open, provider, replaceSecret, onChoose, onClose, list, gmailState, imapState, outlookState, onConnected }: {
+  open: boolean; provider: ProviderId | null; replaceSecret?: boolean; onChoose: (p: ProviderId | "") => void; onClose: () => void;
   list?: DomainList; gmailState: ReturnType<typeof gmailSetupState>; imapState: ReturnType<typeof imapSetupState>;
   outlookState: ReturnType<typeof outlookSetupState>; onConnected: (accountKey: string) => void;
 }) {
   const t = useT();
+  const confirm = useConfirm();
   const state = { cloudflareConnected: list ? list.connected : null, gmail: gmailState, imap: imapState, outlook: outlookState };
   const chosen = PROVIDERS.find((p) => p.id === provider) ?? null;
   const tradeoff = chosen?.tradeoff ? t("Compared with connecting through Google: {tradeoff}", { tradeoff: t.text(chosen.tradeoff) }) : null;
+  // A typed address or app password in the IMAP form is never discarded silently (B4-01):
+  // Esc or Close with a dirty form asks first; a clean form closes as before.
+  const imapDirty = useRef(false);
+  useEffect(() => { if (!open) imapDirty.current = false; }, [open]);
+  const closeGuarded = () => void leaveConnectForm(imapDirty.current, confirm, t, onClose);
   return (
-    <Dialog open={open} title={chosen ? t("Connect {name}", { name: t.text(chosen.name) }) : t("Connect an account")} onClose={onClose} wide>
+    <Dialog open={open} title={chosen ? t("Connect {name}", { name: t.text(chosen.name) }) : t("Connect an account")} onClose={closeGuarded} wide>
       {!chosen ? (
         <div className="fi-provider-cards">
           {PROVIDERS.map((p) => <ProviderCard key={p.id} provider={p} state={availability(p, state)} onChoose={() => onChoose(p.id)} />)}
@@ -337,13 +350,13 @@ function ConnectDialog({ open, provider, onChoose, onClose, list, gmailState, im
       ) : chosen.id === "gmail" ? (
         <ConnectGmail state={gmailState} onBack={() => onChoose("")} onClose={onClose} />
       ) : chosen.id === "microsoft" ? (
-        <ConnectOutlook state={outlookState} onBack={() => onChoose("")} onClose={onClose} />
+        <ConnectOutlook state={outlookState} replaceSecret={replaceSecret} onBack={() => onChoose("")} onClose={onClose} />
       ) : chosen.id === "cloudflare" ? (
         <ConnectCloudflareAccount list={list} onBack={() => onChoose("")} onClose={onClose} />
       ) : chosen.connect === "app-password" && availability(chosen, state) === "available" ? (
         <>
           {tradeoff && <p className="fi-hint">{tradeoff}</p>}
-          <ConnectImap fixed={chosen.preset} onBack={() => onChoose("")} onConnected={onConnected} />
+          <ConnectImap fixed={chosen.preset} onBack={() => onChoose("")} onConnected={onConnected} onDirtyChange={(d) => { imapDirty.current = d; }} />
         </>
       ) : chosen.connect === "app-password" ? (
         <>
@@ -460,40 +473,14 @@ function ConnectGmail({ state, onBack, onClose }: { state: ReturnType<typeof gma
 }
 
 /**
- * SCN-057, SCN-058: a server without Microsoft set up shows the app registration steps; one with it set up
- * connects an account in the browser. "Use another client secret…" opens the steps again (a secret
- * that ends, or one that leaked, is replaced the same way).
+ * SCN-057, SCN-058: the Outlook side of the connect dialog. Opened from an account problem whose
+ * fix is a new client secret, `replaceSecret` opens it straight in the replacing state (B5-02).
  */
-function ConnectOutlook({ state, onBack, onClose }: { state: ReturnType<typeof outlookSetupState>; onBack: () => void; onClose: () => void }) {
-  const t = useT();
+function ConnectOutlook({ state, replaceSecret = false, onBack, onClose }: { state: ReturnType<typeof outlookSetupState>; replaceSecret?: boolean; onBack: () => void; onClose: () => void }) {
   const client = useQueryClient();
-  const setup = useMicrosoftSetup(state === "configured" || state === "not-configured");
-  const [replacing, setReplacing] = useState(false);
-  if (state === "loading" || (state !== "unavailable" && setup.isPending))
-    return <p role="status">{t("Checking the Outlook setup…")}</p>;
-  if (state === "unavailable" || setup.isError)
-    return (
-      <>
-        <p role="alert">{t("The Outlook setup is unknown: {reason}", { reason: setup.isError ? t.text(errorText(setup.error)) : t("the accounts did not load.") })}</p>
-        <div className="fi-dialog-actions"><button type="button" className="fi-secondary" data-autofocus onClick={onBack}>{t("Back")}</button></div>
-      </>
-    );
-  const data = setup.data!;
-  if (state === "configured" && data.configured && !replacing)
-    return (
-      <>
-        <OutlookConnectStep setup={data} onReplace={() => setReplacing(true)} />
-        <div className="fi-dialog-actions"><button type="button" className="fi-secondary" onClick={onBack}>{t("Back")}</button></div>
-      </>
-    );
   return (
-    <>
-      <OutlookSetupWizard setup={data} onSaved={() => { setReplacing(false); void client.invalidateQueries({ queryKey: GMAIL_KEY }); void client.invalidateQueries({ queryKey: MICROSOFT_SETUP_KEY }); }} />
-      <div className="fi-dialog-actions">
-        <button type="button" className="fi-secondary" onClick={replacing ? () => setReplacing(false) : onBack}>{t("Back")}</button>
-        <button type="button" className="fi-secondary" onClick={onClose}>{t("Later")}</button>
-      </div>
-    </>
+    <ConnectOutlookView state={state} replaceSecret={replaceSecret} onBack={onBack} onClose={onClose}
+      onSaved={() => { void client.invalidateQueries({ queryKey: GMAIL_KEY }); void client.invalidateQueries({ queryKey: MICROSOFT_SETUP_KEY }); }} />
   );
 }
 
