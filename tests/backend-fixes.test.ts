@@ -105,6 +105,20 @@ test("search treats % and _ as text", async () => {
   } finally { await mf.dispose(); }
 });
 
+test("search finds a phrase longer than LIKE's 50-byte cap, and Cyrillic in any case (live 2026-10-09)", async () => {
+  const { mf, op } = await fixture();
+  try {
+    const long = "Fabric Inbox routing test 2026-10-08 22:26 UTC · e832587f";
+    await op({ op: "seed", rows: [["inbox", email("t", { subject: long })], ["inbox", email("r", { subject: "Привет, вопрос по счёту" })], ["inbox", email("x", { subject: "Other" })]] });
+    assert.deepEqual((await op({ op: "search", query: long })).map((e: any) => e.id), ["t"]);
+    for (const q of ["привет", "Привет", "ПРИВЕТ", "счёту"]) assert.deepEqual((await op({ op: "search", query: q })).map((e: any) => e.id), ["r"], q);
+  } finally { await mf.dispose(); }
+  // Durable Object SQLite caps LIKE patterns at 50 bytes; a longer one matched nothing. The search uses instr.
+  const source = (await import("node:fs")).readFileSync("workers/durableObject/index.ts", "utf8");
+  const builder = source.slice(source.indexOf("#buildSearchConditions("), source.indexOf("async searchEmails("));
+  assert.doesNotMatch(builder, /LIKE \$\{/, "no SQL LIKE condition is built");
+});
+
 test("a draft id can only replace a draft, and the old draft goes only after the new one is stored", async () => {
   const { mf, op, api } = await fixture();
   try {
