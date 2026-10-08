@@ -5,6 +5,35 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.13.0 — 2026-10-08
+
+- **Forwarding copies work again.** Since 0.8.2 no Cloudflare address had sent its copy to a
+  forwarding destination, and mail to an unknown address could fail instead of being refused: the
+  step that retries a delivery dropped the message's own forward and refuse actions. Both are kept
+  now, and a test sends a message shaped like Cloudflare's own through the whole path.
+- **Senders have names.** Cloudflare mail shows "Maya Chen <maya@…>" instead of a bare address; the
+  name is kept on arrival, and older mail reads it from its stored header. Search finds Cyrillic in
+  any case ("привет" finds "Привет").
+- **The reader says more, and only what applies.** Cc is shown; Reply all appears when it reaches
+  someone besides the sender and fills To and Cc from everyone on the message; the "external images
+  are blocked" line appears only on mail that has remote content.
+- **Ask AI from the inbox.** The AI panel opens from the inbox header — a column on wide windows, a
+  sheet on narrow ones. A failed answer says so with Retry; the messages an answer read are links
+  that open them.
+- **Rules you can enable from the app.** Enable waits for a dry-run of the current values; the
+  dry-run offers the account's newest mail by sender and subject instead of a message id, and says
+  in a sentence what the rule would do. Rule cards show the version and attempts; a run whose result
+  is unknown has Check status (agents: `check_rule_run`). Cloud-tool arguments may use
+  `{{email.preview}}`, the first 300 characters as plain text.
+- **New addresses show up at once.** An address made in the last 7 days is listed in the sidebar
+  even with no mail yet (agents: `list_accounts` returns `createdAt`).
+- **Connecting a hub brings the app forward.** The Allow/Deny prompt comes to the front with a Dock
+  bounce, and closes by itself when the hub stops waiting or after 2 minutes.
+- **Smaller fixes.** Unsaved signature edits ask before leaving; an agent's tool is checked when the
+  agent is saved; the IMAP form asks before discarding what you typed; the Outlook secret warning
+  opens the secret setup; a failed refresh keeps the list with Retry; Esc cancels inbox
+  confirmations; downloads name the file and show progress.
+
 ## 0.12.0 — 2026-10-07
 
 - **Fabric Inbox in Russian.** The app opens in Russian when the Mac's first language is Russian,
