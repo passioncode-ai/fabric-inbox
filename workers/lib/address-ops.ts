@@ -482,7 +482,7 @@ const testKey = (email: string) => `routing-tests/${email}.json`;
 /** A test not arrived after this long is reported as not arrived (SCN-062). */
 export const TEST_WAIT_MS = 3 * 60_000;
 
-interface TestRecord { subject: string; sentAt: string; outboxId: string | null; sendStatus: string; errorCode: string | null }
+interface TestRecord { subject: string; sentAt: string; outboxId: string | null; sendStatus: string; errorCode: string | null; errorDetail?: string | null }
 
 export interface TestStatus {
   subject: string;
@@ -503,7 +503,11 @@ function testState(record: TestRecord, arrival: { date: string; folder: string }
         ? msg("The test message arrived: mail sent to this address reaches it here.")
         : msg("The test message arrived in {folder}: mail sent to this address reaches it here.", { folder: arrival.folder }) };
   if (record.sendStatus === "failed")
-    return { ...base, state: "failed", detail: record.errorCode
+    // The provider's own words when it gave any (live 2026-10-08: "sending may be off" was shown for a
+    // domain whose sending was on, hiding the real refusal).
+    return { ...base, state: "failed", detail: record.errorDetail
+      ? msg("The provider refused the test message ({code}): {detail}", { code: record.errorCode ?? "refused", detail: record.errorDetail })
+      : record.errorCode
       ? msg("The provider refused the test message ({code}): sending from this domain may be off. Turn on sending on its domain, then send it again.", { code: record.errorCode })
       : msg("The provider refused the test message: sending from this domain may be off. Turn on sending on its domain, then send it again.") };
   if (now - Date.parse(record.sentAt) > TEST_WAIT_MS)
@@ -531,7 +535,8 @@ export async function sendRoutingTest(env: Env, rawEmail: string, now = Date.now
     request: { from: email, to: email, subject, text: "If this message appears in the address's inbox, routing works." },
   });
   if ("error" in result) return { status: 400, body: { error: result.error } };
-  const record: TestRecord = { subject, sentAt: new Date(now).toISOString(), outboxId: result.id ?? null, sendStatus: result.status, errorCode: result.errorCode ?? null };
+  const record: TestRecord = { subject, sentAt: new Date(now).toISOString(), outboxId: result.id ?? null, sendStatus: result.status, errorCode: result.errorCode ?? null,
+    errorDetail: (result as { errorDetail?: string | null }).errorDetail ?? null };
   await env.BUCKET.put(testKey(email), JSON.stringify(record));
   console.log(JSON.stringify({ event: "routing_test_sent", domain: domainOf(email), status: result.status }));
   return { status: 200, body: { subject, status: result.status, errorCode: result.errorCode ?? null, test: testState(record, null, now) } };

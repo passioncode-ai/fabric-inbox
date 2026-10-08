@@ -15,6 +15,8 @@ function database(path = ':memory:') {
     return db.prepare(query).all(...args);
   } };
   db.exec(OUTBOX_SCHEMA);
+  // migration 20_outbox_error_detail, once per database (a reopened file already has it)
+  if (!(db.prepare('PRAGMA table_info(outbox)').all() as { name: string }[]).some((c) => c.name === 'error_detail')) db.exec('ALTER TABLE outbox ADD COLUMN error_detail TEXT');
   const store = new SqlOutboxStore(sql, fn => {
     db.exec('BEGIN');
     try { const result = fn(); db.exec('COMMIT'); return result; }
@@ -148,4 +150,17 @@ test('receipt persistence failure cannot turn accepted transport into a second s
   assert.equal(first.errorCode, 'RECEIPT_PERSISTENCE_FAILED');
   assert.equal((await f.coordinator.submit('a', 'key', payload)).status, 'unknown');
   assert.equal(f.counts().sends, 1);
+});
+
+test("a coded refusal keeps the provider's reason, with credentials and addresses masked; other failures keep none", async () => {
+  const { refusalDetail } = await import('../workers/actions/outbox');
+  const reason = 'email.sending.error.sending_disabled for anna@shop.example; Bearer abc.def ' + 'k'.repeat(40);
+  const f = fixture({ transport: () => { throw Object.assign(new Error(reason), { code: 'E_REST_REFUSED' }); } });
+  const result = await f.coordinator.submit('a', 'k-detail', payload);
+  assert.equal(result.status, 'failed');
+  assert.equal(result.errorDetail, 'email.sending.error.sending_disabled for [address]; Bearer [hidden] [hidden]');
+  assert.equal(refusalDetail('x'.repeat(400) + ' ').length <= 300, true);
+  assert.equal(refusalDetail(''), null);
+  const unknown = fixture({ transport: () => { throw new Error('socket closed by anna@shop.example'); } });
+  assert.equal((await unknown.coordinator.submit('a', 'k-unknown', payload)).errorDetail, null, 'an outcome nobody knows keeps no provider text');
 });

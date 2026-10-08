@@ -27,6 +27,8 @@ export interface OutboxRow {
   id: string; mailbox_id: string; idempotency_key: string; payload_hash: string;
   status: OutboxStatus; created_at: number; updated_at: number; attempts: number;
   provider_message_id: string | null; projection_status: 'pending' | 'complete'; error_code: string | null;
+  /** The provider's own words for a refusal, cut to 300 characters (migration 20); null otherwise. */
+  error_detail?: string | null;
 }
 export interface OutboxSql { exec(query: string, ...args: (string | number | null)[]): Iterable<any> }
 export class IdempotencyConflict extends Error {
@@ -35,7 +37,8 @@ export class IdempotencyConflict extends Error {
 export function journal(row: OutboxRow): OutboxEntry {
   return { id: row.id, mailboxId: row.mailbox_id, status: row.status, createdAt: row.created_at,
     updatedAt: row.updated_at, attempts: row.attempts, providerMessageId: row.provider_message_id,
-    deliveryStatus: 'unconfirmed', projectionStatus: row.projection_status, errorCode: row.error_code };
+    deliveryStatus: 'unconfirmed', projectionStatus: row.projection_status, errorCode: row.error_code,
+    errorDetail: row.error_detail ?? null };
 }
 export class SqlOutboxStore {
   constructor(private sql: OutboxSql, private atomic: <T>(fn: () => T) => T) {}
@@ -81,8 +84,8 @@ export class SqlOutboxStore {
       return [...this.sql.exec("UPDATE outbox SET status = 'sending', attempts = attempts + 1, attempted_at = ?, updated_at = ? WHERE id = ? AND status = 'pending' RETURNING id", now, now, id)].length === 1;
     });
   }
-  finish(id: string, state: 'accepted' | 'failed' | 'unknown', receipt: string | null, code: string | null) {
-    this.sql.exec('UPDATE outbox SET status = ?, provider_message_id = ?, error_code = ?, updated_at = ? WHERE id = ? AND status IN (\'pending\', \'sending\')', state, receipt, code, Date.now(), id);
+  finish(id: string, state: 'accepted' | 'failed' | 'unknown', receipt: string | null, code: string | null, detail: string | null = null) {
+    this.sql.exec('UPDATE outbox SET status = ?, provider_message_id = ?, error_code = ?, error_detail = ?, updated_at = ? WHERE id = ? AND status IN (\'pending\', \'sending\')', state, receipt, code, detail, Date.now(), id);
   }
   projected(id: string) {
     this.atomic(() => {
