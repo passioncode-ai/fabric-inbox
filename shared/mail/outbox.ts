@@ -11,4 +11,6 @@ export interface OutboxEntry {
   deliveryStatus: 'unconfirmed';
   projectionStatus: 'pending' | 'complete';
   errorCode: string | null;
+  /** The provider's own words for a refusal (300 characters at most), when it gave any. */
+  errorDetail?: string | null;
 }

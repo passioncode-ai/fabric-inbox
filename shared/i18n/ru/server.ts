@@ -227,6 +227,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"{domain} is not served here; receive its mail here first (Settings → Domains, or connect_domain)": "{domain} здесь не обслуживается; сначала начните получать его почту здесь («Настройки → Домены» или connect_domain)",
 	"The test message arrived: mail sent to this address reaches it here.": "Тестовое письмо пришло: почта на этот адрес доходит сюда.",
 	"The test message arrived in {folder}: mail sent to this address reaches it here.": "Тестовое письмо пришло в {folder}: почта на этот адрес доходит сюда.",
+	"The provider refused the test message ({code}): {detail}": "Провайдер отклонил тестовое письмо ({code}): {detail}",
 	"The provider refused the test message ({code}): sending from this domain may be off. Turn on sending on its domain, then send it again.": "Провайдер отклонил тестовое письмо ({code}): возможно, отправка с этого домена выключена. Включите отправку для домена и отправьте письмо снова.",
 	"The provider refused the test message: sending from this domain may be off. Turn on sending on its domain, then send it again.": "Провайдер отклонил тестовое письмо: возможно, отправка с этого домена выключена. Включите отправку для домена и отправьте письмо снова.",
 	"The test message has not arrived after 3 minutes. Cloudflare may not send this address's mail here: check its routing.": "Тестовое письмо не пришло за 3 минуты. Возможно, Cloudflare не направляет почту этого адреса сюда: проверьте его маршрутизацию.",

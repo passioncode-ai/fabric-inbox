@@ -236,6 +236,11 @@ export const mailboxMigrations: Migration[] = [
 		name: "19_sender_name",
 		sql: txn(`ALTER TABLE emails ADD COLUMN sender_name TEXT;`),
 	},
+	{
+		// The provider's words for a refused send, so a failed action says why (workers/actions/outbox.ts).
+		name: "20_outbox_error_detail",
+		sql: txn(`ALTER TABLE outbox ADD COLUMN error_detail TEXT;`),
+	},
 ];
 
 /** The id and name a person's own folder gets when it held the id 'discarded' (migration 18). */

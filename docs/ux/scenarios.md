@@ -1326,7 +1326,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** draft
 - **Coverage:** app/components/settings/sections/AddAddress.tsx, app/components/settings/sections/add-address-model.ts, workers/lib/address-ops.ts (createAddress, routingTestStatus), workers/routes/agents.ts (/api/project-addresses/:email/test), tests/project-addresses.test.ts, tests/add-address-model.test.ts
 - **Product:** unobserved
-- **Today:** Built in 0.12 (WS7). Without a token the local server makes no rule and the test is sent through the local Email binding; arrival was exercised with a message delivered to the local Worker.
+- **Today:** Built in 0.12 (WS7). Without a token the local server makes no rule and the test is sent through the local Email binding; arrival was exercised with a message delivered to the local Worker. Live 2026-10-09: a refused test showed only `E_REST_REFUSED` and "sending from this domain may be off" for a domain whose sending was on; a coded refusal now keeps the provider's reason (≤ 300 characters, credentials and addresses masked) in the outbox entry (`errorDetail`, migration 20) and the test result shows it (`refusalDetail`, `tests/outbox.test.ts`).
 
 ### SCN-063: Create an address on a domain that does not receive here yet
 - **Persona:** P-01

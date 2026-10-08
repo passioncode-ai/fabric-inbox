@@ -60,7 +60,8 @@ export class OutboxCoordinator {
       } catch (error) {
         const code = (error as { code?: unknown })?.code;
         const rejected = typeof code === 'string' && REJECTIONS.has(code);
-        this.store.finish(id, rejected ? 'failed' : 'unknown', null, rejected ? code : 'TRANSPORT_OUTCOME_UNKNOWN');
+        this.store.finish(id, rejected ? 'failed' : 'unknown', null, rejected ? code : 'TRANSPORT_OUTCOME_UNKNOWN',
+          rejected ? refusalDetail((error as Error)?.message) : null);
         return journal(this.store.get(id)!);
       }
       // Commit acceptance before projection. If this write fails the persisted
@@ -82,4 +83,21 @@ export class OutboxCoordinator {
     }
     return journal(this.store.get(id)!);
   }
+}
+
+/**
+ * A refusal in the provider's own words, kept with the failed action so a person sees why (live
+ * 2026-10-08: an address showed only E_REST_REFUSED and a wrong guess). Only a coded, definite
+ * refusal keeps it; cut to 300 characters, credentials and mail addresses masked, so the journal
+ * still never carries a secret or a recipient.
+ */
+export function refusalDetail(message: unknown): string | null {
+  if (typeof message !== "string" || !message.trim()) return null;
+  return message
+    .replace(/Bearer\s+\S+/gi, "Bearer [hidden]")
+    .replace(/[^\s@<>"'(),;:]+@[^\s@<>"'(),;:]+\.[A-Za-z]{2,}/g, "[address]")
+    .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[hidden]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 300);
 }
