@@ -29,6 +29,8 @@ export interface Email {
 	folder_id?: string | null;
 	subject: string;
 	sender: string;
+	/** The name the message gave its sender; shown beside the address (shared/mail/sender.ts). */
+	sender_name?: string | null;
 	recipient: string;
 	cc?: string;
 	bcc?: string;

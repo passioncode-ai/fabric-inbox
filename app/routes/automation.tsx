@@ -41,6 +41,42 @@ export function enableLocked(
   if (currentKey !== null && saved?.enabled && saved.key === currentKey) return false;
   return currentKey === null || currentKey !== dryRunKey;
 }
+
+/** What a dry-run answers (workers/automation/index.ts dryRun): nothing is executed. */
+export interface DryRunResult {
+  matched: boolean;
+  analysis: { matches: boolean; summary: string; draft: string };
+  action: { type: string };
+  executed: false;
+}
+
+function actionLabel(type: string, t: T): string {
+  switch (type) {
+    case "archive": return t("Archive");
+    case "mark_read": return t("Mark read");
+    case "draft": return t("Prepare a reply draft");
+    case "forward": return t("Forward message");
+    case "mcp": return t("Call a cloud tool (MCP)");
+    default: return type;
+  }
+}
+
+/** A dry-run said in a sentence instead of JSON (UI walk 2026-10-08); the JSON stays under Details. */
+export function dryRunSentence(result: DryRunResult, t: T): string {
+  if (!result.matched) return t("This message does not match: {reason}", { reason: t.text(result.analysis.summary) });
+  return t("This message matches. The rule would: {action}. Nothing was done.", { action: actionLabel(result.action.type, t) });
+}
+
+/** The unified feed names a Cloudflare mailbox `cloudflare:<address>`; other accounts already carry their provider. */
+export function feedAccount(account: string): string {
+  return /^(gmail|imap|outlook|cloudflare):/.test(account) ? account : `cloudflare:${account}`;
+}
+
+/** How a message is named in the dry-run picker: who sent it and its subject. */
+export function previewLabel(m: { sender: string; subject: string }, t: T): string {
+  const who = m.sender.replace(/\s*<[^>]+>/, "").replace(/^"|"$/g, "") || m.sender;
+  return `${who} — ${m.subject || t("No subject")}`;
+}
 /** A run's status in words; an unknown one shows as it came. */
 function runStatusText(status: string, t: T): string {
   switch (status) {
@@ -124,13 +160,27 @@ export default function Automation() {
     refetchInterval: pollInterval(active, AUTOMATION_POLL_MS),
   });
   const [editing, setEditing] = useState<Rule | null>(null);
+  // The messages a dry-run can preview with: this account's newest inbox mail, picked by name
+  // instead of a typed internal id (UI walk 2026-10-08 — the dry-run gate made the id a wall).
+  const previewMessages = useQuery({
+    queryKey: ["rule-preview-messages", account],
+    queryFn: () =>
+      fabric<{ messages: { providerMessageId: string; sender: string; subject: string }[] }>(
+        "/api/inbox?" + new URLSearchParams({ account: feedAccount(account), folder: "inbox", limit: "20" }),
+      ).then((r) => r.messages),
+    enabled: editing !== null,
+  });
   const [args, setArgs] = useState("{}");
   const [messageId, setMessageId] = useState("");
-  const [preview, setPreview] = useState("");
+  const [preview, setPreview] = useState<DryRunResult | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<{ key: string; enabled: boolean } | null>(null);
   const [dryRunKey, setDryRunKey] = useState("");
+  useEffect(() => {
+    const first = previewMessages.data?.[0]?.providerMessageId;
+    if (first && !previewMessages.data?.some((m) => m.providerMessageId === messageId)) setMessageId(first);
+  }, [previewMessages.data, messageId]);
   // Per run: a check in flight, or what the last check found (or why it could not run).
   const [checks, setChecks] = useState<Record<string, { busy: boolean; text?: string; failed?: boolean }>>({});
   async function checkRun(id: string) {
@@ -154,7 +204,7 @@ export default function Automation() {
         ? JSON.stringify(rule.action.arguments, null, 2)
         : "{}",
     );
-    setPreview("");
+    setPreview(null);
     setNotice("");
   }
   function value() {
@@ -492,14 +542,36 @@ export default function Automation() {
             </p>
           )}
           <div className="border-t border-kumo-line pt-4">
-            <label className="block">
-              {t("Preview message ID")}
-              <input
-                className={input}
-                value={messageId}
-                onChange={(e) => setMessageId(e.target.value)}
-              />
-            </label>
+            {previewMessages.isError ? (
+              <label className="block">
+                {t("Preview message ID")}
+                <span className="block text-sm text-kumo-subtle">{t("Recent mail could not be read; enter a message ID instead.")}</span>
+                <input
+                  className={input}
+                  value={messageId}
+                  onChange={(e) => setMessageId(e.target.value)}
+                />
+              </label>
+            ) : previewMessages.isPending ? (
+              <p className="text-sm text-kumo-subtle">{t("Loading…")}</p>
+            ) : previewMessages.data.length === 0 ? (
+              <p className="text-sm text-kumo-subtle">{t("No mail here yet to preview the rule with.")}</p>
+            ) : (
+              <label className="block">
+                {t("Message to preview")}
+                <select
+                  className={input}
+                  value={messageId}
+                  onChange={(e) => setMessageId(e.target.value)}
+                >
+                  {previewMessages.data.map((m) => (
+                    <option key={m.providerMessageId} value={m.providerMessageId}>
+                      {previewLabel(m, t)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <Button
               type="button"
               variant="secondary"
@@ -508,14 +580,10 @@ export default function Automation() {
                 perform(async () => {
                   const rule = value();
                   setPreview(
-                    JSON.stringify(
-                      await fabric(base + "/dry-run", {
-                        emailId: messageId,
-                        rule,
-                      }),
-                      null,
-                      2,
-                    ),
+                    await fabric<DryRunResult>(base + "/dry-run", {
+                      emailId: messageId,
+                      rule,
+                    }),
                   );
                   setDryRunKey(ruleReviewKey(rule));
                 })
@@ -527,12 +595,16 @@ export default function Automation() {
               {t("Preview only. No message is sent, moved or changed.")}
             </p>
             {preview && (
-              <pre
-                aria-live="polite"
-                className="mt-3 whitespace-pre-wrap break-words text-sm"
-              >
-                {preview}
-              </pre>
+              <div className="mt-3 text-sm" aria-live="polite">
+                <p>{dryRunSentence(preview, t)}</p>
+                {preview.matched && preview.analysis.draft ? (
+                  <pre className="mt-2 whitespace-pre-wrap break-words">{preview.analysis.draft}</pre>
+                ) : null}
+                <details className="mt-2">
+                  <summary>{t("Details")}</summary>
+                  <pre className="whitespace-pre-wrap break-words">{JSON.stringify(preview, null, 2)}</pre>
+                </details>
+              </div>
             )}
           </div>
           <div className="flex gap-3">

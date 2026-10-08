@@ -21,6 +21,7 @@ import { cloudflareWorkspace } from "./discard/workspace";
 import type { Env } from "./types";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
 import { incomingFailure } from "./incoming-log";
+import { cleanSenderName } from "../shared/mail/sender";
 
 type AppContext = Context<MailboxContext>;
 
@@ -596,7 +597,8 @@ async function receiveEmail(event: IncomingEmailEvent, env: Env, ctx: ExecutionC
 
 	const inserted = await stub.receiveEmailOnce({
 		id: messageId, subject: parsedEmail.subject || "",
-		sender: (parsedEmail.from?.address || "").toLowerCase(), recipient: allRecipients.join(", "),
+		sender: (parsedEmail.from?.address || "").toLowerCase(), sender_name: cleanSenderName(parsedEmail.from?.name),
+		recipient: allRecipients.join(", "),
 		cc: ccRecipients.join(", ") || null, bcc: bccRecipients.join(", ") || null,
 		date: new Date().toISOString(), // uses receive time, not the email's Date header
 		body: parsedEmail.html || parsedEmail.text || "",

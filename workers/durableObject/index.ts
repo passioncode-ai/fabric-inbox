@@ -118,6 +118,8 @@ interface EmailData {
 	id: string;
 	subject: string;
 	sender: string;
+	/** The name the message gave its sender (From), shown beside the address. */
+	sender_name?: string | null;
 	recipient: string;
 	cc?: string | null;
 	bcc?: string | null;
@@ -1493,6 +1495,7 @@ export class MailboxDO extends DurableObject<Env> {
 				folder_id: folderId,
 				subject: email.subject,
 				sender: email.sender,
+				sender_name: email.sender_name ?? null,
 				recipient: email.recipient,
 				cc: email.cc ?? null,
 				bcc: email.bcc ?? null,

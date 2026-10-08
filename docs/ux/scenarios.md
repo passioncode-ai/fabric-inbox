@@ -167,7 +167,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** validated
 - **Coverage:** app/routes/unified-inbox.tsx (`UnifiedInbox`, `scope`, detail query, `checkForMail`, head query); app/components/inbox/model.ts (`messagePath`); workers/routes/inbox.ts (`/api/inbox/refresh`); app/lib/mail-refresh.ts; workers/providers/gmail-cache.ts
 - **Product:** unobserved
-- **Today:** Partial. The unified workbench shows all-account mail with source labels and filters one account in place through URL scope. Root observed three synthetic accounts, six messages and a one-account view with two messages (RE-009). Detail queries retain account and provider message identity. Individual-message reading exists; full threads, real multi-account synchronization and live account acceptance remain unverified.
+- **Today:** Partial. The unified workbench shows all-account mail with source labels and filters one account in place through URL scope. Root observed three synthetic accounts, six messages and a one-account view with two messages (RE-009). Detail queries retain account and provider message identity. Individual-message reading exists; full threads, real multi-account synchronization and live account acceptance remain unverified. UI walk 2026-10-08: Cloudflare rows show the sender's name beside the address (`sender_name`, migration 19; older rows read their stored From header — `shared/mail/sender.ts`, `tests/sender-display.test.ts`), and the reader names Cc and shows the external-images notice only when the message has remote content (`app/lib/mail-content.ts`); a short address list shows no dead collapse control.
 
 ### SCN-005: Search and recover an empty result
 - **Persona:** P-01
@@ -187,7 +187,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** draft
 - **Coverage:** app/routes/unified-inbox.tsx (`scope`, list query, search form); app/routes/search-results.tsx; app/components/LoadError.tsx; workers/routes/inbox.ts; tests/c2-frontend.test.ts (search failure, failed refresh with results shown, no match, partial answer: AUD-B6-02)
 - **Product:** unobserved
-- **Today:** Partial. Search cached mail retains account/folder scope in the URL, distinguishes no matches from no accounts or failed load, and offers Clear search. Load older messages follows the API cursor. A failed refresh over shown results — in the unified inbox as in a Cloudflare mailbox's search — keeps the list and offers a one-line Retry bar instead of replacing it with the full error panel (`tests/mail-refresh.test.ts`). Search covers cached provider data, not all provider history or offline desktop mail. Live search completeness and stale-result labeling remain unverified.
+- **Today:** Partial. Search cached mail retains account/folder scope in the URL, distinguishes no matches from no accounts or failed load, and offers Clear search. Load older messages follows the API cursor. A failed refresh over shown results — in the unified inbox as in a Cloudflare mailbox's search — keeps the list and offers a one-line Retry bar instead of replacing it with the full error panel (`tests/mail-refresh.test.ts`). Search covers cached provider data, not all provider history or offline desktop mail. Live search completeness and stale-result labeling remain unverified. UI walk 2026-10-08: Cloudflare search folded ASCII only, so "привет" never found "Привет"; a query with other letters now also matches its lower, capitalised and upper forms (`searchVariants`, `workers/lib/inbox-query.ts`).
 
 ### SCN-006: Compose and save a draft
 - **Persona:** P-01
@@ -250,7 +250,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** validated
 - **Coverage:** app/routes/unified-inbox.tsx (`compose`); app/components/inbox/Composer.tsx (`send`, From selector); app/components/inbox/send-state.ts (`replyRecipient`, `replyAllRecipients`)
 - **Product:** unobserved
-- **Today:** Partial. Reply prepares recipients from the selected message, keeps its account fixed and retains Gmail thread/message references. Replying to a sent message selects its original recipient. Reply all seeds To with the sender and the other original recipients and Cc with the other copied addresses, each address once and never the account itself, and is not offered when the account is the only participant (`tests/inbox-ui.test.ts`). Complete-thread continuity remains open; no live reply acceptance is claimed.
+- **Today:** Partial. Reply prepares recipients from the selected message, keeps its account fixed and retains Gmail thread/message references. Replying to a sent message selects its original recipient. Reply all seeds To with the sender and the other original recipients and Cc with the other copied addresses, each address once and never the account itself, and is not offered when the account is the only participant (`tests/inbox-ui.test.ts`). Complete-thread continuity remains open; no live reply acceptance is claimed. UI walk 2026-10-08: Reply all is offered only when it reaches someone besides the sender (`offersReplyAll`, `tests/inbox-ui.test.ts`).
 
 ### SCN-009: Forward with attachments
 - **Persona:** P-01
@@ -372,7 +372,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** validated
 - **Coverage:** app/routes/automation.tsx:243, app/routes/automation.tsx:504, workers/automation/index.ts:212; tests/c2-automation.test.ts (dry-run returns executed:false with no mailbox, outbox, run, counter or network effect: AUD-B11-05)
 - **Product:** unobserved
-- **Today:** Partial. Rule fields and dry-run JSON preview are wired; preview text states no mail mutation, and a successful dry-run of the current form values is what unlocks Enable. Live AI/tool preview acceptance remains open.
+- **Today:** Partial. Rule fields and dry-run JSON preview are wired; preview text states no mail mutation, and a successful dry-run of the current form values is what unlocks Enable. Live AI/tool preview acceptance remains open. UI walk 2026-10-08: the gate had made Enable depend on typing an internal message id; the editor now offers this account's 20 newest inbox messages by sender and subject (newest preselected, a typed id only when the list cannot be read) and says the result in a sentence with the JSON under Details (`feedAccount`, `previewLabel`, `dryRunSentence`, `tests/automation-ui.test.ts`).
 
 ### SCN-015: Enable and pause a rule
 - **Persona:** P-01

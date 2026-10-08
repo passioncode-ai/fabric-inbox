@@ -107,6 +107,7 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Archive message": "Архивировать письмо",
 	"Message could not load": "Не удалось загрузить письмо",
 	"To {to}": "Кому: {to}",
+	"Cc {cc}": "Копия: {cc}",
 	"No message body.": "В письме нет текста.",
 	"Attachments": "Вложения",
 	"Downloading…": "Скачиваем…",

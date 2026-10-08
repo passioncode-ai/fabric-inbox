@@ -1,6 +1,7 @@
 import { inboxIdentity, type InboxReadOptions, type InboxMessage } from "../../shared/mail/inbox";
 import { signalsFromHeaders, triage } from "../../shared/mail/triage";
 import { parseStoredHeaders } from "../agents/prefilter";
+import { displaySender } from "../../shared/mail/sender";
 import { msg } from "../../shared/i18n";
 
 /** Bounded SQL keyset read. SQL parameters contain every caller-controlled value. */
@@ -10,8 +11,13 @@ export function mailboxInboxQuery(accountId: string, options: InboxReadOptions) 
   else { conditions.push("folder_id = ?"); parameters.push(options.folder); }
   if (options.unread) conditions.push("read = 0");
   if (options.query) {
-    conditions.push("instr(lower(coalesce(subject,'') || ' ' || coalesce(sender,'') || ' ' || coalesce(recipient,'') || ' ' || coalesce(snippet,'')), ?) > 0");
-    parameters.push(options.query.toLowerCase());
+    // SQLite's lower() folds ASCII only, so "Привет" never matched "привет" (UI walk 2026-10-08).
+    // The ASCII-folded match stays; a query with other letters also looks for its lower, capitalised
+    // and upper forms in the text as written.
+    const text = "(coalesce(subject,'') || ' ' || coalesce(sender,'') || ' ' || coalesce(sender_name,'') || ' ' || coalesce(recipient,'') || ' ' || coalesce(snippet,''))";
+    const variants = searchVariants(options.query);
+    conditions.push(`(instr(lower(${text}), ?) > 0${variants.map(() => ` OR instr(${text}, ?) > 0`).join("")})`);
+    parameters.push(options.query.toLowerCase(), ...variants);
   }
   if (options.before) {
     const before = options.before;
@@ -20,16 +26,24 @@ export function mailboxInboxQuery(accountId: string, options: InboxReadOptions) 
   }
   parameters.push(options.limit + 1);
   return {
-    sql: `SELECT * FROM (SELECT id, subject, sender, recipient, date, read, starred, thread_id, folder_id, raw_headers, message_id, spam_reason, discard_reason,
+    sql: `SELECT * FROM (SELECT id, subject, sender, sender_name, recipient, date, read, starred, thread_id, folder_id, raw_headers, message_id, spam_reason, discard_reason,
       substr(body,1,2000) AS snippet,
       coalesce(cast(round((julianday(date)-2440587.5)*86400000) AS INTEGER),0) AS timestamp
       FROM emails) WHERE ${conditions.join(" AND ")} ORDER BY timestamp DESC, id ASC LIMIT ?`,
     parameters,
   };
 }
+/** Case forms of a query with non-ASCII letters, matched against the text as written (SQLite folds ASCII only). */
+export function searchVariants(query: string): string[] {
+  if (!/[^\u0000-\u007f]/.test(query)) return [];
+  const lower = query.toLocaleLowerCase();
+  const forms = [lower, lower.charAt(0).toLocaleUpperCase() + lower.slice(1), query.toLocaleUpperCase()];
+  return [...new Set(forms)];
+}
+
 export interface MailboxInboxRow {
   [key: string]: string | number | null;
-  id: string; subject: string | null; sender: string | null; recipient: string | null;
+  id: string; subject: string | null; sender: string | null; sender_name: string | null; recipient: string | null;
   date: string | null; read: number; starred: number; thread_id: string | null;
   snippet: string | null; timestamp: number; raw_headers: string | null; message_id: string | null;
   spam_reason: string | null; folder_id: string | null; discard_reason: string | null;
@@ -48,7 +62,7 @@ export function textSnippet(body: string | null): string {
 }
 export function mailboxInboxMessage(accountId: string, row: MailboxInboxRow, ownDomains: string[] = []): InboxMessage {
   const message: InboxMessage = { id: inboxIdentity(accountId, row.id), accountId, provider: "cloudflare", providerMessageId: row.id,
-    subject: row.subject || "", sender: row.sender || "", recipient: row.recipient || "",
+    subject: row.subject || "", sender: displaySender(row.sender, row.sender_name, row.raw_headers), recipient: row.recipient || "",
     date: new Date(row.timestamp).toISOString(), timestamp: row.timestamp,
     read: !!row.read, starred: !!row.starred, snippet: textSnippet(row.snippet), threadId: row.thread_id || undefined,
     ...(row.message_id ? { rfcMessageId: String(row.message_id).replace(/^<|>$/g, "").toLowerCase() } : {}),

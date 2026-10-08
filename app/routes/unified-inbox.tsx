@@ -406,6 +406,8 @@ export default function UnifiedInbox() {
   const owner = accounts.find((a) => a.id === selected?.accountId);
   /** Everyone a Reply all would reach, or null when the account is the only participant (the button is then not offered, B10-06). */
   const replyAll = detail.data && owner ? replyAllRecipients(detail.data.from, detail.data.to, detail.data.cc ?? "", owner.email) : null;
+  // Reply all is offered only when it reaches someone Reply does not (UI walk 2026-10-08): one sender and nobody else is a plain Reply.
+  const offersReplyAll = !!replyAll && (replyAll.cc !== "" || replyAll.to.includes(","));
   // Drafts on the server, every account's (B-52): read afresh each time Drafts opens.
   const serverDrafts = useQuery({
     queryKey: ["server-drafts", accounts.map((a) => a.id).join(",")],
@@ -1375,6 +1377,7 @@ export default function UnifiedInbox() {
                             <div>
                               <strong>{detail.data.from}</strong>
                               <p>{t("To {to}", { to: detail.data.to })}</p>
+                              {detail.data.cc ? <p>{t("Cc {cc}", { cc: detail.data.cc })}</p> : null}
                             </div>
                             <time dateTime={detail.data.date}>
                               {listDate(detail.data.date, undefined, t)}
@@ -1426,7 +1429,7 @@ export default function UnifiedInbox() {
                         >
                           <ArrowBendUpLeftIcon size={17} /> {t("Reply")}
                         </button>
-                        {replyAll && (
+                        {offersReplyAll && (
                           <button
                             className="fi-secondary"
                             onClick={() => void compose("reply", true)}

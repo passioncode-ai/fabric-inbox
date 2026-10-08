@@ -121,10 +121,13 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
           return (
             <div key={g.key} className="fi-account-group">
               <div className={"fi-domain-row" + (selectedGroup ? " is-active" : "")}>
-                <button type="button" className="fi-domain-toggle" aria-expanded={expanded}
-                  aria-label={t(expanded ? "Collapse {label}" : "Expand {label}", { label: g.label })} onClick={() => toggle(g.key)} disabled={small}>
-                  {expanded ? <CaretDownIcon size={12} /> : <CaretRightIcon size={12} />}
-                </button>
+                {/* A short list does not fold: a spacer keeps the row's alignment instead of a dead, disabled control. */}
+                {small ? <span className="fi-domain-toggle" aria-hidden="true" /> : (
+                  <button type="button" className="fi-domain-toggle" aria-expanded={expanded}
+                    aria-label={t(expanded ? "Collapse {label}" : "Expand {label}", { label: g.label })} onClick={() => toggle(g.key)}>
+                    {expanded ? <CaretDownIcon size={12} /> : <CaretRightIcon size={12} />}
+                  </button>
+                )}
                 <button type="button" className="fi-domain-name" aria-pressed={selectedGroup}
                   title={g.kind === "domain" ? t("Every address on {domain}", { domain: g.label }) : t(g.kind === "gmail" ? "Every Gmail account" : g.kind === "outlook" ? "Every Outlook account" : "Every IMAP account")}
                   onClick={() => g.kind !== "domain" ? onScope({ provider: g.kind, domain: "", account: "" }) : onScope({ domain: g.key, account: "", provider: "" })}>

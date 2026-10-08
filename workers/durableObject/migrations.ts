@@ -231,6 +231,11 @@ export const mailboxMigrations: Migration[] = [
 		sql: "",
 		run: repairDiscardedFolder,
 	},
+	{
+		// The name a message gave its sender, kept beside the address (shared/mail/sender.ts).
+		name: "19_sender_name",
+		sql: txn(`ALTER TABLE emails ADD COLUMN sender_name TEXT;`),
+	},
 ];
 
 /** The id and name a person's own folder gets when it held the id 'discarded' (migration 18). */

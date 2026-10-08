@@ -105,7 +105,7 @@ test("reply all answers every participant except the account itself, once each (
 test("the reader offers Reply all only when others are on the message, seeded and threaded like a reply (B10-06)", () => {
   const code = readFileSync("app/routes/unified-inbox.tsx", "utf8");
   assert.match(code, /const replyAll = detail\.data && owner \? replyAllRecipients\(detail\.data\.from, detail\.data\.to, detail\.data\.cc \?\? "", owner\.email\) : null;/);
-  assert.match(code, /\{replyAll && \([\s\S]{0,300}compose\("reply", true\)/);
+  assert.match(code, /\{offersReplyAll && \([\s\S]{0,300}compose\("reply", true\)/);
   assert.match(code, /\.\.\.\(mode === "reply" && all && replyAll\?\.cc \? \{ cc: replyAll\.cc \} : \{\}\)/, "Cc is seeded on the same reply draft");
   assert.match(code, /threadId: mode === "reply" \? m\?\.threadId : undefined/, "thread identity stays the reply's");
   const model = readFileSync("app/components/inbox/model.ts", "utf8");
@@ -258,4 +258,26 @@ test("an address made in the last 7 days is listed before its first message; an 
   assert.equal(sidebarAccounts(accounts, { filter: "all", hidden: new Set(), now }).visible.length, accounts.length);
   // A week later the same address folds like any other without mail.
   assert.deepEqual(sidebarAccounts([accounts[0]], { filter: "mail", hidden: new Set(), now: now + NEW_ACCOUNT_MS }).withoutMail.map((x) => x.email), ["j1@x.invalid"]);
+});
+
+test("UI walk 2026-10-08: the reader names Cc; the images notice shows only for remote content; a short address list has no dead collapse button", async () => {
+  const reader = readFileSync("app/routes/unified-inbox.tsx", "utf8");
+  assert.match(reader, /detail\.data\.cc \? <p>\{t\("Cc \{cc\}", \{ cc: detail\.data\.cc \}\)\}<\/p> : null/);
+  const { hasRemoteContent } = await import("../app/lib/mail-content");
+  assert.equal(hasRemoteContent("Plain text, no markup."), false);
+  assert.equal(hasRemoteContent('<p>Hi</p><img src="cid:logo">'), false, "an inline cid: image loads nothing from the network");
+  assert.equal(hasRemoteContent('<img src="https://example.net/x.png">'), true);
+  assert.equal(hasRemoteContent("<img src=//cdn.example.net/x.png>"), true);
+  assert.equal(hasRemoteContent('<td background="http://example.net/bg.png">'), true);
+  assert.equal(hasRemoteContent('<div style="background:url(\'https://example.net/a.png\')">'), true);
+  assert.equal(hasRemoteContent('<a href="https://example.net">a link</a>'), false, "a link is not loaded when shown");
+  const sidebar = readFileSync("app/components/inbox/AccountSidebar.tsx", "utf8");
+  assert.doesNotMatch(sidebar, /disabled=\{small\}/);
+  assert.match(sidebar, /small \? <span className="fi-domain-toggle" aria-hidden="true" \/>/);
+});
+
+test("UI walk 2026-10-08: Reply all is offered only when it reaches more than the sender", () => {
+  const reader = readFileSync("app/routes/unified-inbox.tsx", "utf8");
+  assert.match(reader, /const offersReplyAll = !!replyAll && \(replyAll\.cc !== "" \|\| replyAll\.to\.includes\(","\)\);/);
+  assert.match(reader, /\{offersReplyAll && \(/);
 });

@@ -1,5 +1,6 @@
 import type { Email } from "~/types";
 import type { Mail } from "~/services/fabric";
+import { displaySender } from "../../../shared/mail/sender";
 import type { Triage } from "../../../shared/mail/triage";
 /** "cloudflare" (a mailbox on a served domain), "gmail" (Google sign-in), "imap" (an app password) or "outlook" (Microsoft sign-in). */
 export type MailProvider = "cloudflare" | "gmail" | "imap" | "outlook";
@@ -130,7 +131,7 @@ export function normalizeMessage(
   const m = value as Email;
   return {
     subject: m.subject,
-    from: m.sender,
+    from: displaySender(m.sender, m.sender_name, m.raw_headers),
     to: m.recipient,
     cc: m.cc ?? undefined,
     date: m.date,

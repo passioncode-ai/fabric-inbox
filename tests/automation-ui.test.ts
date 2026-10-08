@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import Automation, { enableLocked, ruleReviewKey } from "../app/routes/automation";
+import Automation, { dryRunSentence, enableLocked, feedAccount, previewLabel, ruleReviewKey } from "../app/routes/automation";
 import type { Rule, Run } from "../workers/automation/policy";
 
 /** The Rules and history screen (SCR-07/08) rendered with the server's answers already in the cache. */
@@ -89,4 +89,24 @@ test("the runs list says it is loading before the first answer arrives (B11-09)"
   const html = render("gmail:g1", { rules: [] });
   assert.match(html, /Loading…/);
   assert.doesNotMatch(html, /No runs yet/, "the empty state waits for the first answer");
+});
+
+// UI walk 2026-10-08: the dry-run gate asked for a typed internal message id; the editor now offers
+// this account's newest mail by sender and subject, and says the result in a sentence.
+const tt = Object.assign((s: string, p?: Record<string, unknown>) => s.replace(/\{(\w+)\}/g, (_m, k) => String(p?.[k] ?? "")), { text: (s: string) => s }) as never;
+
+test("the dry-run picker reads this account's feed and names messages by sender and subject", () => {
+  assert.equal(feedAccount("support@example.com"), "cloudflare:support@example.com");
+  assert.equal(feedAccount("gmail:abc"), "gmail:abc");
+  assert.equal(feedAccount("imap:x"), "imap:x");
+  assert.equal(previewLabel({ sender: "Customer <ana@shop.test>", subject: "Order 4412" }, tt), "Customer — Order 4412");
+  assert.equal(previewLabel({ sender: "ana@shop.test", subject: "" }, tt), "ana@shop.test — No subject");
+});
+
+test("a dry-run is said in a sentence: what would happen, and that nothing was done", () => {
+  const base = { analysis: { matches: true, summary: "Matched rule conditions", draft: "" }, executed: false as const };
+  assert.equal(dryRunSentence({ ...base, matched: true, action: { type: "archive" } }, tt), "This message matches. The rule would: Archive. Nothing was done.");
+  assert.equal(dryRunSentence({ ...base, matched: false, analysis: { matches: false, summary: "Conditions did not match", draft: "" }, action: { type: "archive" } }, tt),
+    "This message does not match: Conditions did not match");
+  assert.equal(dryRunSentence({ ...base, matched: true, action: { type: "mcp" } }, tt), "This message matches. The rule would: Call a cloud tool (MCP). Nothing was done.");
 });
