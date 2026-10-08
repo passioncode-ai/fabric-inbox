@@ -479,6 +479,7 @@ export default function Automation() {
                   subject: "{{email.subject}}",
                   sender: "{{email.sender}}",
                   body: "{{email.body}}",
+                  preview: "{{email.preview}}",
                   id: "{{email.id}}",
                 })}
               </p>

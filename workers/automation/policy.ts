@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { textSnippet } from "../lib/inbox-query";
 const address = z
   .string()
   .email()
@@ -158,12 +159,14 @@ export function toolArguments(
     "email.sender": email.sender,
     "email.subject": email.subject,
     "email.body": email.body.slice(0, 16000),
+    // The first 300 characters as plain text: what a signal carries instead of the whole message.
+    "email.preview": textSnippet(email.body),
   };
   function visit(item: unknown, depth: number): unknown {
     if (depth > 12) throw new Error("Arguments are too deeply nested");
     if (typeof item === "string")
       return item.replace(
-        /\{\{(email\.(?:id|sender|subject|body))\}\}/g,
+        /\{\{(email\.(?:id|sender|subject|body|preview))\}\}/g,
         (_, key) => fields[key],
       );
     if (Array.isArray(item)) return item.map((v) => visit(v, depth + 1));

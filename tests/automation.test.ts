@@ -105,3 +105,17 @@ test("tool templates only substitute fixed string values without interpreting em
     nested: ["Subject: Hi"],
   });
 });
+
+test("{{email.preview}} is the first 300 characters as plain text — what a signal carries instead of the whole message", async () => {
+  const { toolArguments } = await import("../workers/automation/policy");
+  const html = "<html><head><style>p{color:red}</style></head><body><p>Payment&nbsp;failed &amp; the customer waits.</p>" + "<p>x</p>".repeat(400) + "</body></html>";
+  const out = toolArguments(
+    { summary: "{{email.preview}}", title: "{{email.subject}}", idempotency_key: "{{email.id}}" },
+    { id: "incoming-1", sender: "ana@shop.test", subject: "Urgent: payment", body: html, date: "" },
+  );
+  assert.equal(out.title, "Urgent: payment");
+  assert.equal(out.idempotency_key, "incoming-1");
+  assert.match(String(out.summary), /^Payment failed & the customer waits\. x x/);
+  assert.ok(String(out.summary).length <= 300);
+  assert.doesNotMatch(String(out.summary), /<|color:red/, "no markup and no style text");
+});
