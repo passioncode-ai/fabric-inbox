@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { isWindowActive, subscribeWindowActivity } from "~/lib/window-activity";
+import { isWindowActive, subscribeWindowActivity } from "../lib/window-activity";
 
 /**
  * Whether this window is visible and focused (app/lib/window-activity.ts). The server render has

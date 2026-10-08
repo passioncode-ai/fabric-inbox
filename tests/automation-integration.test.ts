@@ -166,6 +166,8 @@ test("durable duplicate ingestion creates one run and one actual mailbox effect"
     const pending = await f.command("state", { id: email.id });
     assert.equal(pending.runs.length, 1);
     assert.equal(pending.runs[0].status, "pending");
+    assert.equal(pending.runs[0].attempts, 0);
+    assert.equal(pending.runs[0].rule.version, 1);
     assert.equal(pending.email.read, false);
     assert.equal(pending.effects, 0);
     await f.command("pump");
@@ -174,6 +176,8 @@ test("durable duplicate ingestion creates one run and one actual mailbox effect"
     const done = await f.command("state", { id: email.id });
     assert.equal(done.runs.length, 1);
     assert.equal(done.runs[0].status, "succeeded");
+    assert.equal(done.runs[0].attempts, 1);
+    assert.equal(done.runs[0].rule.version, 1);
     assert.equal(done.email.read, true);
     assert.equal(done.effects, 1);
   } finally {
@@ -199,6 +203,7 @@ for (const action of ["archive", "mark_read"] as const) {
       await f.command("pump");
       const after = await f.command("state", { id: email.id });
       assert.equal(after.runs[0].status, "succeeded");
+      assert.equal(after.runs[0].attempts, 2, "an approval is a second processing pass");
       assert.equal(after.effects, 1);
       if (action === "archive") assert.equal(after.email.folder_id, "archive");
       else assert.equal(after.email.read, true);
@@ -322,6 +327,20 @@ test("an approval cannot apply a proposal to message content changed after prepa
     assert.equal(state.runs[0].status, "cancelled");
     assert.equal(state.effects, 0);
     assert.equal(state.email.folder_id, "inbox");
+  } finally {
+    await f.mf.dispose();
+  }
+});
+
+test("run history reports one attempt for rows stored before attempts were counted", async () => {
+  const f = await fixture();
+  try {
+    await f.command("seed-old");
+    const state = await f.command("state", {});
+    const byId = Object.fromEntries(state.runs.map((r: { id: string; attempts: number }) => [r.id, r.attempts]));
+    assert.equal(byId["old-done"], 1);
+    assert.equal(byId["old-waiting"], 1);
+    assert.equal(byId["new-done"], 1);
   } finally {
     await f.mf.dispose();
   }

@@ -166,7 +166,7 @@ async function ownAddress(ctx: ToolContext, account: Account): Promise<string> {
 
 const listAccounts = defineTool({
   name: "list_accounts", title: "List accounts", level: "read", readOnly: true,
-  description: "Every mailbox this Fabric Inbox reads: Cloudflare addresses, Gmail accounts, IMAP accounts (iCloud, Yahoo, Fastmail and others) and Outlook accounts (Outlook.com and Microsoft 365), with unread and total counts, whether each is hidden or a catch-all, any delivery problem, and for Gmail, IMAP and Outlook accounts their sync state and what they can do (capabilities: archive, spam, drafts). Start here: the accountId values are what every other mail tool takes.",
+  description: "Every mailbox this Fabric Inbox reads: Cloudflare addresses, Gmail accounts, IMAP accounts (iCloud, Yahoo, Fastmail and others) and Outlook accounts (Outlook.com and Microsoft 365), with unread and total counts, whether each is hidden or a catch-all, when it was created or connected (createdAt, ISO time; absent for a Cloudflare address made before the server recorded it; the app lists one made in the last 7 days even with no mail), any delivery problem, and for Gmail, IMAP and Outlook accounts their sync state and what they can do (capabilities: archive, spam, drafts). Start here: the accountId values are what every other mail tool takes.",
   input: {},
   routes: ["GET /api/inbox", "GET /api/accounts", "GET /api/inbox/hidden"],
   async call(_args, ctx) {
@@ -175,7 +175,8 @@ const listAccounts = defineTool({
     const hidden = (await get(ctx, "/api/inbox/hidden")) as { hidden: string[] };
     return {
       accounts: feed.accounts.map((a) => ({ accountId: a.id, provider: a.provider, email: a.email, name: a.name, status: a.status,
-        unread: a.unread ?? 0, total: a.total ?? 0, hidden: !!a.hidden, catchAll: !!a.catchAll, ...(a.error ? { error: a.error } : {}), ...(a.stuck ? { stuck: a.stuck } : {}),
+        unread: a.unread ?? 0, total: a.total ?? 0, hidden: !!a.hidden, catchAll: !!a.catchAll,
+        ...(typeof a.createdAt === "number" ? { createdAt: new Date(a.createdAt).toISOString() } : {}), ...(a.error ? { error: a.error } : {}), ...(a.stuck ? { stuck: a.stuck } : {}),
         ...(a.providerName ? { providerName: a.providerName } : {}), ...(a.capabilities ? { capabilities: a.capabilities } : {}), ...(a.importing !== undefined ? { importing: a.importing } : {}) })),
       gmail: { configuration: remoteAccounts.configuration ?? "configured", accounts: (remoteAccounts.accounts ?? []).filter((a) => (a.provider ?? "gmail") === "gmail").map((a) => ({ accountId: `gmail:${a.id}`, email: a.email, status: a.status, lastSyncAt: a.lastSyncAt ?? null, error: a.error ?? null })) },
       hidden: hidden.hidden,
@@ -958,6 +959,14 @@ const dismissRuleRun = defineTool({
   call: (a, ctx) => post(ctx, `${automationBase(parseAccount(a.accountId))}/runs/${enc(a.runId)}/dismiss`),
 });
 
+const checkRuleRun = defineTool({
+  name: "check_rule_run", title: "Check an uncertain rule run", level: "mail", target: (a) => `${a.accountId} run ${a.runId}`,
+  description: "For a rule run whose outcome is unknown (list_rules shows status unknown): reads what the provider or this server recorded for its action, by the key the action used, and never repeats the action. outcome done: the run becomes succeeded. not_done: proven not done, the run becomes failed, and only then is doing it again by hand safe. unresolved: it stays unknown, with what was found (look in Sent or the account first). not_checkable: a tool call leaves no receipt here; check the tool's own service.",
+  input: { accountId, runId: z.string().min(1).max(200) },
+  routes: ["POST /api/automation/:account/runs/:id/check"],
+  call: (a, ctx) => post(ctx, `${automationBase(parseAccount(a.accountId))}/runs/${enc(a.runId)}/check`),
+});
+
 // ── Administration ─────────────────────────────────────────────────
 
 const agentChoice = z.union([z.literal("off"), z.object({ agentId: z.string().min(1).max(100) })]).describe('"off", or { agentId } of the agent that answers it (list_agents)');
@@ -1458,7 +1467,7 @@ export const TOOLS: readonly ToolDef[] = [
   listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
-  approveRuleRun, dismissRuleRun,
+  approveRuleRun, dismissRuleRun, checkRuleRun,
   checkAddress, createAddress, createAddresses, updateAddress, removeAddress, routeAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,

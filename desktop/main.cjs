@@ -395,6 +395,14 @@ async function drainLinks() {
   try { while (pendingLinks.length) await handleConnectLink(pendingLinks.shift()); }
   finally { connecting = false; }
 }
+const attend = connector.attendWith(app);
+/** The window a connect prompt is attached to: the open one, else the mail (or setup) window opened for it. */
+function promptWindow() {
+  const live = (win) => (win && !win.isDestroyed() ? win : null);
+  if (live(mailWindow) || live(setupWindow)) return live(mailWindow) || live(setupWindow);
+  loadMail();
+  return live(mailWindow) || live(setupWindow);
+}
 async function handleConnectLink(url) {
   const parsed = connector.parseConnectLink(url);
   const parent = mailWindow && !mailWindow.isDestroyed() ? mailWindow : (setupWindow && !setupWindow.isDestroyed() ? setupWindow : null);
@@ -408,7 +416,15 @@ async function handleConnectLink(url) {
   const ses = config ? session.fromPartition(policy.partitionFor(config)) : null;
   const out = await connector.connect({
     request, config,
-    confirm: async (prompt) => box({ type: 'question', ...prompt }),
+    // The prompt is a sheet on a window brought forward (the Dock bounces until it is answered),
+    // and it closes itself when the requester stops listening (`signal`, desktop/connect.cjs). A
+    // window is opened when none is: on macOS a box with no parent cannot be closed that way.
+    confirm: async (prompt, { signal } = {}) => {
+      const owner = promptWindow();
+      const stop = attend(owner);
+      try { return owner ? await dialog.showMessageBox(owner, { type: 'question', ...prompt, signal }) : await dialog.showMessageBox({ type: 'question', ...prompt, signal }); }
+      finally { stop(); }
+    },
     identify: connector.listenerWith(execFileAsync),
     mint: ses ? connector.mintWith(ses, config.origin) : async () => ({ ok: false, error: t('No server') }),
     revoke: ses ? connector.revokeWith(ses, config.origin) : async () => false,
@@ -416,6 +432,9 @@ async function handleConnectLink(url) {
     signIn: async () => { loadMail(); },
     log: (line) => { try { logEvent(JSON.parse(line)); } catch { logEvent({ event: 'connect', outcome: 'unparsed' }); } },
   });
+  // A requester that stopped waiting gets no notice: nothing was made, the hub already gave up, and
+  // a notice nobody reads would hold the next link's prompt back.
+  if (out.reason === 'no_listener' || out.reason === 'not_answered') return;
   if (out.outcome === 'connected') {
     track('hub_connected', {});
     await box({ type: 'info', title: t('Connected'), message: t('{client} is connected to Fabric Inbox.', { client: request.client }), detail: t('You can see and revoke its key in Settings → Agent access.'), buttons: [t('OK')] });
@@ -423,6 +442,7 @@ async function handleConnectLink(url) {
     const detail = out.reason === 'no_server' ? t('Set up your Fabric Inbox server first, then connect again.')
       : out.reason === 'sign_in_required' ? t('Sign in to Fabric Inbox in the window that opened, then connect again from {client}.', { client: request.client })
       : out.reason === 'callback_unreachable' ? (out.revoked ? t('{client} did not receive the key, so it was revoked again.', { client: request.client }) : t('{client} did not receive the key, so it was made but could not be revoked: revoke it in Settings → Agent access.', { client: request.client }))
+      : out.reason === 'listener_changed' ? (out.revoked ? t('The key was made but could not reach {client}, and was revoked again.', { client: request.client }) : t('The key was made but could not reach {client}, and it could not be revoked: revoke it in Settings → Agent access.', { client: request.client }))
       : t('The key could not be made: {error}', { error: out.error ? t.text(out.error) : t('unknown error') });
     if (out.reason === 'no_server') showSetup(t('Set up your server, then connect again.'));
     await box({ type: 'warning', title: t('Not connected'), message: t('{client} is not connected.', { client: request.client }), detail, buttons: [t('OK')] });

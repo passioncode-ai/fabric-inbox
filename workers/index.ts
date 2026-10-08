@@ -20,6 +20,7 @@ import { readDiscardStore, updateDiscardStore } from "./discard/store";
 import { cloudflareWorkspace } from "./discard/workspace";
 import type { Env } from "./types";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
+import { incomingFailure } from "./incoming-log";
 
 type AppContext = Context<MailboxContext>;
 
@@ -773,7 +774,8 @@ async function handleIncomingEmail(event: IncomingEmailEvent, env: Env, ctx: Exe
 	try {
 		return await receiveEmailResilient(event, env, ctx);
 	} catch (e) {
-		console.error("Failed to process incoming email:", (e as Error).message, (e as Error).stack);
+		// The last trace of a message nothing could take: whom it was for and when, never its content (SCN-025).
+		console.error(JSON.stringify(incomingFailure(event, e)));
 		throw e;
 	}
 }

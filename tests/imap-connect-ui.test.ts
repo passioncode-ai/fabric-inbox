@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { PROVIDERS, availability } from "../app/components/settings/sections/providers";
 import { imapErrorText, IMAP_ERROR_CODES } from "../app/lib/imap-errors";
+import { imapDraftDirty, leaveConnectForm } from "../app/components/settings/sections/ImapAccount";
+import { englishT } from "../shared/i18n";
 import { imapSetupState } from "../app/lib/account-status";
 import { PRESETS, presetFor } from "../shared/mail/imap-presets";
 
@@ -38,6 +40,59 @@ test("every code the server answers a connect with is a sentence naming who refu
   assert.match(imapErrorText("app_password_required", { provider: "Yahoo Mail" })!, /^Yahoo Mail needs an app password/);
   assert.match(imapErrorText("smtp_auth_failed", { provider: "X", imapHost: "imap.x.org", smtpHost: "smtp.x.org" })!, /smtp\.x\.org refused it/);
   assert.equal(imapErrorText("something_else", { provider: "X" }), null, "an unknown code falls back to the server's own text");
+});
+
+test("a retry refused inside a backoff reads as a sentence, not a raw code (B4-03)", () => {
+  for (const code of ["sync_backoff", "rate_limited"]) {
+    const text = imapErrorText(code, { provider: "iCloud Mail" })!;
+    assert.ok(text && text.endsWith("."), code);
+    assert.doesNotMatch(text, /_/, `${code} reads as words, not a code`);
+  }
+  const at = Date.parse("2026-10-07T14:30:00Z");
+  assert.equal(imapErrorText("sync_backoff", { provider: "iCloud Mail", retryAt: at })!,
+    `The last try failed a moment ago; the next one is tried on its own at ${englishT.time(at, { hour: "2-digit", minute: "2-digit" })}.`);
+  assert.match(imapErrorText("rate_limited", { provider: "iCloud Mail", retryAt: at })!, /^iCloud Mail asked to slow down; it is tried again on its own at /);
+});
+
+test("the connect form counts what a person typed, so closing asks only then (B4-01)", () => {
+  const clean = { email: "", password: "" };
+  assert.equal(imapDraftDirty(clean), false, "an untouched form closes without asking");
+  assert.equal(imapDraftDirty({ ...clean, email: "   " }), false, "whitespace is nothing typed");
+  assert.equal(imapDraftDirty({ ...clean, email: "ann@fastmail.example" }), true);
+  assert.equal(imapDraftDirty({ ...clean, password: "x" }), true, "a password alone is typed too");
+  const blankServer = { imapHost: "", smtpHost: "", username: "" };
+  assert.equal(imapDraftDirty({ ...clean, server: blankServer }), false);
+  assert.equal(imapDraftDirty({ ...clean, server: { ...blankServer, imapHost: "imap.example.com" } }), true);
+  assert.equal(imapDraftDirty({ ...clean, server: { ...blankServer, smtpHost: "smtp.example.com" } }), true);
+  assert.equal(imapDraftDirty({ ...clean, server: { ...blankServer, username: "ann" } }), true);
+});
+
+test("Esc, Close or Back with something typed asks first; an untouched form leaves at once (B4-01)", async () => {
+  const asked: { title: string; confirmLabel: string; cancelLabel?: string; danger?: boolean }[] = [];
+  const answering = (ok: boolean) => async (request: (typeof asked)[number]) => { asked.push(request); return ok; };
+  let left = 0;
+  const leave = () => { left += 1; };
+
+  assert.equal(await leaveConnectForm(false, answering(false), englishT, leave), true, "a clean form closes");
+  assert.equal(left, 1);
+  assert.equal(asked.length, 0, "and nothing is asked");
+
+  assert.equal(await leaveConnectForm(true, answering(false), englishT, leave), false, "Keep editing stays");
+  assert.equal(left, 1, "the typed address and password are kept");
+  assert.deepEqual(
+    { title: asked[0].title, confirm: asked[0].confirmLabel, cancel: asked[0].cancelLabel, danger: asked[0].danger },
+    { title: "Discard your changes to the new account?", confirm: "Discard changes", cancel: "Keep editing", danger: true });
+
+  assert.equal(await leaveConnectForm(true, answering(true), englishT, leave), true, "Discard changes leaves");
+  assert.equal(left, 2);
+
+  // Every way out goes through it: the dialog's Esc/Close and the form's Back.
+  const accounts = readFileSync("app/components/settings/sections/AccountsSection.tsx", "utf8");
+  assert.match(accounts, /const closeGuarded = \(\) => void leaveConnectForm\(imapDirty\.current, confirm, t, onClose\);/);
+  assert.match(accounts, /<Dialog open=\{open\} [^\n]*onClose=\{closeGuarded\} wide>/, "the dialog's Esc and Close ask");
+  assert.match(accounts, /<ConnectImap [^\n]*onDirtyChange=\{\(d\) => \{ imapDirty\.current = d; \}\}/, "the form reports what was typed");
+  const form = readFileSync("app/components/settings/sections/ImapAccount.tsx", "utf8");
+  assert.match(form, /onClick=\{\(\) => void leaveConnectForm\(dirty, confirm, t, onBack\)\}[^>]*>\{t\("Back"\)\}/, "Back asks too");
 });
 
 test("an address suggests its provider's card; every card links its own help page", () => {

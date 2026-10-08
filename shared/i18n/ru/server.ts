@@ -6,6 +6,7 @@
  */
 export const SERVER: Readonly<Record<string, string>> = {
 	// Shared by several routes
+	"{action} could not be completed: {error}. Try again.": "{action}: не удалось выполнить. {error} Попробуйте ещё раз.",
 	"{action} could not be completed: {error}": "{action}: не удалось выполнить. {error}",
 
 	// Agent access (workers/routes/agent-keys.ts)
@@ -369,6 +370,8 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"The message could not be read for its agent after {attempts} attempts ({error}); it is left for you in the inbox.": "Агенту не удалось прочитать письмо за попыток: {attempts} ({error}); оно оставлено для вас во «Входящих».",
 	"At most {max} agents": "Не больше {max} агентов",
 	"Agent changed: version {current} is newer than {expected}": "Агент изменился: версия {current} новее, чем {expected}",
+	"The schema of the tool {tool} could not be read: {error}": "Не удалось прочитать схему инструмента {tool}: {error}",
+	"The tool {tool} is not listed by its endpoint": "Адрес не перечисляет инструмент {tool}",
 	"Processing stopped while sending. Check Sent before answering.": "Обработка прервалась во время отправки. Прежде чем отвечать, проверьте «Отправленные».",
 	"Processing stopped before a result was recorded; it is run again automatically.": "Обработка прервалась до записи результата; она будет запущена снова автоматически.",
 	"Could not read the agent for this address: {error}": "Не удалось прочитать агента для этого адреса: {error}",
@@ -417,6 +420,31 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Could not preview rule; check the message and AI configuration": "Не удалось выполнить пробный запуск правила; проверьте письмо и настройку ИИ",
 	"Tool returned an error": "Инструмент вернул ошибку",
 	"Tool completed": "Инструмент выполнен",
+	// Checking an uncertain run (SCN-020, AutomationDO.checkRun)
+	"This run is not in the history": "Этого запуска нет в истории",
+	"Only a run whose outcome is unknown can be checked": "Проверить можно только запуск с неизвестным результатом",
+	"The outcome could not be checked right now. Try again.": "Сейчас не удалось проверить результат. Попробуйте ещё раз.",
+	"A tool call leaves no receipt on this server. Check the tool's own service before repeating it.": "Вызов инструмента не оставляет на этом сервере подтверждения. Прежде чем повторять, проверьте в сервисе самого инструмента.",
+	"Checked: nothing was handed to the provider, so nothing was sent.": "Проверено: провайдеру ничего не передавалось, значит, ничего не отправлено.",
+	"Checked: nothing was handed to the provider, so no draft was saved.": "Проверено: провайдеру ничего не передавалось, значит, черновик не сохранён.",
+	"Checked: the provider accepted the forward.": "Проверено: провайдер принял пересылку.",
+	"Checked: the provider saved the draft.": "Проверено: провайдер сохранил черновик.",
+	"Checked: the provider was handed the forward, but its answer was lost. Look in the account's Sent folder before repeating it.": "Проверено: пересылка была передана провайдеру, но его ответ потерян. Прежде чем повторять, посмотрите в «Отправленных» аккаунта.",
+	"Checked: the provider was handed the draft, but its answer was lost. Look in the account's Drafts before repeating it.": "Проверено: черновик был передан провайдеру, но его ответ потерян. Прежде чем повторять, посмотрите в «Черновиках» аккаунта.",
+	"Checked: the message is no longer on this server. Look in the account itself before repeating the action.": "Проверено: письма больше нет на этом сервере. Прежде чем повторять действие, посмотрите в самом аккаунте.",
+	"Checked: the message is archived.": "Проверено: письмо в архиве.",
+	"Checked: the message is marked read.": "Проверено: письмо отмечено как прочитанное.",
+	"Checked: the copy on this server does not show the change yet. Look in the account itself before repeating the action.": "Проверено: копия на этом сервере пока не показывает изменения. Прежде чем повторять действие, посмотрите в самом аккаунте.",
+	"Checked: nothing reached the outbox, so nothing was sent.": "Проверено: в «Исходящие» ничего не попало, значит, ничего не отправлено.",
+	"Checked: the email provider accepted the forward.": "Проверено: почтовый провайдер принял пересылку.",
+	"Checked: the email provider refused the forward, so nothing was sent.": "Проверено: почтовый провайдер отклонил пересылку, значит, ничего не отправлено.",
+	"Checked: the outbox does not know whether the email provider took the forward. Look in Sent before repeating it.": "Проверено: в «Исходящих» неизвестно, принял ли почтовый провайдер пересылку. Прежде чем повторять, посмотрите в «Отправленных».",
+	"Checked: the forward is still in the outbox. Check again in a minute.": "Проверено: пересылка ещё в «Исходящих». Проверьте снова через минуту.",
+	"Checked: the draft is saved.": "Проверено: черновик сохранён.",
+	"Checked: no draft was saved.": "Проверено: черновик не сохранён.",
+	"Checked: the message is no longer in this mailbox.": "Проверено: письма больше нет в этом ящике.",
+	"Checked: the message is not archived.": "Проверено: письмо не в архиве.",
+	"Checked: the message is not marked read.": "Проверено: письмо не отмечено как прочитанное.",
 
 	// Categories and projects (workers/categories/*)
 	"The model gave no answer for this category": "Модель не дала ответа для этой категории",

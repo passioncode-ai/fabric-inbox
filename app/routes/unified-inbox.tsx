@@ -10,6 +10,7 @@ import {
   ArrowLeftIcon,
   ArrowUUpLeftIcon,
   ArrowBendUpLeftIcon,
+  ArrowBendDoubleUpLeftIcon,
   ArrowBendUpRightIcon,
   CaretRightIcon,
   EnvelopeIcon,
@@ -21,6 +22,7 @@ import {
   PaperPlaneTiltIcon,
   PencilSimpleIcon,
   PlusIcon,
+  RobotIcon,
   SparkleIcon,
   StarIcon,
   SunIcon,
@@ -34,7 +36,7 @@ import type { Mail } from "~/services/fabric";
 import type { Email } from "~/types";
 import { htmlToPlainText } from "~/lib/utils";
 import EmailIframe from "~/components/EmailIframe";
-import { replyRecipient } from "~/components/inbox/send-state";
+import { replyAllRecipients, replyRecipient } from "~/components/inbox/send-state";
 import Composer, { type Draft } from "~/components/inbox/Composer";
 import {
   isRemote,
@@ -63,15 +65,18 @@ import { showFeedChange, mergeHead, refreshScope, refreshSummary, WakeRefresh, t
 import SyncStatus from "~/components/inbox/SyncStatus";
 import UndoToast from "~/components/inbox/UndoToast";
 import ShortcutsDialog from "~/components/inbox/ShortcutsDialog";
-import { isMacPlatform, mailKeyAction } from "~/lib/mail-keys";
+import { isMacPlatform, escapeCancelsConfirmation, mailKeyAction } from "~/lib/mail-keys";
 import { archiveMessages, canAct, discardMessages, doneText, learnedNotice, undoDone, type Done } from "~/components/inbox/triage-actions";
 import { triageText } from "~/components/inbox/triage-text";
 import { metaT, useT, type T } from "~/lib/i18n";
 import { msg } from "../../shared/i18n";
 import { useWindowActive } from "~/hooks/useWindowActive";
-import { settingsPath } from "~/components/settings/paths";
+import { outlookSecretSetupPath, settingsPath } from "~/components/settings/paths";
 import { GMAIL_REASON_TEXT, isGmailReason } from "../../shared/mail/gmail-reasons";
+import type { SecretExpiry } from "../../shared/mail/microsoft-setup";
 import { pollInterval, subscribeWindowActivity } from "~/lib/window-activity";
+import AgentDock, { useWideAgentLayout } from "~/components/inbox/AgentDock";
+import { agentAccount, sourceMessage, type SavedDraft, type Source } from "~/components/agent-chat";
 /** How often the list in view is read again while the window is active. */
 const INBOX_POLL_MS = 60_000;
 /** The product's name as the empty reader shows it: the same in every language. */
@@ -177,7 +182,15 @@ export default function UnifiedInbox() {
     [restoredRules, setRestoredRules] = useState<{ ruleId: string; label: string }[]>([]),
     [composeOpen, setComposeOpen] = useState(false),
     [draftsOpen, setDraftsOpen] = useState(false),
-    [rulesOpen, setRulesOpen] = useState(false);
+    [rulesOpen, setRulesOpen] = useState(false),
+    // The attachment whose download is in flight; its button says Downloading… (B6-04).
+    [downloading, setDownloading] = useState<string | null>(null),
+    // The AI panel (SCN-013, B11-01): closed until asked for, so no chat socket opens before then;
+    // and the Cloudflare address the person picked in it, when no open message decides.
+    [agentOpen, setAgentOpen] = useState(false),
+    [agentChoice, setAgentChoice] = useState<string | null>(null);
+  const agentToggle = useRef<HTMLButtonElement>(null);
+  const agentWide = useWideAgentLayout();
   // Opening a message pins the section it was opened in (see pinTriage).
   function setSelected(next: InboxMessage | null | ((current: InboxMessage | null) => InboxMessage | null)) {
     setSelectedState((current) => {
@@ -391,6 +404,8 @@ export default function UnifiedInbox() {
       });
   }, [selected, detail.data, client]);
   const owner = accounts.find((a) => a.id === selected?.accountId);
+  /** Everyone a Reply all would reach, or null when the account is the only participant (the button is then not offered, B10-06). */
+  const replyAll = detail.data && owner ? replyAllRecipients(detail.data.from, detail.data.to, detail.data.cc ?? "", owner.email) : null;
   // Drafts on the server, every account's (B-52): read afresh each time Drafts opens.
   const serverDrafts = useQuery({
     queryKey: ["server-drafts", accounts.map((a) => a.id).join(",")],
@@ -398,6 +413,15 @@ export default function UnifiedInbox() {
     enabled: draftsOpen && accounts.length > 0,
     staleTime: 0,
   });
+  // The Outlook client secret's end date is the server's own setting: read it once an Outlook
+  // account is connected, so the inbox warns as Settings does before sync stops (B5-01).
+  const outlookSetup = useQuery({
+    queryKey: ["microsoft-setup"],
+    queryFn: () => fabric<{ secretExpiry: SecretExpiry | null }>("/api/microsoft-setup"),
+    enabled: accounts.some((a) => a.provider === "outlook"),
+    staleTime: 60_000,
+  });
+  const secretSoon = outlookSetup.data?.secretExpiry?.state === "soon" ? outlookSetup.data.secretExpiry : null;
   const scopeName = categoryParam
     ? activeCategory?.name ?? t("Category")
     : active?.email || (accountId ? t("Selected account") : domainFilter || (providerFilter === "imap" ? t("Other mail") : providerFilter === "outlook" ? "Outlook" : providerFilter ? "Gmail" : t("All inboxes")));
@@ -407,6 +431,31 @@ export default function UnifiedInbox() {
     : providerFilter ? a.provider === providerFilter
     : categoryParam && activeCategory?.accountIds ? activeCategory.accountIds.includes(a.id)
     : !hidden.has(a.id.toLowerCase()));
+  /** The address the AI panel reads (it reads Cloudflare mailboxes): the open message's, the person's pick, the view's. */
+  const agentReading = agentAccount({ accounts, inScope, openAccountId: selected?.accountId, chosenAccountId: agentChoice, filterAccountId: accountId });
+  const agentFocus = agentReading?.by === "message" && selected ? { emailId: selected.providerMessageId, subject: detail.data?.subject ?? selected.subject } : null;
+  /** Closes the AI panel (its chat and socket go with it) and gives the keyboard back to its toggle. */
+  function closeAgent() {
+    setAgentOpen(false);
+    requestAnimationFrame(() => agentToggle.current?.focus());
+  }
+  /** A message the AI read, opened in the reader (B11-03); on a narrow window the sheet steps aside. */
+  function openAgentSource(source: Source) {
+    if (!agentReading) return;
+    setMarked(new Set());
+    setSelected(sourceMessage(agentReading.account.id, source, messages));
+    if (!agentWide) setAgentOpen(false);
+  }
+  /** "Edit & send in composer": the draft the AI saved opens from the server, as Drafts opens it. */
+  function editAgentDraft(d: SavedDraft) {
+    if (!agentReading) return;
+    void saved.openServer({ accountId: agentReading.account.id, serverId: d.draftId, revision: 0, to: d.to, subject: d.subject, date: "", snippet: "", files: 0 })
+      .then((opened) => {
+        if (!opened) return;
+        setComposeOpen(true);
+        if (!agentWide) setAgentOpen(false);
+      });
+  }
   /**
    * Changes what the list shows. Changing the order or the group keeps the open message;
    * changing where to look (inbox, folder, category, search) closes it and clears the group.
@@ -602,8 +651,10 @@ export default function UnifiedInbox() {
   // The list's keyboard (app/lib/mail-keys.ts): read through a ref so the listener is added once.
   const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {});
   keyHandler.current = (e: KeyboardEvent) => {
-    // A dialog (the composer, Drafts, Rules, this help) owns the keyboard while it is open.
+    // A dialog (the composer, Drafts, Rules, this help, the AI sheet) owns the keyboard while it is
+    // open, and so does the AI column: Delete there must not archive the open message.
     if (composeOpen || document.querySelector("dialog[open]")) return;
+    if ((e.target as Element | null)?.closest?.(".fi-agent-panel")) return;
     const action = mailKeyAction({ key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey, isComposing: e.isComposing,
       target: e.target as unknown as Parameters<typeof mailKeyAction>[0]["target"] }, mac);
     if (!action) return;
@@ -633,7 +684,7 @@ export default function UnifiedInbox() {
       );
     }
   }
-  async function compose(mode: Draft["mode"]) {
+  async function compose(mode: Draft["mode"], all = false) {
     const m = detail.data;
     const from = mode === "new" ? accountId : (selected?.accountId ?? "");
     // A Cloudflare address's signature goes into the text once, where the person sees and edits it;
@@ -651,8 +702,13 @@ export default function UnifiedInbox() {
       ...(signature ? { signature } : {}),
       to:
         mode === "reply"
-          ? replyRecipient(m?.from ?? "", m?.to ?? "", owner?.email ?? "")
+          ? all && replyAll
+            ? replyAll.to
+            : replyRecipient(m?.from ?? "", m?.to ?? "", owner?.email ?? "")
           : "",
+      // Reply all is the reply draft with the other participants kept (B10-06), not a new mode:
+      // the thread fields and the sender stay exactly the reply's.
+      ...(mode === "reply" && all && replyAll?.cc ? { cc: replyAll.cc } : {}),
       subject:
         mode === "new"
           ? ""
@@ -685,40 +741,49 @@ export default function UnifiedInbox() {
     setComposeOpen(true);
   }
   async function download(a: OpenMessage["attachments"][number]) {
-    if (!selected) return;
-    await perform(async () => {
-      let blob: Blob;
-      if (isRemote(selected.provider)) {
-        const result = await fabric<{ data: string }>(
-          messagePath(selected) + "/attachments/" + encodeURIComponent(a.id),
-        );
-        blob = new Blob(
-          [
-            Uint8Array.from(
-              atob(result.data.replaceAll("-", "+").replaceAll("_", "/")),
-              (c) => c.charCodeAt(0),
-            ),
-          ],
-          { type: a.mimeType },
-        );
-      } else {
-        const response = await fetch(
-          messagePath(selected) + "/attachments/" + encodeURIComponent(a.id),
-        );
-        if (!response.ok)
-          throw new Error(t("Attachment could not be downloaded."));
-        blob = await response.blob();
-      }
-      const url = URL.createObjectURL(blob),
-        link = document.createElement("a");
-      link.href = url;
-      link.download = a.filename;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    });
+    if (!selected || downloading) return;
+    setDownloading(a.id);
+    try {
+      await perform(async () => {
+        let blob: Blob;
+        if (isRemote(selected.provider)) {
+          const result = await fabric<{ data: string }>(
+            messagePath(selected) + "/attachments/" + encodeURIComponent(a.id),
+          );
+          blob = new Blob(
+            [
+              Uint8Array.from(
+                atob(result.data.replaceAll("-", "+").replaceAll("_", "/")),
+                (c) => c.charCodeAt(0),
+              ),
+            ],
+            { type: a.mimeType },
+          );
+        } else {
+          const response = await fetch(
+            messagePath(selected) + "/attachments/" + encodeURIComponent(a.id),
+          );
+          if (!response.ok)
+            throw new Error(t("{name} could not be downloaded.", { name: a.filename }));
+          blob = await response.blob();
+        }
+        const url = URL.createObjectURL(blob),
+          link = document.createElement("a");
+        link.href = url;
+        link.download = a.filename;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      });
+    } finally {
+      setDownloading(null);
+    }
   }
+  // A read that failed — the first load, or a background one (list.isRefetchError, and the first
+  // page read after Load older). With mail already shown it costs the list a one-line bar (B6-01);
+  // with nothing to show it keeps the full panel.
+  const refreshFailed = list.isError || list.isRefetchError || (olderLoaded && (head.isError || head.isRefetchError));
   return (
-    <main className={"fi-app" + (selected ? " fi-has-selection" : "")}>
+    <main className={"fi-app" + (selected ? " fi-has-selection" : "") + (agentOpen && agentWide ? " fi-agent-open" : "")}>
       <aside className="fi-sidebar" aria-label={t("Mailbox navigation")}>
         <Link to="/" className="fi-brand">
           <img src="/inbox-mark.svg" alt="" />
@@ -885,6 +950,11 @@ export default function UnifiedInbox() {
               <span>↵</span>
             </button>
           </form>
+          <button ref={agentToggle} type="button" className={"fi-icon-button fi-agent-toggle" + (agentOpen ? " is-active" : "")}
+            aria-label={t("AI panel")} title={t("Ask AI about your mail")} aria-expanded={agentOpen} aria-controls="fi-agent-panel"
+            onClick={() => (agentOpen ? closeAgent() : setAgentOpen(true))}>
+            <RobotIcon size={19} weight={agentOpen ? "fill" : "regular"} />
+          </button>
         </header>
         {notice && (
           <div className="fi-notice" role="status">
@@ -921,6 +991,17 @@ export default function UnifiedInbox() {
             )}
             <button className="fi-text-button" disabled={checking} onClick={() => void checkForMail()}>{t("Retry")}</button>{" "}
             · <Link to={settingsPath("accounts", issues.length === 1 ? issues[0].accountId : null)}>{t("Why, and what to do")}</Link>
+          </div>
+        )}
+        {secretSoon && (
+          <div className="fi-provider-errors" role="status">
+            <strong>
+              {t.plural(secretSoon.daysLeft, {
+                one: "The client secret on your server ends on {date}, in {n} day. Outlook accounts stop syncing that day.",
+                other: "The client secret on your server ends on {date}, in {n} days. Outlook accounts stop syncing that day.",
+              }, { date: secretSoon.date })}
+            </strong>{" "}
+            <Link className="fi-text-button" to={outlookSecretSetupPath()}>{t("Open the Outlook setup")}</Link>
           </div>
         )}
         {stuck.length > 0 && (
@@ -1037,13 +1118,21 @@ export default function UnifiedInbox() {
                 </button>
               </div>
             )}
+            {refreshFailed && messages.length > 0 && (
+              <div className="fi-notice" role="alert">
+                <span>{t("The list could not be refreshed; the mail shown may be older.")}</span>
+                <button type="button" className="fi-text-button" onClick={() => readAgain()}>
+                  {t("Retry")}
+                </button>
+              </div>
+            )}
             {list.isPending ? (
               <div className="fi-empty" role="status">
                 <TrayArrowDownIcon size={32} />
                 <h2>{t("Loading your mail")}</h2>
                 <p>{t("Bringing your accounts together.")}</p>
               </div>
-            ) : list.isError ? (
+            ) : list.isError && !messages.length ? (
               <div className="fi-empty" role="alert">
                 <h2>{t("Mail could not load")}</h2>
                 <p>{t.text(list.error.message)}</p>
@@ -1314,11 +1403,17 @@ export default function UnifiedInbox() {
                               <button
                                 className="fi-secondary"
                                 key={a.id}
-                                disabled={busy}
+                                disabled={busy || downloading === a.id}
                                 onClick={() => void download(a)}
                               >
-                                {a.filename} ↓{" "}
-                                <small>{t("{size} KB", { size: Math.ceil(a.size / 1024) })}</small>
+                                {downloading === a.id ? (
+                                  <span role="status">{t("Downloading…")}</span>
+                                ) : (
+                                  <>
+                                    {a.filename} ↓{" "}
+                                    <small>{t("{size} KB", { size: Math.ceil(a.size / 1024) })}</small>
+                                  </>
+                                )}
                               </button>
                             ))}
                           </div>
@@ -1331,6 +1426,14 @@ export default function UnifiedInbox() {
                         >
                           <ArrowBendUpLeftIcon size={17} /> {t("Reply")}
                         </button>
+                        {replyAll && (
+                          <button
+                            className="fi-secondary"
+                            onClick={() => void compose("reply", true)}
+                          >
+                            <ArrowBendDoubleUpLeftIcon size={17} /> {t("Reply all")}
+                          </button>
+                        )}
                         <button
                           className="fi-secondary"
                           onClick={() => void compose("forward")}
@@ -1351,6 +1454,10 @@ export default function UnifiedInbox() {
           </section>
         </div>
       </section>
+      <AgentDock open={agentOpen} wide={agentWide} onClose={closeAgent}
+        addresses={accounts.filter((a) => a.provider === "cloudflare")} reading={agentReading} onChoose={setAgentChoice}
+        unreadableOpen={selected && selected.provider !== "cloudflare" ? (owner?.email ?? rawAccount(selected.accountId)) : null}
+        focus={agentFocus} onOpenSource={openAgentSource} onEditDraft={editAgentDraft} />
       {saved.notice && (
         <p className="fi-draft-warning" role="alert">
           {t.text(saved.notice)}
@@ -1461,6 +1568,19 @@ export default function UnifiedInbox() {
 function SpamBanner({ busy, empty, onEmpty }: { busy: boolean; empty: boolean; onEmpty: () => void }) {
   const t = useT();
   const [confirming, setConfirming] = useState(false);
+  // Escape cancels the confirmation (B8-02): a capture listener, so the list's own keydown
+  // (clearing the selection) never sees this key.
+  useEffect(() => {
+    if (!confirming) return;
+    const cancel = (e: KeyboardEvent) => {
+      if (!escapeCancelsConfirmation({ key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey, isComposing: e.isComposing,
+        target: e.target as unknown as Parameters<typeof escapeCancelsConfirmation>[0]["target"] })) return;
+      e.stopPropagation();
+      setConfirming(false);
+    };
+    window.addEventListener("keydown", cancel, true);
+    return () => window.removeEventListener("keydown", cancel, true);
+  }, [confirming]);
   return (
     <div className="fi-category-progress fi-spam-banner" role="note">
       <span>{t("Mail in Spam is deleted after 30 days. Nothing here reaches an agent, a rule or a category.")}</span>

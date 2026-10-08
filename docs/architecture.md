@@ -511,6 +511,7 @@ flowchart LR
 | Why a message is in Spam, and since when | `MailboxDO` `emails.spam_reason`, `emails.spam_at` |
 | A body too large for a row | R2 `bodies/<id>.html` (`emails.body_key`) |
 | Addresses hidden from the sidebar and All inboxes | R2 `config/hidden-accounts.json` |
+| When each Cloudflare address was made (the sidebar lists one made in the last 7 days before its first message; older addresses have no entry) | R2 `config/address-created.json` |
 | Rules, rule runs | `AutomationDO` storage, one per account |
 | Gmail and Outlook tokens and IMAP app passwords (AES-GCM envelopes, version 2 names its key; see "Mail providers"), IMAP server names and folder state, Outlook folder ids and delta links, message cache of all three (layout 2: rows, bodies, date index, inbox counters; see "Gmail sync, cache and refresh"), set-aside messages, send and draft receipts, moved-message aliases, IMAP draft ids, Outlook Graph ids of drafts and sends (`gid:`) | `GmailAccountsDO` (`workspace`) |
 | The Outlook app registration's client secret, and its end date | Worker secret `MICROSOFT_CLIENT_SECRET`, var `MICROSOFT_CLIENT_SECRET_EXPIRES` |

@@ -402,3 +402,17 @@ test("search_mailbox with hasAttachment: false finds the mail without attachment
     assert.equal(cursor.isError, true, "a Gmail cursor on a Cloudflare mailbox is refused, not ignored");
   } finally { await mf.dispose(); }
 });
+
+test("list_accounts says when an address was made, as the app's sidebar reads it; an address from before the record has none (2026-10-08)", async () => {
+  const { mf, as, call } = await fixture();
+  try {
+    const admin = await as("admin.access");
+    const legacy = await call(admin, "list_accounts", {});
+    assert.equal(legacy.isError, false, JSON.stringify(legacy.data));
+    assert.equal(legacy.data.accounts[0].createdAt, undefined, "no record, no time: the app reads it as old");
+    const at = Date.parse("2026-10-07T21:30:00Z");
+    await mf.dispatchFetch("http://localhost/test/put", { method: "POST", body: JSON.stringify({ key: "config/address-created.json", value: { created: { [MAILBOX]: at } } }) });
+    const listed = await call(admin, "list_accounts", {});
+    assert.equal(listed.data.accounts[0].createdAt, "2026-10-07T21:30:00.000Z");
+  } finally { await mf.dispose(); }
+});

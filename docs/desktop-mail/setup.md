@@ -301,8 +301,11 @@ was learned is added when the server has Workers AI.
 
 ## Addresses in the sidebar
 
-The sidebar lists, by default, addresses with mail in their inbox, catch-all mailboxes and the one
-open (**With mail**; **All** lists every address, remembered on the device). "N without mail not
+The sidebar lists, by default, addresses with mail in their inbox, catch-all mailboxes, the one
+open and any address made (or account connected) in the last 7 days, so a new address is there before
+its first message (**With mail**; **All** lists every address, remembered on the device). The server
+keeps when each address was made in `config/address-created.json`; one made before the server kept
+that record (2026-10-08) has no entry and waits for mail as before. "N without mail not
 listed" offers **Show** and **Hide them…**. The eye next to an address hides it: it leaves the
 sidebar, All inboxes, its domain's view and the unread totals, and keeps receiving; agents and
 categories treat it as before. Hidden addresses wait under **Hidden (N)**, where one opens on its own

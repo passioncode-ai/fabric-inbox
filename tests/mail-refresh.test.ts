@@ -82,6 +82,14 @@ test("the inbox's refresh button reads Gmail, not only the browser's cache (P1-5
   assert.doesNotMatch(code, /Refresh cached mail/);
 });
 
+test("a failed background refresh keeps the shown mail behind a one-line Retry bar (B6-01)", () => {
+  const code = readFileSync("app/routes/unified-inbox.tsx", "utf8");
+  assert.match(code, /list\.isError \|\| list\.isRefetchError \|\| \(olderLoaded && \(head\.isError \|\| head\.isRefetchError\)\)/, "a background read that failed is caught, not only the first load");
+  assert.match(code, /\{refreshFailed && messages\.length > 0 && \([\s\S]{0,300}role="alert"/);
+  assert.match(code, /list\.isError && !messages\.length \? \(/, "the full Mail could not load panel is only for a list with nothing to show");
+  assert.doesNotMatch(code, /\) : list\.isError \? \(/, "an error with mail already shown no longer replaces the list");
+});
+
 test("Refresh sits on the left, under the list's title, before the folder and the search (operator, 2026-10-06)", () => {
   const code = readFileSync("app/routes/unified-inbox.tsx", "utf8");
   const toolbar = code.slice(code.indexOf('<header className="fi-toolbar">'), code.indexOf("</header>", code.indexOf('<header className="fi-toolbar">')));

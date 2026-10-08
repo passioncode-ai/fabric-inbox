@@ -13,16 +13,9 @@ import {
 } from "~/services/fabric";
 import { useWindowActive } from "~/hooks/useWindowActive";
 import { pollInterval } from "~/lib/window-activity";
+import { keepGmailDraft, restoreGmailDraft, type GmailDraft } from "~/lib/gmail-draft";
 const field = "w-full rounded-md border border-kumo-line bg-kumo-base p-2";
-type Draft = {
-  to: string;
-  subject: string;
-  text: string;
-  threadId?: string;
-  inReplyTo?: string;
-  references?: string;
-  idempotencyKey: string;
-};
+type Draft = GmailDraft;
 type Receipt = { status: string; providerMessageId?: string; error?: string };
 export function meta({ matches }: MetaArgs) {
   const t = metaT(matches);
@@ -43,10 +36,9 @@ export default function GmailInbox() {
   const [loadedAccount, setLoadedAccount] = useState("");
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("fabric-draft:" + accountId);
-      const value = saved ? JSON.parse(saved) : null;
-      setDraft(value?.draft ?? null);
-      setLocked(value?.locked ?? false);
+      const saved = restoreGmailDraft(localStorage, accountId);
+      setDraft(saved.draft);
+      setLocked(saved.locked);
     } catch {
       setNotice(t("Saved draft could not be restored."));
     }
@@ -55,12 +47,7 @@ export default function GmailInbox() {
   useEffect(() => {
     if (loadedAccount !== accountId) return;
     try {
-      if (draft)
-        localStorage.setItem(
-          "fabric-draft:" + accountId,
-          JSON.stringify({ draft, locked }),
-        );
-      else localStorage.removeItem("fabric-draft:" + accountId);
+      keepGmailDraft(localStorage, accountId, draft, locked);
     } catch {
       setNotice(
         t("This draft could not be saved on this device. Keep this window open."),
@@ -156,10 +143,8 @@ export default function GmailInbox() {
     if (!draft || sending.current || locked) return;
     sending.current = true;
     try {
-      localStorage.setItem(
-        "fabric-draft:" + accountId,
-        JSON.stringify({ draft, locked: true }),
-      );
+      // The lock is on the device before the request leaves, so a restart restores the same attempt.
+      keepGmailDraft(localStorage, accountId, draft, true);
     } catch {
       sending.current = false;
       setNotice(

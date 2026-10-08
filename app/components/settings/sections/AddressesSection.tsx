@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { PlusIcon } from "@phosphor-icons/react";
 import { useT } from "~/lib/i18n";
 import { fabric } from "~/services/fabric";
+import { ApiError } from "~/services/api";
 import type { AgentList, ProjectAddress, ProjectAddresses, RoutingStatus, TestStatus } from "~/services/agents";
 import type { DomainList } from "~/services/domains";
 import { groupRows, stableGroup, visibleRows, type ListEntry } from "../list-model";
@@ -286,6 +287,19 @@ function RoutingTab({ address: a, catchAll, connected }: { address: ProjectAddre
     await client.invalidateQueries({ queryKey: routingKey(a.email) });
     return t.text(status.detail);
   });
+  // The missing mail is the domain's (Email Routing off or its records): the domain's own
+  // Receive mail here flow fixes it, the same call the add-address dialog's open_domain makes (B14-01).
+  const receiveHere = () => void work.run(T.receiveRunning, async () => {
+    try {
+      await fabric(`/api/domains/${encodeURIComponent(a.domain)}/connect`, { replaceMx: false });
+    } catch (error) {
+      // Another provider handling the domain's mail today is a choice only the domain's page asks.
+      if (error instanceof ApiError && error.status === 409) throw new Error(T.panelReceiveConfirm(a.domain));
+      throw error;
+    }
+    await refreshMail(client, a.domain);
+    return T.receiveDone(a.domain, true);
+  });
   // The last test message, watched until it arrives (SCN-062); polled only while it is on its way.
   const lastTest = useQuery({
     queryKey: ["routing-test", a.email],
@@ -299,6 +313,8 @@ function RoutingTab({ address: a, catchAll, connected }: { address: ProjectAddre
   });
   // The server's English sentence (workers/lib/address-ops.ts) says when the rule sends the mail elsewhere.
   const elsewhere = routing.data?.state === "missing" && routing.data.detail.includes("somewhere else");
+  // Email Routing off or its records unready: a domain's problem, fixed by its own Receive mail here.
+  const domainProblem = routing.data?.state === "missing" && routing.data.domainProblem === true;
   const issue = a.deliveryIssue;
   return (
     <>
@@ -314,6 +330,7 @@ function RoutingTab({ address: a, catchAll, connected }: { address: ProjectAddre
           <p className="fi-hint">{T.panelConnect(<Link key="connect" to={settingsPath("domains", "connect")}>{T.panelConnectLink}</Link>)}</p>
         )}
         {elsewhere && <p className="fi-hint">{T.panelElsewhere(<Link key="domain" to={settingsPath("domains", a.domain)}>{a.domain}</Link>)}</p>}
+        {domainProblem && <p className="fi-hint">{T.panelReceiveHint(<Link key="domain" to={settingsPath("domains", a.domain)}>{a.domain}</Link>)}</p>}
         {catchAll && <p className="fi-hint">{t("It also keeps the mail for every other address on {domain}.", { domain: a.domain })}</p>}
         {issue && (
           <div className="fi-callout is-bad" role="alert">
@@ -324,7 +341,10 @@ function RoutingTab({ address: a, catchAll, connected }: { address: ProjectAddre
           </div>
         )}
         <div className="fi-buttons">
-          {connected && routing.data?.state === "missing" && !elsewhere && (
+          {connected && domainProblem && (
+            <button type="button" className="fi-primary" disabled={!!work.busy} onClick={receiveHere} title={T.panelReceiveTitle(a.domain)}>{t("Receive mail here")}</button>
+          )}
+          {connected && routing.data?.state === "missing" && !elsewhere && !domainProblem && (
             <button type="button" className="fi-primary" disabled={!!work.busy} onClick={sendHere} title={T.panelFixTitle}>{T.panelFix}</button>
           )}
           <button type="button" className="fi-secondary" disabled={!!work.busy} onClick={test}>{T.panelSendTest}</button>

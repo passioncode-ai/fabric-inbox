@@ -1,12 +1,14 @@
+/** @jsxRuntime automatic @jsxImportSource react */
+// ^ pins the automatic JSX runtime so tests/imap-connect-ui.test.ts (tsx) runs this file as the app does.
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { fabric, accountPath, type Account } from "~/services/fabric";
-import { useT, type T } from "~/lib/i18n";
+import { fabric, accountPath, type Account } from "../../../services/fabric";
+import { useT, type T } from "../../../lib/i18n";
 import { CUSTOM, PRESETS, preset as findPreset, presetFor, type Preset } from "../../../../shared/mail/imap-presets";
-import { imapErrorText } from "~/lib/imap-errors";
+import { imapErrorText } from "../../../lib/imap-errors";
 import { settingsPath } from "../paths";
-import { ActionMenu, ActionResult, Badge, Panel, PanelBlock, errorText, useConfirm, useWork } from "../ui";
+import { ActionMenu, ActionResult, Badge, Panel, PanelBlock, errorText, useConfirm, useWork, type ConfirmRequest } from "../ui";
 import { GMAIL_KEY } from "./data";
 import { accountStatusText } from "./providers";
 
@@ -23,14 +25,38 @@ const codeOf = (error: unknown) => {
   return typeof body?.error === "string" ? body.error : "";
 };
 /** The sentence for a failure, with the provider's name and servers; the server's own text when the code is unknown. */
-export function connectError(error: unknown, provider: string, hosts: { imapHost?: string; smtpHost?: string } = {}, t?: T) {
+export function connectError(error: unknown, provider: string, hosts: { imapHost?: string; smtpHost?: string; retryAt?: number } = {}, t?: T) {
   return imapErrorText(codeOf(error), { provider, ...hosts }, t) ?? (t ? t.text(errorText(error)) : errorText(error));
+}
+
+/**
+ * The connect form holds something a person typed, so closing it asks first (B4-01);
+ * an untouched form closes without asking.
+ */
+export function imapDraftDirty(draft: { email: string; password: string; server?: { imapHost: string; smtpHost: string; username: string } }): boolean {
+  const server = draft.server;
+  return !!(draft.email.trim() || draft.password
+    || (server && (server.imapHost.trim() || server.smtpHost.trim() || server.username.trim())));
+}
+
+/**
+ * Leaving the connect form — Esc, Close or Back — with something typed asks first; nothing typed
+ * leaves at once (B4-01, SCN-053). One question for every way out, worded as the editors' guard.
+ */
+export async function leaveConnectForm(dirty: boolean, confirm: (request: ConfirmRequest) => Promise<boolean>, t: T, leave: () => void): Promise<boolean> {
+  if (dirty && !(await confirm({
+    title: t("Discard your changes to {what}?", { what: t("the new account") }),
+    body: <p>{t("They are not saved yet.")}</p>,
+    confirmLabel: t("Discard changes"), cancelLabel: t("Keep editing"), danger: true,
+  }))) return false;
+  leave();
+  return true;
 }
 
 const tone = (a: Account) => (a.error ? "bad" : a.status === "connected" ? "ok" : "warn") as "bad" | "ok" | "warn";
 
 /** The preset chooser, then the form. `fixed` is a card that is one preset (Gmail with an app password). */
-export function ConnectImap({ fixed, onBack, onConnected }: { fixed?: string; onBack: () => void; onConnected: (accountKey: string) => void }) {
+export function ConnectImap({ fixed, onBack, onConnected, onDirtyChange }: { fixed?: string; onBack: () => void; onConnected: (accountKey: string) => void; onDirtyChange?: (dirty: boolean) => void }) {
   const t = useT();
   const [presetId, setPresetId] = useState<string | null>(fixed ?? null);
   if (!presetId) {
@@ -49,12 +75,13 @@ export function ConnectImap({ fixed, onBack, onConnected }: { fixed?: string; on
       </>
     );
   }
-  return <ImapForm presetId={presetId} onBack={fixed ? onBack : () => setPresetId(null)} onConnected={onConnected} />;
+  return <ImapForm presetId={presetId} onBack={fixed ? onBack : () => setPresetId(null)} onConnected={onConnected} onDirtyChange={onDirtyChange} />;
 }
 
-function ImapForm({ presetId, onBack, onConnected }: { presetId: string; onBack: () => void; onConnected: (accountKey: string) => void }) {
+function ImapForm({ presetId, onBack, onConnected, onDirtyChange }: { presetId: string; onBack: () => void; onConnected: (accountKey: string) => void; onDirtyChange?: (dirty: boolean) => void }) {
   const t = useT();
   const client = useQueryClient();
+  const confirm = useConfirm();
   const chosen = findPreset(presetId);
   const custom = presetId === "custom";
   const [email, setEmail] = useState("");
@@ -65,6 +92,14 @@ function ImapForm({ presetId, onBack, onConnected }: { presetId: string; onBack:
   const passwordField = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  // A typed address, password or custom server asks before the dialog closes (B4-01).
+  const dirty = imapDraftDirty({ email, password, server: custom ? server : undefined });
+  const reportDirty = useRef(onDirtyChange);
+  reportDirty.current = onDirtyChange;
+  useEffect(() => {
+    reportDirty.current?.(dirty);
+    return () => reportDirty.current?.(false);
+  }, [dirty]);
   const name = chosen ? t.text(chosen.name) : t("your provider");
   // An address of another provider's domain is said before connecting, not after a refused login.
   const suggested = !custom && email.includes("@") ? presetFor(email) : undefined;
@@ -146,7 +181,7 @@ function ImapForm({ presetId, onBack, onConnected }: { presetId: string; onBack:
         </div>
       )}
       <div className="fi-dialog-actions">
-        <button type="button" className="fi-secondary" onClick={onBack} disabled={working}>{t("Back")}</button>
+        <button type="button" className="fi-secondary" onClick={() => void leaveConnectForm(dirty, confirm, t, onBack)} disabled={working}>{t("Back")}</button>
         <button type="submit" className="fi-primary" disabled={working || !email.trim() || !password}>{working ? t("Checking with {name}…", { name }) : t("[action] Connect")}</button>
       </div>
     </form>
@@ -165,7 +200,7 @@ export function ImapPanel({ account: a, entryKey, onRemoved }: { account: Accoun
   const refresh = () => Promise.all([client.invalidateQueries({ queryKey: GMAIL_KEY }), client.invalidateQueries({ queryKey: ["unified-inbox"] })]);
   const retry = () => void work.run(t("Syncing…"), async () => {
     try { await fabric(accountPath(a.id) + "/sync", {}); return t("{email} synced.", { email: a.email }); }
-    catch (error) { throw new Error(connectError(error, name, {}, t)); }
+    catch (error) { throw new Error(connectError(error, name, { retryAt: a.retryAt }, t)); }
     finally { await refresh(); }
   });
   const disconnect = async () => {
@@ -199,7 +234,7 @@ export function ImapPanel({ account: a, entryKey, onRemoved }: { account: Accoun
           <div className="fi-callout is-bad" role="alert"><p>{imapErrorText("reconnect_required", { provider: name }, t)}</p></div>
         ) : a.error ? (
           <div className="fi-callout" role="status">
-            <p>{imapErrorText(a.error, { provider: name, imapHost: a.server?.imap.host, smtpHost: a.server?.smtp.host }, t) ?? t("The last sync failed ({error}). It is tried again on its own.", { error: a.error })}</p>
+            <p>{imapErrorText(a.error, { provider: name, imapHost: a.server?.imap.host, smtpHost: a.server?.smtp.host, retryAt: a.retryAt }, t) ?? t("The last sync failed ({error}). It is tried again on its own.", { error: a.error })}</p>
             <div className="fi-buttons"><button type="button" className="fi-secondary" disabled={!!work.busy} onClick={retry}>{t("Retry now")}</button></div>
           </div>
         ) : null}

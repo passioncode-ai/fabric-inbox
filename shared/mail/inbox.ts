@@ -12,6 +12,8 @@ export interface InboxAccount {
   /** Why a Gmail account stopped working (shared/mail/gmail-reasons.ts); absent while it works. */
   reason?: string;
   lastSyncAt?: number;
+  /** When the address was created or the account connected (epoch ms); absent for a Cloudflare address made before 2026-10-08, which reads as old. */
+  createdAt?: number;
   /** A Gmail, IMAP or Outlook account waiting out a failure or the provider's request to slow down: when it tries again. */
   retryAt?: number;
   /** Unread messages in this account's inbox; sent with the first page only. */

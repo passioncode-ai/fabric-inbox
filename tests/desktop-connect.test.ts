@@ -3,9 +3,10 @@
 // owner's own session and hands it to a loopback callback — and takes it back if nobody received it.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-const { parseConnectLink, promptFor, connect, mintWith, deliverTo, listenerWith } = require("../desktop/connect.cjs");
+const { parseConnectLink, promptFor, connect, mintWith, deliverTo, listenerWith, attendWith, pauseFor, PROMPT_POLL_MS, PROMPT_DEADLINE_MS } = require("../desktop/connect.cjs");
 
 const STATE = "s".repeat(32);
 const link = (over: Record<string, string> = {}) => {
@@ -61,7 +62,7 @@ test("an Admin key is a warning that needs the person's own tick", () => {
 });
 
 /** A fake world: what was minted, revoked, delivered and logged. */
-function world(over: Partial<Record<"mint" | "deliver" | "revoke" | "confirm" | "identify" | "sleep" | "self", unknown>> = {}) {
+function world(over: Partial<Record<"mint" | "deliver" | "revoke" | "confirm" | "identify" | "sleep" | "pause" | "self", unknown>> = {}) {
   const seen = { minted: [] as unknown[], revoked: [] as string[], delivered: [] as Record<string, unknown>[], logs: [] as string[], signIn: 0, slept: 0, prompts: [] as Record<string, unknown>[] };
   const deps = {
     confirm: async (prompt: Record<string, unknown>) => { seen.prompts.push(prompt); return { response: 1, checkboxChecked: true }; },
@@ -158,6 +159,127 @@ test("a key is revoked, not delivered, when another process took the port meanwh
   assert.deepEqual([out.outcome, out.reason], ["failed", "listener_changed"]);
   assert.deepEqual(seen.revoked, ["tok-9"]);
   assert.deepEqual(seen.delivered, []);
+});
+
+test("a listener_changed failure is told in words: the key was made, could not reach the app, and was revoked (B2)", () => {
+  const main = readFileSync("desktop/main.cjs", "utf8");
+  assert.match(main, /out\.reason === 'listener_changed' \? \(out\.revoked \? t\('The key was made but could not reach \{client\}, and was revoked again\.'/);
+  assert.match(main, /The key was made but could not reach \{client\}, and it could not be revoked: revoke it in Settings → Agent access\./);
+});
+
+// A prompt must not outlive its requester (observed 2026-10-08: a sheet on a background window sat
+// unseen for 10 minutes while both hubs' listeners timed out and a second link queued behind it).
+/** A prompt nobody answers: it ends only when its signal closes it, as Electron's does. */
+const unanswered = (prompts: unknown[], onClose = { response: 0, checkboxChecked: false }) =>
+  async (prompt: unknown, { signal }: { signal: AbortSignal }) => {
+    prompts.push(prompt);
+    await new Promise<void>((resolve) => (signal.aborted ? resolve() : signal.addEventListener("abort", () => resolve(), { once: true })));
+    return onClose;
+  };
+
+test("the prompt closes itself when the requester stops listening: nothing is made or sent, and the log says so", async () => {
+  let calls = 0;
+  const prompts: unknown[] = [];
+  let pauses = 0;
+  const { seen, deps } = world({
+    identify: async () => (++calls === 1 ? HUB : null),
+    pause: async (ms: number) => { assert.equal(ms, PROMPT_POLL_MS); pauses++; },
+    // Even an Allow racing the close is not taken: the requester is gone.
+    confirm: unanswered(prompts, { response: 1, checkboxChecked: true }),
+  });
+  const out = await connect({ request: request(), config, ...deps });
+  assert.deepEqual([out.outcome, out.reason, out.abandoned], ["failed", "no_listener", true]);
+  assert.equal(prompts.length, 1, "the person was asked once");
+  assert.equal(pauses, 2, "two misses in a row, one poll apart, close it");
+  assert.deepEqual(seen.minted, []);
+  assert.deepEqual(seen.delivered, [], "nobody listens, so nothing is posted");
+  assert.ok(seen.logs.some((l) => l.includes('"connect.abandoned"') && l.includes("no_listener")));
+});
+
+test("one missed lookup does not close the prompt; the person's answer still counts", async () => {
+  const answers = [null, HUB, HUB];
+  let calls = 0;
+  let answer!: (value: unknown) => void;
+  const answered = new Promise((resolve) => { answer = resolve; });
+  let pauses = 0;
+  const { seen, deps } = world({
+    identify: async () => (++calls === 1 ? HUB : answers.shift() ?? HUB),
+    pause: async () => { if (++pauses === 3) answer({ response: 1, checkboxChecked: true }); },
+    confirm: async () => answered,
+  });
+  const out = await connect({ request: request(), config, ...deps });
+  assert.equal(out.outcome, "connected");
+  assert.equal(seen.delivered.length, 1);
+});
+
+test("another process taking the port closes the prompt at once", async () => {
+  let calls = 0;
+  const prompts: unknown[] = [];
+  const { seen, deps } = world({
+    identify: async () => (++calls === 1 ? HUB : { pid: 999, name: "Other", path: "/tmp/other" }),
+    pause: async () => {},
+    confirm: unanswered(prompts),
+  });
+  const out = await connect({ request: request(), config, ...deps });
+  assert.deepEqual([out.outcome, out.reason], ["failed", "no_listener"]);
+  assert.equal(calls, 2, "closed on the first look");
+  assert.deepEqual(seen.delivered, []);
+  assert.deepEqual(seen.minted, []);
+});
+
+test("a prompt nobody answers closes at the deadline, and the hub that still listens hears why", async () => {
+  let pauses = 0;
+  const prompts: unknown[] = [];
+  const { seen, deps } = world({ pause: async () => { pauses++; }, confirm: unanswered(prompts) });
+  const out = await connect({ request: request(), config, ...deps });
+  assert.deepEqual([out.outcome, out.reason, out.abandoned], ["failed", "not_answered", true]);
+  assert.equal(pauses, PROMPT_DEADLINE_MS / PROMPT_POLL_MS, "two minutes of three-second looks");
+  assert.equal(PROMPT_DEADLINE_MS, 120000);
+  assert.deepEqual(seen.delivered, [{ state: STATE, outcome: "failed", error: "not_answered" }]);
+  assert.deepEqual(seen.minted, []);
+  assert.ok(seen.logs.some((l) => l.includes('"connect.abandoned"') && l.includes("not_answered")));
+});
+
+test("an answer stops the watch: no lookup after it, no timer left behind", async () => {
+  let calls = 0;
+  const { deps } = world({ identify: async () => { calls++; return HUB; } });
+  const started = Date.now();
+  const out = await connect({ request: request(), config, ...deps });
+  assert.equal(out.outcome, "connected");
+  assert.equal(calls, 2, "one look before the prompt and the same-process check after Allow");
+  assert.ok(Date.now() - started < PROMPT_POLL_MS, "the default wait ended with the answer");
+  const controller = new AbortController();
+  const waiting = pauseFor(60000, controller.signal);
+  controller.abort();
+  await waiting;
+  await pauseFor(60000, controller.signal);
+});
+
+test("before the prompt the app comes forward: window restored and focused, app made active, the Dock bounces until answered", () => {
+  const calls: string[] = [];
+  const app = {
+    focus: (options?: { steal?: boolean }) => calls.push(`app.focus ${JSON.stringify(options ?? null)}`),
+    dock: { bounce: (type: string) => { calls.push(`bounce ${type}`); return 7; }, cancelBounce: (id: number) => calls.push(`cancel ${id}`) },
+  };
+  const win = { isDestroyed: () => false, isMinimized: () => true, restore: () => calls.push("restore"), show: () => calls.push("show"), focus: () => calls.push("focus") };
+  const stop = attendWith(app, "darwin")(win);
+  assert.deepEqual(calls, ["restore", "show", "focus", 'app.focus {"steal":true}', "bounce critical"]);
+  stop();
+  assert.equal(calls.at(-1), "cancel 7");
+  // No window and no Dock (not a Mac): still asks for focus, and nothing throws.
+  const plain: string[] = [];
+  attendWith({ focus: (o?: unknown) => plain.push(`focus ${JSON.stringify(o ?? null)}`) }, "linux")(null)();
+  assert.deepEqual(plain, ["focus null"]);
+  const throwing = { focus: () => { throw new Error("no"); }, dock: { bounce: () => { throw new Error("no"); }, cancelBounce: () => {} } };
+  assert.doesNotThrow(() => attendWith(throwing, "darwin")({ isDestroyed: () => true })());
+});
+
+test("the desktop app shows the prompt on a window brought forward, closable by its signal, and no notice for a requester that left", () => {
+  const main = readFileSync("desktop/main.cjs", "utf8");
+  assert.match(main, /confirm: async \(prompt, \{ signal \} = \{\}\) => \{\n\s+const owner = promptWindow\(\);\n\s+const stop = attend\(owner\);/);
+  assert.match(main, /dialog\.showMessageBox\(owner, \{ type: 'question', \.\.\.prompt, signal \}\)/);
+  assert.match(main, /finally \{ stop\(\); \}/);
+  assert.match(main, /if \(out\.reason === 'no_listener' \|\| out\.reason === 'not_answered'\) return;/);
 });
 
 test("the listener is read from lsof and ps: the app bundle's name, else the command", async () => {

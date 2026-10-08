@@ -1554,3 +1554,46 @@ body {
   .fi-sidebar .fi-account-list { display: flex; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; gap: 4px; min-height: 0; }
   .fi-sidebar .fi-account-group { flex: none; }
 }
+/* The AI panel (SCN-013, B11-01; app/components/inbox/AgentDock.tsx): a fourth column where the
+   window is wide enough, a sheet from the right edge over the mail where it is not. */
+.fi-agent-toggle.is-active { background: var(--pc-panel); color: var(--pc-text); }
+@media (min-width: 1400px) {
+  .fi-app.fi-agent-open { grid-template-columns: 232px minmax(0, 1fr) 360px; }
+}
+.fi-agent-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--pc-bg);
+  color: var(--pc-text);
+  border-left: 1px solid var(--pc-border);
+}
+.fi-agent-sheet {
+  position: fixed;
+  inset: 0 0 0 auto;
+  margin: 0;
+  padding: 0;
+  width: min(420px, 100vw);
+  height: 100dvh;
+  max-height: 100dvh;
+  border: 0;
+  border-left: 1px solid var(--pc-border);
+  box-shadow: var(--pc-shadow-overlay);
+}
+.fi-agent-sheet[open] { display: flex; }
+.fi-agent-sheet::backdrop { background: #0008; backdrop-filter: blur(3px); }
+.fi-agent-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 16px 10px;
+  border-bottom: 1px solid var(--pc-border);
+}
+.fi-agent-head h2 { font-size: 15px; font-weight: 600; margin: 0; }
+.fi-agent-source { margin: 2px 0 0; font-size: 11px; color: var(--pc-text-muted); overflow-wrap: anywhere; }
+.fi-agent-pick { display: flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 11px; color: var(--pc-text-muted); border-bottom: 1px solid var(--pc-border); }
+.fi-agent-pick select { flex: 1; min-width: 0; font-size: 12px; color: var(--pc-text); background: var(--pc-panel); border: 1px solid var(--pc-border); border-radius: 6px; padding: 4px 6px; }
+.fi-agent-note { margin: 0; padding: 10px 16px; font-size: 12px; color: var(--pc-text-muted); border-bottom: 1px solid var(--pc-border); }
+.fi-agent-chat { flex: 1; min-height: 0; overflow: hidden; }

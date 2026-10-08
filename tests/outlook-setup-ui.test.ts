@@ -1,11 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { OutlookConnectStep, OutlookProblem, OutlookSetupWizard, SecretExpiryNotice, type MicrosoftSetup } from "../app/components/settings/sections/OutlookSetup";
+import { ConnectOutlookView, OutlookConnectStep, OutlookProblem, OutlookSetupWizard, SecretExpiryNotice, MICROSOFT_SETUP_KEY, type MicrosoftSetup } from "../app/components/settings/sections/OutlookSetup";
 import { PROVIDERS, availability } from "../app/components/settings/sections/providers";
 import { outlookSetupState } from "../app/lib/account-status";
+import { outlookSecretSetupPath } from "../app/components/settings/paths";
 import { groupAccounts } from "../app/components/inbox/account-groups";
 import { MICROSOFT_ENTRA, MICROSOFT_HELP, MICROSOFT_PERMISSIONS, adminConsentUrl, microsoftSetupValues } from "../shared/mail/microsoft-setup";
 
@@ -69,6 +71,30 @@ test("an Outlook account that stopped working says why and offers its one fix", 
   assert.match(expired, /Open the Outlook setup/);
   assert.match(expired, /does not need to be reconnected/);
   assert.equal(render(createElement(OutlookProblem, { account: account({ status: "connected" }), onRetry: () => {}, onSetup: () => {}, busy: false })), "");
+});
+
+test("opened for a new secret, the setup dialog starts in its replacing state, with the secret fields (B5-02)", () => {
+  const data = setup({ configured: true, clientId: CLIENT_ID, addressMatches: true });
+  const withSetup = (element: ReturnType<typeof createElement>) => {
+    const client = new QueryClient();
+    client.setQueryData(MICROSOFT_SETUP_KEY, data);
+    return renderToStaticMarkup(createElement(QueryClientProvider, { client }, element));
+  };
+  const connectStep = withSetup(createElement(ConnectOutlookView, { state: "configured", onSaved: () => {}, onBack: () => {}, onClose: () => {} }));
+  assert.match(connectStep, /Connect Outlook in browser/, "a plain open still lands on the connect step");
+  const replacing = withSetup(createElement(ConnectOutlookView, { state: "configured", replaceSecret: true, onSaved: () => {}, onBack: () => {}, onClose: () => {} }));
+  assert.match(replacing, /type="password"/, "the client secret field is there at once");
+  assert.match(replacing, /type="date"/, "and its end date");
+});
+
+test("\"Open the Outlook setup\" has one address, and it opens the replacing state (B5-02)", () => {
+  assert.equal(outlookSecretSetupPath(), "/settings/accounts?connect=microsoft&replace=secret");
+  const accounts = readFileSync("app/components/settings/sections/AccountsSection.tsx", "utf8");
+  assert.match(accounts, /const replaceSecret = connecting === OUTLOOK_SECRET_QUERY\.connect && params\.get\("replace"\) === OUTLOOK_SECRET_QUERY\.replace;/,
+    "the dialog reads the replacing state from the address");
+  assert.match(accounts, /onSetup=\{\(\) => setConnecting\("microsoft", "secret"\)\}/, "an Outlook account's problem asks for it");
+  assert.match(accounts, /if \(replace\) n\.set\("replace", replace\); else n\.delete\("replace"\);/, "every other way into the dialog drops it");
+  assert.match(accounts, /<ConnectOutlook state=\{outlookState\} replaceSecret=\{replaceSecret\}/);
 });
 
 test("the sidebar keeps Outlook accounts in their own group, after Gmail and before other mail", () => {

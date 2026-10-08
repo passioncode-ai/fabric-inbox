@@ -21,6 +21,10 @@ import { parseRemoteAccount } from "../../shared/mail/accounts";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
 import { msg } from "../../shared/i18n";
 
+/** What checking an uncertain run found (SCN-020). */
+export type RunCheckOutcome = "done" | "not_done" | "unresolved" | "not_checkable";
+export interface RunCheck { outcome: RunCheckOutcome; detail: string; run: Run }
+
 export class AutomationDO extends DurableObject<Env> {
   private processing: Promise<void> | undefined;
   constructor(ctx: DurableObjectState, env: Env) {
@@ -62,7 +66,9 @@ export class AutomationDO extends DurableObject<Env> {
   async runs() {
     return [...(await this.ctx.storage.list<Run>({ prefix: "run:" })).values()]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .slice(0, 100);
+      .slice(0, 100)
+      // A run stored before attempts were counted made one attempt once it left the queue.
+      .map((run) => ({ attempts: run.status === "pending" ? 0 : 1, ...run }));
   }
   async ingest(account: string, email: RuleEmail) {
     // Caller derives this from authenticated account namespace; email content cannot pick another account.
@@ -107,6 +113,7 @@ export class AutomationDO extends DurableObject<Env> {
           status: limited ? "skipped" : "pending",
           createdAt: now,
           updatedAt: now,
+          attempts: 0,
           ...(limited ? { detail: msg("Daily rule limit reached") } : {}),
         };
         await txn.put("run:" + id, run);
@@ -148,6 +155,99 @@ export class AutomationDO extends DurableObject<Env> {
       await txn.put("run:" + id, run);
       return run;
     });
+  }
+  /**
+   * SCN-020: reads what this server or the provider recorded for an uncertain run's action — by the
+   * key the action itself used ("rule-" + run id), or the message's state — and never repeats the
+   * action. Proven done becomes succeeded; proven not done becomes failed, the only case in which
+   * doing it again by hand is safe; anything else stays unknown with what was found. A tool call
+   * (mcp) leaves no receipt here, so it cannot be checked.
+   */
+  async checkRun(id: string): Promise<RunCheck> {
+    const run = await this.ctx.storage.get<Run>("run:" + id);
+    if (!run) throw new Error("run_not_found");
+    if (run.status !== "unknown") throw new Error("run_not_uncertain");
+    const finding = await this.findOutcome(run);
+    return this.ctx.storage.transaction(async (txn) => {
+      // A second check that finished first already settled it; this one changes nothing.
+      const fresh = await txn.get<Run>("run:" + id);
+      if (!fresh || fresh.status !== "unknown") throw new Error("run_not_uncertain");
+      const now = new Date().toISOString();
+      fresh.checkedAt = now;
+      fresh.updatedAt = now;
+      if (finding.outcome === "done" || finding.outcome === "not_done") {
+        fresh.status = finding.outcome === "done" ? "succeeded" : "failed";
+        fresh.detail = finding.detail;
+      }
+      await txn.put("run:" + id, fresh);
+      return { outcome: finding.outcome, detail: finding.detail, run: fresh };
+    });
+  }
+  private async findOutcome(run: Run): Promise<{ outcome: RunCheckOutcome; detail: string }> {
+    const action = run.proposal?.action ?? run.rule.action;
+    const key = "rule-" + run.id;
+    if (action.type === "mcp")
+      return { outcome: "not_checkable", detail: msg("A tool call leaves no receipt on this server. Check the tool's own service before repeating it.") };
+    const remote = parseRemoteAccount(run.account);
+    if (remote) {
+      const provider = this.env.GMAIL_ACCOUNTS.getByName("workspace");
+      if (action.type === "forward" || action.type === "draft") {
+        let receipt: { status: string };
+        try {
+          receipt = action.type === "forward"
+            ? await provider.getSendReceipt(remote.id, key)
+            : await provider.getDraftReceipt(remote.id, key);
+        } catch (error) {
+          // DO RPC keeps the message, not the class: the code is the message.
+          if ((error as Error)?.message === "receipt_not_found")
+            return { outcome: "not_done", detail: action.type === "forward"
+              ? msg("Checked: nothing was handed to the provider, so nothing was sent.")
+              : msg("Checked: nothing was handed to the provider, so no draft was saved.") };
+          throw error;
+        }
+        if (receipt.status === "accepted")
+          return { outcome: "done", detail: action.type === "forward" ? msg("Checked: the provider accepted the forward.") : msg("Checked: the provider saved the draft.") };
+        return { outcome: "unresolved", detail: action.type === "forward"
+          ? msg("Checked: the provider was handed the forward, but its answer was lost. Look in the account's Sent folder before repeating it.")
+          : msg("Checked: the provider was handed the draft, but its answer was lost. Look in the account's Drafts before repeating it.") };
+      }
+      let message: { archived: boolean; read: boolean };
+      try {
+        message = await provider.getMessage(remote.id, run.emailId);
+      } catch (error) {
+        if ((error as Error)?.message === "message_not_found")
+          return { outcome: "unresolved", detail: msg("Checked: the message is no longer on this server. Look in the account itself before repeating the action.") };
+        throw error;
+      }
+      if (action.type === "archive" ? message.archived : message.read)
+        return { outcome: "done", detail: action.type === "archive" ? msg("Checked: the message is archived.") : msg("Checked: the message is marked read.") };
+      // The copy here follows the account by sync, so "not yet" proves nothing about the provider.
+      return { outcome: "unresolved", detail: msg("Checked: the copy on this server does not show the change yet. Look in the account itself before repeating the action.") };
+    }
+    const stub = this.env.MAILBOX.get(this.env.MAILBOX.idFromName(run.account));
+    if (action.type === "forward") {
+      const entry = await stub.outboxByKey(run.account, key);
+      if (!entry) return { outcome: "not_done", detail: msg("Checked: nothing reached the outbox, so nothing was sent.") };
+      if (entry.status === "accepted") return { outcome: "done", detail: msg("Checked: the email provider accepted the forward.") };
+      if (entry.status === "failed") return { outcome: "not_done", detail: msg("Checked: the email provider refused the forward, so nothing was sent.") };
+      if (entry.status === "unknown")
+        return { outcome: "unresolved", detail: msg("Checked: the outbox does not know whether the email provider took the forward. Look in Sent before repeating it.") };
+      return { outcome: "unresolved", detail: msg("Checked: the forward is still in the outbox. Check again in a minute.") };
+    }
+    if (action.type === "draft")
+      return (await stub.getEmail(key))
+        ? { outcome: "done", detail: msg("Checked: the draft is saved.") }
+        : { outcome: "not_done", detail: msg("Checked: no draft was saved.") };
+    // This mailbox is the message's own store, so its state here is the truth.
+    const email = await stub.getEmail(run.emailId);
+    if (!email) return { outcome: "unresolved", detail: msg("Checked: the message is no longer in this mailbox.") };
+    if (action.type === "archive")
+      return email.folder_id === "archive"
+        ? { outcome: "done", detail: msg("Checked: the message is archived.") }
+        : { outcome: "not_done", detail: msg("Checked: the message is not archived.") };
+    return email.read
+      ? { outcome: "done", detail: msg("Checked: the message is marked read.") }
+      : { outcome: "not_done", detail: msg("Checked: the message is not marked read.") };
   }
   private async readEmail(account: string, id: string): Promise<RuleEmail> {
     const remote = parseRemoteAccount(account);
@@ -428,6 +528,17 @@ automationRouter.post(base + "/runs/:id/dismiss", async (c) => {
     return c.json(await stub(c).dismiss(c.req.param("id")!));
   } catch {
     return c.json({ error: msg("This run cannot be cancelled") }, 409);
+  }
+});
+automationRouter.post(base + "/runs/:id/check", async (c) => {
+  try {
+    return c.json(await stub(c).checkRun(c.req.param("id")!));
+  } catch (error) {
+    const code = (error as Error)?.message;
+    if (code === "run_not_found") return c.json({ error: msg("This run is not in the history") }, 404);
+    if (code === "run_not_uncertain") return c.json({ error: msg("Only a run whose outcome is unknown can be checked") }, 409);
+    console.warn(JSON.stringify({ event: "automation_check_failed", error: String(code ?? "").slice(0, 200) }));
+    return c.json({ error: msg("The outcome could not be checked right now. Try again.") }, 502);
   }
 });
 automationRouter.post(base + "/dry-run", async (c) => {

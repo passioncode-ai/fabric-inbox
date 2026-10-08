@@ -10,7 +10,7 @@ First value is opening a source-labeled thread. Rule setup is optional and does 
 ## Current delivery boundary
 The diagrams below remain target flows. `app/routes/unified-inbox.tsx` (`UnifiedInbox`, `scope`) supplies All inboxes, account/folder/query URL scope, source-labeled rows and the reader in one workbench. `Composer` in `app/components/inbox/Composer.tsx` supplies sender selection, account-fixed replies and recovery of the same locked send attempt. A new or reply action resumes an existing draft rather than silently replacing it. `Rules & history` asks which account to use before opening its existing automation route; the reader also links directly to its own account's rules.
 
-Forwarding remains text-only, search covers cached data, and the reader displays individual messages rather than full threads. Rules/approval/history exist (`app/routes/automation.tsx`), but dry-run is not a prerequisite to enabling. Desktop recovery offers retry/configure, not cached mail (`desktop/main.cjs`). Theme changes use the workbench switch; settings for existing mailboxes and the native server stay separate. These gaps do not rewrite the approved target to match current code. Scoped browser observations live in [workbench verification](../desktop-mail/workbench-verification.md).
+Forwarding carries attachments (up to 10 files / 5 MiB), search covers cached data, and the reader displays individual messages rather than full threads. Rules/approval/history exist (`app/routes/automation.tsx`), but dry-run is not a prerequisite to enabling. Desktop recovery offers retry/configure, not cached mail (`desktop/main.cjs`). Theme changes use the workbench switch; settings for existing mailboxes and the native server stay separate. These gaps do not rewrite the approved target to match current code. Scoped browser observations live in [workbench verification](../desktop-mail/workbench-verification.md).
 
 ## Index
 | ID | Goal | Stories |
@@ -100,7 +100,7 @@ flowchart TD
 ### FLW-03: Write and send mail
 - **Traces:** ST-003; RE-001, RE-003
 - **Goal:** Draft retained or transport outcome visible.
-- **Entry points:** Compose, draft, reply, reply all, forward or mailto.
+- **Entry points:** Compose, draft, reply, reply all or forward (mailto is deferred: unregistered and navigation-denied by design, `tests/desktop-policy.test.ts`).
 - **Success exit:** Draft retained or transport outcome visible.
 - **Task analysis:** Review sender; edit recipients and content; attach; save or send.
 - **Flow:**
@@ -265,8 +265,8 @@ flowchart TD
   E --> D
   D --> F["Test message"]
   F --> G{"Policy allows the answer?"}
-  G -->|yes| H["SCR-08 run: reply sent"]
-  G -->|no| I["SCR-08 run: draft waits for approval with reason"]
+  G -->|yes| H["SCR-10 Recent answers: reply sent (SCR-08 run history remains the designed surface)"]
+  G -->|no| I["SCR-10 Recent answers: draft waits for approval with reason (SCR-08 designed)"]
 ```
 
 - **Screens traversed:**

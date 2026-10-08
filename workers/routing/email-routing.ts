@@ -18,6 +18,8 @@ export interface RoutingStatus {
   /** How mail for the address is routed today, when readable. */
   via?: "rule" | "catch_all";
   ruleId?: string;
+  /** The problem is the domain's, not the address's rule: Email Routing is off or its records need fixing. */
+  domainProblem?: boolean;
 }
 
 interface Matcher { type?: string; field?: string; value?: string }
@@ -139,9 +141,9 @@ export class EmailRoutingClient {
       const zone = await this.zoneId(domain);
       if (!zone) return { state: "unknown", detail: msg("The token cannot see the zone {domain}. Give it Zone read and Email Routing edit on this zone.", { domain }) };
       const settings = await this.settings(zone);
-      if (!settings.enabled) return { state: "missing", detail: msg("Email Routing is off for {domain}. Enable it in the dashboard (Email → Email Routing).", { domain }) };
+      if (!settings.enabled) return { state: "missing", detail: msg("Email Routing is off for {domain}. Enable it in the dashboard (Email → Email Routing).", { domain }), domainProblem: true };
       if (settings.status && settings.status !== "ready")
-        return { state: "missing", detail: msg("Email Routing for {domain} is {status}: its DNS records need fixing in the dashboard.", { domain, status: settings.status }) };
+        return { state: "missing", detail: msg("Email Routing for {domain} is {status}: its DNS records need fixing in the dashboard.", { domain, status: settings.status }), domainProblem: true };
       const rule = this.literalRule(await this.rules(zone), email);
       // A disabled rule matches nothing: the catch-all decides (seen on the owner's
       // contact@ addresses, whose old forward rules were switched off, 2026-09-29).

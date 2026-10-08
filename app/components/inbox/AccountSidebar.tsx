@@ -4,6 +4,7 @@ import { CaretDownIcon, CaretRightIcon, AtIcon, EnvelopeSimpleIcon, EyeIcon, Eye
 import type { InboxAccount } from "./model";
 import { englishT, type T } from "../../../shared/i18n";
 import { useT } from "../../lib/i18n";
+import { escapeCancelsConfirmation } from "../../lib/mail-keys";
 import { addressLabel, groupAccounts, sidebarAccounts, type AddressFilter } from "./account-groups";
 
 interface Props {
@@ -43,7 +44,8 @@ export function syncLabel(a: { status: string; importing?: number }, t: T = engl
 /**
  * Accounts in the sidebar (CF-1): one row per domain that selects the whole
  * domain and expands to its addresses; Gmail accounts in their own group.
- * By default only addresses with mail are listed (plus catch-alls and the open one);
+ * By default only addresses with mail are listed (plus catch-alls, the open one and those made in
+ * the last 7 days);
  * any address can be hidden, and hidden ones wait in their own list.
  */
 export default function AccountSidebar({ accounts, accountId, domain, provider = "", loading, onScope, hidden, onHidden, busy }: Props) {
@@ -59,6 +61,19 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [hiddenOpen, setHiddenOpen] = useState(false);
   const [confirmHideEmpty, setConfirmHideEmpty] = useState(false);
+  // Escape cancels the Hide them… confirmation (B8-02): a capture listener, before the list's
+  // own keydown clears the selection.
+  useEffect(() => {
+    if (!confirmHideEmpty) return;
+    const cancel = (e: KeyboardEvent) => {
+      if (!escapeCancelsConfirmation({ key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey, isComposing: e.isComposing,
+        target: e.target as unknown as Parameters<typeof escapeCancelsConfirmation>[0]["target"] })) return;
+      e.stopPropagation();
+      setConfirmHideEmpty(false);
+    };
+    window.addEventListener("keydown", cancel, true);
+    return () => window.removeEventListener("keydown", cancel, true);
+  }, [confirmHideEmpty]);
   const small = visible.length <= 6;
   const nav = useRef<HTMLElement>(null);
   // A selection made elsewhere (a link, the URL, a scrolled-away row) is brought into view once.

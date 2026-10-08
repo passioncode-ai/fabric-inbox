@@ -75,7 +75,7 @@ function failure(c: C, error: unknown, action: string) {
   // A refusal of the token is the owner's to fix (403, with the permission named); Cloudflare being down is 502.
   if (error instanceof CloudflareApiError) return c.json({ error: error.message }, error.status === 404 ? 404 : error.status === 400 || error.status === 409 ? error.status : error.status === 401 || error.status === 403 ? 403 : 502);
   console.error(JSON.stringify({ event: "agent_keys_failed", action, error: (error as Error)?.message?.slice(0, 300) }));
-  return c.json({ error: msg("{action} could not be completed: {error}", { action, error: (error as Error)?.message ?? msg("unknown error") }) }, 502);
+  return c.json({ error: msg("{action} could not be completed: {error}. Try again.", { action, error: ((error as Error)?.message ?? msg("unknown error")).replace(/[.\s]+$/, "") }) }, 502);
 }
 
 /** Ready-to-paste client setups. They carry the secret, so they are returned once, with it. */

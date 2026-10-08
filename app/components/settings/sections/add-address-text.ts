@@ -199,6 +199,10 @@ function build(t: T) {
       t.rich("A rule sending it elsewhere is never overwritten from here: change it in Cloudflare, or use Bring them here on {domain}, which keeps a copy.", { domain }),
     panelFix: t("Fix it"),
     panelFixTitle: t("Makes or switches on the Cloudflare rule that sends its mail here"),
+    /** The missing mail is the domain's, not the address's rule: the fix is the domain's Receive mail here (B14-01). */
+    panelReceiveTitle: (domain: string) => t("Turns on Email Routing for {domain} and brings its addresses here", { domain }),
+    panelReceiveHint: <N>(link: N) => t.rich("If another provider handles its mail today, {link} asks you to confirm first.", { link }),
+    panelReceiveConfirm: (domain: string) => t("Receiving {domain} here needs your confirmation on its page.", { domain }),
     panelSendTest: t("Send a test message"),
     panelTestSending: t("Sending a test…"),
     panelTestRefused: (subject: string) => t("The provider refused the test message “{subject}”.", { subject }),

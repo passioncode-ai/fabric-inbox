@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { isMacPlatform, isTypingTarget, mailKeyAction, shortcutList, type KeyLike } from "../app/lib/mail-keys";
+import { escapeCancelsConfirmation, isMacPlatform, isTypingTarget, mailKeyAction, shortcutList, type KeyLike } from "../app/lib/mail-keys";
 
 // Keyboard actions in the message list and the open message (operator, 2026-10-06): Delete or
 // Backspace archives and marks read; with ⌘ (Ctrl elsewhere) it discards. Never while typing, and
@@ -59,6 +59,24 @@ test("nothing fires while typing, or while an input method composes", () => {
   assert.ok(isTypingTarget({ tagName: "DIV", role: "textbox" }));
   assert.ok(isTypingTarget({ tagName: "SPAN", closest: (s: string) => (s.includes("contenteditable") ? {} : null) }));
   assert.ok(!isTypingTarget(null));
+});
+
+test("Escape first cancels an open inline confirmation, then clears the selection (B8-02)", () => {
+  assert.equal(escapeCancelsConfirmation(key("Escape")), true);
+  assert.equal(escapeCancelsConfirmation(key("Escape", { target: { tagName: "BUTTON" } })), true, "a focused confirmation button still counts");
+  assert.equal(escapeCancelsConfirmation(key("Escape", { shiftKey: true })), false);
+  assert.equal(escapeCancelsConfirmation(key("Escape", { metaKey: true })), false);
+  assert.equal(escapeCancelsConfirmation(key("Escape", { isComposing: true })), false);
+  assert.equal(escapeCancelsConfirmation(key("Escape", { target: { tagName: "INPUT", type: "text" } })), false, "not while typing");
+  assert.equal(escapeCancelsConfirmation(key("Enter")), false);
+  // Both inline confirmations cancel on a capture listener, before the list's own keydown
+  // (registered on the window's bubble phase) can clear the selection.
+  const inbox = readFileSync("app/routes/unified-inbox.tsx", "utf8");
+  assert.match(inbox, /window\.addEventListener\("keydown", cancel, true\)/);
+  assert.match(inbox, /e\.stopPropagation\(\);\s*\n\s*setConfirming\(false\);/);
+  const sidebar = readFileSync("app/components/inbox/AccountSidebar.tsx", "utf8");
+  assert.match(sidebar, /window\.addEventListener\("keydown", cancel, true\)/);
+  assert.match(sidebar, /setConfirmHideEmpty\(false\);/);
 });
 
 test("the platform is read from the browser, and the help names keys the way the platform does", () => {

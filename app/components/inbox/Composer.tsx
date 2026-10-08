@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fabric, accountPath } from "~/services/fabric";
 import { ApiError } from "~/services/api";
-import { sendRecovery } from "./send-state";
+import { recipientAddresses, sendRecovery } from "./send-state";
 import { isRemote, rawAccount, type InboxAccount } from "./model";
 import type { Draft } from "./draft-store";
 import {
@@ -66,7 +66,12 @@ export default function Composer({
     fileWork = useRef(false),
     // The native file input shows its own words in the browser's language, not the one chosen in
     // Settings (L10N-01), so it stays hidden and a button of ours opens it.
-    filePicker = useRef<HTMLInputElement>(null);
+    filePicker = useRef<HTMLInputElement>(null),
+    // A validation failure moves focus to the field that failed, else to the alert itself (B10-03).
+    toField = useRef<HTMLInputElement>(null),
+    ccField = useRef<HTMLInputElement>(null),
+    bccField = useRef<HTMLInputElement>(null),
+    alertRef = useRef<HTMLParagraphElement>(null);
   const [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [loadingFiles, setLoadingFiles] = useState(false);
@@ -107,6 +112,24 @@ export default function Composer({
     }
     change({ accountId, text: swapSignature(draft.text, draft.signature, signature), signature });
   }
+  /** After a validation failure: focus the recipient field that fails (To, then Cc, then Bcc), else the alert. */
+  function focusProblem() {
+    const fields: [typeof toField, string, boolean][] = [
+      [toField, draft.to, true],
+      [ccField, draft.cc ?? "", false],
+      [bccField, draft.bcc ?? "", false],
+    ];
+    const bad = fields.find(([, value, required]) => {
+      if (!required && !value.trim()) return false;
+      try {
+        recipientAddresses(value);
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    requestAnimationFrame(() => (bad?.[0].current ?? alertRef.current)?.focus());
+  }
   async function send() {
     if (
       sending.current ||
@@ -123,6 +146,7 @@ export default function Composer({
       prepared = await prepareMessage(draft, attachmentsOnDevice());
     } catch (error) {
       setNotice(t.text((error as Error).message));
+      focusProblem();
       sending.current = false;
       setBusy(false);
       return;
@@ -415,9 +439,13 @@ export default function Composer({
             ))}
           </select>
         </label>
+        {!!draft.serverId && (
+          <p className="fi-muted">{t("Sender is fixed once the draft is on your server; discard to start over.")}</p>
+        )}
         <label>
           {t("To")}
           <input
+            ref={toField}
             required
             value={draft.to}
             placeholder="name@example.com"
@@ -428,6 +456,7 @@ export default function Composer({
         <label>
           {t("Cc")}
           <input
+            ref={ccField}
             value={draft.cc ?? ""}
             placeholder={t("Optional recipients")}
             disabled={busy || draft.locked}
@@ -437,6 +466,7 @@ export default function Composer({
         <label>
           {t("Bcc")}
           <input
+            ref={bccField}
             value={draft.bcc ?? ""}
             placeholder={t("Optional hidden recipients")}
             disabled={busy || draft.locked}
@@ -597,7 +627,7 @@ export default function Composer({
           )}
         </section>
         {notice && (
-          <p role="alert" className="fi-notice">
+          <p role="alert" className="fi-notice" ref={alertRef} tabIndex={-1}>
             {notice}
           </p>
         )}
@@ -682,7 +712,7 @@ export default function Composer({
             }
           >
             {busy
-              ? t("Checking…")
+              ? t("Sending…")
               : draft.locked
                 ? t("Retry same attempt")
                 : t("Send message")}

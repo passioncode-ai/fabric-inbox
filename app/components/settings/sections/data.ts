@@ -1,6 +1,6 @@
 import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { createContext, useContext } from "react";
-import { fabric, type AccountList } from "~/services/fabric";
+import { fabric, type AccountList } from "../../../services/fabric";
 import type { AgentList, ProjectAddresses, RoutingStatus } from "~/services/agents";
 import type { Destination, DomainList, Step } from "~/services/domains";
 import type { InboxAccount } from "~/components/inbox/model";
