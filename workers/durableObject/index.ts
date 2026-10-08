@@ -23,7 +23,7 @@ import { validateSender, buildReferencesChain, buildQuotedReplyBlock } from '../
 import { verifyDraft } from '../lib/ai';
 import type { SendMailCommand, SendMailResult, SendMailRequest } from '../../shared/mail/send';
 import type { InboxReadOptions } from '../../shared/mail/inbox';
-import { mailboxInboxQuery, mailboxInboxMessage, type MailboxInboxRow } from '../lib/inbox-query';
+import { mailboxInboxQuery, mailboxInboxMessage, searchVariants, type MailboxInboxRow } from '../lib/inbox-query';
 import { parseStoredHeaders } from '../agents/prefilter';
 import { DISCARD_RETENTION_MS } from '../../shared/mail/discard';
 import { listDrafts as listDraftRows, saveDraft as saveDraftRows, type DraftSql, type DraftSummary, type SaveDraftInput, type SaveDraftResult } from '../lib/mailbox-drafts';
@@ -993,20 +993,24 @@ export class MailboxDO extends DurableObject<Env> {
 			return `?${paramIdx}`;
 		};
 
-		// % and _ typed by the user are literal characters, not wildcards.
-		const like = (value: string) => `%${value.replace(/[\\%_]/g, (c) => "\\" + c)}%`;
-		const E = " ESCAPE '\\'";
-		if (query) {
-			const p = addParam(like(query));
-			conditions.push(`(${prefix}subject LIKE ${p}${E} OR ${prefix}body LIKE ${p}${E} OR ${prefix}sender LIKE ${p}${E} OR ${prefix}recipient LIKE ${p}${E} OR ${prefix}cc LIKE ${p}${E} OR ${prefix}bcc LIKE ${p}${E})`);
-		}
+		// instr, not LIKE: SQLite in Durable Objects caps a LIKE pattern at 50 bytes and a longer one
+		// matched nothing, silently (live 2026-10-09: a 57-character subject was never found, so an
+		// address's routing test always said "not arrived"). instr has no such cap, and % and _ are
+		// plain text. lower() folds ASCII only, as LIKE did; other letters also match their lower,
+		// capitalised and upper forms as written (searchVariants), so "привет" finds "Привет".
+		const contains = (columns: string[], value: string) => {
+			const folded = addParam(value.toLowerCase());
+			const forms = searchVariants(value).map(addParam);
+			return `(${columns.flatMap((c) => [`instr(lower(${prefix}${c}), ${folded}) > 0`, ...forms.map((f) => `instr(${prefix}${c}, ${f}) > 0`)]).join(" OR ")})`;
+		};
+		if (query) conditions.push(contains(["subject", "body", "sender", "recipient", "cc", "bcc"], query));
 		if (folder) {
 			const p = addParam(folder);
 			conditions.push(`${prefix}folder_id = (SELECT id FROM folders WHERE name = ${p} OR id = ${p} LIMIT 1)`);
 		}
-		if (from) { const p = addParam(like(from)); conditions.push(`${prefix}sender LIKE ${p}${E}`); }
-		if (to) { const p = addParam(like(to)); conditions.push(`(${prefix}recipient LIKE ${p}${E} OR ${prefix}cc LIKE ${p}${E} OR ${prefix}bcc LIKE ${p}${E})`); }
-		if (subject) { const p = addParam(like(subject)); conditions.push(`${prefix}subject LIKE ${p}${E}`); }
+		if (from) conditions.push(contains(["sender"], from));
+		if (to) conditions.push(contains(["recipient", "cc", "bcc"], to));
+		if (subject) conditions.push(contains(["subject"], subject));
 		if (date_start) { const p = addParam(date_start); conditions.push(`${prefix}date >= ${p}`); }
 		if (date_end) { const p = addParam(date_end); conditions.push(`${prefix}date <= ${p}`); }
 		if (is_read !== undefined) { const p = addParam(is_read ? 1 : 0); conditions.push(`${prefix}read = ${p}`); }
