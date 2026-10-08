@@ -753,6 +753,23 @@ async function settleRelayedCopy(env: Env, mailboxId: string, emailId: string, t
 const TRANSIENT_DO = /storage operation exceeded timeout|caused object to be reset|Durable Object reset|Network connection lost|Durable Object is overloaded|internal error; reference/i;
 
 /**
+ * The same delivery over bytes already read. A spread (`{ ...event }`) is not enough: the runtime's
+ * ForwardableEmailMessage keeps `forward` and `setReject` on its prototype, so a spread drops them —
+ * every copy then failed as "only possible for mail arriving through Email Routing" and an unknown
+ * address could not be refused (live, 2026-10-08, since 0.8.2). Each method is carried, bound to the
+ * original message.
+ */
+export function replayEvent(event: IncomingEmailEvent, bytes: Uint8Array<ArrayBuffer>): IncomingEmailEvent {
+	const forward = event.forward, setReject = event.setReject, deferForward = event.deferForward;
+	return {
+		raw: new Response(bytes).body!, rawSize: bytes.byteLength, to: event.to, from: event.from,
+		...(setReject ? { setReject: (reason: string) => setReject.call(event, reason) } : {}),
+		...(forward ? { forward: (rcptTo: string, headers?: Headers) => forward.call(event, rcptTo, headers) } : {}),
+		...(deferForward ? { deferForward: (rcptTo: string) => deferForward.call(event, rcptTo) } : {}),
+	};
+}
+
+/**
  * `receiveEmail` with one retry after a transient Durable Object failure. Safe because a delivery is
  * stored once (its id is a hash of mailbox, sender and bytes), so a first attempt that got further
  * than it reported is found, not duplicated. The message is read once and replayed.
@@ -760,7 +777,7 @@ const TRANSIENT_DO = /storage operation exceeded timeout|caused object to be res
 async function receiveEmailResilient(event: IncomingEmailEvent, env: Env, ctx: ExecutionContext, retryDelayMs = 1000) {
 	if (event.rawSize > MAX_EMAIL_SIZE) return receiveEmail(event, env, ctx);
 	const bytes = await streamToArrayBuffer(event.raw, event.rawSize);
-	const attempt = () => receiveEmail({ ...event, raw: new Response(bytes).body!, rawSize: bytes.byteLength }, env, ctx);
+	const attempt = () => receiveEmail(replayEvent(event, bytes), env, ctx);
 	try {
 		return await attempt();
 	} catch (error) {

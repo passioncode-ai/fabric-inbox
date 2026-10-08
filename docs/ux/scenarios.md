@@ -748,7 +748,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** validated
 - **Coverage:** workers/routing/domains.ts, workers/routes/domains.ts, app/components/settings/sections/DestinationsSection.tsx, app/components/settings/sections/DomainsSection.tsx, app/components/settings/sections/AddressesSection.tsx, tests/domains.test.ts
 - **Product:** unobserved
-- **Today:** Built and tested in workerd against a fake Cloudflare. 0.12 (WS7): the copy choice and the catch-all note in Add address.
+- **Today:** Built and tested in workerd against a fake Cloudflare. 0.12 (WS7): the copy choice and the catch-all note in Add address. Live 2026-10-08: no copy had left any Cloudflare address since 0.8.2 — the delivery retry wrapper copied the runtime message with a spread, which drops `forward` and `setReject` from its prototype, so every copy was recorded as "only possible for mail arriving through Email Routing" (j1@sshlg.me: 5 failures) and an unknown address could not be refused. `replayEvent` (`workers/index.ts`) carries both, bound to the message; `tests/incoming-routing.test.ts` drives a prototype-shaped message through `handleIncomingEmail` and fails without the fix. Reaches the owner's server only with a deploy (it runs 0.9.0).
 
 ### SCN-034: Give an agent a knowledge collection
 - **Persona:** P-01
