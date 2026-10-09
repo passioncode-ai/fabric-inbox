@@ -89,6 +89,7 @@ export function builderConfig({ platform, version, signing }) {
     artifactName: `Fabric-Inbox-${version}-linux-\${arch}.\${ext}`,
     linux: {
       icon: path.join(desktop, 'icon.png'), executableName: 'fabric-inbox', category: 'Network;Email;Office',
+      maintainer: 'PassionCode.ai <contact@passioncode.ai>', vendor: 'PassionCode.ai', syncDesktopName: true,
       synopsis: 'Mail client with cloud automation', description: 'Fabric Inbox: one triaged list across Gmail and Cloudflare mailboxes, answered by versioned agents.',
       mimeTypes: ['x-scheme-handler/fabric-inbox'],
       desktop: { entry: { StartupWMClass: 'Fabric Inbox', MimeType: 'x-scheme-handler/fabric-inbox;' } },
