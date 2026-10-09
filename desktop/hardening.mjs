@@ -1,4 +1,5 @@
-// Hardening every Mac build of Fabric Inbox (knowledge/lifecycle.md LC-13 and LC-07).
+// Hardening every build of Fabric Inbox — macOS, Windows and Linux (knowledge/lifecycle.md LC-13 and
+// LC-07; knowledge/platforms.md). Fuses are flipped on every platform; purpose strings are macOS only.
 //
 // Fuses (LC-13). Electron ships with fuses that let any process on the Mac turn the app into a
 // Node interpreter (RunAsNode, NODE_OPTIONS, --inspect), load code from outside its signed asar,
@@ -40,8 +41,13 @@ const STATE = { 0x30: 'off', 0x31: 'on', 0x72: 'removed' };
 
 function requireThat(condition, message) { if (!condition) throw new Error(message); }
 
-/** The binary that holds the fuse wire of an app bundle. */
-export function fuseFile(appPath) {
+/**
+ * The binary that holds the fuse wire of a built app: the framework inside the .app bundle on macOS,
+ * the executable itself on Windows and Linux (`appPath` is then the packaged folder).
+ */
+export function fuseFile(appPath, platform = 'darwin', executableName = 'Fabric Inbox') {
+  if (platform === 'win32') return path.join(appPath, `${executableName}.exe`);
+  if (platform === 'linux') return path.join(appPath, executableName);
   return path.join(appPath, 'Contents', 'Frameworks', 'Electron Framework.framework', 'Electron Framework');
 }
 
@@ -113,7 +119,15 @@ function fuseConfig() {
  * the packager (a re-signed slice would differ from its sibling and fail the universal merge).
  */
 export async function hardenElectronTemplate({ buildPath, platform, arch }, { resetAdHocSignature = false } = {}) {
-  requireThat(platform === 'darwin' || platform === 'mas', `Fuses and purpose strings are hardened for macOS builds; got ${platform}.`);
+  if (platform === 'win32' || platform === 'linux') {
+    // The extracted template is Electron's own executable, renamed later by the packager.
+    const binary = path.join(buildPath, platform === 'win32' ? 'electron.exe' : 'electron');
+    requireThat(existsSync(binary), `The extracted template at ${buildPath} has no ${path.basename(binary)} to harden.`);
+    await flipFuses(binary, fuseConfig());
+    checkFuses(readFuseWires(readFileSync(binary)));
+    return { slices: 1 };
+  }
+  requireThat(platform === 'darwin' || platform === 'mas', `Unknown platform to harden: ${platform}.`);
   const appPath = path.join(buildPath, 'Electron.app');
   requireThat(existsSync(fuseFile(appPath)), `The extracted template at ${buildPath} has no Electron.app to harden.`);
   const slices = await flipFuses(appPath, { ...fuseConfig(), resetAdHocDarwinSignature: resetAdHocSignature && arch === 'arm64' && process.platform === 'darwin' });
@@ -129,9 +143,13 @@ export function hardenTemplateHook(options = {}) {
   return [(args) => hardenElectronTemplate(args, options)];
 }
 
-/** The gate run on a built app: its fuse wire and its Info.plist. Returns receipt lines. */
-export function verifyHardening(appPath) {
-  const fuses = checkFuses(readFuseWires(readFileSync(fuseFile(appPath))));
+/**
+ * The gate run on a built app: its fuse wire, and on macOS its Info.plist. Returns receipt lines.
+ * On Windows and Linux `appPath` is the packaged folder and `executableName` its executable.
+ */
+export function verifyHardening(appPath, { platform = 'darwin', executableName = 'Fabric Inbox' } = {}) {
+  const fuses = checkFuses(readFuseWires(readFileSync(fuseFile(appPath, platform, executableName))));
+  if (platform === 'win32' || platform === 'linux') return { fuses, usageDescriptions: 'not applicable (no Info.plist)' };
   const usageDescriptions = checkUsageDescriptions(plist.parse(readFileSync(path.join(appPath, 'Contents', 'Info.plist'), 'utf8')));
   return { fuses, usageDescriptions };
 }

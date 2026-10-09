@@ -14,7 +14,7 @@ import plist from "plist";
 import {
   FUSE_SENTINEL, REQUIRED_FUSES, readFuseWires, checkFuses, fuseFile,
   usageDescriptionKeys, stripUsageDescriptions, checkUsageDescriptions, DECLARED_USAGE_DESCRIPTIONS,
-  hardenElectronTemplate, hardenTemplateHook,
+  hardenElectronTemplate, hardenTemplateHook, verifyHardening,
 } from "../desktop/hardening.mjs";
 
 // Electron's stock wire as the audit read it from Fabric Inbox 0.8.2 (raw/fabric-inbox.md §5):
@@ -129,7 +129,25 @@ test("the hook is the packager's afterExtract shape and refuses a template that 
   assert.equal(readFuseWires(readFileSync(fuseFile(appDir)))[0].wire, HARDENED);
   const empty = mkdtempSync(path.join(os.tmpdir(), "fabric-template-"));
   await assert.rejects(hardenElectronTemplate({ buildPath: empty, platform: "darwin", arch: "x64" }), /no Electron\.app/);
-  await assert.rejects(hardenElectronTemplate({ buildPath: dir, platform: "linux", arch: "x64" }), /macOS/);
+  await assert.rejects(hardenElectronTemplate({ buildPath: dir, platform: "linux", arch: "x64" }), /no electron to harden/);
+  await assert.rejects(hardenElectronTemplate({ buildPath: dir, platform: "solaris", arch: "x64" }), /Unknown platform/);
+});
+
+test("Windows and Linux: the fuses are flipped in Electron's own executable and the built executable is gated", async () => {
+  for (const [platform, template, built, name] of [["win32", "electron.exe", "Fabric Inbox.exe", "Fabric Inbox"], ["linux", "electron", "fabric-inbox", "fabric-inbox"]] as const) {
+    const dir = mkdtempSync(path.join(os.tmpdir(), `fabric-${platform}-`));
+    writeFileSync(path.join(dir, template), binary(STOCK));
+    await hardenTemplateHook()[0]({ buildPath: dir, electronVersion: "44.4.5", platform, arch: "x64" });
+    assert.equal(readFuseWires(readFileSync(path.join(dir, template)))[0].wire, HARDENED, platform);
+    // The packager renames the template into the app's executable; the gate reads that one.
+    writeFileSync(path.join(dir, built), readFileSync(path.join(dir, template)));
+    assert.equal(fuseFile(dir, platform, name), path.join(dir, built));
+    const receipt = verifyHardening(dir, { platform, executableName: name });
+    assert.match(receipt.fuses, /^1 slice: RunAsNode=off/);
+    assert.match(receipt.usageDescriptions, /not applicable/);
+    writeFileSync(path.join(dir, built), binary(STOCK));
+    assert.throws(() => verifyHardening(dir, { platform, executableName: name }), /RunAsNode is on/, `${platform}: an unhardened build fails the gate`);
+  }
 });
 
 test("every Mac builder applies the hardening hook and gates on the built binary", () => {
