@@ -41,7 +41,6 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Toggle Full Screen": "Включить/выключить полноэкранный режим",
 	"Window": "Окно",
 	"Minimize": "Свернуть",
-	"Close": "Закрыть",
 	"Fabric Inbox needs a system key store": "Fabric Inbox нужно системное хранилище ключей",
 	"It keeps your sign-in encrypted with the Secret Service (GNOME Keyring or KWallet), and none is running. Install or unlock one, then open Fabric Inbox again.": "Вход в аккаунт хранится зашифрованным через Secret Service (GNOME Keyring или KWallet), а ни одно из них не запущено. Установите или разблокируйте хранилище и откройте Fabric Inbox снова.",
 	"[menu] File": "Файл",
