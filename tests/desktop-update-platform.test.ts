@@ -178,7 +178,7 @@ test("Linux: the verified AppImage replaces $APPIMAGE atomically; Restart starts
   installer.checkForUpdates();
   assert.equal(await event, "update-downloaded");
   assert.equal(readFileSync(appImage, "utf8"), "new appimage");
-  assert.equal(statSync(appImage).mode & 0o777, 0o755);
+  if (process.platform !== "win32") assert.equal(statSync(appImage).mode & 0o777, 0o755);
   assert.deepEqual(readdirSync(apps), ["Fabric-Inbox.AppImage"], "no .new file is left beside it");
   installer.installOnQuit();
   assert.deepEqual(f.spawned, [], "nothing to run at quit: the next launch is the new version");

@@ -289,12 +289,12 @@ test("the listener is read from lsof and ps: the app bundle's name, else the com
     if (file.endsWith("lsof")) return { stdout: "p4242\ncFabric\n" };
     return { stdout: "/Applications/Fabric.app/Contents/MacOS/Fabric\n" };
   };
-  assert.deepEqual(await listenerWith(exec)(47123), { pid: 4242, name: "Fabric", path: "/Applications/Fabric.app/Contents/MacOS/Fabric" });
+  assert.deepEqual(await listenerWith(exec, "darwin")(47123), { pid: 4242, name: "Fabric", path: "/Applications/Fabric.app/Contents/MacOS/Fabric" });
   assert.match(runs[0], /^\/usr\/sbin\/lsof -nP -iTCP:47123 -sTCP:LISTEN -Fpc$/);
-  const bare = listenerWith(async (file: string) => (file.endsWith("lsof") ? { stdout: "p51\ncnode\n" } : { stdout: "/opt/homebrew/bin/node\n" }));
+  const bare = listenerWith(async (file: string) => (file.endsWith("lsof") ? { stdout: "p51\ncnode\n" } : { stdout: "/opt/homebrew/bin/node\n" }), "darwin");
   assert.deepEqual(await bare(1), { pid: 51, name: "node", path: "/opt/homebrew/bin/node" });
-  assert.equal(await listenerWith(async () => { throw Object.assign(new Error("exit 1"), { code: 1 }); })(1), null, "lsof finds nothing: exit 1");
-  assert.equal(await listenerWith(async () => ({ stdout: "" }))(1), null);
+  assert.equal(await listenerWith(async () => { throw Object.assign(new Error("exit 1"), { code: 1 }); }, "darwin")(1), null, "lsof finds nothing: exit 1");
+  assert.equal(await listenerWith(async () => ({ stdout: "" }), "darwin")(1), null);
 });
 
 test("minting reads the server's answer: 201 is a key, a redirect or an HTML page is a lapsed sign-in", async () => {

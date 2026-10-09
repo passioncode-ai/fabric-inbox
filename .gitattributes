@@ -1,0 +1,10 @@
+# Every text file is checked out with LF on every OS: signed fixtures (SHA256SUMS), generated
+# documents and the tests that read source files compare bytes, and a Windows checkout with
+# core.autocrlf would turn them into CRLF (the platforms workflow's Windows runners).
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary
+*.zip binary
+*.dmg binary
+*.woff2 binary
