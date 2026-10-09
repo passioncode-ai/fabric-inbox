@@ -110,8 +110,8 @@ function createPlatformInstaller(deps) {
  */
 function updateTarget({ platform, arch, execPath, env = {}, installedOnMac = false, exists = () => false }) {
   if (platform === 'darwin') {
-    const bundle = path.resolve(execPath, '..', '..', '..');
-    return { fileName: (v) => `Fabric-Inbox-${v}-mac.zip`, installed: installedOnMac, packageManager: false, writable: [bundle, path.dirname(bundle)], runningApp: bundle };
+    const bundle = path.posix.resolve(execPath, '..', '..', '..');
+    return { fileName: (v) => `Fabric-Inbox-${v}-mac.zip`, installed: installedOnMac, packageManager: false, writable: [bundle, path.posix.dirname(bundle)], runningApp: bundle };
   }
   if (platform === 'win32') {
     const dir = path.win32.dirname(execPath);

@@ -12,7 +12,11 @@
 // SHA256SUMS exists yet): everything but the signature, so a bad feed or zip stops the release
 // before it is published. The full check runs again on the signed set after `publish`.
 //
-// Runs on macOS (ditto, codesign, plutil). Exits 0 only when the update would be installed.
+//   node scripts/check-update-release.mjs --platform win32 --arch arm64 --dir <folder> --version 0.14.0
+//
+// macOS (the default) runs on macOS (ditto, codesign, plutil); --platform win32 on Windows (it
+// reads the installer's version with PowerShell); --platform linux anywhere. Exits 0 only when the
+// update would be installed.
 import { execFile } from 'node:child_process';
 import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
@@ -22,7 +26,8 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const { createVerifier } = require('../desktop/update-verify.cjs');
+const { createVerifier, feedNameFor } = require('../desktop/update-verify.cjs');
+const { updateTarget } = require('../desktop/platform-installer.cjs');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BUNDLE_ID = 'ai.passioncode.fabric-inbox';
 
@@ -51,20 +56,23 @@ function stubApp(scratch, bundleId) {
 }
 
 /** The app's verification of this release set, as a copy one version older would run it. */
-export async function checkRelease({ dir, version, repository = 'passioncode-ai/fabric-inbox', exec = run, key, fingerprint, bundleId = BUNDLE_ID, beforeSigning = false }) {
+export async function checkRelease({ dir, version, repository = 'passioncode-ai/fabric-inbox', exec = run, key, fingerprint, bundleId = BUNDLE_ID, beforeSigning = false,
+  platform = 'darwin', arch = 'x64', requireAuthenticode = false }) {
   if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('--version is a release version like 1.2.3.');
-  const feed = readFileSync(path.join(dir, 'update-mac.json'));
+  if (!['darwin', 'win32', 'linux'].includes(platform) || !['x64', 'arm64'].includes(arch)) throw new Error('--platform is darwin, win32 or linux; --arch x64 or arm64.');
+  const fileName = updateTarget({ platform, arch, execPath: '' }).fileName;
+  const feed = readFileSync(path.join(dir, feedNameFor(platform, arch)));
   let announced = '';
   try { announced = JSON.parse(feed.toString('utf8')).currentRelease; } catch { /* the verifier names it */ }
   if (announced && announced !== version) throw new Error(`The feed announces ${announced}, not ${version}.`);
   const scratch = mkdtempSync(path.join(os.tmpdir(), 'fabric-update-check-'));
   try {
     const verifier = createVerifier({
-      repository, appVersion: '0.0.0', appName: 'Fabric Inbox', zipName: (v) => `Fabric-Inbox-${v}-mac.zip`,
-      runningApp: stubApp(scratch, bundleId), dir: path.join(scratch, 'updates'), fetch: localFetch(dir, repository, version),
+      repository, appVersion: '0.0.0', appName: 'Fabric Inbox', zipName: fileName, platform, arch, requireAuthenticode,
+      runningApp: platform === 'darwin' ? stubApp(scratch, bundleId) : '', dir: path.join(scratch, 'updates'), fetch: localFetch(dir, repository, version),
       exec, fs, createWriteStream, key: key ?? readFileSync(path.join(root, 'desktop', 'release-key.asc'), 'utf8'), ...(fingerprint ? { fingerprint } : {}),
     });
-    if (beforeSigning) return await verifier.checkBuilt(feed, path.join(dir, `Fabric-Inbox-${version}-mac.zip`));
+    if (beforeSigning) return await verifier.checkBuilt(feed, path.join(dir, fileName(version)));
     const out = await verifier.verify(feed);
     if (out.outcome !== 'verified' || out.version !== version) throw new Error(`The feed announces ${out.version}, not ${version}.`);
     return { version: out.version, held: !!out.migration };
@@ -77,10 +85,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const arg = (name) => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
   try {
     const beforeSigning = process.argv.includes('--before-signing');
-    const out = await checkRelease({ dir: path.resolve(arg('dir') || '.'), version: arg('version') || '', repository: arg('repository') || undefined, beforeSigning });
+    const out = await checkRelease({ dir: path.resolve(arg('dir') || '.'), version: arg('version') || '', repository: arg('repository') || undefined, beforeSigning,
+      platform: arg('platform') || 'darwin', arch: arg('arch') || 'x64', requireAuthenticode: process.argv.includes('--require-authenticode') });
     console.log(beforeSigning
-      ? `update ${out.version}: the built feed names its own zip, the zip has its digest and size, and the app inside is the pinned team's, of this version${out.held ? '; held for a migration' : ''}`
-      : `update ${out.version}: verified as an installed copy would (signed SHA256SUMS, feed, zip digest and size, Developer ID team, version)${out.held ? '; held for a migration' : ''}`);
+      ? `update ${out.version} (${arg('platform') || 'darwin'}): the built feed names its own file, the file has its digest and size, and passes the platform's inspection${out.held ? '; held for a migration' : ''}`
+      : `update ${out.version} (${arg('platform') || 'darwin'}): verified as an installed copy would (signed SHA256SUMS, feed, file digest and size, the platform's inspection)${out.held ? '; held for a migration' : ''}`);
   } catch (error) {
     console.error(`update check failed: ${error.code ? `${error.code}/${error.reason}: ` : ''}${error.message}`);
     process.exit(1);

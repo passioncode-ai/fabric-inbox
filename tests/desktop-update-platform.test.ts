@@ -220,3 +220,22 @@ test("the updater asks the installer step to install as the app quits", async ()
   assert.deepEqual(calls, ["feed", "check", "on-quit"]);
   up.stop();
 });
+
+test("the release gate runs the same verification on a Windows or Linux release set", async () => {
+  const { checkRelease } = await import("../scripts/check-update-release.mjs");
+  const linux = `${FIX}/test-release-0.12.0-linux`;
+  assert.deepEqual(await checkRelease({ dir: linux, version: "0.12.0", platform: "linux", key: KEY, fingerprint: FPR }), { version: "0.12.0", held: false });
+  assert.deepEqual(await checkRelease({ dir: linux, version: "0.12.0", platform: "linux", key: KEY, fingerprint: FPR, beforeSigning: true }), { version: "0.12.0", held: false });
+  await assert.rejects(checkRelease({ dir: linux, version: "0.13.0", platform: "linux", key: KEY, fingerprint: FPR }), /announces 0\.12\.0/);
+  const versions: string[] = [];
+  const exec = async (_file: string, args: string[]) => { versions.push(args.at(-1)!); return { stdout: "0.12.0.0\r\n" }; };
+  assert.deepEqual(await checkRelease({ dir: `${FIX}/test-release-0.12.0-win32`, version: "0.12.0", platform: "win32", exec, key: KEY, fingerprint: FPR }), { version: "0.12.0", held: false });
+  assert.match(versions[0], /VersionInfo\.ProductVersion/);
+  await assert.rejects(checkRelease({ dir: linux, version: "0.12.0", platform: "win32", key: KEY, fingerprint: FPR }), /ENOENT/, "a Linux set has no Windows feed");
+});
+
+test("a release build writes its platform's feed, naming the installer or the AppImage", () => {
+  const source = readFileSync("desktop/dist-platform.mjs", "utf8");
+  assert.match(source, /platform === 'win32' \? \/-setup\\\.exe\$\/ : \/\\\.AppImage\$\//);
+  assert.match(source, /feedFor\(\{ repository, version, zipName: updatable\.name, sha256: updatable\.sha256, size: updatable\.bytes/);
+});

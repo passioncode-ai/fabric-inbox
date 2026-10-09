@@ -15,7 +15,9 @@
 //            checks for updates), both with a .desktop entry MimeType=x-scheme-handler/fabric-inbox
 //            (PL-04) and depending on the Secret Service library (PL-05).
 // A receipt (<name>.receipt.json) lists every artifact with its SHA-256, the fuses and the signing
-// state; SHA256SUMS lines are written beside it.
+// state; SHA256SUMS lines are written beside it. A release build (the release workflow) also writes
+// the feed its copies read, update-<platform>-<arch>.json, naming the installer (Windows) or the
+// AppImage (Linux) with its digest and size.
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -25,8 +27,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hardenTemplateHook, verifyHardening } from './hardening.mjs';
 import { analyticsBundle, BUNDLE_ID, SERVER_SOURCES } from './dist-mac.mjs';
+import { pruneReleases } from './release-retention.mjs';
 
 const require = createRequire(import.meta.url);
+const { feedFor } = require('./updater.cjs');
 const desktop = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(desktop, '..');
 
@@ -117,7 +121,8 @@ async function build(args) {
   const temp = mkdtempSync(path.join(os.tmpdir(), `fabric-${platform}-`));
   try {
     // Only committed files ship (as on macOS): the desktop folder of HEAD.
-    execFileSync('tar', ['-xf', '-', '-C', temp], { input: run('git', ['archive', revision, 'desktop'], { encoding: 'buffer' }) });
+    // Extracted with cwd, not -C: Git for Windows' GNU tar reads "C:\..." as a remote host.
+    execFileSync('tar', ['-xf', '-'], { cwd: temp, input: run('git', ['archive', revision, 'desktop'], { encoding: 'buffer' }) });
     const source = path.join(temp, 'desktop');
     requireThat(!existsSync(path.join(source, 'setups')), 'desktop/setups exists in the commit: setups are bundled only into personal macOS builds.');
     for (const file of ['analytics.json', 'updates.json']) requireThat(!existsSync(path.join(source, file)), `desktop/${file} exists in the commit: only the release build writes it.`);
@@ -164,7 +169,19 @@ async function build(args) {
       ...(platform === 'win32' ? { windows_authenticode: signing ? 'SIGNED (Azure Artifact Signing)' : 'NOT_SIGNED' } : {}),
       builtAt: new Date().toISOString(),
     };
+    if (feed) {
+      // The feed every released copy of this platform reads at releases/latest/download/ (PL-03).
+      const updatable = artifacts.find((a) => (platform === 'win32' ? /-setup\.exe$/ : /\.AppImage$/).test(a.name));
+      requireThat(updatable, 'No installer or AppImage to name in the update feed.');
+      const repository = String(process.env.GITHUB_REPOSITORY);
+      const feedName = path.basename(new URL(feed.feed).pathname);
+      writeFileSync(path.join(args.out, feedName), JSON.stringify(feedFor({ repository, version, zipName: updatable.name, sha256: updatable.sha256, size: updatable.bytes,
+        notes: `Fabric Inbox ${version}: https://github.com/${repository}/releases/tag/v${version}`, pubDate: new Date().toISOString() }), null, 2) + '\n');
+      receipt.update = { file: updatable.name, feed: feedName };
+    }
     const base = `Fabric-Inbox-${version}-${platform === 'win32' ? 'win' : 'linux'}-${arch}`;
+    // LC-15: release/ keeps this release and the newest other one (receipts stay).
+    receipt.prunedFromRelease = pruneReleases(args.out, { current: version });
     writeFileSync(path.join(args.out, `${base}.receipt.json`), JSON.stringify(receipt, null, 2) + '\n');
     writeFileSync(path.join(args.out, `${base}.sha256`), artifacts.map((a) => `${a.sha256}  ${a.name}`).join('\n') + '\n');
     console.log(JSON.stringify(receipt, null, 2));

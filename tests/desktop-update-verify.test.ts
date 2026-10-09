@@ -51,7 +51,7 @@ function harness({ kind = "plain", appVersion = "0.11.0", codesignOk = true, bun
       return { stdout: "" };
     }
     if (file.endsWith("plutil")) {
-      const own = args[5].startsWith("/Applications/");
+      const own = /^[\\/]Applications[\\/]/.test(args[5]);
       if (args[1] === "CFBundleShortVersionString") return { stdout: `${bundleVersion}\n` };
       return { stdout: own ? "ai.passioncode.fabric-inbox\n" : `${bundleId}\n` };
     }
@@ -201,6 +201,10 @@ test("before signing, the release gate checks the built feed and zip, and publis
   await fsPromises.writeFile(path.join(built, ZIP), zip);
   await assert.rejects(checkRelease({ dir: built, version: "0.12.0", exec, beforeSigning: true }), (e: any) => e.reason === "zip_sha256");
   const workflow = readFileSync(".github/workflows/release.yml", "utf8");
-  assert.match(workflow, /publish:\n    needs: \[gate, macos, update-precheck\]/);
+  assert.match(workflow, /publish:\n    needs: \[gate, macos, update-precheck, windows, linux\]/);
+  for (const platform of ["win32", "linux"]) {
+    assert.match(workflow, new RegExp(`check-update-release\\.mjs --before-signing --platform ${platform} --arch \\$\\{\\{ matrix\\.arch \\}\\} --dir release`), `${platform} feeds are checked before signing`);
+  }
+  assert.match(workflow, /check-update-release\.mjs --platform "\$PLATFORM" --arch "\$arch" --dir signed/, "and after publish, on the OS that reads them");
   assert.match(workflow, /check-update-release\.mjs --before-signing --dir built --version "\$VERSION" --repository "\$GITHUB_REPOSITORY"/);
 });

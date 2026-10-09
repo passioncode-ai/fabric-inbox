@@ -207,6 +207,110 @@ jobs:
       - if: always()
         uses: passioncode-ai/.github/actions/apple-signing/cleanup@v1
 
+  # Windows (fabric-workspace knowledge/platforms.md PL-01, PL-02): the per-user NSIS installer for
+  # each architecture, both built on x64 (workerd has no Windows ARM64 binary; electron-builder
+  # cross-builds the arm64 one). Authenticode is Azure Artifact Signing over OIDC, switched on by the
+  # release environment's AZURE_SIGNING_ENABLED once the organization's identity validation is done;
+  # until then the installer is unsigned, its receipt says windows_authenticode: NOT_SIGNED, and the
+  # release notes say so (docs/release.md). The update feed (update-win32-<arch>.json) is checked
+  # here, before signing, by the app's own verifier.
+  windows:
+    needs: gate
+    runs-on: windows-latest
+    environment: release
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write # azure/login (OIDC), used only when Windows signing is switched on
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: [x64, arm64]
+    env:
+      VERSION: ${{ needs.gate.outputs.version }}
+      SIGNING: ${{ vars.AZURE_SIGNING_ENABLED == 'true' }}
+      FABRIC_INBOX_RELEASE_BUILD: "1"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Azure login (OIDC)
+        if: env.SIGNING == 'true'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Build the installer (signed with Artifact Signing when it is switched on)
+        env:
+          AZURE_SIGNING_ENDPOINT: ${{ env.SIGNING == 'true' && vars.AZURE_SIGNING_ENDPOINT || '' }}
+          AZURE_SIGNING_ACCOUNT: ${{ env.SIGNING == 'true' && vars.AZURE_SIGNING_ACCOUNT || '' }}
+          AZURE_SIGNING_PROFILE: ${{ env.SIGNING == 'true' && vars.AZURE_CERTIFICATE_PROFILE || '' }}
+          FABRIC_INBOX_ANALYTICS_APP_KEY: ${{ secrets.FABRIC_INBOX_ANALYTICS_APP_KEY }}
+          FABRIC_INBOX_ANALYTICS_HOST: ${{ vars.FABRIC_INBOX_ANALYTICS_HOST }}
+        run: node desktop/dist-platform.mjs --platform win32 --arch ${{ matrix.arch }} --out release
+      - name: The built update passes the app's checks, before signing the release set
+        run: |
+          flags=(); [[ "$SIGNING" == true ]] && flags=(--require-authenticode)
+          node scripts/check-update-release.mjs --before-signing --platform win32 --arch ${{ matrix.arch }} --dir release --version "$VERSION" --repository "$GITHUB_REPOSITORY" "${flags[@]}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-windows-${{ matrix.arch }}
+          path: |
+            release/Fabric-Inbox-${{ needs.gate.outputs.version }}-win-${{ matrix.arch }}-setup.exe
+            release/Fabric-Inbox-${{ needs.gate.outputs.version }}-win-${{ matrix.arch }}.receipt.json
+            release/update-win32-${{ matrix.arch }}.json
+          if-no-files-found: error
+
+  # Linux (PL-03, PL-05): the AppImage (it updates itself from update-linux-<arch>.json) and the
+  # .deb (apt-installed, never checks), each built on its own architecture. No signing beyond the
+  # release set's GPG-signed SHA256SUMS, which is what an AppImage update verifies.
+  linux:
+    needs: gate
+    runs-on: ${{ matrix.runner }}
+    environment: release
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, arch: x64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64 }
+    env:
+      VERSION: ${{ needs.gate.outputs.version }}
+      FABRIC_INBOX_RELEASE_BUILD: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build the AppImage and the .deb
+        env:
+          FABRIC_INBOX_ANALYTICS_APP_KEY: ${{ secrets.FABRIC_INBOX_ANALYTICS_APP_KEY }}
+          FABRIC_INBOX_ANALYTICS_HOST: ${{ vars.FABRIC_INBOX_ANALYTICS_HOST }}
+        run: node desktop/dist-platform.mjs --platform linux --arch ${{ matrix.arch }} --out release
+      - name: The built update passes the app's checks, before signing the release set
+        run: node scripts/check-update-release.mjs --before-signing --platform linux --arch ${{ matrix.arch }} --dir release --version "$VERSION" --repository "$GITHUB_REPOSITORY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-linux-${{ matrix.arch }}
+          path: |
+            release/Fabric-Inbox-${{ needs.gate.outputs.version }}-linux-${{ matrix.arch }}.AppImage
+            release/Fabric-Inbox-${{ needs.gate.outputs.version }}-linux-${{ matrix.arch }}.deb
+            release/Fabric-Inbox-${{ needs.gate.outputs.version }}-linux-${{ matrix.arch }}.receipt.json
+            release/update-linux-${{ matrix.arch }}.json
+          if-no-files-found: error
+
   # The update every installed copy will read, checked before anything is published (LC-16): the
   # built feed names this release's own zip, the zip has the feed's digest and size, and the app
   # inside is the pinned team's, of this version. The signature is checked again after publish.
@@ -234,7 +338,7 @@ jobs:
   # The Developer ID release. The store job does not hold it: a store upload Apple refuses (for
   # example while the app record is missing) fails its own job and leaves the disk image released.
   publish:
-    needs: [gate, macos, update-precheck]
+    needs: [gate, macos, update-precheck, windows, linux]
     permissions:
       contents: write
       id-token: write
@@ -284,3 +388,58 @@ jobs:
         env:
           VERSION: ${{ needs.gate.outputs.version }}
         run: node scripts/check-update-release.mjs --dir signed --version "$VERSION" --repository "$GITHUB_REPOSITORY"
+
+  # The same check for every Windows and Linux feed, on the OS that reads it: the GPG-signed
+  # SHA256SUMS lists the feed, the feed names only this release's installer or AppImage with the
+  # signed digest and size, and the file passes the platform's inspection (the installer's version
+  # on Windows, and its Authenticode signature once signing is on; the AppImage format on Linux).
+  update-check-platforms:
+    needs: [gate, publish]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, platform: win32, files: "*-win-*-setup.exe" }
+          - { runner: ubuntu-24.04, platform: linux, files: "*.AppImage" }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - if: ${{ !(github.event_name == 'push' || inputs.publish) }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: signed-release-${{ github.ref_name }}
+          path: rehearsal
+      - name: The signed release set
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISHED: ${{ github.event_name == 'push' || inputs.publish }}
+          TAG: ${{ github.ref_name }}
+          PLATFORM: ${{ matrix.platform }}
+          FILES: ${{ matrix.files }}
+        run: |
+          if [ "$PUBLISHED" = "true" ]; then
+            gh release download "$TAG" -R "$GITHUB_REPOSITORY" -D signed -p "update-$PLATFORM-*.json" -p SHA256SUMS -p SHA256SUMS.asc -p "$FILES"
+          else
+            mv rehearsal/dist signed
+          fi
+          ls -l signed
+      - name: Every architecture's update passes the app's own verification
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          SIGNING: ${{ vars.AZURE_SIGNING_ENABLED == 'true' }}
+        run: |
+          flags=(); [[ "$PLATFORM" == win32 && "$SIGNING" == true ]] && flags=(--require-authenticode)
+          for arch in x64 arm64; do
+            node scripts/check-update-release.mjs --platform "$PLATFORM" --arch "$arch" --dir signed --version "$VERSION" --repository "$GITHUB_REPOSITORY" "${flags[@]}"
+          done

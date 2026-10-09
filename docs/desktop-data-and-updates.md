@@ -128,3 +128,54 @@ version; a published release is never rewritten.
 
 The server is updated separately: **Create my server** uploads the server the app carries
 (B-44 records that this still asks for a token each time).
+
+
+## Windows and Linux
+
+The same app and the same rules, per the organization's platform decisions (fabric-workspace
+`knowledge/platforms.md`, PL-01…PL-08). Builder: [`desktop/dist-platform.mjs`](../desktop/dist-platform.mjs);
+installer step of an update: [`desktop/platform-installer.cjs`](../desktop/platform-installer.cjs);
+tests: [`tests/desktop-update-platform.test.ts`](../tests/desktop-update-platform.test.ts),
+[`tests/desktop-platform-build.test.ts`](../tests/desktop-platform-build.test.ts); CI:
+[`.github/workflows/platforms.yml`](../.github/workflows/platforms.yml).
+
+### Where everything lives
+
+Everything on the server is the same as on the Mac (the table above). On the computer, Electron's
+own folders are used (`app.getPath` in `desktop/main.cjs`):
+
+| What | Windows | Linux |
+|---|---|---|
+| The app | `%LOCALAPPDATA%\Programs\Fabric Inbox\` (per-user NSIS install, no administrator rights, PL-01) | the AppImage wherever you keep it; or `/opt/Fabric Inbox/` with `/usr/bin/fabric-inbox` from the `.deb` |
+| Profile (`server.json`, partitions, `auto-update`, `update-install.json`, `analytics-state.json`) | `%APPDATA%\Fabric Inbox\` | `~/.config/Fabric Inbox/` (or under `XDG_CONFIG_HOME`) |
+| The server address's copy | `%APPDATA%\PassionCode\backups\fabric-inbox.json` | `~/.config/PassionCode/backups/fabric-inbox.json` |
+| The app's log | `logs\fabric-inbox.log` inside the profile | `logs/fabric-inbox.log` inside the profile |
+| The sign-in cookie's key (PL-05) | DPAPI, bound to the Windows account | the Secret Service (GNOME Keyring, KWallet); without one the app **refuses to start** rather than keep the sign-in in plain text (`key_store_refused` in the log) |
+| `fabric-inbox://` links (PL-04) | `HKCU\Software\Classes\fabric-inbox`, written by the installer and removed by its uninstaller | `MimeType=x-scheme-handler/fabric-inbox` in the `.desktop` entry of the `.deb`; an AppImage gets it when an AppImage integrator installs its entry |
+
+Uninstalling on Windows (Settings → Apps, or `Uninstall Fabric Inbox.exe`) removes the program
+and the link registration and leaves the profile, as on the Mac; removing `%APPDATA%\Fabric Inbox`
+too costs the sign-in and unsent drafts, and the server's address comes back from the PassionCode
+copy. `apt remove fabric-inbox` leaves `~/.config/Fabric Inbox` the same way.
+
+### Updates
+
+The steps above (cadence, only newer, the switch, held releases, the log codes) are the same; what
+differs is the feed, the file and who installs it (PL-03):
+
+| Copy | Feed | Checked before install | Installed by |
+|---|---|---|---|
+| Windows, installed by the released installer | `update-win32-<arch>.json` | the signed `SHA256SUMS`, the feed, the installer's digest and size; the installer's `ProductVersion` is the announced version (PowerShell); once the running copy is Authenticode-signed, the update must be too, by PassionCode (PL-02) | the verified installer, copied to the cache's `pending-update` folder and run silently in update mode (`/S --updated`) as the app quits, or with `--force-run` on **Restart to Install Update** (Help menu) |
+| Linux AppImage | `update-linux-<arch>.json` | the signed `SHA256SUMS`, the feed, the AppImage's digest and size, and that it is an AppImage (ELF with the type-2 magic) | the app itself: the verified AppImage is copied beside the running AppImage file and renamed over it, so the running copy keeps its old file and the next start is the new version; **Restart to Install Update** starts the new file |
+| Linux `.deb` | none | — | never checks (`package_manager`): download the next `.deb`, or use the AppImage |
+| A build from source, `npm run desktop:win` / `desktop:linux` outside the release workflow | none | — | never checks (`no_feed`) |
+
+A Windows copy started from somewhere other than its install folder (no `Uninstall Fabric
+Inbox.exe` beside it) does not update itself (`not_in_applications`; **Check for Updates…** says to
+install it with the installer). A copy whose folder this account cannot write is `not_replaceable`.
+
+**Authenticode (PL-02).** Windows installers are signed with Azure Artifact Signing in the release
+workflow once the organization's identity validation is complete and the release environment's
+`AZURE_SIGNING_ENABLED` is `true`; until then they are **unsigned** (SmartScreen warns on first
+run), their receipt says `windows_authenticode: NOT_SIGNED`, and the GPG-signed `SHA256SUMS` is
+what an installed copy trusts.
