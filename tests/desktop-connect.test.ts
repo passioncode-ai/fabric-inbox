@@ -323,3 +323,56 @@ test("delivery posts JSON to the loopback callback and counts only a 2xx within 
   const slow = deliverTo("http://127.0.0.1:9/cb", { timeoutMs: 20, fetch: (_u: string, init: RequestInit) => new Promise((_r, reject) => init.signal!.addEventListener("abort", () => reject(new Error("aborted")))) });
   assert.equal(await slow({ state: STATE, outcome: "denied" }), false);
 });
+
+test("Windows: the listener is the LISTENING loopback row in netstat, named by its executable", async () => {
+  const calls: string[] = [];
+  const exec = async (file: string, args: string[]) => {
+    calls.push(file.split("\\").pop()!);
+    if (file.endsWith("netstat.exe")) return { stdout: [
+      "Active Connections", "", "  Proto  Local Address          Foreign Address        State           PID",
+      "  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1012",
+      "  TCP    127.0.0.1:47123        0.0.0.0:0              LISTENING       4242",
+      "  TCP    127.0.0.1:47123        127.0.0.1:50000        ESTABLISHED     4242",
+      "  TCP    192.168.1.5:47124      0.0.0.0:0              LISTENING       77",
+    ].join("\r\n") };
+    if (file.endsWith("tasklist.exe")) { assert.deepEqual(args.slice(0, 2), ["/FI", "PID eq 4242"]); return { stdout: '"Fabric.exe","4242","Console","1","120,000 K"\r\n' }; }
+    return { stdout: "C:\\Users\\me\\AppData\\Local\\Programs\\Fabric\\Fabric.exe\r\n" };
+  };
+  assert.deepEqual(await listenerWith(exec, "win32")(47123), { pid: 4242, name: "Fabric", path: "C:\\Users\\me\\AppData\\Local\\Programs\\Fabric\\Fabric.exe" });
+  assert.equal(await listenerWith(exec, "win32")(47124), null, "a non-loopback listener is not the hub");
+  assert.equal(await listenerWith(exec, "win32")(1), null, "nothing listens");
+  const noPath = async (file: string) => (file.endsWith("netstat.exe") ? { stdout: "  TCP    127.0.0.1:9    0.0.0.0:0    LISTENING    9" }
+    : file.endsWith("tasklist.exe") ? { stdout: '"node.exe","9"' } : Promise.reject(new Error("no powershell")));
+  assert.deepEqual(await listenerWith(noPath, "win32")(9), { pid: 9, name: "node", path: "" }, "PowerShell missing: the image name still names it");
+  assert.equal(await listenerWith(async () => { throw new Error("no netstat"); }, "win32")(9), null);
+  assert.ok(calls.includes("netstat.exe"));
+});
+
+test("Linux: ss names the listener; without ss, /proc/net/tcp and the processes' sockets do", async () => {
+  const fs = (files: Record<string, string>, dirs: Record<string, string[]>, links: Record<string, string>) => ({
+    readFile: async (p: string) => { if (p in files) return files[p]; throw new Error("ENOENT"); },
+    readdir: async (p: string) => { if (p in dirs) return dirs[p]; throw new Error("ENOENT"); },
+    readlink: async (p: string) => { if (p in links) return links[p]; throw new Error("ENOENT"); },
+  });
+  const viaSs = async () => ({ stdout: 'LISTEN 0 511 127.0.0.1:47123 0.0.0.0:* users:(("fabric",pid=4242,fd=21))\n' });
+  assert.deepEqual(await listenerWith(viaSs, "linux", fs({}, {}, { "/proc/4242/exe": "/opt/Fabric/fabric" }) as never)(47123),
+    { pid: 4242, name: "fabric", path: "/opt/Fabric/fabric" });
+  assert.equal(await listenerWith(async () => ({ stdout: "" }), "linux", fs({}, {}, {}) as never)(47123), null, "ss answered: nobody listens");
+  const tcp = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n" +
+    "   0: 0100007F:B843 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 98765 1 0000000000000000 100 0 0 10 0\n";
+  const noSs = async () => { throw Object.assign(new Error("spawn ss ENOENT"), { code: "ENOENT" }); };
+  const proc = fs({ "/proc/net/tcp": tcp, "/proc/4242/comm": "fabric\n" }, { "/proc": ["1", "4242", "self"], "/proc/1/fd": ["0"], "/proc/4242/fd": ["0", "21"] },
+    { "/proc/1/fd/0": "/dev/null", "/proc/4242/fd/0": "/dev/null", "/proc/4242/fd/21": "socket:[98765]", "/proc/4242/exe": "/tmp/.mount_FabricX/fabric" });
+  assert.deepEqual(await listenerWith(noSs, "linux", proc as never)(0xB843), { pid: 4242, name: "fabric", path: "/tmp/.mount_FabricX/fabric" });
+  assert.equal(await listenerWith(noSs, "linux", proc as never)(1), null);
+});
+
+test("Windows and Linux flash the taskbar entry until the prompt is answered; no Dock is touched", () => {
+  const events: string[] = [];
+  const win = { isDestroyed: () => false, isMinimized: () => false, show: () => events.push("show"), focus: () => events.push("focus"),
+    flashFrame: (on: boolean) => events.push(`flash ${on}`) };
+  const stop = attendWith({ focus: () => events.push("app focus") }, "win32")(win);
+  assert.deepEqual(events, ["show", "focus", "app focus", "flash true"]);
+  stop();
+  assert.equal(events.at(-1), "flash false");
+});

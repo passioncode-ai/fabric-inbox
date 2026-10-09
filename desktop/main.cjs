@@ -8,6 +8,7 @@ const policy = require('./policy.cjs');
 const deployer = require('./cloudflare-deploy.cjs');
 const profile = require('./profile.cjs');
 const connector = require('./connect.cjs');
+const { menuTemplate } = require('./menu.cjs');
 const usage = require('./analytics.cjs');
 const backup = require('./backup.cjs');
 const updates = require('./updater.cjs');
@@ -17,7 +18,7 @@ const updateVerify = require('./update-verify.cjs');
 const { createLog } = require('./log.cjs');
 const { randomUUID } = require('node:crypto');
 const { execFile } = require('node:child_process');
-const execFileAsync = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10000, maxBuffer: 1024 * 1024 }, (error, stdout) => (error ? reject(error) : resolve({ stdout }))));
+const execFileAsync = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10000, maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout) => (error ? reject(error) : resolve({ stdout }))));
 const { createWriteStream, constants: fsConstants } = require('node:fs');
 
 // A development run (`npm run desktop`) is its own app to macOS: its own name, so Chromium keeps its
@@ -589,32 +590,20 @@ function openSettings() {
   loadMail();
 }
 function installMenu() {
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: 'Fabric Inbox', submenu: [{ role: 'about', label: t('About Fabric Inbox') },
-      { label: updater && updater.status().state === 'ready' ? t('Restart to Install Update') : updater && updater.status().state === 'downloading' ? t('Downloading Update…') : t('Check for Updates…'),
-        enabled: !(updater && updater.status().state === 'downloading'),
-        click: () => { if (updater && updater.status().state === 'ready') updater.restart(); else void checkForUpdates(); } },
-      { label: t('Install Updates Automatically'), type: 'checkbox', checked: !!(updater && updater.status().automatic), enabled: !!updater && !['off', 'unavailable'].includes(updater.status().state),
-        click: (item) => { if (updater) void updater.setAutomatic(item.checked); } },
-      { type: 'separator' },
-      { label: t('Share Anonymous Usage Counts'), type: 'checkbox', checked: !!(analytics && analytics.status().enabled), enabled: !!analytics, click: (item) => void toggleAnalytics(item) },
-      { label: t('About Usage Counts…'), click: aboutUsageCounts },
-      { type: 'separator' },
-      { label: t('Settings…'), accelerator: 'CmdOrCtrl+,', click: openSettings },
-      { label: t('Server address…'), click: () => showSetup() },
-      { label: t('Connect Cloudflare account…'), click: () => showSetup('', 'cloudflare') },
-      { type: 'separator' }, { role: 'services', label: t('Services') }, { role: 'hide', label: t('Hide Fabric Inbox') }, { role: 'hideOthers', label: t('Hide Others') }, { role: 'unhide', label: t('Show All') }, { type: 'separator' }, { role: 'quit', label: t('Quit Fabric Inbox') }] },
-    { label: t('[menu] Edit'), submenu: [{ role: 'undo', label: t('Undo') }, { role: 'redo', label: t('Redo') }, { type: 'separator' },
-      { role: 'cut', label: t('Cut') }, { role: 'copy', label: t('Copy') }, { role: 'paste', label: t('Paste') }, { role: 'pasteAndMatchStyle', label: t('Paste and Match Style') },
-      { role: 'delete', label: t('Delete') }, { role: 'selectAll', label: t('Select All') }, { type: 'separator' },
-      { label: t('Speech'), submenu: [{ role: 'startSpeaking', label: t('Start Speaking') }, { role: 'stopSpeaking', label: t('Stop Speaking') }] }] },
-    { label: t('Account'), submenu: [{ label: t('Connect Gmail in browser…'), click: () => {
-      if (config) void openExternal(policy.gmailConnectURL(config), true); else showSetup(t('Set the server address before connecting Gmail.'));
-    } }] },
-    { label: t('[menu] View'), submenu: [{ label: t('Retry connection'), accelerator: 'CmdOrCtrl+R', click: loadMail },
-      { role: 'resetZoom', label: t('Actual Size') }, { role: 'zoomIn', label: t('Zoom In') }, { role: 'zoomOut', label: t('Zoom Out') }, { role: 'togglefullscreen', label: t('Toggle Full Screen') }] },
-    { role: 'windowMenu', label: t('Window'), submenu: [{ role: 'minimize', label: t('Minimize') }, { role: 'zoom', label: t('Zoom') }, { type: 'separator' }, { role: 'front', label: t('Bring All to Front') }] },
-  ]));
+  const state = updater ? updater.status() : null;
+  Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate(process.platform, {
+    t,
+    update: {
+      label: state && state.state === 'ready' ? t('Restart to Install Update') : state && state.state === 'downloading' ? t('Downloading Update…') : t('Check for Updates…'),
+      enabled: !(state && state.state === 'downloading'),
+      click: () => { if (updater && updater.status().state === 'ready') updater.restart(); else void checkForUpdates(); },
+    },
+    automatic: { checked: !!(state && state.automatic), enabled: !!updater && !['off', 'unavailable'].includes(state.state), click: (item) => { if (updater) void updater.setAutomatic(item.checked); } },
+    usage: { checked: !!(analytics && analytics.status().enabled), enabled: !!analytics, click: (item) => void toggleAnalytics(item), about: aboutUsageCounts },
+    openSettings, showServer: () => showSetup(), showCloudflare: () => showSetup('', 'cloudflare'),
+    connectGmail: () => { if (config) void openExternal(policy.gmailConnectURL(config), true); else showSetup(t('Set the server address before connecting Gmail.')); },
+    retry: loadMail,
+  })));
 }
 app.on('before-quit', () => { quitting = true; });
 // A ready update is installed by Squirrel.Mac's ShipIt as the app exits; the next launch logs the result.
@@ -642,6 +631,17 @@ app.on('second-instance', (_event, argv) => {
 });
 if (ownsInstance) app.whenReady().then(async () => {
   i18n.init({ app, userData: app.getPath('userData') });
+  // PL-05: no Secret Service on Linux means no protected sign-in; say so and stop (never plain text).
+  const refusal = policy.keyStoreRefusal(process.platform, process.platform === 'linux' && electron.safeStorage && typeof electron.safeStorage.getSelectedStorageBackend === 'function'
+    ? electron.safeStorage.getSelectedStorageBackend() : null);
+  if (refusal) {
+    logEvent({ event: 'key_store_refused', backend: refusal });
+    dialog.showMessageBoxSync({ type: 'error', title: 'Fabric Inbox', message: t('Fabric Inbox needs a system key store'),
+      detail: t('It keeps your sign-in encrypted with the Secret Service (GNOME Keyring or KWallet), and none is running. Install or unlock one, then open Fabric Inbox again.'),
+      buttons: [t('Quit Fabric Inbox')] });
+    app.exit(1);
+    return;
+  }
   installIPC(); installMenu(); await loadBundledSetups();
   // The Mac woke from sleep: the open mail window reads new mail now instead of at its next poll
   // (P1-4). An event, not a timer: nothing runs here while the Mac sleeps or no window is open.
