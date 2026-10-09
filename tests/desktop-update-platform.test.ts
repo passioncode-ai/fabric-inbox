@@ -112,7 +112,7 @@ test("what updates where: the NSIS install, an AppImage; a .deb is left to the p
   const appImage = updateTarget({ platform: "linux", arch: "x64", execPath: "/tmp/.mount_x/fabric-inbox", env: { APPIMAGE: "/home/p/Apps/Fabric-Inbox.AppImage" } });
   assert.deepEqual([appImage.fileName("1.2.3"), appImage.installed, appImage.packageManager, appImage.writable],
     ["Fabric-Inbox-1.2.3-linux-x64.AppImage", true, false, ["/home/p/Apps/Fabric-Inbox.AppImage", "/home/p/Apps"]]);
-  const deb = updateTarget({ platform: "linux", arch: "x64", execPath: "/opt/Fabric Inbox/fabric-inbox", env: {} });
+  const deb = updateTarget({ platform: "linux", arch: "x64", execPath: "/opt/fabric-inbox/fabric-inbox", env: {} });
   assert.deepEqual([deb.installed, deb.packageManager, deb.writable], [false, true, []]);
   const mac = updateTarget({ platform: "darwin", arch: "arm64", execPath: "/Applications/Fabric Inbox.app/Contents/MacOS/Fabric Inbox", installedOnMac: true });
   assert.deepEqual([mac.fileName("1.2.3"), mac.runningApp], ["Fabric-Inbox-1.2.3-mac.zip", "/Applications/Fabric Inbox.app"]);

@@ -36,6 +36,8 @@ test("Linux: AppImage and a .deb named fabric-inbox, with the scheme handler and
   assert.ok(c.deb.depends.includes("libsecret-1-0"));
   assert.deepEqual(c.protocols[0].schemes, ["fabric-inbox"]);
   assert.equal(c.linux.executableName, "fabric-inbox");
+  assert.equal(c.productName, "fabric-inbox", "/opt/fabric-inbox: Chromium's zygote cannot start from a path with a space");
+  assert.equal(c.linux.desktop.entry.Name, "Fabric Inbox");
   assert.match(readFileSync("desktop/linux/after-install.sh", "utf8"), /ln -sf "\$APP_DIR\/fabric-inbox" \/usr\/bin\/fabric-inbox/);
   assert.match(readFileSync("desktop/linux/after-install.sh", "utf8"), /chmod 755 "\$APP_DIR"/, "a 0700 /opt folder would refuse everyone but root");
   assert.match(readFileSync("desktop/dist-platform.mjs", "utf8"), /if \(platform === 'linux'\) chmodSync\(appDir, 0o755\);/);

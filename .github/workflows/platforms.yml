@@ -141,6 +141,7 @@ jobs:
           # electron-builder's NSIS stub is x86 (emulated on ARM64); bounded, and its outcome printed.
           set +e; timeout 600 "$installer" //S; code=$?; set -e
           echo "installer exit $code"; ls -la "$LOCALAPPDATA/Programs" || true
+          find "$LOCALAPPDATA/Programs" -maxdepth 2 | head -40 || true
           for i in $(seq 1 30); do exe="$(find "$LOCALAPPDATA/Programs" -name 'Fabric Inbox.exe' 2>/dev/null | head -1)"; [ -n "$exe" ] && break; sleep 2; done
           test -n "$exe" && echo "EXE=$exe" >> "$GITHUB_ENV"
           test -f "$(dirname "$exe")/Uninstall Fabric Inbox.exe"

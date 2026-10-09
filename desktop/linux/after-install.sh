@@ -4,7 +4,7 @@
 # plus the desktop database, so x-scheme-handler/fabric-inbox finds the app (PL-04). The person's own
 # default handler is set by the app at first launch (app.setAsDefaultProtocolClient).
 set -e
-APP_DIR='/opt/Fabric Inbox'
+APP_DIR='/opt/fabric-inbox'
 chmod 755 "$APP_DIR"
 ln -sf "$APP_DIR/fabric-inbox" /usr/bin/fabric-inbox
 if [ -f "$APP_DIR/chrome-sandbox" ]; then

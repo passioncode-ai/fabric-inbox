@@ -95,9 +95,14 @@ export function builderConfig({ platform, version, arch, signing }) {
   };
   return {
     ...common,
+    // The .deb installs to /opt/<productName>. Chromium's zygote cannot start from a path with a
+    // space (CI: "LaunchProcess: failed to execvp: /opt/Fabric"), so the folder is /opt/fabric-inbox;
+    // menus still say Fabric Inbox (desktop entry Name).
+    productName: 'fabric-inbox',
     artifactName: `Fabric-Inbox-${version}-linux-${arch}.\${ext}`,
     linux: {
-      icon: path.join(desktop, 'icon.png'), executableName: 'fabric-inbox', category: 'Network;Email;Office',
+      icon: path.join(desktop, 'icon.png'), executableName: 'fabric-inbox', category: 'Network;Email;',
+      desktop: { entry: { Name: 'Fabric Inbox', StartupWMClass: 'fabric-inbox' } },
       maintainer: 'PassionCode.ai <contact@passioncode.ai>', vendor: 'PassionCode.ai', syncDesktopName: true,
       synopsis: 'Mail client with cloud automation', description: 'Fabric Inbox: one triaged list across Gmail and Cloudflare mailboxes, answered by versioned agents.',
     },
