@@ -220,7 +220,7 @@ export async function build(c, checked) {
       protocols: [{ name: 'Fabric Inbox connect link', schemes: ['fabric-inbox'] }], appBundleId: BUNDLE_ID, appCategoryType: 'public.app-category.productivity',
       platform: 'mas', arch: c.arch, electronVersion, buildVersion: c['build-number'],
       out: destination, overwrite: false, asar: true, prune: true, osxSign: false,
-      ignore: [/\/(?:mas-package|package|dist-mac|hardening|release-retention)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.icns$/, /\/dmg-background/],
+      ignore: [/\/(?:mas-package|package|dist-mac|dist-platform|hardening|release-retention)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.(?:icns|ico|png)$/, /\/dmg-background/, /^\/(?:linux|windows)\//],
       extendInfo: { ElectronTeamID: c.team, FabricInboxSourceRevision: c.revision, NSHumanReadableCopyright: 'Fabric Inbox', NSRequiresAquaSystemAppearance: false },
       // LC-13/LC-07: hardened fuses, no unused purpose strings (desktop/hardening.mjs); verified after signing.
       afterExtract: hardenTemplateHook(),

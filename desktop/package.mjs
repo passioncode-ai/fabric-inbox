@@ -13,7 +13,7 @@ const apps = await packager({
   platform: 'darwin', arch, electronVersion: require('electron/package.json').version,
   out: path.join(desktop, '..', 'release'), overwrite: true, asar: true, prune: true,
   icon: path.join(desktop, 'icon.icns'),
-  ignore: [/\/(?:mas-package|package|dist-mac|hardening|release-retention)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.icns$/, /\/dmg-background/],
+  ignore: [/\/(?:mas-package|package|dist-mac|dist-platform|hardening|release-retention)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.(?:icns|ico|png)$/, /\/dmg-background/, /^\/(?:linux|windows)\//],
   extendInfo: { NSHumanReadableCopyright: 'Fabric Inbox', NSRequiresAquaSystemAppearance: false },
   // Hardened like a release (desktop/hardening.mjs); an unsigned Apple-silicon build is re-signed ad hoc to launch.
   afterExtract: hardenTemplateHook({ resetAdHocSignature: true }),

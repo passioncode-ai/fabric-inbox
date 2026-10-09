@@ -34,6 +34,8 @@
 		"desktop:package": "node desktop/package.mjs",
 		"desktop:mas": "node desktop/mas-package.mjs",
 		"desktop:dmg": "node desktop/dist-mac.mjs",
+		"desktop:win": "node desktop/dist-platform.mjs --platform win32",
+		"desktop:linux": "node desktop/dist-platform.mjs --platform linux",
 		"desktop:server-bundle": "npm run build && node scripts/server-bundle.mjs",
 		"mcp:docs": "node --import tsx scripts/mcp-docs.ts",
 		"clean": "node scripts/clean.mjs"

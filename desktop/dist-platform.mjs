@@ -91,11 +91,9 @@ export function builderConfig({ platform, version, signing }) {
       icon: path.join(desktop, 'icon.png'), executableName: 'fabric-inbox', category: 'Network;Email;Office',
       maintainer: 'PassionCode.ai <contact@passioncode.ai>', vendor: 'PassionCode.ai', syncDesktopName: true,
       synopsis: 'Mail client with cloud automation', description: 'Fabric Inbox: one triaged list across Gmail and Cloudflare mailboxes, answered by versioned agents.',
-      mimeTypes: ['x-scheme-handler/fabric-inbox'],
-      desktop: { entry: { StartupWMClass: 'Fabric Inbox', MimeType: 'x-scheme-handler/fabric-inbox;' } },
     },
     // PL-05: the sign-in is kept in the Secret Service; libsecret reaches it, a keyring provides it.
-    deb: { depends: ['libsecret-1-0', 'libgtk-3-0', 'libnss3', 'libxss1', 'libasound2 | libasound2t64', 'xdg-utils'], recommends: ['gnome-keyring | kwalletmanager'],
+    deb: { packageName: 'fabric-inbox', depends: ['libsecret-1-0', 'libgtk-3-0', 'libnss3', 'libxss1', 'libasound2 | libasound2t64', 'xdg-utils'], recommends: ['gnome-keyring | kwalletmanager'],
       afterInstall: path.join(desktop, 'linux', 'after-install.sh'), afterRemove: path.join(desktop, 'linux', 'after-remove.sh') },
     appImage: { artifactName: `Fabric-Inbox-${version}-linux-\${arch}.AppImage` },
   };
