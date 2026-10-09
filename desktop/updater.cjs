@@ -30,7 +30,7 @@ const HANDOFF_TIMEOUT_MS = 15 * 60 * 1000;
 const DECLINED_FOR_MS = 24 * 3600 * 1000;
 const SWITCH_FILE = 'auto-update';
 const INSTALL_FILE = 'update-install.json';
-const FEED = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/releases\/latest\/download\/update-mac\.json$/;
+const FEED = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/releases\/latest\/download\/update-(?:mac|(?:win32|linux)-(?:x64|arm64))\.json$/;
 
 /** The feed a release build carries, or null. */
 function readFeed(text) {
@@ -60,11 +60,13 @@ function feedFor({ repository, version, zipName, sha256, size, notes = '', pubDa
   return { currentRelease: version, releases: [{ version, updateTo }] };
 }
 
-const feedURL = (repository) => `https://github.com/${repository}/releases/latest/download/update-mac.json`;
+/** The feed a release build of this platform reads (PL-03): macOS keeps `update-mac.json`. */
+const feedURL = (repository, platform = 'darwin', arch = 'x64') =>
+  `https://github.com/${repository}/releases/latest/download/${platform === 'darwin' ? 'update-mac.json' : `update-${platform}-${arch}.json`}`;
 
 /**
- * The updater. `autoUpdater` is Electron's; every other dependency is passed in so tests drive it
- * with fakes. States: off | unavailable | idle | checking | downloading | ready | held | error.
+ * The updater. `autoUpdater` is Electron's on macOS and desktop/platform-installer.cjs on Windows
+ * and Linux; every other dependency is passed in so tests drive it with fakes. States: off | unavailable | idle | checking | downloading | ready | held | error.
  *
  * deps: { autoUpdater, fs, userData, feed, appVersion, fetchFeed(url) → Buffer, verifier
  *   ({ verify(feedBytes, { onDownload, shouldDownload }), clean() }), replaceable() → boolean
@@ -266,10 +268,12 @@ function createUpdater(deps) {
     status,
 
     /** At launch: decide whether this copy can update itself, then schedule the first check. */
-    async start({ packaged, mas, inApplications }) {
+    async start({ packaged, mas, inApplications, packageManager = false }) {
       await loadSwitch();
       await reconcileInstall();
-      if (!feed || !packaged || mas) { reason = !feed ? 'no_feed' : mas ? 'app_store' : 'development'; set('off'); return; }
+      if (!feed || !packaged || mas || packageManager) {
+        reason = !feed ? 'no_feed' : mas ? 'app_store' : packageManager ? 'package_manager' : 'development'; set('off'); return;
+      }
       if (!inApplications) { reason = 'not_in_applications'; log({ event: 'update_check', outcome: 'check_failed', reason }); set('unavailable'); return; }
       if (typeof fetchFeed !== 'function' || !verifier || !/^\d+\.\d+\.\d+$/.test(String(appVersion))) {
         reason = 'no_version_check'; set('unavailable'); return;
@@ -320,11 +324,17 @@ function createUpdater(deps) {
       return true;
     },
 
-    /** The app is quitting: a ready update is installed now by Squirrel.Mac's ShipIt. */
+    /**
+     * The app is quitting: a ready update is installed now — by Squirrel.Mac's ShipIt on macOS, by the
+     * verified installer on Windows (`installOnQuit`); a Linux AppImage was already put in place.
+     */
     async quitting() {
       if (state !== 'ready' || installing) return;
       log({ event: 'update_install', outcome: 'started', version: readyVersion });
       await recordInstall(readyVersion);
+      if (typeof autoUpdater.installOnQuit === 'function') {
+        try { autoUpdater.installOnQuit(); } catch { log({ event: 'update_install', outcome: 'failed', reason: 'installer' }); }
+      }
     },
 
     /** Stops the timers (tests; the app's own exit needs nothing). */

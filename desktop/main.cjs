@@ -15,11 +15,12 @@ const updates = require('./updater.cjs');
 const i18n = require('./i18n.cjs');
 const { t } = i18n;
 const updateVerify = require('./update-verify.cjs');
+const platformInstaller = require('./platform-installer.cjs');
 const { createLog } = require('./log.cjs');
 const { randomUUID } = require('node:crypto');
-const { execFile } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
 const execFileAsync = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10000, maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout) => (error ? reject(error) : resolve({ stdout }))));
-const { createWriteStream, constants: fsConstants } = require('node:fs');
+const { createWriteStream, existsSync, constants: fsConstants } = require('node:fs');
 
 // A development run (`npm run desktop`) is its own app to macOS: its own name, so Chromium keeps its
 // cookie key in its own Keychain item ("Fabric Inbox Development Safe Storage"). With the installed
@@ -299,12 +300,18 @@ async function startAnalytics() {
   if (!config) void countActive();
 }
 async function startUpdates() {
-  const autoUpdater = electron.autoUpdater;
+  const target = platformInstaller.updateTarget({ platform: process.platform, arch: process.arch, execPath: process.execPath, env: process.env,
+    installedOnMac: typeof app.isInApplicationsFolder === 'function' && app.isInApplicationsFolder(), exists: existsSync });
+  // macOS: Squirrel.Mac installs. Windows and Linux: the verified installer or AppImage (PL-03).
+  const autoUpdater = process.platform === 'darwin' ? electron.autoUpdater
+    : platformInstaller.createPlatformInstaller({ platform: process.platform, app, spawn, fs, appImage: target.appImage, log: logEvent,
+      stagingDir: path.join(app.getPath('cache'), app.getName(), 'pending-update') });
+  if (typeof autoUpdater.clean === 'function') void autoUpdater.clean();
   let feed = null;
   try { feed = updates.readFeed(await fs.readFile(path.join(__dirname, 'updates.json'), 'utf8')); } catch { feed = null; }
   if (!feed || !autoUpdater) return;
   // The feed is read with Node's fetch, and a newer release is downloaded and verified by the app
-  // itself (desktop/update-verify.cjs) before Squirrel.Mac is handed the verified zip (LC-16).
+  // itself (desktop/update-verify.cjs) before the installer step is handed the verified file (LC-16).
   const fetchFeed = async (url) => {
     const response = await globalThis.fetch(url, { redirect: 'follow', cache: 'no-store', signal: AbortSignal.timeout(15000) });
     if (!response.ok) throw new Error(`The update feed answered ${response.status}.`);
@@ -314,43 +321,61 @@ async function startUpdates() {
   try {
     const key = await fs.readFile(path.join(__dirname, 'release-key.asc'), 'utf8');
     const repository = new URL(feed).pathname.split('/').slice(1, 3).join('/');
-    const exec = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10 * 60 * 1000, maxBuffer: 1024 * 1024 },
+    const exec = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10 * 60 * 1000, maxBuffer: 1024 * 1024, windowsHide: true },
       (error, stdout) => (error ? reject(error) : resolve({ stdout }))));
+    // Windows: a signed running copy accepts only a signed update; an unsigned interim one (PL-02)
+    // trusts the GPG-signed SHA256SUMS alone. Read once per launch, and only for a copy that updates.
+    let requireAuthenticode = false;
+    if (process.platform === 'win32' && app.isPackaged && target.installed) {
+      const ps = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+      try {
+        const out = await exec(ps, ['-NoProfile', '-NonInteractive', '-Command', `(Get-AuthenticodeSignature -LiteralPath '${process.execPath.replace(/'/g, "''")}').Status`]);
+        requireAuthenticode = String(out.stdout).trim() === 'Valid';
+      } catch { requireAuthenticode = false; }
+    }
     verifier = updateVerify.createVerifier({ repository, appVersion: app.getVersion(), appName: 'Fabric Inbox',
-      zipName: (version) => `Fabric-Inbox-${version}-mac.zip`, runningApp: path.resolve(process.execPath, '..', '..', '..'),
+      zipName: target.fileName, runningApp: target.runningApp, platform: process.platform, arch: process.arch, requireAuthenticode,
       dir: path.join(app.getPath('cache'), app.getName(), 'updates'), fetch: globalThis.fetch, exec, fs, createWriteStream, key, log: logEvent });
   } catch (error) {
     logEvent({ event: 'update_check', outcome: 'check_failed', reason: 'no_release_key' });
   }
   // The timers hold no process open: quitting is never delayed by an update check.
   const setTimer = (fn, ms) => { const handle = setTimeout(fn, ms); if (handle.unref) handle.unref(); return handle; };
-  // Squirrel.Mac replaces the bundle in place: this user must be able to write it and its folder.
-  const bundle = path.resolve(process.execPath, '..', '..', '..');
+  // The update replaces the app in place: this user must be able to write it and its folder.
   const replaceable = async () => {
-    try { await fs.access(bundle, fsConstants.W_OK); await fs.access(path.dirname(bundle), fsConstants.W_OK); return true; } catch { return false; }
+    if (!target.writable.length) return false;
+    try { for (const where of target.writable) await fs.access(where, fsConstants.W_OK); return true; } catch { return false; }
   };
   updater = updates.createUpdater({ autoUpdater, fs, userData: app.getPath('userData'), feed, appVersion: app.getVersion(), fetchFeed, verifier, replaceable,
     setTimer, clearTimer: clearTimeout, log: logEvent, onChange: () => installMenu() });
-  await updater.start({ packaged: app.isPackaged, mas: !!process.mas,
-    inApplications: typeof app.isInApplicationsFolder === 'function' && app.isInApplicationsFolder() });
+  await updater.start({ packaged: app.isPackaged, mas: !!process.mas, inApplications: target.installed, packageManager: target.packageManager });
   installMenu();
 }
 async function checkForUpdates() {
   if (!updater) {
     await dialog.showMessageBox({ type: 'info', title: t('Updates'), message: t('This copy of Fabric Inbox does not update itself.'),
-      detail: t('Only the released app from GitHub or passioncode.ai checks for updates. Builds from source and the Mac App Store version are updated another way.'), buttons: [t('OK')] });
+      detail: process.platform === 'darwin'
+        ? t('Only the released app from GitHub or passioncode.ai checks for updates. Builds from source and the Mac App Store version are updated another way.')
+        : t('Only the released app from GitHub or passioncode.ai checks for updates. Builds from source are updated another way.'), buttons: [t('OK')] });
     return;
   }
   const out = await updater.checkNow();
   const reason = updater.status().reason;
+  const mac = process.platform === 'darwin';
   const messages = {
     current: [t('You have the latest version.'), t('Fabric Inbox {version} is the newest release.', { version: app.getVersion() })],
-    downloading: [t('A new version is downloading.'), t('It will be installed when you quit Fabric Inbox, or you can restart once it is ready (Fabric Inbox menu).')],
-    unavailable: [t('Updates are not available for this copy.'), reason === 'not_in_applications'
-      ? t('Move Fabric Inbox to the Applications folder, open it from there, and it will update itself.')
-      : reason === 'not_replaceable'
-        ? t('This Mac account cannot replace the app in Applications (it was installed by another account, or the folder is read-only). Install the new version from passioncode.ai/inbox, or update it from the account that installed it.')
-        : t('This copy cannot update itself.')],
+    downloading: [t('A new version is downloading.'), mac
+      ? t('It will be installed when you quit Fabric Inbox, or you can restart once it is ready (Fabric Inbox menu).')
+      : t('It will be installed when you quit Fabric Inbox, or you can restart once it is ready (Help menu).')],
+    unavailable: [t('Updates are not available for this copy.'), reason === 'package_manager'
+      ? t('This copy was installed from a .deb package and does not update itself. Download the new package from passioncode.ai/inbox, or use the AppImage, which updates itself.')
+      : reason === 'not_in_applications'
+        ? (mac ? t('Move Fabric Inbox to the Applications folder, open it from there, and it will update itself.')
+          : t('Install Fabric Inbox with its installer from passioncode.ai/inbox, and that copy will update itself.'))
+        : reason === 'not_replaceable'
+          ? (mac ? t('This Mac account cannot replace the app in Applications (it was installed by another account, or the folder is read-only). Install the new version from passioncode.ai/inbox, or update it from the account that installed it.')
+            : t('This account cannot replace the installed app (its folder is read-only). Install the new version from passioncode.ai/inbox.'))
+          : t('This copy cannot update itself.')],
     failed: out.code === 'signature_failed'
       ? [t('The update did not pass verification and was not installed.'),
         t('{error} Fabric Inbox keeps running this version and checks again later; you can also download the latest version from passioncode.ai/inbox.',
@@ -606,7 +631,8 @@ function installMenu() {
   })));
 }
 app.on('before-quit', () => { quitting = true; });
-// A ready update is installed by Squirrel.Mac's ShipIt as the app exits; the next launch logs the result.
+// A ready update is installed as the app exits (Squirrel.Mac's ShipIt on macOS, the verified installer on
+// Windows; a Linux AppImage is already in place); the next launch logs the result.
 let installNoted = false;
 app.on('will-quit', (event) => {
   if (installNoted || !updater || updater.status().state !== 'ready' || updater.status().installing) return;
