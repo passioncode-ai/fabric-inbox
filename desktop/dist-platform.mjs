@@ -20,7 +20,7 @@
 // AppImage (Linux) with its digest and size.
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -69,8 +69,13 @@ export function platformFeed(env, platform, arch) {
   return { feed: `https://github.com/${repository}/releases/latest/download/update-${platform}-${arch}.json` };
 }
 
-/** electron-builder's configuration for the prepackaged app. */
-export function builderConfig({ platform, version, signing }) {
+/**
+ * electron-builder's configuration for the prepackaged app. File names carry our own architecture
+ * names (x64, arm64): electron-builder's `${arch}` says `amd64` in a .deb and `x86_64` in an AppImage,
+ * and the update feed and the release workflow name the files exactly.
+ */
+export function builderConfig({ platform, version, arch, signing }) {
+  requireThat(ARCHES.includes(arch), `--arch must be ${ARCHES.join(' or ')}`);
   const common = {
     appId: BUNDLE_ID, productName: 'Fabric Inbox', copyright: 'PassionCode.ai',
     directories: { output: '.' }, electronVersion: require('electron/package.json').version,
@@ -79,7 +84,7 @@ export function builderConfig({ platform, version, signing }) {
   };
   if (platform === 'win32') return {
     ...common,
-    artifactName: `Fabric-Inbox-${version}-win-\${arch}-setup.\${ext}`,
+    artifactName: `Fabric-Inbox-${version}-win-${arch}-setup.\${ext}`,
     win: { icon: path.join(desktop, 'icon.ico'), executableName: 'Fabric Inbox', ...(signing ? { azureSignOptions: signing } : {}) },
     nsis: {
       oneClick: true, perMachine: false, allowElevation: false, runAfterFinish: true,
@@ -90,7 +95,7 @@ export function builderConfig({ platform, version, signing }) {
   };
   return {
     ...common,
-    artifactName: `Fabric-Inbox-${version}-linux-\${arch}.\${ext}`,
+    artifactName: `Fabric-Inbox-${version}-linux-${arch}.\${ext}`,
     linux: {
       icon: path.join(desktop, 'icon.png'), executableName: 'fabric-inbox', category: 'Network;Email;Office',
       maintainer: 'PassionCode.ai <contact@passioncode.ai>', vendor: 'PassionCode.ai', syncDesktopName: true,
@@ -99,7 +104,7 @@ export function builderConfig({ platform, version, signing }) {
     // PL-05: the sign-in is kept in the Secret Service; libsecret reaches it, a keyring provides it.
     deb: { packageName: 'fabric-inbox', depends: ['libsecret-1-0', 'libgtk-3-0', 'libnss3', 'libxss1', 'libasound2 | libasound2t64', 'xdg-utils'], recommends: ['gnome-keyring | kwalletmanager'],
       afterInstall: path.join(desktop, 'linux', 'after-install.sh'), afterRemove: path.join(desktop, 'linux', 'after-remove.sh') },
-    appImage: { artifactName: `Fabric-Inbox-${version}-linux-\${arch}.AppImage` },
+    appImage: { artifactName: `Fabric-Inbox-${version}-linux-${arch}.AppImage` },
   };
 }
 
@@ -145,6 +150,10 @@ async function build(args) {
       ...(platform === 'win32' ? { win32metadata: { CompanyName: 'PassionCode.ai', ProductName: 'Fabric Inbox', FileDescription: 'Fabric Inbox', OriginalFilename: 'Fabric Inbox.exe' } } : {}),
       afterExtract: hardenTemplateHook(),
     });
+    // @electron/packager assembles the app in a private (0700) temporary folder and moves it here;
+    // installed under /opt by the .deb, a 0700 folder owned by root is one nobody else can enter
+    // (spawn … EACCES). The app's folder is world-readable, as every installed program's is.
+    if (platform === 'linux') chmodSync(appDir, 0o755);
     const hardening = verifyHardening(appDir, { platform, executableName: spec.executableName });
 
     const builder = await import('electron-builder');
@@ -153,7 +162,7 @@ async function build(args) {
     const produced = await builder.build({
       prepackaged: appDir, projectDir: source,
       targets: builder.Platform[spec.builder].createTarget(spec.targets, builder.Arch[arch]),
-      config: { ...builderConfig({ platform, version, signing }), directories: { output: outDir } },
+      config: { ...builderConfig({ platform, version, arch, signing }), directories: { output: outDir } },
     });
     const artifacts = produced.filter((file) => /\.(exe|AppImage|deb)$/.test(file)).map((file) => {
       const name = path.basename(file);

@@ -254,7 +254,7 @@ The same app is built for Windows and Linux, x64 and ARM64 (fabric-workspace
 
 | | File | How it installs | Updates |
 |---|---|---|---|
-| Windows | `Fabric-Inbox-<version>-win-<arch>-setup.exe` | for your account only, into `%LOCALAPPDATA%\Programs\Fabric Inbox`, no administrator rights; registers `fabric-inbox://` links under `HKCU` | itself, like the Mac app: verified, then installed as you quit (**Help → Restart to Install Update** at once) |
+| Windows | `Fabric-Inbox-<version>-win-<arch>-setup.exe` | for your account only, into `%LOCALAPPDATA%\Programs\fabric-inbox-desktop`, no administrator rights; registers `fabric-inbox://` links under `HKCU` | itself, like the Mac app: verified, then installed as you quit (**Help → Restart to Install Update** at once) |
 | Linux | `Fabric-Inbox-<version>-linux-<arch>.AppImage` | `chmod +x` it and run it | itself: the verified new AppImage replaces the file |
 | Debian, Ubuntu | `Fabric-Inbox-<version>-linux-<arch>.deb` | `sudo apt install ./Fabric-Inbox-…deb`; puts `fabric-inbox` on `PATH` and registers the links | not by itself: install the next `.deb`, or use the AppImage |
 

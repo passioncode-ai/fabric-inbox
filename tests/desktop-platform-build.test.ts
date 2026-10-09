@@ -15,11 +15,11 @@ test("arguments: a platform and an architecture, nothing else", async () => {
 
 test("Windows: a per-user NSIS installer that registers fabric-inbox:// in HKCU (PL-01, PL-04)", async () => {
   const { builderConfig } = await load();
-  const c = builderConfig({ platform: "win32", version: "0.14.0", signing: null }) as any;
+  const c = builderConfig({ platform: "win32", version: "0.14.0", arch: "arm64", signing: null }) as any;
   assert.deepEqual([c.nsis.oneClick, c.nsis.perMachine, c.nsis.allowElevation], [true, false, false]);
   assert.match(c.nsis.include, /desktop[\\/]windows[\\/]installer\.nsh$/);
   assert.equal(c.win.azureSignOptions, undefined, "no signing configured: built NOT_SIGNED");
-  assert.equal(c.artifactName, "Fabric-Inbox-0.14.0-win-${arch}-setup.${ext}");
+  assert.equal(c.artifactName, "Fabric-Inbox-0.14.0-win-arm64-setup.${ext}", "our arch names, as the feed and the workflow expect");
   const nsh = readFileSync("desktop/windows/installer.nsh", "utf8");
   assert.match(nsh, /WriteRegStr HKCU "Software\\Classes\\fabric-inbox" "URL Protocol" ""/);
   assert.match(nsh, /DeleteRegKey HKCU "Software\\Classes\\fabric-inbox"/);
@@ -28,12 +28,17 @@ test("Windows: a per-user NSIS installer that registers fabric-inbox:// in HKCU 
 test("Linux: AppImage and a .deb named fabric-inbox, with the scheme handler and the Secret Service library (PL-01, PL-04, PL-05)", async () => {
   const { builderConfig, PLATFORMS } = await load();
   assert.deepEqual(PLATFORMS.linux.targets, ["AppImage", "deb"]);
-  const c = builderConfig({ platform: "linux", version: "0.14.0", signing: null }) as any;
+  const c = builderConfig({ platform: "linux", version: "0.14.0", arch: "x64", signing: null }) as any;
+  // electron-builder's ${arch} would say amd64 (.deb) and x86_64 (AppImage) on x64.
+  assert.deepEqual([c.artifactName, c.appImage.artifactName], ["Fabric-Inbox-0.14.0-linux-x64.${ext}", "Fabric-Inbox-0.14.0-linux-x64.AppImage"]);
+  assert.throws(() => builderConfig({ platform: "linux", version: "0.14.0", arch: "ia32", signing: null }), /--arch/);
   assert.equal(c.deb.packageName, "fabric-inbox");
   assert.ok(c.deb.depends.includes("libsecret-1-0"));
   assert.deepEqual(c.protocols[0].schemes, ["fabric-inbox"]);
   assert.equal(c.linux.executableName, "fabric-inbox");
   assert.match(readFileSync("desktop/linux/after-install.sh", "utf8"), /ln -sf "\$APP_DIR\/fabric-inbox" \/usr\/bin\/fabric-inbox/);
+  assert.match(readFileSync("desktop/linux/after-install.sh", "utf8"), /chmod 755 "\$APP_DIR"/, "a 0700 /opt folder would refuse everyone but root");
+  assert.match(readFileSync("desktop/dist-platform.mjs", "utf8"), /if \(platform === 'linux'\) chmodSync\(appDir, 0o755\);/);
   assert.match(readFileSync("desktop/linux/after-remove.sh", "utf8"), /rm -f \/usr\/bin\/fabric-inbox/);
   assert.equal(JSON.parse(readFileSync("desktop/package.json", "utf8")).desktopName, "fabric-inbox.desktop");
 });

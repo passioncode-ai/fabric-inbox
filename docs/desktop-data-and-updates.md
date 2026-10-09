@@ -146,7 +146,7 @@ own folders are used (`app.getPath` in `desktop/main.cjs`):
 
 | What | Windows | Linux |
 |---|---|---|
-| The app | `%LOCALAPPDATA%\Programs\Fabric Inbox\` (per-user NSIS install, no administrator rights, PL-01) | the AppImage wherever you keep it; or `/opt/Fabric Inbox/` with `/usr/bin/fabric-inbox` from the `.deb` |
+| The app | `%LOCALAPPDATA%\Programs\fabric-inbox-desktop\` (per-user NSIS install, no administrator rights, PL-01) | the AppImage wherever you keep it; or `/opt/Fabric Inbox/` with `/usr/bin/fabric-inbox` from the `.deb` |
 | Profile (`server.json`, partitions, `auto-update`, `update-install.json`, `analytics-state.json`) | `%APPDATA%\Fabric Inbox\` | `~/.config/Fabric Inbox/` (or under `XDG_CONFIG_HOME`) |
 | The server address's copy | `%APPDATA%\PassionCode\backups\fabric-inbox.json` | `~/.config/PassionCode/backups/fabric-inbox.json` |
 | The app's log | `logs\fabric-inbox.log` inside the profile | `logs/fabric-inbox.log` inside the profile |

@@ -5,6 +5,7 @@
 # default handler is set by the app at first launch (app.setAsDefaultProtocolClient).
 set -e
 APP_DIR='/opt/Fabric Inbox'
+chmod 755 "$APP_DIR"
 ln -sf "$APP_DIR/fabric-inbox" /usr/bin/fabric-inbox
 if [ -f "$APP_DIR/chrome-sandbox" ]; then
   chown root:root "$APP_DIR/chrome-sandbox"

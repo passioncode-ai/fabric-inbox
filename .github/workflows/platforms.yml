@@ -52,7 +52,8 @@ jobs:
       - name: Install the .deb
         run: |
           sudo apt-get install -y -q ./release/Fabric-Inbox-*-linux-${{ matrix.arch }}.deb
-          test -L /usr/bin/fabric-inbox
+          namei -l /usr/bin/fabric-inbox
+          test -L /usr/bin/fabric-inbox && test -x /usr/bin/fabric-inbox
           desktop-file-validate /usr/share/applications/fabric-inbox.desktop
           grep -q '^MimeType=x-scheme-handler/fabric-inbox;' /usr/share/applications/fabric-inbox.desktop
       - name: Smoke — installed .deb, with an unlocked Secret Service
@@ -137,7 +138,9 @@ jobs:
       - name: Install per user, silently
         run: |
           installer="$(ls release/Fabric-Inbox-*-win-${{ matrix.arch }}-setup.exe)"
-          "$installer" //S
+          # electron-builder's NSIS stub is x86 (emulated on ARM64); bounded, and its outcome printed.
+          set +e; timeout 600 "$installer" //S; code=$?; set -e
+          echo "installer exit $code"; ls -la "$LOCALAPPDATA/Programs" || true
           for i in $(seq 1 30); do exe="$(find "$LOCALAPPDATA/Programs" -name 'Fabric Inbox.exe' 2>/dev/null | head -1)"; [ -n "$exe" ] && break; sleep 2; done
           test -n "$exe" && echo "EXE=$exe" >> "$GITHUB_ENV"
           test -f "$(dirname "$exe")/Uninstall Fabric Inbox.exe"
