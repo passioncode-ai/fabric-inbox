@@ -42,7 +42,7 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Window": "Окно",
 	"Minimize": "Свернуть",
 	"Fabric Inbox needs a system key store": "Fabric Inbox нужно системное хранилище ключей",
-	"It keeps your sign-in encrypted with the Secret Service (GNOME Keyring or KWallet), and none is running. Install or unlock one, then open Fabric Inbox again.": "Вход в аккаунт хранится зашифрованным через Secret Service (GNOME Keyring или KWallet), а ни одно из них не запущено. Установите или разблокируйте хранилище и откройте Fabric Inbox снова.",
+	"It keeps your sign-in encrypted with the Secret Service (GNOME Keyring or KWallet), and none was found. Install or unlock one, then open Fabric Inbox again. On a desktop other than GNOME or KDE, start it with --password-store=gnome-libsecret.": "Приложение хранит ваш вход зашифрованным в Secret Service (GNOME Keyring или KWallet), а такое хранилище не найдено. Установите или разблокируйте его и снова откройте Fabric Inbox. На рабочем столе не GNOME и не KDE запускайте приложение с параметром --password-store=gnome-libsecret.",
 	"[menu] File": "Файл",
 	"[menu] Help": "Справка",
 	"Zoom": "Изменить масштаб",

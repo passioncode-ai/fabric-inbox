@@ -663,7 +663,7 @@ if (ownsInstance) app.whenReady().then(async () => {
   if (refusal) {
     logEvent({ event: 'key_store_refused', backend: refusal });
     dialog.showMessageBoxSync({ type: 'error', title: 'Fabric Inbox', message: t('Fabric Inbox needs a system key store'),
-      detail: t('It keeps your sign-in encrypted with the Secret Service (GNOME Keyring or KWallet), and none is running. Install or unlock one, then open Fabric Inbox again.'),
+      detail: t('It keeps your sign-in encrypted with the Secret Service (GNOME Keyring or KWallet), and none was found. Install or unlock one, then open Fabric Inbox again. On a desktop other than GNOME or KDE, start it with --password-store=gnome-libsecret.'),
       buttons: [t('Quit Fabric Inbox')] });
     app.exit(1);
     return;

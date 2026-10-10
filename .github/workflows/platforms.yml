@@ -57,10 +57,16 @@ jobs:
           desktop-file-validate /usr/share/applications/fabric-inbox.desktop
           grep -q '^MimeType=x-scheme-handler/fabric-inbox;' /usr/share/applications/fabric-inbox.desktop
       - name: Smoke — installed .deb, with an unlocked Secret Service
+        # Chromium picks the Secret Service from the desktop session; xvfb has none, so name GNOME.
+        env:
+          XDG_CURRENT_DESKTOP: GNOME
         run: |
           dbus-run-session -- bash -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null && \
             xvfb-run -a node scripts/smoke-desktop.mjs --exe /usr/bin/fabric-inbox --timeout 120'
       - name: Smoke — AppImage
+        # Chromium picks the Secret Service from the desktop session; xvfb has none, so name GNOME.
+        env:
+          XDG_CURRENT_DESKTOP: GNOME
         run: |
           chmod +x release/Fabric-Inbox-*-linux-${{ matrix.arch }}.AppImage
           dbus-run-session -- bash -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null && \
@@ -147,6 +153,15 @@ jobs:
           test -f "$(dirname "$exe")/Uninstall Fabric Inbox.exe"
           reg query 'HKCU\Software\Classes\fabric-inbox' //v 'URL Protocol'
           reg query 'HKCU\Software\Classes\fabric-inbox\shell\open\command'
+      - name: If the install failed — what Defender did, and what the installer carries
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-MpComputerStatus | Select-Object AMRunningMode, RealTimeProtectionEnabled, IsTamperProtected | Format-List
+          Get-MpThreatDetection | Select-Object -First 20 InitialDetectionTime, ThreatID, ActionSuccess, Resources | Format-List
+          $setup = (Get-ChildItem release -Filter '*-setup.exe').FullName
+          $7z = (Get-Command 7z -ErrorAction SilentlyContinue).Source
+          if ($7z) { & $7z l $setup | Select-Object -Last 15 } else { 'no 7z on this runner' }
       - name: Smoke — installed app (scripts/smoke-desktop.mjs needs no dependencies)
         run: node scripts/smoke-desktop.mjs --exe "$EXE" --timeout 120
       - name: Uninstall removes the link registration
