@@ -101,6 +101,10 @@ export async function processRun(
     run.detail = await deps.execute(run, email);
     run.status = "succeeded";
   } catch (error) {
+    // The reason stays in the log (codes and the error's own words, never arguments or tokens):
+    // without it an uncertain run gave no clue why (2026-10-10: every tool call failed silently).
+    console.error(JSON.stringify({ event: "automation_action_failed", rule: run.rule.id, version: run.rule.version,
+      action: run.rule.action.type, refused: error instanceof ActionRejected, error: String(error instanceof Error ? error.message : error).slice(0, 200) }));
     run.status = error instanceof ActionRejected ? "failed" : "unknown";
     run.detail =
       error instanceof ActionRejected
