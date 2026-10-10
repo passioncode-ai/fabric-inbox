@@ -5,6 +5,28 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.14.0 — 2026-10-10
+
+- **Fabric Inbox for Windows and Linux.** The same app, for x64 and ARM64. Windows has an installer
+  for your account only, with no administrator rights; it adds `fabric-inbox://` links and removes
+  them when you uninstall. Linux has an AppImage and a `.deb` for Debian and Ubuntu, which adds a
+  `fabric-inbox` command. Windows and Linux menus are File, Edit, Account, View, Window and Help, and
+  a hub's Allow/Deny prompt flashes the taskbar entry.
+- **Windows installers are not Authenticode-signed yet.** SmartScreen warns once on first run.
+  Verify the installer with the signed `SHA256SUMS`, as the app does for every update.
+- **Updates on Windows and Linux.** The Windows app checks, downloads and verifies a new version,
+  then installs it when you quit, or at once with **Help → Restart to Install Update**. The AppImage
+  replaces itself with the verified new file. A copy installed from the `.deb` does not update
+  itself: install the next `.deb`, or use the AppImage.
+- **Your sign-in stays encrypted on Linux.** The app keeps it in the Secret Service (GNOME Keyring
+  or KWallet). Without one it does not start, rather than store your sign-in as plain text. On a
+  desktop other than GNOME or KDE, start it with `--password-store=gnome-libsecret`.
+- **Search finds long phrases.** A search longer than about 48 characters found nothing; it now
+  matches, and so does the address test that looks for its own message.
+- **A refused send says why.** When the provider refuses a message, the outbox and the address test
+  show the provider's reason instead of a code, with addresses and keys masked.
+- **Usage counts from a pre-release build are counted as test builds**, apart from releases.
+
 ## 0.13.0 — 2026-10-08
 
 - **Forwarding copies work again.** Since 0.8.2 no Cloudflare address had sent its copy to a
