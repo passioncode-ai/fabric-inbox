@@ -165,7 +165,7 @@ differs is the feed, the file and who installs it (PL-03):
 
 | Copy | Feed | Checked before install | Installed by |
 |---|---|---|---|
-| Windows, installed by the released installer | `update-win32-<arch>.json` | the signed `SHA256SUMS`, the feed, the installer's digest and size; the installer's `ProductVersion` is the announced version (PowerShell); once the running copy is Authenticode-signed, the update must be too, by PassionCode (PL-02) | the verified installer, copied to the cache's `pending-update` folder and run silently in update mode (`/S --updated`) as the app quits, or with `--force-run` on **Restart to Install Update** (Help menu) |
+| Windows, installed by the released installer | `update-win32-<arch>.json` | the signed `SHA256SUMS`, the feed, the installer's digest and size; the installer's `ProductVersion` is the announced version (PowerShell); once the running copy is Authenticode-signed, the update must be too: `Valid`, timestamped, and by the profile's signer `CN=Siarhei Sheleh, O=Siarhei Sheleh` (`WINDOWS_SIGNER`, PL-02) | the verified installer, copied to the cache's `pending-update` folder and run silently in update mode (`/S --updated`) as the app quits, or with `--force-run` on **Restart to Install Update** (Help menu) |
 | Linux AppImage | `update-linux-<arch>.json` | the signed `SHA256SUMS`, the feed, the AppImage's digest and size, and that it is an AppImage (ELF with the type-2 magic) | the app itself: the verified AppImage is copied beside the running AppImage file and renamed over it, so the running copy keeps its old file and the next start is the new version; **Restart to Install Update** starts the new file |
 | Linux `.deb` | none | — | never checks (`package_manager`): download the next `.deb`, or use the AppImage |
 | A build from source, `npm run desktop:win` / `desktop:linux` outside the release workflow | none | — | never checks (`no_feed`) |
@@ -174,8 +174,12 @@ A Windows copy started from somewhere other than its install folder (no `Uninsta
 Inbox.exe` beside it) does not update itself (`not_in_applications`; **Check for Updates…** says to
 install it with the installer). A copy whose folder this account cannot write is `not_replaceable`.
 
-**Authenticode (PL-02).** Windows installers are signed with Azure Artifact Signing in the release
-workflow once the organization's identity validation is complete and the release environment's
-`AZURE_SIGNING_ENABLED` is `true`; until then they are **unsigned** (SmartScreen warns on first
-run), their receipt says `windows_authenticode: NOT_SIGNED`, and the GPG-signed `SHA256SUMS` is
-what an installed copy trusts.
+**Authenticode (PL-02).** Windows files are signed with the organization's Azure Artifact Signing
+Public Trust profile `passioncode-public-trust` (active since 2026-10-10; its certificates read
+`CN=Siarhei Sheleh, O=Siarhei Sheleh` and live about three days, so every signature carries an RFC 3161
+timestamp) when the release environment's `AZURE_SIGNING_ENABLED` is `true` — its source of truth is
+passioncode-ai/.github `release-signing/products.json`. The app's own executables and DLLs are signed
+before the installer packs them, then the uninstaller and the installer; the release fails unless
+every one is `Valid`, timestamped and the profile's, and the receipt carries the per-file report.
+0.14.0 shipped **unsigned** (receipt `windows_authenticode: NOT_SIGNED`; SmartScreen warns on first
+run; the GPG-signed `SHA256SUMS` is what an installed copy trusts).

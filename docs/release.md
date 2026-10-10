@@ -17,20 +17,21 @@ build that is never published, attached to a release or uploaded to App Store Co
 | `gate` | none | On the tagged commit: the tag names the version every manifest carries (`vX.Y.Z` or `vX.Y.Z-rc.N`), the store build number is derived from it, then `npm test` and `npm run typecheck` |
 | `macos` | `release` | The Developer ID disk image (below) |
 | `mas` | `release` | The Mac App Store package, and its upload when publishing (below) |
-| `windows` | `release` | Per architecture (x64, arm64; both on `windows-latest`): `node desktop/dist-platform.mjs --platform win32` with `FABRIC_INBOX_RELEASE_BUILD=1` — the per-user NSIS installer, its receipt and `update-win32-<arch>.json` — then `check-update-release.mjs --before-signing --platform win32` on them. Authenticode through Azure Artifact Signing (OIDC) only when the environment's `AZURE_SIGNING_ENABLED` is `true` (below); otherwise the receipt says `windows_authenticode: NOT_SIGNED` |
+| `windows` | `release` | Per architecture (x64, arm64; both on `windows-latest`), with `FABRIC_INBOX_RELEASE_BUILD=1`: `dist-platform.mjs --stage app` assembles and hardens the app; when `AZURE_SIGNING_ENABLED` is `true`, passioncode-ai/.github `windows-signing@v1` signs its executables and DLLs (OIDC, Azure Artifact Signing), `windows-signing/login@v1` signs the job in for electron-builder, `--stage package` builds the installer (electron-builder signs the uninstaller and the installer) and `windows-signing/verify@v1` fails unless the installer is `Valid`, timestamped and `O=Siarhei Sheleh`'s; both reports go into the receipt. Then `check-update-release.mjs --before-signing --platform win32` (with `--require-authenticode` when signing). Off: the receipt says `windows_authenticode: NOT_SIGNED` |
+| `windows-smoke` | none | Each installer installed, launched with a throwaway profile and uninstalled on its own architecture (`windows-latest`, `windows-11-arm`): the arm64 one is cross-packaged on x64. `publish` waits for it |
 | `linux` | `release` | Per architecture on its own runner (`ubuntu-24.04`, `ubuntu-24.04-arm`): the AppImage, the `.deb`, the receipt and `update-linux-<arch>.json`, then the same pre-signing check with `--platform linux` |
 | `publish` | `release` (it holds the GPG key) | The organization's `release-publish.yml@v1`: attests every `release-*` file (Sigstore), writes `SHA256SUMS` and `SHA256SUMS.asc`, then creates the GitHub release with the notes of `## <version>` in [CHANGELOG.md](../CHANGELOG.md) |
 | `update-precheck` | none | Before `publish`, on macOS: the same script with `--before-signing` on the built `release-macos` files — the feed names this release's own zip, the zip has the feed's digest and size, the app inside is team `KJ35UYYL22`'s and this version — so a bad update stops the release before it is published; `publish` waits for it |
 | `update-check-platforms` | none | After `publish`, on `windows-latest` and `ubuntu-24.04`: the same verification of every `update-win32-*` and `update-linux-*` feed against the signed set, on the OS that reads it (the installer's version needs PowerShell) |
 | `update-check` | none | After `publish`, on macOS: `node scripts/check-update-release.mjs` runs the app's own update verification (`desktop/update-verify.cjs`) on the signed set — the rehearsal's `signed-release-<tag>` artifact or the published release's assets — so a feed naming another release's file, a digest the signature does not cover, or a zip whose app is not team `KJ35UYYL22`'s or not this version fails the run instead of every installed copy (LC-16). Checked by hand on 0.11.0: passes in 15 s; one changed byte in the zip fails with `zip_sha256` |
 
-`publish` waits for `gate`, `macos`, `update-precheck`, `windows` and `linux`: a release carries
+`publish` waits for `gate`, `macos`, `update-precheck`, `windows`, `windows-smoke` and `linux`: a release carries
 every platform's files or none. The store job does not hold the release back: a store upload Apple
 refuses fails the `mas` job alone. Windows and Linux are the organization's platform decisions
 (fabric-workspace `knowledge/platforms.md`, PL-01…PL-08); what an installed copy checks:
 [desktop-data-and-updates.md → Windows and Linux](desktop-data-and-updates.md#windows-and-linux).
 
-**An unsigned Windows build is said in the release notes.** Until Artifact Signing is switched on,
+**An unsigned Windows build is said in the release notes.** While Artifact Signing is off,
 the `## <version>` notes in `CHANGELOG.md` carry one line: "Windows installers are not
 Authenticode-signed yet; SmartScreen warns once. Verify them with `SHA256SUMS`."
 
@@ -207,12 +208,12 @@ per package and has no checked universal path; Intel Macs install the universal 
   Connect → Apps → + → New App, platform macOS, bundle id `ai.passioncode.fabric-inbox`, a name and
   SKU); until then every publishing run's `mas` job stops at the record check with that message, and
   the disk image is released without it.
-- **Windows signing (PL-02)**: the organization's Azure Artifact Signing account waits for
-  the organization's identity validation, which a person completes in the Azure portal. Then a
-  person sets the `release` environment's variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
-  `AZURE_SUBSCRIPTION_ID`, `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`,
-  `AZURE_CERTIFICATE_PROFILE` and `AZURE_SIGNING_ENABLED=true` (the same names as Fabric
-  Switchboard's release); no secret is stored, the job signs in over OIDC.
+- **Windows signing (PL-02)**: the profile `passioncode-public-trust` is active (2026-10-10). This
+  repository's identity is the Azure app `github-release-signing-fabric-inbox` (OIDC credential for
+  its `release` environment, signer role on `passioncodesigning`); no secret is stored. The switch
+  `AZURE_SIGNING_ENABLED` is set in passioncode-ai/.github `release-signing/products.json` and written
+  to the environment by `scripts/setup-release-env.py` (a variable flipped only in GitHub is switched
+  back). Renewing the identity validation and the profile is the operator's, in the Azure portal.
 - **Submitting for review**: an upload only makes a build appear under TestFlight. Submitting it
   for App Review is a person's action in App Store Connect.
 - **Rotating** the CI certificates or renewing the profile (it expires 2027-10-03) is the

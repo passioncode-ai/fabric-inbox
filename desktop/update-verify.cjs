@@ -42,6 +42,14 @@ function compareVersions(a, b) {
   return 0;
 }
 
+/**
+ * Who signs the Windows files: the organization's Azure Artifact Signing Public Trust profile
+ * (passioncode-public-trust) was validated for this person, so every certificate it issues reads
+ * CN=Siarhei Sheleh, O=Siarhei Sheleh. Its certificates live about three days, so a signature
+ * counts only with an RFC 3161 timestamp (passioncode-ai/.github release-signing/README.md).
+ */
+const WINDOWS_SIGNER = 'Siarhei Sheleh';
+
 /** The feed file a platform's release carries (PL-03): macOS keeps its name. */
 function feedNameFor(platform = 'darwin', arch = 'x64') {
   return platform === 'darwin' ? 'update-mac.json' : `update-${platform}-${arch}.json`;
@@ -141,7 +149,7 @@ function createVerifier(deps) {
 
   /**
    * Step 5 on Windows: the installer announces this version, and — when the running copy is signed —
-   * carries a valid Authenticode signature of the organization (PL-02).
+   * carries a valid, timestamped Authenticode signature by WINDOWS_SIGNER (PL-02).
    */
   async function inspectWindows(version, file) {
     const ps = `${process.env.SystemRoot || 'C:\\Windows'}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
@@ -154,10 +162,13 @@ function createVerifier(deps) {
     if (announced !== version && announced !== `${version}.0`) fail('signature_failed', 'version_mismatch', msg('The update\'s version is not the one its release announced.'));
     if (!requireAuthenticode) return;
     let verdict;
-    try { verdict = await run(`$s = Get-AuthenticodeSignature -LiteralPath '${literal}'; "$($s.Status)|$($s.SignerCertificate.Subject)"`); }
+    try { verdict = await run(`$s = Get-AuthenticodeSignature -LiteralPath '${literal}'; "$($s.Status)|$($s.SignerCertificate.Subject)|$([bool]$s.TimeStamperCertificate)"`); }
     catch (error) { fail('signature_failed', 'authenticode', String(error && error.message || error)); }
-    const [status, subject = ''] = verdict.split('|');
-    if (status !== 'Valid' || !/PassionCode/i.test(subject)) fail('signature_failed', 'authenticode', msg('The update is not signed by the organization.'));
+    const [status, subject = '', stamped = ''] = verdict.split('|');
+    const names = subject.split(/,\s*/);
+    if (status !== 'Valid' || !names.includes(`CN=${WINDOWS_SIGNER}`) || !names.includes(`O=${WINDOWS_SIGNER}`) || stamped !== 'True') {
+      fail('signature_failed', 'authenticode', msg('The update is not signed by the organization.'));
+    }
   }
 
   /** Step 5 on Linux: the file is an AppImage (ELF with the type-2 AppImage magic); the signed sums vouch for its bytes. */
@@ -241,4 +252,4 @@ function createVerifier(deps) {
   return { verify, clean, checkBuilt };
 }
 
-module.exports = { createVerifier, UpdateError, compareVersions, requirementFor, feedNameFor, TEAM };
+module.exports = { createVerifier, UpdateError, compareVersions, requirementFor, feedNameFor, TEAM, WINDOWS_SIGNER };
