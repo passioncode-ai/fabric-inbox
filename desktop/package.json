@@ -4,6 +4,12 @@
   "version": "0.13.0",
   "private": true,
   "description": "Fabric Inbox desktop mail client",
+  "homepage": "https://passioncode.ai/inbox",
+  "author": {
+    "name": "PassionCode.ai",
+    "email": "contact@passioncode.ai"
+  },
   "main": "main.cjs",
+  "desktopName": "fabric-inbox.desktop",
   "license": "AGPL-3.0-only OR LicenseRef-PassionCode-Commercial"
 }

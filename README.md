@@ -247,6 +247,35 @@ Other builds: `npm run desktop:package -- arm64` (unsigned folder build for deve
 `npm run desktop:mas` (Mac App Store packaging, built for release by the workflow;
 [docs/app-store/mas.md](docs/app-store/mas.md)).
 
+## Install on Windows or Linux
+
+The same app is built for Windows and Linux, x64 and ARM64 (fabric-workspace
+`knowledge/platforms.md`, PL-01…PL-08), from [`desktop/dist-platform.mjs`](desktop/dist-platform.mjs):
+
+| | File | How it installs | Updates |
+|---|---|---|---|
+| Windows | `Fabric-Inbox-<version>-win-<arch>-setup.exe` | for your account only, into `%LOCALAPPDATA%\Programs\fabric-inbox-desktop`, no administrator rights; registers `fabric-inbox://` links under `HKCU` | itself, like the Mac app: verified, then installed as you quit (**Help → Restart to Install Update** at once) |
+| Linux | `Fabric-Inbox-<version>-linux-<arch>.AppImage` | `chmod +x` it and run it | itself: the verified new AppImage replaces the file |
+| Debian, Ubuntu | `Fabric-Inbox-<version>-linux-<arch>.deb` | `sudo apt install ./Fabric-Inbox-…deb`; puts `fabric-inbox` on `PATH` and registers the links | not by itself: install the next `.deb`, or use the AppImage |
+
+On Linux the app keeps the sign-in's key in the Secret Service (GNOME Keyring or KWallet) and
+refuses to start without one rather than store it in plain text (PL-05). Windows installers are
+**unsigned** until the organization's Azure Artifact Signing identity is validated (PL-02):
+SmartScreen warns once, and each release's receipt says `windows_authenticode: NOT_SIGNED`; the
+GPG-signed `SHA256SUMS` covers every file. Where the profile, the log and the key live, and how an
+update is checked: [docs/desktop-data-and-updates.md → Windows and Linux](docs/desktop-data-and-updates.md#windows-and-linux).
+
+Build one yourself (unsigned, no update feed, for debugging):
+
+```sh
+npm run desktop:win -- --arch x64       # release/Fabric-Inbox-<version>-win-x64-setup.exe + .receipt.json + .sha256
+npm run desktop:linux -- --arch arm64   # release/Fabric-Inbox-<version>-linux-arm64.AppImage and .deb
+```
+
+Only committed files are packaged (as on the Mac). [`.github/workflows/platforms.yml`](.github/workflows/platforms.yml)
+builds all four (the Windows installers on Windows, the Linux packages on Linux) nightly and on a pull request that touches `desktop/`, installs each, and launches
+it with a throwaway profile ([`scripts/smoke-desktop.mjs`](scripts/smoke-desktop.mjs)).
+
 ## Deploy
 
 From the app: **Create my server on Cloudflare** (new) or **Fabric Inbox → Connect Cloudflare

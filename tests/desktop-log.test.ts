@@ -23,7 +23,7 @@ test("events are written in order as JSON lines with a timestamp", async () => {
     { ts: "2026-10-07T10:00:00.000Z", event: "auto_update", outcome: "off" },
   ]);
   assert.equal(echoed.length, 2);
-  assert.equal(statSync(path.join(dir, "fabric-inbox.log")).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal(statSync(path.join(dir, "fabric-inbox.log")).mode & 0o777, 0o600);
 });
 
 test("past 1 MB the file rolls over once; at most two files are kept", async () => {

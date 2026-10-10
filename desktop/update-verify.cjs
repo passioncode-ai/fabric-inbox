@@ -42,14 +42,25 @@ function compareVersions(a, b) {
   return 0;
 }
 
+/** The feed file a platform's release carries (PL-03): macOS keeps its name. */
+function feedNameFor(platform = 'darwin', arch = 'x64') {
+  return platform === 'darwin' ? 'update-mac.json' : `update-${platform}-${arch}.json`;
+}
+
 /**
- * deps: { repository, appVersion, appName ('Fabric Inbox'), zipName(version), runningApp (the
- *   .app path), dir (a cache folder this updater owns), fetch, exec(file, args) → { stdout },
- *   fs (node:fs/promises), createWriteStream, key (armored), fingerprint, team, log }
+ * deps: { repository, appVersion, appName ('Fabric Inbox'), zipName(version) — the release file
+ *   (the zip on macOS, the setup .exe on Windows, the AppImage on Linux), runningApp (the .app path
+ *   on macOS), dir (a cache folder this updater owns), fetch, exec(file, args) → { stdout },
+ *   fs (node:fs/promises), createWriteStream, key (armored), fingerprint, team, log,
+ *   platform ('darwin' | 'win32' | 'linux'), arch, requireAuthenticode (Windows: the running copy is
+ *   signed, so an update must be too — an unsigned interim release, PL-02, is trusted on the signed
+ *   SHA256SUMS alone) }
  */
 function createVerifier(deps) {
   const { repository, appVersion, appName, zipName, runningApp, dir, fetch, exec, fs, createWriteStream,
-    key, fingerprint = pgp.RELEASE_KEY_FINGERPRINT, team = TEAM, log = () => {} } = deps;
+    key, fingerprint = pgp.RELEASE_KEY_FINGERPRINT, team = TEAM, log = () => {},
+    platform = 'darwin', arch = 'x64', requireAuthenticode = false } = deps;
+  const feedName = feedNameFor(platform, arch);
   const releaseBase = (version) => `https://github.com/${repository}/releases/download/v${version}/`;
 
   async function bytes(url, code, reason) {
@@ -89,7 +100,7 @@ function createVerifier(deps) {
     let table;
     try { table = pgp.parseSums(sums.toString('utf8')); } catch (error) { fail('signature_failed', 'sums_invalid', error.message); }
     const feedDigest = crypto.createHash('sha256').update(feedBytes).digest('hex');
-    if (table.get('update-mac.json') !== feedDigest) fail('signature_failed', 'feed_not_signed', msg('The update feed is not the one this release signed.'));
+    if (table.get(feedName) !== feedDigest) fail('signature_failed', 'feed_not_signed', msg('The update feed is not the one this release signed.'));
     if (table.get(zipName(version)) !== update.sha256) fail('signature_failed', 'zip_not_signed', msg('The update\'s digest is not the one this release signed.'));
   }
 
@@ -128,8 +139,39 @@ function createVerifier(deps) {
     return String(stdout).trim();
   }
 
+  /**
+   * Step 5 on Windows: the installer announces this version, and — when the running copy is signed —
+   * carries a valid Authenticode signature of the organization (PL-02).
+   */
+  async function inspectWindows(version, file) {
+    const ps = `${process.env.SystemRoot || 'C:\\Windows'}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+    const run = async (command) => String((await exec(ps, ['-NoProfile', '-NonInteractive', '-Command', command])).stdout).trim();
+    const literal = file.replace(/'/g, "''");
+    let announced;
+    try { announced = await run(`(Get-Item -LiteralPath '${literal}').VersionInfo.ProductVersion`); }
+    catch (error) { fail('signature_failed', 'bundle_unreadable', String(error && error.message || error)); }
+    if (announced.replace(/\.0$/, '') !== version) fail('signature_failed', 'version_mismatch', msg('The update\'s version is not the one its release announced.'));
+    if (!requireAuthenticode) return;
+    let verdict;
+    try { verdict = await run(`$s = Get-AuthenticodeSignature -LiteralPath '${literal}'; "$($s.Status)|$($s.SignerCertificate.Subject)"`); }
+    catch (error) { fail('signature_failed', 'authenticode', String(error && error.message || error)); }
+    const [status, subject = ''] = verdict.split('|');
+    if (status !== 'Valid' || !/PassionCode/i.test(subject)) fail('signature_failed', 'authenticode', msg('The update is not signed by the organization.'));
+  }
+
+  /** Step 5 on Linux: the file is an AppImage (ELF with the type-2 AppImage magic); the signed sums vouch for its bytes. */
+  async function inspectLinux(file) {
+    let head;
+    try { const handle = await fs.open(file, 'r'); try { head = Buffer.alloc(11); await handle.read(head, 0, 11, 0); } finally { await handle.close(); } }
+    catch (error) { fail('signature_failed', 'bundle_unreadable', String(error && error.message || error)); }
+    const elf = head[0] === 0x7f && head[1] === 0x45 && head[2] === 0x4c && head[3] === 0x46;
+    if (!elf || head[8] !== 0x41 || head[9] !== 0x49 || head[10] !== 0x02) fail('signature_failed', 'not_appimage', msg('The update is not an AppImage.'));
+  }
+
   /** Step 5: the app inside, unpacked to a scratch folder that is removed again. */
   async function inspect(version, folder, file) {
+    if (platform === 'win32') return inspectWindows(version, file);
+    if (platform === 'linux') return inspectLinux(file);
     const unpacked = path.join(folder, 'unpacked');
     try { await exec('/usr/bin/ditto', ['-x', '-k', file, unpacked]); }
     catch (error) { fail('signature_failed', 'unpack', String(error && error.message || error)); }
@@ -161,6 +203,8 @@ function createVerifier(deps) {
     onDownload(offer.version, !!offer.migration);
     const { folder, file } = await download(offer.version, offer.update);
     await inspect(offer.version, folder, file);
+    // Windows and Linux: the verified file itself is what the installer step runs or puts in place.
+    if (platform !== 'darwin') return { outcome: 'verified', version: offer.version, localFeed: pathToFileURL(file).href, migration: offer.migration };
     const localFeed = path.join(folder, 'feed.json');
     const { version, update } = offer;
     await fs.writeFile(localFeed, JSON.stringify({ currentRelease: version, releases: [{ version, updateTo: {
@@ -196,4 +240,4 @@ function createVerifier(deps) {
   return { verify, clean, checkBuilt };
 }
 
-module.exports = { createVerifier, UpdateError, compareVersions, requirementFor, TEAM };
+module.exports = { createVerifier, UpdateError, compareVersions, requirementFor, feedNameFor, TEAM };

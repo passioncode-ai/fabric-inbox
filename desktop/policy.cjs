@@ -90,4 +90,17 @@ function isMailSender(event, mailWindow, config) {
   if (!mailWindow || mailWindow.isDestroyed() || !config || event.sender !== mailWindow.webContents || event.senderFrame !== mailWindow.webContents.mainFrame) return false;
   try { return new URL(event.senderFrame.url).origin === config.origin; } catch { return false; }
 }
-module.exports = { serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };
+/**
+ * PL-05 (fabric-workspace knowledge/platforms.md): the sign-in cookies are encrypted with the
+ * system's key store — Keychain, DPAPI, or on Linux the Secret Service (GNOME Keyring, KWallet).
+ * When Linux offers no Secret Service, Chromium falls back to `basic_text`, a fixed key: the
+ * session would sit on disk as good as plain. The app refuses to run then, saying why, instead of
+ * keeping a sign-in it cannot protect. Null when the store is fine.
+ */
+function keyStoreRefusal(platform, backend) {
+  if (platform !== 'linux') return null;
+  if (!backend || backend === 'unknown') return 'unknown';
+  return backend === 'basic_text' ? 'basic_text' : null;
+}
+
+module.exports = { keyStoreRefusal, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };

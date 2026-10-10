@@ -33,7 +33,7 @@ its server in your own Cloudflare account. It began as Cloudflare's
 |---|---|
 | Install | `npm ci` |
 | Test (the gate) | `npm test && npm run typecheck` |
-| Build | `npm run build` (disk image: `npm run desktop:dmg`) |
+| Build | `npm run build` (disk image: `npm run desktop:dmg`; Windows/Linux: `npm run desktop:win` / `desktop:linux`) |
 | MCP (register + proving call) | `npm run dev -- --port 5174 --host 127.0.0.1`, then `claude mcp add --transport http fabric-inbox-local http://127.0.0.1:5174/mcp` and call `list_accounts` (README → Quick start) |
 
 All the checks, from `README.md` ("Run locally", "Develop and test"):
@@ -173,6 +173,29 @@ signed release must create it without a prompt (`docs/release.md`, upgrade check
   are capped at 2 GB together; `npm run clean` (`scripts/clean.mjs`) removes them and keeps local
   Miniflare data (`.wrangler/state`), and an agent that built runs it before ending its run when
   they pass the cap (`du -shc build desktop/server-bundle .wrangler/tmp node_modules/.cache`).
+- **Windows and Linux (fabric-workspace knowledge/platforms.md PL-01…PL-08).** The same processes,
+  timers and budgets as the table above; what differs
+  ([docs/desktop-data-and-updates.md → Windows and Linux](docs/desktop-data-and-updates.md#windows-and-linux)):
+  the profile is `%APPDATA%\Fabric Inbox` / `~/.config/Fabric Inbox` with its log under `logs`; no
+  Keychain item — the cookie key is DPAPI on Windows and the Secret Service on Linux, where the app
+  refuses to start without one (PL-05, `key_store_refused`); the connect dialog flashes the taskbar
+  entry instead of bouncing the Dock, and the listener is looked up with `netstat` + `tasklist`
+  (Windows) or `ss`, else `/proc` (Linux), instead of `lsof`; an update is the verified NSIS
+  installer run once, detached, as the app quits (`/S --updated`: the one child that outlives the
+  app, by design) or the verified AppImage renamed over the running one; a `.deb` never checks.
+  `fabric-inbox://` is registered under `HKCU\Software\Classes` by the installer, and by the
+  `.desktop` entry on Linux. Menus: File, Edit, Account, View, Window, Help (`desktop/menu.cjs`).
+- **Where Inbox differs from Fabric Switchboard's reference port** (told to its owner): Electron
+  with electron-builder wrapping a prepackaged, fuse-hardened app, not Tauri; both Windows
+  installers are built on `windows-latest` because workerd has no Windows ARM64 binary, and the
+  arm64 one is installed and launched on `windows-11-arm`; the Windows runner runs the desktop
+  tests except `desktop-profile` and `desktop-policy` (they drive `main.cjs` with POSIX fixture
+  paths; Linux runs the whole suite); the verified installer is copied out of the verifier's cache
+  into `pending-update` because that cache is cleaned once an update is handed over; checkouts are
+  LF on every OS (`.gitattributes`), since signed fixtures and source-reading tests compare bytes;
+  the arm64 installer's payload is packed with the BCJ filter (`installerFilter` in
+  `desktop/dist-platform.mjs`), because NSIS's unpacker skips files under 7-Zip's own ARM64 filter;
+  the `.deb` installs to `/opt/fabric-inbox`, since Chromium's zygote cannot start from a path with a space.
 - **Not decided: notifications (F2).** The app shows no new-mail notification, open or closed: every
   permission is denied (`desktop/main.cjs` `rejectPermissions`). Whether a mail client should notify,
   and through what server signal, is the operator's decision (board B-41).

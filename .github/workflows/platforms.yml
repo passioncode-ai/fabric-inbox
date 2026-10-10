@@ -1,0 +1,173 @@
+# Windows and Linux builds of the desktop app, unsigned (fabric-workspace knowledge/platforms.md
+# PL-08: the release jobs' mirror, without the release environment). Each runner: the test suite,
+# the build (desktop/dist-platform.mjs), an install where the OS has one, and a smoke launch with a
+# throwaway profile (scripts/smoke-desktop.mjs). Nightly, by hand, and on a pull request that touches
+# the desktop app — not after every push.
+name: platforms
+
+on:
+  schedule:
+    - cron: "15 21 * * *"   # 23:15 Europe/Warsaw (summer), beside the nightly hosted checks
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "desktop/**"
+      - "scripts/smoke-desktop.mjs"
+      - "scripts/make-icon.mjs"
+      - ".github/workflows/platforms.yml"
+
+concurrency:
+  group: platforms-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: linux-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, arch: x64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64 }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: System packages (Secret Service, display, AppImage runtime)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gnome-keyring dbus-x11 xvfb libsecret-1-0 libgtk-3-0 libnss3 libxss1 libasound2t64 xdg-utils libfuse2t64 desktop-file-utils
+      - run: npm ci
+      - name: Tests
+        run: npm test
+      - name: Build AppImage and .deb
+        run: node desktop/dist-platform.mjs --platform linux --arch ${{ matrix.arch }} --out release
+      - name: Install the .deb
+        run: |
+          sudo apt-get install -y -q ./release/Fabric-Inbox-*-linux-${{ matrix.arch }}.deb
+          namei -l /usr/bin/fabric-inbox
+          test -L /usr/bin/fabric-inbox && test -x /usr/bin/fabric-inbox
+          desktop-file-validate /usr/share/applications/fabric-inbox.desktop
+          grep -q '^MimeType=x-scheme-handler/fabric-inbox;' /usr/share/applications/fabric-inbox.desktop
+      - name: Smoke — installed .deb, with an unlocked Secret Service
+        # Chromium picks the Secret Service from the desktop session; xvfb has none, so name GNOME.
+        env:
+          XDG_CURRENT_DESKTOP: GNOME
+        run: |
+          dbus-run-session -- bash -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null && \
+            xvfb-run -a node scripts/smoke-desktop.mjs --exe /usr/bin/fabric-inbox --timeout 120'
+      - name: Smoke — AppImage
+        # Chromium picks the Secret Service from the desktop session; xvfb has none, so name GNOME.
+        env:
+          XDG_CURRENT_DESKTOP: GNOME
+        run: |
+          chmod +x release/Fabric-Inbox-*-linux-${{ matrix.arch }}.AppImage
+          dbus-run-session -- bash -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null && \
+            xvfb-run -a node scripts/smoke-desktop.mjs --exe "$(ls release/Fabric-Inbox-*-linux-${{ matrix.arch }}.AppImage)" --timeout 120'
+      - name: Refused without a Secret Service (PL-05)
+        run: |
+          set +e
+          xvfb-run -a node scripts/smoke-desktop.mjs --exe /usr/bin/fabric-inbox --timeout 60 > refused.json 2>&1
+          status=$?
+          cat refused.json
+          test $status -ne 0 && grep -q 'no system key store' refused.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fabric-inbox-linux-${{ matrix.arch }}
+          path: release/Fabric-Inbox-*
+          retention-days: 7
+
+  # Both Windows builds are made on x64: workerd (the Worker tests' runtime) has no Windows ARM64
+  # binary, and electron-builder cross-builds the arm64 installer. Each is then installed and
+  # launched on its own architecture (windows-check).
+  windows-build:
+    name: windows-build-${{ matrix.arch }}
+    runs-on: windows-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # The desktop app's tests. The rest of the suite (the Worker, the web app, and the two desktop
+      # tests that drive main.cjs with POSIX fixture paths) runs on Linux above.
+      - name: Desktop tests
+        if: matrix.arch == 'x64'
+        run: node --import tsx --test $(ls tests/desktop-*.test.ts | grep -v -e desktop-profile -e desktop-policy)
+      - name: Build the NSIS installer (unsigned)
+        run: node desktop/dist-platform.mjs --platform win32 --arch ${{ matrix.arch }} --out release
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fabric-inbox-windows-${{ matrix.arch }}
+          path: release/Fabric-Inbox-*
+          retention-days: 7
+
+  windows-check:
+    name: windows-${{ matrix.arch }}
+    needs: windows-build
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, arch: x64 }
+          - { runner: windows-11-arm, arch: arm64 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fabric-inbox-windows-${{ matrix.arch }}
+          path: release
+      - name: Install per user, silently
+        run: |
+          installer="$(ls release/Fabric-Inbox-*-win-${{ matrix.arch }}-setup.exe)"
+          # electron-builder's NSIS stub is x86 (emulated on ARM64); bounded, and its outcome printed.
+          set +e; timeout 600 "$installer" //S; code=$?; set -e
+          echo "installer exit $code"; ls -la "$LOCALAPPDATA/Programs" || true
+          find "$LOCALAPPDATA/Programs" -maxdepth 2 | head -40 || true
+          for i in $(seq 1 30); do exe="$(find "$LOCALAPPDATA/Programs" -name 'Fabric Inbox.exe' 2>/dev/null | head -1)"; [ -n "$exe" ] && break; sleep 2; done
+          test -n "$exe" && echo "EXE=$exe" >> "$GITHUB_ENV"
+          test -f "$(dirname "$exe")/Uninstall Fabric Inbox.exe"
+          reg query 'HKCU\Software\Classes\fabric-inbox' //v 'URL Protocol'
+          reg query 'HKCU\Software\Classes\fabric-inbox\shell\open\command'
+      - name: If the install failed — what Defender did, and what the installer carries
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-MpComputerStatus | Select-Object AMRunningMode, RealTimeProtectionEnabled, IsTamperProtected | Format-List
+          Get-MpThreatDetection | Select-Object -First 20 InitialDetectionTime, ThreatID, ActionSuccess, Resources | Format-List
+          $setup = (Get-ChildItem release -Filter '*-setup.exe').FullName
+          $7z = (Get-Command 7z -ErrorAction SilentlyContinue).Source
+          if ($7z) { & $7z l $setup | Select-Object -Last 15 } else { 'no 7z on this runner' }
+      - name: Smoke — installed app (scripts/smoke-desktop.mjs needs no dependencies)
+        run: node scripts/smoke-desktop.mjs --exe "$EXE" --timeout 120
+      - name: Uninstall removes the link registration
+        run: |
+          uninstaller="$(dirname "$EXE")/Uninstall Fabric Inbox.exe"
+          "$uninstaller" //S
+          # The uninstaller is x86 NSIS too: under emulation on ARM64 it takes minutes (the install took ~4).
+          for i in $(seq 1 120); do reg query 'HKCU\Software\Classes\fabric-inbox' >/dev/null 2>&1 || { echo "removed after $((i*5)) s"; exit 0; }; sleep 5; done
+          echo "HKCU\\Software\\Classes\\fabric-inbox is still there after uninstall"; exit 1

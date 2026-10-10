@@ -103,3 +103,12 @@ test("npm run clean removes the build caches, not local data or releases", async
   const { readFileSync } = await import("node:fs");
   assert.equal(JSON.parse(readFileSync("package.json", "utf8")).scripts.clean, "node scripts/clean.mjs");
 });
+
+test("Windows and Linux builds are release artefacts of their version too; their receipts stay", () => {
+  const platform = (v: string) => [`Fabric-Inbox-${v}-win-x64-setup.exe`, `Fabric-Inbox-${v}-win-x64.sha256`, `Fabric-Inbox-${v}-win-x64.receipt.json`,
+    `Fabric-Inbox-${v}-linux-arm64.AppImage`, `Fabric-Inbox-${v}-linux-arm64.deb`, `Fabric-Inbox-${v}-linux-arm64.sha256`, `update-linux-arm64.json`];
+  const plan = planReleasePrune([...platform("0.12.0"), ...platform("0.13.0"), ...platform("0.14.0")], { current: "0.14.0" });
+  assert.deepEqual(plan.remove.sort(), ["Fabric-Inbox-0.12.0-linux-arm64.AppImage", "Fabric-Inbox-0.12.0-linux-arm64.deb", "Fabric-Inbox-0.12.0-linux-arm64.sha256",
+    "Fabric-Inbox-0.12.0-win-x64-setup.exe", "Fabric-Inbox-0.12.0-win-x64.sha256"]);
+  assert.match(readFileSync("desktop/dist-platform.mjs", "utf8"), /receipt\.prunedFromRelease = pruneReleases\(args\.out, \{ current: version \}\)/);
+});

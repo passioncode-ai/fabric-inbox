@@ -72,10 +72,14 @@ function promptFor(request, config, listener) {
 }
 
 /**
- * Who listens on a loopback port: { pid, name, path } — the .app bundle's name when the
- * executable lives in one, else the command — or null when nothing does (lsof exits 1).
+ * Who listens on a loopback port: { pid, name, path } — the app's name (the .app bundle on macOS,
+ * the executable on Windows and Linux) — or null when nothing does. One way per platform, each
+ * with tools the system ships: lsof and ps (macOS); netstat, tasklist and PowerShell (Windows);
+ * ss, or /proc when ss is missing (Linux). `exec(file, args)` and `fs` are injected for tests.
  */
-function listenerWith(exec) {
+function listenerWith(exec, platform = process.platform, fs = require('node:fs/promises')) {
+  if (platform === 'win32') return windowsListener(exec);
+  if (platform === 'linux') return linuxListener(exec, fs);
   return async (port) => {
     let found;
     try { found = String((await exec('/usr/sbin/lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-Fpc'])).stdout); } catch { return null; }
@@ -86,6 +90,83 @@ function listenerWith(exec) {
     try { path = String((await exec('/bin/ps', ['-o', 'comm=', '-p', String(pid)])).stdout).trim(); } catch { path = ''; }
     const bundle = /\/([^/]+)\.app\/Contents\/MacOS\//.exec(path);
     return { pid, name: bundle ? bundle[1] : command || path.split('/').pop() || `pid ${pid}`, path };
+  };
+}
+
+const system32 = (tool) => `${process.env.SystemRoot || 'C:\\Windows'}\\System32\\${tool}`;
+
+/** Windows: the LISTENING row for 127.0.0.1/[::1]:port in netstat, then the process's name and path. */
+function windowsListener(exec) {
+  return async (port) => {
+    let rows;
+    try { rows = String((await exec(system32('netstat.exe'), ['-ano', '-p', 'TCP'])).stdout); } catch { return null; }
+    let pid = 0;
+    for (const line of rows.split(/\r?\n/)) {
+      const m = /^\s*TCP\s+(\S+):(\d+)\s+\S+\s+LISTENING\s+(\d+)\s*$/i.exec(line);
+      if (m && Number(m[2]) === port && /^(127\.0\.0\.1|0\.0\.0\.0|\[::1?\])$/.test(m[1])) { pid = Number(m[3]); break; }
+    }
+    if (!pid) return null;
+    let image = '';
+    try {
+      const csv = String((await exec(system32('tasklist.exe'), ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'])).stdout).trim();
+      image = (/^"([^"]+)"/.exec(csv) || [])[1] || '';
+    } catch { image = ''; }
+    let path = '';
+    try {
+      path = String((await exec(system32('WindowsPowerShell\\v1.0\\powershell.exe'),
+        ['-NoProfile', '-NonInteractive', '-Command', `(Get-Process -Id ${pid}).Path`])).stdout).trim();
+    } catch { path = ''; }
+    const file = (path.split('\\').pop() || image).replace(/\.exe$/i, '');
+    return { pid, name: file || `pid ${pid}`, path };
+  };
+}
+
+/** Linux: ss names the listening process; without ss, /proc/net/tcp{,6} and the processes' fds do. */
+function linuxListener(exec, fs) {
+  const exeOf = async (pid) => { try { return await fs.readlink(`/proc/${pid}/exe`); } catch { return ''; } };
+  const viaProc = async (port) => {
+    const hex = port.toString(16).toUpperCase().padStart(4, '0');
+    const inodes = new Set();
+    for (const table of ['/proc/net/tcp', '/proc/net/tcp6']) {
+      let text = '';
+      try { text = await fs.readFile(table, 'utf8'); } catch { continue; }
+      for (const line of text.split('\n').slice(1)) {
+        const f = line.trim().split(/\s+/);
+        // local address is "ADDR:PORT" in hex; state 0A is LISTEN; inode is the 10th field.
+        if (f.length > 9 && f[1].endsWith(`:${hex}`) && f[3] === '0A') inodes.add(f[9]);
+      }
+    }
+    if (!inodes.size) return null;
+    let pids = [];
+    try { pids = (await fs.readdir('/proc')).filter((d) => /^\d+$/.test(d)); } catch { return null; }
+    for (const pid of pids) {
+      let fds = [];
+      try { fds = await fs.readdir(`/proc/${pid}/fd`); } catch { continue; }
+      for (const fd of fds) {
+        let target = '';
+        try { target = await fs.readlink(`/proc/${pid}/fd/${fd}`); } catch { continue; }
+        const m = /^socket:\[(\d+)\]$/.exec(target);
+        if (m && inodes.has(m[1])) {
+          let comm = '';
+          try { comm = (await fs.readFile(`/proc/${pid}/comm`, 'utf8')).trim(); } catch { comm = ''; }
+          return { pid: Number(pid), comm };
+        }
+      }
+    }
+    return null;
+  };
+  return async (port) => {
+    let hit = null;
+    try {
+      const out = String((await exec('ss', ['-Hltnp', `sport = :${port}`])).stdout);
+      const m = /users:\(\("([^"]+)",pid=(\d+)/.exec(out);
+      if (m) hit = { pid: Number(m[2]), comm: m[1] };
+      else if (!out.trim()) return null; // ss answered: nothing listens
+    } catch { hit = null; }
+    if (!hit) hit = await viaProc(port);
+    if (!hit) return null;
+    const path = await exeOf(hit.pid);
+    return { pid: hit.pid, name: path.split('/').pop() || hit.comm || `pid ${hit.pid}`, path };
   };
 }
 
@@ -107,8 +188,14 @@ function attendWith(app, platform = process.platform) {
     try { if (typeof app.focus === 'function') app.focus(platform === 'darwin' ? { steal: true } : undefined); } catch { /* best effort */ }
     let bounce = null;
     try { if (app.dock && typeof app.dock.bounce === 'function') bounce = app.dock.bounce('critical'); } catch { bounce = null; }
+    // Windows and Linux have no Dock: the taskbar entry flashes until the prompt is answered.
+    let flashing = false;
+    if (platform !== 'darwin') {
+      try { if (win && !win.isDestroyed() && typeof win.flashFrame === 'function') { win.flashFrame(true); flashing = true; } } catch { flashing = false; }
+    }
     return () => {
       try { if (bounce !== null && bounce !== undefined && app.dock && typeof app.dock.cancelBounce === 'function') app.dock.cancelBounce(bounce); } catch { /* already stopped */ }
+      try { if (flashing && win && !win.isDestroyed()) win.flashFrame(false); } catch { /* window gone */ }
     };
   };
 }

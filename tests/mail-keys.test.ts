@@ -100,6 +100,6 @@ test("the workbench listens once on the window, gives the keyboard to an open di
   assert.match(code, /if \(marked\.size\) return order\.filter\(\(m\) => marked\.has\(m\.id\)\);/, "a multi-selection is acted on whole, in the order shown");
   assert.match(code, /else if \(action === "undo"\) void undoLast\(\);/);
   // ⌘R stays the desktop menu's Retry connection; Refresh has its own key.
-  assert.match(readFileSync("desktop/main.cjs", "utf8"), /label: t\('Retry connection'\), accelerator: 'CmdOrCtrl\+R'/);
-  assert.doesNotMatch(readFileSync("desktop/main.cjs", "utf8"), /CmdOrCtrl\+Shift\+N/);
+  assert.match(readFileSync("desktop/menu.cjs", "utf8"), /label: t\('Retry connection'\), accelerator: 'CmdOrCtrl\+R'/);
+  assert.doesNotMatch(readFileSync("desktop/main.cjs", "utf8") + readFileSync("desktop/menu.cjs", "utf8"), /CmdOrCtrl\+Shift\+N/);
 });

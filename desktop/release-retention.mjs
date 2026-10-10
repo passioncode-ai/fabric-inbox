@@ -3,8 +3,9 @@
 // (raw/fabric-inbox.md §4, F8). The builders call pruneReleases after a successful build, so the
 // folder never grows past two releases; nobody has to remember a cleanup.
 //
-// Release artefacts: `Fabric-Inbox-<version>[-<variant>].dmg` and its `.dmg.sha256`, grouped by
-// version (a personal `-owner` image and an `-unsigned` one belong to their version), and store
+// Release artefacts: `Fabric-Inbox-<version>[-<variant>].dmg` and its `.dmg.sha256`, and the
+// Windows and Linux builds (`-win-<arch>-setup.exe`, `-linux-<arch>.AppImage` and `.deb`, their
+// `.sha256`), grouped by version (a personal `-owner` image and an `-unsigned` one belong to their version), and store
 // build folders `mas-<mode>-<arch>-<build>-<revision>`, kept per mode (a development build never
 // removes the distribution package that was uploaded). Receipts (`*.receipt.json`) are small and
 // stay as the record of what was built: a store folder's `build-receipt.json` is moved out to
@@ -13,7 +14,7 @@
 import { existsSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
-const IMAGE = /^Fabric-Inbox-(\d+\.\d+\.\d+)(?:-[a-z0-9-]+)?\.dmg(?:\.sha256)?$/;
+const IMAGE = /^Fabric-Inbox-(\d+\.\d+\.\d+)(?:-[a-z0-9-]+)?\.(?:dmg(?:\.sha256)?|exe|AppImage|deb|sha256)$/;
 const STORE = /^mas-(development|distribution)-(?:arm64|x64)-(\d+(?:\.\d+){0,2})-[0-9a-f]{12}$/;
 
 /** Compares dotted numeric versions: negative, zero or positive. */

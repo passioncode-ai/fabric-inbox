@@ -34,6 +34,8 @@
 		"desktop:package": "node desktop/package.mjs",
 		"desktop:mas": "node desktop/mas-package.mjs",
 		"desktop:dmg": "node desktop/dist-mac.mjs",
+		"desktop:win": "node desktop/dist-platform.mjs --platform win32",
+		"desktop:linux": "node desktop/dist-platform.mjs --platform linux",
 		"desktop:server-bundle": "npm run build && node scripts/server-bundle.mjs",
 		"mcp:docs": "node --import tsx scripts/mcp-docs.ts",
 		"clean": "node scripts/clean.mjs"
@@ -115,6 +117,7 @@
 		"@types/react-dom": "^19.1.2",
 		"blake3-wasm": "2.1.5",
 		"electron": "^44.4.5",
+		"electron-builder": "26.15.3",
 		"esbuild": "^0.25.12",
 		"miniflare": "^4.20260312.1",
 		"plist": "3.1.1",
