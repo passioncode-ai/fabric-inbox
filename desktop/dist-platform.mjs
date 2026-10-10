@@ -113,6 +113,9 @@ export function builderConfig({ platform, version, arch, signing }) {
   };
 }
 
+/** The 7z filter for the Windows installer's payload: BCJ for arm64 (nsis7z has no ARM64 filter), else 7-Zip's own choice. */
+export function installerFilter(arch) { return arch === 'arm64' ? 'BCJ' : undefined; }
+
 /** Azure Artifact Signing from the release environment (PL-02), or null: then NOT_SIGNED. */
 export function windowsSigning(env) {
   const endpoint = String(env.AZURE_SIGNING_ENDPOINT || '').trim();
@@ -163,6 +166,10 @@ async function build(args) {
 
     const builder = await import('electron-builder');
     const signing = platform === 'win32' ? windowsSigning(process.env) : null;
+    // 7-Zip picks its ARM64 filter for arm64 executables on its own; the installer's NSIS unpacker
+    // (nsis7z) cannot decode it and silently skipped every .exe and .dll (CI run 38007825102: the
+    // install left only data files). BCJ is a filter nsis7z reads.
+    if (platform === 'win32' && arch === 'arm64') process.env.ELECTRON_BUILDER_7Z_FILTER = installerFilter(arch);
     const outDir = path.join(temp, 'artifacts');
     const produced = await builder.build({
       prepackaged: appDir, projectDir: source,

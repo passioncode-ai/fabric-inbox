@@ -192,7 +192,10 @@ signed release must create it without a prompt (`docs/release.md`, upgrade check
   tests except `desktop-profile` and `desktop-policy` (they drive `main.cjs` with POSIX fixture
   paths; Linux runs the whole suite); the verified installer is copied out of the verifier's cache
   into `pending-update` because that cache is cleaned once an update is handed over; checkouts are
-  LF on every OS (`.gitattributes`), since signed fixtures and source-reading tests compare bytes.
+  LF on every OS (`.gitattributes`), since signed fixtures and source-reading tests compare bytes;
+  the arm64 installer's payload is packed with the BCJ filter (`installerFilter` in
+  `desktop/dist-platform.mjs`), because NSIS's unpacker skips files under 7-Zip's own ARM64 filter;
+  the `.deb` installs to `/opt/fabric-inbox`, since Chromium's zygote cannot start from a path with a space.
 - **Not decided: notifications (F2).** The app shows no new-mail notification, open or closed: every
   permission is denied (`desktop/main.cjs` `rejectPermissions`). Whether a mail client should notify,
   and through what server signal, is the operator's decision (board B-41).

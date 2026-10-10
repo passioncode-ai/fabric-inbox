@@ -20,6 +20,10 @@ test("Windows: a per-user NSIS installer that registers fabric-inbox:// in HKCU 
   assert.match(c.nsis.include, /desktop[\\/]windows[\\/]installer\.nsh$/);
   assert.equal(c.win.azureSignOptions, undefined, "no signing configured: built NOT_SIGNED");
   assert.equal(c.artifactName, "Fabric-Inbox-0.14.0-win-arm64-setup.${ext}", "our arch names, as the feed and the workflow expect");
+  const { installerFilter } = await load();
+  assert.equal(installerFilter("arm64"), "BCJ", "nsis7z cannot decode 7-Zip's ARM64 filter: the .exe and .dll files were skipped");
+  assert.equal(installerFilter("x64"), undefined);
+  assert.match(readFileSync("desktop/dist-platform.mjs", "utf8"), /if \(platform === 'win32' && arch === 'arm64'\) process\.env\.ELECTRON_BUILDER_7Z_FILTER = installerFilter\(arch\);/);
   const nsh = readFileSync("desktop/windows/installer.nsh", "utf8");
   assert.match(nsh, /WriteRegStr HKCU "Software\\Classes\\fabric-inbox" "URL Protocol" ""/);
   assert.match(nsh, /DeleteRegKey HKCU "Software\\Classes\\fabric-inbox"/);
