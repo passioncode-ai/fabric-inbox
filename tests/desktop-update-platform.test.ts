@@ -75,11 +75,15 @@ test("Windows: the signed installer is downloaded, its version read, and handed 
   assert.deepEqual(readFileSync(fileURLToPath(out.localFeed)), h.files.get(`${BASE}${FILES.win32}`), "the very bytes that were checked");
 });
 
-test("Windows: a signed running copy accepts only an installer signed by the organization", async () => {
-  const ok = harness("win32", { requireAuthenticode: true, authenticode: "Valid|CN=PassionCode.ai, O=PassionCode.ai" });
+test("Windows: a signed running copy accepts only a timestamped installer signed by the profile's signer", async () => {
+  // The Public Trust profile's certificates read exactly this subject (Azure, 2026-10-10) and live
+  // about three days: without a timestamp a signature stops validating with its certificate.
+  const SUBJECT = "CN=Siarhei Sheleh, O=Siarhei Sheleh, L=Warsaw, S=Mazowieckie, C=PL";
+  const ok = harness("win32", { requireAuthenticode: true, authenticode: `Valid|${SUBJECT}|True` });
   assert.equal((await ok.verifier.verify(ok.feed)).outcome, "verified");
   assert.deepEqual(ok.calls.slice(-2), ["powershell.exe version", "powershell.exe authenticode"]);
-  for (const authenticode of ["NotSigned|", "Valid|CN=Someone Else", "HashMismatch|CN=PassionCode.ai"]) {
+  for (const authenticode of ["NotSigned||False", `Valid|${SUBJECT}|False`, "Valid|CN=Someone Else, O=Someone Else|True",
+    "Valid|CN=Siarhei Sheleh Impostor, O=Other|True", `HashMismatch|${SUBJECT}|True`, "Valid|CN=PassionCode.ai, O=PassionCode.ai|True"]) {
     const h = harness("win32", { requireAuthenticode: true, authenticode });
     await refusal(h.verifier.verify(h.feed), "signature_failed", "authenticode");
   }

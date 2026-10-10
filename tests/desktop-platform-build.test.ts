@@ -4,9 +4,11 @@ import { readFileSync } from "node:fs";
 
 const load = () => import("../desktop/dist-platform.mjs");
 
-test("arguments: a platform and an architecture, nothing else", async () => {
+test("arguments: a platform, an architecture and a stage, nothing else", async () => {
   const { parsePlatformArgs } = await load();
-  assert.deepEqual({ ...parsePlatformArgs(["--platform", "win32", "--arch", "arm64"]), out: "" }, { platform: "win32", arch: "arm64", out: "" });
+  assert.deepEqual({ ...parsePlatformArgs(["--platform", "win32", "--arch", "arm64"]), out: "" }, { platform: "win32", arch: "arm64", out: "", stage: "all" });
+  assert.equal(parsePlatformArgs(["--platform", "win32", "--stage", "app"]).stage, "app", "the release job signs the app between --stage app and --stage package");
+  assert.throws(() => parsePlatformArgs(["--platform", "win32", "--stage", "sign"]), /--stage must be/);
   assert.equal(parsePlatformArgs(["--platform=linux", "--arch=x64"]).platform, "linux");
   assert.throws(() => parsePlatformArgs(["--platform", "darwin"]), /--platform must be/);
   assert.throws(() => parsePlatformArgs(["--platform", "linux", "--arch", "ia32"]), /--arch must be/);
@@ -54,7 +56,7 @@ test("Windows signing only with all three Azure Artifact Signing values; a feed 
   assert.equal(windowsSigning({}), null);
   assert.equal(windowsSigning({ AZURE_SIGNING_ENDPOINT: "https://weu.codesigning.azure.net", AZURE_SIGNING_ACCOUNT: "passioncodesigning" }), null);
   assert.deepEqual(windowsSigning({ AZURE_SIGNING_ENDPOINT: "https://weu.codesigning.azure.net", AZURE_SIGNING_ACCOUNT: "passioncodesigning", AZURE_SIGNING_PROFILE: "public" }),
-    { endpoint: "https://weu.codesigning.azure.net", codeSigningAccountName: "passioncodesigning", certificateProfileName: "public", publisherName: "PassionCode" });
+    { endpoint: "https://weu.codesigning.azure.net", codeSigningAccountName: "passioncodesigning", certificateProfileName: "public", publisherName: "Siarhei Sheleh" });
   assert.equal(platformFeed({}, "linux", "x64"), null);
   assert.equal(platformFeed({ GITHUB_ACTIONS: "true", GITHUB_REPOSITORY: "o/r" }, "linux", "x64"), null, "a nightly mirror is not a release build");
   assert.deepEqual(platformFeed({ GITHUB_ACTIONS: "true", GITHUB_REPOSITORY: "passioncode-ai/fabric-inbox", FABRIC_INBOX_RELEASE_BUILD: "1" }, "win32", "arm64"),

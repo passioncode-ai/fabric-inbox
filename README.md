@@ -259,10 +259,11 @@ The same app is built for Windows and Linux, x64 and ARM64 (fabric-workspace
 | Debian, Ubuntu | `Fabric-Inbox-<version>-linux-<arch>.deb` | `sudo apt install ./Fabric-Inbox-…deb`; puts `fabric-inbox` on `PATH` and registers the links | not by itself: install the next `.deb`, or use the AppImage |
 
 On Linux the app keeps the sign-in's key in the Secret Service (GNOME Keyring or KWallet) and
-refuses to start without one rather than store it in plain text (PL-05). Windows installers are
-**unsigned** until the organization's Azure Artifact Signing identity is validated (PL-02):
-SmartScreen warns once, and each release's receipt says `windows_authenticode: NOT_SIGNED`; the
-GPG-signed `SHA256SUMS` covers every file. Where the profile, the log and the key live, and how an
+refuses to start without one rather than store it in plain text (PL-05). Windows files are
+Authenticode-signed through the organization's Azure Artifact Signing profile when the release's
+switch is on (PL-02), and each receipt then lists every signature; 0.14.0's installers are
+**unsigned** (SmartScreen warns once; the receipt says `windows_authenticode: NOT_SIGNED`). The
+GPG-signed `SHA256SUMS` covers every file either way. Where the profile, the log and the key live, and how an
 update is checked: [docs/desktop-data-and-updates.md → Windows and Linux](docs/desktop-data-and-updates.md#windows-and-linux).
 
 Build one yourself (unsigned, no update feed, for debugging):

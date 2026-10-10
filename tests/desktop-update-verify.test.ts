@@ -201,7 +201,14 @@ test("before signing, the release gate checks the built feed and zip, and publis
   await fsPromises.writeFile(path.join(built, ZIP), zip);
   await assert.rejects(checkRelease({ dir: built, version: "0.12.0", exec, beforeSigning: true }), (e: any) => e.reason === "zip_sha256");
   const workflow = readFileSync(".github/workflows/release.yml", "utf8");
-  assert.match(workflow, /publish:\n    needs: \[gate, macos, update-precheck, windows, linux\]/);
+  assert.match(workflow, /publish:\n    needs: \[gate, macos, update-precheck, windows, windows-smoke, linux\]/, "publish waits for the arm64 installer launched on windows-11-arm");
+  // Windows signing through the organization's shared actions (passioncode-ai/.github v1, PL-10):
+  // the app's files before packing, the sign-in for electron-builder, and the verification after.
+  for (const action of ["windows-signing@v1", "windows-signing/login@v1", "windows-signing/verify@v1"]) {
+    assert.ok(workflow.includes(`uses: passioncode-ai/.github/actions/${action}`), action);
+  }
+  assert.ok(!/uses: azure\/login@/.test(workflow), "no inline azure/login: the shared login action owns it");
+  assert.match(workflow, /--stage app[\s\S]*windows-signing@v1[\s\S]*--stage package[\s\S]*windows-signing\/verify@v1/, "sign the app, then pack, then verify");
   for (const platform of ["win32", "linux"]) {
     assert.match(workflow, new RegExp(`check-update-release\\.mjs --before-signing --platform ${platform} --arch \\$\\{\\{ matrix\\.arch \\}\\} --dir release`), `${platform} feeds are checked before signing`);
   }
