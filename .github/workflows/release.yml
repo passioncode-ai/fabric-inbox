@@ -249,13 +249,29 @@ jobs:
           FABRIC_INBOX_ANALYTICS_APP_KEY: ${{ secrets.FABRIC_INBOX_ANALYTICS_APP_KEY }}
           FABRIC_INBOX_ANALYTICS_HOST: ${{ vars.FABRIC_INBOX_ANALYTICS_HOST }}
         run: node desktop/dist-platform.mjs --platform win32 --arch ${{ matrix.arch }} --out release --stage app
-      # Pass 1: the app's executables and DLLs, before the installer packs them.
+      # Pass 1: the app's own executables and DLLs, before the installer packs them. Electron ships
+      # some DLLs already signed by Microsoft (d3dcompiler_47.dll); those keep that signature, and
+      # only the unsigned files are signed here and checked for the profile's subject (0.14.1-rc.1).
+      - name: The app's files that carry no signature
+        id: unsigned
+        if: env.SIGNING == 'true'
+        shell: pwsh
+        env:
+          APP: ${{ github.workspace }}\release\.stage-win32-${{ matrix.arch }}\out\Fabric Inbox-win32-${{ matrix.arch }}
+        run: |
+          $files = Get-ChildItem -LiteralPath $env:APP -File | Where-Object { $_.Extension -in '.exe', '.dll' } |
+            Where-Object { (Get-AuthenticodeSignature -LiteralPath $_.FullName).Status -eq 'NotSigned' } | ForEach-Object { $_.FullName }
+          if (-not ($files | Where-Object { $_ -like '*\Fabric Inbox.exe' })) { throw 'Fabric Inbox.exe is not among the files to sign' }
+          $files | ForEach-Object { Write-Host "to sign: $(Split-Path $_ -Leaf)" }
+          $delim = "EOF_$([guid]::NewGuid().ToString('N'))"
+          "files<<$delim" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          $files | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          $delim | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
       - name: Sign the app's executables and DLLs
         if: env.SIGNING == 'true'
         uses: passioncode-ai/.github/actions/windows-signing@v1
         with:
-          files-folder: ${{ github.workspace }}\release\.stage-win32-${{ matrix.arch }}\out\Fabric Inbox-win32-${{ matrix.arch }}
-          files-folder-filter: exe,dll
+          files: ${{ steps.unsigned.outputs.files }}
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
@@ -264,6 +280,14 @@ jobs:
           certificate-profile: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
           expected-subject: ${{ env.SIGNER }}
           report: ${{ runner.temp }}/app-signatures.json
+      - name: Every executable and DLL of the app is Valid and timestamped (ours or Microsoft's)
+        if: env.SIGNING == 'true'
+        uses: passioncode-ai/.github/actions/windows-signing/verify@v1
+        with:
+          files: |
+            ${{ github.workspace }}\release\.stage-win32-${{ matrix.arch }}\out\Fabric Inbox-win32-${{ matrix.arch }}\*.exe
+            ${{ github.workspace }}\release\.stage-win32-${{ matrix.arch }}\out\Fabric Inbox-win32-${{ matrix.arch }}\*.dll
+          out: ${{ runner.temp }}/app-all-signatures.json
       # Pass 2: electron-builder signs the uninstaller and the installer (azureSignOptions) with
       # this job's Azure CLI sign-in.
       - name: Azure sign-in for electron-builder
