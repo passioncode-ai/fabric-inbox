@@ -114,7 +114,8 @@ function createAnalytics(deps) {
   const host = bundle ? bundle.host : '';
   const shared = installationFile(appData);
   // sshlg-growth counts installs by props.iid and keeps only production or sandbox events
-  // (operator decision 2026-10-05): a debug key or a pre-release version is sandbox.
+  // (operator decision 2026-10-05): a debug key or a pre-release version is sandbox. Aptabase's build mode follows it:
+  // isDebug is true exactly when the environment is not production (sshlg-analytics client contract, "Build modes").
   const environment = bundle && !bundle.debug && !String(appVersion).includes('-') ? 'production' : 'sandbox';
   let installId = null;      // set only while analytics is on
   let queue = [];
@@ -153,7 +154,7 @@ function createAnalytics(deps) {
       at,
       body: {
         timestamp: new Date(at).toISOString(), sessionId: sessionId(at), eventName,
-        systemProps: { isDebug: !!bundle.debug, locale: String(locale).slice(0, 10), osName: 'macOS', osVersion: String(osVersion).slice(0, 100),
+        systemProps: { isDebug: environment !== 'production', locale: String(locale).slice(0, 10), osName: 'macOS', osVersion: String(osVersion).slice(0, 100),
           appVersion: String(appVersion).slice(0, 50), appBuildNumber: '', sdkVersion: SDK, engineName: 'Electron', engineVersion: String(engineVersion).slice(0, 30) },
         props: { ...props, install_id: installId, iid: installId, environment },
       },

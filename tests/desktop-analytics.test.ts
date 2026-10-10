@@ -102,6 +102,9 @@ test("a debug key or a pre-release version is the sandbox environment", async ()
     const { a, srv } = client(machine(), extra as any);
     await a.start({});
     assert.ok(srv.events().every((e) => e.props.environment === expected), JSON.stringify(extra));
+    // Aptabase build modes (sshlg-analytics client contract, "Build modes"): isDebug is true exactly when the event is
+    // not production, so a pre-release lands in the dashboard's Debug view, not in Release.
+    assert.ok(srv.events().every((e) => e.systemProps.isDebug === (expected !== "production")), `isDebug ${JSON.stringify(extra)}`);
   }
 });
 
