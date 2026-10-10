@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { validateToolUrl } from "../automation/policy";
+import { toolTransport } from "../automation/mcp";
 import type { ToolGrant } from "./definition";
 
 /**
@@ -17,24 +17,7 @@ export async function readToolSchema(
   const url = validateToolUrl(grant.endpoint, hosts);
   const token = grant.tokenRef ? tokens[grant.tokenRef] : undefined;
   if (grant.tokenRef && !token) throw new Error("Tool credential is not configured");
-  const transport = new StreamableHTTPClientTransport(url, {
-    requestInit: {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      redirect: "error",
-    },
-    fetch: (input, init) =>
-      fetch(input, {
-        ...init,
-        redirect: "error",
-        signal: AbortSignal.any([AbortSignal.timeout(20_000), ...(init?.signal ? [init.signal] : [])]),
-      }),
-    reconnectionOptions: {
-      maxRetries: 0,
-      initialReconnectionDelay: 1000,
-      maxReconnectionDelay: 1000,
-      reconnectionDelayGrowFactor: 1,
-    },
-  });
+  const transport = toolTransport(url, token);
   const client = new Client({ name: "fabric-inbox", version: "0.1.0" });
   try {
     await client.connect(transport);

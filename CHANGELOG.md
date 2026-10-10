@@ -21,6 +21,10 @@ is cut and published: [docs/release.md](docs/release.md).
 - **Your sign-in stays encrypted on Linux.** The app keeps it in the Secret Service (GNOME Keyring
   or KWallet). Without one it does not start, rather than store your sign-in as plain text. On a
   desktop other than GNOME or KDE, start it with `--password-store=gnome-libsecret`.
+- **Rules and agents reach their tools.** A rule or agent action that calls a tool on another
+  server (MCP) never left the server: each call failed before it was sent, and the run said only
+  that its outcome was unknown. Calls now reach the tool, a redirect is still refused, and a failed
+  action leaves its reason in the server's log.
 - **Search finds long phrases.** A search longer than about 48 characters found nothing; it now
   matches, and so does the address test that looks for its own message.
 - **A refused send says why.** When the provider refuses a message, the outbox and the address test
