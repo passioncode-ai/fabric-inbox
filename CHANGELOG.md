@@ -5,6 +5,15 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.14.1 — 2026-10-10
+
+- **Windows installers are signed.** The installer, the uninstaller and the app's own programs and
+  libraries carry a timestamped Authenticode signature from PassionCode.ai's signing profile
+  (signer Siarhei Sheleh), so Windows no longer warns about an unknown publisher. A signed copy
+  installs an update only when that update is signed the same way.
+- **Each Windows installer is installed and opened on its own architecture before a release is
+  published**, ARM64 included.
+
 ## 0.14.0 — 2026-10-10
 
 - **Fabric Inbox for Windows and Linux.** The same app, for x64 and ARM64. Windows has an installer

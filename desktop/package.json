@@ -1,7 +1,7 @@
 {
   "name": "fabric-inbox-desktop",
   "productName": "Fabric Inbox",
-  "version": "0.14.0",
+  "version": "0.14.1",
   "private": true,
   "description": "Fabric Inbox desktop mail client",
   "homepage": "https://passioncode.ai/inbox",
