@@ -168,5 +168,6 @@ jobs:
         run: |
           uninstaller="$(dirname "$EXE")/Uninstall Fabric Inbox.exe"
           "$uninstaller" //S
-          for i in $(seq 1 30); do reg query 'HKCU\Software\Classes\fabric-inbox' >/dev/null 2>&1 || exit 0; sleep 2; done
+          # The uninstaller is x86 NSIS too: under emulation on ARM64 it takes minutes (the install took ~4).
+          for i in $(seq 1 120); do reg query 'HKCU\Software\Classes\fabric-inbox' >/dev/null 2>&1 || { echo "removed after $((i*5)) s"; exit 0; }; sleep 5; done
           echo "HKCU\\Software\\Classes\\fabric-inbox is still there after uninstall"; exit 1
