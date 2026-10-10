@@ -150,7 +150,8 @@ function createVerifier(deps) {
     let announced;
     try { announced = await run(`(Get-Item -LiteralPath '${literal}').VersionInfo.ProductVersion`); }
     catch (error) { fail('signature_failed', 'bundle_unreadable', String(error && error.message || error)); }
-    if (announced.replace(/\.0$/, '') !== version) fail('signature_failed', 'version_mismatch', msg('The update\'s version is not the one its release announced.'));
+    // ProductVersion is the release version (electron-builder writes it so), or Windows' four-part form.
+    if (announced !== version && announced !== `${version}.0`) fail('signature_failed', 'version_mismatch', msg('The update\'s version is not the one its release announced.'));
     if (!requireAuthenticode) return;
     let verdict;
     try { verdict = await run(`$s = Get-AuthenticodeSignature -LiteralPath '${literal}'; "$($s.Status)|$($s.SignerCertificate.Subject)"`); }

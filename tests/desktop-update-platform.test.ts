@@ -85,9 +85,17 @@ test("Windows: a signed running copy accepts only an installer signed by the org
   }
 });
 
-test("Windows: an installer announcing another version is refused", async () => {
-  const h = harness("win32", { productVersion: "0.11.0.0" });
-  await refusal(h.verifier.verify(h.feed), "signature_failed", "version_mismatch");
+test("Windows: the installer's version is the release's, in either form; another version is refused", async () => {
+  // electron-builder writes ProductVersion as the plain version (0.12.0); the 0.14.0-rc.2 rehearsal
+  // refused its own installer because a trailing ".0" was stripped from "0.14.0".
+  for (const productVersion of ["0.12.0", "0.12.0.0"]) {
+    const h = harness("win32", { productVersion });
+    assert.equal((await h.verifier.verify(h.feed)).outcome, "verified", productVersion);
+  }
+  for (const productVersion of ["0.11.0.0", "0.12", "0.12.0.1", ""]) {
+    const h = harness("win32", { productVersion });
+    await refusal(h.verifier.verify(h.feed), "signature_failed", "version_mismatch");
+  }
 });
 
 test("Linux: the signed AppImage is checked for its magic and handed over; no program is run", async () => {
