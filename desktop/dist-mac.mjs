@@ -461,12 +461,15 @@ async function main() {
     const { buildServerBundle } = await import('../scripts/server-bundle.mjs');
     const serverManifest = buildServerBundle({ buildDir: path.join(root, 'build'), outDir: path.join(source, 'server-bundle'),
       version: JSON.parse(run('git', ['show', `${revision}:package.json`])).version, revision });
+    // The agent console (B-70): its xterm view and node-pty, universal, from this checkout's node_modules.
+    const { stageConsoleView, stageConsolePty, CONSOLE_UNPACK } = await import('./console-assets.mjs');
+    stageConsoleView(source); stageConsolePty(source, { platform: 'darwin' });
     const { packager } = await import('@electron/packager');
     const [appDir] = await packager({
       dir: source, name: 'Fabric Inbox', executableName: 'Fabric Inbox', appVersion: version, buildVersion: version,
       protocols: [{ name: 'Fabric Inbox connect link', schemes: ['fabric-inbox'] }], appBundleId: BUNDLE_ID, appCategoryType: 'public.app-category.productivity', icon: path.join(source, 'icon.icns'),
-      platform: 'darwin', arch: 'universal', electronVersion, out: path.join(temp, 'out'), overwrite: true, asar: true, prune: true,
-      ignore: [/\/(?:mas-package|package|dist-mac|dist-platform|hardening|release-retention)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.(?:icns|ico|png)$/, /\/dmg-background/, /^\/(?:linux|windows)\//],
+      platform: 'darwin', arch: 'universal', electronVersion, out: path.join(temp, 'out'), overwrite: true, asar: { unpack: CONSOLE_UNPACK }, prune: false,
+      ignore: [/\/(?:mas-package|package|dist-mac|dist-platform|hardening|release-retention|console-assets)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.(?:icns|ico|png)$/, /\/dmg-background/, /^\/(?:linux|windows)\//],
       // ElectronSquirrelPreventDowngrades: Squirrel.Mac refuses a bundle older than this one (LC-16).
       extendInfo: { NSHumanReadableCopyright: 'Fabric Inbox — PassionCode.ai', NSRequiresAquaSystemAppearance: false, LSMinimumSystemVersion: '12.0', ElectronSquirrelPreventDowngrades: true },
       // LC-13/LC-07: fuses flipped and unused purpose strings stripped in the Electron template, before

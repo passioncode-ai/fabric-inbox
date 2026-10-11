@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld('fabricDesktop', Object.freeze({
   // "system", "en" or "ru"; anything else is kept as "system" (desktop/i18n.cjs).
   locale: () => ipcRenderer.invoke('fabric:locale'),
   setLocale: (choice) => ipcRenderer.invoke('fabric:locale-set', String(choice)),
+  // The agent console beside the mail (B-70): whether this app has it, and opening it. No data crosses.
+  consoleAvailable: () => ipcRenderer.invoke('fabric:console-available'),
+  openConsole: () => ipcRenderer.invoke('fabric:console-open'),
   // Receive-only: the page passes a callback and gets back its unsubscribe; no data crosses.
   onResume: (callback) => {
     if (typeof callback !== 'function') return () => {};

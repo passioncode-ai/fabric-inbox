@@ -53,6 +53,9 @@ declare global {
 			/** The language chosen on this Mac ("system", "en", "ru"), shared with the app's menus. */
 			locale?(): Promise<unknown>;
 			setLocale?(choice: LocaleChoice): Promise<unknown>;
+			/** The agent console (B-70): only in a desktop app that has it (not the Mac App Store one). */
+			consoleAvailable?(): Promise<boolean>;
+			openConsole?(): Promise<unknown>;
 		};
 	}
 }

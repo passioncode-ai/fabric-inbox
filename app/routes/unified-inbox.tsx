@@ -23,6 +23,7 @@ import {
   PencilSimpleIcon,
   PlusIcon,
   RobotIcon,
+  TerminalWindowIcon,
   SparkleIcon,
   StarIcon,
   SunIcon,
@@ -191,6 +192,13 @@ export default function UnifiedInbox() {
     [agentChoice, setAgentChoice] = useState<string | null>(null);
   const agentToggle = useRef<HTMLButtonElement>(null);
   const agentWide = useWideAgentLayout();
+  // The desktop app's agent console (B-70): offered only where the app says it has one.
+  const [hasConsole, setHasConsole] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void window.fabricDesktop?.consoleAvailable?.().then((yes) => { if (live) setHasConsole(yes === true); }, () => {});
+    return () => { live = false; };
+  }, []);
   // Opening a message pins the section it was opened in (see pinTriage).
   function setSelected(next: InboxMessage | null | ((current: InboxMessage | null) => InboxMessage | null)) {
     setSelectedState((current) => {
@@ -952,6 +960,13 @@ export default function UnifiedInbox() {
               <span>↵</span>
             </button>
           </form>
+          {hasConsole && (
+            // B-70: the agent console beside the mail, in the desktop app only (desktop/console.cjs).
+            <button type="button" className="fi-icon-button" aria-label={t("Agent console")} title={t("Open the agent console: your coding agent, connected to this Fabric Inbox")}
+              onClick={() => void window.fabricDesktop?.openConsole?.()}>
+              <TerminalWindowIcon size={19} />
+            </button>
+          )}
           <button ref={agentToggle} type="button" className={"fi-icon-button fi-agent-toggle" + (agentOpen ? " is-active" : "")}
             aria-label={t("AI panel")} title={t("Ask AI about your mail")} aria-expanded={agentOpen} aria-controls="fi-agent-panel"
             onClick={() => (agentOpen ? closeAgent() : setAgentOpen(true))}>
