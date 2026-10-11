@@ -95,6 +95,16 @@ async function loadBundledSetups() {
     } catch { /* a broken bundled file is skipped, never fatal */ }
   }
 }
+// A server a coding agent set up (scripts/onboard.mjs server, docs/agents/onboard.md; B-80) is
+// offered first, like a bundled setup: the person only confirms it and signs in. It names no
+// domains or addresses, so nothing is left for the server's Setup page to apply.
+const agentSetupPath = () => path.join(app.getPath('appData'), 'PassionCode', 'fabric-inbox', 'setup.json');
+async function loadAgentSetup() {
+  try {
+    const read = policy.readSetup(JSON.parse(await fs.readFile(agentSetupPath(), 'utf8')));
+    if (read.ok) bundledSetups.unshift({ id: 'agent:onboard', byAgent: true, ...read, summary: { ...read.summary, byAgent: true } });
+  } catch { /* none, or unreadable: nothing is offered */ }
+}
 function setupById(id) {
   if (openedSetup && id === openedSetup.id) return openedSetup;
   return bundledSetups.find(s => s.id === id) || null;
@@ -501,7 +511,7 @@ function installIPC() {
     const chosen = setupById(id);
     if (!chosen) return { ok: false, error: t('Choose the setup again.') };
     try {
-      await writePrivate(pendingSetupPath(), chosen.setup);
+      if (!chosen.byAgent) await writePrivate(pendingSetupPath(), chosen.setup);
       await saveConfig({ origin: chosen.summary.origin, accessOrigin: chosen.summary.accessOrigin });
       track('server_connected', { method: 'setup_file' });
       loadMail();
@@ -668,7 +678,7 @@ if (ownsInstance) app.whenReady().then(async () => {
     app.exit(1);
     return;
   }
-  installIPC(); installMenu(); await loadBundledSetups();
+  installIPC(); installMenu(); await loadBundledSetups(); await loadAgentSetup();
   // The Mac woke from sleep: the open mail window reads new mail now instead of at its next poll
   // (P1-4). An event, not a timer: nothing runs here while the Mac sleeps or no window is open.
   if (electron.powerMonitor) electron.powerMonitor.on('resume', () => {
