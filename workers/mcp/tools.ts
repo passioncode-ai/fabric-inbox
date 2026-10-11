@@ -353,7 +353,7 @@ const getSendStatus = defineTool({
 
 const listAddresses = defineTool({
   name: "list_addresses", title: "List addresses", level: "read", readOnly: true,
-  description: "The Cloudflare addresses this server keeps mail for: each with its display name, its agent, where a copy is forwarded and any delivery problem; the served domains with their catch-all; and recent mail to addresses that do not exist. Give address to get one address's settings: display name, signature, its reply agent, its forwarding copy, and the chat assistant's instructions for that mailbox (agentSystemPrompt, set with update_address assistantPrompt).",
+  description: "The Cloudflare addresses this server keeps mail for: each with its display name, its agent, where a copy is forwarded and any delivery problem; the served domains with their catch-all; recent mail to addresses that do not exist; and incomingFailures — mail the server could neither take nor refuse (whom it was for, when, its size, why; never the sender or content), which clear_incoming_failures removes once read. Give address to get one address's settings: display name, signature, its reply agent, its forwarding copy, and the chat assistant's instructions for that mailbox (agentSystemPrompt, set with update_address assistantPrompt).",
   input: { address: address.optional() },
   routes: ["GET /api/project-addresses", "GET /api/v1/mailboxes", "GET /api/v1/mailboxes/:mailboxId", "GET /api/v1/config"],
   async call(a, ctx) {
@@ -878,6 +878,14 @@ const listDiscardRules = defineTool({
   input: {},
   routes: ["GET /api/discard/rules"],
   call: (_a, ctx) => get(ctx, "/api/discard/rules"),
+});
+
+const clearIncomingFailures = defineTool({
+  name: "clear_incoming_failures", title: "Clear failed deliveries", level: "admin", target: (a) => a.domain ?? "all domains",
+  description: "Removes the record of mail the server could neither take nor refuse (incomingFailures in list_addresses), for one domain or all, once someone has seen it. The mail itself was never stored; the sender may have had a bounce. Returns how many were removed.",
+  input: { domain: domain.optional().describe("Only this domain's failures; left out, all of them") },
+  routes: ["DELETE /api/incoming-failures"],
+  call: (a, ctx) => del(ctx, `/api/incoming-failures${a.domain ? `?domain=${enc(a.domain.toLowerCase())}` : ""}`),
 });
 
 const removeDiscardRule = defineTool({
@@ -1470,7 +1478,7 @@ export const TOOLS: readonly ToolDef[] = [
   approveRuleRun, dismissRuleRun, checkRuleRun,
   checkAddress, createAddress, createAddresses, updateAddress, removeAddress, routeAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
-  updateSpamList, emptySpam, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
+  updateSpamList, emptySpam, clearIncomingFailures, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,
   disconnectGmail, disconnectAccount, listMailProviders, gmailConnectLink, gmailSetupStatus, checkGmailSetup, createCredentialKey,
   outlookConnectLink, microsoftSetupStatus, checkMicrosoftSetup, listAgentKeys, agentActivity,

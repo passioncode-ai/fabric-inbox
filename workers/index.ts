@@ -20,7 +20,7 @@ import { readDiscardStore, updateDiscardStore } from "./discard/store";
 import { cloudflareWorkspace } from "./discard/workspace";
 import type { Env } from "./types";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
-import { incomingFailure } from "./incoming-log";
+import { incomingFailure, recordIncomingFailure } from "./incoming-log";
 import { cleanSenderName } from "../shared/mail/sender";
 
 type AppContext = Context<MailboxContext>;
@@ -794,7 +794,9 @@ async function handleIncomingEmail(event: IncomingEmailEvent, env: Env, ctx: Exe
 		return await receiveEmailResilient(event, env, ctx);
 	} catch (e) {
 		// The last trace of a message nothing could take: whom it was for and when, never its content (SCN-025).
-		console.error(JSON.stringify(incomingFailure(event, e)));
+		const failure = incomingFailure(event, e);
+		console.error(JSON.stringify(failure));
+		await recordIncomingFailure(env.BUCKET, failure);
 		throw e;
 	}
 }
