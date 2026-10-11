@@ -17,6 +17,7 @@
 
 | Date | Branch / commit | Task | Gate |
 |---|---|---|---|
+| 2026-10-11 | `main` 2a4d89c (PR #74, see the B-85 run brief) | reply agents call a shared knowledge base: grant schema, fixed arguments, a call before the model, public only | 1212 tests, typecheck, UX lint, brand lint 0 errors, mcp:docs, two planted defects caught, server deployed (a3e133d9) and checked over MCP |
 | 2026-09-28 | `agent/agents-triage-2026-09-28` (see run brief) | agents on project addresses, triage, audit, docs, builds | 234 tests (8/8 full runs after the harness fix), typecheck, build, UX lint, 252 links |
 | 2026-09-28 | `main` (0.3.0, see the Cloudflare plan) | Cloudflare complete: domains, create the server from the app, no owner data | 272 tests, typecheck, UX lint, brand lint 0 errors, live Cloudflare checks |
 | 2026-09-29 | `main` 45eef95 (0.5.0, see the categories brief) | categories, agent and feed audits (A1–A18, F1–F20), UI checked in the installed app | 308 tests, typecheck, build, UX lint strict, brand lint 0 errors, live category run |
@@ -29,6 +30,8 @@
 | 2026-09-30 | `main` a9f9516 (0.8.0 tree, see the cloudflare-accounts brief) | several Cloudflare accounts, the relay, the Email Routing apex fix, door presets | 431 tests, typecheck, build, UX lint, brand lint 0 errors, four planted defects caught, server deployed, tokens probed live |
 
 ## Recent log
+- 2026-10-11 — *Symptom:* `npm run typecheck` failed with `never` on every registry call after a grant gained `inputSchema: Record<string, unknown>`. *Surfaced:* stage 6. *Owned by:* stage 3, the contract chose an object-typed field for data that crosses Durable Object RPC. *Root cause:* `unknown` (and a recursive `any`) is not RPC-serializable, so the stub's types collapse. *Fix:* contract — the schema is stored as JSON text. *Next time:* a field added to anything a Durable Object returns is typed as JSON-safe (string, number, boolean, plain records of those) at stage 3; run `npm run typecheck` after the first schema edit, not at the gate.
+- 2026-10-11 — *Symptom:* the independent review found the public-only gate passed an unlabelled field beside public items (and 9 smaller holes). *Surfaced:* stage 5 review. *Owned by:* stage 3, the rule was written as "every classified item is public" instead of "every value sits inside a public item". *Fix:* spec and code — the gate walks values with the enclosing class; tests per bypass (`tests/agents-tool-grant-rules.test.ts`). *Next time:* a data-class filter is specified over values, not over the labels it happens to find.
 
 - 2026-10-01 — *Symptom:* a message sent to the owner on 2026-09-28 was lost (a Durable Object reset during a deploy; the handler threw; Cloudflare did not redeliver) and nobody knew for three days. *Surfaced:* the second review pass, by querying the live Workers log. *Owned by:* stage 8 of the releases since 0.3: "post-deploy" checked the screens, never the server's own error log. *Fix:* 0.8.2 retries a transient Durable Object failure once; B-40 makes such a failure reach the owner. *Next time:* stage 8 reads the deployed Worker's errors for the window since the last release (Workers Observability, `$workers.outcome != ok`), not only what the operator sees.
 
