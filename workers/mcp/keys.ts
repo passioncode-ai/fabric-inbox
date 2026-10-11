@@ -5,6 +5,7 @@
  * is shown once when the key is made and is kept only by Cloudflare and the agent.
  */
 import { normaliseAccounts } from "./scope";
+import { bodyForUpdate } from "../lib/r2-json";
 
 export const AGENT_KEYS_KEY = "config/agent-keys.json";
 
@@ -79,7 +80,7 @@ export class AgentKeysConflict extends Error {}
 export async function updateAgentKeys(bucket: R2Bucket, change: (keys: AgentKey[]) => AgentKey[]): Promise<AgentKey[]> {
   for (let attempt = 0; attempt < 5; attempt++) {
     const object = await bucket.get(AGENT_KEYS_KEY);
-    const current = object ? normaliseKeys(await object.json().catch(() => null)) : [];
+    const current = object ? normaliseKeys(await bodyForUpdate(object)) : [];
     const next = change(current);
     const written = await bucket.put(AGENT_KEYS_KEY, JSON.stringify({ keys: next }), {
       httpMetadata: { contentType: "application/json" },

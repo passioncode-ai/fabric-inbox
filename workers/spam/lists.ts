@@ -1,5 +1,6 @@
 import { normaliseLists, type SpamLists } from "../../shared/mail/spam";
 import { msg } from "../../shared/i18n";
+import { bodyForUpdate } from "../lib/r2-json";
 
 /**
  * The operator's spam lists (SP-1, SP-3, SP-6): one R2 object for the workspace.
@@ -20,7 +21,7 @@ export class SpamListConflict extends Error {}
 export async function updateSpamLists(bucket: R2Bucket, change: (lists: SpamLists) => SpamLists): Promise<SpamLists> {
   for (let attempt = 0; attempt < 5; attempt++) {
     const object = await bucket.get(SPAM_LISTS_KEY);
-    const current = object ? normaliseLists(await object.json().catch(() => null)) : { ...EMPTY_SPAM_LISTS };
+    const current = object ? normaliseLists(await bodyForUpdate(object)) : { ...EMPTY_SPAM_LISTS };
     const next = normaliseLists(change(current));
     const written = await bucket.put(SPAM_LISTS_KEY, JSON.stringify(next), {
       httpMetadata: { contentType: "application/json" },

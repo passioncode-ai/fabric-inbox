@@ -4,6 +4,7 @@ import { RELAY_WORKER, type CloudflareAccounts } from "../routing/accounts";
 import { AgentAccess } from "../mcp/access";
 import { RELAY_COMPATIBILITY_DATE, RELAY_MODULE, RELAY_SOURCE, RELAY_VERSION } from "./script";
 import { msg } from "../../shared/i18n";
+import { bodyForUpdate } from "../lib/r2-json";
 
 /**
  * Installing the relay in another account (MA-6), and the registry of relays (R2 `config/relays.json`,
@@ -70,7 +71,7 @@ export const currentRelay = (relays: Relay[], accountId: string) => relays.find(
 export async function updateRelays(bucket: R2Bucket, change: (relays: Relay[]) => Relay[]): Promise<Relay[]> {
   for (let attempt = 0; attempt < 5; attempt++) {
     const object = await bucket.get(RELAYS_KEY);
-    const next = change(object ? normalise(await object.json().catch(() => null)) : []);
+    const next = change(object ? normalise(await bodyForUpdate(object)) : []);
     const written = await bucket.put(RELAYS_KEY, JSON.stringify({ relays: next }), {
       httpMetadata: { contentType: "application/json" },
       onlyIf: object ? { etagMatches: object.etag } : new Headers({ "If-None-Match": "*" }),

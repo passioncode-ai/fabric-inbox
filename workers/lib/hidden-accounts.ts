@@ -3,6 +3,8 @@
  * domain views and unread totals; still receiving and still read by agents and categories.
  * One R2 object for the workspace, written conditionally so two changes never lose one.
  */
+import { bodyForUpdate } from "./r2-json";
+
 export const HIDDEN_KEY = "config/hidden-accounts.json";
 const ACCOUNT = /^(cloudflare|gmail|imap|outlook):[^\s]{1,320}$/;
 const LIMIT = 2000;
@@ -24,7 +26,7 @@ export async function changeHidden(bucket: R2Bucket, change: { hide?: string[]; 
   const show = new Set((change.show ?? []).map((x) => x.toLowerCase()));
   for (let attempt = 0; attempt < 5; attempt++) {
     const object = await bucket.get(HIDDEN_KEY);
-    const current = object ? normalise(await object.json().catch(() => null)) : [];
+    const current = object ? normalise(await bodyForUpdate(object)) : [];
     const next = [...new Set([...current, ...hide])].filter((x) => !show.has(x)).slice(0, LIMIT);
     const written = await bucket.put(HIDDEN_KEY, JSON.stringify({ hidden: next }), {
       httpMetadata: { contentType: "application/json" },

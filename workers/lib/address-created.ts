@@ -5,6 +5,8 @@
  * workspace, written conditionally like hidden-accounts.ts so two creates at once never lose one.
  * An address created before this record existed has no entry and reads as old.
  */
+import { bodyForUpdate } from "./r2-json";
+
 export const CREATED_KEY = "config/address-created.json";
 const ADDRESS = /^[^\s@]{1,64}@[^\s@]{1,253}$/;
 const LIMIT = 5000;
@@ -27,7 +29,7 @@ export async function readCreated(bucket: R2Bucket): Promise<Record<string, numb
 async function changeCreated(bucket: R2Bucket, change: (current: Record<string, number>) => Record<string, number> | null): Promise<void> {
   for (let attempt = 0; attempt < 5; attempt++) {
     const object = await bucket.get(CREATED_KEY);
-    const next = change(object ? normalise(await object.json().catch(() => null)) : {});
+    const next = change(object ? normalise(await bodyForUpdate(object)) : {});
     if (!next) return;
     const written = await bucket.put(CREATED_KEY, JSON.stringify({ created: next }), {
       httpMetadata: { contentType: "application/json" },

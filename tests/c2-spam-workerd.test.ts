@@ -57,7 +57,10 @@ const bundle = await build({
               usage: { inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, text: 1, reasoning: 0 } }, warnings: [] };
           }});
         }
-        async pump() { for (let i = 0; i < 20; i++) { await this.alarm(); const n = this.ctx.storage.sql.exec('SELECT COUNT(*) AS n FROM queue WHERE next_at <= ?', Date.now()).one().n; if (!n) break; } }
+        // The runtime's own alarm (set 1 s ahead) would screen mail whenever the machine is slow
+        // enough (B-78: "on arrival it is in the inbox" failed under load); here only pump() runs it.
+        async alarm() {}
+        async pump() { for (let i = 0; i < 20; i++) { await super.alarm(); const n = this.ctx.storage.sql.exec('SELECT COUNT(*) AS n FROM queue WHERE next_at <= ?', Date.now()).one().n; if (!n) break; } }
         async checks() { return this.ctx.storage.sql.exec('SELECT message_id, verdict FROM spam_checks').toArray(); }
       }
 
