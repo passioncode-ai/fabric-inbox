@@ -35,6 +35,7 @@ its server in your own Cloudflare account. It began as Cloudflare's
 | Test (the gate) | `npm test && npm run typecheck` |
 | Build | `npm run build` (disk image: `npm run desktop:dmg`; Windows/Linux: `npm run desktop:win` / `desktop:linux`) |
 | MCP (register + proving call) | `npm run dev -- --port 5174 --host 127.0.0.1`, then `claude mcp add --transport http fabric-inbox-local http://127.0.0.1:5174/mcp` and call `list_accounts` (README → Quick start) |
+| A person's real server, set up by the agent | `node scripts/onboard.mjs server` → the person signs in → `connect` (they Allow) → `register` → `prove` ([docs/agents/onboard.md](docs/agents/onboard.md)) |
 
 All the checks, from `README.md` ("Run locally", "Develop and test"):
 

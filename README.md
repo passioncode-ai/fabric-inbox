@@ -38,7 +38,8 @@ and [your deployment](#configure-your-deployment).
    Add `v<version>` after `download` for a specific release; releases up to 0.8.2 carry
    `Fabric-Inbox-<version>.dmg.sha256` (`shasum -a 256 -c` it) instead of `SHA256SUMS`. Building
    it yourself is in [Install on a Mac](#install-on-a-mac).
-2. **Configure.** On first open choose **Create my server on Cloudflare**. You need a Cloudflare
+2. **Configure.** A coding agent can do this for you, step by step, while you only paste the token,
+   sign in and allow its key: [set up as a coding agent](docs/agents/onboard.md). By hand: on first open choose **Create my server on Cloudflare**. You need a Cloudflare
    account (the free plan works) and an API token you create in its dashboard with the permissions
    the app lists ([setup → your own server](docs/desktop-mail/setup.md#your-own-server-created-by-the-mac-app-recommended)).
    Gmail needs an OAuth client of your own in Google Cloud: **Settings → Accounts → Connect
