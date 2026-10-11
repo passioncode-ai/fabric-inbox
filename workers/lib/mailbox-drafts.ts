@@ -9,6 +9,7 @@
  */
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "../../shared/mail/attachments";
 import { htmlToText } from "../../shared/mail/text";
+import { searchText } from "./inbox-query";
 
 export interface DraftSql { exec(query: string, ...args: (string | number | null)[]): Iterable<Record<string, unknown>> }
 
@@ -75,14 +76,14 @@ export function saveDraft(sql: DraftSql, input: SaveDraftInput): SaveDraftResult
   const removed = existing.filter((a) => keep && !keep.has(String(a.id))).map((a) => ({ id: String(a.id), filename: String(a.filename) }));
 
   if (current) {
-    sql.exec(`UPDATE emails SET recipient = ?, cc = ?, bcc = ?, subject = ?, body = ?, body_key = ?, in_reply_to = ?, thread_id = ?, date = ?, draft_revision = ?
-      WHERE id = ?`, input.to, input.cc, input.bcc, input.subject, input.body, input.bodyKey, input.inReplyTo,
+    sql.exec(`UPDATE emails SET recipient = ?, cc = ?, bcc = ?, subject = ?, body = ?, search_text = ?, body_key = ?, in_reply_to = ?, thread_id = ?, date = ?, draft_revision = ?
+      WHERE id = ?`, input.to, input.cc, input.bcc, input.subject, input.body, searchText(input.body), input.bodyKey, input.inReplyTo,
       input.threadId || input.inReplyTo || input.id, input.now, revision + 1, input.id);
     for (const a of removed) sql.exec("DELETE FROM attachments WHERE id = ? AND email_id = ?", a.id, input.id);
   } else {
-    sql.exec(`INSERT INTO emails (id, folder_id, subject, sender, recipient, cc, bcc, date, read, starred, body, in_reply_to, thread_id, body_key, draft_revision)
-      VALUES (?, 'draft', ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, 1)`, input.id, input.subject, input.sender, input.to, input.cc, input.bcc, input.now,
-      input.body, input.inReplyTo, input.threadId || input.inReplyTo || input.id, input.bodyKey);
+    sql.exec(`INSERT INTO emails (id, folder_id, subject, sender, recipient, cc, bcc, date, read, starred, body, search_text, in_reply_to, thread_id, body_key, draft_revision)
+      VALUES (?, 'draft', ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, 1)`, input.id, input.subject, input.sender, input.to, input.cc, input.bcc, input.now,
+      input.body, searchText(input.body), input.inReplyTo, input.threadId || input.inReplyTo || input.id, input.bodyKey);
   }
   for (const a of input.added)
     sql.exec("INSERT INTO attachments (id, email_id, filename, mimetype, size, content_id, disposition) VALUES (?, ?, ?, ?, ?, ?, ?)",

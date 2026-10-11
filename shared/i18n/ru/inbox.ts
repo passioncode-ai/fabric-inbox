@@ -78,6 +78,7 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Mail could not load": "Не удалось загрузить почту",
 	"The list could not be refreshed; the mail shown may be older.": "Не удалось обновить список; показанная почта может быть устаревшей.",
 	"Try again": "Попробовать снова",
+	"Finds words in the subject, the sender's address and name, the recipients and the message text": "Ищет слова в теме, адресе и имени отправителя, получателях и тексте письма",
 	"Your inboxes could not be listed": "Не удалось получить список ящиков",
 	"Your mail, in one place": "Вся почта в одном месте",
 	"No matching mail": "Подходящих писем нет",

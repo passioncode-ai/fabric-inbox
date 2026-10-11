@@ -241,6 +241,12 @@ export const mailboxMigrations: Migration[] = [
 		name: "20_outbox_error_detail",
 		sql: txn(`ALTER TABLE outbox ADD COLUMN error_detail TEXT;`),
 	},
+	{
+		// The message's plain text, searched instead of its HTML (B-21; workers/lib/inbox-query.ts searchText).
+		// Older rows are filled by the next searches, a batch at a time (MailboxDO #indexSearchText).
+		name: "21_search_text",
+		sql: txn(`ALTER TABLE emails ADD COLUMN search_text TEXT;`),
+	},
 ];
 
 /** The id and name a person's own folder gets when it held the id 'discarded' (migration 18). */

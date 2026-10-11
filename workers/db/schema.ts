@@ -18,6 +18,7 @@ export const emails = sqliteTable("emails", {
 	subject: text("subject"),
 	sender: text("sender"),
 	sender_name: text("sender_name"),
+	search_text: text("search_text"),
 	recipient: text("recipient"),
 	cc: text("cc"),
 	bcc: text("bcc"),

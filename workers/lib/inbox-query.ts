@@ -14,7 +14,8 @@ export function mailboxInboxQuery(accountId: string, options: InboxReadOptions) 
     // SQLite's lower() folds ASCII only, so "Привет" never matched "привет" (UI walk 2026-10-08).
     // The ASCII-folded match stays; a query with other letters also looks for its lower, capitalised
     // and upper forms in the text as written.
-    const text = "(coalesce(subject,'') || ' ' || coalesce(sender,'') || ' ' || coalesce(sender_name,'') || ' ' || coalesce(recipient,'') || ' ' || coalesce(snippet,''))";
+    // The message's plain text (B-21); a row stored before the column was filled falls back to its body's start.
+    const text = "(coalesce(subject,'') || ' ' || coalesce(sender,'') || ' ' || coalesce(sender_name,'') || ' ' || coalesce(recipient,'') || ' ' || coalesce(search_body,''))";
     const variants = searchVariants(options.query);
     conditions.push(`(instr(lower(${text}), ?) > 0${variants.map(() => ` OR instr(${text}, ?) > 0`).join("")})`);
     parameters.push(options.query.toLowerCase(), ...variants);
@@ -27,7 +28,7 @@ export function mailboxInboxQuery(accountId: string, options: InboxReadOptions) 
   parameters.push(options.limit + 1);
   return {
     sql: `SELECT * FROM (SELECT id, subject, sender, sender_name, recipient, date, read, starred, thread_id, folder_id, raw_headers, message_id, spam_reason, discard_reason,
-      substr(body,1,2000) AS snippet,
+      substr(body,1,2000) AS snippet, coalesce(search_text, substr(body,1,2000)) AS search_body,
       coalesce(cast(round((julianday(date)-2440587.5)*86400000) AS INTEGER),0) AS timestamp
       FROM emails) WHERE ${conditions.join(" AND ")} ORDER BY timestamp DESC, id ASC LIMIT ?`,
     parameters,
@@ -49,17 +50,23 @@ export interface MailboxInboxRow {
   spam_reason: string | null; folder_id: string | null; discard_reason: string | null;
 }
 
-/** A plain-text preview: the body column holds HTML for most mail. */
-export function textSnippet(body: string | null): string {
+/** The body as plain text: the body column holds HTML for most mail. */
+function plainText(body: string | null): string {
   if (!body) return "";
   return body
     .replace(/<(style|script|head)[^>]*>[\s\S]*?<\/\1>/gi, " ")
     .replace(/<[^>]*>?/g, " ")
     .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/gi, "'")
     .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 300);
+    .trim();
 }
+/** A plain-text preview. */
+export function textSnippet(body: string | null): string { return plainText(body).slice(0, 300); }
+
+/** How much of a message's text is searched (B-21): the stored column holds this much plain text. */
+export const SEARCH_TEXT_CHARS = 20_000;
+/** The text a Cloudflare message is searched by (B-21): its words, not its markup, the way Gmail searches. */
+export function searchText(body: string | null): string { return plainText(body).slice(0, SEARCH_TEXT_CHARS); }
 export function mailboxInboxMessage(accountId: string, row: MailboxInboxRow, ownDomains: string[] = []): InboxMessage {
   const message: InboxMessage = { id: inboxIdentity(accountId, row.id), accountId, provider: "cloudflare", providerMessageId: row.id,
     subject: row.subject || "", sender: displaySender(row.sender, row.sender_name, row.raw_headers), recipient: row.recipient || "",

@@ -953,6 +953,7 @@ export default function UnifiedInbox() {
             <input
               aria-label={t("Search cached mail")}
               placeholder={t("Search cached mail")}
+              title={t("Finds words in the subject, the sender's address and name, the recipients and the message text")}
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
             />

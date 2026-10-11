@@ -80,6 +80,7 @@ export default function Header() {
 						className="w-full"
 						aria-label={t("Search emails")}
 						placeholder={t("Search emails... (try from:name, is:unread, has:attachment)")}
+						title={t("Finds words in the subject, the sender's address and name, the recipients and the message text")}
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
 						onKeyDown={handleKeyDown}
