@@ -5,6 +5,17 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.15.2 — 2026-10-11
+
+- **Automatic updates work again.** From 0.12.0 on, the Mac app downloaded each new release but could
+  not finish checking it, so it never installed one. 0.15.2 fixes this. A copy older than 0.15.2
+  cannot update itself: download 0.15.2 once and install it over the old one; later releases
+  install themselves again.
+- **A remote tool can be your agent's knowledge base.** A tool you grant an agent now shows it its
+  real arguments, can have arguments fixed (for example the knowledge domain), can be asked about
+  every message before the agent answers, and can be limited to results marked public, so a reply
+  never quotes something private; anything else waits for you as a draft.
+
 ## 0.15.1 — 2026-10-11
 
 - **The agent console starts.** In 0.15.0 the console beside your mail could not start your

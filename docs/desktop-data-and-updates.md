@@ -86,6 +86,11 @@ as Fabric Switchboard, Fabric and Fabric Dashboards.
    the menu reads **Restart to Install Update** for anyone who wants it at once. A running session
    is never stopped for an update. The next start logs whether the install happened
    (`update_install installed` or `failed`, from `update-install.json`).
+   The updater reads and removes this folder with Node's own file system (`original-fs`): Electron's
+   treats the downloaded app's `app.asar` as a folder and could not remove it, so every check of
+   0.12.0 failed with `ENOTEMPTY` and no later release was installed (B-86, fixed in 0.15.2;
+   `tests/desktop-update-asar.test.ts` runs the real Electron). A copy before 0.15.2 does not recover
+   by itself: install 0.15.2 once by hand.
 5. **Held releases.** A release whose feed marks `migration` (a runbook URL; `feedFor` in
    `desktop/updater.cjs`) is downloaded and verified once but not installed: **Check for Updates…**
    names the step and its runbook, and the log says `update_check needs_migration`. Later checks

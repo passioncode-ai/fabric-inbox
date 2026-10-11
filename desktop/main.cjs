@@ -23,6 +23,14 @@ const { execFile, spawn } = require('node:child_process');
 const execFileAsync = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10000, maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout) => (error ? reject(error) : resolve({ stdout }))));
 const fsSync = require('node:fs');
 const { createWriteStream, existsSync, constants: fsConstants } = require('node:fs');
+/**
+ * The file system the updater works with (B-86). Electron's node:fs treats every `*.asar` file as a
+ * folder, so the update cache — which holds the downloaded app, app.asar included — could not be
+ * removed (ENOTEMPTY) and no update after 0.12.0 was installed. original-fs is Node's own; outside
+ * Electron (tests) it does not exist and node:fs is the same thing.
+ */
+function loadUpdateFs() { try { return require('original-fs'); } catch { return require('node:fs'); } }
+const updateFs = loadUpdateFs();
 
 // A development run (`npm run desktop`) is its own app to macOS: its own name, so Chromium keeps its
 // cookie key in its own Keychain item ("Fabric Inbox Development Safe Storage"). With the installed
@@ -316,7 +324,7 @@ async function startUpdates() {
     installedOnMac: typeof app.isInApplicationsFolder === 'function' && app.isInApplicationsFolder(), exists: existsSync });
   // macOS: Squirrel.Mac installs. Windows and Linux: the verified installer or AppImage (PL-03).
   const autoUpdater = process.platform === 'darwin' ? electron.autoUpdater
-    : platformInstaller.createPlatformInstaller({ platform: process.platform, app, spawn, fs, appImage: target.appImage, log: logEvent,
+    : platformInstaller.createPlatformInstaller({ platform: process.platform, app, spawn, fs: updateFs.promises, appImage: target.appImage, log: logEvent,
       stagingDir: path.join(app.getPath('cache'), app.getName(), 'pending-update') });
   if (typeof autoUpdater.clean === 'function') void autoUpdater.clean();
   let feed = null;
@@ -347,7 +355,7 @@ async function startUpdates() {
     }
     verifier = updateVerify.createVerifier({ repository, appVersion: app.getVersion(), appName: 'Fabric Inbox',
       zipName: target.fileName, runningApp: target.runningApp, platform: process.platform, arch: process.arch, requireAuthenticode,
-      dir: path.join(app.getPath('cache'), app.getName(), 'updates'), fetch: globalThis.fetch, exec, fs, createWriteStream, key, log: logEvent });
+      dir: path.join(app.getPath('cache'), app.getName(), 'updates'), fetch: globalThis.fetch, exec, fs: updateFs.promises, createWriteStream: updateFs.createWriteStream, key, log: logEvent });
   } catch (error) {
     logEvent({ event: 'update_check', outcome: 'check_failed', reason: 'no_release_key' });
   }
