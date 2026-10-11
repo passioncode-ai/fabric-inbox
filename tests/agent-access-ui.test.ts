@@ -87,7 +87,7 @@ test("the revoke confirmation keeps the key with Keep, and a failed save says to
 test("agents first: the agent is asked to connect itself, and a key by hand is the second way (SCN-077, B-80)", () => {
   const html = render(null, { keys: [], mcpUrl: "https://inbox.example/mcp", canIssue: true });
   assert.match(html, /Let your coding agent connect itself/);
-  assert.match(html, /onboard\.mjs connect --level mail/, "the sentence for the agent is shown as well as copied");
+  assert.match(html, /Connect yourself to my Fabric Inbox[^<]*<code>scripts\/onboard\.mjs connect --level mail<\/code>/, "the sentence for the agent is shown as well as copied, the command as code");
   assert.match(html, /Copy what to tell your agent/);
   assert.match(html, /Or make a key by hand/);
   assert.ok(html.indexOf("Let your coding agent connect itself") < html.lastIndexOf("New key"), "in the panel, connecting itself comes before a key by hand");

@@ -34,7 +34,8 @@ export const LEVELS = levels(englishT);
 const DURATIONS = [{ id: "30d", title: msg("30 days") }, { id: "90d", title: msg("90 days") }, { id: "1y", title: msg("1 year") }] as const;
 const OUTCOME: Record<Entry["outcome"], string> = { done: msg("Done"), failed: msg("Failed"), refused: msg("Refused"), confirmation_asked: msg("Asked to confirm") };
 /** What the person tells their coding agent (docs/agents/onboard.md): the agent knows the rest. */
-export const AGENT_CONNECT_ASK = "Connect yourself to my Fabric Inbox: run the fabric-inbox plugin's scripts/onboard.mjs connect --level mail, then register and prove (docs/agents/onboard.md in passioncode-ai/fabric-inbox).";
+export const AGENT_CONNECT_COMMAND = "scripts/onboard.mjs connect --level mail";
+export const AGENT_CONNECT_GUIDE = "docs/agents/onboard.md, passioncode-ai/fabric-inbox";
 export const KEYS_KEY = ["agent-keys"];
 export const JOURNAL = "journal";
 
@@ -93,6 +94,7 @@ export default function AgentAccessSection({ id }: { id: string | null }) {
       empty={<div className="fi-list-empty"><p>{query ? t("No key matches “{query}”.", { query }) : t("No agent has a key yet.")}</p></div>} />
   );
 
+  const connectAsk = t("Connect yourself to my Fabric Inbox with the Fabric Inbox plugin, then register and prove:");
   const panel = !id ? (
     <PanelPlaceholder>
       <h2>{t("Let an AI agent you run elsewhere work with Fabric Inbox")}</h2>
@@ -100,8 +102,8 @@ export default function AgentAccessSection({ id }: { id: string | null }) {
       {/* Agents first (B-80): the agent connects itself and this screen shows the result. */}
       <h3>{t("Let your coding agent connect itself")}</h3>
       <p>{t("Tell your agent the sentence below. It asks this app for a key, you choose Allow, and the key goes to it without anyone copying a secret. Its key then appears in this list.")}</p>
-      <blockquote className="fi-hint">{AGENT_CONNECT_ASK}</blockquote>
-      <Copy text={AGENT_CONNECT_ASK} label={t("Copy what to tell your agent")} />
+      <blockquote className="fi-hint">{connectAsk} <code>{AGENT_CONNECT_COMMAND}</code></blockquote>
+      <Copy text={`${connectAsk} ${AGENT_CONNECT_COMMAND} (${AGENT_CONNECT_GUIDE})`} label={t("Copy what to tell your agent")} />
       <p className="fi-hint">{t("Or make a key by hand and give it to an agent that cannot connect itself.")}</p>
       {data?.canIssue && <button type="button" onClick={() => setMaking(true)}><PlusIcon size={16} /> {t("New key")}</button>}
     </PanelPlaceholder>
