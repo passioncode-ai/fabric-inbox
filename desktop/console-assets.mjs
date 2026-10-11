@@ -71,8 +71,34 @@ export function stageConsolePty(target, { platform, arch, from = root, run = (cm
   return dest;
 }
 
-/** The packager's asar option: node-pty runs from outside app.asar (its helper and .node files). */
-export const CONSOLE_UNPACK = '**/node_modules/node-pty/**';
+/**
+ * The packager's asar option: node-pty runs from outside app.asar, because it finds its helper by
+ * replacing app.asar with app.asar.unpacked in its own path and native code cannot read an asar.
+ * `unpackDir` is matched against the path inside the app; the glob 0.15.0 used (`unpack`) was
+ * matched against the absolute path, where `**` does not cross a dot folder, and every builder
+ * packs under one (macOS `release/.build-tmp`, Windows and Linux `.stage-…`): no 0.15.0 build had
+ * app.asar.unpacked (B-84).
+ */
+export const CONSOLE_ASAR = { unpackDir: path.join('node_modules', 'node-pty') };
+
+/** The files node-pty must find outside app.asar on each platform (paths inside node_modules/node-pty). */
+function unpackedFiles(platform, arch) {
+  if (platform === 'darwin') return ['arm64', 'x64'].flatMap((a) => [`prebuilds/darwin-${a}/pty.node`, `prebuilds/darwin-${a}/spawn-helper`]);
+  if (platform === 'win32') return [`prebuilds/win32-${arch}/pty.node`];
+  if (platform === 'linux') return ['build/Release/pty.node'];
+  throw new Error(`No console PTY for ${platform}.`);
+}
+
+/**
+ * Checks a built app's Resources folder: node-pty is in app.asar.unpacked. Every builder calls it
+ * with throwOnMissing, so a build whose console could not start fails instead of being released.
+ */
+export function verifyConsoleUnpacked(resourcesDir, { platform, arch }, { throwOnMissing = false } = {}) {
+  const dir = path.join(resourcesDir, 'app.asar.unpacked', 'node_modules', 'node-pty');
+  const missing = unpackedFiles(platform, arch).filter((rel) => !existsSync(path.join(dir, ...rel.split('/'))));
+  if (missing.length && throwOnMissing) throw new Error(`The agent console cannot start: app.asar.unpacked lacks node-pty's ${missing.join(', ')} (B-84).`);
+  return { missing };
+}
 
 if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv.includes('--vendor')) {
   console.log(stageConsoleView(desktop));
