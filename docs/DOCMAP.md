@@ -11,6 +11,7 @@ not for what to do next.
 | How does it work? | [Architecture as built](architecture.md); target proposal: [desktop-mail/architecture.md](desktop-mail/architecture.md) |
 | How is it configured and deployed? | [Setup](desktop-mail/setup.md) (configuration reference, project addresses, agents, deployment order) |
 | How does an agent work with it (MCP)? | [The agent protocol](agents/mcp.md) (connect, levels, two steps, every tool); the skill: `plugins/fabric-inbox/` |
+| How does a coding agent set it up — server, key, MCP registration — with the person only signing in and allowing? | [Set up as a coding agent](agents/onboard.md) (`onboard.mjs`: server, connect, register, prove, status; the launcher's JSON contract) |
 | What must the interface do? | [UX scenarios](ux/scenarios.md), [flows](ux/flows.md), [screens](ux/screens.md) |
 | How does it sound? | [Brand pack](brand/README.md) |
 | What is open outside the roadmap? | [Board](evidence/backlog.md); lessons in [retro](evidence/retro.md) |

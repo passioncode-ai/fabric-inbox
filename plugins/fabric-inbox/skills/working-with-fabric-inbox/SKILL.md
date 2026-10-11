@@ -30,7 +30,12 @@ and input schemas are current; this skill is how to use them well.
 ## 1. Connect (once)
 
 1. Is a `fabric-inbox` MCP server already connected? List tools; `list_accounts` present → go to 2.
-2. Not connected: the owner makes a key in the app — **Settings → Agent access** — and gets a
+2. Not connected and this plugin is installed: connect yourself, with the owner's consent — run
+   `node <this plugin>/scripts/onboard.mjs connect --level mail` (they choose Allow in the app),
+   then `register` and `prove` from the same script. The key goes into the system's key store and
+   Claude Code reads it through a headers helper; you never see it. Setting up a server from
+   nothing, and the levels: `docs/agents/onboard.md` in passioncode-ai/fabric-inbox.
+   Without the plugin's script, the owner makes a key in **Settings → Agent access** and gets a
    Client ID and a Client Secret (shown once). Ask them for the command the app shows, or build it:
 
    ```sh
