@@ -79,6 +79,7 @@
 | SCN-074 | Bring a discarded message back | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PASS |
 | SCN-075 | Keep the discard rules | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PARTIAL |
 | SCN-076 | Use the app in Russian or English | Resume and manage preferences | P-01 | ST-007, FLW-07 | validated | 2026-10-07 PASS |
+| SCN-077 | Let my coding agent set everything up | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1026,7 +1027,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** draft
 - **Coverage:** desktop/connect.cjs, desktop/main.cjs, workers/mcp/scope.ts, workers/mcp/handler.ts, tests/desktop-connect.test.ts, tests/mcp-scope.test.ts, tests/mcp-workerd.test.ts
 - **Product:** unobserved
-- **Today:** Operator, 2026-10-03: "something pops up, you authorise, and it goes on" — the product connects without copying (ADR-0115 in passioncode-ai/fabric). A hub that changed between the question and the delivery (`listener_changed`) has its own notice: the key was made, did not reach the client and was revoked, or must be revoked on SCR-15 (2026-10-07, AUD-B2-03; desktop/main.cjs, tests/desktop-connect.test.ts).
+- **Today:** Operator, 2026-10-03: "something pops up, you authorise, and it goes on" — the product connects without copying (ADR-0115 in passioncode-ai/fabric). A hub that changed between the question and the delivery (`listener_changed`) has its own notice: the key was made, did not reach the client and was revoked, or must be revoked on SCR-15 (2026-10-07, AUD-B2-03; desktop/main.cjs, tests/desktop-connect.test.ts). A coding agent asks the same way with `onboard.mjs connect` (SCN-077, docs/agents/onboard.md): its one-shot listener on this Mac receives the key and puts it in the system key store.
 
 ### SCN-048: Turn the anonymous usage counts off or on
 - **Persona:** P-01
@@ -1547,3 +1548,24 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** shared/i18n/index.ts, shared/i18n/server.ts, shared/i18n/ru/, app/lib/i18n.tsx, app/root.tsx (loader, useLocaleSync), app/components/settings/sections/AppSection.tsx (LanguagePanel), desktop/i18n.cjs, desktop/main.cjs (fabric:locale, fabric:locale-set), desktop/setup.js, scripts/check-locale.mjs, tests/i18n.test.ts, tests/i18n-render.test.ts
 - **Product:** unobserved
 - **Today:** Built in 0.12 (WS9); walked in Russian in the local Worker on 2026-10-07.
+
+### SCN-077: Let my coding agent set everything up
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07, JTBD-03, JRN-03; RE-001
+- **Entry point:** SCR-01
+- **Preconditions:** A coding agent (Claude Code with the fabric-inbox plugin, or a checkout of the repository) and a Cloudflare account; the app installed.
+- **Steps:**
+  1. Ask the agent to set up Fabric Inbox -> it runs the server step; I paste the Cloudflare token into its hidden prompt (or my secret runner gives it), and it reports each step as it runs.
+  2. Open the app -> the welcome offers Use the server your agent set up, with its address -> review names the server, its sign-in and that it has no domains or addresses yet -> Connect and apply -> sign in with the emailed code.
+  3. Tell the agent I am signed in -> it asks the app for a key; the app comes forward and asks me (SCN-047) -> Allow.
+  4. The agent registers the server with itself and makes a proving call; Settings → Agent access lists its key with its level.
+- **Expected result:** The agent did every step it could; I pasted the token, signed in and allowed the key, and copied no address, Client ID or secret.
+- **Alt paths:** I already have a server: the agent skips step 1 and starts at step 3. On Agent access with no key, Let your coding agent connect itself gives the sentence to tell the agent, with Copy; New key stays for an agent that cannot connect itself. Deny: the agent hears it and keeps nothing.
+- **UI elements:** SCR-01 (Use the server your agent set up; the review), SCR-15 (Let your coding agent connect itself, Copy what to tell your agent, New key).
+- **States covered:** empty, success, error
+- **Errors & recovery:** A token without a permission, R2 or Zero Trust not turned on, or a taken name stops the agent's server step with the same words the app's Create my server uses (SCN-030); the agent runs it again after the fix. A key the agent could not keep (no key store) is not kept, and the agent says to revoke it on SCR-15.
+- **Status:** draft
+- **Coverage:** scripts/onboard.mjs, plugins/fabric-inbox/scripts/onboard.mjs, plugins/fabric-inbox/scripts/headers.mjs, desktop/main.cjs, desktop/setup.js, app/components/settings/sections/AgentAccessSection.tsx, tests/onboard.test.ts, tests/agent-access-ui.test.ts, docs/agents/onboard.md
+- **Product:** unobserved
+- **Today:** Agents first (operator, 2026-10-10; fabric-dashboards FD-39; board B-79, B-80, B-81). The agent's proving call was run against the owner's server on 2026-10-11 (89 tools); the first full run with a person's Allow is still to be observed.

@@ -83,3 +83,23 @@ test("the revoke confirmation keeps the key with Keep, and a failed save says to
   assert.match(translateText("ru", answer), /^Сохранение ключа: не удалось выполнить\. R2 timed out Попробуйте ещё раз\.$/);
   assert.equal(translateText("ru", msg("Keep")), "Оставить", "the revoke's Keep has its Russian");
 });
+
+test("agents first: the agent is asked to connect itself, and a key by hand is the second way (SCN-077, B-80)", () => {
+  const html = render(null, { keys: [], mcpUrl: "https://inbox.example/mcp", canIssue: true });
+  assert.match(html, /Let your coding agent connect itself/);
+  assert.match(html, /Connect yourself to my Fabric Inbox[^<]*<code>scripts\/onboard\.mjs connect --level mail<\/code>/, "the sentence for the agent is shown as well as copied, the command as code");
+  assert.match(html, /Copy what to tell your agent/);
+  assert.match(html, /Or make a key by hand/);
+  assert.ok(html.indexOf("Let your coding agent connect itself") < html.lastIndexOf("New key"), "in the panel, connecting itself comes before a key by hand");
+  assert.doesNotMatch(html, /Client Secret/);
+});
+
+test("the welcome offers the server a coding agent set up, and nothing is left for the server to apply (SCN-077, B-80)", () => {
+  const main = readFileSync("desktop/main.cjs", "utf8");
+  assert.match(main, /path\.join\(app\.getPath\('appData'\), 'PassionCode', 'fabric-inbox', 'setup\.json'\)/, "the file onboard.mjs server writes");
+  assert.match(main, /bundledSetups\.unshift\(\{ id: 'agent:onboard', byAgent: true/, "offered first");
+  assert.match(main, /if \(!chosen\.byAgent\) await writePrivate\(pendingSetupPath\(\), chosen\.setup\);/);
+  const setup = readFileSync("desktop/setup.js", "utf8");
+  assert.match(setup, /if \(s\.byAgent\) button\.append\(text\('strong', t\('Use the server your agent set up'\)\)/);
+  assert.match(setup, /No domains or addresses on it yet/);
+});

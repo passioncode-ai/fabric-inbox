@@ -11,11 +11,11 @@
 // --token-env names (for a runner that injects it); it is never an argument, and it goes only to
 // Cloudflare and to the server's own secret, as the Mac app's Create my server does.
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { main as core, OnboardError, readRecord, writeRecord } from '../plugins/fabric-inbox/scripts/onboard.mjs';
+import { main as core, OnboardError, readRecord, recordPath, writeRecord } from '../plugins/fabric-inbox/scripts/onboard.mjs';
 
 export * from '../plugins/fabric-inbox/scripts/onboard.mjs';
 export { headers } from '../plugins/fabric-inbox/scripts/headers.mjs';
@@ -79,8 +79,11 @@ export async function stepServer(opts, { say, deployer = require('../desktop/clo
     onStep: (s) => say({ step: `server.${s.id}`, outcome: s.outcome, detail: s.detail }) });
   const record = { ...readRecord(), server: result.origin, accessOrigin: result.accessOrigin, account: account.id };
   writeRecord(record);
+  // The app offers this server first on its welcome screen (B-80): the person confirms and signs in.
+  writeFileSync(path.join(path.dirname(recordPath()), 'setup.json'), JSON.stringify({ format: 'fabric-inbox-setup/1', name: 'Set up by your coding agent',
+    server: { origin: result.origin, accessOrigin: result.accessOrigin }, domains: [], mailboxes: [], createdBy: 'onboard', createdAt: new Date().toISOString() }, null, 2) + '\n');
   say({ step: 'server', outcome: 'done', detail: result.origin,
-    human: `Open Fabric Inbox, enter ${result.origin} as the server and sign in with the code sent to your email. Then run: node scripts/onboard.mjs connect` });
+    human: `Open Fabric Inbox, choose "Use the server your agent set up" (or enter ${result.origin}) and sign in with the code sent to your email. Then the agent runs connect.` });
   return record;
 }
 
