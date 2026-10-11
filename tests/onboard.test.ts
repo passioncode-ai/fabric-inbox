@@ -67,6 +67,11 @@ test("server: one account is used; several need --account; the person is told wh
   assert.equal(last.step, "server");
   assert.match(last.human, /sign in/);
   assert.ok(!JSON.stringify(events).includes('"t"'), "the token is in no event");
+  // The app offers this server on its welcome screen (B-80): the file is a setup it accepts.
+  const { readSetup } = (await import("node:module")).createRequire(import.meta.url)("../desktop/policy.cjs");
+  const setup = readSetup(JSON.parse(readFileSync(path.join(path.dirname(m.recordPath()), "setup.json"), "utf8")));
+  assert.equal(setup.ok, true, setup.error);
+  assert.deepEqual([setup.summary.origin, setup.summary.accessOrigin, setup.summary.domainCount], ["https://fabric-inbox.me.workers.dev", "https://me.cloudflareaccess.com", 0]);
   const two = { ...deployer, accounts: async () => [{ id: "a", name: "A" }, { id: "b", name: "B" }] };
   await assert.rejects(m.stepServer({}, { say, deployer: two, token: "t", bundle: async () => "/b" }), (e: any) => e.code === "choose_account");
 });

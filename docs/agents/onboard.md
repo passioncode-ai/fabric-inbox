@@ -37,8 +37,9 @@ server built from this checkout (`npm run desktop:server-bundle` runs when the b
 older). A token that reaches several accounts needs `--account <id>`; the refusal lists them.
 Running it again on an existing server updates the code and keeps the storage and the sign-in.
 
-**Then the person:** installs the Fabric Inbox app (README → Quick start), enters the server
-address the step printed and signs in with the emailed code. That sign-in is the only way a key can
+**Then the person:** installs the Fabric Inbox app (README → Quick start) and opens it. The step left
+a setup beside its record (`setup.json`), so the welcome offers **Use the server your agent set up**
+with its address; they confirm and sign in with the emailed code (SCN-077). Nobody types the address. That sign-in is the only way a key can
 be made for you: the server makes keys for a signed-in person only.
 
 ## 2. Your key, with the person's consent
@@ -84,6 +85,7 @@ refused (revoked, expired, or never allowed) — run `connect` again.
 |---|---|
 | The record (server, MCP URL, key id and level, registration; no secret) | `<appData>/PassionCode/fabric-inbox/onboard.json` — macOS `~/Library/Application Support`, Linux `$XDG_CONFIG_HOME` or `~/.config`, Windows `%APPDATA%` |
 | The headers helper Claude Code runs | `headers.mjs` beside the record |
+| The server the app's welcome offers | `setup.json` beside the record (written by `server`) |
 | The key | the system key store, service `fabric-inbox-agent-key`, account = the server's host |
 
 `onboard.mjs forget` removes the stored key and the record; the key itself stays valid until it is
