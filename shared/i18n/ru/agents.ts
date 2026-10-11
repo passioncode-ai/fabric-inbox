@@ -303,6 +303,8 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	// The AI panel on the unified inbox (app/components/inbox/AgentDock.tsx, app/routes/unified-inbox.tsx)
 	"AI panel": "Панель ИИ",
 	"Ask AI about your mail": "Спросить ИИ о почте",
+	"Agent console": "Консоль агента",
+	"Open the agent console: your coding agent, connected to this Fabric Inbox": "Открыть консоль агента: ваш агент для кода, подключённый к этому Fabric Inbox",
 	"Ask AI": "Спросить ИИ",
 	"Reads {address}, where the open message is.": "Читает {address} — ящик открытого письма.",
 	"Reads {address}.": "Читает {address}.",

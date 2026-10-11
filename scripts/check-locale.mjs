@@ -111,11 +111,12 @@ const sources = [
   ...walk(join(ROOT, 'workers'), ['.ts']),
 ];
 for (const path of sources) collect(path);
-const desktopSources = readdirSync(join(ROOT, 'desktop')).filter((f) => f.endsWith('.cjs') || f === 'setup.js').map((f) => join(ROOT, 'desktop', f));
+const desktopSources = readdirSync(join(ROOT, 'desktop')).filter((f) => f.endsWith('.cjs') || f === 'setup.js' || f === 'console-view.js').map((f) => join(ROOT, 'desktop', f));
 for (const path of desktopSources) collect(path, { desktop: true });
 
-// desktop/setup.html: [data-i18n] inner HTML and [data-i18n-attrs] attribute values.
-const html = readFileSync(join(ROOT, 'desktop/setup.html'), 'utf8');
+// desktop/setup.html and console.html: [data-i18n] inner HTML and [data-i18n-attrs] attribute values.
+for (const page of ['setup.html', 'console.html']) {
+const html = readFileSync(join(ROOT, 'desktop', page), 'utf8');
 const normalise = (text) => text.replace(/\s+/g, ' ').trim();
 for (const match of html.matchAll(/<(\w+)([^>]*)\sdata-i18n(?:\s|>|=)/g)) {
   const tag = match[1];
@@ -124,17 +125,19 @@ for (const match of html.matchAll(/<(\w+)([^>]*)\sdata-i18n(?:\s|>|=)/g)) {
   // The element's own closing tag, counting nested ones of the same name.
   let depth = 1; let at = open + 1; const re = new RegExp(`<(/?)${tag}\\b[^>]*>`, 'g'); re.lastIndex = at; let end = -1;
   for (let m; (m = re.exec(html));) { depth += m[1] ? -1 : 1; if (depth === 0) { end = m.index; break; } }
-  if (end < 0) { problems.push(`desktop/setup.html: <${tag} data-i18n> is not closed`); continue; }
+  if (end < 0) { problems.push(`desktop/${page}: <${tag} data-i18n> is not closed`); continue; }
   const line = html.slice(0, match.index).split('\n').length;
-  add(normalise(html.slice(open + 1, end)), `desktop/setup.html:${line}`, { desktop: true });
+  add(normalise(html.slice(open + 1, end)), `desktop/${page}:${line}`, { desktop: true });
 }
 for (const match of html.matchAll(/<\w+[^>]*\sdata-i18n-attrs="([^"]+)"[^>]*>/g)) {
   const line = html.slice(0, match.index).split('\n').length;
   for (const attr of match[1].split(/\s+/)) {
     const value = new RegExp(`\\s${attr}="([^"]*)"`).exec(match[0]);
-    if (!value) problems.push(`desktop/setup.html:${line}: data-i18n-attrs names ${attr}, which the element does not have`);
-    else add(value[1], `desktop/setup.html:${line}`, { desktop: true });
+    if (!value) problems.push(`desktop/${page}:${line}: data-i18n-attrs names ${attr}, which the element does not have`);
+    else add(value[1], `desktop/${page}:${line}`, { desktop: true });
   }
+}
+
 }
 
 // The dictionary, file by file: a key lives in exactly one file.

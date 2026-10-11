@@ -80,6 +80,7 @@
 | SCN-075 | Keep the discard rules | Find and handle a conversation | P-01 | ST-002, FLW-02 | validated | 2026-10-07 PARTIAL |
 | SCN-076 | Use the app in Russian or English | Resume and manage preferences | P-01 | ST-007, FLW-07 | validated | 2026-10-07 PASS |
 | SCN-077 | Let my coding agent set everything up | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
+| SCN-078 | Work through my coding agent in the console | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1569,3 +1570,24 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** scripts/onboard.mjs, plugins/fabric-inbox/scripts/onboard.mjs, plugins/fabric-inbox/scripts/headers.mjs, desktop/main.cjs, desktop/setup.js, app/components/settings/sections/AgentAccessSection.tsx, tests/onboard.test.ts, tests/agent-access-ui.test.ts, docs/agents/onboard.md
 - **Product:** unobserved
 - **Today:** Agents first (operator, 2026-10-10; fabric-dashboards FD-39; board B-79, B-80, B-81). The agent's proving call was run against the owner's server on 2026-10-11 (89 tools); the first full run with a person's Allow is still to be observed.
+
+### SCN-078: Work through my coding agent in the console
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07, JTBD-03, JRN-03; RE-001
+- **Entry point:** the inbox toolbar's console button, View → Agent Console (⌃⌘T; Ctrl+Shift+T on Windows and Linux)
+- **Preconditions:** The desktop app (not the Mac App Store one), signed in to its server; Claude Code or Codex installed.
+- **Steps:**
+  1. Open the console -> a window beside the mail says what it is, lists the coding agents found and the level (Admin, Mail, Read).
+  2. New session (or Continue last session) -> the app makes a key for this session; the agent starts in the window, connected to this Fabric Inbox only.
+  3. Ask it for anything the app does -> it works through the server's tools; every change is listed under What agents changed (SCN-044).
+  4. Stop -> asked first; the agent stops and its key is revoked.
+- **Expected result:** One place to do anything with mail by talking to my own agent, beside the inbox, with nothing copied and nothing left behind.
+- **Alt paths:** No agent installed: the window says which it looked for and how to get one. Not signed in: the session does not start and the mail window opens to sign in. Quitting the app while a session runs: asked first; quitting stops it and revokes its key. A session the app could not end (a crash): its key is revoked before the next session starts.
+- **UI elements:** the console window (Agent, Level, New session, Continue last session, Stop, the terminal); the inbox toolbar's console button; View → Agent Console.
+- **States covered:** empty, loading, success, error
+- **Errors & recovery:** The agent cannot be started: the reason is shown and the key made for it is revoked. The key cannot be made: the server's reason is shown. A key that could not be revoked at the end: the window says to revoke it in Settings → Agent access.
+- **Status:** draft
+- **Coverage:** desktop/console.cjs, desktop/console-view.js, desktop/console.html, desktop/console-preload.cjs, desktop/console-assets.mjs, desktop/main.cjs, desktop/menu.cjs, app/routes/unified-inbox.tsx, tests/desktop-console.test.ts
+- **Product:** unobserved
+- **Today:** Operator request 2026-10-08 and 2026-10-11 ("как консоль как в других продуктах… открывать кодинг агента нашего… проработать любые действия через mcp"); the pattern of Fabric Dashboards (its ADR-0017). The core ran live on 2026-10-11 with the real node-pty and Claude Code (started, stopped, key revoked); the console in a built app awaits the next release.

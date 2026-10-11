@@ -35,6 +35,7 @@ import { fileURLToPath } from 'node:url';
 import { hardenTemplateHook, verifyHardening } from './hardening.mjs';
 import { analyticsBundle, BUNDLE_ID, SERVER_SOURCES } from './dist-mac.mjs';
 import { pruneReleases } from './release-retention.mjs';
+import { CONSOLE_UNPACK, stageConsolePty, stageConsoleView } from './console-assets.mjs';
 
 const require = createRequire(import.meta.url);
 const { feedFor } = require('./updater.cjs');
@@ -48,7 +49,7 @@ export const PLATFORMS = Object.freeze({
 });
 const ARCHES = ['x64', 'arm64'];
 // Files of the macOS builders and of this one never ship inside an app.
-export const PACKAGE_IGNORE = [/\/(?:mas-package|package|dist-mac|dist-platform|hardening|release-retention)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.(?:icns|ico)$/, /\/dmg-background/, /^\/(?:linux|windows)\//];
+export const PACKAGE_IGNORE = [/\/(?:mas-package|package|dist-mac|dist-platform|hardening|release-retention|console-assets)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.(?:icns|ico)$/, /\/dmg-background/, /^\/(?:linux|windows)\//];
 
 function requireThat(condition, message) { if (!condition) throw new Error(message); }
 const run = (cmd, args, options = {}) => execFileSync(cmd, args, { encoding: 'utf8', cwd: root, maxBuffer: 256 * 1024 * 1024, ...options });
@@ -162,11 +163,13 @@ async function assembleApp(args, temp) {
   const { buildServerBundle } = await import('../scripts/server-bundle.mjs');
   const serverManifest = buildServerBundle({ buildDir: path.join(root, 'build'), outDir: path.join(source, 'server-bundle'), version, revision });
 
+  // The agent console (B-70): its xterm view and node-pty for this platform and architecture.
+  stageConsoleView(source); stageConsolePty(source, { platform, arch });
   const { packager } = await import('@electron/packager');
   const [appDir] = await packager({
     dir: source, name: 'Fabric Inbox', executableName: spec.executableName, appVersion: version, buildVersion: version,
     platform, arch, electronVersion: require('electron/package.json').version, out: path.join(temp, 'out'), overwrite: true,
-    asar: true, prune: true, icon: path.join(source, spec.icon), ignore: PACKAGE_IGNORE,
+    asar: { unpack: CONSOLE_UNPACK }, prune: false, icon: path.join(source, spec.icon), ignore: PACKAGE_IGNORE,
     ...(platform === 'win32' ? { win32metadata: { CompanyName: 'PassionCode.ai', ProductName: 'Fabric Inbox', FileDescription: 'Fabric Inbox', OriginalFilename: 'Fabric Inbox.exe' } } : {}),
     afterExtract: hardenTemplateHook(),
   });

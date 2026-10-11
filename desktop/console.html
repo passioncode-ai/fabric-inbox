@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- xterm injects its own <style>, so inline styles are allowed (Fabric Dashboards ADR-0017); nothing else is. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'">
+<title>Agent console — Fabric Inbox</title>
+<link rel="stylesheet" href="fabric-tokens.css">
+<link rel="stylesheet" href="console-vendor/xterm.css">
+<link rel="stylesheet" href="console.css">
+<script src="console-vendor/xterm.js" defer></script>
+<script src="console-vendor/addon-fit.js" defer></script>
+<script src="console-view.js" defer></script>
+</head>
+<body>
+<header class="bar">
+  <strong data-i18n>Agent console</strong>
+  <span id="status" class="status" role="status" aria-live="polite"></span>
+  <span class="grow"></span>
+  <button type="button" id="stop" class="secondary small" hidden data-i18n>Stop</button>
+</header>
+<section id="choose" class="choose" hidden>
+  <p data-i18n>Your coding agent runs here, connected to this Fabric Inbox: ask it to do anything the app does. It gets its own key for this session, revoked when the session ends.</p>
+  <div class="row">
+    <label><span data-i18n>Agent</span> <select id="runtime"></select></label>
+    <label><span data-i18n>Level</span> <select id="level">
+      <option value="admin" data-i18n>Admin — everything the app does</option>
+      <option value="mail" data-i18n>Mail — mail, no settings</option>
+      <option value="read" data-i18n>Read — changes nothing</option>
+    </select></label>
+  </div>
+  <div class="row">
+    <button type="button" id="new" class="primary" data-i18n>New session</button>
+    <button type="button" id="continue" class="secondary" data-i18n>Continue last session</button>
+  </div>
+  <p id="problem" class="problem" role="alert" hidden></p>
+</section>
+<section id="none" class="choose" hidden>
+  <p data-i18n>No coding agent was found. Install Claude Code or Codex, then open the console again.</p>
+  <p class="hint" id="looked"></p>
+</section>
+<div id="terminal" class="terminal" hidden></div>
+</body>
+</html>

@@ -41,7 +41,7 @@ async function boot(userData: string) {
   const fakeElectron = {
     app: fakeApp, BrowserWindow: FakeWindow,
     Menu: { buildFromTemplate: (x: any) => x, setApplicationMenu: (m: any) => menus.push(m) },
-    ipcMain: { handle: (name: string, fn: any) => handlers.set(name, fn) }, shell: {}, dialog: {},
+    ipcMain: { handle: (name: string, fn: any) => handlers.set(name, fn), on() {} }, shell: {}, dialog: {},
     session: { fromPartition: () => fakeSession }, powerMonitor: new EventEmitter(),
   };
   const code = await readFile(new URL("../desktop/main.cjs", import.meta.url), "utf8");

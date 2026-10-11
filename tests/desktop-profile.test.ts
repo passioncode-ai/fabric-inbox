@@ -181,7 +181,7 @@ async function boot({ config, packaged = true, switches = [] as string[], files 
   const fakeElectron = {
     app: fakeApp, BrowserWindow: FakeWindow,
     Menu: { buildFromTemplate: (x: any) => { menu = x; return x; }, setApplicationMenu() {} },
-    ipcMain: { handle: (name: string, fn: Function) => handlers.set(name, fn) }, shell: {}, dialog: {},
+    ipcMain: { handle: (name: string, fn: Function) => handlers.set(name, fn), on() {} }, shell: {}, dialog: {},
     session: { fromPartition: sessionFor },
   };
   const code = await readFile(new URL("../desktop/main.cjs", import.meta.url), "utf8");

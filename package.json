@@ -30,6 +30,7 @@
 		"preview": "npm run build && vite preview",
 		"typecheck": "npm run cf-typegen && react-router typegen && tsc -b",
 		"test": "node --import tsx --test tests/*.test.ts",
+		"predesktop": "node desktop/console-assets.mjs --vendor",
 		"desktop": "electron desktop",
 		"desktop:package": "node desktop/package.mjs",
 		"desktop:mas": "node desktop/mas-package.mjs",
@@ -39,6 +40,9 @@
 		"desktop:server-bundle": "npm run build && node scripts/server-bundle.mjs",
 		"mcp:docs": "node --import tsx scripts/mcp-docs.ts",
 		"clean": "node scripts/clean.mjs"
+	},
+	"allowScripts": {
+		"node-pty@1.1.0": true
 	},
 	"dependencies": {
 		"@cloudflare/ai-chat": "^0.1.8",
@@ -63,6 +67,7 @@
 		"imapflow": "2.2.5",
 		"isbot": "^5.1.27",
 		"jose": "^6.2.1",
+		"node-pty": "1.1.0",
 		"postal-mime": "^2.6.1",
 		"react": "^19.3.0",
 		"react-dom": "^19.3.0",
@@ -115,6 +120,8 @@
 		"@types/node": "^20.19.37",
 		"@types/react": "^19.1.2",
 		"@types/react-dom": "^19.1.2",
+		"@xterm/addon-fit": "0.11.0",
+		"@xterm/xterm": "6.0.0",
 		"blake3-wasm": "2.1.5",
 		"electron": "^44.4.5",
 		"electron-builder": "26.15.3",

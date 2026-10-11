@@ -16,10 +16,12 @@ const i18n = require('./i18n.cjs');
 const { t } = i18n;
 const updateVerify = require('./update-verify.cjs');
 const platformInstaller = require('./platform-installer.cjs');
+const consoleCore = require('./console.cjs');
 const { createLog } = require('./log.cjs');
 const { randomUUID } = require('node:crypto');
 const { execFile, spawn } = require('node:child_process');
 const execFileAsync = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10000, maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout) => (error ? reject(error) : resolve({ stdout }))));
+const fsSync = require('node:fs');
 const { createWriteStream, existsSync, constants: fsConstants } = require('node:fs');
 
 // A development run (`npm run desktop`) is its own app to macOS: its own name, so Chromium keeps its
@@ -439,6 +441,74 @@ function promptWindow() {
   loadMail();
   return live(mailWindow) || live(setupWindow);
 }
+// ── The agent console (B-70, SCN-078; desktop/console.cjs) ─────────────────────────────────────
+// The person's own coding agent in a PTY beside the mail, connected to this server's MCP with a key
+// made for the session. Not in the Mac App Store package: its sandbox cannot run another CLI.
+const consoleURL = pathToFileURL(path.join(__dirname, 'console.html')).href;
+let consoleWindow = null;
+let agentConsole = null;
+let consoleFor = null;
+let loginPathValue;
+let lastRuntime = null;
+const consoleAvailable = () => !process.mas;
+/** The login shell's PATH (an app started from the Dock has a short one), read once, 5 s at most. */
+function loginPath() {
+  if (loginPathValue !== undefined) return Promise.resolve(loginPathValue);
+  if (process.platform === 'win32') { loginPathValue = process.env.Path || process.env.PATH || ''; return Promise.resolve(loginPathValue); }
+  const shell = process.env.SHELL || '/bin/zsh';
+  return new Promise((resolve) => execFile(shell, ['-ilc', 'printf "%s" "$PATH"'], { timeout: 5000, windowsHide: true }, (error, stdout) => {
+    loginPathValue = error ? (process.env.PATH || '') : String(stdout).trim().split('\n').pop();
+    resolve(loginPathValue);
+  }));
+}
+function consoleRuntimes(found) {
+  const exists = (file) => { try { fsSync.accessSync(file, fsConstants.X_OK); return fsSync.statSync(file).isFile(); } catch { return false; } };
+  return consoleCore.findRuntimes({ platform: process.platform, env: process.env, loginPath: found, exists });
+}
+/** node-pty from the app (or the repository in a development run); macOS's spawn-helper made executable. */
+function loadPty() {
+  const pty = require('node-pty');
+  if (process.platform === 'darwin') {
+    const helper = path.join(path.dirname(require.resolve('node-pty/package.json')), 'prebuilds', `darwin-${process.arch}`, 'spawn-helper').replace('app.asar', 'app.asar.unpacked');
+    try { fsSync.accessSync(helper, fsConstants.X_OK); } catch { try { fsSync.chmodSync(helper, 0o755); } catch { /* reported when spawning */ } }
+  }
+  return pty;
+}
+function consoleSend(channel, value) {
+  if (consoleWindow && !consoleWindow.isDestroyed()) consoleWindow.webContents.send(channel, value);
+}
+async function ensureConsole() {
+  if (!config || !consoleAvailable()) return null;
+  if (agentConsole && consoleFor === config.origin) return agentConsole;
+  if (agentConsole && agentConsole.running()) return agentConsole;
+  const ses = session.fromPartition(policy.partitionFor(config));
+  consoleFor = config.origin;
+  agentConsole = consoleCore.createConsole({
+    pty: { spawn: (...args) => loadPty().spawn(...args) }, fs, dir: path.join(app.getPath('userData'), 'consoles'),
+    mint: connector.mintWith(ses, config.origin), revoke: connector.revokeWith(ses, config.origin),
+    origin: config.origin, mcpUrl: new URL('/mcp', config.origin).href, cwd: app.getPath('home'), loginPath: await loginPath(),
+    log: logEvent,
+    onData: (data) => consoleSend('fabric:console-data', data),
+    onState: (state) => { consoleSend('fabric:console-phase', { ...state, runtimes: consoleRuntimes(loginPathValue) }); installMenu(); },
+  });
+  return agentConsole;
+}
+/** Opens the console window, beside the mail window on its right when there is room. */
+function openConsole() {
+  if (!consoleAvailable()) return;
+  if (!config) { showSetup(t('Set up your server first; the console works with it.')); return; }
+  if (consoleWindow && !consoleWindow.isDestroyed()) { consoleWindow.show(); consoleWindow.focus(); return; }
+  const anchor = mailWindow && !mailWindow.isDestroyed() ? mailWindow.getBounds() : null;
+  consoleWindow = new BrowserWindow({ title: t('Agent console — Fabric Inbox'), width: 720, height: anchor ? anchor.height : 640, minWidth: 420, minHeight: 320,
+    ...(anchor ? { x: anchor.x + anchor.width + 8, y: anchor.y } : {}), backgroundColor: '#111111',
+    webPreferences: securePreferences({ preload: path.join(__dirname, 'console-preload.cjs'), partition: 'fabric-console' }) });
+  rejectPermissions(consoleWindow.webContents.session);
+  consoleWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+  consoleWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  consoleWindow.on('closed', () => { consoleWindow = null; });
+  consoleWindow.loadFile(path.join(__dirname, 'console.html'));
+}
+
 async function handleConnectLink(url) {
   const parsed = connector.parseConnectLink(url);
   const parent = mailWindow && !mailWindow.isDestroyed() ? mailWindow : (setupWindow && !setupWindow.isDestroyed() ? setupWindow : null);
@@ -485,6 +555,32 @@ async function handleConnectLink(url) {
   }
 }
 function installIPC() {
+  const fromConsole = (event) => {
+    if (!policy.isSetupSender(event, consoleWindow, consoleURL)) throw new Error('Untrusted console request');
+  };
+  ipcMain.handle('fabric:console-locale', (event) => { fromConsole(event); return i18n.forWindow(); });
+  ipcMain.handle('fabric:console-available', (event) => { if (!policy.isMailSender(event, mailWindow, config)) throw new Error('Untrusted request'); return consoleAvailable(); });
+  ipcMain.handle('fabric:console-open', (event) => { if (!policy.isMailSender(event, mailWindow, config)) throw new Error('Untrusted request'); openConsole(); return true; });
+  ipcMain.handle('fabric:console-state', async (event) => {
+    fromConsole(event);
+    const c = await ensureConsole();
+    const runtimes = consoleRuntimes(await loginPath());
+    return { ...(c ? c.state() : { phase: 'idle' }), runtimes, lastRuntime, output: c ? c.output() : '' };
+  });
+  ipcMain.handle('fabric:console-start', async (event, input) => {
+    fromConsole(event);
+    const c = await ensureConsole();
+    if (!c) return { ok: false, error: 'no_server' };
+    const runtime = consoleRuntimes(await loginPath()).find((r) => r.id === String(input?.runtime));
+    if (!runtime) return { ok: false, error: 'runtime' };
+    lastRuntime = runtime.id;
+    const out = await c.start({ runtime, level: String(input?.level || 'admin'), resume: !!input?.resume, cols: Number(input?.cols) || 100, rows: Number(input?.rows) || 30 });
+    if (!out.ok && out.error === 'sign_in') loadMail();
+    return out;
+  });
+  ipcMain.handle('fabric:console-stop', async (event) => { fromConsole(event); if (agentConsole) await agentConsole.stop(); return true; });
+  ipcMain.on('fabric:console-write', (event, data) => { try { fromConsole(event); } catch { return; } if (agentConsole) agentConsole.write(String(data)); });
+  ipcMain.on('fabric:console-resize', (event, cols, rows) => { try { fromConsole(event); } catch { return; } if (agentConsole) agentConsole.resize(Number(cols), Number(rows)); });
   function trusted(event) {
     if (!policy.isSetupSender(event, setupWindow, setupURL)) throw new Error('Untrusted setup request');
   }
@@ -638,9 +734,20 @@ function installMenu() {
     openSettings, showServer: () => showSetup(), showCloudflare: () => showSetup('', 'cloudflare'),
     connectGmail: () => { if (config) void openExternal(policy.gmailConnectURL(config), true); else showSetup(t('Set the server address before connecting Gmail.')); },
     retry: loadMail,
+    console: consoleAvailable() ? openConsole : null,
   })));
 }
-app.on('before-quit', () => { quitting = true; });
+app.on('before-quit', (event) => {
+  // A running agent console is asked about first (Fabric Dashboards ADR-0017): quitting ends it.
+  if (!quitting && agentConsole && agentConsole.running()) {
+    const answer = dialog.showMessageBoxSync(consoleWindow && !consoleWindow.isDestroyed() ? consoleWindow : undefined, {
+      type: 'question', buttons: [t('Cancel'), t('Quit and stop the agent')], defaultId: 0, cancelId: 0,
+      message: t('The agent console is still running.'), detail: t('Quitting stops the agent and revokes its key.') });
+    if (answer === 0) { event.preventDefault(); return; }
+    void agentConsole.stop();
+  }
+  quitting = true;
+});
 // A ready update is installed as the app exits (Squirrel.Mac's ShipIt on macOS, the verified installer on
 // Windows; a Linux AppImage is already in place); the next launch logs the result.
 let installNoted = false;

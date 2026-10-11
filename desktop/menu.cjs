@@ -7,7 +7,7 @@
 /**
  * ctx: { t, update: { label, enabled, click }, automatic: { checked, enabled, click },
  *        usage: { checked, enabled, click, about }, openSettings, showServer, showCloudflare,
- *        connectGmail, retry }
+ *        connectGmail, retry, console (opens the agent console, or null) }
  */
 function menuTemplate(platform, ctx) {
   const { t } = ctx;
@@ -31,7 +31,9 @@ function menuTemplate(platform, ctx) {
     { role: 'delete', label: t('Delete') }, { role: 'selectAll', label: t('Select All') },
     ...(mac ? [{ type: 'separator' }, { label: t('Speech'), submenu: [{ role: 'startSpeaking', label: t('Start Speaking') }, { role: 'stopSpeaking', label: t('Stop Speaking') }] }] : [])];
   const account = { label: t('Account'), submenu: [{ label: t('Connect Gmail in browser…'), click: ctx.connectGmail }] };
-  const view = { label: t('[menu] View'), submenu: [{ label: t('Retry connection'), accelerator: 'CmdOrCtrl+R', click: ctx.retry },
+  // B-70: the agent console; not in the Mac App Store package (ctx.console is null there).
+  const agentConsole = ctx.console ? [{ label: t('Agent Console'), accelerator: mac ? 'Ctrl+Cmd+T' : 'Ctrl+Shift+T', click: ctx.console }, { type: 'separator' }] : [];
+  const view = { label: t('[menu] View'), submenu: [...agentConsole, { label: t('Retry connection'), accelerator: 'CmdOrCtrl+R', click: ctx.retry },
     { role: 'resetZoom', label: t('Actual Size') }, { role: 'zoomIn', label: t('Zoom In') }, { role: 'zoomOut', label: t('Zoom Out') }, { role: 'togglefullscreen', label: t('Toggle Full Screen') }] };
   if (mac) return [
     { label: 'Fabric Inbox', submenu: [{ role: 'about', label: t('About Fabric Inbox') }, ...updates, { type: 'separator' }, ...usage, { type: 'separator' }, ...server,
