@@ -5,6 +5,24 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.15.0 — 2026-10-11
+
+- **An agent console beside your mail.** Your own coding agent (Claude Code or Codex) runs in a
+  panel on the right of the mail window, already connected to this Fabric Inbox: ask it to do
+  anything the app does. Open it with the console button in the inbox toolbar, **View → Agent
+  Console** or ⌃⌘T (Ctrl+Shift+T on Windows and Linux); open it again to hide the panel while the
+  session keeps running. Each session gets its own key, at the level you choose, and the key is
+  revoked when the session ends. Quitting the app while a session runs asks first. Not in the Mac App
+  Store version.
+- **Your coding agent can set Fabric Inbox up for you.** It creates the server in your Cloudflare
+  account, then connects itself once you allow it in the app. You paste the token, sign in and
+  choose Allow; you copy no address and no secret. The app's welcome offers **Use the server your
+  agent set up**. **Settings → Agent access** first shows the sentence to give your agent; making a
+  key by hand is the second option. How an agent does it: `docs/agents/onboard.md`.
+- **Mail the server could not take is shown.** If a message could be neither accepted nor
+  refused, the domain's settings list whom it was for, when and why. Its sender may have had a
+  bounce, so you know whom to ask. **Clear** removes the list.
+
 ## 0.14.1 — 2026-10-10
 
 - **Windows installers are signed.** The installer, the uninstaller and the app's own programs and
