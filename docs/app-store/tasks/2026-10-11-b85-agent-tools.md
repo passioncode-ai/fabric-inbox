@@ -61,3 +61,17 @@ cloud read node (M9) does not exist yet. This run makes Inbox's side ready, inde
 |---|---|
 | Connecting `nicegram-support` to the Research Agent (needs M9, the consumer token, the filled domain) | B-85 |
 | An unanswered support question as a signal for the knowledge base (B-85 item 4) | B-85 |
+
+## Close-out
+
+| REQ | Evidence |
+|---|---|
+| REQ-1 | `tests/agents-model.test.ts` "B-85 REQ-1" and "arguments that do not fit" (planted: validator removed → fails) |
+| REQ-2 | `tests/agents-registry.test.ts` "B-85 REQ-2"; `tests/agents-tool-grant-rules.test.ts` |
+| REQ-3 | `tests/agents-runner.test.ts` "B-85 REQ-3" |
+| REQ-4 | `tests/agents-runner.test.ts` "B-85 REQ-4" ×2 |
+| REQ-5 | `tests/agents-runner.test.ts` "B-85 REQ-5" ×4; `tests/agents-tool-grant-rules.test.ts` (unlabelled sibling, top-level field, numbers, depth) |
+| REQ-6 | `tests/agents-tool-grants-ui.test.ts` (planted: publicOnly not saved → fails); `scripts/check-locale.mjs` all in Russian |
+| REQ-7 | `docs/ux/lint.py`, `doctor.py` exit 0; `npm run mcp:docs` exit 0; live `save_agent` schema lists `fixed`, `prefetch`, `publicOnly` |
+
+Merged as `2a4d89c` (PR #74); the owner's server runs it (Worker `a3e133d9`). Not observed: the editor fields in a running app, and a real knowledge tool (none exists until the Research Agent's cloud node). Open: B-85 (connection, item 4).
