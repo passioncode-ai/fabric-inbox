@@ -48,7 +48,7 @@ test("B-86: under Electron, node:fs cannot remove an update cache holding app.as
 
 test("B-86: the update verifier and the installer get original-fs, not Electron's asar-aware fs", () => {
   const main = readFileSync("desktop/main.cjs", "utf8");
-  assert.match(main, /const updateFs = loadUpdateFs\(\);/);
+  assert.match(main, /const updateFs = updateVerify\.updateFileSystem\(\);/);
   assert.match(main, /updateVerify\.createVerifier\(\{[\s\S]*?fs: updateFs\.promises, createWriteStream: updateFs\.createWriteStream,/);
   assert.match(main, /createPlatformInstaller\(\{ platform: process\.platform, app, spawn, fs: updateFs\.promises,/);
 });

@@ -252,4 +252,12 @@ function createVerifier(deps) {
   return { verify, clean, checkBuilt };
 }
 
-module.exports = { createVerifier, UpdateError, compareVersions, requirementFor, feedNameFor, TEAM, WINDOWS_SIGNER };
+/**
+ * The file system an update is handled with (B-86). Inside Electron, node:fs treats every `*.asar`
+ * file as a folder, so a cache holding a downloaded app (app.asar included) cannot be removed
+ * (ENOTEMPTY on macOS, EBUSY on Windows). original-fs is Node's own; outside Electron it does not
+ * exist and node:fs is the same thing. The app and the release's update check both use this.
+ */
+function updateFileSystem() { try { return require('original-fs'); } catch { return require('node:fs'); } }
+
+module.exports = { createVerifier, UpdateError, compareVersions, requirementFor, feedNameFor, TEAM, WINDOWS_SIGNER, updateFileSystem };

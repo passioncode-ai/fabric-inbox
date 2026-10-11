@@ -18,15 +18,17 @@
 // reads the installer's version with PowerShell); --platform linux anywhere. Exits 0 only when the
 // update would be installed.
 import { execFile } from 'node:child_process';
-import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import fs from 'node:fs/promises';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const { createVerifier, feedNameFor } = require('../desktop/update-verify.cjs');
+const { createVerifier, feedNameFor, updateFileSystem } = require('../desktop/update-verify.cjs');
+// The app's own file system for updates: run under Electron (the release workflow does), node:fs
+// would trip over the downloaded app's app.asar exactly as installed copies did (B-86).
+const ufs = updateFileSystem();
 const { updateTarget } = require('../desktop/platform-installer.cjs');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BUNDLE_ID = 'ai.passioncode.fabric-inbox';
@@ -65,19 +67,19 @@ export async function checkRelease({ dir, version, repository = 'passioncode-ai/
   let announced = '';
   try { announced = JSON.parse(feed.toString('utf8')).currentRelease; } catch { /* the verifier names it */ }
   if (announced && announced !== version) throw new Error(`The feed announces ${announced}, not ${version}.`);
-  const scratch = mkdtempSync(path.join(os.tmpdir(), 'fabric-update-check-'));
+  const scratch = ufs.mkdtempSync(path.join(os.tmpdir(), 'fabric-update-check-'));
   try {
     const verifier = createVerifier({
       repository, appVersion: '0.0.0', appName: 'Fabric Inbox', zipName: fileName, platform, arch, requireAuthenticode,
       runningApp: platform === 'darwin' ? stubApp(scratch, bundleId) : '', dir: path.join(scratch, 'updates'), fetch: localFetch(dir, repository, version),
-      exec, fs, createWriteStream, key: key ?? readFileSync(path.join(root, 'desktop', 'release-key.asc'), 'utf8'), ...(fingerprint ? { fingerprint } : {}),
+      exec, fs: ufs.promises, createWriteStream: ufs.createWriteStream, key: key ?? readFileSync(path.join(root, 'desktop', 'release-key.asc'), 'utf8'), ...(fingerprint ? { fingerprint } : {}),
     });
     if (beforeSigning) return await verifier.checkBuilt(feed, path.join(dir, fileName(version)));
     const out = await verifier.verify(feed);
     if (out.outcome !== 'verified' || out.version !== version) throw new Error(`The feed announces ${out.version}, not ${version}.`);
     return { version: out.version, held: !!out.migration };
   } finally {
-    rmSync(scratch, { recursive: true, force: true });
+    ufs.rmSync(scratch, { recursive: true, force: true });
   }
 }
 
