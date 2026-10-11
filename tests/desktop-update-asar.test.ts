@@ -37,7 +37,10 @@ function rmUnderElectron(module: string, dir: string): string {
 test("B-86: under Electron, node:fs cannot remove an update cache holding app.asar; original-fs can", { skip: electron ? false : "no Electron binary" }, async () => {
   const { base, dir } = await updateCache();
   try {
-    assert.equal(rmUnderElectron("node:fs", dir), "ENOTEMPTY", "the failure the installed 0.12.0 logged");
+    const asarAware = rmUnderElectron("node:fs", dir);
+    // macOS reports ENOTEMPTY (what the installed 0.12.0 logged); Windows reports EBUSY, as the archive stays open.
+    assert.notEqual(asarAware, "ok", "Electron's node:fs cannot remove it");
+    if (process.platform === "darwin") assert.equal(asarAware, "ENOTEMPTY", "the failure the installed 0.12.0 logged");
     assert.equal(rmUnderElectron("original-fs", dir), "ok");
     assert.equal(existsSync(dir), false);
   } finally { rmSync(base, { recursive: true, force: true }); }
