@@ -161,6 +161,19 @@ function UpdateNotice() {
 	);
 }
 
+/** The desktop app's docked agent console (B-70): the page gives up its right edge to it. */
+function ConsoleDock() {
+	useEffect(() => {
+		const bridge = window.fabricDesktop;
+		if (!bridge?.onConsoleDock) return;
+		const root = document.documentElement;
+		const stop = bridge.onConsoleDock((width) => root.style.setProperty("--fi-console-width", `${Math.max(0, Math.min(4000, Math.round(width)))}px`));
+		void bridge.consoleDockReady?.();
+		return () => { stop(); root.style.removeProperty("--fi-console-width"); };
+	}, []);
+	return null;
+}
+
 export default function App() {
 	// Use useState to ensure each SSR request gets a fresh client while the
 	// browser reuses the same singleton across navigations.
@@ -173,6 +186,7 @@ export default function App() {
 					<Toasty>
 						<MutationErrorToasts />
 						<UpdateNotice />
+						<ConsoleDock />
 						<Outlet />
 					</Toasty>
 				</TooltipProvider>
