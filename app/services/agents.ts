@@ -49,6 +49,8 @@ export interface ProjectAddresses {
   routingConfigured: boolean;
   addresses: ProjectAddress[];
   unknownRecipients: { address: string; domain: string; action: string; count: number; lastSeen: string }[];
+  /** Mail the server could neither take nor refuse (B-40), newest first: never the sender or content. */
+  incomingFailures?: { id: string; to: string | null; domain: string | null; at: string; size: number | null; error: string }[];
 }
 export interface RoutingStatus {
   state: "verified" | "missing" | "unknown";

@@ -587,9 +587,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Alt paths:** A domain without a catch-all rejects with a clear bounce so the sender knows.
 - **UI elements:** SCR-02; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** If neither rejecting nor storing is possible, the failure is logged with the recipient and time.
+- **Errors & recovery:** If neither rejecting nor storing is possible, the failure is logged with the recipient and time, and the domain's panel shows Mail this server could not take (whom it was for, when, why; never the sender or content) until Clear (B-40).
 - **Status:** draft
-- **Coverage:** workers/index.ts (resolveRecipient), app/components/settings/sections/DomainsSection.tsx (unknown recipients), tests/incoming-routing.test.ts, tests/project-addresses.test.ts, workers/incoming-log.ts, tests/incoming-failure-log.test.ts
+- **Coverage:** workers/index.ts (resolveRecipient), app/components/settings/sections/DomainsSection.tsx (unknown recipients), tests/incoming-routing.test.ts, tests/project-addresses.test.ts, workers/incoming-log.ts, tests/incoming-failure-log.test.ts, tests/domain-failures-ui.test.ts
 - **Product:** unobserved
 - **Today:** Implemented. Unknown addresses are rejected with "Address not found" or kept in a per-domain catch-all, recorded without sender or body, and listed on **Project addresses** with **Create address** (observed on the local Worker with a synthetic message). A message nothing could take is logged as one JSON line `incoming_failed` with the envelope recipient, the time, the size and the failure, never the sender, subject or body (2026-10-07, AUD-B12-03).
 

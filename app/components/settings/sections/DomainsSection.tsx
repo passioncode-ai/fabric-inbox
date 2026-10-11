@@ -219,6 +219,12 @@ function ServedDomain({ summary, list, data, action }: {
   const d = detail.data;
   const addresses = (data?.addresses ?? []).filter((a) => a.domain === domain);
   const unknown = (data?.unknownRecipients ?? []).filter((u) => u.domain === domain);
+  const failures = (data?.incomingFailures ?? []).filter((f) => f.domain === domain);
+  const failureWork = useWork(domain, "incoming-failures");
+  const clearFailures = () => void failureWork.run(t("Clearing…"), async () => {
+    try { await fabric(`/api/incoming-failures?domain=${encodeURIComponent(domain)}`, undefined, "DELETE"); return ""; }
+    finally { await refreshMail(client, domain); }
+  });
   const effective = data?.domains.find((x) => x.domain === domain)?.catchAll ?? null;
   const catchAll = effective?.mailbox ?? d?.catchAllMailbox ?? null;
   const catchAllFixed = effective?.source === "deployment";
@@ -339,6 +345,24 @@ function ServedDomain({ summary, list, data, action }: {
               </li>
             ))}
           </ul>
+        </PanelBlock>
+      )}
+      {failures.length > 0 && (
+        // B-40: mail the server could neither take nor refuse is shown where the domain is, not left in the Worker's log.
+        <PanelBlock title={t("Mail this server could not take")} aside={
+          <button type="button" className="fi-text-button" disabled={!!failureWork.busy} onClick={clearFailures}>{failureWork.busy ? t("Clearing…") : t("Clear")}</button>}>
+          <div className="fi-callout is-bad" role="alert">
+            <p>{t.plural(failures.length, {
+              one: "{n} message for {domain} could not be taken or refused, so it was not kept. Its sender may have had a bounce; ask them to send it again.",
+              other: "{n} messages for {domain} could not be taken or refused, so they were not kept. Their senders may have had a bounce; ask them to send again.",
+            }, { domain })}</p>
+          </div>
+          <ul className="fi-plain-list">
+            {failures.map((f) => (
+              <li key={f.id}><span className="fi-grow">{t("{address}, {when}: {problem}", { address: f.to ?? domain, when: t.dateTime(f.at), problem: f.error })}</span></li>
+            ))}
+          </ul>
+          <ActionResult result={failureWork.result} />
         </PanelBlock>
       )}
       {summary.fixed && <p className="fi-hint">{t("{domain} is set in this server's configuration (DOMAINS), so it is always received here.", { domain })}</p>}

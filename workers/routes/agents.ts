@@ -8,6 +8,7 @@ import { allServedDomains, createMailbox, deleteMailbox, isDomainName, readAllSe
 import { cloudflareApi, cloudflareToken } from "../routing/cloudflare-api";
 import { DomainManager } from "../routing/domains";
 import { knownCollections } from "./knowledge";
+import { clearIncomingFailures, listIncomingFailures } from "../incoming-log";
 import {
   checkAddresses, createAddress, createAddresses, removeAddress, routingTestStatus, sendRoutingTest, setForwardCopy, effectiveCatchAll,
 } from "../lib/address-ops";
@@ -187,11 +188,12 @@ async function unknownRecipients(bucket: R2Bucket) {
 agentsRouter.get("/api/project-addresses", async (c) => {
   c.header("Cache-Control", "no-store");
   try {
-    const [served, unknown, agents, issues] = await Promise.all([
+    const [served, unknown, agents, issues, failures] = await Promise.all([
       readAllSettings(c.env.BUCKET),
       unknownRecipients(c.env.BUCKET),
       c.env.AGENT_REGISTRY ? registry(c).listAgents() : Promise.resolve([]),
       deliveryIssues(c.env.BUCKET),
+      listIncomingFailures(c.env.BUCKET).catch(() => []),
     ]);
     const names = new Map<string, string>(agents.map((a) => [a.id, a.name] as [string, string]));
     const domains = await allServedDomains(c.env);
@@ -217,11 +219,20 @@ agentsRouter.get("/api/project-addresses", async (c) => {
         };
       }),
       unknownRecipients: unknown.filter((u) => !served.some((s) => s.email === u.address)),
+      // Mail the server could neither take nor refuse (B-40): whom it was for, when, the size, why.
+      incomingFailures: failures.map((f) => ({ ...f, domain: (f.to ?? "").slice((f.to ?? "").lastIndexOf("@") + 1) || null })),
     });
   } catch (error) {
     console.error(JSON.stringify({ event: "project_addresses_error", error: (error as Error).message }));
     return c.json({ error: msg("Project addresses are unavailable right now") }, 503);
   }
+});
+
+/** The owner has seen the failures (B-40): all of them, or one domain's (`?domain=`). */
+agentsRouter.delete("/api/incoming-failures", async (c) => {
+  const domain = c.req.query("domain")?.trim().toLowerCase();
+  if (domain && !isDomainName(domain)) return c.json({ error: msg("Not a domain name") }, 400);
+  return c.json({ removed: await clearIncomingFailures(c.env.BUCKET, domain || undefined) });
 });
 
 agentsRouter.get("/api/project-addresses/:email/routing", async (c) => {
