@@ -15,6 +15,7 @@ const bundle = await build({
       export class TestMailbox extends MailboxDO {
         constructor(ctx, env) { super(ctx, {...env, AI:{run:forbidden}, EMAIL:{send:forbidden}}); }
         async seed(folder, row) { return this.createEmail(folder, row, []); }
+        async unindex(id) { this.ctx.storage.sql.exec('UPDATE emails SET search_text = NULL WHERE id = ?', id); }
         async attach(row) { this.ctx.storage.sql.exec("INSERT INTO attachments (id, email_id, filename, mimetype, size) VALUES (?, ?, ?, 'text/plain', 1)", row.id, row.email_id, row.filename); }
       }
       export default {
@@ -30,6 +31,8 @@ const bundle = await build({
             if (c.op === 'deleteFolder') return Response.json(await box.deleteFolder(c.id));
             if (c.op === 'folder') return Response.json(await box.getEmails({ folder: c.folder }));
             if (c.op === 'search') return Response.json(await box.searchEmails({ query: c.query }));
+            if (c.op === 'inbox') return Response.json((await box.listInboxMessages(c.mailbox, { folder: c.folder || 'inbox', query: c.query, limit: 50 })).map(m => m.providerMessageId));
+            if (c.op === 'unindex') { await box.unindex(c.id); return Response.json(true); }
             if (c.op === 'get') return Response.json(await box.getEmail(c.id));
             if (c.op === 'delete') return Response.json(await box.deleteEmail(c.id));
             if (c.op === 'r2get') { const o = await env.BUCKET.get(c.key); return Response.json(o ? (await o.text()).length : null); }
@@ -117,6 +120,38 @@ test("search finds a phrase longer than LIKE's 50-byte cap, and Cyrillic in any 
   const source = (await import("node:fs")).readFileSync("workers/durableObject/index.ts", "utf8");
   const builder = source.slice(source.indexOf("#buildSearchConditions("), source.indexOf("async searchEmails("));
   assert.doesNotMatch(builder, /LIKE \$\{/, "no SQL LIKE condition is built");
+});
+
+test("B-21: search reads the message's text, not its HTML; deep text is found; the sender's name is searched", async () => {
+  const { mf, op } = await fixture();
+  try {
+    const css = "<style>" + ".x{color:red}".repeat(400) + "</style>";
+    await op({ op: "seed", rows: [
+      ["inbox", email("deep", { body: `<html><head>${css}</head><body><div class="greeting">Hello</div><p>Your refund for order R-4471 is on its way &amp; done.</p></body></html>` })],
+      ["inbox", email("named", { sender: "x@y.invalid", sender_name: "Marta Kowalska" })],
+      ["inbox", email("plain", { body: "Nothing to see" })],
+    ] });
+    for (const query of ["R-4471", "refund for order", "on its way & done"]) {
+      assert.deepEqual((await op({ op: "search", query })).map((e: any) => e.id), ["deep"], `searchEmails: ${query}`);
+      assert.deepEqual(await op({ op: "inbox", query }), ["deep"], `inbox list: ${query}`);
+    }
+    for (const markup of ["greeting", "color:red", "<p>", "div"]) {
+      assert.deepEqual((await op({ op: "search", query: markup })).map((e: any) => e.id), [], `markup is not text: ${markup}`);
+      assert.deepEqual(await op({ op: "inbox", query: markup }), [], `inbox list, markup: ${markup}`);
+    }
+    assert.deepEqual((await op({ op: "search", query: "Kowalska" })).map((e: any) => e.id), ["named"]);
+    assert.deepEqual(await op({ op: "inbox", query: "Marta" }), ["named"]);
+  } finally { await mf.dispose(); }
+});
+
+test("B-21: a message stored before the text column is found as before, then indexed by the next search", async () => {
+  const { mf, op } = await fixture();
+  try {
+    await op({ op: "seed", rows: [["inbox", email("old", { body: "<p>Invoice INV-77 attached</p>" })]] });
+    await op({ op: "unindex", id: "old" });
+    assert.deepEqual((await op({ op: "search", query: "INV-77" })).map((e: any) => e.id), ["old"], "found from its body meanwhile");
+    assert.deepEqual((await op({ op: "search", query: "<p>" })).map((e: any) => e.id), [], "and indexed by that search: markup no longer matches");
+  } finally { await mf.dispose(); }
 });
 
 test("a draft id can only replace a draft, and the old draft goes only after the new one is stored", async () => {

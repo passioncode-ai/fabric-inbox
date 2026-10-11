@@ -23,7 +23,7 @@ import { validateSender, buildReferencesChain, buildQuotedReplyBlock } from '../
 import { verifyDraft } from '../lib/ai';
 import type { SendMailCommand, SendMailResult, SendMailRequest } from '../../shared/mail/send';
 import type { InboxReadOptions } from '../../shared/mail/inbox';
-import { mailboxInboxQuery, mailboxInboxMessage, searchVariants, type MailboxInboxRow } from '../lib/inbox-query';
+import { mailboxInboxQuery, mailboxInboxMessage, searchText, searchVariants, type MailboxInboxRow } from '../lib/inbox-query';
 import { parseStoredHeaders } from '../agents/prefilter';
 import { DISCARD_RETENTION_MS } from '../../shared/mail/discard';
 import { listDrafts as listDraftRows, saveDraft as saveDraftRows, type DraftSql, type DraftSummary, type SaveDraftInput, type SaveDraftResult } from '../lib/mailbox-drafts';
@@ -363,6 +363,7 @@ export class MailboxDO extends DurableObject<Env> {
 
   async listInboxMessages(mailboxId: string, options: InboxReadOptions) {
     const accountId = "cloudflare:" + mailboxId;
+    if (options.query) this.#indexSearchText();
     const query = mailboxInboxQuery(accountId, options);
     return this.ctx.storage.sql.exec<MailboxInboxRow>(query.sql, ...query.parameters).toArray()
       .map(row => mailboxInboxMessage(accountId, row, options.ownDomains ?? []));
@@ -1001,9 +1002,11 @@ export class MailboxDO extends DurableObject<Env> {
 		const contains = (columns: string[], value: string) => {
 			const folded = addParam(value.toLowerCase());
 			const forms = searchVariants(value).map(addParam);
-			return `(${columns.flatMap((c) => [`instr(lower(${prefix}${c}), ${folded}) > 0`, ...forms.map((f) => `instr(${prefix}${c}, ${f}) > 0`)]).join(" OR ")})`;
+			const column = (c: string) => c.replace(/\b([a-z_]+)\b(?!\()/g, `${prefix}$1`);
+			return `(${columns.map(column).flatMap((c) => [`instr(lower(${c}), ${folded}) > 0`, ...forms.map((f) => `instr(${c}, ${f}) > 0`)]).join(" OR ")})`;
 		};
-		if (query) conditions.push(contains(["subject", "body", "sender", "recipient", "cc", "bcc"], query));
+		// The message's words, not its markup (B-21): search_text, or the body for a row not yet indexed.
+		if (query) conditions.push(contains(["subject", "coalesce(search_text, body)", "sender", "sender_name", "recipient", "cc", "bcc"], query));
 		if (folder) {
 			const p = addParam(folder);
 			conditions.push(`${prefix}folder_id = (SELECT id FROM folders WHERE name = ${p} OR id = ${p} LIMIT 1)`);
@@ -1020,7 +1023,17 @@ export class MailboxDO extends DurableObject<Env> {
 		return { conditions, params };
 	}
 
+	/**
+	 * Fills search_text for rows stored before it existed (B-21), a bounded batch per search, so a
+	 * large mailbox converges without one long pass; until then such a row is searched by its body.
+	 */
+	#indexSearchText(limit = 200) {
+		const rows = this.ctx.storage.sql.exec<{ id: string; body: string | null }>("SELECT id, body FROM emails WHERE search_text IS NULL LIMIT ?", limit).toArray();
+		for (const row of rows) this.ctx.storage.sql.exec("UPDATE emails SET search_text = ? WHERE id = ?", searchText(row.body), row.id);
+	}
+
 	async searchEmails(options: SearchFilterOptions & { page?: number; limit?: number }) {
+		if (options.query) this.#indexSearchText();
 		const { page = 1, limit: rawLimit = 25 } = options;
 		const limit = Math.min(Math.max(rawLimit, 1), 100);
 		const { conditions, params } = this.#buildSearchConditions(options, "e");
@@ -1507,6 +1520,7 @@ export class MailboxDO extends DurableObject<Env> {
 				read: isSent ? 1 : (email.read ? 1 : 0),
 				starred: email.starred ? 1 : 0,
 				body: email.body,
+				search_text: searchText(email.body),
 				in_reply_to: email.in_reply_to ?? null,
 				email_references: email.email_references ?? null,
 				thread_id: email.thread_id ?? null,
