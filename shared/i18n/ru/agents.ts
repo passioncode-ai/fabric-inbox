@@ -331,6 +331,14 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"Server URL": "URL сервера",
 	"Available Tools": "Доступные инструменты",
 
+	// Tool grants that call a shared knowledge base (B-85)
+	"Fixed arguments (JSON)": "Фиксированные аргументы (JSON)",
+	"Sent on every call, over what the agent chooses, e.g. {\"domain\": \"nicegram\"}.": "Передаются при каждом вызове поверх того, что выбрал агент, например {\"domain\": \"nicegram\"}.",
+	"Not applied, so no arguments are fixed: give a JSON object of texts, numbers or true/false.": "Не применено, фиксированных аргументов нет: нужен объект JSON, значения которого — текст, числа или true/false.",
+	"Ask it before answering, with the message as": "Спрашивать до ответа, передавая письмо в аргументе",
+	"The name of a text argument of the tool, e.g. query. Empty: the agent calls it only when it decides to.": "Имя текстового аргумента инструмента, например query. Пусто: агент вызывает инструмент только сам, когда сочтёт нужным.",
+	"Use only public results: every item it returns must be marked public, otherwise the answer waits for you": "Использовать только публичные результаты: каждый пункт ответа инструмента должен быть помечен как public, иначе ответ ждёт вас",
+
 	// Words several settings sections share; kept here once (a second home fails the check)
 	"Upload .md or .txt files…": "Загрузить файлы .md или .txt…",
 };

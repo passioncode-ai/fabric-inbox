@@ -65,3 +65,46 @@ test("a model that never submits returns no decision, so the runner can leave th
   assert.equal(r.decision, null);
   assert.equal(r.text, "");
 });
+
+test("B-85 REQ-1: a granted tool with a schema is offered that schema and called with the model's arguments as they are", async () => {
+  const got: Record<string, unknown>[] = [];
+  const agent = { ...AgentInputSchema.parse({ name: "Support", instructions: "Answer." }), id: "support", version: 1, createdAt: "x" };
+  const schema = { type: "object", properties: { query: { type: "string", description: "What to find" } }, required: ["query"] };
+  const req: ModelRequest = { agent, system: "s", prompt: "{}", tools: [
+    { name: "nicegram_kb", description: "kb", inputSchema: schema, run: async (a) => { got.push(a); return "{}"; } },
+    { name: "legacy_tool", description: "old grant", run: async (a) => { got.push(a); return "{}"; } },
+  ] };
+  let offered: { name: string; inputSchema?: unknown }[] = [];
+  let n = 0;
+  const model = new MockLanguageModelV3({
+    doGenerate: async (options) => {
+      n++;
+      if (n === 1) { offered = (options.tools ?? []) as never; return call("nicegram_kb", { query: "translator" }, n) as never; }
+      if (n === 2) return call("legacy_tool", { arguments: { order: "A-1" } }, n) as never;
+      return call("submit_answer", ANSWER, n) as never;
+    },
+  });
+  await runModel(model, req);
+  const kb = offered.find((t) => t.name === "nicegram_kb")!;
+  assert.deepEqual((kb.inputSchema as { properties: unknown }).properties, schema.properties, "the endpoint's own schema");
+  const legacy = offered.find((t) => t.name === "legacy_tool")!;
+  assert.ok("arguments" in ((legacy.inputSchema as { properties: Record<string, unknown> }).properties), "an older grant keeps the wrapper");
+  assert.deepEqual(got, [{ query: "translator" }, { order: "A-1" }]);
+});
+
+test("B-85 review: arguments that do not fit the tool's schema never reach the endpoint", async () => {
+  const got: unknown[] = [];
+  const agent = { ...AgentInputSchema.parse({ name: "Support", instructions: "Answer." }), id: "support", version: 1, createdAt: "x" };
+  const schema = { type: "object", properties: { query: { type: "string" } }, required: ["query"] };
+  const req: ModelRequest = { agent, system: "s", prompt: "{}", tools: [{ name: "nicegram_kb", description: "kb", inputSchema: schema, run: async (a) => { got.push(a); return "{}"; } }] };
+  let n = 0;
+  const model = new MockLanguageModelV3({
+    doGenerate: async () => {
+      n++;
+      if (n === 1) return call("nicegram_kb", { domain: "everything" }, n) as never;
+      return call("submit_answer", ANSWER, n) as never;
+    },
+  });
+  await runModel(model, req);
+  assert.deepEqual(got, [], "a call without the required query is refused before the endpoint");
+});

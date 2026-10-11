@@ -1163,7 +1163,11 @@ const setHidden = defineTool({
 const agentInput = z.object({
   name: z.string().min(1).max(80), instructions: z.string().min(1).max(20_000), knowledge: z.string().max(50_000).optional().describe("Notes the agent always has"),
   collections: z.array(z.string().max(100)).max(10).optional().describe("Knowledge collection ids it searches"),
-  tools: z.array(z.object({ name: z.string().regex(/^[a-z][a-z0-9_]{0,47}$/), description: z.string().min(1).max(500), endpoint: z.string().url(), tool: z.string().min(1).max(200), tokenRef: z.string().max(100).optional() })).max(10).optional(),
+  tools: z.array(z.object({ name: z.string().regex(/^[a-z][a-z0-9_]{0,47}$/), description: z.string().min(1).max(500), endpoint: z.string().url(), tool: z.string().min(1).max(200), tokenRef: z.string().max(100).optional(),
+    fixed: z.record(z.union([z.string().max(500), z.number(), z.boolean()])).optional().describe("Arguments pinned on every call, over the model's (e.g. a knowledge domain)"),
+    prefetch: z.object({ argument: z.string().min(1).max(64) }).optional().describe("Call once before the model, with the message's subject and opening as this text argument"),
+    publicOnly: z.boolean().optional().describe("Use the output only when every item with a `class` is \"public\"; otherwise the answer stays a draft"),
+  })).max(10).optional().describe("Remote MCP tools; the endpoint's input schema is read and stored on save"),
   replyPolicy: z.object({ mode: z.enum(["draft", "auto"]), allowedIntents: z.array(z.string().max(80)).max(20).default([]), dailySendLimit: z.number().int().min(1).max(200).default(20) }).optional(),
 }).describe("The agent's whole definition; saving makes a new version");
 

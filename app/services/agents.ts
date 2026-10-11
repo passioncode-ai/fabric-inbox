@@ -8,6 +8,14 @@ export interface ToolGrant {
   endpoint: string;
   tool: string;
   tokenRef?: string;
+  /** The endpoint's input schema as JSON text, written by the server on save (B-85). */
+  inputSchema?: string;
+  /** Arguments pinned on every call. */
+  fixed?: Record<string, string | number | boolean>;
+  /** Called once before the model, with the message as this argument. */
+  prefetch?: { argument: string };
+  /** Only an all-public output may be used. */
+  publicOnly?: boolean;
 }
 export interface AgentInput {
   name: string;

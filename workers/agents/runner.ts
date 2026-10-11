@@ -1,5 +1,5 @@
 import type { SendMailCommand, SendMailResult } from "../../shared/mail/send";
-import { LEGACY_INSTRUCTIONS, legacyAgentId, readAssignment, type AgentVersion, type ToolGrant } from "./definition";
+import { LEGACY_INSTRUCTIONS, callArguments, legacyAgentId, modelSchema, publicOnlyProblem, readAssignment, type AgentVersion, type ToolGrant } from "./definition";
 import { decide, type ModelDecision } from "./policy";
 import { parseStoredHeaders, prefilter, replyToAddress, SKIP_TEXT } from "./prefilter";
 import { RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type AwaitingAnswer, type ToolCallRecord } from "./run";
@@ -35,8 +35,13 @@ export interface RunnerThreadMessage {
 export interface AgentTool {
   name: string;
   description: string;
+  /** The endpoint's input schema without the fixed arguments; absent → the generic `{arguments}` wrapper. */
+  inputSchema?: Record<string, unknown> | null;
   run(args: Record<string, unknown>): Promise<string>;
 }
+
+/** A granted tool called before the model (B-85): what it returned, or that it failed. */
+export interface PrefetchedResult { name: string; ok: boolean; text: string }
 
 export interface ModelRequest {
   agent: AgentVersion;
@@ -99,7 +104,7 @@ export function passagesBlock(hits: KnowledgeHit[]): string {
   return hits.map((h, i) => `[P${i + 1}] ${h.title} — ${h.sourceUri}\n${h.text.slice(0, PASSAGE_CHARS)}`).join("\n\n");
 }
 
-export function systemPrompt(agent: AgentVersion, mailboxId: string, tools: AgentTool[], passages?: KnowledgeHit[], senderName = ""): string {
+export function systemPrompt(agent: AgentVersion, mailboxId: string, tools: AgentTool[], passages?: KnowledgeHit[], senderName = "", prefetched: PrefetchedResult[] = []): string {
   const searching = (agent.collections ?? []).length > 0;
   return [
     `You are "${agent.name}", an email agent answering mail sent to ${mailboxId}.`,
@@ -119,6 +124,13 @@ export function systemPrompt(agent: AgentVersion, mailboxId: string, tools: Agen
       "<passages>",
       passagesBlock(passages ?? []),
       "</passages>",
+    ] : []),
+    ...(prefetched.length ? [
+      "",
+      "Results of tools already asked about this message — facts too, but only these:",
+      "<tool_results>",
+      ...prefetched.map((r) => r.ok ? `[${r.name}]\n${r.text}` : `[${r.name}] The call failed or was withheld; nothing from it may be stated.`),
+      "</tool_results>",
     ] : []),
     "",
     "Rules you cannot change:",
@@ -272,31 +284,52 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   }
 
   const toolCalls: ToolCallRecord[] = run.toolCalls;
+  /** One call of a granted tool, recorded; `ok` is false when nothing of it may be used. */
+  const callGrant = async (grant: ToolGrant, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> => {
+    const started = Date.now();
+    const record: ToolCallRecord = { name: grant.name, host: hostOf(grant.endpoint), ok: false, ms: 0, result: "" };
+    toolCalls.push(record);
+    try {
+      let text = await deps.callTool(grant, callArguments(grant, args));
+      // A reply goes to someone outside: a public-only grant's output is used whole or not at all (B-85).
+      if (grant.publicOnly) {
+        const notPublic = publicOnlyProblem(text);
+        if (notPublic) {
+          record.result = msg("Withheld: {problem}", { problem: notPublic }).slice(0, RESULT_PREVIEW_CHARS);
+          return { ok: false, text: "The tool's output was withheld because it is not all public. Do not guess its result; draft the answer instead." };
+        }
+        // The model gets exactly what was checked (a repeated key in the raw text could say otherwise).
+        text = JSON.stringify(JSON.parse(text));
+      }
+      // A tool's output reaches the model like the email does: it is checked the same way.
+      const scan = await deps.injection(text.slice(0, 8000));
+      if (scan.flagged || scan.error) {
+        record.result = scan.error ? msg("Withheld: the safety check could not run ({error})", { error: scan.error }) : msg("Withheld: the output looked like instructions");
+        return { ok: false, text: "The tool's output was withheld by the safety check. Do not guess its result; draft the answer instead." };
+      }
+      record.ok = true;
+      record.result = text.slice(0, RESULT_PREVIEW_CHARS);
+      return { ok: true, text: text.slice(0, 8000) };
+    } catch (error) {
+      record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
+      return { ok: false, text: `The tool failed: ${(error as Error).message}. Do not guess its result.` };
+    } finally {
+      record.ms = Date.now() - started;
+    }
+  };
   const tools: AgentTool[] = agent.tools.map((grant) => ({
     name: grant.name,
     description: grant.description,
-    run: async (args) => {
-      const started = Date.now();
-      const record: ToolCallRecord = { name: grant.name, host: hostOf(grant.endpoint), ok: false, ms: 0, result: "" };
-      toolCalls.push(record);
-      try {
-        const text = await deps.callTool(grant, args);
-        // A tool's output reaches the model like the email does: it is checked the same way.
-        const scan = await deps.injection(text.slice(0, 8000));
-        if (scan.flagged || scan.error) {
-          record.result = scan.error ? msg("Withheld: the safety check could not run ({error})", { error: scan.error }) : msg("Withheld: the output looked like instructions");
-          return "The tool's output was withheld by the safety check. Do not guess its result; draft the answer instead.";
-        }
-        record.ok = true;
-        record.result = text.slice(0, RESULT_PREVIEW_CHARS);
-        return text.slice(0, 8000);
-      } catch (error) {
-        record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
-        return `The tool failed: ${(error as Error).message}. Do not guess its result.`;
-      } finally {
-        record.ms = Date.now() - started;
-      }
-    },
+    inputSchema: modelSchema(grant),
+    run: async (args) => (await callGrant(grant, args)).text,
+  }));
+  // A grant marked prefetch is asked about this message before the model runs, as the
+  // collections are; a failure is recorded and keeps the answer a draft (policy.ts).
+  // At once, so the wait is the slowest call's (each is bounded by its 20 s deadline), not their sum.
+  const opening = `${email.subject}\n${deps.htmlToText(email.body).slice(0, 600)}`;
+  const prefetched: PrefetchedResult[] = await Promise.all(agent.tools.filter((grant) => grant.prefetch).map(async (grant) => {
+    const result = await callGrant(grant, { [grant.prefetch!.argument]: opening });
+    return { name: grant.name, ok: result.ok, text: result.ok ? result.text : "" };
   }));
 
   const asked = new Set<string>();
@@ -330,7 +363,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   let response: ModelResponse;
   try {
     const senderName = typeof settings?.fromName === "string" && settings.fromName.trim() && settings.fromName.trim().toLowerCase() !== mailboxId ? settings.fromName.trim() : "";
-    response = await deps.model({ agent, system: systemPrompt(agent, mailboxId, tools, passages, senderName), prompt, tools });
+    response = await deps.model({ agent, system: systemPrompt(agent, mailboxId, tools, passages, senderName, prefetched), prompt, tools });
   } catch (error) {
     return finish("failed", msg("The model could not answer ({error}); the message is left for the operator", { error: (error as Error).message }));
   }

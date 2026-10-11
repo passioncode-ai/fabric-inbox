@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { msg } from "../../shared/i18n";
 
 /**
  * A reusable agent (SCN-022): a named, versioned definition that is not tied to a
@@ -7,6 +8,8 @@ import { z } from "zod";
 /** Names the runner provides itself; a granted tool cannot take them. */
 export const RESERVED_TOOLS = ["search_knowledge", "submit_answer"];
 const ToolName = z.string().regex(/^[a-z][a-z0-9_]{0,47}$/, "Tool name: lowercase letters, digits and _");
+
+export const SCHEMA_LIMIT = 8_000;
 
 export const ToolGrantSchema = z.object({
   /** The name the model sees; unique within the agent. */
@@ -18,8 +21,89 @@ export const ToolGrantSchema = z.object({
   tool: z.string().min(1).max(100),
   /** Name of a Worker secret entry in AUTOMATION_TOOL_TOKENS; never the value. */
   tokenRef: z.string().regex(/^[A-Z_][A-Z0-9_]*$/).optional(),
+  /**
+   * The tool's input schema as its endpoint listed it at save time (B-85), as JSON text: an
+   * object type here is not RPC-serializable and turns the registry's types into never. The
+   * registry writes it; a value sent by the editor is replaced. Absent on older grants.
+   */
+  inputSchema: z.string().max(SCHEMA_LIMIT).optional(),
+  /** Arguments the operator pins (e.g. a knowledge domain): merged into every call, over the model's. */
+  fixed: z.record(z.union([z.string().max(500), z.number(), z.boolean()])).optional()
+    .refine((f) => !f || Object.keys(f).length <= 10, "At most 10 fixed arguments"),
+  /** Call the tool once before the model, with the message's subject and opening as this argument. */
+  prefetch: z.object({ argument: z.string().min(1).max(64) }).strict().optional(),
+  /**
+   * Use the output only when every item carrying a `class` says "public" (a reply goes to
+   * someone outside); anything else is withheld from the model and keeps the answer a draft.
+   */
+  publicOnly: z.boolean().optional(),
 }).strict();
 export type ToolGrant = z.infer<typeof ToolGrantSchema>;
+
+/**
+ * The schema the model is offered for a grant: the endpoint's, without the fixed arguments.
+ * Null when there is none usable (an older grant, not an object schema, or over 8 KB), and the
+ * model then gets the generic `{arguments}` wrapper.
+ */
+export function modelSchema(grant: ToolGrant): Record<string, unknown> | null {
+  let schema: Record<string, unknown>;
+  try { schema = JSON.parse(grant.inputSchema ?? "null"); } catch { return null; }
+  if (!schema || typeof schema !== "object" || schema.type !== "object") return null;
+  // A reference the provider may not resolve would fail every run of the agent; the wrapper is safer.
+  if (/"\$ref"\s*:/.test(grant.inputSchema ?? "")) return null;
+  const fixed = Object.keys(grant.fixed ?? {});
+  const properties = { ...((schema.properties as Record<string, unknown> | undefined) ?? {}) };
+  for (const key of fixed) delete properties[key];
+  const required = Array.isArray(schema.required) ? (schema.required as unknown[]).filter((k) => typeof k === "string" && !fixed.includes(k)) : undefined;
+  return { ...schema, properties, ...(required ? { required } : {}) };
+}
+
+/** The arguments sent to the endpoint: the model's, then the operator's fixed ones over them. */
+export const callArguments = (grant: ToolGrant, args: Record<string, unknown>): Record<string, unknown> => ({ ...args, ...(grant.fixed ?? {}) });
+
+/** What a grant's own settings require of its endpoint's schema; empty when they fit. */
+export function grantSchemaProblems(grant: ToolGrant, schema: Record<string, unknown>): string[] {
+  const properties = (schema.properties as Record<string, { type?: unknown }> | undefined) ?? {};
+  const problems: string[] = [];
+  for (const key of Object.keys(grant.fixed ?? {})) if (!Object.hasOwn(properties, key)) problems.push(msg('fixed argument "{key}" is not in the tool\'s schema', { key }));
+  const argument = grant.prefetch?.argument;
+  if (argument && (!Object.hasOwn(properties, argument) || properties[argument]?.type !== "string")) problems.push(msg('"{argument}" is not a text argument of the tool', { argument }));
+  // The fixed value would replace the message, so the call before the model would never see it.
+  if (argument && Object.hasOwn(grant.fixed ?? {}, argument)) problems.push(msg('"{argument}" is fixed, so it cannot carry the message', { argument }));
+  return problems;
+}
+
+/**
+ * The public-only gate (B-85, D4): the output is used only if it is JSON and every value in it
+ * (text, number, true/false) sits inside an object marked `class: "public"`, its own or an
+ * enclosing one's. An unlabelled field beside public items fails it too: a synthesized answer
+ * could repeat a confidential source. No partial filtering.
+ */
+export function publicOnlyProblem(output: string): string | null {
+  let value: unknown;
+  try { value = JSON.parse(output); } catch { return "the output is not JSON, so its data class is unknown"; }
+  let unmarked = 0, tooDeep = false;
+  const walk = (node: unknown, inherited: unknown, depth: number) => {
+    if (depth > 20) { tooDeep = true; return; }
+    if (node === null) return;
+    if (typeof node !== "object") { if (inherited !== "public") unmarked++; return; }
+    if (Array.isArray(node)) { for (const child of node) walk(child, inherited, depth + 1); return; }
+    const record = node as Record<string, unknown>;
+    const own = Object.hasOwn(record, "class") ? record.class : inherited;
+    for (const [key, child] of Object.entries(record)) if (key !== "class") walk(child, own, depth + 1);
+    if (Object.hasOwn(record, "class") && record.class !== "public") unmarked++;
+  };
+  walk(value, undefined, 0);
+  if (tooDeep) return "the output is nested too deep to check its data class";
+  return unmarked ? `${unmarked} value(s) are not marked public` : null;
+}
+
+/** Whether the model's arguments fit a granted tool's schema: a plain object with its required keys. */
+export function toolArgumentsValid(schema: Record<string, unknown>, args: unknown): boolean {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+  const required = Array.isArray(schema.required) ? (schema.required as unknown[]).filter((k): k is string => typeof k === "string") : [];
+  return required.every((k) => Object.hasOwn(args, k));
+}
 
 export const ReplyPolicySchema = z.object({
   /** draft: every answer waits for the operator. auto: allowed answers are sent. */
