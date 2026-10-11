@@ -207,10 +207,11 @@ source and the Mac App Store package send nothing. What is sent, where, and how 
 
 ### Release
 
-A release is a tag: push `vX.Y.Z` on the reviewed release commit and
-[`.github/workflows/release.yml`](.github/workflows/release.yml) starts. A member of
-`release-approvers`, who may be whoever pushed the tag, approves its `release` environment (an
-agent never approves); the workflow
+A release is a tag: a member of `release-approvers` (the only people the tag ruleset lets do it)
+pushes `vX.Y.Z` on a commit of `main` and
+[`.github/workflows/release.yml`](.github/workflows/release.yml) starts. Its `guard` job lets the
+signing jobs run only when `ci.yml` passed on that exact commit (approval by checks, 2026-10-11;
+there is no approval click); the workflow
 then builds the image with the CI Developer ID, notarizes and staples the app and then the image
 made from it, builds and signs the Mac App Store package, attests every file (Sigstore), signs
 `SHA256SUMS` with the organization's GPG key, publishes the GitHub release and uploads the store

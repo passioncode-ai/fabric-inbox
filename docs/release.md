@@ -5,15 +5,19 @@ server, the Mac app and the skill, built and signed **only in GitHub Actions**
 ([`.github/workflows/release.yml`](../.github/workflows/release.yml)), in this repository's
 protected `release` environment. This follows the organization's release signing
 ([passioncode-ai/.github `release-signing/README.md`](https://github.com/passioncode-ai/.github/blob/main/release-signing/README.md)):
-a member of `release-approvers` approves the signing jobs, and that may be whoever pushed the
-tag (operator decision, 2026-10-03); an agent never approves a release run, even when its account
-could; admins cannot bypass it. Nobody's laptop holds a release key, and a build signed anywhere else is a debug
+**approval by checks** (operator decision, 2026-10-11, superseding the click per run of
+2026-10-03): the `guard` job passes a publishing run only when `main` contains the tagged commit and
+`ci.yml` concluded `success` on that exact commit, and every job that holds the `release`
+environment's keys needs it. The environment has no reviewers; pushing a `v*` tag is the release
+decision, and the tag ruleset `release-tags` lets only team `release-approvers` create, move or
+delete one. Nobody's laptop holds a release key, and a build signed anywhere else is a debug
 build that is never published, attached to a release or uploaded to App Store Connect.
 
 ## What a release is
 
-| Job | Approval | What it does |
+| Job | Environment | What it does |
 |---|---|---|
+| `guard` | none | passioncode-ai/.github `actions/release-guard@v1` with `workflows: ci.yml`. A publishing run (a pushed `v*` tag, or a dispatch with `publish=true`) passes only when `main` contains the tagged commit and `ci.yml` concluded `success` on that commit; with no run, or one cancelled, it starts `ci.yml` on the tag and waits (up to 60 min); anything else fails with the reason and the run's link. A rehearsal (`publish=false`) passes with a notice. `macos`, `mas`, `windows` and `linux` need it |
 | `gate` | none | On the tagged commit: the tag names the version every manifest carries (`vX.Y.Z` or `vX.Y.Z-rc.N`), the store build number is derived from it, then `npm test` and `npm run typecheck` |
 | `macos` | `release` | The Developer ID disk image (below) |
 | `mas` | `release` | The Mac App Store package, and its upload when publishing (below) |
@@ -138,14 +142,15 @@ per package and has no checked universal path; Intel Macs install the universal 
    ```
 
    The push trigger ignores `-rc` tags, so nothing starts until the dispatch. `gate` runs at once;
-   `macos`, `mas` and `publish` wait for an approver. The signed, attested set (with
+   `guard` passes the rehearsal with a notice and the signing jobs start. The signed, attested set (with
    `SHA256SUMS.asc` and the notes) is kept as the artifact `signed-release-<tag>` for 14 days, the
    store package as `mas-pkg-…`. No release is created and nothing is uploaded to App Store Connect.
-5. **Tag.** `git tag -a v<version> -m "Fabric Inbox <version>" <merge commit> && git push origin v<version>`.
-   A release tag that already exists is never moved: a mistake gets a new version.
-6. **Approve.** A member of `release-approvers`, whoever pushed the tag included, opens the run and
-   approves ("Review deployments") the `release` environment for the signing jobs, then again for
-   `publish`.
+5. **Tag.** `git tag -a v<version> -m "Fabric Inbox <version>" <commit on main> && git push origin v<version>`,
+   by a member of `release-approvers` (the ruleset `release-tags` refuses anyone else). The tag is
+   the release decision. A release tag that already exists is never moved: a mistake gets a new version.
+6. **Watch the run.** Nothing waits for a click: `guard` checks that `main` contains the commit
+   and that `ci.yml` passed on it (starting it on the tag when none ran), then the signing jobs and
+   `publish` run. A `guard` failure names why; fix it on `main` and release a new version.
 7. **Check from the download.** In an empty directory, do what the README tells a teammate
    (`gh release download …`, `gpg --verify SHA256SUMS.asc SHA256SUMS`,
    `shasum -a 256 -c SHA256SUMS --ignore-missing`, `gh attestation verify <file> -R passioncode-ai/fabric-inbox --signer-workflow passioncode-ai/.github/.github/workflows/release-publish.yml`: the attestations are signed by the organization's reusable `release-publish.yml`, so without `--signer-workflow` the check fails with "verifying with issuer sigstore.dev"). Install the copy into
@@ -200,8 +205,10 @@ per package and has no checked universal path; Intel Macs install the universal 
 
 ## Human steps
 
-- **Approving** the `release` environment (step 6): a person from `release-approvers`, who may be
-  whoever pushed the tag; never an agent.
+- **Deciding a release** (step 5): pushing the `v*` tag, which only team `release-approvers` can do
+  (ruleset `release-tags`). There is no approval click since 2026-10-11; should the organization
+  return to `"approval": "people"` (passioncode-ai/.github `release-signing/products.json`), a person
+  from `release-approvers` approves the `release` environment again, never an agent.
 - **The App Store Connect app record** for `ai.passioncode.fabric-inbox` exists since 2026-10-03
   (Apple id `6818818207`, SKU `fabric-inbox`); the App Store Connect API cannot create one. Should it
   ever be missing, a person with the Account Holder, Admin or App Manager role creates it (App Store
