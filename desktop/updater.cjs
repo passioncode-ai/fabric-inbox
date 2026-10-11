@@ -28,6 +28,7 @@ const RETRY_MS = 30 * 60 * 1000;
 const RESTART_TIMEOUT_MS = 60 * 1000;
 const HANDOFF_TIMEOUT_MS = 15 * 60 * 1000;
 const DECLINED_FOR_MS = 24 * 3600 * 1000;
+const STUCK_AFTER = 3;
 const SWITCH_FILE = 'auto-update';
 const INSTALL_FILE = 'update-install.json';
 const FEED = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/releases\/latest\/download\/update-(?:mac|(?:win32|linux)-(?:x64|arm64))\.json$/;
@@ -87,6 +88,7 @@ function createUpdater(deps) {
   let lastError = '';
   let lastCheck = 0;
   let retried = false;     // one retry within the hour after a failed check, then back to 6 h
+  let failures = 0;        // checks failed in a row; STUCK_AFTER of them are shown to the person (B-86)
   let timer = null;        // the next check
   let watchdog = null;     // Squirrel.Mac must answer a hand-off within HANDOFF_TIMEOUT_MS
   let manual = [];         // people's "Check for Updates…" waiting for what happened
@@ -96,7 +98,7 @@ function createUpdater(deps) {
   let installing = false;  // Restart to Install Update was chosen: the quit is Squirrel.Mac's
 
   const set = (next) => { state = next; onChange(status()); };
-  function status() { return { state, reason, automatic, readyVersion, heldVersion, runbook, error: lastError, lastCheck, installing }; }
+  function status() { return { state, reason, automatic, readyVersion, heldVersion, runbook, error: lastError, lastCheck, installing, failures, stuck: failures >= STUCK_AFTER }; }
   function settle(outcome) { const waiting = manual; manual = []; for (const done of waiting) done(outcome); }
   const cleanUp = () => { void Promise.resolve().then(() => verifier.clean()).catch(() => {}); };
 
@@ -154,6 +156,9 @@ function createUpdater(deps) {
     lastError = String(message || why || code).slice(0, 300);
     reason = why || code;
     log({ event: 'update_check', outcome: code, reason, version: staging || undefined });
+    failures += 1;
+    // Logging alone hid 0.12.0's failures for days: from the third in a row the menu says so (B-86).
+    if (failures === STUCK_AFTER) log({ event: 'update_stuck', failures, reason });
     if (code === 'install_failed' && staging) declined = { version: staging, until: now() + DECLINED_FOR_MS };
     staging = '';
     set('error');
@@ -171,6 +176,7 @@ function createUpdater(deps) {
       staging = '';
       retried = false;
       log({ event: 'update_check', outcome: 'ready', version: readyVersion });
+      failures = 0;
       set('ready');
       settle({ outcome: 'ready', version: readyVersion });
       schedule(0);
@@ -229,6 +235,7 @@ function createUpdater(deps) {
     }
     if (out.outcome !== 'verified') {
       retried = false;
+      failures = 0;
       log({ event: 'update_check', outcome: 'current', latest: out.version, running: appVersion, ...(out.outcome === 'older' ? { refused: 'older' } : {}) });
       staging = ''; heldVersion = ''; runbook = '';
       set('idle');
@@ -238,6 +245,7 @@ function createUpdater(deps) {
     }
     if (out.migration) {
       retried = false;
+      failures = 0;
       heldVersion = out.version; runbook = out.migration.runbook;
       log({ event: 'update_check', outcome: 'needs_migration', version: out.version });
       staging = '';
@@ -342,4 +350,4 @@ function createUpdater(deps) {
   };
 }
 
-module.exports = { createUpdater, readFeed, feedFor, feedURL, compareVersions, FIRST_CHECK_MS, CHECK_EVERY_MS, RETRY_MS, HANDOFF_TIMEOUT_MS, DECLINED_FOR_MS, SWITCH_FILE };
+module.exports = { createUpdater, readFeed, feedFor, feedURL, compareVersions, FIRST_CHECK_MS, CHECK_EVERY_MS, RETRY_MS, HANDOFF_TIMEOUT_MS, DECLINED_FOR_MS, SWITCH_FILE, STUCK_AFTER };

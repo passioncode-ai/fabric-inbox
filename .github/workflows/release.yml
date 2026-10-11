@@ -341,7 +341,7 @@ jobs:
       - name: The built update passes the app's checks, before signing the release set
         run: |
           flags=(); [[ "$SIGNING" == true ]] && flags=(--require-authenticode)
-          node scripts/check-update-release.mjs --before-signing --platform win32 --arch ${{ matrix.arch }} --dir release --version "$VERSION" --repository "$GITHUB_REPOSITORY" "${flags[@]}"
+          node scripts/run-in-electron.mjs scripts/check-update-release.mjs --before-signing --platform win32 --arch ${{ matrix.arch }} --dir release --version "$VERSION" --repository "$GITHUB_REPOSITORY" "${flags[@]}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-windows-${{ matrix.arch }}
@@ -429,7 +429,7 @@ jobs:
           FABRIC_INBOX_ANALYTICS_HOST: ${{ vars.FABRIC_INBOX_ANALYTICS_HOST }}
         run: node desktop/dist-platform.mjs --platform linux --arch ${{ matrix.arch }} --out release
       - name: The built update passes the app's checks, before signing the release set
-        run: node scripts/check-update-release.mjs --before-signing --platform linux --arch ${{ matrix.arch }} --dir release --version "$VERSION" --repository "$GITHUB_REPOSITORY"
+        run: node scripts/run-in-electron.mjs scripts/check-update-release.mjs --before-signing --platform linux --arch ${{ matrix.arch }} --dir release --version "$VERSION" --repository "$GITHUB_REPOSITORY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-linux-${{ matrix.arch }}
@@ -462,7 +462,7 @@ jobs:
       - name: The built update passes the app's checks, before signing
         env:
           VERSION: ${{ needs.gate.outputs.version }}
-        run: node scripts/check-update-release.mjs --before-signing --dir built --version "$VERSION" --repository "$GITHUB_REPOSITORY"
+        run: node scripts/run-in-electron.mjs scripts/check-update-release.mjs --before-signing --dir built --version "$VERSION" --repository "$GITHUB_REPOSITORY"
 
   # The Developer ID release. The store job does not hold it: a store upload Apple refuses (for
   # example while the app record is missing) fails its own job and leaves the disk image released.
@@ -516,7 +516,7 @@ jobs:
       - name: The update every installed copy will read passes the app's own verification
         env:
           VERSION: ${{ needs.gate.outputs.version }}
-        run: node scripts/check-update-release.mjs --dir signed --version "$VERSION" --repository "$GITHUB_REPOSITORY"
+        run: node scripts/run-in-electron.mjs scripts/check-update-release.mjs --dir signed --version "$VERSION" --repository "$GITHUB_REPOSITORY"
 
   # The same check for every Windows and Linux feed, on the OS that reads it: the GPG-signed
   # SHA256SUMS lists the feed, the feed names only this release's installer or AppImage with the
@@ -570,5 +570,5 @@ jobs:
         run: |
           flags=(); [[ "$PLATFORM" == win32 && "$SIGNING" == true ]] && flags=(--require-authenticode)
           for arch in x64 arm64; do
-            node scripts/check-update-release.mjs --platform "$PLATFORM" --arch "$arch" --dir signed --version "$VERSION" --repository "$GITHUB_REPOSITORY" "${flags[@]}"
+            node scripts/run-in-electron.mjs scripts/check-update-release.mjs --platform "$PLATFORM" --arch "$arch" --dir signed --version "$VERSION" --repository "$GITHUB_REPOSITORY" "${flags[@]}"
           done

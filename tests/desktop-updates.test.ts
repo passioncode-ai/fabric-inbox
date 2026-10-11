@@ -225,6 +225,27 @@ test("a failed check is retried once within the hour, then every six hours", asy
   assert.deepEqual(h.pending(), [6 * HOUR]);
 });
 
+test("B-86: three failed checks in a row make the updates stuck, shown to the person; a good check clears it", async () => {
+  const h = updater();
+  h.feedState.fail = true;
+  const up = h.make();
+  await up.start(RELEASED);
+  await h.advance(90 * 1000);
+  await h.advance(30 * 60 * 1000);
+  assert.equal(up.status().stuck, false, "two failures: still quiet");
+  await h.advance(6 * HOUR);
+  assert.equal(up.status().failures, 3);
+  assert.equal(up.status().stuck, true);
+  assert.equal(h.lines.filter((l: any) => l.event === "update_stuck").length, 1, "logged once, when it becomes stuck");
+  await h.advance(30 * 60 * 1000);
+  assert.equal(h.lines.filter((l: any) => l.event === "update_stuck").length, 1, "not again on the fourth");
+  h.feedState.fail = false;
+  h.verdicts.push({ outcome: "current", version: "0.11.0" });
+  await h.advance(6 * HOUR);
+  assert.equal(up.status().failures, 0);
+  assert.equal(up.status().stuck, false);
+});
+
 test("each refusal is logged under its own LC-16 code, and nothing reaches Squirrel.Mac", async () => {
   for (const code of ["signature_failed", "download_failed", "check_failed"]) {
     const h = updater();

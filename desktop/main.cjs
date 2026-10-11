@@ -23,14 +23,8 @@ const { execFile, spawn } = require('node:child_process');
 const execFileAsync = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10000, maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout) => (error ? reject(error) : resolve({ stdout }))));
 const fsSync = require('node:fs');
 const { createWriteStream, existsSync, constants: fsConstants } = require('node:fs');
-/**
- * The file system the updater works with (B-86). Electron's node:fs treats every `*.asar` file as a
- * folder, so the update cache — which holds the downloaded app, app.asar included — could not be
- * removed (ENOTEMPTY) and no update after 0.12.0 was installed. original-fs is Node's own; outside
- * Electron (tests) it does not exist and node:fs is the same thing.
- */
-function loadUpdateFs() { try { return require('original-fs'); } catch { return require('node:fs'); } }
-const updateFs = loadUpdateFs();
+// The updater's file system is Node's own, not Electron's asar-aware one (B-86, update-verify.cjs).
+const updateFs = updateVerify.updateFileSystem();
 
 // A development run (`npm run desktop`) is its own app to macOS: its own name, so Chromium keeps its
 // cookie key in its own Keychain item ("Fabric Inbox Development Safe Storage"). With the installed
@@ -370,6 +364,21 @@ async function startUpdates() {
     setTimer, clearTimer: clearTimeout, log: logEvent, onChange: () => installMenu() });
   await updater.start({ packaged: app.isPackaged, mas: !!process.mas, inApplications: target.installed, packageManager: target.packageManager });
   installMenu();
+}
+/** The download page a copy that cannot update itself is sent to (also named in the notices below). */
+const DOWNLOAD_PAGE = 'https://passioncode.ai/inbox';
+/**
+ * Several checks in a row failed (B-86: 0.12.0 failed every check for days and only logged it).
+ * The menu says so, and this notice offers the download; a later good check clears it.
+ */
+async function showUpdatesStuck(now) {
+  const answer = await dialog.showMessageBox({ type: 'warning', title: t('Updates'),
+    message: t('Fabric Inbox has not been able to update itself.'),
+    detail: t('The last {count} update checks failed: {error}. Download the latest version and install it over this one; your server, sign-in and settings stay as they are.',
+      { count: now.failures, error: now.error ? t.text(String(now.error).replace(/\.$/, '')) : t('Unknown error') }),
+    buttons: [t('Download Latest Version'), t('Try Again'), t('Later')], defaultId: 0, cancelId: 2 });
+  if (answer.response === 0) { try { await shell.openExternal(DOWNLOAD_PAGE); } catch { /* the notice named the page */ } }
+  else if (answer.response === 1) void checkForUpdates();
 }
 async function checkForUpdates() {
   if (!updater) {
@@ -779,9 +788,15 @@ function installMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate(process.platform, {
     t,
     update: {
-      label: state && state.state === 'ready' ? t('Restart to Install Update') : state && state.state === 'downloading' ? t('Downloading Update…') : t('Check for Updates…'),
+      label: state && state.state === 'ready' ? t('Restart to Install Update') : state && state.state === 'downloading' ? t('Downloading Update…')
+        : state && state.stuck ? t('Updates Are Not Installing…') : t('Check for Updates…'),
       enabled: !(state && state.state === 'downloading'),
-      click: () => { if (updater && updater.status().state === 'ready') updater.restart(); else void checkForUpdates(); },
+      click: () => {
+        const now = updater ? updater.status() : null;
+        if (now && now.state === 'ready') updater.restart();
+        else if (now && now.stuck) void showUpdatesStuck(now);
+        else void checkForUpdates();
+      },
     },
     automatic: { checked: !!(state && state.automatic), enabled: !!updater && !['off', 'unavailable'].includes(state.state), click: (item) => { if (updater) void updater.setAutomatic(item.checked); } },
     usage: { checked: !!(analytics && analytics.status().enabled), enabled: !!analytics, click: (item) => void toggleAnalytics(item), about: aboutUsageCounts },

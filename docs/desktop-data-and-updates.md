@@ -91,6 +91,9 @@ as Fabric Switchboard, Fabric and Fabric Dashboards.
    0.12.0 failed with `ENOTEMPTY` and no later release was installed (B-86, fixed in 0.15.2;
    `tests/desktop-update-asar.test.ts` runs the real Electron). A copy before 0.15.2 does not recover
    by itself: install 0.15.2 once by hand.
+   From the third failed check in a row the app no longer stays silent: the menu item reads
+   **Updates Are Not Installing…** and offers the download (`update_stuck` in the log; a good check
+   clears it).
 5. **Held releases.** A release whose feed marks `migration` (a runbook URL; `feedFor` in
    `desktop/updater.cjs`) is downloaded and verified once but not installed: **Check for Updates…**
    names the step and its runbook, and the log says `update_check needs_migration`. Later checks

@@ -182,7 +182,7 @@ test("the release gate runs the same verification on the signed release set", as
   // With the organization's key the test release is refused, as a real copy would refuse it.
   await assert.rejects(checkRelease({ dir, version: "0.12.0", exec }), (e: any) => e.reason === "sums_signature");
   const workflow = readFileSync(".github/workflows/release.yml", "utf8");
-  assert.match(workflow, /node scripts\/check-update-release\.mjs --dir signed --version "\$VERSION"/);
+  assert.match(workflow, /node scripts\/run-in-electron\.mjs scripts\/check-update-release\.mjs --dir signed --version "\$VERSION"/);
 });
 
 test("before signing, the release gate checks the built feed and zip, and publish waits for it", async () => {
