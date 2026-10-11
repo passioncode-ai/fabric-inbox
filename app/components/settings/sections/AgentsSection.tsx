@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { PlusIcon } from "@phosphor-icons/react";
 import { fabric } from "~/services/fabric";
@@ -229,6 +229,45 @@ function AgentPanel({ agent, list, tab, onDeleted }: { agent: Agent; list: Agent
   );
 }
 
+/** A grant's fixed arguments as JSON text; a value that is not a flat JSON object is not applied. */
+function FixedArguments({ value, onChange }: { value: ToolGrant["fixed"]; onChange: (fixed: ToolGrant["fixed"]) => void }) {
+  const t = useT();
+  const shown = (fixed: ToolGrant["fixed"]) => (fixed && Object.keys(fixed).length ? JSON.stringify(fixed) : "");
+  const [text, setText] = useState(shown(value));
+  const [problem, setProblem] = useState(false);
+  const read = (next: string): ToolGrant["fixed"] | null => {
+    if (!next.trim()) return undefined;
+    try {
+      const parsed = JSON.parse(next) as unknown;
+      const flat = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        && Object.values(parsed).every((v) => ["string", "number", "boolean"].includes(typeof v));
+      return flat ? (parsed as ToolGrant["fixed"]) : null;
+    } catch { return null; }
+  };
+  // The cards are keyed by position: when the grant under this field changes (a tool above was
+  // removed), show its arguments instead of the text typed for the old one.
+  useEffect(() => {
+    const typed = read(text);
+    if (typed !== null && JSON.stringify(typed ?? null) === JSON.stringify(value ?? null)) return;
+    if (typed === null && value === undefined) return;
+    setText(shown(value)); setProblem(false);
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  const apply = (next: string) => {
+    setText(next);
+    const parsed = read(next);
+    setProblem(parsed === null);
+    // Text that is not a flat object applies nothing: the grant has no fixed arguments until it is.
+    onChange(parsed === null ? undefined : parsed);
+  };
+  return (
+    <label className="fi-field">{t("Fixed arguments (JSON)")}
+      <span className="fi-hint">{t('Sent on every call, over what the agent chooses, e.g. {"domain": "nicegram"}.')}</span>
+      <input className="fi-input" value={text} onChange={(e) => apply(e.target.value)} aria-invalid={problem || undefined} />
+      {problem && <span className="fi-hint" role="alert">{t("Not applied, so no arguments are fixed: give a JSON object of texts, numbers or true/false.")}</span>}
+    </label>
+  );
+}
+
 const hostOf = (endpoint: string) => { try { return new URL(endpoint).hostname; } catch { return endpoint; } };
 
 function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCancel, saveLabel }: {
@@ -291,6 +330,14 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
               <label className="fi-field">{t("Endpoint (https)")} <input className="fi-input" type="url" value={tool.endpoint} required onChange={(e) => setTool(i, { ...tool, endpoint: e.target.value })} /></label>
               <label className="fi-field">{t("Credential name (optional)")} <input className="fi-input" value={tool.tokenRef ?? ""} onChange={(e) => setTool(i, { ...tool, tokenRef: e.target.value || undefined })} /></label>
             </div>
+            <FixedArguments value={tool.fixed} onChange={(fixed) => setTool(i, { ...tool, fixed })} />
+            <label className="fi-field">{t("Ask it before answering, with the message as")}
+              <span className="fi-hint">{t("The name of a text argument of the tool, e.g. query. Empty: the agent calls it only when it decides to.")}</span>
+              <input className="fi-input" value={tool.prefetch?.argument ?? ""} maxLength={64}
+                onChange={(e) => setTool(i, { ...tool, prefetch: e.target.value.trim() ? { argument: e.target.value.trim() } : undefined })} />
+            </label>
+            <label className="fi-check"><input type="checkbox" checked={!!tool.publicOnly} onChange={(e) => setTool(i, { ...tool, publicOnly: e.target.checked || undefined })} />
+              <span>{t("Use only public results: every item it returns must be marked public, otherwise the answer waits for you")}</span></label>
             <div className="fi-buttons"><button type="button" className="fi-secondary" onClick={() => set("tools", value.tools.filter((_, j) => j !== i))}>{t("Remove tool")}</button></div>
           </div>
         ))}

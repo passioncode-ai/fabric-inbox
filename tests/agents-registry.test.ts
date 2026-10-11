@@ -198,6 +198,24 @@ test("a granted tool whose schema cannot be read is refused at save, with the re
   } finally { await mf.dispose(); }
 });
 
+test("B-85 REQ-2: the endpoint's schema is stored on save over whatever the editor sent; fixed and prefetch must fit it", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const schema = { type: "object", properties: { query: { type: "string" }, domain: { type: "string" }, limit: { type: "number" } }, required: ["query"] };
+    await command("schema", { script: { schema } });
+    const kb = { name: "nicegram_kb", description: "Search the knowledge base", endpoint: "https://tools.project.invalid/mcp", tool: "research.search" };
+    const saved = await command("create", { input: { ...support, tools: [{ ...kb, inputSchema: JSON.stringify({ type: "object", properties: { evil: {} } }), fixed: { domain: "nicegram" }, prefetch: { argument: "query" }, publicOnly: true }] } });
+    assert.deepEqual(JSON.parse(saved.tools[0].inputSchema), schema, "the endpoint's schema, not the client's");
+    assert.deepEqual(saved.tools[0].fixed, { domain: "nicegram" });
+    assert.deepEqual(saved.tools[0].prefetch, { argument: "query" });
+    assert.equal(saved.tools[0].publicOnly, true);
+    const unknownFixed = await command("create", { input: { ...support, tools: [{ ...kb, fixed: { tenant: "x" } }] } });
+    assert.match(unknownFixed.message, /^agent_invalid: nicegram_kb: fixed argument "tenant" is not in the tool's schema$/);
+    const numberPrefetch = await command("create", { input: { ...support, tools: [{ ...kb, prefetch: { argument: "limit" } }] } });
+    assert.match(numberPrefetch.message, /^agent_invalid: nicegram_kb: "limit" is not a text argument of the tool$/);
+  } finally { await mf.dispose(); }
+});
+
 test("the daily send budget is per address and per day", async () => {
   const { mf, command } = await fixture();
   try {

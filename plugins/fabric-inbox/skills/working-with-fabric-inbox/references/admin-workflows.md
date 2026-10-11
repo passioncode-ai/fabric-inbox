@@ -98,6 +98,12 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
 - **Change:** `list_agents` with `agentId` → `save_agent` with `agentId`, the full `agent`, and
   `expectedVersion` = its current version. A conflict means someone changed it meanwhile: read
   again, merge, retry.
+- **A shared knowledge base or other remote tool:** grant it in `tools` (its host must be in
+  `list_agents`' allowed hosts; the endpoint's input schema is read and stored on save). `fixed` pins
+  arguments on every call (e.g. `{ "domain": "nicegram", "allow_web": false }`); `prefetch:
+  { argument: "query" }` asks it about each message before the agent answers; `publicOnly: true`
+  uses an output only when every item with a `class` is `"public"`, so a reply to someone outside
+  never cites a confidential source (otherwise the answer stays a draft).
 - **See what it did:** `list_agent_runs` (outcome `attention` = needs a person).
 - **Delete:** `delete_agent`, two-step; its addresses stop being answered.
 

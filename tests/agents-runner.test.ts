@@ -424,3 +424,86 @@ test("an address in Cc answers when the To address has no agent; Off never claim
   assert.equal(await off.run(), null);
   assert.equal(off.effects.claims.length, 0, "an address with no agent takes no part");
 });
+
+// ── B-85: a shared knowledge base as a granted tool (fixed arguments, a call before the model, public only) ──
+
+const KB_SCHEMA = { type: "object", properties: { query: { type: "string" }, domain: { type: "string" }, allow_web: { type: "boolean" } }, required: ["query"] };
+const kbGrant = (over: Record<string, unknown> = {}) => ({ name: "nicegram_kb", description: "Search the Nicegram knowledge base", endpoint: "https://kb.project.invalid/mcp", tool: "research.search",
+  inputSchema: JSON.stringify(KB_SCHEMA), fixed: { domain: "nicegram", allow_web: false }, ...over });
+const publicHits = JSON.stringify({ results: [{ class: "public", title: "Wiki: Translator", quote: "Tap the globe to translate." }] });
+
+test("B-85 REQ-3: fixed arguments are merged into every call and the model cannot override them", async () => {
+  const calls: Record<string, unknown>[] = [];
+  const h = harness({
+    agent: autoAgent({ tools: [kbGrant()] }),
+    callTool: async (_g, args) => { calls.push(args); return publicHits; },
+    model: async (r) => { await r.tools[0].run({ query: "translator", domain: "everything", allow_web: true }); return { decision: answer(), text: "" }; },
+  });
+  await h.run();
+  assert.deepEqual(calls, [{ query: "translator", domain: "nicegram", allow_web: false }]);
+});
+
+test("B-85 REQ-4: a prefetch grant is called before the model with the message; its output reaches the prompt and the run", async () => {
+  const calls: Record<string, unknown>[] = [];
+  let system = "";
+  const h = harness({
+    agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })] }),
+    email: { subject: "Translator broken", body: "<p>How do I translate a chat?</p>" },
+    callTool: async (_g, args) => { calls.push(args); return publicHits; },
+    model: async (r) => { system = r.system; return { decision: answer(), text: "" }; },
+  });
+  const run = (await h.run())!;
+  assert.equal(calls.length, 1, "called once, before the model");
+  assert.equal(calls[0].domain, "nicegram");
+  assert.match(String(calls[0].query), /^Translator broken\nHow do I translate a chat\?/);
+  assert.match(system, /<tool_results>[\s\S]*nicegram_kb[\s\S]*Tap the globe to translate\.[\s\S]*<\/tool_results>/);
+  assert.equal(run.toolCalls[0].name, "nicegram_kb");
+  assert.equal(run.toolCalls[0].ok, true);
+  assert.equal(run.status, "sent");
+});
+
+test("B-85 REQ-4: a failed prefetch keeps the answer a draft and the model is told nothing was found", async () => {
+  let system = "";
+  const h = harness({
+    agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })] }),
+    callTool: async () => { throw new Error("knowledge node unreachable"); },
+    model: async (r) => { system = r.system; return { decision: answer(), text: "" }; },
+  });
+  const run = (await h.run())!;
+  assert.equal(run.status, "drafted");
+  assert.match(run.reason, /tool call failed/);
+  assert.doesNotMatch(system, /knowledge node unreachable/, "the error text is not presented as knowledge");
+  assert.match(system, /nicegram_kb[\s\S]*(failed|could not)/i);
+});
+
+for (const [label, output] of [
+  ["a confidential passage", JSON.stringify({ results: [{ class: "public", quote: "ok" }, { class: "confidential", quote: "internal revenue" }] })],
+  ["an output with no class at all", JSON.stringify({ results: [{ quote: "unlabelled" }] })],
+  ["an output that is not JSON", "Translator: tap the globe."],
+] as const) {
+  test(`B-85 REQ-5: publicOnly withholds ${label} from the model and the answer stays a draft`, async () => {
+    let seen = "";
+    const h = harness({
+      agent: autoAgent({ tools: [kbGrant({ publicOnly: true })] }),
+      callTool: async () => output,
+      model: async (r) => { seen = await r.tools[0].run({ query: "translator" }); return { decision: answer(), text: "" }; },
+    });
+    const run = (await h.run())!;
+    assert.doesNotMatch(seen, /internal revenue|unlabelled|tap the globe/i, "nothing of it reaches the model");
+    assert.equal(run.toolCalls[0].ok, false);
+    assert.equal(run.status, "drafted");
+  });
+}
+
+test("B-85 REQ-5: publicOnly passes an output whose every classified item is public", async () => {
+  let seen = "";
+  const h = harness({
+    agent: autoAgent({ tools: [kbGrant({ publicOnly: true })] }),
+    callTool: async () => publicHits,
+    model: async (r) => { seen = await r.tools[0].run({ query: "translator" }); return { decision: answer(), text: "" }; },
+  });
+  const run = (await h.run())!;
+  assert.match(seen, /Tap the globe to translate/);
+  assert.equal(run.toolCalls[0].ok, true);
+  assert.equal(run.status, "sent");
+});

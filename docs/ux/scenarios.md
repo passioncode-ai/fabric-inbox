@@ -523,7 +523,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** User session available; the project domain uses Cloudflare Email Routing and the operator can change its routing.
 - **Steps:**
   1. Create an agent from a template (support, sales, billing) or blank -> name, instructions, knowledge sources, tools and reply policy are shown.
-  2. Grant tools from the allowed list and set the reply policy -> each grant shows what the agent may do and on which destination.
+  2. Grant tools from the allowed list and set the reply policy -> each grant shows what the agent may do and on which destination; a grant can pin arguments, be asked before every answer, and be limited to public results.
   3. Save -> the agent is listed with its version and the addresses it serves (none yet).
 - **Expected result:** An agent is a named, versioned definition that is not tied to one mailbox.
 - **Alt paths:** Leaving without saving keeps the previous version; a template never changes an existing agent.
@@ -533,7 +533,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** draft
 - **Coverage:** app/components/settings/sections/AgentsSection.tsx (AgentEditor), workers/agents/definition.ts (AGENT_TEMPLATES), workers/agents/registry.ts (createAgent, updateAgent), tests/agents-registry.test.ts
 - **Product:** unobserved
-- **Today:** Partial. **Agents** creates an agent from the Support, Sales or Billing template or blank, with instructions, knowledge, tool grants and reply policy; every save is a new version, a stale edit is refused, a disallowed tool host blocks saving with the reason. Tool schemas are not read from the server yet. Observed on the local Worker.
+- **Today:** Partial. **Agents** creates an agent from the Support, Sales or Billing template or blank, with instructions, knowledge, tool grants and reply policy; every save is a new version, a stale edit is refused, a disallowed tool host blocks saving with the reason. Each granted tool's input schema is read from its endpoint on save and stored with the version; a fixed argument the schema lacks, or a "before answering" argument that is not text, blocks saving with the reason (B-85, `tests/agents-registry.test.ts`). Observed on the local Worker; the B-85 fields are not yet observed in a running app.
 
 ### SCN-023: Put one agent on several addresses
 - **Persona:** P-01
@@ -569,11 +569,11 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Alt paths:** No-reply, bulk and automated senders are recorded as skipped; a thread the operator already answered is not answered again. One message sent to several agent addresses is answered once, from the first agent address in To (else the first in Cc, a Bcc copy last); every other copy is recorded as skipped with "Duplicate: answered from <address>".
 - **UI elements:** SCR-10 Recent answers (the current surface; SCR-08 run history remains the designed surface); named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** A model or tool failure produces a draft or an unknown outcome, never a guessed send; a send whose acceptance is unknown is not repeated automatically; text in the mail cannot widen the grants of the agent.
+- **Errors & recovery:** A model or tool failure produces a draft or an unknown outcome, never a guessed send; a send whose acceptance is unknown is not repeated automatically; text in the mail cannot widen the grants of the agent; a public-only tool whose output is not all marked public is withheld from the model and the answer waits as a draft.
 - **Status:** draft
 - **Coverage:** workers/agents/prefilter.ts (prefilter), workers/agents/policy.ts (decide), workers/agents/runner.ts (runAgent), workers/agents/dedupe.ts (electAnswerer, decideClaim), app/components/settings/sections/AgentsSection.tsx (Recent answers), tests/agents-runner.test.ts, tests/agents-registry.test.ts, tests/agents-dedupe.test.ts
 - **Product:** unobserved
-- **Today:** Implemented and tested without a live model. No-reply, bulk, list, automatic and already-answered mail is skipped before any model call; an allowed grounded answer is sent once through the outbox; limits, disallowed intents, ungrounded answers and tool failures become drafts with the reason; an unknown send is recorded and not retried; a failed safety check is recorded as such. A message delivered to several agent addresses is answered once per workspace (B-22): a copy that is not chosen waits up to 20 minutes for the chosen address, then shows as a skipped duplicate naming it, or answers itself if that address never took the message. Runs are listed on **Agents → Recent answers** rather than SCR-08. No real model call or delivery observed.
+- **Today:** Implemented and tested without a live model. No-reply, bulk, list, automatic and already-answered mail is skipped before any model call; an allowed grounded answer is sent once through the outbox; limits, disallowed intents, ungrounded answers and tool failures become drafts with the reason; a granted tool is offered with its endpoint's schema, gets its fixed arguments on every call, can be asked about the message before the model runs, and, when public-only, is used only if every classified item is public (B-85, `tests/agents-runner.test.ts`, `tests/agents-model.test.ts`); an unknown send is recorded and not retried; a failed safety check is recorded as such. A message delivered to several agent addresses is answered once per workspace (B-22): a copy that is not chosen waits up to 20 minutes for the chosen address, then shows as a skipped duplicate naming it, or answers itself if that address never took the message. Runs are listed on **Agents → Recent answers** rather than SCR-08. No real model call or delivery observed.
 
 ### SCN-025: Mail to an address with no mailbox
 - **Persona:** P-01

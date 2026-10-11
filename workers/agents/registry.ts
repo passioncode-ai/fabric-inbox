@@ -6,6 +6,8 @@ import { validateToolUrl } from "../automation/policy";
 import {
   AgentInputSchema,
   agentId,
+  grantSchemaProblems,
+  SCHEMA_LIMIT,
   type AgentInput,
   type AgentSummary,
   type AgentVersion,
@@ -189,6 +191,14 @@ export class AgentRegistryDO extends DurableObject<Env> {
         throw new AgentInvalid(msg("The schema of the tool {tool} could not be read: {error}", { tool: grant.name, error: (error as Error).message }));
       }
       if (schema == null) throw new AgentInvalid(msg("The tool {tool} is not listed by its endpoint", { tool: grant.name }));
+      // B-85: the endpoint's schema is what the model is offered later, so it is stored with the
+      // version; whatever the editor sent in its place is replaced.
+      const stored = schema && typeof schema === "object" && !Array.isArray(schema) ? schema as Record<string, unknown> : {};
+      const problems = grantSchemaProblems(grant, stored);
+      if (problems.length) throw new AgentInvalid(`${grant.name}: ${problems.join("; ")}`);
+      const text = JSON.stringify(stored);
+      // A schema over the limit is not stored: the model then gets the generic wrapper (modelSchema).
+      if (Object.keys(stored).length && text.length <= SCHEMA_LIMIT) grant.inputSchema = text; else delete grant.inputSchema;
     }
     return parsed.data;
   }

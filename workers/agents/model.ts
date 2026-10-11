@@ -1,8 +1,9 @@
-import { generateText, hasToolCall, stepCountIs, ToolChoiceViolationError, type LanguageModel, type ModelMessage } from "ai";
+import { generateText, hasToolCall, jsonSchema, stepCountIs, ToolChoiceViolationError, type LanguageModel, type ModelMessage } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 import { z } from "zod";
 import type { ModelDecision } from "./policy";
 import type { ModelRequest, ModelResponse } from "./runner";
+import { toolArgumentsValid } from "./definition";
 
 export const DEFAULT_AGENT_MODEL = "@cf/moonshotai/kimi-k2.5";
 const MODEL_TIMEOUT_MS = 90_000;
@@ -49,11 +50,24 @@ export async function runModel(model: LanguageModel, request: ModelRequest): Pro
           inputSchema: z.object({ query: z.string().min(2).max(300).describe("What to look for, in the words the knowledge would use") }),
           execute: async ({ query }: { query: string }) => tool.run({ query }),
         }
-      : {
-          description: tool.description,
-          inputSchema: z.object({ arguments: z.record(z.unknown()).default({}).describe("Arguments for the tool") }),
-          execute: async ({ arguments: args }: { arguments: Record<string, unknown> }) => tool.run(args ?? {}),
-        };
+      : tool.inputSchema
+        // B-85: the endpoint's own schema (read at save time, without the operator's fixed arguments).
+        ? {
+            description: tool.description,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            inputSchema: jsonSchema(tool.inputSchema as any, {
+              // Without a validator the SDK checks nothing; this keeps a string or a missing required key from reaching the endpoint.
+              validate: (value) => toolArgumentsValid(tool.inputSchema!, value)
+                ? { success: true, value: value as Record<string, unknown> }
+                : { success: false, error: new Error("The arguments do not match the tool's schema (an object with its required keys)") },
+            }),
+            execute: async (args: Record<string, unknown>) => tool.run(args ?? {}),
+          }
+        : {
+            description: tool.description,
+            inputSchema: z.object({ arguments: z.record(z.unknown()).default({}).describe("Arguments for the tool") }),
+            execute: async ({ arguments: args }: { arguments: Record<string, unknown> }) => tool.run(args ?? {}),
+          };
   }
   const abortSignal = AbortSignal.timeout(MODEL_TIMEOUT_MS);
   const result = await generateText({
