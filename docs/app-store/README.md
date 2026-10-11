@@ -175,10 +175,10 @@ app. Nothing is half-done in the tree.
    longer on any ref but GitHub still serves them by SHA. Either ask GitHub Support to purge the
    repository's unreachable objects, or re-create the repository and push only the public `main`.
    Until then, do not push a tag or branch whose history is not the public `main`.
-5. **Approve the release rehearsal** (any member of `release-approvers`, whoever pushed the tag
-   included; never an agent):
-   the newest `release` run on a `v*-rc.*` tag waits in "Review deployments" for its `macos`,
-   `mas` and `publish` jobs. A rehearsal publishes nothing and uploads nothing.
+5. ~~**Approve the release rehearsal**~~ — retired 2026-10-11 (operator: approval by checks). The
+   `release` environment has no reviewers; `release.yml`'s `guard` job lets a publishing run's
+   signing jobs start only when `ci.yml` passed on the tagged commit of `main`, and only
+   `release-approvers` can push a `v*` tag (ruleset `release-tags`). See [docs/release.md](../release.md).
 6. ~~**Create the App Store Connect app record**~~ — done 2026-10-03: "Fabric Inbox", Apple id `6818818207`, SKU `fabric-inbox`, en-US, macOS.
    The API cannot create a record; a publishing run's `mas` job checks for it first.
 

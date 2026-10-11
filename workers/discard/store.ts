@@ -1,5 +1,6 @@
 import { EMPTY_DISCARD_STORE, normaliseDiscardStore, type DiscardFacts, type DiscardStore } from "../../shared/mail/discard";
 import { msg } from "../../shared/i18n";
+import { bodyForUpdate } from "../lib/r2-json";
 
 /**
  * The workspace's discard rules and its Always allow list (shared/mail/discard.ts): one R2 object,
@@ -21,7 +22,7 @@ export class DiscardStoreConflict extends Error {}
 export async function updateDiscardStore(bucket: R2Bucket, change: (store: DiscardStore) => DiscardStore): Promise<DiscardStore> {
   for (let attempt = 0; attempt < 5; attempt++) {
     const object = await bucket.get(DISCARD_KEY);
-    const current = object ? normaliseDiscardStore(await object.json().catch(() => null)) : { rules: [], allowed: [] };
+    const current = object ? normaliseDiscardStore(await bodyForUpdate(object)) : { rules: [], allowed: [] };
     const next = normaliseDiscardStore(change(current));
     const written = await bucket.put(DISCARD_KEY, JSON.stringify(next), {
       httpMetadata: { contentType: "application/json" },
