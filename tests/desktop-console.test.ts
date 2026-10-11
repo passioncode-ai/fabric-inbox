@@ -150,7 +150,8 @@ test("the console is in the View menu with its shortcut, and absent where the ap
 
 test("only the console window drives the PTY; the mail page may only ask whether there is one and open it", () => {
   const main = readFileSync("desktop/main.cjs", "utf8");
-  assert.match(main, /const fromConsole = \(event\) => \{\s*if \(!policy\.isSetupSender\(event, consoleWindow, consoleURL\)\) throw/);
+  assert.match(main, /const fromConsole = \(event\) => \{[\s\S]{0,400}?event\.senderFrame\.url === consoleURL;\s*if \(!docked && !policy\.isSetupSender\(event, consoleWindow, consoleURL\)\) throw/, "the docked panel or the window, at the console page only");
+  assert.match(main, /handle\('fabric:console-dock-ready', \(event\) => \{ if \(!policy\.isMailSender\(event, mailWindow, config\)\) throw/, "only the mail page says it makes room");
   for (const channel of ["console-state", "console-start", "console-stop", "console-locale"]) assert.match(main, new RegExp(`handle\\('fabric:${channel}', async \\(event[^)]*\\) => \\{ ?\\s*fromConsole\\(event\\)|handle\\('fabric:${channel}', \\(event\\) => \\{ fromConsole\\(event\\)`), channel);
   assert.match(main, /handle\('fabric:console-open', \(event\) => \{ if \(!policy\.isMailSender\(event, mailWindow, config\)\) throw/);
   assert.match(main, /const consoleAvailable = \(\) => !process\.mas;/, "not in the Mac App Store package");

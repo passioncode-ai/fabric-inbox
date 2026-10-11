@@ -1578,12 +1578,12 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** the inbox toolbar's console button, View → Agent Console (⌃⌘T; Ctrl+Shift+T on Windows and Linux)
 - **Preconditions:** The desktop app (not the Mac App Store one), signed in to its server; Claude Code or Codex installed.
 - **Steps:**
-  1. Open the console -> a window beside the mail says what it is, lists the coding agents found and the level (Admin, Mail, Read).
+  1. Open the console -> a panel on the mail window's right (the mail makes room for it) says what it is, lists the coding agents found and the level (Admin, Mail, Read); opening it again hides the panel while its session keeps running.
   2. New session (or Continue last session) -> the app makes a key for this session; the agent starts in the window, connected to this Fabric Inbox only.
   3. Ask it for anything the app does -> it works through the server's tools; every change is listed under What agents changed (SCN-044).
   4. Stop -> asked first; the agent stops and its key is revoked.
 - **Expected result:** One place to do anything with mail by talking to my own agent, beside the inbox, with nothing copied and nothing left behind.
-- **Alt paths:** No agent installed: the window says which it looked for and how to get one. Not signed in: the session does not start and the mail window opens to sign in. Quitting the app while a session runs: asked first; quitting stops it and revokes its key. A session the app could not end (a crash): its key is revoked before the next session starts.
+- **Alt paths:** A server whose pages do not make room for the panel (older than the app): the console opens as a window beside the mail instead. No agent installed: the window says which it looked for and how to get one. Not signed in: the session does not start and the mail window opens to sign in. Quitting the app while a session runs: asked first; quitting stops it and revokes its key. A session the app could not end (a crash): its key is revoked before the next session starts.
 - **UI elements:** the console window (Agent, Level, New session, Continue last session, Stop, the terminal); the inbox toolbar's console button; View → Agent Console.
 - **States covered:** empty, loading, success, error
 - **Errors & recovery:** The agent cannot be started: the reason is shown and the key made for it is revoked. The key cannot be made: the server's reason is shown. A key that could not be revoked at the end: the window says to revoke it in Settings → Agent access.

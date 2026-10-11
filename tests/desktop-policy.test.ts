@@ -119,7 +119,7 @@ test('a failed remote load cannot close recovery when Chromium finishes its erro
   assert.equal(mail.options.webPreferences.preload, '/fixture/desktop/mail-preload.cjs');
   const bridge = await readFile(new URL('../desktop/mail-preload.cjs', import.meta.url), 'utf8');
   assert.deepEqual([...bridge.matchAll(/ipcRenderer\.(\w+)\('([^']+)'/g)].map(m => m[1] + ' ' + m[2]),
-    ['invoke fabric:pending-setup', 'invoke fabric:pending-setup-done', 'invoke fabric:locale', 'invoke fabric:locale-set', 'invoke fabric:console-available', 'invoke fabric:console-open', 'on fabric:resumed', 'removeListener fabric:resumed']);
+    ['invoke fabric:pending-setup', 'invoke fabric:pending-setup-done', 'invoke fabric:locale', 'invoke fabric:locale-set', 'invoke fabric:console-available', 'invoke fabric:console-open', 'invoke fabric:console-dock-ready', 'on fabric:console-dock', 'removeListener fabric:console-dock', 'on fabric:resumed', 'removeListener fabric:resumed']);
   // Waking the Mac tells the open mail window, and only it, to read new mail.
   powerMonitor.emit('resume');
   assert.deepEqual(sent, ['fabric:resumed']);

@@ -29,3 +29,6 @@ body {
   margin-top: 0.25em;
   margin-bottom: 0.25em;
 }
+
+/* The desktop app's docked agent console (B-70): the page leaves the panel's width free on its right. */
+body { box-sizing: border-box; padding-right: var(--fi-console-width, 0px); }

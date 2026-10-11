@@ -14,6 +14,14 @@ contextBridge.exposeInMainWorld('fabricDesktop', Object.freeze({
   // The agent console beside the mail (B-70): whether this app has it, and opening it. No data crosses.
   consoleAvailable: () => ipcRenderer.invoke('fabric:console-available'),
   openConsole: () => ipcRenderer.invoke('fabric:console-open'),
+  // The page makes room for the docked console: it says it can, then hears the panel's width (0: none).
+  consoleDockReady: () => ipcRenderer.invoke('fabric:console-dock-ready'),
+  onConsoleDock: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, width) => callback(Number(width) || 0);
+    ipcRenderer.on('fabric:console-dock', listener);
+    return () => ipcRenderer.removeListener('fabric:console-dock', listener);
+  },
   // Receive-only: the page passes a callback and gets back its unsubscribe; no data crosses.
   onResume: (callback) => {
     if (typeof callback !== 'function') return () => {};

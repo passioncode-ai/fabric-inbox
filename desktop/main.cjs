@@ -1,6 +1,6 @@
 'use strict';
 const electron = require('electron');
-const { app, BrowserWindow, Menu, ipcMain, shell, dialog, session } = electron;
+const { app, BrowserWindow, Menu, ipcMain, shell, dialog, session, WebContentsView } = electron;
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -446,6 +446,12 @@ function promptWindow() {
 // made for the session. Not in the Mac App Store package: its sandbox cannot run another CLI.
 const consoleURL = pathToFileURL(path.join(__dirname, 'console.html')).href;
 let consoleWindow = null;
+// Docked: the console as a panel on the mail window's right (Fabric Dashboards ADR-0017), when the
+// mail page says it makes room for it (fabric:console-dock-ready); otherwise a window of its own.
+let consoleView = null;
+let consoleDocked = false;
+let dockReady = false;
+const DOCK_WIDTH = 520;
 let agentConsole = null;
 let consoleFor = null;
 let loginPathValue;
@@ -476,6 +482,41 @@ function loadPty() {
 }
 function consoleSend(channel, value) {
   if (consoleWindow && !consoleWindow.isDestroyed()) consoleWindow.webContents.send(channel, value);
+  if (consoleView && !consoleView.webContents.isDestroyed()) consoleView.webContents.send(channel, value);
+}
+function layoutDock() {
+  if (!consoleDocked || !consoleView || !mailWindow || mailWindow.isDestroyed()) return;
+  const { width, height } = mailWindow.getContentBounds();
+  const panel = Math.min(DOCK_WIDTH, Math.max(320, Math.floor(width / 2)));
+  consoleView.setBounds({ x: width - panel, y: 0, width: panel, height });
+  mailWindow.webContents.send('fabric:console-dock', panel);
+}
+/** Shows or hides the docked panel; the session in it keeps running while hidden. */
+function toggleDock() {
+  if (!mailWindow || mailWindow.isDestroyed()) return;
+  if (consoleDocked) {
+    mailWindow.contentView.removeChildView(consoleView);
+    consoleDocked = false;
+    mailWindow.webContents.send('fabric:console-dock', 0);
+    return;
+  }
+  if (!consoleView || consoleView.webContents.isDestroyed()) {
+    consoleView = new WebContentsView({ webPreferences: securePreferences({ preload: path.join(__dirname, 'console-preload.cjs'), partition: 'fabric-console' }) });
+    rejectPermissions(consoleView.webContents.session);
+    consoleView.webContents.on('will-navigate', (event) => event.preventDefault());
+    consoleView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    consoleView.webContents.loadFile(path.join(__dirname, 'console.html'));
+    if (!mailWindow.__consoleLayout) {
+      mailWindow.__consoleLayout = true;
+      mailWindow.on('resize', layoutDock);
+      mailWindow.on('closed', () => { consoleView = null; consoleDocked = false; dockReady = false; });
+      mailWindow.webContents.on('did-start-navigation', (_e, _url, inPlace, isMainFrame) => { if (isMainFrame && !inPlace) dockReady = false; });
+    }
+  }
+  mailWindow.contentView.addChildView(consoleView);
+  consoleDocked = true;
+  layoutDock();
+  consoleView.webContents.focus();
 }
 async function ensureConsole() {
   if (!config || !consoleAvailable()) return null;
@@ -497,6 +538,7 @@ async function ensureConsole() {
 function openConsole() {
   if (!consoleAvailable()) return;
   if (!config) { showSetup(t('Set up your server first; the console works with it.')); return; }
+  if (dockReady && mailWindow && !mailWindow.isDestroyed() && !(consoleWindow && !consoleWindow.isDestroyed())) { toggleDock(); return; }
   if (consoleWindow && !consoleWindow.isDestroyed()) { consoleWindow.show(); consoleWindow.focus(); return; }
   const anchor = mailWindow && !mailWindow.isDestroyed() ? mailWindow.getBounds() : null;
   consoleWindow = new BrowserWindow({ title: t('Agent console — Fabric Inbox'), width: 720, height: anchor ? anchor.height : 640, minWidth: 420, minHeight: 320,
@@ -556,11 +598,15 @@ async function handleConnectLink(url) {
 }
 function installIPC() {
   const fromConsole = (event) => {
-    if (!policy.isSetupSender(event, consoleWindow, consoleURL)) throw new Error('Untrusted console request');
+    const docked = consoleView && !consoleView.webContents.isDestroyed() && event.sender === consoleView.webContents
+      && event.senderFrame === consoleView.webContents.mainFrame && event.senderFrame.url === consoleURL;
+    if (!docked && !policy.isSetupSender(event, consoleWindow, consoleURL)) throw new Error('Untrusted console request');
   };
   ipcMain.handle('fabric:console-locale', (event) => { fromConsole(event); return i18n.forWindow(); });
   ipcMain.handle('fabric:console-available', (event) => { if (!policy.isMailSender(event, mailWindow, config)) throw new Error('Untrusted request'); return consoleAvailable(); });
   ipcMain.handle('fabric:console-open', (event) => { if (!policy.isMailSender(event, mailWindow, config)) throw new Error('Untrusted request'); openConsole(); return true; });
+  // The mail page makes room for a docked console (it shifts by --fi-console-width); an older page does not, and gets a window.
+  ipcMain.handle('fabric:console-dock-ready', (event) => { if (!policy.isMailSender(event, mailWindow, config)) throw new Error('Untrusted request'); dockReady = consoleAvailable(); if (consoleDocked) layoutDock(); return dockReady; });
   ipcMain.handle('fabric:console-state', async (event) => {
     fromConsole(event);
     const c = await ensureConsole();

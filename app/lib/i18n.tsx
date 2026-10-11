@@ -56,6 +56,8 @@ declare global {
 			/** The agent console (B-70): only in a desktop app that has it (not the Mac App Store one). */
 			consoleAvailable?(): Promise<boolean>;
 			openConsole?(): Promise<unknown>;
+			consoleDockReady?(): Promise<unknown>;
+			onConsoleDock?(callback: (width: number) => void): () => void;
 		};
 	}
 }
