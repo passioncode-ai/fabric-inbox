@@ -35,7 +35,7 @@ import { fileURLToPath } from 'node:url';
 import { hardenTemplateHook, verifyHardening } from './hardening.mjs';
 import { analyticsBundle, BUNDLE_ID, SERVER_SOURCES } from './dist-mac.mjs';
 import { pruneReleases } from './release-retention.mjs';
-import { CONSOLE_UNPACK, stageConsolePty, stageConsoleView } from './console-assets.mjs';
+import { CONSOLE_ASAR, stageConsolePty, stageConsoleView, verifyConsoleUnpacked } from './console-assets.mjs';
 
 const require = createRequire(import.meta.url);
 const { feedFor } = require('./updater.cjs');
@@ -169,7 +169,7 @@ async function assembleApp(args, temp) {
   const [appDir] = await packager({
     dir: source, name: 'Fabric Inbox', executableName: spec.executableName, appVersion: version, buildVersion: version,
     platform, arch, electronVersion: require('electron/package.json').version, out: path.join(temp, 'out'), overwrite: true,
-    asar: { unpack: CONSOLE_UNPACK }, prune: false, icon: path.join(source, spec.icon), ignore: PACKAGE_IGNORE,
+    asar: CONSOLE_ASAR, prune: false, icon: path.join(source, spec.icon), ignore: PACKAGE_IGNORE,
     ...(platform === 'win32' ? { win32metadata: { CompanyName: 'PassionCode.ai', ProductName: 'Fabric Inbox', FileDescription: 'Fabric Inbox', OriginalFilename: 'Fabric Inbox.exe' } } : {}),
     afterExtract: hardenTemplateHook(),
   });
@@ -178,6 +178,7 @@ async function assembleApp(args, temp) {
   // (spawn … EACCES). The app's folder is world-readable, as every installed program's is.
   if (platform === 'linux') chmodSync(appDir, 0o755);
   verifyHardening(appDir, { platform, executableName: spec.executableName });
+  verifyConsoleUnpacked(path.join(appDir, 'resources'), { platform, arch }, { throwOnMissing: true });
   return { platform, arch, version, revision, source, appDir, analytics: !!analytics, feed,
     serverBundle: { version: serverManifest.version, revision: serverManifest.revision, modules: serverManifest.modules.length } };
 }

@@ -5,6 +5,16 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.15.1 — 2026-10-11
+
+- **The agent console starts.** In 0.15.0 the console beside your mail could not start your
+  coding agent on any platform: the files it runs from were packed where it cannot reach them.
+  0.15.1 fixes the build, and a build whose console could not start is no longer released.
+- **A stored list is never replaced because it could not be read.** If the server could not read
+  its agent keys, spam or discard rules, hidden addresses or relays at the moment you changed one,
+  the change could have replaced the whole list with an empty one. Now the change is refused and
+  nothing is lost.
+
 ## 0.15.0 — 2026-10-11
 
 - **An agent console beside your mail.** Your own coding agent (Claude Code or Codex) runs in a
