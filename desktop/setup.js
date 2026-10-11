@@ -59,7 +59,8 @@ function renderBundled(setups) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'choice primary-choice';
-    button.append(text('strong', t('Use {name}', { name: s.name })),
+    if (s.byAgent) button.append(text('strong', t('Use the server your agent set up')), text('span', new URL(s.origin).host));
+    else button.append(text('strong', t('Use {name}', { name: s.name })),
       text('span', `${t.plural(s.domainCount, { one: '{n} domain', other: '{n} domains' })} · ${t.plural(s.mailboxCount, { one: '{n} address', other: '{n} addresses' })} · ${new URL(s.origin).host}`));
     button.addEventListener('click', () => review(s));
     holder.append(button);
@@ -70,12 +71,14 @@ function renderBundled(setups) {
 function review(summary) {
   chosen = summary;
   fail($('#review-error'), '');
-  $('#review-name').textContent = summary.name;
   $('#review-origin').textContent = summary.origin;
   $('#review-access').textContent = summary.accessOrigin
     ? t('Cloudflare Access ({host}), a code by email', { host: new URL(summary.accessOrigin).host })
     : t('Whatever the server asks for');
-  $('#review-count').textContent = `${t.plural(summary.domainCount, { one: '{n} domain', other: '{n} domains' })}, ${t.plural(summary.mailboxCount, { one: '{n} address', other: '{n} addresses' })}`;
+  $('#review-name').textContent = summary.byAgent ? t('The server your agent set up') : summary.name;
+  $('#review-count').textContent = summary.domainCount || summary.mailboxCount
+    ? `${t.plural(summary.domainCount, { one: '{n} domain', other: '{n} domains' })}, ${t.plural(summary.mailboxCount, { one: '{n} address', other: '{n} addresses' })}`
+    : t('No domains or addresses on it yet: add them in Settings after you sign in.');
   const list = $('#review-domains');
   list.replaceChildren(...summary.byDomain.map(d => {
     const li = document.createElement('li');
