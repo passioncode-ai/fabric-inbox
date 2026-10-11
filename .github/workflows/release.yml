@@ -33,6 +33,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Approval by checks (passioncode-ai/.github docs/release-signing/DESIGN.md, operator 2026-10-11):
+  # every job that holds the release environment's keys needs this one, which passes a publishing
+  # run only when main contains the tagged commit and CI passed on that exact commit.
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      actions: write   # starts CI on the tag when none ran on the commit
+    steps:
+      - uses: passioncode-ai/.github/actions/release-guard@v1
+        with:
+          workflows: ci.yml
+          publish: ${{ github.event_name == 'push' || inputs.publish }}
+
   # Not signing, so it needs no approval: the repository's gate on the tagged commit, and the
   # version and store build number the signing jobs use.
   gate:
@@ -66,7 +81,7 @@ jobs:
         run: npm run typecheck
 
   macos:
-    needs: gate
+    needs: [guard, gate]
     runs-on: macos-latest
     environment: release
     timeout-minutes: 120
@@ -134,7 +149,7 @@ jobs:
   # The Mac App Store package. It is not a release file (only the store installs it), so its
   # artifact is not named release-*; it is uploaded to App Store Connect only when publishing.
   mas:
-    needs: gate
+    needs: [guard, gate]
     runs-on: macos-latest
     environment: release
     timeout-minutes: 120
@@ -218,7 +233,7 @@ jobs:
   # timestamped and signed by the profile's signer. Off: the receipt says
   # windows_authenticode: NOT_SIGNED and the release notes say so (docs/release.md).
   windows:
-    needs: gate
+    needs: [guard, gate]
     runs-on: windows-latest
     environment: release
     timeout-minutes: 90
@@ -386,7 +401,7 @@ jobs:
   # .deb (apt-installed, never checks), each built on its own architecture. No signing beyond the
   # release set's GPG-signed SHA256SUMS, which is what an AppImage update verifies.
   linux:
-    needs: gate
+    needs: [guard, gate]
     runs-on: ${{ matrix.runner }}
     environment: release
     timeout-minutes: 60
