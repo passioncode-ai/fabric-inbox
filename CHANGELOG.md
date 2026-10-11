@@ -12,8 +12,8 @@ is cut and published: [docs/release.md](docs/release.md).
   0.15.1 fixes the build, and a build whose console could not start is no longer released.
 - **A stored list is never replaced because it could not be read.** If the server could not read
   its agent keys, spam or discard rules, hidden addresses or relays at the moment you changed one,
-  the change could have replaced the whole list with an empty one. Now the change is refused, you
-  are told to try again, and nothing is lost.
+  the change could have replaced the whole list with an empty one. Now the change is refused and
+  nothing is lost.
 
 ## 0.15.0 — 2026-10-11
 
