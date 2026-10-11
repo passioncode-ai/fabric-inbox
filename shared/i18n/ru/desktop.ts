@@ -7,6 +7,11 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	// The app menu (desktop/main.cjs installMenu), also named in Settings → App → Mac app
 	"About Fabric Inbox": "О программе Fabric Inbox",
 	"Check for Updates…": "Проверить обновления…",
+	"Updates Are Not Installing…": "Обновления не устанавливаются…",
+	"Fabric Inbox has not been able to update itself.": "Fabric Inbox не может обновиться сам.",
+	"The last {count} update checks failed: {error}. Download the latest version and install it over this one; your server, sign-in and settings stay as they are.": "Последние проверки обновлений не удались ({count}): {error}. Скачайте последнюю версию и установите её поверх этой: сервер, вход и настройки сохранятся.",
+	"Download Latest Version": "Скачать последнюю версию",
+	"Try Again": "Попробовать снова",
 	"Restart to Install Update": "Перезапустить для обновления",
 	"Install Updates Automatically": "Устанавливать обновления автоматически",
 	"Share Anonymous Usage Counts": "Отправлять анонимные счётчики использования",

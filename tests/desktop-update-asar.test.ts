@@ -52,3 +52,12 @@ test("B-86: the update verifier and the installer get original-fs, not Electron'
   assert.match(main, /updateVerify\.createVerifier\(\{[\s\S]*?fs: updateFs\.promises, createWriteStream: updateFs\.createWriteStream,/);
   assert.match(main, /createPlatformInstaller\(\{ platform: process\.platform, app, spawn, fs: updateFs\.promises,/);
 });
+
+test("B-86: stuck updates are told to the person: the menu item changes and opens a notice with the download", () => {
+  const main = readFileSync("desktop/main.cjs", "utf8");
+  assert.match(main, /: state && state\.stuck \? t\('Updates Are Not Installing…'\) : t\('Check for Updates…'\)/);
+  assert.match(main, /else if \(now && now\.stuck\) void showUpdatesStuck\(now\);/);
+  const notice = main.slice(main.indexOf("async function showUpdatesStuck"), main.indexOf("async function checkForUpdates"));
+  assert.match(notice, /buttons: \[t\('Download Latest Version'\), t\('Try Again'\), t\('Later'\)\]/);
+  assert.match(notice, /shell\.openExternal\(DOWNLOAD_PAGE\)/);
+});
