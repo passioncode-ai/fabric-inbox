@@ -9,7 +9,7 @@
 // the version package-lock.json pins, installed into a temporary prefix (never the project tree).
 // Exits with the script's own code.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -24,19 +24,32 @@ export function lockedElectronVersion(lock = JSON.parse(readFileSync(path.join(r
   return version;
 }
 
-/** The Electron executable: this checkout's, or one installed for this run at the locked version. */
-export function electronBinary({ from = root, install = true } = {}) {
-  const resolveIn = (dir) => {
-    try { const bin = createRequire(path.join(dir, 'package.json'))('electron'); return typeof bin === 'string' && existsSync(bin) ? bin : null; } catch { return null; }
-  };
-  const local = resolveIn(from);
-  if (local || !install) return local;
-  const prefix = mkdtempSync(path.join(os.tmpdir(), 'fabric-electron-'));
+const resolveElectron = (dir) => {
+  try { const bin = createRequire(path.join(dir, 'package.json'))('electron'); return typeof bin === 'string' && existsSync(bin) ? bin : null; } catch { return null; }
+};
+const npmInstall = (prefix) => {
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   execFileSync(npm, ['install', '--prefix', prefix, '--no-audit', '--no-fund', `electron@${lockedElectronVersion()}`], { stdio: ['ignore', 'ignore', 'inherit'], shell: process.platform === 'win32' });
-  const installed = resolveIn(prefix);
-  if (!installed) throw new Error('Electron could not be installed for this run.');
-  return installed;
+};
+const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/**
+ * The Electron executable: this checkout's, or one installed for this run at the locked version.
+ * Electron's binary comes from GitHub, which sometimes answers 504 (B-96), so a failed install is
+ * tried again in a fresh folder after 15 s and 30 s before the run is refused.
+ */
+export function electronBinary({ from = root, install = true, attempts = 3, installInto = npmInstall, resolveIn = resolveElectron, wait = sleep } = {}) {
+  const local = resolveIn(from);
+  if (local || !install) return local;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const prefix = mkdtempSync(path.join(os.tmpdir(), 'fabric-electron-'));
+    try { installInto(prefix); } catch (error) { console.error(`Electron install attempt ${attempt} failed: ${error.message}`); }
+    const installed = resolveIn(prefix);
+    if (installed) return installed;
+    rmSync(prefix, { recursive: true, force: true });
+    if (attempt < attempts) wait(15000 * attempt);
+  }
+  throw new Error(`Electron could not be installed for this run after ${attempts} attempts.`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
