@@ -171,3 +171,58 @@ test("macOS: node-pty is staged universal, spawn-helper executable, nothing else
   const view = stageConsoleView(target);
   assert.deepEqual(readdirSync(view).sort(), ["LICENSE-xterm", "addon-fit.js", "xterm.css", "xterm.js"]);
 });
+
+// ── Bug hunt 2026-10-12: a console key must never outlive its session ──
+
+const CLAUDE = { id: "claude", name: "Claude Code", file: "/opt/homebrew/bin/claude" };
+
+test("stop({ wait }) resolves only once the session's key is revoked, so a quit can wait for it", async () => {
+  let release!: () => void;
+  const s = setup({ revoke: async (id: string) => { await new Promise<void>((r) => { release = r; }); s.revoked.push(id); return true; } });
+  await s.c.start({ runtime: CLAUDE });
+  let done = false;
+  const stopping = s.c.stop({ wait: true, timeoutMs: 5000 }).then(() => { done = true; });
+  s.p.exit(0);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(done, false, "still waiting for the revoke");
+  release();
+  await stopping;
+  assert.deepEqual(s.revoked, ["k1"]);
+  assert.equal(s.c.running(), false);
+});
+
+test("stop({ wait }) gives up after its deadline when the agent never exits", async () => {
+  const s = setup({ setTimer: (fn: () => void, ms: number) => (ms <= 5000 ? setTimeout(fn, 5) : 0) });
+  await s.c.start({ runtime: CLAUDE });
+  const t0 = Date.now();
+  await s.c.stop({ wait: true, timeoutMs: 20 });
+  assert.ok(Date.now() - t0 < 2000);
+});
+
+test("two starts at once make one key and one agent", async () => {
+  const s = setup();
+  const [a, b] = await Promise.all([s.c.start({ runtime: CLAUDE }), s.c.start({ runtime: CLAUDE })]);
+  assert.deepEqual([a, b].map((r: any) => r.ok).sort(), [false, true]);
+  assert.equal(s.minted.length, 1);
+  assert.equal(s.p.spawned.length, 1);
+});
+
+test("a failure after the key was made revokes it and returns to idle, so the person can try again", async () => {
+  const failing = { ...fsPromises, writeFile: async () => { throw new Error("disk full"); } };
+  const s = setup({ fs: failing });
+  const out = await s.c.start({ runtime: CLAUDE });
+  assert.equal(out.ok, false);
+  assert.deepEqual(s.revoked, ["k1"]);
+  assert.equal(s.c.state().phase, "idle");
+});
+
+test("a key left by a crash is revoked only on its own server; another server's stays recorded for it", async () => {
+  const dir = path.join(mkdtempSync(path.join(os.tmpdir(), "fabric-console-")), "consoles");
+  await fsPromises.mkdir(dir, { recursive: true });
+  await fsPromises.writeFile(path.join(dir, "keys.json"), JSON.stringify([{ id: "mine", origin: ORIGIN }, { id: "theirs", origin: "https://other.workers.dev" }, "legacy"]));
+  const s = setup({ dir });
+  const out = await s.c.leftovers();
+  assert.deepEqual(s.revoked.sort(), ["legacy", "mine"]);
+  assert.deepEqual(out, { revoked: 2, kept: 1 });
+  assert.deepEqual(JSON.parse(readFileSync(path.join(dir, "keys.json"), "utf8")), [{ id: "theirs", origin: "https://other.workers.dev" }]);
+});

@@ -376,3 +376,18 @@ test("Windows and Linux flash the taskbar entry until the prompt is answered; no
   stop();
   assert.equal(events.at(-1), "flash false");
 });
+
+test("Windows: a hub listening on [::1] only (Node's 'localhost') is found: netstat lists IPv6 too (bug hunt 2026-10-12)", async () => {
+  const seenArgs: string[][] = [];
+  const exec = async (file: string, args: string[]) => {
+    if (file.endsWith("netstat.exe")) { seenArgs.push(args); return { stdout: [
+      "  TCP    [::]:135               [::]:0                 LISTENING       1012",
+      "  TCP    [::1]:47125            [::]:0                 LISTENING       5151",
+      "  UDP    [::1]:47125            *:*                                    5151",
+    ].join("\r\n") }; }
+    if (file.endsWith("tasklist.exe")) return { stdout: '"Hub.exe","5151","Console","1","1 K"\r\n' };
+    return { stdout: "C:\\Hub\\Hub.exe\r\n" };
+  };
+  assert.deepEqual(await listenerWith(exec, "win32")(47125), { pid: 5151, name: "Hub", path: "C:\\Hub\\Hub.exe" });
+  assert.ok(!seenArgs[0].includes("-p"), "netstat is not limited to IPv4");
+});

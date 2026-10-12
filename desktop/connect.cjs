@@ -99,7 +99,8 @@ const system32 = (tool) => `${process.env.SystemRoot || 'C:\\Windows'}\\System32
 function windowsListener(exec) {
   return async (port) => {
     let rows;
-    try { rows = String((await exec(system32('netstat.exe'), ['-ano', '-p', 'TCP'])).stdout); } catch { return null; }
+    // No `-p TCP`: that lists IPv4 only, and a hub listening on [::1] (Node's 'localhost') was never found (bug hunt 2026-10-12).
+    try { rows = String((await exec(system32('netstat.exe'), ['-ano'])).stdout); } catch { return null; }
     let pid = 0;
     for (const line of rows.split(/\r?\n/)) {
       const m = /^\s*TCP\s+(\S+):(\d+)\s+\S+\s+LISTENING\s+(\d+)\s*$/i.exec(line);

@@ -194,8 +194,11 @@ test("Linux: the verified AppImage replaces $APPIMAGE atomically; Restart starts
   assert.deepEqual(readdirSync(apps), ["Fabric-Inbox.AppImage"], "no .new file is left beside it");
   installer.installOnQuit();
   assert.deepEqual(f.spawned, [], "nothing to run at quit: the next launch is the new version");
-  installer.quitAndInstall();
+  process.argv.push("fabric-inbox://connect?port=47123&nonce=x", "--keep-me");
+  try { installer.quitAndInstall(); } finally { process.argv.splice(-2, 2); }
   assert.equal(f.app.relaunched.execPath, appImage);
+  assert.ok(f.app.relaunched.args.includes("--keep-me"), "other arguments are kept");
+  assert.ok(!f.app.relaunched.args.some((a: string) => a.startsWith("fabric-inbox:")), "the connect link it was launched with is not replayed (bug hunt 2026-10-12)");
   assert.deepEqual(f.app.calls, ["relaunch", "exit 0"]);
 });
 

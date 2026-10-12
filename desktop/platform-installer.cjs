@@ -82,7 +82,8 @@ function createPlatformInstaller(deps) {
         return;
       }
       // The AppImage on disk is already the new version: start it and leave.
-      app.relaunch({ execPath: appImage, args: process.argv.slice(1) });
+      // Not the connect link it was launched with: the new copy would ask about a stale request again (bug hunt 2026-10-12).
+      app.relaunch({ execPath: appImage, args: process.argv.slice(1).filter((a) => !/^fabric-inbox:/i.test(String(a))) });
       app.exit(0);
     },
 
