@@ -121,3 +121,21 @@ test("B-89: a message cached before parts kept their Content-ID is read again on
   assert.equal(needsInlineRefresh([{ filename: "a", mimeType: "image/png", size: 1, providerAttachmentId: "a", inline: false }]), false);
   assert.equal(needsInlineRefresh([]), false);
 });
+
+test("B-89: the inline route answers the picture's bytes with its type and a closed policy", async () => {
+  const { accountsRouter } = await import("../workers/routes/accounts");
+  const calls: unknown[][] = [];
+  const stub = {
+    inlineAttachment: async (...a: unknown[]) => { calls.push(a); return { mimeType: "image/png", data: Buffer.from([137, 80, 78, 71]).toString("base64url") }; },
+  };
+  const env = { GMAIL_ACCOUNTS: { getByName: () => stub } };
+  const r = await accountsRouter.request("https://mail.example.invalid/api/accounts/g1/messages/m%2F1/attachments/att-logo/inline", {}, env as never);
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("content-type"), "image/png");
+  assert.equal(r.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(r.headers.get("content-security-policy"), "default-src 'none'; sandbox");
+  assert.deepEqual([...new Uint8Array(await r.arrayBuffer())], [137, 80, 78, 71]);
+  assert.deepEqual(calls, [["g1", "m/1", "att-logo"]]);
+  const refused = { GMAIL_ACCOUNTS: { getByName: () => ({ inlineAttachment: async () => { throw new ProviderError("attachment_not_found", 404); } }) } };
+  assert.equal((await accountsRouter.request("https://mail.example.invalid/api/accounts/g1/messages/m1/attachments/att-pdf/inline", {}, refused as never)).status, 404);
+});

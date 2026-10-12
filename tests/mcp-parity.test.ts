@@ -26,6 +26,21 @@ test("read_message returns inReplyTo and bcc on both providers (parity gap 1)", 
   assert.equal(gread.data.folder, "draft");
 });
 
+test("B-89: read_message names the picture a file is embedded as (contentId) on both providers", async () => {
+  const cf = fakeApi({ [`GET ${CF_BOX}/emails/e1`]: ok(cfEmail({ id: "e1", attachments: [
+    { id: "a1", filename: "logo.png", mimetype: "image/png", size: 10, disposition: "inline", content_id: "<logo@x>" },
+    { id: "a2", filename: "r.pdf", mimetype: "application/pdf", size: 30, disposition: "attachment", content_id: null },
+  ] })) });
+  const read = await call(cf.api, "read_message", { accountId: `cloudflare:${CF}`, messageId: "e1" });
+  assert.deepEqual(read.data.attachments.map((a: Record<string, unknown>) => [a.attachmentId, a.contentId, a.inline]), [["a1", "logo@x", true], ["a2", undefined, false]]);
+  const gm = fakeApi({ "GET /api/accounts/g1/messages/m9": ok(gmailMessage({ providerMessageId: "m9", attachments: [
+    { filename: "logo.png", mimeType: "image/png", size: 10, providerAttachmentId: "att-logo", contentId: "logo@x", inline: true },
+    { filename: "r.pdf", mimeType: "application/pdf", size: 30, providerAttachmentId: "att-pdf", inline: false },
+  ] })) });
+  const gread = await call(gm.api, "read_message", { accountId: "gmail:g1", messageId: "m9" });
+  assert.deepEqual(gread.data.attachments.map((a: Record<string, unknown>) => [a.attachmentId, a.contentId, a.inline]), [["att-logo", "logo@x", true], ["att-pdf", undefined, false]]);
+});
+
 // ── Gap 1: drafts on the server, changed and sent over MCP (Gmail; Cloudflare end to end in mcp-workerd) ──
 
 test("Gmail drafts are listed with the others, changed under their revision keeping their thread, sent and deleted over MCP (parity gap 1)", async () => {
