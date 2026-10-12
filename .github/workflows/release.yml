@@ -264,7 +264,9 @@ jobs:
           FABRIC_INBOX_ANALYTICS_APP_KEY: ${{ secrets.FABRIC_INBOX_ANALYTICS_APP_KEY }}
           FABRIC_INBOX_ANALYTICS_HOST: ${{ vars.FABRIC_INBOX_ANALYTICS_HOST }}
         run: node desktop/dist-platform.mjs --platform win32 --arch ${{ matrix.arch }} --out release --stage app
-      # Pass 1: the app's own executables and DLLs, before the installer packs them. Electron ships
+      # Pass 1: the app's own executables, DLLs and Node modules, before the installer packs them,
+      # nested ones included: node-pty's pty.node, conpty.node, winpty.dll and winpty-agent.exe live in
+      # resources\app.asar.unpacked (B-100: a top-level listing left them unsigned). Electron ships
       # some DLLs already signed by Microsoft (d3dcompiler_47.dll); those keep that signature, and
       # only the unsigned files are signed here and checked for the profile's subject (0.14.1-rc.1).
       - name: The app's files that carry no signature
@@ -274,9 +276,10 @@ jobs:
         env:
           APP: ${{ github.workspace }}\release\.stage-win32-${{ matrix.arch }}\out\Fabric Inbox-win32-${{ matrix.arch }}
         run: |
-          $files = Get-ChildItem -LiteralPath $env:APP -File | Where-Object { $_.Extension -in '.exe', '.dll' } |
+          $files = Get-ChildItem -LiteralPath $env:APP -File -Recurse | Where-Object { $_.Extension -in '.exe', '.dll', '.node' } |
             Where-Object { (Get-AuthenticodeSignature -LiteralPath $_.FullName).Status -eq 'NotSigned' } | ForEach-Object { $_.FullName }
           if (-not ($files | Where-Object { $_ -like '*\Fabric Inbox.exe' })) { throw 'Fabric Inbox.exe is not among the files to sign' }
+          if (-not ($files | Where-Object { $_ -like '*\pty.node' })) { throw "the console's pty.node is not among the files to sign" }
           $files | ForEach-Object { Write-Host "to sign: $(Split-Path $_ -Leaf)" }
           $delim = "EOF_$([guid]::NewGuid().ToString('N'))"
           "files<<$delim" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
@@ -295,13 +298,24 @@ jobs:
           certificate-profile: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
           expected-subject: ${{ env.SIGNER }}
           report: ${{ runner.temp }}/app-signatures.json
+      - name: Every PE file of the app, nested ones included
+        id: allpe
+        if: env.SIGNING == 'true'
+        shell: pwsh
+        env:
+          APP: ${{ github.workspace }}\release\.stage-win32-${{ matrix.arch }}\out\Fabric Inbox-win32-${{ matrix.arch }}
+        run: |
+          $files = Get-ChildItem -LiteralPath $env:APP -File -Recurse | Where-Object { $_.Extension -in '.exe', '.dll', '.node' } | ForEach-Object { $_.FullName }
+          Write-Host "PE files to verify: $($files.Count)"
+          $delim = "EOF_$([guid]::NewGuid().ToString('N'))"
+          "files<<$delim" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          $files | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          $delim | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
       - name: Every executable and DLL of the app is Valid and timestamped (ours or Microsoft's)
         if: env.SIGNING == 'true'
         uses: passioncode-ai/.github/actions/windows-signing/verify@v1
         with:
-          files: |
-            ${{ github.workspace }}\release\.stage-win32-${{ matrix.arch }}\out\Fabric Inbox-win32-${{ matrix.arch }}\*.exe
-            ${{ github.workspace }}\release\.stage-win32-${{ matrix.arch }}\out\Fabric Inbox-win32-${{ matrix.arch }}\*.dll
+          files: ${{ steps.allpe.outputs.files }}
           out: ${{ runner.temp }}/app-all-signatures.json
       # Pass 2: electron-builder signs the uninstaller and the installer (azureSignOptions) with
       # this job's Azure CLI sign-in.
@@ -525,6 +539,9 @@ jobs:
   update-check-platforms:
     needs: [gate, publish]
     runs-on: ${{ matrix.runner }}
+    # The release environment holds AZURE_SIGNING_ENABLED, so a signed release's Windows check demands
+    # Authenticode as every installed copy does (B-105: without it SIGNING was false here).
+    environment: release
     permissions:
       contents: read
     strategy:

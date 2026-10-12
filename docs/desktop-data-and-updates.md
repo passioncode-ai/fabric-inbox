@@ -187,8 +187,11 @@ install it with the installer). A copy whose folder this account cannot write is
 Public Trust profile `passioncode-public-trust` (active since 2026-10-10; its certificates read
 `CN=Siarhei Sheleh, O=Siarhei Sheleh` and live about three days, so every signature carries an RFC 3161
 timestamp) when the release environment's `AZURE_SIGNING_ENABLED` is `true` — its source of truth is
-passioncode-ai/.github `release-signing/products.json`. The app's own executables and DLLs are signed
-before the installer packs them, then the uninstaller and the installer; the release fails unless
-every one is `Valid`, timestamped and the profile's, and the receipt carries the per-file report.
+passioncode-ai/.github `release-signing/products.json`. Every executable, DLL and Node module of the
+app, nested ones included (the agent console's `pty.node`, `conpty.node`, `winpty.dll` and
+`winpty-agent.exe` in `resources\app.asar.unpacked`), is signed before the installer packs it, then the
+uninstaller and the installer; the release fails unless every one is `Valid`, timestamped and the
+profile's (or Microsoft's), and the receipt carries the per-file report. Up to 0.16.2 the listing was
+the top level only, so those nested files shipped unsigned (B-100).
 0.14.0 shipped **unsigned** (receipt `windows_authenticode: NOT_SIGNED`; SmartScreen warns on first
 run; the GPG-signed `SHA256SUMS` is what an installed copy trusts).
