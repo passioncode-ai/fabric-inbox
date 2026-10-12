@@ -80,7 +80,19 @@ What was wrong, by kind:
 
 ## Verification (local, this branch)
 
-See the pull request for the exact commands and exit codes of this run.
+| Check | Result |
+|---|---|
+| `npm test` | before merging `main`: exit 0 — 1257 tests, 1256 pass, 1 skipped. After merging `main` at `2971aa2`: 1260 tests, 1258 pass, 1 skipped, 1 failed — `tests/mcp-workerd.test.ts` "search_mailbox with hasAttachment: false…", a workerd `internal error` reading agent keys under load (English MCP text, untouched here); that file then passed alone twice (14 of 14) |
+| `npm run typecheck` | exit 0 |
+| `node scripts/check-locale.mjs` | every interface string in Russian, the Mac app's copy current, no unwrapped literal |
+| `python3 docs/brand/lint.py` | exit 0 — 0 errors, 2205 warnings (2204 B022 adoption, 1 B005), the same count as before the pass |
+| `python3 docs/ux/lint.py`, `python3 docs/ux/doctor.py`; `git diff --check origin/main` | exit 0 each |
+
+Tests that assert exact Russian strings (`tests/i18n*.test.ts`, `desktop-i18n`, `agent-panel`,
+`agent-access-ui`, `gmail-callback-pages`, `outlook-routes`) pass unchanged: the asserted strings
+were kept.
+
+The copy is not released: it ships with the next version, whose CHANGELOG section should name it.
 
 ## Exact next task
 
