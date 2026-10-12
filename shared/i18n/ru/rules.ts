@@ -209,7 +209,7 @@ export const RULES: Readonly<Record<string, string>> = {
 	"Show fewer": "Показать меньше",
 	"Show all {n}": "Показать все ({n})",
 	"Entries": "Записи",
-	"Empty.": "Пусто",
+	"Empty.": "Пусто.",
 	"Find": "Найти",
 	"Nothing matches “{query}”.": "Ничего не найдено по запросу «{query}».",
 	"Remove {value}": "Убрать {value}",

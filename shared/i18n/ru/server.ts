@@ -11,7 +11,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 
 	// Agent access (workers/routes/agent-keys.ts)
 	"Name the agent this key is for": "Назовите агента, для которого этот ключ",
-	"Invalid key": "Неверный ключ",
+	"Invalid key": "Недопустимый ключ",
 	"An Admin key manages the whole workspace, so it cannot be limited to mailboxes. Choose Read or Mail.": "Ключ уровня «Администратор» управляет всем рабочим пространством, поэтому его нельзя ограничить отдельными ящиками. Выберите «Чтение» или «Почта».",
 	"Choose at least one mailbox, or leave the limit out for the whole workspace.": "Выберите хотя бы один почтовый ящик или не задавайте ограничение — тогда ключ действует во всём рабочем пространстве.",
 	"{value} is not an account: use \"cloudflare:<address>\", \"gmail:<id>\", \"imap:<id>\" or \"outlook:<id>\".": "{value} — не аккаунт: укажите \"cloudflare:<address>\", \"gmail:<id>\", \"imap:<id>\" или \"outlook:<id>\".",
@@ -146,7 +146,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Email Routing could not be read": "Не удалось прочитать Email Routing",
 
 	// Sending (workers/routes/reply-forward.ts)
-	"Invalid send request": "Неверный запрос на отправку",
+	"Invalid send request": "Недопустимый запрос на отправку",
 	"Send outcome is unknown; do not resend automatically": "Результат отправки неизвестен; не отправляйте повторно автоматически",
 	"Email was not accepted by the transport": "Почтовый сервис не принял письмо",
 
@@ -352,8 +352,8 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"The agent asked for review": "Агент попросил проверить ответ",
 	"A tool call failed during this answer": "Во время ответа вызов инструмента завершился ошибкой",
 	"The answer is not grounded in the agent's knowledge": "Ответ не опирается на знания агента",
-	"Intent \"{intent}\" is not allowed to send": "Для намерения \"{intent}\" отправка не разрешена",
-	"Intent \"unknown\" is not allowed to send": "Для намерения \"unknown\" отправка не разрешена",
+	"Intent \"{intent}\" is not allowed to send": "Для намерения «{intent}» отправка не разрешена",
+	"Intent \"unknown\" is not allowed to send": "Для намерения «unknown» отправка не разрешена",
 	"Daily send limit of {limit} reached": "Исчерпан дневной лимит отправок: {limit}",
 	"Allowed: {intent}": "Разрешено: {intent}",
 	"Allowed: grounded answer": "Разрешено: ответ с опорой на знания",
