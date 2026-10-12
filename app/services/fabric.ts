@@ -95,6 +95,9 @@ export type Mail = {
     mimeType: string;
     providerAttachmentId: string;
     size: number;
+    /** The Content-ID the HTML names as `cid:`, and whether the part said it is inline (B-89). */
+    contentId?: string;
+    inline?: boolean;
   }[];
 };
 export const accountPath = (id: string) =>

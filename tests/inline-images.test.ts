@@ -22,10 +22,10 @@ test("a Cloudflare message's cid: images point at its inline parts, which leave 
   assert.deepEqual(v.listed.map((a) => a.id), ["a2"], "the inline picture is not offered as a download");
 });
 
-test("an inline part the HTML never references stays downloadable; other providers are unchanged", () => {
+test("an inline part the HTML never references stays downloadable; other providers use their inline route (B-89)", () => {
   const unused = inlineView(open({ html: "<p>No pictures</p>" }), "cloudflare", "cloudflare:me@p.invalid", "e1");
   assert.deepEqual(unused.listed.map((a) => a.id), ["a1", "a2"]);
   const gmail = inlineView(open(), "gmail", "gmail:g1", "m1");
-  assert.equal(gmail.inline, undefined);
-  assert.equal(gmail.html, open().html);
+  assert.deepEqual(gmail.inline, { mailboxId: "g1", emailId: "m1", attachmentIds: ["a1"], remote: true });
+  assert.match(gmail.html!, /src="\/api\/accounts\/g1\/messages\/m1\/attachments\/a1\/inline"/);
 });

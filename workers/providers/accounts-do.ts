@@ -262,6 +262,9 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
       this.service.getAttachment(accountId, messageId, attachmentId),
     );
   }
+  inlineAttachment(accountId: string, messageId: string, attachmentId: string) {
+    return this.serial(() => this.service.inlineAttachment(accountId, messageId, attachmentId));
+  }
   disconnect(accountId: string) {
     return this.serial(() => this.service.disconnect(accountId));
   }

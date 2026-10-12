@@ -1,5 +1,6 @@
 import { signalsFromHeaders, type TriageSignals } from "../../shared/mail/triage";
 import { validateAttachments, type MailAttachment } from '../../shared/mail/attachments';
+import { bareContentId } from "../../shared/mail/inline";
 import {
   fromB64,
   GMAIL_SCOPE,
@@ -127,6 +128,10 @@ export interface Message {
     mimeType: string;
     size: number;
     providerAttachmentId: string;
+    /** The part's Content-ID without brackets, which the HTML names as `cid:` (B-89). */
+    contentId?: string;
+    /** Whether the part said it is inline; absent on messages cached before 2026-10-12. */
+    inline?: boolean;
   }[];
 }
 export interface SendInput {
@@ -183,13 +188,18 @@ export function normalizeMessage(
     attachments: [],
   };
   const walk = (part: GmailPart) => {
-    if (part.body?.attachmentId)
+    if (part.body?.attachmentId) {
+      const partHeader = (name: string) => part.headers?.find((h) => h.name.toLowerCase() === name)?.value;
+      const contentId = bareContentId(partHeader("content-id"));
       msg.attachments.push({
         filename: part.filename || "",
         mimeType: part.mimeType || "application/octet-stream",
         size: part.body.size || 0,
         providerAttachmentId: part.body.attachmentId,
+        ...(contentId ? { contentId } : {}),
+        inline: /^\s*inline\b/i.test(partHeader("content-disposition") ?? ""),
       });
+    }
     else if (part.body?.data) {
       const body = decodeBody(fromB64(part.body.data), part.headers);
       if (part.mimeType === "text/plain") msg.text += body;

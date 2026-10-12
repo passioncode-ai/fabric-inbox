@@ -29,7 +29,7 @@ import type { GmailCache, StoredMessage } from "../gmail-cache";
 import type { Store } from "../google-oauth";
 import type { PageResult } from "../provider";
 import { MESSAGE_FIELDS, labelsFor, localId, messageFromGraph, messageWithBody, roleOfLabels, type GraphAttachment, type GraphMessage } from "./convert";
-import type { GraphClient } from "./graph";
+import type { GraphClient, GraphRequest } from "./graph";
 import { randomId } from "./oauth";
 import { DISCARDED_FOLDER, OUTLOOK_FOLDERS, type OutlookAccount, type OutlookFolderState, type OutlookRole, type OutlookSyncState } from "./types";
 
@@ -39,6 +39,23 @@ export const PAGE_SIZE = 50;
 export const NEWEST = 20;
 /** A message larger than this is not downloaded to be read here (as for IMAP). */
 export const MAX_MESSAGE_BYTES = 30 * 1024 * 1024;
+
+const ATTACHMENT_FIELDS = "id,name,contentType,size,isInline";
+/**
+ * A message's attachments as Graph lists them, with each file's Content-ID (B-89). `contentId` is a
+ * property of `fileAttachment` only, so it is asked for by its cast; should Graph refuse that select
+ * (400), the list is asked for again without it and its pictures stay downloads.
+ */
+export async function listAttachments(graph: Pick<GraphClient, "json">, graphId: string, request?: GraphRequest): Promise<GraphAttachment[]> {
+  const list = (fields: string) => graph.json<{ value?: GraphAttachment[] }>(`/me/messages/${encodeURIComponent(graphId)}/attachments?$select=${fields}`, request);
+  try {
+    return (await list(`${ATTACHMENT_FIELDS},microsoft.graph.fileAttachment/contentId`)).value ?? [];
+  } catch (error) {
+    if (!(error instanceof ProviderError && error.code === "provider_rejected")) throw error;
+    console.warn(JSON.stringify({ event: "outlook_attachment_content_id_refused" }));
+    return (await list(ATTACHMENT_FIELDS)).value ?? [];
+  }
+}
 /** The folders are listed again after a day. */
 const LIST_EVERY_MS = 86_400_000;
 /** The import order: what a person looks at first, first. */
@@ -86,7 +103,7 @@ export async function readMessage(graph: GraphClient, account: OutlookAccount, g
     if (!(error instanceof ProviderError && error.code === "message_too_large")) throw error;
   }
   const attachments = meta.hasAttachments
-    ? (await graph.json<{ value?: GraphAttachment[] }>(`/me/messages/${enc(graphId)}/attachments?$select=id,name,contentType,size,isInline`, { patience: patienceMs })).value ?? []
+    ? await listAttachments(graph, graphId, { patience: patienceMs })
     : [];
   return { message: await messageWithBody(account.id, meta, role, mime, attachments), role, bodyless: !mime };
 }

@@ -363,6 +363,25 @@ test("files are read raw ($value), and every header of a message is Graph's own"
   await assert.rejects(service.getAttachment(account.id, id, "not-a-key!"), (e: ProviderError) => e.code === "invalid_id" || e.code === "attachment_not_found");
 });
 
+test("B-89: an embedded picture is answered for the reader; a file that is not one is refused", async (t) => {
+  const { service, graph } = await fixture(t);
+  const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  graph.deliver("With a logo", { attach: [
+    { name: "logo.png", contentType: "image/png", bytes: png, isInline: true, contentId: "logo@x" },
+    { name: "r.pdf", contentType: "application/pdf", bytes: new Uint8Array([37, 80]) },
+  ] });
+  const account = await connect(service, graph);
+  await settle(service, account.id);
+  const id = (await rows(service, account.id, { folder: "inbox" }))[0]!.providerMessageId;
+  const message = await service.getMessage(account.id, id);
+  const [logo, pdf] = message.attachments;
+  assert.deepEqual([logo!.contentId, logo!.inline, pdf!.contentId, pdf!.inline], ["logo@x", true, undefined, false]);
+  const picture = await service.inlineAttachment(account.id, id, logo!.providerAttachmentId);
+  assert.equal(picture.mimeType, "image/png");
+  assert.deepEqual(new Uint8Array(Buffer.from(picture.data, "base64url")), png);
+  await assert.rejects(service.inlineAttachment(account.id, id, pdf!.providerAttachmentId), (e: ProviderError) => e.code === "attachment_not_found");
+});
+
 // ── Sending ──────────────────────────────────────────────────────────────────────
 
 test("a send is a MIME draft made here and sent by Graph: Cc, Bcc, a reply's headers and its files go out once", async (t) => {
