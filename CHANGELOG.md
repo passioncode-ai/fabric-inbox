@@ -7,8 +7,8 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## 0.16.0 — 2026-10-12
 
-A bug-fix release: a review of the whole product and of the live server found 41 problems; 30 are
-fixed here.
+A bug-fix release: a review of the whole product and of the live server found 36 problems; 30 are
+fixed here, and the rest are on the board.
 
 - **Your agent console never leaves its key behind.** Quitting, restarting for an update or switching
   servers while the agent console runs now waits for its key to be revoked.
