@@ -210,6 +210,13 @@ export class AgentRegistryDO extends DurableObject<Env> {
       const text = JSON.stringify(stored);
       // A schema over the limit is not stored: the model then gets the generic wrapper (modelSchema).
       if (Object.keys(stored).length && text.length <= SCHEMA_LIMIT) grant.inputSchema = text; else delete grant.inputSchema;
+      // B-85: the gap tool must be one the same endpoint offers.
+      if (grant.gaps) {
+        let gapSchema: unknown;
+        try { gapSchema = await this.toolSchema({ ...grant, tool: grant.gaps.tool }); }
+        catch (error) { throw new AgentInvalid(msg("The schema of the tool {tool} could not be read: {error}", { tool: grant.gaps.tool, error: (error as Error).message })); }
+        if (gapSchema == null) throw new AgentInvalid(msg("The tool {tool} is not listed by its endpoint", { tool: grant.gaps.tool }));
+      }
     }
     return parsed.data;
   }

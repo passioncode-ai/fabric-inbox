@@ -338,6 +338,11 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
             </label>
             <label className="fi-check"><input type="checkbox" checked={!!tool.publicOnly} onChange={(e) => setTool(i, { ...tool, publicOnly: e.target.checked || undefined })} />
               <span>{t("Use only public results: every item it returns must be marked public, otherwise the answer waits for you")}</span></label>
+            <label className="fi-field">{t("Report questions it cannot answer to (tool)")}
+              <span className="fi-hint">{t("A tool of the same endpoint, e.g. nicegram.gaps.submit. When the tool asked before answering finds nothing confident, the question, paraphrased without personal data, is sent to it once.")}</span>
+              <input className="fi-input" value={tool.gaps?.tool ?? ""} maxLength={100}
+                onChange={(e) => setTool(i, { ...tool, gaps: e.target.value.trim() ? { tool: e.target.value.trim() } : undefined })} />
+            </label>
             <div className="fi-buttons"><button type="button" className="fi-secondary" onClick={() => set("tools", value.tools.filter((_, j) => j !== i))}>{t("Remove tool")}</button></div>
           </div>
         ))}

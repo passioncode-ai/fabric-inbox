@@ -37,6 +37,12 @@ export const ToolGrantSchema = z.object({
    * someone outside); anything else is withheld from the model and keeps the answer a draft.
    */
   publicOnly: z.boolean().optional(),
+  /**
+   * B-85: a tool on the same endpoint that records a question the knowledge could not answer. When
+   * the call before the model answers `abstained: true`, it is called once per message with the run's
+   * id, kind "unanswered", the fixed `channel` (or "email") and the model's paraphrase of the question.
+   */
+  gaps: z.object({ tool: z.string().min(1).max(100) }).strict().optional(),
 }).strict();
 export type ToolGrant = z.infer<typeof ToolGrantSchema>;
 

@@ -10,6 +10,8 @@ export interface ModelDecision {
   grounded: boolean;
   body: string;
   reason: string;
+  /** When nothing answered the question: a one-sentence paraphrase with no personal data (B-85 gaps). */
+  question?: string;
 }
 
 export interface PolicyContext {
@@ -19,6 +21,8 @@ export interface PolicyContext {
   rateLimited: string | null;
   /** Why the agent's knowledge could not be searched in this run; such an answer is never sent. */
   knowledgeProblem?: string | null;
+  /** The knowledge tool asked before the model found no confident answer (abstained); never sent. */
+  abstained?: boolean;
 }
 
 export type PolicyOutcome =
@@ -39,6 +43,7 @@ export function decide(policy: ReplyPolicy, proposal: ModelDecision, context: Po
   if (!proposal.body.trim()) return { action: "skip", reason: msg("The agent produced no answer") };
   if (policy.mode === "draft") return { action: "draft", reason: msg("This agent drafts only") };
   if (context.knowledgeProblem) return { action: "draft", reason: msg("The knowledge could not be searched ({problem})", { problem: context.knowledgeProblem }) };
+  if (context.abstained) return { action: "draft", reason: msg("No confident answer in the knowledge; a person checks it") };
   if (proposal.decision === "draft")
     return { action: "draft", reason: proposal.reason.trim() || msg("The agent asked for review") };
   if (context.toolFailures > 0) return { action: "draft", reason: msg("A tool call failed during this answer") };
