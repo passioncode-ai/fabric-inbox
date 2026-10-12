@@ -33,6 +33,8 @@ export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   sends?: boolean;
   /** Changes nothing. Tools that change something are journalled. */
   readOnly?: boolean;
+  /** Only adds (an address, a sent message): told to clients as not destructive. Every other changing tool is. */
+  additive?: boolean;
   /**
    * Irreversible: the first call returns this summary and a code; the second call, with the code,
    * acts. `null` means these particular arguments change nothing irreversible and run at once.
@@ -61,6 +63,21 @@ export interface Ledger {
  * The tools a caller may see and call: its level, sending only for a key that may send, and for a
  * key limited to mailboxes only the tools that stay inside a mailbox or the feed (AP-11).
  */
+/**
+ * The hints a client reads (MCP sweep 2026-10-12). The spec reads destructiveHint: false as "only
+ * additive updates", so a tool that changes something is destructive unless it is marked `additive`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function annotationsFor(tool: Pick<ToolDef<any>, "title" | "readOnly" | "additive" | "confirm" | "sends">) {
+  return {
+    title: tool.title,
+    readOnlyHint: !!tool.readOnly,
+    destructiveHint: !tool.readOnly && (!tool.additive || !!tool.confirm),
+    // Sending mail reaches outside this server.
+    openWorldHint: !!tool.sends,
+  };
+}
+
 export function toolsFor(principal: Principal, tools: readonly ToolDef[]): ToolDef[] {
   // An empty limit (a damaged list, or a limit on an Admin key) reaches nothing, so it lists nothing.
   if (principal.accounts && !principal.accounts.length) return [];
@@ -187,24 +204,21 @@ export function buildServer(info: ServerInfo, tools: readonly ToolDef[], ctx: To
       title: tool.title,
       description: tool.description,
       inputSchema: input,
-      annotations: {
-        title: tool.title,
-        readOnlyHint: !!tool.readOnly,
-        destructiveHint: !!tool.confirm,
-        // Sending mail and changing Cloudflare reach outside this server.
-        openWorldHint: !!tool.sends,
-      },
+      annotations: annotationsFor(tool),
     }, (async (args: Record<string, unknown>) => runTool(tool, args, ctx, ledger)) as never);
   }
   return server;
 }
 
 /** Turns a route's answer into data, or an ApiError carrying the app's own message. */
+/** A bare error code from a route (`account_not_found`) as a sentence an agent can act on, the code kept. */
+const readableCode = (error: string) =>
+  /^[a-z]+(_[a-z]+)+$/.test(error) ? `${error[0].toUpperCase()}${error.slice(1).replace(/_/g, " ")} (${error})` : error;
 export function unwrap(response: ApiResponse): unknown {
   if (response.status >= 200 && response.status < 300) return response.data;
   const data = response.data as { error?: unknown; message?: unknown } | string | null;
   const message = typeof data === "string" ? data
-    : typeof data?.error === "string" ? data.error
+    : typeof data?.error === "string" ? readableCode(data.error)
     : typeof data?.message === "string" ? data.message
     : `The server answered ${response.status}`;
   throw new ApiError(response.status, message, response.data);

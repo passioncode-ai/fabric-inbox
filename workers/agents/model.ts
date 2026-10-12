@@ -1,3 +1,4 @@
+import { deadline } from "../lib/deadline";
 import { generateText, hasToolCall, jsonSchema, stepCountIs, ToolChoiceViolationError, type LanguageModel, type ModelMessage } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 import { z } from "zod";
@@ -70,7 +71,7 @@ export async function runModel(model: LanguageModel, request: ModelRequest): Pro
             execute: async ({ arguments: args }: { arguments: Record<string, unknown> }) => tool.run(args ?? {}),
           };
   }
-  const abortSignal = AbortSignal.timeout(MODEL_TIMEOUT_MS);
+  const limit = deadline(MODEL_TIMEOUT_MS);
   const result = await generateText({
     model,
     system: request.system,
@@ -81,9 +82,9 @@ export async function runModel(model: LanguageModel, request: ModelRequest): Pro
     // The last step offers submit_answer alone. Not a forced tool choice: a model that
     // ignores one throws ToolChoiceViolationError and the whole run would be lost.
     prepareStep: ({ stepNumber }) => (stepNumber >= MAX_STEPS - 1 ? { activeTools: ["submit_answer"] } : undefined),
-    abortSignal,
+    abortSignal: limit.signal,
     maxRetries: 1,
-  });
+  }).finally(limit.clear);
   if (decision) return { decision, text: result.text };
   const messages: ModelMessage[] = [
     { role: "user", content: request.prompt },
@@ -91,6 +92,7 @@ export async function runModel(model: LanguageModel, request: ModelRequest): Pro
     { role: "user", content: SUBMIT_NOW },
   ];
   let lastText = "";
+  const finalLimit = deadline(FINAL_TURN_MS);
   try {
     const last = await generateText({
       model,
@@ -101,9 +103,9 @@ export async function runModel(model: LanguageModel, request: ModelRequest): Pro
       toolChoice: { type: "tool", toolName: "submit_answer" },
       stopWhen: stepCountIs(1),
       // Its own short deadline: the first call may have used most of the 90 s.
-      abortSignal: AbortSignal.timeout(FINAL_TURN_MS),
+      abortSignal: finalLimit.signal,
       maxRetries: 0,
-    });
+    }).finally(finalLimit.clear);
     lastText = last.text;
   } catch (error) {
     // Refusing the one allowed call, or running out of time for it, is "no answer";

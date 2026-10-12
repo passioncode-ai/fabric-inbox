@@ -1,3 +1,4 @@
+import { deadline } from "../lib/deadline";
 import { msg } from "../../shared/i18n";
 /**
  * The one Cloudflare API client of this server (CF-2/CF-3). The token is the
@@ -78,6 +79,15 @@ export class CloudflareApi {
     private label: { whose: string; Whose?: string; fix: string } | null = null) {}
 
   async call<T>(path: string, init: { method?: string; body?: unknown; form?: FormData; what?: string; timeoutMs?: number } = {}): Promise<T> {
+    const limit = deadline(init.timeoutMs ?? (init.form ? 60_000 : 15_000));
+    try {
+      return await this.request<T>(path, init, limit.signal);
+    } finally {
+      limit.clear();
+    }
+  }
+
+  private async request<T>(path: string, init: { method?: string; body?: unknown; form?: FormData; what?: string; timeoutMs?: number }, signal: AbortSignal): Promise<T> {
     let response: Response;
     try {
       // A multipart upload (a Worker script) sets its own Content-Type with the boundary.
@@ -85,7 +95,7 @@ export class CloudflareApi {
         method: init.method ?? "GET",
         headers: init.form ? { Authorization: `Bearer ${this.token}` } : { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
         ...(init.form ? { body: init.form } : init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-        signal: AbortSignal.timeout(init.timeoutMs ?? (init.form ? 60_000 : 15_000)),
+        signal,
       });
     } catch (error) {
       throw new CloudflareApiError(msg("Cloudflare did not answer ({error}). Try again.", { error: (error as Error).message }), 0);

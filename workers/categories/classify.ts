@@ -1,3 +1,4 @@
+import { deadline } from "../lib/deadline";
 import { generateObject, type LanguageModel } from "ai";
 import { z } from "zod";
 import type { ClassifiedMessage } from "./definition";
@@ -50,6 +51,7 @@ export const SYSTEM = [
 
 export async function classify(model: LanguageModel, categories: DescribedCategory[], message: ClassifiedMessage & { to: string }): Promise<Verdict[]> {
   if (!categories.length) return [];
+  const limit = deadline(45_000);
   const { object } = await generateObject({
     model,
     schema: ResultSchema,
@@ -59,9 +61,9 @@ export async function classify(model: LanguageModel, categories: DescribedCatego
       email: { from: message.sender, to: message.to, subject: message.subject.slice(0, 500), text: message.text.slice(0, TEXT_CHARS) },
     }),
     maxOutputTokens: 1500,
-    abortSignal: AbortSignal.timeout(45_000),
+    abortSignal: limit.signal,
     maxRetries: 1,
-  });
+  }).finally(limit.clear);
   const byId = new Map(object.results.map((r) => [r.id, r]));
   // A category the model left out is "no", with the omission said, never guessed.
   return categories.map((c) => {
