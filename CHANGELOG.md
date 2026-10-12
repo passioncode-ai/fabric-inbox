@@ -5,7 +5,7 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 0.16.3 — 2026-10-13
 
 - **Restart Now asks about a running agent console.** Restarting from the update dialog now asks
   first and revokes the console's key, as the menu already did.
@@ -13,6 +13,8 @@ is cut and published: [docs/release.md](docs/release.md).
   spoke English.
 - **Linux: the AppImage keeps Chromium's sandbox where the system allows it**, and the `.deb` names
   every library it needs (glibc 2.34 or later for the agent console).
+- **Windows: every file of the app is signed**, the agent console's helpers included; before, the
+  ones inside the app's resources were not.
 - **Agents can trust which tools change things.** Every tool that removes or overwrites something now
   says so to agent clients (`destructiveHint`); before, only the tools that ask for confirmation did.
   An unknown account is reported as a sentence, not a bare code.
