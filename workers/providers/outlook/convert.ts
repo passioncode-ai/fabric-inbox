@@ -20,6 +20,7 @@ import { signalsFromHeaders } from "../../../shared/mail/triage";
 import { b64url } from "../google-oauth";
 import type { Message } from "../gmail-client";
 import type { OutlookRole } from "./types";
+import { bareContentId } from "../../../shared/mail/inline";
 
 export interface GraphAddress { emailAddress?: { name?: string; address?: string } }
 export interface GraphMessage {
@@ -53,6 +54,8 @@ export interface GraphAttachment {
   contentType?: string;
   size?: number;
   isInline?: boolean;
+  /** A file attachment's Content-ID (B-89); Graph answers it only when asked by its cast. */
+  contentId?: string | null;
 }
 
 /** The properties every read asks for: what the cache keeps of a message, without its body. */
@@ -154,7 +157,8 @@ export async function messageWithBody(accountId: string, m: GraphMessage, role: 
   const base = await messageFromGraph(accountId, m, role);
   const files = attachments
     .filter((a) => a["@odata.type"] !== "#microsoft.graph.referenceAttachment")
-    .map((a) => ({ filename: a.name ?? "", mimeType: a.contentType || "application/octet-stream", size: a.size ?? 0, providerAttachmentId: attachmentKey(a.id) }));
+    .map((a) => ({ filename: a.name ?? "", mimeType: a.contentType || "application/octet-stream", size: a.size ?? 0, providerAttachmentId: attachmentKey(a.id),
+      ...(bareContentId(a.contentId) ? { contentId: bareContentId(a.contentId) } : {}), inline: a.isInline === true }));
   if (!mime) return { ...base, attachments: files };
   const parsed = await new PostalMime().parse(mime);
   const header = (name: string) => parsed.headers.find((h) => h.key === name)?.value;

@@ -3,16 +3,20 @@ export interface InlineAttachments {
   mailboxId: string;
   emailId: string;
   attachmentIds: string[];
+  /** A Gmail, IMAP or Outlook message: its pictures come from the account's inline route (B-89). */
+  remote?: boolean;
 }
 const segment = (value: string) => encodeURIComponent(value).replace(/[!'()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
-export function attachmentPath(mailboxId: string, emailId: string, attachmentId: string) {
-  return `/api/v1/mailboxes/${segment(mailboxId)}/emails/${segment(emailId)}/attachments/${segment(attachmentId)}`;
+export function attachmentPath(mailboxId: string, emailId: string, attachmentId: string, remote = false) {
+  return remote
+    ? `/api/accounts/${segment(mailboxId)}/messages/${segment(emailId)}/attachments/${segment(attachmentId)}/inline`
+    : `/api/v1/mailboxes/${segment(mailboxId)}/emails/${segment(emailId)}/attachments/${segment(attachmentId)}`;
 }
 export function mailImagePolicy(remote: boolean, origin: string, inline?: InlineAttachments) {
   const url = new URL(origin);
   if (!['https:', 'http:'].includes(url.protocol) || url.origin !== origin) throw new Error('Invalid application origin');
   const images = ['data:', 'cid:'];
-  if (inline) images.push(...inline.attachmentIds.map(id => origin + attachmentPath(inline.mailboxId, inline.emailId, id)));
+  if (inline) images.push(...inline.attachmentIds.map(id => origin + attachmentPath(inline.mailboxId, inline.emailId, id, inline.remote)));
   if (remote) images.push('https:');
   return `default-src 'none'; base-uri 'none'; form-action 'none'; style-src 'unsafe-inline'; img-src ${images.join(' ')}; script-src 'unsafe-inline';`;
 }
@@ -33,6 +37,7 @@ export function rewriteInlineImages(
   mailboxId: string,
   emailId: string,
   attachments?: InlineAttachmentRef[],
+  remote = false,
 ): string {
   if (!body || !attachments?.length) return body;
   let result = body;
@@ -40,7 +45,7 @@ export function rewriteInlineImages(
     if (att.disposition !== 'inline' || !att.content_id) continue;
     const cid = att.content_id.trim().replace(/^<(.*)>$/, '$1');
     if (!cid) continue;
-    const url = attachmentPath(mailboxId, emailId, att.id);
+    const url = attachmentPath(mailboxId, emailId, att.id, remote);
     const reference = new RegExp(`cid:${escapeRegExp(cid)}(?![^\\s"'<>()\\\\])`, 'gi');
     result = result.replace(reference, () => url);
   }

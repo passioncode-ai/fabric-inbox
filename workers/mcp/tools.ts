@@ -311,7 +311,9 @@ const getAttachment = defineTool({
   name: "get_attachment", title: "Get an attachment", level: "read", readOnly: true,
   description: "The bytes of one attachment, base64-encoded (standard alphabet, padded). Only attachments up to 5 MB come back; a larger one is refused with 413 and is opened in the app. The attachmentId comes from read_message.",
   input: { accountId, messageId, attachmentId: z.string().min(1).max(2048) },
-  routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId", "GET /api/accounts/:accountId/messages/:messageId/attachments/:attachmentId"],
+  // The reader's inline route (B-89) answers the same file's bytes for an embedded picture.
+  routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId", "GET /api/accounts/:accountId/messages/:messageId/attachments/:attachmentId",
+    "GET /api/accounts/:accountId/messages/:messageId/attachments/:attachmentId/inline"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
     if (account.provider !== "cloudflare") {

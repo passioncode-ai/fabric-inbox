@@ -3,6 +3,7 @@ import type { Mail } from "~/services/fabric";
 import { displaySender } from "../../../shared/mail/sender";
 import type { Triage } from "../../../shared/mail/triage";
 import { rewriteInlineImages, type InlineAttachments } from "../../lib/mail-image-policy";
+import { bareContentId, inlinePictureType } from "../../../shared/mail/inline";
 /** "cloudflare" (a mailbox on a served domain), "gmail" (Google sign-in), "imap" (an app password) or "outlook" (Microsoft sign-in). */
 export type MailProvider = "cloudflare" | "gmail" | "imap" | "outlook";
 /** Gmail, IMAP and Outlook accounts: kept by the server's accounts object and reached at /api/accounts/<id>. */
@@ -129,6 +130,8 @@ export function normalizeMessage(
         filename: a.filename,
         mimeType: a.mimeType,
         size: a.size,
+        ...(a.inline !== undefined ? { disposition: a.inline ? "inline" : "attachment" } : {}),
+        ...(a.contentId ? { contentId: a.contentId } : {}),
       })),
     };
   }
@@ -156,18 +159,26 @@ export function normalizeMessage(
 }
 
 /**
- * What the reader shows (bug hunt 2026-10-12): a Cloudflare message's `cid:` pictures point at its
- * inline parts (and the frame's CSP allows those), and a part the HTML shows is not offered again as a
- * download. Other providers have no inline-part route yet and are shown as they are.
+ * What the reader shows (bug hunt 2026-10-12; B-89): a message's `cid:` pictures point at its inline
+ * parts (and the frame's CSP allows those), and a part the HTML shows is not offered again as a
+ * download. Cloudflare mail shows its inline parts; Gmail, IMAP and Outlook show each raster picture
+ * whose Content-ID the HTML names, through the account's inline route (`shared/mail/inline.ts`).
  */
 export function inlineView(open: OpenMessage, provider: InboxMessage["provider"], accountId: string, emailId: string):
   { html?: string; inline?: InlineAttachments; listed: OpenMessage["attachments"] } {
-  if (isRemote(provider) || !open.html) return { html: open.html, listed: open.attachments };
-  const cid = (a: OpenMessage["attachments"][number]) => (a.contentId ?? "").trim().replace(/^<(.*)>$/, "$1");
-  const shown = open.attachments.filter((a) => a.disposition === "inline" && cid(a) && open.html!.toLowerCase().includes(`cid:${cid(a).toLowerCase()}`));
+  if (!open.html) return { html: open.html, listed: open.attachments };
+  const remote = isRemote(provider);
+  const html = open.html.toLowerCase();
+  const shown = open.attachments.filter((a) =>
+    bareContentId(a.contentId) && html.includes(`cid:${bareContentId(a.contentId).toLowerCase()}`) &&
+    (remote ? inlinePictureType(a.mimeType) !== null : a.disposition === "inline"));
   if (!shown.length) return { html: open.html, listed: open.attachments };
   const mailboxId = rawAccount(accountId);
-  const html = rewriteInlineImages(open.html, mailboxId, emailId, shown.map((a) => ({ id: a.id, disposition: "inline", content_id: a.contentId })));
+  const rewritten = rewriteInlineImages(open.html, mailboxId, emailId, shown.map((a) => ({ id: a.id, disposition: "inline", content_id: a.contentId })), remote);
   const ids = new Set(shown.map((a) => a.id));
-  return { html, inline: { mailboxId, emailId, attachmentIds: [...ids] }, listed: open.attachments.filter((a) => !ids.has(a.id)) };
+  return {
+    html: rewritten,
+    inline: { mailboxId, emailId, attachmentIds: [...ids], ...(remote ? { remote: true } : {}) },
+    listed: open.attachments.filter((a) => !ids.has(a.id)),
+  };
 }

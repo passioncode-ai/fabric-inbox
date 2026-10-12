@@ -33,7 +33,7 @@ export interface FakeMail {
   conversationId: string;
   internetMessageId: string;
   mime: string;
-  attachments: { id: string; name: string; contentType: string; bytes: Uint8Array; isInline: boolean; type?: string }[];
+  attachments: { id: string; name: string; contentType: string; bytes: Uint8Array; isInline: boolean; contentId?: string; type?: string }[];
   headers: { name: string; value: string }[];
   changeKey: number;
   /** The change sequence of the last change; the folder it was in before its last move. */
@@ -121,7 +121,7 @@ export class FakeGraph {
   }
 
   /** New mail in a folder (the newest received last unless a date is given). */
-  deliver(subject: string, o: Partial<Omit<FakeMail, "id" | "subject">> & { folder?: string; body?: string; attach?: { name: string; contentType: string; bytes: Uint8Array }[] } = {}): FakeMail {
+  deliver(subject: string, o: Partial<Omit<FakeMail, "id" | "subject">> & { folder?: string; body?: string; attach?: { name: string; contentType: string; bytes: Uint8Array; isInline?: boolean; contentId?: string }[] } = {}): FakeMail {
     const id = graphId();
     const internetMessageId = `<${subject.replace(/\W/g, "")}.${counter}@example.org>`;
     const received = o.received ?? new Date(Date.UTC(2026, 9, 5, 10, 0, 0) + counter * 60_000).toISOString();
@@ -131,7 +131,7 @@ export class FakeGraph {
     const mail: FakeMail = {
       id, folder: o.folder ?? "inbox", subject, from, to: o.to ?? [this.me.mail!], cc: o.cc, bcc: o.bcc, received, isRead: o.isRead ?? false, flagged: o.flagged ?? false,
       isDraft: o.isDraft ?? false, conversationId: o.conversationId ?? graphId("conv"), internetMessageId, mime,
-      attachments: (o.attach ?? []).map((a) => ({ id: graphId("att"), name: a.name, contentType: a.contentType, bytes: a.bytes, isInline: false })),
+      attachments: (o.attach ?? []).map((a) => ({ id: graphId("att"), name: a.name, contentType: a.contentType, bytes: a.bytes, isInline: a.isInline ?? false, contentId: a.contentId })),
       headers: [{ name: "Received", value: "from example.org" }, { name: "List-Id", value: "<news.example.org>" }, { name: "Message-ID", value: internetMessageId }],
       changeKey: 1, seq: this.seq++,
     };
@@ -288,7 +288,7 @@ export class FakeGraph {
       const mail = this.deliver(parsed.subject ?? "", { folder: "drafts", isDraft: true, isRead: true, mime, to: list(parsed.to), cc: list(parsed.cc), bcc: list(parsed.bcc),
         from: { name: "", address: this.me.mail! }, received: new Date().toISOString() });
       mail.internetMessageId = parsed.messageId ?? mail.internetMessageId;
-      mail.attachments = parsed.attachments.map((a) => ({ id: graphId("att"), name: a.filename ?? "file", contentType: a.mimeType, bytes: new Uint8Array(a.content as ArrayBuffer), isInline: a.disposition === "inline" }));
+      mail.attachments = parsed.attachments.map((a) => ({ id: graphId("att"), name: a.filename ?? "file", contentType: a.mimeType, bytes: new Uint8Array(a.content as ArrayBuffer), isInline: a.disposition === "inline", contentId: a.contentId?.replace(/^<|>$/g, "") }));
       return json(this.view(mail), 201);
     }
     if ((m = /^\/me\/messages\/([^/]+)(\/.*)?$/.exec(path))) {
@@ -334,7 +334,9 @@ export class FakeGraph {
         this.sent.push(mail);
         return new Response(null, { status: 202 });
       }
-      if (rest === "/attachments" && method === "GET") return json({ value: mail.attachments.map((a) => ({ "@odata.type": a.type ?? "#microsoft.graph.fileAttachment", id: a.id, name: a.name, contentType: a.contentType, size: a.bytes.length, isInline: a.isInline })) });
+      if (rest === "/attachments" && method === "GET") return json({ value: mail.attachments.map((a) => ({ "@odata.type": a.type ?? "#microsoft.graph.fileAttachment", id: a.id, name: a.name, contentType: a.contentType, size: a.bytes.length, isInline: a.isInline,
+        // contentId belongs to fileAttachment: Graph answers it only when the select names it by its cast.
+        ...(select?.includes("microsoft.graph.fileAttachment/contentId") && (a.type ?? "#microsoft.graph.fileAttachment") === "#microsoft.graph.fileAttachment" ? { contentId: a.contentId ?? null } : {}) })) });
       if (rest === "/attachments" && method === "POST") {
         const a = JSON.parse(body ?? "{}");
         const bytes = new Uint8Array(Buffer.from(a.contentBytes, "base64"));

@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+- **Pictures inside Gmail, IMAP and Outlook mail show.** A logo, a signature or a pasted screenshot
+  that a message embeds appeared as a broken image unless the mail came to a Cloudflare address.
+  Now it shows in place for every account, and it is no longer offered again as a download. SVG
+  pictures stay downloads.
+
 ## 0.16.1 — 2026-10-12
 
 - **A draft keeps its files in the mailbox view.** Saving or sending a draft from a mailbox's own

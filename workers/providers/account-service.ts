@@ -37,6 +37,7 @@ import { createMicrosoftAuthorization, exchangeMicrosoftCode, microsoftConfigura
 import { CUSTOM, PRESETS } from "../../shared/mail/imap-presets";
 import { DISCARD_RETENTION_MS, addressOf } from "../../shared/mail/discard";
 import { msg } from "../../shared/i18n";
+import { inlinePictureType } from "../../shared/mail/inline";
 export { importPercent, type SyncState } from "./gmail-sync";
 
 /** How a sync runs: until when it may start pages, whether it imports, and under whose lock. */
@@ -183,6 +184,17 @@ function matches(m: Omit<Message, "text" | "html">, f: MessageFilters) {
     && (f.threadId === undefined || m.threadId === f.threadId);
 }
 /** How long one read may spend moving an account's cache to the current layout before it answers from the old one. */
+/**
+ * The part an inline route may answer (B-89): a raster picture the message names by Content-ID.
+ * Anything else, a download or SVG among them, is not served for the reader to embed.
+ */
+export function inlinePart(files: Message["attachments"], attachmentId: string) {
+  const file = files.find((f) => f.providerAttachmentId === attachmentId);
+  const type = file?.contentId ? inlinePictureType(file.mimeType) : null;
+  return file && type ? { ...file, mimeType: type } : null;
+}
+/** A message cached before its parts kept their Content-ID (B-89) is read once more when opened. */
+export const needsInlineRefresh = (files: Message["attachments"]) => files.some((f) => !("inline" in f));
 const MIGRATE_ON_READ_MS = 5_000;
 /** Rows of the first layout that it already hid: an earlier import's leftovers once history took over. */
 function hiddenByFirstLayout(account: AccountRecord, row: StoredMessage) {
@@ -568,8 +580,9 @@ export class AccountService {
       return fresh;
     }
     // Cached before Cc and Reply-To were kept: read it once more from Gmail so a reply reaches
-    // the right people. Gmail out of reach is no reason to fail the read; the cached copy stands.
-    if (!("cc" in row.message)) {
+    // the right people; cached before its parts kept their Content-ID (B-89): read once more so its
+    // pictures show. The provider out of reach is no reason to fail the read; the cached copy stands.
+    if (!("cc" in row.message) || needsInlineRefresh(row.message.attachments ?? [])) {
       try {
         const fresh = await this.withSession(account, (s) => s.message(messageId));
         await this.saveMessage(account, fresh);
@@ -1161,6 +1174,15 @@ export class AccountService {
       throw new ProviderError("invalid_id", 400);
     const id = await this.currentId(account.id, messageId);
     return this.withSession(account, (s) => s.attachment(id, attachmentId));
+  }
+  /** An embedded picture of a message, for the reader (B-89): its type and base64url bytes. */
+  async inlineAttachment(accountId: string, messageId: string, attachmentId: string) {
+    if (!attachmentId || attachmentId.length > 2048) throw new ProviderError("invalid_id", 400);
+    const message = await this.getMessage(accountId, messageId);
+    const part = inlinePart(message.attachments, attachmentId);
+    if (!part) throw new ProviderError("attachment_not_found", 404);
+    const { data } = await this.getAttachment(accountId, messageId, attachmentId);
+    return { mimeType: part.mimeType, data };
   }
   async disconnect(accountId: string) {
     const account = await this.account(accountId);

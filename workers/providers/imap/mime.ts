@@ -15,6 +15,7 @@ import PostalMime, { decodeWords } from "postal-mime";
 import { signalsFromHeaders } from "../../../shared/mail/triage";
 import type { Message } from "../gmail-client";
 import { ROLE_KEY, type FolderRole } from "./types";
+import { bareContentId } from "../../../shared/mail/inline";
 
 const ROLE_LABEL: Record<FolderRole, string | null> = { inbox: "INBOX", sent: "SENT", drafts: "DRAFT", trash: "TRASH", junk: "SPAM", archive: null, discarded: "DISCARDED" };
 
@@ -119,6 +120,8 @@ export async function messageFromRaw(raw: Uint8Array | string, meta: ImapMeta, w
       mimeType: a.mimeType || "application/octet-stream",
       size: typeof a.content === "string" ? a.content.length : a.content.byteLength,
       providerAttachmentId: String(i),
+      ...(bareContentId(a.contentId) ? { contentId: bareContentId(a.contentId) } : {}),
+      inline: a.disposition === "inline",
     })) : [],
   };
 }

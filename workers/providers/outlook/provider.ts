@@ -33,7 +33,7 @@ import { NotSentError, type DraftUpdate, type DraftView, type MailProvider, type
 import { MESSAGE_FIELDS, addresses, attachmentFromKey, attachmentKey, labelsFor, localId, messageWithBody, threadOf, type GraphAttachment, type GraphMessage } from "./convert";
 import { GraphClient } from "./graph";
 import { microsoftConfiguration, randomId, type MicrosoftEnvironment } from "./oauth";
-import { MAX_MESSAGE_BYTES, OutlookSync, findDiscarded, readMessage, roleOfFolder } from "./sync";
+import { MAX_MESSAGE_BYTES, OutlookSync, findDiscarded, listAttachments, readMessage, roleOfFolder } from "./sync";
 import { DISCARDED_FOLDER, WELL_KNOWN, type OutlookAccount, type OutlookCredentials, type OutlookRole } from "./types";
 
 /** A MIME message larger than this (base64, as sent) is created without its files, which follow one by one. */
@@ -313,7 +313,7 @@ export class OutlookSession implements ProviderSession {
   }
   private async files(graphId: string, has: boolean | undefined): Promise<GraphAttachment[]> {
     if (!has) return [];
-    return (await this.graph.json<{ value?: GraphAttachment[] }>(`/me/messages/${enc(graphId)}/attachments?$select=id,name,contentType,size,isInline`)).value ?? [];
+    return listAttachments(this.graph, graphId);
   }
   private async view(id: string, meta: GraphMessage, attachments: GraphAttachment[], mime: Uint8Array | null): Promise<DraftView> {
     const m = await messageWithBody(this.account.id, meta, "drafts", mime, attachments);

@@ -3,7 +3,7 @@ import { MAX_SEND_REQUEST_BYTES } from '../../shared/mail/attachments';
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import { configuration } from "../providers/google-oauth";
+import { configuration, fromB64 } from "../providers/google-oauth";
 import type { GmailBindings } from "../providers/accounts-do";
 import type { GmailFolder, SendRequest } from "../providers/account-service";
 import { ProviderError } from "../providers/gmail-client";
@@ -452,6 +452,25 @@ accountsRouter.get(
     ),
 );
 
+/**
+ * An embedded picture's bytes for the reader's frame (B-89), which may load only these URLs
+ * (app/lib/mail-image-policy.ts): a raster picture the message names by Content-ID, nothing else.
+ */
+accountsRouter.get(
+  "/api/accounts/:accountId/messages/:messageId/attachments/:attachmentId/inline",
+  async (c) => {
+    const { mimeType, data } = await stub(c.env).inlineAttachment(c.req.param("accountId"), c.req.param("messageId"), c.req.param("attachmentId"));
+    return new Response(fromB64(data), {
+      headers: {
+        "Content-Type": mimeType,
+        "Content-Disposition": "inline",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+        "Cache-Control": "private, max-age=3600",
+      },
+    });
+  },
+);
 accountsRouter.get(
   "/api/accounts/:accountId/sends/:idempotencyKey",
   async (c) =>

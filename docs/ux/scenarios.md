@@ -283,13 +283,14 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   1. Open a message -> attachment names and availability appear.
   2. Choose an attachment -> retrieval progress and its result are shown.
 - **Release refinement (REL-05):** HTML remote images start blocked. Load external images grants this message only; selecting another message resets permission. Message HTML cannot submit forms or set a base URL, and sends no referrer.
+- **Embedded pictures (B-89, 2026-10-12):** A picture the message embeds (`cid:`) shows in place for every account kind, without Load external images: Cloudflare mail from its inline parts, Gmail, IMAP and Outlook through the account's inline route. Only a raster picture whose Content-ID the HTML names is shown; SVG and every other file stay downloads, and a picture shown in place is not listed again. A message cached before 0.16.2 is read once more from its provider when opened.
 - **Expected result:** The attachment belongs to the selected message and account.
 - **Alt paths:** Return to the previous surface without causing an external action; preserve confirmed saved work.
 - **UI elements:** SCR-04; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Unavailable content names the missing download; retry does not imply cached content exists.
 - **Status:** draft
-- **Coverage:** app/routes/unified-inbox.tsx (`download`, attachment controls); app/components/inbox/model.ts (`messagePath`); desktop/main.cjs:82
+- **Coverage:** app/routes/unified-inbox.tsx (`download`, attachment controls); app/components/inbox/model.ts (`messagePath`, `inlineView`); shared/mail/inline.ts; workers/routes/accounts.ts (`…/attachments/:attachmentId/inline`); tests/inline-images-remote.test.ts; desktop/main.cjs:82
 - **Product:** unobserved
 - **Today:** Partial. Attachment controls request content through the selected account/provider message path and initiate a download; Electron asks for a save location. While a download is in flight its button reads Downloading… (role="status"), and a failed Cloudflare download names the file (`tests/inbox-ui.test.ts`). No real provider attachment or desktop download was exercised. Offline attachment availability is absent.
 
