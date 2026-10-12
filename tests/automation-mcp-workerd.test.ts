@@ -38,7 +38,7 @@ const bundle = await build({
 
 type Seen = { method: string; path: string; auth: string | null; rpc: string | null; redirect: string };
 
-function standInServer(seen: Seen[]) {
+function standInServer(seen: Seen[], { outputSchema = false } = {}) {
   return async (request: Request) => {
     const url = new URL(request.url);
     const body = request.method === "POST" ? await request.json() : null;
@@ -48,7 +48,9 @@ function standInServer(seen: Seen[]) {
     if (body.id === undefined) return new Response(null, { status: 202 });
     const result =
       body.method === "initialize" ? { protocolVersion: body.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "stand-in", version: "1" } }
-      : body.method === "tools/list" ? { tools: [{ name: "communicator.signal.emit", inputSchema: { type: "object", properties: { kind: { type: "string" } } } }] }
+      : body.method === "tools/list" ? { tools: [{ name: "communicator.signal.emit", inputSchema: { type: "object", properties: { kind: { type: "string" } } },
+          // A server that declares what its tool returns (the Nicegram data agent does, 2026-10-12).
+          ...(outputSchema ? { outputSchema: { type: "object", properties: { class: { type: "string" } }, required: ["class"] } } : {}) }] }
       : body.method === "tools/call" ? { content: [{ type: "text", text: `emitted ${body.params.arguments.kind}` }] }
       : null;
     if (!result) return Response.json({ jsonrpc: "2.0", id: body.id, error: { code: -32601, message: "no" } });
@@ -56,13 +58,13 @@ function standInServer(seen: Seen[]) {
   };
 }
 
-async function worker(seen: Seen[]) {
+async function worker(seen: Seen[], options: { outputSchema?: boolean } = {}) {
   const mf = new Miniflare({
     modules: true,
     script: bundle.outputFiles[0].text,
     compatibilityDate: "2026-09-01",
     compatibilityFlags: ["nodejs_compat"],
-    outboundService: standInServer(seen),
+    outboundService: standInServer(seen, options),
   });
   const run = async (command: unknown) => (await mf.dispatchFetch("http://localhost/", { method: "POST", body: JSON.stringify(command) })).json() as Promise<any>;
   return { mf, run };
@@ -86,6 +88,20 @@ test("a rule's tool call reaches its host from workerd, with its credential, and
 test("an agent's tool schema is read from workerd too", async () => {
   const seen: Seen[] = [];
   const { mf, run } = await worker(seen);
+  try {
+    const out = await run({ op: "schema", grant: { endpoint: `https://${HOST}/mcp`, tool: "communicator.signal.emit" } });
+    assert.equal(out.error, undefined, out.error);
+    assert.deepEqual(out.ok, { type: "object", properties: { kind: { type: "string" } } });
+  } finally {
+    await mf.dispose();
+  }
+});
+
+test("a tool that declares an outputSchema can be granted: its schema is read in workerd, where code generation is not allowed", async () => {
+  // The SDK compiled output-schema validators with ajv (new Function), which Workers refuse: granting
+  // the Nicegram data agent failed with "Code generation from strings disallowed for this context".
+  const seen: Seen[] = [];
+  const { mf, run } = await worker(seen, { outputSchema: true });
   try {
     const out = await run({ op: "schema", grant: { endpoint: `https://${HOST}/mcp`, tool: "communicator.signal.emit" } });
     assert.equal(out.error, undefined, out.error);

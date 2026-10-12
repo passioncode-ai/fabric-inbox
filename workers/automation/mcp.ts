@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker";
 import { validateToolUrl, type Rule } from "./policy";
 import { msg } from "../../shared/i18n";
 
@@ -11,6 +12,14 @@ export interface McpCall {
 }
 
 type CallResult = { isError?: boolean; content?: unknown };
+
+/**
+ * The MCP client every tool call and schema read uses. The SDK's default validator compiles a
+ * tool's outputSchema with ajv (new Function), which Workers refuse ("Code generation from strings
+ * disallowed for this context"): a server that declares output schemas could not be granted at all
+ * (the Nicegram data agent, 2026-10-12). The cfworker validator interprets schemas without codegen.
+ */
+export const toolClient = () => new Client({ name: "fabric-inbox", version: "0.1.0" }, { jsonSchemaValidator: new CfWorkerJsonSchemaValidator() });
 
 /**
  * Every request to a tool endpoint: one 20-second deadline, and no redirect followed. Workers'
@@ -55,7 +64,7 @@ export async function callMcpTool(call: McpCall, hosts: string, tokens: Record<s
   const token = call.tokenRef ? tokens[call.tokenRef] : undefined;
   if (call.tokenRef && !token) throw new Error("Tool credential is not configured");
   const transport = toolTransport(url, token);
-  const client = new Client({ name: "fabric-inbox", version: "0.1.0" });
+  const client = toolClient();
   try {
     await client.connect(transport);
     return (await client.callTool({ name: call.tool, arguments: call.arguments }, undefined, { timeout: 20_000 })) as CallResult;
