@@ -5,6 +5,29 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.16.0 — 2026-10-12
+
+A bug-fix release: a review of the whole product and of the live server found 41 problems; 30 are
+fixed here.
+
+- **Your agent console never leaves its key behind.** Quitting, restarting for an update or switching
+  servers while the agent console runs now waits for its key to be revoked.
+- **Agent replies say they are automatic.** They carry `Auto-Submitted: auto-replied`, so other
+  auto-responders do not answer them.
+- **A draft is sent once**, even when it is sent from two windows at the same moment.
+- **Plain-text mail reads as written**: its lines and the addresses in it are kept.
+- **Embedded pictures show in the inbox** (for mail on your Cloudflare addresses) and are no longer
+  listed again as attachments.
+- **Nothing is skipped after a burst of new mail**, and undoing one failed action no longer undoes
+  your other changes.
+- **Changing the sender keeps what you typed**, and a double-click on Reply opens one draft.
+- **Reply agents are harder to steer**: the safety check reads exactly what the agent reads, all of
+  it, and a busy address no longer holds up answers for your other addresses.
+- **A tool you grant can be a knowledge base that declares its answers' format**, and each tool's
+  credential is only ever sent to its own server.
+- Windows: a hub listening on IPv6 is found when it connects. Windows and Linux: opening the app
+  again always brings a window back.
+
 ## 0.15.2 — 2026-10-11
 
 - **Automatic updates work again.** From 0.12.0 on, the Mac app downloaded each new release but could
