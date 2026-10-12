@@ -499,6 +499,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Draft not found: it was sent or deleted": "Черновик не найден: его отправили или удалили",
 	"The draft changed since revision {expected} (now {revision}); read it again before sending": "Черновик изменился после версии {expected} (сейчас {revision}); прочитайте его снова перед отправкой",
 	"The draft has no recipient": "У черновика нет получателя",
+	"This draft is being sent already": "Этот черновик уже отправляется",
 	"The draft's file {file} could not be read; remove it and add it again": "Файл черновика {file} не удалось прочитать; удалите его и добавьте снова",
 	"Rate limit exceeded: max {n} emails per hour per mailbox": "Превышен лимит: не больше {n} писем в час с одного ящика",
 	"Rate limit exceeded: max {n} emails per day per mailbox": "Превышен лимит: не больше {n} писем в день с одного ящика",

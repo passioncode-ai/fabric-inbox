@@ -18,7 +18,7 @@ import type { OutboxEntry } from '../../shared/mail/outbox';
 import { OutboxCoordinator, IdempotencyConflict, payloadHash } from '../actions/outbox';
 import { sentProjection, transportParams, type PreparedMail } from '../actions/prepare-mail';
 import { sendFromAccount } from '../email-sender';
-import { SendEmailRequestSchema, type EmailFull } from '../lib/schemas';
+import { SendMailRequestSchema, type EmailFull } from '../lib/schemas';
 import { validateSender, buildReferencesChain, buildQuotedReplyBlock } from '../lib/email-helpers';
 import { verifyDraft } from '../lib/ai';
 import type { SendMailCommand, SendMailResult, SendMailRequest } from '../../shared/mail/send';
@@ -199,7 +199,7 @@ export class MailboxDO extends DurableObject<Env> {
   async sendMail(command: SendMailCommand): Promise<SendMailResult> {
     try {
       const mailboxId = command.mailboxId.toLowerCase();
-      const request = SendEmailRequestSchema.parse(command.request);
+      const request = SendMailRequestSchema.parse(command.request);
       if (request.attachments !== undefined) request.attachments = validateAttachments(request.attachments);
       validateSender(request.to, request.from, mailboxId);
       validateSendHeaders(request);
@@ -822,7 +822,23 @@ export class MailboxDO extends DurableObject<Env> {
 	 * goes out as a reply in its conversation. A retry with the same key after the draft is gone
 	 * answers the first attempt's outcome; a key used for different content is a conflict.
 	 */
+	/** Drafts being sent right now: a second send of the same draft meanwhile is refused (bug hunt 2026-10-12). */
+	#sendingDrafts = new Set<string>();
+
+	/**
+	 * Sends a draft once. Two windows, or a person and an agent, sending the same draft at the same
+	 * revision each made their own idempotency key, so both passed and the message left twice: the
+	 * draft is now claimed for the length of the send, and a second send meanwhile is a conflict.
+	 */
 	async sendDraft(command: { mailboxId: string; draftId: string; idempotencyKey: string; from: string | { email: string; name: string }; expectedRevision?: number }): Promise<SendMailResult> {
+		if (this.#sendingDrafts.has(command.draftId))
+			return { error: msg("This draft is being sent already"), code: "DRAFT_CONFLICT" };
+		this.#sendingDrafts.add(command.draftId);
+		try { return await this.#sendDraftOnce(command); }
+		finally { this.#sendingDrafts.delete(command.draftId); }
+	}
+
+	async #sendDraftOnce(command: { mailboxId: string; draftId: string; idempotencyKey: string; from: string | { email: string; name: string }; expectedRevision?: number }): Promise<SendMailResult> {
 		const mailboxId = command.mailboxId.toLowerCase();
 		const draft = await this.getEmail(command.draftId);
 		if (!draft || draft.folder_id !== Folders.DRAFT) {
@@ -855,6 +871,12 @@ export class MailboxDO extends DurableObject<Env> {
 				html, text: htmlToText(html) || " ", ...(files.length ? { attachments: files } : {}) },
 		});
 		if (!("error" in result) && result.status === "accepted") {
+			// An edit saved while this send was in flight is newer than what left: it stays a draft.
+			const now = this.ctx.storage.sql.exec<{ draft_revision: number | null }>("SELECT draft_revision FROM emails WHERE id = ? AND folder_id = ?", draft.id, Folders.DRAFT).toArray()[0];
+			if (now && Number(now.draft_revision ?? 1) !== revision) {
+				console.log(JSON.stringify({ event: "draft_kept_newer_revision", sent: revision, kept: Number(now.draft_revision ?? 1) }));
+				return result;
+			}
 			const removed = await this.deleteDraft(draft.id);
 			if (removed?.length) await (this.env as Env).BUCKET.delete(removed.map((a: { id: string; filename: string }) => `attachments/${draft.id}/${a.id}/${a.filename}`))
 				.catch((error: unknown) => console.warn(JSON.stringify({ event: "draft_cleanup_failed", error: (error as Error).message })));
@@ -1015,7 +1037,12 @@ export class MailboxDO extends DurableObject<Env> {
 		if (to) conditions.push(contains(["recipient", "cc", "bcc"], to));
 		if (subject) conditions.push(contains(["subject"], subject));
 		if (date_start) { const p = addParam(date_start); conditions.push(`${prefix}date >= ${p}`); }
-		if (date_end) { const p = addParam(date_end); conditions.push(`${prefix}date <= ${p}`); }
+		// A date without a time means that whole day: stored dates carry a time, so compare with the next day.
+		if (date_end) {
+			const dayOnly = /^\d{4}-\d{2}-\d{2}$/.test(date_end) && Number.isFinite(Date.parse(date_end));
+			const p = addParam(dayOnly ? new Date(Date.parse(date_end) + 86_400_000).toISOString().slice(0, 10) : date_end);
+			conditions.push(dayOnly ? `${prefix}date < ${p}` : `${prefix}date <= ${p}`);
+		}
 		if (is_read !== undefined) { const p = addParam(is_read ? 1 : 0); conditions.push(`${prefix}read = ${p}`); }
 		if (is_starred !== undefined) { const p = addParam(is_starred ? 1 : 0); conditions.push(`${prefix}starred = ${p}`); }
 		if (has_attachment !== undefined) { conditions.push(`${prefix}id ${has_attachment ? "IN" : "NOT IN"} (SELECT DISTINCT email_id FROM attachments)`); }
@@ -1116,10 +1143,9 @@ export class MailboxDO extends DurableObject<Env> {
 			if (rowSubject !== normalized) continue;
 
 			if (normalizedSender) {
-				const threadSenders = String((row as any).senders || "");
-				const threadRecipients = String((row as any).recipients || "");
-				const allParticipants = `${threadSenders},${threadRecipients}`;
-				if (!allParticipants.includes(normalizedSender)) {
+				// Exact addresses: a substring test let jimbob@x.com join bob@x.com's thread (bug hunt 2026-10-12).
+				const participants = new Set(`${(row as any).senders || ""},${(row as any).recipients || ""}`.split(/[,\s]+/).map((a) => a.trim()).filter(Boolean));
+				if (!participants.has(normalizedSender)) {
 					continue;
 				}
 			}
