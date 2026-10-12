@@ -20,6 +20,7 @@ import { GMAIL_FOLDERS } from "../providers/gmail-cache";
 import { parseRemoteAccount, type RemoteProvider } from "../../shared/mail/accounts";
 import { AttachmentValidationError, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, validateAttachments, type MailAttachment } from "../../shared/mail/attachments";
 import { BATCH_MAX, LOCAL_PART_RE } from "../../shared/address-name";
+import { bareContentId } from "../../shared/mail/inline";
 
 // ── Shared pieces ──────────────────────────────────────────────────
 
@@ -79,8 +80,13 @@ interface ReadMessage {
   subject: string; from: string; to: string; cc: string | null; bcc: string | null; replyTo: string | null; date: string; folder: string | null;
   read: boolean; starred: boolean; spamReason: string | null; text: string; truncated: boolean; html?: string;
   headers?: { name: string; value: string }[];
-  attachments: { attachmentId: string; filename: string; type: string; size: number }[];
+  attachments: { attachmentId: string; filename: string; type: string; size: number; contentId?: string; inline: boolean }[];
 }
+/** A file's Content-ID, which the HTML names as `cid:` to show it as a picture (B-89), and whether it is inline. */
+const embedded = (contentId: unknown, inline: boolean) => {
+  const id = bareContentId(typeof contentId === "string" ? contentId : "");
+  return { ...(id ? { contentId: id } : {}), inline };
+};
 /** A stored message's headers, or (mail kept before they were stored, and your own drafts) the fields the app knows. */
 function cloudflareHeaders(e: Record<string, unknown>): { name: string; value: string }[] {
   const stored = parseStoredHeaders(e.raw_headers as string | null);
@@ -102,7 +108,8 @@ async function readMessage(ctx: ToolContext, account: Account, id: string, max =
       replyTo: headerValue(parseStoredHeaders(e.raw_headers as string | null), "reply-to")?.trim() || null, date: String(e.date ?? ""), folder: (e.folder_id as string) ?? null, read: !!e.read, starred: !!e.starred,
       spamReason: e.folder_id === "spam" ? (e.spam_reason as string) ?? null : null, text: body.text, truncated: body.truncated, ...(includeHtml ? { html } : {}),
       ...(includeHeaders ? { headers: cloudflareHeaders(e) } : {}),
-      attachments: (e.attachments ?? []).map((a) => ({ attachmentId: String(a.id), filename: String(a.filename), type: String(a.mimetype), size: Number(a.size) })),
+      attachments: (e.attachments ?? []).map((a) => ({ attachmentId: String(a.id), filename: String(a.filename), type: String(a.mimetype), size: Number(a.size),
+        ...embedded(a.content_id, a.disposition === "inline") })),
     };
   }
   const m = (await get(ctx, `${remote(account.remoteId)}/messages/${enc(id)}`)) as Record<string, unknown> & { labels?: string[]; attachments?: Record<string, unknown>[] };
@@ -119,7 +126,8 @@ async function readMessage(ctx: ToolContext, account: Account, id: string, max =
     date: String(m.date ?? ""), folder: labels.includes("SPAM") ? "spam" : labels.includes("TRASH") ? "trash" : labels.includes("DRAFT") ? "draft" : labels.includes("DISCARDED") ? "discarded" : labels.includes("INBOX") ? "inbox" : labels.includes("SENT") ? "sent" : "archive",
     read: !!m.read, starred: labels.includes("STARRED"), spamReason: labels.includes("SPAM") ? (account.provider === "gmail" ? "Gmail put it in Spam" : account.provider === "outlook" ? "It is in the account's Junk Email folder" : "It is in the account's spam folder") : null,
     text: body.text, truncated: body.truncated, ...(includeHtml ? { html: String(m.html ?? "") } : {}), ...(headers ? { headers } : {}),
-    attachments: (m.attachments ?? []).map((a) => ({ attachmentId: String(a.providerAttachmentId), filename: String(a.filename), type: String(a.mimeType), size: Number(a.size) })),
+    attachments: (m.attachments ?? []).map((a) => ({ attachmentId: String(a.providerAttachmentId), filename: String(a.filename), type: String(a.mimeType), size: Number(a.size),
+      ...embedded(a.contentId, a.inline === true) })),
   };
 }
 
@@ -264,7 +272,7 @@ const listMailboxMessages = defineTool({
 
 const readMessageTool = defineTool({
   name: "read_message", title: "Read a message", level: "read", readOnly: true,
-  description: "One message in full: From, To, Cc, Bcc (your own sent mail and drafts), Reply-To, In-Reply-To and References, the body as plain text, its attachments (ids for get_attachment) and why it is in Spam if it is. includeHeaders adds every header, as the app's View source shows them. Reading does not mark it read; use update_messages for that.",
+  description: "One message in full: From, To, Cc, Bcc (your own sent mail and drafts), Reply-To, In-Reply-To and References, the body as plain text, its attachments (ids for get_attachment; contentId names a file the body shows as a picture, `cid:` in its HTML) and why it is in Spam if it is. includeHeaders adds every header, as the app's View source shows them. Reading does not mark it read; use update_messages for that.",
   input: { accountId, messageId, maxChars, includeHtml: z.boolean().default(false).describe("Also return the original HTML"),
     includeHeaders: z.boolean().default(false).describe("Also return every header of the message (View source)") },
   routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/accounts/:accountId/messages/:messageId", "GET /api/accounts/:accountId/messages/:messageId/headers"],
