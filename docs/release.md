@@ -153,6 +153,11 @@ per package and has no checked universal path; Intel Macs install the universal 
 6. **Watch the run.** Nothing waits for a click: `guard` checks that `main` contains the commit
    and that `ci.yml` passed on it (starting it on the tag when none ran), then the signing jobs and
    `publish` run. A `guard` failure names why; fix it on `main` and release a new version.
+   A job that sits in `waiting` on the `release` environment for minutes while the environment has
+   no reviewers and no wait timer (`gh api …/actions/runs/<id>/pending_deployments` shows
+   `reviewers: []`) is stuck on GitHub's side, not held for anyone: `gh run cancel <id>`, then
+   `gh run rerun <id> --failed` (v0.16.2, 2026-10-12: `linux (ubuntu-24.04, x64)` waited four hours;
+   the re-run passed and kept the other jobs' results).
 7. **Check from the download.** In an empty directory, do what the README tells a teammate
    (`gh release download …`, `gpg --verify SHA256SUMS.asc SHA256SUMS`,
    `shasum -a 256 -c SHA256SUMS --ignore-missing`, `gh attestation verify <file> -R passioncode-ai/fabric-inbox --signer-workflow passioncode-ai/.github/.github/workflows/release-publish.yml`: the attestations are signed by the organization's reusable `release-publish.yml`, so without `--signer-workflow` the check fails with "verifying with issuer sigstore.dev"). Install the copy into
