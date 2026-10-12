@@ -16,6 +16,15 @@ test("publicOnly: every value must sit inside an item marked public", () => {
   assert.match(publicOnlyProblem(JSON.stringify(deep))!, /too deep/, "depth is a refusal, not a skip");
 });
 
+test("publicOnly (FI-3): the brief's rule is the code's — class is the string public, inherited by everything inside", () => {
+  assert.equal(publicOnlyProblem(JSON.stringify({ class: "public", answer: "a", sources: [{ title: "Wiki", score: 0.9 }] })), null, "a top-level public class covers the whole output");
+  assert.match(publicOnlyProblem(JSON.stringify({ answer: "a", sources: [{ title: "Wiki" }] }))!, /not marked public/, "no class anywhere is not public");
+  assert.match(publicOnlyProblem(JSON.stringify({ results: [{ class: { label: "public" }, quote: "x" }] }))!, /not marked public/, "a class object is not the string public");
+  assert.match(publicOnlyProblem(JSON.stringify({ results: [{ class: "PUBLIC", quote: "x" }] }))!, /not marked public/, "the value is exact");
+  assert.match(publicOnlyProblem(JSON.stringify({ class: "public", results: [{ class: "internal", quote: "x" }] }))!, /not marked public/, "an inner class overrides the outer one");
+  assert.match(publicOnlyProblem("plain text answer")!, /not JSON/);
+});
+
 test("modelSchema: a schema with $ref falls back to the wrapper; required drops fixed keys", () => {
   assert.equal(modelSchema(grant({ inputSchema: JSON.stringify({ type: "object", properties: { q: { $ref: "#/$defs/Q" } }, $defs: { Q: { type: "string" } } }) })), null);
   const s = modelSchema(grant({ inputSchema: JSON.stringify({ type: "object", properties: { q: { type: "string" }, domain: { type: "string" } }, required: ["q", "domain"] }), fixed: { domain: "nicegram" } }))!;
