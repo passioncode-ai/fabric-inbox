@@ -118,9 +118,16 @@ export function builderConfig({ platform, version, arch, signing }) {
       synopsis: 'Mail client with cloud automation', description: 'Fabric Inbox: one triaged list across Gmail and Cloudflare mailboxes, answered by versioned agents.',
     },
     // PL-05: the sign-in is kept in the Secret Service; libsecret reaches it, a keyring provides it.
-    deb: { packageName: 'fabric-inbox', depends: ['libsecret-1-0', 'libgtk-3-0', 'libnss3', 'libxss1', 'libasound2 | libasound2t64', 'xdg-utils'], recommends: ['gnome-keyring | kwalletmanager'],
+    // B-103: this list replaces electron-builder's own, so it names every library Electron loads, and
+    // glibc 2.34, the floor of the agent console's bundled pty.node (Debian 12, Ubuntu 22.04 and later).
+    deb: { packageName: 'fabric-inbox', depends: ['libc6 (>= 2.34)', 'libsecret-1-0', 'libgtk-3-0', 'libnss3', 'libxss1', 'libasound2 | libasound2t64',
+      'libgbm1', 'libxkbcommon0', 'libxtst6', 'libnotify4', 'libuuid1', 'libcups2 | libcups2t64', 'libatspi2.0-0 | libatspi2.0-0t64', 'xdg-utils'],
+      recommends: ['gnome-keyring | kwalletmanager'],
       afterInstall: path.join(desktop, 'linux', 'after-install.sh'), afterRemove: path.join(desktop, 'linux', 'after-remove.sh') },
-    appImage: { artifactName: `Fabric-Inbox-${version}-linux-${arch}.AppImage` },
+    // B-99: electron-builder's .desktop entry says `AppRun --no-sandbox %U` unless told otherwise. With
+    // no arguments, AppRun switches the sandbox off only where user namespaces are unavailable, and the
+    // app logs it (main.cjs, `sandbox_off`).
+    appImage: { artifactName: `Fabric-Inbox-${version}-linux-${arch}.AppImage`, executableArgs: [] },
   };
 }
 

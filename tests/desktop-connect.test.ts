@@ -348,6 +348,21 @@ test("Windows: the listener is the LISTENING loopback row in netstat, named by i
   assert.ok(calls.includes("netstat.exe"));
 });
 
+test("B-101: on Windows in another language the listening row is found by its wildcard remote address, not the word LISTENING", async () => {
+  const rows = (state: string) => async (file: string) => (file.endsWith("netstat.exe") ? { stdout: [
+    "Aktive Verbindungen", "", "  Proto  Lokale Adresse         Remoteadresse          Status           PID",
+    "  TCP    127.0.0.1:47123        127.0.0.1:50000        HERGESTELLT      777",
+    `  TCP    127.0.0.1:47123        0.0.0.0:0              ${state}        4242`,
+    `  TCP    [::1]:47125            [::]:0                 ${state}        4343`,
+    "  UDP    127.0.0.1:47126        *:*                                    55",
+  ].join("\r\n") } : file.endsWith("tasklist.exe") ? { stdout: '"Hub.exe","1"' } : { stdout: "" });
+  for (const state of ["ABHÖREN", "NASŁUCHIWANIE", "ÉCOUTE", "ПРОСЛУШИВАНИЕ", "LISTENING"]) {
+    assert.equal((await listenerWith(rows(state), "win32")(47123))?.pid, 4242, state);
+    assert.equal((await listenerWith(rows(state), "win32")(47125))?.pid, 4343, `${state} on [::1]`);
+    assert.equal(await listenerWith(rows(state), "win32")(47126), null, `${state}: UDP is not a listener`);
+  }
+});
+
 test("Linux: ss names the listener; without ss, /proc/net/tcp and the processes' sockets do", async () => {
   const fs = (files: Record<string, string>, dirs: Record<string, string[]>, links: Record<string, string>) => ({
     readFile: async (p: string) => { if (p in files) return files[p]; throw new Error("ENOENT"); },

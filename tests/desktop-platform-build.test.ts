@@ -31,6 +31,16 @@ test("Windows: a per-user NSIS installer that registers fabric-inbox:// in HKCU 
   assert.match(nsh, /DeleteRegKey HKCU "Software\\Classes\\fabric-inbox"/);
 });
 
+test("B-99/B-103: the AppImage's menu entry does not switch the sandbox off; the .deb names every library Electron and the console need", async () => {
+  const { builderConfig } = await load();
+  const c = builderConfig({ platform: "linux", version: "0.16.3", arch: "x64", signing: null }) as any;
+  assert.deepEqual(c.appImage.executableArgs, [], "electron-builder's default .desktop Exec adds --no-sandbox");
+  for (const lib of ["libc6 (>= 2.34)", "libgbm1", "libxkbcommon0", "libxtst6", "libnotify4", "libuuid1", "libnss3", "libsecret-1-0", "libgtk-3-0"]) {
+    assert.ok(c.deb.depends.includes(lib), lib);
+  }
+  for (const alt of ["libcups2 | libcups2t64", "libatspi2.0-0 | libatspi2.0-0t64", "libasound2 | libasound2t64"]) assert.ok(c.deb.depends.includes(alt), alt);
+});
+
 test("Linux: AppImage and a .deb named fabric-inbox, with the scheme handler and the Secret Service library (PL-01, PL-04, PL-05)", async () => {
   const { builderConfig, PLATFORMS } = await load();
   assert.deepEqual(PLATFORMS.linux.targets, ["AppImage", "deb"]);

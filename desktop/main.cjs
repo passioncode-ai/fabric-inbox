@@ -423,7 +423,7 @@ async function checkForUpdates() {
   if (out.outcome === 'ready') {
     const answer = await dialog.showMessageBox({ type: 'info', title: t('Updates'), message: t('Fabric Inbox {version} is ready to install.', { version: out.version || '' }),
       detail: t('It will be installed when you quit Fabric Inbox. Restart now to use it at once.'), buttons: [t('Later'), t('Restart Now')], defaultId: 1, cancelId: 0 });
-    if (answer.response === 1) updater.restart();
+    if (answer.response === 1) void restartToUpdate();
     return;
   }
   const [message, detail] = messages[out.outcome] || messages.failed;
@@ -798,7 +798,7 @@ function installMenu() {
       enabled: !(state && state.state === 'downloading'),
       click: () => {
         const now = updater ? updater.status() : null;
-        if (now && now.state === 'ready') void consoleMayEnd().then((go) => { if (go) updater.restart(); });
+        if (now && now.state === 'ready') void restartToUpdate();
         else if (now && now.stuck) void showUpdatesStuck(now);
         else void checkForUpdates();
       },
@@ -824,6 +824,15 @@ async function consoleMayEnd() {
   if (answer === 0) return false;
   await agentConsole.stop({ wait: true, timeoutMs: 5000 });
   return true;
+}
+/**
+ * Restart to install a ready update, from the update-ready dialog or the menu (B-104): a running
+ * console is asked about and its key revoked first, since an AppImage restart exits without
+ * before-quit.
+ */
+async function restartToUpdate() {
+  if (!(await consoleMayEnd())) return;
+  updater.restart();
 }
 let endingConsole = false;
 app.on('before-quit', (event) => {
@@ -865,6 +874,9 @@ app.on('second-instance', (_event, argv) => {
 });
 if (ownsInstance) app.whenReady().then(async () => {
   i18n.init({ app, userData: app.getPath('userData') });
+  // B-99: an AppImage's AppRun adds --no-sandbox where user namespaces are off (Ubuntu 24.04's default);
+  // the .deb keeps the sandbox through its SUID chrome-sandbox. Said in the log, never silent.
+  if (process.platform === 'linux' && app.commandLine.hasSwitch('no-sandbox')) logEvent({ event: 'sandbox_off', appImage: !!process.env.APPIMAGE });
   // PL-05: no Secret Service on Linux means no protected sign-in; say so and stop (never plain text).
   const refusal = policy.keyStoreRefusal(process.platform, process.platform === 'linux' && electron.safeStorage && typeof electron.safeStorage.getSelectedStorageBackend === 'function'
     ? electron.safeStorage.getSelectedStorageBackend() : null);

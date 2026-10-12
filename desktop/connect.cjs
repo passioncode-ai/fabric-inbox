@@ -95,7 +95,11 @@ function listenerWith(exec, platform = process.platform, fs = require('node:fs/p
 
 const system32 = (tool) => `${process.env.SystemRoot || 'C:\\Windows'}\\System32\\${tool}`;
 
-/** Windows: the LISTENING row for 127.0.0.1/[::1]:port in netstat, then the process's name and path. */
+/**
+ * Windows: the listening row for 127.0.0.1/[::1]:port in netstat, then the process's name and path. A
+ * listening TCP row is told by its wildcard remote address (0.0.0.0:0 or [::]:0), not by the state's
+ * word, which Windows translates (ABHÖREN, NASŁUCHIWANIE…; B-101).
+ */
 function windowsListener(exec) {
   return async (port) => {
     let rows;
@@ -103,7 +107,7 @@ function windowsListener(exec) {
     try { rows = String((await exec(system32('netstat.exe'), ['-ano'])).stdout); } catch { return null; }
     let pid = 0;
     for (const line of rows.split(/\r?\n/)) {
-      const m = /^\s*TCP\s+(\S+):(\d+)\s+\S+\s+LISTENING\s+(\d+)\s*$/i.exec(line);
+      const m = /^\s*TCP\s+(\S+):(\d+)\s+(?:0\.0\.0\.0|\[::\]):0\s+\S+\s+(\d+)\s*$/i.exec(line);
       if (m && Number(m[2]) === port && /^(127\.0\.0\.1|0\.0\.0\.0|\[::1?\])$/.test(m[1])) { pid = Number(m[3]); break; }
     }
     if (!pid) return null;
