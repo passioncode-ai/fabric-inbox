@@ -568,3 +568,38 @@ test("B-85: a failed gap report never changes the answer's outcome", async () =>
   assert.match(run.reason, /No confident answer/, "drafted for the abstention, not for the failed report");
   assert.equal(run.toolCalls.find((c) => c.name.endsWith(":gap"))?.ok, false);
 });
+
+test("B-85: a knowledge tool the model calls itself and that abstains gives candidates, keeps a draft, and one gap per run", async () => {
+  const calls: { tool: string; args: Record<string, unknown> }[] = [];
+  const seen: string[] = [];
+  const h = harness({
+    agent: autoAgent({ tools: [kbGrant({ publicOnly: true, fixed: { channel: "email" }, gaps: { tool: "nicegram.gaps.submit" } })] }),
+    callTool: async (grant, args) => { calls.push({ tool: grant.tool, args }); return grant.tool === "nicegram.gaps.submit" ? JSON.stringify({ class: "public", duplicate: false }) : abstained; },
+    model: async (r) => {
+      seen.push(await r.tools[0].run({ query: "ghost mode" }));
+      seen.push(await r.tools[0].run({ query: "stealth mode" }));
+      return { decision: answer({ question: "Is ghost mode still available" }), text: "" };
+    },
+  });
+  const run = (await h.run())!;
+  assert.match(seen[0], /unverified candidates/i, "framed as candidates");
+  assert.match(seen[0], /never state/i);
+  assert.equal(run.status, "drafted");
+  assert.match(run.reason, /No confident answer/);
+  const gaps = calls.filter((c) => c.tool === "nicegram.gaps.submit");
+  assert.equal(gaps.length, 1, "one gap per run, however many calls abstained");
+  assert.equal(gaps[0].args.requestId, run.id);
+});
+
+test("B-85: a confident answer the model still cannot ground (grounded: false, with its question) is reported as one gap", async () => {
+  const calls: { tool: string; args: Record<string, unknown> }[] = [];
+  const h = harness({
+    agent: autoAgent({ tools: [gapGrant()] }),
+    callTool: async (grant, args) => { calls.push({ tool: grant.tool, args }); return grant.tool === "nicegram.gaps.submit" ? "{}" : confident; },
+    model: async () => ({ decision: answer({ decision: "draft", grounded: false, question: "How to recover a lost phone's account" }), text: "" }),
+  });
+  const run = (await h.run())!;
+  assert.equal(run.status, "drafted");
+  const gaps = calls.filter((c) => c.tool === "nicegram.gaps.submit");
+  assert.deepEqual(gaps.map((g) => g.args), [{ requestId: run.id, kind: "unanswered", channel: "email", question: "How to recover a lost phone's account" }]);
+});
