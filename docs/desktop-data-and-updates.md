@@ -162,6 +162,13 @@ own folders are used (`app.getPath` in `desktop/main.cjs`):
 | The sign-in cookie's key (PL-05) | DPAPI, bound to the Windows account | the Secret Service (GNOME Keyring, KWallet); without one the app **refuses to start** rather than keep the sign-in in plain text (`key_store_refused` in the log) |
 | `fabric-inbox://` links (PL-04) | `HKCU\Software\Classes\fabric-inbox`, written by the installer and removed by its uninstaller | `MimeType=x-scheme-handler/fabric-inbox` in the `.desktop` entry of the `.deb`; an AppImage gets it when an AppImage integrator installs its entry |
 
+**Linux requirements (B-99, B-103).** The agent console's `pty.node` needs glibc 2.34 or later (Debian 12,
+Ubuntu 22.04 and later); the `.deb` declares it with every library Electron loads. The AppImage needs
+`libfuse.so.2` (`sudo apt install libfuse2` or `libfuse2t64` on Ubuntu 22.04 and later). Chromium's
+sandbox: the `.deb` keeps it through its SUID `chrome-sandbox`; an AppImage cannot carry a SUID helper,
+so where unprivileged user namespaces are off (Ubuntu 24.04's default) its launcher starts the app with
+`--no-sandbox` and the app logs `sandbox_off`. On such systems install the `.deb`.
+
 Uninstalling on Windows (Settings → Apps, or `Uninstall Fabric Inbox.exe`) removes the program
 and the link registration and leaves the profile, as on the Mac; removing `%APPDATA%\Fabric Inbox`
 too costs the sign-in and unsent drafts, and the server's address comes back from the PassionCode
