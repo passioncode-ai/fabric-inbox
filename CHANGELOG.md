@@ -5,6 +5,16 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.16.1 — 2026-10-12
+
+- **A draft keeps its files in the mailbox view.** Saving or sending a draft from a mailbox's own
+  window kept its attachments only in the main inbox; now they stay and are sent there too, and a
+  forward carries the original message's files.
+- **An agent never answers from a guess of its knowledge base.** When the knowledge tool you granted
+  finds nothing it is confident about, what it returns is shown to the agent as unverified
+  candidates, the answer waits for you as a draft, and the question (reworded, with no personal
+  data) is reported back to the knowledge base once, so it can be filled.
+
 ## 0.16.0 — 2026-10-12
 
 A bug-fix release: a review of the whole product and of the live server found 36 problems; 30 are
