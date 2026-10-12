@@ -1,6 +1,5 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { validateToolUrl } from "../automation/policy";
-import { toolTransport } from "../automation/mcp";
+import { toolClient, toolTransport } from "../automation/mcp";
 import type { ToolGrant } from "./definition";
 
 /**
@@ -18,7 +17,7 @@ export async function readToolSchema(
   const token = grant.tokenRef ? tokens[grant.tokenRef] : undefined;
   if (grant.tokenRef && !token) throw new Error("Tool credential is not configured");
   const transport = toolTransport(url, token);
-  const client = new Client({ name: "fabric-inbox", version: "0.1.0" });
+  const client = toolClient();
   try {
     await client.connect(transport);
     const { tools } = await client.listTools(undefined, { timeout: 20_000 });
