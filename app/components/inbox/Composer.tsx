@@ -102,15 +102,27 @@ export default function Composer({
   function change(patch: Partial<Draft>) {
     onChange({ ...draft, ...patch });
   }
-  /** A new message's sender changed: its signature follows the sender. */
+  // The draft as it is now, for work that finishes after an await (bug hunt 2026-10-12).
+  const latest = useRef(draft);
+  latest.current = draft;
+  const senderTurn = useRef(0);
+  /**
+   * A new message's sender changed: its signature follows the sender. The sender is set at once; the
+   * signature is applied to the draft as it is when it arrives (what was typed meanwhile stays), and a
+   * reply for an earlier choice is dropped, so a slow answer cannot put the previous sender back.
+   */
   async function changeSender(accountId: string) {
+    const turn = ++senderTurn.current;
+    onChange({ ...latest.current, accountId });
     let signature = "";
     try {
       signature = accountId ? await signatureFor(accountId, fabric) : "";
     } catch {
-      setNotice(t("The sender's signature could not be loaded; add it to the message if you need it."));
+      if (turn === senderTurn.current) setNotice(t("The sender's signature could not be loaded; add it to the message if you need it."));
     }
-    change({ accountId, text: swapSignature(draft.text, draft.signature, signature), signature });
+    if (turn !== senderTurn.current) return;
+    const now = latest.current;
+    onChange({ ...now, accountId, text: swapSignature(now.text, now.signature, signature), signature });
   }
   /** After a validation failure: focus the recipient field that fails (To, then Cc, then Bcc), else the alert. */
   function focusProblem() {

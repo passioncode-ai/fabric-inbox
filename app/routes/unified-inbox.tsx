@@ -40,6 +40,7 @@ import EmailIframe from "~/components/EmailIframe";
 import { replyAllRecipients, replyRecipient } from "~/components/inbox/send-state";
 import Composer, { type Draft } from "~/components/inbox/Composer";
 import {
+  inlineView,
   isRemote,
   messagePath,
   normalizeMessage,
@@ -443,6 +444,8 @@ export default function UnifiedInbox() {
     : !hidden.has(a.id.toLowerCase()));
   /** The address the AI panel reads (it reads Cloudflare mailboxes): the open message's, the person's pick, the view's. */
   const agentReading = agentAccount({ accounts, inScope, openAccountId: selected?.accountId, chosenAccountId: agentChoice, filterAccountId: accountId });
+  // Embedded pictures shown in the message, not offered again as downloads (bug hunt 2026-10-12).
+  const reading = selected && detail.data ? inlineView(detail.data, selected.provider, selected.accountId, selected.providerMessageId) : null;
   const agentFocus = agentReading?.by === "message" && selected ? { emailId: selected.providerMessageId, subject: detail.data?.subject ?? selected.subject } : null;
   /** Closes the AI panel (its chat and socket go with it) and gives the keyboard back to its toggle. */
   function closeAgent() {
@@ -694,7 +697,14 @@ export default function UnifiedInbox() {
       );
     }
   }
+  // One compose at a time: a double-click on Reply made two drafts, both synced to the server (bug hunt 2026-10-12).
+  const composing = useRef(false);
   async function compose(mode: Draft["mode"], all = false) {
+    if (composing.current) return;
+    composing.current = true;
+    try { await composeOnce(mode, all); } finally { composing.current = false; }
+  }
+  async function composeOnce(mode: Draft["mode"], all = false) {
     const m = detail.data;
     const from = mode === "new" ? accountId : (selected?.accountId ?? "");
     // A Cloudflare address's signature goes into the text once, where the person sees and edits it;
@@ -1403,10 +1413,11 @@ export default function UnifiedInbox() {
                         <div className="fi-message-body">
                           {/* HTML when the message has it (sandboxed), the text part otherwise:
                               Gmail sends both, and text-first dropped every layout. */}
-                          {detail.data.html ? (
+                          {reading?.html ? (
                             <EmailIframe
                               messageKey={selected.id}
-                              body={detail.data.html}
+                              body={reading.html}
+                              inlineAttachments={reading.inline}
                               autoSize
                             />
                           ) : detail.data.text ? (
@@ -1415,10 +1426,10 @@ export default function UnifiedInbox() {
                             <p>{t("No message body.")}</p>
                           )}
                         </div>
-                        {!!detail.data.attachments.length && (
+                        {!!reading?.listed.length && (
                           <div className="fi-attachments">
                             <h3>{t("Attachments")}</h3>
-                            {detail.data.attachments.map((a) => (
+                            {reading.listed.map((a) => (
                               <button
                                 className="fi-secondary"
                                 key={a.id}

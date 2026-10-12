@@ -424,6 +424,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"This run cannot be cancelled": "Этот запуск нельзя отменить",
 	"Could not preview rule; check the message and AI configuration": "Не удалось выполнить пробный запуск правила; проверьте письмо и настройку ИИ",
 	"Tool returned an error": "Инструмент вернул ошибку",
+	"Expired: nobody approved it within 14 days": "Истёк срок: за 14 дней никто не одобрил",
 	"Tool completed": "Инструмент выполнен",
 	// Checking an uncertain run (SCN-020, AutomationDO.checkRun)
 	"This run is not in the history": "Этого запуска нет в истории",

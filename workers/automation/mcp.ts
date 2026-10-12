@@ -3,6 +3,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker";
 import { validateToolUrl, type Rule } from "./policy";
 import { msg } from "../../shared/i18n";
+import { ActionRejected } from "./engine";
 
 export interface McpCall {
   endpoint: string;
@@ -110,9 +111,19 @@ export function toolResultText(result: CallResult): string {
 export async function invokeTool(
   action: Extract<Rule["action"], { type: "mcp" }>,
   hosts: string,
-  tokens: ToolTokens,
+  tokens: ToolTokens | string,
 ): Promise<string> {
-  const result = await callMcpTool(action, hosts, tokens);
-  if (result.isError) throw new Error(msg("Tool returned an error"));
+  // What fails before a request leaves (a host no longer allowed, a missing or foreign credential,
+  // malformed credentials) and a tool that answers isError are refusals: nothing happened, so the run
+  // is failed, not "outcome uncertain" with nothing the person can settle (bug hunt 2026-10-12).
+  let parsed: ToolTokens;
+  try {
+    parsed = typeof tokens === "string" ? JSON.parse(tokens || "{}") : tokens;
+    tokenFor(parsed, action.tokenRef, validateToolUrl(action.endpoint, hosts));
+  } catch (error) {
+    throw new ActionRejected(error instanceof SyntaxError ? msg("Tool credentials are misconfigured") : (error as Error).message);
+  }
+  const result = await callMcpTool(action, hosts, parsed);
+  if (result.isError) throw new ActionRejected(msg("Tool returned an error"));
   return msg("Tool completed");
 }

@@ -28,27 +28,39 @@ export type InjectionScan = { flagged: boolean; error?: string };
  * as such (with flagged = true, so callers fail closed) instead of being
  * mistaken for a detected injection.
  */
-export async function scanPromptInjection(ai: Ai, bodyHtml: string | null | undefined): Promise<InjectionScan> {
+const SCAN_CHUNK = 24_000;
+const SCAN_MAX = 8 * SCAN_CHUNK;
+
+/**
+ * `plain`: the text is already what the model reads (an agent's prompt, a tool's output) and is scanned
+ * exactly as it is. Stripping HTML from it again let "<" in a subject and ">" in a body hide everything
+ * between them from the scan (bug hunt 2026-10-12). The whole text is scanned, a chunk at a time; a
+ * text longer than the cap is refused as unscannable rather than passed unread.
+ */
+export async function scanPromptInjection(ai: Ai, bodyHtml: string | null | undefined, options: { plain?: boolean } = {}): Promise<InjectionScan> {
 	if (!bodyHtml) return { flagged: false };
-	const plainText = stripHtmlToText(bodyHtml).trim();
+	const plainText = options.plain ? bodyHtml.trim() : stripHtmlToText(bodyHtml).trim();
 	if (plainText.length < 10) return { flagged: false };
+	if (plainText.length > SCAN_MAX) return { flagged: true, error: "the text is too long to scan" };
 	try {
-		const response = (await ai.run(
-			// @ts-expect-error — model string not in generated union
-			"@cf/meta/llama-3.1-8b-instruct-fast",
-			{
-				messages: [
-					{ role: "system", content: INJECTION_PROMPT },
-					{ role: "user", content: plainText.slice(0, 24_000) },
-				],
-				max_tokens: 10,
-				temperature: 0,
-			},
-		)) as { response?: string };
-		const result = (response?.response || "NO").trim().toUpperCase();
-		if (result.includes("YES")) {
-			console.warn("Prompt injection detected in incoming email");
-			return { flagged: true };
+		for (let start = 0; start < plainText.length; start += SCAN_CHUNK) {
+			const response = (await ai.run(
+				// @ts-expect-error — model string not in generated union
+				"@cf/meta/llama-3.1-8b-instruct-fast",
+				{
+					messages: [
+						{ role: "system", content: INJECTION_PROMPT },
+						{ role: "user", content: plainText.slice(start, start + SCAN_CHUNK) },
+					],
+					max_tokens: 10,
+					temperature: 0,
+				},
+			)) as { response?: string };
+			const result = (response?.response || "NO").trim().toUpperCase();
+			if (result.includes("YES")) {
+				console.warn("Prompt injection detected in incoming email");
+				return { flagged: true };
+			}
 		}
 		return { flagged: false };
 	} catch (e) {

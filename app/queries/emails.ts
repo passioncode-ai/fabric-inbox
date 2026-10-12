@@ -195,8 +195,10 @@ export function useUpdateEmail() {
 			}
 		},
 		onSettled: (_data, _err, { mailboxId }) => {
-			// Always refetch to ensure server truth
+			// Always refetch to ensure server truth; search results too, or an opened message stayed
+			// bold there for 30 s (bug hunt 2026-10-12).
 			qc.invalidateQueries({ queryKey: ["emails", mailboxId] });
+			qc.invalidateQueries({ queryKey: ["search", mailboxId] });
 			qc.invalidateQueries({
 				queryKey: queryKeys.folders.list(mailboxId),
 			});

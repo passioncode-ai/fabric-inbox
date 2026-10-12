@@ -101,3 +101,37 @@ test("Refresh sits on the left, under the list's title, before the folder and th
   assert.match(status, /useVisibleClock\(15_000\)/);
   assert.match(code, /fetching=\{list\.isFetching \|\| head\.isFetching\}/);
 });
+
+test("a full new first page that ends newer than everything loaded is a gap: the list restarts from it, nothing skipped (bug hunt 2026-10-12)", () => {
+  const loaded = { pages: [page([row("m9", 900), row("m8", 800)]), page([row("m7", 700)])], pageParams: ["", "c-m8"] };
+  // More than a page of mail arrived: the new first page (full, hasMore) ends at n2, newer than m9.
+  const head = page([row("n4", 1400), row("n3", 1300), row("n2", 1200)], true, "c-n2");
+  const merged = mergeHead(loaded, head);
+  assert.deepEqual(merged.pages.map((p) => p.messages.map((m) => m.id)), [["n4", "n3", "n2"]], "Load older continues from n2, not past n1 to m7");
+  assert.equal(merged.pages[0].cursor, "c-n2");
+  assert.deepEqual(merged.pageParams, [""]);
+  // A complete new page (no more after it) is not a gap.
+  const whole = mergeHead(loaded, page([row("n1", 1100)], false));
+  assert.deepEqual(whole.pages[0].messages.map((m) => m.id), ["n1", "m9", "m8"]);
+});
+
+test("undoing one refused change puts back only that row, not other changes made since (bug hunt 2026-10-12)", async () => {
+  const { QueryClient } = await import("@tanstack/react-query");
+  const { showFeedChange } = await import("../app/lib/mail-refresh");
+  const client = new QueryClient();
+  const key = ["unified-inbox", "all"];
+  client.setQueryData(key, { pages: [{ messages: [{ id: "a", read: false }, { id: "b", read: false }, { id: "c", read: false }], hasMore: false }], pageParams: [""] });
+  const undoA = await showFeedChange(client, { id: "a", removed: true });
+  await showFeedChange(client, { id: "b", removed: true });
+  await showFeedChange(client, { id: "c", patch: { read: true } });
+  undoA(); // archiving a failed; b's archive and c's read stand
+  const rows = (client.getQueryData(key) as any).pages[0].messages;
+  assert.deepEqual(rows.map((m: any) => m.id), ["a", "c"], "a is back where it was; b stays archived");
+  assert.equal(rows.find((m: any) => m.id === "c").read, true, "c stays read");
+  const undoRead = await showFeedChange(client, { id: "c", patch: { read: false } });
+  await showFeedChange(client, { id: "a", patch: { read: true } });
+  undoRead();
+  const after = (client.getQueryData(key) as any).pages[0].messages;
+  assert.equal(after.find((m: any) => m.id === "c").read, true, "c's read flag is what it was before the refused change");
+  assert.equal(after.find((m: any) => m.id === "a").read, true, "a's later change is kept");
+});

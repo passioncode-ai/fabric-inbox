@@ -51,6 +51,7 @@ const bundle = await build({
             }};
         }
         async pump() { return this.alarm(); }
+        async batchMailboxes() { return this.nextBatch().map((r) => r.mailbox_id); }
         async overlap() { return this.maxInflight ?? {}; }
         async expireHolds() { this.ctx.storage.sql.exec('UPDATE agent_queue SET next_at = 0'); }
         async endClaimWaits() { this.ctx.storage.sql.exec('UPDATE agent_message_claims SET deadline = 0'); this.ctx.storage.sql.exec('UPDATE agent_queue SET next_at = 0'); }
@@ -96,6 +97,7 @@ const bundle = await build({
               case 'hold': await reg.enqueue(c.mailbox, c.emailId, { holdMs: c.holdMs }); return Response.json(true);
               case 'release': await reg.release(c.mailbox, c.emailId); return Response.json(true);
               case 'expire': await reg.expireHolds(); return Response.json(true);
+              case 'batch': return Response.json(await reg.batchMailboxes());
               case 'endWaits': await reg.endClaimWaits(); return Response.json(true);
               case 'claim': return Response.json(await reg.claimMessage(c.key, c.mailbox, c.elected));
               case 'ageClaim': await reg.ageClaim(c.key, c.ms); return Response.json(true);
@@ -528,5 +530,17 @@ test("message claims expire like other receipts, so storage does not grow withou
     await command("ageClaim", { key: "mid:old", ms: 8 * 86_400_000 });
     await command("claim", { key: "mid:new", mailbox: "a@project.invalid", elected: "a@project.invalid" });
     assert.equal(await command("claimCount"), 1, "the week-old claim is pruned");
+  } finally { await mf.dispose(); }
+});
+
+test("a burst to one address does not hold up another address's answer (bug hunt 2026-10-12)", async () => {
+  const { mf, command } = await fixture();
+  try {
+    for (let i = 0; i < 35; i++) await command("hold", { mailbox: "busy@p.invalid", emailId: `b${i}`, holdMs: 60_000 });
+    await command("hold", { mailbox: "quiet@p.invalid", emailId: "q1", holdMs: 60_000 });
+    await command("expire");
+    const batch = await command("batch");
+    assert.ok(batch.includes("quiet@p.invalid"), JSON.stringify(batch));
+    assert.equal(batch.filter((m: string) => m === "busy@p.invalid").length, 1, "one message per mailbox at a time");
   } finally { await mf.dispose(); }
 });

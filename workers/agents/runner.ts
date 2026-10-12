@@ -164,7 +164,8 @@ function userPrompt(email: RunnerEmail, thread: RunnerThreadMessage[], mailboxId
       text: htmlToText(m.body).slice(0, THREAD_CHARS),
     }));
   return JSON.stringify({
-    email: { from: email.sender, subject: email.subject, date: email.date, text: htmlToText(email.body).slice(0, BODY_CHARS) },
+    // The subject is capped: it has no limit of its own, and an unbounded one pushed the body past the scan (bug hunt 2026-10-12).
+    email: { from: email.sender, subject: (email.subject || "").slice(0, 500), date: email.date, text: htmlToText(email.body).slice(0, BODY_CHARS) },
     earlierInThread: earlier,
   });
 }

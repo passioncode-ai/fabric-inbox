@@ -48,6 +48,7 @@ const bundle = await build({
         }
         async keys() { return [...(await this.ctx.storage.list()).keys()].filter((k) => !k.startsWith('rule:')).sort(); }
         async pruneNow() { return this.prune(Date.now()); }
+        async runOf(id) { return this.ctx.storage.get('run:' + id); }
         async interruptAfterRunning(id) {
           const run = await this.ctx.storage.get('run:' + id);
           await this.ctx.storage.put('run:' + id, {...run, status:'running'});
@@ -74,6 +75,7 @@ const bundle = await build({
             case 'approve': result = await automation.approve(command.id); break;
             case 'seed-old': await automation.seedOld(); result = await automation.keys(); break;
             case 'prune': result = { removed: await automation.pruneNow(), keys: await automation.keys() }; break;
+            case 'run': result = await automation.runOf(command.id); break;
             case 'interrupt': await automation.interruptAfterRunning(command.id); result = {}; break;
             case 'state': result = {runs:await automation.runs(), effects:await mailbox.effectCount(), email:command.id ? await mailbox.getEmail(command.id) : null}; break;
             case 'receive': {
@@ -354,5 +356,9 @@ test("old finished runs, day counters and event receipts are pruned; waiting and
     assert.equal(r.removed, 3);
     const today = new Date().toISOString().slice(0, 10);
     assert.deepEqual(r.keys, [`count:${today}:r`, "event:new", "run:new-done", "run:old-waiting"]);
+    // A run nobody approved for 14 days is cancelled with its reason, then pruned like any other (bug hunt 2026-10-12).
+    const waiting = await f.command("run", { id: "old-waiting" });
+    assert.equal(waiting.status, "cancelled");
+    assert.match(waiting.error, /nobody approved it within 14 days/);
   } finally { await f.mf.dispose(); }
 });
