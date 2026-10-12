@@ -87,7 +87,7 @@
  "Hide Fabric Inbox": "Скрыть Fabric Inbox",
  "Hide Others": "Скрыть остальные",
  "I already have a server": "У меня уже есть сервер",
- "I started this connection from {app}": "Это подключение начал я сам из {app}",
+ "I started this connection from {app}": "Это подключение запущено мной из {app}",
  "Install Fabric Inbox with its installer from passioncode.ai/inbox, and that copy will update itself.": "Установите Fabric Inbox установщиком с passioncode.ai/inbox — эта копия будет обновляться сама.",
  "Install Updates Automatically": "Устанавливать обновления автоматически",
  "It calls itself “{client}” and listens on this Mac as {app} (process {pid}). Its own key is sent only to that process. You can see and revoke it in Settings → Agent access.": "Называет себя «{client}» и работает на этом Mac как {app} (процесс {pid}). Собственный ключ получит только этот процесс. Увидеть и отозвать его можно в «Настройки → Доступ агентов».",
