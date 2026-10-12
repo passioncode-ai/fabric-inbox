@@ -8,7 +8,7 @@ import {
 	emailUpdateErrorMessage,
 } from "~/lib/mutation-errors";
 import { msg } from "../../shared/i18n";
-import api from "~/services/api";
+import api, { type MailFile } from "~/services/api";
 import type { Email } from "~/types";
 import { queryKeys } from "./keys";
 
@@ -102,7 +102,7 @@ export function useThreadReplies(
  * Invalidate the mailbox's list, its folder counts and the unified inbox (which shows the same
  * mail, P3-12) after any email mutation.
  */
-function useInvalidateEmailData() {
+export function useInvalidateEmailData() {
 	const qc = useQueryClient();
 	return (mailboxId: string) => {
 		qc.invalidateQueries({ queryKey: ["emails", mailboxId] });
@@ -263,16 +263,18 @@ export function useSaveDraft() {
 		}: {
 			mailboxId: string;
 			draft: {
-				to?: string;
+				/** The draft's id for the whole compose: saved in place, its files kept (B-88). */
+				draft_id: string;
+				to: string;
 				cc?: string;
 				bcc?: string;
-				subject?: string;
+				subject: string;
 				body: string;
 				in_reply_to?: string;
 				thread_id?: string;
-				draft_id?: string;
+				attachments?: MailFile[];
 			};
-		}) => api.saveDraft(mailboxId, draft),
+		}) => { const { draft_id, ...rest } = draft; return api.putDraft(mailboxId, draft_id, rest); },
 		onSuccess: (_data, { mailboxId }) => invalidate(mailboxId),
 	});
 }
