@@ -332,11 +332,19 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       record.ms = Date.now() - started;
     }
   };
+  // A knowledge tool that abstains (no confident answer) at any point of this run keeps the answer a
+  // draft, whether it was asked before the model or by the model (B-85).
+  let abstainedAny = false;
   const tools: AgentTool[] = agent.tools.map((grant) => ({
     name: grant.name,
     description: grant.description,
     inputSchema: modelSchema(grant),
-    run: async (args) => (await callGrant(grant, args)).text,
+    run: async (args) => {
+      const result = await callGrant(grant, args);
+      if (!result.ok || !abstainedOutput(result.text)) return result.text;
+      abstainedAny = true;
+      return `No confident answer. These are unverified candidates (coverage below 0.6): never state them as facts; decide draft, say the team will check, and fill question.\n${result.text}`;
+    },
   }));
   // A grant marked prefetch is asked about this message before the model runs, as the
   // collections are; a failure is recorded and keeps the answer a draft (policy.ts).
@@ -346,6 +354,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     const result = await callGrant(grant, { [grant.prefetch!.argument]: opening });
     return { name: grant.name, ok: result.ok, text: result.ok ? result.text : "", abstained: result.ok && abstainedOutput(result.text) };
   }));
+  if (prefetched.some((r) => r.abstained)) abstainedAny = true;
 
   const asked = new Set<string>();
   if (collections.length) tools.push({
@@ -400,10 +409,12 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // B-85: a knowledge tool that abstained is told what was not answered, once per message. The id is
   // this run's (never model-written); the question is the model's paraphrase, so the sender's own
   // words never leave. A failed report is recorded and changes nothing about the answer.
-  const abstainedGrants = agent.tools.filter((g) => g.prefetch && prefetched.some((r) => r.name === g.name && r.abstained));
+  // Reported when the knowledge abstained, or when the model could not ground its answer and says what
+  // was asked; one report per run, whatever the number of calls (B-85, data agent README "Reporting gaps").
   const question = (proposal.question ?? "").trim().slice(0, 1000);
-  for (const grant of abstainedGrants.filter((g) => g.gaps)) {
-    if (!question) continue;
+  const unanswered = abstainedAny || proposal.grounded === false;
+  const gapGrant = question && unanswered ? agent.tools.find((g) => g.gaps) : undefined;
+  for (const grant of gapGrant ? [gapGrant] : []) {
     const started = Date.now();
     const record: ToolCallRecord = { name: `${grant.name}:gap`, host: hostOf(grant.endpoint), ok: false, ms: 0, result: "" };
     toolCalls.push(record);
@@ -427,7 +438,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     toolFailures: toolCalls.filter((c) => !c.ok && c.name !== "search_knowledge" && !c.name.endsWith(":gap")).length,
     rateLimited: needsSendChecks ? await deps.mailbox.rateLimit() : null,
     knowledgeProblem,
-    abstained: abstainedGrants.length > 0,
+    abstained: abstainedAny,
   });
   if (outcome.action === "skip") return finish("skipped", outcome.reason);
 
