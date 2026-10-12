@@ -16,6 +16,8 @@ export interface ToolGrant {
   prefetch?: { argument: string };
   /** Only an all-public output may be used. */
   publicOnly?: boolean;
+  /** A tool that records a question the knowledge could not answer. */
+  gaps?: { tool: string };
 }
 export interface AgentInput {
   name: string;

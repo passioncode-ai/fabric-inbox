@@ -40,8 +40,13 @@ export interface AgentTool {
   run(args: Record<string, unknown>): Promise<string>;
 }
 
-/** A granted tool called before the model (B-85): what it returned, or that it failed. */
-export interface PrefetchedResult { name: string; ok: boolean; text: string }
+/** A granted tool called before the model (B-85): what it returned, or that it failed, and whether it abstained. */
+export interface PrefetchedResult { name: string; ok: boolean; text: string; abstained?: boolean }
+
+/** A knowledge tool's own verdict that nothing answers confidently (`abstained: true` in its JSON). */
+export function abstainedOutput(text: string): boolean {
+  try { const v = JSON.parse(text) as { abstained?: unknown }; return !!v && typeof v === "object" && v.abstained === true; } catch { return false; }
+}
 
 export interface ModelRequest {
   agent: AgentVersion;
@@ -129,8 +134,17 @@ export function systemPrompt(agent: AgentVersion, mailboxId: string, tools: Agen
       "",
       "Results of tools already asked about this message — facts too, but only these:",
       "<tool_results>",
-      ...prefetched.map((r) => r.ok ? `[${r.name}]\n${r.text}` : `[${r.name}] The call failed or was withheld; nothing from it may be stated.`),
+      ...prefetched.filter((r) => !r.abstained).map((r) => r.ok ? `[${r.name}]\n${r.text}` : `[${r.name}] The call failed or was withheld; nothing from it may be stated.`),
+      ...prefetched.filter((r) => r.abstained).map((r) => `[${r.name}] No confident answer: see the candidates below.`),
       "</tool_results>",
+    ] : []),
+    // B-85: a tool that abstained returns weak candidates. They are never facts (canvas §6).
+    ...(prefetched.some((r) => r.abstained) ? [
+      "",
+      "Unverified candidates from a knowledge tool that found no confident answer (each with its coverage, below 0.6). None of them is a fact: never state them; decide draft, say the team will check, and fill question.",
+      "<candidates>",
+      ...prefetched.filter((r) => r.abstained).map((r) => `[${r.name}]\n${r.text}`),
+      "</candidates>",
     ] : []),
     "",
     "Rules you cannot change:",
@@ -330,7 +344,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   const opening = `${email.subject}\n${deps.htmlToText(email.body).slice(0, 600)}`;
   const prefetched: PrefetchedResult[] = await Promise.all(agent.tools.filter((grant) => grant.prefetch).map(async (grant) => {
     const result = await callGrant(grant, { [grant.prefetch!.argument]: opening });
-    return { name: grant.name, ok: result.ok, text: result.ok ? result.text : "" };
+    return { name: grant.name, ok: result.ok, text: result.ok ? result.text : "", abstained: result.ok && abstainedOutput(result.text) };
   }));
 
   const asked = new Set<string>();
@@ -383,13 +397,37 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   run.grounded = proposal.grounded;
   if (sources.size) run.sources = [...sources.values()];
 
+  // B-85: a knowledge tool that abstained is told what was not answered, once per message. The id is
+  // this run's (never model-written); the question is the model's paraphrase, so the sender's own
+  // words never leave. A failed report is recorded and changes nothing about the answer.
+  const abstainedGrants = agent.tools.filter((g) => g.prefetch && prefetched.some((r) => r.name === g.name && r.abstained));
+  const question = (proposal.question ?? "").trim().slice(0, 1000);
+  for (const grant of abstainedGrants.filter((g) => g.gaps)) {
+    if (!question) continue;
+    const started = Date.now();
+    const record: ToolCallRecord = { name: `${grant.name}:gap`, host: hostOf(grant.endpoint), ok: false, ms: 0, result: "" };
+    toolCalls.push(record);
+    try {
+      const channel = typeof grant.fixed?.channel === "string" ? grant.fixed.channel : "email";
+      const out = await deps.callTool({ ...grant, tool: grant.gaps!.tool }, { requestId: run.id, kind: "unanswered", channel, question });
+      record.ok = true;
+      record.result = out.slice(0, RESULT_PREVIEW_CHARS);
+    } catch (error) {
+      record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
+    } finally {
+      record.ms = Date.now() - started;
+    }
+  }
+
   const policy = agent.replyPolicy;
   const needsSendChecks = policy.mode === "auto" && proposal.decision === "send";
   const outcome = decide(policy, proposal, {
     sentToday: needsSendChecks ? await deps.registry.sentToday(mailboxId) : 0,
-    toolFailures: toolCalls.filter((c) => !c.ok && c.name !== "search_knowledge").length,
+    // A gap report is bookkeeping, not part of the answer: its failure does not change the outcome.
+    toolFailures: toolCalls.filter((c) => !c.ok && c.name !== "search_knowledge" && !c.name.endsWith(":gap")).length,
     rateLimited: needsSendChecks ? await deps.mailbox.rateLimit() : null,
     knowledgeProblem,
+    abstained: abstainedGrants.length > 0,
   });
   if (outcome.action === "skip") return finish("skipped", outcome.reason);
 

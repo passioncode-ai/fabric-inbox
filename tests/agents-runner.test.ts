@@ -507,3 +507,64 @@ test("B-85 REQ-5: publicOnly passes an output whose every classified item is pub
   assert.equal(run.toolCalls[0].ok, true);
   assert.equal(run.status, "sent");
 });
+
+// ── B-85 item 4: a knowledge tool that abstains (nicegram-data-agent 0.1.4, canvas §6) ──
+
+const abstained = JSON.stringify({ class: "public", abstained: true, results: [{ class: "public", id: "fact:buy-account", title: "Buy Account", text: "You can buy a ready account in the store.", coverage: 0.31 }] });
+const confident = JSON.stringify({ class: "public", abstained: false, results: [{ class: "public", id: "fact:support-email", title: "support email", text: "Write to support@nicegram.me.", coverage: 0.92 }] });
+const gapGrant = () => kbGrant({ prefetch: { argument: "query" }, publicOnly: true, fixed: { channel: "email" }, gaps: { tool: "nicegram.gaps.submit" } });
+
+test("B-85: an abstained answer's results are unverified candidates, not facts; the answer stays a draft; one gap is submitted", async () => {
+  const calls: { tool: string; args: Record<string, unknown> }[] = [];
+  let system = "";
+  const h = harness({
+    agent: autoAgent({ tools: [gapGrant()] }),
+    email: { subject: "Delete my account", body: "<p>How do I delete my account and all my data?</p>" },
+    callTool: async (grant, args) => { calls.push({ tool: grant.tool, args }); return grant.tool === "nicegram.gaps.submit" ? JSON.stringify({ class: "public", duplicate: false }) : abstained; },
+    model: async (r) => { system = r.system; return { decision: answer({ question: "How to delete an account and its data" }), text: "" }; },
+  });
+  const run = (await h.run())!;
+  assert.doesNotMatch(system.slice(system.indexOf("<tool_results>"), system.indexOf("</tool_results>") + 1), /Buy Account/, "never framed as facts");
+  assert.match(system, /Unverified candidates[\s\S]*<candidates>[\s\S]*Buy Account[\s\S]*<\/candidates>/);
+  assert.equal(run.status, "drafted");
+  assert.match(run.reason, /No confident answer/);
+  const gaps = calls.filter((c) => c.tool === "nicegram.gaps.submit");
+  assert.equal(gaps.length, 1);
+  assert.deepEqual(gaps[0].args, { requestId: run.id, kind: "unanswered", channel: "email", question: "How to delete an account and its data" });
+  assert.equal(run.toolCalls.find((c) => c.name.endsWith(":gap"))?.ok, true);
+});
+
+test("B-85: a confident answer is facts as before, with no gap; a gap without a question is not sent", async () => {
+  const calls: string[] = [];
+  let system = "";
+  const h = harness({
+    agent: autoAgent({ tools: [gapGrant()] }),
+    callTool: async (grant) => { calls.push(grant.tool); return confident; },
+    model: async (r) => { system = r.system; return { decision: answer(), text: "" }; },
+  });
+  const run = (await h.run())!;
+  assert.match(system, /<tool_results>[\s\S]*support@nicegram\.me/);
+  assert.deepEqual(calls, ["research.search"]);
+  assert.equal(run.status, "sent");
+
+  const noQuestion = harness({
+    agent: autoAgent({ tools: [gapGrant()] }),
+    callTool: async (grant) => { calls.push(grant.tool); return abstained; },
+    model: async () => ({ decision: answer(), text: "" }),
+  });
+  const r2 = (await noQuestion.run())!;
+  assert.equal(r2.status, "drafted");
+  assert.ok(!calls.includes("nicegram.gaps.submit"), "no paraphrase from the model, no gap: the sender's words are never sent");
+});
+
+test("B-85: a failed gap report never changes the answer's outcome", async () => {
+  const h = harness({
+    agent: autoAgent({ tools: [gapGrant()] }),
+    callTool: async (grant) => { if (grant.tool === "nicegram.gaps.submit") throw new Error("gap store down"); return abstained; },
+    model: async () => ({ decision: answer({ question: "How to delete an account" }), text: "" }),
+  });
+  const run = (await h.run())!;
+  assert.equal(run.status, "drafted");
+  assert.match(run.reason, /No confident answer/, "drafted for the abstention, not for the failed report");
+  assert.equal(run.toolCalls.find((c) => c.name.endsWith(":gap"))?.ok, false);
+});

@@ -103,7 +103,9 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   arguments on every call (e.g. `{ "domain": "nicegram", "allow_web": false }`); `prefetch:
   { argument: "query" }` asks it about each message before the agent answers; `publicOnly: true`
   uses an output only when every item with a `class` is `"public"`, so a reply to someone outside
-  never cites a confidential source (otherwise the answer stays a draft).
+  never cites a confidential source (otherwise the answer stays a draft). A knowledge tool that answers
+  `abstained: true` gives only unverified candidates: the answer stays a draft, and `gaps: { tool }`
+  (on the same endpoint) is sent the question, paraphrased without personal data, once per message.
 - **See what it did:** `list_agent_runs` (outcome `attention` = needs a person).
 - **Delete:** `delete_agent`, two-step; its addresses stop being answered.
 

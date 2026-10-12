@@ -1167,6 +1167,7 @@ const agentInput = z.object({
     fixed: z.record(z.union([z.string().max(500), z.number(), z.boolean()])).optional().describe("Arguments pinned on every call, over the model's (e.g. a knowledge domain)"),
     prefetch: z.object({ argument: z.string().min(1).max(64) }).optional().describe("Call once before the model, with the message's subject and opening as this text argument"),
     publicOnly: z.boolean().optional().describe("Use the output only when every item with a `class` is \"public\"; otherwise the answer stays a draft"),
+    gaps: z.object({ tool: z.string().min(1).max(100) }).optional().describe("A tool on the same endpoint that records a question the knowledge could not answer (when the call before the model answers abstained: true)"),
   })).max(10).optional().describe("Remote MCP tools; the endpoint's input schema is read and stored on save"),
   replyPolicy: z.object({ mode: z.enum(["draft", "auto"]), allowedIntents: z.array(z.string().max(80)).max(20).default([]), dailySendLimit: z.number().int().min(1).max(200).default(20) }).optional(),
 }).describe("The agent's whole definition; saving makes a new version");
