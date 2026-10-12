@@ -101,22 +101,71 @@ function createConsole(deps) {
   const { pty, fs, dir, mint, revoke, origin, mcpUrl, cwd, loginPath, env = process.env, platform = process.platform,
     kill = (pid, signal) => process.kill(pid, signal), log = () => {}, onData = () => {}, onState = () => {}, setTimer = setTimeout } = deps;
   let session = null;
+  let starting = false;   // a start between its first await and its session (bug hunt 2026-10-12: two keys, two agents)
   let state = { phase: 'idle' };
   const out = ring();
   const set = (next) => { state = next; onState(state); };
   const leftoversFile = path.join(dir, 'keys.json');
 
-  async function remember(ids) { await fs.mkdir(dir, { recursive: true, mode: 0o700 }); await fs.writeFile(leftoversFile, JSON.stringify(ids), { mode: 0o600 }); }
-  async function recorded() { try { return JSON.parse(await fs.readFile(leftoversFile, 'utf8')); } catch { return []; } }
+  // keys.json: the key ids a session made and has not revoked yet, each with the server it belongs to
+  // (a bare id is from before 0.16). A key is revoked only through its own server's session.
+  async function remember(entries) { await fs.mkdir(dir, { recursive: true, mode: 0o700 }); await fs.writeFile(leftoversFile, JSON.stringify(entries), { mode: 0o600 }); }
+  async function recorded() {
+    try {
+      const list = JSON.parse(await fs.readFile(leftoversFile, 'utf8'));
+      return Array.isArray(list) ? list.map((e) => (typeof e === 'string' ? { id: e, origin: null } : e)).filter((e) => e && typeof e.id === 'string') : [];
+    } catch { return []; }
+  }
+  const stored = (entries) => entries.map((e) => (e.origin === null ? e.id : e));
 
-  async function end(reason, code) {
-    if (!session) return;
-    const s = session; session = null;
+  /** Ends exactly this session (an older child's exit never ends a newer one): revoke, clean up, tell. */
+  async function end(s, reason, code) {
+    if (!s || session !== s) return;
+    session = null;
     const revoked = await revoke(s.keyId).catch(() => false);
-    if (revoked) await remember((await recorded()).filter((id) => id !== s.keyId)).catch(() => {});
+    if (revoked) await remember(stored((await recorded()).filter((e) => e.id !== s.keyId))).catch(() => {});
     await fs.rm(s.folder, { recursive: true, force: true }).catch(() => {});
     log({ event: 'console', outcome: 'ended', runtime: s.runtime, reason, code: code ?? null, revoked });
     set({ phase: 'ended', reason, code: code ?? null, runtime: s.runtime, keyRevoked: revoked });
+    s.resolveEnded();
+  }
+  const newSession = (fields) => { const s = { ...fields }; s.ended = new Promise((resolve) => { s.resolveEnded = resolve; }); return s; };
+
+  async function startOnce({ runtime, spec, level, resume, cols, rows }) {
+    set({ phase: 'starting', runtime: spec.id });
+    // A key an earlier session could not revoke (a crash, a forced quit) goes before a new one is made.
+    await this.leftovers().catch(() => {});
+    const minted = await mint({ name: `Agent console (${spec.name})`, level, send: level === 'read' ? 'drafts' : 'send', dailySendLimit: 50, duration: '30d' });
+    if (!minted.ok) { set({ phase: 'idle', error: minted.signIn ? 'sign_in' : 'key', detail: minted.error || null }); return { ok: false, error: minted.signIn ? 'sign_in' : 'key', detail: minted.error }; }
+    const key = { id: minted.data.key.id, clientId: minted.data.key.clientId, clientSecret: minted.data.clientSecret };
+    await remember(stored([...(await recorded()), { id: key.id, origin }])).catch(() => {});
+    const tag = crypto.randomBytes(6).toString('hex').toUpperCase();
+    const names = { id: `FABRIC_INBOX_CONSOLE_ID_${tag}`, secret: `FABRIC_INBOX_CONSOLE_SECRET_${tag}` };
+    const folder = path.join(dir, `session-${tag.toLowerCase()}`);
+    // From here on the key exists: whatever fails ends this session, which revokes it (bug hunt 2026-10-12:
+    // a failed write left the view stuck on "starting" and the key live).
+    const pending = newSession({ keyId: key.id, folder, runtime: spec.id, level });
+    session = pending;
+    let child;
+    try {
+      await fs.mkdir(folder, { recursive: true, mode: 0o700 });
+      const configPath = path.join(folder, 'mcp.json');
+      await fs.writeFile(configPath, JSON.stringify(mcpConfig(mcpUrl, names), null, 2), { mode: 0o600 });
+      child = pty.spawn(runtime.file, spec.args({ configPath, brief: briefFor(origin), mcpUrl, env: names, resume }), {
+        name: 'xterm-256color', cols: Math.max(2, Math.min(1000, cols | 0)), rows: Math.max(1, Math.min(500, rows | 0)), cwd,
+        env: sessionEnv(env, { loginPath, names, key, origin }),
+      });
+    } catch (error) {
+      await end(pending, 'spawn_failed');
+      set({ phase: 'idle', error: 'spawn', detail: String(error && error.message || error) });
+      return { ok: false, error: 'spawn', detail: String(error && error.message || error) };
+    }
+    pending.child = child;
+    child.onData((data) => { out.push(data); onData(data); });
+    child.onExit(({ exitCode }) => { void end(pending, pending.stopping ? 'stopped' : 'exited', exitCode); });
+    log({ event: 'console', outcome: 'started', runtime: spec.id, level, resume });
+    set({ phase: 'running', runtime: spec.id, level });
+    return { ok: true };
   }
 
   return {
@@ -125,67 +174,52 @@ function createConsole(deps) {
 
     /** Opens the agent: a key for this session, its config, then the PTY. */
     async start({ runtime, level = 'admin', resume = false, cols = 100, rows = 30 }) {
-      if (session) return { ok: false, error: 'running' };
+      if (session || starting) return { ok: false, error: 'running' };
       if (!LEVELS.includes(level)) return { ok: false, error: 'level' };
       const spec = RUNTIMES.find((r) => r.id === runtime?.id);
       if (!spec || !runtime.file) return { ok: false, error: 'runtime' };
-      set({ phase: 'starting', runtime: spec.id });
-      // A key an earlier session could not revoke (a crash, a forced quit) goes before a new one is made.
-      await this.leftovers().catch(() => {});
-      const minted = await mint({ name: `Agent console (${spec.name})`, level, send: level === 'read' ? 'drafts' : 'send', dailySendLimit: 50, duration: '30d' });
-      if (!minted.ok) { set({ phase: 'idle', error: minted.signIn ? 'sign_in' : 'key', detail: minted.error || null }); return { ok: false, error: minted.signIn ? 'sign_in' : 'key', detail: minted.error }; }
-      const key = { id: minted.data.key.id, clientId: minted.data.key.clientId, clientSecret: minted.data.clientSecret };
-      await remember([...(await recorded()), key.id]).catch(() => {});
-      const tag = crypto.randomBytes(6).toString('hex').toUpperCase();
-      const names = { id: `FABRIC_INBOX_CONSOLE_ID_${tag}`, secret: `FABRIC_INBOX_CONSOLE_SECRET_${tag}` };
-      const folder = path.join(dir, `session-${tag.toLowerCase()}`);
-      await fs.mkdir(folder, { recursive: true, mode: 0o700 });
-      const configPath = path.join(folder, 'mcp.json');
-      await fs.writeFile(configPath, JSON.stringify(mcpConfig(mcpUrl, names), null, 2), { mode: 0o600 });
-      let child;
-      try {
-        child = pty.spawn(runtime.file, spec.args({ configPath, brief: briefFor(origin), mcpUrl, env: names, resume }), {
-          name: 'xterm-256color', cols: Math.max(2, Math.min(1000, cols | 0)), rows: Math.max(1, Math.min(500, rows | 0)), cwd,
-          env: sessionEnv(env, { loginPath, names, key, origin }),
-        });
-      } catch (error) {
-        session = { keyId: key.id, folder, runtime: spec.id };
-        await end('spawn_failed');
-        return { ok: false, error: 'spawn', detail: String(error && error.message || error) };
-      }
-      session = { child, keyId: key.id, folder, runtime: spec.id, level };
-      child.onData((data) => { out.push(data); onData(data); });
-      child.onExit(({ exitCode }) => { void end(session?.stopping ? 'stopped' : 'exited', exitCode); });
-      log({ event: 'console', outcome: 'started', runtime: spec.id, level, resume });
-      set({ phase: 'running', runtime: spec.id, level });
-      return { ok: true };
+      starting = true;
+      try { return await startOnce.call(this, { runtime, spec, level, resume, cols, rows }); }
+      finally { starting = false; }
     },
 
-    write(data) { if (session && typeof data === 'string' && data.length <= 1024 * 1024) session.child.write(data); },
-    resize(cols, rows) { if (session) session.child.resize(Math.max(2, Math.min(1000, cols | 0)), Math.max(1, Math.min(500, rows | 0))); },
+    write(data) { if (session && session.child && typeof data === 'string' && data.length <= 1024 * 1024) session.child.write(data); },
+    resize(cols, rows) { if (session && session.child) session.child.resize(Math.max(2, Math.min(1000, cols | 0)), Math.max(1, Math.min(500, rows | 0))); },
 
     /** Hang up the agent's whole process group, then kill it if it is still there (PL-07: taskkill on Windows). */
-    async stop() {
-      if (!session) return;
-      session.stopping = true;
-      const pid = session.child.pid;
+    /**
+     * Hangs up the agent; with `wait`, resolves once its key is revoked (or after `timeoutMs`), so a
+     * quit or a server switch can wait for it (bug hunt 2026-10-12: quitting left a 30-day key live).
+     */
+    async stop({ wait = false, timeoutMs = 5000 } = {}) {
+      const s = session;
+      if (!s || !s.child) return;
+      s.stopping = true;
+      const pid = s.child.pid;
       try {
-        if (platform === 'win32') session.child.kill();
+        if (platform === 'win32') s.child.kill();
         else kill(-pid, 'SIGHUP');
-      } catch { try { session.child.kill(); } catch { /* gone */ } }
-      setTimer(() => { if (session && session.child.pid === pid) { try { session.child.kill('SIGKILL'); } catch { /* gone */ } } }, STOP_GRACE_MS);
+      } catch { try { s.child.kill(); } catch { /* gone */ } }
+      setTimer(() => { if (session === s) { try { s.child.kill('SIGKILL'); } catch { /* gone */ } } }, STOP_GRACE_MS);
+      if (wait) await Promise.race([s.ended, new Promise((resolve) => setTimeout(resolve, timeoutMs))]);
     },
 
     /** At start: keys of sessions the app could not end (a crash, a forced quit) are revoked. */
     async leftovers() {
-      const ids = await recorded();
+      const entries = await recorded();
       const kept = [];
-      for (const id of ids) if (!(await revoke(id).catch(() => false))) kept.push(id);
-      if (ids.length) { await remember(kept).catch(() => {}); log({ event: 'console', outcome: 'leftovers', revoked: ids.length - kept.length, kept: kept.length }); }
-      return { revoked: ids.length - kept.length, kept: kept.length };
+      let revoked = 0;
+      for (const e of entries) {
+        // Another server's key is revoked when that server is current; this session cannot reach it.
+        if (e.origin && e.origin !== origin) { kept.push(e); continue; }
+        if (session && session.keyId === e.id) { kept.push(e); continue; }
+        if (await revoke(e.id).catch(() => false)) revoked++; else kept.push(e);
+      }
+      if (entries.length) { await remember(stored(kept)).catch(() => {}); log({ event: 'console', outcome: 'leftovers', revoked, kept: kept.length }); }
+      return { revoked, kept: kept.length };
     },
 
-    running: () => !!session,
+    running: () => !!(session && session.child),
   };
 }
 

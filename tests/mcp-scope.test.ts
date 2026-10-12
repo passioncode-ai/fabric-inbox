@@ -228,3 +228,21 @@ test("a comma is never part of an account id, so a stored limit or a request can
   assert.deepEqual(normaliseKeys({ keys: [{ id: "k", clientId: "c", accounts: ["cloudflare:digest,ceo@corp.example"] }] })[0]!.accounts, [], "a stored limit with a comma reaches nothing");
   assert.equal(validateNewKey({ name: "x", level: "read", accounts: ["digest,ceo@corp.example"] }).ok, false);
 });
+
+test("a key limited to an Outlook account reaches that account's mail (bug hunt 2026-10-12: every call was refused)", async () => {
+  const { api, calls } = fakeApi();
+  const s = scopedApi(api, ["outlook:o1"]);
+  await s.request("GET", "/api/accounts/o1/messages");
+  await s.request("POST", "/api/accounts/o1/messages/m1/read", { body: { read: true } });
+  assert.equal(calls.length, 2);
+  await assert.rejects(() => s.request("GET", "/api/accounts/o2/messages"), /limited to outlook:o1/);
+});
+
+test("export_setup returns the setup itself, not the bytes of its file (bug hunt 2026-10-12)", async () => {
+  const setup = { format: "fabric-inbox-setup/1", name: "Workspace", domains: ["p.invalid"], mailboxes: [] };
+  const bytes = new TextEncoder().encode(JSON.stringify(setup));
+  const api: Api = { async request() { return { status: 200, data: bytes, contentType: "application/json" }; } };
+  const tool = TOOLS.find((t) => t.name === "export_setup")!;
+  const out = await (tool as any).call({ fromCloudflare: false }, { api });
+  assert.deepEqual(out, setup);
+});

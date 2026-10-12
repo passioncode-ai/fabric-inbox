@@ -3,6 +3,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker";
 import { validateToolUrl, type Rule } from "./policy";
 import { msg } from "../../shared/i18n";
+import { ActionRejected } from "./engine";
 
 export interface McpCall {
   endpoint: string;
@@ -55,14 +56,38 @@ export function toolTransport(url: URL, token: string | undefined): StreamableHT
 }
 
 /**
+ * AUTOMATION_TOOL_TOKENS: each entry is `{ host, token }`, a token bound to the one host it is for,
+ * or (configured before hosts were named) a bare token. A grant names an entry by `tokenRef`.
+ */
+export type ToolTokens = Record<string, string | { host: string; token: string }>;
+
+/**
+ * The bearer a call to `url` may carry. A token bound to a host goes only to that host: before
+ * 2026-10-12 any grant could send any named token to any allowlisted host (bug hunt). A bare token
+ * still works, and its use is logged so it can be bound.
+ */
+export function tokenFor(tokens: ToolTokens, ref: string | undefined, url: URL): string | undefined {
+  if (!ref) return undefined;
+  const entry = tokens[ref];
+  if (entry === undefined || entry === "") throw new Error("Tool credential is not configured");
+  if (typeof entry === "string") {
+    console.warn(JSON.stringify({ event: "tool_token_unbound", ref }));
+    return entry;
+  }
+  if (!entry || typeof entry !== "object" || typeof entry.host !== "string" || typeof entry.token !== "string" || !entry.token)
+    throw new Error("Tool credentials are misconfigured");
+  if (url.hostname.toLowerCase() !== entry.host.toLowerCase()) throw new Error("This credential belongs to another tool host");
+  return entry.token;
+}
+
+/**
  * One remote MCP tool call on an allowlisted host. The host is validated at call
  * time as well as at save time, so removing a host from the allowlist stops a
  * granted tool immediately. SDK 1.26 speaks its negotiated supported protocol.
  */
-export async function callMcpTool(call: McpCall, hosts: string, tokens: Record<string, string>): Promise<CallResult> {
+export async function callMcpTool(call: McpCall, hosts: string, tokens: ToolTokens): Promise<CallResult> {
   const url = validateToolUrl(call.endpoint, hosts);
-  const token = call.tokenRef ? tokens[call.tokenRef] : undefined;
-  if (call.tokenRef && !token) throw new Error("Tool credential is not configured");
+  const token = tokenFor(tokens, call.tokenRef, url);
   const transport = toolTransport(url, token);
   const client = toolClient();
   try {
@@ -86,9 +111,19 @@ export function toolResultText(result: CallResult): string {
 export async function invokeTool(
   action: Extract<Rule["action"], { type: "mcp" }>,
   hosts: string,
-  tokens: Record<string, string>,
+  tokens: ToolTokens | string,
 ): Promise<string> {
-  const result = await callMcpTool(action, hosts, tokens);
-  if (result.isError) throw new Error(msg("Tool returned an error"));
+  // What fails before a request leaves (a host no longer allowed, a missing or foreign credential,
+  // malformed credentials) and a tool that answers isError are refusals: nothing happened, so the run
+  // is failed, not "outcome uncertain" with nothing the person can settle (bug hunt 2026-10-12).
+  let parsed: ToolTokens;
+  try {
+    parsed = typeof tokens === "string" ? JSON.parse(tokens || "{}") : tokens;
+    tokenFor(parsed, action.tokenRef, validateToolUrl(action.endpoint, hosts));
+  } catch (error) {
+    throw new ActionRejected(error instanceof SyntaxError ? msg("Tool credentials are misconfigured") : (error as Error).message);
+  }
+  const result = await callMcpTool(action, hosts, parsed);
+  if (result.isError) throw new ActionRejected(msg("Tool returned an error"));
   return msg("Tool completed");
 }

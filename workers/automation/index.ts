@@ -332,7 +332,7 @@ export class AutomationDO extends DurableObject<Env> {
       return invokeTool(
         action,
         this.env.AUTOMATION_MCP_HOSTS ?? "",
-        JSON.parse(this.env.AUTOMATION_TOOL_TOKENS ?? "{}"),
+        this.env.AUTOMATION_TOOL_TOKENS ?? "{}",
       );
     if (action.type === "forward" && email.hasAttachments)
       throw new ActionRejected(
@@ -482,9 +482,16 @@ export class AutomationDO extends DurableObject<Env> {
     const runCutoff = new Date(now - 30 * 86_400_000).toISOString();
     const dayCutoff = new Date(now - 3 * 86_400_000).toISOString().slice(0, 10);
     const eventCutoff = new Date(now - 90 * 86_400_000).toISOString();
+    const waitCutoff = new Date(now - 14 * 86_400_000).toISOString();
     const gone: string[] = [];
-    for (const [key, run] of await this.ctx.storage.list<Run>({ prefix: "run:" }))
+    for (const [key, run] of await this.ctx.storage.list<Run>({ prefix: "run:" })) {
       if (finished.has(run.status) && (run.updatedAt || run.createdAt) < runCutoff) gone.push(key);
+      // A run waiting for an approval or a device that never came was kept for ever and read into
+      // memory on every alarm (bug hunt 2026-10-12): after 14 days it is cancelled, with the reason.
+      else if ((run.status === "waiting_approval" || run.status === "waiting_device") && run.createdAt < waitCutoff) {
+        await this.ctx.storage.put(key, { ...run, status: "cancelled", error: msg("Expired: nobody approved it within 14 days"), updatedAt: new Date(now).toISOString() });
+      }
+    }
     for (const key of (await this.ctx.storage.list({ prefix: "count:" })).keys())
       if (key.slice("count:".length, "count:".length + 10) < dayCutoff) gone.push(key);
     for (const [key, value] of await this.ctx.storage.list<{ at?: string }>({ prefix: "event:" }))

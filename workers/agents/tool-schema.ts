@@ -1,5 +1,5 @@
 import { validateToolUrl } from "../automation/policy";
-import { toolClient, toolTransport } from "../automation/mcp";
+import { tokenFor, toolClient, toolTransport, type ToolTokens } from "../automation/mcp";
 import type { ToolGrant } from "./definition";
 
 /**
@@ -11,11 +11,10 @@ import type { ToolGrant } from "./definition";
 export async function readToolSchema(
   grant: ToolGrant,
   hosts: string,
-  tokens: Record<string, string>,
+  tokens: ToolTokens,
 ): Promise<unknown | null> {
   const url = validateToolUrl(grant.endpoint, hosts);
-  const token = grant.tokenRef ? tokens[grant.tokenRef] : undefined;
-  if (grant.tokenRef && !token) throw new Error("Tool credential is not configured");
+  const token = tokenFor(tokens, grant.tokenRef, url);
   const transport = toolTransport(url, token);
   const client = toolClient();
   try {

@@ -2,7 +2,7 @@ import type { Env } from "../types";
 import { scanPromptInjection } from "../lib/ai";
 import { allServedDomains } from "../lib/mailbox-store";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
-import { callMcpTool, toolResultText } from "../automation/mcp";
+import { callMcpTool, toolResultText, type ToolTokens } from "../automation/mcp";
 import { workersAiModel } from "./model";
 import { readAssignment } from "./definition";
 import type { RunnerDeps } from "./runner";
@@ -11,7 +11,7 @@ import { msg } from "../../shared/i18n";
 type Registry = RunnerDeps["registry"];
 
 /** The tool tokens keyed by their secret names (a grant's `tokenRef`); never the values out. */
-export function toolTokens(env: Env): Record<string, string> {
+export function toolTokens(env: Env): ToolTokens {
   try {
     const value = JSON.parse(env.AUTOMATION_TOOL_TOKENS || "{}");
     return value && typeof value === "object" ? value : {};
@@ -77,7 +77,8 @@ export function productionDeps(env: Env, mailboxId: string, registry: Registry):
       if (assignment === "off") return false;
       return assignment ? (await registry.getAgent(assignment.id)) !== null : true;
     },
-    injection: (text) => scanPromptInjection(env.AI, text),
+    // The prompt and tool outputs are scanned exactly as the model reads them (bug hunt 2026-10-12).
+    injection: (text) => scanPromptInjection(env.AI, text, { plain: true }),
     model: (request) => workersAiModel(env.AI, env.AGENT_MODEL, request),
     knowledge: {
       async search(query, collections, limit) {

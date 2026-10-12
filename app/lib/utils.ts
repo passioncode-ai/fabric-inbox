@@ -12,6 +12,7 @@ import { attachmentPath } from "./mail-image-policy";
 import DOMPurify from "dompurify";
 import { formatQuotedDate } from "shared/dates";
 import { englishT, type T } from "../../shared/i18n";
+import { htmlToText } from "../../shared/mail/text";
 import type { Attachment } from "~/types";
 
 export {
@@ -179,7 +180,9 @@ export function buildQuotedReplyBlock(
 	// The original HTML renders safely in the sandboxed iframe, but quoted
 	// reply blocks are injected into the compose editor where raw HTML would
 	// execute. Convert to escaped plain text instead.
-	const bodyToQuote = escapeHtml(stripHtml(body)).replace(/\n/g, "<br>");
+	// Text first (entities decoded, lines kept, <style> dropped), then escaped: stripping tags left
+	// "&nbsp;" and CSS in the quote and ran every line together (bug hunt 2026-10-12).
+	const bodyToQuote = escapeHtml(htmlToText(body)).replace(/\n/g, "<br>");
 
 	return `<br><blockquote style="border-left: 2px solid #ccc; margin: 0; padding-left: 1em; color: #666;">${t("On {date}, {sender} wrote:", { date: formattedDate, sender: escapedSender })}<br><br>${bodyToQuote}</blockquote>`;
 }

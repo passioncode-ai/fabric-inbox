@@ -22,6 +22,10 @@ export function mergeHead<P extends FeedPage>(data: Pages<P> | undefined, head: 
 	if (!data || data.pages.length <= 1 || !head.messages.length) return { pages: [head], pageParams: [data?.pageParams[0] ?? ""] };
 	const last = position(head.messages[head.messages.length - 1]);
 	const have = new Set(head.messages.map((m) => m.id));
+	// A full new page that ends newer than every loaded row leaves unseen mail between them: joining
+	// would let Load older continue from the old cursor past it (bug hunt 2026-10-12). Start over from it.
+	if (head.hasMore && data.pages[0].messages.every((m) => !have.has(m.id) && compareInbox(position(m), last) > 0))
+		return { pages: [head], pageParams: [data.pageParams[0] ?? ""] };
 	const tail = data.pages[0].messages.filter((m) => !have.has(m.id) && compareInbox(position(m), last) > 0);
 	return { pages: [{ ...data.pages[0], ...head, messages: [...head.messages, ...tail], hasMore: data.pages[0].hasMore, cursor: data.pages[0].cursor }, ...data.pages.slice(1)], pageParams: data.pageParams };
 }
@@ -51,7 +55,31 @@ export async function showFeedChange(client: QueryClient, change: FeedChange): P
 	await Promise.all(lists.map((filter) => client.cancelQueries(filter)));
 	const before = lists.flatMap((filter) => client.getQueriesData(filter));
 	for (const filter of lists) client.setQueriesData(filter, (data: unknown) => applyFeedChange(data as never, change));
-	return () => { for (const [key, data] of before) client.setQueryData(key, data); };
+	// Undo puts back this row only: restoring the whole snapshot also undid every change made since
+	// (an archive of three where one failed brought the other two back; bug hunt 2026-10-12).
+	return () => { for (const [key, data] of before) client.setQueryData(key, (now: unknown) => revertFeedChange(now as never, data as never, change)); };
+}
+
+type Row = { id: string };
+const pagesOf = <P extends { messages: Row[] }>(data: Pages<P> | P | undefined): P[] => (!data ? [] : "pages" in data ? data.pages : [data]);
+/** `now` with `change` taken back, using the row as it was in `before`; every other row is left as it is now. */
+export function revertFeedChange<P extends { messages: Row[] }>(now: Pages<P> | P | undefined, before: Pages<P> | P | undefined, change: FeedChange): typeof now {
+	if (!now || !before) return now;
+	let original: Row | undefined; let at = -1; let pageAt = -1;
+	pagesOf(before).forEach((page, pi) => page.messages.forEach((m, i) => { if (m.id === change.id) { original = m; at = i; pageAt = pi; } }));
+	if (!original) return now;
+	const fix = (page: P, pi: number): P => {
+		if ("removed" in change) {
+			if (pi !== pageAt || page.messages.some((m) => m.id === change.id)) return page;
+			const messages = [...page.messages];
+			messages.splice(Math.min(at, messages.length), 0, original!);
+			return { ...page, messages };
+		}
+		const keys = Object.keys(change.patch) as (keyof typeof change.patch)[];
+		return { ...page, messages: page.messages.map((m) => (m.id === change.id
+			? { ...m, ...Object.fromEntries(keys.map((k) => [k, (original as Record<string, unknown>)[k]])) } : m)) };
+	};
+	return "pages" in now ? { ...now, pages: now.pages.map(fix) } : fix(now, 0);
 }
 
 /**

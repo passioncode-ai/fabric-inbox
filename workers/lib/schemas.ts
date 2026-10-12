@@ -58,8 +58,7 @@ export const ErrorResponseSchema = z.object({
 	error: z.string(),
 });
 
-export const SendEmailRequestSchema = z
-	.object({
+const SendEmailRequestFields = z.object({
 		to: RecipientFieldSchema,
 		cc: RecipientFieldSchema.optional(),
 		bcc: RecipientFieldSchema.optional(),
@@ -84,7 +83,20 @@ export const SendEmailRequestSchema = z
 		in_reply_to: z.string().optional(),
 		references: z.array(z.string()).optional(),
 		thread_id: z.string().optional(),
-	})
+	});
+
+/** What a person or an MCP client may send through the HTTP API. */
+export const SendEmailRequestSchema = SendEmailRequestFields
+	.refine((data) => data.html || data.text, {
+		message: "Either 'html' or 'text' must be provided",
+	});
+
+/**
+ * What MailboxDO.sendMail takes: the same, plus `auto_submitted`, which only the server's own agents set
+ * (workers/agents/runner.ts) and which leaves as Auto-Submitted: auto-replied (workers/actions/prepare-mail.ts).
+ * The public schema dropped it before 2026-10-12, so no agent reply carried the header.
+ */
+export const SendMailRequestSchema = SendEmailRequestFields.extend({ auto_submitted: z.boolean().optional() })
 	.refine((data) => data.html || data.text, {
 		message: "Either 'html' or 'text' must be provided",
 	});

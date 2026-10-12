@@ -1339,7 +1339,13 @@ const exportSetup = defineTool({
   description: "The server's setup as a file (domains, mailboxes, their agents and forwarding, catch-alls — no secrets), or, with fromCloudflare, a proposed setup read from the Email Routing rules in your Cloudflare account, for apply_setup.",
   input: { fromCloudflare: z.boolean().default(false), domains: z.array(z.string().max(253)).max(100).optional().describe("fromCloudflare: only these domains") },
   routes: ["GET /api/setup/export", "GET /api/setup/from-cloudflare"],
-  call: (a, ctx) => (a.fromCloudflare ? get(ctx, "/api/setup/from-cloudflare", { domains: a.domains }) : get(ctx, "/api/setup/export")),
+  async call(a, ctx) {
+    if (a.fromCloudflare) return get(ctx, "/api/setup/from-cloudflare", { domains: a.domains });
+    // The export route answers as a download (Content-Disposition: attachment), which the in-process
+    // client keeps as bytes; the tool returns the setup itself, so apply_setup can take it (bug hunt 2026-10-12).
+    const file = await get(ctx, "/api/setup/export");
+    return file instanceof Uint8Array ? JSON.parse(new TextDecoder().decode(file)) : file;
+  },
 });
 const applySetup = defineTool({
   name: "apply_setup", title: "Apply a setup", level: "admin", target: (a) => String((a.setup as { name?: unknown }).name ?? "setup"),

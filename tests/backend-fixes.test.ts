@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";
+import { readFileSync } from "node:fs";
 import { decodeBody } from "../workers/providers/gmail-client";
 
 // Audit fixes of 2026-09-28 (REQ-A), each exercised on the production code in
@@ -31,6 +32,8 @@ const bundle = await build({
             if (c.op === 'deleteFolder') return Response.json(await box.deleteFolder(c.id));
             if (c.op === 'folder') return Response.json(await box.getEmails({ folder: c.folder }));
             if (c.op === 'search') return Response.json(await box.searchEmails({ query: c.query }));
+            if (c.op === 'searchBy') return Response.json(await box.searchEmails(c.options));
+            if (c.op === 'threadBySubject') return Response.json(await box.findThreadBySubject(c.subject, c.sender));
             if (c.op === 'inbox') return Response.json((await box.listInboxMessages(c.mailbox, { folder: c.folder || 'inbox', query: c.query, limit: 50 })).map(m => m.providerMessageId));
             if (c.op === 'unindex') { await box.unindex(c.id); return Response.json(true); }
             if (c.op === 'get') return Response.json(await box.getEmail(c.id));
@@ -154,6 +157,46 @@ test("B-21: a message stored before the text column is found as before, then ind
   } finally { await mf.dispose(); }
 });
 
+test("a text-only message is stored as escaped HTML: its lines and <addresses> survive the reader and search (bug hunt 2026-10-12)", async () => {
+  const { mf, op, api } = await fixture();
+  try {
+    await api("/api/v1/mailboxes", { method: "POST", body: JSON.stringify({ email: "me@p.invalid", name: "Me" }), headers: { "content-type": "application/json" } });
+    const text = "Line one\r\nReply to Bob <bob@corp.test> if 2 < 3\r\nLine three";
+    const got = await op({ op: "receive", to: "me@p.invalid", raw: `From: a@x.invalid\r\nTo: me@p.invalid\r\nSubject: Plain\r\nMessage-ID: <plain@x.invalid>\r\nContent-Type: text/plain\r\n\r\n${text}\r\n` });
+    const body = (await op({ op: "get", id: got.result.emailId })).body as string;
+    assert.match(body, /Reply to Bob &lt;bob@corp\.test&gt; if 2 &lt; 3/, "the address is text, not a tag the reader drops");
+    assert.match(body, /Line one<br>/, "line breaks survive");
+    for (const query of ["bob@corp.test", "Line three"]) assert.deepEqual((await op({ op: "search", query })).map((e: any) => e.id), [got.result.emailId], query);
+  } finally { await mf.dispose(); }
+});
+
+test("a date-only 'before' includes that whole day (bug hunt 2026-10-12)", async () => {
+  const { mf, op } = await fixture();
+  try {
+    await op({ op: "seed", rows: [["inbox", email("on", { date: "2026-10-12T15:30:00.000Z" })], ["inbox", email("next", { date: "2026-10-13T00:10:00.000Z" })]] });
+    assert.deepEqual((await op({ op: "searchBy", options: { date_end: "2026-10-12" } })).map((e: any) => e.id), ["on"], "the 12th is in, the 13th is out");
+    assert.deepEqual((await op({ op: "searchBy", options: { date_end: "2026-10-12T15:00:00.000Z" } })).map((e: any) => e.id), [], "a full time stays exact");
+  } finally { await mf.dispose(); }
+});
+
+test("a subject thread is joined only by one of its own participants, not an address that contains theirs (bug hunt 2026-10-12)", async () => {
+  const { mf, op } = await fixture();
+  try {
+    const now = new Date().toISOString();
+    await op({ op: "seed", rows: [["inbox", email("t-first", { subject: "Weekly report", sender: "bob@x.com", date: now, thread_id: "t-first" })], ["sent", email("t-reply", { subject: "Re: Weekly report", sender: "me@p.invalid", recipient: "bob@x.com", date: now, thread_id: "t-first" })]] });
+    assert.equal(await op({ op: "threadBySubject", subject: "Weekly report", sender: "bob@x.com" }), "t-first");
+    assert.equal(await op({ op: "threadBySubject", subject: "Weekly report", sender: "jimbob@x.com" }), null, "jimbob@x.com is not bob@x.com");
+    assert.equal(await op({ op: "threadBySubject", subject: "Weekly report", sender: "ob@x.co" }), null);
+  } finally { await mf.dispose(); }
+});
+
+test("counting an unknown address is best-effort: a failure there never fails the delivery (bug hunt 2026-10-12)", () => {
+  const src = readFileSync("workers/index.ts", "utf8");
+  const block = src.slice(src.indexOf('const policy = await unknownAddressPolicy('), src.indexOf('const REJECT_TEXT'));
+  assert.doesNotMatch(block, /await recordUnknownRecipient\(env, address, "catch_all"\);/, "not awaited bare on the delivery path");
+  assert.match(block, /countUnknown\(env, address, "catch_all"\)/);
+});
+
 test("a draft id can only replace a draft, and the old draft goes only after the new one is stored", async () => {
   const { mf, op, api } = await fixture();
   try {
@@ -214,12 +257,14 @@ test("a message whose body is larger than a database row is kept whole: the body
     assert.equal(got.rejected, null);
     assert.equal(got.result.inserted, true, "stored on the first delivery, not failed on every retry");
     const email = await op({ op: "get", id: got.result.emailId });
-    assert.equal(email.body.trim().length, body.trim().length, "reading it gives the whole body");
+    // A text-only body is stored as escaped HTML (textToHtml); its text is all there.
+    const asText = (html: string) => html.replace(/<br>/g, "\n").replace(/<[^>]+>/g, "").trim();
+    assert.equal(asText(email.body).length, body.trim().length, "reading it gives the whole body");
     assert.equal((await op({ op: "r2", prefix: "bodies/" })).length, 1);
     await op({ op: "delete", id: got.result.emailId });
     assert.deepEqual(await op({ op: "r2", prefix: "bodies/" }), [], "deleting the message deletes its body");
     const small = await op({ op: "receive", to: "me@p.invalid", raw: "From: a@x.invalid\r\nTo: me@p.invalid\r\nSubject: s\r\nContent-Type: text/plain\r\n\r\nhello\r\n" });
-    assert.equal((await op({ op: "get", id: small.result.emailId })).body.trim(), "hello");
+    assert.equal(asText((await op({ op: "get", id: small.result.emailId })).body), "hello");
     assert.deepEqual(await op({ op: "r2", prefix: "bodies/" }), [], "a small body stays in its row");
   } finally { await mf.dispose(); }
 });

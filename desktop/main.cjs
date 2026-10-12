@@ -273,7 +273,12 @@ function loadMail() {
     if (retireAfterLoad && (current.origin === snapshot.origin || (snapshot.accessOrigin && current.origin === snapshot.accessOrigin))) {
       const retiring = retireAfterLoad;
       retireAfterLoad = null;
-      void retirePartition(retiring);
+      // A console still running for the previous server revokes its key while that server's session
+      // still holds its sign-in; retiring the partition first left the key live (bug hunt 2026-10-12).
+      void (async () => {
+        if (agentConsole && agentConsole.running() && consoleFor !== snapshot.origin) await agentConsole.stop({ wait: true, timeoutMs: 5000 });
+        await retirePartition(retiring);
+      })();
     }
     if (current.origin === snapshot.origin) void countActive();
     if (!setupOpened && current.origin === snapshot.origin && current.pathname !== SETUP_PAGE && await readPendingSetup()) {
@@ -793,7 +798,7 @@ function installMenu() {
       enabled: !(state && state.state === 'downloading'),
       click: () => {
         const now = updater ? updater.status() : null;
-        if (now && now.state === 'ready') updater.restart();
+        if (now && now.state === 'ready') void consoleMayEnd().then((go) => { if (go) updater.restart(); });
         else if (now && now.stuck) void showUpdatesStuck(now);
         else void checkForUpdates();
       },
@@ -806,14 +811,28 @@ function installMenu() {
     console: consoleAvailable() ? openConsole : null,
   })));
 }
+/**
+ * A running agent console is asked about before the app quits or restarts for an update (Fabric
+ * Dashboards ADR-0017); true when it may go. Stopping waits for its key to be revoked (bug hunt
+ * 2026-10-12: the app used to exit first, leaving a 30-day key live).
+ */
+async function consoleMayEnd() {
+  if (!agentConsole || !agentConsole.running()) return true;
+  const answer = dialog.showMessageBoxSync(consoleWindow && !consoleWindow.isDestroyed() ? consoleWindow : undefined, {
+    type: 'question', buttons: [t('Cancel'), t('Quit and stop the agent')], defaultId: 0, cancelId: 0,
+    message: t('The agent console is still running.'), detail: t('Quitting stops the agent and revokes its key.') });
+  if (answer === 0) return false;
+  await agentConsole.stop({ wait: true, timeoutMs: 5000 });
+  return true;
+}
+let endingConsole = false;
 app.on('before-quit', (event) => {
-  // A running agent console is asked about first (Fabric Dashboards ADR-0017): quitting ends it.
   if (!quitting && agentConsole && agentConsole.running()) {
-    const answer = dialog.showMessageBoxSync(consoleWindow && !consoleWindow.isDestroyed() ? consoleWindow : undefined, {
-      type: 'question', buttons: [t('Cancel'), t('Quit and stop the agent')], defaultId: 0, cancelId: 0,
-      message: t('The agent console is still running.'), detail: t('Quitting stops the agent and revokes its key.') });
-    if (answer === 0) { event.preventDefault(); return; }
-    void agentConsole.stop();
+    event.preventDefault();
+    if (endingConsole) return;
+    endingConsole = true;
+    void consoleMayEnd().then((go) => { endingConsole = false; if (go) { quitting = true; app.quit(); } });
+    return;
   }
   quitting = true;
 });
@@ -840,6 +859,9 @@ app.on('second-instance', (_event, argv) => {
   for (const arg of argv || []) queueLink(arg);
   const win = setupWindow || mailWindow;
   if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
+  // No window left (Windows and Linux, after the console prompt kept the app running): opening the
+  // app again brings one back instead of doing nothing (bug hunt 2026-10-12).
+  else if (config) loadMail(); else showSetup();
 });
 if (ownsInstance) app.whenReady().then(async () => {
   i18n.init({ app, userData: app.getPath('userData') });

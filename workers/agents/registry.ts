@@ -105,12 +105,23 @@ export class AgentRegistryDO extends DurableObject<Env> {
     });
   }
 
+  /**
+   * The next messages to answer: each mailbox's oldest due message, oldest first. The first due rows
+   * were taken before keeping one per mailbox, so a burst of mail to one address filled the window and
+   * kept every other address waiting until its backlog cleared (bug hunt 2026-10-12).
+   */
+  protected nextBatch() {
+    return this.rows(`SELECT mailbox_id, email_id, attempts FROM (
+        SELECT mailbox_id, email_id, attempts, enqueued_at,
+          ROW_NUMBER() OVER (PARTITION BY mailbox_id ORDER BY attempts, enqueued_at) AS turn
+        FROM agent_queue WHERE next_at <= ?)
+      WHERE turn = 1 ORDER BY attempts, enqueued_at LIMIT ?`, Date.now(), BATCH);
+  }
+
   private async drain() {
     // One message per mailbox at a time: two messages of one thread read the thread
     // before either answer exists, and would both be answered.
-    const candidates = this.rows("SELECT mailbox_id, email_id, attempts FROM agent_queue WHERE next_at <= ? ORDER BY attempts, enqueued_at LIMIT ?", Date.now(), BATCH * 10);
-    const seen = new Set<string>();
-    const batch = candidates.filter((c) => !seen.has(String(c.mailbox_id)) && seen.add(String(c.mailbox_id))).slice(0, BATCH);
+    const batch = this.nextBatch();
     let failures = 0;
     await Promise.all(batch.map(async (item) => {
       const mailboxId = String(item.mailbox_id), emailId = String(item.email_id);

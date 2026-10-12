@@ -7,6 +7,7 @@ import { cors } from "hono/cors";
 import PostalMime from "postal-mime";
 import { z } from "zod";
 import { type StoredAttachment } from "./lib/attachments";
+import { textToHtml } from "./lib/email-helpers";
 import { AttachmentValidationError, MAX_ATTACHMENTS, storedAttachmentName, validateAttachments } from "../shared/mail/attachments";
 import { allServedDomains, createMailbox, deleteMailbox, listMailboxAddresses, readSettings, storedCatchAll, updateSettings, readAllSettings, allowedAddresses as allowedAddressList } from "./lib/mailbox-store";
 import { createAddress, removeAddress } from "./lib/address-ops";
@@ -495,6 +496,12 @@ async function recordUnknownRecipient(env: Env, address: string, action: "reject
 	}));
 }
 
+/** The unknown-address count is bookkeeping: a failure there is logged and never fails the delivery (bug hunt 2026-10-12). */
+async function countUnknown(env: Env, address: string, outcome: "catch_all" | "rejected"): Promise<void> {
+	await recordUnknownRecipient(env, address, outcome).catch((error: unknown) =>
+		console.warn(JSON.stringify({ event: "unknown_recipient_count_failed", outcome, error: (error as Error)?.message?.slice(0, 120) })));
+}
+
 async function resolveRecipient(candidates: string[], allowedAddresses: string[], env: Env): Promise<Route> {
 	if (!candidates.length) return { rejected: "no_recipient" };
 	const domains = new Set(await allServedDomains(env));
@@ -507,10 +514,10 @@ async function resolveRecipient(candidates: string[], allowedAddresses: string[]
 	const address = onServedDomain[0];
 	const policy = await unknownAddressPolicy(env, domainOf(address));
 	if (policy.kind === "catch_all" && await env.BUCKET.head(`mailboxes/${policy.mailbox}.json`)) {
-		await recordUnknownRecipient(env, address, "catch_all");
+		await countUnknown(env, address, "catch_all");
 		return { mailboxId: policy.mailbox };
 	}
-	await recordUnknownRecipient(env, address, "rejected");
+	await countUnknown(env, address, "rejected");
 	return { rejected: "unknown_address", address };
 }
 
@@ -601,7 +608,9 @@ async function receiveEmail(event: IncomingEmailEvent, env: Env, ctx: ExecutionC
 		recipient: allRecipients.join(", "),
 		cc: ccRecipients.join(", ") || null, bcc: bccRecipients.join(", ") || null,
 		date: new Date().toISOString(), // uses receive time, not the email's Date header
-		body: parsedEmail.html || parsedEmail.text || "",
+		// The body is read as HTML everywhere (reader, search, agents): a text-only message is escaped first,
+		// or its <addresses> vanished as tags and its lines ran together (bug hunt 2026-10-12).
+		body: parsedEmail.html || textToHtml(parsedEmail.text || ""),
 		in_reply_to: inReplyTo, email_references: emailReferences.length > 0 ? JSON.stringify(emailReferences) : null,
 		thread_id: threadId, message_id: originalMessageId, raw_headers: JSON.stringify(parsedEmail.headers),
 	}, attachmentData, mailboxId, verdict.verdict === "spam" ? { spam: verdict.reason }
@@ -759,15 +768,23 @@ const TRANSIENT_DO = /storage operation exceeded timeout|caused object to be res
  * address could not be refused (live, 2026-10-08, since 0.8.2). Each method is carried, bound to the
  * original message.
  */
-export function replayEvent(event: IncomingEmailEvent, bytes: Uint8Array<ArrayBuffer>): IncomingEmailEvent {
+export function replayEvent(event: IncomingEmailEvent, bytes: Uint8Array<ArrayBuffer>, once?: ForwardOnce): IncomingEmailEvent {
 	const forward = event.forward, setReject = event.setReject, deferForward = event.deferForward;
 	return {
 		raw: new Response(bytes).body!, rawSize: bytes.byteLength, to: event.to, from: event.from,
 		...(setReject ? { setReject: (reason: string) => setReject.call(event, reason) } : {}),
-		...(forward ? { forward: (rcptTo: string, headers?: Headers) => forward.call(event, rcptTo, headers) } : {}),
+		...(forward ? { forward: async (rcptTo: string, headers?: Headers) => {
+			// Replays of one message share one forward: a retry after the copy left does not send it again.
+			if (once) { if (once.sent.has(rcptTo)) return; once.sent.add(rcptTo); }
+			return forward.call(event, rcptTo, headers);
+		} } : {}),
 		...(deferForward ? { deferForward: (rcptTo: string) => deferForward.call(event, rcptTo) } : {}),
 	};
 }
+
+/** Which recipients a message's copy was already forwarded to, shared by the replays of one delivery. */
+export interface ForwardOnce { sent: Set<string> }
+export const forwardOnce = (): ForwardOnce => ({ sent: new Set() });
 
 /**
  * `receiveEmail` with one retry after a transient Durable Object failure. Safe because a delivery is
@@ -777,7 +794,10 @@ export function replayEvent(event: IncomingEmailEvent, bytes: Uint8Array<ArrayBu
 async function receiveEmailResilient(event: IncomingEmailEvent, env: Env, ctx: ExecutionContext, retryDelayMs = 1000) {
 	if (event.rawSize > MAX_EMAIL_SIZE) return receiveEmail(event, env, ctx);
 	const bytes = await streamToArrayBuffer(event.raw, event.rawSize);
-	const attempt = () => receiveEmail(replayEvent(event, bytes), env, ctx);
+	// The retry can find the copy still owed when the first attempt forwarded it and then failed while
+	// marking it settled; both attempts share one forward, so the copy leaves once (bug hunt 2026-10-12).
+	const once = forwardOnce();
+	const attempt = () => receiveEmail(replayEvent(event, bytes, once), env, ctx);
 	try {
 		return await attempt();
 	} catch (error) {
