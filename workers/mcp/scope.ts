@@ -62,7 +62,8 @@ function accountOfPath(pathname: string, allowed: ReadonlySet<string>): string |
     if (pathname.startsWith("/api/v1/mailboxes/") && parts[4]) return normaliseAccountId(`cloudflare:${decodeURIComponent(parts[4])}`);
     if (pathname.startsWith("/api/accounts/") && parts[3]) {
       const id = decodeURIComponent(parts[3]);
-      const candidates = [`gmail:${id}`, `imap:${id}`].map(normaliseAccountId).filter((a): a is string => !!a);
+      // Outlook accounts live under /api/accounts/ too; leaving them out refused every call of a key limited to one (bug hunt 2026-10-12).
+      const candidates = [`gmail:${id}`, `imap:${id}`, `outlook:${id}`].map(normaliseAccountId).filter((a): a is string => !!a);
       return candidates.find((a) => allowed.has(a)) ?? candidates[0] ?? null;
     }
   } catch { return null; }

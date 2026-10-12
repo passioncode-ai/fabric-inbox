@@ -2,7 +2,7 @@ import type { Env } from "../types";
 import { scanPromptInjection } from "../lib/ai";
 import { allServedDomains } from "../lib/mailbox-store";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
-import { callMcpTool, toolResultText } from "../automation/mcp";
+import { callMcpTool, toolResultText, type ToolTokens } from "../automation/mcp";
 import { workersAiModel } from "./model";
 import { readAssignment } from "./definition";
 import type { RunnerDeps } from "./runner";
@@ -11,7 +11,7 @@ import { msg } from "../../shared/i18n";
 type Registry = RunnerDeps["registry"];
 
 /** The tool tokens keyed by their secret names (a grant's `tokenRef`); never the values out. */
-export function toolTokens(env: Env): Record<string, string> {
+export function toolTokens(env: Env): ToolTokens {
   try {
     const value = JSON.parse(env.AUTOMATION_TOOL_TOKENS || "{}");
     return value && typeof value === "object" ? value : {};
