@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+- **Agents can trust which tools change things.** Every tool that removes or overwrites something now
+  says so to agent clients (`destructiveHint`); before, only the tools that ask for confirmation did.
+  An unknown account is reported as a sentence, not a bare code.
+- **Your server stops sooner after each job.** A finished model or Cloudflare call no longer keeps
+  the server busy until its time limit.
+
 ## 0.16.2 — 2026-10-12
 
 - **Pictures inside Gmail, IMAP and Outlook mail show.** A logo, a signature or a pasted screenshot

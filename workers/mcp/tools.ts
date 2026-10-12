@@ -387,7 +387,7 @@ const cloudflareAccount = z.string().regex(/^[0-9a-f]{32}$/).describe("A Cloudfl
 const listDomains = defineTool({
   name: "list_domains", title: "List domains", level: "read", readOnly: true,
   description: "The domains of the shown Cloudflare accounts, each with its account and whether it is served here, the accounts themselves, what a token needs, and — with destinations — `destinations: { account, destinations }`, the forwarding destinations of one account (the server's unless account is given; a copy must be confirmed in its domain's own account). Give domain for one domain's full routing detail.",
-  input: { domain: domain.optional(), destinations: z.boolean().default(false).describe("Also list the forwarding destinations"), account: cloudflareAccount.optional() },
+  input: { domain: domain.optional(), destinations: z.boolean().default(false).describe("Also list the forwarding destinations"), account: cloudflareAccount.optional().describe("With destinations: whose forwarding destinations to list (default: this server's account). It does not filter the domains") },
   routes: ["GET /api/domains", "GET /api/domains/:domain", "GET /api/domains/destinations"],
   async call(a, ctx) {
     const main = a.domain ? await get(ctx, `/api/domains/${enc(a.domain.toLowerCase())}`) : await get(ctx, "/api/domains");
@@ -685,7 +685,7 @@ async function sendNew(ctx: ToolContext, account: Account, a: Outgoing, thread?:
 }
 
 const sendEmail = defineTool({
-  name: "send_email", title: "Send a new message", level: "mail", sends: true, target: (a) => `${a.accountId} → ${[a.to].flat().join(", ")}`,
+  name: "send_email", title: "Send a new message", level: "mail", additive: true, sends: true, target: (a) => `${a.accountId} → ${[a.to].flat().join(", ")}`,
   description: "Sends a new message from one of your addresses or Gmail, IMAP or Outlook accounts, with files if you give them. It really leaves: confirm the recipients and text with the person you work for unless they asked you to send. The idempotencyKey makes a retry safe. Counts against this key's daily sends.",
   input: { accountId, to: recipients, cc: recipients.optional(), bcc: recipients.optional(), subject: z.string().min(1).max(998), ...body, attachments, idempotencyKey,
     signature: z.boolean().default(true).describe("Add the address's signature (Cloudflare)") },
@@ -694,7 +694,7 @@ const sendEmail = defineTool({
 });
 
 const reply = defineTool({
-  name: "reply", title: "Reply to a message", level: "mail", sends: true, target: (a) => `${a.accountId} ${a.messageId}`,
+  name: "reply", title: "Reply to a message", level: "mail", additive: true, sends: true, target: (a) => `${a.accountId} ${a.messageId}`,
   description: "Answers a message in its conversation: to its Reply-To address when it has one, otherwise its sender (with replyAll also everyone else in To and Cc except you), subject Re:, threaded, with the original quoted and the address's signature. to, cc, bcc and subject replace what would be chosen; attachments adds files. It really leaves; counts against this key's daily sends.",
   input: { accountId, messageId, ...body, idempotencyKey, replyAll: z.boolean().default(false), to: recipients.optional().describe("Answer these addresses instead"),
     cc: recipients.optional().describe("Copy these addresses (instead of those replyAll would copy)"), bcc: recipients.optional(),
@@ -746,7 +746,7 @@ async function originalFiles(ctx: ToolContext, account: Account, messageId: stri
 }
 
 const forward = defineTool({
-  name: "forward", title: "Forward a message", level: "mail", sends: true, target: (a) => `${a.accountId} ${a.messageId} → ${[a.to].flat().join(", ")}`,
+  name: "forward", title: "Forward a message", level: "mail", additive: true, sends: true, target: (a) => `${a.accountId} ${a.messageId} → ${[a.to].flat().join(", ")}`,
   description: "Forwards a message with its text and its attachments (up to 10 files, 5 MB together with any files you add), your note and the address's signature on top. cc, bcc and subject replace what would be chosen. It really leaves; counts against this key's daily sends.",
   input: { accountId, messageId, to: recipients, cc: recipients.optional(), bcc: recipients.optional(),
     subject: z.string().min(1).max(998).optional().describe("Instead of Fwd: and the original's subject"),
@@ -1010,7 +1010,7 @@ const checkAddress = defineTool({
 });
 
 const createAddress = defineTool({
-  name: "create_address", title: "Create an address", level: "admin", target: (a) => `${a.localPart}@${a.domain}`,
+  name: "create_address", title: "Create an address", level: "admin", additive: true, target: (a) => `${a.localPart}@${a.domain}`,
   description: "Makes a new mailbox on one of your served domains and, when this server can, the Cloudflare rule that sends its mail here. The answer lists its steps (address, rule), each done, already, skipped, failed or not_receiving (the rule exists but Email Routing is off or broken for the domain), the last three with a fix. Optionally sets its display name, signature, agent and a copy to a verified destination. check_address first says whether the name is free; send_test_message and check_test_message then prove it receives.",
   input: { localPart: z.string().regex(LOCAL_PART_RE).describe("The part before @, lower case (letters, digits, . _ + -, a letter or digit at each end, no two dots together)"), domain,
     ...newAddressSettings },
@@ -1020,7 +1020,7 @@ const createAddress = defineTool({
 });
 
 const createAddresses = defineTool({
-  name: "create_addresses", title: "Create several addresses", level: "admin", target: (a) => `${a.localParts.length} on ${a.domain}`,
+  name: "create_addresses", title: "Create several addresses", level: "admin", additive: true, target: (a) => `${a.localParts.length} on ${a.domain}`,
   description: "Makes up to 50 addresses on one served domain with the same settings (agent, signature, copy, rule), one after another; each gets its own display name from its name unless name is given for all. Answers one row per address with its status (201 created, 409 exists, 400 refused) and steps; a failure never stops the others. One call does only what fits the server's Cloudflare budget for a request: the names it did not start come back in remaining (complete false) — call create_addresses again with them, same settings, until complete is true. Sending a name again is safe: an address that exists answers 409.",
   input: { domain, localParts: z.array(z.string().max(320)).min(1).max(BATCH_MAX).describe("The names before @, up to 50"), ...newAddressSettings },
   routes: ["POST /api/project-addresses/batch"],
@@ -1069,7 +1069,7 @@ const routeAddress = defineTool({
 });
 
 const sendTest = defineTool({
-  name: "send_test_message", title: "Send a test message", level: "admin", sends: true, target: (a) => a.address,
+  name: "send_test_message", title: "Send a test message", level: "admin", additive: true, sends: true, target: (a) => a.address,
   description: "Sends a message from the address to itself through Cloudflare, to check that sending and receiving both work; it lands in its Inbox. check_test_message then says whether it arrived.",
   input: { address }, routes: ["POST /api/project-addresses/:email/test"],
   call: (a, ctx) => post(ctx, `/api/project-addresses/${enc(a.address.toLowerCase())}/test`),
@@ -1115,7 +1115,7 @@ const enableSending = defineTool({
 });
 
 const addDestination = defineTool({
-  name: "add_forward_destination", title: "Add a forwarding destination", level: "admin", target: (a) => a.email,
+  name: "add_forward_destination", title: "Add a forwarding destination", level: "admin", additive: true, target: (a) => a.email,
   description: "Adds an address that copies may be forwarded to, in one Cloudflare account (the server's unless account is given: add it in the account of the domain whose copies go there). Cloudflare emails it a verification link; it can be used once someone clicks it.",
   input: { email: z.string().email().max(320), account: cloudflareAccount.optional() }, routes: ["POST /api/domains/destinations"],
   async call(a, ctx) {
@@ -1176,8 +1176,8 @@ const agentInput = z.object({
   tools: z.array(z.object({ name: z.string().regex(/^[a-z][a-z0-9_]{0,47}$/), description: z.string().min(1).max(500), endpoint: z.string().url(), tool: z.string().min(1).max(200), tokenRef: z.string().max(100).optional(),
     fixed: z.record(z.union([z.string().max(500), z.number(), z.boolean()])).optional().describe("Arguments pinned on every call, over the model's (e.g. a knowledge domain)"),
     prefetch: z.object({ argument: z.string().min(1).max(64) }).optional().describe("Call once before the model, with the message's subject and opening as this text argument"),
-    publicOnly: z.boolean().optional().describe("Use the output only when every item with a `class` is \"public\"; otherwise the answer stays a draft"),
-    gaps: z.object({ tool: z.string().min(1).max(100) }).optional().describe("A tool on the same endpoint that records a question the knowledge could not answer (when the call before the model answers abstained: true)"),
+    publicOnly: z.boolean().optional().describe("Use the output only when it is JSON and every value in it sits inside an object whose `class` is exactly \"public\" (inherited by what is inside; an inner class overrides); otherwise it is withheld and the answer stays a draft"),
+    gaps: z.object({ tool: z.string().min(1).max(100) }).optional().describe("A tool on the same endpoint that records, once per run, a question the knowledge could not answer: when a call (before the model or by it) answers abstained: true, or the model says its answer is not grounded"),
   })).max(10).optional().describe("Remote MCP tools; the endpoint's input schema is read and stored on save"),
   replyPolicy: z.object({ mode: z.enum(["draft", "auto"]), allowedIntents: z.array(z.string().max(80)).max(20).default([]), dailySendLimit: z.number().int().min(1).max(200).default(20) }).optional(),
 }).describe("The agent's whole definition; saving makes a new version");
