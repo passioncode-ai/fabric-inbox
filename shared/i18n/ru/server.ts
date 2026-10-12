@@ -383,6 +383,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Withheld: the safety check could not run ({error})": "Скрыто: не удалось выполнить проверку безопасности ({error})",
 	"Withheld: the output looked like instructions": "Скрыто: результат был похож на инструкции",
 	"Withheld: {problem}": "Скрыто: {problem}",
+	"No confident answer in the knowledge; a person checks it": "В знаниях нет уверенного ответа; его проверит человек",
 	"fixed argument \"{key}\" is not in the tool's schema": "фиксированного аргумента «{key}» нет в схеме инструмента",
 	"\"{argument}\" is not a text argument of the tool": "«{argument}» — не текстовый аргумент инструмента",
 	"\"{argument}\" is fixed, so it cannot carry the message": "«{argument}» зафиксирован, поэтому в нём нельзя передать письмо",

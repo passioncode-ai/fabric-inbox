@@ -16,6 +16,7 @@ const DecisionSchema = z.object({
   grounded: z.boolean(),
   body: z.string().max(12_000),
   reason: z.string().max(500),
+  question: z.string().max(1000).optional().describe("Only when nothing you found answers the person: what they want to know, as one English sentence, with no names, addresses, phone numbers, usernames or quotes"),
 });
 
 /** What the model is told when it stopped without submitting its answer. */
