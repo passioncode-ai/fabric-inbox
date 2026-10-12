@@ -4,6 +4,7 @@
 
 import { useKumoToastManager } from "@cloudflare/kumo";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import api, { type MailFile } from "~/services/api";
 import {
 	buildQuotedReplyBlock,
 	escapeHtml,
@@ -13,7 +14,7 @@ import {
 	stripHtml,
 	toEmailListValue,
 } from "~/lib/utils";
-import { useDeleteEmail, useForwardEmail, useReplyToEmail, useSaveDraft, useSendEmail } from "~/queries/emails";
+import { useForwardEmail, useInvalidateEmailData, useReplyToEmail, useSaveDraft, useSendEmail } from "~/queries/emails";
 import { useMailbox } from "~/queries/mailboxes";
 import { useUIStore } from "~/hooks/useUIStore";
 import { useT, type T } from "~/lib/i18n";
@@ -174,7 +175,7 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 	const saveDraftMutation = useSaveDraft();
 	const replyMutation = useReplyToEmail();
 	const forwardMutation = useForwardEmail();
-	const deleteEmailMutation = useDeleteEmail();
+	const invalidateMail = useInvalidateEmailData();
 
 	const [to, setTo] = useState("");
 	const [cc, setCc] = useState("");
@@ -189,6 +190,11 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 	const sendingRef = useRef(false);
 	const lastInitializedOptionsRef = useRef<typeof composeOptions | null>(null);
 	const isDraftEdit = !!composeOptions.draftEmail;
+	// B-88: one draft id for the whole compose (the draft's own when editing one), saved in place so
+	// its files stay; a forward carries the original's files, read once.
+	const draftKey = useRef<string>(composeOptions.draftEmail?.id ?? crypto.randomUUID());
+	const draftSaved = useRef(!!composeOptions.draftEmail);
+	const forwardFiles = useRef<Promise<MailFile[]> | null>(null);
 
 	const formTitle = useMemo(() => {
 		if (isDraftEdit) return t("Edit Draft");
@@ -201,6 +207,9 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 		if (lastInitializedOptionsRef.current === composeOptions) return;
 		lastInitializedOptionsRef.current = composeOptions;
 		sendKey.current = crypto.randomUUID();
+		draftKey.current = composeOptions.draftEmail?.id ?? crypto.randomUUID();
+		draftSaved.current = !!composeOptions.draftEmail;
+		forwardFiles.current = null;
 
 		const initialFields = buildInitialComposeFields(
 			composeOptions,
@@ -217,19 +226,41 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 		setBody(initialFields.body);
 	}, [composeOptions, currentMailbox?.email, sigBlock, t]);
 
+	/** The original's files for a forward (a forward used to go without them, B-88). */
+	const originalFiles = (): Promise<MailFile[]> => {
+		const original = composeOptions.originalEmail;
+		if (composeOptions.mode !== "forward" || !original || !mailboxId) return Promise.resolve([]);
+		forwardFiles.current ??= Promise.all((original.attachments ?? []).map(async (a) => {
+			const blob = await api.getAttachment(mailboxId, original.id, a.id);
+			const bytes = new Uint8Array(await blob.arrayBuffer());
+			let binary = "";
+			for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+			return { content: btoa(binary), filename: a.filename, type: a.mimetype, disposition: a.disposition === "inline" ? "inline" as const : "attachment" as const,
+				...(a.content_id ? { contentId: a.content_id } : {}) };
+		}));
+		return forwardFiles.current;
+	};
+	/** Saves the draft in place under its id; the first save of a forward adds the original's files. */
+	const saveInPlace = async () => {
+		const first = !draftSaved.current;
+		await saveDraftMutation.mutateAsync({ mailboxId: mailboxId!, draft: {
+			draft_id: draftKey.current,
+			to,
+			cc: cc || undefined,
+			bcc: bcc || undefined,
+			subject,
+			body,
+			in_reply_to: composeOptions.originalEmail?.id || composeOptions.draftEmail?.in_reply_to || undefined,
+			thread_id: composeOptions.originalEmail?.thread_id || composeOptions.draftEmail?.thread_id || undefined,
+			...(first && composeOptions.mode === "forward" ? { attachments: await originalFiles() } : {}),
+		} });
+		draftSaved.current = true;
+	};
+
 	const handleSaveDraft = async () => {
 		if (!mailboxId || isSending) return; setIsSavingDraft(true); setError(null);
 		try {
-			await saveDraftMutation.mutateAsync({ mailboxId, draft: {
-				to,
-				cc: cc || undefined,
-				bcc: bcc || undefined,
-				subject,
-				body,
-				in_reply_to: composeOptions.originalEmail?.id || composeOptions.draftEmail?.in_reply_to || undefined,
-				thread_id: composeOptions.originalEmail?.thread_id || composeOptions.draftEmail?.thread_id || undefined,
-				draft_id: composeOptions.draftEmail?.id || undefined,
-			} });
+			await saveInPlace();
 			toastManager.add({ title: t("Draft saved!") });
 		}
 		catch (err: unknown) {
@@ -258,13 +289,19 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 			html: body,
 			text: htmlToPlainText(body),
 		};
-		const draftId = composeOptions.draftEmail?.id; const mode = composeOptions.mode; const originalId = composeOptions.originalEmail?.id || composeOptions.draftEmail?.in_reply_to;
+		const mode = composeOptions.mode; const originalId = composeOptions.originalEmail?.id || composeOptions.draftEmail?.in_reply_to;
 		sendingRef.current = true; setIsSending(true); toastManager.add({ title: t("Sending email...") });
 		try {
-			if ((mode === "reply" || mode === "reply-all") && originalId) await replyMutation.mutateAsync({ mailboxId, emailId: originalId, email: emailData });
-			else if (mode === "forward" && originalId) await forwardMutation.mutateAsync({ mailboxId, emailId: originalId, email: emailData });
+			// A saved draft (opened with Edit draft, or saved in this compose) is saved with what is on
+			// screen and sent as it is, with its files; the server removes it once accepted (B-88).
+			if (draftSaved.current) {
+				await saveInPlace();
+				await api.sendDraft(mailboxId, draftKey.current, sendKey.current);
+				invalidateMail(mailboxId);
+			}
+			else if ((mode === "reply" || mode === "reply-all") && originalId) await replyMutation.mutateAsync({ mailboxId, emailId: originalId, email: emailData });
+			else if (mode === "forward" && originalId) await forwardMutation.mutateAsync({ mailboxId, emailId: originalId, email: { ...emailData, attachments: await originalFiles() } });
 			else await sendEmailMutation.mutateAsync({ mailboxId, email: emailData });
-			if (draftId) deleteEmailMutation.mutate({ mailboxId, id: draftId });
 			toastManager.add({ title: t("Accepted by email provider") });
 			onClose();
 		} catch (err: unknown) { const message = (err instanceof Error && err.message ? t.text(err.message) : null) || t("Failed to send email."); setError(message); toastManager.add({ title: message, variant: "error" }); }

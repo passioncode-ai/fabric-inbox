@@ -78,6 +78,9 @@ function post<T>(url: string, body?: unknown, opts?: { signal?: AbortSignal }) {
 	});
 }
 
+/** A file as a send or a draft save takes it: base64 content. */
+export interface MailFile { content: string; filename: string; type: string; disposition: "attachment" | "inline"; contentId?: string }
+
 function put<T>(url: string, body?: unknown) {
 	return request<T>(url, {
 		method: "PUT",
@@ -139,19 +142,16 @@ const api = {
 		post<void>(`/api/v1/mailboxes/${mailboxId}/threads/${threadId}/read`),
 	getAttachment: (mailboxId: string, emailId: string, attachmentId: string) =>
 		get<Blob>(`/api/v1/mailboxes/${mailboxId}/emails/${emailId}/attachments/${attachmentId}`, { responseType: "blob" }),
-	saveDraft: (
+	/**
+	 * Saves a draft in place under its own id (B-52): its files stay unless `keep_attachments` says
+	 * otherwise, and `attachments` adds new ones. The legacy POST /drafts gave every save a new id and
+	 * dropped the files (B-88).
+	 */
+	putDraft: (
 		mailboxId: string,
-		draft: {
-			to?: string;
-			cc?: string;
-			bcc?: string;
-			subject?: string;
-			body: string;
-			in_reply_to?: string;
-			thread_id?: string;
-			draft_id?: string;
-		},
-	) => post<{ draft_id: string }>(`/api/v1/mailboxes/${mailboxId}/drafts`, draft),
+		draftId: string,
+		draft: { to: string; cc?: string; bcc?: string; subject: string; body: string; in_reply_to?: string; thread_id?: string; attachments?: MailFile[] },
+	) => put<{ id: string; revision: number }>(`/api/v1/mailboxes/${mailboxId}/drafts/${encodeURIComponent(draftId)}`, draft),
 	/** Sends a saved draft as it is, as a reply when it answers a message, and removes it once accepted (B-50). */
 	sendDraft: (mailboxId: string, draftId: string, idempotencyKey: string) =>
 		sendConfirmed(`/api/v1/mailboxes/${mailboxId}/drafts/${encodeURIComponent(draftId)}/send`, { idempotencyKey }),
