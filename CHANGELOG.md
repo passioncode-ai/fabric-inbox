@@ -7,6 +7,10 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **The agent panel keeps your keys.** After you send a question, typing never moves the mail
+  selection, and a suggestion about the open message no longer shows its long id or spills out of
+  the panel. A question that got no answer shows Retry again when you reopen the panel.
+- **Closing an empty message leaves no empty draft.**
 - **An agent's fixed tool arguments are never dropped silently.** Text that is not a JSON object now
   stops the agent from being saved until it is fixed or cleared; before, the tool was saved without
   them, so the agent could ask more than intended.

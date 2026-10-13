@@ -27,7 +27,7 @@ import { useT } from "../lib/i18n";
 import { msg } from "../../shared/i18n";
 import { useUIStore } from "~/hooks/useUIStore";
 import type { UIMessage } from "ai";
-import { draftOf, lastPrompt, MAX_SOURCES, retryTurn, sourcesOf, toolNameOf, turnFailed, usesDraftTool, type SavedDraft, type Source } from "./agent-chat";
+import { draftOf, lastPrompt, MAX_SOURCES, retryTurn, sourcesOf, toolNameOf, turnFailed, unanswered, usesDraftTool, type SavedDraft, type Source } from "./agent-chat";
 
 /**
  * Where the panel sits decides what its links do: on the unified inbox a source opens in the reader
@@ -312,7 +312,7 @@ export function AgentChatConnected({
 		useAgentChat({ agent });
 	const isStreaming = status === "streaming" || status === "submitted";
 	// A failed model turn (B11-02): an error bubble with Retry instead of silence.
-	const failed = turnFailed(status, error);
+	const failed = turnFailed(status, error) || unanswered(messages, isStreaming);
 	const retryable = lastPrompt(messages) !== null;
 	const retry = () => retryTurn({ streaming: isStreaming, messages, clearError, regenerate: () => regenerate() });
 
@@ -324,6 +324,16 @@ export function AgentChatConnected({
 	useEffect(() => {
 		inputRef.current?.focus();
 	}, []);
+
+	// While an answer streams the text box is replaced by Stop: focus stays in the panel so keys never
+	// reach the mail list, and returns to the text box when the answer ends (UI walk 2026-10-13).
+	const stopRef = useRef<HTMLDivElement>(null);
+	const wasStreaming = useRef(false);
+	useEffect(() => {
+		if (isStreaming) stopRef.current?.focus();
+		else if (wasStreaming.current) inputRef.current?.focus();
+		wasStreaming.current = isStreaming;
+	}, [isStreaming]);
 
 	const handleSend = () => {
 		const text = inputValue.trim();
@@ -341,16 +351,22 @@ export function AgentChatConnected({
 	};
 
 	// What the person would type: sent to the agent as their own words, in their language.
+	// The button shows the words; the text sent also names the message id, which the agent needs
+	// and a person does not (UI walk 2026-10-13: a 70-character id overflowed the panel).
+	const subject = focus ? focus.subject || t("(No subject)") : "";
+	const plain = (text: string) => ({ label: text, text });
 	const suggestedPrompts = [
 		...(focus
 			? [
-				t("Explain the open message “{subject}” (message id {id})", { subject: focus.subject || t("(No subject)"), id: focus.emailId }),
-				t("Draft a reply to the open message “{subject}” (message id {id})", { subject: focus.subject || t("(No subject)"), id: focus.emailId }),
+				{ label: t("Explain the open message “{subject}”", { subject }),
+					text: t("Explain the open message “{subject}” (message id {id})", { subject, id: focus.emailId }) },
+				{ label: t("Draft a reply to the open message “{subject}”", { subject }),
+					text: t("Draft a reply to the open message “{subject}” (message id {id})", { subject, id: focus.emailId }) },
 			]
 			: []),
-		t("Show me the latest inbox emails"),
-		t("Any unread emails?"),
-		t("Draft a response to the latest email"),
+		plain(t("Show me the latest inbox emails")),
+		plain(t("Any unread emails?")),
+		plain(t("Draft a response to the latest email")),
 	];
 
 	return (
@@ -401,14 +417,12 @@ export function AgentChatConnected({
 						<div className="flex flex-col gap-1.5 w-full">
 							{suggestedPrompts.map((prompt) => (
 								<button
-									key={prompt}
+									key={prompt.text}
 									type="button"
-									onClick={() =>
-										sendMessage({ text: prompt })
-									}
-									className="text-left px-3 py-2 rounded-lg border border-kumo-line text-xs text-kumo-strong hover:bg-kumo-tint hover:border-kumo-fill-hover transition-colors cursor-pointer bg-transparent"
+									onClick={() => sendMessage({ text: prompt.text })}
+									className="text-left px-3 py-2 rounded-lg border border-kumo-line text-xs text-kumo-strong hover:bg-kumo-tint hover:border-kumo-fill-hover transition-colors cursor-pointer bg-transparent [overflow-wrap:anywhere]"
 								>
-									{prompt}
+									{prompt.label}
 								</button>
 							))}
 						</div>
@@ -469,7 +483,7 @@ export function AgentChatConnected({
 			{/* Input */}
 			<div className="shrink-0 border-t border-kumo-line px-3 py-2">
 				{isStreaming ? (
-					<div className="flex justify-center">
+					<div ref={stopRef} tabIndex={-1} className="flex justify-center outline-none">
 						<Button
 							variant="secondary"
 							size="sm"

@@ -297,6 +297,8 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"and {n} more messages": "и ещё {n} письмо|и ещё {n} письма|и ещё {n} писем",
 	"The AI could not finish this answer.": "ИИ не смог закончить этот ответ.",
 	"Your mail is as it was, apart from any step above marked done.": "Почта не изменилась — кроме шагов выше, отмеченных как выполненные.",
+	"Explain the open message “{subject}”": "Объясни открытое письмо «{subject}»",
+	"Draft a reply to the open message “{subject}”": "Напиши черновик ответа на открытое письмо «{subject}»",
 	"Explain the open message “{subject}” (message id {id})": "Объясни открытое письмо «{subject}» (id письма {id})",
 	"Draft a reply to the open message “{subject}” (message id {id})": "Напиши черновик ответа на открытое письмо «{subject}» (id письма {id})",
 

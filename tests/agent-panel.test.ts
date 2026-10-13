@@ -100,7 +100,9 @@ test("the chat renders a failed turn as an error bubble with Retry after the que
 
 test("with a message open on the panel's address, it is offered as the first prompts", () => {
   const out = chatWith({ status: "ready", messages: [] }, { focus: { emailId: "m-42", subject: "Invoice" } });
-  assert.match(out, /Explain the open message “Invoice” \(message id m-42\).*Draft a reply to the open message “Invoice”.*Show me the latest inbox emails/s);
+  assert.match(out, /Explain the open message “Invoice”.*Draft a reply to the open message “Invoice”.*Show me the latest inbox emails/s);
+  // UI walk 2026-10-13: the button shows the words; the message id goes only into the text sent.
+  assert.doesNotMatch(out, /message id m-42/);
   assert.doesNotMatch(chatWith({ status: "ready", messages: [] }), /open message/);
 });
 
