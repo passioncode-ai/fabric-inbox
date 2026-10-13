@@ -7,6 +7,9 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **Other agents can follow what your reply agents do.** A new agent tool, `list_agent_events`, is a
+  feed read by cursor: one event per answer — sent, drafted, left alone, a question without an answer
+  (paraphrased) or one that needs a look — with no sender, subject or message text.
 - **See the whole conversation.** Above the message you open, its conversation is listed oldest
   first — what you received, the replies you sent and your drafts, for every kind of account. Open
   any of them to read it, reply to it or forward it; a reply you send joins the list.
