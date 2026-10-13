@@ -105,6 +105,8 @@ const bundle = await build({
               case 'runId': return Response.json(await runIdFor(c.mailbox, c.emailId));
               case 'runs': return Response.json(await reg.listRuns({mailboxId: c.mailbox, ...(c.options ?? {})}));
               case 'byIds': return Response.json(await reg.runsByIds(c.ids));
+              case 'save': await reg.saveRun(c.run); return Response.json(true);
+              case 'events': return Response.json(await reg.listEvents(c.after, c.limit));
               case 'sent': return Response.json(await box(c.mailbox).sentLog());
               case 'folder': return Response.json(await box(c.mailbox).folder(c.folder));
               case 'settings': return Response.json(await (await env.BUCKET.get('mailboxes/' + c.mailbox + '.json')).json());
@@ -216,6 +218,27 @@ test("B-85 REQ-2: the endpoint's schema is stored on save over whatever the edit
     assert.match(unknownFixed.message, /^agent_invalid: acme_kb: fixed argument "tenant" is not in the tool's schema$/);
     const numberPrefetch = await command("create", { input: { ...support, tools: [{ ...kb, prefetch: { argument: "limit" } }] } });
     assert.match(numberPrefetch.message, /^agent_invalid: acme_kb: "limit" is not a text argument of the tool$/);
+  } finally { await mf.dispose(); }
+});
+
+test("B-118: a run that ends appends one event; the feed pages forward by cursor and starts with the newest", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const base = { mailboxId: "a@project.invalid", sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1 };
+    for (const id of ["e1", "e2", "e3"]) {
+      const run = { ...base, id: "run-" + id, emailId: id, status: "running", createdAt: "2026-10-14T08:00:00.000Z", updatedAt: "2026-10-14T08:00:00.000Z" };
+      await command("begin", { run });
+      await command("save", { run: { ...run, status: "drafted" } });
+      await command("save", { run: { ...run, status: "drafted" } }); // saved again: still one event
+    }
+    const newest = await command("events", { limit: 2 });
+    assert.deepEqual(newest.events.map((e: any) => e.data.value.runId), ["run-e2", "run-e3"], "without after: the newest, oldest first");
+    assert.equal(newest.cursor, newest.events[1].id);
+    const all = await command("events", { after: "0", limit: 50 });
+    assert.deepEqual(all.events.map((e: any) => e.data.value.runId), ["run-e1", "run-e2", "run-e3"]);
+    assert.ok(Number(all.events[1].id) > Number(all.events[0].id), "ids increase");
+    const none = await command("events", { after: all.cursor, limit: 50 });
+    assert.deepEqual(none, { events: [], cursor: null });
   } finally { await mf.dispose(); }
 });
 

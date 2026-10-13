@@ -1,3 +1,4 @@
+import { EVENTS_KEPT, EVENTS_KEPT_MS, runEvent, type AgentEvent } from "./events";
 import { DurableObject } from "cloudflare:workers";
 import { migrateSchema } from "../lib/do-schema";
 import { AGENT_REGISTRY_STEPS } from "./schema";
@@ -321,8 +322,32 @@ export class AgentRegistryDO extends DurableObject<Env> {
 
   async saveRun(run: AgentRun): Promise<void> {
     run.updatedAt = new Date().toISOString();
-    this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?",
-      run.status, JSON.stringify(run), run.updatedAt, run.id);
+    this.ctx.storage.transactionSync(() => {
+      const before = this.rows("SELECT status FROM agent_runs WHERE id = ?", run.id)[0]?.status;
+      this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?",
+        run.status, JSON.stringify(run), run.updatedAt, run.id);
+      // B-118: a run that just ended (its status changed to a final one) appends one event.
+      const event = before !== run.status ? runEvent(run) : null;
+      if (event) {
+        this.ctx.storage.sql.exec("INSERT INTO agent_events (run_id, at, body) VALUES (?, ?, ?)", run.id, event.at, JSON.stringify(event));
+        this.ctx.storage.sql.exec(
+          "DELETE FROM agent_events WHERE seq <= (SELECT seq FROM agent_events ORDER BY seq DESC LIMIT 1 OFFSET ?) AND at < ?",
+          EVENTS_KEPT, new Date(Date.now() - EVENTS_KEPT_MS).toISOString());
+      }
+    });
+  }
+
+  /**
+   * The agent-events feed (B-118, fabric-service/0.1 events page): after a cursor, the next events
+   * oldest first; without one, the newest `limit`. `cursor` is the last id returned, null when empty.
+   */
+  async listEvents(after?: string | null, limit = 50): Promise<{ events: (AgentEvent & { id: string })[]; cursor: string | null }> {
+    const n = Math.max(1, Math.min(200, Number(limit) || 50));
+    const rows = after != null && after !== ""
+      ? this.rows("SELECT seq, body FROM agent_events WHERE seq > ? ORDER BY seq ASC LIMIT ?", Number(after) || 0, n)
+      : this.rows("SELECT seq, body FROM agent_events ORDER BY seq DESC LIMIT ?", n).reverse();
+    const events = rows.map((row) => ({ id: String(row.seq), ...(JSON.parse(String(row.body)) as AgentEvent) }));
+    return { events, cursor: events.length ? events[events.length - 1]!.id : null };
   }
 
   /**
