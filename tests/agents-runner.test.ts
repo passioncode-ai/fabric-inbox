@@ -603,3 +603,49 @@ test("B-85: a confident answer the model still cannot ground (grounded: false, w
   const gaps = calls.filter((c) => c.tool === "acme.gaps.submit");
   assert.deepEqual(gaps.map((g) => g.args), [{ requestId: run.id, kind: "unanswered", channel: "email", question: "How to recover a lost phone's account" }]);
 });
+
+test("B-117: a question without an answer is kept on the run with its thread; a failed gap report is tried once more", async () => {
+  let gapTries = 0;
+  const calls: { tool: string; args: Record<string, unknown> }[] = [];
+  const h = harness({
+    agent: autoAgent({ tools: [gapGrant()] }),
+    callTool: async (grant, args) => {
+      calls.push({ tool: grant.tool, args });
+      if (grant.tool === "acme.gaps.submit") { gapTries++; if (gapTries === 1) throw new Error("503"); return "{}"; }
+      return confident;
+    },
+    model: async () => ({ decision: answer({ decision: "draft", grounded: false, question: "How to move chats to a new phone" }), text: "" }),
+  });
+  const run = (await h.run())!;
+  assert.equal(run.question, "How to move chats to a new phone");
+  assert.equal(run.unanswered, true);
+  assert.ok(run.threadId, "the run keeps its conversation");
+  assert.equal(gapTries, 2, "the report is tried once more");
+  const gaps = calls.filter((c) => c.tool === "acme.gaps.submit");
+  assert.equal(gaps[0]!.args.requestId, gaps[1]!.args.requestId, "the same request id, so the knowledge base counts it once");
+  assert.equal(run.toolCalls.filter((c) => c.name.endsWith(":gap")).length, 1, "recorded once");
+  assert.equal(run.toolCalls.find((c) => c.name.endsWith(":gap"))!.ok, true);
+});
+
+test("B-117: an answered message keeps no question and is not marked unanswered", async () => {
+  const h = harness({
+    agent: autoAgent({ tools: [gapGrant()] }),
+    callTool: async () => confident,
+    model: async () => ({ decision: answer({}), text: "" }),
+  });
+  const run = (await h.run())!;
+  assert.equal(run.question, undefined);
+  assert.equal(run.unanswered, undefined);
+});
+
+test("B-117: the history shows each question without an answer and whether it reached the knowledge base", async () => {
+  const { gapState } = await import("../app/services/agents");
+  const { englishT } = await import("../shared/i18n");
+  assert.equal(gapState({ toolCalls: [] } as never, englishT), "Not reported: no knowledge tool of this agent takes questions");
+  assert.equal(gapState({ toolCalls: [{ name: "kb:gap", ok: true }] } as never, englishT), "Reported to the knowledge base");
+  assert.equal(gapState({ toolCalls: [{ name: "kb:gap", ok: false }] } as never, englishT), "The report to the knowledge base failed");
+  const { readFileSync } = await import("node:fs");
+  const ui = readFileSync("app/components/settings/sections/AgentsSection.tsx", "utf8");
+  assert.match(ui, /\{ id: "unanswered", label: msg\("Questions without an answer"\) \}/);
+  assert.match(ui, /t\("Question without an answer: \{question\}", \{ question: run\.question \}\)/);
+});

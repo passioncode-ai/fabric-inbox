@@ -43,6 +43,12 @@ export interface AgentRun {
   sources?: { ref: string; collectionId: string; title: string; sourceUri: string }[];
   draftId?: string;
   sent?: { to: string; subject: string; body: string; outboxId: string };
+  /** B-117: what the person wanted to know, as the model paraphrased it (no personal data) — kept only when no answer was found. */
+  question?: string;
+  /** B-117: the knowledge had no confident answer, or the model could not ground its answer. */
+  unanswered?: boolean;
+  /** B-117: the message's conversation. */
+  threadId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -71,5 +77,7 @@ export const RUN_OUTCOMES = {
   answered: ["sent", "drafted"],
   attention: ["send_failed", "send_unknown", "failed", "interrupted"],
   skipped: ["skipped", "off"],
+  /** B-117: any status, filtered by the run's `unanswered` mark instead. */
+  unanswered: [],
 } as const satisfies Record<string, readonly AgentRun["status"][]>;
 export type RunOutcome = keyof typeof RUN_OUTCOMES;
