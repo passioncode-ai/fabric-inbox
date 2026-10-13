@@ -656,6 +656,7 @@ body {
   font-size: 10px;
   border: 1px solid var(--pc-border);
   border-radius: 4px;
+}
 .fi-agent-tag {
   display: inline-block;
   margin-top: 4px;
