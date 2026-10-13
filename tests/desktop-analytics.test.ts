@@ -1,6 +1,6 @@
 // Anonymous usage counts (passioncode-ai/fabric-inbox#27, docs/ANALYTICS.md): the shared
 // PassionCode installation file, the one switch every app honours, what leaves the Mac and when.
-// A synthetic server stands in for analytics.sshlg.me; nothing here touches the network.
+// A synthetic server stands in for analytics.owner.example; nothing here touches the network.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -82,7 +82,7 @@ test("the first PassionCode app creates the shared installation; the install is 
   assert.equal(events[1].props.launch, "ordinary");
   for (const e of events) {
     assert.equal(e.props.install_id, file.id);
-    assert.equal(e.props.iid, file.id, "sshlg-growth counts installs by iid");
+    assert.equal(e.props.iid, file.id, "a growth agent counts installs by iid");
     assert.equal(e.props.environment, "production");
     assert.match(e.sessionId, /^\d{18}$/);
     assert.equal(e.systemProps.sdkVersion, usage.SDK);
@@ -102,7 +102,7 @@ test("a debug key or a pre-release version is the sandbox environment", async ()
     const { a, srv } = client(machine(), extra as any);
     await a.start({});
     assert.ok(srv.events().every((e) => e.props.environment === expected), JSON.stringify(extra));
-    // Aptabase build modes (sshlg-analytics client contract, "Build modes"): isDebug is true exactly when the event is
+    // Aptabase build modes (the analytics server client contract, "Build modes"): isDebug is true exactly when the event is
     // not production, so a pre-release lands in the dashboard's Debug view, not in Release.
     assert.ok(srv.events().every((e) => e.systemProps.isDebug === (expected !== "production")), `isDebug ${JSON.stringify(extra)}`);
   }

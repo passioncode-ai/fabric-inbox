@@ -9,7 +9,7 @@ the disk image built by the release workflow sends anything. Source:
 Fabric Inbox counts installs, days of use and how many accounts, mailboxes, agents and agent keys
 a server has, so PassionCode.ai can see how its apps are used, and so one person using several
 PassionCode apps (Fabric Switchboard, Fabric, Fabric Inbox) counts once. Events go to the
-organization's self-hosted Aptabase at `https://analytics.sshlg.me` (`ssheleg/sshlg-analytics`,
+organization's self-hosted Aptabase at `https://analytics.owner.example` (`the analytics server`,
 its `docs/client-contract.md`). The approach is the one Switchboard shipped first (its
 `docs/ANALYTICS.md`); the organization's shared answer is roadmap track RM-13.
 
@@ -18,7 +18,7 @@ its `docs/client-contract.md`). The approach is the one Switchboard shipped firs
 Every event carries the app version, the OS name and version, the locale, the Electron version, an
 SDK tag (`fabric-inbox-analytics@1`), an Aptabase session id and `props.install_id`, the shared
 installation id below, repeated as `props.iid`, plus `props.environment`: `production` for a
-release build, `sandbox` for a debug key or a pre-release version. sshlg-growth counts installs by
+release build, `sandbox` for a debug key or a pre-release version. a growth agent counts installs by
 `iid` and keeps only those two environments (operator decision 2026-10-05; Switchboard did the
 same in fabric-switchboard#75). Nothing else identifies the Mac or the person.
 
@@ -88,10 +88,10 @@ build refuses a key without one), and the receipt says `analytics: App Key bundl
 value). The source names no analytics host: the server's domain is also a deployment domain, which
 `tests/no-owner-data.test.ts` keeps out of everything that ships. Only the release workflow's
 `macos` job sets the two variables, from the `release` environment's variable
-`FABRIC_INBOX_ANALYTICS_HOST` (`https://analytics.sshlg.me`) and its secret
+`FABRIC_INBOX_ANALYTICS_HOST` (`https://analytics.owner.example`) and its secret
 `FABRIC_INBOX_ANALYTICS_APP_KEY`, which holds the App Key of the Aptabase app *Fabric Inbox*
-(`XnZ1VzR5qEmaf7KF1nkUVU`; vault `sshlg-analytics/prod/APTABASE_APP_KEY_FABRIC_INBOX`, found with
-`observatory_credentials sshlg-analytics`). The file is git-ignored, and the builder refuses a
+(`XnZ1VzR5qEmaf7KF1nkUVU`; vault `the analytics vault slot APTABASE_APP_KEY_FABRIC_INBOX`, found with
+`observatory_credentials the analytics server`). The file is git-ignored, and the builder refuses a
 commit that contains it.
 
 Source builds, forks, `npm run desktop`, a local `npm run desktop:dmg` without the variable and the
@@ -105,9 +105,9 @@ store build needs the App Privacy answers in App Store Connect first; both are o
 
 ## Reading the numbers
 
-The Aptabase dashboard at `analytics.sshlg.me` (app *Fabric Inbox*). From a checkout of
-`sshlg-analytics`: `scripts/stats.sh 7 "Fabric Inbox"` prints release and debug counts separately.
+The Aptabase dashboard at `analytics.owner.example` (app *Fabric Inbox*). From a checkout of
+`the analytics server`: `scripts/stats.sh 7 "Fabric Inbox"` prints release and debug counts separately.
 The client was checked against the live server on 2026-10-05: one start sent through
 `desktop/analytics.cjs` with a debug key was stored as 2 debug events in 1 session
 (`stats.sh 1 "Fabric Inbox"`). Cross-app questions (one `install_id` across apps) go through
-ClickHouse, which `sshlg-growth` queries; registering the app there is growth's task.
+ClickHouse, which `a growth agent` queries; registering the app there is growth's task.

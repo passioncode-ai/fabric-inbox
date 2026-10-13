@@ -261,7 +261,7 @@ function FixedArguments({ value, onChange }: { value: ToolGrant["fixed"]; onChan
   };
   return (
     <label className="fi-field">{t("Fixed arguments (JSON)")}
-      <span className="fi-hint">{t('Sent on every call, over what the agent chooses, e.g. {"domain": "nicegram"}.')}</span>
+      <span className="fi-hint">{t('Sent on every call, over what the agent chooses, e.g. {"domain": "acme"}.')}</span>
       <input className="fi-input" value={text} onChange={(e) => apply(e.target.value)} aria-invalid={problem || undefined} />
       {problem && <span className="fi-hint" role="alert">{t("Not applied, so no arguments are fixed: give a JSON object of texts, numbers or true/false.")}</span>}
     </label>
@@ -339,7 +339,7 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
             <label className="fi-check"><input type="checkbox" checked={!!tool.publicOnly} onChange={(e) => setTool(i, { ...tool, publicOnly: e.target.checked || undefined })} />
               <span>{t("Use only public results: every item it returns must be marked public, otherwise the answer waits for you")}</span></label>
             <label className="fi-field">{t("Report questions it cannot answer to (tool)")}
-              <span className="fi-hint">{t("A tool of the same endpoint, e.g. nicegram.gaps.submit. When the tool asked before answering finds nothing confident, the question, paraphrased without personal data, is sent to it once.")}</span>
+              <span className="fi-hint">{t("A tool of the same endpoint, e.g. acme.gaps.submit. When the tool asked before answering finds nothing confident, the question, paraphrased without personal data, is sent to it once.")}</span>
               <input className="fi-input" value={tool.gaps?.tool ?? ""} maxLength={100}
                 onChange={(e) => setTool(i, { ...tool, gaps: e.target.value.trim() ? { tool: e.target.value.trim() } : undefined })} />
             </label>

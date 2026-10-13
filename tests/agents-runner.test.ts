@@ -428,8 +428,8 @@ test("an address in Cc answers when the To address has no agent; Off never claim
 // ── B-85: a shared knowledge base as a granted tool (fixed arguments, a call before the model, public only) ──
 
 const KB_SCHEMA = { type: "object", properties: { query: { type: "string" }, domain: { type: "string" }, allow_web: { type: "boolean" } }, required: ["query"] };
-const kbGrant = (over: Record<string, unknown> = {}) => ({ name: "nicegram_kb", description: "Search the Nicegram knowledge base", endpoint: "https://kb.project.invalid/mcp", tool: "research.search",
-  inputSchema: JSON.stringify(KB_SCHEMA), fixed: { domain: "nicegram", allow_web: false }, ...over });
+const kbGrant = (over: Record<string, unknown> = {}) => ({ name: "acme_kb", description: "Search the Acme knowledge base", endpoint: "https://kb.project.invalid/mcp", tool: "research.search",
+  inputSchema: JSON.stringify(KB_SCHEMA), fixed: { domain: "acme", allow_web: false }, ...over });
 const publicHits = JSON.stringify({ results: [{ class: "public", title: "Wiki: Translator", quote: "Tap the globe to translate." }] });
 
 test("B-85 REQ-3: fixed arguments are merged into every call and the model cannot override them", async () => {
@@ -440,7 +440,7 @@ test("B-85 REQ-3: fixed arguments are merged into every call and the model canno
     model: async (r) => { await r.tools[0].run({ query: "translator", domain: "everything", allow_web: true }); return { decision: answer(), text: "" }; },
   });
   await h.run();
-  assert.deepEqual(calls, [{ query: "translator", domain: "nicegram", allow_web: false }]);
+  assert.deepEqual(calls, [{ query: "translator", domain: "acme", allow_web: false }]);
 });
 
 test("B-85 REQ-4: a prefetch grant is called before the model with the message; its output reaches the prompt and the run", async () => {
@@ -454,10 +454,10 @@ test("B-85 REQ-4: a prefetch grant is called before the model with the message; 
   });
   const run = (await h.run())!;
   assert.equal(calls.length, 1, "called once, before the model");
-  assert.equal(calls[0].domain, "nicegram");
+  assert.equal(calls[0].domain, "acme");
   assert.match(String(calls[0].query), /^Translator broken\nHow do I translate a chat\?/);
-  assert.match(system, /<tool_results>[\s\S]*nicegram_kb[\s\S]*Tap the globe to translate\.[\s\S]*<\/tool_results>/);
-  assert.equal(run.toolCalls[0].name, "nicegram_kb");
+  assert.match(system, /<tool_results>[\s\S]*acme_kb[\s\S]*Tap the globe to translate\.[\s\S]*<\/tool_results>/);
+  assert.equal(run.toolCalls[0].name, "acme_kb");
   assert.equal(run.toolCalls[0].ok, true);
   assert.equal(run.status, "sent");
 });
@@ -473,7 +473,7 @@ test("B-85 REQ-4: a failed prefetch keeps the answer a draft and the model is to
   assert.equal(run.status, "drafted");
   assert.match(run.reason, /tool call failed/);
   assert.doesNotMatch(system, /knowledge node unreachable/, "the error text is not presented as knowledge");
-  assert.match(system, /nicegram_kb[\s\S]*(failed|could not)/i);
+  assert.match(system, /acme_kb[\s\S]*(failed|could not)/i);
 });
 
 for (const [label, output] of [
@@ -508,11 +508,11 @@ test("B-85 REQ-5: publicOnly passes an output whose every classified item is pub
   assert.equal(run.status, "sent");
 });
 
-// ── B-85 item 4: a knowledge tool that abstains (nicegram-data-agent 0.1.4, canvas §6) ──
+// ── B-85 item 4: a knowledge tool that abstains (acme-data-agent 0.1.4, canvas §6) ──
 
 const abstained = JSON.stringify({ class: "public", abstained: true, results: [{ class: "public", id: "fact:buy-account", title: "Buy Account", text: "You can buy a ready account in the store.", coverage: 0.31 }] });
-const confident = JSON.stringify({ class: "public", abstained: false, results: [{ class: "public", id: "fact:support-email", title: "support email", text: "Write to support@nicegram.me.", coverage: 0.92 }] });
-const gapGrant = () => kbGrant({ prefetch: { argument: "query" }, publicOnly: true, fixed: { channel: "email" }, gaps: { tool: "nicegram.gaps.submit" } });
+const confident = JSON.stringify({ class: "public", abstained: false, results: [{ class: "public", id: "fact:support-email", title: "support email", text: "Write to support@acme.example.", coverage: 0.92 }] });
+const gapGrant = () => kbGrant({ prefetch: { argument: "query" }, publicOnly: true, fixed: { channel: "email" }, gaps: { tool: "acme.gaps.submit" } });
 
 test("B-85: an abstained answer's results are unverified candidates, not facts; the answer stays a draft; one gap is submitted", async () => {
   const calls: { tool: string; args: Record<string, unknown> }[] = [];
@@ -520,7 +520,7 @@ test("B-85: an abstained answer's results are unverified candidates, not facts; 
   const h = harness({
     agent: autoAgent({ tools: [gapGrant()] }),
     email: { subject: "Delete my account", body: "<p>How do I delete my account and all my data?</p>" },
-    callTool: async (grant, args) => { calls.push({ tool: grant.tool, args }); return grant.tool === "nicegram.gaps.submit" ? JSON.stringify({ class: "public", duplicate: false }) : abstained; },
+    callTool: async (grant, args) => { calls.push({ tool: grant.tool, args }); return grant.tool === "acme.gaps.submit" ? JSON.stringify({ class: "public", duplicate: false }) : abstained; },
     model: async (r) => { system = r.system; return { decision: answer({ question: "How to delete an account and its data" }), text: "" }; },
   });
   const run = (await h.run())!;
@@ -528,7 +528,7 @@ test("B-85: an abstained answer's results are unverified candidates, not facts; 
   assert.match(system, /Unverified candidates[\s\S]*<candidates>[\s\S]*Buy Account[\s\S]*<\/candidates>/);
   assert.equal(run.status, "drafted");
   assert.match(run.reason, /No confident answer/);
-  const gaps = calls.filter((c) => c.tool === "nicegram.gaps.submit");
+  const gaps = calls.filter((c) => c.tool === "acme.gaps.submit");
   assert.equal(gaps.length, 1);
   assert.deepEqual(gaps[0].args, { requestId: run.id, kind: "unanswered", channel: "email", question: "How to delete an account and its data" });
   assert.equal(run.toolCalls.find((c) => c.name.endsWith(":gap"))?.ok, true);
@@ -543,7 +543,7 @@ test("B-85: a confident answer is facts as before, with no gap; a gap without a 
     model: async (r) => { system = r.system; return { decision: answer(), text: "" }; },
   });
   const run = (await h.run())!;
-  assert.match(system, /<tool_results>[\s\S]*support@nicegram\.me/);
+  assert.match(system, /<tool_results>[\s\S]*support@acme\.example/);
   assert.deepEqual(calls, ["research.search"]);
   assert.equal(run.status, "sent");
 
@@ -554,13 +554,13 @@ test("B-85: a confident answer is facts as before, with no gap; a gap without a 
   });
   const r2 = (await noQuestion.run())!;
   assert.equal(r2.status, "drafted");
-  assert.ok(!calls.includes("nicegram.gaps.submit"), "no paraphrase from the model, no gap: the sender's words are never sent");
+  assert.ok(!calls.includes("acme.gaps.submit"), "no paraphrase from the model, no gap: the sender's words are never sent");
 });
 
 test("B-85: a failed gap report never changes the answer's outcome", async () => {
   const h = harness({
     agent: autoAgent({ tools: [gapGrant()] }),
-    callTool: async (grant) => { if (grant.tool === "nicegram.gaps.submit") throw new Error("gap store down"); return abstained; },
+    callTool: async (grant) => { if (grant.tool === "acme.gaps.submit") throw new Error("gap store down"); return abstained; },
     model: async () => ({ decision: answer({ question: "How to delete an account" }), text: "" }),
   });
   const run = (await h.run())!;
@@ -573,8 +573,8 @@ test("B-85: a knowledge tool the model calls itself and that abstains gives cand
   const calls: { tool: string; args: Record<string, unknown> }[] = [];
   const seen: string[] = [];
   const h = harness({
-    agent: autoAgent({ tools: [kbGrant({ publicOnly: true, fixed: { channel: "email" }, gaps: { tool: "nicegram.gaps.submit" } })] }),
-    callTool: async (grant, args) => { calls.push({ tool: grant.tool, args }); return grant.tool === "nicegram.gaps.submit" ? JSON.stringify({ class: "public", duplicate: false }) : abstained; },
+    agent: autoAgent({ tools: [kbGrant({ publicOnly: true, fixed: { channel: "email" }, gaps: { tool: "acme.gaps.submit" } })] }),
+    callTool: async (grant, args) => { calls.push({ tool: grant.tool, args }); return grant.tool === "acme.gaps.submit" ? JSON.stringify({ class: "public", duplicate: false }) : abstained; },
     model: async (r) => {
       seen.push(await r.tools[0].run({ query: "ghost mode" }));
       seen.push(await r.tools[0].run({ query: "stealth mode" }));
@@ -586,7 +586,7 @@ test("B-85: a knowledge tool the model calls itself and that abstains gives cand
   assert.match(seen[0], /never state/i);
   assert.equal(run.status, "drafted");
   assert.match(run.reason, /No confident answer/);
-  const gaps = calls.filter((c) => c.tool === "nicegram.gaps.submit");
+  const gaps = calls.filter((c) => c.tool === "acme.gaps.submit");
   assert.equal(gaps.length, 1, "one gap per run, however many calls abstained");
   assert.equal(gaps[0].args.requestId, run.id);
 });
@@ -595,11 +595,11 @@ test("B-85: a confident answer the model still cannot ground (grounded: false, w
   const calls: { tool: string; args: Record<string, unknown> }[] = [];
   const h = harness({
     agent: autoAgent({ tools: [gapGrant()] }),
-    callTool: async (grant, args) => { calls.push({ tool: grant.tool, args }); return grant.tool === "nicegram.gaps.submit" ? "{}" : confident; },
+    callTool: async (grant, args) => { calls.push({ tool: grant.tool, args }); return grant.tool === "acme.gaps.submit" ? "{}" : confident; },
     model: async () => ({ decision: answer({ decision: "draft", grounded: false, question: "How to recover a lost phone's account" }), text: "" }),
   });
   const run = (await h.run())!;
   assert.equal(run.status, "drafted");
-  const gaps = calls.filter((c) => c.tool === "nicegram.gaps.submit");
+  const gaps = calls.filter((c) => c.tool === "acme.gaps.submit");
   assert.deepEqual(gaps.map((g) => g.args), [{ requestId: run.id, kind: "unanswered", channel: "email", question: "How to recover a lost phone's account" }]);
 });

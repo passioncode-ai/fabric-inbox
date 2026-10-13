@@ -1,7 +1,7 @@
 # Run brief 2026-10-11: reply agents call a shared knowledge base (B-85, items 1–3)
 
-The operator asked on 2026-10-11 for the Nicegram support agent to be connected to the shared Nicegram
-knowledge base, with one solution across the agents. The base is the `nicegram` domain of the
+The operator asked on 2026-10-11 for the Acme support agent to be connected to the shared Acme
+knowledge base, with one solution across the agents. The base is the `acme` domain of the
 operator's Research Agent (KB1 = (a); ssheleg/research-agent BL-099,
 `docs/integrations/knowledge-bases.md`, which already names Fabric Inbox as a cloud consumer). Its
 cloud read node (M9) does not exist yet. This run makes Inbox's side ready, independent of M9.
@@ -11,10 +11,10 @@ cloud read node (M9) does not exist yet. This run makes Inbox's side ready, inde
 | Source | Read | What it gave |
 |---|---|---|
 | Code | `workers/agents/{definition,model,runner,policy,registry,tool-schema}.ts`, `workers/automation/mcp.ts` | Tools reach the model as `{arguments: record}` (`model.ts`). The schema is read at save time and thrown away (`registry.ts` `validate`). Collections are searched before the model (`runner.ts`), granted tools are not. A failed tool call keeps the answer a draft (`policy.ts`). |
-| Live server | `list_agents`, `list_knowledge`, `list_agent_runs` (MCP, 2026-10-11) | `nicegram-support` v2: `tools: []`; collections `nicegram-help` (Wiki @0c2a727, 20 docs) and `nicegram-product` (19 docs); 3 runs, 1 sent |
+| Live server | `list_agents`, `list_knowledge`, `list_agent_runs` (MCP, 2026-10-11) | `acme-support` v2: `tools: []`; collections `acme-help` (Wiki @0c2a727, 20 docs) and `acme-product` (19 docs); 3 runs, 1 sent |
 | Retro | `docs/evidence/retro.md`, standing instructions 1–10 | Instruction 8: a changed route needs its tool, `npm run mcp:docs` and the skill to agree. Instruction 7: the gate is the exit code. Recent log 2026-09-29: test the model adapter with a model that misbehaves |
 | Scenarios | `docs/ux/scenarios.md` SCN-022, SCN-024 | SCN-022 still reads "Tool schemas are not read from the server yet" (stale: they are read at save time) |
-| Peers | nicegramappbot-35, mobile-publisher-agent-61, nicegram-business-7b | One source (Research Agent domain), no copy per consumer. Support replies cite class `public` only. Business is a separate product |
+| Peers | a community-bot session, a store-publishing session, a business-support session | One source (Research Agent domain), no copy per consumer. Support replies cite class `public` only. Business is a separate product |
 | Graph, wiki | none built for this repository | — |
 | Board | `docs/evidence/backlog.md` | B-85 filed (PR #73) |
 
@@ -26,7 +26,7 @@ cloud read node (M9) does not exist yet. This run makes Inbox's side ready, inde
   schema, minus the fixed arguments. A grant saved before this change, or a schema that is not a JSON
   object schema or is over 8 KB, falls back to today's `{arguments}` wrapper.
 - **D2, fixed arguments.** `fixed` (string, number or boolean values, at most 10) is merged into
-  every call and overrides the model. This is how the operator pins `domain: "nicegram"` and
+  every call and overrides the model. This is how the operator pins `domain: "acme"` and
   `allow_web: false`. A key the schema does not list is refused at save.
 - **D3, the call before the model.** `prefetch: { argument }` calls the tool once before the model.
   It passes the message's subject and opening (600 characters) as that argument, plus the fixed
@@ -64,7 +64,7 @@ cloud read node (M9) does not exist yet. This run makes Inbox's side ready, inde
 
 | Item | Home |
 |---|---|
-| Connecting `nicegram-support` to the Research Agent (needs M9, the consumer token, the filled domain) | B-85 |
+| Connecting `acme-support` to the Research Agent (needs M9, the consumer token, the filled domain) | B-85 |
 | An unanswered support question as a signal for the knowledge base (B-85 item 4) | B-85 |
 
 ## Close-out
@@ -81,13 +81,13 @@ cloud read node (M9) does not exist yet. This run makes Inbox's side ready, inde
 
 Merged as `2a4d89c` (PR #74); the owner's server runs it (Worker `a3e133d9`). Not observed: the editor fields in a running app, and a real knowledge tool (none exists until the Research Agent's cloud node). Open: B-85 (connection, item 4).
 
-## Dataroom receipts (FI-1…FI-5, 2026-10-12)
+## Data room receipts (FI-1…FI-5, 2026-10-12)
 
-The Nicegram dataroom tracks this work as FI-1…FI-5; each closes here with its receipt.
+The Acme data room tracks this work as FI-1…FI-5; each closes here with its receipt.
 
 | Item | State | Receipt |
 |---|---|---|
-| FI-1 (canary C-09) and GAPS-1 | waits for a person | one external mail to support@nicegram.me; then the draft id and the first gap's `requestId` (the run id) are recorded here, with the data agent's log line (`event: tool, consumer: fabric-inbox`) |
+| FI-1 (canary C-09) and GAPS-1 | waits for a person | one external mail to support@acme.example; then the draft id and the first gap's `requestId` (the run id) are recorded here, with the data agent's log line (`event: tool, consumer: fabric-inbox`) |
 | FI-3 (D4 vs `publicOnlyProblem`) | done | D4 above now states the code's rule: every value under `class: "public"`, inherited, an inner class overriding; a class that is not exactly the string (`"PUBLIC"`, an object) is not public. The code did not change; `tests/agents-tool-grant-rules.test.ts` "publicOnly (FI-3)" pins the top-level class, no class, a class object, the exact value, an inner override and non-JSON |
-| FI-4 (live hosts and token) | done | measured on Worker `435c6e49` (0.16.2, `e50fd8f`) through the Cloudflare settings API: `AUTOMATION_MCP_HOSTS` = `sshlg-fabric-877b6ee889db.herokuapp.com,nicegram-data-agent-52cc996f302f.herokuapp.com`, `AUTOMATION_TOOL_TOKENS` a secret binding (name only read). The handshake (initialize, tools/list) was seen by the data agent at 09:57:59Z from Worker `9335b210`; the call path since (`workers/automation/mcp.ts`, `workers/agents/tool-schema.ts`) is unchanged (`git diff 2971aa2 e50fd8f` on them is empty), only the runner's abstain handling changed (#90) |
-| FI-5 (hand-loaded collections) | wallet lines done; deletion waits for FI-1 | the decided fact `wallet-retired`: six `nicegram-product` documents (01, 02, 04, 15, 16, 17) no longer present the wallet as a feature. Feature mentions were removed, the table rows were dropped, and 01 and 16 now say it is retired. Anti-scam advice keeps seed phrases without naming the wallet. `put_knowledge_documents` → `updated: 6`; a re-read of all 18 finds no wallet claim (06 warns about connecting a wallet on a phishing site, 12 says Wallet-to-Earn was removed). `nicegram-help` and `nicegram-product` are deleted after C-09 (`delete_knowledge_collection`, two steps) |
+| FI-4 (live hosts and token) | done | measured on Worker `435c6e49` (0.16.2, `e50fd8f`) through the Cloudflare settings API: `AUTOMATION_MCP_HOSTS` = `signals.example.invalid,data-agent.acme.example`, `AUTOMATION_TOOL_TOKENS` a secret binding (name only read). The handshake (initialize, tools/list) was seen by the data agent at 09:57:59Z from Worker `9335b210`; the call path since (`workers/automation/mcp.ts`, `workers/agents/tool-schema.ts`) is unchanged (`git diff 2971aa2 e50fd8f` on them is empty), only the runner's abstain handling changed (#90) |
+| FI-5 (hand-loaded collections) | wallet lines done; deletion waits for FI-1 | the decided fact `wallet-retired`: six `acme-product` documents (01, 02, 04, 15, 16, 17) no longer present the wallet as a feature. Feature mentions were removed, the table rows were dropped, and 01 and 16 now say it is retired. Anti-scam advice keeps seed phrases without naming the wallet. `put_knowledge_documents` → `updated: 6`; a re-read of all 18 finds no wallet claim (06 warns about connecting a wallet on a phishing site, 12 says Wallet-to-Earn was removed). `acme-help` and `acme-product` are deleted after C-09 (`delete_knowledge_collection`, two steps) |

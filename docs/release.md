@@ -204,7 +204,7 @@ per package and has no checked universal path; Intel Macs install the universal 
    and installs this one with nobody downloading anything: **Check for Updates…** says it is ready,
    quitting installs it, and the next start shows the new version (`app_updated` in the usage counts).
    **Usage counts.** The receipt's `analytics` reads `App Key bundled`; after the upgrade check,
-   `scripts/stats.sh 1 "Fabric Inbox"` in a checkout of `sshlg-analytics` shows release events from
+   `scripts/stats.sh 1 "Fabric Inbox"` in a checkout of `the analytics server` shows release events from
    that launch ([ANALYTICS.md](ANALYTICS.md#reading-the-numbers)).
 8. **Record.** Add the receipts (run URL, release URL, sha256, both submission ids, Gatekeeper
    lines, the store build number and its App Store Connect state, the download check, the upgrade

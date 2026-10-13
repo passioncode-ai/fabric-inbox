@@ -44,10 +44,10 @@ test("the list shows each key with how it sends, never a secret, and says these 
 });
 
 test("a key's panel offers Revoke only behind its ⋯ menu, and names what it reaches (SCN-044, AP-11)", () => {
-  const html = render("t1", { keys: [key({ accounts: ["cloudflare:research@sshlg.me"] })], mcpUrl: "https://inbox.example/mcp", canIssue: true });
+  const html = render("t1", { keys: [key({ accounts: ["cloudflare:research@owner.example"] })], mcpUrl: "https://inbox.example/mcp", canIssue: true });
   assert.match(html, /More actions for Support assistant/);
   assert.doesNotMatch(html, />Revoke…</, "the menu is closed until opened");
-  assert.match(html, /Only research@sshlg\.me/);
+  assert.match(html, /Only research@owner\.example/);
   assert.match(html, /shown once/);
 });
 
@@ -67,7 +67,7 @@ test("with no keys and no Cloudflare token, the list says so and where to go (SC
 
 test("a key says which mailboxes it reaches (AP-11)", () => {
   assert.equal(scopeText({ accounts: null }), "All mailboxes");
-  assert.equal(scopeText({ accounts: ["cloudflare:research@sshlg.me"] }), "Only research@sshlg.me");
+  assert.equal(scopeText({ accounts: ["cloudflare:research@owner.example"] }), "Only research@owner.example");
   assert.equal(scopeText({ accounts: ["cloudflare:a@x.invalid", "gmail:g1"] }), "Only a@x.invalid, gmail:g1");
   assert.equal(scopeText({ accounts: [] }), "No mailbox");
 });
