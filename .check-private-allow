@@ -1,0 +1,62 @@
+# check_private.py allow list (org-index; Fabric ADR-0092). One fingerprint per line.
+# Nothing private is listed here: P1 (private terms) can never be allowed.
+# Regenerate only after reading each new finding; a real address or name is replaced, never allowed.
+
+# Made-up addresses in tests and examples (public mail providers and example names; provider detection needs real provider domains)
+P2:docs/evidence/backlog.md:79b281f8ddcca460
+P2:tests/agent-panel.test.ts:81d1a7135b972257
+P2:tests/backend-fixes.test.ts:f252fdc0577f5cf6
+P2:tests/backend-fixes.test.ts:fd89a7010c53df2c
+P2:tests/discard-providers.test.ts:1068b2c7104832df
+P2:tests/discard-workerd.test.ts:81d1a7135b972257
+P2:tests/discard-workerd.test.ts:a7ae145a6b903fcb
+P2:tests/discard-workspace.test.ts:81d1a7135b972257
+P2:tests/discard-workspace.test.ts:a2f26a9bc5f9ab32
+P2:tests/discard-workspace.test.ts:fc69bf49882ebf66
+P2:tests/discard.test.ts:2f0cadd212d82056
+P2:tests/discard.test.ts:89fc83f682b5eeb7
+P2:tests/discard.test.ts:cbed49e23b7d506d
+P2:tests/imap-connect-ui.test.ts:13b772a96495c77e
+P2:tests/imap-connect-ui.test.ts:87847f6d5a1595cb
+P2:tests/imap-inbox-ui.test.ts:1d2da3c794ec0b0c
+P2:tests/imap-inbox-ui.test.ts:83fcc4327f0363fc
+P2:tests/imap-inbox-ui.test.ts:8c2cfb7b7bffc525
+P2:tests/imap-inbox-ui.test.ts:907d7bf93d60cbe6
+P2:tests/imap-inbox-ui.test.ts:9283cad0c92a76ab
+P2:tests/imap-inbox-ui.test.ts:b19cbcfd37c7eb91
+P2:tests/imap-inbox-ui.test.ts:b5343fe8b6fd58ea
+P2:tests/imap-provider.test.ts:1068b2c7104832df
+P2:tests/imap-provider.test.ts:89fc83f682b5eeb7
+P2:tests/imap-routes.test.ts:038ab7a69c7cd24b
+P2:tests/imap-routes.test.ts:1068b2c7104832df
+P2:tests/imap-routes.test.ts:298c260dc73ef530
+P2:tests/imap-routes.test.ts:9283cad0c92a76ab
+P2:tests/imap-routes.test.ts:afbc34416ac6e7fb
+P2:tests/imap-routes.test.ts:b19cbcfd37c7eb91
+P2:tests/mcp-scope.test.ts:b5a9182eeb4475a1
+P2:tests/mcp-scope.test.ts:d2e87fa970598005
+P2:tests/outlook-setup-ui.test.ts:42cbe7eebb412bbc
+P2:tests/outlook-setup-ui.test.ts:df8156e8b1ab4863
+P2:tests/settings-ui.test.ts:b3e42cde35dfe0ba
+P2:tests/settings-ui.test.ts:ce393bcb920618a2
+P2:tests/settings-ui.test.ts:f9e66d9cc93fa9a3
+P2:tests/sync-status.test.ts:89fc83f682b5eeb7
+P2:tests/sync-status.test.ts:8c2cfb7b7bffc525
+P2:tests/sync-status.test.ts:b6561d5ad3ad5b3a
+P2:tests/sync-status.test.ts:fbb556b98bd52b9c
+P2:workers/durableObject/index.ts:f252fdc0577f5cf6
+P2:workers/mcp/scope.ts:b2214336c5027e05
+P2:workers/mcp/scope.ts:b5a9182eeb4475a1
+
+# Third-party package authors in package-lock.json (npm metadata)
+P2:package-lock.json:b0373516d594ddd1
+
+# Made-up account ids (all zeros-and-hex placeholders) in tests
+P4:tests/credential-key.test.ts:b3c4a34f51f64d96
+P4:tests/gmail-setup.test.ts:b3c4a34f51f64d96
+P4:tests/outlook-routes.test.ts:b3c4a34f51f64d96
+
+# Made-up home paths in test fixtures
+P3:tests/desktop-console.test.ts:e21f0b006090b388
+P3:tests/desktop-update-platform.test.ts:c57a6c4994f0b9b9
+P3:tests/desktop-updates.test.ts:da4de8c7a5751230
