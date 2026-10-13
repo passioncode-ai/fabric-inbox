@@ -229,8 +229,12 @@ function AgentPanel({ agent, list, tab, onDeleted }: { agent: Agent; list: Agent
   );
 }
 
-/** A grant's fixed arguments as JSON text; a value that is not a flat JSON object is not applied. */
-function FixedArguments({ value, onChange }: { value: ToolGrant["fixed"]; onChange: (fixed: ToolGrant["fixed"]) => void }) {
+/**
+ * A grant's fixed arguments as JSON text. Text that is not a flat JSON object is reported to the
+ * editor, which refuses to save until it is fixed or cleared (UI walk 2026-10-13: it used to save the
+ * grant without them, widening what the agent may ask for).
+ */
+function FixedArguments({ value, onChange, onProblem }: { value: ToolGrant["fixed"]; onChange: (fixed: ToolGrant["fixed"]) => void; onProblem?: (bad: boolean) => void }) {
   const t = useT();
   const shown = (fixed: ToolGrant["fixed"]) => (fixed && Object.keys(fixed).length ? JSON.stringify(fixed) : "");
   const [text, setText] = useState(shown(value));
@@ -250,20 +254,21 @@ function FixedArguments({ value, onChange }: { value: ToolGrant["fixed"]; onChan
     const typed = read(text);
     if (typed !== null && JSON.stringify(typed ?? null) === JSON.stringify(value ?? null)) return;
     if (typed === null && value === undefined) return;
-    setText(shown(value)); setProblem(false);
+    setText(shown(value)); setProblem(false); onProblem?.(false);
   }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
   const apply = (next: string) => {
     setText(next);
     const parsed = read(next);
     setProblem(parsed === null);
-    // Text that is not a flat object applies nothing: the grant has no fixed arguments until it is.
+    onProblem?.(parsed === null);
+    // Text that is not a flat object applies nothing; the editor refuses to save while it is shown.
     onChange(parsed === null ? undefined : parsed);
   };
   return (
     <label className="fi-field">{t("Fixed arguments (JSON)")}
       <span className="fi-hint">{t('Sent on every call, over what the agent chooses, e.g. {"domain": "acme"}.')}</span>
       <input className="fi-input" value={text} onChange={(e) => apply(e.target.value)} aria-invalid={problem || undefined} />
-      {problem && <span className="fi-hint" role="alert">{t("Not applied, so no arguments are fixed: give a JSON object of texts, numbers or true/false.")}</span>}
+      {problem && <span className="fi-hint" role="alert">{t("This is not a JSON object of texts, numbers or true/false. Fix it or clear it: the agent cannot be saved until then.")}</span>}
     </label>
   );
 }
@@ -278,8 +283,15 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
   const set = <K extends keyof AgentInput>(key: K, v: AgentInput[K]) => onChange({ ...value, [key]: v });
   const policy = value.replyPolicy;
   const setTool = (index: number, tool: ToolGrant) => set("tools", value.tools.map((old, i) => (i === index ? tool : old)));
+  // Tools whose fixed-arguments text is not a flat JSON object: saving waits until each is fixed or cleared.
+  const [badFixed, setBadFixed] = useState<Set<number>>(() => new Set());
+  const markFixed = (index: number, bad: boolean) => setBadFixed((old) => {
+    if (old.has(index) === bad) return old;
+    const next = new Set(old); if (bad) next.add(index); else next.delete(index); return next;
+  });
+  const blocked = badFixed.size > 0;
   return (
-    <form aria-label={version ? t("Edit agent, version {version}", { version }) : t("New agent")} onSubmit={(e) => { e.preventDefault(); onSave(); }}>
+    <form aria-label={version ? t("Edit agent, version {version}", { version }) : t("New agent")} onSubmit={(e) => { e.preventDefault(); if (blocked) return; onSave(); }}>
       {version && <p className="fi-hint">{t("Saving creates version {version}; each answer records the version that wrote it.", { version: version + 1 })}</p>}
       <label className="fi-field">{t("Name")}
         <input className="fi-input" required maxLength={80} value={value.name} onChange={(e) => set("name", e.target.value)} />
@@ -330,7 +342,7 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
               <label className="fi-field">{t("Endpoint (https)")} <input className="fi-input" type="url" value={tool.endpoint} required onChange={(e) => setTool(i, { ...tool, endpoint: e.target.value })} /></label>
               <label className="fi-field">{t("Credential name (optional)")} <input className="fi-input" value={tool.tokenRef ?? ""} onChange={(e) => setTool(i, { ...tool, tokenRef: e.target.value || undefined })} /></label>
             </div>
-            <FixedArguments value={tool.fixed} onChange={(fixed) => setTool(i, { ...tool, fixed })} />
+            <FixedArguments value={tool.fixed} onChange={(fixed) => setTool(i, { ...tool, fixed })} onProblem={(bad) => markFixed(i, bad)} />
             <label className="fi-field">{t("Ask it before answering, with the message as")}
               <span className="fi-hint">{t("The name of a text argument of the tool, e.g. query. Empty: the agent calls it only when it decides to.")}</span>
               <input className="fi-input" value={tool.prefetch?.argument ?? ""} maxLength={64}
@@ -343,7 +355,7 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
               <input className="fi-input" value={tool.gaps?.tool ?? ""} maxLength={100}
                 onChange={(e) => setTool(i, { ...tool, gaps: e.target.value.trim() ? { tool: e.target.value.trim() } : undefined })} />
             </label>
-            <div className="fi-buttons"><button type="button" className="fi-secondary" onClick={() => set("tools", value.tools.filter((_, j) => j !== i))}>{t("Remove tool")}</button></div>
+            <div className="fi-buttons"><button type="button" className="fi-secondary" onClick={() => { set("tools", value.tools.filter((_, j) => j !== i)); setBadFixed((old) => new Set([...old].filter((j) => j !== i).map((j) => (j > i ? j - 1 : j)))); }}>{t("Remove tool")}</button></div>
           </div>
         ))}
         <div className="fi-buttons">
@@ -353,7 +365,7 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
       </fieldset>
 
       <div className="fi-buttons">
-        <button type="submit" className="fi-primary" disabled={busy}>{busy ? t("Saving…") : saveLabel}</button>
+        <button type="submit" className="fi-primary" disabled={busy || blocked}>{busy ? t("Saving…") : saveLabel}</button>
         {onCancel && <button type="button" className="fi-secondary" disabled={busy} onClick={onCancel}>{version ? t("Undo changes") : t("Choose another template")}</button>}
       </div>
     </form>

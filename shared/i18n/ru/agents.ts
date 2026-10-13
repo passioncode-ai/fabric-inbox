@@ -334,7 +334,7 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	// Tool grants that call a shared knowledge base (B-85)
 	"Fixed arguments (JSON)": "Фиксированные аргументы (JSON)",
 	"Sent on every call, over what the agent chooses, e.g. {\"domain\": \"acme\"}.": "Передаются при каждом вызове поверх того, что выбрал агент, например {\"domain\": \"acme\"}.",
-	"Not applied, so no arguments are fixed: give a JSON object of texts, numbers or true/false.": "Не применено, аргументы не зафиксированы: укажите объект JSON со значениями — текстом, числами или true/false.",
+	"This is not a JSON object of texts, numbers or true/false. Fix it or clear it: the agent cannot be saved until then.": "Это не объект JSON со значениями-текстами, числами или true/false. Исправьте или очистите поле: до этого агента нельзя сохранить.",
 	"Ask it before answering, with the message as": "Спрашивать до ответа, передавая письмо в аргументе",
 	"The name of a text argument of the tool, e.g. query. Empty: the agent calls it only when it decides to.": "Имя текстового аргумента инструмента, например query. Пусто: агент вызывает инструмент только сам, когда сочтёт нужным.",
 	"Use only public results: every item it returns must be marked public, otherwise the answer waits for you": "Использовать только публичные результаты: каждый пункт ответа инструмента должен быть помечен как public, иначе ответ ждёт вас",

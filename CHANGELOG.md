@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+- **An agent's fixed tool arguments are never dropped silently.** Text that is not a JSON object now
+  stops the agent from being saved until it is fixed or cleared; before, the tool was saved without
+  them, so the agent could ask more than intended.
+- **The Drafts count includes drafts on your server.** Drafts an agent wrote or another device saved
+  are counted as soon as the inbox opens, not only after the Drafts list was opened once.
+
 ## 0.16.3 — 2026-10-13
 
 - **Restart Now asks about a running agent console.** Restarting from the update dialog now asks
