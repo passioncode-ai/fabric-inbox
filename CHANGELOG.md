@@ -7,6 +7,8 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **Moving a message to Trash says so**, and restoring it too; the last action's message no longer
+  stays on screen.
 - **A reply agent can send with no daily limit.** Leave *Sends per address per day* empty (over MCP,
   `dailySendLimit: null`); a number still caps it, and a new agent still starts at 20.
 - **The agent panel keeps your keys.** After you send a question, typing never moves the mail

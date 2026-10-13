@@ -129,7 +129,10 @@ test("UI actions use account-scoped reversible routes and preserve selection dur
   const trash = await changeMessage(message, { trashed: true }, request);
   assert.equal(applyMessageChange(other, trash), other);
   assert.equal(applyMessageChange(message, trash), null);
-  await changeMessage(message, { trashed: false }, request);
+  // UI walk 2026-10-13 (B-113): trashing said nothing, and the previous toast stayed up.
+  assert.equal((trash as { notice?: string }).notice, "Moved to Trash.");
+  const restored = await changeMessage(message, { trashed: false }, request);
+  assert.equal((restored as { notice?: string }).notice, "Restored.");
   const cf = { ...message, provider: "cloudflare" as const, accountId: "cloudflare:box a", providerMessageId: "message/id" };
   await changeMessage(cf, { starred: false }, request);
   await changeMessage(cf, { trashed: true }, request);
