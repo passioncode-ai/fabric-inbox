@@ -226,6 +226,9 @@ test("the daily send budget is per address and per day", async () => {
     assert.equal(await command("reserve", { mailbox: "a@p.invalid", limit: 2, day: "2026-09-28" }), false);
     assert.equal(await command("reserve", { mailbox: "b@p.invalid", limit: 2, day: "2026-09-28" }), true);
     assert.equal(await command("reserve", { mailbox: "a@p.invalid", limit: 2, day: "2026-09-29" }), true);
+    // No limit (null, operator 2026-10-13): sends are still counted, never refused.
+    for (let i = 0; i < 5; i++) assert.equal(await command("reserve", { mailbox: "c@p.invalid", limit: null, day: "2026-09-28" }), true);
+    assert.equal(await command("reserve", { mailbox: "c@p.invalid", limit: 5, day: "2026-09-28" }), false, "the five were counted");
   } finally { await mf.dispose(); }
 });
 

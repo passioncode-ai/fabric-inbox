@@ -51,7 +51,9 @@ function build(t: T) {
     whoAnswers: t("Who answers"),
     policyDraft: t("Drafts every answer for you"),
     policyAnyAnswer: t("any grounded answer"),
-    policyAuto: (intents: string, limit: number) => t("Sends {intents} · up to {limit} a day per address", { intents, limit }),
+    policyAuto: (intents: string, limit: number | null) => limit === null
+      ? t("Sends {intents} · no daily limit", { intents })
+      : t("Sends {intents} · up to {limit} a day per address", { intents, limit }),
     answerOff: t("Off — I read it myself"),
     answerOffHint: t("New mail stays for you; an agent can be chosen later."),
     signatureToggle: (who: string) => t("Add a signature to mail sent from {who}", { who }),

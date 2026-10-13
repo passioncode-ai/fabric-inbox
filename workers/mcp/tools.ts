@@ -1179,7 +1179,7 @@ const agentInput = z.object({
     publicOnly: z.boolean().optional().describe("Use the output only when it is JSON and every value in it sits inside an object whose `class` is exactly \"public\" (inherited by what is inside; an inner class overrides); otherwise it is withheld and the answer stays a draft"),
     gaps: z.object({ tool: z.string().min(1).max(100) }).optional().describe("A tool on the same endpoint that records, once per run, a question the knowledge could not answer: when a call (before the model or by it) answers abstained: true, or the model says its answer is not grounded"),
   })).max(10).optional().describe("Remote MCP tools; the endpoint's input schema is read and stored on save"),
-  replyPolicy: z.object({ mode: z.enum(["draft", "auto"]), allowedIntents: z.array(z.string().max(80)).max(20).default([]), dailySendLimit: z.number().int().min(1).max(200).default(20) }).optional(),
+  replyPolicy: z.object({ mode: z.enum(["draft", "auto"]), allowedIntents: z.array(z.string().max(80)).max(20).default([]), dailySendLimit: z.number().int().min(1).max(200).nullable().default(20).describe("Sends per address per day in auto mode; null: no limit") }).optional(),
 }).describe("The agent's whole definition; saving makes a new version");
 
 const saveAgent = defineTool({

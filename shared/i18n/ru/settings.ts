@@ -25,6 +25,7 @@ export const SETTINGS: Readonly<Record<string, string>> = {
 	"Drafts every answer for you": "Пишет черновики ответов, отправляете вы",
 	"any grounded answer": "любой ответ с опорой на знания",
 	"Sends {intents} · up to {limit} a day per address": "Отправляет: {intents} · до {limit} в день с каждого адреса",
+	"Sends {intents} · no daily limit": "Отправляет: {intents} · без дневного лимита",
 	"New mail stays for you; an agent can be chosen later.": "Новую почту читаете вы сами; агента можно выбрать позже.",
 	"Add a signature to mail sent from {who}": "Добавлять подпись к письмам с {who}",
 	"these addresses": "этих адресов",

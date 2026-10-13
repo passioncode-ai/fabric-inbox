@@ -7,6 +7,8 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **A reply agent can send with no daily limit.** Leave *Sends per address per day* empty (over MCP,
+  `dailySendLimit: null`); a number still caps it, and a new agent still starts at 20.
 - **The agent panel keeps your keys.** After you send a question, typing never moves the mail
   selection, and a suggestion about the open message no longer shows its long id or spills out of
   the panel. A question that got no answer shows Retry again when you reopen the panel.
