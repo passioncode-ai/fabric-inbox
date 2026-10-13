@@ -5,6 +5,7 @@ import { focusSections, listDate, triageOf, type ListView } from "./triage-view"
 import { TRIAGE_GROUPS, type Triage, type TriageGroup } from "../../../shared/mail/triage";
 import { triageText } from "./triage-text";
 import { useT, type T } from "../../lib/i18n";
+import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
 
 /** The group, or the specific reason an automated message was raised (e.g. "Payment problem"). */
 function tagText(tri: Triage, t: T): string {
@@ -59,6 +60,9 @@ function MessageRow({ message, account, selected, marked, onSelect, showGroup, c
       {message.categoryReason && <span className="fi-category-reason">{t("Why: {reason}", { reason: t.text(message.categoryReason) })}</span>}
       {message.spamReason && <span className="fi-category-reason fi-spam-reason">{t("Why in Spam: {reason}", { reason: t.text(message.spamReason) })}</span>}
       {message.discardReason && <span className="fi-category-reason fi-spam-reason">{triageText(t).whyDiscarded} {t.text(message.discardReason)}</span>}
+      {message.agentRun && (
+        <span className={"fi-agent-tag" + (agentRunNeedsLook(message.agentRun.status) ? " needs-look" : "")}>{agentRunLabel(message.agentRun.status, t)}</span>
+      )}
       <span className="fi-message-account">
         <EnvelopeIcon size={12} aria-hidden="true" />
         {account?.email ?? rawAccount(message.accountId)}

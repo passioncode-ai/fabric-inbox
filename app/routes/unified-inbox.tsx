@@ -54,6 +54,7 @@ import {
 import { useDrafts } from "~/components/inbox/use-drafts";
 import ConversationList from "~/components/inbox/ConversationList";
 import { loadConversation } from "~/components/inbox/thread";
+import AgentRunPanel from "~/components/inbox/AgentRunPanel";
 import { untouchedDraft } from "~/components/inbox/draft-store";
 import DraftsDialog, { draftRows } from "~/components/inbox/DraftsDialog";
 import { listServerDrafts, signatureFor } from "~/components/inbox/server-drafts";
@@ -1427,6 +1428,10 @@ export default function UnifiedInbox() {
                             </time>
                           </div>
                         </header>
+                        <AgentRunPanel message={selected} onOpenDraft={(draftId) => {
+                          void saved.openServer({ accountId: selected.accountId, serverId: draftId, revision: 0, to: "", subject: "", date: "", snippet: "", files: 0 })
+                            .then((opened) => { if (opened) setComposeOpen(true); });
+                        }} />
                         <div className="fi-message-body">
                           {/* HTML when the message has it (sandboxed), the text part otherwise:
                               Gmail sends both, and text-first dropped every layout. */}

@@ -10,6 +10,9 @@ is cut and published: [docs/release.md](docs/release.md).
 - **See the whole conversation.** Above the message you open, its conversation is listed oldest
   first — what you received, the replies you sent and your drafts, for every kind of account. Open
   any of them to read it, reply to it or forward it; a reply you send joins the list.
+- **See what your agents did, in the mail.** A message an agent answered, drafted or left alone is
+  marked in the list, and opening it shows why, from what and with which tools — and what it sent, or
+  a button to open its draft.
 - **Moving a message to Trash says so**, and restoring it too; the last action's message no longer
   stays on screen.
 - **A reply agent can send with no daily limit.** Leave *Sends per address per day* empty (over MCP,

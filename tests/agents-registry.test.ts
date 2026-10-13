@@ -104,6 +104,7 @@ const bundle = await build({
               case 'claimCount': return Response.json(await reg.claimCount());
               case 'runId': return Response.json(await runIdFor(c.mailbox, c.emailId));
               case 'runs': return Response.json(await reg.listRuns({mailboxId: c.mailbox, ...(c.options ?? {})}));
+              case 'byIds': return Response.json(await reg.runsByIds(c.ids));
               case 'sent': return Response.json(await box(c.mailbox).sentLog());
               case 'folder': return Response.json(await box(c.mailbox).folder(c.folder));
               case 'settings': return Response.json(await (await env.BUCKET.get('mailboxes/' + c.mailbox + '.json')).json());
@@ -339,6 +340,11 @@ test("history pages by a cursor that keeps runs sharing a timestamp, and filters
     assert.deepEqual(attention.map((r: any) => r.id), ["r4", "r5"], "a stale running run needs attention");
     assert.equal(attention[1].status, "interrupted");
     assert.deepEqual((await command("runs", { options: { agentId: "sales" } })).map((r: any) => r.id), ["r2"]);
+    // B-115: the inbox asks for the runs of the messages on its page, by id; unknown ids are left out.
+    const some = await command("byIds", { ids: ["r2", "nope", "r5"] });
+    assert.deepEqual(some.map((r: any) => r.id).sort(), ["r2", "r5"]);
+    assert.equal(some.find((r: any) => r.id === "r5").status, "interrupted", "presented as the history shows it");
+    assert.deepEqual(await command("byIds", { ids: [] }), []);
   } finally { await mf.dispose(); }
 });
 

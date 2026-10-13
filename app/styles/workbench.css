@@ -657,6 +657,40 @@ body {
   border: 1px solid var(--pc-border);
   border-radius: 4px;
 }
+.fi-agent-tag {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 0 6px;
+  font-size: 11px;
+  border: 1px solid var(--pc-border);
+  border-radius: 4px;
+  color: var(--pc-muted);
+}
+.fi-agent-tag.needs-look,
+.fi-agent-run.needs-look .fi-agent-run-title strong {
+  color: var(--pc-danger, #b42318);
+}
+.fi-agent-run {
+  margin: 0 34px 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--pc-border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.fi-agent-run p {
+  margin: 4px 0;
+}
+.fi-agent-run-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--pc-muted);
+  font-size: 12px;
+}
+.fi-agent-run pre {
+  white-space: pre-wrap;
+  font: inherit;
+}
 .fi-account-pill {
   font-size: 9px;
   letter-spacing: 0;

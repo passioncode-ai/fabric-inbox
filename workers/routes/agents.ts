@@ -108,6 +108,15 @@ agentsRouter.delete("/api/agents/:id", async (c) => {
   } catch (error) { return registryFailure(c, error); }
 });
 
+/** One run, by id (B-115: the reader's panel for a message an agent answered). */
+agentsRouter.get("/api/agent-runs/:id", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  try {
+    const [run] = await registry(c).runsByIds([c.req.param("id")]);
+    return run ? c.json(run) : c.json({ error: msg("This agent run is not kept any more") }, 404);
+  } catch (error) { return registryFailure(c, error); }
+});
+
 agentsRouter.get("/api/agent-runs", async (c) => {
   if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
   const limit = Number(c.req.query("limit") || 50);

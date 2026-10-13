@@ -58,6 +58,8 @@ export interface InboxMessage {
   triage?: Triage;
   /** Screened categories this message is in (CAT-5), with why. */
   categories?: { id: string; name: string; reason: string }[];
+  /** A reply agent's run on this message (B-115): what it did, so the list can mark it and the reader show it. */
+  agentRun?: { id: string; status: string; agentId?: string; agentVersion?: number; draftId?: string };
   /** In a category's own view: why this message belongs there. */
   categoryReason?: string;
   /** Why it is in Spam (SP-4): a rule, the model, the operator, or Gmail. */
