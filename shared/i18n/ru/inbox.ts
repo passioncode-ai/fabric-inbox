@@ -166,6 +166,7 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"The message could not be moved. Refresh and try again.": "Не удалось переместить письмо. Обновите список и попробуйте ещё раз.",
 	"Moved to Spam. New mail from {who} goes to Spam too; change it on Spam rules.": "Перемещено в «Спам». Новая почта от {who} тоже будет попадать в «Спам»; изменить это можно в разделе «Правила спама».",
 	"Moved to Spam.": "Перемещено в «Спам».",
+	"Conversation": "Переписка",
 	"Moved to Trash.": "Перемещено в «Корзину».",
 	"Restored.": "Восстановлено.",
 	"Moved to the inbox. Mail from {who} is no longer treated as spam.": "Перемещено во «Входящие». Почта от {who} больше не считается спамом.",
