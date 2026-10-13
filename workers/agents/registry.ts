@@ -342,7 +342,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
     const args: (string | number)[] = [];
     if (options.mailboxId) { where.push("mailbox_id = ?"); args.push(options.mailboxId.toLowerCase()); }
     if (options.agentId) { where.push("json_extract(body, '$.agentId') = ?"); args.push(options.agentId); }
-    if (options.outcome) {
+    if (options.outcome === "unanswered") where.push("json_extract(body, '$.unanswered') = 1");
+    else if (options.outcome) {
       const statuses = RUN_OUTCOMES[options.outcome];
       const clause = `status IN (${statuses.map(() => "?").join(", ")})`;
       args.push(...statuses);

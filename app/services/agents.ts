@@ -137,6 +137,10 @@ export interface AgentRun {
   sources?: { ref: string; collectionId: string; title: string; sourceUri: string }[];
   draftId?: string;
   sent?: { to: string; subject: string; body: string; outboxId: string };
+  /** B-117: the question the agent found no answer for, paraphrased; and its conversation. */
+  question?: string;
+  unanswered?: boolean;
+  threadId?: string;
   createdAt: string;
 }
 
@@ -160,4 +164,11 @@ export function runStatusText(t: T = englishT): Record<AgentRunStatus, string> {
 
 export function blankAgent(): AgentInput {
   return { name: "", instructions: "", knowledge: "", collections: [], tools: [], replyPolicy: { mode: "draft", allowedIntents: [], dailySendLimit: 20 } };
+}
+
+/** Whether a question without an answer reached the knowledge base (B-117): its gap report, recorded as a `:gap` tool call. */
+export function gapState(run: Pick<AgentRun, "toolCalls">, t: (s: string) => string): string {
+  const report = run.toolCalls.find((c) => c.name.endsWith(":gap"));
+  if (!report) return t("Not reported: no knowledge tool of this agent takes questions");
+  return report.ok ? t("Reported to the knowledge base") : t("The report to the knowledge base failed");
 }
