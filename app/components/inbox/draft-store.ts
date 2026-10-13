@@ -41,6 +41,14 @@ export type Draft = {
   /** The signature added to the text when the draft was made, so a change of sender can swap it. */
   signature?: string;
 };
+/**
+ * A new message nobody wrote in (UI walk 2026-10-13): no recipient, subject, file or text beyond the
+ * signature it was made with. Closing Compose on one discards it instead of keeping an empty draft.
+ */
+export function untouchedDraft(d: Draft): boolean {
+  return d.mode === "new" && !d.to.trim() && !d.cc?.trim() && !d.bcc?.trim() && !d.subject.trim() && !d.forwardSource
+    && !d.attachments?.length && !d.pendingAttachments?.length && !d.serverFiles?.length && d.text.trim() === (d.signature ?? "").trim();
+}
 /** A file already kept with the draft on the server; its bytes are not on this device. */
 export type ServerFile = { id: string; filename: string; mimetype: string; size: number; sourceId?: string };
 function serverFiles(value: unknown): ServerFile[] | undefined {

@@ -52,6 +52,7 @@ import {
   type OpenMessage,
 } from "~/components/inbox/model";
 import { useDrafts } from "~/components/inbox/use-drafts";
+import { untouchedDraft } from "~/components/inbox/draft-store";
 import DraftsDialog, { draftRows } from "~/components/inbox/DraftsDialog";
 import { listServerDrafts, signatureFor } from "~/components/inbox/server-drafts";
 import MessageActions, { applyMessageChange } from "~/components/inbox/MessageActions";
@@ -1544,6 +1545,8 @@ export default function UnifiedInbox() {
           onCompleteAttachments={saved.completeAttachments}
           onClose={() => {
             if (activeDraft.current === draft.id) setComposeOpen(false);
+            // A new message closed untouched leaves no empty draft behind (UI walk 2026-10-13).
+            if (untouchedDraft(draft)) void saved.discard(draft).catch(() => {});
           }}
           onSent={() => {
             setNotice(

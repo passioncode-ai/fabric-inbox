@@ -157,6 +157,12 @@ export function retryTurn(chat: {
 	return true;
 }
 
+/**
+ * The last question has no answer and nothing is coming (UI walk 2026-10-13): the error of a failed
+ * turn lives only while the panel is open, so after it reopens the question alone is the sign.
+ */
+export const unanswered = (messages: UIMessage[], streaming: boolean) => !streaming && messages.length > 0 && messages[messages.length - 1]!.role === "user";
+
 /** A turn that failed: the chat's own error state (a model or connection failure mid-answer). */
 export const turnFailed = (status: string, error: unknown) => status === "error" || (!!error && status !== "streaming" && status !== "submitted");
 
