@@ -71,7 +71,7 @@ test("B-85 REQ-1: a granted tool with a schema is offered that schema and called
   const agent = { ...AgentInputSchema.parse({ name: "Support", instructions: "Answer." }), id: "support", version: 1, createdAt: "x" };
   const schema = { type: "object", properties: { query: { type: "string", description: "What to find" } }, required: ["query"] };
   const req: ModelRequest = { agent, system: "s", prompt: "{}", tools: [
-    { name: "nicegram_kb", description: "kb", inputSchema: schema, run: async (a) => { got.push(a); return "{}"; } },
+    { name: "acme_kb", description: "kb", inputSchema: schema, run: async (a) => { got.push(a); return "{}"; } },
     { name: "legacy_tool", description: "old grant", run: async (a) => { got.push(a); return "{}"; } },
   ] };
   let offered: { name: string; inputSchema?: unknown }[] = [];
@@ -79,13 +79,13 @@ test("B-85 REQ-1: a granted tool with a schema is offered that schema and called
   const model = new MockLanguageModelV3({
     doGenerate: async (options) => {
       n++;
-      if (n === 1) { offered = (options.tools ?? []) as never; return call("nicegram_kb", { query: "translator" }, n) as never; }
+      if (n === 1) { offered = (options.tools ?? []) as never; return call("acme_kb", { query: "translator" }, n) as never; }
       if (n === 2) return call("legacy_tool", { arguments: { order: "A-1" } }, n) as never;
       return call("submit_answer", ANSWER, n) as never;
     },
   });
   await runModel(model, req);
-  const kb = offered.find((t) => t.name === "nicegram_kb")!;
+  const kb = offered.find((t) => t.name === "acme_kb")!;
   assert.deepEqual((kb.inputSchema as { properties: unknown }).properties, schema.properties, "the endpoint's own schema");
   const legacy = offered.find((t) => t.name === "legacy_tool")!;
   assert.ok("arguments" in ((legacy.inputSchema as { properties: Record<string, unknown> }).properties), "an older grant keeps the wrapper");
@@ -96,12 +96,12 @@ test("B-85 review: arguments that do not fit the tool's schema never reach the e
   const got: unknown[] = [];
   const agent = { ...AgentInputSchema.parse({ name: "Support", instructions: "Answer." }), id: "support", version: 1, createdAt: "x" };
   const schema = { type: "object", properties: { query: { type: "string" } }, required: ["query"] };
-  const req: ModelRequest = { agent, system: "s", prompt: "{}", tools: [{ name: "nicegram_kb", description: "kb", inputSchema: schema, run: async (a) => { got.push(a); return "{}"; } }] };
+  const req: ModelRequest = { agent, system: "s", prompt: "{}", tools: [{ name: "acme_kb", description: "kb", inputSchema: schema, run: async (a) => { got.push(a); return "{}"; } }] };
   let n = 0;
   const model = new MockLanguageModelV3({
     doGenerate: async () => {
       n++;
-      if (n === 1) return call("nicegram_kb", { domain: "everything" }, n) as never;
+      if (n === 1) return call("acme_kb", { domain: "everything" }, n) as never;
       return call("submit_answer", ANSWER, n) as never;
     },
   });

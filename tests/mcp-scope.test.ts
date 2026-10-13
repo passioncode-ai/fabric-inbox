@@ -32,11 +32,11 @@ function fakeApi(answers: Record<string, unknown> = {}) {
   return { api, calls };
 }
 
-const RESEARCH = "cloudflare:research@sshlg.me";
+const RESEARCH = "cloudflare:research@owner.example";
 
 test("account ids normalise the way list_accounts names them, and anything else is refused", () => {
-  assert.equal(normaliseAccountId("cloudflare:Research@SSHLG.me"), RESEARCH);
-  assert.equal(normaliseAccountId("research@sshlg.me"), RESEARCH, "a bare address is a Cloudflare mailbox");
+  assert.equal(normaliseAccountId("cloudflare:Research@owner.example"), RESEARCH);
+  assert.equal(normaliseAccountId("research@owner.example"), RESEARCH, "a bare address is a Cloudflare mailbox");
   assert.equal(normaliseAccountId("gmail:abc_DEF-1"), "gmail:abc_DEF-1");
   for (const bad of ["", "cloudflare:", "cloudflare:a/b@x.com", "gmail:a/b", "smtp:x@y.z", "research"]) assert.equal(normaliseAccountId(bad), null, bad);
 });
@@ -44,7 +44,7 @@ test("account ids normalise the way list_accounts names them, and anything else 
 test("a key file keeps a key's accounts; none is the whole workspace; a damaged list reaches nothing (fails closed)", () => {
   const [all, some, damaged, empty] = normaliseKeys({ keys: [
     { id: "a", clientId: "a" },
-    { id: "b", clientId: "b", accounts: ["cloudflare:Research@sshlg.me", "research@sshlg.me", "nonsense"] },
+    { id: "b", clientId: "b", accounts: ["cloudflare:Research@owner.example", "research@owner.example", "nonsense"] },
     { id: "c", clientId: "c", accounts: ["nonsense", 7] },
     { id: "d", clientId: "d", accounts: "cloudflare:x@y.z" },
   ] });
@@ -85,14 +85,14 @@ test("whether a tool fits a mailbox scope is read from its routes, so a new work
 test("the scoped API lets a key into its own mailbox and refuses every other path", async () => {
   const { api, calls } = fakeApi();
   const s = scopedApi(api, [RESEARCH, "gmail:g1"]);
-  await s.request("GET", "/api/v1/mailboxes/research%40sshlg.me/emails/42");
-  await s.request("GET", "/api/v1/mailboxes/RESEARCH%40sshlg.me/threads/t1");
+  await s.request("GET", "/api/v1/mailboxes/research%40owner.example/emails/42");
+  await s.request("GET", "/api/v1/mailboxes/RESEARCH%40owner.example/threads/t1");
   await s.request("POST", "/api/accounts/g1/messages/m1/read", { body: { read: true } });
   assert.equal(calls.length, 3);
   for (const [method, path] of [
-    ["GET", "/api/v1/mailboxes/contact%40sshlg.me/emails"],
+    ["GET", "/api/v1/mailboxes/contact%40owner.example/emails"],
     ["GET", "/api/v1/mailboxes"],
-    ["GET", "/api/v1/mailboxes/research%40sshlg.me%2F..%2Fcontact%40sshlg.me/emails"],
+    ["GET", "/api/v1/mailboxes/research%40owner.example%2F..%2Fcontact%40owner.example/emails"],
     ["POST", "/api/spam/report"],
     ["GET", "/api/project-addresses"],
     ["GET", "/api/accounts/g2/messages"],
@@ -105,11 +105,11 @@ test("the scoped API lets a key into its own mailbox and refuses every other pat
 
 test("the feed is narrowed to the key's mailboxes, in the request and in the answer", async () => {
   const feed = {
-    accounts: [{ id: RESEARCH, email: "research@sshlg.me" }, { id: "cloudflare:contact@sshlg.me", email: "contact@sshlg.me" }],
-    messages: [{ accountId: RESEARCH, providerMessageId: "1" }, { accountId: "cloudflare:contact@sshlg.me", providerMessageId: "2" }],
+    accounts: [{ id: RESEARCH, email: "research@owner.example" }, { id: "cloudflare:contact@owner.example", email: "contact@owner.example" }],
+    messages: [{ accountId: RESEARCH, providerMessageId: "1" }, { accountId: "cloudflare:contact@owner.example", providerMessageId: "2" }],
     issues: [], hasMore: false,
   };
-  const one = fakeApi({ "/api/inbox": feed, "/api/accounts": { accounts: [{ id: "g1" }, { id: "g2" }] }, "/api/inbox/hidden": { hidden: ["cloudflare:research@sshlg.me", "cloudflare:contact@sshlg.me", "gmail:g1"] } });
+  const one = fakeApi({ "/api/inbox": feed, "/api/accounts": { accounts: [{ id: "g1" }, { id: "g2" }] }, "/api/inbox/hidden": { hidden: ["cloudflare:research@owner.example", "cloudflare:contact@owner.example", "gmail:g1"] } });
   const s = scopedApi(one.api, [RESEARCH]);
   const got = (await s.request("GET", "/api/inbox", { query: { limit: 25 } })).data as typeof feed;
   assert.equal(one.calls[0]!.query!.account, RESEARCH, "the only mailbox is named for the key");
@@ -117,7 +117,7 @@ test("the feed is narrowed to the key's mailboxes, in the request and in the ans
   assert.deepEqual(got.messages.map((m) => m.accountId), [RESEARCH], "a row from another mailbox never leaves, even if the app returned it");
   assert.deepEqual(((await s.request("GET", "/api/accounts")).data as { accounts: unknown[] }).accounts, [], "no Gmail account is in this scope");
   assert.deepEqual(((await s.request("GET", "/api/inbox/hidden")).data as { hidden: string[] }).hidden, [RESEARCH], "hidden entries are stored as account ids");
-  await assert.rejects(s.request("GET", "/api/inbox", { query: { account: "cloudflare:contact@sshlg.me" } }), (e: Error & { status?: number }) => e.status === 403);
+  await assert.rejects(s.request("GET", "/api/inbox", { query: { account: "cloudflare:contact@owner.example" } }), (e: Error & { status?: number }) => e.status === 403);
 
 });
 
@@ -148,10 +148,10 @@ test("categories are the workspace's, so a limited key cannot filter the feed by
 });
 
 test("nothing in a feed answer names another mailbox: issues and cursors that do are dropped", async () => {
-  const otherCursor = btoa(JSON.stringify({ version: 1, scope: "s", position: { accountId: "cloudflare:contact@sshlg.me", providerMessageId: "9", timestamp: 1 } }));
+  const otherCursor = btoa(JSON.stringify({ version: 1, scope: "s", position: { accountId: "cloudflare:contact@owner.example", providerMessageId: "9", timestamp: 1 } }));
   const ownCursor = btoa(JSON.stringify({ version: 1, scope: "s", position: { accountId: RESEARCH, providerMessageId: "1", timestamp: 1 } }));
   const answer = (cursor: string) => fakeApi({ "/api/inbox": { accounts: [], messages: [], hasMore: true, cursor,
-    issues: [{ provider: "cloudflare", accountId: "cloudflare:contact@sshlg.me", error: "x" }, { provider: "cloudflare", accountId: RESEARCH, error: "y" }] } }).api;
+    issues: [{ provider: "cloudflare", accountId: "cloudflare:contact@owner.example", error: "x" }, { provider: "cloudflare", accountId: RESEARCH, error: "y" }] } }).api;
   const leaked = (await scopedApi(answer(otherCursor), [RESEARCH]).request("GET", "/api/inbox", { query: {} })).data as { issues: { accountId: string }[]; cursor?: string; hasMore: boolean };
   assert.deepEqual(leaked.issues.map((i) => i.accountId), [RESEARCH]);
   assert.equal(leaked.cursor, undefined);
@@ -169,14 +169,14 @@ test("through a tool, another mailbox is refused with the reason and nothing is 
   const { api, calls } = fakeApi();
   const principal = scoped([RESEARCH]);
   const readMessage = TOOLS.find((t) => t.name === "read_message")!;
-  const out = await runTool(readMessage, { accountId: "cloudflare:contact@sshlg.me", messageId: "1" }, { api: scopedApi(api, [RESEARCH]), principal }, ledger());
+  const out = await runTool(readMessage, { accountId: "cloudflare:contact@owner.example", messageId: "1" }, { api: scopedApi(api, [RESEARCH]), principal }, ledger());
   assert.equal(out.isError, true);
-  assert.match(out.content[0]!.text, /limited to research@sshlg\.me/);
+  assert.match(out.content[0]!.text, /limited to research@owner\.example/);
   assert.equal(calls.length, 0);
 });
 
 test("a new key may name its mailboxes; an Admin key cannot be limited, and a bad account is refused", () => {
-  const ok = validateNewKey({ name: "Research agent", level: "read", accounts: ["cloudflare:Research@sshlg.me", "research@sshlg.me"] });
+  const ok = validateNewKey({ name: "Research agent", level: "read", accounts: ["cloudflare:Research@owner.example", "research@owner.example"] });
   assert.ok(ok.ok);
   assert.deepEqual(ok.ok && ok.value.accounts, [RESEARCH]);
   const whole = validateNewKey({ name: "Assistant", level: "mail" });
@@ -195,7 +195,7 @@ test("a key whose only mailbox does not exist here gets an empty feed with the r
   const out = await s.request("GET", "/api/inbox", { query: { limit: 1 } });
   assert.equal(out.status, 200);
   assert.deepEqual((out.data as { accounts: unknown[] }).accounts, []);
-  assert.match(JSON.stringify((out.data as { issues: unknown[] }).issues), /research@sshlg\.me has no mailbox/);
+  assert.match(JSON.stringify((out.data as { issues: unknown[] }).issues), /research@owner\.example has no mailbox/);
   assert.equal((await s.request("GET", "/api/inbox", { query: { account: RESEARCH } })).status, 404);
 });
 
@@ -205,7 +205,7 @@ import { narrowPrincipal, NARROW_HEADER } from "../workers/mcp/scope";
 test("X-Fabric-Accounts narrows any key to the named mailboxes, and never widens one", () => {
   assert.equal(NARROW_HEADER, "X-Fabric-Accounts");
   const admin = { kind: "agent", label: "Fabric", level: "admin", send: "send", dailySendLimit: 50, keyId: "k", accounts: null } as Principal;
-  assert.deepEqual(narrowPrincipal(admin, "cloudflare:News@example.com, research@sshlg.me")?.accounts, ["cloudflare:news@example.com", RESEARCH]);
+  assert.deepEqual(narrowPrincipal(admin, "cloudflare:News@example.com, research@owner.example")?.accounts, ["cloudflare:news@example.com", RESEARCH]);
   assert.equal(narrowPrincipal(admin, null), admin, "no header, no change");
   const limited = scoped([RESEARCH, "cloudflare:a@x.invalid"]);
   assert.deepEqual(narrowPrincipal(limited, `${RESEARCH},cloudflare:other@x.invalid`)?.accounts, [RESEARCH], "intersection, never the union");

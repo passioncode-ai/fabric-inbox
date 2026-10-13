@@ -2,7 +2,7 @@
 // Anonymous usage counts (passioncode-ai/fabric-inbox#27, docs/ANALYTICS.md): installs, days of
 // use and how many accounts, mailboxes, agents and agent keys a server has — never a name, an
 // address, a domain, a path, a message or a token. Events go to the organization's self-hosted
-// Aptabase in batches of at most 25 (the ingestion contract of ssheleg/sshlg-analytics); its
+// Aptabase in batches of at most 25 (the ingestion contract of the analytics server); its
 // address comes with the App Key, so the source names no host.
 //
 // Only an app that carries an App Key sends anything: the release workflow writes
@@ -113,9 +113,9 @@ function createAnalytics(deps) {
   const bundle = deps.bundle || null;
   const host = bundle ? bundle.host : '';
   const shared = installationFile(appData);
-  // sshlg-growth counts installs by props.iid and keeps only production or sandbox events
+  // a growth agent counts installs by props.iid and keeps only production or sandbox events
   // (operator decision 2026-10-05): a debug key or a pre-release version is sandbox. Aptabase's build mode follows it:
-  // isDebug is true exactly when the environment is not production (sshlg-analytics client contract, "Build modes").
+  // isDebug is true exactly when the environment is not production (the analytics server client contract, "Build modes").
   const environment = bundle && !bundle.debug && !String(appVersion).includes('-') ? 'production' : 'sandbox';
   let installId = null;      // set only while analytics is on
   let queue = [];

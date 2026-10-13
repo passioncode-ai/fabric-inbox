@@ -18,7 +18,7 @@ type CallResult = { isError?: boolean; content?: unknown };
  * The MCP client every tool call and schema read uses. The SDK's default validator compiles a
  * tool's outputSchema with ajv (new Function), which Workers refuse ("Code generation from strings
  * disallowed for this context"): a server that declares output schemas could not be granted at all
- * (the Nicegram data agent, 2026-10-12). The cfworker validator interprets schemas without codegen.
+ * (the Acme data agent, 2026-10-12). The cfworker validator interprets schemas without codegen.
  */
 export const toolClient = () => new Client({ name: "fabric-inbox", version: "0.1.0" }, { jsonSchemaValidator: new CfWorkerJsonSchemaValidator() });
 

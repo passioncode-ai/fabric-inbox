@@ -27,7 +27,7 @@ test("publicOnly (FI-3): the brief's rule is the code's — class is the string 
 
 test("modelSchema: a schema with $ref falls back to the wrapper; required drops fixed keys", () => {
   assert.equal(modelSchema(grant({ inputSchema: JSON.stringify({ type: "object", properties: { q: { $ref: "#/$defs/Q" } }, $defs: { Q: { type: "string" } } }) })), null);
-  const s = modelSchema(grant({ inputSchema: JSON.stringify({ type: "object", properties: { q: { type: "string" }, domain: { type: "string" } }, required: ["q", "domain"] }), fixed: { domain: "nicegram" } }))!;
+  const s = modelSchema(grant({ inputSchema: JSON.stringify({ type: "object", properties: { q: { type: "string" }, domain: { type: "string" } }, required: ["q", "domain"] }), fixed: { domain: "acme" } }))!;
   assert.deepEqual(Object.keys(s.properties as object), ["q"]);
   assert.deepEqual(s.required, ["q"]);
 });

@@ -6,11 +6,11 @@ import assert from "node:assert/strict";
 import { tokenFor } from "../workers/automation/mcp";
 
 const url = (u: string) => new URL(u);
-const tokens = { NGDATA: { host: "nicegram-data-agent.example.com", token: "t-ng" }, SIGNALS: { host: "signals.example.com", token: "t-sig" }, OLD: "t-old" };
+const tokens = { NGDATA: { host: "acme-data-agent.example.com", token: "t-ng" }, SIGNALS: { host: "signals.example.com", token: "t-sig" }, OLD: "t-old" };
 
 test("a bound token goes only to its own host", () => {
-  assert.equal(tokenFor(tokens, "NGDATA", url("https://nicegram-data-agent.example.com/mcp")), "t-ng");
-  assert.equal(tokenFor(tokens, "NGDATA", url("https://NICEGRAM-DATA-AGENT.example.com/mcp")), "t-ng", "host case does not matter");
+  assert.equal(tokenFor(tokens, "NGDATA", url("https://acme-data-agent.example.com/mcp")), "t-ng");
+  assert.equal(tokenFor(tokens, "NGDATA", url("https://ACME-DATA-AGENT.example.com/mcp")), "t-ng", "host case does not matter");
   assert.throws(() => tokenFor(tokens, "NGDATA", url("https://signals.example.com/mcp")), /belongs to another tool host/);
 });
 

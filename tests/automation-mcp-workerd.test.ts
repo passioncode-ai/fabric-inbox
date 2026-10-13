@@ -2,7 +2,7 @@
 // server answering through outboundService. Node tests that replace globalThis.fetch could not see
 // that Workers' fetch refuses `redirect: "error"` before any request leaves; from 0.8 until this
 // fix every rule and agent tool call failed that way without reaching its host (live 2026-10-10:
-// the urgent-mail rule on support@nicegram.me ended "unknown", the signals server saw nothing).
+// the urgent-mail rule on support@acme.example ended "unknown", the signals server saw nothing).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
@@ -49,7 +49,7 @@ function standInServer(seen: Seen[], { outputSchema = false } = {}) {
     const result =
       body.method === "initialize" ? { protocolVersion: body.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "stand-in", version: "1" } }
       : body.method === "tools/list" ? { tools: [{ name: "communicator.signal.emit", inputSchema: { type: "object", properties: { kind: { type: "string" } } },
-          // A server that declares what its tool returns (the Nicegram data agent does, 2026-10-12).
+          // A server that declares what its tool returns (the Acme data agent does, 2026-10-12).
           ...(outputSchema ? { outputSchema: { type: "object", properties: { class: { type: "string" } }, required: ["class"] } } : {}) }] }
       : body.method === "tools/call" ? { content: [{ type: "text", text: `emitted ${body.params.arguments.kind}` }] }
       : null;
@@ -99,7 +99,7 @@ test("an agent's tool schema is read from workerd too", async () => {
 
 test("a tool that declares an outputSchema can be granted: its schema is read in workerd, where code generation is not allowed", async () => {
   // The SDK compiled output-schema validators with ajv (new Function), which Workers refuse: granting
-  // the Nicegram data agent failed with "Code generation from strings disallowed for this context".
+  // the Acme data agent failed with "Code generation from strings disallowed for this context".
   const seen: Seen[] = [];
   const { mf, run } = await worker(seen, { outputSchema: true });
   try {
