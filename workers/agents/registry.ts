@@ -330,6 +330,12 @@ export class AgentRegistryDO extends DurableObject<Env> {
    * (created_at and id, so runs sharing a timestamp are not skipped); `outcome`
    * narrows to one of RUN_OUTCOMES; `agentId` to one agent.
    */
+  /** The runs with these ids (B-115: the inbox page's messages), as the history presents them; unknown ids are left out. */
+  async runsByIds(ids: string[]): Promise<AgentRun[]> {
+    if (!ids.length) return [];
+    const rows = this.rows("SELECT body FROM agent_runs WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(ids.slice(0, 500)));
+    return rows.map((row) => this.present(JSON.parse(String(row.body)) as AgentRun));
+  }
   async listRuns(options: { mailboxId?: string; limit?: number; before?: string; outcome?: RunOutcome; agentId?: string } = {}): Promise<AgentRun[]> {
     const limit = Math.max(1, Math.min(200, options.limit ?? 50));
     const where: string[] = [];

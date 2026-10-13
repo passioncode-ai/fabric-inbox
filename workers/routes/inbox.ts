@@ -7,6 +7,7 @@ import { allServedDomains, storedCatchAll } from "../lib/mailbox-store";
 import { changeHidden, HiddenConflict, readHidden } from "../lib/hidden-accounts";
 import { REMOTE_ACCOUNT, parseRemoteAccount } from "../../shared/mail/accounts";
 import { msg } from "../../shared/i18n";
+import { runIdFor, type AgentRun } from "../agents/run";
 
 export interface InboxSources {
   cloudflareAccounts(): Promise<InboxAccount[]>;
@@ -247,7 +248,8 @@ inboxRouter.get("/api/inbox", async c => {
       readHidden(c.env.BUCKET).catch(() => [] as string[]),
       catchAllMailboxes(c.env).catch(() => new Set<string>()),
     ]);
-    return c.json(await readInbox(params, inboxSources(c.env), { decorate: (page) => markCategories(c.env, page), ownDomains,
+    return c.json(await readInbox(params, inboxSources(c.env), { decorate: (page) => Promise.all([markCategories(c.env, page),
+      c.env.AGENT_REGISTRY ? attachAgentRuns(page, (ids) => c.env.AGENT_REGISTRY.getByName("workspace").runsByIds(ids)) : undefined]).then(() => undefined), ownDomains,
       hidden: new Set(hidden), catchAlls }));
   } catch (error) {
     if (error instanceof InboxRequestError) return c.json({ error: error.message }, error.status);
@@ -260,6 +262,24 @@ inboxRouter.get("/api/inbox", async c => {
  * call for the whole page. A message in a flagged category becomes important with
  * the category as the first reason.
  */
+/**
+ * Marks each Cloudflare message on the page with its reply agent's run (B-115), looked up in one call;
+ * agents answer Cloudflare addresses only. A registry that cannot answer leaves the page unmarked.
+ */
+export async function attachAgentRuns(page: InboxMessage[], runsByIds: (ids: string[]) => Promise<AgentRun[]>) {
+  const cloudflare = page.filter((m) => m.accountId.startsWith("cloudflare:"));
+  if (!cloudflare.length) return;
+  const ids = await Promise.all(cloudflare.map((m) => runIdFor(m.accountId.slice("cloudflare:".length), m.providerMessageId)));
+  let runs: AgentRun[];
+  try { runs = await runsByIds(ids); } catch { return; }
+  const byId = new Map(runs.map((r) => [r.id, r]));
+  cloudflare.forEach((m, i) => {
+    const run = byId.get(ids[i]!);
+    if (run) m.agentRun = { id: run.id, status: run.status, ...(run.agentId ? { agentId: run.agentId } : {}),
+      ...(run.agentVersion ? { agentVersion: run.agentVersion } : {}), ...(run.draftId ? { draftId: run.draftId } : {}) };
+  });
+}
+
 async function markCategories(env: Env, page: InboxMessage[]) {
   if (!env.CATEGORIES || !page.length) return;
   const found = await env.CATEGORIES.getByName("workspace").membership(page.map((m) => ({ accountId: m.accountId, messageId: m.providerMessageId })));

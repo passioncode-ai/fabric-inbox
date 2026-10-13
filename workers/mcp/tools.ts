@@ -419,11 +419,13 @@ const listAgents = defineTool({
 
 const listAgentRuns = defineTool({
   name: "list_agent_runs", title: "Reply agents' recent answers", level: "read", readOnly: true,
-  description: "What the reply agents did with incoming mail, newest first: sent, drafted, needs a look, or left alone, with the reason and exactly what was sent. Page with before.",
+  description: "What the reply agents did with incoming mail, newest first: sent, drafted, needs a look, or left alone, with the reason and exactly what was sent. Page with before. runId (a message's agentRun.id in list_messages) reads that one run.",
   input: { address: address.optional(), agentId: z.string().max(100).optional(), outcome: z.enum(["answered", "attention", "skipped"]).optional(),
-    before: z.string().max(200).optional().describe("The last run's createdAt|id, for the next page"), limit: z.number().int().min(1).max(200).default(50) },
-  routes: ["GET /api/agent-runs"],
-  call: (a, ctx) => get(ctx, "/api/agent-runs", { mailbox: a.address?.toLowerCase(), agent: a.agentId, outcome: a.outcome, before: a.before, limit: a.limit }),
+    before: z.string().max(200).optional().describe("The last run's createdAt|id, for the next page"), limit: z.number().int().min(1).max(200).default(50),
+    runId: z.string().regex(/^agent-[0-9a-f]{32}$/).optional().describe("One run, by its id") },
+  routes: ["GET /api/agent-runs", "GET /api/agent-runs/:id"],
+  call: (a, ctx) => a.runId ? get(ctx, `/api/agent-runs/${enc(a.runId)}`)
+    : get(ctx, "/api/agent-runs", { mailbox: a.address?.toLowerCase(), agent: a.agentId, outcome: a.outcome, before: a.before, limit: a.limit }),
 });
 
 const listCategories = defineTool({
