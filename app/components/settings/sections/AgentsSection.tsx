@@ -8,7 +8,7 @@ import { msg } from "../../../../shared/i18n";
 import { ApiError } from "~/services/api";
 import type { CollectionList } from "~/services/knowledge";
 import {
-  blankAgent, runStatusText, type Agent, type AgentInput, type AgentList, type AgentRun, type ToolGrant,
+  blankAgent, gapState, runStatusText, type Agent, type AgentInput, type AgentList, type AgentRun, type ToolGrant,
 } from "~/services/agents";
 import { groupRows, visibleRows, type ListEntry } from "../list-model";
 import { settingsPath } from "../paths";
@@ -29,8 +29,10 @@ const OUTCOME_FILTERS = [
   { id: "answered", label: msg("Sent or drafted") },
   { id: "attention", label: msg("Needs a look") },
   { id: "skipped", label: msg("Left alone") },
+  { id: "unanswered", label: msg("Questions without an answer") },
 ] as const;
 const COLLECTIONS_KEY = ["knowledge-collections"];
+
 
 /** When the daily send count starts again, in the viewer's own time (the count is kept per UTC day). */
 function resetTime(t: T) {
@@ -462,6 +464,12 @@ function RunsHistory({ agents, agentId }: { agents?: AgentList; agentId?: string
               <p className="fi-hint" style={{ margin: 0 }}>
                 {run.agentId ? `${agentName(run.agentId)} v${run.agentVersion}` : t("No agent")}{run.intent ? ` · ${t("intent: {intent}", { intent: run.intent })}` : ""} · {t.text(run.reason)}
               </p>
+              {run.question && (
+                <p style={{ margin: 0 }}>
+                  <strong>{t("Question without an answer: {question}", { question: run.question })}</strong>{" "}
+                  <span className="fi-hint">· {gapState(run, t)}</span>
+                </p>
+              )}
               {run.status === "send_unknown" && <p role="note">{t("Check Sent for this address before answering again; it is not retried.")}</p>}
               {run.sources && run.sources.length > 0 && (
                 <details>

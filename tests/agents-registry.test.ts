@@ -339,6 +339,9 @@ test("history pages by a cursor that keeps runs sharing a timestamp, and filters
     assert.deepEqual(attention.map((r: any) => r.id), ["r4", "r5"], "a stale running run needs attention");
     assert.equal(attention[1].status, "interrupted");
     assert.deepEqual((await command("runs", { options: { agentId: "sales" } })).map((r: any) => r.id), ["r2"]);
+    // B-117: questions without an answer, newest first.
+    await command("begin", { run: { mailboxId: "a@project.invalid", sender: "x@y.invalid", subject: "q", reason: "", toolCalls: [], emailId: "q1", id: "q1", status: "drafted", agentId: "support", createdAt: "2026-09-29T11:00:00.000Z", updatedAt: "2026-09-29T11:00:00.000Z", question: "How to X", unanswered: true } });
+    assert.deepEqual((await command("runs", { options: { outcome: "unanswered" } })).map((r: any) => r.id), ["q1"]);
   } finally { await mf.dispose(); }
 });
 

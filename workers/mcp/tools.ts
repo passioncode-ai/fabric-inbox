@@ -420,7 +420,7 @@ const listAgents = defineTool({
 const listAgentRuns = defineTool({
   name: "list_agent_runs", title: "Reply agents' recent answers", level: "read", readOnly: true,
   description: "What the reply agents did with incoming mail, newest first: sent, drafted, needs a look, or left alone, with the reason and exactly what was sent. Page with before.",
-  input: { address: address.optional(), agentId: z.string().max(100).optional(), outcome: z.enum(["answered", "attention", "skipped"]).optional(),
+  input: { address: address.optional(), agentId: z.string().max(100).optional(), outcome: z.enum(["answered", "attention", "skipped", "unanswered"]).optional().describe("unanswered: questions the agent found no answer for, each with its question"),
     before: z.string().max(200).optional().describe("The last run's createdAt|id, for the next page"), limit: z.number().int().min(1).max(200).default(50) },
   routes: ["GET /api/agent-runs"],
   call: (a, ctx) => get(ctx, "/api/agent-runs", { mailbox: a.address?.toLowerCase(), agent: a.agentId, outcome: a.outcome, before: a.before, limit: a.limit }),

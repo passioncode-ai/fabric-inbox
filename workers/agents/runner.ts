@@ -413,6 +413,9 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // was asked; one report per run, whatever the number of calls (B-85, data agent README "Reporting gaps").
   const question = (proposal.question ?? "").trim().slice(0, 1000);
   const unanswered = abstainedAny || proposal.grounded === false;
+  // B-117: the question is kept on the run, with its conversation, for the Unanswered questions list.
+  if (question && unanswered) { run.question = question; run.unanswered = true; }
+  run.threadId = (email.thread_id as string | null | undefined) || email.id;
   const gapGrant = question && unanswered ? agent.tools.find((g) => g.gaps) : undefined;
   for (const grant of gapGrant ? [gapGrant] : []) {
     const started = Date.now();
@@ -420,7 +423,9 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     toolCalls.push(record);
     try {
       const channel = typeof grant.fixed?.channel === "string" ? grant.fixed.channel : "email";
-      const out = await deps.callTool({ ...grant, tool: grant.gaps!.tool }, { requestId: run.id, kind: "unanswered", channel, question });
+      const report = () => deps.callTool({ ...grant, tool: grant.gaps!.tool }, { requestId: run.id, kind: "unanswered", channel, question });
+      // Tried once more on failure, with the same request id, so the knowledge base counts it once (B-117).
+      const out = await report().catch(() => report());
       record.ok = true;
       record.result = out.slice(0, RESULT_PREVIEW_CHARS);
     } catch (error) {

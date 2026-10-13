@@ -10,6 +10,11 @@
  */
 export const AGENTS: Readonly<Record<string, string>> = {
 	// The server's answers as the client words them (app/services/fabric.ts)
+	"Questions without an answer": "Вопросы без ответа",
+	"Question without an answer: {question}": "Вопрос без ответа: {question}",
+	"Not reported: no knowledge tool of this agent takes questions": "Не передан: ни один инструмент знаний этого агента не принимает вопросы",
+	"Reported to the knowledge base": "Передан в базу знаний",
+	"The report to the knowledge base failed": "Не удалось передать в базу знаний",
 	"The server did not answer in 30 seconds. Try again.": "Сервер не ответил за 30 секунд. Попробуйте ещё раз.",
 	"The server could not be reached. Check the connection and try again.": "Не удалось связаться с сервером. Проверьте подключение и попробуйте ещё раз.",
 	"The server answered {status} without data. Try again.": "Сервер ответил {status} без данных. Попробуйте ещё раз.",
