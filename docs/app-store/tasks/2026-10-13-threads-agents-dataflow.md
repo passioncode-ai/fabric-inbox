@@ -66,3 +66,7 @@ Inbox side.
 ## First task
 
 M1: the conversation endpoint for all four providers and the reader's thread view.
+
+## Built so far
+
+- M5 (B-118, 2026-10-14): the feed is an `agent_events` log in the agent registry (one row per run that ended), read forward by cursor through `GET /api/agent-events` and the MCP tool `list_agent_events`, in the fabric-service/0.1 events-page shape with the payload schema `docs/agents/agent-event.schema.json`. An agent key reaches only `/mcp`, so other agents read it there; `/fabric/v1/events` itself comes with the service descriptor (B-87).

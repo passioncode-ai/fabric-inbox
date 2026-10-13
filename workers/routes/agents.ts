@@ -117,6 +117,14 @@ agentsRouter.get("/api/agent-runs/:id", async (c) => {
   } catch (error) { return registryFailure(c, error); }
 });
 
+/** The agent-events feed (B-118): what reply agents did, for other agents, by cursor. */
+agentsRouter.get("/api/agent-events", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  try {
+    return c.json(await registry(c).listEvents(c.req.query("after") ?? null, Number(c.req.query("limit") || 50)));
+  } catch (error) { return registryFailure(c, error); }
+});
+
 agentsRouter.get("/api/agent-runs", async (c) => {
   if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
   const limit = Number(c.req.query("limit") || 50);

@@ -52,4 +52,12 @@ export const AGENT_REGISTRY_STEPS: readonly SchemaStep[] = [
       created_at INTEGER NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS agent_message_claims_by_time ON agent_message_claims(created_at)`,
   ]),
+  // B-118: the agent-events feed — one row per run that ended, read forward by seq.
+  statements("4_agent_events", [
+    `CREATE TABLE IF NOT EXISTS agent_events (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      at TEXT NOT NULL,
+      body TEXT NOT NULL)`,
+  ]),
 ];
