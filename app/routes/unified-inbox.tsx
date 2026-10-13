@@ -421,9 +421,12 @@ export default function UnifiedInbox() {
   const serverDrafts = useQuery({
     queryKey: ["server-drafts", accounts.map((a) => a.id).join(",")],
     queryFn: () => listServerDrafts(accounts.map((a) => a.id), fabric),
-    enabled: draftsOpen && accounts.length > 0,
-    staleTime: 0,
+    // Read when the inbox opens too, so the Drafts badge counts drafts made by an agent or on another
+    // device (UI walk 2026-10-13); fresh again whenever the dialog opens, never polled.
+    enabled: accounts.length > 0,
+    staleTime: draftsOpen ? 0 : 5 * 60_000,
   });
+  useEffect(() => { if (draftsOpen && accounts.length > 0) void serverDrafts.refetch(); }, [draftsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   // The Outlook client secret's end date is the server's own setting: read it once an Outlook
   // account is connected, so the inbox warns as Settings does before sync stops (B5-01).
   const outlookSetup = useQuery({
