@@ -52,6 +52,8 @@ import {
   type OpenMessage,
 } from "~/components/inbox/model";
 import { useDrafts } from "~/components/inbox/use-drafts";
+import ConversationList from "~/components/inbox/ConversationList";
+import { loadConversation } from "~/components/inbox/thread";
 import { untouchedDraft } from "~/components/inbox/draft-store";
 import DraftsDialog, { draftRows } from "~/components/inbox/DraftsDialog";
 import { listServerDrafts, signatureFor } from "~/components/inbox/server-drafts";
@@ -376,6 +378,13 @@ export default function UnifiedInbox() {
       ]),
     ).values(),
   );
+  // The open message's conversation, oldest first (B-114); keyed by thread, so moving within it is instant.
+  const conversation = useQuery({
+    queryKey: ["conversation", selected?.accountId, selected?.threadId],
+    enabled: !!selected?.threadId,
+    queryFn: () => loadConversation(selected!, (url) => fabric(url)),
+    staleTime: 30_000,
+  });
   const detail = useQuery({
     queryKey: [
       "unified-message",
@@ -498,6 +507,8 @@ export default function UnifiedInbox() {
   }
   async function refresh() {
     await client.invalidateQueries({ queryKey: ["unified-inbox"] });
+    // A reply just sent joins the open conversation (B-114).
+    await client.invalidateQueries({ queryKey: ["conversation"] });
   }
   /**
    * Refresh (P1-5): Gmail is read now for the accounts in view (Cloudflare mail arrives by push),
@@ -1382,6 +1393,8 @@ export default function UnifiedInbox() {
                   detail.data && (
                     <>
                       <div className="fi-reader-scroll">
+                        <ConversationList rows={conversation.data ?? []} openId={selected.providerMessageId}
+                          onOpen={(message) => setSelected(message)} />
                         <header className="fi-message-header">
                           <span className="fi-eyebrow">
                             {selected.provider === "cloudflare"

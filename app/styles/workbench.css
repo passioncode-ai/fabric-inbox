@@ -590,6 +590,73 @@ body {
 .fi-message-header {
   padding: 34px 34px 20px;
 }
+.fi-thread {
+  padding: 18px 34px 0;
+}
+.fi-thread-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--pc-muted);
+}
+.fi-thread-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-left: 2px solid var(--pc-border);
+}
+.fi-thread-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.fi-thread-row:hover:not(:disabled) {
+  background: var(--pc-surface-hover, rgba(127, 127, 127, 0.08));
+}
+.fi-thread-row.is-open {
+  cursor: default;
+  background: var(--pc-surface-selected, rgba(127, 127, 127, 0.12));
+}
+.fi-thread-row.is-unread .fi-thread-who {
+  font-weight: 650;
+}
+.fi-thread-who {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fi-thread-row time {
+  font-size: 12px;
+  color: var(--pc-muted);
+}
+.fi-thread-snippet {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--pc-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fi-thread-chip {
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  border: 1px solid var(--pc-border);
+  border-radius: 4px;
+}
 .fi-account-pill {
   font-size: 9px;
   letter-spacing: 0;

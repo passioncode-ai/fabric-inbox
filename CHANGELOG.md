@@ -7,6 +7,9 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **See the whole conversation.** Above the message you open, its conversation is listed oldest
+  first — what you received, the replies you sent and your drafts, for every kind of account. Open
+  any of them to read it, reply to it or forward it; a reply you send joins the list.
 - **Moving a message to Trash says so**, and restoring it too; the last action's message no longer
   stays on screen.
 - **A reply agent can send with no daily limit.** Leave *Sends per address per day* empty (over MCP,
