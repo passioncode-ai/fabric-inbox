@@ -95,6 +95,14 @@ npm run mcp:docs                                       # the agent protocol's to
   committed, and `tests/no-owner-data.test.ts` fails otherwise. A personal build
   (`npm run desktop:dmg -- --setup <name>`) bundles the local `deployments/<name>/setup.json` and is
   for its owner only. The public build carries no one's setup or domains.
+- **No private data in this public repository** (operator, 2026-10-13). Code, tests, docs, commit
+  messages and PR text use neutral names: a client is `Acme`, the operator's domain `owner.example`,
+  hosts `*.example` / `*.example.invalid`; never a client, the operator's own agents, private
+  repositories, real addresses or home paths. Before every push org-index's
+  `scripts/check_private.py .` must report 0 findings (this machine's `.git/hooks/pre-push` runs it
+  with the operator's local term list). `.check-private-allow` lists only made-up fixtures; a private
+  term (P1) can never be allowed — replace it. History is kept as it is (operator, 2026-10-13: no
+  rewrite).
 - Licence: `AGPL-3.0-only OR LicenseRef-PassionCode-Commercial` for this project's own code
   (`README.md` → License). The code imported from Cloudflare's Agentic Inbox template stays
   Apache-2.0: never remove or reword a `Copyright (c) 2026 Cloudflare, Inc.` header, and keep
