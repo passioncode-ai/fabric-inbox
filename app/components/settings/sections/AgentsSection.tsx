@@ -319,9 +319,9 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
                 onChange={(e) => set("replyPolicy", { ...policy, allowedIntents: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} />
             </label>
             <label className="fi-field">{t("Sends per address per day")}
-              <span className="fi-hint">{t("The count starts again at {time} your time (midnight UTC).", { time: resetTime(t) })}</span>
-              <input className="fi-input" type="number" min={1} max={200} value={policy.dailySendLimit}
-                onChange={(e) => set("replyPolicy", { ...policy, dailySendLimit: Math.max(1, Math.min(200, Number(e.target.value) || 1)) })} />
+              <span className="fi-hint">{t("Empty: no limit. The count starts again at {time} your time (midnight UTC).", { time: resetTime(t) })}</span>
+              <input className="fi-input" type="number" min={1} max={200} placeholder={t("No limit")} value={policy.dailySendLimit ?? ""}
+                onChange={(e) => set("replyPolicy", { ...policy, dailySendLimit: e.target.value.trim() === "" ? null : Math.max(1, Math.min(200, Number(e.target.value) || 1)) })} />
             </label>
           </div>
         )}

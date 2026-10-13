@@ -397,11 +397,12 @@ export class AgentRegistryDO extends DurableObject<Env> {
    * Takes one send from today's budget before the send is attempted. A failed or
    * unknown send keeps its slot: the budget errs toward sending less.
    */
-  async reserveSend(mailboxId: string, limit: number, day = new Date().toISOString().slice(0, 10)): Promise<boolean> {
+  /** Counts one send for the address today; refused at the limit. A null limit counts and never refuses. */
+  async reserveSend(mailboxId: string, limit: number | null, day = new Date().toISOString().slice(0, 10)): Promise<boolean> {
     return this.ctx.storage.transactionSync(() => {
       const box = mailboxId.toLowerCase();
       const count = Number(this.rows("SELECT count FROM agent_send_counts WHERE day = ? AND mailbox_id = ?", day, box)[0]?.count ?? 0);
-      if (count >= limit) return false;
+      if (limit !== null && count >= limit) return false;
       this.ctx.storage.sql.exec(
         "INSERT INTO agent_send_counts (day, mailbox_id, count) VALUES (?, ?, 1) ON CONFLICT(day, mailbox_id) DO UPDATE SET count = count + 1",
         day, box);

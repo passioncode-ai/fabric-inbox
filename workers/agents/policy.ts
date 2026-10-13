@@ -51,7 +51,7 @@ export function decide(policy: ReplyPolicy, proposal: ModelDecision, context: Po
   const allowed = policy.allowedIntents.map(normalize);
   if (allowed.length && !allowed.includes(normalize(proposal.intent)))
     return { action: "draft", reason: proposal.intent ? msg('Intent "{intent}" is not allowed to send', { intent: proposal.intent }) : msg('Intent "unknown" is not allowed to send') };
-  if (context.sentToday >= policy.dailySendLimit)
+  if (policy.dailySendLimit !== null && context.sentToday >= policy.dailySendLimit)
     return { action: "draft", reason: msg("Daily send limit of {limit} reached", { limit: policy.dailySendLimit }) };
   if (context.rateLimited) return { action: "draft", reason: context.rateLimited };
   return { action: "send", reason: proposal.intent ? msg("Allowed: {intent}", { intent: proposal.intent }) : msg("Allowed: grounded answer") };

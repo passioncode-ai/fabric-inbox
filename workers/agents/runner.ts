@@ -64,7 +64,7 @@ export interface RunnerDeps {
     getAgent(id: string): Promise<AgentVersion | null>;
     ensureAgent(id: string, input: unknown): Promise<AgentVersion | null>;
     sentToday(mailboxId: string): Promise<number>;
-    reserveSend(mailboxId: string, limit: number): Promise<boolean>;
+    reserveSend(mailboxId: string, limit: number | null): Promise<boolean>;
     /** Atomic per workspace: of the copies of one message, one answers (B-22). */
     claimMessage(key: string, mailboxId: string, elected: string): Promise<MessageClaim>;
   };
@@ -454,7 +454,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   try {
     if (outcome.action === "draft") return await saveDraft(outcome.reason);
     if (!(await deps.registry.reserveSend(mailboxId, policy.dailySendLimit)))
-      return await saveDraft(msg("Daily send limit of {limit} reached", { limit: policy.dailySendLimit }));
+      return await saveDraft(msg("Daily send limit of {limit} reached", { limit: policy.dailySendLimit ?? 0 }));
   } catch (error) {
     return finish("failed", msg("Could not save the answer: {error}", { error: (error as Error).message }));
   }

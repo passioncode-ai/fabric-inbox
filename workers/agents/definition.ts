@@ -116,8 +116,8 @@ export const ReplyPolicySchema = z.object({
   mode: z.enum(["draft", "auto"]).default("draft"),
   /** Intents the agent may answer without the operator. Empty in auto mode = any grounded answer. */
   allowedIntents: z.array(z.string().trim().min(1).max(60)).max(20).default([]),
-  /** Sends per address per UTC day; beyond it answers become drafts. */
-  dailySendLimit: z.number().int().min(1).max(200).default(20),
+  /** Sends per address per UTC day; beyond it answers become drafts. null: no limit (operator 2026-10-13); left out, 20. */
+  dailySendLimit: z.number().int().min(1).max(200).nullable().default(20),
 }).strict();
 export type ReplyPolicy = z.infer<typeof ReplyPolicySchema>;
 
