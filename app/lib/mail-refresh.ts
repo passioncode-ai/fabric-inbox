@@ -45,19 +45,63 @@ export function applyFeedChange<P extends { messages: { id: string }[] }>(data: 
 }
 
 /**
+ * A change the list shows before the server has it (B-95). A read that starts after the change was
+ * shown but before the server applied it answers with the old row; its answer gets the change too
+ * (`withPendingChanges`), so an archived row does not come back until the next read. Settled when the
+ * server confirmed it; forgotten when it was taken back.
+ */
+interface PendingChange { change: FeedChange; at: number; settledAt?: number }
+const pendingChanges: PendingChange[] = [];
+/** A read takes at most 30 s (`fabric`); a settled change matters to reads started before it settled. */
+const SETTLED_KEEP_MS = 35_000;
+/** A change nobody settled or took back stops being applied after this. */
+const UNSETTLED_KEEP_MS = 60_000;
+
+function prunePending(now: number) {
+	for (let i = pendingChanges.length - 1; i >= 0; i--) {
+		const p = pendingChanges[i]!;
+		if (p.settledAt !== undefined ? now - p.settledAt > SETTLED_KEEP_MS : now - p.at > UNSETTLED_KEEP_MS) pendingChanges.splice(i, 1);
+	}
+}
+
+/** A page read that started at `startedAt`, with every change shown since that the server may not have had yet. */
+export function withPendingChanges<P extends { messages: { id: string }[] }>(page: P, startedAt: number, now = Date.now()): P {
+	prunePending(now);
+	let out = page;
+	for (const p of pendingChanges) if (p.settledAt === undefined || startedAt < p.settledAt) out = applyFeedChange(out, p.change) as P;
+	return out;
+}
+
+/** Messages put back by the server (Undo): earlier changes that hid or changed them no longer apply. */
+export function forgetFeedChanges(ids: Iterable<string>) {
+	const gone = new Set(ids);
+	for (let i = pendingChanges.length - 1; i >= 0; i--) if (gone.has(pendingChanges[i]!.change.id)) pendingChanges.splice(i, 1);
+}
+
+/** What `showFeedChange` hands back: call it to take the change back; `settle` once the server has it. */
+export type ShownChange = (() => void) & { settle(): void };
+
+/**
  * Shows `change` in every cached list of the unified inbox (its pages, and the first page read
  * after Load older) before the server answers; the returned function puts them back exactly as
- * they were, for when the server refuses (P3-12).
+ * they were, for when the server refuses (P3-12), and `settle` says the server has it (B-95).
  */
-export async function showFeedChange(client: QueryClient, change: FeedChange): Promise<() => void> {
+export async function showFeedChange(client: QueryClient, change: FeedChange): Promise<ShownChange> {
 	const lists = [{ queryKey: ["unified-inbox"] }, { queryKey: ["unified-inbox-head"] }];
 	// A read in flight would land on top of the change and bring the old row back.
 	await Promise.all(lists.map((filter) => client.cancelQueries(filter)));
 	const before = lists.flatMap((filter) => client.getQueriesData(filter));
 	for (const filter of lists) client.setQueriesData(filter, (data: unknown) => applyFeedChange(data as never, change));
+	const entry: PendingChange = { change, at: Date.now() };
+	pendingChanges.push(entry);
 	// Undo puts back this row only: restoring the whole snapshot also undid every change made since
 	// (an archive of three where one failed brought the other two back; bug hunt 2026-10-12).
-	return () => { for (const [key, data] of before) client.setQueryData(key, (now: unknown) => revertFeedChange(now as never, data as never, change)); };
+	const undo = () => {
+		const i = pendingChanges.indexOf(entry);
+		if (i >= 0) pendingChanges.splice(i, 1);
+		for (const [key, data] of before) client.setQueryData(key, (now: unknown) => revertFeedChange(now as never, data as never, change));
+	};
+	return Object.assign(undo, { settle: () => { entry.settledAt ??= Date.now(); } });
 }
 
 type Row = { id: string };
