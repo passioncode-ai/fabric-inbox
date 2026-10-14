@@ -285,7 +285,7 @@ at most a few pages per folder, and Retry-After is honoured.
 | Storage | `MailboxDO.receiveEmailOnce`, `emails.spam_reason` (migration `11_spam_reason`) | spam is stored in the `spam` folder with its reason; its journal event is marked, so no rule, agent or category acts on it; it is not forwarded as a copy |
 | The model | `workers/categories/store.ts` (`SPAM_CATEGORY` in `classify`, `spam_checks`, `spam_budget`) | a screened message is judged once, in the same call as its categories when it has any, else within `SPAM_DAILY_LIMIT`; spam moves with the model's reason and leaves every category; almost empty mail (`tooLittleToJudge`) is not judged |
 | Actions | `workers/routes/spam.ts`, `MailboxDO.markSpam/markNotSpam`, Gmail `setSpam` (SPAM label) | Report spam / Not spam put the sender (or domain) on the block or allow list in `config/spam.json`, written conditionally on its etag |
-| Retention | `MailboxDO.purgeSpam` on the mailbox's alarm | spam older than 30 days goes with its attachments; `/api/spam/empty` deletes it all now; Gmail keeps its own spam |
+| Retention | `MailboxDO.purgeSpam` on the mailbox's alarm | spam older than 30 days goes with its attachments, 200 messages a pass: their stored bodies and attachments leave R2 first, in calls of up to 1,000 keys, and only then the rows; if R2 refuses, no row goes and the alarm tries again in 5 minutes (B-90); `/api/spam/empty` deletes up to 1,000 now and the alarm the rest; Gmail keeps its own spam |
 | Screens | the Spam folder in the unified feed, `app/components/settings/sections/SpamSection.tsx` (SCR-14) | each row says why it is in Spam; Spam reads newest first with no triage marks |
 
 A stranger's message waits in the agent queue for its spam check (`AgentRegistryDO.enqueue` with
