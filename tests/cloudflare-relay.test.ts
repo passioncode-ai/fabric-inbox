@@ -291,6 +291,10 @@ test("a relay cannot claim a domain through a pending copy of it in its own acco
     assert.equal(claim.status, 403);
     const remembered = await server.r2("config/domain-accounts.json");
     assert.notEqual(remembered?.["archive.invalid"], B, "and the relay's claim changed nothing anyone else reads");
+    // B-40: the refused delivery is where the owner looks (Settings → Domains, list_addresses), not only in the log.
+    const overview = await server.call("/api/project-addresses");
+    const failures = (overview.body as { incomingFailures?: { to: string | null; error: string }[] }).incomingFailures ?? [];
+    assert.ok(failures.some((f) => f.to === "hello@archive.invalid" && /Refused from the relay: archive\.invalid is not a domain/.test(f.error)), JSON.stringify(failures));
   } finally { await server.mf.dispose(); }
 });
 
@@ -355,4 +359,10 @@ test("a relay running with a sign-in the registry does not name is reinstalled, 
     const current = (await server.r2("config/relays.json")).relays.find((r: any) => !r.retiredAt);
     assert.equal(cf.scripts[B]["fabric-inbox-relay"].bindings.find((b) => b.name === "RELAY_TOKEN_ID")!.text, current.tokenId);
   } finally { await server.mf.dispose(); }
+});
+
+test("B-40: a message the server cannot take from a relay is recorded like one arriving directly, and the relay gets a failure", async () => {
+  const { readFileSync } = await import("node:fs");
+  const ingress = readFileSync("workers/relay/ingress.ts", "utf8");
+  assert.match(ingress, /try \{\n\s+result = await receiveEmailResilient\(event, env, ctx\);\n\s+\} catch \(e\) \{[\s\S]{0,400}await recordIncomingFailure\(env\.BUCKET, failure\);\n\s+return json\(\{ error: [^}]*\}, 500\);/);
 });
