@@ -1220,6 +1220,20 @@ export class MailboxDO extends DurableObject<Env> {
   async forwardOwed(deliveryId: string): Promise<boolean> {
     return this.ctx.storage.sql.exec("SELECT 1 FROM incoming_receipts WHERE delivery_id = ? AND forward_status = 'owed'", deliveryId).toArray().length > 0;
   }
+  /** Where this delivery's forwarding copy stands: owed, being sent (not confirmed), settled, or none (B-91). */
+  async forwardState(deliveryId: string): Promise<"owed" | "sending" | "settled" | null> {
+    const row = this.ctx.storage.sql.exec("SELECT forward_status FROM incoming_receipts WHERE delivery_id = ?", deliveryId).toArray()[0];
+    const status = row?.forward_status;
+    return status === "owed" || status === "sending" || status === "settled" ? status : null;
+  }
+  /**
+   * The copy is about to leave (B-91): true for the delivery that may send it now — owed, or never
+   * marked (forwarding switched on after it was stored) — false when another already is or did.
+   */
+  async forwardSending(deliveryId: string): Promise<boolean> {
+    return this.ctx.storage.sql.exec("UPDATE incoming_receipts SET forward_status = 'sending' WHERE delivery_id = ? AND (forward_status IS NULL OR forward_status = 'owed') RETURNING 1",
+      deliveryId).toArray().length > 0;
+  }
   /** The copy was sent or its failure recorded: a later redelivery does not send it again. */
   async forwardSettled(deliveryId: string): Promise<void> {
     this.ctx.storage.sql.exec("UPDATE incoming_receipts SET forward_status = 'settled' WHERE delivery_id = ?", deliveryId);
