@@ -462,6 +462,22 @@ test("B-85 REQ-4: a prefetch grant is called before the model with the message; 
   assert.equal(run.status, "sent");
 });
 
+test("the prefetch keeps the message's line breaks and decodes <addresses> (data agent reads by sentence)", async () => {
+  const calls: Record<string, unknown>[] = [];
+  const h = harness({
+    agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })] }),
+    // A text-only mail as the server stores it (textToHtml): lines as <br>, an address escaped.
+    email: { subject: "Код не приходит", body: '<div style="white-space:pre-wrap">Код для входа не приходит по смс<br>В вайбере коды приходят<br><br>On Mon, Support &lt;support@acme.example&gt; wrote:<br>&gt; old</div>' },
+    callTool: async (_g, args) => { calls.push(args); return publicHits; },
+    model: async () => ({ decision: answer(), text: "" }),
+  });
+  await h.run();
+  const query = String(calls[0]!.query);
+  assert.match(query, /^Код не приходит\nКод для входа не приходит по смс\nВ вайбере коды приходят\n/, "each line stays a line");
+  assert.match(query, /<support@acme\.example> wrote:/, "&lt;/&gt; decoded");
+  assert.ok(query.length <= "Код не приходит\n".length + 600);
+});
+
 test("B-85 REQ-4: a failed prefetch keeps the answer a draft and the model is told nothing was found", async () => {
   let system = "";
   const h = harness({

@@ -1,3 +1,4 @@
+import { htmlToText as linesOf } from "../../shared/mail/text";
 import type { SendMailCommand, SendMailResult } from "../../shared/mail/send";
 import { LEGACY_INSTRUCTIONS, callArguments, legacyAgentId, modelSchema, publicOnlyProblem, readAssignment, type AgentVersion, type ToolGrant } from "./definition";
 import { decide, type ModelDecision } from "./policy";
@@ -349,7 +350,9 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // A grant marked prefetch is asked about this message before the model runs, as the
   // collections are; a failure is recorded and keeps the answer a draft (policy.ts).
   // At once, so the wait is the slowest call's (each is bounded by its 20 s deadline), not their sum.
-  const opening = `${email.subject}\n${deps.htmlToText(email.body).slice(0, 600)}`;
+  // Line breaks kept and entities decoded: the data agent reads a mail by sentence — the subject, then
+  // the body's first sentence — and skips a quoted reply by its header at a line start.
+  const opening = `${email.subject}\n${linesOf(email.body).slice(0, 600)}`;
   const prefetched: PrefetchedResult[] = await Promise.all(agent.tools.filter((grant) => grant.prefetch).map(async (grant) => {
     const result = await callGrant(grant, { [grant.prefetch!.argument]: opening });
     return { name: grant.name, ok: result.ok, text: result.ok ? result.text : "", abstained: result.ok && abstainedOutput(result.text) };
