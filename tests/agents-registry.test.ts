@@ -26,10 +26,11 @@ const bundle = await build({
         async folder(name) { return this.getEmails({folder:name}); }
       }
       export class TestRegistry extends AgentRegistryDO {
-        async toolSchema(grant) {
+        async toolInfo(grant) {
           const script = JSON.parse(await (await this.env.BUCKET.get('test/tool-schema.json'))?.text() || '{}');
           if (script.throw) throw new Error(script.throw);
-          return 'schema' in script ? script.schema : {};
+          const schema = 'schema' in script ? script.schema : {};
+          return schema === null ? null : { schema, readOnly: (script.readOnly || []).includes(grant.tool) };
         }
         deps(mailboxId) {
           const real = super.deps(mailboxId);
@@ -595,5 +596,25 @@ test("a burst to one address does not hold up another address's answer (bug hunt
     const batch = await command("batch");
     assert.ok(batch.includes("quiet@p.invalid"), JSON.stringify(batch));
     assert.equal(batch.filter((m: string) => m === "busy@p.invalid").length, 1, "one message per mailbox at a time");
+  } finally { await mf.dispose(); }
+});
+
+test("B-94: a grant's read-only mark is the endpoint's, and a stale run's second claim is marked a re-run", async () => {
+  const { mf, command } = await fixture();
+  try {
+    await command("schema", { script: { schema: { type: "object", properties: { order: { type: "string" } } }, readOnly: ["order_status"] } });
+    const tools = [
+      { name: "order_status", description: "Look up an order", endpoint: "https://tools.project.invalid/mcp", tool: "order_status" },
+      { name: "refund", description: "Refund an order", endpoint: "https://tools.project.invalid/mcp", tool: "refund", readOnly: true },
+    ];
+    const saved = await command("create", { input: { ...support, tools } });
+    assert.deepEqual(saved.tools.map((t: { readOnly?: boolean }) => t.readOnly), [true, false], "the editor's readOnly: true on refund is replaced");
+    const stale = new Date(Date.now() - 24 * 3600_000).toISOString();
+    const run = { id: "run-b94", mailboxId: "a@project.invalid", emailId: "e-b94", sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [],
+      agentId: "support", agentVersion: 1, status: "running", createdAt: stale, updatedAt: stale };
+    assert.equal((await command("begin", { run })).claimed, true);
+    const again = await command("begin", { run: { ...run, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } });
+    assert.equal(again.claimed, true, "a stale run is claimed again");
+    assert.equal(again.run.rerun, true);
   } finally { await mf.dispose(); }
 });

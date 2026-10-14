@@ -51,6 +51,8 @@ export interface AgentRun {
   threadId?: string;
   /** The how-many-th answer to this message: 2 and up after "answer again"; its draft gets its own id. */
   attempt?: number;
+  /** Run again after an earlier worker on it was interrupted (B-94): tools that may act are not called again. */
+  rerun?: boolean;
   /** What the message is about (a few English words) and what the sender wants (one sentence); no personal data. */
   topic?: string;
   summary?: string;

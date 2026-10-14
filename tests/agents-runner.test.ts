@@ -689,3 +689,36 @@ test("answer again: the next attempt drafts beside the earlier draft, never over
   assert.equal(second.draftId, `${first.id}-draft-2`);
   assert.deepEqual(h.effects.drafts.map((d) => d.id), [`${first.id}-draft`, `${first.id}-draft-2`]);
 });
+
+test("a run re-run after an interruption calls only read-only tools again; the answer stays a draft (B-94)", async () => {
+  const called: string[] = [];
+  const agent = autoAgent({ tools: [
+    { name: "order_status", description: "Look up an order", endpoint: "https://tools.project.invalid/mcp", tool: "order_status", readOnly: true },
+    { name: "refund", description: "Refund an order", endpoint: "https://tools.project.invalid/mcp", tool: "refund" },
+  ] });
+  const h = harness({
+    agent,
+    callTool: async (grant) => { called.push(grant.tool); return "done"; },
+    model: async (r) => { for (const tool of r.tools) await tool.run({ order: "A-1" }); return { decision: answer(), text: "" }; },
+  });
+  // The registry marks the claim of a stale run (registry.ts beginRun).
+  const begin = h.deps.registry.beginRun;
+  h.deps.registry.beginRun = async (run) => { const r = await begin(run); return { ...r, run: { ...r.run, rerun: true } }; };
+  const run = (await h.run())!;
+  assert.deepEqual(called, ["order_status"], "the refund tool is not called a second time");
+  assert.equal(run.toolCalls.find((c) => c.name === "refund")?.ok, false);
+  assert.match(run.toolCalls.find((c) => c.name === "refund")!.result, /Not called again/);
+  assert.equal(run.status, "drafted");
+  assert.equal(h.effects.sends.length, 0);
+});
+
+test("a first run calls every granted tool, read-only or not (B-94)", async () => {
+  const called: string[] = [];
+  const h = harness({
+    agent: autoAgent({ tools: [{ name: "refund", description: "Refund an order", endpoint: "https://tools.project.invalid/mcp", tool: "refund" }] }),
+    callTool: async (grant) => { called.push(grant.tool); return "done"; },
+    model: async (r) => { await r.tools[0].run({}); return { decision: answer(), text: "" }; },
+  });
+  await h.run();
+  assert.deepEqual(called, ["refund"]);
+});

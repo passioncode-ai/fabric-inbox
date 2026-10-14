@@ -13,6 +13,14 @@ export async function readToolSchema(
   hosts: string,
   tokens: ToolTokens,
 ): Promise<unknown | null> {
+  return (await readToolInfo(grant, hosts, tokens))?.schema ?? null;
+}
+
+/** What a granted tool is, from its endpoint's tools/list: its input schema and whether it only reads (B-94). */
+export interface ToolInfo { schema: unknown; readOnly: boolean }
+
+/** The tool's schema and its `readOnlyHint` (absent or false: it may act), or null when the endpoint does not list it. */
+export async function readToolInfo(grant: ToolGrant, hosts: string, tokens: ToolTokens): Promise<ToolInfo | null> {
   const url = validateToolUrl(grant.endpoint, hosts);
   const token = tokenFor(tokens, grant.tokenRef, url);
   const transport = toolTransport(url, token);
@@ -20,7 +28,8 @@ export async function readToolSchema(
   try {
     await client.connect(transport);
     const { tools } = await client.listTools(undefined, { timeout: 20_000 });
-    return tools.find((tool) => tool.name === grant.tool)?.inputSchema ?? null;
+    const tool = tools.find((t) => t.name === grant.tool);
+    return tool ? { schema: tool.inputSchema ?? null, readOnly: tool.annotations?.readOnlyHint === true } : null;
   } finally {
     await client.close();
   }
