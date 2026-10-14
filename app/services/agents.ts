@@ -166,6 +166,11 @@ export function blankAgent(): AgentInput {
   return { name: "", instructions: "", knowledge: "", collections: [], tools: [], replyPolicy: { mode: "draft", allowedIntents: [], dailySendLimit: 20 } };
 }
 
+/** The Recent answers filter a link asks for (`/settings/agents?runs=unanswered`, B-115); anything else is all. */
+export function initialOutcome(value: string | null): string {
+  return value === "answered" || value === "attention" || value === "skipped" || value === "unanswered" ? value : "";
+}
+
 /** Whether a question without an answer reached the knowledge base (B-117): its gap report, recorded as a `:gap` tool call. */
 export function gapState(run: Pick<AgentRun, "toolCalls">, t: (s: string) => string): string {
   const report = run.toolCalls.find((c) => c.name.endsWith(":gap"));

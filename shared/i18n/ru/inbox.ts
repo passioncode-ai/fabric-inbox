@@ -167,6 +167,7 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Moved to Spam. New mail from {who} goes to Spam too; change it on Spam rules.": "Перемещено в «Спам». Новая почта от {who} тоже будет попадать в «Спам»; изменить это можно в разделе «Правила спама».",
 	"Moved to Spam.": "Перемещено в «Спам».",
 	"Conversation": "Переписка",
+	"Agents' answers": "Ответы агентов",
 	"Agent replied": "Агент ответил",
 	"Agent's draft": "Черновик агента",
 	"Agent left it alone": "Агент пропустил",

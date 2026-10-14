@@ -1,3 +1,4 @@
+import { isAgentDraft } from "./agent-run";
 import { useEffect, useRef } from "react";
 import type { Draft } from "./draft-store";
 import type { InboxAccount } from "./model";
@@ -105,7 +106,7 @@ export default function DraftsDialog({
               <li key={"server:" + r.row.accountId + ":" + r.row.serverId}>
                 <button type="button" onClick={() => onOpenServer(r.row)}>
                   <strong>{r.row.subject || t("No subject")}</strong>
-                  <span>{email(r.row.accountId)}</span>
+                  <span>{email(r.row.accountId)}{isAgentDraft(r.row.serverId) && <span className="fi-agent-tag">{t("Agent's draft")}</span>}</span>
                   <span className="fi-muted">
                     {r.row.to ? t("To {address}", { address: r.row.to }) : t("No recipient yet")}
                     {r.row.files ? ` · ${t.plural(r.row.files, { one: "{n} file", other: "{n} files" })}` : ""}

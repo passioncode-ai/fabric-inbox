@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { PlusIcon } from "@phosphor-icons/react";
 import { fabric } from "~/services/fabric";
 import { useT, type T } from "../../../lib/i18n";
@@ -8,7 +8,7 @@ import { msg } from "../../../../shared/i18n";
 import { ApiError } from "~/services/api";
 import type { CollectionList } from "~/services/knowledge";
 import {
-  blankAgent, gapState, runStatusText, type Agent, type AgentInput, type AgentList, type AgentRun, type ToolGrant,
+  blankAgent, gapState, initialOutcome, runStatusText, type Agent, type AgentInput, type AgentList, type AgentRun, type ToolGrant,
 } from "~/services/agents";
 import { groupRows, visibleRows, type ListEntry } from "../list-model";
 import { settingsPath } from "../paths";
@@ -410,7 +410,8 @@ function KnowledgeGrants({ value, onChange }: { value: string[]; onChange: (ids:
 function RunsHistory({ agents, agentId }: { agents?: AgentList; agentId?: string }) {
   const t = useT();
   const statusText = runStatusText(t);
-  const [outcome, setOutcome] = useState("");
+  const [params] = useSearchParams();
+  const [outcome, setOutcome] = useState(() => initialOutcome(params.get("runs")));
   const [chosenAgent, setChosenAgent] = useState("");
   const agentFilter = agentId ?? chosenAgent;
   const runs = useInfiniteQuery({

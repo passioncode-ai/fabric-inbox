@@ -858,6 +858,11 @@ export default function UnifiedInbox() {
           <span>{t("Drafts")}</span>
           <span className="fi-counter">{draftRows(saved.drafts, serverDrafts.data?.drafts ?? []).length}</span>
         </button>
+        {/* What the reply agents did, one click away (B-115): Settings → Agents → Recent answers. */}
+        <Link className="fi-nav-item" to={settingsPath("agents")}>
+          <RobotIcon size={18} />
+          <span>{t("Agents' answers")}</span>
+        </Link>
         <div className="fi-section-label">{t("WORKSPACE")}</div>
         <button
           className={"fi-nav-item" + (!accountId && !domainFilter && !categoryParam && !providerFilter ? " is-active" : "")}

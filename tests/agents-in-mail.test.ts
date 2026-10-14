@@ -49,3 +49,25 @@ test("the reader shows the run and opens the agent's draft in the composer; the 
   const panel = readFileSync("app/components/inbox/AgentRunPanel.tsx", "utf8");
   assert.match(panel, /fabric<AgentRunView>\(`\/api\/agent-runs\/\$\{encodeURIComponent\(id!\)\}`\)/);
 });
+
+test("B-115: an agent's draft is told apart in Drafts by its id", async () => {
+  const { isAgentDraft } = await import("../app/components/inbox/agent-run");
+  assert.equal(isAgentDraft("agent-0123456789abcdef0123456789abcdef-draft"), true);
+  assert.equal(isAgentDraft("d1"), false);
+  assert.equal(isAgentDraft("agent-0123456789abcdef0123456789abcdef"), false);
+  const { readFileSync } = await import("node:fs");
+  const dialog = readFileSync("app/components/inbox/DraftsDialog.tsx", "utf8");
+  assert.match(dialog, /isAgentDraft\(r\.row\.serverId\) && <span className="fi-agent-tag">\{t\("Agent's draft"\)\}<\/span>/);
+});
+
+test("B-115: the agents' answers are one click from the inbox, opened on the chosen filter", async () => {
+  const { readFileSync } = await import("node:fs");
+  const route = readFileSync("app/routes/unified-inbox.tsx", "utf8");
+  assert.match(route, /<Link className="fi-nav-item" to=\{settingsPath\("agents"\)\}>/);
+  const section = readFileSync("app/components/settings/sections/AgentsSection.tsx", "utf8");
+  assert.match(section, /useState\(\(\) => initialOutcome\(params\.get\("runs"\)\)\)/);
+  const { initialOutcome } = await import("../app/services/agents");
+  assert.equal(initialOutcome("unanswered"), "unanswered");
+  assert.equal(initialOutcome("bogus"), "");
+  assert.equal(initialOutcome(null), "");
+});

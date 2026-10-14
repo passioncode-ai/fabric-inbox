@@ -7,6 +7,8 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **Agents' answers in the sidebar**, one click from the inbox, and an agent's draft is marked as
+  such in Drafts.
 - **Open a message from a link.** `/?open=<account>|<message>` opens that message in the inbox, with
   what its agent did; every agent event carries such a link, so a dashboard can open the ticket here.
 - **Questions your agents could not answer, in one list.** Settings → Agents → *Questions without an
