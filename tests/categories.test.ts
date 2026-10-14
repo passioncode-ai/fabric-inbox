@@ -62,6 +62,9 @@ const bundle = await build({
         }
         async pump() { for (let i = 0; i < 20; i++) { await this.alarm(); const n = this.ctx.storage.sql.exec('SELECT COUNT(*) AS n FROM queue WHERE next_at <= ?', Date.now()).one().n; if (!n) break; } }
         async queueRows() { return this.ctx.storage.sql.exec('SELECT account_id, message_id, target, attempts, last_error FROM queue').toArray(); }
+        async age(days) { const back = days * 86400000; this.ctx.storage.sql.exec('UPDATE verdicts SET classified_at = classified_at - ?', back); this.ctx.storage.sql.exec('UPDATE spam_checks SET checked_at = checked_at - ?', back); }
+        async pruneNow() { return this.prune(Date.now(), true); }
+        async verdictRows() { return this.ctx.storage.sql.exec('SELECT category_id, message_id, matched, source FROM verdicts ORDER BY message_id').toArray(); }
       }
       const app = new Hono();
       app.post('/mailbox', async (c) => { const b = await c.req.json(); await c.env.BUCKET.put('mailboxes/' + b.email + '.json', JSON.stringify({ agent: 'off' })); return c.json({ ok: true }); });
@@ -75,6 +78,9 @@ const bundle = await build({
       app.post('/pump', async (c) => { await c.env.CATEGORIES.getByName('workspace').pump(); return c.json({ ok: true }); });
       app.get('/queue', async (c) => c.json(await c.env.CATEGORIES.getByName('workspace').queueRows()));
       app.get('/calls', async (c) => c.json(await c.env.CATEGORIES.getByName('workspace').callCount()));
+      app.post('/age', async (c) => { await c.env.CATEGORIES.getByName('workspace').age((await c.req.json()).days); return c.json({ ok: true }); });
+      app.post('/prune', async (c) => c.json(await c.env.CATEGORIES.getByName('workspace').pruneNow()));
+      app.get('/verdicts', async (c) => c.json(await c.env.CATEGORIES.getByName('workspace').verdictRows()));
       app.post('/trash', async (c) => { const b = await c.req.json(); const box = c.env.MAILBOX.get(c.env.MAILBOX.idFromName(b.mailbox)); await box.deleteEmail(b.id); return c.json({ ok: true }); });
       app.route('/', categoriesRouter);
       app.route('/', inboxRouter);
@@ -215,4 +221,32 @@ test("the daily model budget holds messages for the next day; a model that is do
     assert.match(rows[0].last_error, /model down/);
     assert.equal((await down.call("/api/categories")).body.categories[0].stats.pending, 1);
   } finally { await down.mf.dispose(); }
+});
+
+test("unmatched verdicts older than 30 days are deleted; matched ones and the category's counts stay (B-92)", async () => {
+  const { mf, call, receive } = await fixture();
+  try {
+    await receive("support@acme.invalid", "Please refund my order", "I want a refund for order 42.");
+    await receive("sales@acme.invalid", "Partnership", "Let us talk about a partnership.");
+    await receive("hi@other.invalid", "Refund?", "Can I get my money back? refund please");
+    assert.equal((await call("/api/categories", "POST", { name: "Refunds", description: "Messages about refund requests", scope: { all: true } })).status, 201);
+    await call("/pump", "POST");
+    const stats = async () => (await call("/api/categories")).body.categories[0].stats;
+    assert.deepEqual([(await stats()).matched, (await stats()).classified], [2, 3]);
+    assert.equal(Number((await call("/prune", "POST")).body), 0, "nothing is old yet");
+    await call("/age", "POST", { days: 31 });
+    assert.equal(Number((await call("/prune", "POST")).body), 1, "the one message that is not about refunds");
+    const rows = (await call("/verdicts")).body as { matched: number }[];
+    assert.deepEqual(rows.map((r) => r.matched), [1, 1], "only the matched verdicts are kept");
+    assert.deepEqual([(await stats()).matched, (await stats()).classified], [2, 3], "the figures a person reads do not shrink");
+    const view = await call("/api/inbox?category=refunds");
+    assert.equal(view.body.messages.length, 2, "the category's view is unchanged");
+    // A change of what it selects starts over, its pruned count with it.
+    const changed = await call("/api/categories/refunds", "PUT", { name: "Refunds", description: "Messages about partnerships", scope: { all: true } });
+    assert.equal(changed.status, 200, JSON.stringify(changed.body));
+    await call("/pump", "POST");
+    assert.equal((await stats()).classified, 3, "a fresh classification counts afresh");
+  } finally {
+    await mf.dispose();
+  }
 });

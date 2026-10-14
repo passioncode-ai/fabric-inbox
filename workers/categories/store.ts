@@ -49,6 +49,15 @@ const CONCURRENCY = 4;
 const MAX_ATTEMPTS = 5;
 const TEXT_CHARS = 6000;
 const DEFAULT_DAILY_CALLS = 500;
+/**
+ * Verdicts that a message is NOT in a category, and spam answers, older than this are deleted (B-92):
+ * one row per screened category per message otherwise grows for ever. Matched verdicts stay (they are
+ * the category's view); an `error` verdict stays (it is shown and counted). A message this old that is
+ * screened again is simply decided again.
+ */
+export const VERDICT_RETENTION_MS = 30 * 86_400_000;
+const PRUNE_BATCH = 500;
+const PRUNE_EVERY_MS = 3_600_000;
 export const DEFAULT_SPAM_DAILY_CALLS = 300;
 type Row = Record<string, string | number | null>;
 const day = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
@@ -57,6 +66,7 @@ const nextDay = (t = Date.now()) => Date.parse(day(t) + "T00:00:00Z") + 86_400_0
 export class CategoriesDO extends DurableObject<Env> {
   private sql: SqlStorage;
   private draining: Promise<void> | undefined;
+  private prunedAt = 0;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
@@ -165,7 +175,8 @@ export class CategoriesDO extends DurableObject<Env> {
     return {
       matched: one("SELECT COUNT(*) AS n FROM verdicts WHERE category_id = ? AND version = ? AND matched = 1", c.id, c.version),
       fresh: one("SELECT COUNT(*) AS n FROM verdicts WHERE category_id = ? AND version = ? AND matched = 1 AND classified_at > ?", c.id, c.version, seen),
-      classified: one("SELECT COUNT(*) AS n FROM verdicts WHERE category_id = ? AND version = ?", c.id, c.version),
+      classified: one("SELECT COUNT(*) AS n FROM verdicts WHERE category_id = ? AND version = ?", c.id, c.version)
+        + one("SELECT COALESCE(SUM(pruned), 0) AS n FROM verdict_prunes WHERE category_id = ? AND version = ?", c.id, c.version),
       pending: c.kind === "screened" && c.enabled ? pendingAll : 0,
       errors: one("SELECT COUNT(*) AS n FROM verdicts WHERE category_id = ? AND version = ? AND source = 'error'", c.id, c.version),
       waitingBudget: c.kind === "screened" && c.enabled ? waitingBudget : 0,
@@ -205,6 +216,7 @@ export class CategoriesDO extends DurableObject<Env> {
 
   private async restart(c: Category) {
     this.sql.exec("DELETE FROM verdicts WHERE category_id = ?", c.id);
+    this.sql.exec("DELETE FROM verdict_prunes WHERE category_id = ?", c.id);
     this.sql.exec("DELETE FROM queue WHERE target = ?", c.id);
     this.sql.exec("DELETE FROM backfills WHERE category_id = ?", c.id);
     if (c.kind === "screened" && c.enabled) await this.startBackfill(c);
@@ -214,6 +226,7 @@ export class CategoriesDO extends DurableObject<Env> {
     const found = this.sql.exec("DELETE FROM categories WHERE id = ? RETURNING id", id).toArray().length > 0;
     if (found) {
       this.sql.exec("DELETE FROM verdicts WHERE category_id = ?", id);
+      this.sql.exec("DELETE FROM verdict_prunes WHERE category_id = ?", id);
       this.sql.exec("DELETE FROM queue WHERE target = ?", id);
       this.sql.exec("DELETE FROM backfills WHERE category_id = ?", id);
     }
@@ -280,6 +293,8 @@ export class CategoriesDO extends DurableObject<Env> {
         })));
       await this.advanceBackfills().catch((error: unknown) =>
         console.error(JSON.stringify({ event: "category_backfill_failed", error: (error as Error)?.message?.slice(0, 200) })));
+      try { this.prune(); }
+      catch (error) { console.error(JSON.stringify({ event: "category_prune_failed", error: (error as Error)?.message?.slice(0, 200) })); }
     } finally {
       // Whatever happened above, the queue wakes again for what is left.
       const next = this.sql.exec("SELECT MIN(next_at) AS t FROM queue").one() as Row;
@@ -495,6 +510,35 @@ export class CategoriesDO extends DurableObject<Env> {
       this.sql.exec("UPDATE backfills SET done = ?, state = ?, detail = ?, updated_at = ? WHERE category_id = ?",
         done, left === 0 ? "done" : "running", waiting ? msg("{n} wait for tomorrow's model budget", { n: waiting }) : "", Date.now(), b.category_id);
     }
+  }
+
+  /**
+   * Deletes up to PRUNE_BATCH unmatched verdicts and as many spam answers older than VERDICT_RETENTION_MS
+   * (B-92), at most hourly unless the last pass found a full batch. Each category's pruned count is kept
+   * for its current version, so its "classified" figure does not shrink. Returns how many verdicts went.
+   */
+  protected prune(now = Date.now(), force = false): number {
+    if (!force && now - this.prunedAt < PRUNE_EVERY_MS) return 0;
+    this.prunedAt = now;
+    const cutoff = now - VERDICT_RETENTION_MS;
+    const gone = this.sql.exec(`DELETE FROM verdicts WHERE rowid IN (SELECT rowid FROM verdicts WHERE matched = 0 AND source != 'error' AND classified_at < ? LIMIT ?)
+      RETURNING category_id, version`, cutoff, PRUNE_BATCH).toArray() as Row[];
+    const counts = new Map<string, { version: number; n: number }>();
+    for (const r of gone) {
+      const key = String(r.category_id);
+      const at = counts.get(key);
+      if (at && at.version === Number(r.version)) at.n++;
+      else counts.set(key, { version: Number(r.version), n: 1 });
+    }
+    for (const [id, { version, n }] of counts)
+      this.sql.exec(`INSERT INTO verdict_prunes (category_id, version, pruned) VALUES (?, ?, ?) ON CONFLICT(category_id) DO UPDATE SET
+        pruned = CASE WHEN version = excluded.version THEN pruned + excluded.pruned ELSE excluded.pruned END, version = excluded.version`, id, version, n);
+    // Counted from RETURNING: rowsWritten also counts the index rows a delete touches.
+    const spam = this.sql.exec("DELETE FROM spam_checks WHERE rowid IN (SELECT rowid FROM spam_checks WHERE checked_at < ? LIMIT ?) RETURNING 1", cutoff, PRUNE_BATCH).toArray().length;
+    // A full batch means more is waiting: the next drain goes on rather than an hour later.
+    if (gone.length >= PRUNE_BATCH || spam >= PRUNE_BATCH) this.prunedAt = 0;
+    if (gone.length || spam) console.log(JSON.stringify({ event: "category_verdicts_pruned", verdicts: gone.length, spamChecks: spam }));
+    return gone.length;
   }
 
   // ── Reads for the feed (CAT-5) ────────────────────────────────
