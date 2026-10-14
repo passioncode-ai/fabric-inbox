@@ -4,7 +4,7 @@ import { allServedDomains } from "../lib/mailbox-store";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
 import { callMcpTool, toolResultText, type ToolTokens } from "../automation/mcp";
 import { workersAiModel } from "./model";
-import { readAssignment } from "./definition";
+import { legacyAgentId, readAssignment } from "./definition";
 import type { RunnerDeps } from "./runner";
 import { msg } from "../../shared/i18n";
 
@@ -21,6 +21,18 @@ export function toolTokens(env: Env): ToolTokens {
 }
 
 /** The production effects of one run, all scoped to the mailbox being answered. */
+/**
+ * Whether an address with a mailbox here has an agent that will answer: not Off, and an assigned agent
+ * that still exists — or none assigned yet, as a pre-registry mailbox migrates on its first message,
+ * unless the agent it was migrated to has been deleted since, which is never re-created (B-93). An
+ * address counted as answering when it will not makes every copy that ranks it first wait the claim.
+ */
+export async function assignmentServes(assignment: ReturnType<typeof readAssignment>, address: string, registry: Pick<Registry, "getAgent" | "agentState">): Promise<boolean> {
+  if (assignment === "off") return false;
+  if (assignment) return (await registry.getAgent(assignment.id)) !== null;
+  return !registry.agentState || (await registry.agentState(legacyAgentId(address))) !== "deleted";
+}
+
 export function productionDeps(env: Env, mailboxId: string, registry: Registry): RunnerDeps {
   const box = mailboxId.toLowerCase();
   const stub = env.MAILBOX.get(env.MAILBOX.idFromName(box));
@@ -68,14 +80,10 @@ export function productionDeps(env: Env, mailboxId: string, registry: Registry):
         }, []);
       },
     },
-    // Another address has an agent when it has a mailbox here that is not Off: an assigned agent
-    // that still exists, or none yet (a pre-registry mailbox migrates on its first message).
     async agentServes(address) {
       const object = await env.BUCKET.get(`mailboxes/${address.toLowerCase()}.json`);
       if (!object) return false;
-      const assignment = readAssignment(await object.json<Record<string, unknown>>());
-      if (assignment === "off") return false;
-      return assignment ? (await registry.getAgent(assignment.id)) !== null : true;
+      return assignmentServes(readAssignment(await object.json<Record<string, unknown>>()), address, registry);
     },
     // The prompt and tool outputs are scanned exactly as the model reads them (bug hunt 2026-10-12).
     injection: (text) => scanPromptInjection(env.AI, text, { plain: true }),

@@ -121,3 +121,9 @@ test("the list shows the count and the reader offers Show and Mark conversation 
   assert.match(route, /onMarkRead=\{markConversationRead\}/);
   assert.match(route, /loadText=\{\(message\) => messageText\(message, \(url\) => fabric\(url\)\)\}/);
 });
+
+test("agents see the count too: list_messages passes threadCount through", () => {
+  const tools = readFileSync("workers/mcp/tools.ts", "utf8");
+  assert.match(tools, /\.\.\.\(m\.threadCount \? \{ threadCount: m\.threadCount \} : \{\}\)/);
+  assert.match(tools, /threadCount says how many messages a row's conversation holds/);
+});

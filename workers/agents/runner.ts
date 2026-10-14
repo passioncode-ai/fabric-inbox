@@ -65,6 +65,8 @@ export interface RunnerDeps {
     saveRun(run: AgentRun): Promise<void>;
     getAgent(id: string): Promise<AgentVersion | null>;
     ensureAgent(id: string, input: unknown): Promise<AgentVersion | null>;
+    /** Live, deleted since, or never created (B-93). */
+    agentState?(id: string): Promise<"live" | "deleted" | "none">;
     sentToday(mailboxId: string): Promise<number>;
     reserveSend(mailboxId: string, limit: number | null): Promise<boolean>;
     /** Atomic per workspace: of the copies of one message, one answers (B-22). */
