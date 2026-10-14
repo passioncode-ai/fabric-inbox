@@ -318,6 +318,11 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Alerts": "Оповещения",
 	"App stores": "Магазины приложений",
 	"Billing": "Оплата",
+	"Sales": "Продажи",
+	// Agent templates (workers/agents/definition.ts AGENT_TEMPLATES): filled into the editor in the interface's language
+	"Answer customer questions about the product.\nAnswer only from the knowledge below. If the answer is not there, say you will pass the question to the team and do not invent details.\nBe brief and friendly; one clear next step per reply.": "Отвечайте на вопросы клиентов о продукте.\nОтвечайте только по знаниям ниже. Если ответа там нет, скажите, что передадите вопрос команде, и не придумывайте подробностей.\nПишите коротко и дружелюбно; в каждом ответе — один понятный следующий шаг.",
+	"Reply to people asking about buying, pricing or partnerships.\nShare only prices and terms from the knowledge below. Offer a call for anything custom.": "Отвечайте тем, кто спрашивает о покупке, ценах или партнёрстве.\nНазывайте только цены и условия из знаний ниже. Для всего нестандартного предложите созвониться.",
+	"Handle invoices, receipts and refunds.\nNever promise a refund or change a charge yourself: explain the process from the knowledge below and draft the rest for the operator.": "Занимайтесь счетами, чеками и возвратами.\nНикогда не обещайте возврат и не меняйте списание сами: объясните порядок по знаниям ниже, а остальное оставьте черновиком для оператора.",
 	"Dev & CI": "Разработка и CI",
 	"Notifications": "Уведомления",
 	"Social": "Соцсети",

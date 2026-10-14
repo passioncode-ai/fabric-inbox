@@ -59,7 +59,7 @@ import { openFromLink } from "~/components/inbox/open-link";
 import { untouchedDraft } from "~/components/inbox/draft-store";
 import DraftsDialog, { draftRows } from "~/components/inbox/DraftsDialog";
 import { listServerDrafts, signatureFor } from "~/components/inbox/server-drafts";
-import MessageActions, { applyMessageChange } from "~/components/inbox/MessageActions";
+import MessageActions, { applyMessageChange, changeMessage, type ActionMessage } from "~/components/inbox/MessageActions";
 import TriagedList from "~/components/inbox/TriagedList";
 import AccountSidebar from "~/components/inbox/AccountSidebar";
 import CategorySidebar from "~/components/inbox/CategorySidebar";
@@ -182,7 +182,7 @@ export default function UnifiedInbox() {
     [marked, setMarked] = useState<Set<string>>(() => new Set()),
     [anchor, setAnchor] = useState<string | null>(null),
     // The last archive or discard, with Undo, and the once-only notice of a rule it taught.
-    [toast, setToast] = useState<{ done?: Done; text: string; notice?: string; ruleIds?: string[]; undoing?: boolean } | null>(null),
+    [toast, setToast] = useState<{ done?: Done; trashed?: ActionMessage; text: string; notice?: string; ruleIds?: string[]; undoing?: boolean } | null>(null),
     [shortcutsOpen, setShortcutsOpen] = useState(false),
     [mac, setMac] = useState(false),
     // After Not discarded: the rules that would discard such mail again, to stop.
@@ -629,6 +629,7 @@ export default function UnifiedInbox() {
   }
   /** Undo (the toast's button, ⌘Z): every message back where and as it was. */
   async function undoLast() {
+    if (toast?.trashed && !toast.undoing) return undoTrash(toast.trashed);
     const done = toast?.done;
     if (!done || toast?.undoing) return;
     setToast({ ...toast!, undoing: true });
@@ -639,6 +640,22 @@ export default function UnifiedInbox() {
     if (result.failed.length) setNotice(TT.undoFailed(result.restored, result.failed.length, result.failed[0]!));
     await refresh();
     void client.invalidateQueries({ queryKey: ["discard-rules"] });
+  }
+  /**
+   * Undo of Move to Trash from the inbox (B-113), offered only there: the same restore as Trash's own —
+   * a Cloudflare, IMAP or Outlook message moves back to the inbox, a Gmail one leaves Trash (untrash).
+   */
+  async function undoTrash(message: ActionMessage) {
+    setToast((current) => (current ? { ...current, undoing: true } : current));
+    try {
+      await changeMessage(message, { trashed: false });
+      forgetFeedChanges([message.id]);
+      setToast({ text: TT.undone(1) });
+    } catch (e) {
+      setToast(null);
+      setNotice(TT.undoFailed(0, 1, t.text((e as Error).message)));
+    }
+    await refresh();
   }
   /** Don't (the once-only notice): the rules that discard just taught are removed. */
   async function forgetRules(ruleIds: string[], label?: string) {
@@ -1345,7 +1362,10 @@ export default function UnifiedInbox() {
                       // Guard: only the message that was acted on moves the selection on.
                       if ("removed" in change) {
                         if (selected.id === change.id) selectNextAfter(change.id);
-                        if (change.notice) setNotice(t.text(change.notice));
+                        // Moved to Trash from the inbox: said with Undo, as an archive is (B-113).
+                        if (change.trashed && folder === "inbox" && selected.id === change.id)
+                          setToast({ trashed: selected, text: t.text(change.notice ?? "") });
+                        else if (change.notice) setNotice(t.text(change.notice));
                       }
                       else setSelected(current => applyMessageChange(current, change));
                     }} />
@@ -1607,7 +1627,7 @@ export default function UnifiedInbox() {
       )}
       {toast && (
         <UndoToast text={toast.text} undoing={toast.undoing} undoKey={mac ? "⌘Z" : "Ctrl+Z"}
-          onUndo={toast.done ? () => void undoLast() : undefined}
+          onUndo={toast.done || toast.trashed ? () => void undoLast() : undefined}
           notice={toast.notice} onDont={toast.ruleIds ? () => void forgetRules(toast.ruleIds!, toast.done?.learned.find((l) => l.created)?.label) : undefined}
           onClose={() => setToast(null)} />
       )}

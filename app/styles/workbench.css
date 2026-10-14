@@ -1103,6 +1103,11 @@ body {
     grid-template-columns: 1fr;
     height: 100dvh;
   }
+  /* Reading on a phone: the message takes the screen; its own toolbar has Back (B-113, 375 px). */
+  .fi-has-selection .fi-sidebar,
+  .fi-has-selection .fi-toolbar {
+    display: none;
+  }
   .fi-sidebar {
     padding: 12px;
     border-right: 0;

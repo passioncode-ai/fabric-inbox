@@ -9,9 +9,9 @@ This report describes an initial desktop/cloud implementation, not completion of
 | Area | Evidence | Boundary |
 |---|---|---|
 | Owner | Remote `https://github.com/passioncode-ai/fabric-inbox.git`, branch `main` (was `codex/fabric-inbox` until 2026-09-27); source ancestor `93b86c6c0e5c1e63a100a5d0c421cfaf7cd1102c` | New private repository, original Worker unchanged |
-| Mail persistence | [mail core receipt](../../.task-pipeline/build/fabric-inbox/core-report.md), integrated commit `7088d7d` | Cloudflare provider is simulated in tests; acceptance does not prove recipient delivery |
-| Gmail | [Gmail receipt](../../.task-pipeline/build/fabric-inbox/gmail-report.md), integrated commit `5930de0` | OAuth/refresh/history/send/draft code tested with fake upstream; no real grant |
-| Desktop | [desktop receipt](../../.task-pipeline/build/fabric-inbox/desktop-report.md), integrated commit `bda7683` | Remote web host, not the originally proposed bundled offline renderer |
+| Mail persistence | [mail core receipt](receipts/core-report.md), integrated commit `7088d7d` | Cloudflare provider is simulated in tests; acceptance does not prove recipient delivery |
+| Gmail | [Gmail receipt](receipts/gmail-report.md), integrated commit `5930de0` | OAuth/refresh/history/send/draft code tested with fake upstream; no real grant |
+| Desktop | [desktop receipt](receipts/desktop-report.md), integrated commit `bda7683` | Remote web host, not the originally proposed bundled offline renderer |
 | Automation | `workers/automation/index.ts:65`, `workers/automation/engine.ts:20`, `tests/automation-integration.test.ts` | Event receipt commits selected rule snapshots atomically; approval bound to resolved proposal/message; interrupted effects become unknown; `AutomationDO.checkRun` settles an unknown run only on proof read under the action's own key (outbox entry, provider receipt, message state), never by repeating it (`tests/automation-check.test.ts`) |
 | UI | `app/components/settings/sections/AccountsSection.tsx`, `app/routes/gmail-inbox.tsx`, `app/routes/automation.tsx`, `app/routes.ts` | Accounts/per-account reading, rules/history; no combined all-account list |
 | Sender recovery | `app/services/api.ts:88`, `app/hooks/useComposeForm.ts:184`, `app/routes/gmail-inbox.tsx:41` | Cloudflare key per compose attempt; Gmail draft/key persists locally. No full Cloudflare offline draft recovery |

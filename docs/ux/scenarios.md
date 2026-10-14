@@ -302,7 +302,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** User session and relevant account or fixture available; capabilities are checked before action.
 - **Steps:**
   1. Choose read status, star status or archive -> the action reports progress and result.
-  2. Choose Move to trash -> provider confirmation removes this message from the current list.
+  2. Choose Move to trash -> provider confirmation removes this message from the current list; in the unified inbox the toast "Moved to Trash." offers Undo (also ⌘Z / Ctrl+Z), the same restore as Trash's own (B-113).
   3. In Trash choose Restore message (Gmail) or Restore to inbox (Cloudflare) -> provider-confirmed restoration remains scoped to this account. Permanent deletion is outside these controls.
 - **Expected result:** Failed organization does not silently remove the only visible copy.
 - **Alt paths:** Return to the previous surface without causing an external action; preserve confirmed saved work.

@@ -182,30 +182,34 @@ Write like a real person: short, direct plain text, no markdown, no lists, no me
 Read the thread before answering and never repeat what was already said.
 Use the name the sender signs with.`;
 
+/**
+ * The starting points of a new agent. Name and instructions are dictionary keys (msg), so the
+ * editor fills them in the interface's language (B-113); the server keeps them in English.
+ */
 export const AGENT_TEMPLATES: Record<"support" | "sales" | "billing", AgentInput> = {
   support: {
-    name: "Support",
-    instructions: `Answer customer questions about the product.
+    name: msg("Support"),
+    instructions: msg(`Answer customer questions about the product.
 Answer only from the knowledge below. If the answer is not there, say you will pass the question to the team and do not invent details.
-Be brief and friendly; one clear next step per reply.`,
+Be brief and friendly; one clear next step per reply.`),
     knowledge: "",
     collections: [],
     tools: [],
     replyPolicy: { mode: "draft", allowedIntents: ["question", "how-to", "status"], dailySendLimit: 20 },
   },
   sales: {
-    name: "Sales",
-    instructions: `Reply to people asking about buying, pricing or partnerships.
-Share only prices and terms from the knowledge below. Offer a call for anything custom.`,
+    name: msg("Sales"),
+    instructions: msg(`Reply to people asking about buying, pricing or partnerships.
+Share only prices and terms from the knowledge below. Offer a call for anything custom.`),
     knowledge: "",
     collections: [],
     tools: [],
     replyPolicy: { mode: "draft", allowedIntents: ["pricing", "question"], dailySendLimit: 10 },
   },
   billing: {
-    name: "Billing",
-    instructions: `Handle invoices, receipts and refunds.
-Never promise a refund or change a charge yourself: explain the process from the knowledge below and draft the rest for the operator.`,
+    name: msg("Billing"),
+    instructions: msg(`Handle invoices, receipts and refunds.
+Never promise a refund or change a charge yourself: explain the process from the knowledge below and draft the rest for the operator.`),
     knowledge: "",
     collections: [],
     tools: [],

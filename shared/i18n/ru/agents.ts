@@ -55,7 +55,7 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"[agent] It may have been deleted.": "Возможно, его удалили.",
 	"All agents": "Все агенты",
 	"Find an agent or address": "Найти агента или адрес",
-	"Find an agent": "Найти агента",
+	"Agent or address": "Агент или адрес",
 	"the new agent": "новый агент",
 	"Saved {name}, version {version}. Put it on an address under Addresses → Who answers.": "«{name}» сохранён, версия {version}. Назначьте его на адрес в разделе «Адреса → Кто отвечает».",
 	"Start from": "Начать с",

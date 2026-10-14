@@ -6,7 +6,7 @@ import {
 	ArrowBendUpRightIcon, AtIcon, BooksIcon, CaretLeftIcon, FunnelSimpleIcon, GearSixIcon, GlobeIcon, PlugIcon, ProhibitIcon, XCircleIcon,
 	RobotIcon, UserCircleIcon, type Icon,
 } from "@phosphor-icons/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useParams, type MetaArgs } from "react-router";
 import { DEFAULT_SECTION, SECTIONS, isSection, settingsPath, type SectionId } from "~/components/settings/paths";
 import { ConfirmProvider, WorkProvider } from "~/components/settings/ui";
@@ -53,6 +53,14 @@ export default function Settings() {
 		get: (domain: string) => steps[domain] ?? [],
 		set: (domain: string, s: Step[]) => setSteps((m) => ({ ...m, [domain]: s })),
 	}), [steps]);
+	// On a narrow screen the sections are one row that scrolls sideways: the current one is brought
+	// into it, so a section opened from a link is not off to the right (B-113, 375 px).
+	const nav = useRef<HTMLElement>(null);
+	useEffect(() => {
+		const current = nav.current?.querySelector<HTMLElement>('[aria-current="page"]');
+		if (current && nav.current && nav.current.scrollWidth > nav.current.clientWidth)
+			current.scrollIntoView({ block: "nearest", inline: "nearest" });
+	}, [section]);
 
 	if (!section) return <Navigate to={settingsPath(DEFAULT_SECTION)} replace />;
 	if (!isSection(section)) return <Navigate to={settingsPath(DEFAULT_SECTION)} replace />;
@@ -63,7 +71,7 @@ export default function Settings() {
 		<ConfirmProvider>
 			<StepMemory.Provider value={memory}>
 				<div className="fi-settings">
-					<nav className="fi-settings-nav" aria-label={t("Settings sections")}>
+					<nav ref={nav} className="fi-settings-nav" aria-label={t("Settings sections")}>
 						<Link to="/" className="fi-nav-item fi-settings-back"><CaretLeftIcon size={16} /><span>{t("Back to mail")}</span></Link>
 						{(["mail", "agents", "app"] as const).map((group) => (
 							<div key={group} role="group" aria-label={t.text(GROUP_LABEL[group])} style={{ display: "contents" }}>
