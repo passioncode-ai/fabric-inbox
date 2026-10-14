@@ -5,34 +5,37 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 0.17.0 — 2026-10-14
 
-- **Answer again.** A message a reply agent drafted, left alone or could not answer can be given back to
-  it — *Answer again* under *What the agent did*, or the agent tool `answer_again` — and the agent answers
-  once more by its policy; a new draft sits beside the earlier one. An answer already sent is never repeated.
-- **Every agent event says what the message is about.** A reply agent now records a short topic and a
-  one-sentence summary of what the sender wants for every message, with e-mail addresses, links,
-  usernames and phone numbers removed, and the agent-events feed carries both.
-- **Agents' answers in the sidebar**, one click from the inbox, and an agent's draft is marked as
-  such in Drafts.
-- **Open a message from a link.** `/?open=<account>|<message>` opens that message in the inbox, with
-  what its agent did; every agent event carries such a link, so a dashboard can open the ticket here.
-- **Questions your agents could not answer, in one list.** Settings → Agents → *Questions without an
-  answer* shows each question (paraphrased, without personal details) and whether it reached your
-  knowledge base; a failed report is tried once more.
-- **Other agents can follow what your reply agents do.** A new agent tool, `list_agent_events`, is a
-  feed read by cursor: one event per answer — sent, drafted, left alone, a question without an answer
-  (paraphrased) or one that needs a look — with no sender, subject or message text.
 - **See the whole conversation.** Above the message you open, its conversation is listed oldest
   first — what you received, the replies you sent and your drafts, for every kind of account. Open
   any of them to read it, reply to it or forward it; a reply you send joins the list.
 - **See what your agents did, in the mail.** A message an agent answered, drafted or left alone is
   marked in the list, and opening it shows why, from what and with which tools — and what it sent, or
   a button to open its draft.
-- **Moving a message to Trash says so**, and restoring it too; the last action's message no longer
-  stays on screen.
+- **Agents' answers in the sidebar**, one click from the inbox, and an agent's draft is marked as
+  such in Drafts.
+- **Answer again.** A message a reply agent drafted, left alone or could not answer can be given back to
+  it — *Answer again* under *What the agent did*, or the agent tool `answer_again` — and the agent answers
+  once more by its policy; a new draft sits beside the earlier one. An answer already sent is never repeated.
+- **Questions your agents could not answer, in one list.** Settings → Agents → *Questions without an
+  answer* shows each question (paraphrased, without personal details) and whether it reached your
+  knowledge base; a failed report is tried once more.
+- **Other agents can follow what your reply agents do.** A new agent tool, `list_agent_events`, is a
+  feed read by cursor: one event per answer — sent, drafted, left alone, a question without an answer
+  (paraphrased) or one that needs a look — with no sender, subject or message text.
+- **Every agent event says what the message is about.** A reply agent now records a short topic and a
+  one-sentence summary of what the sender wants for every message, with e-mail addresses, links,
+  usernames and phone numbers removed, and the agent-events feed carries both.
+- **Open a message from a link.** `/?open=<account>|<message>` opens that message in the inbox, with
+  what its agent did; every agent event carries such a link, so a dashboard can open the ticket here.
 - **A reply agent can send with no daily limit.** Leave *Sends per address per day* empty (over MCP,
   `dailySendLimit: null`); a number still caps it, and a new agent still starts at 20.
+- **A reply agent's knowledge lookup reads the message line by line.** The question sent ahead to a
+  knowledge tool keeps the message's line breaks and plain `<addresses>`, so a quoted earlier reply is
+  recognised and skipped.
+- **Moving a message to Trash says so**, and restoring it too; the last action's message no longer
+  stays on screen.
 - **The agent panel keeps your keys.** After you send a question, typing never moves the mail
   selection, and a suggestion about the open message no longer shows its long id or spills out of
   the panel. A question that got no answer shows Retry again when you reopen the panel.
