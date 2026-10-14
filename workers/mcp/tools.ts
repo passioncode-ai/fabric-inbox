@@ -430,7 +430,7 @@ const listAgentRuns = defineTool({
 
 const listAgentEvents = defineTool({
   name: "list_agent_events", title: "Reply agents' events", level: "read", readOnly: true,
-  description: "What reply agents did, as a feed another agent reads by cursor: one event per run that ended (sent, drafted, left alone, a question without an answer, or needs a look), with the address, agent, intent, whether the answer was grounded, the question it could not answer (a paraphrase) and the passages it used — never the sender, subject or message text. Without after: the newest events; pass the returned cursor as after to read only what is new.",
+  description: "What reply agents did, as a feed another agent reads by cursor: one event per run that ended (sent, drafted, left alone, a question without an answer, or needs a look), with the address, agent, intent, whether the answer was grounded, the question it could not answer (a paraphrase) and the passages it used — never the sender, subject or message text; each event's link opens the message and its run in the inbox. Without after: the newest events; pass the returned cursor as after to read only what is new.",
   input: { after: z.string().max(128).optional().describe("The cursor from the previous page"), limit: z.number().int().min(1).max(200).default(50) },
   routes: ["GET /api/agent-events"],
   call: (a, ctx) => get(ctx, "/api/agent-events", { after: a.after, limit: a.limit }),

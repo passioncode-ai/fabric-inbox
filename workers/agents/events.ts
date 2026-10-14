@@ -4,6 +4,7 @@
 // question it could not answer (the model's paraphrase, written without personal data) and the
 // titles of the passages it used — never the sender, the subject, or any message's text.
 import type { AgentRun } from "./run";
+import { messageLink } from "../../shared/mail/open-link";
 
 /** The payload schema of `data.value`, published in this repository. */
 export const AGENT_EVENT_SCHEMA = "https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/agents/agent-event.schema.json";
@@ -13,6 +14,8 @@ export interface AgentEvent {
   kind: "agent.sent" | "agent.drafted" | "agent.skipped" | "agent.unanswered" | "agent.needs_look";
   level: "info" | "notice" | "warning";
   text: string;
+  /** Opens the message and its run in the inbox (B-119): a path under the server's origin. */
+  link: string;
   data: { schema: string; value: AgentEventValue };
 }
 export interface AgentEventValue {
@@ -46,7 +49,7 @@ export function runEvent(run: AgentRun & { question?: string; unanswered?: boole
     unanswered, ...(unanswered && run.question ? { question: cut(run.question) } : {}),
     sources: (run.sources ?? []).slice(0, 32).map((s) => cut(s.title)),
   };
-  return { at: run.updatedAt, kind, level: kind === "agent.needs_look" ? "warning" : kind === "agent.unanswered" ? "notice" : "info", text: cut(text), data: { schema: AGENT_EVENT_SCHEMA, value } };
+  return { at: run.updatedAt, link: messageLink(`cloudflare:${run.mailboxId}`, run.emailId, run.id), kind, level: kind === "agent.needs_look" ? "warning" : kind === "agent.unanswered" ? "notice" : "info", text: cut(text), data: { schema: AGENT_EVENT_SCHEMA, value } };
 }
 
 /** Events kept: at least seven days or 1000 events, whichever is more (fabric-service/0.1). */

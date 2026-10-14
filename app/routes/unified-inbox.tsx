@@ -55,6 +55,7 @@ import { useDrafts } from "~/components/inbox/use-drafts";
 import ConversationList from "~/components/inbox/ConversationList";
 import { loadConversation } from "~/components/inbox/thread";
 import AgentRunPanel from "~/components/inbox/AgentRunPanel";
+import { openFromLink } from "~/components/inbox/open-link";
 import { untouchedDraft } from "~/components/inbox/draft-store";
 import DraftsDialog, { draftRows } from "~/components/inbox/DraftsDialog";
 import { listServerDrafts, signatureFor } from "~/components/inbox/server-drafts";
@@ -379,6 +380,15 @@ export default function UnifiedInbox() {
       ]),
     ).values(),
   );
+  // A link that names a message opens it, with its agent run (B-119: the dashboard's "open in source",
+  // the agent-events feed's link). Read once, when the inbox opens.
+  const linked = useRef(false);
+  useEffect(() => {
+    if (linked.current) return;
+    linked.current = true;
+    const message = openFromLink(params);
+    if (message) setSelected(message);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // The open message's conversation, oldest first (B-114); keyed by thread, so moving within it is instant.
   const conversation = useQuery({
     queryKey: ["conversation", selected?.accountId, selected?.threadId],
