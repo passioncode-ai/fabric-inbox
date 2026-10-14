@@ -14,6 +14,16 @@ is cut and published: [docs/release.md](docs/release.md).
 - **More of the app speaks Russian:** the notifications area and the agent templates (Support, Sales,
   Billing) fill in the interface's language.
 - **On a phone:** an open message takes the whole screen, and Settings shows the section you are in.
+- **A saved draft that cannot be read is kept.** On an account's page it is set aside on this device
+  instead of being deleted by the next save, and the notice says so.
+- **Mail a relay could not deliver here is shown to you** in Settings → Domains, like mail arriving
+  directly, instead of only in the server's log.
+- **A rule is turned on only after its preview.** The server now holds the app's rule: a new or
+  changed rule is enabled after a dry-run of that rule (agents too, through `save_rule`); renaming or
+  pausing needs none.
+- **For agents:** a send whose outcome is unknown keeps its place in the day's allowance;
+  `list_agent_activity` pages by `cursor` and never skips entries of the same moment; `list_rules`
+  keeps every run still waiting for approval, however old.
 
 ## 0.18.0 — 2026-10-14
 
