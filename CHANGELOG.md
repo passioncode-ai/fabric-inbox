@@ -7,6 +7,8 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **Open a message from a link.** `/?open=<account>|<message>` opens that message in the inbox, with
+  what its agent did; every agent event carries such a link, so a dashboard can open the ticket here.
 - **Questions your agents could not answer, in one list.** Settings → Agents → *Questions without an
   answer* shows each question (paraphrased, without personal details) and whether it reached your
   knowledge base; a failed report is tried once more.
