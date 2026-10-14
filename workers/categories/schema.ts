@@ -29,4 +29,11 @@ const INITIAL = [
 
 export const CATEGORIES_STEPS: readonly SchemaStep[] = [
   statements("1_initial", INITIAL),
+  // B-92: unmatched verdicts are deleted after a retention window; how many were, per category version,
+  // keeps "{matched} of {classified} sorted messages" true.
+  statements("2_verdict_retention", [
+    `CREATE TABLE IF NOT EXISTS verdict_prunes (category_id TEXT PRIMARY KEY, version INTEGER NOT NULL, pruned INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS verdicts_unmatched_age ON verdicts(matched, classified_at)`,
+    `CREATE INDEX IF NOT EXISTS spam_checks_age ON spam_checks(checked_at)`,
+  ]),
 ];
