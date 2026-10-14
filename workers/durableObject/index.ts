@@ -106,6 +106,13 @@ interface GetEmailsOptions {
 const SPAM_HOLD_MS = 15 * 60_000;
 /** Spam is kept this long, then deleted with its attachments (SP-5). */
 export const SPAM_RETENTION_MS = 30 * 86_400_000;
+/** Messages one retention pass deletes; their files go in one R2 call per R2_DELETE_KEYS keys (B-90). */
+export const PURGE_ROWS = 200;
+const R2_DELETE_KEYS = 1000;
+/** Passes an "empty now" (Empty Spam) makes in one request; the alarm finishes the rest. */
+const PURGE_PASSES_ALL = 5;
+/** How long a purge waits after R2 refused to delete its files. */
+const PURGE_RETRY_MS = 5 * 60_000;
 /**
  * A Durable Object SQLite row holds at most 2 MB. A longer body goes to R2 whole and the row
  * keeps this many characters of it (search and snippets read the row); UTF-8 is at most 3 bytes a
@@ -1364,23 +1371,63 @@ export class MailboxDO extends DurableObject<Env> {
    */
   async purgeDiscarded(options: { all?: boolean; now?: number } = {}): Promise<number> {
     const cutoff = new Date((options.now ?? Date.now()) - DISCARD_RETENTION_MS).toISOString();
-    const rows = options.all
-      ? this.ctx.storage.sql.exec("SELECT id FROM emails WHERE folder_id = 'discarded' LIMIT 500").toArray()
-      : this.ctx.storage.sql.exec("SELECT id FROM emails WHERE folder_id = 'discarded' AND discarded_at IS NOT NULL AND discarded_at < ? LIMIT 500", cutoff).toArray();
-    const bucket = (this.env as Env).BUCKET;
-    let deleted = 0;
-    for (const { id } of rows) {
-      const attachments = await this.deleteEmail(String(id));
-      if (attachments === null) continue;
-      deleted++;
-      if (attachments.length && bucket)
-        await bucket.delete(attachments.map((a) => `attachments/${id}/${a.id}/${a.filename}`)).catch((error: unknown) =>
-          console.warn(JSON.stringify({ event: "discarded_attachment_delete_failed", error: (error as Error).message })));
-    }
+    const due = () => options.all
+      ? this.ctx.storage.sql.exec("SELECT id FROM emails WHERE folder_id = 'discarded' LIMIT ?", PURGE_ROWS).toArray()
+      : this.ctx.storage.sql.exec("SELECT id FROM emails WHERE folder_id = 'discarded' AND discarded_at IS NOT NULL AND discarded_at < ? LIMIT ?", cutoff, PURGE_ROWS).toArray();
+    const { deleted, more, failed } = await this.purgePasses(due, "discarded", options.all ? PURGE_PASSES_ALL : 1);
     if (deleted) console.log(JSON.stringify({ event: "discarded_purged", count: deleted, all: !!options.all }));
-    if (rows.length === 500) await this.ctx.storage.setAlarm(Date.now() + 1000);
+    if (failed) await this.armRetry(PURGE_RETRY_MS);
+    else if (more) await this.armRetry(1000);
     else await this.armDiscardPurge();
     return deleted;
+  }
+
+  /**
+   * Deletes messages a retention purge chose (B-90): their stored bodies and attachments go from R2
+   * first, in calls of up to R2_DELETE_KEYS keys — a pass of PURGE_ROWS messages costs a few
+   * subrequests, not one or two per message — and only then the rows. If R2 refuses, no row is
+   * deleted and the alarm tries again, so no file is ever left without the row that names it.
+   */
+  private async purgeRows(ids: string[], what: "spam" | "discarded"): Promise<{ deleted: number; failed: boolean }> {
+    if (!ids.length) return { deleted: 0, failed: false };
+    const sql = this.ctx.storage.sql, list = JSON.stringify(ids);
+    const keys = [
+      ...sql.exec("SELECT body_key FROM emails WHERE id IN (SELECT value FROM json_each(?)) AND body_key IS NOT NULL", list).toArray().map((r) => String(r.body_key)),
+      ...sql.exec("SELECT email_id, id, filename FROM attachments WHERE email_id IN (SELECT value FROM json_each(?))", list).toArray()
+        .map((r) => `attachments/${r.email_id}/${r.id}/${r.filename}`),
+    ];
+    const bucket = (this.env as Env).BUCKET;
+    if (keys.length && bucket) {
+      try {
+        for (let i = 0; i < keys.length; i += R2_DELETE_KEYS) await bucket.delete(keys.slice(i, i + R2_DELETE_KEYS));
+      } catch (error) {
+        console.warn(JSON.stringify({ event: what + "_purge_files_failed", files: keys.length, error: (error as Error).message?.slice(0, 200) }));
+        return { deleted: 0, failed: true };
+      }
+    }
+    sql.exec("DELETE FROM attachments WHERE email_id IN (SELECT value FROM json_each(?))", list);
+    const deleted = sql.exec("DELETE FROM emails WHERE id IN (SELECT value FROM json_each(?)) RETURNING id", list).toArray().length;
+    return { deleted, failed: false };
+  }
+
+  /** Up to `passes` purges of PURGE_ROWS messages each; `more` when a full one was the last. Stops at a refusal. */
+  private async purgePasses(due: () => Record<string, SqlStorageValue>[], what: "spam" | "discarded", passes: number) {
+    let deleted = 0;
+    for (let pass = 0; pass < passes; pass++) {
+      const rows = due();
+      const result = await this.purgeRows(rows.map((r) => String(r.id)), what);
+      deleted += result.deleted;
+      if (result.failed) return { deleted, more: true, failed: true };
+      if (rows.length < PURGE_ROWS) return { deleted, more: false, failed: false };
+    }
+    return { deleted, more: true, failed: false };
+  }
+
+  /** Wakes the mailbox `delay` ms from now unless it is already due sooner. */
+  private async armRetry(delay: number) {
+    const due = Date.now() + delay;
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > due) await this.ctx.storage.setAlarm(due);
   }
 
   async countDiscarded(): Promise<number> {
@@ -1416,21 +1463,13 @@ export class MailboxDO extends DurableObject<Env> {
    */
   async purgeSpam(options: { all?: boolean; now?: number } = {}): Promise<number> {
     const cutoff = new Date((options.now ?? Date.now()) - SPAM_RETENTION_MS).toISOString();
-    const rows = options.all
-      ? this.ctx.storage.sql.exec("SELECT id FROM emails WHERE folder_id = 'spam' LIMIT 500").toArray()
-      : this.ctx.storage.sql.exec("SELECT id FROM emails WHERE folder_id = 'spam' AND spam_at IS NOT NULL AND spam_at < ? LIMIT 500", cutoff).toArray();
-    const bucket = (this.env as Env).BUCKET;
-    let deleted = 0;
-    for (const { id } of rows) {
-      const attachments = await this.deleteEmail(String(id));
-      if (attachments === null) continue;
-      deleted++;
-      if (attachments.length && bucket)
-        await bucket.delete(attachments.map((a) => `attachments/${id}/${a.id}/${a.filename}`)).catch((error: unknown) =>
-          console.warn(JSON.stringify({ event: "spam_attachment_delete_failed", error: (error as Error).message })));
-    }
+    const due = () => options.all
+      ? this.ctx.storage.sql.exec("SELECT id FROM emails WHERE folder_id = 'spam' LIMIT ?", PURGE_ROWS).toArray()
+      : this.ctx.storage.sql.exec("SELECT id FROM emails WHERE folder_id = 'spam' AND spam_at IS NOT NULL AND spam_at < ? LIMIT ?", cutoff, PURGE_ROWS).toArray();
+    const { deleted, more, failed } = await this.purgePasses(due, "spam", options.all ? PURGE_PASSES_ALL : 1);
     if (deleted) console.log(JSON.stringify({ event: "spam_purged", count: deleted, all: !!options.all }));
-    if (rows.length === 500) await this.ctx.storage.setAlarm(Date.now() + 1000);
+    if (failed) await this.armRetry(PURGE_RETRY_MS);
+    else if (more) await this.armRetry(1000);
     else await this.armSpamPurge();
     return deleted;
   }
