@@ -52,6 +52,7 @@ const bundle = await build({
           try {
             switch (command.op) {
               case 'rule': result = await automation.saveRule(command.rule); break;
+              case 'rule-reviewed': result = await automation.saveRuleReviewed(command.rule); break;
               case 'seed': {
                 const e = command.email;
                 await mailbox.createEmail('inbox', {id:e.id, sender:e.sender, recipient:'${ACCOUNT}', subject:e.subject, body:e.body, date:e.date, thread_id:e.id, message_id:e.id+'@source.test'}, []);
@@ -140,7 +141,8 @@ test("AUD-B11-05: a dry-run of archive, mark read, forward and a cloud tool retu
     assert.equal(after.email.folder_id, "inbox");
     assert.equal(after.email.read, false);
     assert.deepEqual(after.runs, [], "a dry-run creates no run");
-    assert.deepEqual(after.keys, [], "no run, no daily count and no event receipt is stored");
+    assert.deepEqual(after.keys.filter((k: string) => !k.startsWith("review:")), [], "no run, no daily count and no event receipt is stored");
+    assert.equal(after.keys.filter((k: string) => k.startsWith("review:")).length, 4, "only the review receipts the enable gate reads (B-67), one per rule previewed");
     assert.deepEqual(f.outbound, [], "no tool server or provider is called");
   } finally {
     await f.mf.dispose();
@@ -155,7 +157,7 @@ test("AUD-B11-05: a dry-run whose conditions do not match says so and still chan
     assert.deepEqual([preview.matched, preview.executed, preview.analysis.matches], [false, false, false]);
     const after = await f.ok("state", { id: email.id });
     assert.deepEqual([after.effects.moves, after.effects.updates, after.effects.sends], [0, 0, 0]);
-    assert.deepEqual(after.keys, []);
+    assert.deepEqual(after.keys.filter((k: string) => !k.startsWith("review:")), [], "a preview that did not match still reviewed the rule (B-67), and stored nothing else");
   } finally {
     await f.mf.dispose();
   }
@@ -295,6 +297,30 @@ test("AUD-B11-11: invokeTool makes one request with a deadline; when it times ou
   }
 });
 
+// ── B-67: the server enables only a rule whose exact content was dry-run ──
+test("B-67: a new or changed rule is enabled only after a dry-run of exactly it; pausing and renaming need none", async () => {
+  const f = await fixture();
+  try {
+    await f.ok("seed", { email });
+    const archive = rule({ type: "archive" });
+    const refused = await f.command("rule-reviewed", { rule: archive });
+    assert.equal(refused.status, 500);
+    assert.match(String(refused.body.thrown), /rule_review_required/, "an enabled rule never previewed is refused");
+    assert.ok((await f.ok("rule-reviewed", { rule: { ...archive, enabled: false } })).version, "saving it off needs no preview");
+    await f.ok("dry-run", { id: email.id, rule: { ...archive, enabled: false, version: 7 } });
+    const on = await f.ok("rule-reviewed", { rule: archive });
+    assert.equal(on.enabled, true, "the previewed content is enabled (its version and on/off do not count)");
+    const renamed = await f.ok("rule-reviewed", { rule: { ...archive, name: "Invoices" } });
+    assert.equal(renamed.enabled, true, "renaming an enabled rule keeps it on without a new preview");
+    const changed = await f.command("rule-reviewed", { rule: { ...archive, name: "Invoices", conditions: { from: "other@example.invalid" } } });
+    assert.match(String(changed.body.thrown), /rule_review_required/, "changed conditions need a new preview");
+    const paused = await f.ok("rule-reviewed", { rule: { ...archive, conditions: { from: "other@example.invalid" }, enabled: false } });
+    assert.equal(paused.enabled, false, "a pause is always allowed");
+  } finally {
+    await f.mf.dispose();
+  }
+});
+
 test("B-50: an older run still waiting for approval stays in the list past the newest 100", async () => {
   const f = await fixture();
   try {
@@ -313,4 +339,13 @@ test("B-50: an older run still waiting for approval stays in the list past the n
   } finally {
     await f.mf.dispose();
   }
+});
+
+test("B-67: the API answers a refused enable with 409 and what to do; agents are told in save_rule", async () => {
+  const { readFileSync } = await import("node:fs");
+  const route = readFileSync("workers/automation/index.ts", "utf8");
+  assert.match(route, /stub\(c\)\.saveRuleReviewed\(await c\.req\.json\(\)\)/);
+  assert.match(route, /if \(\(error as Error\)\?\.message === REVIEW_REQUIRED\)\n\s+return c\.json\(\{ error: msg\("Run a dry-run of this rule before enabling it[^"]*"\) \}, 409\);/);
+  const tools = readFileSync("workers/mcp/tools.ts", "utf8");
+  assert.match(tools, /Enabling a new or changed rule needs dry_run_rule of the same rule first/);
 });
