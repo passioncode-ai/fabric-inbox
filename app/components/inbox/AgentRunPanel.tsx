@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fabric } from "~/services/fabric";
 import { useT } from "~/lib/i18n";
 import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
@@ -13,6 +13,9 @@ interface AgentRunView {
   sent?: { to: string; subject: string; body: string };
 }
 
+/** Runs that can be given back to the agent: never one already sent or that may have been sent. */
+const AGAIN = new Set(["drafted", "skipped", "failed", "interrupted", "send_failed"]);
+
 /**
  * What the reply agent did with the open message (B-115): why, from what, with which tools, and the
  * reply it sent or the draft it left — read by the run's id when the message carries one.
@@ -25,6 +28,12 @@ export default function AgentRunPanel({ message, onOpenDraft }: { message: Inbox
     enabled: !!id,
     queryFn: () => fabric<AgentRunView>(`/api/agent-runs/${encodeURIComponent(id!)}`),
     staleTime: 15_000,
+  });
+  const client = useQueryClient();
+  // Gives the message back to its agent (the next attempt); refused for an answer already sent.
+  const again = useMutation({
+    mutationFn: () => fabric<AgentRunView>(`/api/agent-runs/${encodeURIComponent(id!)}/again`, {}, "POST"),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ["agent-run", id] }),
   });
   if (!message.agentRun) return null;
   const r = run.data;
@@ -58,6 +67,11 @@ export default function AgentRunPanel({ message, onOpenDraft }: { message: Inbox
           {r.draftId && status === "drafted" && (
             <button type="button" className="fi-secondary" onClick={() => onOpenDraft(r.draftId!)}>{t("Open the agent's draft")}</button>
           )}
+          {AGAIN.has(status) && (
+            <button type="button" className="fi-secondary" disabled={again.isPending} onClick={() => again.mutate()}>{t("Answer again")}</button>
+          )}
+          {again.isSuccess && <p role="status">{t("The agent will answer it again in a moment.")}</p>}
+          {again.isError && <p role="alert">{t.text((again.error as Error).message || "")}</p>}
         </>
       )}
     </section>

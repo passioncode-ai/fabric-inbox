@@ -307,7 +307,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
         // One that vanished while sending is reported, since the send may have happened.
         const stale = prior.status === "running" && Date.now() - Date.parse(prior.updatedAt) > RUN_STALE_MS && prior.phase !== "sending";
         if (!stale) return { claimed: false, run: this.present(prior) };
-        const again = { ...run, createdAt: prior.createdAt };
+        const again = { ...run, createdAt: prior.createdAt, ...(prior.attempt ? { attempt: prior.attempt } : {}) };
         this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?",
           again.status, JSON.stringify(again), again.updatedAt, again.id);
         return { claimed: true, run: again };
@@ -355,6 +355,26 @@ export class AgentRegistryDO extends DurableObject<Env> {
    * (created_at and id, so runs sharing a timestamp are not skipped); `outcome`
    * narrows to one of RUN_OUTCOMES; `agentId` to one agent.
    */
+  /**
+   * Answer again (the voice-of-the-customer agent's "hand to the owner"): a run that ended without a
+   * sent answer is marked stale and its message queued, so the runner claims it once more as the next
+   * attempt and answers by the agent's policy. A sent answer, or one whose send may have happened, is
+   * never repeated; a run going on now is left alone.
+   */
+  async answerAgain(id: string): Promise<{ ok: true; run: AgentRun } | { ok: false; reason: string }> {
+    const prior = this.rows("SELECT body FROM agent_runs WHERE id = ?", id)[0];
+    if (!prior) return { ok: false, reason: msg("This agent run is not kept any more") };
+    const run = JSON.parse(String(prior.body)) as AgentRun;
+    if (run.status === "sent") return { ok: false, reason: msg("This message was already answered; it is not sent twice.") };
+    if (run.status === "send_unknown" || run.phase === "sending") return { ok: false, reason: msg("This answer may have been sent already; check Sent before answering again.") };
+    if (run.status === "running" && Date.now() - Date.parse(run.updatedAt) <= RUN_STALE_MS) return { ok: false, reason: msg("The agent is answering this message now.") };
+    const again: AgentRun = { ...run, status: "running", reason: "", attempt: (run.attempt ?? 1) + 1, updatedAt: new Date(0).toISOString() };
+    delete again.phase;
+    this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?", again.status, JSON.stringify(again), again.updatedAt, id);
+    await this.enqueue(run.mailboxId, run.emailId);
+    return { ok: true, run: this.present(again) };
+  }
+
   /** The runs with these ids (B-115: the inbox page's messages), as the history presents them; unknown ids are left out. */
   async runsByIds(ids: string[]): Promise<AgentRun[]> {
     if (!ids.length) return [];

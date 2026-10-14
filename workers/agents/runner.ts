@@ -459,7 +459,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   const signed = signature?.enabled && signature.text?.trim() ? `${proposal.body.trim()}\n\n${signature.text.trim()}` : proposal.body.trim();
   const reply = { to: replyTo || email.sender, subject: replySubject(email.subject), text: signed };
   const saveDraft = async (reason: string) => {
-    const draftId = `${run.id}-draft`;
+    // An answer given again keeps the earlier draft (a person may have edited it) beside the new one.
+    const draftId = `${run.id}-draft${run.attempt && run.attempt > 1 ? `-${run.attempt}` : ""}`;
     await deps.mailbox.createDraft({ id: draftId, ...reply, inReplyTo: email.id, threadId: email.thread_id || email.id });
     run.draftId = draftId;
     return finish("drafted", reason);

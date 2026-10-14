@@ -14,4 +14,4 @@ export function agentRunLabel(status: string, t: T): string {
 export const agentRunNeedsLook = (status: string) => ATTENTION.has(status);
 
 /** A draft a reply agent left (B-115): its id is the run's id with `-draft` (workers/agents/runner.ts). */
-export const isAgentDraft = (serverId: string) => /^agent-[0-9a-f]{32}-draft$/.test(serverId);
+export const isAgentDraft = (serverId: string) => /^agent-[0-9a-f]{32}-draft(-\d+)?$/.test(serverId);

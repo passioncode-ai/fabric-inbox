@@ -49,6 +49,8 @@ export interface AgentRun {
   unanswered?: boolean;
   /** B-117: the message's conversation. */
   threadId?: string;
+  /** The how-many-th answer to this message: 2 and up after "answer again"; its draft gets its own id. */
+  attempt?: number;
   /** What the message is about (a few English words) and what the sender wants (one sentence); no personal data. */
   topic?: string;
   summary?: string;

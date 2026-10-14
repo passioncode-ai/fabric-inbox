@@ -117,6 +117,15 @@ agentsRouter.get("/api/agent-runs/:id", async (c) => {
   } catch (error) { return registryFailure(c, error); }
 });
 
+/** Answer again: the run's message goes back to its agent as the next attempt. */
+agentsRouter.post("/api/agent-runs/:id/again", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  try {
+    const result = await registry(c).answerAgain(c.req.param("id"));
+    return result.ok ? c.json(result.run) : c.json({ error: result.reason }, 409);
+  } catch (error) { return registryFailure(c, error); }
+});
+
 /** The agent-events feed (B-118): what reply agents did, for other agents, by cursor. */
 agentsRouter.get("/api/agent-events", async (c) => {
   if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
