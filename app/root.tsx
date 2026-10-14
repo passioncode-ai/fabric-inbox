@@ -174,6 +174,27 @@ function ConsoleDock() {
 	return null;
 }
 
+/**
+ * The toast region's name in the interface's language (B-73): Kumo's Toasty renders base-ui's viewport,
+ * which names itself "Notifications" and takes no label. React never rewrites that constant attribute, so
+ * the translated name set here stays; the viewport is found by its fixed live-region attributes.
+ */
+function ToastRegionLabel() {
+	const t = useT();
+	const label = t("Notifications");
+	useEffect(() => {
+		const apply = () => {
+			for (const region of document.querySelectorAll<HTMLElement>('[role="region"][aria-live="polite"][aria-relevant="additions text"]'))
+				if (region.getAttribute("aria-label") !== label) region.setAttribute("aria-label", label);
+		};
+		apply();
+		const observer = new MutationObserver(apply);
+		observer.observe(document.body, { childList: true, subtree: true });
+		return () => observer.disconnect();
+	}, [label]);
+	return null;
+}
+
 export default function App() {
 	// Use useState to ensure each SSR request gets a fresh client while the
 	// browser reuses the same singleton across navigations.
@@ -184,6 +205,7 @@ export default function App() {
 			<LinkProvider component={KumoLink}>
 				<TooltipProvider>
 					<Toasty>
+						<ToastRegionLabel />
 						<MutationErrorToasts />
 						<UpdateNotice />
 						<ConsoleDock />

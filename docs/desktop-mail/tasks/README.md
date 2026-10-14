@@ -21,7 +21,7 @@ Shared inputs of every packet: [brief](../brief.md), [contracts](../architecture
 
 The next operational packet is T08 controlled acceptance per [setup](../setup.md). Independent development: T04 after the provider list, T07 unified inbox/attachments, T06 device runner only for a real selected tool. Do not declare the all-accounts task done while the adapter for a specific provider is missing.
 
-Shared contracts/receipts: [as-built](../implementation.md), [core](../../../.task-pipeline/build/fabric-inbox/core-report.md), [Gmail](../../../.task-pipeline/build/fabric-inbox/gmail-report.md), [desktop](../../../.task-pipeline/build/fabric-inbox/desktop-report.md), [UX](../../ux/implementation-receipt.md). The original carry-over entries below are historical.
+Shared contracts/receipts: [as-built](../implementation.md), [core](../receipts/core-report.md), [Gmail](../receipts/gmail-report.md), [desktop](../receipts/desktop-report.md), [UX](../../ux/implementation-receipt.md). The original carry-over entries below are historical.
 
 ## Packet boundaries and checks
 
@@ -38,9 +38,9 @@ T01 changes only contracts/persistence/execution and the tests of those operatio
 
 ## Saved delegation packets
 
-- [Core brief](../../../.task-pipeline/build/fabric-inbox/core-brief.md)
-- [Gmail brief](../../../.task-pipeline/build/fabric-inbox/gmail-brief.md)
-- [UX brief](../../../.task-pipeline/build/fabric-inbox/ux-brief.md)
-- [Desktop brief](../../../.task-pipeline/build/fabric-inbox/desktop-brief.md)
+- [Core brief](../receipts/core-brief.md)
+- [Gmail brief](../receipts/gmail-brief.md)
+- [UX brief](../receipts/ux-brief.md)
+- [Desktop brief](../receipts/desktop-brief.md)
 
 These are the original bounded packets; the actual status is determined by the table above and the implementation receipts, not by the expected results in the prompt.

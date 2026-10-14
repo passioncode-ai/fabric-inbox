@@ -6,7 +6,7 @@ import { useT } from "../../lib/i18n";
 import { isRemote } from "./model";
 
 export type ActionMessage = Pick<InboxMessage, "id" | "accountId" | "provider" | "providerMessageId" | "starred"> & { sender?: string };
-export type MessageChange = { id: string; starred: boolean } | { id: string; removed: true; notice?: string };
+export type MessageChange = { id: string; starred: boolean } | { id: string; removed: true; notice?: string; trashed?: boolean };
 export interface MessageActionsProps {
   message: ActionMessage;
   folder: InboxFolder;
@@ -42,7 +42,7 @@ export async function changeMessage(
   await request(gmail ? path + "/trashed" : path + "/move",
     gmail ? change : { folderId: change.trashed ? "trash" : "inbox" }, "POST");
   // Said in the toast, so the last action's toast is never left showing (UI walk 2026-10-13).
-  return { id: message.id, removed: true, notice: change.trashed ? msg("Moved to Trash.") : msg("Restored.") };
+  return { id: message.id, removed: true, notice: change.trashed ? msg("Moved to Trash.") : msg("Restored."), ...(change.trashed ? { trashed: true } : {}) };
 }
 
 /** What the list may show at once for an action on `message`, before the server confirms it. */

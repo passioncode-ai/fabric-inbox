@@ -108,7 +108,7 @@ export default function AgentsSection({ id, tab }: { id: string | null; tab: str
   return (
     <SectionLayout section="agents" hasSelection={!!id} list={listView} panel={panel}
       toolbar={<>
-        <ListSearch value={query} onChange={setQuery} placeholder={t("Find an agent or address")} label={t("Find an agent")} />
+        <ListSearch value={query} onChange={setQuery} placeholder={t("Agent or address")} label={t("Find an agent or address")} />
         <Link className="fi-primary" to={settingsPath("agents", NEW)} preventScrollReset><PlusIcon size={16} /> {t("New agent")}</Link>
       </>} />
   );
@@ -133,8 +133,9 @@ function NewAgentPanel({ list, onCreated }: { list: AgentList; onCreated: (a: Ag
         <PanelBlock title={t("Start from")}>
           <div className="fi-provider-cards">
             {Object.entries(list.templates).map(([key, template]) => (
-              <button key={key} type="button" className="fi-provider-card" onClick={() => setDraft(structuredClone(template))}>
-                <strong>{template.name}</strong><span>{policySummary(template, t)}</span>
+              <button key={key} type="button" className="fi-provider-card"
+                onClick={() => setDraft({ ...structuredClone(template), name: t.text(template.name), instructions: t.text(template.instructions) })}>
+                <strong>{t.text(template.name)}</strong><span>{policySummary(template, t)}</span>
               </button>
             ))}
             <button type="button" className="fi-provider-card" onClick={() => setDraft(blankAgent())}>

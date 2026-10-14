@@ -186,7 +186,6 @@ export async function createMailbox(env: Env, rawEmail: string, name: string, se
     fromName: name,
     forwarding: { enabled: false, email: "" },
     signature: { enabled: false, text: "" },
-    autoReply: { enabled: false, subject: "", message: "" },
     // No agent answers a new address until one is chosen; only mailboxes from before
     // the agent registry (no key at all) are migrated to their old drafting agent.
     agent: "off",
