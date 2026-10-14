@@ -8,7 +8,7 @@ import { createElement, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { gmailDraftKey, keepGmailDraft, restoreGmailDraft, type GmailDraft } from "../app/lib/gmail-draft";
+import { gmailDraftKey, keepGmailDraft, restoreGmailDraft, setAsideUnreadableDraft, unreadableDraftKey, type GmailDraft } from "../app/lib/gmail-draft";
 import { showFeedChange } from "../app/lib/mail-refresh";
 import { AccountService, type AccountRecord } from "../workers/providers/account-service";
 import { seal, type Store } from "../workers/providers/google-oauth";
@@ -71,9 +71,22 @@ test("AUD-B1-04: an unreadable saved entry is refused (the page says the draft c
   storage.rows.set("fabric-draft:g1", '{"draft":{"to":"maya@example.invalid"');
   assert.throws(() => restoreGmailDraft(storage, "g1"), SyntaxError);
   assert.equal(storage.rows.get("fabric-draft:g1"), '{"draft":{"to":"maya@example.invalid"', "reading never rewrites the entry");
+  // B-68: the page sets the unreadable entry aside, so its next save (a new draft, or none) never deletes it.
+  assert.equal(setAsideUnreadableDraft(storage, "g1"), true);
+  assert.equal(storage.rows.has("fabric-draft:g1"), false);
+  assert.equal(storage.rows.get(unreadableDraftKey("g1")), '{"draft":{"to":"maya@example.invalid"', "kept byte for byte");
+  keepGmailDraft(storage, "g1", null, false);
+  keepGmailDraft(storage, "g1", gmailDraft(), false);
+  assert.equal(storage.rows.get(unreadableDraftKey("g1")), '{"draft":{"to":"maya@example.invalid"', "later saves leave it alone");
+  // A device that refuses the copy leaves the entry in place; the page then saves nothing over it.
+  const full = new DeviceStorage();
+  full.rows.set("fabric-draft:g2", "{broken");
+  full.full = true;
+  assert.equal(setAsideUnreadableDraft(full, "g2"), false);
+  assert.equal(full.rows.get("fabric-draft:g2"), "{broken");
   const page = readFileSync("app/routes/gmail-inbox.tsx", "utf8");
-  assert.match(page, /restoreGmailDraft\(localStorage, accountId\)[\s\S]{0,200}catch \{\n\s+setNotice\(t\("Saved draft could not be restored\."\)\)/,
-    "the account page turns the refusal into its notice");
+  assert.match(page, /restoreGmailDraft\(localStorage, accountId\)[\s\S]{0,200}catch \{[\s\S]{0,200}if \(!setAsideUnreadableDraft\(localStorage, accountId\)\) \{[\s\S]{0,200}return;/,
+    "the account page sets the entry aside, and saves nothing when it could not");
 });
 
 test("AUD-B1-04: a device that refuses the save throws, so the page can say so and never sends without its lock", () => {
