@@ -428,6 +428,14 @@ const listAgentRuns = defineTool({
     : get(ctx, "/api/agent-runs", { mailbox: a.address?.toLowerCase(), agent: a.agentId, outcome: a.outcome, before: a.before, limit: a.limit }),
 });
 
+const answerAgain = defineTool({
+  name: "answer_again", title: "Answer a message again", level: "mail", readOnly: false, additive: true,
+  description: "Gives a message back to its reply agent: the agent answers it once more, by its own policy (in draft mode a new draft beside any earlier one). For a run that was drafted, left alone, failed or interrupted; a message already answered, or whose answer may have been sent, is refused.",
+  input: { runId: z.string().regex(/^agent-[0-9a-f]{32}$/).describe("The run (list_agent_runs, list_agent_events)") },
+  routes: ["POST /api/agent-runs/:id/again"],
+  call: (a, ctx) => post(ctx, `/api/agent-runs/${enc(a.runId)}/again`, {}),
+});
+
 const listAgentEvents = defineTool({
   name: "list_agent_events", title: "Reply agents' events", level: "read", readOnly: true,
   description: "What reply agents did, as a feed another agent reads by cursor: one event per run that ended (sent, drafted, left alone, a question without an answer, or needs a look), with the address, agent, intent, whether the answer was grounded, the question it could not answer (a paraphrase) and the passages it used — never the sender, subject or message text; each event's link opens the message and its run in the inbox. Without after: the newest events; pass the returned cursor as after to read only what is new.",
@@ -1503,7 +1511,7 @@ const agentActivity = defineTool({
 
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listFolders, getSendStatus,
-  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, listCategories, listKnowledge, searchKnowledge, listRules,
+  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, answerAgain, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,

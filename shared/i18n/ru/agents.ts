@@ -10,6 +10,9 @@
  */
 export const AGENTS: Readonly<Record<string, string>> = {
 	// The server's answers as the client words them (app/services/fabric.ts)
+	"The agent is answering this message now.": "Агент сейчас отвечает на это письмо.",
+	"This answer may have been sent already; check Sent before answering again.": "Этот ответ, возможно, уже отправлен — проверьте «Отправленные», прежде чем отвечать заново.",
+	"This message was already answered; it is not sent twice.": "На это письмо уже ответили; второй раз оно не отправляется.",
 	"This agent run is not kept any more": "Этот прогон агента больше не хранится",
 	"Questions without an answer": "Вопросы без ответа",
 	"Question without an answer: {question}": "Вопрос без ответа: {question}",

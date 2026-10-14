@@ -676,3 +676,16 @@ test("VoC: the run keeps the model's topic and summary, cut to size, for every a
   assert.equal(run.topic, "Translator in chats");
   assert.equal(run.summary, "The user asks how to translate messages in a chat.");
 });
+
+test("answer again: the next attempt drafts beside the earlier draft, never over it", async () => {
+  const h = harness({ agent: autoAgent({ replyPolicy: { mode: "draft", allowedIntents: [], dailySendLimit: 20 } }), model: async () => ({ decision: answer(), text: "" }) });
+  const first = (await h.run())!;
+  assert.equal(first.draftId, `${first.id}-draft`);
+  // The registry's answerAgain makes the run stale with the next attempt; beginRun keeps the attempt.
+  h.runs.set(first.id, { ...first, status: "running", attempt: 2, updatedAt: new Date(0).toISOString() } as never);
+  const beginRun = h.deps.registry.beginRun;
+  h.deps.registry.beginRun = async (run) => { h.runs.delete(run.id); return beginRun({ ...run, attempt: 2 } as never); };
+  const second = (await h.run())!;
+  assert.equal(second.draftId, `${first.id}-draft-2`);
+  assert.deepEqual(h.effects.drafts.map((d) => d.id), [`${first.id}-draft`, `${first.id}-draft-2`]);
+});

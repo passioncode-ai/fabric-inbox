@@ -7,6 +7,9 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **Answer again.** A message a reply agent drafted, left alone or could not answer can be given back to
+  it — *Answer again* under *What the agent did*, or the agent tool `answer_again` — and the agent answers
+  once more by its policy; a new draft sits beside the earlier one. An answer already sent is never repeated.
 - **Every agent event says what the message is about.** A reply agent now records a short topic and a
   one-sentence summary of what the sender wants for every message, with e-mail addresses, links,
   usernames and phone numbers removed, and the agent-events feed carries both.

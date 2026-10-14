@@ -105,6 +105,7 @@ const bundle = await build({
               case 'runId': return Response.json(await runIdFor(c.mailbox, c.emailId));
               case 'runs': return Response.json(await reg.listRuns({mailboxId: c.mailbox, ...(c.options ?? {})}));
               case 'byIds': return Response.json(await reg.runsByIds(c.ids));
+              case 'again': return Response.json(await reg.answerAgain(c.id));
               case 'save': await reg.saveRun(c.run); return Response.json(true);
               case 'events': return Response.json(await reg.listEvents(c.after, c.limit));
               case 'sent': return Response.json(await box(c.mailbox).sentLog());
@@ -239,6 +240,23 @@ test("B-118: a run that ends appends one event; the feed pages forward by cursor
     assert.ok(Number(all.events[1].id) > Number(all.events[0].id), "ids increase");
     const none = await command("events", { after: all.cursor, limit: 50 });
     assert.deepEqual(none, { events: [], cursor: null });
+  } finally { await mf.dispose(); }
+});
+
+test("answer again: a drafted, skipped or failed run is queued once more as a new attempt; a sent one never is", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const base = { mailboxId: "a@project.invalid", sender: "x@y.invalid", subject: "s", reason: "r", toolCalls: [], agentId: "support", agentVersion: 1,
+      createdAt: "2026-10-14T08:00:00.000Z", updatedAt: "2026-10-14T08:00:00.000Z" };
+    for (const [id, status] of [["d", "drafted"], ["s", "sent"], ["u", "send_unknown"], ["k", "skipped"]]) await command("begin", { run: { ...base, id, emailId: id, status } });
+    const again = await command("again", { id: "d" });
+    assert.equal(again.ok, true);
+    assert.equal(again.run.attempt, 2);
+    assert.equal((await command("byIds", { ids: ["d"] }))[0].status, "interrupted", "shown as waiting to be answered again");
+    assert.deepEqual(await command("again", { id: "s" }), { ok: false, reason: "This message was already answered; it is not sent twice." });
+    assert.equal((await command("again", { id: "u" })).ok, false, "a send that may have happened is never repeated");
+    assert.equal((await command("again", { id: "nope" })).ok, false);
+    assert.equal((await command("again", { id: "k" })).run.attempt, 2);
   } finally { await mf.dispose(); }
 });
 
