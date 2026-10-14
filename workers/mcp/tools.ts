@@ -1341,7 +1341,7 @@ const ruleChange = z.object({
 });
 const saveRule = defineTool({
   name: "save_rule", title: "Create or change a rule", level: "admin", target: (a) => `${a.accountId} ${a.rule.id}`,
-  description: "Creates an automation rule of one account, or changes one (same id): only the fields you give change, so renaming a rule keeps it on, its mode and its limit. A new rule needs name, conditions and action and starts off, in approval mode, 20 runs a day. The server numbers each saved version. A rule in approval mode waits for approve_rule_run; turn a rule off with enabled: false.",
+  description: "Creates an automation rule of one account, or changes one (same id): only the fields you give change, so renaming a rule keeps it on, its mode and its limit. Enabling a new or changed rule needs dry_run_rule of the same rule first (within a day), as the app asks; otherwise the save is refused with 409. A new rule needs name, conditions and action and starts off, in approval mode, 20 runs a day. The server numbers each saved version. A rule in approval mode waits for approve_rule_run; turn a rule off with enabled: false.",
   input: { accountId, rule: ruleChange },
   routes: ["GET /api/automation/:account/rules", "PUT /api/automation/:account/rules"],
   async call(a, ctx) {

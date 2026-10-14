@@ -427,6 +427,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Forward accepted by email provider": "Почтовый провайдер принял пересылку",
 	"Automation is not configured": "Правила не настроены",
 	"Invalid rule or tool host is not enabled": "Недопустимое правило или хост инструмента не разрешён",
+	"Run a dry-run of this rule before enabling it: a new or changed rule is enabled only after its preview.": "Сначала выполните пробный запуск правила: новое или изменённое правило включается только после проверки.",
 	"Approval is no longer available": "Одобрение больше недоступно",
 	"This run cannot be cancelled": "Этот запуск нельзя отменить",
 	"Could not preview rule; check the message and AI configuration": "Не удалось выполнить пробный запуск правила; проверьте письмо и настройку ИИ",

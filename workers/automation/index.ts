@@ -21,6 +21,22 @@ import { parseRemoteAccount } from "../../shared/mail/accounts";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
 import { msg } from "../../shared/i18n";
 
+/** How long a dry-run lets its exact rule be enabled (B-67), and how many such receipts are kept. */
+const REVIEW_TTL_MS = 24 * 60 * 60_000;
+const REVIEW_KEEP = 100;
+const REVIEW_REQUIRED = "rule_review_required";
+class ReviewRequired extends Error { constructor() { super(REVIEW_REQUIRED); } }
+/**
+ * What a review covers: everything that decides what the rule does — not its saved version, whether it
+ * is on, or its name (a rename changes no behaviour). The editor's ruleReviewKey is stricter (it keeps
+ * the name), so anything it lets through passes here.
+ */
+async function reviewKey(rule: Rule): Promise<string> {
+  const text = JSON.stringify({ ...rule, version: 0, enabled: false, name: "" });
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 /** What checking an uncertain run found (SCN-020). */
 export type RunCheckOutcome = "done" | "not_done" | "unresolved" | "not_checkable";
 export interface RunCheck { outcome: RunCheckOutcome; detail: string; run: Run }
@@ -62,6 +78,23 @@ export class AutomationDO extends DurableObject<Env> {
       await txn.put("rule:" + rule.id, rule);
       return rule;
     });
+  }
+  /**
+   * B-67, the server side of the pre-enable review (FLW-05): a rule is enabled only when a dry-run of
+   * exactly its content succeeded here in the last REVIEW_TTL_MS, or when it was already enabled with
+   * that content (a rename or a limit change of an enabled rule keeps it on; any pause needs nothing).
+   * The interface, the API and agents (save_rule) all come through here.
+   */
+  async saveRuleReviewed(input: unknown) {
+    const parsed = RuleSchema.parse(input);
+    if (parsed.enabled) {
+      const key = await reviewKey(parsed);
+      const old = await this.ctx.storage.get<Rule>("rule:" + parsed.id);
+      const unchanged = !!old?.enabled && (await reviewKey(old)) === key;
+      const receipt = await this.ctx.storage.get<number>("review:" + key);
+      if (!unchanged && !(receipt && Date.now() - receipt < REVIEW_TTL_MS)) throw new ReviewRequired();
+    }
+    return this.saveRule(input);
   }
   async runs() {
     return [...(await this.ctx.storage.list<Run>({ prefix: "run:" })).values()]
@@ -313,6 +346,9 @@ export class AutomationDO extends DurableObject<Env> {
     const analysis = deterministic
       ? await this.analyze(rule, email)
       : { matches: false, summary: msg("Conditions did not match"), draft: "" };
+    // The receipt the server-side enable gate looks for (B-67): this content was reviewed.
+    await this.ctx.storage.put("review:" + (await reviewKey(rule)), Date.now());
+    await this.pruneReviews();
     return {
       matched: deterministic && analysis.matches,
       analysis,
@@ -325,6 +361,13 @@ export class AutomationDO extends DurableObject<Env> {
           : rule.action,
       executed: false,
     };
+  }
+  /** Review receipts are kept a day, the newest REVIEW_KEEP of them. */
+  private async pruneReviews() {
+    const now = Date.now();
+    const all = [...(await this.ctx.storage.list<number>({ prefix: "review:" })).entries()].sort((a, b) => b[1] - a[1]);
+    const gone = all.filter(([, at], i) => now - at > REVIEW_TTL_MS || i >= REVIEW_KEEP).map(([key]) => key);
+    if (gone.length) await this.ctx.storage.delete(gone);
   }
   private async execute(run: Run, email: RuleEmail): Promise<string> {
     const action = run.proposal?.action ?? run.rule.action;
@@ -517,8 +560,10 @@ automationRouter.get(base + "/rules", async (c) =>
 );
 automationRouter.put(base + "/rules", async (c) => {
   try {
-    return c.json(await stub(c).saveRule(await c.req.json()));
-  } catch {
+    return c.json(await stub(c).saveRuleReviewed(await c.req.json()));
+  } catch (error) {
+    if ((error as Error)?.message === REVIEW_REQUIRED)
+      return c.json({ error: msg("Run a dry-run of this rule before enabling it: a new or changed rule is enabled only after its preview.") }, 409);
     return c.json({ error: msg("Invalid rule or tool host is not enabled") }, 400);
   }
 });
