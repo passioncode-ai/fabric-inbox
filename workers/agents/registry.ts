@@ -256,6 +256,12 @@ export class AgentRegistryDO extends DurableObject<Env> {
    * Creates the agent only if the id was never used (legacy migration, SCN-022).
    * A deleted id stays deleted: the operator's delete means Off, not "recreate".
    */
+  /** Whether an id names a live agent, one deleted since, or none ever (B-93: a deleted migrated agent is never re-created). */
+  async agentState(id: string): Promise<"live" | "deleted" | "none"> {
+    const head = this.rows("SELECT deleted_at FROM agents WHERE id = ?", id)[0];
+    return !head ? "none" : head.deleted_at ? "deleted" : "live";
+  }
+
   async ensureAgent(id: string, input: unknown): Promise<AgentVersion | null> {
     const data = await this.validate(input);
     return this.ctx.storage.transactionSync(() => {

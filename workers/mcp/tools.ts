@@ -134,7 +134,7 @@ async function readMessage(ctx: ToolContext, account: Account, id: string, max =
 const row = (m: Record<string, unknown>) => ({
   accountId: m.accountId, messageId: m.providerMessageId, threadId: m.threadId ?? null, subject: m.subject, from: m.sender, to: m.recipient,
   date: m.date, read: m.read, starred: m.starred, snippet: m.snippet,
-  ...(m.alsoIn ? { alsoIn: m.alsoIn } : {}), ...(m.categories ? { categories: m.categories } : {}),
+  ...(m.threadCount ? { threadCount: m.threadCount } : {}), ...(m.alsoIn ? { alsoIn: m.alsoIn } : {}), ...(m.categories ? { categories: m.categories } : {}),
   ...(m.spamReason ? { spamReason: m.spamReason } : {}), ...(m.discardReason ? { discardReason: m.discardReason } : {}), ...(m.triage ? { triage: m.triage } : {}),
 });
 
@@ -195,7 +195,7 @@ const listAccounts = defineTool({
 
 const listMessages = defineTool({
   name: "list_messages", title: "List or search messages", level: "read", readOnly: true,
-  description: "The triaged feed across every mailbox, newest first, as the app's All inboxes reads it (the app then groups it by triage; here it is one list). Narrow it to one account, a domain, a provider, a folder, unread mail, a category, or text in the subject, sender or body (query). Page with cursor. Hidden addresses are left out unless you name the account. folder \"draft\" lists the drafts kept on the server (as list_drafts does; unread and categoryId do not apply). folder \"discarded\" lists Discarded mail, each with discardReason (deleted after 30 days; restore_discarded brings one back).",
+  description: "The triaged feed across every mailbox, newest first, as the app's All inboxes reads it (the app then groups it by triage; here it is one list). threadCount says how many messages a row's conversation holds when it is more than one (read_thread reads it). Narrow it to one account, a domain, a provider, a folder, unread mail, a category, or text in the subject, sender or body (query). Page with cursor. Hidden addresses are left out unless you name the account. folder \"draft\" lists the drafts kept on the server (as list_drafts does; unread and categoryId do not apply). folder \"discarded\" lists Discarded mail, each with discardReason (deleted after 30 days; restore_discarded brings one back).",
   input: {
     accountId: accountId.optional(), domain: z.string().max(253).optional().describe("Only Cloudflare addresses on this domain"),
     provider: z.enum(["cloudflare", "gmail", "imap", "outlook"]).optional(), folder: z.enum(["inbox", "sent", "archive", "trash", "starred", "spam", "discarded", "draft"]).default("inbox"),
