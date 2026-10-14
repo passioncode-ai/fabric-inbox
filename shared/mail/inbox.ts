@@ -50,6 +50,8 @@ export interface InboxMessage {
   starred: boolean;
   snippet: string;
   threadId?: string;
+  /** How many messages its conversation holds (trash, spam and discarded left out), when more than one (B-114). */
+  threadCount?: number;
   /** The RFC Message-ID, when known: the same email received in two inboxes shares it. */
   rfcMessageId?: string;
   /** Other inboxes that received this same email; the row stands for all of them. */

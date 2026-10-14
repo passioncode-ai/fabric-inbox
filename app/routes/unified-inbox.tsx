@@ -53,7 +53,7 @@ import {
 } from "~/components/inbox/model";
 import { useDrafts } from "~/components/inbox/use-drafts";
 import ConversationList from "~/components/inbox/ConversationList";
-import { loadConversation } from "~/components/inbox/thread";
+import { loadConversation, markRead, messageText, type ThreadRow } from "~/components/inbox/thread";
 import AgentRunPanel from "~/components/inbox/AgentRunPanel";
 import { openFromLink } from "~/components/inbox/open-link";
 import { untouchedDraft } from "~/components/inbox/draft-store";
@@ -396,6 +396,15 @@ export default function UnifiedInbox() {
     queryFn: () => loadConversation(selected!, (url) => fabric(url)),
     staleTime: 30_000,
   });
+  /**
+   * Marks messages of the open conversation read (B-114): the whole conversation, or one message shown
+   * in place. The conversation and the list are read again either way, so a partial refusal shows as it is.
+   */
+  const markConversationRead = (rows: ThreadRow[], whole: boolean) =>
+    markRead(rows, (url, body, method) => fabric(url, body, method), whole).finally(() => {
+      void client.invalidateQueries({ queryKey: ["conversation"] });
+      void client.invalidateQueries({ queryKey: ["unified-inbox"] });
+    });
   const detail = useQuery({
     queryKey: [
       "unified-message",
@@ -1410,7 +1419,8 @@ export default function UnifiedInbox() {
                     <>
                       <div className="fi-reader-scroll">
                         <ConversationList rows={conversation.data ?? []} openId={selected.providerMessageId}
-                          onOpen={(message) => setSelected(message)} />
+                          onOpen={(message) => setSelected(message)} loadText={(message) => messageText(message, (url) => fabric(url))}
+                          onMarkRead={markConversationRead} />
                         <header className="fi-message-header">
                           <span className="fi-eyebrow">
                             {selected.provider === "cloudflare"

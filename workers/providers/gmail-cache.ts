@@ -11,6 +11,10 @@
  *                                  unread), newest first; the value is what the feed shows
  *   count:a                        { unread, total } of the inbox, kept in the same transaction
  *   cache:a                        { layout, after } — the layout and a migration's resume point
+ *   thx:a:<thread>:<id>            the message's labels, one row per message of a conversation
+ *                                  (<thread> URI-encoded), kept with the index rows (B-114)
+ *   threads:a                      { done } or { after } — the conversation index's backfill of mail
+ *                                  cached before it existed, resumable like the migration
  *
  * Layout 1 (before 0.11) kept body chunks under the message's own key and had no index, so
  * every inbox read and count scanned the whole cache and failed past 20,000 keys. `migrate`
@@ -75,7 +79,17 @@ const legacyBodyPrefix = (a: string, id: string) => `message:${a}:${id}:body:`;
 const countKey = (a: string) => "count:" + a;
 const stateKey = (a: string) => "cache:" + a;
 /** Every key prefix one account owns in this cache. */
-export const cachePrefixes = (a: string) => [`message:${a}:`, `body:${a}:`, `idx:${a}:`];
+export const cachePrefixes = (a: string) => [`message:${a}:`, `body:${a}:`, `idx:${a}:`, `thx:${a}:`];
+/** A conversation id longer than this is not indexed: its messages are then found by a scan. */
+const MAX_THREAD_ID = 300;
+const threadPrefix = (a: string, thread: string) => `thx:${a}:${encodeURIComponent(thread)}:`;
+const threadKey = (a: string, thread: string, id: string) => threadPrefix(a, thread) + id;
+const threadStateKey = (a: string) => "threads:" + a;
+interface ThreadIndexState { done?: true; after?: string }
+/** Labels that take a message out of its conversation as the reader shows it. */
+const outOfConversation = (labels: string[]) => labels.includes("TRASH") || labels.includes("SPAM") || labels.includes(DISCARDED_LABEL);
+/** The most messages one conversation's count reads; a longer conversation reads as this many. */
+export const THREAD_COUNT_LIMIT = 100;
 
 const MAX_TS = 9_999_999_999_999;
 /** The time the feed sorts by: Gmail's internal date, or the Date header when that is missing. */
@@ -125,6 +139,8 @@ const MIGRATE_BATCH = 100;
 export class GmailCache {
   /** Accounts known to be on layout 2 in this object's lifetime. */
   private current = new Set<string>();
+  /** Accounts whose conversation index is complete, in this object's lifetime. */
+  private threaded = new Set<string>();
   constructor(private store: Store) {}
 
   /** The layout an account's cache is on; a cache with no rows starts on layout 2. */
@@ -195,6 +211,10 @@ export class GmailCache {
     for (const view of views(m)) {
       if (sign > 0) await tx.put<IndexRow>(idxKey(a, view, row), row);
       else await tx.delete(idxKey(a, view, row));
+    }
+    if (m.threadId && m.threadId.length <= MAX_THREAD_ID) {
+      if (sign > 0) await tx.put<string[]>(threadKey(a, m.threadId, m.providerMessageId), m.labels);
+      else await tx.delete(threadKey(a, m.threadId, m.providerMessageId));
     }
     if (!inInbox(m)) return;
     const counts = (await tx.get<InboxCounts>(countKey(a))) ?? { unread: 0, total: 0 };
@@ -327,6 +347,71 @@ export class GmailCache {
     }
   }
 
+  /**
+   * Builds the conversation index (`thx:`) for mail cached before it existed, until `deadline`
+   * (B-114). Mail saved since is indexed as it is saved; each batch, with its resume point, is one
+   * transaction, so a row removed meanwhile is never indexed again. Needs layout 2. True when done.
+   */
+  async indexThreads(a: string, deadline: number): Promise<boolean> {
+    if (this.threaded.has(a)) return true;
+    if ((await this.layout(a)) !== 2) return false;
+    let batches = 0;
+    while (batches === 0 || Date.now() < deadline) {
+      batches++;
+      const done = await this.store.transaction(async (tx) => {
+        const state = await tx.get<ThreadIndexState>(threadStateKey(a));
+        if (state?.done) return true;
+        let after = state?.after;
+        const rows = await tx.list<StoredMessage | string>({ prefix: `message:${a}:`, startAfter: after, limit: MIGRATE_BATCH });
+        for (const [key, row] of rows) {
+          after = key;
+          if (typeof row === "string" || row.layout !== 2) continue;
+          const m = row.message;
+          if (m.threadId && m.threadId.length <= MAX_THREAD_ID) await tx.put<string[]>(threadKey(a, m.threadId, m.providerMessageId), m.labels);
+        }
+        const finished = rows.size < MIGRATE_BATCH;
+        await tx.put<ThreadIndexState>(threadStateKey(a), finished ? { done: true } : { after });
+        return finished;
+      });
+      if (done) {
+        this.threaded.add(a);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * The cached messages of one conversation (ids and labels), at most `limit`, or undefined while
+   * the conversation index is still being built (the caller then scans).
+   */
+  async threadMembers(a: string, threadId: string, limit = THREAD_COUNT_LIMIT): Promise<{ id: string; labels: string[] }[] | undefined> {
+    if (!threadId || threadId.length > MAX_THREAD_ID || !(await this.threadsReady(a))) return undefined;
+    const prefix = threadPrefix(a, threadId);
+    const rows = await this.store.list<string[]>({ prefix, limit });
+    return [...rows].map(([key, labels]) => ({ id: key.slice(prefix.length), labels }));
+  }
+
+  /**
+   * How many messages each conversation holds, trash, spam and discarded mail left out (B-114),
+   * read up to THREAD_COUNT_LIMIT each; undefined while the conversation index is being built.
+   */
+  async threadCounts(a: string, threadIds: string[]): Promise<Map<string, number> | undefined> {
+    if (!(await this.threadsReady(a))) return undefined;
+    const counts = new Map<string, number>();
+    for (const id of new Set(threadIds)) {
+      const members = await this.threadMembers(a, id);
+      if (members) counts.set(id, members.filter((m) => !outOfConversation(m.labels)).length);
+    }
+    return counts;
+  }
+
+  private async threadsReady(a: string): Promise<boolean> {
+    if (this.threaded.has(a)) return true;
+    if ((await this.store.get<ThreadIndexState>(threadStateKey(a)))?.done) { this.threaded.add(a); return true; }
+    return false;
+  }
+
   /** Unread and total mail in the inbox: the stored counters. */
   async counts(a: string): Promise<InboxCounts> {
     return (await this.store.get<InboxCounts>(countKey(a))) ?? { unread: 0, total: 0 };
@@ -401,6 +486,8 @@ export class GmailCache {
     }
     await this.store.delete(countKey(a));
     await this.store.delete(stateKey(a));
+    await this.store.delete(threadStateKey(a));
     this.current.delete(a);
+    this.threaded.delete(a);
   }
 }

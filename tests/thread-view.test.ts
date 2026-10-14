@@ -55,7 +55,7 @@ test("the reader shows the conversation above the open message and opens any of 
   const { readFileSync } = await import("node:fs");
   const route = readFileSync("app/routes/unified-inbox.tsx", "utf8");
   assert.match(route, /queryKey: \["conversation", selected\?\.accountId, selected\?\.threadId\]/);
-  assert.match(route, /<ConversationList rows=\{conversation\.data \?\? \[\]\} openId=\{selected\.providerMessageId\}\s+onOpen=\{\(message\) => setSelected\(message\)\} \/>/);
+  assert.match(route, /<ConversationList rows=\{conversation\.data \?\? \[\]\} openId=\{selected\.providerMessageId\}\s+onOpen=\{\(message\) => setSelected\(message\)\}/);
   assert.match(route, /invalidateQueries\(\{ queryKey: \["conversation"\] \}\)/, "a reply just sent joins the conversation");
   const list = readFileSync("app/components/inbox/ConversationList.tsx", "utf8");
   assert.match(list, /if \(rows\.length < 2\) return null;/);

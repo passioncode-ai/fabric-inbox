@@ -1,6 +1,6 @@
 import { displaySender } from "../../../shared/mail/sender";
 import { htmlToText } from "../../../shared/mail/text";
-import { rawAccount, type InboxMessage } from "./model";
+import { messagePath, rawAccount, type InboxMessage } from "./model";
 
 /**
  * One message of a conversation as the reader lists it (B-114): the message itself (enough to open
@@ -13,6 +13,8 @@ export interface ThreadRow {
   open: boolean;
   /** When it was sent or received, for the order (ms). */
   at: number;
+  /** In Trash, Spam or Discarded: not part of the conversation as the reader shows it (B-114). */
+  removed?: boolean;
 }
 
 type Request = (url: string) => Promise<unknown>;
@@ -34,6 +36,7 @@ function fromCloudflare(open: InboxMessage, e: Record<string, unknown>): ThreadR
     kind: folder === "sent" ? "sent" : folder === "draft" ? "draft" : "received",
     open: id === open.providerMessageId,
     at: Date.parse(String(e.date ?? "")) || 0,
+    ...(folder === "trash" || folder === "spam" || folder === "discarded" ? { removed: true } : {}),
   };
 }
 
@@ -51,12 +54,14 @@ function fromRemote(open: InboxMessage, m: Record<string, unknown>): ThreadRow {
     kind: labels.includes("DRAFT") ? "draft" : labels.includes("SENT") ? "sent" : "received",
     open: id === open.providerMessageId,
     at: Number(m.timestamp) > 0 ? Number(m.timestamp) : Date.parse(String(m.date ?? "")) || 0,
+    ...(labels.includes("TRASH") || labels.includes("SPAM") || labels.includes("DISCARDED") ? { removed: true } : {}),
   };
 }
 
 /**
  * The open message's whole conversation, oldest first (B-114). A message with no thread, or a thread
- * the server cannot read now, is shown alone: the reader never loses the message it opened.
+ * the server cannot read now, is shown alone: the reader never loses the message it opened. Mail in
+ * Trash, Spam or Discarded is left out, as the list's count leaves it out, unless it is the open one.
  */
 export async function loadConversation(open: InboxMessage, request: Request): Promise<ThreadRow[]> {
   const alone: ThreadRow[] = [{ message: open, kind: "received", open: true, at: Date.parse(open.date) || 0 }];
@@ -74,6 +79,39 @@ export async function loadConversation(open: InboxMessage, request: Request): Pr
   } catch {
     return alone;
   }
+  rows = rows.filter((r) => r.open || !r.removed);
   if (!rows.some((r) => r.open)) rows.push(alone[0]!);
   return rows.sort((a, b) => a.at - b.at);
+}
+
+type Send = (url: string, body?: unknown, method?: string) => Promise<unknown>;
+
+/** The messages "Mark conversation read" changes: the unread ones you received (drafts and your own mail are read). */
+export const unreadOf = (rows: ThreadRow[]) => rows.filter((r) => !r.message.read && r.kind === "received");
+
+/**
+ * Marks messages of one conversation read (B-114). The whole Cloudflare conversation is one request;
+ * a Gmail, IMAP or Outlook message is marked one by one, every one tried. Throws, after trying all of
+ * them, when any was refused: the caller says so and the list shows what the server now holds.
+ */
+export async function markRead(rows: ThreadRow[], send: Send, whole: boolean): Promise<void> {
+  const unread = unreadOf(rows);
+  const first = unread[0]?.message;
+  if (!first) return;
+  if (whole && first.provider === "cloudflare" && first.threadId) {
+    await send(`/api/v1/mailboxes/${encodeURIComponent(rawAccount(first.accountId))}/threads/${encodeURIComponent(first.threadId)}/read`, {});
+    return;
+  }
+  const results = await Promise.allSettled(unread.map((r) => r.message.provider === "cloudflare"
+    ? send(messagePath(r.message), { read: true }, "PUT")
+    : send(messagePath(r.message) + "/read", { read: true })));
+  const refused = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+  if (refused) throw refused.reason;
+}
+
+/** A message's text for the conversation (B-114): its plain text, or its HTML read as text. */
+export async function messageText(message: InboxMessage, request: Request): Promise<string> {
+  const m = (await request(messagePath(message))) as { text?: string | null; html?: string | null; body?: string | null } | null;
+  const text = String(m?.text ?? "").trim();
+  return text || htmlToText(String(m?.html ?? m?.body ?? "")).trim();
 }

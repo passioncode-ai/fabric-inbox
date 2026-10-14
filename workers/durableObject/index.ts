@@ -365,8 +365,22 @@ export class MailboxDO extends DurableObject<Env> {
     const accountId = "cloudflare:" + mailboxId;
     if (options.query) this.#indexSearchText();
     const query = mailboxInboxQuery(accountId, options);
-    return this.ctx.storage.sql.exec<MailboxInboxRow>(query.sql, ...query.parameters).toArray()
+    const messages = this.ctx.storage.sql.exec<MailboxInboxRow>(query.sql, ...query.parameters).toArray()
       .map(row => mailboxInboxMessage(accountId, row, options.ownDomains ?? []));
+    // How long each row's conversation is (B-114), in one query; the ids go as one JSON parameter
+    // (bound parameters are limited). Trash, spam and discarded mail are not part of it.
+    const threads = [...new Set(messages.map((m) => m.threadId).filter((t): t is string => !!t))];
+    if (threads.length) {
+      const counts = new Map(this.ctx.storage.sql.exec<{ thread_id: string; n: number }>(
+        `SELECT thread_id, COUNT(*) AS n FROM emails WHERE thread_id IN (SELECT value FROM json_each(?))
+          AND folder_id NOT IN ('trash', 'spam', 'discarded') GROUP BY thread_id`, JSON.stringify(threads)).toArray()
+        .map((r) => [r.thread_id, Number(r.n)] as const));
+      for (const m of messages) {
+        const n = m.threadId ? counts.get(m.threadId) : undefined;
+        if (n && n > 1) m.threadCount = n;
+      }
+    }
+    return messages;
   }
 
 	/**

@@ -177,7 +177,14 @@ and cache reads take no lock, so the feed and mail actions never wait behind a s
 failed save left); `idx:a:<folder>[~u]:<rev-ts>:<id>` one index row per folder the message is in,
 plus `~u` while unread, newest first, holding what the feed shows; `count:a` the inbox's unread and
 total, changed in the same transaction as every save and delete; `cache:a` the layout and a
-migration's resume point. A page of the feed reads about one page of index rows however large the
+migration's resume point; `thx:a:<thread>:<id>` one row per message of a conversation (the thread id
+URI-encoded, up to 300 characters; the value is the message's labels), written and removed with the
+index rows, which the reader's conversation and `read_thread` read instead of scanning, and the feed
+counts (Trash, Spam and Discarded left out, up to 100 per conversation) for each row's `threadCount`;
+`threads:a` the resume point of the backfill that indexes mail cached before 0.18 — run by reads (1 s)
+and by the alarm's migration budget, in batches of 100 rows, each one transaction; until it is done
+rows carry no count and conversations are found by the old scan. A Cloudflare mailbox counts with one
+SQL query over `thread_id` (indexed) per page. A page of the feed reads about one page of index rows however large the
 cache; a search reads its folder's index until it has a page, up to 50,000 rows (`cache_scan_limit`
 beyond). Caches written before 0.11 (layout 1: chunks under the message key, no index) move over in
 resumable batches of 100 rows, each one transaction with its resume point, so nothing is indexed or
