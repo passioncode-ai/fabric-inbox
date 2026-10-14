@@ -7,6 +7,9 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **Every agent event says what the message is about.** A reply agent now records a short topic and a
+  one-sentence summary of what the sender wants for every message, with e-mail addresses, links,
+  usernames and phone numbers removed, and the agent-events feed carries both.
 - **Agents' answers in the sidebar**, one click from the inbox, and an agent's draft is marked as
   such in Drafts.
 - **Open a message from a link.** `/?open=<account>|<message>` opens that message in the inbox, with

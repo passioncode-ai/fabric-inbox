@@ -21,6 +21,19 @@ export interface AgentEvent {
 export interface AgentEventValue {
   runId: string; address: string; agentId?: string; agentVersion?: number; status: string;
   intent?: string; grounded?: boolean; unanswered: boolean; question?: string; sources: string[];
+  topic?: string; summary?: string;
+}
+
+/**
+ * Removes what could identify a person from a model's paraphrase before it leaves the server: e-mail
+ * addresses, links, @usernames and phone numbers (seven or more digits). Version numbers stay.
+ */
+export function scrubPersonal(text: string): string {
+  return text
+    .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "[…]")
+    .replace(/\bhttps?:\/\/\S+/gi, "[…]")
+    .replace(/(^|[\s(,;])@\w{3,}/g, "$1[…]")
+    .replace(/\+?\d[\d\s().-]{5,}\d/g, (m) => (m.replace(/\D/g, "").length >= 7 && !/^\d+(\.\d+){1,3}$/.test(m.trim()) ? "[…]" : m));
 }
 
 const ENDED = new Set(["sent", "drafted", "skipped", "off", "send_failed", "send_unknown", "failed", "interrupted"]);
@@ -28,7 +41,7 @@ const TROUBLE = new Set(["send_failed", "send_unknown", "failed", "interrupted"]
 const cut = (s: string, n = 500) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
 /** The event of a run that ended, or null for one still going (B-118). */
-export function runEvent(run: AgentRun & { question?: string; unanswered?: boolean }): AgentEvent | null {
+export function runEvent(run: AgentRun): AgentEvent | null {
   if (!ENDED.has(run.status)) return null;
   const who = run.agentId ? `Agent ${run.agentId}` : "An agent";
   const unanswered = run.unanswered === true;
@@ -46,8 +59,10 @@ export function runEvent(run: AgentRun & { question?: string; unanswered?: boole
     ...(run.agentId ? { agentId: run.agentId } : {}), ...(run.agentVersion ? { agentVersion: run.agentVersion } : {}),
     status: run.status, ...(run.intent ? { intent: cut(run.intent) } : {}),
     ...(run.grounded !== undefined ? { grounded: run.grounded } : {}),
-    unanswered, ...(unanswered && run.question ? { question: cut(run.question) } : {}),
+    unanswered, ...(unanswered && run.question ? { question: cut(scrubPersonal(run.question)) } : {}),
     sources: (run.sources ?? []).slice(0, 32).map((s) => cut(s.title)),
+    ...(run.topic ? { topic: cut(scrubPersonal(run.topic), 60) } : {}),
+    ...(run.summary ? { summary: cut(scrubPersonal(run.summary), 300) } : {}),
   };
   return { at: run.updatedAt, link: messageLink(`cloudflare:${run.mailboxId}`, run.emailId, run.id), kind, level: kind === "agent.needs_look" ? "warning" : kind === "agent.unanswered" ? "notice" : "info", text: cut(text), data: { schema: AGENT_EVENT_SCHEMA, value } };
 }

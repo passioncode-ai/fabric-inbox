@@ -1,3 +1,4 @@
+import { scrubPersonal } from "./events";
 import { htmlToText as linesOf } from "../../shared/mail/text";
 import type { SendMailCommand, SendMailResult } from "../../shared/mail/send";
 import { LEGACY_INSTRUCTIONS, callArguments, legacyAgentId, modelSchema, publicOnlyProblem, readAssignment, type AgentVersion, type ToolGrant } from "./definition";
@@ -158,6 +159,7 @@ export function systemPrompt(agent: AgentVersion, mailboxId: string, tools: Agen
     "- grounded = true only if every fact in the answer comes from the knowledge above, a passage, or a tool result in this run.",
     '- decision: "send" when the answer is complete and grounded; "draft" when a person should check it (and say why in reason); "skip" when no reply is needed (thanks, FYI, spam).',
     "- intent: one or two words for what the sender wants, e.g. question, pricing, refund, bug, partnership.",
+    "- topic: two to four English words for what the message is about; summary: what the sender wants as one English sentence. Neither may contain names, addresses, phone numbers, usernames or quotes.",
     "- body: the reply itself in plain text, in the language the sender wrote in. Greet the sender by the name they sign with. No markdown, no commentary about yourself.",
     senderName
       ? `- Sign off as "${senderName.replace(/"/g, "'").slice(0, 100)}". Never sign with your own name above, and never say you are an AI or an agent.`
@@ -407,6 +409,9 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   };
   run.intent = proposal.intent;
   run.grounded = proposal.grounded;
+  // What the message is about, for the voice-of-the-customer feed; cut to size, never personal.
+  if (proposal.topic?.trim()) run.topic = scrubPersonal(proposal.topic.trim()).slice(0, 60);
+  if (proposal.summary?.trim()) run.summary = scrubPersonal(proposal.summary.trim()).slice(0, 300);
   if (sources.size) run.sources = [...sources.values()];
 
   // B-85: a knowledge tool that abstained is told what was not answered, once per message. The id is
@@ -414,7 +419,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // words never leave. A failed report is recorded and changes nothing about the answer.
   // Reported when the knowledge abstained, or when the model could not ground its answer and says what
   // was asked; one report per run, whatever the number of calls (B-85, data agent README "Reporting gaps").
-  const question = (proposal.question ?? "").trim().slice(0, 1000);
+  const question = scrubPersonal((proposal.question ?? "").trim()).slice(0, 1000);
   const unanswered = abstainedAny || proposal.grounded === false;
   // B-117: the question is kept on the run, with its conversation, for the Unanswered questions list.
   if (question && unanswered) { run.question = question; run.unanswered = true; }

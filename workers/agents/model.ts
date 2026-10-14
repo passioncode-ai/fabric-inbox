@@ -17,6 +17,8 @@ const DecisionSchema = z.object({
   grounded: z.boolean(),
   body: z.string().max(12_000),
   reason: z.string().max(500),
+  topic: z.string().max(60).optional().describe("Two to four English words naming what the message is about, e.g. login codes, translator, subscription refund"),
+  summary: z.string().max(300).optional().describe("What the sender wants, as one English sentence, with no names, addresses, phone numbers, usernames or quotes"),
   question: z.string().max(1000).optional().describe("Only when nothing you found answers the person: what they want to know, as one English sentence, with no names, addresses, phone numbers, usernames or quotes"),
 });
 
