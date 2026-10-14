@@ -362,7 +362,7 @@ export class MailboxDO extends DurableObject<Env> {
     const wanted = [...new Set(ids)].slice(0, 100);
     if (!wanted.length) return [];
     return this.ctx.storage.sql.exec<MailboxInboxRow>(
-      `SELECT id, subject, sender, recipient, date, read, starred, thread_id, folder_id, raw_headers, message_id, substr(body,1,2000) AS snippet,
+      `SELECT id, subject, sender, recipient, date, read, starred, thread_id, folder_id, raw_headers, message_id, substr(body,1,2000) AS snippet, substr(search_text,1,300) AS snippet_text,
          coalesce(cast(round((julianday(date)-2440587.5)*86400000) AS INTEGER),0) AS timestamp
        FROM emails WHERE id IN (${wanted.map(() => "?").join(",")}) AND folder_id NOT IN ('trash', 'spam', 'draft', 'discarded')`, ...wanted)
       .toArray().map(row => mailboxInboxMessage(accountId, row, ownDomains));

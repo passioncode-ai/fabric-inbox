@@ -28,7 +28,7 @@ export function mailboxInboxQuery(accountId: string, options: InboxReadOptions) 
   parameters.push(options.limit + 1);
   return {
     sql: `SELECT * FROM (SELECT id, subject, sender, sender_name, recipient, date, read, starred, thread_id, folder_id, raw_headers, message_id, spam_reason, discard_reason,
-      substr(body,1,2000) AS snippet, coalesce(search_text, substr(body,1,2000)) AS search_body,
+      substr(body,1,2000) AS snippet, substr(search_text,1,300) AS snippet_text, coalesce(search_text, substr(body,1,2000)) AS search_body,
       coalesce(cast(round((julianday(date)-2440587.5)*86400000) AS INTEGER),0) AS timestamp
       FROM emails) WHERE ${conditions.join(" AND ")} ORDER BY timestamp DESC, id ASC LIMIT ?`,
     parameters,
@@ -46,7 +46,7 @@ export interface MailboxInboxRow {
   [key: string]: string | number | null;
   id: string; subject: string | null; sender: string | null; sender_name: string | null; recipient: string | null;
   date: string | null; read: number; starred: number; thread_id: string | null;
-  snippet: string | null; timestamp: number; raw_headers: string | null; message_id: string | null;
+  snippet: string | null; snippet_text: string | null; timestamp: number; raw_headers: string | null; message_id: string | null;
   spam_reason: string | null; folder_id: string | null; discard_reason: string | null;
 }
 
@@ -54,7 +54,9 @@ export interface MailboxInboxRow {
 function plainText(body: string | null): string {
   if (!body) return "";
   return body
-    .replace(/<(style|script|head)[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<(style|script|head|title)[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    // A style or script block cut by the 2,000-character read has no end tag: none of it is text.
+    .replace(/<(style|script)\b[^>]*>[\s\S]*$/i, " ")
     // An inline element joins the text around it, as a browser shows it: "<b>Ann</b>." reads "Ann.", not "Ann ." (B-113).
     .replace(/<\/?(?:a|abbr|b|bdi|bdo|cite|code|data|dfn|em|font|i|kbd|mark|q|s|samp|small|span|strike|strong|sub|sup|time|u|var|wbr)\b[^>]*>/gi, "")
     .replace(/<[^>]*>?/g, " ")
@@ -73,7 +75,7 @@ export function mailboxInboxMessage(accountId: string, row: MailboxInboxRow, own
   const message: InboxMessage = { id: inboxIdentity(accountId, row.id), accountId, provider: "cloudflare", providerMessageId: row.id,
     subject: row.subject || "", sender: displaySender(row.sender, row.sender_name, row.raw_headers), recipient: row.recipient || "",
     date: new Date(row.timestamp).toISOString(), timestamp: row.timestamp,
-    read: !!row.read, starred: !!row.starred, snippet: textSnippet(row.snippet), threadId: row.thread_id || undefined,
+    read: !!row.read, starred: !!row.starred, snippet: row.snippet_text ?? textSnippet(row.snippet), threadId: row.thread_id || undefined,
     ...(row.message_id ? { rfcMessageId: String(row.message_id).replace(/^<|>$/g, "").toLowerCase() } : {}),
     ...(row.folder_id === "spam" ? { spamReason: row.spam_reason || msg("In Spam") } : {}),
     ...(row.folder_id === "discarded" ? { discardReason: row.discard_reason || msg("You discarded it") } : {}) };
