@@ -41,6 +41,7 @@ const bundle = await build({
         async alarm() {}
         async pump() { return super.alarm(); }
         async keys() { return [...(await this.ctx.storage.list()).keys()].filter((k) => !k.startsWith('rule:')).sort(); }
+        async putRuns(runs) { for (const r of runs) await this.ctx.storage.put('run:' + r.id, r); }
       }
       export default {
         async fetch(request, env) {
@@ -62,6 +63,7 @@ const bundle = await build({
               case 'pump': await automation.pump(); result = await automation.runs(); break;
               case 'approve': result = await automation.approve(command.id); break;
               case 'dismiss': result = await automation.dismiss(command.id); break;
+              case 'put-runs': await automation.putRuns(command.runs); result = await automation.runs(); break;
               case 'state': result = { runs: await automation.runs(), keys: await automation.keys(), effects: await mailbox.effects(),
                 email: command.id ? await mailbox.getEmail(command.id) : null }; break;
               default: throw new Error('Unknown test command');
@@ -314,6 +316,26 @@ test("B-67: a new or changed rule is enabled only after a dry-run of exactly it;
     assert.match(String(changed.body.thrown), /rule_review_required/, "changed conditions need a new preview");
     const paused = await f.ok("rule-reviewed", { rule: { ...archive, conditions: { from: "other@example.invalid" }, enabled: false } });
     assert.equal(paused.enabled, false, "a pause is always allowed");
+  } finally {
+    await f.mf.dispose();
+  }
+});
+
+test("B-50: an older run still waiting for approval stays in the list past the newest 100", async () => {
+  const f = await fixture();
+  try {
+    const at = (i: number) => new Date(Date.UTC(2026, 9, 1) + i * 60_000).toISOString();
+    const base = { rule: rule({ type: "archive" }), emailId: "e", account: "x", attempts: 1 };
+    const runs = [
+      { ...base, id: "old-wait", status: "waiting_approval", createdAt: at(0) },
+      { ...base, id: "old-done", status: "succeeded", createdAt: at(1) },
+      ...Array.from({ length: 120 }, (_, i) => ({ ...base, id: "r" + i, status: "succeeded", createdAt: at(10 + i) })),
+    ];
+    const listed = (await f.ok("put-runs", { runs })) as { id: string }[];
+    const ids = listed.map((r) => r.id);
+    assert.equal(ids.length, 101, "the newest 100 and the one still waiting");
+    assert.ok(ids.includes("old-wait"), "a run awaiting approval never drops out");
+    assert.ok(!ids.includes("old-done"));
   } finally {
     await f.mf.dispose();
   }

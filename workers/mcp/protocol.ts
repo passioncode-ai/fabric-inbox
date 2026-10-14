@@ -183,8 +183,10 @@ export async function runTool(tool: ToolDef, rawArgs: Record<string, unknown>, c
     }
     return text(result ?? { ok: true });
   } catch (error) {
-    // A route that refused (4xx) sent nothing; an unknown failure keeps the send counted.
-    if (tool.sends && error instanceof ApiError && error.status < 500) await ledger.refundSend(caller).catch(() => {});
+    // A route that refused (4xx) sent nothing; an unknown failure keeps the send counted — and so does
+    // a 409 whose answer says the outcome is unknown: the message may have left (B-50).
+    const outcomeUnknown = error instanceof ApiError && (error.data as { status?: unknown } | null)?.status === "unknown";
+    if (tool.sends && error instanceof ApiError && error.status < 500 && !outcomeUnknown) await ledger.refundSend(caller).catch(() => {});
     await journal("failed", errorText(error));
     const details = errorDetails(error);
     const traced = tool.sends && (details?.outboxId || details?.idempotencyKey);

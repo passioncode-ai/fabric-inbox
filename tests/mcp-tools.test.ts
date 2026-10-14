@@ -198,6 +198,22 @@ test("a failed send returns the outbox id and status the route gave, so get_send
   assert.deepEqual(gsent.data.details, { status: "unknown", idempotencyKey: "s2" });
 });
 
+test("B-50: a send whose outcome is unknown keeps its place in the daily allowance; a plain refusal gives it back", async () => {
+  const tool = TOOLS.find((t) => t.name === "send_email")!;
+  const run = async (answer: ApiResponse) => {
+    const api = fakeApi({ "POST /api/accounts/g1/send": answer }).api;
+    let refunds = 0;
+    const l: Ledger = { issueConfirmation: async () => ({ code: "CODE", expiresAt: 0 }), consumeConfirmation: async () => true,
+      reserveSend: async () => ({ ok: true, used: 1, limit: 5 }), refundSend: async () => { refunds++; }, record: async () => {} };
+    const args = z.object(tool.input).parse({ accountId: "gmail:g1", to: "ann@customer.invalid", subject: "Hi", text: "Hi.", idempotencyKey: "k" });
+    await runTool(tool, args, { api, principal: owner }, l);
+    return refunds;
+  };
+  assert.equal(await run(ok({ status: "unknown", idempotencyKey: "k", error: "provider_unavailable" }, 409)), 0, "it may have left");
+  assert.equal(await run(ok({ error: "idempotency_conflict" }, 409)), 1, "a conflict sent nothing");
+  assert.equal(await run(ok({ error: "invalid_recipient" }, 400)), 1);
+});
+
 // ── 9. A thread spans folders ───────────────────────────────────────
 
 test("list_mailbox_messages with a threadId and no folder lists the conversation in every folder (agent audit 9)", async () => {

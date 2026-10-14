@@ -479,7 +479,7 @@ const searchKnowledge = defineTool({
 const automationBase = (account: Account) => `/api/automation/${enc(account.provider === "cloudflare" ? account.mailbox : account.id)}`;
 const listRules = defineTool({
   name: "list_rules", title: "List rules", level: "read", readOnly: true,
-  description: "The automation rules of one account (conditions, action, approval or automatic, daily limit) and their latest 100 runs, including runs waiting for approval.",
+  description: "The automation rules of one account (conditions, action, approval or automatic, daily limit) and their latest 100 runs, plus every older run still waiting for approval, a device or a check, so none drops out.",
   input: { accountId },
   routes: ["GET /api/automation/:account/rules", "GET /api/automation/:account/runs"],
   async call(a, ctx) {
@@ -1512,9 +1512,11 @@ const listAgentKeys = defineTool({
 const agentActivity = defineTool({
   name: "list_agent_activity", title: "What agents changed", level: "admin", readOnly: true,
   description: "The journal of every change made through this protocol, newest first: which key, which tool, on what, and whether it was done, refused or waiting for confirmation.",
-  input: { before: z.number().int().optional().describe("Timestamp (ms) of the last entry, for the next page"), limit: z.number().int().min(1).max(200).default(50) },
+  input: { cursor: z.number().int().optional().describe("nextCursor of the previous page"),
+    before: z.number().int().optional().describe("Older paging by timestamp (ms); prefer cursor, which never skips entries of the same millisecond"),
+    limit: z.number().int().min(1).max(200).default(50) },
   routes: ["GET /api/agent-keys/journal"],
-  call: (a, ctx) => get(ctx, "/api/agent-keys/journal", { before: a.before, limit: a.limit }),
+  call: (a, ctx) => get(ctx, "/api/agent-keys/journal", { cursor: a.cursor, before: a.before, limit: a.limit }),
 });
 
 export const TOOLS: readonly ToolDef[] = [

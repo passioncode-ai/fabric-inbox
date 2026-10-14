@@ -178,7 +178,7 @@ function Journal() {
   const t = useT();
   const [before, setBefore] = useState<number[]>([]);
   const journal = useQuery({ queryKey: ["agent-journal", before.at(-1) ?? null], queryFn: () =>
-    fabric<{ entries: Entry[]; nextBefore: number | null }>(`/api/agent-keys/journal${before.length ? `?before=${before.at(-1)}` : ""}`) });
+    fabric<{ entries: Entry[]; nextCursor?: number | null; nextBefore: number | null }>(`/api/agent-keys/journal${before.length ? `?cursor=${before.at(-1)}` : ""}`) });
   return (
     <PanelBlock>
       {journal.isPending ? <SkeletonRows rows={4} label={t("Loading…")} /> : journal.isError ? (
@@ -203,7 +203,7 @@ function Journal() {
       )}
       <div className="fi-buttons">
         {before.length > 0 && <button type="button" className="fi-secondary" onClick={() => setBefore(before.slice(0, -1))}>{t("Newer")}</button>}
-        {journal.data?.nextBefore && <button type="button" className="fi-secondary" onClick={() => setBefore([...before, journal.data!.nextBefore!])}>{t("Show older")}</button>}
+        {journal.data?.nextCursor && <button type="button" className="fi-secondary" onClick={() => setBefore([...before, journal.data!.nextCursor!])}>{t("Show older")}</button>}
       </div>
     </PanelBlock>
   );

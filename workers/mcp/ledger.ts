@@ -29,7 +29,7 @@ export const LEDGER_STEPS = [
 ];
 
 export type JournalOutcome = "done" | "failed" | "refused" | "confirmation_asked";
-export interface JournalEntry { at: number; caller: string; callerLabel: string; tool: string; target: string; outcome: JournalOutcome; detail: string }
+export interface JournalEntry { id: number; at: number; caller: string; callerLabel: string; tool: string; target: string; outcome: JournalOutcome; detail: string }
 
 const day = (t: number) => new Date(t).toISOString().slice(0, 10);
 
@@ -96,19 +96,23 @@ export class EmailMCP extends DurableObject<Env> {
     this.sql.exec("UPDATE mcp_send_counts SET count = MAX(0, count - 1) WHERE day = ? AND caller = ?", day(now), caller);
   }
 
-  record(entry: JournalEntry): void {
+  record(entry: Omit<JournalEntry, "id">): void {
     this.sql.exec("INSERT INTO mcp_journal (at, caller, caller_label, tool, target, outcome, detail) VALUES (?, ?, ?, ?, ?, ?, ?)",
       entry.at, entry.caller, entry.callerLabel.slice(0, 200), entry.tool, entry.target.slice(0, 300), entry.outcome, entry.detail.slice(0, 500));
     this.sql.exec("DELETE FROM mcp_journal WHERE id <= (SELECT id FROM mcp_journal ORDER BY id DESC LIMIT 1 OFFSET ?)", JOURNAL_KEPT);
   }
 
-  journal(options: { before?: number; limit?: number; caller?: string } = {}): JournalEntry[] {
+  /**
+   * Newest first. Paged by `cursor`, the id of the last entry seen: entries sharing a millisecond are
+   * neither skipped nor repeated (B-50). `before` (a timestamp) is the older cursor, still accepted.
+   */
+  journal(options: { before?: number; cursor?: number; limit?: number; caller?: string } = {}): JournalEntry[] {
     const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
     const rows = [...this.sql.exec(
-      `SELECT at, caller, caller_label, tool, target, outcome, detail FROM mcp_journal
-        WHERE at < ? ${options.caller ? "AND caller = ?" : ""} ORDER BY at DESC, id DESC LIMIT ?`,
-      ...[options.before ?? Number.MAX_SAFE_INTEGER, ...(options.caller ? [options.caller] : []), limit])];
-    return rows.map((r) => ({ at: Number(r.at), caller: String(r.caller), callerLabel: String(r.caller_label), tool: String(r.tool),
+      `SELECT id, at, caller, caller_label, tool, target, outcome, detail FROM mcp_journal
+        WHERE id < ? AND at < ? ${options.caller ? "AND caller = ?" : ""} ORDER BY id DESC LIMIT ?`,
+      ...[options.cursor ?? Number.MAX_SAFE_INTEGER, options.before ?? Number.MAX_SAFE_INTEGER, ...(options.caller ? [options.caller] : []), limit])];
+    return rows.map((r) => ({ id: Number(r.id), at: Number(r.at), caller: String(r.caller), callerLabel: String(r.caller_label), tool: String(r.tool),
       target: String(r.target), outcome: r.outcome as JournalOutcome, detail: String(r.detail) }));
   }
 }
