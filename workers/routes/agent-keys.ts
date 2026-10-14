@@ -149,9 +149,12 @@ agentKeysRouter.delete("/api/agent-keys/:id", (c) => alone(c, async () => {
 agentKeysRouter.get("/api/agent-keys/journal", async (c) => {
   c.header("Cache-Control", "no-store");
   const before = Number(c.req.query("before")) || undefined;
+  const cursor = Number(c.req.query("cursor")) || undefined;
   const limit = Math.min(Math.max(Number(c.req.query("limit")) || 50, 1), 200);
   try {
-    const entries = await c.env.EMAIL_MCP.getByName("workspace").journal({ before, limit });
-    return c.json({ entries, nextBefore: entries.length === limit ? entries[entries.length - 1]!.at : null });
+    const entries = await c.env.EMAIL_MCP.getByName("workspace").journal({ before, cursor, limit });
+    const last = entries.length === limit ? entries[entries.length - 1]! : null;
+    // nextCursor (the last entry's id) never skips entries sharing a millisecond (B-50); nextBefore is the older form.
+    return c.json({ entries, nextCursor: last ? last.id : null, nextBefore: last ? last.at : null });
   } catch (error) { return failure(c, error, msg("Reading what agents changed")); }
 });

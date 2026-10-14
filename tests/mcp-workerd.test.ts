@@ -209,6 +209,17 @@ test("an agent drafts, sends once per key per day, and every change is journalle
     assert.ok(rows.includes("Sender send_email done"));
     assert.ok(rows.includes("Sender send_email refused"));
     assert.ok(!rows.some((r: string) => r.includes("list_mailbox_messages")), "reading is not journalled");
+    // B-50: paged one entry at a time by cursor, every entry comes once, even several in one millisecond.
+    const all = journal.data.entries.map((e: { id: number }) => e.id);
+    const paged: number[] = [];
+    let cursor: number | undefined;
+    for (let i = 0; i < all.length + 1; i++) {
+      const page = await call(admin, "list_agent_activity", { limit: 1, ...(cursor ? { cursor } : {}) });
+      paged.push(...page.data.entries.map((e: { id: number }) => e.id));
+      cursor = page.data.nextCursor ?? undefined;
+      if (!cursor) break;
+    }
+    assert.deepEqual(paged, all, "the cursor walks the whole journal, newest first, with nothing skipped or repeated");
   } finally { await mf.dispose(); }
 });
 

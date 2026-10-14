@@ -21,6 +21,9 @@ import { parseRemoteAccount } from "../../shared/mail/accounts";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
 import { msg } from "../../shared/i18n";
 
+/** Runs someone can still act on: they stay listed past the newest 100 (B-50). */
+const OPEN_RUN = new Set<string>(["pending", "running", "waiting_approval", "waiting_device", "unknown"]);
+
 /** What checking an uncertain run found (SCN-020). */
 export type RunCheckOutcome = "done" | "not_done" | "unresolved" | "not_checkable";
 export interface RunCheck { outcome: RunCheckOutcome; detail: string; run: Run }
@@ -63,10 +66,14 @@ export class AutomationDO extends DurableObject<Env> {
       return rule;
     });
   }
+  /**
+   * The newest 100 runs, and every older one still waiting for someone (approval, a device, the queue
+   * or an unknown outcome): those never drop out of the list while they can be acted on (B-50).
+   */
   async runs() {
-    return [...(await this.ctx.storage.list<Run>({ prefix: "run:" })).values()]
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .slice(0, 100)
+    const sorted = [...(await this.ctx.storage.list<Run>({ prefix: "run:" })).values()]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return [...sorted.slice(0, 100), ...sorted.slice(100).filter((run) => OPEN_RUN.has(run.status))]
       // A run stored before attempts were counted made one attempt once it left the queue.
       .map((run) => ({ attempts: run.status === "pending" ? 0 : 1, ...run }));
   }
