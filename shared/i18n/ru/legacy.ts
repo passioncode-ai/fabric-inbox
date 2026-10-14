@@ -136,7 +136,8 @@ export const LEGACY: Readonly<Record<string, string>> = {
 
 	// The Gmail account page (app/routes/gmail-inbox.tsx)
 	"Gmail · Fabric Inbox": "Gmail · Fabric Inbox",
-	"Saved draft could not be restored.": "Не удалось восстановить сохранённый черновик.",
+	"Saved draft could not be restored. It is kept on this device and a new draft starts here.": "Не удалось восстановить сохранённый черновик. Он сохранён на этом устройстве, здесь начинается новый черновик.",
+	"Saved draft could not be restored. It is kept on this device; drafts here are not saved until there is room.": "Не удалось восстановить сохранённый черновик. Он сохранён на этом устройстве; новые черновики здесь не сохраняются, пока не освободится место.",
 	"This draft could not be saved on this device. Keep this window open.": "Не удалось сохранить черновик на этом устройстве. Не закрывайте это окно.",
 	"Cannot save send recovery information on this device. Sending was not attempted.": "Не удалось сохранить на этом устройстве данные для повторной отправки. Письмо не отправлялось.",
 	"Accepted by Gmail. Recipient delivery is not confirmed.": "Принято Gmail. Доставка получателю не подтверждена.",

@@ -13,7 +13,7 @@ import {
 } from "~/services/fabric";
 import { useWindowActive } from "~/hooks/useWindowActive";
 import { pollInterval } from "~/lib/window-activity";
-import { keepGmailDraft, restoreGmailDraft, type GmailDraft } from "~/lib/gmail-draft";
+import { keepGmailDraft, restoreGmailDraft, setAsideUnreadableDraft, type GmailDraft } from "~/lib/gmail-draft";
 const field = "w-full rounded-md border border-kumo-line bg-kumo-base p-2";
 type Draft = GmailDraft;
 type Receipt = { status: string; providerMessageId?: string; error?: string };
@@ -40,7 +40,14 @@ export default function GmailInbox() {
       setDraft(saved.draft);
       setLocked(saved.locked);
     } catch {
-      setNotice(t("Saved draft could not be restored."));
+      // The unreadable entry is kept aside, never deleted by the next save (B-68).
+      setDraft(null);
+      setLocked(false);
+      if (!setAsideUnreadableDraft(localStorage, accountId)) {
+        setNotice(t("Saved draft could not be restored. It is kept on this device; drafts here are not saved until there is room."));
+        return;
+      }
+      setNotice(t("Saved draft could not be restored. It is kept on this device and a new draft starts here."));
     }
     setLoadedAccount(accountId);
   }, [accountId, t]);

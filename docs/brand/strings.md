@@ -26,7 +26,8 @@ Bounded inventory of actual integrated source wording. Rows remain proposed beca
 | state.mail.select | Select a message to read it. | app/routes/gmail-inbox.tsx:432 | SCN-004 | proposed |
 | state.send.accepted | Accepted by Gmail. Recipient delivery is not confirmed. | app/routes/gmail-inbox.tsx:168 | SCN-007 | proposed |
 | state.send.unknown | Outcome unknown. Check send status before trying again. | app/routes/gmail-inbox.tsx:172 | SCN-020 | proposed |
-| state.draft.restore_failed | Saved draft could not be restored. | app/routes/gmail-inbox.tsx:46 | SCN-019 | proposed |
+| state.draft.restore_failed | Saved draft could not be restored. It is kept on this device and a new draft starts here. | app/routes/gmail-inbox.tsx | SCN-019 | proposed |
+| state.draft.restore_failed_full | Saved draft could not be restored. It is kept on this device; drafts here are not saved until there is room. | app/routes/gmail-inbox.tsx | SCN-019 | proposed |
 | state.draft.save_failed | This draft could not be saved on this device. Keep this window open. | app/routes/gmail-inbox.tsx:61 | SCN-006 | proposed |
 | action.rule.new | New rule | app/routes/automation.tsx:94 | SCN-014 | proposed |
 | action.rule.dry_run | Dry-run | app/routes/automation.tsx:404 | SCN-014 | proposed |

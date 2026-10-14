@@ -24,6 +24,22 @@ export function restoreGmailDraft(storage: Pick<Storage, "getItem">, accountId: 
   return { draft: value?.draft ?? null, locked: value?.locked ?? false };
 }
 
+/** Where an unreadable saved entry is kept, so the next save never deletes it (B-68). */
+export const unreadableDraftKey = (accountId: string) => "fabric-draft-unreadable:" + accountId;
+
+/**
+ * Moves an entry that could not be read out of the draft's place, kept as it was, so the page can start
+ * a new draft without deleting what was saved (B-68). Returns false when the device refuses the copy:
+ * the entry then stays where it is, and the page must not save over it.
+ */
+export function setAsideUnreadableDraft(storage: Pick<Storage, "getItem" | "setItem" | "removeItem">, accountId: string): boolean {
+  const raw = storage.getItem(gmailDraftKey(accountId));
+  if (raw === null) return true;
+  try { storage.setItem(unreadableDraftKey(accountId), raw); } catch { return false; }
+  storage.removeItem(gmailDraftKey(accountId));
+  return true;
+}
+
 /** Saves the draft and its lock, or removes the entry once there is no draft. Throws when the device refuses. */
 export function keepGmailDraft(
   storage: Pick<Storage, "setItem" | "removeItem">,
