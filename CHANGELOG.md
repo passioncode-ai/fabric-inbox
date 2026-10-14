@@ -5,6 +5,33 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.18.0 — 2026-10-14
+
+- **Each row says how long its conversation is.** A message that is part of a longer conversation
+  shows the number of its messages; mail in Trash, Spam and Discarded is not counted. Agents get the
+  same number from `list_messages` (`threadCount`).
+- **Read any message of a conversation in place.** *Show* opens a message's text right in the
+  conversation and marks it read. *Mark conversation read* marks every unread message of it at once,
+  in a Cloudflare mailbox and in Gmail, IMAP and Outlook accounts; `update_messages` with `thread` now
+  does the same for agents.
+- **A long Gmail, IMAP or Outlook conversation shows all its messages.** Before, a large account could
+  leave older ones out of the conversation.
+- **An archived message no longer comes back for a moment.** A list update that arrived just after
+  you archived, discarded or read a message could show it as before until the next update.
+- **A list preview reads as the message does:** no space appears before punctuation that follows a
+  bold word or a link.
+- **A redelivered message never sends its forwarding copy twice.** If a copy may have left before the
+  delivery was cut off, it is not sent again, and the delivery issues say so.
+- **Clearing old Spam and Discarded mail leaves no files behind**, however much has piled up; if
+  storage refuses, the messages wait for the next try.
+- **A reply agent that was interrupted does not repeat what it did.** When its answer is started
+  again, it calls only the tools their server marks as read-only; any other tool is not called a
+  second time, and the answer stays a draft.
+- **An address whose migrated agent you deleted no longer holds up its copies** of a message that
+  another address's agent could answer.
+- **Category screening keeps less.** Decisions that a message is not in a category, and spam checks,
+  are kept for 30 days; the counts in Settings stay as they were.
+
 ## 0.17.0 — 2026-10-14
 
 - **See the whole conversation.** Above the message you open, its conversation is listed oldest
