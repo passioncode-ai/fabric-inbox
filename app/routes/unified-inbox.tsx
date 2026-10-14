@@ -68,7 +68,7 @@ import { totalUnread } from "~/components/inbox/account-groups";
 import { displayOrder, groupCounts, isTriageGroup, listDate, nextAfter, pinTriage, triageOf, type ListView } from "~/components/inbox/triage-view";
 import type { Triage, TriageGroup } from "../../shared/mail/triage";
 import type { InboxFolder } from "../../shared/mail/inbox";
-import { showFeedChange, mergeHead, refreshScope, refreshSummary, WakeRefresh, type FeedChange, type RefreshOutcome, type RefreshResponse } from "~/lib/mail-refresh";
+import { showFeedChange, mergeHead, refreshScope, refreshSummary, WakeRefresh, type FeedChange, type RefreshOutcome, type RefreshResponse, withPendingChanges, forgetFeedChanges, type ShownChange } from "~/lib/mail-refresh";
 import SyncStatus from "~/components/inbox/SyncStatus";
 import UndoToast from "~/components/inbox/UndoToast";
 import ShortcutsDialog from "~/components/inbox/ShortcutsDialog";
@@ -264,7 +264,8 @@ export default function UnifiedInbox() {
   const { archiveKey, discardKey } = triageKeys(mac);
   const windowActive = useWindowActive();
   const listKey = ["unified-inbox", accountId, domainFilter, providerFilter, categoryParam, folder, search, unreadOnly];
-  const readPage = (pageParam: string) =>
+  // A page answers with every change shown since its read started that the server may not have yet (B-95).
+  const readPage = (pageParam: string, startedAt = Date.now()) =>
       fabric<InboxData>(
         "/api/inbox?" +
           new URLSearchParams({
@@ -278,7 +279,7 @@ export default function UnifiedInbox() {
             ...(categoryParam ? { category: categoryParam } : {}),
             ...(providerFilter ? { provider: providerFilter } : {}),
           }),
-      );
+      ).then((page) => withPendingChanges(page, startedAt));
   const list = useInfiniteQuery({
     queryKey: listKey,
     initialPageParam: "",
@@ -426,13 +427,14 @@ export default function UnifiedInbox() {
     markedRead.current = selected.id;
     const key = ["unified-message", selected.accountId, selected.providerMessageId];
     // The row reads as read at once; it goes back to unread if the server refuses (P3-12).
-    let undo: (() => void) | undefined;
+    let undo: ShownChange | undefined;
     void showChange({ id: selected.id, patch: { read: true } }).then((rollback) => { undo = rollback; })
       .then(() => isRemote(selected.provider)
         ? fabric(messagePath(selected) + "/read", { read: true })
         : fabric(messagePath(selected), { read: true }, "PUT"))
       .then(() => {
         // The reader's own copy says read too, so "Mark as unread" is offered at once.
+        undo?.settle();
         client.setQueryData(key, (d: OpenMessage | undefined) => (d ? { ...d, read: true } : d));
         setSelected((current) => (current?.id === selected.id ? { ...current, read: true } : current));
         return client.invalidateQueries({ queryKey: ["unified-inbox"] });
@@ -568,6 +570,7 @@ export default function UnifiedInbox() {
     const undo = change ? await showChange(change) : undefined;
     try {
       await action();
+      undo?.settle();
       after?.();
       await refresh();
       await client.invalidateQueries({ queryKey: ["unified-message"] });
@@ -596,7 +599,7 @@ export default function UnifiedInbox() {
     setBusy(true);
     setNotice("");
     setRestoredRules([]);
-    const undo: (() => void)[] = [];
+    const undo: ((() => void) & { settle(): void })[] = [];
     for (const m of list) undo.push(await showChange({ id: m.id, removed: true }));
     const order = displayOrder(messages, view, group, openGroups);
     const leaving = new Set(list.map((m) => m.id));
@@ -607,8 +610,9 @@ export default function UnifiedInbox() {
     if (after) requestAnimationFrame(() => document.querySelector<HTMLElement>(".fi-message.is-selected")?.focus());
     try {
       const done = kind === "archive" ? await archiveMessages(list) : await discardMessages(list);
-      // What did not move comes back into the list.
+      // What did not move comes back into the list; what did is settled (B-95).
       for (const f of done.failed) undo[list.indexOf(f.message as InboxMessage)]?.();
+      for (const u of undo) u.settle();
       if (!done.items.length) throw new Error(done.failed[0]?.error ?? t("Nothing changed."));
       const learned = learnedNotice(done, t);
       setToast({ done, text: doneText(done, t), ...(learned ? { notice: learned.text, ruleIds: learned.ruleIds } : {}) });
@@ -629,6 +633,8 @@ export default function UnifiedInbox() {
     if (!done || toast?.undoing) return;
     setToast({ ...toast!, undoing: true });
     const result = await undoDone(done).catch((e: Error) => ({ restored: 0, failed: [e.message] }));
+    // What Undo put back is no longer hidden by the change that took it away (B-95).
+    forgetFeedChanges(done.items.map((item) => item.message.id));
     setToast(result.failed.length ? null : { text: TT.undone(result.restored) });
     if (result.failed.length) setNotice(TT.undoFailed(result.restored, result.failed.length, result.failed[0]!));
     await refresh();

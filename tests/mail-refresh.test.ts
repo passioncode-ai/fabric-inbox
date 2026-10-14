@@ -135,3 +135,44 @@ test("undoing one refused change puts back only that row, not other changes made
   assert.equal(after.find((m: any) => m.id === "c").read, true, "c's read flag is what it was before the refused change");
   assert.equal(after.find((m: any) => m.id === "a").read, true, "a's later change is kept");
 });
+
+test("a read that started before the server had a shown change keeps the change (B-95)", async () => {
+  const { QueryClient } = await import("@tanstack/react-query");
+  const { showFeedChange, withPendingChanges, forgetFeedChanges } = await import("../app/lib/mail-refresh");
+  const client = new QueryClient();
+  client.setQueryData(["unified-inbox", "b95"], { pages: [{ messages: [{ id: "x1", read: false }, { id: "x2", read: false }], hasMore: false }], pageParams: [""] });
+  const stale = { messages: [{ id: "x1", read: false }, { id: "x2", read: false }], hasMore: false };
+  const archived = await showFeedChange(client, { id: "x1", removed: true });
+  const read = await showFeedChange(client, { id: "x2", patch: { read: true } });
+  // A poll started after the change was shown, answered before the server applied it.
+  const startedAt = Date.now();
+  assert.deepEqual(withPendingChanges(stale, startedAt).messages, [{ id: "x2", read: true }], "the archived row stays gone, the read flag stays");
+  await new Promise((resolve) => setTimeout(resolve, 5)); // the server answers a moment later
+  archived.settle();
+  read.settle();
+  // A read started once the server had both answers with the server's own rows.
+  const later = Date.now() + 1;
+  const fresh = { messages: [{ id: "x2", read: false }], hasMore: false };
+  assert.deepEqual(withPendingChanges(fresh, later).messages, [{ id: "x2", read: false }], "settled changes leave later reads alone (x2 marked unread elsewhere)");
+  assert.deepEqual(withPendingChanges(stale, startedAt).messages, [{ id: "x2", read: true }], "an older read in flight still gets them");
+  // Undo of the archive put x1 back on the server: the change no longer hides it.
+  forgetFeedChanges(["x1"]);
+  assert.deepEqual(withPendingChanges(stale, startedAt).messages.map((m) => m.id), ["x1", "x2"]);
+  // A refused change, taken back, is never applied again; a forgotten change does not linger past its time.
+  const refused = await showFeedChange(client, { id: "x3", removed: true });
+  refused();
+  assert.deepEqual(withPendingChanges({ messages: [{ id: "x3" }], hasMore: false }, Date.now()).messages, [{ id: "x3" }]);
+  const unsettled = await showFeedChange(client, { id: "x4", removed: true });
+  assert.deepEqual(withPendingChanges({ messages: [{ id: "x4" }], hasMore: false }, Date.now(), Date.now() + 61_000).messages, [{ id: "x4" }], "dropped after a minute");
+  void unsettled;
+  forgetFeedChanges(["x2"]);
+});
+
+test("the inbox applies shown changes to every page it reads, settles them and forgets what Undo restored (B-95)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const route = readFileSync("app/routes/unified-inbox.tsx", "utf8");
+  assert.match(route, /\.then\(\(page\) => withPendingChanges\(page, startedAt\)\)/);
+  assert.match(route, /for \(const u of undo\) u\.settle\(\);/);
+  assert.match(route, /undo\?\.settle\(\);/);
+  assert.match(route, /forgetFeedChanges\(done\.items\.map\(\(item\) => item\.message\.id\)\)/);
+});
