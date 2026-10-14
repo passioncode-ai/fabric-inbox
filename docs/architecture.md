@@ -439,7 +439,11 @@ flowchart LR
   a failed or unconfirmed upload never deletes a working relay. The version is the source's
   fingerprint, and a relay reporting an older one is upgraded in the background. It POSTs the raw message to `/relay/incoming` (`ingress.ts`): only a
   registered relay, only for domains of its own account, through the same `receiveEmail`; a copy is
-  forwarded by the relay and stays owed until `/relay/forwarded`. Mail from such a domain is sent
+  forwarded by the relay and stays owed until `/relay/forwarded`. A delivery the server refuses for a
+  domain outside the relay's account, or cannot take at all, is recorded in the incoming failures
+  (`incoming-log.ts`; Settings → Domains, `list_addresses`) as direct mail is, and the relay fails
+  it so the platform retries (B-40); a relay that cannot reach the server leaves its trace only in
+  its own Worker log, in the other account. Mail from such a domain is sent
   through that account's Email Sending REST API (`workers/email-sender.ts (sendFromAccount)`); a
   4xx is a failure (`E_RATE_LIMIT_EXCEEDED` for 429, `E_RECIPIENT_SUPPRESSED` when every recipient
   was suppressed, else `E_REST_REFUSED`), anything else unknown; a refusal from the account it was

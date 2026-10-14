@@ -6,6 +6,7 @@ import type { AccessClaims } from "../mcp/keys";
 import { readRelays, tidyRelay, upgradeRelay, type Relay } from "./install";
 import { RELAY_VERSION } from "./script";
 import { readSettings } from "../lib/mailbox-store";
+import { incomingFailure, recordIncomingFailure } from "../incoming-log";
 
 /**
  * Where a relay hands over mail (MA-7). Access admits the relay's service token on these two paths
@@ -65,7 +66,10 @@ export async function handleRelayIncoming(request: Request, env: Env, ctx: Execu
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return json({ error: "The envelope recipient is missing" }, 400);
   if (!(await inRelayAccount(env, relay, domainOf(to)))) {
     console.warn(JSON.stringify({ event: "relay_refused_domain", accountId: relay.accountId, domain: domainOf(to) }));
-    return json({ error: `${domainOf(to)} is not a domain of the account this relay serves` }, 403);
+    const reason = `${domainOf(to)} is not a domain of the account this relay serves`;
+    // The relay fails the delivery on this answer; the owner sees whom it was for and why (B-40).
+    await recordIncomingFailure(env.BUCKET, incomingFailure({ to, rawSize: Number(request.headers.get("content-length")) || undefined }, new Error("Refused from the relay: " + reason)));
+    return json({ error: reason }, 403);
   }
   const tooLarge = { outcome: "rejected", reject: `Message too large: the limit is ${MAX_EMAIL_SIZE / 1024 / 1024} MB` };
   if (Number(request.headers.get("content-length") ?? "0") > MAX_EMAIL_SIZE) return json(tooLarge);
@@ -87,7 +91,17 @@ export async function handleRelayIncoming(request: Request, env: Env, ctx: Execu
     setReject: (reason) => { reject = reason; },
     deferForward: (target) => { forwardTo = target; },
   };
-  const result = await receiveEmailResilient(event, env, ctx);
+  let result: Awaited<ReturnType<typeof receiveEmailResilient>>;
+  try {
+    result = await receiveEmailResilient(event, env, ctx);
+  } catch (e) {
+    // The same last trace as mail arriving directly (handleIncomingEmail): whom it was for, when and
+    // why, never its content (SCN-025, B-40). The relay fails the delivery, so the platform retries.
+    const failure = incomingFailure(event, e);
+    console.error(JSON.stringify({ ...failure, via: "relay", accountId: relay.accountId }));
+    await recordIncomingFailure(env.BUCKET, failure);
+    return json({ error: "The server could not take the message: " + failure.error }, 500);
+  }
   if ("rejected" in result) {
     console.log(JSON.stringify({ event: "relay_rejected", accountId: relay.accountId, reason: result.rejected }));
     return json({ outcome: "rejected", reject: reject ?? "Address not found" });
