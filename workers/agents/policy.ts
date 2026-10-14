@@ -12,6 +12,10 @@ export interface ModelDecision {
   reason: string;
   /** When nothing answered the question: a one-sentence paraphrase with no personal data (B-85 gaps). */
   question?: string;
+  /** What the message is about, in a few English words (the voice-of-the-customer theme). */
+  topic?: string;
+  /** What the sender wants, one English sentence without personal data (the voice-of-the-customer paraphrase). */
+  summary?: string;
 }
 
 export interface PolicyContext {

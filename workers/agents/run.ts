@@ -49,6 +49,9 @@ export interface AgentRun {
   unanswered?: boolean;
   /** B-117: the message's conversation. */
   threadId?: string;
+  /** What the message is about (a few English words) and what the sender wants (one sentence); no personal data. */
+  topic?: string;
+  summary?: string;
   createdAt: string;
   updatedAt: string;
 }

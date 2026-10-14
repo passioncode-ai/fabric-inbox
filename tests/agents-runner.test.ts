@@ -665,3 +665,14 @@ test("B-117: the history shows each question without an answer and whether it re
   assert.match(ui, /\{ id: "unanswered", label: msg\("Questions without an answer"\) \}/);
   assert.match(ui, /t\("Question without an answer: \{question\}", \{ question: run\.question \}\)/);
 });
+
+test("VoC: the run keeps the model's topic and summary, cut to size, for every answer", async () => {
+  const h = harness({
+    agent: autoAgent({ tools: [gapGrant()] }),
+    callTool: async () => confident,
+    model: async () => ({ decision: answer({ topic: "Translator in chats", summary: "The user asks how to translate messages in a chat." }), text: "" }),
+  });
+  const run = (await h.run())!;
+  assert.equal(run.topic, "Translator in chats");
+  assert.equal(run.summary, "The user asks how to translate messages in a chat.");
+});

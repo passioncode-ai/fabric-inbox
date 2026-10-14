@@ -40,3 +40,12 @@ test("a question without an answer is its own kind, with the paraphrase; trouble
   assert.equal(bad.level, "warning");
   assert.equal(runEvent(run({ status: "running" })), null, "a run still going is not an event");
 });
+
+test("every event carries the run's topic and one-sentence summary, scrubbed of personal details (VoC)", async () => {
+  const e = runEvent(run({ topic: "login codes", summary: "The user does not get the login code by SMS; write to ann@private.invalid or +1 415 555 0101, @annlee" }))!;
+  assert.equal(e.data.value.topic, "login codes");
+  assert.equal(e.data.value.summary, "The user does not get the login code by SMS; write to […] or […], […]");
+  const { scrubPersonal } = await import("../workers/agents/events");
+  assert.equal(scrubPersonal("see https://x.invalid/a?token=1 now"), "see […] now");
+  assert.equal(scrubPersonal("version 12.4.1 on iOS 18"), "version 12.4.1 on iOS 18", "versions are not phone numbers");
+});
