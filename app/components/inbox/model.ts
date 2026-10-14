@@ -52,6 +52,8 @@ export type InboxMessage = {
   starred: boolean;
   snippet: string;
   threadId?: string;
+  /** How many messages its conversation holds, when more than one (B-114; trash, spam and discarded left out). */
+  threadCount?: number;
   triage?: Triage;
   /** Screened categories this message is in, with why. */
   categories?: { id: string; name: string; reason: string }[];

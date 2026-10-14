@@ -196,6 +196,8 @@ export function inlinePart(files: Message["attachments"], attachmentId: string) 
 /** A message cached before its parts kept their Content-ID (B-89) is read once more when opened. */
 export const needsInlineRefresh = (files: Message["attachments"]) => files.some((f) => !("inline" in f));
 const MIGRATE_ON_READ_MS = 5_000;
+/** How long one feed read may spend building the conversation index before it answers without counts. */
+const THREADS_ON_READ_MS = 1_000;
 /** Rows of the first layout that it already hid: an earlier import's leftovers once history took over. */
 function hiddenByFirstLayout(account: AccountRecord, row: StoredMessage) {
   return account.provider === "gmail" && account.sync.mode === "history" && row.generation !== account.sync.generation;
@@ -558,7 +560,11 @@ export class AccountService {
   /** Moves the account's cache to the current layout within `budgetMs`; true once it is there. */
   async migrateCache(accountId: string, budgetMs = MIGRATE_ON_READ_MS) {
     const account = await this.account(accountId);
-    return this.cache.migrate(account.id, (row) => hiddenByFirstLayout(account, row), Date.now() + budgetMs);
+    const deadline = Date.now() + budgetMs;
+    const migrated = await this.cache.migrate(account.id, (row) => hiddenByFirstLayout(account, row), deadline);
+    // The conversation index of mail cached before it existed is built in the same budget (B-114).
+    if (migrated) await this.cache.indexThreads(account.id, deadline);
+    return migrated;
   }
   /** The id a message has now: an IMAP move gives it a new one, kept as an alias for a while. */
   protected async currentId(accountId: string, messageId: string) {
@@ -600,6 +606,19 @@ export class AccountService {
     const limit = Math.min(100, Math.max(1, options.limit || 50));
     // Metadata rows use a separate prefix from body chunks at read time. Cursor is a provider id, never an arbitrary storage key.
     if (options.cursor) keyPart(options.cursor);
+    // One conversation (read_thread, the reader's conversation): its messages from the conversation
+    // index, however large the cache is; a scan of a few pages could miss them (B-114).
+    if (options.threadId && !options.cursor) {
+      const members = await this.cache.threadMembers(account.id, options.threadId);
+      if (members) {
+        const found: Omit<Message, "text" | "html">[] = [];
+        for (const member of members) {
+          const row = await this.cache.row(account.id, member.id);
+          if (row && !hiddenByFirstLayout(account, row) && matches(row.message, options)) found.push(row.message);
+        }
+        return { messages: found.slice(0, limit), nextCursor: undefined, sync: account.sync, status: account.status };
+      }
+    }
     let after = options.cursor
       ? prefix + options.cursor + ":￿"
       : undefined;
@@ -637,9 +656,25 @@ export class AccountService {
   async listInboxMessages(accountId: string, options: InboxReadOptions): Promise<InboxMessage[]> {
     const account = await this.account(accountId);
     const feed = { provider: account.provider, providerName: this.providerName(account) };
-    const page = await this.cache.migrate(account.id, (row) => hiddenByFirstLayout(account, row), Date.now() + MIGRATE_ON_READ_MS)
+    const migrated = await this.cache.migrate(account.id, (row) => hiddenByFirstLayout(account, row), Date.now() + MIGRATE_ON_READ_MS);
+    const page = migrated
       ? await this.cache.inboxPage(account.id, options, feed)
       : await this.cache.legacyInboxPage(account.id, options, (row) => !hiddenByFirstLayout(account, row), feed);
+    // How long each row's conversation is (B-114): read from the conversation index once it is built;
+    // until then, or when it cannot be read, rows carry no count rather than a wrong one.
+    if (migrated) {
+      try {
+        const threads = page.map((m) => m.threadId).filter((t): t is string => !!t);
+        const counts = threads.length && await this.cache.indexThreads(account.id, Date.now() + THREADS_ON_READ_MS)
+          ? await this.cache.threadCounts(account.id, threads) : undefined;
+        for (const m of page) {
+          const n = m.threadId ? counts?.get(m.threadId) : undefined;
+          if (n && n > 1) m.threadCount = n;
+        }
+      } catch (error) {
+        console.warn(JSON.stringify({ event: "thread_counts_failed", provider: account.provider, error: (error as Error)?.message?.slice(0, 200) }));
+      }
+    }
     // Discarded rows say why: the reason kept when the app or a rule discarded them, else the provider's place.
     if (options.folder === "discarded") {
       for (const m of page) {

@@ -52,6 +52,14 @@ function MessageRow({ message, account, selected, marked, onSelect, showGroup, c
           {!message.read && <span className="fi-unread" aria-hidden="true" />}
           <span className="fi-visually-hidden">{[marked && t("Selected."), important && t("Important."), !message.read && t("Unread.")].filter(Boolean).map((s) => s + " ").join("")}</span>
           {senderName(message.sender)}
+          {(message.threadCount ?? 0) > 1 && (
+            <>
+              <span className="fi-thread-count" aria-hidden="true" title={t.plural(message.threadCount!, { one: "{n} message in this thread", other: "{n} messages in this thread" })}>
+                {message.threadCount}
+              </span>
+              <span className="fi-visually-hidden">{" " + t.plural(message.threadCount!, { one: "{n} message in this thread", other: "{n} messages in this thread" })}</span>
+            </>
+          )}
         </strong>
         <time dateTime={message.date}>{listDate(message.date, undefined, t)}</time>
       </div>
