@@ -55,6 +55,8 @@ function plainText(body: string | null): string {
   if (!body) return "";
   return body
     .replace(/<(style|script|head)[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    // An inline element joins the text around it, as a browser shows it: "<b>Ann</b>." reads "Ann.", not "Ann ." (B-113).
+    .replace(/<\/?(?:a|abbr|b|bdi|bdo|cite|code|data|dfn|em|font|i|kbd|mark|q|s|samp|small|span|strike|strong|sub|sup|time|u|var|wbr)\b[^>]*>/gi, "")
     .replace(/<[^>]*>?/g, " ")
     .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/gi, "'")
     .replace(/\s+/g, " ")
