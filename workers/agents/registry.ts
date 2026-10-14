@@ -17,7 +17,7 @@ import {
 import { RUN_OUTCOMES, runIdFor, type AgentRun, type RunOutcome } from "./run";
 import { runAgent, type RunnerDeps } from "./runner";
 import { productionDeps, toolTokens } from "./deps";
-import { readToolSchema } from "./tool-schema";
+import { readToolInfo, type ToolInfo } from "./tool-schema";
 import { CLAIM_POLL_MS, CLAIM_TTL_MS, decideClaim, type MessageClaim } from "./dedupe";
 
 
@@ -180,9 +180,9 @@ export class AgentRegistryDO extends DurableObject<Env> {
     return row ? (JSON.parse(String(row.body)) as AgentVersion) : null;
   }
 
-  /** Test seam: the granted tool's schema, read from its endpoint; production reads it over MCP. */
-  protected async toolSchema(grant: ToolGrant): Promise<unknown | null> {
-    return readToolSchema(grant, this.env.AUTOMATION_MCP_HOSTS ?? "", toolTokens(this.env));
+  /** Test seam: the granted tool's schema and read-only mark, read from its endpoint; production reads them over MCP. */
+  protected async toolInfo(grant: ToolGrant): Promise<ToolInfo | null> {
+    return readToolInfo(grant, this.env.AUTOMATION_MCP_HOSTS ?? "", toolTokens(this.env));
   }
 
   /** Validates the definition, every tool host against the workspace allowlist and each granted tool's schema. */
@@ -196,13 +196,16 @@ export class AgentRegistryDO extends DurableObject<Env> {
         throw new AgentInvalid(`${grant.name}: ${(error as Error).message}`);
       }
       // The schema is checked at save time, not first at run time: an unreadable tool is refused with the reason.
-      let schema: unknown;
+      let info: ToolInfo | null;
       try {
-        schema = await this.toolSchema(grant);
+        info = await this.toolInfo(grant);
       } catch (error) {
         throw new AgentInvalid(msg("The schema of the tool {tool} could not be read: {error}", { tool: grant.name, error: (error as Error).message }));
       }
-      if (schema == null) throw new AgentInvalid(msg("The tool {tool} is not listed by its endpoint", { tool: grant.name }));
+      if (info == null || info.schema == null) throw new AgentInvalid(msg("The tool {tool} is not listed by its endpoint", { tool: grant.name }));
+      const schema = info.schema;
+      // B-94: the endpoint's own mark, never the editor's.
+      grant.readOnly = info.readOnly;
       // B-85: the endpoint's schema is what the model is offered later, so it is stored with the
       // version; whatever the editor sent in its place is replaced.
       const stored = schema && typeof schema === "object" && !Array.isArray(schema) ? schema as Record<string, unknown> : {};
@@ -214,7 +217,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
       // B-85: the gap tool must be one the same endpoint offers.
       if (grant.gaps) {
         let gapSchema: unknown;
-        try { gapSchema = await this.toolSchema({ ...grant, tool: grant.gaps.tool }); }
+        try { gapSchema = (await this.toolInfo({ ...grant, tool: grant.gaps.tool }))?.schema ?? null; }
         catch (error) { throw new AgentInvalid(msg("The schema of the tool {tool} could not be read: {error}", { tool: grant.gaps.tool, error: (error as Error).message })); }
         if (gapSchema == null) throw new AgentInvalid(msg("The tool {tool} is not listed by its endpoint", { tool: grant.gaps.tool }));
       }
@@ -313,7 +316,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
         // One that vanished while sending is reported, since the send may have happened.
         const stale = prior.status === "running" && Date.now() - Date.parse(prior.updatedAt) > RUN_STALE_MS && prior.phase !== "sending";
         if (!stale) return { claimed: false, run: this.present(prior) };
-        const again = { ...run, createdAt: prior.createdAt, ...(prior.attempt ? { attempt: prior.attempt } : {}) };
+        // B-94: marked a re-run, so tools that may act are not called a second time.
+        const again = { ...run, createdAt: prior.createdAt, ...(prior.attempt ? { attempt: prior.attempt } : {}), rerun: true };
         this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?",
           again.status, JSON.stringify(again), again.updatedAt, again.id);
         return { claimed: true, run: again };

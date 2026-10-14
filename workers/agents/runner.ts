@@ -309,6 +309,12 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     const started = Date.now();
     const record: ToolCallRecord = { name: grant.name, host: hostOf(grant.endpoint), ok: false, ms: 0, result: "" };
     toolCalls.push(record);
+    // B-94: the interrupted worker may already have made this call; a tool that may act would act twice.
+    // Not called again, it counts as a failed call, so the answer stays a draft (policy.ts).
+    if (run.rerun && grant.readOnly !== true) {
+      record.result = msg("Not called again: the run was interrupted and this tool may act").slice(0, RESULT_PREVIEW_CHARS);
+      return { ok: false, text: "This tool is not called again after an interruption. Do not guess its result; draft the answer instead." };
+    }
     try {
       let text = await deps.callTool(grant, callArguments(grant, args));
       // A reply goes to someone outside: a public-only grant's output is used whole or not at all (B-85).

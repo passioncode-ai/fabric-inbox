@@ -43,6 +43,12 @@ export const ToolGrantSchema = z.object({
    * id, kind "unanswered", the fixed `channel` (or "email") and the model's paraphrase of the question.
    */
   gaps: z.object({ tool: z.string().min(1).max(100) }).strict().optional(),
+  /**
+   * B-94: whether the endpoint marks the tool read-only (MCP `readOnlyHint`), read at save time like
+   * `inputSchema`; a value sent by the editor is replaced. A run re-run after it was interrupted calls
+   * only read-only tools again: one that may act could act twice.
+   */
+  readOnly: z.boolean().optional(),
 }).strict();
 export type ToolGrant = z.infer<typeof ToolGrantSchema>;
 
