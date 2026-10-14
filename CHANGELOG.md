@@ -5,6 +5,16 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+- **Move to Trash can be undone.** In the inbox, moving the open message to Trash says so with Undo
+  (also ⌘Z / Ctrl+Z).
+- **List previews no longer show a message's styling code** — the text of mail that starts with a
+  long style sheet now reads as its text.
+- **More of the app speaks Russian:** the notifications area and the agent templates (Support, Sales,
+  Billing) fill in the interface's language.
+- **On a phone:** an open message takes the whole screen, and Settings shows the section you are in.
+
 ## 0.18.0 — 2026-10-14
 
 - **Each row says how long its conversation is.** A message that is part of a longer conversation
