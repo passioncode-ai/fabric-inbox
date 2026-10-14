@@ -456,6 +456,8 @@ type IncomingEmailEvent = {
 	 * so it is handed back here and stays owed until the relay reports (`settleRelayedCopy`).
 	 */
 	deferForward?: (rcptTo: string) => void;
+	/** Whether this delivery's own replays already forwarded the copy to `rcptTo` (`forwardOnce`). */
+	forwardedHere?: (rcptTo: string) => boolean;
 };
 type RejectReason = "no_recipient" | "domain_not_served" | "unknown_address";
 type Route = { mailboxId: string } | { rejected: RejectReason; address?: string };
@@ -562,10 +564,11 @@ async function receiveEmail(event: IncomingEmailEvent, env: Env, ctx: ExecutionC
   const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailboxId));
   if (await stub.hasReceivedEmail(messageId)) {
     await stub.redelivered(messageId);
-    // Stored before, cut off before its copy: the retry sends the copy it still owes.
-    const owed = await stub.forwardOwed(messageId).catch(() => false);
-    if (owed) {
-      const forwarded = await forwardCopy(event, env, mailboxId);
+    // Stored before, cut off before its copy: the retry sends the copy it still owes. A copy an earlier
+    // delivery started forwarding and never confirmed may have left: it is not sent twice (B-91).
+    const state = await stub.forwardState(messageId).catch(() => null);
+    if (state === "owed" || state === "sending") {
+      const forwarded = state === "owed" ? await forwardCopy(event, env, mailboxId, stub, messageId) : await unconfirmedCopy(event, env, mailboxId);
       if (forwarded !== "deferred") await stub.forwardSettled(messageId);
       await stub.flushIncomingEvents();
       return { mailboxId, emailId: messageId, inserted: false, ...(forwarded ? { forwarded } : {}) };
@@ -633,7 +636,7 @@ async function receiveEmail(event: IncomingEmailEvent, env: Env, ctx: ExecutionC
       console.warn(JSON.stringify({ event: "discard_count_failed", error: (error as Error).message })));
     return { mailboxId, emailId: messageId, inserted: true, discarded: discard.reason };
   }
-  const forwarded = await forwardCopy(event, env, mailboxId);
+  const forwarded = await forwardCopy(event, env, mailboxId, stub, messageId);
   if (forwarded && forwarded !== "deferred") await stub.forwardSettled(messageId);
   return { mailboxId, emailId: messageId, inserted: true, ...(forwarded ? { forwarded } : {}) };
 }
@@ -703,7 +706,8 @@ async function discardVerdict(env: Env, stub: { knownCorrespondent(address: stri
  * the Gmail copy. A failed forward never fails the delivery — the mail is
  * already kept — but is recorded for the operator under delivery-issues/.
  */
-async function forwardCopy(event: IncomingEmailEvent, env: Env, mailboxId: string): Promise<"sent" | "failed" | "deferred" | undefined> {
+async function forwardCopy(event: IncomingEmailEvent, env: Env, mailboxId: string,
+	marks?: { forwardSending(id: string): Promise<boolean>; forwardSettled(id: string): Promise<void> }, deliveryId?: string): Promise<"sent" | "failed" | "deferred" | undefined> {
 	const settings = await readSettings(env.BUCKET, mailboxId).catch(() => null);
 	const forwarding = settings?.forwarding as { enabled?: unknown; email?: unknown } | undefined;
 	const target = typeof forwarding?.email === "string" ? forwarding.email.trim().toLowerCase() : "";
@@ -714,15 +718,41 @@ async function forwardCopy(event: IncomingEmailEvent, env: Env, mailboxId: strin
 	else if (!event.forward && !event.deferForward) problem = "Forwarding is only possible for mail arriving through Email Routing";
 	if (!problem && event.deferForward) { event.deferForward(target); return "deferred"; }
 	if (!problem) {
+		// Marked before it leaves and settled the moment Email Routing takes it, so a later delivery of the
+		// same message can tell a copy that may have left from one never tried (B-91). Another delivery
+		// already sending it: this one does not.
+		if (marks && deliveryId && !(await marks.forwardSending(deliveryId))) return undefined;
 		try {
 			await event.forward!(target);
-			await recordCopyOutcome(env, mailboxId, target, null);
-			return "sent";
 		} catch (error) {
 			problem = `Email Routing refused the forward: ${(error as Error).message}`;
 		}
+		if (!problem) {
+			if (marks && deliveryId) await marks.forwardSettled(deliveryId).catch((error: unknown) =>
+				console.warn(JSON.stringify({ event: "forward_settle_failed", mailboxId, error: (error as Error)?.message?.slice(0, 200) })));
+			await recordCopyOutcome(env, mailboxId, target, null);
+			return "sent";
+		}
 	}
 	await recordCopyOutcome(env, mailboxId, target, problem);
+	return "failed";
+}
+
+/**
+ * A redelivery of a message whose copy an earlier delivery started forwarding and never confirmed
+ * (B-91). Sent within this delivery (an in-process retry): it left. Otherwise it may have left, so it is
+ * not sent again — a second copy is worse than a missing one the operator is told about.
+ */
+async function unconfirmedCopy(event: IncomingEmailEvent, env: Env, mailboxId: string): Promise<"sent" | "failed" | undefined> {
+	const settings = await readSettings(env.BUCKET, mailboxId).catch(() => null);
+	const forwarding = settings?.forwarding as { email?: unknown } | undefined;
+	const target = typeof forwarding?.email === "string" ? forwarding.email.trim().toLowerCase() : "";
+	if (target && event.forwardedHere?.(target)) {
+		await recordCopyOutcome(env, mailboxId, target, null);
+		return "sent";
+	}
+	await recordCopyOutcome(env, mailboxId, target || "(the forwarding address)",
+		"A delivery was cut off while its copy was being forwarded; the copy may not have left and was not sent twice");
 	return "failed";
 }
 
@@ -779,6 +809,7 @@ export function replayEvent(event: IncomingEmailEvent, bytes: Uint8Array<ArrayBu
 			return forward.call(event, rcptTo, headers);
 		} } : {}),
 		...(deferForward ? { deferForward: (rcptTo: string) => deferForward.call(event, rcptTo) } : {}),
+		...(once ? { forwardedHere: (rcptTo: string) => once.sent.has(rcptTo) } : {}),
 	};
 }
 

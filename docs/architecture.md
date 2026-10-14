@@ -334,7 +334,7 @@ English is the source text and the key; nothing a server stores or an agent read
 | Path | Guarantee | Where |
 |---|---|---|
 | Arrival | a delivery is stored once (id = hash of mailbox, sender, bytes) with its journal event in one transaction; a body too large for a row goes whole to R2 (`bodies/<id>.html`) | `workers/index.ts`, `MailboxDO.receiveEmailOnce/spillBody` |
-| Forwarding copy | owed until attempted (`incoming_receipts.forward_status`); a retried delivery sends what it owes, once | `workers/index.ts (forwardCopy)` |
+| Forwarding copy | `incoming_receipts.forward_status`: `owed` when stored, `sending` just before it leaves, `settled` the moment Email Routing takes it (or its failure is recorded). A redelivery sends a copy still `owed`; one left `sending` may have left, so it is not sent twice and the operator is told under delivery-issues/ (B-91); replays within one delivery share one forward (`forwardOnce`) | `workers/index.ts (forwardCopy, unconfirmedCopy)`, `MailboxDO.forwardSending`, `forwardState` |
 | Journal → rules, agents, categories | an event is acknowledged only when every consumer took it; a failing one waits its own backoff and is set aside after 10 attempts, counted and retried on request | `workers/actions/incoming.ts`, `MailboxDO.drainIncomingEvents/inboxCounts/retryIncoming` |
 | Agents | one run per message; a message whose run was cut off waits in the queue until that run is stale; one message delivered to several agent addresses is answered once per workspace (B-22) | `workers/agents/registry.ts`, `workers/agents/dedupe.ts` |
 | Gmail events | each event its own backoff, `dead:event:` after 10 | `workers/providers/account-service.ts (drainEvents)` |
