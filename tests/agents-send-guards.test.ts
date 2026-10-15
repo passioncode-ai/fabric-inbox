@@ -51,6 +51,11 @@ test("evidence: an abstained answer or coverage below 0.6 rests on nothing; a co
     items: [{ id: "fact:login-code" }, { id: 7 }], revision: { data: "abc", docs: "def" } })),
     { tool: "facts", requestId: "req-1", items: ["fact:login-code", "7"], revision: '{"data":"abc","docs":"def"}' });
   assert.deepEqual(evidenceOf("facts", "plain text answer"), { tool: "facts" });
+  // Coverage per cited item (the data agent's shape): one item at 0.6 or more is needed, and only those are cited.
+  assert.equal(evidenceOf("facts", JSON.stringify({ abstained: false, results: [{ id: "fact:a", coverage: 0.4 }, { id: "fact:b", coverage: 0.5 }] })), null);
+  assert.deepEqual(evidenceOf("facts", JSON.stringify({ abstained: false, trace: "t-9", revision: { data: "x" },
+    results: [{ id: "fact:a", coverage: 0.4 }, { id: "fact:b", coverage: 0.8 }] })),
+    { tool: "facts", requestId: "t-9", items: ["fact:b"], revision: '{"data":"x"}' });
 });
 
 test("older agents keep working: the new policy fields default off", () => {

@@ -55,8 +55,9 @@ export function abstainedOutput(text: string): boolean {
 export interface EvidenceTrace { tool: string; requestId?: string; items?: string[]; revision?: string }
 
 /**
- * The trace of a tool output that counts as a confident answer, or null: an abstained answer, or one
- * whose top-level coverage is below 0.6, rests on nothing. Output that is not JSON counts, untraced.
+ * The trace of a tool output that counts as a confident answer, or null: an abstained answer, one whose
+ * top-level coverage is below 0.6, or one whose cited items all carry a coverage below 0.6 rests on
+ * nothing. Items with a coverage below 0.6 are not cited. Output that is not JSON counts, untraced.
  */
 export function evidenceOf(tool: string, text: string): EvidenceTrace | null {
   let value: unknown;
@@ -67,13 +68,18 @@ export function evidenceOf(tool: string, text: string): EvidenceTrace | null {
   if (typeof v.coverage === "number" && v.coverage < 0.6) return null;
   const id = [v.requestId, v.request_id, v.trace, v.traceId].find((x) => typeof x === "string") as string | undefined;
   const items: string[] = [];
+  let scored = 0;
   for (const key of ["items", "facts", "results", "citations"]) {
     const list = v[key];
     if (Array.isArray(list)) for (const item of list) {
-      const itemId = item && typeof item === "object" ? (item as Record<string, unknown>).id : undefined;
+      if (!item || typeof item !== "object") continue;
+      const { id: itemId, coverage } = item as Record<string, unknown>;
+      // A cited item with its own coverage counts only at 0.6 or more (the knowledge base's own bar).
+      if (typeof coverage === "number") { scored++; if (coverage < 0.6) continue; }
       if (typeof itemId === "string" || typeof itemId === "number") items.push(String(itemId));
     }
   }
+  if (scored > 0 && items.length === 0) return null;
   const revision = v.revision === undefined ? undefined : (typeof v.revision === "string" ? v.revision : JSON.stringify(v.revision)).slice(0, 200);
   return { tool, ...(id ? { requestId: id.slice(0, 100) } : {}), ...(items.length ? { items: items.slice(0, 20) } : {}), ...(revision ? { revision } : {}) };
 }
