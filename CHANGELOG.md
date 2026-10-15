@@ -21,6 +21,9 @@ is cut and published: [docs/release.md](docs/release.md).
 - **A rule is turned on only after its preview.** The server now holds the app's rule: a new or
   changed rule is enabled after a dry-run of that rule (agents too, through `save_rule`); renaming or
   pausing needs none.
+- **Reply agents answer mail in other languages more carefully.** A knowledge tool asked before the
+  agent answers gets the question in English when the mail is neither English nor Russian, so it no
+  longer matches the wrong fact by a shared word.
 - **For agents:** a send whose outcome is unknown keeps its place in the day's allowance;
   `list_agent_activity` pages by `cursor` and never skips entries of the same moment; `list_rules`
   keeps every run still waiting for approval, however old.
