@@ -1205,7 +1205,10 @@ const agentInput = z.object({
     publicOnly: z.boolean().optional().describe("Use the output only when it is JSON and every value in it sits inside an object whose `class` is exactly \"public\" (inherited by what is inside; an inner class overrides); otherwise it is withheld and the answer stays a draft"),
     gaps: z.object({ tool: z.string().min(1).max(100) }).optional().describe("A tool on the same endpoint that records, once per run, a question the knowledge could not answer: when a call (before the model or by it) answers abstained: true, or the model says its answer is not grounded"),
   })).max(10).optional().describe("Remote MCP tools; the endpoint's input schema is read and stored on save"),
-  replyPolicy: z.object({ mode: z.enum(["draft", "auto"]), allowedIntents: z.array(z.string().max(80)).max(20).default([]), dailySendLimit: z.number().int().min(1).max(200).nullable().default(20).describe("Sends per address per day in auto mode; null: no limit") }).optional(),
+  replyPolicy: z.object({ mode: z.enum(["draft", "auto"]), allowedIntents: z.array(z.string().max(80)).max(20).default([]), dailySendLimit: z.number().int().min(1).max(200).nullable().default(20).describe("Sends per address per day in auto mode; null: no limit"),
+    draftFollowUps: z.boolean().optional().describe("Auto mode: replies, forwards (Re:, Fwd:, AW:, Отв:…) and follow-ups to an earlier answer wait for a person"),
+    draftTopics: z.array(z.string().min(1).max(400)).max(30).optional().describe("Auto mode: topics a person answers; words separated by | are alternatives matching where a word starts (a quoted word: the whole word), groups joined by \" + \" must all appear"),
+    requireEvidence: z.boolean().optional().describe("Auto mode: send only when a granted tool answered confidently (not abstained, coverage 0.6 or more)") }).optional(),
 }).describe("The agent's whole definition; saving makes a new version");
 
 const saveAgent = defineTool({
