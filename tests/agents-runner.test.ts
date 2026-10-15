@@ -815,3 +815,21 @@ test("an auto agent drafts a follow-up in a conversation it already answered, an
     callTool: async () => JSON.stringify({ abstained: false, coverage: 0.3 }) });
   assert.equal((await weak.run())!.status, "drafted");
 });
+
+test("a listed topic is caught in the English restatement and the model's summary, not only in the original words", async () => {
+  const guarded = autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })],
+    replyPolicy: { mode: "auto", allowedIntents: [], dailySendLimit: 50, draftFollowUps: true, draftTopics: ["sensitive|\"18+\""], requireEvidence: true } });
+  const confident = JSON.stringify({ abstained: false, results: [{ id: "publication:x", coverage: 0.7 }] });
+  // Spanish: only the restatement names the topic.
+  const es = harness({ agent: guarded, email: { subject: "Ayuda", body: "<p>¿Cómo activo el contenido para adultos en la app?</p>" }, callTool: async () => confident });
+  es.deps.paraphrase = async () => "The sender asks how to enable sensitive content in the app.";
+  const r1 = (await es.run())!;
+  assert.equal(r1.status, "drafted");
+  assert.match(r1.reason, /topic a person answers/);
+  // No prefetch at all: the model's English summary names it.
+  const plain = harness({ agent: autoAgent({ replyPolicy: { mode: "auto", allowedIntents: [], dailySendLimit: 50, draftTopics: ["sensitive"] } }),
+    email: { subject: "Ayuda", body: "<p>¿Cómo activo el contenido?</p>" },
+    model: async () => ({ decision: answer({ intent: "how-to", summary: "The sender wants to see sensitive content." }), text: "" }) });
+  const r2 = (await plain.run())!;
+  assert.equal(r2.status, "drafted");
+});

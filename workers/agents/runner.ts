@@ -536,7 +536,10 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     abstained: abstainedAny,
     // A reply or forward by its subject, or a message after this address already answered in the conversation.
     followUp: isFollowUpSubject(email.subject) || thread.some((m) => m.id !== email.id && m.folder_id === "sent" && Date.parse(m.date) <= received),
-    topic: matchedTopic(policy.draftTopics ?? [], `${email.subject}\n${deps.htmlToText(email.body)}`),
+    // The original words, and the English the run produced from them (the restatement a knowledge tool
+    // was asked, the model's topic and summary), so a topic in another language is caught too.
+    topic: matchedTopic(policy.draftTopics ?? [], [email.subject, deps.htmlToText(email.body),
+      asking !== opening ? asking ?? "" : "", proposal.topic ?? "", proposal.summary ?? ""].filter(Boolean).join("\n")),
     evidence: evidence.length > 0,
   });
   if (evidence.length) run.evidence = evidence.slice(0, 10);
