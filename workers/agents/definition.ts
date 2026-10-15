@@ -124,6 +124,15 @@ export const ReplyPolicySchema = z.object({
   allowedIntents: z.array(z.string().trim().min(1).max(60)).max(20).default([]),
   /** Sends per address per UTC day; beyond it answers become drafts. null: no limit (operator 2026-10-13); left out, 20. */
   dailySendLimit: z.number().int().min(1).max(200).nullable().default(20),
+  /** A reply or forward (Re:, Fwd:, AW:, Отв:… in the subject), or a message in a conversation this address already answered, waits for a person. */
+  draftFollowUps: z.boolean().default(false),
+  /**
+   * Topics a person answers: a message whose subject or text matches one waits for a person. An entry is
+   * words separated by "|" (any of them); groups joined by " + " must all match. Case does not matter.
+   */
+  draftTopics: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
+  /** Send only when a granted tool gave a confident answer in this run (not abstained, coverage 0.6 or more). */
+  requireEvidence: z.boolean().default(false),
 }).strict();
 export type ReplyPolicy = z.infer<typeof ReplyPolicySchema>;
 
@@ -195,7 +204,7 @@ Be brief and friendly; one clear next step per reply.`),
     knowledge: "",
     collections: [],
     tools: [],
-    replyPolicy: { mode: "draft", allowedIntents: ["question", "how-to", "status"], dailySendLimit: 20 },
+    replyPolicy: { mode: "draft", allowedIntents: ["question", "how-to", "status"], dailySendLimit: 20, draftFollowUps: false, draftTopics: [], requireEvidence: false },
   },
   sales: {
     name: msg("Sales"),
@@ -204,7 +213,7 @@ Share only prices and terms from the knowledge below. Offer a call for anything 
     knowledge: "",
     collections: [],
     tools: [],
-    replyPolicy: { mode: "draft", allowedIntents: ["pricing", "question"], dailySendLimit: 10 },
+    replyPolicy: { mode: "draft", allowedIntents: ["pricing", "question"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false },
   },
   billing: {
     name: msg("Billing"),
@@ -213,6 +222,6 @@ Never promise a refund or change a charge yourself: explain the process from the
     knowledge: "",
     collections: [],
     tools: [],
-    replyPolicy: { mode: "draft", allowedIntents: ["receipt"], dailySendLimit: 10 },
+    replyPolicy: { mode: "draft", allowedIntents: ["receipt"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false },
   },
 };

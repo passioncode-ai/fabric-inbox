@@ -53,6 +53,8 @@ export interface AgentRun {
   attempt?: number;
   /** Run again after an earlier worker on it was interrupted (B-94): tools that may act are not called again. */
   rerun?: boolean;
+  /** The confident tool answers this run rested on (request id, cited items, revision): a sent answer is traceable. */
+  evidence?: { tool: string; requestId?: string; items?: string[]; revision?: string }[];
   /** What the message is about (a few English words) and what the sender wants (one sentence); no personal data. */
   topic?: string;
   summary?: string;

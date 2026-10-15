@@ -3,7 +3,7 @@ import { queryLanguage } from "./language";
 import { htmlToText as linesOf } from "../../shared/mail/text";
 import type { SendMailCommand, SendMailResult } from "../../shared/mail/send";
 import { LEGACY_INSTRUCTIONS, callArguments, legacyAgentId, modelSchema, publicOnlyProblem, readAssignment, type AgentVersion, type ToolGrant } from "./definition";
-import { decide, type ModelDecision } from "./policy";
+import { decide, isFollowUpSubject, matchedTopic, type ModelDecision } from "./policy";
 import { parseStoredHeaders, prefilter, replyToAddress, SKIP_TEXT } from "./prefilter";
 import { RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type AwaitingAnswer, type ToolCallRecord } from "./run";
 import { answeringOrder, duplicateReason, electAnswerer, messageKey, type MessageClaim } from "./dedupe";
@@ -49,6 +49,33 @@ export interface PrefetchedResult { name: string; ok: boolean; text: string; abs
 /** A knowledge tool's own verdict that nothing answers confidently (`abstained: true` in its JSON). */
 export function abstainedOutput(text: string): boolean {
   try { const v = JSON.parse(text) as { abstained?: unknown }; return !!v && typeof v === "object" && v.abstained === true; } catch { return false; }
+}
+
+/** What a confident tool answer is traced by: its request id, the ids of the items it cites, its revision. */
+export interface EvidenceTrace { tool: string; requestId?: string; items?: string[]; revision?: string }
+
+/**
+ * The trace of a tool output that counts as a confident answer, or null: an abstained answer, or one
+ * whose top-level coverage is below 0.6, rests on nothing. Output that is not JSON counts, untraced.
+ */
+export function evidenceOf(tool: string, text: string): EvidenceTrace | null {
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { return { tool }; }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { tool };
+  const v = value as Record<string, unknown>;
+  if (v.abstained === true) return null;
+  if (typeof v.coverage === "number" && v.coverage < 0.6) return null;
+  const id = [v.requestId, v.request_id, v.trace, v.traceId].find((x) => typeof x === "string") as string | undefined;
+  const items: string[] = [];
+  for (const key of ["items", "facts", "results", "citations"]) {
+    const list = v[key];
+    if (Array.isArray(list)) for (const item of list) {
+      const itemId = item && typeof item === "object" ? (item as Record<string, unknown>).id : undefined;
+      if (typeof itemId === "string" || typeof itemId === "number") items.push(String(itemId));
+    }
+  }
+  const revision = v.revision === undefined ? undefined : (typeof v.revision === "string" ? v.revision : JSON.stringify(v.revision)).slice(0, 200);
+  return { tool, ...(id ? { requestId: id.slice(0, 100) } : {}), ...(items.length ? { items: items.slice(0, 20) } : {}), ...(revision ? { revision } : {}) };
 }
 
 export interface ModelRequest {
@@ -341,6 +368,9 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       }
       record.ok = true;
       record.result = text.slice(0, RESULT_PREVIEW_CHARS);
+      // A confident answer is what an evidence-only policy sends on, and what a sent answer is traced to.
+      const trace = evidenceOf(grant.name, text);
+      if (trace) { evidence.push(trace); }
       return { ok: true, text: text.slice(0, 8000) };
     } catch (error) {
       record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
@@ -352,6 +382,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // A knowledge tool that abstains (no confident answer) at any point of this run keeps the answer a
   // draft, whether it was asked before the model or by the model (B-85).
   let abstainedAny = false;
+  /** Confident tool answers in this run, with what traces them (requestId, cited item ids, revision). */
+  const evidence: EvidenceTrace[] = [];
   const tools: AgentTool[] = agent.tools.map((grant) => ({
     name: grant.name,
     description: grant.description,
@@ -496,7 +528,12 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     rateLimited: needsSendChecks ? await deps.mailbox.rateLimit() : null,
     knowledgeProblem,
     abstained: abstainedAny,
+    // A reply or forward by its subject, or a message after this address already answered in the conversation.
+    followUp: isFollowUpSubject(email.subject) || thread.some((m) => m.id !== email.id && m.folder_id === "sent" && Date.parse(m.date) <= received),
+    topic: matchedTopic(policy.draftTopics ?? [], `${email.subject}\n${deps.htmlToText(email.body)}`),
+    evidence: evidence.length > 0,
   });
+  if (evidence.length) run.evidence = evidence.slice(0, 10);
   if (outcome.action === "skip") return finish("skipped", outcome.reason);
 
   const signature = settings?.signature as { enabled?: boolean; text?: string } | undefined;
@@ -544,7 +581,11 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   }
   if ("error" in result) return saveDraft(msg("The send was refused ({error}); saved as a draft", { error: result.error }));
   run.sent = { to: reply.to, subject: reply.subject, body: reply.text.slice(0, SENT_BODY_CHARS), outboxId: result.id };
-  if (result.status === "accepted") return finish("sent", outcome.reason);
+  if (result.status === "accepted") {
+    // Every answer sent without a person is traceable to what it rested on.
+    console.log(JSON.stringify({ event: "agent_answer_sent", run: run.id, agent: agent.id, version: agent.version, evidence: run.evidence ?? [] }));
+    return finish("sent", outcome.reason);
+  }
   if (result.status === "failed") {
     delete run.sent;
     return saveDraft(msg("The provider rejected the send ({code}); saved as a draft", { code: result.errorCode ?? "failed" }));
