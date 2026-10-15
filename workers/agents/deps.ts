@@ -3,7 +3,7 @@ import { scanPromptInjection } from "../lib/ai";
 import { allServedDomains } from "../lib/mailbox-store";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
 import { callMcpTool, toolResultText, type ToolTokens } from "../automation/mcp";
-import { workersAiModel } from "./model";
+import { workersAiModel, workersAiParaphrase } from "./model";
 import { legacyAgentId, readAssignment } from "./definition";
 import type { RunnerDeps } from "./runner";
 import { msg } from "../../shared/i18n";
@@ -88,6 +88,7 @@ export function productionDeps(env: Env, mailboxId: string, registry: Registry):
     // The prompt and tool outputs are scanned exactly as the model reads them (bug hunt 2026-10-12).
     injection: (text) => scanPromptInjection(env.AI, text, { plain: true }),
     model: (request) => workersAiModel(env.AI, env.AGENT_MODEL, request),
+    paraphrase: (text) => workersAiParaphrase(env.AI, env.AGENT_MODEL, text),
     knowledge: {
       async search(query, collections, limit) {
         if (!env.KNOWLEDGE) throw new Error("knowledge is not configured on this server");
