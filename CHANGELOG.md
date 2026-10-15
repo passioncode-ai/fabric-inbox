@@ -24,6 +24,9 @@ is cut and published: [docs/release.md](docs/release.md).
 - **Reply agents answer mail in other languages more carefully.** A knowledge tool asked before the
   agent answers gets the question in English when the mail is neither English nor Russian, so it no
   longer matches the wrong fact by a shared word.
+- **Guards for agents that send on their own.** In auto mode an agent can leave to you replies,
+  forwards and follow-ups to its earlier answer, topics you list, and any answer its tools did not
+  give confidently; every answer it sends keeps what it rested on.
 - **For agents:** a send whose outcome is unknown keeps its place in the day's allowance;
   `list_agent_activity` pages by `cursor` and never skips entries of the same moment; `list_rules`
   keeps every run still waiting for approval, however old.
