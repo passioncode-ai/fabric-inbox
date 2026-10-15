@@ -389,6 +389,9 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
     } finally {
       record.ms = Date.now() - started;
+      // Countable without any text (the data agent's logs carry none): how often a message took this
+      // path, and how often it failed (B-122).
+      console.log(JSON.stringify({ event: "agent_prefetch_restated", ok: record.ok, ms: record.ms, chars: asking?.length ?? 0, run: run.id }));
     }
   }
   const prefetched: PrefetchedResult[] = await Promise.all(prefetchGrants.map(async (grant) => {
