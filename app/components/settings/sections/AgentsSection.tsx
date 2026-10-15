@@ -328,6 +328,21 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
             </label>
           </div>
         )}
+        {policy.mode === "auto" && (
+          <>
+            <label className="fi-check"><input type="checkbox" checked={!!policy.draftFollowUps}
+              onChange={(e) => set("replyPolicy", { ...policy, draftFollowUps: e.target.checked })} />
+              <span>{t("Leave replies, forwards and follow-ups to an earlier answer for me")}</span></label>
+            <label className="fi-check"><input type="checkbox" checked={!!policy.requireEvidence}
+              onChange={(e) => set("replyPolicy", { ...policy, requireEvidence: e.target.checked })} />
+              <span>{t("Send only when a tool gave a confident answer")}</span></label>
+            <label className="fi-field">{t("Topics I answer myself")}
+              <span className="fi-hint">{t("One per line. Words separated by | are alternatives; groups joined by \" + \" must all appear, e.g. code|sms + login|not arriving.")}</span>
+              <textarea className="fi-input" rows={3} value={(policy.draftTopics ?? []).join("\n")}
+                onChange={(e) => set("replyPolicy", { ...policy, draftTopics: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 30) })} />
+            </label>
+          </>
+        )}
         <p className="fi-hint">{t("Never answered: no-reply, bulk, list and automatic mail, calendar invitations, and mail from your own domains. A message is also left alone once you have replied to it yourself.")}</p>
       </fieldset>
 

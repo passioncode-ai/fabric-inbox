@@ -98,6 +98,10 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
 - **Change:** `list_agents` with `agentId` → `save_agent` with `agentId`, the full `agent`, and
   `expectedVersion` = its current version. A conflict means someone changed it meanwhile: read
   again, merge, retry.
+- **Guards for an auto-sending agent:** `replyPolicy.draftFollowUps: true` leaves replies, forwards and
+  follow-ups to an earlier answer to a person; `draftTopics` lists topics a person answers (`a|b` are
+  alternatives, `x|y + z` needs a word of each group); `requireEvidence: true` sends only when a granted
+  tool answered confidently. A sent answer's `evidence` (request id, cited items, revision) is on the run.
 - **A shared knowledge base or other remote tool:** grant it in `tools` (its host must be in
   `list_agents`' allowed hosts; the endpoint's input schema is read and stored on save). `fixed` pins
   arguments on every call (e.g. `{ "domain": "acme", "allow_web": false }`); `prefetch:

@@ -783,3 +783,35 @@ test("when the restatement fails the tool is not asked and the answer stays a dr
   assert.match(run.toolCalls.find((c) => c.name === "acme_kb")?.result ?? "", /Not asked/);
   assert.equal(h.effects.sends.length, 0);
 });
+
+test("an auto agent drafts a follow-up in a conversation it already answered, and traces what a sent answer rested on", async () => {
+  const guarded = (over = {}) => autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })],
+    replyPolicy: { mode: "auto", allowedIntents: [], dailySendLimit: 50, draftFollowUps: true, draftTopics: ["wallet|кошел"], requireEvidence: true, ...over } });
+  const confident = JSON.stringify({ abstained: false, coverage: 0.9, requestId: "req-7", items: [{ id: "fact:theme" }], revision: "r1" });
+  // Answered before in this conversation: a person takes the follow-up.
+  const followUp = harness({ agent: guarded(), email: { subject: "Theme", body: "<p>Still not working.</p>" }, callTool: async () => confident,
+    thread: [{ id: "earlier", sender: MAILBOX, recipient: "ann@customer.invalid", date: "2026-09-27T10:00:00.000Z", folder_id: "sent", body: "Try this." },
+      { id: "incoming-1", sender: "ann@customer.invalid", recipient: MAILBOX, date: "2026-09-28T10:00:00.000Z", folder_id: "inbox", body: "Still not working." }] });
+  const f = (await followUp.run())!;
+  assert.equal(f.status, "drafted");
+  assert.match(f.reason, /follow-up/);
+  // A topic a person answers.
+  const wallet = harness({ agent: guarded(), email: { subject: "Wallet", body: "<p>My wallet shows zero.</p>" }, callTool: async () => confident });
+  assert.equal((await wallet.run())!.status, "drafted");
+  // A plain question with a confident tool answer is sent, and the run keeps the trace.
+  const lines: string[] = [];
+  const log = console.log;
+  console.log = (line: unknown) => { lines.push(String(line)); };
+  let sent;
+  try {
+    const ok = harness({ agent: guarded(), email: { subject: "Theme", body: "<p>How do I change the theme?</p>" }, callTool: async () => confident });
+    sent = (await ok.run())!;
+  } finally { console.log = log; }
+  assert.equal(sent.status, "sent", sent.reason);
+  assert.deepEqual(sent.evidence, [{ tool: "acme_kb", requestId: "req-7", items: ["fact:theme"], revision: "r1" }]);
+  assert.ok(lines.some((l) => /"event":"agent_answer_sent".*"req-7"/.test(l)));
+  // No confident answer: a draft.
+  const weak = harness({ agent: guarded(), email: { subject: "Theme", body: "<p>How do I change the theme?</p>" },
+    callTool: async () => JSON.stringify({ abstained: false, coverage: 0.3 }) });
+  assert.equal((await weak.run())!.status, "drafted");
+});
