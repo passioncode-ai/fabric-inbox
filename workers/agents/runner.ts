@@ -1,4 +1,5 @@
 import { scrubPersonal } from "./events";
+import { queryLanguage } from "./language";
 import { htmlToText as linesOf } from "../../shared/mail/text";
 import type { SendMailCommand, SendMailResult } from "../../shared/mail/send";
 import { LEGACY_INSTRUCTIONS, callArguments, legacyAgentId, modelSchema, publicOnlyProblem, readAssignment, type AgentVersion, type ToolGrant } from "./definition";
@@ -87,6 +88,11 @@ export interface RunnerDeps {
   /** flagged when the text looks like an attempt to steer the agent; a failed scan sets error. */
   injection(text: string): Promise<{ flagged: boolean; error?: string }>;
   model(request: ModelRequest): Promise<ModelResponse>;
+  /**
+   * What the sender asks, as one or two English sentences without personal details: what a knowledge
+   * tool is asked before the model runs when the message is in neither English nor Russian.
+   */
+  paraphrase?(text: string): Promise<string>;
   /** Searches only the collections named; an empty list finds nothing (KN-4). */
   knowledge: { search(query: string, collections: string[], limit: number): Promise<KnowledgeHit[]> };
   callTool(grant: ToolGrant, args: Record<string, unknown>): Promise<string>;
@@ -363,8 +369,35 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // Line breaks kept and entities decoded: the data agent reads a mail by sentence — the subject, then
   // the body's first sentence — and skips a quoted reply by its header at a line start.
   const opening = `${email.subject}\n${linesOf(email.body).slice(0, 600)}`;
-  const prefetched: PrefetchedResult[] = await Promise.all(agent.tools.filter((grant) => grant.prefetch).map(async (grant) => {
-    const result = await callGrant(grant, { [grant.prefetch!.argument]: opening });
+  const prefetchGrants = agent.tools.filter((grant) => grant.prefetch);
+  // The knowledge tools read English and Russian; a message in another language is asked as its
+  // English restatement, never as it is, or it can match a wrong fact with full confidence.
+  // A restatement that cannot be made is a failed call, so the answer stays a draft.
+  let asking: string | null = opening;
+  if (prefetchGrants.length && queryLanguage(opening) === "other") {
+    const started = Date.now();
+    const record: ToolCallRecord = { name: "paraphrase", host: "model", ok: false, ms: 0, result: "" };
+    toolCalls.push(record);
+    try {
+      if (!deps.paraphrase) throw new Error("no restatement on this server");
+      asking = scrubPersonal((await deps.paraphrase(opening)).trim()).slice(0, 600);
+      if (!asking) throw new Error("the restatement was empty");
+      record.ok = true;
+      record.result = asking.slice(0, RESULT_PREVIEW_CHARS);
+    } catch (error) {
+      asking = null;
+      record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
+    } finally {
+      record.ms = Date.now() - started;
+    }
+  }
+  const prefetched: PrefetchedResult[] = await Promise.all(prefetchGrants.map(async (grant) => {
+    if (asking === null) {
+      toolCalls.push({ name: grant.name, host: hostOf(grant.endpoint), ok: false, ms: 0,
+        result: msg("Not asked: the message could not be put in English for it").slice(0, RESULT_PREVIEW_CHARS) });
+      return { name: grant.name, ok: false, text: "", abstained: false };
+    }
+    const result = await callGrant(grant, { [grant.prefetch!.argument]: asking });
     return { name: grant.name, ok: result.ok, text: result.ok ? result.text : "", abstained: result.ok && abstainedOutput(result.text) };
   }));
   if (prefetched.some((r) => r.abstained)) abstainedAny = true;

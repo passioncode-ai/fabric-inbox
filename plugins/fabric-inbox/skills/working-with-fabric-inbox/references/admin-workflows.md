@@ -101,7 +101,9 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
 - **A shared knowledge base or other remote tool:** grant it in `tools` (its host must be in
   `list_agents`' allowed hosts; the endpoint's input schema is read and stored on save). `fixed` pins
   arguments on every call (e.g. `{ "domain": "acme", "allow_web": false }`); `prefetch:
-  { argument: "query" }` asks it about each message before the agent answers; `publicOnly: true`
+  { argument: "query" }` asks it about each message before the agent answers — as written in English
+  or Russian, otherwise as a short English restatement without personal details (no restatement, no
+  question: the answer stays a draft); `publicOnly: true`
   uses an output only when every item with a `class` is `"public"`, so a reply to someone outside
   never cites a confidential source (otherwise the answer stays a draft). A knowledge tool that answers
   `abstained: true` gives only unverified candidates: the answer stays a draft, and `gaps: { tool }`

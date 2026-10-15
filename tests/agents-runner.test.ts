@@ -722,3 +722,48 @@ test("a first run calls every granted tool, read-only or not (B-94)", async () =
   await h.run();
   assert.deepEqual(called, ["refund"]);
 });
+
+test("a message in neither English nor Russian is asked of a prefetch tool as its English restatement", async () => {
+  const asked: string[] = [];
+  const restated: string[] = [];
+  const agent = autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })] });
+  const h = harness({
+    agent,
+    email: { subject: "AW: Premium", body: "<p>Hallo, ich habe Premium gekauft aber es ist nicht aktiv.</p>" },
+    callTool: async (_grant, args) => { asked.push(String(args.query)); return JSON.stringify({ answer: "ok", coverage: 0.9 }); },
+  });
+  h.deps.paraphrase = async (text) => { restated.push(text); return "The sender bought Premium but it is not active. Contact ann@customer.invalid."; };
+  const run = (await h.run())!;
+  assert.equal(restated.length, 1);
+  assert.match(restated[0]!, /ich habe Premium gekauft/);
+  assert.equal(asked.length, 1);
+  assert.doesNotMatch(asked[0]!, /Hallo/, "the German text never reaches the knowledge tool");
+  assert.match(asked[0]!, /^The sender bought Premium but it is not active\./);
+  assert.doesNotMatch(asked[0]!, /ann@customer\.invalid/, "personal details are scrubbed from the restatement");
+  assert.equal(run.toolCalls.find((c) => c.name === "paraphrase")?.ok, true);
+});
+
+test("an English or Russian message is asked as written, with no restatement", async () => {
+  for (const body of ["<p>Hi, I bought Premium but it is not active.</p>", "<p>Здравствуйте, я купил Premium, но он не активен.</p>"]) {
+    const asked: string[] = [];
+    const h = harness({ agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })] }), email: { subject: "Premium", body },
+      callTool: async (_grant, args) => { asked.push(String(args.query)); return JSON.stringify({ answer: "ok", coverage: 0.9 }); } });
+    h.deps.paraphrase = async () => { throw new Error("must not be called"); };
+    await h.run();
+    assert.equal(asked.length, 1);
+    assert.match(asked[0]!, /Premium/);
+  }
+});
+
+test("when the restatement fails the tool is not asked and the answer stays a draft", async () => {
+  let asked = 0;
+  const h = harness({ agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })] }),
+    email: { subject: "Premium", body: "<p>Hola, compré Premium pero no está activo.</p>" },
+    callTool: async () => { asked++; return "{}"; } });
+  h.deps.paraphrase = async () => { throw new Error("model unavailable"); };
+  const run = (await h.run())!;
+  assert.equal(asked, 0);
+  assert.equal(run.status, "drafted");
+  assert.match(run.toolCalls.find((c) => c.name === "acme_kb")?.result ?? "", /Not asked/);
+  assert.equal(h.effects.sends.length, 0);
+});
