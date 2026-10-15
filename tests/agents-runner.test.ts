@@ -743,6 +743,22 @@ test("a message in neither English nor Russian is asked of a prefetch tool as it
   assert.equal(run.toolCalls.find((c) => c.name === "paraphrase")?.ok, true);
 });
 
+test("the restatement path is logged as a count, never with the message's words (B-122)", async () => {
+  const lines: string[] = [];
+  const log = console.log;
+  console.log = (line: unknown) => { lines.push(String(line)); };
+  try {
+    const h = harness({ agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })] }),
+      email: { subject: "Premium", body: "<p>Hola, compré Premium pero no está activo.</p>" }, callTool: async () => "{}" });
+    h.deps.paraphrase = async () => { throw new Error("model unavailable"); };
+    await h.run();
+  } finally { console.log = log; }
+  const event = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).find((e) => e?.event === "agent_prefetch_restated");
+  assert.ok(event, lines.join("\n"));
+  assert.equal(event.ok, false);
+  assert.ok(!lines.some((l) => /compré|Hola/.test(l)), "no words of the message");
+});
+
 test("an English or Russian message is asked as written, with no restatement", async () => {
   for (const body of ["<p>Hi, I bought Premium but it is not active.</p>", "<p>Здравствуйте, я купил Premium, но он не активен.</p>"]) {
     const asked: string[] = [];
