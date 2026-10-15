@@ -337,7 +337,7 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
               onChange={(e) => set("replyPolicy", { ...policy, requireEvidence: e.target.checked })} />
               <span>{t("Send only when a tool gave a confident answer")}</span></label>
             <label className="fi-field">{t("Topics I answer myself")}
-              <span className="fi-hint">{t("One per line. Words separated by | are alternatives; groups joined by \" + \" must all appear, e.g. code|sms + login|not arriving.")}</span>
+              <span className="fi-hint">{t("One per line. Words separated by | are alternatives and match where a word starts; a word in quotes must be the whole word; groups joined by \" + \" must all appear, e.g. code|sms + login|not arriving.")}</span>
               <textarea className="fi-input" rows={3} value={(policy.draftTopics ?? []).join("\n")}
                 onChange={(e) => set("replyPolicy", { ...policy, draftTopics: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 30) })} />
             </label>

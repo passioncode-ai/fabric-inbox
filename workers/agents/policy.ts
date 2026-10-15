@@ -39,12 +39,23 @@ export interface PolicyContext {
 const FOLLOW_UP_PREFIX = /^\s*(?:(?:re|fwd?|aw|wg|sv|tr|отв|ответ|пересл)\s*(?:\[\d+\]|\(\d+\))?\s*:\s*)+/i;
 export const isFollowUpSubject = (subject: string) => FOLLOW_UP_PREFIX.test(subject);
 
-/** The first draftTopics entry the text matches: every " + " group needs one of its "|" words. */
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/**
+ * One alternative of a topic: it matches where a word starts, so a stem ("кошел", "авторизац") finds
+ * every form; in double quotes ("att") it must be the whole word, so "attachment" does not count.
+ */
+function alternative(word: string): RegExp | null {
+  const quoted = /^"(.+)"$/.exec(word);
+  const core = (quoted ? quoted[1]! : word).trim();
+  if (!core) return null;
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(core)}${quoted ? "(?![\\p{L}\\p{N}])" : ""}`, "iu");
+}
+
+/** The first draftTopics entry the text matches: every " + " group needs one of its "|" alternatives. */
 export function matchedTopic(topics: readonly string[], text: string): string | null {
-  const haystack = text.toLowerCase();
   for (const entry of topics) {
-    const groups = entry.split(" + ").map((g) => g.split("|").map((w) => w.trim().toLowerCase()).filter(Boolean)).filter((g) => g.length);
-    if (groups.length && groups.every((words) => words.some((w) => haystack.includes(w)))) return entry;
+    const groups = entry.split(" + ").map((g) => g.split("|").map((w) => alternative(w.trim())).filter((r): r is RegExp => !!r)).filter((g) => g.length);
+    if (groups.length && groups.every((alternatives) => alternatives.some((r) => r.test(text)))) return entry;
   }
   return null;
 }

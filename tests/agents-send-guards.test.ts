@@ -24,6 +24,12 @@ test("a topic entry: | alternatives, all ' + ' groups must match, any case", () 
   assert.equal(matchedTopic([login], "Не приходит код для входа"), login);
   assert.equal(matchedTopic([login], "Promo code for Premium"), null, "a code alone is not a login-code mail");
   assert.equal(matchedTopic([wallet, login], "How do I change the theme?"), null);
+  // An alternative matches where a word starts; in quotes it must be the whole word.
+  const att = '"att"|app tracking';
+  assert.equal(matchedTopic([att], "What is ATT in the app?"), att);
+  assert.equal(matchedTopic([att], "See the attachment"), null);
+  assert.equal(matchedTopic(["кошел"], "Мой кошелёк пуст"), "кошел");
+  assert.equal(matchedTopic(["code"], "the barcode"), null, "not inside a word");
 });
 
 test("the policy drafts follow-ups, topics and answers with no evidence; otherwise it sends", () => {

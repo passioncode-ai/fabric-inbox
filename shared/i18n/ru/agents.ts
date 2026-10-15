@@ -89,7 +89,7 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"Leave replies, forwards and follow-ups to an earlier answer for me": "Ответы, пересылки и продолжения после прошлого ответа оставлять мне",
 	"Send only when a tool gave a confident answer": "Отправлять, только если инструмент дал уверенный ответ",
 	"Topics I answer myself": "Темы, на которые я отвечаю сам",
-	"One per line. Words separated by | are alternatives; groups joined by \" + \" must all appear, e.g. code|sms + login|not arriving.": "По одной на строку. Слова через | — варианты; группы через « + » должны встретиться все, например: код|sms + вход|не приходит.",
+	"One per line. Words separated by | are alternatives and match where a word starts; a word in quotes must be the whole word; groups joined by \" + \" must all appear, e.g. code|sms + login|not arriving.": "По одной на строку. Слова через | — варианты, совпадают с началом слова; слово в кавычках должно совпасть целиком; группы через « + » должны встретиться все, например: код|sms + вход|не приходит.",
 	"Comma-separated, e.g. question, pricing. Empty: any answer grounded in the knowledge.": "Через запятую, например: question, pricing. Если пусто — любой ответ с опорой на знания.",
 	"Sends per address per day": "Отправок с адреса в день",
 	"Empty: no limit. The count starts again at {time} your time (midnight UTC).": "Пусто — без лимита. Счётчик обнуляется в {time} по вашему времени (полночь UTC).",
