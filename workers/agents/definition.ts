@@ -117,6 +117,9 @@ export function toolArgumentsValid(schema: Record<string, unknown>, args: unknow
   return required.every((k) => Object.hasOwn(args, k));
 }
 
+/** A fixed reply: English, and Russian for a message written in Russian. */
+const LocalizedText = z.object({ en: z.string().trim().min(1).max(3000), ru: z.string().trim().min(1).max(3000).optional() }).strict();
+
 export const ReplyPolicySchema = z.object({
   /** draft: every answer waits for the operator. auto: allowed answers are sent. */
   mode: z.enum(["draft", "auto"]).default("draft"),
@@ -133,6 +136,20 @@ export const ReplyPolicySchema = z.object({
   draftTopics: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
   /** Send only when a granted tool gave a confident answer in this run (not abstained, coverage 0.6 or more). */
   requireEvidence: z.boolean().default(false),
+  /**
+   * Auto mode, every message answered: an answer that would wait for a person for what it says (no
+   * evidence, a tool that failed or abstained, a listed topic, the model asking for review) is replaced
+   * by this fixed text and sent. Fixed, so it states no fact. Daily and rate limits still draft.
+   */
+  fallbackReply: LocalizedText.optional(),
+  /** Labels the agent puts on every message (the model picks one), shown on the run and in its events. */
+  categories: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
+  /** Messages a person handles: these categories or topics get this fixed reply naming who, instead of an answer. */
+  handoff: z.object({
+    categories: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
+    topics: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
+    reply: LocalizedText,
+  }).strict().optional(),
 }).strict();
 export type ReplyPolicy = z.infer<typeof ReplyPolicySchema>;
 
@@ -204,7 +221,7 @@ Be brief and friendly; one clear next step per reply.`),
     knowledge: "",
     collections: [],
     tools: [],
-    replyPolicy: { mode: "draft", allowedIntents: ["question", "how-to", "status"], dailySendLimit: 20, draftFollowUps: false, draftTopics: [], requireEvidence: false },
+    replyPolicy: { mode: "draft", allowedIntents: ["question", "how-to", "status"], dailySendLimit: 20, draftFollowUps: false, draftTopics: [], requireEvidence: false, categories: [] },
   },
   sales: {
     name: msg("Sales"),
@@ -213,7 +230,7 @@ Share only prices and terms from the knowledge below. Offer a call for anything 
     knowledge: "",
     collections: [],
     tools: [],
-    replyPolicy: { mode: "draft", allowedIntents: ["pricing", "question"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false },
+    replyPolicy: { mode: "draft", allowedIntents: ["pricing", "question"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, categories: [] },
   },
   billing: {
     name: msg("Billing"),
@@ -222,6 +239,6 @@ Never promise a refund or change a charge yourself: explain the process from the
     knowledge: "",
     collections: [],
     tools: [],
-    replyPolicy: { mode: "draft", allowedIntents: ["receipt"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false },
+    replyPolicy: { mode: "draft", allowedIntents: ["receipt"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, categories: [] },
   },
 };

@@ -26,7 +26,8 @@ export interface AgentInput {
   /** Knowledge collections the agent may search (KN-3). */
   collections: string[];
   tools: ToolGrant[];
-  replyPolicy: { mode: ReplyMode; allowedIntents: string[]; dailySendLimit: number | null; draftFollowUps?: boolean; draftTopics?: string[]; requireEvidence?: boolean };
+  replyPolicy: { mode: ReplyMode; allowedIntents: string[]; dailySendLimit: number | null; draftFollowUps?: boolean; draftTopics?: string[]; requireEvidence?: boolean;
+    fallbackReply?: { en: string; ru?: string }; categories?: string[]; handoff?: { categories: string[]; topics: string[]; reply: { en: string; ru?: string } } };
 }
 export interface Agent extends AgentInput {
   id: string;

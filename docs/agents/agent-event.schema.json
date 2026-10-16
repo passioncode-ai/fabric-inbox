@@ -79,6 +79,23 @@
       "type": "string",
       "maxLength": 300,
       "description": "What the sender wants, as one English sentence without personal data"
+    },
+    "category": {
+      "type": "string",
+      "maxLength": 60,
+      "description": "The agent policy's category of the message (the model picks one of the policy's list)."
+    },
+    "handoff": {
+      "type": "boolean",
+      "description": "Answered with the policy's hand-off reply: a person handles it (event kind agent.handoff)."
+    },
+    "fallback": {
+      "type": "boolean",
+      "description": "Answered with the policy's fixed safe reply: nothing confident could be said."
+    },
+    "dissatisfied": {
+      "type": "boolean",
+      "description": "The message replies to an earlier answer and says it did not help (event kind agent.not_helped); reported to the knowledge tool as an outdated gap."
     }
   }
 }

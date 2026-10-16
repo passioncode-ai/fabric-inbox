@@ -16,6 +16,10 @@ export interface ModelDecision {
   topic?: string;
   /** What the sender wants, one English sentence without personal data (the voice-of-the-customer paraphrase). */
   summary?: string;
+  /** One of the policy's categories. */
+  category?: string;
+  /** The message says an earlier answer from this address did not help or was wrong. */
+  dissatisfied?: boolean;
 }
 
 export interface PolicyContext {
@@ -62,7 +66,7 @@ export function matchedTopic(topics: readonly string[], text: string): string | 
 
 export type PolicyOutcome =
   | { action: "send"; reason: string }
-  | { action: "draft"; reason: string }
+  | { action: "draft"; reason: string; capacity?: boolean }
   | { action: "skip"; reason: string };
 
 const normalize = (value: string) => value.trim().toLowerCase();
@@ -90,7 +94,7 @@ export function decide(policy: ReplyPolicy, proposal: ModelDecision, context: Po
   if (allowed.length && !allowed.includes(normalize(proposal.intent)))
     return { action: "draft", reason: proposal.intent ? msg('Intent "{intent}" is not allowed to send', { intent: proposal.intent }) : msg('Intent "unknown" is not allowed to send') };
   if (policy.dailySendLimit !== null && context.sentToday >= policy.dailySendLimit)
-    return { action: "draft", reason: msg("Daily send limit of {limit} reached", { limit: policy.dailySendLimit }) };
-  if (context.rateLimited) return { action: "draft", reason: context.rateLimited };
+    return { action: "draft", reason: msg("Daily send limit of {limit} reached", { limit: policy.dailySendLimit }), capacity: true };
+  if (context.rateLimited) return { action: "draft", reason: context.rateLimited, capacity: true };
   return { action: "send", reason: proposal.intent ? msg("Allowed: {intent}", { intent: proposal.intent }) : msg("Allowed: grounded answer") };
 }

@@ -341,6 +341,30 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
               <textarea className="fi-input" rows={3} value={(policy.draftTopics ?? []).join("\n")}
                 onChange={(e) => set("replyPolicy", { ...policy, draftTopics: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 30) })} />
             </label>
+            <label className="fi-field">{t("Safe reply when it cannot answer")}
+              <span className="fi-hint">{t("Sent instead of a draft when the answer would wait for you for what it says, so every message gets a reply. It states no facts: thank, ask for details, say where to get help. Empty: those answers stay drafts.")}</span>
+              <textarea className="fi-input" rows={3} value={policy.fallbackReply?.en ?? ""}
+                onChange={(e) => set("replyPolicy", { ...policy, fallbackReply: e.target.value.trim() ? { ...policy.fallbackReply, en: e.target.value } : undefined })} />
+            </label>
+            <label className="fi-field">{t("Safe reply in Russian")}
+              <textarea className="fi-input" rows={3} value={policy.fallbackReply?.ru ?? ""} disabled={!policy.fallbackReply?.en}
+                onChange={(e) => policy.fallbackReply && set("replyPolicy", { ...policy, fallbackReply: { en: policy.fallbackReply.en, ...(e.target.value.trim() ? { ru: e.target.value } : {}) } })} />
+            </label>
+            <label className="fi-field">{t("Categories")}
+              <span className="fi-hint">{t("Comma-separated. The agent labels every message with one; the label shows on its answers and events.")}</span>
+              <input className="fi-input" value={(policy.categories ?? []).join(", ")}
+                onChange={(e) => set("replyPolicy", { ...policy, categories: e.target.value.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 30) })} />
+            </label>
+            <label className="fi-field">{t("Categories a person handles")}
+              <span className="fi-hint">{t("Comma-separated. These get the hand-off reply below instead of an answer.")}</span>
+              <input className="fi-input" value={(policy.handoff?.categories ?? []).join(", ")}
+                onChange={(e) => set("replyPolicy", { ...policy, handoff: { topics: [], reply: { en: "" }, ...policy.handoff, categories: e.target.value.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 30) } })} />
+            </label>
+            <label className="fi-field">{t("Hand-off reply")}
+              <span className="fi-hint">{t("Says who handles it and how to reach them. Empty: nothing is handed off.")}</span>
+              <textarea className="fi-input" rows={3} value={policy.handoff?.reply.en ?? ""}
+                onChange={(e) => set("replyPolicy", { ...policy, handoff: e.target.value.trim() ? { categories: [], topics: [], ...policy.handoff, reply: { ...policy.handoff?.reply, en: e.target.value } } : undefined })} />
+            </label>
           </>
         )}
         <p className="fi-hint">{t("Never answered: no-reply, bulk, list and automatic mail, calendar invitations, and mail from your own domains. A message is also left alone once you have replied to it yourself.")}</p>

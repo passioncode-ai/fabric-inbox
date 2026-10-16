@@ -438,7 +438,7 @@ const answerAgain = defineTool({
 
 const listAgentEvents = defineTool({
   name: "list_agent_events", title: "Reply agents' events", level: "read", readOnly: true,
-  description: "What reply agents did, as a feed another agent reads by cursor: one event per run that ended (sent, drafted, left alone, a question without an answer, or needs a look), with the address, agent, intent, whether the answer was grounded, the question it could not answer (a paraphrase) and the passages it used — never the sender, subject or message text; each event's link opens the message and its run in the inbox. Without after: the newest events; pass the returned cursor as after to read only what is new.",
+  description: "What reply agents did, as a feed another agent reads by cursor: one event per run that ended (sent, drafted, left alone, a question without an answer, handed to a person, a reply saying an earlier answer did not help, or needs a look), with the address, agent, intent, category, whether the answer was grounded, the question it could not answer (a paraphrase) and the passages it used — never the sender, subject or message text; each event's link opens the message and its run in the inbox. Without after: the newest events; pass the returned cursor as after to read only what is new.",
   input: { after: z.string().max(128).optional().describe("The cursor from the previous page"), limit: z.number().int().min(1).max(200).default(50) },
   routes: ["GET /api/agent-events"],
   call: (a, ctx) => get(ctx, "/api/agent-events", { after: a.after, limit: a.limit }),
@@ -1208,7 +1208,12 @@ const agentInput = z.object({
   replyPolicy: z.object({ mode: z.enum(["draft", "auto"]), allowedIntents: z.array(z.string().max(80)).max(20).default([]), dailySendLimit: z.number().int().min(1).max(200).nullable().default(20).describe("Sends per address per day in auto mode; null: no limit"),
     draftFollowUps: z.boolean().optional().describe("Auto mode: replies, forwards (Re:, Fwd:, AW:, Отв:…) and follow-ups to an earlier answer wait for a person"),
     draftTopics: z.array(z.string().min(1).max(400)).max(30).optional().describe("Auto mode: topics a person answers; words separated by | are alternatives matching where a word starts (a quoted word: the whole word), groups joined by \" + \" must all appear"),
-    requireEvidence: z.boolean().optional().describe("Auto mode: send only when a granted tool answered confidently (not abstained, coverage 0.6 or more)") }).optional(),
+    requireEvidence: z.boolean().optional().describe("Auto mode: send only when a granted tool answered confidently (not abstained, coverage 0.6 or more)"),
+    fallbackReply: z.object({ en: z.string().min(1).max(3000), ru: z.string().min(1).max(3000).optional() }).optional().describe("Auto mode, every message answered: this fixed text is sent instead of a draft when the answer would wait for a person for what it says (no evidence, a tool failed or abstained, a listed topic); limits still draft. ru is used for a message in Russian"),
+    categories: z.array(z.string().min(1).max(60)).max(30).optional().describe("Labels the agent puts on every message (it picks one); shown on runs and events"),
+    handoff: z.object({ categories: z.array(z.string().min(1).max(60)).max(30).default([]), topics: z.array(z.string().min(1).max(400)).max(30).default([]),
+      reply: z.object({ en: z.string().min(1).max(3000), ru: z.string().min(1).max(3000).optional() }) }).optional()
+      .describe("Messages a person handles: these categories, or these topics (as draftTopics), get this fixed reply naming whom to contact") }).optional(),
 }).describe("The agent's whole definition; saving makes a new version");
 
 const saveAgent = defineTool({
