@@ -833,3 +833,66 @@ test("a listed topic is caught in the English restatement and the model's summar
   const r2 = (await plain.run())!;
   assert.equal(r2.status, "drafted");
 });
+
+const autonomous = (over: Record<string, unknown> = {}) => autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" }, gaps: { tool: "gaps.submit" } })],
+  replyPolicy: { mode: "auto", allowedIntents: [], dailySendLimit: 50, requireEvidence: true,
+    fallbackReply: { en: "Thanks for writing. Please tell us your platform and app version.", ru: "Спасибо! Напишите платформу и версию приложения." },
+    categories: ["login", "refund", "other"],
+    handoff: { categories: ["refund"], topics: ["account shop"], reply: { en: "A person handles this: write to our support manager.", ru: "Этим занимается человек: напишите менеджеру поддержки." } },
+    ...over } });
+
+test("an autonomous lane sends the safe reply instead of a draft, in the sender's language, and keeps limits as drafts", async () => {
+  const weak = async () => JSON.stringify({ abstained: true, results: [] });
+  const en = harness({ agent: autonomous(), email: { subject: "Login", body: "<p>I cannot log in to the app.</p>" }, callTool: weak });
+  const r1 = (await en.run())!;
+  assert.equal(r1.status, "sent", r1.reason);
+  assert.equal(r1.fallback, true);
+  assert.match(JSON.stringify(en.effects.sends), /tell us your platform/);
+  assert.doesNotMatch(JSON.stringify(en.effects.sends), /it costs 10 EUR/, "the model's unverified answer never leaves");
+  const ru = harness({ agent: autonomous(), email: { subject: "Вход", body: "<p>Не могу войти в приложение.</p>" }, callTool: weak });
+  await ru.run();
+  assert.match(JSON.stringify(ru.effects.sends), /Напишите платформу/);
+  // The daily limit still drafts.
+  const full = harness({ agent: autonomous(), sentToday: 50, email: { subject: "Login", body: "<p>I cannot log in.</p>" }, callTool: weak });
+  assert.equal((await full.run())!.status, "drafted");
+});
+
+test("a message in a hand-off category or topic gets the hand-off reply; the category is kept and the event says handoff", async () => {
+  const { runEvent } = await import("../workers/agents/events");
+  const confident = async () => JSON.stringify({ abstained: false, results: [{ id: "fact:x", coverage: 0.9 }] });
+  const byCategory = harness({ agent: autonomous(), email: { subject: "Money back", body: "<p>I want my money back for Premium.</p>" }, callTool: confident,
+    model: async () => ({ decision: answer({ intent: "refund", category: "Refund" }), text: "" }) });
+  const r = (await byCategory.run())!;
+  assert.equal(r.status, "sent");
+  assert.equal(r.handoff, true);
+  assert.equal(r.category, "refund");
+  assert.match(JSON.stringify(byCategory.effects.sends), /support manager/);
+  assert.equal(runEvent(r)?.kind, "agent.handoff");
+  assert.equal(runEvent(r)?.data.value.category, "refund");
+  const byTopic = harness({ agent: autonomous(), email: { subject: "Order", body: "<p>The account I bought in Account Shop does not work.</p>" }, callTool: confident });
+  assert.equal((await byTopic.run())!.handoff, true);
+  // A category outside the list becomes "other".
+  const odd = harness({ agent: autonomous(), email: { subject: "Hi", body: "<p>How do I change the theme?</p>" }, callTool: confident,
+    model: async () => ({ decision: answer({ intent: "how-to", category: "themes" }), text: "" }) });
+  assert.equal((await odd.run())!.category, "other");
+});
+
+test("a reply saying an earlier answer did not help is reported as an outdated gap and marked for the voice of the customer", async () => {
+  const { runEvent } = await import("../workers/agents/events");
+  const gaps: Record<string, unknown>[] = [];
+  const h = harness({ agent: autonomous(), email: { subject: "Re: Login", body: "<p>Your answer did not help, still no code.</p>" },
+    thread: [{ id: "earlier", sender: MAILBOX, recipient: "ann@customer.invalid", date: "2026-09-27T10:00:00.000Z", folder_id: "sent", body: "Try this." },
+      { id: "incoming-1", sender: "ann@customer.invalid", recipient: MAILBOX, date: "2026-09-28T10:00:00.000Z", folder_id: "inbox", body: "did not help" }],
+    callTool: async (grant, args) => { if (grant.tool === "gaps.submit") { gaps.push(args); return "{}"; } return JSON.stringify({ abstained: false, results: [{ id: "fact:x", coverage: 0.9 }] }); },
+    model: async () => ({ decision: answer({ intent: "login", dissatisfied: true, summary: "The login code still does not arrive after our answer." }), text: "" }) });
+  const r = (await h.run())!;
+  assert.equal(r.dissatisfied, true);
+  assert.equal(gaps.length, 1);
+  assert.equal(gaps[0]!.kind, "outdated");
+  assert.match(String(gaps[0]!.question), /login code still does not arrive/);
+  assert.equal(runEvent(r)?.kind, "agent.not_helped");
+  // Without an earlier answer from this address, the flag is not trusted.
+  const first = harness({ agent: autonomous(), email: { subject: "Login", body: "<p>It did not help.</p>" }, callTool: async () => "{}",
+    model: async () => ({ decision: answer({ dissatisfied: true }), text: "" }) });
+  assert.equal((await first.run())!.dissatisfied, undefined);
+});

@@ -196,6 +196,8 @@ export function systemPrompt(agent: AgentVersion, mailboxId: string, tools: Agen
       ? `- Tools you may use: ${tools.map((t) => t.name).join(", ")}. Use a tool only when the answer needs it.`
       : "- You have no tools in this run.",
     "- Finish by calling submit_answer exactly once.",
+    ...(agent.replyPolicy.categories?.length ? [`- Set category to exactly one of: ${agent.replyPolicy.categories.map((c) => JSON.stringify(c)).join(", ")}.`] : []),
+    "- Set dissatisfied to true only when the message replies to an earlier answer from this address and says it did not help or was wrong.",
     ...(searching ? ["- If the passages do not answer the question, call search_knowledge with other words before deciding; never state what no passage, knowledge or tool result says."] : []),
     "- grounded = true only if every fact in the answer comes from the knowledge above, a passage, or a tool result in this run.",
     '- decision: "send" when the answer is complete and grounded; "draft" when a person should check it (and say why in reason); "skip" when no reply is needed (thanks, FYI, spam).',
@@ -494,6 +496,17 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // What the message is about, for the voice-of-the-customer feed; cut to size, never personal.
   if (proposal.topic?.trim()) run.topic = scrubPersonal(proposal.topic.trim()).slice(0, 60);
   if (proposal.summary?.trim()) run.summary = scrubPersonal(proposal.summary.trim()).slice(0, 300);
+  // A category outside the policy's list is not kept ("other" stands in when the policy has one).
+  const categories = agent.replyPolicy.categories ?? [];
+  const category = proposal.category?.trim();
+  if (categories.length) {
+    const known = categories.find((c) => c.toLowerCase() === (category ?? "").toLowerCase());
+    run.category = known ?? categories.find((c) => c.toLowerCase() === "other");
+    if (!run.category) delete run.category;
+  }
+  // The person replies to an earlier answer from this address and says it did not help (B-123).
+  const answeredBefore = thread.some((m) => m.id !== email.id && m.folder_id === "sent" && Date.parse(m.date) <= received);
+  if (proposal.dissatisfied === true && answeredBefore) run.dissatisfied = true;
   if (sources.size) run.sources = [...sources.values()];
 
   // B-85: a knowledge tool that abstained is told what was not answered, once per message. The id is
@@ -506,14 +519,18 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // B-117: the question is kept on the run, with its conversation, for the Unanswered questions list.
   if (question && unanswered) { run.question = question; run.unanswered = true; }
   run.threadId = (email.thread_id as string | null | undefined) || email.id;
-  const gapGrant = question && unanswered ? agent.tools.find((g) => g.gaps) : undefined;
+  // An answer that did not help is reported as outdated, with what the person wanted (B-123).
+  const outdated = run.dissatisfied === true ? scrubPersonal((proposal.summary ?? proposal.question ?? "").trim()).slice(0, 1000) : "";
+  const gapKind = outdated ? "outdated" : "unanswered";
+  const gapText = outdated || question;
+  const gapGrant = (outdated || (question && unanswered)) ? agent.tools.find((g) => g.gaps) : undefined;
   for (const grant of gapGrant ? [gapGrant] : []) {
     const started = Date.now();
     const record: ToolCallRecord = { name: `${grant.name}:gap`, host: hostOf(grant.endpoint), ok: false, ms: 0, result: "" };
     toolCalls.push(record);
     try {
       const channel = typeof grant.fixed?.channel === "string" ? grant.fixed.channel : "email";
-      const report = () => deps.callTool({ ...grant, tool: grant.gaps!.tool }, { requestId: run.id, kind: "unanswered", channel, question });
+      const report = () => deps.callTool({ ...grant, tool: grant.gaps!.tool }, { requestId: run.id, kind: gapKind, channel, question: gapText });
       // Tried once more on failure, with the same request id, so the knowledge base counts it once (B-117).
       const out = await report().catch(() => report());
       record.ok = true;
@@ -527,7 +544,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
 
   const policy = agent.replyPolicy;
   const needsSendChecks = policy.mode === "auto" && proposal.decision === "send";
-  const outcome = decide(policy, proposal, {
+  let outcome = decide(policy, proposal, {
     sentToday: needsSendChecks ? await deps.registry.sentToday(mailboxId) : 0,
     // A gap report is bookkeeping, not part of the answer: its failure does not change the outcome.
     toolFailures: toolCalls.filter((c) => !c.ok && c.name !== "search_knowledge" && !c.name.endsWith(":gap")).length,
@@ -543,10 +560,28 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     evidence: evidence.length > 0,
   });
   if (evidence.length) run.evidence = evidence.slice(0, 10);
+  // Every message answered (an autonomous lane): a message a person handles gets the policy's hand-off
+  // reply, and an answer that would wait for a person for what it says gets the safe reply. Both are
+  // fixed texts, so nothing unverified is sent; the daily and rate limits still keep a draft.
+  let body = proposal.body.trim();
+  if (policy.mode === "auto" && outcome.action !== "skip") {
+    const localized = (text: { en: string; ru?: string }) => (queryLanguage(opening) === "ru" && text.ru ? text.ru : text.en);
+    const handoff = policy.handoff;
+    const handText = `${email.subject}\n${deps.htmlToText(email.body)}\n${run.summary ?? ""}`;
+    if (handoff && ((run.category && handoff.categories.some((c) => c.toLowerCase() === run.category!.toLowerCase())) || matchedTopic(handoff.topics, handText))) {
+      if (!(outcome.action === "draft" && outcome.capacity)) outcome = { action: "send", reason: msg("Handed to a person: the reply says whom to contact") };
+      body = localized(handoff.reply);
+      run.handoff = true;
+    } else if (outcome.action === "draft" && !outcome.capacity && policy.fallbackReply) {
+      outcome = { action: "send", reason: msg("Safe reply sent ({reason})", { reason: outcome.reason }) };
+      body = localized(policy.fallbackReply);
+      run.fallback = true;
+    }
+  }
   if (outcome.action === "skip") return finish("skipped", outcome.reason);
 
   const signature = settings?.signature as { enabled?: boolean; text?: string } | undefined;
-  const signed = signature?.enabled && signature.text?.trim() ? `${proposal.body.trim()}\n\n${signature.text.trim()}` : proposal.body.trim();
+  const signed = signature?.enabled && signature.text?.trim() ? `${body}\n\n${signature.text.trim()}` : body;
   const reply = { to: replyTo || email.sender, subject: replySubject(email.subject), text: signed };
   const saveDraft = async (reason: string) => {
     // An answer given again keeps the earlier draft (a person may have edited it) beside the new one.

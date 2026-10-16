@@ -102,6 +102,9 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   follow-ups to an earlier answer to a person; `draftTopics` lists topics a person answers (`a|b` are
   alternatives matching where a word starts, `"att"` a whole word, `x|y + z` needs one of each group); `requireEvidence: true` sends only when a granted
   tool answered confidently. A sent answer's `evidence` (request id, cited items, revision) is on the run.
+  For a lane where every message gets a reply: `fallbackReply: { en, ru? }` (a fixed text without facts, sent
+  instead of a draft), `categories` (the agent labels each message) and `handoff: { categories, topics, reply }`
+  (a fixed reply naming who handles it). Events add `agent.handoff` and `agent.not_helped`.
 - **A shared knowledge base or other remote tool:** grant it in `tools` (its host must be in
   `list_agents`' allowed hosts; the endpoint's input schema is read and stored on save). `fixed` pins
   arguments on every call (e.g. `{ "domain": "acme", "allow_web": false }`); `prefetch:

@@ -11,7 +11,7 @@ export const AGENT_EVENT_SCHEMA = "https://github.com/passioncode-ai/fabric-inbo
 
 export interface AgentEvent {
   at: string;
-  kind: "agent.sent" | "agent.drafted" | "agent.skipped" | "agent.unanswered" | "agent.needs_look";
+  kind: "agent.sent" | "agent.drafted" | "agent.skipped" | "agent.unanswered" | "agent.needs_look" | "agent.not_helped" | "agent.handoff";
   level: "info" | "notice" | "warning";
   text: string;
   /** Opens the message and its run in the inbox (B-119): a path under the server's origin. */
@@ -22,6 +22,8 @@ export interface AgentEventValue {
   runId: string; address: string; agentId?: string; agentVersion?: number; status: string;
   intent?: string; grounded?: boolean; unanswered: boolean; question?: string; sources: string[];
   topic?: string; summary?: string;
+  /** The policy category of the message; whether it was handed to a person, got the safe reply, or said an earlier answer did not help. */
+  category?: string; handoff?: boolean; fallback?: boolean; dissatisfied?: boolean;
 }
 
 /**
@@ -46,10 +48,14 @@ export function runEvent(run: AgentRun): AgentEvent | null {
   const who = run.agentId ? `Agent ${run.agentId}` : "An agent";
   const unanswered = run.unanswered === true;
   const kind: AgentEvent["kind"] = TROUBLE.has(run.status) ? "agent.needs_look"
+    : run.dissatisfied ? "agent.not_helped"
+    : run.handoff ? "agent.handoff"
     : unanswered ? "agent.unanswered"
     : run.status === "sent" ? "agent.sent"
     : run.status === "drafted" ? "agent.drafted" : "agent.skipped";
   const text = kind === "agent.needs_look" ? `${who} needs a look at a message to ${run.mailboxId}.`
+    : kind === "agent.not_helped" ? `A reply to ${run.mailboxId} says an earlier answer from ${run.agentId ?? "its agent"} did not help.`
+    : kind === "agent.handoff" ? `${who} passed a message to ${run.mailboxId} to a person${run.category ? ` (${run.category})` : ""}.`
     : kind === "agent.unanswered" ? `${who} found no answer for a question to ${run.mailboxId}.`
     : kind === "agent.sent" ? `${who} sent an answer from ${run.mailboxId}.`
     : kind === "agent.drafted" ? `${who} drafted an answer for ${run.mailboxId}.`
@@ -63,8 +69,10 @@ export function runEvent(run: AgentRun): AgentEvent | null {
     sources: (run.sources ?? []).slice(0, 32).map((s) => cut(s.title)),
     ...(run.topic ? { topic: cut(scrubPersonal(run.topic), 60) } : {}),
     ...(run.summary ? { summary: cut(scrubPersonal(run.summary), 300) } : {}),
+    ...(run.category ? { category: cut(run.category, 60) } : {}),
+    ...(run.handoff ? { handoff: true } : {}), ...(run.fallback ? { fallback: true } : {}), ...(run.dissatisfied ? { dissatisfied: true } : {}),
   };
-  return { at: run.updatedAt, link: messageLink(`cloudflare:${run.mailboxId}`, run.emailId, run.id), kind, level: kind === "agent.needs_look" ? "warning" : kind === "agent.unanswered" ? "notice" : "info", text: cut(text), data: { schema: AGENT_EVENT_SCHEMA, value } };
+  return { at: run.updatedAt, link: messageLink(`cloudflare:${run.mailboxId}`, run.emailId, run.id), kind, level: kind === "agent.needs_look" || kind === "agent.not_helped" ? "warning" : kind === "agent.unanswered" || kind === "agent.handoff" ? "notice" : "info", text: cut(text), data: { schema: AGENT_EVENT_SCHEMA, value } };
 }
 
 /** Events kept: at least seven days or 1000 events, whichever is more (fabric-service/0.1). */
