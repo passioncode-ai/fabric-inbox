@@ -27,6 +27,15 @@ is cut and published: [docs/release.md](docs/release.md).
 - **Guards for agents that send on their own.** In auto mode an agent can leave to you replies,
   forwards and follow-ups to its earlier answer, topics you list, and any answer its tools did not
   give confidently; every answer it sends keeps what it rested on.
+- **Agents that answer on their own, without drafts.** An agent in auto mode can hand listed requests to a
+  person with a fixed reply, label every message with a category, and — instead of a draft — hold an
+  answer it is not sure of: the question goes to its knowledge and the message is tried again every 12
+  hours for a week. A reply saying an earlier answer did not help is reported to the knowledge.
+- **With an OpenRouter key, answers are written by an open model and checked by another vendor's model**
+  before they are sent; without one, the server's own Workers AI writes them as before.
+- **Agents know what they are.** Each agent's instructions now say, truthfully, that it is an AI
+  assistant, what it can read and how its answers leave.
+- **Preview an agent's answer** to a message you write, without sending anything (`preview_agent_answer`).
 - **For agents:** a send whose outcome is unknown keeps its place in the day's allowance;
   `list_agent_activity` pages by `cursor` and never skips entries of the same moment; `list_rules`
   keeps every run still waiting for approval, however old.
