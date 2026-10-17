@@ -107,6 +107,58 @@ export class AgentRegistryDO extends DurableObject<Env> {
   }
 
   /**
+   * What an agent would do with a message, without doing it: the whole run — prefilter, knowledge,
+   * tools, model, policy — on a message given as text, as if it came to `address`. Nothing is sent,
+   * drafted, stored or reported to a knowledge tool as a gap; read-only tools are called as in a real
+   * run, and the model is (it spends). Answers the run and the reply it would send.
+   */
+  async previewAnswer(agentId: string, input: { address: string; from: string; subject: string; text: string }) {
+    const agent = await this.getAgent(agentId);
+    if (!agent) throw new AgentNotFound(agentId);
+    const address = input.address.toLowerCase();
+    const real = this.deps(address);
+    const gapTools = new Set(agent.tools.flatMap((g) => (g.gaps ? [g.gaps.tool] : [])));
+    let reply: { to: string; subject: string; text: string } | null = null;
+    let draft: { to: string; subject: string; text: string } | null = null;
+    const now = new Date().toISOString();
+    const html = `<p>${input.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")}</p>`;
+    const deps: RunnerDeps = {
+      ...real,
+      registry: {
+        beginRun: async (run) => ({ claimed: true, run }),
+        saveRun: async () => {},
+        getAgent: async (id) => (id === agentId ? agent : null),
+        ensureAgent: async () => null,
+        agentState: async () => "live",
+        sentToday: async () => 0,
+        reserveSend: async () => true,
+        claimMessage: async () => ({ outcome: "answer" }),
+      },
+      agentServes: async () => false,
+      mailbox: {
+        ...real.mailbox,
+        settings: async () => ({ ...((await real.mailbox.settings()) ?? {}), agent: { id: agentId } }),
+        saveAssignment: async () => {},
+        email: async () => ({ id: "preview", sender: input.from, subject: input.subject, body: html, date: now, thread_id: null, raw_headers: null, folder_id: "inbox" }),
+        thread: async () => [],
+        rateLimit: async () => null,
+        send: async (command) => {
+          const request = command.request as { to?: string; subject?: string; text?: string };
+          reply = { to: String(request.to ?? ""), subject: String(request.subject ?? ""), text: String(request.text ?? "") };
+          return { id: "preview", mailboxId: address, status: "accepted", createdAt: 0, updatedAt: 0, attempts: 1, providerMessageId: "preview",
+            deliveryStatus: "unconfirmed", projectionStatus: "complete", errorCode: null } as Awaited<ReturnType<RunnerDeps["mailbox"]["send"]>>;
+        },
+        createDraft: async (d) => { draft = { to: d.to, subject: d.subject, text: d.text }; },
+      },
+      // A gap report is a write to someone else's knowledge: never from a preview.
+      callTool: async (grant, args) => (gapTools.has(grant.tool) ? JSON.stringify({ preview: true }) : real.callTool(grant, args)),
+    };
+    const run = await runAgent({ mailboxId: address, emailId: "preview" }, deps);
+    if (!run || "owner" in run) return { status: "not_answered", run: null, reply: null, draft: null };
+    return { status: run.status, run: { ...run, sender: "", subject: "" }, reply, draft };
+  }
+
+  /**
    * The next messages to answer: each mailbox's oldest due message, oldest first. The first due rows
    * were taken before keeping one per mailbox, so a burst of mail to one address filled the window and
    * kept every other address waiting until its backlog cleared (bug hunt 2026-10-12).

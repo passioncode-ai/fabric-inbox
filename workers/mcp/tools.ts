@@ -1217,6 +1217,16 @@ const agentInput = z.object({
       .describe("Messages a person handles: these categories, or these topics (as draftTopics), get this fixed reply naming whom to contact") }).optional(),
 }).describe("The agent's whole definition; saving makes a new version");
 
+const previewAgentAnswer = defineTool({
+  // Sends nothing, but spends the model and calls the agent's read-only tools, so it is journalled.
+  name: "preview_agent_answer", title: "Preview a reply agent's answer", level: "admin", target: (a) => `${a.agentId} ${a.address}`,
+  description: "Runs a reply agent on a message you write, as if it came to the address, and returns what it would do and the reply it would send — nothing is sent, drafted, stored or reported to its knowledge. Use it to test an agent before or after changing it. Mail from a domain this server serves is left alone, as in a real run, so use an outside sender.",
+  input: { agentId: z.string().min(1).max(100), address, from: z.string().email().describe("The sender, from outside this server's domains"),
+    subject: z.string().max(500).default(""), text: z.string().min(1).max(20_000).describe("The message, as plain text") },
+  routes: ["POST /api/agents/:id/preview"],
+  call: (a, ctx) => post(ctx, `/api/agents/${enc(a.agentId)}/preview`, { address: a.address, from: a.from, subject: a.subject, text: a.text }),
+});
+
 const saveAgent = defineTool({
   name: "save_agent", title: "Create or change a reply agent", level: "admin", target: (a) => a.agentId ?? a.agent.name,
   description: "Creates a reply agent, or saves a new version of one (give agentId and expectedVersion, the version you read with list_agents). A new agent drafts every answer until its replyPolicy says auto. Assign it to addresses with update_address.",
@@ -1530,7 +1540,7 @@ const agentActivity = defineTool({
 
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listFolders, getSendStatus,
-  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, answerAgain, listCategories, listKnowledge, searchKnowledge, listRules,
+  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,

@@ -118,6 +118,20 @@ agentsRouter.get("/api/agent-runs/:id", async (c) => {
 });
 
 /** Answer again: the run's message goes back to its agent as the next attempt. */
+/** What an agent would answer to a message, sent nowhere (preview_agent_answer). */
+agentsRouter.post("/api/agents/:id/preview", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  const body = await c.req.json().catch(() => null) as { address?: unknown; from?: unknown; subject?: unknown; text?: unknown } | null;
+  const address = typeof body?.address === "string" ? body.address.trim() : "";
+  const from = typeof body?.from === "string" ? body.from.trim() : "";
+  const text = typeof body?.text === "string" ? body.text : "";
+  if (!/^[^\s@]+@[^\s@]+$/.test(address) || !/^[^\s@]+@[^\s@]+$/.test(from) || !text.trim() || text.length > 20_000)
+    return c.json({ error: msg("A preview needs the address, a sender and the message text") }, 400);
+  try {
+    return c.json(await registry(c).previewAnswer(c.req.param("id"), { address, from, subject: typeof body?.subject === "string" ? body.subject.slice(0, 500) : "", text }));
+  } catch (error) { return registryFailure(c, error); }
+});
+
 agentsRouter.post("/api/agent-runs/:id/again", async (c) => {
   if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
   try {

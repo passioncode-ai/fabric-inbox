@@ -105,6 +105,7 @@ const bundle = await build({
               case 'claimCount': return Response.json(await reg.claimCount());
               case 'runId': return Response.json(await runIdFor(c.mailbox, c.emailId));
               case 'runs': return Response.json(await reg.listRuns({mailboxId: c.mailbox, ...(c.options ?? {})}));
+              case 'preview': return Response.json(await reg.previewAnswer(c.id, c.input));
               case 'byIds': return Response.json(await reg.runsByIds(c.ids));
               case 'again': return Response.json(await reg.answerAgain(c.id));
               case 'save': await reg.saveRun(c.run); return Response.json(true);
@@ -616,5 +617,20 @@ test("B-94: a grant's read-only mark is the endpoint's, and a stale run's second
     const again = await command("begin", { run: { ...run, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } });
     assert.equal(again.claimed, true, "a stale run is claimed again");
     assert.equal(again.run.rerun, true);
+  } finally { await mf.dispose(); }
+});
+
+test("a preview runs the agent on a written message and sends, drafts and stores nothing", async () => {
+  const { mf, command } = await fixture();
+  try {
+    await command("create", { id: "support", input: support });
+    await command("setup", { mailbox: "support@project.invalid", settings: { agent: "off" },
+      model: { decision: { decision: "send", intent: "pricing", grounded: true, body: "It costs 10 EUR.", reason: "" } } });
+    const preview = await command("preview", { id: "support", input: { address: "support@project.invalid", from: "lead@customer.invalid", subject: "Price?", text: "How much is it?" } });
+    assert.equal(preview.status, "sent", JSON.stringify(preview));
+    assert.equal(preview.reply.to, "lead@customer.invalid");
+    assert.match(preview.reply.text, /10 EUR/);
+    assert.equal(preview.run.subject, "", "the preview answer carries no message text but the reply");
+    assert.deepEqual(await command("runs", { mailbox: "support@project.invalid" }).then((r: { runs?: unknown[] }) => r.runs ?? r), [], "nothing stored");
   } finally { await mf.dispose(); }
 });
