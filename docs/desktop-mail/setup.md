@@ -124,7 +124,9 @@ Every name the Worker reads (`workers/types.ts`). None is in `wrangler.jsonc` (C
 | `CLOUDFLARE_API_TOKEN_<account id>` | secret, one per extra account | domains in another Cloudflare account | none | written by the server when a token is connected in Settings → Accounts (or by the door); removed with the account |
 | `CLOUDFLARE_ACCOUNT_ID` | var | optional | the only account the server's token sees, else the one whose Workers hold `EMAIL_ROUTING_WORKER` | the account the server runs in (its Access app, agent keys and relays' sign-ins live there) |
 | `EMAIL_ROUTING_WORKER` | var | routing | `fabric-inbox` | the Worker routing rules point at |
-| `AGENT_MODEL` | var | optional | `@cf/moonshotai/kimi-k2.5` | Workers AI model for address agents and the chat |
+| `AGENT_MODEL` | var | optional | `@cf/moonshotai/kimi-k2.5` | Workers AI model for address agents and the chat (reply agents use it only without `OPENROUTER_API_KEY`) |
+| `OPENROUTER_API_KEY` | secret | optional | — | Reply agents write on OpenRouter (`REPLY_MODEL`, fallback `REPLY_FALLBACK_MODEL`) and every answer sent without a person is approved by a model of another vendor first; without it, Workers AI writes and nothing checks |
+| `REPLY_MODEL` / `REPLY_FALLBACK_MODEL` | var | optional | `xiaomi/mimo-v2.6-pro` / `deepseek/deepseek-v4.1-flash` | The reply-lane writer and its fallback (open vendors only) |
 | `AUTOMATION_MODEL` | var | optional | `@cf/meta/llama-4-scout-17b-16e-instruct` | model for rule conditions and rule drafts |
 | `CATEGORY_MODEL` | var | optional | `@cf/meta/llama-4-scout-17b-16e-instruct` | model that reads a new message against the categories described in words |
 | `CATEGORY_DAILY_LIMIT` | var | optional | `500` | messages the category model reads per UTC day; the rest wait for the next day |

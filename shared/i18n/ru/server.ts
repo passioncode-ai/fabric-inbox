@@ -396,6 +396,8 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Safe reply sent ({reason})": "Отправлен безопасный ответ ({reason})",
 	"A preview needs the address, a sender and the message text": "Для предпросмотра нужны адрес, отправитель и текст письма",
 	"Not sure, so not answered yet: {reason}": "Нет уверенности — пока без ответа: {reason}",
+	"The checker did not approve the answer ({reason})": "Проверяющая модель не одобрила ответ ({reason})",
+	"The answer could not be checked ({error})": "Ответ не удалось проверить ({error})",
 	"Withheld: {problem}": "Скрыто: {problem}",
 	"No confident answer in the knowledge; a person checks it": "В знаниях нет уверенного ответа; его проверит человек",
 	"fixed argument \"{key}\" is not in the tool's schema": "фиксированного аргумента «{key}» нет в схеме инструмента",

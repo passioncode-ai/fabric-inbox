@@ -91,7 +91,7 @@ export interface ModelRequest {
   tools: AgentTool[];
 }
 /** `decision` is null when the model finished without calling submit_answer. */
-export type ModelResponse = { decision: ModelDecision | null; text: string };
+export type ModelResponse = { decision: ModelDecision | null; text: string; /** The model that wrote it, when known. */ model?: string };
 
 export interface RunnerDeps {
   registry: {
@@ -126,6 +126,11 @@ export interface RunnerDeps {
    * tool is asked before the model runs when the message is in neither English nor Russian.
    */
   paraphrase?(text: string): Promise<string>;
+  /**
+   * An independent check, by a model of another vendor than `writer`, of an answer about to be sent
+   * without a person. Absent: no check (a server without a reply-lane key).
+   */
+  check?(writer: string, input: { message: string; facts: string; answer: string }): Promise<{ approved: boolean; reason: string; model: string }>;
   /** Searches only the collections named; an empty list finds nothing (KN-4). */
   knowledge: { search(query: string, collections: string[], limit: number): Promise<KnowledgeHit[]> };
   callTool(grant: ToolGrant, args: Record<string, unknown>): Promise<string>;
@@ -377,6 +382,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       record.ok = true;
       record.result = text.slice(0, RESULT_PREVIEW_CHARS);
       // A confident answer is what an evidence-only policy sends on, and what a sent answer is traced to.
+      factTexts.push(`[${grant.name}]\n${text.slice(0, 4000)}`);
       const trace = evidenceOf(grant.name, text);
       if (trace) { evidence.push(trace); }
       return { ok: true, text: text.slice(0, 8000) };
@@ -392,6 +398,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   let abstainedAny = false;
   /** Confident tool answers in this run, with what traces them (requestId, cited item ids, revision). */
   const evidence: EvidenceTrace[] = [];
+  /** What the tools answered in this run, for the checker. */
+  const factTexts: string[] = [];
   const tools: AgentTool[] = agent.tools.map((grant) => ({
     name: grant.name,
     description: grant.description,
@@ -492,6 +500,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     reason: msg("The agent did not return a structured answer"),
   };
   run.intent = proposal.intent;
+  if (response.model) run.model = response.model;
   run.grounded = proposal.grounded;
   // What the message is about, for the voice-of-the-customer feed; cut to size, never personal.
   if (proposal.topic?.trim()) run.topic = scrubPersonal(proposal.topic.trim()).slice(0, 60);
@@ -577,6 +586,30 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       if (!(outcome.action === "draft" && outcome.capacity)) outcome = { action: "send", reason: msg("Handed to a person: the reply says whom to contact") };
       body = localized(handoff.reply);
       run.handoff = true;
+    } else {
+      // Before an answer leaves without a person: a model of another vendor approves it, or it is
+      // treated like an answer the agent is not sure of (operator rule 2026-10-16).
+      if (outcome.action === "send" && deps.check) {
+        const started = Date.now();
+        const record: ToolCallRecord = { name: "check", host: "model", ok: false, ms: 0, result: "" };
+        toolCalls.push(record);
+        try {
+          const facts = [agent.knowledge.trim(), passagesBlock(passages), ...factTexts].filter(Boolean).join("\n\n");
+          const verdict = await deps.check(response.model ?? "", { message: `${email.subject}\n${deps.htmlToText(email.body)}`, facts, answer: body });
+          record.ok = verdict.approved;
+          record.result = `${verdict.model}: ${verdict.approved ? "approved" : "rejected"} — ${verdict.reason}`.slice(0, RESULT_PREVIEW_CHARS);
+          run.checkedBy = verdict.model;
+          if (!verdict.approved) outcome = { action: "draft", reason: msg("The checker did not approve the answer ({reason})", { reason: verdict.reason }) };
+        } catch (error) {
+          record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
+          outcome = { action: "draft", reason: msg("The answer could not be checked ({error})", { error: (error as Error).message.slice(0, 120) }) };
+        } finally {
+          record.ms = Date.now() - started;
+        }
+      }
+    }
+    if (run.handoff) {
+      // The hand-off reply is fixed text: nothing to check.
     } else if (outcome.action === "draft" && !outcome.capacity && policy.fallbackReply) {
       outcome = { action: "send", reason: msg("Safe reply sent ({reason})", { reason: outcome.reason }) };
       body = localized(policy.fallbackReply);

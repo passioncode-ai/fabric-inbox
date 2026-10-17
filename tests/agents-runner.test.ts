@@ -914,3 +914,37 @@ test("no drafts: an answer the agent is not sure of is held, its question report
     callTool: async () => JSON.stringify({ abstained: false, results: [{ id: "fact:theme", coverage: 0.9 }] }) });
   assert.equal((await ok.run())!.status, "sent");
 });
+
+test("an auto answer is checked by another vendor before it leaves; a rejection holds it, an approval sends it", async () => {
+  const { checkersFor } = await import("../workers/agents/model");
+  assert.deepEqual(checkersFor("xiaomi/mimo-v2.6-pro"), ["qwen/qwen3.8-flash", "deepseek/deepseek-v4.1-flash"]);
+  assert.deepEqual(checkersFor("deepseek/deepseek-v4.1-flash"), ["qwen/qwen3.8-flash", "xiaomi/mimo-v2.6-pro"]);
+  const confident = async () => JSON.stringify({ abstained: false, results: [{ id: "fact:theme", coverage: 0.9 }], answer: "Settings → Appearance." });
+  const asked: { writer: string; facts: string }[] = [];
+  const make = (approved: boolean | "throw") => {
+    const h = harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true }), email: { subject: "Theme", body: "<p>How do I change the theme?</p>" },
+      callTool: confident, model: async () => ({ decision: answer({ intent: "how-to", body: "Open Settings → Appearance." }), text: "", model: "xiaomi/mimo-v2.6-pro" }) });
+    h.deps.check = async (writer, input) => { asked.push({ writer, facts: input.facts }); if (approved === "throw") throw new Error("no checker answered");
+      return { approved, reason: approved ? "fine" : "claims a menu the facts do not name", model: "qwen/qwen3.8-flash" }; };
+    return h;
+  };
+  const ok = (await make(true).run())!;
+  assert.equal(ok.status, "sent");
+  assert.equal(ok.model, "xiaomi/mimo-v2.6-pro");
+  assert.equal(ok.checkedBy, "qwen/qwen3.8-flash");
+  assert.equal(asked[0]!.writer, "xiaomi/mimo-v2.6-pro");
+  assert.match(asked[0]!.facts, /Settings → Appearance/, "the checker sees what the tools answered");
+  const rejected = make(false);
+  const r = (await rejected.run())!;
+  assert.equal(r.status, "held");
+  assert.match(r.reason, /checker did not approve/);
+  assert.deepEqual([rejected.effects.sends.length, rejected.effects.drafts.length], [0, 0]);
+  assert.equal((await make("throw").run())!.status, "held", "no verdict is no approval");
+  // A hand-off reply is fixed text and is not checked.
+  let checked = 0;
+  const hand = harness({ agent: autonomous(), email: { subject: "Refund", body: "<p>I want a refund.</p>" }, callTool: confident,
+    model: async () => ({ decision: answer({ category: "refund" }), text: "" }) });
+  hand.deps.check = async () => { checked++; return { approved: false, reason: "", model: "x" }; };
+  assert.equal((await hand.run())!.status, "sent");
+  assert.equal(checked, 0);
+});

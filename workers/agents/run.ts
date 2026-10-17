@@ -55,6 +55,9 @@ export interface AgentRun {
   attempt?: number;
   /** Run again after an earlier worker on it was interrupted (B-94): tools that may act are not called again. */
   rerun?: boolean;
+  /** The model that wrote the answer, and the one that approved it before it was sent. */
+  model?: string;
+  checkedBy?: string;
   /** The policy category the model chose. */
   category?: string;
   /** Answered with the policy's hand-off reply (a person handles it), or its safe reply (nothing confident to say). */
