@@ -599,7 +599,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     toolFailures: toolCalls.filter((c) => !c.ok && c.name !== "search_knowledge" && !c.name.endsWith(":gap")).length,
     rateLimited: needsSendChecks ? await deps.mailbox.rateLimit() : null,
     knowledgeProblem,
-    abstained: abstainedAny,
+    // The lane's own knowledge is evidence when a checker approves what is sent (knowledgeIsEvidence).
+    abstained: abstainedAny && !(policy.knowledgeIsEvidence && policy.mode === "auto" && deps.check),
     // A reply or forward by its subject, or a message after this address already answered in the conversation.
     followUp: isFollowUpSubject(email.subject) || thread.some((m) => m.id !== email.id && m.folder_id === "sent" && Date.parse(m.date) <= received),
     // The original words, and the English the run produced from them (the restatement a knowledge tool
@@ -619,7 +620,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     const handText = `${email.subject}\n${deps.htmlToText(email.body)}\n${run.summary ?? ""}`;
     if (handoff && ((run.category && handoff.categories.some((c) => c.toLowerCase() === run.category!.toLowerCase())) || matchedTopic(handoff.topics, handText))) {
       if (!(outcome.action === "draft" && outcome.capacity)) outcome = { action: "send", reason: msg("Handed to a person: the reply says whom to contact") };
-      body = localized(handoff.reply);
+      const own = run.category ? Object.entries(handoff.replies ?? {}).find(([c]) => c.toLowerCase() === run.category!.toLowerCase())?.[1] : undefined;
+      body = localized(own ?? handoff.reply);
       run.handoff = true;
     } else {
       // Before an answer leaves without a person: a model of another vendor approves it, or it is

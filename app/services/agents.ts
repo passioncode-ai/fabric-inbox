@@ -27,7 +27,8 @@ export interface AgentInput {
   collections: string[];
   tools: ToolGrant[];
   replyPolicy: { mode: ReplyMode; allowedIntents: string[]; dailySendLimit: number | null; draftFollowUps?: boolean; draftTopics?: string[]; requireEvidence?: boolean; holdUnsure?: boolean;
-    fallbackReply?: { en: string; ru?: string }; categories?: string[]; handoff?: { categories: string[]; topics: string[]; reply: { en: string; ru?: string } } };
+    knowledgeIsEvidence?: boolean; fallbackReply?: { en: string; ru?: string }; categories?: string[];
+    handoff?: { categories: string[]; topics: string[]; reply: { en: string; ru?: string }; replies?: Record<string, { en: string; ru?: string }> } };
 }
 export interface Agent extends AgentInput {
   id: string;

@@ -891,6 +891,45 @@ test("a message in a hand-off category or topic gets the hand-off reply; the cat
   assert.equal((await odd.run())!.category, "other");
 });
 
+test("a hand-off category with its own reply gets that reply; the others get the shared one", async () => {
+  const policy = { categories: ["refund", "premium", "other"], handoff: { categories: ["refund", "premium"], topics: [],
+    reply: { en: "A person handles this: write to our support manager." },
+    replies: { premium: { en: "Premium starts from 1,000 USDT a week. Write to our sales manager.", ru: "Премиум от 1 000 USDT в неделю. Напишите менеджеру." } } } };
+  const confident = async () => JSON.stringify({ abstained: false, results: [{ id: "fact:x", coverage: 0.9 }] });
+  const premium = harness({ agent: autonomous(policy), email: { subject: "Big campaign", body: "<p>We want a premium placement.</p>" }, callTool: confident,
+    model: async () => ({ decision: answer({ intent: "sales", category: "Premium" }), text: "" }) });
+  const r = (await premium.run())!;
+  assert.equal(r.handoff, true);
+  assert.match(JSON.stringify(premium.effects.sends), /1,000 USDT a week/);
+  const ru = harness({ agent: autonomous(policy), email: { subject: "Реклама", body: "<p>Хотим премиум размещение.</p>" }, callTool: confident,
+    model: async () => ({ decision: answer({ intent: "sales", category: "premium" }), text: "" }) });
+  await ru.run();
+  assert.match(JSON.stringify(ru.effects.sends), /Премиум от 1 000 USDT/);
+  const refund = harness({ agent: autonomous(policy), email: { subject: "Money back", body: "<p>Refund please.</p>" }, callTool: confident,
+    model: async () => ({ decision: answer({ intent: "refund", category: "refund" }), text: "" }) });
+  await refund.run();
+  assert.match(JSON.stringify(refund.effects.sends), /support manager/);
+});
+
+test("knowledgeIsEvidence: a tool that abstains does not hold an answer the checker approves; without it, it holds", async () => {
+  const weak = async () => JSON.stringify({ abstained: true, results: [] });
+  const make = (knowledgeIsEvidence: boolean, approved = true) => {
+    const h = harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true, requireEvidence: false, knowledgeIsEvidence }),
+      email: { subject: "Price", body: "<p>How much is it?</p>" }, callTool: weak,
+      model: async () => ({ decision: answer({ intent: "pricing", body: "It costs 10 EUR." }), text: "", model: "xiaomi/mimo-v2.6-pro" }) });
+    h.deps.check = async () => ({ approved, reason: approved ? "from the knowledge" : "not in the facts", model: "qwen/qwen3.8-flash" });
+    return h;
+  };
+  const on = make(true); const sent = (await on.run())!;
+  assert.equal(sent.status, "sent", sent.reason);
+  assert.match(JSON.stringify(on.effects.sends), /10 EUR/);
+  assert.equal((await make(false).run())!.status, "held", "the B-85 rule stays the default");
+  assert.equal((await make(true, false).run())!.status, "held", "the checker still decides");
+  // No checker on this server: the abstain rule holds.
+  const bare = make(true); bare.deps.check = undefined;
+  assert.notEqual((await bare.run())!.status, "sent");
+});
+
 test("a reply saying an earlier answer did not help is reported as an outdated gap and marked for the voice of the customer", async () => {
   const { runEvent } = await import("../workers/agents/events");
   const gaps: Record<string, unknown>[] = [];
