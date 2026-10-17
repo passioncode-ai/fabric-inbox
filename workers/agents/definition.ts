@@ -142,6 +142,12 @@ export const ReplyPolicySchema = z.object({
    * by this fixed text and sent. Fixed, so it states no fact. Daily and rate limits still draft.
    */
   fallbackReply: LocalizedText.optional(),
+  /**
+   * Auto mode, no drafts: an answer the agent is not sure of is neither sent nor drafted. The message is
+   * held, its question reported to the knowledge tool, and it is answered again once the knowledge has it.
+   * A fallbackReply, when set, is sent instead.
+   */
+  holdUnsure: z.boolean().default(false),
   /** Labels the agent puts on every message (the model picks one), shown on the run and in its events. */
   categories: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
   /** Messages a person handles: these categories or topics get this fixed reply naming who, instead of an answer. */
@@ -221,7 +227,7 @@ Be brief and friendly; one clear next step per reply.`),
     knowledge: "",
     collections: [],
     tools: [],
-    replyPolicy: { mode: "draft", allowedIntents: ["question", "how-to", "status"], dailySendLimit: 20, draftFollowUps: false, draftTopics: [], requireEvidence: false, categories: [] },
+    replyPolicy: { mode: "draft", allowedIntents: ["question", "how-to", "status"], dailySendLimit: 20, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, categories: [] },
   },
   sales: {
     name: msg("Sales"),
@@ -230,7 +236,7 @@ Share only prices and terms from the knowledge below. Offer a call for anything 
     knowledge: "",
     collections: [],
     tools: [],
-    replyPolicy: { mode: "draft", allowedIntents: ["pricing", "question"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, categories: [] },
+    replyPolicy: { mode: "draft", allowedIntents: ["pricing", "question"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, categories: [] },
   },
   billing: {
     name: msg("Billing"),
@@ -239,6 +245,6 @@ Never promise a refund or change a charge yourself: explain the process from the
     knowledge: "",
     collections: [],
     tools: [],
-    replyPolicy: { mode: "draft", allowedIntents: ["receipt"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, categories: [] },
+    replyPolicy: { mode: "draft", allowedIntents: ["receipt"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, categories: [] },
   },
 };

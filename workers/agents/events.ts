@@ -38,7 +38,7 @@ export function scrubPersonal(text: string): string {
     .replace(/\+?\d[\d\s().-]{5,}\d/g, (m) => (m.replace(/\D/g, "").length >= 7 && !/^\d+(\.\d+){1,3}$/.test(m.trim()) ? "[…]" : m));
 }
 
-const ENDED = new Set(["sent", "drafted", "skipped", "off", "send_failed", "send_unknown", "failed", "interrupted"]);
+const ENDED = new Set(["sent", "drafted", "held", "skipped", "off", "send_failed", "send_unknown", "failed", "interrupted"]);
 const TROUBLE = new Set(["send_failed", "send_unknown", "failed", "interrupted"]);
 const cut = (s: string, n = 500) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 

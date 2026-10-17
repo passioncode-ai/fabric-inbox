@@ -92,6 +92,7 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"Safe reply when it cannot answer": "Безопасный ответ, когда ответить нечем",
 	"Sent instead of a draft when the answer would wait for you for what it says, so every message gets a reply. It states no facts: thank, ask for details, say where to get help. Empty: those answers stay drafts.": "Отправляется вместо черновика, когда ответ ждал бы вас из-за содержания, — так ответ получает каждое письмо. В нём нет фактов: поблагодарить, попросить подробности, сказать, где помогут. Пусто — такие ответы остаются черновиками.",
 	"Safe reply in Russian": "Безопасный ответ по-русски",
+	"No drafts: when it is not sure, it does not answer, reports the question to the knowledge and answers once it is there": "Без черновиков: если нет уверенности, не отвечает, передаёт вопрос в базу знаний и отвечает, когда ответ там появится",
 	"Comma-separated. The agent labels every message with one; the label shows on its answers and events.": "Через запятую. Агент помечает каждое письмо одной из них; метка видна в его ответах и событиях.",
 	"Categories a person handles": "Категории, которые ведёт человек",
 	"Comma-separated. These get the hand-off reply below instead of an answer.": "Через запятую. На такие письма уходит ответ о передаче ниже, а не ответ агента.",

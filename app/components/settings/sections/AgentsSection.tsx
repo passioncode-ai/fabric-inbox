@@ -341,6 +341,9 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
               <textarea className="fi-input" rows={3} value={(policy.draftTopics ?? []).join("\n")}
                 onChange={(e) => set("replyPolicy", { ...policy, draftTopics: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 30) })} />
             </label>
+            <label className="fi-check"><input type="checkbox" checked={!!policy.holdUnsure}
+              onChange={(e) => set("replyPolicy", { ...policy, holdUnsure: e.target.checked })} />
+              <span>{t("No drafts: when it is not sure, it does not answer, reports the question to the knowledge and answers once it is there")}</span></label>
             <label className="fi-field">{t("Safe reply when it cannot answer")}
               <span className="fi-hint">{t("Sent instead of a draft when the answer would wait for you for what it says, so every message gets a reply. It states no facts: thank, ask for details, say where to get help. Empty: those answers stay drafts.")}</span>
               <textarea className="fi-input" rows={3} value={policy.fallbackReply?.en ?? ""}

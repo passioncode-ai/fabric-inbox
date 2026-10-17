@@ -1210,6 +1210,7 @@ const agentInput = z.object({
     draftTopics: z.array(z.string().min(1).max(400)).max(30).optional().describe("Auto mode: topics a person answers; words separated by | are alternatives matching where a word starts (a quoted word: the whole word), groups joined by \" + \" must all appear"),
     requireEvidence: z.boolean().optional().describe("Auto mode: send only when a granted tool answered confidently (not abstained, coverage 0.6 or more)"),
     fallbackReply: z.object({ en: z.string().min(1).max(3000), ru: z.string().min(1).max(3000).optional() }).optional().describe("Auto mode, every message answered: this fixed text is sent instead of a draft when the answer would wait for a person for what it says (no evidence, a tool failed or abstained, a listed topic); limits still draft. ru is used for a message in Russian"),
+    holdUnsure: z.boolean().optional().describe("Auto mode, no drafts: an answer the agent is not sure of is neither sent nor drafted; the question goes to the knowledge tool and the message waits (status held) for answer_again"),
     categories: z.array(z.string().min(1).max(60)).max(30).optional().describe("Labels the agent puts on every message (it picks one); shown on runs and events"),
     handoff: z.object({ categories: z.array(z.string().min(1).max(60)).max(30).default([]), topics: z.array(z.string().min(1).max(400)).max(30).default([]),
       reply: z.object({ en: z.string().min(1).max(3000), ru: z.string().min(1).max(3000).optional() }) }).optional()

@@ -8,6 +8,8 @@ export type AgentRunStatus =
   | "off"
   | "skipped"
   | "drafted"
+  /** Not sure, so not answered: the question went to the knowledge owner; answer_again answers it once the knowledge has it. */
+  | "held"
   | "sent"
   | "send_failed"
   | "send_unknown"

@@ -523,24 +523,29 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   const outdated = run.dissatisfied === true ? scrubPersonal((proposal.summary ?? proposal.question ?? "").trim()).slice(0, 1000) : "";
   const gapKind = outdated ? "outdated" : "unanswered";
   const gapText = outdated || question;
-  const gapGrant = (outdated || (question && unanswered)) ? agent.tools.find((g) => g.gaps) : undefined;
-  for (const grant of gapGrant ? [gapGrant] : []) {
-    const started = Date.now();
-    const record: ToolCallRecord = { name: `${grant.name}:gap`, host: hostOf(grant.endpoint), ok: false, ms: 0, result: "" };
-    toolCalls.push(record);
-    try {
-      const channel = typeof grant.fixed?.channel === "string" ? grant.fixed.channel : "email";
-      const report = () => deps.callTool({ ...grant, tool: grant.gaps!.tool }, { requestId: run.id, kind: gapKind, channel, question: gapText });
-      // Tried once more on failure, with the same request id, so the knowledge base counts it once (B-117).
-      const out = await report().catch(() => report());
-      record.ok = true;
-      record.result = out.slice(0, RESULT_PREVIEW_CHARS);
-    } catch (error) {
-      record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
-    } finally {
-      record.ms = Date.now() - started;
+  let gapReported = false;
+  const reportGap = async (kind: string, text: string) => {
+    const gapGrant = text && !gapReported ? agent.tools.find((g) => g.gaps) : undefined;
+    if (gapGrant) gapReported = true;
+    for (const grant of gapGrant ? [gapGrant] : []) {
+      const started = Date.now();
+      const record: ToolCallRecord = { name: `${grant.name}:gap`, host: hostOf(grant.endpoint), ok: false, ms: 0, result: "" };
+      toolCalls.push(record);
+      try {
+        const channel = typeof grant.fixed?.channel === "string" ? grant.fixed.channel : "email";
+        const report = () => deps.callTool({ ...grant, tool: grant.gaps!.tool }, { requestId: run.id, kind, channel, question: text });
+        // Tried once more on failure, with the same request id, so the knowledge base counts it once (B-117).
+        const out = await report().catch(() => report());
+        record.ok = true;
+        record.result = out.slice(0, RESULT_PREVIEW_CHARS);
+      } catch (error) {
+        record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
+      } finally {
+        record.ms = Date.now() - started;
+      }
     }
-  }
+  };
+  if (outdated || (question && unanswered)) await reportGap(gapKind, gapText);
 
   const policy = agent.replyPolicy;
   const needsSendChecks = policy.mode === "auto" && proposal.decision === "send";
@@ -576,6 +581,12 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       outcome = { action: "send", reason: msg("Safe reply sent ({reason})", { reason: outcome.reason }) };
       body = localized(policy.fallbackReply);
       run.fallback = true;
+    } else if (outcome.action === "draft" && !outcome.capacity && policy.holdUnsure) {
+      // No drafts: what the agent is not sure of is not answered yet. The question goes to the knowledge
+      // owner, and the message is answered again (answer_again) once the knowledge has it.
+      const held = scrubPersonal((proposal.question || proposal.summary || "").trim()).slice(0, 1000);
+      if (held) { run.question = held; run.unanswered = true; await reportGap("unanswered", held); }
+      return finish("held", msg("Not sure, so not answered yet: {reason}", { reason: outcome.reason }));
     }
   }
   if (outcome.action === "skip") return finish("skipped", outcome.reason);
