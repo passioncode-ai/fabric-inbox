@@ -3,7 +3,7 @@ import { scanPromptInjection } from "../lib/ai";
 import { allServedDomains } from "../lib/mailbox-store";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
 import { callMcpTool, toolResultText, type ToolTokens } from "../automation/mcp";
-import { workersAiModel, workersAiParaphrase } from "./model";
+import { openRouterAgentModel, openRouterCheck, openRouterParaphrase, workersAiModel, workersAiParaphrase } from "./model";
 import { legacyAgentId, readAssignment } from "./definition";
 import type { RunnerDeps } from "./runner";
 import { msg } from "../../shared/i18n";
@@ -87,8 +87,16 @@ export function productionDeps(env: Env, mailboxId: string, registry: Registry):
     },
     // The prompt and tool outputs are scanned exactly as the model reads them (bug hunt 2026-10-12).
     injection: (text) => scanPromptInjection(env.AI, text, { plain: true }),
-    model: (request) => workersAiModel(env.AI, env.AGENT_MODEL, request),
-    paraphrase: (text) => workersAiParaphrase(env.AI, env.AGENT_MODEL, text),
+    // With a reply-lane key, answers are written on OpenRouter and checked by another vendor before they
+    // leave; without one, the server's own Workers AI writes them and nothing checks them.
+    ...(env.OPENROUTER_API_KEY ? {
+      model: (request) => openRouterAgentModel(env.OPENROUTER_API_KEY!, request, { primary: env.REPLY_MODEL, fallback: env.REPLY_FALLBACK_MODEL }),
+      paraphrase: (text) => openRouterParaphrase(env.OPENROUTER_API_KEY!, text, env.REPLY_FALLBACK_MODEL),
+      check: (writer, input) => openRouterCheck(env.OPENROUTER_API_KEY!, writer, input),
+    } satisfies Pick<RunnerDeps, "model" | "paraphrase" | "check"> : {
+      model: (request) => workersAiModel(env.AI, env.AGENT_MODEL, request),
+      paraphrase: (text) => workersAiParaphrase(env.AI, env.AGENT_MODEL, text),
+    }),
     knowledge: {
       async search(query, collections, limit) {
         if (!env.KNOWLEDGE) throw new Error("knowledge is not configured on this server");
