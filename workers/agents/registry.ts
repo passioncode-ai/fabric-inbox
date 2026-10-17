@@ -25,11 +25,14 @@ import { CLAIM_POLL_MS, CLAIM_TTL_MS, decideClaim, type MessageClaim } from "./d
 export const RUN_STALE_MS = 10 * 60_000;
 /**
  * A message held because the agent was not sure (holdUnsure) is answered again every HELD_RETRY_MS for
- * HELD_FOR_MS: once the knowledge has the answer, the customer gets it; a repeated gap report counts
- * once (same request id). After that it stays held and the events keep saying so.
+ * its first HELD_FAST_MS, then once a day until HELD_FOR_MS (the knowledge team curates weekly, so an
+ * answer added after the first week still reaches the customer). A repeated gap report counts once
+ * (same request id). After that it stays held and the events keep saying so.
  */
 export const HELD_RETRY_MS = 12 * 3_600_000;
-export const HELD_FOR_MS = 7 * 86_400_000;
+export const HELD_FAST_MS = 7 * 86_400_000;
+export const HELD_LATE_RETRY_MS = 24 * 3_600_000;
+export const HELD_FOR_MS = 30 * 86_400_000;
 /** Longest an answer waits for its spam check before the agent runs anyway (B-30). */
 export const MAX_SPAM_HOLD_MS = 15 * 60_000;
 const MAX_AGENTS = 100;
@@ -181,10 +184,11 @@ export class AgentRegistryDO extends DurableObject<Env> {
   /** Held runs due another try go back to the queue (answer_again); answers when the next one is due. */
   protected async retryHeld(now = Date.now()): Promise<number | null> {
     const since = new Date(now - HELD_FOR_MS).toISOString();
-    const rows = this.rows("SELECT id, updated_at FROM agent_runs WHERE status = 'held' AND created_at >= ? ORDER BY updated_at LIMIT 20", since);
+    const rows = this.rows("SELECT id, created_at, updated_at FROM agent_runs WHERE status = 'held' AND created_at >= ? ORDER BY updated_at LIMIT 20", since);
     let next: number | null = null;
     for (const row of rows) {
-      const due = Date.parse(String(row.updated_at)) + HELD_RETRY_MS;
+      const age = now - Date.parse(String(row.created_at));
+      const due = Date.parse(String(row.updated_at)) + (age < HELD_FAST_MS ? HELD_RETRY_MS : HELD_LATE_RETRY_MS);
       if (due <= now) {
         const result = await this.answerAgain(String(row.id));
         if (!result.ok) console.warn(JSON.stringify({ event: "held_retry_refused", run: row.id, reason: result.reason }));
