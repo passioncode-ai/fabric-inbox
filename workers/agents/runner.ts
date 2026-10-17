@@ -51,6 +51,13 @@ export function abstainedOutput(text: string): boolean {
   try { const v = JSON.parse(text) as { abstained?: unknown }; return !!v && typeof v === "object" && v.abstained === true; } catch { return false; }
 }
 
+/**
+ * A knowledge tool lists its results in rank order (the data agent's contract, "Relevance floor",
+ * 0.1.16): the first result is the answer, and an item's `coverage` is its own share of the question, not
+ * its rank, so a lower result may carry a higher one. The model and the checker read results that way.
+ */
+export const RANK_NOTE = "Results are in rank order: the first result is the answer. Later results are only related topics, whatever their coverage: never state one in place of the first, and use it only for a separate question the message itself asks.";
+
 /** What a confident tool answer is traced by: its request id, the ids of the items it cites, its revision. */
 export interface EvidenceTrace { tool: string; requestId?: string; items?: string[]; revision?: string }
 
@@ -202,7 +209,8 @@ export function systemPrompt(agent: AgentVersion, mailboxId: string, tools: Agen
     ] : []),
     ...(prefetched.length ? [
       "",
-      "Results of tools already asked about this message — facts too, but only these:",
+      "Results of tools already asked about this message — facts too, but only these.",
+      RANK_NOTE,
       "<tool_results>",
       ...prefetched.filter((r) => !r.abstained).map((r) => r.ok ? `[${r.name}]\n${r.text}` : `[${r.name}] The call failed or was withheld; nothing from it may be stated.`),
       ...prefetched.filter((r) => r.abstained).map((r) => `[${r.name}] No confident answer: see the candidates below.`),
@@ -432,7 +440,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     inputSchema: modelSchema(grant),
     run: async (args) => {
       const result = await callGrant(grant, args);
-      if (!result.ok || !abstainedOutput(result.text)) return result.text;
+      if (!result.ok) return result.text;
+      if (!abstainedOutput(result.text)) return `${RANK_NOTE}\n${result.text}`;
       abstainedAny = true;
       return `No confident answer. These are unverified candidates (coverage below 0.6): never state them as facts; decide draft, say the team will check, and fill question.\n${result.text}`;
     },
@@ -623,7 +632,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
           // The operator's instructions are facts too (contacts, routing, what the team offers); measured
           // 2026-10-17: a support contact named only in the instructions was rejected as invented.
           const facts = [`[operator instructions]\n${agent.instructions.trim()}`, agent.knowledge.trim() && `[knowledge]\n${agent.knowledge.trim()}`,
-            passagesBlock(passages), ...factTexts].filter(Boolean).join("\n\n");
+            passagesBlock(passages), factTexts.length ? `[tool results]\n${RANK_NOTE}` : "", ...factTexts].filter(Boolean).join("\n\n");
           const verdict = await deps.check(response.model ?? "", { message: `${email.subject}\n${deps.htmlToText(email.body)}`, facts, answer: body });
           record.ok = verdict.approved;
           record.result = `${verdict.model}: ${verdict.approved ? "approved" : "rejected"} — ${verdict.reason}`.slice(0, RESULT_PREVIEW_CHARS);

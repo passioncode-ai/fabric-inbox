@@ -462,6 +462,20 @@ test("B-85 REQ-4: a prefetch grant is called before the model with the message; 
   assert.equal(run.status, "sent");
 });
 
+test("tool results are read in rank order: the first is the answer, later ones are not (data agent contract)", async () => {
+  let system = ""; let asked = ""; let checked = "";
+  const h = harness({
+    agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } }), kbGrant({ name: "acme_kb2" })] }),
+    email: { subject: "Translator broken", body: "<p>How do I translate a chat?</p>" },
+    callTool: async () => publicHits,
+    model: async (r) => { system = r.system; asked = await r.tools.find((t) => t.name === "acme_kb2")!.run({ query: "x" }); return { decision: answer(), text: "" }; },
+  });
+  h.deps.check = async (_writer, input) => { checked = input.facts; return { approved: true, reason: "ok", model: "checker" }; };
+  await h.run();
+  for (const text of [system, asked, checked]) assert.match(text, /rank order[\s\S]*first[\s\S]*answer/i);
+  assert.match(asked, /Tap the globe to translate\./, "the output still follows the note");
+});
+
 test("the prefetch keeps the message's line breaks and decodes <addresses> (data agent reads by sentence)", async () => {
   const calls: Record<string, unknown>[] = [];
   const h = harness({
