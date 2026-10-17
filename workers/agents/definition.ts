@@ -150,11 +150,20 @@ export const ReplyPolicySchema = z.object({
   holdUnsure: z.boolean().default(false),
   /** Labels the agent puts on every message (the model picks one), shown on the run and in its events. */
   categories: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
+  /**
+   * Auto mode with a checker: the agent's own knowledge and instructions count as evidence, so a knowledge
+   * tool that abstains does not by itself hold or draft the answer; the checker still approves it before
+   * it is sent. Without a checker on the server, the abstain rule (B-85) applies as before.
+   */
+  knowledgeIsEvidence: z.boolean().default(false),
   /** Messages a person handles: these categories or topics get this fixed reply naming who, instead of an answer. */
   handoff: z.object({
     categories: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
     topics: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
     reply: LocalizedText,
+    /** A category's own fixed reply, over `reply` (the routing for that kind of message). */
+    replies: z.record(z.string().trim().min(1).max(60), LocalizedText).optional()
+      .refine((r) => !r || Object.keys(r).length <= 30, "At most 30 category replies"),
   }).strict().optional(),
 }).strict();
 export type ReplyPolicy = z.infer<typeof ReplyPolicySchema>;
@@ -227,7 +236,7 @@ Be brief and friendly; one clear next step per reply.`),
     knowledge: "",
     collections: [],
     tools: [],
-    replyPolicy: { mode: "draft", allowedIntents: ["question", "how-to", "status"], dailySendLimit: 20, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, categories: [] },
+    replyPolicy: { mode: "draft", allowedIntents: ["question", "how-to", "status"], dailySendLimit: 20, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, knowledgeIsEvidence: false, categories: [] },
   },
   sales: {
     name: msg("Sales"),
@@ -236,7 +245,7 @@ Share only prices and terms from the knowledge below. Offer a call for anything 
     knowledge: "",
     collections: [],
     tools: [],
-    replyPolicy: { mode: "draft", allowedIntents: ["pricing", "question"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, categories: [] },
+    replyPolicy: { mode: "draft", allowedIntents: ["pricing", "question"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, knowledgeIsEvidence: false, categories: [] },
   },
   billing: {
     name: msg("Billing"),
@@ -245,6 +254,6 @@ Never promise a refund or change a charge yourself: explain the process from the
     knowledge: "",
     collections: [],
     tools: [],
-    replyPolicy: { mode: "draft", allowedIntents: ["receipt"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, categories: [] },
+    replyPolicy: { mode: "draft", allowedIntents: ["receipt"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, knowledgeIsEvidence: false, categories: [] },
   },
 };

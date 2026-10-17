@@ -33,6 +33,11 @@ is cut and published: [docs/release.md](docs/release.md).
   hours for a week. A reply saying an earlier answer did not help is reported to the knowledge.
 - **With an OpenRouter key, answers are written by an open model and checked by another vendor's model**
   before they are sent; without one, the server's own Workers AI writes them as before.
+- **A sales lane answers from its own knowledge.** A hand-off category can have its own fixed reply (for
+  example premium requests point to the sales contact), and an agent can treat its knowledge as enough
+  when its tools have no answer, if the checker approves the reply.
+- **Agents read a knowledge tool's results in order:** the first result is the answer, the rest are
+  related topics.
 - **Agents know what they are.** Each agent's instructions now say, truthfully, that it is an AI
   assistant, what it can read and how its answers leave.
 - **Preview an agent's answer** to a message you write, without sending anything (`preview_agent_answer`).

@@ -344,6 +344,9 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
             <label className="fi-check"><input type="checkbox" checked={!!policy.holdUnsure}
               onChange={(e) => set("replyPolicy", { ...policy, holdUnsure: e.target.checked })} />
               <span>{t("No drafts: when it is not sure, it does not answer, reports the question to the knowledge and answers once it is there")}</span></label>
+            <label className="fi-check"><input type="checkbox" checked={!!policy.knowledgeIsEvidence}
+              onChange={(e) => set("replyPolicy", { ...policy, knowledgeIsEvidence: e.target.checked })} />
+              <span>{t("Its own knowledge is enough: a tool without an answer does not stop a reply the checker approves")}</span></label>
             <label className="fi-field">{t("Safe reply when it cannot answer")}
               <span className="fi-hint">{t("Sent instead of a draft when the answer would wait for you for what it says, so every message gets a reply. It states no facts: thank, ask for details, say where to get help. Empty: those answers stay drafts.")}</span>
               <textarea className="fi-input" rows={3} value={policy.fallbackReply?.en ?? ""}
@@ -368,6 +371,18 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
               <textarea className="fi-input" rows={3} value={policy.handoff?.reply.en ?? ""}
                 onChange={(e) => set("replyPolicy", { ...policy, handoff: e.target.value.trim() ? { categories: [], topics: [], ...policy.handoff, reply: { ...policy.handoff?.reply, en: e.target.value } } : undefined })} />
             </label>
+            {policy.handoff?.reply.en && policy.handoff.categories.map((category) => (
+              <label key={category} className="fi-field">{t("Reply for {category}", { category })}
+                <span className="fi-hint">{t("Empty: the hand-off reply above.")}</span>
+                <textarea className="fi-input" rows={3} value={policy.handoff?.replies?.[category]?.en ?? ""}
+                  onChange={(e) => {
+                    const handoff = policy.handoff!;
+                    const replies = { ...handoff.replies };
+                    if (e.target.value.trim()) replies[category] = { ...replies[category], en: e.target.value }; else delete replies[category];
+                    set("replyPolicy", { ...policy, handoff: { ...handoff, replies: Object.keys(replies).length ? replies : undefined } });
+                  }} />
+              </label>
+            ))}
           </>
         )}
         <p className="fi-hint">{t("Never answered: no-reply, bulk, list and automatic mail, calendar invitations, and mail from your own domains. A message is also left alone once you have replied to it yourself.")}</p>

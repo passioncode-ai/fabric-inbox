@@ -1212,8 +1212,10 @@ const agentInput = z.object({
     fallbackReply: z.object({ en: z.string().min(1).max(3000), ru: z.string().min(1).max(3000).optional() }).optional().describe("Auto mode, every message answered: this fixed text is sent instead of a draft when the answer would wait for a person for what it says (no evidence, a tool failed or abstained, a listed topic); limits still draft. ru is used for a message in Russian"),
     holdUnsure: z.boolean().optional().describe("Auto mode, no drafts: an answer the agent is not sure of is neither sent nor drafted; the question goes to the knowledge tool and the message waits (status held) for answer_again"),
     categories: z.array(z.string().min(1).max(60)).max(30).optional().describe("Labels the agent puts on every message (it picks one); shown on runs and events"),
+    knowledgeIsEvidence: z.boolean().optional().describe("Auto mode with a checker: the agent's own knowledge and instructions count as evidence, so a knowledge tool that abstains does not by itself hold or draft the answer; the checker still approves it before it is sent"),
     handoff: z.object({ categories: z.array(z.string().min(1).max(60)).max(30).default([]), topics: z.array(z.string().min(1).max(400)).max(30).default([]),
-      reply: z.object({ en: z.string().min(1).max(3000), ru: z.string().min(1).max(3000).optional() }) }).optional()
+      reply: z.object({ en: z.string().min(1).max(3000), ru: z.string().min(1).max(3000).optional() }),
+      replies: z.record(z.object({ en: z.string().min(1).max(3000), ru: z.string().min(1).max(3000).optional() })).optional().describe("A category's own fixed reply, over reply") }).optional()
       .describe("Messages a person handles: these categories, or these topics (as draftTopics), get this fixed reply naming whom to contact") }).optional(),
 }).describe("The agent's whole definition; saving makes a new version");
 

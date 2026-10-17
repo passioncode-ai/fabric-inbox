@@ -104,7 +104,9 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   tool answered confidently. A sent answer's `evidence` (request id, cited items, revision) is on the run.
   For a lane where every message gets a reply: `fallbackReply: { en, ru? }` (a fixed text without facts, sent
   instead of a draft), `categories` (the agent labels each message) and `handoff: { categories, topics, reply }`
-  (a fixed reply naming who handles it). Events add `agent.handoff` and `agent.not_helped`.
+  (a fixed reply naming who handles it; `replies: { <category>: { en, ru? } }` gives a category its own).
+  `knowledgeIsEvidence: true` lets an answer built from the agent's own knowledge leave when a knowledge
+  tool abstains, if the checker approves it. Events add `agent.handoff` and `agent.not_helped`.
   Test an agent with `preview_agent_answer` (an outside sender, the text): it returns what the agent would do and
   the reply, sending and storing nothing.
 - **A shared knowledge base or other remote tool:** grant it in `tools` (its host must be in
