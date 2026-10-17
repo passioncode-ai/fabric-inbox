@@ -444,6 +444,14 @@ const listAgentEvents = defineTool({
   call: (a, ctx) => get(ctx, "/api/agent-events", { after: a.after, limit: a.limit }),
 });
 
+const agentMailVolume = defineTool({
+  name: "agent_mail_volume", title: "Mail volume of agent addresses", level: "read", readOnly: true,
+  description: "How much mail came to each address a reply agent answers, per UTC day over the last days (1–30, today included): messages received (spam apart), messages a reply agent ran on, and messages with no agent run — counts only, never a sender, subject or text. Use it with list_agent_events to see what share of the mail the agents saw. runsKeptFrom names the day before which agent runs were pruned (null: none were). A message deleted for good is no longer counted.",
+  input: { days: z.number().int().min(1).max(30).default(14).describe("How many UTC days back, today included") },
+  routes: ["GET /api/agent-volume"],
+  call: (a, ctx) => get(ctx, "/api/agent-volume", { days: a.days }),
+});
+
 const listCategories = defineTool({
   name: "list_categories", title: "List categories and projects", level: "read", readOnly: true,
   description: "Categories (by rule or described to the model) with their counts and backfill state, the projects that group addresses and domains, and the daily model budget. Give categoryId for one category.",
@@ -1542,7 +1550,7 @@ const agentActivity = defineTool({
 
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listFolders, getSendStatus,
-  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
+  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, agentMailVolume, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,

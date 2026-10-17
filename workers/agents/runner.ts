@@ -58,6 +58,12 @@ export function abstainedOutput(text: string): boolean {
  */
 export const RANK_NOTE = "Results are in rank order: the first result is the answer. Later results are only related topics, whatever their coverage: never state one in place of the first, and use it only for a separate question the message itself asks.";
 
+/** A gap report's request id: the run's id and the first 12 hex digits of SHA-256 over its kind and question. */
+export async function gapRequestId(runId: string, kind: string, question: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${kind}\n${question}`)));
+  return `${runId}-${Array.from(digest.slice(0, 6), (b) => b.toString(16).padStart(2, "0")).join("")}`;
+}
+
 /** What a confident tool answer is traced by: its request id, the ids of the items it cites, its revision. */
 export interface EvidenceTrace { tool: string; requestId?: string; items?: string[]; revision?: string }
 
@@ -577,7 +583,11 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       toolCalls.push(record);
       try {
         const channel = typeof grant.fixed?.channel === "string" ? grant.fixed.channel : "email";
-        const report = () => deps.callTool({ ...grant, tool: grant.gaps!.tool }, { requestId: run.id, kind, channel, question: text });
+        // The request id names this report: the same question from this message is one report, and a run
+        // answered again with another question (a held retry) is a new one — the knowledge base refuses a
+        // reused id with other content (live 2026-10-18: "already used for a different report").
+        const requestId = await gapRequestId(run.id, kind, text);
+        const report = () => deps.callTool({ ...grant, tool: grant.gaps!.tool }, { requestId, kind, channel, question: text });
         // Tried once more on failure, with the same request id, so the knowledge base counts it once (B-117).
         const out = await report().catch(() => report());
         record.ok = true;

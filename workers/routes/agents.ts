@@ -8,6 +8,7 @@ import { allServedDomains, createMailbox, deleteMailbox, isDomainName, readAllSe
 import { cloudflareApi, cloudflareToken } from "../routing/cloudflare-api";
 import { DomainManager } from "../routing/domains";
 import { knownCollections } from "./knowledge";
+import { mailVolume } from "../agents/volume";
 import { clearIncomingFailures, listIncomingFailures } from "../incoming-log";
 import {
   checkAddresses, createAddress, createAddresses, removeAddress, routingTestStatus, sendRoutingTest, setForwardCopy, effectiveCatchAll,
@@ -145,6 +146,15 @@ agentsRouter.get("/api/agent-events", async (c) => {
   if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
   try {
     return c.json(await registry(c).listEvents(c.req.query("after") ?? null, Number(c.req.query("limit") || 50)));
+  } catch (error) { return registryFailure(c, error); }
+});
+
+/** Mail volume per agent address and UTC day (B-126): counts only, for the support monitor. */
+agentsRouter.get("/api/agent-volume", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  const days = Number(c.req.query("days") || 14);
+  try {
+    return c.json(await mailVolume(c.env, Number.isFinite(days) ? days : 14));
   } catch (error) { return registryFailure(c, error); }
 });
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runAgent, type RunnerDeps, type RunnerEmail, type ModelRequest, type ModelResponse } from "../workers/agents/runner";
+import { runAgent, gapRequestId, type RunnerDeps, type RunnerEmail, type ModelRequest, type ModelResponse } from "../workers/agents/runner";
 import { AgentInputSchema, type AgentVersion } from "../workers/agents/definition";
 import type { AgentRun } from "../workers/agents/run";
 import type { ModelDecision } from "../workers/agents/policy";
@@ -462,6 +462,14 @@ test("B-85 REQ-4: a prefetch grant is called before the model with the message; 
   assert.equal(run.status, "sent");
 });
 
+test("a gap report's request id is the same for the same question and new for another (a held retry asks anew)", async () => {
+  const a = await gapRequestId("agent-1", "unanswered", "How to log in");
+  assert.match(a, /^agent-1-[0-9a-f]{12}$/);
+  assert.equal(a, await gapRequestId("agent-1", "unanswered", "How to log in"));
+  assert.notEqual(a, await gapRequestId("agent-1", "unanswered", "Why no code by SMS"));
+  assert.notEqual(a, await gapRequestId("agent-1", "outdated", "How to log in"));
+});
+
 test("tool results are read in rank order: the first is the answer, later ones are not (data agent contract)", async () => {
   let system = ""; let asked = ""; let checked = "";
   const h = harness({
@@ -560,7 +568,7 @@ test("B-85: an abstained answer's results are unverified candidates, not facts; 
   assert.match(run.reason, /No confident answer/);
   const gaps = calls.filter((c) => c.tool === "acme.gaps.submit");
   assert.equal(gaps.length, 1);
-  assert.deepEqual(gaps[0].args, { requestId: run.id, kind: "unanswered", channel: "email", question: "How to delete an account and its data" });
+  assert.deepEqual(gaps[0].args, { requestId: await gapRequestId(run.id, "unanswered", "How to delete an account and its data"), kind: "unanswered", channel: "email", question: "How to delete an account and its data" });
   assert.equal(run.toolCalls.find((c) => c.name.endsWith(":gap"))?.ok, true);
 });
 
@@ -618,7 +626,7 @@ test("B-85: a knowledge tool the model calls itself and that abstains gives cand
   assert.match(run.reason, /No confident answer/);
   const gaps = calls.filter((c) => c.tool === "acme.gaps.submit");
   assert.equal(gaps.length, 1, "one gap per run, however many calls abstained");
-  assert.equal(gaps[0].args.requestId, run.id);
+  assert.match(String(gaps[0].args.requestId), new RegExp(`^${run.id}-[0-9a-f]{12}$`));
 });
 
 test("B-85: a confident answer the model still cannot ground (grounded: false, with its question) is reported as one gap", async () => {
@@ -631,7 +639,7 @@ test("B-85: a confident answer the model still cannot ground (grounded: false, w
   const run = (await h.run())!;
   assert.equal(run.status, "drafted");
   const gaps = calls.filter((c) => c.tool === "acme.gaps.submit");
-  assert.deepEqual(gaps.map((g) => g.args), [{ requestId: run.id, kind: "unanswered", channel: "email", question: "How to recover a lost phone's account" }]);
+  assert.deepEqual(gaps.map((g) => g.args), [{ requestId: await gapRequestId(run.id, "unanswered", "How to recover a lost phone's account"), kind: "unanswered", channel: "email", question: "How to recover a lost phone's account" }]);
 });
 
 test("B-117: a question without an answer is kept on the run with its thread; a failed gap report is tried once more", async () => {
