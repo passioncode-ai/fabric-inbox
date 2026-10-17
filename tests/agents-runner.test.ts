@@ -896,3 +896,21 @@ test("a reply saying an earlier answer did not help is reported as an outdated g
     model: async () => ({ decision: answer({ dissatisfied: true }), text: "" }) });
   assert.equal((await first.run())!.dissatisfied, undefined);
 });
+
+test("no drafts: an answer the agent is not sure of is held, its question reported, and nothing is sent or drafted", async () => {
+  const gaps: Record<string, unknown>[] = [];
+  const h = harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true }), email: { subject: "Login", body: "<p>I cannot log in.</p>" },
+    callTool: async (grant, args) => { if (grant.tool === "gaps.submit") { gaps.push(args); return "{}"; } return JSON.stringify({ abstained: true, results: [] }); },
+    model: async () => ({ decision: answer({ intent: "login", grounded: false, question: "Why can the user not log in?" }), text: "" }) });
+  const r = (await h.run())!;
+  assert.equal(r.status, "held");
+  assert.equal(r.unanswered, true);
+  assert.deepEqual([h.effects.sends.length, h.effects.drafts.length], [0, 0]);
+  assert.equal(gaps.length, 1, "reported once, not twice");
+  const { runEvent } = await import("../workers/agents/events");
+  assert.equal(runEvent(r)?.kind, "agent.unanswered");
+  // A confident answer is still sent.
+  const ok = harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true }), email: { subject: "Theme", body: "<p>How do I change the theme?</p>" },
+    callTool: async () => JSON.stringify({ abstained: false, results: [{ id: "fact:theme", coverage: 0.9 }] }) });
+  assert.equal((await ok.run())!.status, "sent");
+});

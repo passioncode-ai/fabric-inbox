@@ -177,6 +177,7 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"The agent will answer it again in a moment.": "Агент ответит на него заново через минуту.",
 	"Agent replied": "Агент ответил",
 	"Agent's draft": "Черновик агента",
+	"Waiting for the knowledge": "Ждёт базы знаний",
 	"Agent left it alone": "Агент пропустил",
 	"Agent is answering": "Агент отвечает",
 	"Agent: needs a look": "Агент: нужна проверка",

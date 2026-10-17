@@ -6,6 +6,7 @@ const ATTENTION = new Set(["send_failed", "send_unknown", "failed", "interrupted
 export function agentRunLabel(status: string, t: T): string {
   if (status === "sent") return t("Agent replied");
   if (status === "drafted") return t("Agent's draft");
+  if (status === "held") return t("Waiting for the knowledge");
   if (status === "skipped") return t("Agent left it alone");
   if (status === "running") return t("Agent is answering");
   if (ATTENTION.has(status)) return t("Agent: needs a look");

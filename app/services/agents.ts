@@ -26,7 +26,7 @@ export interface AgentInput {
   /** Knowledge collections the agent may search (KN-3). */
   collections: string[];
   tools: ToolGrant[];
-  replyPolicy: { mode: ReplyMode; allowedIntents: string[]; dailySendLimit: number | null; draftFollowUps?: boolean; draftTopics?: string[]; requireEvidence?: boolean;
+  replyPolicy: { mode: ReplyMode; allowedIntents: string[]; dailySendLimit: number | null; draftFollowUps?: boolean; draftTopics?: string[]; requireEvidence?: boolean; holdUnsure?: boolean;
     fallbackReply?: { en: string; ru?: string }; categories?: string[]; handoff?: { categories: string[]; topics: string[]; reply: { en: string; ru?: string } } };
 }
 export interface Agent extends AgentInput {
@@ -121,7 +121,7 @@ export interface TestStatus {
   arrivedAt?: string;
   folder?: string;
 }
-export type AgentRunStatus = "running" | "off" | "skipped" | "drafted" | "sent" | "send_failed" | "send_unknown" | "failed" | "interrupted";
+export type AgentRunStatus = "running" | "off" | "skipped" | "drafted" | "held" | "sent" | "send_failed" | "send_unknown" | "failed" | "interrupted";
 export interface AgentRun {
   id: string;
   mailboxId: string;
@@ -155,6 +155,7 @@ export function runStatusText(t: T = englishT): Record<AgentRunStatus, string> {
     off: t("Off"),
     skipped: t("Skipped"),
     drafted: t("Draft waiting"),
+    held: t("Waiting for the knowledge"),
     sent: t("[run] Sent"),
     send_failed: t("Not sent"),
     send_unknown: t("Outcome unknown"),

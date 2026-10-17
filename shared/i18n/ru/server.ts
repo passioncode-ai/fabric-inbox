@@ -394,6 +394,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"No tool gave a confident answer to rest it on": "Ни один инструмент не дал уверенного ответа, на который можно опереться",
 	"Handed to a person: the reply says whom to contact": "Передано человеку: в ответе сказано, к кому обратиться",
 	"Safe reply sent ({reason})": "Отправлен безопасный ответ ({reason})",
+	"Not sure, so not answered yet: {reason}": "Нет уверенности — пока без ответа: {reason}",
 	"Withheld: {problem}": "Скрыто: {problem}",
 	"No confident answer in the knowledge; a person checks it": "В знаниях нет уверенного ответа; его проверит человек",
 	"fixed argument \"{key}\" is not in the tool's schema": "фиксированного аргумента «{key}» нет в схеме инструмента",

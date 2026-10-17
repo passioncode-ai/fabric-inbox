@@ -14,7 +14,7 @@ interface AgentRunView {
 }
 
 /** Runs that can be given back to the agent: never one already sent or that may have been sent. */
-const AGAIN = new Set(["drafted", "skipped", "failed", "interrupted", "send_failed"]);
+const AGAIN = new Set(["drafted", "held", "skipped", "failed", "interrupted", "send_failed"]);
 
 /**
  * What the reply agent did with the open message (B-115): why, from what, with which tools, and the
