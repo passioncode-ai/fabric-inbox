@@ -62,3 +62,23 @@ test("older agents keep working: the new policy fields default off", () => {
   const old = ReplyPolicySchema.parse({ mode: "auto", allowedIntents: [], dailySendLimit: 20 });
   assert.deepEqual([old.draftFollowUps, old.draftTopics, old.requireEvidence], [false, [], false]);
 });
+
+test("the reply lane asks the fallback model when the first one ends without a structured answer", async () => {
+  const { openRouterAgentModel } = await import("../workers/agents/model");
+  const calls: string[] = [];
+  const decision = { decision: "send" as const, intent: "q", grounded: true, body: "Hi.", reason: "" };
+  const run = (answers: Record<string, unknown>) => async (model: { modelId?: string }) => {
+    const id = String((model as { modelId?: string }).modelId); calls.push(id);
+    const a = answers[id]; if (a instanceof Error) throw a; return a as never;
+  };
+  const req = {} as never;
+  calls.length = 0;
+  let r = await openRouterAgentModel("k", req, {}, run({ "xiaomi/mimo-v2.6-pro": { decision: null, text: "prose only" }, "deepseek/deepseek-v4.1-flash": { decision, text: "" } }));
+  assert.deepEqual([r.model, r.decision?.decision, calls.length], ["deepseek/deepseek-v4.1-flash", "send", 2], "prose without an answer goes to the fallback");
+  calls.length = 0;
+  r = await openRouterAgentModel("k", req, {}, run({ "xiaomi/mimo-v2.6-pro": { decision, text: "" } }));
+  assert.deepEqual([r.model, calls.length], ["xiaomi/mimo-v2.6-pro", 1]);
+  calls.length = 0;
+  r = await openRouterAgentModel("k", req, {}, run({ "xiaomi/mimo-v2.6-pro": { decision: null, text: "prose" }, "deepseek/deepseek-v4.1-flash": new Error("down") }));
+  assert.deepEqual([r.model, r.text, r.decision], ["xiaomi/mimo-v2.6-pro", "prose", null], "neither answered: the first prose comes back");
+});

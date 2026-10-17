@@ -168,20 +168,32 @@ export const checkersFor = (writer: string, models: readonly string[] = CHECK_MO
 const openRouter = (apiKey: string) => createOpenRouter({ apiKey, appName: "Fabric Inbox", appUrl: "https://passioncode.ai/inbox/",
   headers: { "X-OpenRouter-Categories": "personal-agent" } });
 
-/** The agent on OpenRouter: the reply model, then the fallback when it fails or gives no answer. */
-export async function openRouterAgentModel(apiKey: string, request: ModelRequest, models: { primary?: string; fallback?: string } = {}): Promise<ModelResponse> {
+/**
+ * The agent on OpenRouter: the reply model, then the fallback when it fails or ends without a structured
+ * answer (prose alone is no answer: seen live 2026-10-17, a follow-up held because the writer replied in
+ * prose and the fallback was not asked). When neither answers, the first one's prose is returned.
+ */
+export async function openRouterAgentModel(apiKey: string, request: ModelRequest, models: { primary?: string; fallback?: string } = {},
+  run: (model: LanguageModel, request: ModelRequest) => Promise<ModelResponse> = runModel): Promise<ModelResponse> {
   const provider = openRouter(apiKey);
   const primary = models.primary || REPLY_MODEL;
   const fallback = models.fallback || REPLY_FALLBACK_MODEL;
+  let first: ModelResponse | null = null;
   try {
-    const first = await runModel(provider.chat(primary), request);
-    if (first.decision || first.text.trim()) return { ...first, model: primary };
-    console.warn(JSON.stringify({ event: "reply_model_empty", model: primary }));
+    first = await run(provider.chat(primary), request);
+    if (first.decision) return { ...first, model: primary };
+    console.warn(JSON.stringify({ event: "reply_model_no_answer", model: primary, prose: first.text.trim().length > 0 }));
   } catch (error) {
     console.warn(JSON.stringify({ event: "reply_model_failed", model: primary, error: (error as Error).message?.slice(0, 200) }));
   }
-  const second = await runModel(provider.chat(fallback), request);
-  return { ...second, model: fallback };
+  try {
+    const second = await run(provider.chat(fallback), request);
+    if (second.decision || !first) return { ...second, model: fallback };
+  } catch (error) {
+    if (!first) throw error;
+    console.warn(JSON.stringify({ event: "reply_model_failed", model: fallback, error: (error as Error).message?.slice(0, 200) }));
+  }
+  return { ...first, model: primary };
 }
 
 /** The restatement on OpenRouter's fast model (runner.ts B-122). */
