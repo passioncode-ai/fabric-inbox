@@ -38,6 +38,10 @@ is cut and published: [docs/release.md](docs/release.md).
   when its tools have no answer, if the checker approves the reply.
 - **Agents read a knowledge tool's results in order:** the first result is the answer, the rest are
   related topics.
+- **How much of an address's mail its agent saw:** `agent_mail_volume` counts, per agent address and
+  day, the messages received, those an agent ran on and those it did not — numbers only.
+- **A held message answered again reports its new question** to the knowledge base instead of being
+  refused as a repeat.
 - **Agents know what they are.** Each agent's instructions now say, truthfully, that it is an AI
   assistant, what it can read and how its answers leave.
 - **Preview an agent's answer** to a message you write, without sending anything (`preview_agent_answer`).

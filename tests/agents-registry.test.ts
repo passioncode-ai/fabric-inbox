@@ -14,6 +14,7 @@ const bundle = await build({
       import { AgentRegistryDO } from './workers/agents/registry';
       import { receiveEmail } from './workers/index';
       import { runIdFor } from './workers/agents/run';
+      import { mailVolume } from './workers/agents/volume';
       const forbidden = () => { throw new Error('External AI and tools are forbidden in this test'); };
       export class TestMailbox extends MailboxDO {
         constructor(ctx, env) {
@@ -24,6 +25,7 @@ const bundle = await build({
         }
         async sentLog() { return await this.ctx.storage.get('sent') || []; }
         async folder(name) { return this.getEmails({folder:name}); }
+        async seed(rows) { for (const r of rows) this.ctx.storage.sql.exec("INSERT INTO emails (id, folder_id, subject, sender, recipient, date, body) VALUES (?, ?, 's', 'x@y.invalid', 'a', ?, '')", r.id, r.folder, r.date); }
       }
       export class TestRegistry extends AgentRegistryDO {
         async toolInfo(grant) {
@@ -112,6 +114,8 @@ const bundle = await build({
               case 'again': return Response.json(await reg.answerAgain(c.id));
               case 'save': await reg.saveRun(c.run); return Response.json(true);
               case 'events': return Response.json(await reg.listEvents(c.after, c.limit));
+              case 'seed': await box(c.mailbox).seed(c.rows); return Response.json(true);
+              case 'volume': return Response.json(await mailVolume(env, c.days, c.now));
               case 'sent': return Response.json(await box(c.mailbox).sentLog());
               case 'folder': return Response.json(await box(c.mailbox).folder(c.folder));
               case 'settings': return Response.json(await (await env.BUCKET.get('mailboxes/' + c.mailbox + '.json')).json());
@@ -244,6 +248,32 @@ test("B-118: a run that ends appends one event; the feed pages forward by cursor
     assert.ok(Number(all.events[1].id) > Number(all.events[0].id), "ids increase");
     const none = await command("events", { after: all.cursor, limit: 50 });
     assert.deepEqual(none, { events: [], cursor: null });
+  } finally { await mf.dispose(); }
+});
+
+test("B-126: mail volume per agent address and UTC day — received, agent runs, no run, spam; counts only", async () => {
+  const { mf, command } = await fixture();
+  try {
+    await command("setup", { mailbox: "support@project.invalid", settings: { agent: { id: "support" } } });
+    await command("setup", { mailbox: "off@project.invalid", settings: { agent: "off" } });
+    await command("seed", { mailbox: "support@project.invalid", rows: [
+      { id: "m1", folder: "inbox", date: "2026-10-16T09:00:00.000Z" }, { id: "m2", folder: "archive", date: "2026-10-16T23:59:00.000Z" },
+      { id: "m3", folder: "spam", date: "2026-10-16T10:00:00.000Z" }, { id: "m4", folder: "sent", date: "2026-10-16T11:00:00.000Z" },
+      { id: "m5", folder: "inbox", date: "2026-10-17T08:00:00.000Z" }, { id: "m6", folder: "inbox", date: "2026-10-10T08:00:00.000Z" }] });
+    const run = { mailboxId: "support@project.invalid", sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1,
+      id: "run-m1", emailId: "m1", status: "sent", createdAt: "2026-10-16T09:00:01.000Z", updatedAt: "2026-10-16T09:00:05.000Z" };
+    await command("begin", { run });
+    const volume = await command("volume", { days: 3, now: Date.parse("2026-10-17T12:00:00.000Z") });
+    assert.equal(volume.from, "2026-10-15");
+    assert.equal(volume.to, "2026-10-17");
+    assert.equal(volume.runsKeptFrom, null);
+    assert.deepEqual(volume.addresses.map((a: any) => a.address), ["support@project.invalid"], "an address with no agent is left out");
+    assert.deepEqual(volume.addresses[0].days, [
+      { day: "2026-10-15", received: 0, agentRuns: 0, noRun: 0, spam: 0 },
+      { day: "2026-10-16", received: 2, agentRuns: 1, noRun: 1, spam: 1 },
+      { day: "2026-10-17", received: 1, agentRuns: 0, noRun: 1, spam: 0 },
+    ]);
+    assert.doesNotMatch(JSON.stringify(volume), /x@y\.invalid|"s"/, "no sender, no subject");
   } finally { await mf.dispose(); }
 });
 

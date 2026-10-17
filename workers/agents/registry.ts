@@ -476,6 +476,19 @@ export class AgentRegistryDO extends DurableObject<Env> {
     const rows = this.rows("SELECT body FROM agent_runs WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(ids.slice(0, 500)));
     return rows.map((row) => this.present(JSON.parse(String(row.body)) as AgentRun));
   }
+  /**
+   * Runs per address and UTC day since `since` (B-126), and the oldest run still kept: older runs are
+   * pruned (MAX_RUNS_KEPT), so days before it are not counted here.
+   */
+  async runsPerDay(since: string): Promise<{ counts: { mailboxId: string; day: string; runs: number }[]; keptFrom: string | null }> {
+    const counts = this.rows(
+      "SELECT mailbox_id, substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM agent_runs WHERE created_at >= ? GROUP BY mailbox_id, day", since)
+      .map((r) => ({ mailboxId: String(r.mailbox_id), day: String(r.day), runs: Number(r.n) }));
+    const oldest = this.rows("SELECT MIN(created_at) AS t FROM agent_runs")[0]?.t;
+    const full = Number(this.rows("SELECT COUNT(*) AS n FROM agent_runs")[0]?.n ?? 0) >= MAX_RUNS_KEPT;
+    return { counts, keptFrom: full && typeof oldest === "string" ? oldest : null };
+  }
+
   async listRuns(options: { mailboxId?: string; limit?: number; before?: string; outcome?: RunOutcome; agentId?: string } = {}): Promise<AgentRun[]> {
     const limit = Math.max(1, Math.min(200, options.limit ?? 50));
     const where: string[] = [];

@@ -351,6 +351,21 @@ export class MailboxDO extends DurableObject<Env> {
 		}));
 	}
 
+  /**
+   * Messages that came to this address per UTC day since `since` (B-126): counts only, by the day the
+   * server received them. Spam is counted apart; sent mail, drafts and discarded drafts are not mail
+   * received. A message deleted for good is no longer counted.
+   */
+  async receivedPerDay(since: string): Promise<{ day: string; received: number; spam: number }[]> {
+    return this.ctx.storage.sql.exec(
+      `SELECT substr(date, 1, 10) AS day,
+              SUM(CASE WHEN folder_id = 'spam' THEN 0 ELSE 1 END) AS received,
+              SUM(CASE WHEN folder_id = 'spam' THEN 1 ELSE 0 END) AS spam
+         FROM emails WHERE date >= ? AND folder_id NOT IN ('sent', 'draft', 'discarded')
+        GROUP BY day ORDER BY day`, since).toArray()
+      .map((r) => ({ day: String(r.day), received: Number(r.received), spam: Number(r.spam) }));
+  }
+
   /** Unread messages in Inbox, for the sidebar counts. */
   async countUnreadInbox(): Promise<number> {
     return Number(this.ctx.storage.sql.exec("SELECT COUNT(*) AS n FROM emails WHERE folder_id = 'inbox' AND read = 0").one().n);
