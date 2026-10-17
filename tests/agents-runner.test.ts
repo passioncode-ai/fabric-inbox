@@ -948,3 +948,23 @@ test("an auto answer is checked by another vendor before it leaves; a rejection 
   assert.equal((await hand.run())!.status, "sent");
   assert.equal(checked, 0);
 });
+
+test("the agent knows itself: the system prompt says what it is, what it reads and how its answers leave, as its policy makes true", async () => {
+  const { selfBlock } = await import("../workers/agents/runner");
+  const auto = selfBlock(autonomous({ fallbackReply: undefined, holdUnsure: true }), "support@project.invalid").join("\n");
+  assert.match(auto, /AI assistant answering e-mail sent to support@project\.invalid/);
+  assert.match(auto, /cannot open attachments, links or images/);
+  assert.match(auto, /and sent at once/);
+  assert.doesNotMatch(auto, /checked by another model/, "no checker on this server: not claimed");
+  assert.match(selfBlock(autonomous(), "a@project.invalid", true).join("\n"), /checked by another model before it leaves/);
+  assert.match(auto, /nothing is sent: the question goes to the team that maintains your knowledge/);
+  assert.match(auto, /handled by a person/);
+  const draft = selfBlock(agent({ replyPolicy: { mode: "draft", allowedIntents: [], dailySendLimit: 20 } }), "a@project.invalid").join("\n");
+  assert.match(draft, /saved as a draft; a person reads it before it is sent/);
+  assert.doesNotMatch(draft, /sent at once|handled by a person/);
+  // It is in the prompt the model gets.
+  let system = "";
+  const h = harness({ model: async (r) => { system = r.system; return { decision: answer(), text: "" }; } });
+  await h.run();
+  assert.match(system, /Who you are and how you work/);
+});
