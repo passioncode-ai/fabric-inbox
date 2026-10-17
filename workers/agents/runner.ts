@@ -172,7 +172,7 @@ export function selfBlock(agent: AgentVersion, mailboxId: string, checked = fals
     "- You read the message's text and the earlier messages of its conversation. You cannot open attachments, links or images. Your answer goes back as a reply in the same conversation.",
     "- You state only facts from your knowledge and tool results; you have no access to the person's account, payments or devices, and you cannot act outside this e-mail except through the tools listed below.",
     auto
-      ? `- Your answer is sent at once, without a person reading it${[policy.requireEvidence ? "only when your tools gave a confident answer" : "", checked ? "after another model checks it" : ""].filter(Boolean).map((s) => `, ${s}`).join("")}.${policy.holdUnsure ? " If you are not sure, nothing is sent: the question goes to the team that maintains your knowledge, and the message is tried again every 12 hours for a week, so it is answered once the knowledge has it." : ""}`
+      ? `- Your answer is sent at once, without a person reading it${[policy.requireEvidence ? "only when your tools gave a confident answer" : "", checked ? "after another model checks it" : ""].filter(Boolean).map((s) => `, ${s}`).join("")}.${policy.holdUnsure ? " If you are not sure, nothing is sent: the question goes to the team that maintains your knowledge, and the message is tried again — every 12 hours for a week, then daily for a month — so it is answered once the knowledge has it." : ""}`
       : "- Your answer is saved as a draft; a person reads it before it is sent.",
     ...(policy.handoff ? ["- Some requests are handled by a person; for those a fixed reply tells the sender whom to contact."] : []),
   ];

@@ -637,16 +637,16 @@ test("a preview runs the agent on a written message and sends, drafts and stores
   } finally { await mf.dispose(); }
 });
 
-test("a held message is given back to its agent every 12 hours for 7 days, then left alone", async () => {
+test("a held message is given back every 12 hours for 7 days, then daily until day 30, then left alone", async () => {
   const { mf, command } = await fixture();
   try {
     const base = { mailboxId: "a@project.invalid", sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1 };
     const now = Date.parse("2026-10-17T12:00:00.000Z");
     const at = (h: number) => new Date(now - h * 3_600_000).toISOString();
-    for (const [id, created, updated] of [["due", 20, 13], ["not-yet", 20, 2], ["too-old", 24 * 8, 13]] as const)
+    for (const [id, created, updated] of [["due", 20, 13], ["not-yet", 20, 2], ["late-not-yet", 24 * 10, 13], ["late-due", 24 * 10, 25], ["too-old", 24 * 31, 25]] as const)
       await command("begin", { run: { ...base, id: "agent-" + id.padEnd(32, "0").replace(/[^0-9a-f]/g, "0"), emailId: id, status: "held", createdAt: at(created), updatedAt: at(updated) } });
     const r = await command("retry-held", { now });
-    assert.equal(r.queue, 1, "only the one due, within its 7 days, is queued again");
-    assert.equal(r.next, Date.parse(at(2)) + 12 * 3_600_000, "the next try is when the other one is due");
+    assert.equal(r.queue, 2, "due: the 12-hour one in its first week and the daily one after it; not one older than 30 days");
+    assert.equal(r.next, Date.parse(at(2)) + 12 * 3_600_000, "the next try is the soonest still to come");
   } finally { await mf.dispose(); }
 });

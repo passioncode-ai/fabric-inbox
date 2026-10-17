@@ -958,7 +958,7 @@ test("the agent knows itself: the system prompt says what it is, what it reads a
   assert.match(auto, /sent at once, without a person reading it, only when your tools gave a confident answer\./);
   assert.doesNotMatch(auto, /another model checks it/, "no checker on this server: not claimed");
   assert.match(selfBlock(autonomous(), "a@project.invalid", true).join("\n"), /sent at once, without a person reading it, only when your tools gave a confident answer, after another model checks it\./);
-  assert.match(auto, /nothing is sent: the question goes to the team that maintains your knowledge, and the message is tried again every 12 hours for a week/);
+  assert.match(auto, /nothing is sent: the question goes to the team that maintains your knowledge, and the message is tried again — every 12 hours for a week, then daily for a month/);
   assert.match(auto, /handled by a person/);
   const draft = selfBlock(agent({ replyPolicy: { mode: "draft", allowedIntents: [], dailySendLimit: 20 } }), "a@project.invalid").join("\n");
   assert.match(draft, /saved as a draft; a person reads it before it is sent/);
