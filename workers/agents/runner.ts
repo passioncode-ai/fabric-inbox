@@ -620,7 +620,10 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
         const record: ToolCallRecord = { name: "check", host: "model", ok: false, ms: 0, result: "" };
         toolCalls.push(record);
         try {
-          const facts = [agent.knowledge.trim(), passagesBlock(passages), ...factTexts].filter(Boolean).join("\n\n");
+          // The operator's instructions are facts too (contacts, routing, what the team offers); measured
+          // 2026-10-17: a support contact named only in the instructions was rejected as invented.
+          const facts = [`[operator instructions]\n${agent.instructions.trim()}`, agent.knowledge.trim() && `[knowledge]\n${agent.knowledge.trim()}`,
+            passagesBlock(passages), ...factTexts].filter(Boolean).join("\n\n");
           const verdict = await deps.check(response.model ?? "", { message: `${email.subject}\n${deps.htmlToText(email.body)}`, facts, answer: body });
           record.ok = verdict.approved;
           record.result = `${verdict.model}: ${verdict.approved ? "approved" : "rejected"} — ${verdict.reason}`.slice(0, RESULT_PREVIEW_CHARS);
