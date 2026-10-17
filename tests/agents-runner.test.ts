@@ -934,6 +934,7 @@ test("an auto answer is checked by another vendor before it leaves; a rejection 
   assert.equal(ok.checkedBy, "qwen/qwen3.8-flash");
   assert.equal(asked[0]!.writer, "xiaomi/mimo-v2.6-pro");
   assert.match(asked[0]!.facts, /Settings → Appearance/, "the checker sees what the tools answered");
+  assert.match(asked[0]!.facts, /\[operator instructions\]/, "and the operator's instructions, which name contacts and routing");
   const rejected = make(false);
   const r = (await rejected.run())!;
   assert.equal(r.status, "held");
