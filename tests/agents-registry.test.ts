@@ -52,6 +52,7 @@ const bundle = await build({
             }};
         }
         async pump() { return this.alarm(); }
+        async retryHeldNow(now) { return this.retryHeld(now); }
         async batchMailboxes() { return this.nextBatch().map((r) => r.mailbox_id); }
         async overlap() { return this.maxInflight ?? {}; }
         async expireHolds() { this.ctx.storage.sql.exec('UPDATE agent_queue SET next_at = 0'); }
@@ -106,6 +107,7 @@ const bundle = await build({
               case 'runId': return Response.json(await runIdFor(c.mailbox, c.emailId));
               case 'runs': return Response.json(await reg.listRuns({mailboxId: c.mailbox, ...(c.options ?? {})}));
               case 'preview': return Response.json(await reg.previewAnswer(c.id, c.input));
+              case 'retry-held': return Response.json({ next: await reg.retryHeldNow(c.now), queue: await reg.queueLength() });
               case 'byIds': return Response.json(await reg.runsByIds(c.ids));
               case 'again': return Response.json(await reg.answerAgain(c.id));
               case 'save': await reg.saveRun(c.run); return Response.json(true);
@@ -632,5 +634,19 @@ test("a preview runs the agent on a written message and sends, drafts and stores
     assert.match(preview.reply.text, /10 EUR/);
     assert.equal(preview.run.subject, "", "the preview answer carries no message text but the reply");
     assert.deepEqual(await command("runs", { mailbox: "support@project.invalid" }).then((r: { runs?: unknown[] }) => r.runs ?? r), [], "nothing stored");
+  } finally { await mf.dispose(); }
+});
+
+test("a held message is given back to its agent every 12 hours for 7 days, then left alone", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const base = { mailboxId: "a@project.invalid", sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1 };
+    const now = Date.parse("2026-10-17T12:00:00.000Z");
+    const at = (h: number) => new Date(now - h * 3_600_000).toISOString();
+    for (const [id, created, updated] of [["due", 20, 13], ["not-yet", 20, 2], ["too-old", 24 * 8, 13]] as const)
+      await command("begin", { run: { ...base, id: "agent-" + id.padEnd(32, "0").replace(/[^0-9a-f]/g, "0"), emailId: id, status: "held", createdAt: at(created), updatedAt: at(updated) } });
+    const r = await command("retry-held", { now });
+    assert.equal(r.queue, 1, "only the one due, within its 7 days, is queued again");
+    assert.equal(r.next, Date.parse(at(2)) + 12 * 3_600_000, "the next try is when the other one is due");
   } finally { await mf.dispose(); }
 });

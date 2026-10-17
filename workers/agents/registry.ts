@@ -23,6 +23,13 @@ import { CLAIM_POLL_MS, CLAIM_TTL_MS, decideClaim, type MessageClaim } from "./d
 
 /** A run left "running" this long lost its worker; it is shown as interrupted, never replayed. */
 export const RUN_STALE_MS = 10 * 60_000;
+/**
+ * A message held because the agent was not sure (holdUnsure) is answered again every HELD_RETRY_MS for
+ * HELD_FOR_MS: once the knowledge has the answer, the customer gets it; a repeated gap report counts
+ * once (same request id). After that it stays held and the events keep saying so.
+ */
+export const HELD_RETRY_MS = 12 * 3_600_000;
+export const HELD_FOR_MS = 7 * 86_400_000;
 /** Longest an answer waits for its spam check before the agent runs anyway (B-30). */
 export const MAX_SPAM_HOLD_MS = 15 * 60_000;
 const MAX_AGENTS = 100;
@@ -171,7 +178,26 @@ export class AgentRegistryDO extends DurableObject<Env> {
       WHERE turn = 1 ORDER BY attempts, enqueued_at LIMIT ?`, Date.now(), BATCH);
   }
 
+  /** Held runs due another try go back to the queue (answer_again); answers when the next one is due. */
+  protected async retryHeld(now = Date.now()): Promise<number | null> {
+    const since = new Date(now - HELD_FOR_MS).toISOString();
+    const rows = this.rows("SELECT id, updated_at FROM agent_runs WHERE status = 'held' AND created_at >= ? ORDER BY updated_at LIMIT 20", since);
+    let next: number | null = null;
+    for (const row of rows) {
+      const due = Date.parse(String(row.updated_at)) + HELD_RETRY_MS;
+      if (due <= now) {
+        const result = await this.answerAgain(String(row.id));
+        if (!result.ok) console.warn(JSON.stringify({ event: "held_retry_refused", run: row.id, reason: result.reason }));
+      } else if (next === null || due < next) next = due;
+    }
+    return next;
+  }
+
   private async drain() {
+    const heldDue = await this.retryHeld().catch((error) => {
+      console.warn(JSON.stringify({ event: "held_retry_failed", error: (error as Error).message?.slice(0, 200) }));
+      return null;
+    });
     // One message per mailbox at a time: two messages of one thread read the thread
     // before either answer exists, and would both be answered.
     const batch = this.nextBatch();
@@ -219,7 +245,10 @@ export class AgentRegistryDO extends DurableObject<Env> {
     const due = this.rows("SELECT MIN(next_at) AS t FROM agent_queue")[0]?.t;
     if (due !== null && due !== undefined) {
       const soonest = Number(due) <= Date.now() ? Date.now() + (batch.length && failures === batch.length ? 30_000 : 1000) : Number(due);
-      await this.ctx.storage.setAlarm(soonest);
+      await this.ctx.storage.setAlarm(heldDue !== null ? Math.min(soonest, heldDue) : soonest);
+    } else if (heldDue !== null) {
+      // Nothing queued, but a held message is due another try then.
+      await this.ctx.storage.setAlarm(heldDue);
     }
   }
 

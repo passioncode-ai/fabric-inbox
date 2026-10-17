@@ -330,7 +330,7 @@ test("Reply-To is the address answered, and it is checked like the sender; the m
   assert.match(sent.request.text, /— Acme team$/);
   assert.equal(sent.request.auto_submitted, true, "an agent's reply says it is automatic");
   assert.match(system, /Sign off as "Acme Support"/);
-  assert.match(system, /never say you are an AI/);
+  assert.match(system, /Do not bring up that you are an AI; if asked, say you are an AI assistant, never that you are a person/);
   assert.equal(replyToAddress(JSON.parse(headers)), "cust@buyer.invalid");
   const noReplyTarget = prefilter({ mailboxId: MAILBOX, sender: "person@x.invalid", headers: [{ key: "reply-to", value: "no_reply@x.invalid" }], answeredAfter: false, replyTo: "no_reply@x.invalid" });
   assert.equal(noReplyTarget, "no_reply_sender", "a Reply-To that takes no replies is not answered");
@@ -954,10 +954,10 @@ test("the agent knows itself: the system prompt says what it is, what it reads a
   const auto = selfBlock(autonomous({ fallbackReply: undefined, holdUnsure: true }), "support@project.invalid").join("\n");
   assert.match(auto, /AI assistant answering e-mail sent to support@project\.invalid/);
   assert.match(auto, /cannot open attachments, links or images/);
-  assert.match(auto, /and sent at once/);
-  assert.doesNotMatch(auto, /checked by another model/, "no checker on this server: not claimed");
-  assert.match(selfBlock(autonomous(), "a@project.invalid", true).join("\n"), /checked by another model before it leaves/);
-  assert.match(auto, /nothing is sent: the question goes to the team that maintains your knowledge/);
+  assert.match(auto, /sent at once, without a person reading it, only when your tools gave a confident answer\./);
+  assert.doesNotMatch(auto, /another model checks it/, "no checker on this server: not claimed");
+  assert.match(selfBlock(autonomous(), "a@project.invalid", true).join("\n"), /sent at once, without a person reading it, only when your tools gave a confident answer, after another model checks it\./);
+  assert.match(auto, /nothing is sent: the question goes to the team that maintains your knowledge, and the message is tried again every 12 hours for a week/);
   assert.match(auto, /handled by a person/);
   const draft = selfBlock(agent({ replyPolicy: { mode: "draft", allowedIntents: [], dailySendLimit: 20 } }), "a@project.invalid").join("\n");
   assert.match(draft, /saved as a draft; a person reads it before it is sent/);

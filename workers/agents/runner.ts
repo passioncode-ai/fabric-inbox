@@ -172,7 +172,7 @@ export function selfBlock(agent: AgentVersion, mailboxId: string, checked = fals
     "- You read the message's text and the earlier messages of its conversation. You cannot open attachments, links or images. Your answer goes back as a reply in the same conversation.",
     "- You state only facts from your knowledge and tool results; you have no access to the person's account, payments or devices, and you cannot act outside this e-mail except through the tools listed below.",
     auto
-      ? `- Your answer is ${policy.requireEvidence ? "sent only when your tools gave a confident answer, " : ""}${checked ? "checked by another model before it leaves, " : ""}and sent at once.${policy.holdUnsure ? " If you are not sure, nothing is sent: the question goes to the team that maintains your knowledge." : ""}`
+      ? `- Your answer is sent at once, without a person reading it${[policy.requireEvidence ? "only when your tools gave a confident answer" : "", checked ? "after another model checks it" : ""].filter(Boolean).map((s) => `, ${s}`).join("")}.${policy.holdUnsure ? " If you are not sure, nothing is sent: the question goes to the team that maintains your knowledge, and the message is tried again every 12 hours for a week, so it is answered once the knowledge has it." : ""}`
       : "- Your answer is saved as a draft; a person reads it before it is sent.",
     ...(policy.handoff ? ["- Some requests are handled by a person; for those a fixed reply tells the sender whom to contact."] : []),
   ];
@@ -229,13 +229,15 @@ export function systemPrompt(agent: AgentVersion, mailboxId: string, tools: Agen
     "- Set dissatisfied to true only when the message replies to an earlier answer from this address and says it did not help or was wrong.",
     ...(searching ? ["- If the passages do not answer the question, call search_knowledge with other words before deciding; never state what no passage, knowledge or tool result says."] : []),
     "- grounded = true only if every fact in the answer comes from the knowledge above, a passage, or a tool result in this run.",
-    '- decision: "send" when the answer is complete and grounded; "draft" when a person should check it (and say why in reason); "skip" when no reply is needed (thanks, FYI, spam).',
+    agent.replyPolicy.mode === "auto" && agent.replyPolicy.holdUnsure
+      ? '- decision: "send" when the facts you have answer the question (no person reviews it); "draft" only when they do not — then nothing is sent, the question goes to the knowledge team, and you fill question; never draft just to have a person confirm an answer the facts support; "skip" when no reply is needed (thanks, FYI, spam).'
+      : '- decision: "send" when the answer is complete and grounded; "draft" when a person should check it (and say why in reason); "skip" when no reply is needed (thanks, FYI, spam).',
     "- intent: one or two words for what the sender wants, e.g. question, pricing, refund, bug, partnership.",
     "- topic: two to four English words for what the message is about; summary: what the sender wants as one English sentence. Neither may contain names, addresses, phone numbers, usernames or quotes.",
     "- body: the reply itself in plain text, in the language the sender wrote in. Greet the sender by the name they sign with. No markdown, no commentary about yourself.",
     senderName
-      ? `- Sign off as "${senderName.replace(/"/g, "'").slice(0, 100)}". Never sign with your own name above, and never say you are an AI or an agent.`
-      : "- End without a name in the sign-off. Never sign with your own name above, and never say you are an AI or an agent.",
+      ? `- Sign off as "${senderName.replace(/"/g, "'").slice(0, 100)}". Never sign with your own name above. Do not bring up that you are an AI; if asked, say you are an AI assistant, never that you are a person.`
+      : "- End without a name in the sign-off. Never sign with your own name above. Do not bring up that you are an AI; if asked, say you are an AI assistant, never that you are a person.",
   ].join("\n");
 }
 

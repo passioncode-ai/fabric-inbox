@@ -212,7 +212,10 @@ export async function openRouterCheck(apiKey: string, writer: string, input: { m
     const limit = deadline(30_000);
     try {
       const result = await generateText({
-        abortSignal: limit.signal, model: provider.chat(model), system: CHECK_SYSTEM, maxOutputTokens: 200,
+        // A verdict, not an essay: reasoning off, or it spends the output budget and leaves no JSON
+        // (measured 2026-10-17 on real facts: both checkers answered empty at 200 tokens).
+        abortSignal: limit.signal, model: provider.chat(model), system: CHECK_SYSTEM, maxOutputTokens: 400,
+        providerOptions: { openrouter: { reasoning: { enabled: false } } },
         prompt: `<message>\n${input.message.slice(0, 6000)}\n</message>\n\n<facts>\n${input.facts.slice(0, 16000) || "(none)"}\n</facts>\n\n<answer>\n${input.answer.slice(0, 6000)}\n</answer>`,
       });
       const json = /\{[\s\S]*\}/.exec(result.text)?.[0];
