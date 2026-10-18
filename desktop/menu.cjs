@@ -6,7 +6,7 @@
 
 /**
  * ctx: { t, update: { label, enabled, click }, automatic: { checked, enabled, click },
- *        usage: { checked, enabled, click, about }, openSettings, showServer, showCloudflare,
+ *        usage: { checked, enabled, click, about }, login: { checked, enabled, click }, openSettings, showServer, showCloudflare,
  *        connectGmail, retry, console (opens the agent console, or null) }
  */
 function menuTemplate(platform, ctx) {
@@ -20,6 +20,8 @@ function menuTemplate(platform, ctx) {
     { label: t('Share Anonymous Usage Counts'), type: 'checkbox', checked: ctx.usage.checked, enabled: ctx.usage.enabled, click: ctx.usage.click },
     { label: t('About Usage Counts…'), click: ctx.usage.about },
   ];
+  // Open at Login: on by default for an installed copy (the organization's lifecycle rule, 2026-10-16).
+  const login = ctx.login ? [{ label: t('Open at Login'), type: 'checkbox', checked: ctx.login.checked, enabled: ctx.login.enabled, click: ctx.login.click }] : [];
   const server = [
     { label: t('Settings…'), accelerator: 'CmdOrCtrl+,', click: ctx.openSettings },
     { label: t('Server address…'), click: ctx.showServer },
@@ -36,14 +38,14 @@ function menuTemplate(platform, ctx) {
   const view = { label: t('[menu] View'), submenu: [...agentConsole, { label: t('Retry connection'), accelerator: 'CmdOrCtrl+R', click: ctx.retry },
     { role: 'resetZoom', label: t('Actual Size') }, { role: 'zoomIn', label: t('Zoom In') }, { role: 'zoomOut', label: t('Zoom Out') }, { role: 'togglefullscreen', label: t('Toggle Full Screen') }] };
   if (mac) return [
-    { label: 'Fabric Inbox', submenu: [{ role: 'about', label: t('About Fabric Inbox') }, ...updates, { type: 'separator' }, ...usage, { type: 'separator' }, ...server,
+    { label: 'Fabric Inbox', submenu: [{ role: 'about', label: t('About Fabric Inbox') }, ...updates, { type: 'separator' }, ...usage, ...login, { type: 'separator' }, ...server,
       { type: 'separator' }, { role: 'services', label: t('Services') }, { role: 'hide', label: t('Hide Fabric Inbox') }, { role: 'hideOthers', label: t('Hide Others') },
       { role: 'unhide', label: t('Show All') }, { type: 'separator' }, { role: 'quit', label: t('Quit Fabric Inbox') }] },
     { label: t('[menu] Edit'), submenu: edit }, account, view,
     { role: 'windowMenu', label: t('Window'), submenu: [{ role: 'minimize', label: t('Minimize') }, { role: 'zoom', label: t('Zoom') }, { type: 'separator' }, { role: 'front', label: t('Bring All to Front') }] },
   ];
   return [
-    { label: t('[menu] File'), submenu: [...server, { type: 'separator' }, { role: 'quit', label: t('Quit Fabric Inbox'), accelerator: 'Ctrl+Q' }] },
+    { label: t('[menu] File'), submenu: [...server, ...(login.length ? [{ type: 'separator' }, ...login] : []), { type: 'separator' }, { role: 'quit', label: t('Quit Fabric Inbox'), accelerator: 'Ctrl+Q' }] },
     { label: t('[menu] Edit'), submenu: edit }, account, view,
     { label: t('Window'), submenu: [{ role: 'minimize', label: t('Minimize') }, { role: 'close', label: t('Close') }] },
     { label: t('[menu] Help'), submenu: [...updates, { type: 'separator' }, ...usage, { type: 'separator' }, { role: 'about', label: t('About Fabric Inbox') }] },

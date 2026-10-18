@@ -185,10 +185,10 @@ and the workflow run that built it.
 ### Updates and your data
 
 From 0.11.0 a released copy in **Applications** updates itself: it checks the latest GitHub
-release 90 seconds after it starts and every six hours while it runs, downloads a newer version
+release 90 seconds after it starts and every five minutes while it runs, downloads a newer version
 in the background, verifies it (the organization's signed `SHA256SUMS`, the file's digest, the
 Developer ID team and the version inside) and installs it when you quit, or at once with
-**Fabric Inbox → Restart to Install Update**. A version that fails any check is not installed.
+**Fabric Inbox → Restart to Install Update** (or the «Restart to finish updating» notification). A version that fails any check is not installed.
 **Install Updates Automatically** in the same menu turns it off.
 Your accounts, addresses, agents, keys and mail live on your server, so removing or reinstalling
 the app loses none of them; the server's address is also kept in

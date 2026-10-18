@@ -1,6 +1,6 @@
 'use strict';
 const electron = require('electron');
-const { app, BrowserWindow, Menu, ipcMain, shell, dialog, session, WebContentsView } = electron;
+const { app, BrowserWindow, Menu, ipcMain, shell, dialog, session, WebContentsView, Notification, Tray, nativeImage } = electron;
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -12,6 +12,7 @@ const { menuTemplate } = require('./menu.cjs');
 const usage = require('./analytics.cjs');
 const backup = require('./backup.cjs');
 const updates = require('./updater.cjs');
+const { createAutostart } = require('./autostart.cjs');
 const i18n = require('./i18n.cjs');
 const { t } = i18n;
 const updateVerify = require('./update-verify.cjs');
@@ -79,6 +80,13 @@ let analytics = null;
 let launchedByLink = false;
 // Automatic updates (docs/desktop-data-and-updates.md): off unless this build carries a feed.
 let updater = null;
+/** Open at Login (the organization's lifecycle rule, 2026-10-16): the module and its last read state. */
+let autostart = null;
+let loginItem = null;
+/** Windows and Linux: closing the window leaves the app running; the tray icon brings it back. */
+let tray = null;
+/** The ready version the "Restart to finish updating" notification was shown for, once per version. */
+let notifiedReady = '';
 // The app's log, ~/Library/Logs/<app name>/ (LC-12): codes and versions only.
 let appLog = null;
 function logEvent(line) {
@@ -366,9 +374,67 @@ async function startUpdates() {
     try { for (const where of target.writable) await fs.access(where, fsConstants.W_OK); return true; } catch { return false; }
   };
   updater = updates.createUpdater({ autoUpdater, fs, userData: app.getPath('userData'), feed, appVersion: app.getVersion(), fetchFeed, verifier, replaceable,
-    setTimer, clearTimer: clearTimeout, log: logEvent, onChange: () => installMenu() });
+    setTimer, clearTimer: clearTimeout, log: logEvent, onChange: () => { installMenu(); notifyReady(); } });
   await updater.start({ packaged: app.isPackaged, mas: !!process.mas, inApplications: target.installed, packageManager: target.packageManager });
   installMenu();
+}
+/**
+ * A system notification, when the system supports them. The person may have notifications for the app
+ * turned off; Electron cannot read that, so the same information is always in the menu too.
+ */
+function notify(title, body, onClick) {
+  if (!Notification || !Notification.isSupported()) { logEvent({ event: 'notification', outcome: 'unsupported' }); return null; }
+  const note = new Notification({ title, body, silent: false });
+  if (onClick) note.on('click', onClick);
+  note.show();
+  return note;
+}
+/**
+ * An update is downloaded, verified and ready: say so once per version, with "Restart to finish
+ * updating" (LC-16, the organization's rule of 2026-10-16). Clicking it restarts, asking first when the
+ * agent console runs; ignoring it installs the update when the app quits, as before.
+ */
+function notifyReady() {
+  const now = updater ? updater.status() : null;
+  if (!now || now.state !== 'ready' || !now.readyVersion || now.readyVersion === notifiedReady) return;
+  notifiedReady = now.readyVersion;
+  logEvent({ event: 'update_ready_notice', version: now.readyVersion });
+  notify(t('Restart to finish updating'), t('Fabric Inbox {version} is ready. Click to restart now, or it is installed when you quit.', { version: now.readyVersion }),
+    () => void restartToUpdate());
+}
+/**
+ * Every launch: Open at Login is turned on once for an installed copy and read again; a login item the
+ * system holds for approval is told to the person with where to allow it (no silent degradation).
+ */
+async function startAutostart() {
+  autostart = createAutostart({ app, fs, path, platform: process.platform, userData: app.getPath('userData'), env: process.env,
+    homedir: require('node:os').homedir(), mas: !!process.mas, execPath: process.execPath, log: logEvent });
+  loginItem = await autostart.start();
+  installMenu();
+  if (loginItem.needsApproval) notify(t('Fabric Inbox cannot open at login yet'),
+    t('Allow it in System Settings → General → Login Items, so new mail is ready when you start your Mac.'),
+    () => void shell.openExternal('x-apple.systempreferences:com.apple.LoginItems-Settings.extension').catch(() => {}));
+}
+async function toggleLogin(item) {
+  if (!autostart) return;
+  try { loginItem = await autostart.set(item.checked); }
+  catch (error) { logEvent({ event: 'login_item', outcome: 'failed', reason: String(error && error.code || 'error') }); }
+  installMenu();
+}
+/** Windows and Linux: the tray icon that keeps a closed app reachable (macOS has its Dock icon). */
+function startTray() {
+  if (process.platform === 'darwin' || tray || !Tray) return;
+  try {
+    const icon = nativeImage.createFromPath(path.join(__dirname, 'icon.png')).resize({ width: 16, height: 16 });
+    tray = new Tray(icon);
+    tray.setToolTip('Fabric Inbox');
+    const open = () => { const win = setupWindow || mailWindow; if (win && !win.isDestroyed()) { win.show(); win.focus(); } else if (config) loadMail(); else showSetup(); };
+    tray.setContextMenu(Menu.buildFromTemplate([{ label: t('Open Fabric Inbox'), click: open }, { type: 'separator' }, { label: t('Quit Fabric Inbox'), click: () => app.quit() }]));
+    tray.on('click', open);
+  } catch (error) {
+    tray = null;
+    logEvent({ event: 'tray', outcome: 'failed', reason: String(error && error.message || error).slice(0, 120) });
+  }
 }
 /** The download page a copy that cannot update itself is sent to (also named in the notices below). */
 const DOWNLOAD_PAGE = 'https://passioncode.ai/inbox';
@@ -805,6 +871,7 @@ function installMenu() {
     },
     automatic: { checked: !!(state && state.automatic), enabled: !!updater && !['off', 'unavailable'].includes(state.state), click: (item) => { if (updater) void updater.setAutomatic(item.checked); } },
     usage: { checked: !!(analytics && analytics.status().enabled), enabled: !!analytics, click: (item) => void toggleAnalytics(item), about: aboutUsageCounts },
+    login: { checked: !!(loginItem && loginItem.enabled), enabled: !!(loginItem && loginItem.supported), click: (item) => void toggleLogin(item) },
     openSettings, showServer: () => showSetup(), showCloudflare: () => showSetup('', 'cloudflare'),
     connectGmail: () => { if (config) void openExternal(policy.gmailConnectURL(config), true); else showSetup(t('Set the server address before connecting Gmail.')); },
     retry: loadMail,
@@ -858,7 +925,10 @@ app.on('will-quit', (event) => {
 app.on('browser-window-focus', () => {
   if (analytics) { void analytics.wake(); void countActive(); }
 });
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+// Closing the last window leaves the app running (the organization's lifecycle rule, 2026-10-16): the
+// Dock icon on macOS, the tray icon on Windows and Linux bring it back; it ends only by Quit or a signal.
+// Without a tray (the desktop offers none) opening the app again brings a window back (second-instance).
+app.on('window-all-closed', () => { /* keep running */ });
 app.on('activate', () => {
   if (mailWindow && !mailWindow.isDestroyed()) { mailWindow.show(); mailWindow.focus(); }
   else if (setupWindow && !setupWindow.isDestroyed()) { setupWindow.show(); setupWindow.focus(); }
@@ -904,6 +974,8 @@ if (ownsInstance) app.whenReady().then(async () => {
   appReady = true;
   void startAnalytics().catch(() => {});
   void startUpdates().catch(() => logEvent({ event: 'update_check', outcome: 'check_failed', reason: 'not_started' }));
+  startTray();
+  void startAutostart().catch(() => logEvent({ event: 'login_item', outcome: 'failed', reason: 'not_started' }));
   for (const arg of process.argv || []) queueLink(arg);
   void drainLinks();
 });
