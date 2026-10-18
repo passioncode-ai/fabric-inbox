@@ -298,7 +298,7 @@ async function markCategories(env: Env, page: InboxMessage[]) {
  * One category's view (CAT-5). A scope category is the live feed of the inboxes
  * it covers; a screened category lists its matched messages, newest first, each
  * read in its current state from its provider (a message gone to trash or deleted
- * leaves the view, and its verdict is forgotten).
+ * leaves the view; its verdicts are parked, and restoring it puts it back, B-26).
  */
 async function readCategory(env: Env, id: string, params: URLSearchParams, ownDomains: string[] = []): Promise<InboxResponse & { category: unknown }> {
   if (!env.CATEGORIES) throw new InboxRequestError("categories_unavailable");

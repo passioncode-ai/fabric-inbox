@@ -402,8 +402,12 @@ flowchart LR
 | API | `workers/routes/categories.ts` | `/api/categories` (with `accountIds` it covers, every inbox for the picker, limits), `/api/categories/:id`, `/:id/seen`, `/api/projects` (a project in use cannot be deleted) |
 | Screens | `app/components/settings/sections/CategoriesSection.tsx` (`/settings/categories`), `app/components/inbox/CategorySidebar.tsx` | SCR-13; the sidebar section with counts (new since opened for screened, unread for scope) |
 
-A message restored from Trash does not return to a described category until the category
-changes (board B-26).
+A message that leaves a category's view (to Trash, or deleted) has its verdicts parked
+(`verdicts_parked`, `CategoriesDO.forget`); restored from Trash (a Cloudflare move out of Trash,
+a remote untrash or back to inbox), it returns to its categories without the model
+(`CategoriesDO.restore`, `workers/categories/restore.ts`), found by its id or, when an IMAP move
+gave it a new one, by its date, subject and sender. Only a category's current version takes it back;
+parked verdicts go after 30 days (B-26).
 
 ## Domains and the server's own account (CF-2, CF-5)
 

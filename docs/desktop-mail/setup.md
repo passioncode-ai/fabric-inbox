@@ -358,8 +358,8 @@ first, then one model call per message for all described categories in scope, ea
 one-line reason shown as **Why:** on the row. At most `CATEGORY_DAILY_LIMIT` messages a day are
 read by the model; the rest wait for the next UTC day and say so. Changing where it looks, the
 description or the conditions sorts again from scratch; a rename does not. A project a category
-uses cannot be deleted. A message moved to Trash leaves the view; restored, it comes back only when
-the category is next changed (board B-26).
+uses cannot be deleted. A message moved to Trash leaves the view; restored within 30 days, it comes
+back to the categories it was in, unless the category changed meanwhile (board B-26).
 
 ## Gmail
 
