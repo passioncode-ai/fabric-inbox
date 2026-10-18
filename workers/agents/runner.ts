@@ -58,6 +58,15 @@ export function abstainedOutput(text: string): boolean {
  */
 export const RANK_NOTE = "Results are in rank order: the first result is the answer. Later results are only related topics, whatever their coverage: never state one in place of the first, and use it only for a separate question the message itself asks.";
 
+/**
+ * The operator's rule of 2026-10-18: no em dash in text for people, and no spaced hyphen or "--" standing
+ * in for one. Every reply an agent sends or drafts passes through this, the fixed hand-off and safe
+ * replies included: a dash between words becomes a comma, an em dash inside a word a hyphen.
+ */
+export function withoutDashes(text: string): string {
+  return text.replace(/(\S)[ \t]+(?:\u2014|\u2013|--|-)[ \t]+(?=\S)/g, "$1, ").replace(/\u2014/g, "-");
+}
+
 /** A gap report's request id: the run's id and the first 12 hex digits of SHA-256 over its kind and question. */
 export async function gapRequestId(runId: string, kind: string, question: string): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${kind}\n${question}`)));
@@ -248,7 +257,7 @@ export function systemPrompt(agent: AgentVersion, mailboxId: string, tools: Agen
       : '- decision: "send" when the answer is complete and grounded; "draft" when a person should check it (and say why in reason); "skip" when no reply is needed (thanks, FYI, spam).',
     "- intent: one or two words for what the sender wants, e.g. question, pricing, refund, bug, partnership.",
     "- topic: two to four English words for what the message is about; summary: what the sender wants as one English sentence. Neither may contain names, addresses, phone numbers, usernames or quotes.",
-    "- body: the reply itself in plain text, in the language the sender wrote in. Greet the sender by the name they sign with. No markdown, no commentary about yourself.",
+    "- body: the reply itself in plain text, in the language the sender wrote in. Greet the sender by the name they sign with. No markdown, no commentary about yourself. Never use the em dash (U+2014) or a hyphen standing in for one: write a full stop, comma, colon or parentheses.",
     senderName
       ? `- Sign off as "${senderName.replace(/"/g, "'").slice(0, 100)}". Never sign with your own name above. Do not bring up that you are an AI; if asked, say you are an AI assistant, never that you are a person.`
       : "- End without a name in the sign-off. Never sign with your own name above. Do not bring up that you are an AI; if asked, say you are an AI assistant, never that you are a person.",
@@ -676,7 +685,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
 
   const signature = settings?.signature as { enabled?: boolean; text?: string } | undefined;
   const signed = signature?.enabled && signature.text?.trim() ? `${body}\n\n${signature.text.trim()}` : body;
-  const reply = { to: replyTo || email.sender, subject: replySubject(email.subject), text: signed };
+  const reply = { to: replyTo || email.sender, subject: replySubject(email.subject), text: withoutDashes(signed) };
   const saveDraft = async (reason: string) => {
     // An answer given again keeps the earlier draft (a person may have edited it) beside the new one.
     const draftId = `${run.id}-draft${run.attempt && run.attempt > 1 ? `-${run.attempt}` : ""}`;

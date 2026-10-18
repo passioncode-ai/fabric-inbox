@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runAgent, gapRequestId, type RunnerDeps, type RunnerEmail, type ModelRequest, type ModelResponse } from "../workers/agents/runner";
+import { runAgent, gapRequestId, withoutDashes, type RunnerDeps, type RunnerEmail, type ModelRequest, type ModelResponse } from "../workers/agents/runner";
 import { AgentInputSchema, type AgentVersion } from "../workers/agents/definition";
 import type { AgentRun } from "../workers/agents/run";
 import type { ModelDecision } from "../workers/agents/policy";
@@ -327,7 +327,7 @@ test("Reply-To is the address answered, and it is checked like the sender; the m
   assert.equal(run.status, "sent");
   const sent = h.effects.sends[0] as any;
   assert.equal(sent.request.to, "cust@buyer.invalid");
-  assert.match(sent.request.text, /— Acme team$/);
+  assert.match(sent.request.text, /\n- Acme team$/, "an em dash in the signature becomes a hyphen");
   assert.equal(sent.request.auto_submitted, true, "an agent's reply says it is automatic");
   assert.match(system, /Sign off as "Acme Support"/);
   assert.match(system, /Do not bring up that you are an AI; if asked, say you are an AI assistant, never that you are a person/);
@@ -460,6 +460,21 @@ test("B-85 REQ-4: a prefetch grant is called before the model with the message; 
   assert.equal(run.toolCalls[0].name, "acme_kb");
   assert.equal(run.toolCalls[0].ok, true);
   assert.equal(run.status, "sent");
+});
+
+test("no em dash leaves in a reply: the model's dashes and the fixed texts' become commas (operator rule 2026-10-18)", async () => {
+  assert.equal(withoutDashes("Open Settings \u2014 then Appearance. Fast - and free -- today \u2013 really."), "Open Settings, then Appearance. Fast, and free, today, really.");
+  assert.equal(withoutDashes("- a list item\n- another\n2020\u20142021, e-mail"), "- a list item\n- another\n2020-2021, e-mail");
+  const h = harness({ agent: autoAgent(), email: { subject: "Price", body: "<p>How much?</p>" },
+    model: async () => ({ decision: answer({ body: "It costs 10 EUR \u2014 billed monthly." }), text: "" }) });
+  await h.run();
+  assert.doesNotMatch(JSON.stringify(h.effects.sends), /\u2014|\\u2014/);
+  assert.match(JSON.stringify(h.effects.sends), /10 EUR, billed monthly/);
+  const handed = harness({ agent: autonomous({ handoff: { categories: ["refund"], topics: [], reply: { en: "A person handles this \u2014 write to support." } } }),
+    email: { subject: "Refund", body: "<p>Money back</p>" }, callTool: async () => JSON.stringify({ abstained: false, results: [{ id: "f", coverage: 0.9 }] }),
+    model: async () => ({ decision: answer({ category: "refund" }), text: "" }) });
+  await handed.run();
+  assert.match(JSON.stringify(handed.effects.sends), /handles this, write to support/);
 });
 
 test("a gap report's request id is the same for the same question and new for another (a held retry asks anew)", async () => {
