@@ -5,7 +5,7 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 0.19.0 (2026-10-18)
 
 - **Fabric Inbox opens at login.** An installed copy turns Open at Login on at its first launch; the
   menu item (and the system's own settings) turn it off, and an update keeps your choice. If macOS holds
@@ -17,7 +17,7 @@ is cut and published: [docs/release.md](docs/release.md).
 - **Anonymous usage counts go to PassionCode's own analytics server.**
 - **Move to Trash can be undone.** In the inbox, moving the open message to Trash says so with Undo
   (also ⌘Z / Ctrl+Z).
-- **List previews no longer show a message's styling code** — the text of mail that starts with a
+- **List previews no longer show a message's styling code:** the text of mail that starts with a
   long style sheet now reads as its text.
 - **More of the app speaks Russian:** the notifications area and the agent templates (Support, Sales,
   Billing) fill in the interface's language.
@@ -36,9 +36,9 @@ is cut and published: [docs/release.md](docs/release.md).
   forwards and follow-ups to its earlier answer, topics you list, and any answer its tools did not
   give confidently; every answer it sends keeps what it rested on.
 - **Agents that answer on their own, without drafts.** An agent in auto mode can hand listed requests to a
-  person with a fixed reply, label every message with a category, and — instead of a draft — hold an
+  person with a fixed reply, label every message with a category, and, instead of a draft, hold an
   answer it is not sure of: the question goes to its knowledge and the message is tried again every 12
-  hours for a week. A reply saying an earlier answer did not help is reported to the knowledge.
+  hours for a week, then daily up to 30 days. A reply saying an earlier answer did not help is reported to the knowledge.
 - **With an OpenRouter key, answers are written by an open model and checked by another vendor's model**
   before they are sent; without one, the server's own Workers AI writes them as before.
 - **A sales lane answers from its own knowledge.** A hand-off category can have its own fixed reply (for
@@ -49,7 +49,7 @@ is cut and published: [docs/release.md](docs/release.md).
 - **Replies carry no em dash.** Every reply an agent sends or drafts writes a comma where a dash stood
   between words, the fixed hand-off texts and the signature included.
 - **How much of an address's mail its agent saw:** `agent_mail_volume` counts, per agent address and
-  day, the messages received, those an agent ran on and those it did not — numbers only.
+  day, the messages received, those an agent ran on and those it did not (numbers only).
 - **A held message answered again reports its new question** to the knowledge base instead of being
   refused as a repeat.
 - **Agents know what they are.** Each agent's instructions now say, truthfully, that it is an AI
