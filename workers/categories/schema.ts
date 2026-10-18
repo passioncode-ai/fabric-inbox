@@ -36,4 +36,15 @@ export const CATEGORIES_STEPS: readonly SchemaStep[] = [
     `CREATE INDEX IF NOT EXISTS verdicts_unmatched_age ON verdicts(matched, classified_at)`,
     `CREATE INDEX IF NOT EXISTS spam_checks_age ON spam_checks(checked_at)`,
   ]),
+  // B-26: the verdicts of a message gone from the view (to Trash, or deleted) wait here, so restoring it
+  // puts it back in its categories without asking the model again; kept for the retention window.
+  statements("3_parked_verdicts", [
+    `CREATE TABLE IF NOT EXISTS verdicts_parked (category_id TEXT NOT NULL, version INTEGER NOT NULL, account_id TEXT NOT NULL,
+       message_id TEXT NOT NULL, matched INTEGER NOT NULL, reason TEXT NOT NULL, source TEXT NOT NULL, timestamp INTEGER NOT NULL,
+       subject TEXT NOT NULL, sender TEXT NOT NULL, classified_at INTEGER NOT NULL, parked_at INTEGER NOT NULL,
+       PRIMARY KEY (category_id, account_id, message_id))`,
+    `CREATE INDEX IF NOT EXISTS verdicts_parked_by_message ON verdicts_parked(account_id, message_id)`,
+    `CREATE INDEX IF NOT EXISTS verdicts_parked_by_content ON verdicts_parked(account_id, timestamp)`,
+    `CREATE INDEX IF NOT EXISTS verdicts_parked_age ON verdicts_parked(parked_at)`,
+  ]),
 ];

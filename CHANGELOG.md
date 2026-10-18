@@ -5,6 +5,11 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+- **A message restored from Trash comes back to its categories.** Described categories keep their
+  verdict while it is in Trash, so it returns without being sorted again.
+
 ## 0.19.0 (2026-10-18)
 
 - **Fabric Inbox opens at login.** An installed copy turns Open at Login on at its first launch; the

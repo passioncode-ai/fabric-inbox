@@ -535,6 +535,8 @@ export class CategoriesDO extends DurableObject<Env> {
         pruned = CASE WHEN version = excluded.version THEN pruned + excluded.pruned ELSE excluded.pruned END, version = excluded.version`, id, version, n);
     // Counted from RETURNING: rowsWritten also counts the index rows a delete touches.
     const spam = this.sql.exec("DELETE FROM spam_checks WHERE rowid IN (SELECT rowid FROM spam_checks WHERE checked_at < ? LIMIT ?) RETURNING 1", cutoff, PRUNE_BATCH).toArray().length;
+    // B-26: verdicts parked when their message left the view, kept as long as Trash keeps the message.
+    this.sql.exec("DELETE FROM verdicts_parked WHERE rowid IN (SELECT rowid FROM verdicts_parked WHERE parked_at < ? LIMIT ?)", cutoff, PRUNE_BATCH);
     // A full batch means more is waiting: the next drain goes on rather than an hour later.
     if (gone.length >= PRUNE_BATCH || spam >= PRUNE_BATCH) this.prunedAt = 0;
     if (gone.length || spam) console.log(JSON.stringify({ event: "category_verdicts_pruned", verdicts: gone.length, spamChecks: spam }));
@@ -560,9 +562,46 @@ export class CategoriesDO extends DurableObject<Env> {
     return rows.map((r) => ({ accountId: String(r.account_id), messageId: String(r.message_id), timestamp: Number(r.timestamp), reason: String(r.reason), source: String(r.source) }));
   }
 
-  /** A message that no longer exists leaves its categories. */
-  async forget(keys: { accountId: string; messageId: string }[]): Promise<void> {
-    for (const k of keys.slice(0, 200)) this.sql.exec("DELETE FROM verdicts WHERE account_id = ? AND message_id = ?", k.accountId, k.messageId);
+  /**
+   * A message gone from the view (to Trash, or deleted) leaves its categories. Its verdicts are parked,
+   * not dropped (B-26): restoring it puts them back, and parked ones go after the retention window.
+   */
+  async forget(keys: { accountId: string; messageId: string }[], now = Date.now()): Promise<void> {
+    for (const k of keys.slice(0, 200)) this.ctx.storage.transactionSync(() => {
+      this.sql.exec(`INSERT OR REPLACE INTO verdicts_parked (category_id, version, account_id, message_id, matched, reason, source, timestamp,
+          subject, sender, classified_at, parked_at)
+        SELECT category_id, version, account_id, message_id, matched, reason, source, timestamp, subject, sender, classified_at, ?
+        FROM verdicts WHERE account_id = ? AND message_id = ?`, now, k.accountId, k.messageId);
+      this.sql.exec("DELETE FROM verdicts WHERE account_id = ? AND message_id = ?", k.accountId, k.messageId);
+    });
+  }
+
+  /**
+   * A message back from Trash returns to the categories it was in (B-26), without the model. `accountIds`
+   * are the keys it may be filed under (a remote account's provider prefix is not known to every caller).
+   * Found by its id; a message whose id changed on the move (IMAP) is found by its date, subject and
+   * sender, and filed under its new id. Only verdicts of a category's current version come back.
+   * Answers how many verdicts were restored.
+   */
+  async restore(item: { accountIds: string[]; messageId: string; newMessageId?: string; timestamp?: number; subject?: string; sender?: string }): Promise<number> {
+    const current = new Map((this.sql.exec("SELECT id, version FROM categories").toArray() as Row[]).map((r) => [String(r.id), Number(r.version)]));
+    let restored = 0;
+    for (const accountId of item.accountIds.slice(0, 5)) this.ctx.storage.transactionSync(() => {
+      let rows = this.sql.exec("SELECT * FROM verdicts_parked WHERE account_id = ? AND message_id = ?", accountId, item.messageId).toArray() as Row[];
+      if (!rows.length && typeof item.timestamp === "number" && item.subject !== undefined && item.sender !== undefined)
+        rows = this.sql.exec("SELECT * FROM verdicts_parked WHERE account_id = ? AND timestamp = ? AND subject = ? AND sender = ?",
+          accountId, item.timestamp, item.subject.slice(0, 300), item.sender.slice(0, 300)).toArray() as Row[];
+      const id = item.newMessageId || item.messageId;
+      for (const r of rows) {
+        this.sql.exec("DELETE FROM verdicts_parked WHERE category_id = ? AND account_id = ? AND message_id = ?", r.category_id, r.account_id, r.message_id);
+        if (current.get(String(r.category_id)) !== Number(r.version)) continue;
+        this.sql.exec(`INSERT OR IGNORE INTO verdicts (category_id, version, account_id, message_id, matched, reason, source, timestamp, subject, sender, classified_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, r.category_id, r.version, accountId, id, r.matched, r.reason, r.source, r.timestamp, r.subject, r.sender, r.classified_at);
+        restored++;
+      }
+    });
+    if (restored) console.log(JSON.stringify({ event: "category_verdicts_restored", verdicts: restored }));
+    return restored;
   }
 
   /** For a page of the feed: which enabled categories each message is in (current versions only). */

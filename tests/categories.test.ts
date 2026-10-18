@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
@@ -36,6 +37,7 @@ const bundle = await build({
       import { inboxRouter } from './workers/routes/inbox';
       import { receiveEmail } from './workers/index';
       import { MockLanguageModelV3 } from 'ai/test';
+      import { restoreCategories } from './workers/categories/restore';
       const forbidden = () => { throw new Error('External AI is forbidden in this test'); };
       export class TestMailbox extends MailboxDO {
         constructor(ctx, env) { super(ctx, {...env, AI:{run:forbidden}, EMAIL:{send: forbidden}}); }
@@ -64,6 +66,8 @@ const bundle = await build({
         async queueRows() { return this.ctx.storage.sql.exec('SELECT account_id, message_id, target, attempts, last_error FROM queue').toArray(); }
         async age(days) { const back = days * 86400000; this.ctx.storage.sql.exec('UPDATE verdicts SET classified_at = classified_at - ?', back); this.ctx.storage.sql.exec('UPDATE spam_checks SET checked_at = checked_at - ?', back); }
         async pruneNow() { return this.prune(Date.now(), true); }
+        async parkedRows() { return this.ctx.storage.sql.exec('SELECT category_id, message_id, matched, parked_at FROM verdicts_parked ORDER BY message_id').toArray(); }
+        async ageParked(days) { this.ctx.storage.sql.exec('UPDATE verdicts_parked SET parked_at = parked_at - ?', days * 86400000); }
         async verdictRows() { return this.ctx.storage.sql.exec('SELECT category_id, message_id, matched, source FROM verdicts ORDER BY message_id').toArray(); }
       }
       const app = new Hono();
@@ -82,6 +86,15 @@ const bundle = await build({
       app.post('/prune', async (c) => c.json(await c.env.CATEGORIES.getByName('workspace').pruneNow()));
       app.get('/verdicts', async (c) => c.json(await c.env.CATEGORIES.getByName('workspace').verdictRows()));
       app.post('/trash', async (c) => { const b = await c.req.json(); const box = c.env.MAILBOX.get(c.env.MAILBOX.idFromName(b.mailbox)); await box.deleteEmail(b.id); return c.json({ ok: true }); });
+      app.post('/move', async (c) => {
+        const b = await c.req.json();
+        const ok = await c.env.MAILBOX.get(c.env.MAILBOX.idFromName(b.mailbox)).moveEmail(b.id, b.folder);
+        if (ok && !['trash', 'spam'].includes(b.folder)) await restoreCategories(c.env, { accountIds: ['cloudflare:' + b.mailbox], messageId: b.id });
+        return c.json({ ok });
+      });
+      app.post('/restore', async (c) => c.json(await c.env.CATEGORIES.getByName('workspace').restore(await c.req.json())));
+      app.get('/parked', async (c) => c.json(await c.env.CATEGORIES.getByName('workspace').parkedRows()));
+      app.post('/age-parked', async (c) => { await c.env.CATEGORIES.getByName('workspace').ageParked((await c.req.json()).days); return c.json({ ok: true }); });
       app.route('/', categoriesRouter);
       app.route('/', inboxRouter);
       export default { fetch: (r, env, ctx) => app.fetch(r, env, ctx) };
@@ -193,8 +206,67 @@ test("plain conditions decide without the model; a change starts over; a trashed
 
     await call("/trash", "POST", { mailbox: "support@acme.invalid", id: view[0].providerMessageId });
     assert.deepEqual((await call("/api/inbox?category=stripe")).body.messages, []);
-    assert.equal((await call("/api/categories")).body.categories[0].stats.matched, 0, "the verdict of a removed message is forgotten");
+    assert.equal((await call("/api/categories")).body.categories[0].stats.matched, 0, "a deleted message leaves its categories");
     void cat;
+  } finally { await mf.dispose(); }
+});
+
+test("B-26: a message moved to Trash leaves the view and comes back to its categories when restored, without the model", async () => {
+  const { mf, call, receive } = await fixture();
+  try {
+    await receive("support@acme.invalid", "Invoice paid", "thanks", "Stripe <billing@payments.invalid>");
+    await call("/api/categories", "POST", { name: "Stripe", scope: { domains: ["acme.invalid"] }, conditions: { senders: ["@payments.invalid"] } });
+    await call("/api/categories", "POST", { name: "Refunds", scope: { domains: ["acme.invalid"] }, description: "about invoice" });
+    await call("/pump", "POST");
+    const id = (await call("/api/inbox?category=stripe")).body.messages[0].providerMessageId;
+    assert.equal((await call("/api/inbox?category=refunds")).body.messages.length, 1);
+    const calls = (await call("/calls")).body;
+
+    await call("/move", "POST", { mailbox: "support@acme.invalid", id, folder: "trash" });
+    assert.deepEqual((await call("/api/inbox?category=stripe")).body.messages, [], "out of the view while in Trash");
+    assert.deepEqual((await call("/api/inbox?category=refunds")).body.messages, []);
+    assert.equal((await call("/parked")).body.length, 2, "its verdicts are parked, not dropped");
+
+    await call("/move", "POST", { mailbox: "support@acme.invalid", id, folder: "inbox" });
+    assert.deepEqual((await call("/api/inbox?category=stripe")).body.messages.map((m: any) => m.providerMessageId), [id], "back in the rule category");
+    const refunds = (await call("/api/inbox?category=refunds")).body.messages;
+    assert.equal(refunds.length, 1, "back in the described category");
+    assert.match(refunds[0].categoryReason, /mentions invoice/, "with the reason it had");
+    assert.equal((await call("/calls")).body, calls, "the model is not asked again");
+    assert.deepEqual((await call("/parked")).body, []);
+  } finally { await mf.dispose(); }
+});
+
+test("B-26: a restored message whose id changed (IMAP) is found by date, subject and sender; a changed category does not take it back; parked verdicts expire", async () => {
+  const { mf, call, receive } = await fixture();
+  try {
+    await receive("support@acme.invalid", "Invoice paid", "thanks", "Stripe <billing@payments.invalid>");
+    await receive("support@acme.invalid", "Invoice two", "thanks", "Stripe <billing@payments.invalid>");
+    await call("/api/categories", "POST", { name: "Stripe", scope: { domains: ["acme.invalid"] }, conditions: { senders: ["@payments.invalid"] } });
+    await call("/pump", "POST");
+    const [two, one] = (await call("/api/inbox?category=stripe")).body.messages;
+    for (const m of [one, two]) await call("/move", "POST", { mailbox: "support@acme.invalid", id: m.providerMessageId, folder: "trash" });
+    await call("/api/inbox?category=stripe");
+    const parked = (await call("/parked")).body;
+    assert.equal(parked.length, 2);
+    // As an IMAP account answers: the message is back under a new id, with its date, subject and sender.
+    const back = await call("/restore", "POST", { accountIds: ["imap:x", "cloudflare:support@acme.invalid"], messageId: "trash-uid-9", newMessageId: "inbox-uid-12",
+      timestamp: Date.parse(one.date), subject: one.subject, sender: "Stripe <billing@payments.invalid>" });
+    assert.equal(back.body, 1);
+    assert.deepEqual((await call("/verdicts")).body.map((r: any) => r.message_id), ["inbox-uid-12"]);
+    // The category changes while the other message is in Trash: its old verdict does not come back.
+    await call("/api/categories/stripe", "PUT", { name: "Stripe", scope: { domains: ["acme.invalid"] }, conditions: { senders: ["@people.test"] } });
+    assert.equal((await call("/restore", "POST", { accountIds: ["cloudflare:support@acme.invalid"], messageId: two.providerMessageId })).body, 0);
+    // Parked verdicts go after the retention window.
+    await receive("support@acme.invalid", "From Bob", "hi", "Bob <bob@people.test>");
+    await call("/pump", "POST");
+    const bob = (await call("/api/inbox?category=stripe")).body.messages[0];
+    await call("/move", "POST", { mailbox: "support@acme.invalid", id: bob.providerMessageId, folder: "trash" });
+    await call("/api/inbox?category=stripe");
+    assert.equal((await call("/parked")).body.length, 1);
+    await call("/age-parked", "POST", { days: 31 });
+    await call("/prune", "POST");
+    assert.deepEqual((await call("/parked")).body, []);
   } finally { await mf.dispose(); }
 });
 
@@ -249,4 +321,12 @@ test("unmatched verdicts older than 30 days are deleted; matched ones and the ca
   } finally {
     await mf.dispose();
   }
+});
+
+test("B-26: the real restore paths put a message back in its categories (Cloudflare move, remote untrash and back to inbox)", () => {
+  const index = readFileSync("workers/index.ts", "utf8");
+  assert.match(index, /moveEmail\(c\.req\.param\("id"\)!, folderId\);\n[^\n]*\n\tif \(success && !\["trash", "spam", "draft", "discarded"\]\.includes\(folderId\)\)\n\t\tawait restoreCategories\(/);
+  const accounts = readFileSync("workers/routes/accounts.ts", "utf8");
+  assert.match(accounts, /await restored\(c\.env, c\.req\.param\("accountId"\), c\.req\.param\("messageId"\),\n\s+await stub\(c\.env\)\.moveToInbox/);
+  assert.match(accounts, /return c\.json\(value \? message : await restored\(c\.env, accountId, messageId, message\)\);/);
 });

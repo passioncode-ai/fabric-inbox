@@ -1,4 +1,5 @@
 import { bodyLimit } from 'hono/body-limit';
+import { remoteCategoryKeys, restoreCategories } from "../categories/restore";
 import { MAX_SEND_REQUEST_BYTES } from '../../shared/mail/attachments';
 import { Hono, type Context } from "hono";
 import { z } from "zod";
@@ -434,10 +435,8 @@ accountsRouter.post(
   "/api/accounts/:accountId/messages/:messageId/inbox",
   async (c) =>
     c.json(
-      await stub(c.env).moveToInbox(
-        c.req.param("accountId"),
-        c.req.param("messageId"),
-      ),
+      await restored(c.env, c.req.param("accountId"), c.req.param("messageId"),
+        await stub(c.env).moveToInbox(c.req.param("accountId"), c.req.param("messageId"))),
     ),
 );
 accountsRouter.get(
@@ -549,6 +548,16 @@ accountsRouter.post("/api/accounts/:accountId/drafts/:draftId/send", async (c) =
   return c.json(result, result.status === "accepted" ? 200 : result.status === "unknown" ? 409 : 400);
 });
 
+/**
+ * B-26: a message back from Trash returns to the described categories it was in, under its id now (an
+ * IMAP move gives it a new one). Answers the message unchanged.
+ */
+async function restored<T extends { providerMessageId?: string; date?: string; subject?: string; from?: string }>(env: object, accountId: string, messageId: string, message: T): Promise<T> {
+  await restoreCategories(env as Parameters<typeof restoreCategories>[0], { accountIds: remoteCategoryKeys(accountId), messageId, newMessageId: message?.providerMessageId,
+    date: message?.date, subject: message?.subject, sender: message?.from });
+  return message;
+}
+
 for (const field of ["starred", "trashed"] as const) {
   accountsRouter.post(`/api/accounts/:accountId/messages/:messageId/${field}`, async c => {
     const body = await c.req.json<unknown>().catch(() => null);
@@ -558,8 +567,8 @@ for (const field of ["starred", "trashed"] as const) {
     const accountId = c.req.param("accountId"), messageId = c.req.param("messageId");
     if (![accountId, messageId].every(id => /^[A-Za-z0-9_-]{1,128}$/.test(id)))
       return c.json({ error: "invalid_id" }, 400);
-    return c.json(await (field === "starred"
-      ? stub(c.env).setStarred(accountId, messageId, value)
-      : stub(c.env).setTrashed(accountId, messageId, value)));
+    if (field === "starred") return c.json(await stub(c.env).setStarred(accountId, messageId, value));
+    const message = await stub(c.env).setTrashed(accountId, messageId, value);
+    return c.json(value ? message : await restored(c.env, accountId, messageId, message));
   });
 }

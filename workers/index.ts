@@ -2,6 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { restoreCategories } from "./categories/restore";
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import PostalMime from "postal-mime";
@@ -349,6 +350,9 @@ app.delete("/api/v1/mailboxes/:mailboxId/emails/:id", async (c: AppContext) => {
 app.post("/api/v1/mailboxes/:mailboxId/emails/:id/move", async (c: AppContext) => {
 	const { folderId } = (await c.req.json()) as { folderId: string };
 	const success = await c.var.mailboxStub.moveEmail(c.req.param("id")!, folderId);
+	// B-26: a message moved back out of Trash (or Spam) returns to the categories it was in.
+	if (success && !["trash", "spam", "draft", "discarded"].includes(folderId))
+		await restoreCategories(c.env, { accountIds: ["cloudflare:" + c.req.param("mailboxId")!.toLowerCase()], messageId: c.req.param("id")! });
 	return success ? c.json({ status: "moved" }) : c.json({ error: "Folder not found" }, 400);
 });
 
