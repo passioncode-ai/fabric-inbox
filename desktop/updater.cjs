@@ -13,9 +13,11 @@
 // and says so.
 //
 // The switch is the file `auto-update` in the app's data folder: absent means on, only the word
-// `off` turns checks off. Cadence: the first check 90 s after start, then every 6 h while the app
-// runs (window or not), and after a failed check one retry within the hour. The timers are the
-// only ones this module owns, and they hold no process open (main.cjs unrefs them).
+// `off` turns checks off. Cadence (the organization's LC-16, operator 2026-10-17): the first check 90 s
+// after start, then every 5 minutes while the app runs (window or not), a failed check retried after 5
+// minutes too. It reads the release's static feed, never the rate-limited GitHub API. A quiet check is
+// logged once (again when its answer or the failure changes), so the log does not grow by 288 lines a
+// day. The timers are the only ones this module owns, and they hold no process open (main.cjs unrefs them).
 const path = require('node:path');
 // Sentences a person may read in Check for Updates…: English, collected for translation (L10N-04).
 const { msg } = require('./i18n.cjs');
@@ -23,8 +25,8 @@ const { msg } = require('./i18n.cjs');
 const { compareVersions } = require('./update-verify.cjs');
 
 const FIRST_CHECK_MS = 90 * 1000;
-const CHECK_EVERY_MS = 6 * 3600 * 1000;
-const RETRY_MS = 30 * 60 * 1000;
+const CHECK_EVERY_MS = 5 * 60 * 1000;
+const RETRY_MS = 5 * 60 * 1000;
 const RESTART_TIMEOUT_MS = 60 * 1000;
 const HANDOFF_TIMEOUT_MS = 15 * 60 * 1000;
 const DECLINED_FOR_MS = 24 * 3600 * 1000;
@@ -87,7 +89,8 @@ function createUpdater(deps) {
   let runbook = '';
   let lastError = '';
   let lastCheck = 0;
-  let retried = false;     // one retry within the hour after a failed check, then back to 6 h
+  let retried = false;     // a failed check's retry is due (5 min, like every check)
+  let lastLogged = '';     // the last check answer written to the log: the same one is not written again
   let failures = 0;        // checks failed in a row; STUCK_AFTER of them are shown to the person (B-86)
   let timer = null;        // the next check
   let watchdog = null;     // Squirrel.Mac must answer a hand-off within HANDOFF_TIMEOUT_MS
@@ -155,7 +158,10 @@ function createUpdater(deps) {
     stopWatchdog();
     lastError = String(message || why || code).slice(0, 300);
     reason = why || code;
-    log({ event: 'update_check', outcome: code, reason, version: staging || undefined });
+    // The same failure five minutes later is not a new line; a different one, or one after a success, is.
+    const key = `${code}|${reason}|${staging}`;
+    if (key !== lastLogged) log({ event: 'update_check', outcome: code, reason, version: staging || undefined });
+    lastLogged = key;
     failures += 1;
     // Logging alone hid 0.12.0's failures for days: from the third in a row the menu says so (B-86).
     if (failures === STUCK_AFTER) log({ event: 'update_stuck', failures, reason });
@@ -236,7 +242,9 @@ function createUpdater(deps) {
     if (out.outcome !== 'verified') {
       retried = false;
       failures = 0;
-      log({ event: 'update_check', outcome: 'current', latest: out.version, running: appVersion, ...(out.outcome === 'older' ? { refused: 'older' } : {}) });
+      const key = `current|${out.version}|${out.outcome}`;
+      if (key !== lastLogged || byPerson) log({ event: 'update_check', outcome: 'current', latest: out.version, running: appVersion, ...(out.outcome === 'older' ? { refused: 'older' } : {}) });
+      lastLogged = key;
       staging = ''; heldVersion = ''; runbook = '';
       set('idle');
       settle({ outcome: 'current' });

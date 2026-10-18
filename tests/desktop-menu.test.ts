@@ -41,3 +41,14 @@ test("PL-05: Linux without a Secret Service (basic_text) is refused; other platf
   assert.equal(keyStoreRefusal("win32", null), null);
   assert.equal(keyStoreRefusal("darwin", null), null);
 });
+
+test("Open at Login is a checkbox in the app menu on macOS and in File on Windows and Linux (lifecycle rule 2026-10-16)", () => {
+  const login = { checked: true, enabled: true, click: () => {} };
+  const mac = menuTemplate("darwin", { ...ctx, login });
+  assert.ok(mac[0].submenu.some((i: any) => i.label === "Open at Login" && i.type === "checkbox" && i.checked));
+  for (const platform of ["win32", "linux"]) {
+    const file = menuTemplate(platform, { ...ctx, login })[0].submenu.map((i: any) => i.label ?? i.type);
+    assert.deepEqual(file, ["Settings…", "Server address…", "Connect Cloudflare account…", "separator", "Open at Login", "separator", "Quit Fabric Inbox"]);
+  }
+  assert.ok(!menuTemplate("darwin", ctx)[0].submenu.some((i: any) => i.label === "Open at Login"), "absent without the context");
+});

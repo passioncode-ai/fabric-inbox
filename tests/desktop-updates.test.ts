@@ -17,6 +17,7 @@ const backup = require("../desktop/backup.cjs");
 const policy = require("../desktop/policy.cjs");
 
 const FEED = "https://github.com/passioncode-ai/fabric-inbox/releases/latest/download/update-mac.json";
+const MINUTE = 60 * 1000;
 const HOUR = 3600 * 1000;
 const LOCAL = "file:///Users/x/Library/Caches/Fabric%20Inbox/updates/0.12.0/feed.json";
 
@@ -110,9 +111,10 @@ test("the release's feed names only that release, with its sha256 and size, and 
   assert.throws(() => updates.feedFor({ repository: "a/b", version: "0.10.1", zipName: "z", sha256: "x", size: 1 }), /sha256/);
 });
 
-test("a released app in Applications checks 90 s after start, then every six hours while it runs", async () => {
+test("a released app in Applications checks 90 s after start, then every five minutes; a quiet check is logged once", async () => {
   const h = updater();
-  h.verdicts.push({ outcome: "current", version: "0.11.0" }, { outcome: "current", version: "0.11.0" });
+  for (let i = 0; i < 4; i++) h.verdicts.push({ outcome: "current", version: "0.11.0" });
+  h.verdicts.push({ outcome: "current", version: "0.11.1", } as never);
   const up = h.make();
   await up.start(RELEASED);
   assert.deepEqual(h.calls, [], "nothing at launch itself");
@@ -121,11 +123,14 @@ test("a released app in Applications checks 90 s after start, then every six hou
   await h.advance(90 * 1000);
   assert.deepEqual(h.calls, ["feed-read", "verify"]);
   assert.equal(up.status().state, "idle");
-  assert.deepEqual(h.pending(), [6 * HOUR], "one timer, the next check in six hours — window or not");
-  await h.advance(6 * HOUR);
-  assert.deepEqual(h.calls, ["feed-read", "verify", "feed-read", "verify"]);
-  assert.deepEqual(events(h.lines), ["update_check:current", "update_check:current"]);
+  assert.deepEqual(h.pending(), [5 * MINUTE], "one timer, the next check in five minutes, window or not");
+  for (let i = 0; i < 3; i++) await h.advance(5 * MINUTE);
+  assert.equal(h.calls.length, 8, "four checks");
+  assert.deepEqual(events(h.lines), ["update_check:current"], "the same quiet answer is logged once, not 288 times a day");
+  await h.advance(5 * MINUTE);
+  assert.deepEqual(events(h.lines), ["update_check:current", "update_check:current"], "a different latest release is logged again");
   assert.ok(!/browser-window-focus[^\n]*updater/.test(readFileSync("desktop/main.cjs", "utf8")), "a window coming forward is not a trigger");
+  assert.ok(!/api\.github\.com/.test(readFileSync("desktop/updater.cjs", "utf8") + readFileSync("desktop/update-verify.cjs", "utf8")), "the static feed, never the rate-limited API");
 });
 
 test("copies that cannot or must not update themselves never check, and say why", async () => {
@@ -206,23 +211,26 @@ test("the next launch says whether the install happened", async () => {
   assert.deepEqual(events(idle.lines), ["update_restart:refused"]);
 });
 
-test("a failed check is retried once within the hour, then every six hours", async () => {
+test("a failed check is retried in five minutes and then every five minutes; the same failure is logged once", async () => {
   const h = updater();
   h.feedState.fail = true;
   const up = h.make();
   await up.start(RELEASED);
   await h.advance(90 * 1000);
   assert.equal(up.status().state, "error");
-  assert.deepEqual(h.pending(), [30 * 60 * 1000]);
-  await h.advance(30 * 60 * 1000);
-  assert.deepEqual(h.pending(), [6 * HOUR], "after the one retry, back to six hours");
-  assert.deepEqual(events(h.lines), ["update_check:check_failed", "update_check:check_failed"]);
+  assert.deepEqual(h.pending(), [5 * MINUTE]);
+  await h.advance(5 * MINUTE);
+  assert.deepEqual(h.pending(), [5 * MINUTE], "still every five minutes");
+  await h.advance(5 * MINUTE);
+  assert.deepEqual(events(h.lines), ["update_check:check_failed", "update_stuck:undefined"], "one line for the failure, one when it is stuck");
   assert.equal(h.lines[0].reason, "feed_unreachable");
+  assert.equal(up.status().failures, 3);
   h.feedState.fail = false;
   h.verdicts.push({ outcome: "current", version: "0.11.0" });
-  await h.advance(6 * HOUR);
+  await h.advance(5 * MINUTE);
   assert.equal(up.status().state, "idle");
-  assert.deepEqual(h.pending(), [6 * HOUR]);
+  assert.deepEqual(h.pending(), [5 * MINUTE]);
+  assert.deepEqual(events(h.lines).slice(-1), ["update_check:current"], "the first good check after failures is logged");
 });
 
 test("B-86: three failed checks in a row make the updates stuck, shown to the person; a good check clears it", async () => {
@@ -231,17 +239,17 @@ test("B-86: three failed checks in a row make the updates stuck, shown to the pe
   const up = h.make();
   await up.start(RELEASED);
   await h.advance(90 * 1000);
-  await h.advance(30 * 60 * 1000);
+  await h.advance(5 * MINUTE);
   assert.equal(up.status().stuck, false, "two failures: still quiet");
-  await h.advance(6 * HOUR);
+  await h.advance(5 * MINUTE);
   assert.equal(up.status().failures, 3);
   assert.equal(up.status().stuck, true);
   assert.equal(h.lines.filter((l: any) => l.event === "update_stuck").length, 1, "logged once, when it becomes stuck");
-  await h.advance(30 * 60 * 1000);
+  await h.advance(5 * MINUTE);
   assert.equal(h.lines.filter((l: any) => l.event === "update_stuck").length, 1, "not again on the fourth");
   h.feedState.fail = false;
   h.verdicts.push({ outcome: "current", version: "0.11.0" });
-  await h.advance(6 * HOUR);
+  await h.advance(5 * MINUTE);
   assert.equal(up.status().failures, 0);
   assert.equal(up.status().stuck, false);
 });
@@ -277,7 +285,7 @@ test("a release held for a migration is verified but not installed, and says whe
   assert.ok(!h.calls.some((c) => c.startsWith("squirrel")));
   assert.deepEqual([up.status().state, up.status().heldVersion], ["held", "0.12.0"]);
   assert.deepEqual(events(h.lines), ["update_check:needs_migration"]);
-  assert.deepEqual(h.pending(), [6 * HOUR], "a later release may not need the step");
+  assert.deepEqual(h.pending(), [5 * MINUTE], "a later release may not need the step");
 });
 
 test("the switch is the file auto-update: absent is on, only off is off, and off stops checks, downloads and installs", async () => {
@@ -335,9 +343,9 @@ test("a version Squirrel.Mac refused is not downloaded again for a day", async (
   await h.advance(90 * 1000);
   h.u.emit("error", new Error("Code signature at URL did not pass validation"));
   assert.equal(up.status().state, "error");
-  await h.advance(30 * 60 * 1000);
-  await h.advance(6 * HOUR);
-  await h.advance(6 * HOUR);
+  await h.advance(5 * MINUTE);
+  await h.advance(5 * MINUTE);
+  await h.advance(5 * MINUTE);
   assert.equal(h.calls.filter((c) => c === "download").length, 1, "one download, not one per retry");
   assert.ok(h.lines.some((l) => l.reason === "declined_before"));
   await h.advance(24 * HOUR);
@@ -399,13 +407,13 @@ test("a held release is not downloaded again on every check", async () => {
   const up = h.make();
   await up.start(RELEASED);
   await h.advance(90 * 1000);
-  await h.advance(6 * HOUR);
-  await h.advance(6 * HOUR);
+  await h.advance(5 * MINUTE);
+  await h.advance(5 * MINUTE);
   assert.equal(h.calls.filter((c) => c === "download").length, 1);
   assert.equal(up.status().state, "held");
   assert.deepEqual(await up.checkNow(), { outcome: "held", version: "0.12.0", runbook: "https://example.com/runbook" });
   h.verdicts.push({ outcome: "current", version: "0.11.0" });
-  await h.advance(6 * HOUR);
+  await h.advance(5 * MINUTE);
   assert.equal(up.status().state, "idle", "a feed that no longer offers it clears the hold");
 });
 

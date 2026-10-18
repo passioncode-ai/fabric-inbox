@@ -54,9 +54,11 @@ Fabric Inbox follows the organization's one update behaviour for every product (
 fabric-workspace `knowledge/lifecycle.md`): the same switch, cadence, verification and log codes
 as Fabric Switchboard, Fabric and Fabric Dashboards.
 
-1. **Cadence.** The first check runs 90 s after the app starts, then every 6 h while it runs,
-   with or without a window (one timer, which never holds the app open; `desktop/updater.cjs`).
-   After a failed check one retry follows within the hour, then the 6-hour rhythm again. Each
+1. **Cadence.** The first check runs 90 s after the app starts, then every 5 minutes while it runs,
+   with or without a window (one timer, which never holds the app open; `desktop/updater.cjs`; the
+   organization's cadence since 2026-10-17). A failed check is retried after 5 minutes too. The same
+   answer, or the same failure, is logged once, not at every check. A ready update is announced once
+   per version with a «Restart to finish updating» notification; clicking it restarts the app. Each
    check reads `https://github.com/passioncode-ai/fabric-inbox/releases/latest/download/update-mac.json`,
    the feed the latest published release carries. No environment variable can point a released
    copy at another feed: the address is written into the app by the release workflow.

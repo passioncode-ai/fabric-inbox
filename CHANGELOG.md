@@ -7,6 +7,14 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **Fabric Inbox opens at login.** An installed copy turns Open at Login on at its first launch; the
+  menu item (and the system's own settings) turn it off, and an update keeps your choice. If macOS holds
+  it for your approval, a notification says where to allow it.
+- **Closing the window keeps the app running.** On Windows and Linux a tray icon opens it again; it ends
+  only with Quit.
+- **Updates arrive sooner.** The app checks every five minutes and says «Restart to finish updating»
+  once an update is ready.
+- **Anonymous usage counts go to PassionCode's own analytics server.**
 - **Move to Trash can be undone.** In the inbox, moving the open message to Trash says so with Undo
   (also ⌘Z / Ctrl+Z).
 - **List previews no longer show a message's styling code** — the text of mail that starts with a
