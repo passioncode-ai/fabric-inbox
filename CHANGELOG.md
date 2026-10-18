@@ -38,6 +38,8 @@ is cut and published: [docs/release.md](docs/release.md).
   when its tools have no answer, if the checker approves the reply.
 - **Agents read a knowledge tool's results in order:** the first result is the answer, the rest are
   related topics.
+- **Replies carry no em dash.** Every reply an agent sends or drafts writes a comma where a dash stood
+  between words, the fixed hand-off texts and the signature included.
 - **How much of an address's mail its agent saw:** `agent_mail_volume` counts, per agent address and
   day, the messages received, those an agent ran on and those it did not — numbers only.
 - **A held message answered again reports its new question** to the knowledge base instead of being
