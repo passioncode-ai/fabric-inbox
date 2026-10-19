@@ -110,6 +110,9 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   (a fixed reply naming who handles it; `replies: { <category>: { en, ru? } }` gives a category its own).
   `knowledgeIsEvidence: true` lets an answer built from the agent's own knowledge leave when a knowledge
   tool abstains, if the checker approves it. Events add `agent.handoff` and `agent.not_helped`.
+  Nobody waits without a word (B-131): a held message (`holdUnsure`) still unanswered a day after it came
+  gets `waitingReply: { en, ru? }` once (a default text when unset; it stays held and is answered when the
+  knowledge has it), and a message held or drafted 4 hours without a reply raises one `agent.waiting` event.
   `agent_mail_volume { days }` gives per-address, per-day counts (received, agent runs, no run, spam).
   Test an agent with `preview_agent_answer` (an outside sender, the text): it returns what the agent would do and
   the reply, sending and storing nothing.

@@ -344,6 +344,17 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
             <label className="fi-check"><input type="checkbox" checked={!!policy.holdUnsure}
               onChange={(e) => set("replyPolicy", { ...policy, holdUnsure: e.target.checked })} />
               <span>{t("No drafts: when it is not sure, it does not answer, reports the question to the knowledge and answers once it is there")}</span></label>
+            {policy.holdUnsure && <>
+              <label className="fi-field">{t("Reply while the answer is not there")}
+                <span className="fi-hint">{t("Sent once, a day after the message came, if it is still not answered. Empty: a short default saying the answer follows in the same thread.")}</span>
+                <textarea className="fi-input" rows={3} value={policy.waitingReply?.en ?? ""}
+                  onChange={(e) => set("replyPolicy", { ...policy, waitingReply: e.target.value.trim() ? { ...policy.waitingReply, en: e.target.value } : undefined })} />
+              </label>
+              <label className="fi-field">{t("That reply in Russian")}
+                <textarea className="fi-input" rows={3} value={policy.waitingReply?.ru ?? ""} disabled={!policy.waitingReply?.en}
+                  onChange={(e) => policy.waitingReply && set("replyPolicy", { ...policy, waitingReply: { en: policy.waitingReply.en, ...(e.target.value.trim() ? { ru: e.target.value } : {}) } })} />
+              </label>
+            </>}
             <label className="fi-check"><input type="checkbox" checked={!!policy.knowledgeIsEvidence}
               onChange={(e) => set("replyPolicy", { ...policy, knowledgeIsEvidence: e.target.checked })} />
               <span>{t("Its own knowledge is enough: a tool without an answer does not stop a reply the checker approves")}</span></label>

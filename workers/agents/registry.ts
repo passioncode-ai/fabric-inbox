@@ -1,4 +1,4 @@
-import { EVENTS_KEPT, EVENTS_KEPT_MS, runEvent, type AgentEvent } from "./events";
+import { EVENTS_KEPT, EVENTS_KEPT_MS, runEvent, waitingEvent, type AgentEvent } from "./events";
 import { DurableObject } from "cloudflare:workers";
 import { migrateSchema } from "../lib/do-schema";
 import { AGENT_REGISTRY_STEPS } from "./schema";
@@ -33,6 +33,13 @@ export const HELD_RETRY_MS = 12 * 3_600_000;
 export const HELD_FAST_MS = 7 * 86_400_000;
 export const HELD_LATE_RETRY_MS = 24 * 3_600_000;
 export const HELD_FOR_MS = 30 * 86_400_000;
+/**
+ * B-131 (support quality standard A6): a message waiting for a person (held, or a draft nobody sent)
+ * is escalated once WAIT_SLA_MS after it came, the mail first-reply target. Runs older than
+ * ESCALATE_WITHIN_MS when first seen are not escalated: a backlog from before this rule stays quiet.
+ */
+export const WAIT_SLA_MS = 4 * 3_600_000;
+export const ESCALATE_WITHIN_MS = 3 * 86_400_000;
 /** Longest an answer waits for its spam check before the agent runs anyway (B-30). */
 export const MAX_SPAM_HOLD_MS = 15 * 60_000;
 const MAX_AGENTS = 100;
@@ -198,10 +205,15 @@ export class AgentRegistryDO extends DurableObject<Env> {
   }
 
   private async drain() {
-    const heldDue = await this.retryHeld().catch((error) => {
+    const retryDue = await this.retryHeld().catch((error) => {
       console.warn(JSON.stringify({ event: "held_retry_failed", error: (error as Error).message?.slice(0, 200) }));
       return null;
     });
+    const waitDue = await this.superviseWaiting().catch((error) => {
+      console.warn(JSON.stringify({ event: "waiting_supervision_failed", error: (error as Error).message?.slice(0, 200) }));
+      return null;
+    });
+    const heldDue = retryDue === null ? waitDue : waitDue === null ? retryDue : Math.min(retryDue, waitDue);
     // One message per mailbox at a time: two messages of one thread read the thread
     // before either answer exists, and would both be answered.
     const batch = this.nextBatch();
@@ -402,7 +414,9 @@ export class AgentRegistryDO extends DurableObject<Env> {
         const stale = prior.status === "running" && Date.now() - Date.parse(prior.updatedAt) > RUN_STALE_MS && prior.phase !== "sending";
         if (!stale) return { claimed: false, run: this.present(prior) };
         // B-94: marked a re-run, so tools that may act are not called a second time.
-        const again = { ...run, createdAt: prior.createdAt, ...(prior.attempt ? { attempt: prior.attempt } : {}), rerun: true };
+        const again = { ...run, createdAt: prior.createdAt, ...(prior.attempt ? { attempt: prior.attempt } : {}), rerun: true,
+          // B-131: an escalation and a waiting reply happen once per message, across its retries.
+          ...(prior.escalatedAt ? { escalatedAt: prior.escalatedAt } : {}), ...(prior.acknowledged ? { acknowledged: prior.acknowledged } : {}) };
         this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?",
           again.status, JSON.stringify(again), again.updatedAt, again.id);
         return { claimed: true, run: again };
@@ -423,13 +437,55 @@ export class AgentRegistryDO extends DurableObject<Env> {
         run.status, JSON.stringify(run), run.updatedAt, run.id);
       // B-118: a run that just ended (its status changed to a final one) appends one event.
       const event = before !== run.status ? runEvent(run) : null;
-      if (event) {
-        this.ctx.storage.sql.exec("INSERT INTO agent_events (run_id, at, body) VALUES (?, ?, ?)", run.id, event.at, JSON.stringify(event));
-        this.ctx.storage.sql.exec(
-          "DELETE FROM agent_events WHERE seq <= (SELECT seq FROM agent_events ORDER BY seq DESC LIMIT 1 OFFSET ?) AND at < ?",
-          EVENTS_KEPT, new Date(Date.now() - EVENTS_KEPT_MS).toISOString());
-      }
+      if (event) this.appendEvent(run.id, event);
     });
+  }
+
+  private appendEvent(runId: string, event: AgentEvent) {
+    this.ctx.storage.sql.exec("INSERT INTO agent_events (run_id, at, body) VALUES (?, ?, ?)", runId, event.at, JSON.stringify(event));
+    this.ctx.storage.sql.exec(
+      "DELETE FROM agent_events WHERE seq <= (SELECT seq FROM agent_events ORDER BY seq DESC LIMIT 1 OFFSET ?) AND at < ?",
+      EVENTS_KEPT, new Date(Date.now() - EVENTS_KEPT_MS).toISOString());
+  }
+
+  /**
+   * B-131: escalates, once, each message still waiting for a person WAIT_SLA_MS after it came: a held
+   * run, or a drafted one whose conversation has no reply sent after it. Answers when the next is due.
+   */
+  protected async superviseWaiting(now = Date.now()): Promise<number | null> {
+    const from = new Date(now - ESCALATE_WITHIN_MS).toISOString();
+    const pending = (where: string, ...args: string[]) => this.rows(`SELECT id, mailbox_id, email_id, body, created_at FROM agent_runs
+      WHERE status IN ('held', 'drafted') AND created_at >= ? AND json_extract(body, '$.escalatedAt') IS NULL ${where}
+      ORDER BY created_at LIMIT 20`, from, ...args);
+    for (const row of pending("AND created_at <= ?", new Date(now - WAIT_SLA_MS).toISOString())) {
+      const run = JSON.parse(String(row.body)) as AgentRun;
+      let waiting = true;
+      if (run.status === "drafted") {
+        // A person who sent the draft, or wrote their own reply, has answered it.
+        try {
+          const box = this.deps(run.mailboxId).mailbox;
+          const email = await box.email(run.emailId);
+          if (!email) waiting = false;
+          else {
+            const thread = email.thread_id ? await box.thread(email.thread_id) : [];
+            const received = Date.parse(email.date);
+            waiting = !thread.some((m) => m.folder_id === "sent" && Date.parse(m.date) > received);
+          }
+        } catch (error) {
+          console.warn(JSON.stringify({ event: "waiting_check_failed", run: run.id, error: (error as Error).message?.slice(0, 200) }));
+          continue;
+        }
+      }
+      const at = new Date(now).toISOString();
+      run.escalatedAt = at;
+      this.ctx.storage.transactionSync(() => {
+        this.ctx.storage.sql.exec("UPDATE agent_runs SET body = ? WHERE id = ? AND status = ?", JSON.stringify(run), run.id, run.status);
+        if (waiting) this.appendEvent(run.id, waitingEvent(run, at));
+      });
+      if (waiting) console.log(JSON.stringify({ event: "agent_waiting_escalated", run: run.id, status: run.status }));
+    }
+    const next = pending("")[0]?.created_at;
+    return typeof next === "string" ? Math.max(now + 1000, Date.parse(next) + WAIT_SLA_MS) : null;
   }
 
   /**

@@ -25,6 +25,14 @@ export interface RunnerEmail {
   recipient?: string | null;
   cc?: string | null;
 }
+/** B-131: a held message gets its waiting reply a day after it came (the standard's second limit). */
+export const SAFE_DEFAULT_MS = 24 * 3_600_000;
+/** Said when the policy names no waiting reply of its own: no fact, only what happens next. */
+export const DEFAULT_WAITING_REPLY = {
+  en: "Thank you for your message. We are checking the answer and will reply in this thread as soon as we have it.",
+  ru: "Спасибо за письмо. Мы уточняем ответ и напишем в этой переписке, как только он будет готов.",
+};
+
 export interface RunnerThreadMessage {
   id: string;
   sender: string;
@@ -367,7 +375,10 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     thread = [];
   }
   const received = Date.parse(email.date);
-  const answeredAfter = thread.some((m) => m.folder_id === "sent" && Date.parse(m.date) > received);
+  // B-131: the waiting reply this run already sent is not an answer; the real one still goes out.
+  const waitingSent = run.acknowledged ? deps.htmlToText(run.acknowledged.text).trim().slice(0, 60) : "";
+  const answeredAfter = thread.some((m) => m.folder_id === "sent" && Date.parse(m.date) > received
+    && !(waitingSent && deps.htmlToText(m.body).trim().startsWith(waitingSent)));
   const headers = parseStoredHeaders(email.raw_headers);
   const replyTo = replyToAddress(headers);
   const ownDomains = deps.servedDomains ? await deps.servedDomains().catch(() => [] as string[]) : [];
@@ -678,7 +689,37 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       // owner, and the message is answered again (answer_again) once the knowledge has it.
       const held = scrubPersonal((proposal.question || proposal.summary || "").trim()).slice(0, 1000);
       if (held) { run.question = held; run.unanswered = true; await reportGap("unanswered", held); }
-      return finish("held", msg("Not sure, so not answered yet: {reason}", { reason: outcome.reason }));
+      const reason = msg("Not sure, so not answered yet: {reason}", { reason: outcome.reason });
+      // B-131: nobody waits without a word. A day after the message came, one fixed reply says the
+      // answer follows here; the run stays held and is answered once the knowledge has it.
+      if (!run.acknowledged && Date.now() - Date.parse(run.createdAt) >= SAFE_DEFAULT_MS) {
+        const text = localized(policy.waitingReply ?? DEFAULT_WAITING_REPLY);
+        const signature = settings?.signature as { enabled?: boolean; text?: string } | undefined;
+        const signed = withoutDashes(signature?.enabled && signature.text?.trim() ? `${text}\n\n${signature.text.trim()}` : text);
+        if (!(await deps.registry.reserveSend(mailboxId, policy.dailySendLimit)))
+          return finish("held", msg("{reason}. The waiting reply was not sent: the daily send limit is reached", { reason }));
+        const to = replyTo || email.sender;
+        let status: "accepted" | "unknown" | null = null;
+        try {
+          const result = await deps.mailbox.send({
+            mailboxId, idempotencyKey: `${run.id}:waiting`, kind: "reply", originalEmailId: email.id,
+            request: {
+              from: typeof settings?.fromName === "string" && settings.fromName.trim()
+                ? { email: mailboxId, name: settings.fromName.trim().slice(0, 100) } : mailboxId,
+              to, subject: replySubject(email.subject), text: signed, html: textHtml(signed), auto_submitted: true,
+            },
+          });
+          status = "error" in result || result.status === "failed" ? null : result.status === "accepted" ? "accepted" : "unknown";
+        } catch {
+          // The send may have happened: never sent twice, so it counts as sent with an unknown outcome.
+          status = "unknown";
+        }
+        if (!status) return finish("held", msg("{reason}. The waiting reply was refused; it is tried again with the next attempt", { reason }));
+        run.acknowledged = { at: new Date().toISOString(), status, text: signed.slice(0, 2000) };
+        console.log(JSON.stringify({ event: "agent_waiting_reply_sent", run: run.id, status }));
+        return finish("held", msg("{reason}. A reply saying the answer follows was sent", { reason }));
+      }
+      return finish("held", reason);
     }
   }
   if (outcome.action === "skip") return finish("skipped", outcome.reason);

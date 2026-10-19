@@ -7,6 +7,10 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **Nobody waits without a word.** A message an agent holds because it is not sure gets one reply a
+  day after it came, saying the answer follows in the same conversation (Settings → Agents, or a
+  default); the real answer still goes out once the knowledge has it. A message held, or a draft
+  nobody sent, still unanswered after 4 hours raises one `agent.waiting` event for the monitor.
 - **One address can be brought here on its own.** In Settings → Domains, each address whose
   Cloudflare rule still sends its mail elsewhere has Bring here: it gets its mailbox, keeps sending a
   copy where its mail went before, and only its rule moves. Agents do the same with
