@@ -123,12 +123,15 @@ function createAnalytics(deps) {
   let retryAt = 0;
   let failures = 0;
   let flushing = null;
-  let state = { installed: false, activeDay: '', counts: null, version: '' };
+  let state = { installed: false, activeDay: '', counts: null, version: '', disclosedAt: '' };
+  // A7-012 (issue #45, Fabric ADR-0127): a start before the person answered the switch waits here.
+  let deferred = null;
 
   async function loadState() {
     try {
       const value = JSON.parse(await fs.readFile(stateFile(userData), 'utf8'));
-      if (value && typeof value === 'object') state = { installed: value.installed === true, activeDay: typeof value.activeDay === 'string' ? value.activeDay : '', counts: value.counts && typeof value.counts === 'object' ? cleanCounts(value.counts) : null, version: typeof value.version === 'string' ? value.version.slice(0, 50) : '' };
+      if (value && typeof value === 'object') state = { installed: value.installed === true, activeDay: typeof value.activeDay === 'string' ? value.activeDay : '', counts: value.counts && typeof value.counts === 'object' ? cleanCounts(value.counts) : null, version: typeof value.version === 'string' ? value.version.slice(0, 50) : '',
+        disclosedAt: typeof value.disclosedAt === 'string' ? value.disclosedAt.slice(0, 40) : '' };
     } catch { /* first run, or an unreadable state: start fresh */ }
   }
   async function saveState() {
@@ -198,19 +201,8 @@ function createAnalytics(deps) {
     return flushing;
   }
 
-  return {
-    /** Whether this build can send at all, and whether it does now. */
-    status: () => ({ available: !!bundle, enabled: !!installId }),
-
-    /** At launch: the install once per app, then the start. */
-    async start({ launch = 'ordinary', serverConfigured = false } = {}) {
-      if (!bundle || typeof send !== 'function') return;
-      let installation;
-      try { installation = await ensureInstallation({ fs, file: shared, uuid, now }); }
-      catch (error) { log({ event: 'analytics_off', reason: 'installation_not_written', code: error && error.code || 'error' }); return; }
-      if (installation.state !== 'ok') { log({ event: 'analytics_off', reason: 'installation_unreadable' }); return; }
-      await loadState();
-      if (installation.value.analytics === false) return;
+  /** The start itself, once the switch is on and answered: the install once per app, then the start. */
+  async function begin(installation, { launch = 'ordinary', serverConfigured = false } = {}) {
       installId = installation.value.id;
       if (!state.installed && track('app_installed', { first_passioncode_app: installation.created, server_configured: !!serverConfigured })) {
         state.installed = true;
@@ -221,6 +213,40 @@ function createAnalytics(deps) {
       if (state.version !== appVersion) { state.version = String(appVersion).slice(0, 50); await saveState(); }
       track('app_started', { launch: launch === 'link' ? 'link' : 'ordinary' });
       await flush();
+  }
+
+  /** The person's answer, from the first-run question or the menu switch: kept once per app (A7-012). */
+  async function disclose() {
+    if (state.disclosedAt) return;
+    state.disclosedAt = new Date(now()).toISOString();
+    await saveState();
+  }
+
+  return {
+    /**
+     * Whether this build can send at all, whether it does now, whether it still waits for the person's
+     * first answer (nothing is sent until then), and whether this install sent counts before it asked.
+     */
+    status: () => ({ available: !!bundle, enabled: !!installId, pending: !!deferred, sentBefore: state.installed === true }),
+
+    /**
+     * At launch. Until the person has answered the switch once (the first-run question or the menu),
+     * nothing is queued or sent, `app_installed` included: the start waits for the answer (A7-012).
+     */
+    async start(options = {}) {
+      if (!bundle || typeof send !== 'function') return;
+      let installation;
+      try { installation = await ensureInstallation({ fs, file: shared, uuid, now }); }
+      catch (error) { log({ event: 'analytics_off', reason: 'installation_not_written', code: error && error.code || 'error' }); return; }
+      if (installation.state !== 'ok') { log({ event: 'analytics_off', reason: 'installation_unreadable' }); return; }
+      await loadState();
+      if (installation.value.analytics === false) return;
+      if (!state.disclosedAt) {
+        deferred = options;
+        log({ event: 'analytics_pending', reason: 'not_answered' });
+        return;
+      }
+      await begin(installation, options);
     },
 
     /** Whether today's active event is still due; a caller fetches counts only then. */
@@ -268,11 +294,16 @@ function createAnalytics(deps) {
      */
     async setEnabled(enabled) {
       if (!bundle) return false;
+      const waiting = deferred;
+      deferred = null;
       if (enabled) {
         const installation = await ensureInstallation({ fs, file: shared, uuid, now }).catch(() => null);
-        if (!installation || installation.state !== 'ok') return false;
-        if (installation.value.analytics === false && !(await writeSwitch({ fs, file: shared, enabled: true }))) return false;
+        if (!installation || installation.state !== 'ok') { deferred = waiting; return false; }
+        if (installation.value.analytics === false && !(await writeSwitch({ fs, file: shared, enabled: true }))) { deferred = waiting; return false; }
         await loadState();
+        await disclose();
+        // The start that waited for this answer happens now, so the install is counted after it, not before.
+        if (waiting) { await begin(installation, waiting); return true; }
         state.counts = null;
         installId = installation.value.id;
         await saveState();
@@ -280,6 +311,7 @@ function createAnalytics(deps) {
       }
       queue = [];
       installId = null;
+      await disclose();
       return writeSwitch({ fs, file: shared, enabled: false }).catch(() => false);
     },
   };

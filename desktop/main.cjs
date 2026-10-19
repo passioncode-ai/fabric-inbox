@@ -325,6 +325,8 @@ async function startAnalytics() {
   await analytics.start({ launch: launchedByLink ? 'link' : 'ordinary', serverConfigured: !!config });
   installMenu();
   if (!config) void countActive();
+  // A window already in front when the start finished is asked now; otherwise the next one that comes forward.
+  void askUsageCounts(BrowserWindow.getFocusedWindow());
 }
 async function startUpdates() {
   const target = platformInstaller.updateTarget({ platform: process.platform, arch: process.arch, execPath: process.execPath, env: process.env,
@@ -505,10 +507,33 @@ async function toggleAnalytics(item) {
   installMenu();
   if (analytics.status().enabled) void countActive();
 }
+const usageCountsText = () => t('When this is on, Fabric Inbox tells PassionCode.ai that it was installed and opened, once a day that it was used, and how many Gmail accounts, Cloudflare mailboxes, agents and agent keys your server has. It never sends names, email addresses, domains, messages, keys or anything from your mail. The setting is shared by every PassionCode app on this Mac.');
 function aboutUsageCounts() {
-  void dialog.showMessageBox({ type: 'info', title: t('Usage counts'), message: t('Anonymous usage counts'),
-    detail: t('When this is on, Fabric Inbox tells PassionCode.ai that it was installed and opened, once a day that it was used, and how many Gmail accounts, Cloudflare mailboxes, agents and agent keys your server has. It never sends names, email addresses, domains, messages, keys or anything from your mail. The setting is shared by every PassionCode app on this Mac.'),
-    buttons: [t('OK')] });
+  void dialog.showMessageBox({ type: 'info', title: t('Usage counts'), message: t('Anonymous usage counts'), detail: usageCountsText(), buttons: [t('OK')] });
+}
+/**
+ * A7-012 (issue #45): until the person has answered once, nothing is counted or sent. The first time a
+ * window comes forward this asks, with the switch on and Continue; Not now asks again at the next launch,
+ * and the menu's Share Usage Counts is the other way to answer. Asked at most once a launch.
+ */
+let usageAsked = false;
+async function askUsageCounts(win) {
+  if (usageAsked || !analytics || !analytics.status().pending || !win || win.isDestroyed()) return;
+  usageAsked = true;
+  const before = analytics.status().sentBefore;
+  const { response, checkboxChecked } = await dialog.showMessageBox(win, { type: 'question', title: t('Usage counts'),
+    message: t('Share anonymous usage counts?'),
+    detail: `${usageCountsText()}\n\n${before ? t('This copy sent counts before it asked you; from now on it sends nothing until you answer.') : t('Nothing has been sent yet.')}`,
+    checkboxLabel: t('Share usage counts'), checkboxChecked: true, buttons: [t('Continue'), t('Not now')], defaultId: 0, cancelId: 1 });
+  if (response !== 0) { logEvent({ event: 'analytics_question', answer: 'later' }); return; }
+  logEvent({ event: 'analytics_question', answer: checkboxChecked ? 'on' : 'off' });
+  const ok = await analytics.setEnabled(!!checkboxChecked);
+  if (!ok && checkboxChecked) {
+    await dialog.showMessageBox(win, { type: 'warning', title: t('Usage counts'), message: t('Usage counts could not be turned on.'),
+      detail: t('The shared PassionCode settings file on this Mac could not be read, so nothing is sent.'), buttons: [t('OK')] });
+  }
+  installMenu();
+  if (analytics.status().enabled) void countActive();
 }
 function queueLink(url) {
   if (typeof url !== 'string' || !url.startsWith(`${connector.SCHEME}:`)) return;
@@ -922,8 +947,8 @@ app.on('will-quit', (event) => {
   void updater.quitting().finally(() => app.quit());
 });
 // The window coming forward retries usage counts (LC-08); updates run on their own timer (LC-16).
-app.on('browser-window-focus', () => {
-  if (analytics) { void analytics.wake(); void countActive(); }
+app.on('browser-window-focus', (_event, win) => {
+  if (analytics) { void analytics.wake(); void countActive(); void askUsageCounts(win); }
 });
 // Closing the last window leaves the app running (the organization's lifecycle rule, 2026-10-16): the
 // Dock icon on macOS, the tray icon on Windows and Linux bring it back; it ends only by Quit or a signal.
