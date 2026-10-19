@@ -22,7 +22,8 @@ const cloudflare = (tag: string | null, versions = [{ version_id: "v-1", percent
     asked.push(url.replace(/^.*\/scripts\//, ""));
     assert.equal((init.headers as Record<string, string>).Authorization, "Bearer token");
     const result = url.endsWith("/deployments") ? { deployments: [{ id: "d-1", created_on: "2026-10-19T20:00:00Z", versions }] }
-      : { id: "v-1", metadata: { annotations: tag ? { "workers/tag": tag } : {} } };
+      // The shape Cloudflare answers (read live 2026-10-19): annotations at the top, the script's etag under resources.
+      : { id: "v-1", metadata: { created_on: "2026-10-19T20:00:00Z" }, annotations: tag ? { "workers/tag": tag } : {}, resources: { script: { etag: "etag-1" } } };
     return new Response(JSON.stringify({ success: true, result }), { status: 200 });
   }) as unknown as typeof fetch;
   return { fetchImpl, asked };
@@ -35,6 +36,7 @@ test("B-62: a served version tagged with this clean checkout's commit is linked,
   assert.equal(r.verdict, "linked", JSON.stringify(r.problems));
   assert.equal(r.commit, c.commit);
   assert.equal(r.worker.versionId, "v-1");
+  assert.equal(r.worker.scriptEtag, "etag-1");
   assert.equal(r.build.files, 2);
   assert.equal(r.build.sha256, buildDigest(c.root).sha256, "the digest is stable");
   assert.deepEqual(cf.asked, ["fabric-inbox/deployments", "fabric-inbox/versions/v-1"]);
