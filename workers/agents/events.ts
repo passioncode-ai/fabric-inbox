@@ -5,18 +5,20 @@
 // titles of the passages it used — never the sender, the subject, or any message's text.
 import type { AgentRun } from "./run";
 import { messageLink } from "../../shared/mail/open-link";
+import { QUALITY_SCHEMA, type QualityDaily } from "./quality";
 
 /** The payload schema of `data.value`, published in this repository. */
 export const AGENT_EVENT_SCHEMA = "https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/agents/agent-event.schema.json";
 
 export interface AgentEvent {
   at: string;
-  kind: "agent.sent" | "agent.drafted" | "agent.skipped" | "agent.unanswered" | "agent.needs_look" | "agent.not_helped" | "agent.handoff" | "agent.waiting";
+  kind: "agent.sent" | "agent.drafted" | "agent.skipped" | "agent.unanswered" | "agent.needs_look" | "agent.not_helped" | "agent.handoff" | "agent.waiting" | "support.quality_daily";
   level: "info" | "notice" | "warning";
   text: string;
   /** Opens the message and its run in the inbox (B-119): a path under the server's origin. */
   link: string;
-  data: { schema: string; value: AgentEventValue };
+  /** `AgentEventValue` for agent.* kinds; the quality standard's day for support.quality_daily (B-130). */
+  data: { schema: string; value: AgentEventValue | QualityDaily };
 }
 export interface AgentEventValue {
   runId: string; address: string; agentId?: string; agentVersion?: number; status: string;
@@ -99,4 +101,12 @@ export function waitingEvent(run: AgentRun, at: string): AgentEvent {
   };
   return { at, link: messageLink(`cloudflare:${run.mailboxId}`, run.emailId, run.id), kind: "agent.waiting", level: "warning",
     text: cut(`A message to ${run.mailboxId} has waited ${hours} hours with ${what}.`), data: { schema: AGENT_EVENT_SCHEMA, value } };
+}
+
+/** B-130: the day's quality of one agent address (support.quality_daily); counts only. */
+export function qualityEvent(address: string, value: QualityDaily, at: string): AgentEvent {
+  const people = (value.autonomy.toPersonPolicy ?? 0) + (value.autonomy.toPersonInability ?? 0);
+  return { at, link: "/settings/agents", kind: "support.quality_daily", level: "info",
+    text: cut(`Quality of ${address} on ${value.date}: ${value.coverage.turns ?? "unknown"} messages, ${value.autonomy.answered ?? 0} answered by the agent, ${people} for a person, ${value.autonomy.personQueueWaiting ?? 0} waiting.`),
+    data: { schema: QUALITY_SCHEMA, value } };
 }

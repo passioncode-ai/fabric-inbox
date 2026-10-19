@@ -7,6 +7,11 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **A daily quality report per agent address.** After each UTC day the agent events carry one
+  `support.quality_daily` per address: how much mail came and got a reply, first-reply times, repeats,
+  errors and model calls, what the agent answered and what went to a person, and who still waits.
+  What cannot be measured is marked, never shown as 0. The sender, subject and texts of an agent run
+  are removed 30 days after it began; its counts stay.
 - **Nobody waits without a word.** A message an agent holds because it is not sure gets one reply a
   day after it came, saying the answer follows in the same conversation (Settings → Agents, or a
   default); the real answer still goes out once the knowledge has it. A message held, or a draft

@@ -113,6 +113,9 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   Nobody waits without a word (B-131): a held message (`holdUnsure`) still unanswered a day after it came
   gets `waitingReply: { en, ru? }` once (a default text when unset; it stays held and is answered when the
   knowledge has it), and a message held or drafted 4 hours without a reply raises one `agent.waiting` event.
+  After each UTC day, `list_agent_events` carries one `support.quality_daily` per agent address (B-130): replies
+  and first-reply p50/p90, repeats, errors and model calls, answered vs handed to a person, the person queue;
+  a field not measured is null and listed in `notMeasured`. Sender, subject and texts leave runs after 30 days.
   `agent_mail_volume { days }` gives per-address, per-day counts (received, agent runs, no run, spam).
   Test an agent with `preview_agent_answer` (an outside sender, the text): it returns what the agent would do and
   the reply, sending and storing nothing.

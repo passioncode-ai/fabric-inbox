@@ -299,6 +299,8 @@ test("a repeated identical search is answered from the guard, not the index", as
   const run = (await h.run())!;
   assert.equal(searches, 2, "one search before the model, one for the first tool call — the repeat never reaches the index");
   assert.deepEqual(run.sources?.map((s) => s.sourceUri), ["faq/pricing.md"]);
+  // B-130: the knowledge revision the answer rested on is kept with each source.
+  assert.ok(run.sources?.every((s) => typeof s.revision === "string" && s.revision.length > 0));
 });
 
 

@@ -1,4 +1,6 @@
-import { EVENTS_KEPT, EVENTS_KEPT_MS, runEvent, waitingEvent, type AgentEvent } from "./events";
+import { EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, runEvent, waitingEvent, type AgentEvent } from "./events";
+import { qualityDay } from "./quality";
+import { readAllSettings } from "../lib/mailbox-store";
 import { DurableObject } from "cloudflare:workers";
 import { migrateSchema } from "../lib/do-schema";
 import { AGENT_REGISTRY_STEPS } from "./schema";
@@ -8,6 +10,7 @@ import {
   AgentInputSchema,
   agentId,
   grantSchemaProblems,
+  readAssignment,
   SCHEMA_LIMIT,
   type AgentInput,
   type AgentSummary,
@@ -40,6 +43,10 @@ export const HELD_FOR_MS = 30 * 86_400_000;
  */
 export const WAIT_SLA_MS = 4 * 3_600_000;
 export const ESCALATE_WITHIN_MS = 3 * 86_400_000;
+/** B-130: a run's sender, subject and texts are removed this long after it began; its counts stay. */
+export const RUN_TEXT_KEPT_MS = 30 * 86_400_000;
+/** B-130: missed quality days are caught up to this many days back. */
+const QUALITY_CATCH_UP_DAYS = 7;
 /** Longest an answer waits for its spam check before the agent runs anyway (B-30). */
 export const MAX_SPAM_HOLD_MS = 15 * 60_000;
 const MAX_AGENTS = 100;
@@ -213,7 +220,12 @@ export class AgentRegistryDO extends DurableObject<Env> {
       console.warn(JSON.stringify({ event: "waiting_supervision_failed", error: (error as Error).message?.slice(0, 200) }));
       return null;
     });
-    const heldDue = retryDue === null ? waitDue : waitDue === null ? retryDue : Math.min(retryDue, waitDue);
+    this.redactOldRuns();
+    const qualityDue = await this.emitQualityDays().catch((error) => {
+      console.warn(JSON.stringify({ event: "quality_daily_failed", error: (error as Error).message?.slice(0, 200) }));
+      return Date.now() + 3_600_000;
+    });
+    const heldDue = [retryDue, waitDue, qualityDue].filter((t): t is number => t !== null).reduce((a, b) => Math.min(a, b));
     // One message per mailbox at a time: two messages of one thread read the thread
     // before either answer exists, and would both be answered.
     const batch = this.nextBatch();
@@ -449,6 +461,64 @@ export class AgentRegistryDO extends DurableObject<Env> {
   }
 
   /**
+   * B-130 (A1): a run's sender, subject and every text it kept (the reply sent, tool results, the
+   * waiting reply, the question) are removed RUN_TEXT_KEPT_MS after it began; the counts stay.
+   */
+  protected redactOldRuns(now = Date.now()) {
+    const before = new Date(now - RUN_TEXT_KEPT_MS).toISOString();
+    for (const row of this.rows("SELECT id, body FROM agent_runs WHERE created_at < ? AND json_extract(body, '$.redacted') IS NULL LIMIT 200", before)) {
+      const run = JSON.parse(String(row.body)) as AgentRun;
+      run.sender = ""; run.subject = ""; run.redacted = true;
+      if (run.sent) run.sent = { ...run.sent, to: "", subject: "", body: "" };
+      if (run.acknowledged) run.acknowledged = { ...run.acknowledged, text: "" };
+      run.toolCalls = run.toolCalls.map((c) => ({ ...c, result: "" }));
+      delete run.question; delete run.intent; delete run.summary;
+      this.ctx.storage.sql.exec("UPDATE agent_runs SET body = ? WHERE id = ?", JSON.stringify(run), String(row.id));
+    }
+  }
+
+  /**
+   * B-130 (A5): one support.quality_daily event per agent address for each closed UTC day not yet
+   * reported (the last QUALITY_CATCH_UP_DAYS at most). Answers when the next day closes.
+   */
+  protected async emitQualityDays(now = Date.now()): Promise<number> {
+    const today = new Date(now).toISOString().slice(0, 10);
+    const next = Date.parse(`${today}T00:00:00.000Z`) + 86_400_000 + 5 * 60_000;
+    const last = (await this.ctx.storage.get<string>("quality_day")) ?? null;
+    const days: string[] = [];
+    for (let i = QUALITY_CATCH_UP_DAYS; i >= 1; i--) {
+      const day = new Date(Date.parse(`${today}T00:00:00.000Z`) - i * 86_400_000).toISOString().slice(0, 10);
+      if (last ? day > last : i === 1) days.push(day);
+    }
+    if (!days.length) return next;
+    const served = (await readAllSettings(this.env.BUCKET)).flatMap(({ email, settings }) => {
+      const assignment = readAssignment(settings);
+      return assignment && assignment !== "off" ? [email.toLowerCase()] : [];
+    });
+    for (const day of days) {
+      const since = new Date(Date.parse(`${day}T00:00:00.000Z`) - 7 * 86_400_000).toISOString();
+      const at = new Date(now).toISOString();
+      for (const address of served) {
+        let received: number | null = null;
+        try {
+          const rows = await this.env.MAILBOX.get(this.env.MAILBOX.idFromName(address)).receivedPerDay(`${day}T00:00:00.000Z`);
+          received = rows.find((r) => r.day === day)?.received ?? 0;
+        } catch (error) {
+          console.warn(JSON.stringify({ event: "quality_received_unreadable", error: (error as Error).message?.slice(0, 200) }));
+        }
+        const runs = this.rows("SELECT body FROM agent_runs WHERE mailbox_id = ? AND created_at >= ?", address, since)
+          .map((r) => JSON.parse(String(r.body)) as AgentRun);
+        const value = qualityDay({ address, day, received, runs, now,
+          modeOf: (r) => (r.agentId && r.agentVersion ? this.version(r.agentId, r.agentVersion)?.replyPolicy.mode : undefined) === "draft" ? "draft" : "auto" });
+        this.appendEvent(`quality-${day}`, qualityEvent(address, value, at));
+      }
+      await this.ctx.storage.put("quality_day", day);
+      console.log(JSON.stringify({ event: "quality_daily_emitted", day, addresses: served.length }));
+    }
+    return next;
+  }
+
+  /**
    * B-131: escalates, once, each message still waiting for a person WAIT_SLA_MS after it came: a held
    * run, or a drafted one whose conversation has no reply sent after it. Answers when the next is due.
    */
@@ -478,6 +548,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
       }
       const at = new Date(now).toISOString();
       run.escalatedAt = at;
+      if (run.status === "drafted") run.answeredByPerson = !waiting;
       this.ctx.storage.transactionSync(() => {
         this.ctx.storage.sql.exec("UPDATE agent_runs SET body = ? WHERE id = ? AND status = ?", JSON.stringify(run), run.id, run.status);
         if (waiting) this.appendEvent(run.id, waitingEvent(run, at));

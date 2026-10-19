@@ -1,0 +1,423 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/agents/support-quality-daily.schema.json",
+  "title": "support.quality_daily (v2), as Fabric Inbox emits it",
+  "description": "One event per closed UTC day and agent address (B-130): the four families of the support quality standard v1 (issue #181): nobody dropped (coverage), quality (an independent judge, rubric v1), stability and autonomy. Counts and codes only: no person's words, no id of a person, no judge note. A family or field not measured that day is named in notMeasured and is null, never 0. A copy of the shared standard's v2 schema (urn:support-quality-standard:schema:support.quality-daily:v2); quality is flat because an event's data.value members nest two levels at most. Fabric Inbox's channel is mail:<domain>:<local part>.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "date",
+    "channel",
+    "rubricVersion",
+    "judgeModel",
+    "coverage",
+    "quality",
+    "stability",
+    "autonomy",
+    "notMeasured"
+  ],
+  "properties": {
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "The closed UTC day."
+    },
+    "channel": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9:._-]{1,80}$",
+      "description": "The channel: for Fabric Inbox mail:<domain>:<local part> of the agent address."
+    },
+    "rubricVersion": {
+      "type": "string",
+      "description": "The judge rubric's version (v1: language, addressed, policy_safe, routing, actionable, continuity)."
+    },
+    "judgeModel": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The judge model that gave the day's first verdict; null when nothing was judged."
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coverageBasis",
+        "turns",
+        "delivered",
+        "undelivered",
+        "firstReplyP50Ms",
+        "firstReplyP90Ms",
+        "repeatAsk",
+        "agentRepeat",
+        "followupsAnswered",
+        "followupsPending"
+      ],
+      "properties": {
+        "coverageBasis": {
+          "enum": [
+            "inbound",
+            "owed"
+          ],
+          "description": "What turns counts: every inbound message (inbound), or only the questions someone owed an answer (owed), where unsolicited replies would be wrong (group chats)."
+        },
+        "turns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Messages the address received that day, spam apart (coverageBasis inbound)."
+        },
+        "delivered": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Messages of the day that got a reply: an answer, a hand-off or safe reply, or the waiting reply."
+        },
+        "undelivered": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Replies the provider refused or did not confirm (send_failed, send_unknown)."
+        },
+        "firstReplyP50Ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "firstReplyP90Ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "repeatAsk": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "The same message sent again by the same person."
+        },
+        "agentRepeat": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Replies the agent sent that it had already sent to the same person within a week."
+        },
+        "followupsAnswered": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Earlier unanswered questions answered on this day when the knowledge arrived."
+        },
+        "followupsPending": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Questions waiting for an answer at the time of writing."
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "judged",
+        "questions",
+        "helpedYes",
+        "helpedPartly",
+        "helpedNo",
+        "languagePass",
+        "languageFail",
+        "addressedPass",
+        "addressedFail",
+        "policySafePass",
+        "policySafeFail",
+        "routingPass",
+        "routingFail",
+        "actionablePass",
+        "actionableFail",
+        "continuityPass",
+        "continuityFail"
+      ],
+      "properties": {
+        "judged": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "questions": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "helpedYes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "helpedPartly": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "helpedNo": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "languagePass": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "languageFail": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "addressedPass": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "addressedFail": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "policySafePass": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "policySafeFail": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "routingPass": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "routingFail": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "actionablePass": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "actionableFail": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "continuityPass": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "continuityFail": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "description": "The judge (rubric v1): judged turns, real questions, helped yes/partly/no among questions, and pass and fail per check."
+    },
+    "stability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "errors",
+        "modelCalls",
+        "modelCallsFailed",
+        "fallbackTurns",
+        "processErrors",
+        "restarts"
+      ],
+      "properties": {
+        "errors": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "modelCalls": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "modelCallsFailed": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "fallbackTurns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Turns the fallback model answered after the writer failed or gave no answer."
+        },
+        "processErrors": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "restarts": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "autonomy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "answered",
+        "toPersonPolicy",
+        "toPersonInability",
+        "limitReplies",
+        "smalltalk"
+      ],
+      "properties": {
+        "answered": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "toPersonPolicy": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Handed to a person by policy: a hand-off reply, or a draft on an address whose agent drafts."
+        },
+        "toPersonInability": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "The agent could not answer: held, or drafted on an auto-sending address for what the answer says."
+        },
+        "limitReplies": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Drafted because a daily send limit or rate limit was reached."
+        },
+        "smalltalk": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "personQueueWaiting": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Optional (A2): items waiting for a person at the time of writing."
+        },
+        "personQueueOldestMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Optional (A2): age of the oldest item waiting for a person; null when none waits."
+        },
+        "noSafeDefault": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Optional (A6): items that waited past the SLA where no safe default may act (for example a drafting-only address), so a person is the only route."
+        }
+      }
+    },
+    "notMeasured": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-zA-Z][a-zA-Z.]{1,60}$"
+      },
+      "description": "What the agent could not measure that day: a family (delivery, quality) or a field name (repeatAsk, processErrors, ...). A field named here is null, never 0."
+    }
+  }
+}
