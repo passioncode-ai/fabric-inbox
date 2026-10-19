@@ -7,6 +7,9 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **Usage counts wait for your answer.** The Mac app sends nothing, not even that it was installed,
+  until you answer once: it asks the first time a window comes forward (Continue with the switch on
+  or off, or Not now), and the menu's Share Usage Counts answers too.
 - **A hub can check narrowing, and a deploy has a receipt.** The server announces what its
   `X-Fabric-Accounts` narrowing does (`fabric-inbox/account-narrowing`, revision 1) when an agent
   connects. Each `npm run deploy` tags the Worker version with its commit, and `npm run

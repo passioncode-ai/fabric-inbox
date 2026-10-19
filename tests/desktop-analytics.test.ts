@@ -17,11 +17,13 @@ const HOST = "https://analytics.example.org";
 const BUNDLE = { appKey: "A-SH-0123456789", host: HOST, debug: false };
 const DAY = 24 * 3600 * 1000;
 
-function machine() {
+/** A Mac where the person already answered the usage-counts question (A7-012), unless `answered` is false. */
+function machine({ answered = true } = {}) {
   const root = mkdtempSync(path.join(os.tmpdir(), "fabric-analytics-"));
   const appData = path.join(root, "Application Support");
   const userData = path.join(appData, "Fabric Inbox");
   mkdirSync(userData, { recursive: true });
+  if (answered) writeFileSync(path.join(userData, "analytics-state.json"), JSON.stringify({ disclosedAt: "2026-10-01T00:00:00.000Z" }));
   return { appData, userData, shared: path.join(appData, "PassionCode", "installation.json") };
 }
 
@@ -55,7 +57,7 @@ test("a build without an App Key sends nothing and never creates the shared file
   const a = usage.createAnalytics({ fs: fsPromises, appData: m.appData, userData: m.userData, bundle: null, fetch: srv.fetch, uuid: randomUUID });
   await a.start({});
   await a.active({ gmail: 1 });
-  assert.deepEqual(a.status(), { available: false, enabled: false });
+  assert.deepEqual(a.status(), { available: false, enabled: false, pending: false, sentBefore: false });
   assert.equal(srv.batches.length, 0);
   assert.equal(existsSync(m.shared), false);
   assert.equal(await a.setEnabled(true), false);
@@ -179,7 +181,7 @@ test("analytics: false in the shared file is the one switch: nothing is sent unt
   await a.active({ gmail: 1 });
   await a.event("server_connected", { method: "entered" });
   assert.equal(srv.batches.length, 0);
-  assert.deepEqual(a.status(), { available: true, enabled: false });
+  assert.deepEqual(a.status(), { available: true, enabled: false, pending: false, sentBefore: false });
   assert.equal(await a.setEnabled(true), true);
   assert.deepEqual(JSON.parse(readFileSync(m.shared, "utf8")), { version: 1, id, analytics: true, created_at: 1, fabric: true });
   await a.active({ gmail: 3 });
@@ -329,4 +331,53 @@ test("usage counts are sent with Node's fetch, so a pending Keychain prompt cann
 test("a development run has its own app name, so its cookie key lives in its own Keychain item", () => {
   const main = readFileSync("desktop/main.cjs", "utf8");
   assert.match(main, /app\.setName\(app\.isPackaged \? 'Fabric Inbox' : 'Fabric Inbox Development'\);/);
+});
+
+test("A7-012: nothing is queued or sent before the person answers; the answer starts it, and a no sends nothing at all", async () => {
+  const m = machine({ answered: false });
+  const { a, srv, lines } = client(m);
+  await a.start({ serverConfigured: true });
+  await a.active({ gmail: 1 });
+  await a.event("server_connected", { method: "entered" });
+  a.wake();
+  assert.equal(srv.batches.length, 0, "nothing before the answer, app_installed included");
+  assert.deepEqual(a.status(), { available: true, enabled: false, pending: true, sentBefore: false });
+  assert.ok(lines.some((l) => l.event === "analytics_pending"));
+  // Yes: the start that waited happens now, and the answer is kept, so the next launch does not ask again.
+  assert.equal(await a.setEnabled(true), true);
+  assert.deepEqual(srv.events().map((e: any) => e.eventName), ["app_installed", "app_started"]);
+  assert.equal(a.status().pending, false);
+  const again = client(m, { server: server() });
+  await again.a.start({});
+  assert.equal(again.a.status().pending, false);
+  assert.deepEqual(again.srv.events().map((e: any) => e.eventName), ["app_started"], "installed once per app");
+
+  // No: nothing is ever sent, and the answer is kept too.
+  const n = machine({ answered: false });
+  const no = client(n);
+  await no.a.start({});
+  assert.equal(await no.a.setEnabled(false), true);
+  await no.a.active({ gmail: 1 });
+  assert.equal(no.srv.batches.length, 0);
+  const later = client(n);
+  await later.a.start({});
+  assert.deepEqual(later.a.status(), { available: true, enabled: false, pending: false, sentBefore: false }, "answered, and off");
+  assert.equal(later.srv.batches.length, 0);
+});
+
+test("A7-012: an install that sent counts before this rule is asked once and is not counted as a new install; an unreadable state asks again", async () => {
+  const m = machine({ answered: false });
+  writeFileSync(path.join(m.userData, "analytics-state.json"), JSON.stringify({ installed: true, version: "0.10.0" }));
+  const { a, srv } = client(m);
+  await a.start({});
+  assert.deepEqual(a.status(), { available: true, enabled: false, pending: true, sentBefore: true });
+  assert.equal(srv.batches.length, 0);
+  await a.setEnabled(true);
+  assert.deepEqual(srv.events().map((e: any) => e.eventName), ["app_started"], "no second app_installed");
+  const broken = machine({ answered: false });
+  writeFileSync(path.join(broken.userData, "analytics-state.json"), "{not json");
+  const b = client(broken);
+  await b.a.start({});
+  assert.equal(b.a.status().pending, true);
+  assert.equal(b.srv.batches.length, 0);
 });

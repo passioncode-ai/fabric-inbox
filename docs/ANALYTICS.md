@@ -13,6 +13,18 @@ organization's self-hosted Aptabase at `https://analytics.owner.example` (`the a
 its `docs/client-contract.md`). The approach is the one Switchboard shipped first (its
 `docs/ANALYTICS.md`); the organization's shared answer is roadmap track RM-13.
 
+## Nothing before the person answers
+
+Since issue #45 (Fabric ADR-0127, A7-012) nothing is queued or sent until the person has answered the
+switch once, `app_installed` included. The first time a window comes forward the app asks: *Share
+anonymous usage counts?* with what is counted, *Nothing has been sent yet.*, the switch (on) and
+Continue, or Not now (asked again at the next launch). The menu's Share Usage Counts is the other way
+to answer. The answer is kept per app as `disclosedAt` in `<userData>/analytics-state.json` (another
+PassionCode app's answer does not answer for this one; the shared switch in `installation.json` stays
+the one on/off). A start that waited is counted after the answer; an install that sent counts before
+this rule is asked once, told so, and is not counted as a new install; an unreadable state file asks
+again rather than sending. Tests: `A7-012: …` in `tests/desktop-analytics.test.ts`.
+
 ## What is sent
 
 Every event carries the app version, the OS name and version, the locale, the Electron version, an

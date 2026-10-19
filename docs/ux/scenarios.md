@@ -1035,16 +1035,17 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 ### SCN-048: Turn the anonymous usage counts off or on
 - **Persona:** P-01
 - **Feature:** Resume and manage preferences
-- **Traces:** ST-007, FLW-07, JTBD-03; passioncode-ai/fabric-inbox#27
+- **Traces:** ST-007, FLW-07, JTBD-03; passioncode-ai/fabric-inbox#27, #45 (A7-012)
 - **Entry point:** The app menu, Fabric Inbox → Share Anonymous Usage Counts (a checkmark) and About Usage Counts…
 - **Preconditions:** A released disk image (it carries the App Key); no PassionCode app has turned the shared switch off.
 - **Steps:**
+  0. The first time a window comes forward, before anything is sent -> a native question, Share anonymous usage counts?, says what is counted and that nothing has been sent yet, with the switch on and Continue or Not now -> Continue keeps the answer (on or off) and only then is the install counted; Not now asks again at the next launch (#45).
   1. The person opens About Usage Counts… -> a native notice says what is sent (installed, opened, a day of use, how many Gmail accounts, Cloudflare mailboxes, agents and agent keys) and what never is (names, addresses, domains, messages, keys), and that the setting is shared by every PassionCode app on this Mac.
   2. They clear the checkmark -> the shared file says `analytics: false`, events still waiting are dropped, and nothing more is sent by this app or by any other PassionCode app on the Mac.
   3. They set it again -> counting resumes from that moment; nothing done while it was off is reported.
 - **Expected result:** The person knows what leaves the Mac and has one switch for it that every PassionCode app honours.
 - **Alt paths:** A build from source or the Mac App Store package: the checkmark is shown unavailable and nothing is sent. The shared file cannot be read (damaged): the checkmark cannot be set, a notice says nothing is sent, and the file is left as it is.
-- **UI elements:** App menu checkbox item, About Usage Counts… item, native notice.
+- **UI elements:** First-run question (native, with a checkbox, Continue and Not now), app menu checkbox item, About Usage Counts… item, native notice.
 - **States covered:** empty, error, success
 - **Errors & recovery:** The shared file is damaged: analytics stays off and the notice says so; the person can remove the file to start fresh. The server is unreachable: events wait in memory (at most 23 hours) and are sent when it answers; nothing blocks the window.
 - **Status:** draft
