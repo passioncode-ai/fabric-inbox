@@ -11,7 +11,7 @@ import { type StoredAttachment } from "./lib/attachments";
 import { textToHtml } from "./lib/email-helpers";
 import { AttachmentValidationError, MAX_ATTACHMENTS, storedAttachmentName, validateAttachments } from "../shared/mail/attachments";
 import { allServedDomains, createMailbox, deleteMailbox, listMailboxAddresses, readSettings, storedCatchAll, updateSettings, readAllSettings, allowedAddresses as allowedAddressList } from "./lib/mailbox-store";
-import { createAddress, removeAddress } from "./lib/address-ops";
+import { createAddress, pausedKey, removeAddress } from "./lib/address-ops";
 import { routingClient } from "./routing/email-routing";
 import { handleSendEmail, handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
 import { Folders, isBuiltInFolder } from "../shared/folders";
@@ -463,7 +463,7 @@ type IncomingEmailEvent = {
 	/** Whether this delivery's own replays already forwarded the copy to `rcptTo` (`forwardOnce`). */
 	forwardedHere?: (rcptTo: string) => boolean;
 };
-type RejectReason = "no_recipient" | "domain_not_served" | "unknown_address";
+type RejectReason = "no_recipient" | "domain_not_served" | "unknown_address" | "address_paused";
 type Route = { mailboxId: string } | { rejected: RejectReason; address?: string };
 
 const domainOf = (address: string) => address.slice(address.lastIndexOf("@") + 1);
@@ -513,15 +513,29 @@ async function resolveRecipient(candidates: string[], allowedAddresses: string[]
 	const domains = new Set(await allServedDomains(env));
 	const onServedDomain = candidates.filter((a) => !domains.size || domains.has(domainOf(a)));
 	if (!onServedDomain.length) return { rejected: "domain_not_served", address: candidates[0] };
+	let paused: string | null = null;
 	for (const address of onServedDomain) {
 		if (allowedAddresses.length && !allowedAddresses.includes(address)) continue;
-		if (await env.BUCKET.head(`mailboxes/${address}.json`)) return { mailboxId: address };
+		if (await env.BUCKET.head(`mailboxes/${address}.json`)) {
+			// B-27: a paused address keeps its mail but takes none; its mail follows the domain's catch-all.
+			if (await env.BUCKET.head(pausedKey(address))) { paused ??= address; continue; }
+			return { mailboxId: address };
+		}
 	}
-	const address = onServedDomain[0];
+	const address = paused ?? onServedDomain[0];
 	const policy = await unknownAddressPolicy(env, domainOf(address));
-	if (policy.kind === "catch_all" && await env.BUCKET.head(`mailboxes/${policy.mailbox}.json`)) {
+	if (policy.kind === "catch_all" && policy.mailbox !== address && await env.BUCKET.head(`mailboxes/${policy.mailbox}.json`)
+		&& !(await env.BUCKET.head(pausedKey(policy.mailbox)))) {
+		if (paused) {
+			console.log(JSON.stringify({ event: "paused_address_mail", outcome: "catch_all", domain: domainOf(address) }));
+			return { mailboxId: policy.mailbox };
+		}
 		await countUnknown(env, address, "catch_all");
 		return { mailboxId: policy.mailbox };
+	}
+	if (paused) {
+		console.log(JSON.stringify({ event: "paused_address_mail", outcome: "rejected", domain: domainOf(address) }));
+		return { rejected: "address_paused", address };
 	}
 	await countUnknown(env, address, "rejected");
 	return { rejected: "unknown_address", address };
@@ -531,6 +545,7 @@ const REJECT_TEXT: Record<RejectReason, (address?: string) => string> = {
 	no_recipient: () => "No recipient address",
 	domain_not_served: (address) => `Domain not served here: ${address ? domainOf(address) : "unknown"}`,
 	unknown_address: (address) => `Address not found: ${address ?? "unknown"}`,
+	address_paused: (address) => `Address not accepting mail now: ${address ?? "unknown"}`,
 };
 
 async function receiveEmail(event: IncomingEmailEvent, env: Env, ctx: ExecutionContext) {

@@ -243,7 +243,7 @@ export async function removeAddress(env: Env, rawEmail: string): Promise<OpResul
   } catch (error) {
     return { status: 502, body: { error: msg("{routing} The mailbox could not be deleted ({error}); remove it again to finish.", { routing, error: (error as Error).message }) } };
   }
-  await env.BUCKET.delete(`delivery-issues/${email}.json`).catch(() => undefined);
+  await env.BUCKET.delete([`delivery-issues/${email}.json`, pausedKey(email)]).catch(() => undefined);
   // What happens to the next message is read from Cloudflare, not assumed.
   let afterwards: string;
   const next = client ? await client.status(email).catch(() => null) : null;
@@ -252,6 +252,76 @@ export async function removeAddress(env: Env, rawEmail: string): Promise<OpResul
   else afterwards = catchAll ? msg("New mail to {email} goes to {mailbox} if Cloudflare still sends it here.", { email, mailbox: catchAll.mailbox }) : msg("New mail to {email} is refused if Cloudflare still sends it here.", { email });
   console.log(JSON.stringify({ event: "address_deleted", domain }));
   return { status: 200, body: { email, routing, afterwards } };
+}
+
+/* ------------------------------------------------------------ pause (B-27) */
+
+/** A paused address keeps its mailbox and mail; this marker makes delivery treat it as unknown. */
+export const pausedKey = (email: string) => `paused/${email.toLowerCase()}.json`;
+
+/** The paused addresses and since when (B-27). */
+export async function pausedAddresses(bucket: R2Bucket): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  let cursor: string | undefined;
+  for (let page = 0; page < 10; page++) {
+    const result = await bucket.list({ prefix: "paused/", cursor });
+    await Promise.all(result.objects.map(async (o) => {
+      const at = await bucket.get(o.key).then((b) => b?.json<{ at?: string }>()).catch(() => null);
+      out.set(o.key.slice("paused/".length, -".json".length), typeof at?.at === "string" ? at.at : "");
+    }));
+    if (!result.truncated) break;
+    cursor = result.cursor;
+  }
+  return out;
+}
+
+/**
+ * Pauses an address (B-27): its mailbox, mail, settings and agent stay; its Cloudflare rule is switched
+ * off, and mail that still reaches the server goes to the domain's catch-all mailbox or is refused.
+ * Resume undoes both. The domain's catch-all mailbox cannot be paused (it keeps other addresses' mail).
+ */
+export async function pauseAddress(env: Env, rawEmail: string, now = Date.now()): Promise<OpResult> {
+  const email = rawEmail.trim().toLowerCase();
+  const domain = domainOf(email);
+  if (!(await env.BUCKET.head(settingsKey(email)))) return { status: 404, body: { error: msg("Address not found") } };
+  const catchAll = await effectiveCatchAll(env, domain);
+  if (catchAll?.mailbox === email)
+    return { status: 409, body: { error: msg("{email} keeps mail for every other address on {domain}. Choose another catch-all (or none) first.", { email, domain }) } };
+  const already = await env.BUCKET.head(pausedKey(email));
+  let routing = msg("Cloudflare was not changed: this server has no token. Mail that still comes here is not kept in this address.");
+  const client = routingClient(env);
+  if (client) {
+    try { routing = await client.disableRule(email); }
+    catch (error) {
+      if (error instanceof ZoneNotVisible) routing = msg("{reason}, so its routing rule was not switched off.", { reason: error.message });
+      else return { status: 502, body: { error: msg("{reason}. Nothing was changed.", { reason: error instanceof RoutingError ? error.message : msg("Routing could not be changed") }) } };
+    }
+  }
+  if (!already) await env.BUCKET.put(pausedKey(email), JSON.stringify({ at: new Date(now).toISOString() }));
+  const next = client ? await client.status(email).catch(() => null) : null;
+  const afterwards = catchAll ? msg("While it is paused, new mail to {email} goes to {mailbox}.", { email, mailbox: catchAll.mailbox })
+    : next?.state === "missing" ? msg("While it is paused, new mail to {email} does not come here: {detail}", { email, detail: next.detail })
+      : msg("While it is paused, new mail to {email} is refused if it still comes here; the sender is told.", { email });
+  console.log(JSON.stringify({ event: "address_paused", domain, again: !!already }));
+  return { status: 200, body: { email, paused: true, routing, afterwards } };
+}
+
+/** Resumes a paused address (B-27): its rule sends mail here again and delivery keeps it as before. */
+export async function resumeAddress(env: Env, rawEmail: string): Promise<OpResult> {
+  const email = rawEmail.trim().toLowerCase();
+  if (!(await env.BUCKET.head(settingsKey(email)))) return { status: 404, body: { error: msg("Address not found") } };
+  let routing: RoutingStatus | null = null;
+  const client = routingClient(env);
+  if (client) {
+    try { routing = (await client.ensureRule(email)).status; }
+    catch (error) {
+      if (!(error instanceof ZoneNotVisible))
+        return { status: 502, body: { error: msg("{reason}. The address stays paused.", { reason: error instanceof RoutingError ? error.message : msg("Routing could not be changed") }) } };
+    }
+  }
+  await env.BUCKET.delete(pausedKey(email));
+  console.log(JSON.stringify({ event: "address_resumed", domain: domainOf(email) }));
+  return { status: 200, body: { email, paused: false, routing } };
 }
 
 /* ------------------------------------------------- checking before creating */

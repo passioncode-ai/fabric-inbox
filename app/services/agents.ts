@@ -53,6 +53,8 @@ export interface ProjectAddress {
   forwardTo: string | null;
   /** The last forwarding failure, cleared by the next successful forward. */
   deliveryIssue: { target: string; problem: string; count: number; lastAt: string } | null;
+  /** B-27: since when the address is paused ("" when unknown), or null. */
+  paused?: string | null;
 }
 export interface ProjectAddresses {
   domains: { domain: string; unknownAddressPolicy: string;

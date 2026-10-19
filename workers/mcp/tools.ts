@@ -1124,6 +1124,20 @@ const removeAddress = defineTool({
   call: (a, ctx) => del(ctx, `/api/project-addresses/${enc(a.address.toLowerCase())}`),
 });
 
+const pauseAddress = defineTool({
+  name: "pause_address", title: "Pause an address", level: "admin", target: (a) => a.address,
+  description: "Pauses an address without deleting anything: its mailbox, mail, settings and agent stay; its Cloudflare rule is switched off, and new mail to it goes to the domain's catch-all mailbox, or is refused when there is none (the answer says which). The domain's catch-all mailbox cannot be paused. resume_address undoes it.",
+  input: { address }, routes: ["POST /api/project-addresses/:email/pause"],
+  call: (a, ctx) => post(ctx, `/api/project-addresses/${enc(a.address.toLowerCase())}/pause`),
+});
+
+const resumeAddress = defineTool({
+  name: "resume_address", title: "Resume a paused address", level: "admin", target: (a) => a.address,
+  description: "Resumes a paused address: its Cloudflare rule sends its mail here again and it keeps new mail as before. Resuming an address that is not paused changes nothing.",
+  input: { address }, routes: ["POST /api/project-addresses/:email/resume"],
+  call: (a, ctx) => post(ctx, `/api/project-addresses/${enc(a.address.toLowerCase())}/resume`),
+});
+
 const routeAddress = defineTool({
   name: "route_address_here", title: "Send an address's mail here", level: "admin", target: (a) => a.address,
   description: "Creates or turns on the Cloudflare rule that sends this address's mail to this server. A rule that already sends it elsewhere is not changed here: bring_address_here moves it and keeps a copy.",
@@ -1591,7 +1605,7 @@ export const TOOLS: readonly ToolDef[] = [
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,
-  checkAddress, createAddress, createAddresses, updateAddress, removeAddress, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
+  checkAddress, createAddress, createAddresses, updateAddress, removeAddress, pauseAddress, resumeAddress, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, clearIncomingFailures, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,

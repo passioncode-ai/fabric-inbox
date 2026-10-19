@@ -36,6 +36,13 @@ function cloudflare(state: { zone?: boolean; enabled?: boolean; status?: string;
       (state.rules ??= []).push(rule);
       return ok(rule);
     }
+    const put = /^\/zones\/zone1\/email\/routing\/rules\/([^/?]+)$/.exec(path);
+    if (put && method === "PUT" && put[1] !== "catch_all") {
+      const rule = (state.rules ?? []).find((r) => r.id === put[1]);
+      if (!rule) return new Response("{}", { status: 404 });
+      Object.assign(rule, JSON.parse(String(init!.body)));
+      return ok(rule);
+    }
     return new Response("{}", { status: 404 });
   }) as typeof fetch;
   return { calls, client: new EmailRoutingClient("token", "fabric-inbox", fetcher), fetcher };
@@ -587,4 +594,49 @@ test("an unreadable creation record never hides an address or fails its creation
   const listed = await inboxSources(broken.env as never).cloudflareAccounts();
   assert.deepEqual(listed.map((a) => [a.email, a.createdAt]), [["x@project.invalid", undefined]], "listed without a time, never left out");
   assert.equal((await broken.call("POST", "/api/project-addresses", { localPart: "y", domain: "project.invalid" })).status, 201, "the address is made even when its time cannot be kept");
+});
+
+test("B-27: pausing switches the address's rule off and keeps its mailbox; resuming switches it on; the catch-all cannot be paused", async () => {
+  const original = globalThis.fetch;
+  try {
+    const h = environment({ token: true });
+    const cf = cloudflare({ rules: [literal("support@project.invalid", toWorker)] });
+    globalThis.fetch = cf.fetcher;
+    assert.equal((await h.call("POST", "/api/project-addresses", { localPart: "support", domain: "project.invalid" })).status, 201);
+    const paused = await h.call("POST", "/api/project-addresses/Support@project.invalid/pause");
+    assert.equal(paused.status, 200, JSON.stringify(paused.body));
+    assert.equal(paused.body.paused, true);
+    assert.match(paused.body.routing, /switched off/);
+    assert.match(paused.body.afterwards, /does not come here: .*disabled/);
+    assert.equal(cf.calls.filter((c) => c.method === "PUT")[0]?.body?.enabled, false);
+    assert.ok(h.objects.has(mailboxKey("support@project.invalid")), "the mailbox stays");
+    assert.ok(h.objects.has("paused/support@project.invalid.json"));
+    const list = await h.call("GET", "/api/project-addresses");
+    assert.ok(list.body.addresses.find((a: any) => a.email === "support@project.invalid").paused, "listed as paused, with its time");
+    // Pausing again changes nothing in Cloudflare.
+    assert.equal((await h.call("POST", "/api/project-addresses/support@project.invalid/pause")).body.routing.includes("already off"), true);
+    const resumed = await h.call("POST", "/api/project-addresses/support@project.invalid/resume");
+    assert.equal(resumed.status, 200);
+    assert.equal(resumed.body.paused, false);
+    assert.equal(cf.calls.filter((c) => c.method === "PUT").at(-1)?.body?.enabled, true);
+    assert.ok(!h.objects.has("paused/support@project.invalid.json"));
+    assert.equal((await h.call("GET", "/api/project-addresses")).body.addresses[0].paused, null);
+    // A missing address, and the domain's catch-all mailbox, are refused.
+    assert.equal((await h.call("POST", "/api/project-addresses/ghost@project.invalid/pause")).status, 404);
+    const withCatchAll = environment({ token: true, policy: JSON.stringify({ "project.invalid": "catch_all:support@project.invalid" }) });
+    await withCatchAll.call("POST", "/api/project-addresses", { localPart: "support", domain: "project.invalid" });
+    assert.equal((await withCatchAll.call("POST", "/api/project-addresses/support@project.invalid/pause")).status, 409);
+  } finally { globalThis.fetch = original; }
+});
+
+test("B-27: with a catch-all elsewhere the pause says where mail goes; without a token it still pauses; removing clears the mark", async () => {
+  const h = environment({ policy: JSON.stringify({ "project.invalid": "catch_all:hello@project.invalid" }) });
+  await h.call("POST", "/api/project-addresses", { localPart: "hello", domain: "project.invalid" });
+  await h.call("POST", "/api/project-addresses", { localPart: "sales", domain: "project.invalid" });
+  const paused = await h.call("POST", "/api/project-addresses/sales@project.invalid/pause");
+  assert.equal(paused.status, 200);
+  assert.match(paused.body.routing, /no token/);
+  assert.match(paused.body.afterwards, /goes to hello@project\.invalid/);
+  assert.equal((await h.call("DELETE", "/api/project-addresses/sales@project.invalid")).status, 200);
+  assert.ok(!h.objects.has("paused/sales@project.invalid.json"), "a removed address leaves no pause mark behind");
 });

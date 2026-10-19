@@ -723,9 +723,10 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Steps:**
   1. Settings → Addresses → Add address (or Add address in the inbox sidebar, Add an address on <domain> on a domain's panel, or Add the first address on an empty list) -> choose the domain, type the part before @, set the display name, signature, who answers and optionally a copy to a confirmed destination, Create -> the steps run in the dialog (SCN-062), and Done opens the new address.
   2. ⋯ → Remove … on an address -> confirm in the dialog -> its rule, then the address and its mail are deleted; the answer says where new mail to it goes now, and the focus moves to the row that took its place.
+  3. ⋯ → Pause … on an address -> the dialog says where new mail goes while it is paused (the domain's catch-all mailbox, or refused with the sender told) -> its Cloudflare rule is switched off; its mailbox, mail, settings and agent stay, and the row shows Paused. ⋯ → Resume switches the rule on and it takes mail again (B-27).
 - **Expected result:** Addresses for a new account or project exist in seconds and go away cleanly.
 - **Alt paths:** From recent mail to an address that does not exist (the domain's panel, or the names offered in the dialog), the form is filled with that name. Several at once: SCN-064.
-- **UI elements:** SCR-02; Add address dialog and its step list, ⋯ Remove … with the shared confirmation.
+- **UI elements:** SCR-02; Add address dialog and its step list, ⋯ Remove … with the shared confirmation, ⋯ Pause … / Resume and the Paused badge.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A rule Cloudflare refuses no longer costs the address: it is created, marked Not receiving yet, and Fix it makes the rule again (SCN-065); an agent that asks for the rule to be required (createRoute true) still gets no address when the rule is refused. A copy to an unconfirmed destination or to a served domain is refused with the reason; the catch-all address cannot be removed until another one (or none) is chosen.
 - **Status:** validated

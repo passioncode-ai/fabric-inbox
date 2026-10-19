@@ -46,6 +46,9 @@ works; the live tool schemas have every input.
   `assistantPrompt`, `agent` (`"off"` or `{ agentId }`), `forwardTo` (`null` stops forwarding).
 - **Remove:** `remove_address` is two-step and deletes the address's mail for good. Its summary
   says how much; the person decides.
+- **Pause instead of removing:** `pause_address` keeps the mailbox, its mail, settings and agent,
+  switches its Cloudflare rule off, and new mail goes to the domain's catch-all or is refused (the
+  answer says which); `resume_address` undoes it. The catch-all mailbox itself cannot be paused.
 - **Mail arrives elsewhere:** `check_address_routing` says where it goes; `route_address_here`
   points it at this server.
 - **Hide from the sidebar:** `set_hidden_addresses` (it keeps receiving).

@@ -7,6 +7,9 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **Pause an address without deleting it.** Settings → Addresses → ⋯ → Pause keeps its mail,
+  settings and agent, stops new mail (it goes to the domain's catch-all, or is refused, as the dialog
+  says before you pause), and Resume brings it back. Agents use `pause_address` and `resume_address`.
 - **A daily quality report per agent address.** After each UTC day the agent events carry one
   `support.quality_daily` per address: how much mail came and got a reply, first-reply times, repeats,
   errors and model calls, what the agent answered and what went to a person, and who still waits.

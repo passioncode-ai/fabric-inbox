@@ -350,7 +350,7 @@ English is the source text and the key; nothing a server stores or an agent read
 
 ## Addresses: one way to create and remove
 
-`workers/lib/address-ops.ts` (`createAddress`, `removeAddress`, `setForwardCopy`,
+`workers/lib/address-ops.ts` (`createAddress`, `removeAddress`, `pauseAddress`, `resumeAddress`, `setForwardCopy`,
 `effectiveCatchAll`) is behind both Settings → Addresses (`/api/project-addresses`) and the legacy
 mailbox route (`/api/v1/mailboxes`, used for the addresses a deployment's `EMAIL_ADDRESSES` lists). Every check runs before Cloudflare is touched; a rule the
 mailbox is saved before its rule (below), so no rule is left without a mailbox; a zone the token cannot see gets its
@@ -389,6 +389,8 @@ reports it not arrived after 3 minutes. The part before @ is checked by
 `shared/address-name.ts`, the same module the dialog uses. `DomainManager.connect` leaves rules to another Worker alone
 and keeps each address's agent and the chosen catch-all; `release` keeps serving when the zone
 cannot be looked up and asks before giving up a zone the token cannot see.
+
+Pause (B-27): `pauseAddress` refuses the domain's catch-all mailbox, switches the address's literal rule off (`EmailRoutingClient.disableRule`; a rule elsewhere or none is left alone) and writes `paused/<address>.json`; delivery (`resolveRecipient`, `workers/index.ts`) skips a paused mailbox, so its mail follows the domain's catch-all or is refused as `address_paused`; the mailbox, mail, settings and agent stay. `resumeAddress` turns the rule on (`ensureRule`) and removes the mark; removing an address removes the mark too. The listing carries `paused`.
 
 ## Categories (CAT-1…CAT-7)
 

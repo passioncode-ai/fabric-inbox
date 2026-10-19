@@ -146,7 +146,8 @@ function AddressRowContent({ entry, agents, unread }: { entry: AddressEntry; age
         <span className="fi-row-meta">{a.forwardTo ? t("{answerer} · copy to {destination}", { answerer, destination: a.forwardTo }) : answerer}</span>
       </span>
       <span className="fi-row-side">
-        {a.deliveryIssue ? <Badge tone="bad" title={t.text(a.deliveryIssue.problem)}>{t("Copy failing")}</Badge>
+        {a.paused != null ? <Badge tone="warn">{t("Paused")}</Badge>
+          : a.deliveryIssue ? <Badge tone="bad" title={t.text(a.deliveryIssue.problem)}>{t("Copy failing")}</Badge>
           : entry.orphan ? <Badge tone="warn">{t("Not received")}</Badge>
           : routing.data ? <RoutingBadge state={routing.data.state} /> : null}
         {unread > 0 && <span className="fi-unread-count" aria-label={t.plural(unread, { one: "{n} unread", other: "{n} unread" })}>{unread}</span>}
@@ -193,6 +194,7 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
   const navigate = useNavigate();
   const work = useWork(a.email, "answers");
   const removeWork = useWork(a.email, "remove");
+  const pauseWork = useWork(a.email, "pause");
   const path = "/api/project-addresses/" + encodeURIComponent(a.email);
   const catchAll = data.domains.find((d) => d.domain === a.domain)?.catchAll?.mailbox === a.email;
   const routing = useRouting(a.email, true);
@@ -211,6 +213,32 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
     } finally { await refreshMail(client); }
     return value === "off" ? t("{email} is Off. New mail stays for you.", { email: a.email })
       : t("{email} is answered by {agent}.", { email: a.email, agent: agents?.agents.find((x) => x.id === value)?.name ?? value });
+  });
+
+  // B-27: what happens to new mail while it is paused, said before it is paused.
+  const domainCatchAll = data.domains.find((d) => d.domain === a.domain)?.catchAll?.mailbox;
+  const pause = async () => {
+    const ok = await confirm({
+      title: t("Pause {email}?", { email: a.email }),
+      body: <p>{domainCatchAll
+        ? t("Its mail and settings stay. New mail to it goes to {mailbox} until you resume it.", { mailbox: domainCatchAll })
+        : t("Its mail and settings stay. New mail to it is refused, and the sender is told, until you resume it.")}</p>,
+      confirmLabel: t("Pause"),
+      blocked: catchAll ? t("{email} keeps the mail for every other address on {domain}. Choose another catch-all on Domains first.", { email: a.email, domain: a.domain }) : undefined,
+    });
+    if (!ok) return;
+    await pauseWork.run(t("Pausing…"), async () => {
+      try {
+        const r = await fabric<{ routing: string; afterwards: string }>(path + "/pause", undefined, "POST");
+        return t("{email} is paused. {routing} {afterwards}", { email: a.email, routing: t.text(r.routing), afterwards: t.text(r.afterwards) });
+      } finally { await refreshMail(client); }
+    });
+  };
+  const resume = () => void pauseWork.run(t("Resuming…"), async () => {
+    try {
+      await fabric(path + "/resume", undefined, "POST");
+      return t("{email} takes mail again.", { email: a.email });
+    } finally { await refreshMail(client); }
   });
 
   const remove = async () => {
@@ -238,10 +266,12 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
       badges={<>
         {routing.data && <RoutingBadge state={routing.data.state} />}
         {catchAll && <Badge>{t("Catch-all for {domain}", { domain: a.domain })}</Badge>}
+        {a.paused != null && <Badge tone="warn">{t("Paused")}</Badge>}
         {unread > 0 && <Badge>{t.plural(unread, { one: "{n} unread", other: "{n} unread" })}</Badge>}
       </>}
       menu={<ActionMenu label={t("More actions for {email}", { email: a.email })} actions={[
         { label: t("Open its mail"), onSelect: () => navigate("/?account=" + encodeURIComponent("cloudflare:" + a.email)) },
+        a.paused != null ? { label: t("Resume {email}", { email: a.email }), onSelect: resume } : { label: t("Pause {email}…", { email: a.email }), onSelect: () => void pause() },
         { label: t("Remove {email}…", { email: a.email }), danger: true, onSelect: () => void remove() },
       ]} />}>
       <PanelBlock title={t("Who answers")}>
@@ -270,6 +300,7 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
           <Link className="fi-secondary" to={"/automation/" + encodeURIComponent(a.email)}>{t("Open rules and history")}</Link>
         </PanelBlock>
       )}
+      <ActionResult result={pauseWork.result} />
       <ActionResult result={removeWork.result} />
     </Panel>
   );
