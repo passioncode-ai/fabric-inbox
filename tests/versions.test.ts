@@ -17,7 +17,9 @@ test("the server, the Mac app and the skill plugin carry one version", () => {
 // reads FABRIC_SERVER_VERSION to refuse putting an older server over a newer one).
 test("npm run deploy records the server's version on the Worker", () => {
   const scripts = JSON.parse(readFileSync("package.json", "utf8")).scripts;
-  assert.match(scripts.deploy, /wrangler deploy --var FABRIC_SERVER_VERSION:\$npm_package_version$/);
+  assert.match(scripts.deploy, /wrangler deploy --var FABRIC_SERVER_VERSION:\$npm_package_version --tag \$\(git rev-parse --short=12 HEAD\)$/);
+  // B-62: each version is tagged with its commit, which the deployment receipt reads back.
+  assert.equal(scripts["deploy:receipt"], "node scripts/deploy-receipt.mjs");
 });
 
 // The release notes come from CHANGELOG.md (desktop/dist-mac.mjs refuses a version without its
