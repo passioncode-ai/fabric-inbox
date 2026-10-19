@@ -78,8 +78,11 @@ separate operator assistant; it no longer answers incoming mail.
 
 `/api/inbox` (`workers/routes/inbox.ts (readInbox)`) merges Cloudflare mailboxes and Gmail
 accounts with a keyset cursor per filter scope (`account`, `domain` = its Cloudflare addresses,
-`provider`, `category`, `folder`, `q`, `unread`). Accounts are read by a pool of 8; unread is
-counted for every inbox; a failed inbox keeps `hasMore` true so Load older stays. The same email
+`provider`, `category`, `folder`, `q`, `unread`). Cloudflare mailboxes are read by a pool of 8;
+the Gmail, IMAP and Outlook accounts, all in one accounts object, are read in one call for their
+pages (`GmailAccountsDO.inboxPages`) and one for their counts (`inboxCountsMany`), each account
+answering its page or its own error code (B-24); unread is counted for every inbox; a failed inbox
+keeps `hasMore` true so Load older stays. The same email
 in several inboxes (one RFC Message-ID) is one row with `alsoIn`. Each message carries `triage`
 from `shared/mail/triage.ts (triage)`: one of ten groups and important / normal / low, from header
 signals (`signalsFromHeaders`; raw headers never leave the server), Gmail labels and the served
@@ -103,6 +106,7 @@ Gmail records of 0.10 are read as they are, with the same ids and cache.
 |---|---|---|
 | Shared by every provider | `workers/providers/account-service.ts (AccountService)` | records, sealed credentials, the message cache (`gmail-cache.ts`: one layout, providers map their state onto its labels), idempotent sends with `sending`/`accepted`/`unknown` receipts, the incoming-event queue for rules, agents and categories, status, backoff and reasons (`accountProblem`) |
 | The provider's own work | `workers/providers/provider.ts (MailProvider, ProviderSession)` | a session per sync or action (`syncPage`, `message`, `change`, `attachment`, `headers`, `send`, drafts, `close`); `NotSentError` for a send refused before anything left (its reservation is removed, the same key may retry), any other failure after the hand-over is an unknown outcome |
+| A Gmail account's own labels (B-35) | `AccountService.listLabels`, `changeLabels`; `GET /api/accounts/:id/labels`, `POST /api/accounts/:id/messages/:mid/labels`; tools `list_folders`, `search_mailbox` (`label`), `label_messages`, `read_message` (`labels`) | the labels by id, name and type (system or user), without the one discard keeps; a change puts on and takes off only the person's own labels (`Label_…`, at most 20 each side), checked against the account's labels before Gmail is asked (`invalid_label`); an account with folders answers `not_supported` |
 | What an account can do | `ProviderCapabilities` (per account, in `GET /api/accounts`, the feed's accounts and `list_accounts`) | `organization` labels or folders, `threads` provider or headers, `drafts`, `archive`, `spam`, `trash`, `search` (cache), `sentCopy`, `auth`, `delivery` (poll); the app and the agent tools offer only what is true, and the routes refuse the rest (`not_supported`) |
 | Gmail | `gmail-provider.ts` over `gmail-client.ts`, `gmail-sync.ts` | 0.10's behaviour, unchanged (below) |
 | IMAP/SMTP | `workers/providers/imap/` | see "IMAP accounts" |

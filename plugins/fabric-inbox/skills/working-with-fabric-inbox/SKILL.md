@@ -120,6 +120,9 @@ form; `forward` carries the original's files unless `includeOriginalAttachments:
 **Find.** `list_messages` with `query` searches every inbox; `search_mailbox` searches one account
 by sender, recipient, subject, dates, read, starred, attachments and folder — every field applies,
 and one it cannot apply is refused (Gmail, IMAP and Outlook page with `cursor`, Cloudflare with `page`).
+A Gmail account's own labels: `list_folders` lists them by id, `search_mailbox` with `label` finds the
+synced mail under one, and `label_messages` puts them on or takes them off (only the person's own,
+`Label_…`; IMAP and Outlook have folders instead).
 
 **Tidy.** `move_messages` (inbox, archive, trash, a Cloudflare folder) and `mark_spam` (spam or not,
 and by default remembers the sender) act on up to 100 messages; each answer lists what failed, and

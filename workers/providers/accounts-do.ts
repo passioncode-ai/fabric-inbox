@@ -211,6 +211,12 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
   listInboxMessages(accountId: string, options: InboxReadOptions) {
     return this.service.listInboxMessages(accountId, options);
   }
+  inboxPages(accountIds: string[], options: InboxReadOptions) {
+    return this.service.inboxPages(accountIds, options);
+  }
+  inboxCountsMany(accountIds: string[]) {
+    return this.service.inboxCountsMany(accountIds);
+  }
   send(accountId: string, request: SendRequest) {
     return this.serial(() => this.service.send(accountId, request));
   }
@@ -237,6 +243,12 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
   }
   archive(accountId: string, messageId: string) {
     return this.serial(() => this.service.archive(accountId, messageId));
+  }
+  listLabels(accountId: string) {
+    return this.serial(() => this.service.listLabels(accountId));
+  }
+  changeLabels(accountId: string, messageId: string, change: { add: string[]; remove: string[] }) {
+    return this.serial(() => this.service.changeLabels(accountId, messageId, change));
   }
   moveToInbox(accountId: string, messageId: string) {
     return this.serial(() => this.service.moveToInbox(accountId, messageId));

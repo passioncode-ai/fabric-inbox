@@ -88,6 +88,7 @@ accountsRouter.onError((error, c) => {
     invalid_spam_state: 400,
     invalid_filter: 400,
     invalid_folder: 400,
+    invalid_label: 400,
     credential_store_unavailable: 503,
     message_store_unavailable: 503,
     provider_unavailable: 503,
@@ -372,8 +373,20 @@ accountsRouter.get("/api/accounts/:accountId/messages", async (c) => {
       unread: flag("unread"), starred: flag("starred"), hasAttachment: flag("hasAttachment"),
       folder: text("folder") as GmailFolder | undefined,
       ...(text("threadId") ? { threadId: text("threadId") } : {}),
+      ...(text("label") ? { label: text("label") } : {}),
     }),
   );
+});
+// A Gmail account's labels, system and its own (B-35); an account with folders answers not_supported.
+accountsRouter.get("/api/accounts/:accountId/labels", async (c) =>
+  c.json(await stub(c.env).listLabels(c.req.param("accountId"))),
+);
+// Puts the account's own labels on a message and takes others off: { add: ["Label_…"], remove: [...] } (B-35).
+accountsRouter.post("/api/accounts/:accountId/messages/:messageId/labels", async (c) => {
+  const body = await c.req.json<unknown>().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "invalid_label" }, 400);
+  const { add = [], remove = [] } = body as { add?: string[]; remove?: string[] };
+  return c.json(await stub(c.env).changeLabels(c.req.param("accountId"), c.req.param("messageId"), { add, remove }));
 });
 accountsRouter.get("/api/accounts/:accountId/messages/:messageId", async (c) =>
   c.json(

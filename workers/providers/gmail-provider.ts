@@ -8,7 +8,7 @@ import { configuration, type GmailEnvironment, type Store } from "./google-oauth
 import { GmailClient, ProviderError, makeMime, normalizeMessage, type Credentials, type Fetcher, type GmailMessage, type Message, type SendInput } from "./gmail-client";
 import { DISCARDED_LABEL, type GmailCache } from "./gmail-cache";
 import { GmailSync, importPercent, normalizeSync, type SyncState } from "./gmail-sync";
-import type { AccountBase, DraftUpdate, DraftView, MailProvider, MessageChange, ProviderCapabilities, ProviderSession } from "./provider";
+import type { AccountBase, AccountLabel, DraftUpdate, DraftView, MailProvider, MessageChange, ProviderCapabilities, ProviderSession } from "./provider";
 
 export interface GmailAccount extends AccountBase {
   provider: "gmail";
@@ -18,7 +18,7 @@ export interface GmailAccount extends AccountBase {
 /** The name of the account's own label that is Discarded (made the first time a message is discarded). */
 export const DISCARD_LABEL_NAME = "Discarded";
 /** Where this server keeps the id Gmail gave that label (`Label_…`). */
-const discardLabelKey = (accountId: string) => `label:${accountId}:discarded`;
+export const discardLabelKey = (accountId: string) => `label:${accountId}:discarded`;
 
 const CAPABILITIES: ProviderCapabilities = {
   organization: "labels", threads: "provider", drafts: true, archive: true, spam: true, trash: true,
@@ -153,9 +153,19 @@ class GmailSession implements ProviderSession {
         await this.withLabel((label) => c.modify(messageId, to === "inbox" ? ["INBOX"] : [], [label]));
         if (to === "trash") await c.setTrashed(messageId, true);
       }
+    } else if ("labels" in change) {
+      // Gmail answers an id it does not know with a bare 400: named here, before the change, as a refusal.
+      const own = new Set((await this.labels()).filter((l) => l.type === "user").map((l) => l.id));
+      if ([...change.labels.add, ...change.labels.remove].some((id) => !own.has(id))) throw new ProviderError("invalid_label", 400);
+      await c.modify(messageId, change.labels.add, change.labels.remove);
     }
     // Read full provider state after acknowledgement; never optimistically cache labels.
     return this.message(messageId);
+  }
+  async labels(): Promise<AccountLabel[]> {
+    const [found, discard] = await Promise.all([this.client.labels(), this.store.get<string>(discardLabelKey(this.account.id))]);
+    return (found.labels ?? []).filter((l) => l.id && l.id !== discard)
+      .map((l) => ({ id: l.id, name: l.name, type: l.type === "user" ? "user" : "system" }));
   }
   attachment(messageId: string, attachmentId: string) {
     return this.client.attachment(messageId, attachmentId);

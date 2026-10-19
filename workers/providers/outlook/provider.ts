@@ -144,6 +144,8 @@ export class OutlookSession implements ProviderSession {
   }
 
   async change(messageId: string, change: MessageChange): Promise<(Message & { bodyless?: boolean }) | null> {
+    // Folders, not labels (B-35): the accounts object refuses it first; a session asked anyway refuses too.
+    if ("labels" in change) throw new ProviderError("not_supported", 400);
     const graphId = await this.remote(messageId);
     const path = `/me/messages/${enc(graphId)}`;
     let now: GraphMessage;

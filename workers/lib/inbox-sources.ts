@@ -65,6 +65,16 @@ export function inboxSources(env: Env): InboxSources {
       if (account.provider !== "cloudflare") { const r = remote(account); return r.stub.countInbox(r.id); }
       return env.MAILBOX.get(env.MAILBOX.idFromName(account.id.slice(11))).inboxCounts();
   },
+    async messagesMany(accounts, options) {
+      const ids = new Map(accounts.map((a) => [remote(a).id, a.id]));
+      const found = await env.GMAIL_ACCOUNTS.getByName("workspace").inboxPages([...ids.keys()], options);
+      return Object.fromEntries([...ids].map(([id, feedId]) => [feedId, found[id] ?? { error: "account_unavailable" }]));
+  },
+    async countsMany(accounts) {
+      const ids = new Map(accounts.map((a) => [remote(a).id, a.id]));
+      const found = await env.GMAIL_ACCOUNTS.getByName("workspace").inboxCountsMany([...ids.keys()]);
+      return Object.fromEntries([...ids].map(([id, feedId]) => [feedId, found[id] ?? { error: "account_unavailable" }]));
+  },
     async messages(account, options) {
       if (account.provider !== "cloudflare") { const r = remote(account); return r.stub.listInboxMessages(r.id, options); }
       // The account list was read from R2 a moment ago; a mailbox deleted since reads as empty.

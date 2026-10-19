@@ -17,8 +17,19 @@ export interface InboxSources {
   /** Unread messages in the account's inbox; optional, a failure leaves the count out. */
   unreadCount?(account: InboxAccount): Promise<number>;
   /** Unread and total mail and stuck journal events; preferred over unreadCount when present. */
-  counts?(account: InboxAccount): Promise<{ unread: number; total?: number; stuck?: InboxAccount["stuck"] }>;
+  counts?(account: InboxAccount): Promise<InboxCountsRead>;
+  /**
+   * Gmail, IMAP and Outlook accounts live in one accounts object: their pages are read in one call
+   * (B-24), each account answering its page or its own error code. Cloudflare mailboxes are their
+   * own objects and are read one by one.
+   */
+  messagesMany?(accounts: InboxAccount[], options: InboxReadOptions): Promise<Record<string, { messages: InboxMessage[] } | { error: string }>>;
+  /** The same accounts' counts in one call (B-24). */
+  countsMany?(accounts: InboxAccount[]): Promise<Record<string, InboxCountsRead | { error: string }>>;
 }
+export interface InboxCountsRead { unread: number; total?: number; stuck?: InboxAccount["stuck"] }
+/** Accounts the accounts object holds, which a batched source reads together. */
+const batched = (a: InboxAccount) => a.provider !== "cloudflare";
 class InboxRequestError extends Error { constructor(message: string, readonly status: 400 | 404 = 400) { super(message); } }
 const allowedErrors = new Set(["cache_scan_limit", "account_not_found", "reconnect_required", "rate_limited", "message_store_unavailable", "account_limit"]);
 function publicError(error: unknown) { return error instanceof Error && allowedErrors.has(error.message) ? error.message : "account_unavailable"; }
@@ -117,41 +128,70 @@ export async function readInbox(params: URLSearchParams, sources: InboxSources, 
   const reading = selected.slice(0, 100);
   const readIds = new Set(reading.map(a => a.id));
   const failed = new Set<string>();
+  const fail = (a: InboxAccount, error: unknown) => {
+    a.error = publicError(error);
+    failed.add(a.id);
+    if (!issues.some(i => i.accountId === a.id)) issues.push({ accountId: a.id, provider: a.provider, error: a.error });
+  };
+  for (const a of reading)
+    if (a.error || ["reconnect_required", "rate_limited", "error"].includes(a.status))
+      issues.push({ accountId: a.id, provider: a.provider, error: a.error || a.status, ...(a.reason ? { reason: a.reason } : {}) });
+  const together = sources.messagesMany ? reading.filter(batched) : [];
+  const alone = reading.filter(a => !together.includes(a));
+  const readTogether = async () => {
+    if (!together.length) return;
+    let found: Awaited<ReturnType<NonNullable<InboxSources["messagesMany"]>>>;
+    try { found = await sources.messagesMany!(together, options); }
+    catch (error) { for (const a of together) fail(a, error); return; }
+    for (const a of together) {
+      const result = found[a.id];
+      if (result && "messages" in result) messages.push(...result.messages);
+      else fail(a, new Error(result?.error ?? "account_unavailable"));
+    }
+  };
   // A pool of 8 in flight: one slow account holds back only its own slot.
   let next = 0;
-  await Promise.all(Array.from({ length: Math.min(8, reading.length) }, async () => {
-    while (next < reading.length) {
-      const a = reading[next++];
-      if (a.error || ["reconnect_required", "rate_limited", "error"].includes(a.status))
-        issues.push({ accountId: a.id, provider: a.provider, error: a.error || a.status, ...(a.reason ? { reason: a.reason } : {}) });
+  await Promise.all([readTogether(), ...Array.from({ length: Math.min(8, alone.length) }, async () => {
+    while (next < alone.length) {
+      const a = alone[next++];
       try { messages.push(...await sources.messages(a, options)); }
-      catch (error) {
-        a.error = publicError(error);
-        failed.add(a.id);
-        if (!issues.some(i => i.accountId === a.id)) issues.push({ accountId: a.id, provider: a.provider, error: a.error });
-      }
+      catch (error) { fail(a, error); }
     }
-  }));
+  })]);
   // Unread counts for every inbox, not only the ones read, so the sidebar is never half stale.
-  if (firstPage && (sources.counts || sources.unreadCount)) {
+  if (firstPage && (sources.counts || sources.unreadCount || sources.countsMany)) {
     const counting = accounts.slice(0, 100);
-    let n = 0;
-    await Promise.all(Array.from({ length: Math.min(8, counting.length) }, async () => {
-      while (n < counting.length) {
-        const a = counting[n++];
-        // A count that cannot be read is said to be stale, never silently left as it was (P2-11).
-        const stale = (error: unknown) => {
-          a.countsStale = true;
-          console.warn(JSON.stringify({ event: "inbox_count_failed", provider: a.provider, error: publicError(error) }));
-        };
-        if (sources.counts) await sources.counts(a).then((c) => {
-          a.unread = c.unread;
-          if (typeof c.total === "number") a.total = c.total;
-          if (c.stuck && (c.stuck.dead || c.stuck.retrying)) a.stuck = c.stuck;
-        }).catch(stale);
-        else await sources.unreadCount!(a).then(count => { a.unread = count; }).catch(stale);
+    // A count that cannot be read is said to be stale, never silently left as it was (P2-11).
+    const stale = (a: InboxAccount, error: unknown) => {
+      a.countsStale = true;
+      console.warn(JSON.stringify({ event: "inbox_count_failed", provider: a.provider, error: publicError(error) }));
+    };
+    const apply = (a: InboxAccount, c: InboxCountsRead) => {
+      a.unread = c.unread;
+      if (typeof c.total === "number") a.total = c.total;
+      if (c.stuck && (c.stuck.dead || c.stuck.retrying)) a.stuck = c.stuck;
+    };
+    const countTogether = sources.countsMany ? counting.filter(batched) : [];
+    const countAlone = counting.filter(a => !countTogether.includes(a) && (sources.counts || sources.unreadCount));
+    const countBatch = async () => {
+      if (!countTogether.length) return;
+      let found: Awaited<ReturnType<NonNullable<InboxSources["countsMany"]>>>;
+      try { found = await sources.countsMany!(countTogether); }
+      catch (error) { for (const a of countTogether) stale(a, error); return; }
+      for (const a of countTogether) {
+        const c = found[a.id];
+        if (c && !("error" in c)) apply(a, c);
+        else stale(a, new Error(c && "error" in c ? c.error : "account_unavailable"));
       }
-    }));
+    };
+    let n = 0;
+    await Promise.all([countBatch(), ...Array.from({ length: Math.min(8, countAlone.length) }, async () => {
+      while (n < countAlone.length) {
+        const a = countAlone[n++];
+        if (sources.counts) await sources.counts(a).then((c) => apply(a, c)).catch((error) => stale(a, error));
+        else await sources.unreadCount!(a).then(count => { a.unread = count; }).catch((error) => stale(a, error));
+      }
+    })]);
   }
   void readIds;
   messages.sort(compareInbox);

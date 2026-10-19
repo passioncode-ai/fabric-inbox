@@ -121,3 +121,43 @@ test('a copy merged into a row on one page is not shown again on the next (2026-
   const second = await readInbox(new URLSearchParams({ limit: '2', cursor: first.cursor! }), sources([a2, g1, g2, a1]));
   assert.deepEqual(second.messages.map((m) => m.providerMessageId), ['a1'], 'the merged copy is not repeated');
 });
+
+test('Gmail, IMAP and Outlook accounts are read and counted in one call each; a Cloudflare mailbox alone (B-24)', async () => {
+  const rows = accounts.flatMap(a => [message(a, 'm-' + a.id, 1000)]);
+  const calls: string[] = [];
+  const base = sources(rows);
+  const s: any = { ...base,
+    messages: async (a: InboxAccount, o: InboxReadOptions) => { calls.push('messages:' + a.id); return base.messages(a, o); },
+    messagesMany: async (list: InboxAccount[], o: InboxReadOptions) => {
+      calls.push('messagesMany:' + list.map(a => a.id).join(','));
+      return Object.fromEntries(await Promise.all(list.map(async a => [a.id, { messages: await base.messages(a, o) }])));
+    },
+    counts: async (a: InboxAccount) => { calls.push('counts:' + a.id); return { unread: 1, total: 1 }; },
+    countsMany: async (list: InboxAccount[]) => { calls.push('countsMany:' + list.map(a => a.id).join(',')); return Object.fromEntries(list.map(a => [a.id, { unread: 2, total: 5 }])); } };
+  const page = await readInbox(new URLSearchParams(), s);
+  assert.deepEqual(calls.sort(), ['counts:cloudflare:me@example.invalid', 'countsMany:gmail:a,gmail:b', 'messages:cloudflare:me@example.invalid', 'messagesMany:gmail:a,gmail:b']);
+  assert.equal(page.messages.length, 3);
+  assert.deepEqual(page.accounts.map(a => [a.id, a.unread, a.total]), [['cloudflare:me@example.invalid', 1, 1], ['gmail:a', 2, 5], ['gmail:b', 2, 5]]);
+});
+
+test('one account failing inside the batch is that account\'s issue; a batch that fails is every account\'s, never a leak (B-24)', async () => {
+  const rows = accounts.flatMap(a => [message(a, 'm-' + a.id, 1000)]);
+  const base = sources(rows);
+  const s: any = { ...base,
+    messagesMany: async (list: InboxAccount[], o: InboxReadOptions) => Object.fromEntries(await Promise.all(list.map(async a =>
+      [a.id, a.id === 'gmail:b' ? { error: 'reconnect_required' } : { messages: await base.messages(a, o) }]))),
+    countsMany: async (list: InboxAccount[]) => Object.fromEntries(list.map(a => [a.id, a.id === 'gmail:a' ? { error: 'secret upstream text' } : { unread: 3 }])) };
+  const page = await readInbox(new URLSearchParams({ limit: '5' }), s);
+  assert.deepEqual(page.messages.map(m => m.accountId).sort(), ['cloudflare:me@example.invalid', 'gmail:a']);
+  assert.deepEqual(page.issues, [{ accountId: 'gmail:b', provider: 'gmail', error: 'reconnect_required' }]);
+  assert.equal(page.hasMore, true, 'the failed inbox may hold older mail');
+  const a = page.accounts.find(x => x.id === 'gmail:a')!, b = page.accounts.find(x => x.id === 'gmail:b')!;
+  assert.deepEqual([a.unread, a.countsStale, b.unread], [undefined, true, 3]);
+  s.messagesMany = async () => { throw new Error('private upstream response'); };
+  s.countsMany = async () => { throw new Error('private upstream response'); };
+  const down = await readInbox(new URLSearchParams(), s);
+  assert.deepEqual(down.messages.map(m => m.accountId), ['cloudflare:me@example.invalid']);
+  assert.deepEqual(down.issues.map(i => [i.accountId, i.error]), [['gmail:a', 'account_unavailable'], ['gmail:b', 'account_unavailable']]);
+  assert.ok(down.accounts.filter(x => x.provider === 'gmail').every(x => x.countsStale));
+  assert.ok(!JSON.stringify(down).includes('private') && !JSON.stringify(page).includes('secret'));
+});

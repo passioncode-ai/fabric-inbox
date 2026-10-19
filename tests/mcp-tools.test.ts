@@ -288,3 +288,55 @@ test("discard_messages and restore_discarded send the feed's account ids to the 
   assert.equal(move.isError, true);
   assert.match(JSON.stringify(move.data), /discard_messages/);
 });
+
+// ── Gmail's own labels (B-35) ────────────────────────────────────────
+
+test("list_folders lists a Gmail account's labels; an IMAP or Outlook account is told its folders are the standard ones (B-35)", async () => {
+  const labels = [{ id: "INBOX", name: "INBOX", type: "system" }, { id: "Label_2", name: "Clients", type: "user" }];
+  const gm = fakeApi({ "GET /api/accounts/g1/labels": ok({ labels }) });
+  const listed = await call(gm.api, "list_folders", { accountId: "gmail:g1" });
+  assert.deepEqual(listed.data, { labels });
+  for (const accountId of ["imap:i1", "outlook:o1"]) {
+    const refused = await call(gm.api, "list_folders", { accountId });
+    assert.equal(refused.isError, true);
+    assert.match(refused.data.error, /inbox, sent, archive/);
+  }
+  assert.equal(gm.calls.length, 1);
+});
+
+test("search_mailbox finds a Gmail account's mail under one label; a label is refused where there are none (B-35)", async () => {
+  const gm = fakeApi({ "GET /api/accounts/g1/messages": ok({ messages: [gmailMessage({ labels: ["INBOX", "Label_2"] })] }) });
+  const found = await call(gm.api, "search_mailbox", { accountId: "gmail:g1", label: "Label_2" });
+  assert.equal(found.isError, false, JSON.stringify(found.data));
+  assert.equal(gm.calls[0]!.query!.label, "Label_2");
+  assert.equal(found.data.messages.length, 1);
+  for (const accountId of ["imap:i1", `cloudflare:${CF}`]) {
+    const refused = await call(gm.api, "search_mailbox", { accountId, label: "Label_2" });
+    assert.equal(refused.isError, true, accountId);
+    assert.match(refused.data.error, /label/);
+  }
+  assert.equal(gm.calls.length, 1);
+});
+
+test("label_messages puts labels on and takes them off each message; a provider without labels fails that message only (B-35)", async () => {
+  const gm = fakeApi({ "POST /api/accounts/g1/messages/m1/labels": ok(gmailMessage({ labels: ["INBOX", "Label_3"] })),
+    "POST /api/accounts/g1/messages/m2/labels": ok(gmailMessage({ providerMessageId: "m2", labels: ["Label_3"] })) });
+  const done = await call(gm.api, "label_messages", { messages: [{ accountId: "gmail:g1", messageId: "m1" }, { accountId: "gmail:g1", messageId: "m2" },
+    { accountId: "imap:i1", messageId: "x" }], add: ["Label_3"], remove: ["Label_2"] });
+  assert.equal(done.isError, false, JSON.stringify(done.data));
+  assert.equal(done.data.done, 2);
+  assert.match(done.data.failed[0].error, /labels/);
+  assert.deepEqual(gm.calls.map((c) => [c.path, c.body]), [["/api/accounts/g1/messages/m1/labels", { add: ["Label_3"], remove: ["Label_2"] }],
+    ["/api/accounts/g1/messages/m2/labels", { add: ["Label_3"], remove: ["Label_2"] }]]);
+  assert.equal(done.journal[0]!.tool, "label_messages");
+  const empty = await call(gm.api, "label_messages", { messages: [{ accountId: "gmail:g1", messageId: "m1" }] });
+  assert.equal(empty.isError, true);
+});
+
+test("read_message names a Gmail message's own labels (B-35)", async () => {
+  const gm = fakeApi({ "GET /api/accounts/g1/messages/m1": ok(gmailMessage({ labels: ["INBOX", "Label_2", "CATEGORY_UPDATES", "UNREAD"] })) });
+  const read = await call(gm.api, "read_message", { accountId: "gmail:g1", messageId: "m1" });
+  assert.deepEqual(read.data.labels, ["Label_2"]);
+  const imap = fakeApi({ "GET /api/accounts/i1/messages/m1": ok(gmailMessage()) });
+  assert.equal((await call(imap.api, "read_message", { accountId: "imap:i1", messageId: "m1" })).data.labels, undefined);
+});
