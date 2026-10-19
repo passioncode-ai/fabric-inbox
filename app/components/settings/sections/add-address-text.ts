@@ -198,7 +198,7 @@ function build(t: T) {
     panelConnectLink: t("Connect Cloudflare"),
     /** The sentence around a link to the domain. */
     panelElsewhere: <N>(domain: N) =>
-      t.rich("A rule sending it elsewhere is never overwritten from here: change it in Cloudflare, or use Bring them here on {domain}, which keeps a copy.", { domain }),
+      t.rich("A rule sending it elsewhere is never overwritten from here: use Bring here beside it on {domain}, which keeps a copy, or change it in Cloudflare.", { domain }),
     panelFix: t("Fix it"),
     panelFixTitle: t("Makes or switches on the Cloudflare rule that sends its mail here"),
     /** The missing mail is the domain's, not the address's rule: the fix is the domain's Receive mail here (B14-01). */

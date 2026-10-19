@@ -107,7 +107,7 @@ export const SETTINGS: Readonly<Record<string, string>> = {
 	"No domain receives mail here yet. Adding an address on one of your domains receives its mail here first.": "Ни один домен пока не получает почту здесь. Добавьте адрес на своём домене — почта этого домена сначала будет переведена сюда.",
 	"Connect Cloudflare, or receive a domain's mail here first (Domains)": "Сначала подключите Cloudflare или начните получать здесь почту домена (раздел «Домены»)",
 	"Connect Cloudflare to make and check its rule: {link}.": "Чтобы создать и проверить правило адреса, нужен Cloudflare: {link}.",
-	"A rule sending it elsewhere is never overwritten from here: change it in Cloudflare, or use Bring them here on {domain}, which keeps a copy.": "Правило, которое направляет почту в другое место, отсюда не перезаписывается. Измените его в Cloudflare или нажмите «Перенести сюда» на странице {domain} — копия на прежний адрес сохранится.",
+	"A rule sending it elsewhere is never overwritten from here: use Bring here beside it on {domain}, which keeps a copy, or change it in Cloudflare.": "Правило, отправляющее почту в другое место, отсюда не перезаписывается: выберите «Перенести сюда» рядом с ним на {domain}, копия сохранится, или измените его в Cloudflare.",
 	"Makes or switches on the Cloudflare rule that sends its mail here": "Создаёт или включает правило Cloudflare, которое направляет его почту сюда",
 	"Turns on Email Routing for {domain} and brings its addresses here": "Включает Email Routing для {domain} и переносит его адреса сюда",
 	"If another provider handles its mail today, {link} asks you to confirm first.": "Если сейчас почту домена принимает другой провайдер, сначала это нужно подтвердить на странице {link}.",

@@ -86,6 +86,7 @@ const BODIES: Record<string, string[]> = {
   "POST /api/accounts/:accountId/messages/:messageId/read": ["read"], // workers/routes/accounts.ts
   "POST /api/accounts/:accountId/messages/:messageId/starred": ["starred"],
   "POST /api/accounts/:accountId/messages/:messageId/labels": ["add", "remove"], // workers/routes/accounts.ts (B-35)
+  "POST /api/domains/:domain/bring": ["address"], // workers/routes/domains.ts BringInput (B-28)
   "POST /api/accounts/:accountId/messages/:messageId/trashed": ["trashed"],
   "POST /api/automation/:account/dry-run": ["emailId", "rule"], // workers/automation/index.ts
 };

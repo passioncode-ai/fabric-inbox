@@ -37,6 +37,9 @@ works; the live tool schemas have every input.
   rule again once the cause is gone); `not_receiving` means the rule exists but the domain's Email
   Routing is off or broken (`connect_domain` turns it on again). If a call's answer is lost,
   `check_address` with the same names says which exist now; never assume none were created.
+- **An address whose Cloudflare rule sends it elsewhere:** `bring_address_here` makes its mailbox,
+  keeps the old forward destination as its copy and points only that rule here; the catch-all and
+  the domain's other addresses stay as they are (`connect_domain` moves them all).
 - **Prove it:** `send_test_message` → `check_test_message` every few seconds until its `state` is
   `arrived` or `not_arrived` (after 3 minutes); `not_arrived` → `check_address_routing`.
 - **Change:** `update_address` — only the fields you pass change: `fromName`, `signature`,

@@ -6,7 +6,7 @@ import { CloudflareApiError, TOKEN_PERMISSIONS, ACCOUNT_TOKEN_PERMISSIONS } from
 import { CloudflareAccounts, isAccountId } from "../routing/accounts";
 import { currentRelay, readRelays } from "../relay/install";
 import { effectiveCatchAll } from "../lib/address-ops";
-import { DomainManager, type ConnectResult, type Step } from "../routing/domains";
+import { BringRefused, DomainManager, type ConnectResult, type Step } from "../routing/domains";
 import { msg } from "../../shared/i18n";
 
 /**
@@ -160,6 +160,25 @@ domainsRouter.post("/api/domains/:domain/connect", async (c) => {
     const failed = result.steps.find((s) => s.outcome === "failed" && !["sending", "dmarc"].includes(s.id));
     return failed ? c.json({ ...result, error: `${failed.label}: ${failed.detail}` }, 502) : c.json(result, 200);
   } catch (error) { return failure(c, error, "domain_connect_failed"); }
+});
+
+export const BringInput = z.object({ address: z.string().trim().toLowerCase().email() }).strict();
+/** One address brought here keeping its old destination as a copy (B-28); the rest of the domain stays as it is. */
+domainsRouter.post("/api/domains/:domain/bring", async (c) => {
+  const domain = domainParam(c);
+  if (!domain) return c.json({ error: msg("Not a domain name") }, 400);
+  const parsed = BringInput.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: msg("Name the address to bring here") }, 400);
+  const m = manager(c);
+  if (!m) return c.json({ error: NOT_CONNECTED }, 503);
+  try {
+    const result = await m.bringAddress(domain, parsed.data.address);
+    logSteps("domain_bring_address", result);
+    return stepsResponse(c, result);
+  } catch (error) {
+    if (error instanceof BringRefused) return c.json({ error: error.message }, error.status);
+    return failure(c, error, "domain_bring_failed");
+  }
 });
 
 domainsRouter.post("/api/domains/:domain/release", async (c) => {

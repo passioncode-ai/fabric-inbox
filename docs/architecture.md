@@ -427,6 +427,11 @@ flowchart LR
 - `DomainManager.connect` is idempotent and ordered so no message is refused mid-change: routing on
   (another provider's MX only with `replaceMx`), domain served, mailboxes with their forwarded copy,
   then rules to the Worker, then sending and DMARC. `release` is its reverse and keeps the mail.
+- `DomainManager.bringAddress` (`POST /api/domains/:domain/bring`, tool `bring_address_here`, B-28) does
+  the same for one address on a domain that already receives here: its mailbox with the old forward
+  as its copy, then its own rule to the Worker (switched on if it was off); the catch-all and other
+  addresses stay. A domain not receiving here, no rule of its own, a drop rule or another Worker's
+  rule is refused (`BringRefused`, 400/404/409) before anything is written.
 - Several accounts (0.8, [brief](app-store/tasks/2026-09-30-cloudflare-accounts.md)):
   `CloudflareAccounts` (`workers/routing/accounts.ts`) reads the server's token and every
   `CLOUDFLARE_API_TOKEN_<account id>` secret (the environment is the registry), lists their
