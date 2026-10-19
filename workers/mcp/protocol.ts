@@ -8,7 +8,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z, type ZodRawShape } from "zod";
 import { levelAllows, type Level, type Principal } from "./keys";
-import { toolFitsScope } from "./scope";
+import { NARROWING, NARROWING_CAPABILITY, toolFitsScope } from "./scope";
 
 /** What a route answered: its status and parsed JSON (or text), unchanged. */
 export interface ApiResponse { status: number; data: unknown; contentType: string }
@@ -199,7 +199,8 @@ export interface ServerInfo { name: string; version: string; instructions: strin
 
 /** One server per request, with only the caller's tools. */
 export function buildServer(info: ServerInfo, tools: readonly ToolDef[], ctx: ToolContext, ledger: Ledger): McpServer {
-  const server = new McpServer({ name: info.name, version: info.version }, { instructions: info.instructions });
+  const server = new McpServer({ name: info.name, version: info.version },
+    { instructions: info.instructions, capabilities: { experimental: { [NARROWING_CAPABILITY]: { ...NARROWING } } } });
   for (const tool of toolsFor(ctx.principal, tools)) {
     const input = tool.confirm ? { ...tool.input, confirm: CONFIRM_FIELD } : tool.input;
     server.registerTool(tool.name, {

@@ -62,6 +62,13 @@ and Policies — Edit** to make keys (`TOKEN_PERMISSIONS` in `workers/routing/cl
   those mailboxes; the header intersects with the key's own limit, so it can narrow and never widen,
   and a header naming nothing valid is refused at the door. Fabric sends it on every call it makes
   for one of its agents (ADR-0115 in passioncode-ai/fabric).
+- **A hub checks narrowing before it relies on it** (B-62): `initialize` answers
+  `capabilities.experimental["fabric-inbox/account-narrowing"]` = `{ revision: 1, header: "X-Fabric-Accounts",
+  intersection: "exact", commaInId: "refused", emptyScope: "refused" }`, named from the source
+  (`NARROWING`, `workers/mcp/scope.ts`). `narrowingSupported(capabilities, need)` is the check written as code:
+  missing, malformed or older answers false, so a hub fails closed against an older or rolled-back server. It is
+  the server's claim about itself; `npm run deploy:receipt` links the served Worker version to a commit and the
+  build's digest.
 - **A hub on this Mac can be connected by the owner's consent** instead of a copied secret: the
   desktop app answers a `fabric-inbox://connect?client=…&client_id=…&level=…&callback=http://127.0.0.1:<port>/…&state=…`
   link with a native Allow/Deny prompt, makes the key through the owner's own signed-in session —

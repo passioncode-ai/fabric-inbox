@@ -7,6 +7,10 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **A hub can check narrowing, and a deploy has a receipt.** The server announces what its
+  `X-Fabric-Accounts` narrowing does (`fabric-inbox/account-narrowing`, revision 1) when an agent
+  connects. Each `npm run deploy` tags the Worker version with its commit, and `npm run
+  deploy:receipt` links the version Cloudflare serves to that commit and the build's digest.
 - **Pause an address without deleting it.** Settings → Addresses → ⋯ → Pause keeps its mail,
   settings and agent, stops new mail (it goes to the domain's catch-all, or is refused, as the dialog
   says before you pause), and Resume brings it back. Agents use `pause_address` and `resume_address`.

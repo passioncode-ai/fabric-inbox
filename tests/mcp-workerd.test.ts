@@ -427,3 +427,22 @@ test("list_accounts says when an address was made, as the app's sidebar reads it
     assert.equal(listed.data.accounts[0].createdAt, "2026-10-07T21:30:00.000Z");
   } finally { await mf.dispose(); }
 });
+
+test("B-62: initialize names the narrowing capability from the source, and a hub's check fails closed on a missing or older one", async () => {
+  const { NARROWING, NARROWING_CAPABILITY, narrowingSupported } = await import("../workers/mcp/scope");
+  const { mf, as } = await fixture();
+  try {
+    for (const client of [await as("admin.access"), await as("admin.access", { "X-Fabric-Accounts": `cloudflare:${MAILBOX}` })]) {
+      const caps = client.getServerCapabilities();
+      assert.deepEqual((caps?.experimental as Record<string, unknown>)[NARROWING_CAPABILITY], { ...NARROWING });
+      assert.equal(narrowingSupported(caps), true);
+    }
+  } finally { await mf.dispose(); }
+  // An older runtime (no entry), a rolled-back one (an older revision), and a malformed entry are all refused.
+  assert.equal(narrowingSupported({}), false);
+  assert.equal(narrowingSupported({ experimental: { [NARROWING_CAPABILITY]: { ...NARROWING, revision: 0 } } }), false);
+  assert.equal(narrowingSupported({ experimental: { [NARROWING_CAPABILITY]: { ...NARROWING, revision: "1" } } }), false);
+  assert.equal(narrowingSupported({ experimental: { [NARROWING_CAPABILITY]: { ...NARROWING, intersection: "union" } } }), false);
+  assert.equal(narrowingSupported({ experimental: { [NARROWING_CAPABILITY]: { ...NARROWING } } }, 2), false, "a hub needing a later revision refuses this one");
+  assert.equal(narrowingSupported(null), false);
+});

@@ -174,6 +174,30 @@ export function scopedApi(api: Api, accounts: readonly string[]): Api {
  */
 export const NARROW_HEADER = "X-Fabric-Accounts";
 
+/**
+ * B-62 (issue #26, ADR-0115): what this server's narrowing does, named from this source and announced
+ * in `initialize` as `capabilities.experimental["fabric-inbox/account-narrowing"]`. A hub checks it at
+ * the authenticated endpoint and fails closed when it is missing or older than the revision it needs.
+ * It is a claim this code makes about itself, not an attestation of the bytes that run; the deployment
+ * receipt (`scripts/deploy-receipt.mjs`) links a Worker version to a commit and a bundle digest.
+ * Revision 1: the header narrows by exact intersection with the key's own accounts and never widens
+ * it; an id with a comma, "%" or "/" is refused; a header naming nothing valid reaches nothing (403).
+ */
+export const NARROWING_CAPABILITY = "fabric-inbox/account-narrowing";
+export const NARROWING = { revision: 1, header: NARROW_HEADER, intersection: "exact", commaInId: "refused", emptyScope: "refused" } as const;
+
+/**
+ * The hub's side, written down as code (B-62): whether a server's `initialize` capabilities promise
+ * narrowing at `need` or later. Anything missing, malformed or older answers false, so a hub that
+ * meets an older runtime (or one rolled back to it) sends it no narrowed call.
+ */
+export function narrowingSupported(capabilities: unknown, need: number = NARROWING.revision): boolean {
+  const entry = (capabilities as { experimental?: Record<string, unknown> } | null | undefined)?.experimental?.[NARROWING_CAPABILITY] as
+    { revision?: unknown; header?: unknown; intersection?: unknown; commaInId?: unknown } | undefined;
+  return !!entry && typeof entry.revision === "number" && Number.isInteger(entry.revision) && entry.revision >= need
+    && entry.header === NARROW_HEADER && entry.intersection === "exact" && entry.commaInId === "refused";
+}
+
 export function narrowPrincipal(principal: Principal | null, header: string | null): Principal | null {
   if (!principal || header === null) return principal;
   const named = normaliseAccounts(header.split(",").map((s) => s.trim()).filter(Boolean)) ?? [];

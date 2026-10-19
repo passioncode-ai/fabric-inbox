@@ -54,7 +54,10 @@ organization, a bucket and a workers.dev name could not be exercised on an accou
 
 1. `npm ci && npm test`, then `CLOUDFLARE_ACCOUNT_ID=<account> npm run deploy` (builds, then
    `wrangler deploy --var FABRIC_SERVER_VERSION:<version>`, so the server records its version as the
-   app's own deploy does; applies the Durable Object migrations). `wrangler.jsonc` names no account and no
+   app's own deploy does, and tags the version with its commit; applies the Durable Object migrations).
+   `npm run deploy:receipt` (same credentials) then writes a receipt (`scripts/deploy-receipt.mjs`, B-62): the
+   served version read from Cloudflare, the commit its tag names, whether the checkout is clean, and the
+   digest of `build/`; `linked` (exit 0) only when the tag is this clean checkout's commit and no traffic split. `wrangler.jsonc` names no account and no
    deployment's values; `keep_vars` keeps what is set on the Worker. If wrangler stops with *Received a
    malformed response from the API* right after `POST …/workers/scripts/<name>/versions -> 200 OK`
    (wrangler 4.74.0, 2026-10-12), the version was uploaded but not deployed: take its `id` from that
