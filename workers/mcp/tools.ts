@@ -126,6 +126,8 @@ async function readMessage(ctx: ToolContext, account: Account, id: string, max =
     date: String(m.date ?? ""), folder: labels.includes("SPAM") ? "spam" : labels.includes("TRASH") ? "trash" : labels.includes("DRAFT") ? "draft" : labels.includes("DISCARDED") ? "discarded" : labels.includes("INBOX") ? "inbox" : labels.includes("SENT") ? "sent" : "archive",
     read: !!m.read, starred: labels.includes("STARRED"), spamReason: labels.includes("SPAM") ? (account.provider === "gmail" ? "Gmail put it in Spam" : account.provider === "outlook" ? "It is in the account's Junk Email folder" : "It is in the account's spam folder") : null,
     text: body.text, truncated: body.truncated, ...(includeHtml ? { html: String(m.html ?? "") } : {}), ...(headers ? { headers } : {}),
+    // A Gmail message's own labels, by id (list_folders names them, label_messages changes them; B-35).
+    ...(account.provider === "gmail" ? { labels: labels.filter((l) => l.startsWith("Label_")) } : {}),
     attachments: (m.attachments ?? []).map((a) => ({ attachmentId: String(a.providerAttachmentId), filename: String(a.filename), type: String(a.mimeType), size: Number(a.size),
       ...embedded(a.contentId, a.inline === true) })),
   };
@@ -223,10 +225,10 @@ const listMessages = defineTool({
 
 const searchMailbox = defineTool({
   name: "search_mailbox", title: "Search one mailbox", level: "read", readOnly: true,
-  description: "Search one account with fields, each its own filter and all of them applied: text (query), sender, recipient (To or Cc), subject, dates, read, starred, attachments and folder. A Cloudflare mailbox is searched across every folder unless folder names one, and pages with page; Gmail searches the mail synced here, pages with cursor, and takes folder inbox, sent, archive, starred, spam, trash or draft. A filter that cannot be applied is refused, never ignored. Use list_messages for the feed across all accounts.",
+  description: "Search one account with fields, each its own filter and all of them applied: text (query), sender, recipient (To or Cc), subject, dates, read, starred, attachments and folder. A Cloudflare mailbox is searched across every folder unless folder names one, and pages with page; Gmail searches the mail synced here, pages with cursor, and takes folder inbox, sent, archive, starred, spam, trash or draft, and label: one of the account's labels by id (list_folders), such as Label_12 or CATEGORY_UPDATES. A filter that cannot be applied is refused, never ignored. Use list_messages for the feed across all accounts.",
   input: {
     accountId, query: z.string().max(500).optional(), from: z.string().max(320).optional(), to: z.string().max(320).optional(), subject: z.string().max(500).optional(),
-    folder: z.string().max(100).optional(), after: z.string().max(40).optional().describe("ISO date, inclusive"), before: z.string().max(40).optional().describe("ISO date, inclusive"),
+    folder: z.string().max(100).optional(), label: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).optional().describe("Gmail: a label id from list_folders"), after: z.string().max(40).optional().describe("ISO date, inclusive"), before: z.string().max(40).optional().describe("ISO date, inclusive"),
     unread: z.boolean().optional(), starred: z.boolean().optional(), hasAttachment: z.boolean().optional(),
     page: z.number().int().min(1).default(1).describe("Cloudflare paging"), limit: z.number().int().min(1).max(100).default(25),
     cursor: z.string().max(300).optional().describe("Gmail paging: nextCursor of the previous page"),
@@ -237,12 +239,15 @@ const searchMailbox = defineTool({
     for (const [name, value] of [["after", a.after], ["before", a.before]] as const)
       if (value !== undefined && !Number.isFinite(Date.parse(value))) throw new ApiError(400, `${name} must be an ISO date, such as 2026-05-01`, null);
     const flag = (value: boolean | undefined) => (value === undefined ? undefined : String(value));
+    if (a.label !== undefined && account.provider !== "gmail")
+      throw new ApiError(400, "Only a Gmail account has labels; an IMAP or Outlook account is searched by folder, a Cloudflare mailbox by folder", null);
     if (account.provider !== "cloudflare") {
       if (a.page !== 1) throw new ApiError(400, "A Gmail, IMAP or Outlook search pages with cursor (nextCursor of the previous page), not page", null);
       if (a.folder !== undefined && !(GMAIL_FOLDERS as readonly string[]).includes(a.folder))
         throw new ApiError(400, `A Gmail, IMAP or Outlook search takes folder ${GMAIL_FOLDERS.join(", ")}; the account's other labels and folders cannot be searched here`, null);
       const data = (await get(ctx, `${remote(account.remoteId)}/messages`, { q: a.query, from: a.from, to: a.to, subject: a.subject, after: a.after, before: a.before,
-        unread: flag(a.unread), starred: flag(a.starred), hasAttachment: flag(a.hasAttachment), folder: a.folder, limit: a.limit, cursor: a.cursor })) as { messages: Record<string, unknown>[]; nextCursor?: string };
+        unread: flag(a.unread), starred: flag(a.starred), hasAttachment: flag(a.hasAttachment), folder: a.folder, limit: a.limit, cursor: a.cursor,
+        ...(a.label ? { label: a.label } : {}) })) as { messages: Record<string, unknown>[]; nextCursor?: string };
       return { messages: data.messages.map((m) => ({ accountId: account.id, messageId: m.providerMessageId, threadId: m.threadId, subject: m.subject, from: m.from, to: m.to, date: m.date, read: m.read, snippet: m.snippet })), nextCursor: data.nextCursor ?? null };
     }
     if (a.cursor !== undefined) throw new ApiError(400, "A Cloudflare mailbox search pages with page, not cursor", null);
@@ -339,10 +344,16 @@ const getAttachment = defineTool({
 
 const listFolders = defineTool({
   name: "list_folders", title: "List folders", level: "read", readOnly: true,
-  description: "The folders of a Cloudflare mailbox with their unread counts, including folders you made.",
+  description: "The folders of a Cloudflare mailbox with their unread counts, including folders you made; or a Gmail account's labels, by id, name and type (system, or user for the person's own), which search_mailbox finds mail under and label_messages puts on or takes off. An IMAP or Outlook account's folders are the standard ones list_messages reads.",
   input: { accountId },
-  routes: ["GET /api/v1/mailboxes/:mailboxId/folders"],
-  async call(a, ctx) { return { folders: await get(ctx, `${box(cloudflareOnly(parseAccount(a.accountId), "Folders").mailbox)}/folders`) }; },
+  routes: ["GET /api/v1/mailboxes/:mailboxId/folders", "GET /api/accounts/:accountId/labels"],
+  async call(a, ctx) {
+    const account = parseAccount(a.accountId);
+    if (account.provider === "gmail") return get(ctx, `${remote(account.remoteId)}/labels`);
+    if (account.provider !== "cloudflare")
+      throw new ApiError(400, "An IMAP or Outlook account is read in its inbox, sent, archive, starred, spam, trash, draft and discarded folders (list_messages with folder); its other folders are not synced", null);
+    return { folders: await get(ctx, `${box(account.mailbox)}/folders`) };
+  },
 });
 
 const getSendStatus = defineTool({
@@ -869,6 +880,24 @@ const moveMessages = defineTool({
       if (a.to === "trash") return post(ctx, `${remote(account.remoteId)}/messages/${enc(id)}/trashed`, { trashed: true });
       if (a.to === "inbox") return post(ctx, `${remote(account.remoteId)}/messages/${enc(id)}/inbox`);
       throw new ApiError(400, "A Gmail, IMAP or Outlook message moves to inbox, archive or trash", null);
+    });
+  },
+});
+
+const ownLabels = z.array(z.string().regex(/^Label_[A-Za-z0-9_-]{1,120}$/)).max(20);
+const labelMessages = defineTool({
+  name: "label_messages", title: "Label messages", level: "mail",
+  target: (a) => `${a.messages.length} message(s) +${(a.add ?? []).join(",") || "-"} -${(a.remove ?? []).join(",") || "-"}`,
+  description: "Puts a Gmail account's own labels on messages (add) and takes others off (remove), by id: list_folders lists them (type user, ids like Label_12). System labels have their own tools (update_messages for read and starred, move_messages, mark_spam, discard_messages), and the label discard keeps is discard's. Each message is changed on its own; one that cannot be (an IMAP or Outlook account has folders, not labels) is in failed.",
+  input: { messages: messageRefs, add: ownLabels.optional().describe("Label ids to put on"), remove: ownLabels.optional().describe("Label ids to take off") },
+  routes: ["POST /api/accounts/:accountId/messages/:messageId/labels"],
+  async call(a, ctx) {
+    const add = a.add ?? [], remove = a.remove ?? [];
+    if (!add.length && !remove.length) throw new ApiError(400, "Name labels to add, to remove, or both", null);
+    if (add.some((id) => remove.includes(id))) throw new ApiError(400, "A label is either added or removed, not both", null);
+    return eachMessage(a.messages, async (account, id) => {
+      if (account.provider !== "gmail") throw new ApiError(400, "Only a Gmail account has labels; move_messages moves an IMAP or Outlook message between its folders", null);
+      return post(ctx, `${remote(account.remoteId)}/messages/${enc(id)}/labels`, { add, remove });
     });
   },
 });
@@ -1551,7 +1580,7 @@ const agentActivity = defineTool({
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listFolders, getSendStatus,
   listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, agentMailVolume, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
-  listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
+  listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,
   checkAddress, createAddress, createAddresses, updateAddress, removeAddress, routeAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,

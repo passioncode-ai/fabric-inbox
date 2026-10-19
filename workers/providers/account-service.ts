@@ -24,9 +24,9 @@ import { isGmailReason, type GmailReason } from "../../shared/mail/gmail-reasons
 import { DISCARDED_LABEL, GMAIL_FOLDERS, GmailCache, gmailInboxMessage, inFolder, keyPart, msgKey, type GmailFolder, type InboxCounts, type IndexRow, type StoredMessage } from "./gmail-cache";
 export { GMAIL_FOLDERS, type GmailFolder } from "./gmail-cache";
 import { credentialKeys, hasCredentialKey, openCredentials, sealCredentials, type CredentialEnvironment, type CredentialKeys } from "./credentials";
-import { GmailProvider, type GmailAccount } from "./gmail-provider";
+import { GmailProvider, discardLabelKey, type GmailAccount } from "./gmail-provider";
 import { normalizeSync } from "./gmail-sync";
-import { DISCARD_RESTORE_TARGETS, NotSentError, type DiscardRestoreTarget, type DraftUpdate, type MailProvider, type MessageChange, type ProviderCapabilities, type ProviderSession } from "./provider";
+import { DISCARD_RESTORE_TARGETS, NotSentError, type AccountLabel, type DiscardRestoreTarget, type DraftUpdate, type MailProvider, type MessageChange, type ProviderCapabilities, type ProviderSession } from "./provider";
 import type { ImapAccount, ImapCredentials } from "./imap/types";
 import { ImapProvider, type ImapDeps } from "./imap/provider";
 import { serverSettings, type ImapConnectInput } from "./imap/connect";
@@ -166,12 +166,20 @@ export interface MessageFilters {
   unread?: boolean; starred?: boolean; hasAttachment?: boolean; folder?: GmailFolder;
   /** One conversation's messages (read_thread for Gmail and IMAP accounts). */
   threadId?: string;
+  /** Only messages carrying this Gmail label id (list_folders names them; B-35). */
+  label?: string;
 }
+/** A Gmail label id as an agent may name one in a search: a system id or the person's own `Label_…`. */
+const LABEL_ID = /^[A-Za-z0-9_-]{1,128}$/;
+/** The person's own labels, the only ones changeLabels puts on or takes off: system labels have their own actions. */
+const OWN_LABEL_ID = /^Label_[A-Za-z0-9_-]{1,120}$/;
+/** The most labels one change names on each side. */
+const MAX_LABEL_CHANGE = 20;
 function checkFilters(f: MessageFilters) {
   const bad = (["query", "from", "to", "subject", "threadId"] as const).some((k) => f[k] !== undefined && typeof f[k] !== "string")
     || (["after", "before"] as const).some((k) => f[k] !== undefined && !Number.isFinite(f[k]))
     || (["unread", "starred", "hasAttachment"] as const).some((k) => f[k] !== undefined && typeof f[k] !== "boolean");
-  if (bad) throw new ProviderError("invalid_filter", 400);
+  if (bad || (f.label !== undefined && (typeof f.label !== "string" || !LABEL_ID.test(f.label)))) throw new ProviderError("invalid_filter", 400);
   if (f.folder !== undefined && !GMAIL_FOLDERS.includes(f.folder)) throw new ProviderError("invalid_folder", 400);
 }
 function matches(m: Omit<Message, "text" | "html">, f: MessageFilters) {
@@ -181,7 +189,7 @@ function matches(m: Omit<Message, "text" | "html">, f: MessageFilters) {
     && has(m.subject, f.subject) && (f.after === undefined || timestamp >= f.after) && (f.before === undefined || timestamp <= f.before)
     && (f.unread === undefined || f.unread === !m.read) && (f.starred === undefined || f.starred === m.labels.includes("STARRED"))
     && (f.hasAttachment === undefined || f.hasAttachment === (m.attachments?.length ?? 0) > 0) && (!f.folder || inFolder(m.labels, f.folder))
-    && (f.threadId === undefined || m.threadId === f.threadId);
+    && (f.threadId === undefined || m.threadId === f.threadId) && (f.label === undefined || m.labels.includes(f.label));
 }
 /** How long one read may spend moving an account's cache to the current layout before it answers from the old one. */
 /**
@@ -709,6 +717,26 @@ export class AccountService {
       return this.cache.counts(account.id);
     return this.cache.legacyCounts(account.id, (row) => !hiddenByFirstLayout(account, row));
   }
+  /**
+   * Several accounts' feed pages in one call (B-24): the feed asked this object once per account
+   * before. Each account answers its page or its own error code, so one account that cannot be read
+   * never hides another's mail; codes, not errors, because an error's class does not cross RPC.
+   */
+  async inboxPages(accountIds: string[], options: InboxReadOptions): Promise<Record<string, { messages: InboxMessage[] } | { error: string }>> {
+    return this.eachAccount(accountIds, async (id) => ({ messages: await this.listInboxMessages(id, options) }));
+  }
+  /** The same accounts' inbox counts in one call (B-24). */
+  async inboxCountsMany(accountIds: string[]): Promise<Record<string, InboxCounts | { error: string }>> {
+    return this.eachAccount(accountIds, (id) => this.countInbox(id));
+  }
+  private async eachAccount<T>(accountIds: string[], read: (id: string) => Promise<T>): Promise<Record<string, T | { error: string }>> {
+    if (!Array.isArray(accountIds) || accountIds.length > 100) throw new ProviderError("account_limit", 400);
+    const found = await Promise.all(accountIds.map(async (id) => {
+      try { return [id, await read(id)] as const; }
+      catch (error) { return [id, { error: error instanceof ProviderError ? error.code : "account_unavailable" }] as const; }
+    }));
+    return Object.fromEntries(found);
+  }
   async countUnreadInbox(accountId: string): Promise<number> {
     return (await this.countInbox(accountId)).unread;
   }
@@ -925,10 +953,34 @@ export class AccountService {
     if (typeof spam !== "boolean") throw new ProviderError("invalid_spam_state", 400);
     return this.changeMessage(accountId, messageId, { spam });
   }
+  /** The account's labels, where it has labels (Gmail, B-35); an account with folders answers not_supported. */
+  async listLabels(accountId: string): Promise<{ labels: AccountLabel[] }> {
+    const account = await this.account(accountId);
+    if (this.capabilities(account).organization !== "labels") throw new ProviderError("not_supported", 400);
+    return { labels: await this.withSession(account, async (s) => {
+      if (!s.labels) throw new ProviderError("not_supported", 400);
+      return s.labels();
+    }) };
+  }
+  /**
+   * Puts the account's own labels on a message and takes others off, in one change (B-35). System
+   * labels have their own actions (read, star, archive, spam, trash) and Discarded is discard's, so
+   * neither is changed here; a malformed change is refused before the provider is asked.
+   */
+  async changeLabels(accountId: string, messageId: string, change: { add: string[]; remove: string[] }) {
+    const list = (value: unknown) => Array.isArray(value) && value.length <= MAX_LABEL_CHANGE
+      && value.every((id) => typeof id === "string" && OWN_LABEL_ID.test(id)) ? value as string[] : null;
+    const add = list(change?.add), remove = list(change?.remove);
+    if (!add || !remove || !(add.length + remove.length) || add.some((id) => remove.includes(id))) throw new ProviderError("invalid_label", 400);
+    const discard = await this.store.get<string>(discardLabelKey(keyPart(accountId)));
+    if (discard && [...add, ...remove].includes(discard)) throw new ProviderError("invalid_label", 400);
+    return this.changeMessage(accountId, messageId, { labels: { add: [...new Set(add)], remove: [...new Set(remove)] } });
+  }
   private async changeMessage(accountId: string, messageId: string, change: MessageChange) {
     keyPart(messageId);
     const account = await this.account(accountId);
     const capabilities = this.capabilities(account);
+    if ("labels" in change && capabilities.organization !== "labels") throw new ProviderError("not_supported", 400);
     const restoreTo = "discarded" in change && !change.discarded ? change.to : undefined;
     if (("archive" in change && !capabilities.archive) || ("spam" in change && !capabilities.spam) || ("trashed" in change && !capabilities.trash)
       || (restoreTo === "archive" && !capabilities.archive) || (restoreTo === "trash" && !capabilities.trash))

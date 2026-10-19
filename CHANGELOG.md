@@ -9,6 +9,11 @@ is cut and published: [docs/release.md](docs/release.md).
 
 - **A message restored from Trash comes back to its categories.** Described categories keep their
   verdict while it is in Trash, so it returns without being sorted again.
+- **Agents work with a Gmail account's own labels.** `list_folders` lists them, `search_mailbox`
+  finds the mail under one (`label`), `label_messages` puts labels on a message or takes them off, and
+  `read_message` names a message's labels. IMAP and Outlook accounts keep their folders.
+- **The inbox reads several Gmail, IMAP and Outlook accounts at once.** Their mail and counts come in
+  one request each instead of two per account, so the list opens faster with many accounts.
 
 ## 0.19.0 (2026-10-18)
 

@@ -84,11 +84,16 @@ export type MessageChange =
    * label, an IMAP or Outlook folder named Discarded, made when missing — and read. Not discarded
    * (false): out of that place, back to `to` (the inbox when absent; Undo names where it was).
    */
-  | { discarded: boolean; to?: DiscardRestoreTarget };
+  | { discarded: boolean; to?: DiscardRestoreTarget }
+  /** Gmail only (organization "labels"): the account's own labels put on and taken off, by id (B-35). */
+  | { labels: { add: string[]; remove: string[] } };
 
 /** Where a remote account's discarded message can go back to (a discard from Spam is refused). */
 export type DiscardRestoreTarget = "inbox" | "archive" | "trash";
 export const DISCARD_RESTORE_TARGETS: readonly DiscardRestoreTarget[] = ["inbox", "archive", "trash"];
+
+/** One of a Gmail account's labels: a system one (INBOX, CATEGORY_…) or the person's own (`Label_…`). */
+export interface AccountLabel { id: string; name: string; type: "system" | "user" }
 
 /** The result of one unit of sync work. */
 export interface PageResult {
@@ -155,6 +160,11 @@ export interface ProviderSession {
    * without one): Discarded mail past its 30 days. Absent where Trash always exists.
    */
   expunge?(messageId: string): Promise<void>;
+  /**
+   * The account's labels, system and its own, where it has labels (Gmail, B-35); the label a
+   * provider keeps for Discarded is not among them. Absent where the account has folders.
+   */
+  labels?(): Promise<AccountLabel[]>;
   close(): Promise<void>;
 }
 

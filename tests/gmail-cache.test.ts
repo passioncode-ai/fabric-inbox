@@ -147,3 +147,18 @@ test("a first-layout cache moves over once, resumably, never losing or double-co
   assert.equal(all.length, 260, "every message is in the index once");
   assert.equal(new Set(all).size, 260);
 });
+
+test("several accounts' pages and counts come back from one call, each its own result or error code (B-24)", async () => {
+  const { service, store } = await fixture();
+  legacyRow(store, "m1", { timestamp: 2000, read: false });
+  legacyRow(store, "m2", { timestamp: 1000 });
+  while (!(await service.migrateCache("a", 2_000))) { /* moved over in the background, as the alarm does */ }
+  const pages = await service.inboxPages(["a", "missing"], inbox);
+  assert.deepEqual(Object.keys(pages).sort(), ["a", "missing"]);
+  const a = pages.a;
+  assert.ok("messages" in a);
+  assert.deepEqual(a.messages.map((m) => m.providerMessageId), ["m1", "m2"]);
+  assert.deepEqual(pages.missing, { error: "account_not_found" });
+  assert.deepEqual(await service.inboxCountsMany(["a", "missing"]), { a: { unread: 1, total: 2 }, missing: { error: "account_not_found" } });
+  await assert.rejects(service.inboxPages(Array.from({ length: 101 }, (_, i) => "x" + i), inbox), /account_limit/);
+});
