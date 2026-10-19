@@ -3,6 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import { AttachmentValidationError, storedAttachmentName, validateAttachments, type MailAttachment } from '../../shared/mail/attachments';
+import { RENAME_TABLES, type RenameRow, type RenameTable } from "./rename-tables";
 import { DurableObject } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import { eq, and, or, asc, desc, sql } from "drizzle-orm";
@@ -155,6 +156,7 @@ interface AttachmentData {
 	content_id?: string | null;
 	disposition?: string | null;
 }
+
 
 export class MailboxDO extends DurableObject<Env> {
 	declare __DURABLE_OBJECT_BRAND: never;
@@ -1002,6 +1004,56 @@ export class MailboxDO extends DurableObject<Env> {
 		// This live instance keeps serving the address: rebuild an empty schema.
 		applyMigrations(this.ctx.storage.sql, mailboxMigrations, this.ctx.storage);
 		return keys;
+	}
+
+	/* -------------------------------------------- rename an address (B-27) */
+
+	/**
+	 * One page of a table this mailbox keeps, in rowid order after `after`, for a rename to copy into the
+	 * new address's object. Only the mail tables move; the outbox stays (a rename waits for it to settle).
+	 */
+	async exportPage(table: RenameTable, after: number, limit = 200): Promise<{ rows: RenameRow[]; next: number | null }> {
+		if (!RENAME_TABLES.includes(table)) throw new Error(`not a mail table: ${table}`);
+		const rows = this.ctx.storage.sql.exec<Record<string, SqlStorageValue>>(
+			`SELECT rowid AS _rowid, * FROM ${table} WHERE rowid > ? ORDER BY rowid LIMIT ?`, after, Math.min(Math.max(limit, 1), 500)).toArray();
+		const next = rows.length ? Number(rows[rows.length - 1]!._rowid) : null;
+		return { rows: rows.map(({ _rowid, ...row }) => row), next: rows.length < Math.min(Math.max(limit, 1), 500) ? null : next };
+	}
+
+	/** Rows from another mailbox's `exportPage`, kept with their ids; a row already here is left as it is (a repeat adds nothing). */
+	async importRows(table: RenameTable, rows: RenameRow[]): Promise<number> {
+		if (!RENAME_TABLES.includes(table)) throw new Error(`not a mail table: ${table}`);
+		const columns = new Set(this.ctx.storage.sql.exec<{ name: string }>(`PRAGMA table_info(${table})`).toArray().map((c) => c.name));
+		let added = 0;
+		this.ctx.storage.transactionSync(() => {
+			for (const row of rows) {
+				const names = Object.keys(row).filter((k) => columns.has(k));
+				if (!names.length) continue;
+				const cursor = this.ctx.storage.sql.exec(`INSERT OR IGNORE INTO ${table} (${names.join(", ")}) VALUES (${names.map(() => "?").join(", ")})`,
+					...names.map((k) => row[k] as SqlStorageValue));
+				added += cursor.rowsWritten > 0 ? 1 : 0;
+			}
+		});
+		return added;
+	}
+
+	/** Messages per folder, and sends still in flight: what a rename checks before and after copying. */
+	async renameCounts(): Promise<{ folders: Record<string, number>; attachments: number; pendingSends: number }> {
+		const folders = Object.fromEntries(this.ctx.storage.sql.exec<{ folder_id: string; n: number }>(
+			"SELECT folder_id, COUNT(*) AS n FROM emails GROUP BY folder_id").toArray().map((r) => [String(r.folder_id), Number(r.n)]));
+		const attachments = Number(this.ctx.storage.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM attachments").one().n);
+		const pendingSends = Number(this.ctx.storage.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM outbox WHERE status IN ('pending', 'sending')").one().n);
+		return { folders, attachments, pendingSends };
+	}
+
+	/**
+	 * Empties this mailbox after a rename copied it: its rows go, its R2 files stay, because the new
+	 * address's rows name the same files (bodies and attachments are keyed by message id, not address).
+	 */
+	async emptyKeepingFiles(): Promise<void> {
+		await this.ctx.storage.deleteAlarm();
+		await this.ctx.storage.deleteAll();
+		applyMigrations(this.ctx.storage.sql, mailboxMigrations, this.ctx.storage);
 	}
 
 	async moveEmail(id: string, folderId: string) {

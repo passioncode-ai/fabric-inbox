@@ -13,7 +13,7 @@ import { msg } from "../../shared/i18n";
  * Cloudflare is touched; the mailbox is saved before its rule is made, so no rule is
  * ever left without a mailbox; a domain's catch-all is never removed while it is one.
  */
-export type OpResult = { status: 200 | 201 | 400 | 403 | 404 | 409 | 502 | 503; body: Record<string, unknown> };
+export type OpResult = { status: 200 | 201 | 202 | 400 | 403 | 404 | 409 | 502 | 503; body: Record<string, unknown> };
 
 export interface CreateAddressInput {
   email: string;

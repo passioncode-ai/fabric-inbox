@@ -195,6 +195,7 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
   const work = useWork(a.email, "answers");
   const removeWork = useWork(a.email, "remove");
   const pauseWork = useWork(a.email, "pause");
+  const [renaming, setRenaming] = useState(false);
   const path = "/api/project-addresses/" + encodeURIComponent(a.email);
   const catchAll = data.domains.find((d) => d.domain === a.domain)?.catchAll?.mailbox === a.email;
   const routing = useRouting(a.email, true);
@@ -272,6 +273,7 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
       menu={<ActionMenu label={t("More actions for {email}", { email: a.email })} actions={[
         { label: t("Open its mail"), onSelect: () => navigate("/?account=" + encodeURIComponent("cloudflare:" + a.email)) },
         a.paused != null ? { label: t("Resume {email}", { email: a.email }), onSelect: resume } : { label: t("Pause {email}…", { email: a.email }), onSelect: () => void pause() },
+        ...(catchAll || a.paused != null ? [] : [{ label: t("Rename or move {email}…", { email: a.email }), onSelect: () => setRenaming(true) }]),
         { label: t("Remove {email}…", { email: a.email }), danger: true, onSelect: () => void remove() },
       ]} />}>
       <PanelBlock title={t("Who answers")}>
@@ -301,6 +303,8 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
         </PanelBlock>
       )}
       <ActionResult result={pauseWork.result} />
+      <RenameDialog open={renaming} from={a.email} domains={data.domains.map((d) => d.domain)} onClose={() => setRenaming(false)}
+        onDone={(to) => { setRenaming(false); void refreshMail(client); navigate(settingsPath("addresses") + "/" + encodeURIComponent(to), { replace: true, preventScrollReset: true }); }} />
       <ActionResult result={removeWork.result} />
     </Panel>
   );
@@ -445,5 +449,54 @@ function CopyTab({ address: a, list }: { address: ProjectAddress; list?: DomainL
       )}
       <ActionResult result={work.result} />
     </PanelBlock>
+  );
+}
+
+/**
+ * B-27: rename or move an address keeping its mail. A large mailbox answers "running" with its step: the
+ * dialog calls again until it is done (nothing is copied twice), and says what moves and what the old
+ * address does afterwards before anything is changed.
+ */
+function RenameDialog({ open, from, domains, onClose, onDone }: { open: boolean; from: string; domains: string[]; onClose: () => void; onDone: (to: string) => void }) {
+  const t = useT();
+  const [name, setName] = useState(localPart(from));
+  const [domain, setDomain] = useState(from.slice(from.lastIndexOf("@") + 1));
+  const [working, setWorking] = useState("");
+  const [problem, setProblem] = useState("");
+  useEffect(() => { if (open) { setName(localPart(from)); setDomain(from.slice(from.lastIndexOf("@") + 1)); setProblem(""); } }, [open, from]);
+  const to = `${name.trim().toLowerCase()}@${domain}`;
+  const submit = async () => {
+    setProblem("");
+    try {
+      for (let round = 0; round < 50; round++) {
+        setWorking(round ? t("Moving the mail…") : t("Renaming…"));
+        const r = await fabric<{ state: string; copied?: number }>(`/api/project-addresses/${encodeURIComponent(from)}/rename`, { to }, "POST");
+        if (r.state === "done") { onDone(to); return; }
+      }
+      setProblem(t("The rename is still running. Open the address again later; it goes on where it stopped."));
+    } catch (error) {
+      setProblem(error instanceof ApiError ? t.text(error.message) : t("The rename could not be started."));
+    } finally { setWorking(""); }
+  };
+  return (
+    <Dialog open={open} title={t("Rename or move {email}", { email: from })} onClose={onClose} busy={!!working}>
+      <form onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+        <p>{t("Every message, attachment, draft, folder, setting, signature and who answers moves to the new address. The old address delivers to the new one for 30 days, then follows the domain's catch-all.")}</p>
+        <label className="fi-field">{t("New name")}
+          <input className="fi-input" data-autofocus required value={name} onChange={(e) => setName(e.target.value)} disabled={!!working} />
+        </label>
+        <label className="fi-field">{t("Domain")}
+          <select className="fi-input" value={domain} onChange={(e) => setDomain(e.target.value)} disabled={!!working}>
+            {domains.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </label>
+        {working && <p className="fi-hint" role="status">{working}</p>}
+        {problem && <p className="fi-action-result is-error" role="alert">{problem}</p>}
+        <div className="fi-dialog-actions">
+          <button type="button" className="fi-secondary" onClick={onClose} disabled={!!working}>{t("Cancel")}</button>
+          <button type="submit" className="fi-primary" disabled={!!working || !name.trim() || to === from}>{working ? working : t("Rename")}</button>
+        </div>
+      </form>
+    </Dialog>
   );
 }

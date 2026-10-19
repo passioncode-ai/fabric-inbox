@@ -1138,6 +1138,21 @@ const resumeAddress = defineTool({
   call: (a, ctx) => post(ctx, `/api/project-addresses/${enc(a.address.toLowerCase())}/resume`),
 });
 
+const renameAddressTool = defineTool({
+  name: "rename_address", title: "Rename or move an address", level: "admin", target: (a) => a.address,
+  description: "Renames an address, or moves it to another served domain, keeping everything: its messages, attachments, drafts, folders, settings, signature, who answers and category labels move to the new address, which gets its own Cloudflare rule. The old address delivers to the new one for 30 days, then follows the domain's catch-all. A large mailbox answers state running with the step reached: call again with the same addresses to go on (nothing is copied twice). Refused before any change for the domain's catch-all, a paused address, an address still sending, or a new address that exists.",
+  input: { address, to: z.string().email().max(254).describe("The new address, on a domain served here") },
+  routes: ["POST /api/project-addresses/:email/rename"],
+  call: (a, ctx) => post(ctx, `/api/project-addresses/${enc(a.address.toLowerCase())}/rename`, { to: a.to.toLowerCase() }),
+});
+
+const renameStatusTool = defineTool({
+  name: "rename_status", title: "Read a rename", level: "read", readOnly: true, target: (a) => a.address,
+  description: "Where a rename of this address stands: running with its step and messages copied, or done with the new address (while the old one still delivers to it).",
+  input: { address }, routes: ["GET /api/project-addresses/:email/rename"],
+  call: (a, ctx) => get(ctx, `/api/project-addresses/${enc(a.address.toLowerCase())}/rename`),
+});
+
 const routeAddress = defineTool({
   name: "route_address_here", title: "Send an address's mail here", level: "admin", target: (a) => a.address,
   description: "Creates or turns on the Cloudflare rule that sends this address's mail to this server. A rule that already sends it elsewhere is not changed here: bring_address_here moves it and keeps a copy.",
@@ -1605,7 +1620,7 @@ export const TOOLS: readonly ToolDef[] = [
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,
-  checkAddress, createAddress, createAddresses, updateAddress, removeAddress, pauseAddress, resumeAddress, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
+  checkAddress, createAddress, createAddresses, updateAddress, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, clearIncomingFailures, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,

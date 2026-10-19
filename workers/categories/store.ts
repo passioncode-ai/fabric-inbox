@@ -583,6 +583,22 @@ export class CategoriesDO extends DurableObject<Env> {
    * sender, and filed under its new id. Only verdicts of a category's current version come back.
    * Answers how many verdicts were restored.
    */
+  /**
+   * B-27: an address renamed keeping its mail keeps its category labels and spam checks: every row of
+   * the old account moves to the new one. A row the new account already has is kept (a repeat changes
+   * nothing). Answers how many rows moved.
+   */
+  async moveAccount(from: string, to: string): Promise<number> {
+    let moved = 0;
+    this.ctx.storage.transactionSync(() => {
+      for (const table of ["verdicts", "verdicts_parked", "queue", "spam_checks"]) {
+        moved += this.sql.exec(`UPDATE OR IGNORE ${table} SET account_id = ? WHERE account_id = ?`, to, from).rowsWritten;
+        this.sql.exec(`DELETE FROM ${table} WHERE account_id = ?`, from);
+      }
+    });
+    return moved;
+  }
+
   async restore(item: { accountIds: string[]; messageId: string; newMessageId?: string; timestamp?: number; subject?: string; sender?: string }): Promise<number> {
     const current = new Map((this.sql.exec("SELECT id, version FROM categories").toArray() as Row[]).map((r) => [String(r.id), Number(r.version)]));
     let restored = 0;
