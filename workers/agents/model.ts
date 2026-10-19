@@ -179,21 +179,26 @@ export async function openRouterAgentModel(apiKey: string, request: ModelRequest
   const primary = models.primary || REPLY_MODEL;
   const fallback = models.fallback || REPLY_FALLBACK_MODEL;
   let first: ModelResponse | null = null;
+  const trace = request.trace;
+  let failed = 0;
   try {
     first = await run(provider.chat(primary), request);
-    if (first.decision) return { ...first, model: primary };
-    console.warn(JSON.stringify({ event: "reply_model_no_answer", model: primary, prose: first.text.trim().length > 0 }));
+    if (first.decision) return { ...first, model: primary, calls: { calls: 1, failed: 0, recovered: 0 } };
+    console.warn(JSON.stringify({ event: "reply_model_no_answer", trace, model: primary, prose: first.text.trim().length > 0 }));
   } catch (error) {
-    console.warn(JSON.stringify({ event: "reply_model_failed", model: primary, error: (error as Error).message?.slice(0, 200) }));
+    failed++;
+    console.warn(JSON.stringify({ event: "reply_model_failed", trace, model: primary, error: (error as Error).message?.slice(0, 200) }));
   }
   try {
     const second = await run(provider.chat(fallback), request);
-    if (second.decision || !first) return { ...second, model: fallback };
+    // A turn the fallback answered after the writer failed or gave no answer counts as recovered.
+    if (second.decision || !first) return { ...second, model: fallback, calls: { calls: 2, failed, recovered: second.decision ? 1 : 0 } };
   } catch (error) {
     if (!first) throw error;
-    console.warn(JSON.stringify({ event: "reply_model_failed", model: fallback, error: (error as Error).message?.slice(0, 200) }));
+    failed++;
+    console.warn(JSON.stringify({ event: "reply_model_failed", trace, model: fallback, error: (error as Error).message?.slice(0, 200) }));
   }
-  return { ...first, model: primary };
+  return { ...first, model: primary, calls: { calls: 2, failed, recovered: 0 } };
 }
 
 /** The restatement on OpenRouter's fast model (runner.ts B-122). */

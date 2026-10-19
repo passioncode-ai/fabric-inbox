@@ -42,7 +42,7 @@ export interface AgentRun {
   grounded?: boolean;
   toolCalls: ToolCallRecord[];
   /** Knowledge passages given to the model in this run (KN-4), by reference — never their text. */
-  sources?: { ref: string; collectionId: string; title: string; sourceUri: string }[];
+  sources?: { ref: string; collectionId: string; title: string; sourceUri: string; /** B-130: the document's revision the passage came from. */ revision?: string }[];
   draftId?: string;
   sent?: { to: string; subject: string; body: string; outboxId: string };
   /** B-117: what the person wanted to know, as the model paraphrased it (no personal data) — kept only when no answer was found. */
@@ -77,6 +77,17 @@ export interface AgentRun {
    * fact); the run stays held, so the real answer still goes out when the knowledge has it.
    */
   acknowledged?: { at: string; status: "accepted" | "unknown"; text: string };
+  /** B-131: a drafted run whose conversation had a reply sent after the message when it was supervised. */
+  answeredByPerson?: boolean;
+  /** B-130: when the message came (its Date when plausible, else when the run began), and when its answer was accepted. */
+  receivedAt?: string;
+  repliedAt?: string;
+  /** B-130: model calls this run made (writer, fallback, checker), how many failed, and turns a fallback recovered. */
+  modelCalls?: { calls: number; failed: number; recovered: number };
+  /** B-130: drafted because a daily or rate limit was reached, not for what the answer says. */
+  limited?: boolean;
+  /** B-130: the sender, subject and texts were removed 30 days after the run began; counts stay. */
+  redacted?: boolean;
   createdAt: string;
   updatedAt: string;
 }

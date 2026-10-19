@@ -57,6 +57,8 @@ const bundle = await build({
         async pump() { return this.alarm(); }
         async retryHeldNow(now) { return this.retryHeld(now); }
         async superviseNow(now) { return this.superviseWaiting(now); }
+        async qualityNow(now) { return this.emitQualityDays(now); }
+        async redactNow(now) { return this.redactOldRuns(now); }
         async batchMailboxes() { return this.nextBatch().map((r) => r.mailbox_id); }
         async overlap() { return this.maxInflight ?? {}; }
         async expireHolds() { this.ctx.storage.sql.exec('UPDATE agent_queue SET next_at = 0'); }
@@ -112,6 +114,8 @@ const bundle = await build({
               case 'runs': return Response.json(await reg.listRuns({mailboxId: c.mailbox, ...(c.options ?? {})}));
               case 'preview': return Response.json(await reg.previewAnswer(c.id, c.input));
               case 'retry-held': return Response.json({ next: await reg.retryHeldNow(c.now), queue: await reg.queueLength() });
+              case 'quality': return Response.json({ next: await reg.qualityNow(c.now) });
+              case 'redact': await reg.redactNow(c.now); return Response.json(true);
               case 'supervise': return Response.json({ next: await reg.superviseNow(c.now) });
               case 'seedThread': await box(c.mailbox).seedThread(c.rows); return Response.json(true);
               case 'byIds': return Response.json(await reg.runsByIds(c.ids));
@@ -732,5 +736,53 @@ test("B-131: answering a held message again keeps its escalation and its waiting
     assert.equal(claim.run.createdAt, old);
     assert.equal(claim.run.escalatedAt, old);
     assert.equal(claim.run.acknowledged?.text, "We are checking.");
+  } finally { await mf.dispose(); }
+});
+
+test("B-130: each closed UTC day gives one support.quality_daily per agent address, once; a day is not reported twice", async () => {
+  const { mf, command } = await fixture();
+  try {
+    await command("create", { id: "support", input: support });
+    const box = "support@project.invalid";
+    await command("setup", { mailbox: box, settings: { agent: { id: "support" } }, model: {} });
+    const now = Date.parse("2026-10-19T00:10:00.000Z");
+    await command("seedThread", { mailbox: box, rows: [{ id: "a", folder: "inbox", date: "2026-10-18T09:00:00.000Z", thread: "t1" },
+      { id: "b", folder: "inbox", date: "2026-10-18T10:00:00.000Z", thread: "t2" }, { id: "c", folder: "spam", date: "2026-10-18T10:00:00.000Z", thread: "t3" }] });
+    const base = { mailboxId: box, sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1 };
+    await command("begin", { run: { ...base, id: "agent-" + "a1".repeat(16), emailId: "a", status: "sent", createdAt: "2026-10-18T09:00:10.000Z",
+      updatedAt: "2026-10-18T09:01:00.000Z", receivedAt: "2026-10-18T09:00:00.000Z", repliedAt: "2026-10-18T09:01:00.000Z", modelCalls: { calls: 2, failed: 0, recovered: 0 } } });
+    const first = await command("quality", { now });
+    assert.equal(first.next, Date.parse("2026-10-20T00:05:00.000Z"), "the next day closes at midnight; looked at five minutes after");
+    const events = ((await command("events", {})).events as { kind: string; data: { value: Record<string, any> } }[]).filter((e) => e.kind === "support.quality_daily");
+    assert.equal(events.length, 1);
+    const v = events[0].data.value;
+    assert.equal(v.date, "2026-10-18");
+    assert.equal(v.channel, "mail:project.invalid:support");
+    assert.equal(v.coverage.turns, 2, "spam apart");
+    assert.equal(v.coverage.delivered, 1);
+    assert.equal(v.coverage.firstReplyP50Ms, 60_000);
+    assert.equal(v.autonomy.answered, 1);
+    await command("quality", { now: now + 3_600_000 });
+    assert.equal(((await command("events", {})).events as { kind: string }[]).filter((e) => e.kind === "support.quality_daily").length, 1, "once per day");
+  } finally { await mf.dispose(); }
+});
+
+test("B-130: a run's sender, subject and texts are removed 30 days after it began; its counts stay", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const base = { mailboxId: "a@project.invalid", reason: "", agentId: "support", agentVersion: 1 };
+    const old = new Date(Date.now() - 31 * 86_400_000).toISOString(), fresh = new Date().toISOString();
+    const oldId = "agent-" + "c1".repeat(16), freshId = "agent-" + "c2".repeat(16);
+    const texts = { sender: "ann@customer.invalid", subject: "My account", question: "Why?", summary: "About an account",
+      toolCalls: [{ name: "kb", host: "h", ok: true, ms: 1, result: "private text" }], sent: { to: "ann@customer.invalid", subject: "Re: My account", body: "Hello Ann", outboxId: "o" } };
+    await command("begin", { run: { ...base, ...texts, id: oldId, emailId: "m1", status: "sent", createdAt: old, updatedAt: old } });
+    await command("begin", { run: { ...base, ...texts, id: freshId, emailId: "m2", status: "sent", createdAt: fresh, updatedAt: fresh } });
+    await command("redact", { now: Date.now() });
+    const runs = await command("byIds", { ids: [oldId, freshId] }) as Record<string, any>[];
+    const gone = runs.find((r) => r.id === oldId)!, kept = runs.find((r) => r.id === freshId)!;
+    assert.equal(gone.redacted, true);
+    assert.ok(!JSON.stringify(gone).includes("ann@customer.invalid") && !JSON.stringify(gone).includes("private text") && !JSON.stringify(gone).includes("Hello Ann"));
+    assert.equal(gone.status, "sent", "counts stay");
+    assert.equal(kept.sender, "ann@customer.invalid");
   } finally { await mf.dispose(); }
 });

@@ -27,6 +27,12 @@ export interface RunnerEmail {
 }
 /** B-131: a held message gets its waiting reply a day after it came (the standard's second limit). */
 export const SAFE_DEFAULT_MS = 24 * 3_600_000;
+
+/** B-130: the message's Date when it is plausible (not later than now, at most two days earlier), else now. */
+export function receivedAtOf(date: string, now: string): string {
+  const at = Date.parse(date), at0 = Date.parse(now);
+  return Number.isFinite(at) && at <= at0 + 60_000 && at0 - at <= 2 * 86_400_000 ? new Date(Math.min(at, at0)).toISOString() : now;
+}
 /** Said when the policy names no waiting reply of its own: no fact, only what happens next. */
 export const DEFAULT_WAITING_REPLY = {
   en: "Thank you for your message. We are checking the answer and will reply in this thread as soon as we have it.",
@@ -119,9 +125,13 @@ export interface ModelRequest {
   system: string;
   prompt: string;
   tools: AgentTool[];
+  /** B-130: the run id, carried on every model call's log line. */
+  trace?: string;
 }
 /** `decision` is null when the model finished without calling submit_answer. */
-export type ModelResponse = { decision: ModelDecision | null; text: string; /** The model that wrote it, when known. */ model?: string };
+export type ModelResponse = { decision: ModelDecision | null; text: string; /** The model that wrote it, when known. */ model?: string;
+  /** B-130: calls made for this answer, how many failed, and whether a fallback recovered the turn. */
+  calls?: { calls: number; failed: number; recovered: number } };
 
 export interface RunnerDeps {
   registry: {
@@ -319,6 +329,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     toolCalls: [],
     createdAt: now,
     updatedAt: now,
+    receivedAt: receivedAtOf(email.date, now),
   };
   // Who answers is known before anything is recorded: an address with no agent leaves no
   // run behind (the history is answers, not every message that arrived).
@@ -398,7 +409,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   const sources = new Map<string, NonNullable<AgentRun["sources"]>[number]>();
   const remember = (hits: KnowledgeHit[]) => {
     for (const h of hits) if (!sources.has(h.ref) && sources.size < 20)
-      sources.set(h.ref, { ref: h.ref, collectionId: h.collectionId, title: h.title, sourceUri: h.sourceUri });
+      sources.set(h.ref, { ref: h.ref, collectionId: h.collectionId, title: h.title, sourceUri: h.sourceUri, ...(h.revision ? { revision: h.revision } : {}) });
   };
   if (collections.length) {
     try {
@@ -545,8 +556,10 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   let response: ModelResponse;
   try {
     const senderName = typeof settings?.fromName === "string" && settings.fromName.trim() && settings.fromName.trim().toLowerCase() !== mailboxId ? settings.fromName.trim() : "";
-    response = await deps.model({ agent, system: systemPrompt(agent, mailboxId, tools, passages, senderName, prefetched, !!deps.check), prompt, tools });
+    response = await deps.model({ agent, system: systemPrompt(agent, mailboxId, tools, passages, senderName, prefetched, !!deps.check), prompt, tools, trace: run.id });
+    run.modelCalls = response.calls ? { ...response.calls } : { calls: 1, failed: 0, recovered: 0 };
   } catch (error) {
+    run.modelCalls = { calls: 1, failed: 1, recovered: 0 };
     return finish("failed", msg("The model could not answer ({error}); the message is left for the operator", { error: (error as Error).message }));
   }
   // No structured answer and no text: nothing was decided, so the message waits for a person
@@ -669,9 +682,11 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
           record.ok = verdict.approved;
           record.result = `${verdict.model}: ${verdict.approved ? "approved" : "rejected"} — ${verdict.reason}`.slice(0, RESULT_PREVIEW_CHARS);
           run.checkedBy = verdict.model;
+          if (run.modelCalls) run.modelCalls.calls++;
           if (!verdict.approved) outcome = { action: "draft", reason: msg("The checker did not approve the answer ({reason})", { reason: verdict.reason }) };
         } catch (error) {
           record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
+          if (run.modelCalls) { run.modelCalls.calls++; run.modelCalls.failed++; }
           outcome = { action: "draft", reason: msg("The answer could not be checked ({error})", { error: (error as Error).message.slice(0, 120) }) };
         } finally {
           record.ms = Date.now() - started;
@@ -735,9 +750,14 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     return finish("drafted", reason);
   };
   try {
-    if (outcome.action === "draft") return await saveDraft(outcome.reason);
-    if (!(await deps.registry.reserveSend(mailboxId, policy.dailySendLimit)))
+    if (outcome.action === "draft") {
+      if (outcome.capacity) run.limited = true;
+      return await saveDraft(outcome.reason);
+    }
+    if (!(await deps.registry.reserveSend(mailboxId, policy.dailySendLimit))) {
+      run.limited = true;
       return await saveDraft(msg("Daily send limit of {limit} reached", { limit: policy.dailySendLimit ?? 0 }));
+    }
   } catch (error) {
     return finish("failed", msg("Could not save the answer: {error}", { error: (error as Error).message }));
   }
@@ -772,6 +792,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   if (result.status === "accepted") {
     // Every answer sent without a person is traceable to what it rested on.
     console.log(JSON.stringify({ event: "agent_answer_sent", run: run.id, agent: agent.id, version: agent.version, evidence: run.evidence ?? [] }));
+    run.repliedAt = new Date().toISOString();
     return finish("sent", outcome.reason);
   }
   if (result.status === "failed") {
