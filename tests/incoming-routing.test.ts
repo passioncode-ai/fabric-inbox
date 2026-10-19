@@ -30,6 +30,7 @@ const bundle = await build({
             return Response.json(rows);
           }
           for (const m of c.mailboxes || []) await env.BUCKET.put('mailboxes/'+m+'.json','{}');
+          for (const m of c.paused || []) await env.BUCKET.put('paused/'+m+'.json', JSON.stringify({at:'2026-10-19T00:00:00.000Z'}));
           const bytes = new TextEncoder().encode(c.raw);
           let rejected = null;
           const event = {to:c.to, from:'sender@outside.invalid', rawSize:bytes.length, raw:new Response(bytes).body,
@@ -229,5 +230,26 @@ test("a message whose forward and setReject live on its prototype keeps both thr
     const refused = await command("runtime", { to: "nobody@shop.invalid", raw: mail("nobody@shop.invalid"), mailboxes: ["support@shop.invalid"], domains: "shop.invalid" });
     assert.equal(refused.threw, false, refused.message);
     assert.match(String(refused.rejected), /nobody@shop\.invalid|not|unknown/i, "an unknown address is refused, not failed");
+  } finally { await mf.dispose(); }
+});
+
+test("B-27: mail to a paused address goes to the domain's catch-all, or is refused with its own reason; the paused mailbox gets nothing", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const policy = JSON.stringify({ "shop.invalid": "catch_all:hello@shop.invalid" });
+    const kept = await command("deliver", { to: "sales@shop.invalid", raw: mail("sales@shop.invalid"), mailboxes: ["sales@shop.invalid", "hello@shop.invalid"],
+      paused: ["sales@shop.invalid"], domains: "shop.invalid", policy });
+    assert.equal(kept.rejected, null);
+    assert.equal(kept.result.mailboxId, "hello@shop.invalid");
+    assert.equal((await command("count", { mailbox: "sales@shop.invalid" })).count, 0, "the paused address takes no mail");
+    assert.equal((await command("unknown")).length, 0, "a paused address is not an unknown recipient");
+    const refused = await command("deliver", { to: "sales@shop.invalid", raw: mail("sales@shop.invalid", "Another"), domains: "other.invalid shop.invalid" ,
+      mailboxes: ["sales@shop.invalid"], paused: ["sales@shop.invalid"] });
+    assert.deepEqual(refused.result, { rejected: "address_paused" });
+    assert.match(refused.rejected, /not accepting mail now: sales@shop\.invalid/);
+    // Resumed (the marker gone), it takes mail again.
+    await mf.getR2Bucket("BUCKET").then((b) => b.delete("paused/sales@shop.invalid.json"));
+    const back = await command("deliver", { to: "sales@shop.invalid", raw: mail("sales@shop.invalid", "Third one"), domains: "shop.invalid", mailboxes: ["sales@shop.invalid"] });
+    assert.equal(back.result.mailboxId, "sales@shop.invalid");
   } finally { await mf.dispose(); }
 });

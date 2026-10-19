@@ -228,6 +228,26 @@ export class EmailRoutingClient {
     return msg("The routing rule for {email} was removed.", { email });
   }
 
+  /**
+   * B-27: pausing an address switches its literal rule off when it sends mail here, so Cloudflare
+   * stops delivering it (the domain's catch-all applies instead); ensureRule switches it on again.
+   * A rule sending it elsewhere, or no rule, is left alone. Returns what happened, in words.
+   */
+  async disableRule(address: string): Promise<string> {
+    const email = address.toLowerCase();
+    const domain = email.slice(email.lastIndexOf("@") + 1);
+    const zone = await this.zoneId(domain);
+    if (!zone) throw new ZoneNotVisible(msg("The token cannot see the zone {domain}", { domain }));
+    const rule = this.literalRule(await this.rules(zone), email);
+    if (!rule) return msg("No routing rule named {email}.", { email });
+    if (!this.toWorker(rule)) return msg("The routing rule for {email} sends mail elsewhere; it was left as it is.", { email });
+    if (rule.enabled === false) return msg("The routing rule for {email} is already off.", { email });
+    await this.call(`/zones/${zone}/email/routing/rules/${rule.id}`, { method: "PUT", body: JSON.stringify({
+      name: rule.name || `Fabric Inbox: ${email}`, enabled: false, priority: rule.priority ?? 0, matchers: rule.matchers, actions: rule.actions }) });
+    rule.enabled = false;
+    return msg("The routing rule for {email} was switched off.", { email });
+  }
+
   /** Creates the literal rule unless one for the address already exists (duplicates shadow each other). */
   async createRule(address: string): Promise<RoutingStatus> {
     return (await this.ensureRule(address)).status;
@@ -269,7 +289,7 @@ export class EmailRoutingClient {
 }
 
 /** What callers use: the single-token client above, or one that finds each domain's account. */
-export type RoutingClient = Pick<EmailRoutingClient, "status" | "inventory" | "deleteRule" | "createRule" | "ensureRule" | "routingFor">;
+export type RoutingClient = Pick<EmailRoutingClient, "status" | "inventory" | "deleteRule" | "disableRule" | "createRule" | "ensureRule" | "routingFor">;
 
 /**
  * Email Routing across every account the server has a token for (MA-4): each address is worked on
@@ -318,6 +338,12 @@ export class AccountsRoutingClient implements RoutingClient {
     const client = await this.client(address).catch((e) => { throw new RoutingError((e as Error).message); });
     if (!client) throw new ZoneNotVisible(msg("The server's tokens cannot see the zone {domain}", { domain: address.slice(address.lastIndexOf("@") + 1) }));
     return client.deleteRule(address);
+  }
+
+  async disableRule(address: string): Promise<string> {
+    const client = await this.client(address).catch((e) => { throw new RoutingError((e as Error).message); });
+    if (!client) throw new ZoneNotVisible(msg("The server's tokens cannot see the zone {domain}", { domain: address.slice(address.lastIndexOf("@") + 1) }));
+    return client.disableRule(address);
   }
 
   async createRule(address: string): Promise<RoutingStatus> {

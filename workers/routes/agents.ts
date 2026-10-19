@@ -11,7 +11,7 @@ import { knownCollections } from "./knowledge";
 import { mailVolume } from "../agents/volume";
 import { clearIncomingFailures, listIncomingFailures } from "../incoming-log";
 import {
-  checkAddresses, createAddress, createAddresses, removeAddress, routingTestStatus, sendRoutingTest, setForwardCopy, effectiveCatchAll,
+  checkAddresses, createAddress, createAddresses, removeAddress, pauseAddress, resumeAddress, pausedAddresses, routingTestStatus, sendRoutingTest, setForwardCopy, effectiveCatchAll,
 } from "../lib/address-ops";
 import { BATCH_MAX, checkLocalPart } from "../../shared/address-name";
 import { ROUTING_NOT_CONFIGURED, routingClient, RoutingError, type RoutingStatus } from "../routing/email-routing";
@@ -238,12 +238,13 @@ async function unknownRecipients(bucket: R2Bucket) {
 agentsRouter.get("/api/project-addresses", async (c) => {
   c.header("Cache-Control", "no-store");
   try {
-    const [served, unknown, agents, issues, failures] = await Promise.all([
+    const [served, unknown, agents, issues, failures, paused] = await Promise.all([
       readAllSettings(c.env.BUCKET),
       unknownRecipients(c.env.BUCKET),
       c.env.AGENT_REGISTRY ? registry(c).listAgents() : Promise.resolve([]),
       deliveryIssues(c.env.BUCKET),
       listIncomingFailures(c.env.BUCKET).catch(() => []),
+      pausedAddresses(c.env.BUCKET).catch(() => new Map<string, string>()),
     ]);
     const names = new Map<string, string>(agents.map((a) => [a.id, a.name] as [string, string]));
     const domains = await allServedDomains(c.env);
@@ -266,6 +267,8 @@ agentsRouter.get("/api/project-addresses", async (c) => {
           forwardTo: (settings.forwarding as { enabled?: boolean; email?: string } | undefined)?.enabled
             ? (settings.forwarding as { email?: string }).email ?? null : null,
           deliveryIssue: issues.get(email) ?? null,
+          // B-27: since when the address is paused (an empty string when the time is unreadable), or null.
+          paused: paused.has(email) ? paused.get(email)! : null,
         };
       }),
       unknownRecipients: unknown.filter((u) => !served.some((s) => s.email === u.address)),
@@ -368,6 +371,16 @@ agentsRouter.get("/api/project-addresses/check", async (c) => {
  */
 agentsRouter.delete("/api/project-addresses/:email", async (c) => {
   const result = await removeAddress(c.env, c.req.param("email"));
+  return c.json(result.body, result.status);
+});
+
+/** B-27: pause an address keeping its mail, and resume it. */
+agentsRouter.post("/api/project-addresses/:email/pause", async (c) => {
+  const result = await pauseAddress(c.env, c.req.param("email"));
+  return c.json(result.body, result.status);
+});
+agentsRouter.post("/api/project-addresses/:email/resume", async (c) => {
+  const result = await resumeAddress(c.env, c.req.param("email"));
   return c.json(result.body, result.status);
 });
 
