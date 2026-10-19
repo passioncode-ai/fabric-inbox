@@ -481,3 +481,52 @@ test("an address's forwarding copy can be changed or removed, with the checks cr
     assert.equal((await call("/api/project-addresses/nobody@product.invalid/copy", "PUT", { forwardTo: null })).status, 404);
   } finally { await mf.dispose(); }
 });
+
+test("one address is brought here keeping its old destination as a copy; nothing else on the domain moves; again changes nothing (B-28)", async () => {
+  const { mf, cf, call, r2 } = await fixture({ bindings: { DOMAINS: "base.invalid,product.invalid" } });
+  try {
+    const z = cf.zone("product.invalid");
+    const first = await call("/api/domains/product.invalid/bring", "POST", { address: "Support@product.invalid" });
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    assert.deepEqual(outcomes(first.body.steps), { address: "done", rule: "done" });
+    assert.deepEqual((await r2(mailboxKey("support@product.invalid"))).forwarding, { enabled: true, email: "owner@gmail.invalid" });
+    assert.deepEqual(z.rules.find((r) => r.name === "support@product.invalid")!.actions, [{ type: "worker", value: ["fabric-inbox"] }]);
+    assert.deepEqual(z.catchAll.actions, [{ type: "forward", value: ["owner@gmail.invalid"] }], "the catch-all is not touched");
+    assert.equal(z.rules.find((r) => r.name === "old@product.invalid")!.enabled, false, "other addresses are not touched");
+    assert.equal(await r2(mailboxKey("catch-all@product.invalid")), null);
+
+    const writes = cf.writes.length;
+    const again = await call("/api/domains/product.invalid/bring", "POST", { address: "support@product.invalid" });
+    assert.deepEqual(outcomes(again.body.steps), { address: "already", rule: "already" });
+    assert.equal(cf.writes.length, writes, "a second run writes nothing to Cloudflare");
+
+    // A switched-off rule is switched on here; it reached no one, so there is no copy to keep.
+    const old = await call("/api/domains/product.invalid/bring", "POST", { address: "old@product.invalid" });
+    assert.equal(old.status, 200, JSON.stringify(old.body));
+    const oldRule = z.rules.find((r) => r.name === "old@product.invalid")!;
+    assert.deepEqual([oldRule.enabled, oldRule.actions], [true, [{ type: "worker", value: ["fabric-inbox"] }]]);
+    assert.equal((await r2(mailboxKey("old@product.invalid"))).forwarding?.enabled ?? false, false);
+  } finally { await mf.dispose(); }
+});
+
+test("bringing one address is refused where it cannot hold: another domain, a domain not served, no rule of its own, another Worker's rule (B-28)", async () => {
+  const { mf, cf, call } = await fixture({ bindings: { DOMAINS: "base.invalid,product.invalid" } });
+  try {
+    const z = cf.zone("product.invalid");
+    z.rules.push({ id: "w1", name: "bot@product.invalid", enabled: true, priority: 0, matchers: [{ type: "literal", field: "to", value: "bot@product.invalid" }], actions: [{ type: "worker", value: ["other-worker"] }] });
+    const writes = cf.writes.length;
+    for (const [domain, address, status, pattern] of [
+      ["product.invalid", "support@elsewhere.invalid", 400, /not on product\.invalid/],
+      ["product.invalid", "nobody@product.invalid", 404, /no rule of its own/],
+      ["product.invalid", "bot@product.invalid", 409, /another Worker/],
+      ["product.invalid", "spam@product.invalid", 409, /drops/],
+      ["namecheap.invalid", "a@namecheap.invalid", 409, /Receive mail here/],
+    ] as const) {
+      const r = await call(`/api/domains/${domain}/bring`, "POST", { address });
+      assert.equal(r.status, status, `${address}: ${JSON.stringify(r.body)}`);
+      assert.match(r.body.error, pattern, address);
+    }
+    assert.equal((await call("/api/domains/product.invalid/bring", "POST", {})).status, 400);
+    assert.equal(cf.writes.length, writes, "a refusal writes nothing");
+  } finally { await mf.dispose(); }
+});

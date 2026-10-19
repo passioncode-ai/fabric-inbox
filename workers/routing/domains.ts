@@ -60,6 +60,8 @@ export interface DomainDetail {
 }
 
 export type StepOutcome = "done" | "already" | "skipped" | "failed";
+/** A request to bring one address here that cannot hold, refused before anything is written (B-28). */
+export class BringRefused extends Error { constructor(readonly status: 400 | 404 | 409, message: string) { super(message); } }
 export interface Step { id: string; label: string; outcome: StepOutcome; detail: string }
 export interface ConnectResult { domain: string; steps: Step[]; needsConfirmation?: { foreignMx?: string[]; zoneNotVisible?: boolean } }
 
@@ -308,6 +310,52 @@ export class DomainManager {
 
     // 5–6. Sending and DMARC: failures are reported, receiving already works
     if (options.sending !== false) steps.push(...await this.enableSending(domain, ctx));
+    return { domain, steps };
+  }
+
+  /**
+   * One address brought here (B-28), as Bring them here does for a whole domain: its mailbox is
+   * made or kept, where its rule forwarded to stays a copy, and only its own rule then points at
+   * this server, switched on if it was off. The catch-all and every other address stay as they are.
+   * A request that cannot hold is refused before anything is written (`BringRefused`).
+   */
+  async bringAddress(domain: string, email: string): Promise<ConnectResult> {
+    if (domainOf(email) !== domain) throw new BringRefused(400, msg("{address} is not on {domain}", { address: email, domain }));
+    const ctx = await this.zone(domain);
+    if (!ctx) throw new BringRefused(404, msg("{domain} is not a domain in any Cloudflare account this server has a token for.", { domain }));
+    const { zone, api } = ctx;
+    const settings = await api.call<{ enabled?: boolean; status?: string }>(`/zones/${zone.id}/email/routing`, { what: msg("read Email Routing (Email Routing Rules: Edit)") });
+    if (!settings.enabled || settings.status !== "ready" || !(await allServedDomains(this.env)).includes(domain))
+      throw new BringRefused(409, msg("{domain} does not receive mail here yet: use Receive mail here on the domain first.", { domain }));
+    const rule = (await this.rules(ctx)).find((r) => address(r) === email);
+    if (!rule) throw new BringRefused(404, msg("{address} has no rule of its own in Cloudflare; its mail follows the catch-all. Add it as an address here instead.", { address: email }));
+    const action = actionOf(rule);
+    if (action.type === "worker" && !toWorker(rule, ctx.worker))
+      throw new BringRefused(409, msg("{address} is sent to another Worker ({worker}); it is left to that Worker.", { address: email, worker: action.value ?? "" }));
+    if (action.type === "drop") throw new BringRefused(409, msg("Cloudflare drops mail for {address}. Add it as an address here to receive it.", { address: email }));
+    const steps: Step[] = [];
+    const step = (id: string, label: string, outcome: StepOutcome, detail: string) => { steps.push({ id, label, outcome, detail }); return outcome !== "failed"; };
+    // A copy only where the rule was delivering, to an address on a domain not served here (that would loop).
+    const copy = rule.enabled !== false && action.type === "forward" && action.value && !(await allServedDomains(this.env)).includes(domainOf(action.value.toLowerCase()))
+      ? action.value.toLowerCase() : undefined;
+    try {
+      const applied = await applySetup(this.env, { name: "Bring an address here", format: "fabric-inbox-setup/1", server: { origin: "https://this-server.invalid" }, domains: [domain],
+        mailboxes: [{ address: email, ...(copy ? { forwardTo: copy } : {}) }], catchAll: [], notServed: [] });
+      const box = applied.mailboxes[0];
+      if (!box || box.outcome === "refused") { step("address", msg("Make its mailbox"), "failed", box?.reason ?? msg("The mailbox could not be made.")); return { domain, steps }; }
+      step("address", msg("Make its mailbox"), box.outcome === "unchanged" ? "already" : "done", box.outcome === "unchanged"
+        ? msg("{address} already has its mailbox here.", { address: email })
+        : copy ? msg("{address} has its mailbox here and sends a copy to {copy}, where its mail went before.", { address: email, copy })
+          : msg("{address} has its mailbox here.", { address: email }));
+    } catch (e) { step("address", msg("Make its mailbox"), "failed", msg("The address could not be saved: {error}", { error: (e as Error).message })); return { domain, steps }; }
+    if (rule.enabled !== false && toWorker(rule, ctx.worker)) { step("rule", msg("Send the mail here"), "already", msg("Mail for {address} already arrives here.", { address: email })); return { domain, steps }; }
+    try {
+      await api.call(`/zones/${zone.id}/email/routing/rules/${rule.id ?? rule.tag}`, {
+        method: "PUT", what: msg("change routing rules (Email Routing Rules: Edit)"),
+        body: { name: rule.name || `Fabric Inbox: ${email}`, enabled: true, priority: rule.priority ?? 0, matchers: rule.matchers, actions: [{ type: "worker", value: [ctx.worker] }] },
+      });
+      step("rule", msg("Send the mail here"), "done", msg("Mail for {address} now arrives here.", { address: email }));
+    } catch (e) { step("rule", msg("Send the mail here"), "failed", msg("{error} Running this again continues from here.", { error: errorText(e) })); }
     return { domain, steps };
   }
 

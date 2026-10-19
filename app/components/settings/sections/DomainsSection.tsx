@@ -269,7 +269,17 @@ function ServedDomain({ summary, list, data, action }: {
                 one: "{n} address still goes elsewhere ({addresses}).",
                 other: "{n} addresses still go elsewhere ({addresses}).",
               }, { addresses: elsewhere.map((r) => r.address).join(", ") })}
-                <button type="button" className="fi-text-button" disabled={busy} onClick={connect}>{t("Bring them here, keeping a copy")}</button></li>
+                <button type="button" className="fi-text-button" disabled={busy} onClick={connect}>{t("Bring them here, keeping a copy")}</button>
+                {/* One address alone (B-28): the domain's catch-all and its other addresses stay as they are. */}
+                <ul className="fi-plain-list" aria-label={t("Addresses that go elsewhere")}>
+                  {elsewhere.map((r) => (
+                    <li key={r.address}>
+                      <span className="fi-grow">{r.address}</span>
+                      <button type="button" className="fi-text-button" disabled={busy} aria-label={t("Bring {address} here, keeping a copy", { address: r.address })}
+                        onClick={() => void action.act(`/api/domains/${domain}/bring`, t("Working…"), { address: r.address })}>{t("Bring here")}</button>
+                    </li>
+                  ))}
+                </ul></li>
             )}
             <li>{d.sending.enabled ? <><Badge tone="ok">{t("Sending")}</Badge> {t("Replies from these addresses can leave.")}</> : <>
               <Badge tone="bad">{t("Sending")}</Badge> {t("Off: replies from these addresses cannot leave yet.")}

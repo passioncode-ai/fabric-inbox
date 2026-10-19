@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+- **One address can be brought here on its own.** In Settings → Domains, each address whose
+  Cloudflare rule still sends its mail elsewhere has Bring here: it gets its mailbox, keeps sending a
+  copy where its mail went before, and only its rule moves. Agents do the same with
+  `bring_address_here`.
+
 ## 0.20.0 (2026-10-19)
 
 - **A message restored from Trash comes back to its categories.** Described categories keep their

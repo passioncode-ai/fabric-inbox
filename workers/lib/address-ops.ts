@@ -381,8 +381,8 @@ export async function checkAddresses(env: Env, rawDomain: string, rawNames: stri
     if (rule && !rule.toHere)
       return { localPart: c.value, email, status: "elsewhere", notes: [],
         detail: rule.enabled
-          ? msg("A Cloudflare rule {action}. Change or delete it in Cloudflare (the domain → Email → Email Routing → Routing rules), or use Bring them here on the domain, which keeps a copy.", { action: describeAction(email, rule.action) })
-          : msg("A Cloudflare rule (switched off) {action}. Change or delete it in Cloudflare (the domain → Email → Email Routing → Routing rules), or use Bring them here on the domain, which keeps a copy.", { action: describeAction(email, rule.action) }) };
+          ? msg("A Cloudflare rule {action}. Use Bring here beside it on the domain's page, which keeps a copy, or change it in Cloudflare (the domain → Email → Email Routing → Routing rules).", { action: describeAction(email, rule.action) })
+          : msg("A Cloudflare rule (switched off) {action}. Use Bring here beside it on the domain's page, or change it in Cloudflare (the domain → Email → Email Routing → Routing rules).", { action: describeAction(email, rule.action) }) };
     const notes: string[] = [];
     if (rule?.enabled) notes.push(catchAll
       ? msg("Cloudflare already sends it here; until it exists, its mail is kept in {mailbox}, the domain's catch-all.", { mailbox: catchAll.mailbox })

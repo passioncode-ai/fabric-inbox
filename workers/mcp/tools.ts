@@ -1126,9 +1126,16 @@ const removeAddress = defineTool({
 
 const routeAddress = defineTool({
   name: "route_address_here", title: "Send an address's mail here", level: "admin", target: (a) => a.address,
-  description: "Creates or turns on the Cloudflare rule that sends this address's mail to this server.",
+  description: "Creates or turns on the Cloudflare rule that sends this address's mail to this server. A rule that already sends it elsewhere is not changed here: bring_address_here moves it and keeps a copy.",
   input: { address }, routes: ["POST /api/project-addresses/:email/routing"],
   call: (a, ctx) => post(ctx, `/api/project-addresses/${enc(a.address.toLowerCase())}/routing`),
+});
+
+const bringAddress = defineTool({
+  name: "bring_address_here", title: "Bring one address here, keeping a copy", level: "admin", target: (a) => a.address,
+  description: "For an address whose Cloudflare rule sends its mail elsewhere (a forward, or a rule switched off): makes its mailbox here, keeps the old forward destination as the mailbox's copy, then points that rule at this server, as connect_domain does for a whole domain. Only this address changes; the catch-all and other addresses stay as they are. Refused before anything is written when the domain does not receive mail here yet, the address has no rule of its own, Cloudflare drops its mail, or its rule belongs to another Worker. Running it again changes nothing.",
+  input: { address }, routes: ["POST /api/domains/:domain/bring"],
+  call: (a, ctx) => { const email = a.address.toLowerCase(); return post(ctx, `/api/domains/${enc(email.slice(email.lastIndexOf("@") + 1))}/bring`, { address: email }); },
 });
 
 const sendTest = defineTool({
@@ -1583,7 +1590,7 @@ export const TOOLS: readonly ToolDef[] = [
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,
-  checkAddress, createAddress, createAddresses, updateAddress, removeAddress, routeAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
+  checkAddress, createAddress, createAddresses, updateAddress, removeAddress, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, clearIncomingFailures, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,
