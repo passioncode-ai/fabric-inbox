@@ -5,7 +5,7 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 0.20.0 (2026-10-19)
 
 - **A message restored from Trash comes back to its categories.** Described categories keep their
   verdict while it is in Trash, so it returns without being sorted again.
