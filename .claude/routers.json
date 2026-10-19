@@ -1,0 +1,25 @@
+{
+  "super-ux": {
+    "materialised": [
+      "docs/ux/scenarios.md"
+    ],
+    "guards": [
+      "docs/ux/lint.py"
+    ]
+  },
+  "copywriting": {
+    "materialised": [
+      "docs/brand/voice.md",
+      "docs/brand/terminology.md",
+      "docs/brand/facts.md"
+    ],
+    "guards": [
+      "docs/brand/lint.py"
+    ]
+  },
+  "task-pipeline": {
+    "materialised": [
+      "docs/DOCMAP.md"
+    ]
+  }
+}
