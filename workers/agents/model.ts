@@ -165,7 +165,7 @@ const vendorOf = (model: string) => model.split("/")[0]!;
 export const checkersFor = (writer: string, models: readonly string[] = CHECK_MODELS) => models.filter((m) => vendorOf(m) !== vendorOf(writer));
 
 /** App attribution (B-53, roadmap RM-16): only on calls Inbox itself makes with its own reply-lane key. */
-const openRouter = (apiKey: string) => createOpenRouter({ apiKey, appName: "Fabric Inbox", appUrl: "https://passioncode.ai/inbox/",
+export const openRouter = (apiKey: string) => createOpenRouter({ apiKey, appName: "Fabric Inbox", appUrl: "https://passioncode.ai/inbox/",
   headers: { "X-OpenRouter-Categories": "personal-agent" } });
 
 /**

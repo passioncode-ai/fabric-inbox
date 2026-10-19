@@ -116,6 +116,8 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   After each UTC day, `list_agent_events` carries one `support.quality_daily` per agent address (B-130): replies
   and first-reply p50/p90, repeats, errors and model calls, answered vs handed to a person, the person queue;
   a field not measured is null and listed in `notMeasured`. Sender, subject and texts leave runs after 30 days.
+  Its `quality` comes from a daily judge (B-132): up to 30 sent answers per address, rubric v1, a model of
+  another vendor than the writer and checker; the verdict and its note are on the run (`list_agent_runs`).
   `agent_mail_volume { days }` gives per-address, per-day counts (received, agent runs, no run, spam).
   Test an agent with `preview_agent_answer` (an outside sender, the text): it returns what the agent would do and
   the reply, sending and storing nothing.

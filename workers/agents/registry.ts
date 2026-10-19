@@ -1,5 +1,6 @@
 import { EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, runEvent, waitingEvent, type AgentEvent } from "./events";
 import { qualityDay } from "./quality";
+import { JUDGE_SAMPLE, judgesFor, openRouterJudge, qualityOf, type JudgeInput, type JudgeVerdict } from "./judge";
 import { readAllSettings } from "../lib/mailbox-store";
 import { DurableObject } from "cloudflare:workers";
 import { migrateSchema } from "../lib/do-schema";
@@ -508,7 +509,11 @@ export class AgentRegistryDO extends DurableObject<Env> {
         }
         const runs = this.rows("SELECT body FROM agent_runs WHERE mailbox_id = ? AND created_at >= ?", address, since)
           .map((r) => JSON.parse(String(r.body)) as AgentRun);
-        const value = qualityDay({ address, day, received, runs, now,
+        const judged = await this.judgeDay(address, day, runs).catch((error) => {
+          console.warn(JSON.stringify({ event: "judge_day_failed", error: (error as Error).message?.slice(0, 200) }));
+          return null;
+        });
+        const value = qualityDay({ address, day, received, runs, now, judged,
           modeOf: (r) => (r.agentId && r.agentVersion ? this.version(r.agentId, r.agentVersion)?.replyPolicy.mode : undefined) === "draft" ? "draft" : "auto" });
         this.appendEvent(`quality-${day}`, qualityEvent(address, value, at));
       }
@@ -516,6 +521,48 @@ export class AgentRegistryDO extends DurableObject<Env> {
       console.log(JSON.stringify({ event: "quality_daily_emitted", day, addresses: served.length }));
     }
     return next;
+  }
+
+  /** Test seam: one verdict from a judge of another vendor; production asks OpenRouter (B-132). */
+  protected async judgeAnswer(models: string[], input: JudgeInput): Promise<JudgeVerdict | null> {
+    if (!this.env.OPENROUTER_API_KEY) return null;
+    return openRouterJudge(this.env.OPENROUTER_API_KEY, models, input);
+  }
+
+  /**
+   * B-132 (standard A3, A4): grades up to JUDGE_SAMPLE answers the address sent on `day` (not judged
+   * before, not redacted), keeps each verdict on its run, and answers the day's quality family from
+   * every verdict of the day; null when nothing was judged (no judge, no answer, every call failed).
+   */
+  protected async judgeDay(address: string, day: string, runs: AgentRun[]): Promise<ReturnType<typeof qualityOf>> {
+    const ofDay = runs.filter((r) => r.createdAt.startsWith(day) && r.status === "sent" && r.sent?.body && !r.redacted);
+    const todo = ofDay.filter((r) => !r.judgement).slice(0, Math.max(0, JUDGE_SAMPLE - ofDay.filter((r) => r.judgement).length));
+    const deps = this.deps(address);
+    let calls = 0, failed = 0;
+    for (let i = 0; i < todo.length; i += 4) {
+      await Promise.all(todo.slice(i, i + 4).map(async (run) => {
+        const models = judgesFor(run.model, run.checkedBy);
+        if (!models.length) return;
+        try {
+          const email = await deps.mailbox.email(run.emailId);
+          if (!email) return;
+          const thread = email.thread_id ? await deps.mailbox.thread(email.thread_id) : [];
+          const received = Date.parse(email.date);
+          const earlier = thread.filter((m) => m.folder_id === "sent" && Date.parse(m.date) < received).at(-1);
+          calls++;
+          const verdict = await this.judgeAnswer(models, { message: `${email.subject}\n${deps.htmlToText(email.body)}`,
+            earlier: earlier ? deps.htmlToText(earlier.body) : "", answer: run.sent!.body });
+          if (!verdict) return;
+          run.judgement = verdict;
+          this.ctx.storage.sql.exec("UPDATE agent_runs SET body = json_set(body, '$.judgement', json(?)) WHERE id = ?", JSON.stringify(verdict), run.id);
+        } catch (error) {
+          failed++;
+          console.warn(JSON.stringify({ event: "judge_failed", trace: run.id, error: (error as Error).message?.slice(0, 200) }));
+        }
+      }));
+    }
+    if (calls) console.log(JSON.stringify({ event: "judge_day", day, calls, failed }));
+    return qualityOf(ofDay.flatMap((r) => (r.judgement ? [r.judgement] : [])));
   }
 
   /**
