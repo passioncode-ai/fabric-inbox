@@ -1045,3 +1045,52 @@ test("the agent knows itself: the system prompt says what it is, what it reads a
   await h.run();
   assert.match(system, /Who you are and how you work/);
 });
+
+test("B-131: a message held a day gets one waiting reply, stays held, and the real answer still goes out after it", async () => {
+  const { DEFAULT_WAITING_REPLY } = await import("../workers/agents/runner");
+  const unsure = async (grant: { tool: string }) => (grant.tool === "gaps.submit" ? "{}" : JSON.stringify({ abstained: true, results: [] }));
+  const dayOld = (h: ReturnType<typeof harness>, extra: Partial<AgentRun> = {}) => {
+    const begin = h.deps.registry.beginRun;
+    h.deps.registry.beginRun = async (run) => begin({ ...run, createdAt: new Date(Date.now() - 25 * 3_600_000).toISOString(), ...extra });
+  };
+  // Under a day: held, nothing sent.
+  const fresh = harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true }), email: { subject: "Login", body: "<p>I cannot log in.</p>" }, callTool: unsure,
+    model: async () => ({ decision: answer({ intent: "login", grounded: false, question: "Why can the user not log in?" }), text: "" }) });
+  assert.equal((await fresh.run())!.status, "held");
+  assert.equal(fresh.effects.sends.length, 0);
+  // A day old: one waiting reply in the sender's language, with its own idempotency key; the run stays held.
+  const old = harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true }), email: { subject: "Вход", body: "<p>Не могу войти в приложение.</p>" }, callTool: unsure,
+    model: async () => ({ decision: answer({ intent: "login", grounded: false, question: "Why can the user not log in?" }), text: "" }) });
+  dayOld(old);
+  const held = (await old.run())!;
+  assert.equal(held.status, "held", held.reason);
+  assert.equal(old.effects.sends.length, 1);
+  const command = old.effects.sends[0] as any;
+  assert.equal(command.idempotencyKey, `${held.id}:waiting`);
+  assert.equal(command.request.text, DEFAULT_WAITING_REPLY.ru);
+  assert.equal(command.request.auto_submitted, true);
+  assert.equal(held.acknowledged?.status, "accepted");
+  // The next retry: the waiting reply is in Sent after the message, yet it is not an answer; the real one is sent.
+  const later = harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true }), email: { subject: "Вход", body: "<p>Не могу войти в приложение.</p>" },
+    callTool: async () => JSON.stringify({ abstained: false, results: [{ id: "fact:login", coverage: 0.9 }] }),
+    thread: [{ id: "incoming-1", sender: "ann@customer.invalid", recipient: MAILBOX, date: "2026-09-28T10:00:00.000Z", folder_id: "inbox", body: "<p>Не могу войти в приложение.</p>" },
+      { id: "ack", sender: MAILBOX, recipient: "ann@customer.invalid", date: "2026-09-29T10:00:00.000Z", folder_id: "sent", body: `<p>${held.acknowledged!.text}</p>` }] });
+  dayOld(later, { acknowledged: held.acknowledged });
+  const answered = (await later.run())!;
+  assert.equal(answered.status, "sent", answered.reason);
+  assert.equal(later.effects.sends.length, 1, "the real answer, and no second waiting reply");
+  // A person's own reply after the message is still an answer: nothing is sent.
+  const person = harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true }), callTool: unsure,
+    thread: [{ id: "incoming-1", sender: "ann@customer.invalid", recipient: MAILBOX, date: "2026-09-28T10:00:00.000Z", folder_id: "inbox", body: "<p>How much is it?</p>" },
+      { id: "mine", sender: MAILBOX, recipient: "ann@customer.invalid", date: "2026-09-29T10:00:00.000Z", folder_id: "sent", body: "<p>It costs 10 EUR.</p>" }] });
+  dayOld(person, { acknowledged: held.acknowledged });
+  assert.equal((await person.run())!.status, "skipped");
+  // At the daily send limit the waiting reply is not sent, and it is tried again next time.
+  const full = harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true, dailySendLimit: 1 }), sentToday: 1, callTool: unsure,
+    model: async () => ({ decision: answer({ intent: "login", grounded: false, question: "q" }), text: "" }) });
+  dayOld(full);
+  const limited = (await full.run())!;
+  assert.equal(limited.status, "held");
+  assert.equal(limited.acknowledged, undefined);
+  assert.equal(full.effects.sends.length, 0);
+});

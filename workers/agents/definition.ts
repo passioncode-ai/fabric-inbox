@@ -148,6 +148,12 @@ export const ReplyPolicySchema = z.object({
    * A fallbackReply, when set, is sent instead.
    */
   holdUnsure: z.boolean().default(false),
+  /**
+   * B-131: a held message (holdUnsure) still unanswered a day after it arrived gets this fixed text, so
+   * nobody waits without a word; the default says the answer follows in the same thread. It states no
+   * fact, and the message is still answered once the knowledge has it.
+   */
+  waitingReply: LocalizedText.optional(),
   /** Labels the agent puts on every message (the model picks one), shown on the run and in its events. */
   categories: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
   /**

@@ -25,6 +25,7 @@ const bundle = await build({
         }
         async sentLog() { return await this.ctx.storage.get('sent') || []; }
         async folder(name) { return this.getEmails({folder:name}); }
+        async seedThread(rows) { for (const r of rows) this.ctx.storage.sql.exec("INSERT INTO emails (id, folder_id, subject, sender, recipient, date, body, thread_id) VALUES (?, ?, 's', 'x@y.invalid', 'a', ?, '', ?)", r.id, r.folder, r.date, r.thread); }
         async seed(rows) { for (const r of rows) this.ctx.storage.sql.exec("INSERT INTO emails (id, folder_id, subject, sender, recipient, date, body) VALUES (?, ?, 's', 'x@y.invalid', 'a', ?, '')", r.id, r.folder, r.date); }
       }
       export class TestRegistry extends AgentRegistryDO {
@@ -55,6 +56,7 @@ const bundle = await build({
         }
         async pump() { return this.alarm(); }
         async retryHeldNow(now) { return this.retryHeld(now); }
+        async superviseNow(now) { return this.superviseWaiting(now); }
         async batchMailboxes() { return this.nextBatch().map((r) => r.mailbox_id); }
         async overlap() { return this.maxInflight ?? {}; }
         async expireHolds() { this.ctx.storage.sql.exec('UPDATE agent_queue SET next_at = 0'); }
@@ -110,6 +112,8 @@ const bundle = await build({
               case 'runs': return Response.json(await reg.listRuns({mailboxId: c.mailbox, ...(c.options ?? {})}));
               case 'preview': return Response.json(await reg.previewAnswer(c.id, c.input));
               case 'retry-held': return Response.json({ next: await reg.retryHeldNow(c.now), queue: await reg.queueLength() });
+              case 'supervise': return Response.json({ next: await reg.superviseNow(c.now) });
+              case 'seedThread': await box(c.mailbox).seedThread(c.rows); return Response.json(true);
               case 'byIds': return Response.json(await reg.runsByIds(c.ids));
               case 'again': return Response.json(await reg.answerAgain(c.id));
               case 'save': await reg.saveRun(c.run); return Response.json(true);
@@ -678,5 +682,55 @@ test("a held message is given back every 12 hours for 7 days, then daily until d
     const r = await command("retry-held", { now });
     assert.equal(r.queue, 2, "due: the 12-hour one in its first week and the daily one after it; not one older than 30 days");
     assert.equal(r.next, Date.parse(at(2)) + 12 * 3_600_000, "the next try is the soonest still to come");
+  } finally { await mf.dispose(); }
+});
+
+test("B-131: a message waiting for a person past 4 hours is escalated once; one a person answered, or one from before the rule, is not", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const box = "a@project.invalid";
+    const base = { mailboxId: box, sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1 };
+    const now = Date.now();
+    const at = (h: number) => new Date(now - h * 3_600_000).toISOString();
+    const id = (name: string) => "agent-" + name.replace(/[^0-9a-f]/g, "0").padEnd(32, "0").slice(0, 32);
+    // A draft a person answered (a reply in Sent after it), and one nobody answered.
+    await command("seedThread", { mailbox: box, rows: [
+      { id: "answered", folder: "inbox", date: at(6), thread: "t-answered" }, { id: "reply", folder: "sent", date: at(1), thread: "t-answered" },
+      { id: "draft-open", folder: "inbox", date: at(6), thread: "t-open" }] });
+    for (const [name, status, created] of [["held-due", "held", 5], ["held-soon", "held", 2], ["answered", "drafted", 5], ["draft-open", "drafted", 5], ["held-old", "held", 24 * 4]] as const)
+      await command("begin", { run: { ...base, id: id(name), emailId: name, status, createdAt: at(created), updatedAt: at(created) } });
+    const first = await command("supervise", { now });
+    const events = (await command("events", {})).events as { kind: string; data: { value: { runId: string; waitingHours: number } } }[];
+    const waiting = events.filter((e) => e.kind === "agent.waiting");
+    assert.deepEqual(waiting.map((e) => e.data.value.runId).sort(), [id("draft-open"), id("held-due")].sort());
+    assert.equal(waiting[0].data.value.waitingHours, 5);
+    assert.ok(Math.abs(first.next - (Date.parse(at(2)) + 4 * 3_600_000)) < 1000, "the next check is when the 2-hour one reaches 4 hours");
+    await command("supervise", { now });
+    const again = ((await command("events", {})).events as { kind: string }[]).filter((e) => e.kind === "agent.waiting");
+    assert.equal(again.length, 2, "escalated once");
+    const runs = await command("byIds", { ids: [id("answered"), id("held-old")] }) as { id: string; escalatedAt?: string }[];
+    assert.ok(runs.find((r) => r.id === id("answered"))?.escalatedAt, "an answered draft is marked, so it is not looked at again");
+    assert.equal(runs.find((r) => r.id === id("held-old"))?.escalatedAt, undefined, "a run from before the rule is left alone");
+    // A retry of a held run keeps its escalation (and a waiting reply) across the re-run.
+    const kept = await command("byIds", { ids: [id("held-due")] }) as { escalatedAt?: string }[];
+    assert.ok(kept[0].escalatedAt);
+  } finally { await mf.dispose(); }
+});
+
+test("B-131: answering a held message again keeps its escalation and its waiting reply", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const base = { mailboxId: "a@project.invalid", sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1 };
+    const runId = "agent-" + "ab".repeat(16);
+    const old = new Date(Date.now() - 30 * 3_600_000).toISOString();
+    await command("begin", { run: { ...base, id: runId, emailId: "m1", status: "held", createdAt: old, updatedAt: old,
+      escalatedAt: old, acknowledged: { at: old, status: "accepted", text: "We are checking." } } });
+    assert.equal((await command("again", { id: runId })).ok, true);
+    const now = new Date().toISOString();
+    const claim = await command("begin", { run: { ...base, id: runId, emailId: "m1", status: "running", createdAt: now, updatedAt: now } });
+    assert.equal(claim.claimed, true);
+    assert.equal(claim.run.createdAt, old);
+    assert.equal(claim.run.escalatedAt, old);
+    assert.equal(claim.run.acknowledged?.text, "We are checking.");
   } finally { await mf.dispose(); }
 });

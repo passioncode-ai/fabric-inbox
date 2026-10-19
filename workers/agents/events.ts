@@ -11,7 +11,7 @@ export const AGENT_EVENT_SCHEMA = "https://github.com/passioncode-ai/fabric-inbo
 
 export interface AgentEvent {
   at: string;
-  kind: "agent.sent" | "agent.drafted" | "agent.skipped" | "agent.unanswered" | "agent.needs_look" | "agent.not_helped" | "agent.handoff";
+  kind: "agent.sent" | "agent.drafted" | "agent.skipped" | "agent.unanswered" | "agent.needs_look" | "agent.not_helped" | "agent.handoff" | "agent.waiting";
   level: "info" | "notice" | "warning";
   text: string;
   /** Opens the message and its run in the inbox (B-119): a path under the server's origin. */
@@ -24,6 +24,8 @@ export interface AgentEventValue {
   topic?: string; summary?: string;
   /** The policy category of the message; whether it was handed to a person, got the safe reply, or said an earlier answer did not help. */
   category?: string; handoff?: boolean; fallback?: boolean; dissatisfied?: boolean;
+  /** B-131: the message has waited for a person past the SLA (event kind agent.waiting), in whole hours. */
+  waitingHours?: number;
 }
 
 /**
@@ -78,3 +80,23 @@ export function runEvent(run: AgentRun): AgentEvent | null {
 /** Events kept: at least seven days or 1000 events, whichever is more (fabric-service/0.1). */
 export const EVENTS_KEPT = 1000;
 export const EVENTS_KEPT_MS = 7 * 86_400_000;
+
+/**
+ * B-131: the one escalation of a message still waiting for a person past the SLA: held (the agent
+ * was not sure) or drafted (a person sends it). Emitted once per run, at `at`.
+ */
+export function waitingEvent(run: AgentRun, at: string): AgentEvent {
+  const hours = Math.max(1, Math.floor((Date.parse(at) - Date.parse(run.createdAt)) / 3_600_000));
+  const what = run.status === "drafted" ? "a draft a person has not sent" : "no answer yet";
+  const value: AgentEventValue = {
+    runId: run.id, address: run.mailboxId,
+    ...(run.agentId ? { agentId: run.agentId } : {}), ...(run.agentVersion ? { agentVersion: run.agentVersion } : {}),
+    status: run.status, unanswered: run.unanswered === true,
+    ...(run.unanswered && run.question ? { question: cut(scrubPersonal(run.question)) } : {}),
+    sources: (run.sources ?? []).slice(0, 32).map((s) => cut(s.title)),
+    ...(run.category ? { category: cut(run.category, 60) } : {}),
+    waitingHours: hours,
+  };
+  return { at, link: messageLink(`cloudflare:${run.mailboxId}`, run.emailId, run.id), kind: "agent.waiting", level: "warning",
+    text: cut(`A message to ${run.mailboxId} has waited ${hours} hours with ${what}.`), data: { schema: AGENT_EVENT_SCHEMA, value } };
+}

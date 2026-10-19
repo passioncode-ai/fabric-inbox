@@ -70,6 +70,13 @@ export interface AgentRun {
   /** What the message is about (a few English words) and what the sender wants (one sentence); no personal data. */
   topic?: string;
   summary?: string;
+  /** B-131: when the run was escalated once for waiting on a person past the SLA (WAIT_SLA_MS). */
+  escalatedAt?: string;
+  /**
+   * B-131: the waiting reply sent to a held message past SAFE_DEFAULT_MS (a fixed text that states no
+   * fact); the run stays held, so the real answer still goes out when the knowledge has it.
+   */
+  acknowledged?: { at: string; status: "accepted" | "unknown"; text: string };
   createdAt: string;
   updatedAt: string;
 }
