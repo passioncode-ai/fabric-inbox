@@ -12,6 +12,10 @@ is cut and published: [docs/release.md](docs/release.md).
   errors and model calls, what the agent answered and what went to a person, and who still waits.
   What cannot be measured is marked, never shown as 0. The sender, subject and texts of an agent run
   are removed 30 days after it began; its counts stay.
+- **An independent judge grades the answers.** Once a day up to 30 answers per address from the day
+  before are graded on six checks (language, answers the question, safe, routes to a person only when
+  needed, gives a step, no repeats) and whether they helped, by a model of another vendor than the
+  ones that wrote and checked them. The counts join the daily quality report; the notes stay on the run.
 - **Nobody waits without a word.** A message an agent holds because it is not sure gets one reply a
   day after it came, saying the answer follows in the same conversation (Settings → Agents, or a
   default); the real answer still goes out once the knowledge has it. A message held, or a draft

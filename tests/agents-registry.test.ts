@@ -58,6 +58,13 @@ const bundle = await build({
         async retryHeldNow(now) { return this.retryHeld(now); }
         async superviseNow(now) { return this.superviseWaiting(now); }
         async qualityNow(now) { return this.emitQualityDays(now); }
+        async judgeAnswer(models, input) {
+          const script = JSON.parse(await (await this.env.BUCKET.get('test/judge.json'))?.text() || 'null');
+          if (!script) return null;
+          await this.env.BUCKET.put('test/judge-last.json', JSON.stringify({ models, input }));
+          if (script.throw) throw new Error(script.throw);
+          return { ...script.verdict, model: models[0] };
+        }
         async redactNow(now) { return this.redactOldRuns(now); }
         async batchMailboxes() { return this.nextBatch().map((r) => r.mailbox_id); }
         async overlap() { return this.maxInflight ?? {}; }
@@ -114,6 +121,8 @@ const bundle = await build({
               case 'runs': return Response.json(await reg.listRuns({mailboxId: c.mailbox, ...(c.options ?? {})}));
               case 'preview': return Response.json(await reg.previewAnswer(c.id, c.input));
               case 'retry-held': return Response.json({ next: await reg.retryHeldNow(c.now), queue: await reg.queueLength() });
+              case 'judgeScript': await env.BUCKET.put('test/judge.json', JSON.stringify(c.script)); return Response.json(true);
+              case 'judgeLast': return Response.json(JSON.parse(await (await env.BUCKET.get('test/judge-last.json'))?.text() || 'null'));
               case 'quality': return Response.json({ next: await reg.qualityNow(c.now) });
               case 'redact': await reg.redactNow(c.now); return Response.json(true);
               case 'supervise': return Response.json({ next: await reg.superviseNow(c.now) });
@@ -784,5 +793,53 @@ test("B-130: a run's sender, subject and texts are removed 30 days after it bega
     assert.ok(!JSON.stringify(gone).includes("ann@customer.invalid") && !JSON.stringify(gone).includes("private text") && !JSON.stringify(gone).includes("Hello Ann"));
     assert.equal(gone.status, "sent", "counts stay");
     assert.equal(kept.sender, "ann@customer.invalid");
+  } finally { await mf.dispose(); }
+});
+
+test("B-132: the day's answers are judged once by another vendor, the verdict stays on the run, and the day's event carries the counts", async () => {
+  const { mf, command } = await fixture();
+  try {
+    await command("create", { id: "support", input: support });
+    const box = "support@project.invalid";
+    await command("setup", { mailbox: box, settings: { agent: { id: "support" } }, model: {} });
+    await command("seedThread", { mailbox: box, rows: [{ id: "a", folder: "inbox", date: "2026-10-18T09:00:00.000Z", thread: "t1" }] });
+    const base = { mailboxId: box, sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1 };
+    const id = "agent-" + "d1".repeat(16);
+    await command("begin", { run: { ...base, id, emailId: "a", status: "sent", createdAt: "2026-10-18T09:00:10.000Z", updatedAt: "2026-10-18T09:01:00.000Z",
+      model: "xiaomi/mimo-v2.6-pro", checkedBy: "qwen/qwen3.8-flash", repliedAt: "2026-10-18T09:01:00.000Z",
+      sent: { to: "x@y.invalid", subject: "Re: s", body: "Open Settings, then Account.", outboxId: "o" } } });
+    const checks = { language: "PASS", addressed: "PASS", policySafe: "PASS", routing: "PASS", actionable: "FAIL", continuity: "PASS" };
+    await command("judgeScript", { script: { verdict: { rubric: "v1", checks, question: true, helped: "partly", note: "no clear step" } } });
+    await command("quality", { now: Date.parse("2026-10-19T00:10:00.000Z") });
+    const last = await command("judgeLast", {});
+    assert.deepEqual(last.models, ["deepseek/deepseek-v4.1-flash"], "neither the writer's vendor nor the checker's");
+    assert.equal(last.input.answer, "Open Settings, then Account.");
+    const event = ((await command("events", {})).events as { kind: string; data: { value: Record<string, any> } }[]).find((e) => e.kind === "support.quality_daily")!;
+    assert.equal(event.data.value.judgeModel, "deepseek/deepseek-v4.1-flash");
+    assert.equal(event.data.value.quality.judged, 1);
+    assert.equal(event.data.value.quality.helpedPartly, 1);
+    assert.equal(event.data.value.quality.actionableFail, 1);
+    assert.ok(!event.data.value.notMeasured.includes("quality"));
+    assert.ok(!JSON.stringify(event.data).includes("no clear step"), "the judge's note stays on the run");
+    const [kept] = await command("byIds", { ids: [id] }) as { judgement?: { note: string } }[];
+    assert.equal(kept.judgement?.note, "no clear step");
+  } finally { await mf.dispose(); }
+});
+
+test("B-132: with no judge, or every call failing, quality is not measured rather than 0", async () => {
+  const { mf, command } = await fixture();
+  try {
+    await command("create", { id: "support", input: support });
+    const box = "support@project.invalid";
+    await command("setup", { mailbox: box, settings: { agent: { id: "support" } }, model: {} });
+    await command("seedThread", { mailbox: box, rows: [{ id: "a", folder: "inbox", date: "2026-10-18T09:00:00.000Z", thread: "t1" }] });
+    await command("begin", { run: { mailboxId: box, sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1,
+      id: "agent-" + "d2".repeat(16), emailId: "a", status: "sent", createdAt: "2026-10-18T09:00:10.000Z", updatedAt: "2026-10-18T09:01:00.000Z",
+      model: "xiaomi/mimo-v2.6-pro", sent: { to: "x@y.invalid", subject: "Re: s", body: "Hello", outboxId: "o" } } });
+    await command("judgeScript", { script: { throw: "judge down" } });
+    await command("quality", { now: Date.parse("2026-10-19T00:10:00.000Z") });
+    const event = ((await command("events", {})).events as { kind: string; data: { value: Record<string, any> } }[]).find((e) => e.kind === "support.quality_daily")!;
+    assert.equal(event.data.value.quality.judged, null);
+    assert.ok(event.data.value.notMeasured.includes("quality"));
   } finally { await mf.dispose(); }
 });

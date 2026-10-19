@@ -86,6 +86,8 @@ export interface AgentRun {
   modelCalls?: { calls: number; failed: number; recovered: number };
   /** B-130: drafted because a daily or rate limit was reached, not for what the answer says. */
   limited?: boolean;
+  /** B-132: the daily judge's verdict on the answer this run sent (rubric v1); counts leave, the note stays here. */
+  judgement?: import("./judge").JudgeVerdict;
   /** B-130: the sender, subject and texts were removed 30 days after the run began; counts stay. */
   redacted?: boolean;
   createdAt: string;
