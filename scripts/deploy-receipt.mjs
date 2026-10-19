@@ -5,7 +5,9 @@
 // state from Git, the digest from build/. `npm run deploy` tags each version with its commit, so a
 // version whose tag is not this checkout's commit, or a dirty tree, is reported "unlinked".
 //
-//   CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… node scripts/deploy-receipt.mjs [--out <dir>] [--expect-version <id>]
+//   CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… node scripts/deploy-receipt.mjs [--root <checkout>] [--out <dir>] [--expect-version <id>]
+//
+// --root reads another checkout (the one the deploy ran from); by default this script's own.
 //
 // The receipt carries no token, no account id or name. Exit 0 when linked, 2 when not, 1 on an error.
 import { createHash } from "node:crypto";
@@ -50,9 +52,12 @@ export async function servedVersion({ token, account, script, fetchImpl = fetch 
   const main = [...(active.versions ?? [])].sort((a, b) => (b.percentage ?? 0) - (a.percentage ?? 0))[0];
   if (!main) throw new Error("the active deployment names no version");
   const version = await api(`/versions/${main.version_id}`);
-  const annotations = version?.metadata?.annotations ?? {};
+  // The version's annotations are top-level in the API's answer (read live 2026-10-19); older answers nested them.
+  const annotations = version?.annotations ?? version?.metadata?.annotations ?? {};
   return { deploymentId: active.id, deployedAt: active.created_on ?? null, versionId: main.version_id, percentage: main.percentage ?? null,
-    split: (active.versions ?? []).length > 1, tag: annotations["workers/tag"] ?? null };
+    split: (active.versions ?? []).length > 1, tag: annotations["workers/tag"] ?? null,
+    // Cloudflare's own hash of the script it serves, for a later read to compare against.
+    scriptEtag: version?.resources?.script?.etag ?? null };
 }
 
 export async function makeReceipt({ root, token, account, script, fetchImpl, expectVersion, now = new Date() }) {
@@ -73,7 +78,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : undefined; };
   const token = process.env.CLOUDFLARE_API_TOKEN, account = process.env.CLOUDFLARE_ACCOUNT_ID;
   if (!token || !account) { console.error("CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are needed (from the vault, never typed)."); process.exit(1); }
-  const root = fileURLToPath(new URL("..", import.meta.url));
+  const root = arg("--root") ?? fileURLToPath(new URL("..", import.meta.url));
   const script = /"name"\s*:\s*"([^"]+)"/.exec(readFileSync(join(root, "wrangler.jsonc"), "utf8"))?.[1];
   try {
     const receipt = await makeReceipt({ root, token, account, script, expectVersion: arg("--expect-version") });
