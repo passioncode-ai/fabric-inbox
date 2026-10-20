@@ -18,6 +18,7 @@
 // minutes too. It reads the release's static feed, never the rate-limited GitHub API. A quiet check is
 // logged once (again when its answer or the failure changes), so the log does not grow by 288 lines a
 // day. The timers are the only ones this module owns, and they hold no process open (main.cjs unrefs them).
+const { fileURLToPath } = require('node:url');
 const path = require('node:path');
 // Sentences a person may read in Check for Updates…: English, collected for translation (L10N-04).
 const { msg } = require('./i18n.cjs');
@@ -77,7 +78,7 @@ const feedURL = (repository, platform = 'darwin', arch = 'x64') =>
  *   clearTimer(handle), log, onChange }
  */
 function createUpdater(deps) {
-  const { autoUpdater, fs, userData, feed, appVersion, fetchFeed, verifier, replaceable = async () => true, now = Date.now,
+  const { autoUpdater, fs, userData, feed, appVersion, fetchFeed, verifier, replaceable = async () => true, staged = async () => true, now = Date.now,
     setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (h) => clearTimeout(h), log = () => {}, onChange = () => {} } = deps;
   const switchFile = path.join(userData, SWITCH_FILE);
   const installFile = path.join(userData, INSTALL_FILE);
@@ -149,8 +150,31 @@ function createUpdater(deps) {
   function schedule(ms) {
     if (timer) clearTimer(timer);
     timer = null;
-    if (!automatic || ['off', 'unavailable', 'ready'].includes(state)) return;
+    // A ready update is looked at on the same cadence: the files it waits in can vanish (B-51).
+    if (state === 'ready') { timer = setTimer(() => { timer = null; void keepStaged(); }, CHECK_EVERY_MS); return; }
+    if (!automatic || ['off', 'unavailable'].includes(state)) return;
     timer = setTimer(() => { timer = null; if (automatic) void check({ manual: false }); }, ms);
+  }
+
+  /**
+   * B-51: macOS purges ~/Library/Caches when the disk runs short, and Squirrel.Mac's staged update
+   * lives there. Measured 2026-10-20: the staged 0.20.0 was gone, ShipIt failed at every quit
+   * ("Could not read update request") and launchd restarted it for minutes, while the app still
+   * said the update was ready. Whether the staged files are there; when they are not, the ready
+   * state is dropped and the release is fetched and verified again.
+   */
+  async function stagedNow() {
+    try { return await staged(); } catch { return false; }
+  }
+  async function keepStaged() {
+    if (state !== 'ready') return true;
+    if (await stagedNow()) { schedule(0); return true; }
+    log({ event: 'update_staged', outcome: 'lost', version: readyVersion });
+    readyVersion = '';
+    declined = null;
+    set('idle');
+    if (automatic) await check({ manual: false }); else schedule(0);
+    return false;
   }
   function stopWatchdog() { if (watchdog) clearTimer(watchdog); watchdog = null; }
 
@@ -307,7 +331,9 @@ function createUpdater(deps) {
 
     /** "Check for Updates…": checks now, whatever the switch says, and resolves with the outcome. */
     checkNow() {
-      if (state === 'ready') return Promise.resolve({ outcome: 'ready', version: readyVersion });
+      if (state === 'ready') return stagedNow().then((ok) => (ok ? { outcome: 'ready', version: readyVersion }
+        // The staged files are gone: say so by fetching it again, and answer with what that check finds.
+        : new Promise((resolve) => { manual.push(resolve); void keepStaged(); })));
       if (state === 'downloading') return Promise.resolve({ outcome: 'downloading' });
       if (state === 'checking') return new Promise((resolve) => { manual.push(resolve); });
       if (!['idle', 'error', 'held'].includes(state)) return Promise.resolve({ outcome: 'unavailable', reason });
@@ -332,7 +358,9 @@ function createUpdater(deps) {
       if (installing) return true;
       installing = true;
       log({ event: 'update_restart', outcome: 'requested', version: readyVersion });
-      void recordInstall(readyVersion).then(() => {
+      void stagedNow().then(async (ok) => {
+        if (!ok) { installing = false; onChange(status()); await keepStaged(); return; }
+        await recordInstall(readyVersion);
         log({ event: 'update_install', outcome: 'started', version: readyVersion });
         try { autoUpdater.quitAndInstall(); } catch { abandonInstall('failed'); return; }
         setTimer(() => abandonInstall('timeout'), RESTART_TIMEOUT_MS);
@@ -346,6 +374,8 @@ function createUpdater(deps) {
      */
     async quitting() {
       if (state !== 'ready' || installing) return;
+      // Nothing to install when the staged files are gone: no record, so the next launch fetches it again.
+      if (!(await stagedNow())) { log({ event: 'update_install', outcome: 'skipped', reason: 'staged_lost', version: readyVersion }); return; }
       log({ event: 'update_install', outcome: 'started', version: readyVersion });
       await recordInstall(readyVersion);
       if (typeof autoUpdater.installOnQuit === 'function') {
@@ -358,4 +388,18 @@ function createUpdater(deps) {
   };
 }
 
-module.exports = { createUpdater, readFeed, feedFor, feedURL, compareVersions, FIRST_CHECK_MS, CHECK_EVERY_MS, RETRY_MS, HANDOFF_TIMEOUT_MS, DECLINED_FOR_MS, SWITCH_FILE, STUCK_AFTER };
+/**
+ * macOS: whether Squirrel.Mac's staged update is still on disk: its ShipIt state file names a bundle
+ * (`updateBundleURL`) and that bundle's Info.plist exists. `readPlist` turns the state file into an object.
+ */
+async function squirrelStaged({ fs, cacheDir, bundleId, readPlist }) {
+  const stateFile = path.join(cacheDir, `${bundleId}.ShipIt`, 'ShipItState.plist');
+  const state = await readPlist(stateFile);
+  const url = state && typeof state.updateBundleURL === 'string' ? state.updateBundleURL : '';
+  if (!url.startsWith('file://')) return false;
+  const bundle = fileURLToPath(url);
+  await fs.access(path.join(bundle, 'Contents', 'Info.plist'));
+  return true;
+}
+
+module.exports = { squirrelStaged, createUpdater, readFeed, feedFor, feedURL, compareVersions, FIRST_CHECK_MS, CHECK_EVERY_MS, RETRY_MS, HANDOFF_TIMEOUT_MS, DECLINED_FOR_MS, SWITCH_FILE, STUCK_AFTER };

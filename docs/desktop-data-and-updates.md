@@ -93,6 +93,13 @@ as Fabric Switchboard, Fabric and Fabric Dashboards.
    0.12.0 failed with `ENOTEMPTY` and no later release was installed (B-86, fixed in 0.15.2;
    `tests/desktop-update-asar.test.ts` runs the real Electron). A copy before 0.15.2 does not recover
    by itself: install 0.15.2 once by hand.
+   Squirrel.Mac stages the update under `~/Library/Caches/ai.passioncode.fabric-inbox.ShipIt/`, and macOS
+   purges `~/Library/Caches` when the disk runs short. While an update waits, the app looks every
+   5 minutes whether the bundle `ShipItState.plist` names still exists (`squirrelStaged`); when it is gone
+   (`update_staged lost` in the log) the ready state is dropped and the release is fetched and verified
+   again, and a quit over missing files records no install (`update_install skipped`). Measured on
+   2026-10-20 (B-51): with 188 MB free the staged 0.20.0 was purged, ShipIt failed at each quit with
+   *Could not read update request* and the installed copy stayed on 0.19.0.
    From the third failed check in a row the app no longer stays silent: the menu item reads
    **Updates Are Not Installing…** and offers the download (`update_stuck` in the log; a good check
    clears it).

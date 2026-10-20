@@ -2,6 +2,7 @@
 // A fake autoUpdater stands in for Squirrel.Mac, a fake verifier for desktop/update-verify.cjs
 // (tested on its own in desktop-update-verify.test.ts) and fake timers for the cadence; nothing
 // here touches the network.
+import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
@@ -173,7 +174,7 @@ test("a verified update is handed to Squirrel.Mac as a local feed, installed on 
   assert.deepEqual([up.status().state, up.status().readyVersion], ["ready", "0.12.0"]);
   await settle();
   assert.ok(h.cleans.n >= 2, "what a previous run left is removed at start, and the verified zip once Squirrel.Mac has its copy");
-  assert.deepEqual(h.pending(), [], "nothing more is checked while an update waits");
+  assert.deepEqual(h.pending(), [5 * 60 * 1000], "while an update waits, only whether its staged files are still there is looked at (B-51)");
   assert.deepEqual(await up.checkNow(), { outcome: "ready", version: "0.12.0" });
   assert.equal(up.restart(), true);
   await until(() => h.calls.includes("install"));
@@ -490,4 +491,50 @@ test("the server's address is kept in the shared PassionCode folder and read bac
   writeFileSync(path.join(blocked, "PassionCode", "backups"), "a file where the folder should be");
   assert.equal(await backup.saveBackup({ fs: fsPromises, appData: blocked, config, log: (l: unknown) => lines.push(l) }), false);
   assert.equal(lines[0].outcome, "not_written");
+});
+
+test("B-51: staged files the system purged are noticed; the release is fetched again, and a quit installs nothing it cannot read", async () => {
+  const disk = { staged: true };
+  const h = updater({ staged: async () => disk.staged });
+  const up = h.make();
+  await up.start(RELEASED);
+  await h.advance(90 * 1000);
+  h.u.emit("update-downloaded", {}, "notes", "0.12.0");
+  await settle();
+  assert.equal(up.status().state, "ready");
+  // Still there: nothing changes at the five-minute look.
+  await h.advance(5 * 60 * 1000);
+  assert.equal(up.status().state, "ready");
+  assert.equal(h.calls.filter((c) => c === "download").length, 1);
+  // macOS purged the cache: a quit now records no install (the next launch would call it failed) …
+  disk.staged = false;
+  await up.quitting();
+  assert.ok(!existsSync(path.join(h.userData, "update-install.json")));
+  assert.equal(events(h.lines).at(-1), "update_install:skipped");
+  // … and the next look drops the ready state and fetches and verifies the release again.
+  await h.advance(5 * 60 * 1000);
+  await until(() => h.calls.filter((c) => c === "download").length === 2);
+  assert.ok(events(h.lines).includes("update_staged:lost"));
+  assert.equal(up.status().state, "downloading");
+  // Restart to Install with nothing staged is not handed to Squirrel.Mac either.
+  h.u.emit("update-downloaded", {}, "notes", "0.12.0");
+  await settle();
+  disk.staged = false;
+  assert.equal(up.restart(), true);
+  await until(() => events(h.lines).includes("update_staged:lost") && up.status().state !== "ready");
+  assert.ok(!h.calls.includes("install"), "never quitAndInstall over missing files");
+});
+
+test("B-51: squirrelStaged reads ShipIt's state file and looks for the bundle it names", async () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "fabric-shipit-"));
+  const id = "ai.passioncode.fabric-inbox";
+  const bundle = path.join(home, `${id}.ShipIt`, "update.x", "Fabric Inbox.app");
+  const state = { updateBundleURL: pathToFileURL(bundle + path.sep).href };
+  const readPlist = async () => state;
+  const check = () => updates.squirrelStaged({ fs: fsPromises, cacheDir: home, bundleId: id, readPlist });
+  await assert.rejects(check(), "no bundle yet");
+  mkdirSync(path.join(bundle, "Contents"), { recursive: true });
+  writeFileSync(path.join(bundle, "Contents", "Info.plist"), "<plist/>");
+  assert.equal(await check(), true);
+  assert.equal(await updates.squirrelStaged({ fs: fsPromises, cacheDir: home, bundleId: id, readPlist: async () => ({}) }), false);
 });

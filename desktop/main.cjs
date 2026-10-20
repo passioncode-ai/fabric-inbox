@@ -375,7 +375,13 @@ async function startUpdates() {
     if (!target.writable.length) return false;
     try { for (const where of target.writable) await fs.access(where, fsConstants.W_OK); return true; } catch { return false; }
   };
-  updater = updates.createUpdater({ autoUpdater, fs, userData: app.getPath('userData'), feed, appVersion: app.getVersion(), fetchFeed, verifier, replaceable,
+  // B-51: the staged update lives in ~/Library/Caches, which macOS purges when the disk runs short.
+  const readPlist = async (file) => JSON.parse((await new Promise((resolve, reject) => execFile('/usr/bin/plutil', ['-convert', 'json', '-o', '-', file],
+    { timeout: 10000, maxBuffer: 1024 * 1024 }, (error, stdout) => (error ? reject(error) : resolve(stdout))))));
+  const staged = process.platform === 'darwin'
+    ? () => updates.squirrelStaged({ fs, cacheDir: path.join(app.getPath('home'), 'Library', 'Caches'), bundleId: 'ai.passioncode.fabric-inbox', readPlist })
+    : async () => true;
+  updater = updates.createUpdater({ autoUpdater, fs, userData: app.getPath('userData'), feed, appVersion: app.getVersion(), fetchFeed, verifier, replaceable, staged,
     setTimer, clearTimer: clearTimeout, log: logEvent, onChange: () => { installMenu(); notifyReady(); } });
   await updater.start({ packaged: app.isPackaged, mas: !!process.mas, inApplications: target.installed, packageManager: target.packageManager });
   installMenu();
