@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+- **Rename or move an address keeping its mail.** Settings → Addresses → ⋯ → Rename or move moves
+  every message, attachment, draft, folder, setting and who answers to the new address, on the same
+  domain or another; the old address keeps delivering to it for 30 days. Agents use `rename_address`.
+
 ## 0.21.0 (2026-10-19)
 
 - **Usage counts wait for your answer.** The Mac app sends nothing, not even that it was installed,

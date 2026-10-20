@@ -392,6 +392,8 @@ cannot be looked up and asks before giving up a zone the token cannot see.
 
 Pause (B-27): `pauseAddress` refuses the domain's catch-all mailbox, switches the address's literal rule off (`EmailRoutingClient.disableRule`; a rule elsewhere or none is left alone) and writes `paused/<address>.json`; delivery (`resolveRecipient`, `workers/index.ts`) skips a paused mailbox, so its mail follows the domain's catch-all or is refused as `address_paused`; the mailbox, mail, settings and agent stay. `resumeAddress` turns the rule on (`ensureRule`) and removes the mark; removing an address removes the mark too. The listing carries `paused`.
 
+Rename (B-27): `renameAddress` (`workers/lib/address-rename.ts`, spec `docs/app-store/tasks/b-27-rename.md`) checks first (not the catch-all, not paused, no send in flight, the new address free and served), then runs steps recorded in `renames/<from>.json`: create the new mailbox with the old settings, copy `folders`, `emails` and `attachments` page by page (`MailboxDO.exportPage`/`importRows`, same ids, `INSERT OR IGNORE`, so a repeat adds nothing), verify counts per folder, route the new address (`ensureRule`) and write the alias `renamed/<from>.json` (30 days; delivery puts the old address's mail into the new one), move category rows (`CategoriesDO.moveAccount`) and the created time, then empty the old object without deleting R2 files (`emptyKeepingFiles`: bodies and attachments are keyed by message id). A call that runs out of its share answers `202 running`; the next call continues.
+
 ## Categories (CAT-1…CAT-7)
 
 ```mermaid

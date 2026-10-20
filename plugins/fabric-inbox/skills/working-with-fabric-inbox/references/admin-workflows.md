@@ -49,6 +49,10 @@ works; the live tool schemas have every input.
 - **Pause instead of removing:** `pause_address` keeps the mailbox, its mail, settings and agent,
   switches its Cloudflare rule off, and new mail goes to the domain's catch-all or is refused (the
   answer says which); `resume_address` undoes it. The catch-all mailbox itself cannot be paused.
+- **Rename or move:** `rename_address { address, to }` moves everything (mail, attachments, drafts,
+  folders, settings, who answers, category labels) to `to`; the old address delivers to it for 30 days.
+  `state: running` means call again with the same addresses (it continues, nothing twice);
+  `rename_status` reads where it stands.
 - **Mail arrives elsewhere:** `check_address_routing` says where it goes; `route_address_here`
   points it at this server.
 - **Hide from the sidebar:** `set_hidden_addresses` (it keeps receiving).

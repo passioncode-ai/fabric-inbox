@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono";
+import { renameAddress, renameStatus } from "../lib/address-rename";
 import { z } from "zod";
 import type { Env } from "../types";
 import { AGENT_TEMPLATES, readAssignment } from "../agents/definition";
@@ -371,6 +372,20 @@ agentsRouter.get("/api/project-addresses/check", async (c) => {
  */
 agentsRouter.delete("/api/project-addresses/:email", async (c) => {
   const result = await removeAddress(c.env, c.req.param("email"));
+  return c.json(result.body, result.status);
+});
+
+/** B-27: rename or move an address keeping its mail; a call continues a rename already started. */
+export const RenameInput = z.object({ to: z.string().trim().toLowerCase().email().max(254) }).strict();
+agentsRouter.post("/api/project-addresses/:email/rename", async (c) => {
+  const parsed = RenameInput.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: msg("Give the new address") }, 400);
+  const result = await renameAddress(c.env, c.req.param("email"), parsed.data.to);
+  return c.json(result.body, result.status);
+});
+agentsRouter.get("/api/project-addresses/:email/rename", async (c) => {
+  c.header("Cache-Control", "no-store");
+  const result = await renameStatus(c.env, c.req.param("email"));
   return c.json(result.body, result.status);
 });
 

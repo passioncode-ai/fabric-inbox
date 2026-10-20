@@ -12,6 +12,7 @@ import { textToHtml } from "./lib/email-helpers";
 import { AttachmentValidationError, MAX_ATTACHMENTS, storedAttachmentName, validateAttachments } from "../shared/mail/attachments";
 import { allServedDomains, createMailbox, deleteMailbox, listMailboxAddresses, readSettings, storedCatchAll, updateSettings, readAllSettings, allowedAddresses as allowedAddressList } from "./lib/mailbox-store";
 import { createAddress, pausedKey, removeAddress } from "./lib/address-ops";
+import { renamedTo } from "./lib/address-rename";
 import { routingClient } from "./routing/email-routing";
 import { handleSendEmail, handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
 import { Folders, isBuiltInFolder } from "../shared/folders";
@@ -520,6 +521,15 @@ async function resolveRecipient(candidates: string[], allowedAddresses: string[]
 			// B-27: a paused address keeps its mail but takes none; its mail follows the domain's catch-all.
 			if (await env.BUCKET.head(pausedKey(address))) { paused ??= address; continue; }
 			return { mailboxId: address };
+		}
+	}
+	// B-27: an address renamed keeping its mail delivers to its new address while its alias lasts.
+	for (const address of onServedDomain) {
+		if (allowedAddresses.length && !allowedAddresses.includes(address)) continue;
+		const to = await renamedTo(env.BUCKET, address).catch(() => null);
+		if (to && await env.BUCKET.head(`mailboxes/${to}.json`) && !(await env.BUCKET.head(pausedKey(to)))) {
+			console.log(JSON.stringify({ event: "renamed_address_mail", domain: domainOf(address) }));
+			return { mailboxId: to };
 		}
 	}
 	const address = paused ?? onServedDomain[0];
