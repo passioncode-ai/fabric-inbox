@@ -18,6 +18,7 @@
 // minutes too. It reads the release's static feed, never the rate-limited GitHub API. A quiet check is
 // logged once (again when its answer or the failure changes), so the log does not grow by 288 lines a
 // day. The timers are the only ones this module owns, and they hold no process open (main.cjs unrefs them).
+const { fileURLToPath } = require('node:url');
 const path = require('node:path');
 // Sentences a person may read in Check for Updates…: English, collected for translation (L10N-04).
 const { msg } = require('./i18n.cjs');
@@ -396,7 +397,7 @@ async function squirrelStaged({ fs, cacheDir, bundleId, readPlist }) {
   const state = await readPlist(stateFile);
   const url = state && typeof state.updateBundleURL === 'string' ? state.updateBundleURL : '';
   if (!url.startsWith('file://')) return false;
-  const bundle = decodeURIComponent(new URL(url).pathname);
+  const bundle = fileURLToPath(url);
   await fs.access(path.join(bundle, 'Contents', 'Info.plist'));
   return true;
 }

@@ -2,6 +2,7 @@
 // A fake autoUpdater stands in for Squirrel.Mac, a fake verifier for desktop/update-verify.cjs
 // (tested on its own in desktop-update-verify.test.ts) and fake timers for the cadence; nothing
 // here touches the network.
+import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
@@ -528,7 +529,7 @@ test("B-51: squirrelStaged reads ShipIt's state file and looks for the bundle it
   const home = mkdtempSync(path.join(os.tmpdir(), "fabric-shipit-"));
   const id = "ai.passioncode.fabric-inbox";
   const bundle = path.join(home, `${id}.ShipIt`, "update.x", "Fabric Inbox.app");
-  const state = { updateBundleURL: "file://" + encodeURI(bundle + "/") };
+  const state = { updateBundleURL: pathToFileURL(bundle + path.sep).href };
   const readPlist = async () => state;
   const check = () => updates.squirrelStaged({ fs: fsPromises, cacheDir: home, bundleId: id, readPlist });
   await assert.rejects(check(), "no bundle yet");
