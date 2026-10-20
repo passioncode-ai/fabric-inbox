@@ -7,6 +7,9 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+- **An update the system cleared away is downloaded again.** macOS empties its caches when the
+  disk runs short, and that is where a downloaded update waits. The app now notices, fetches the
+  update again and installs it at the next quit, instead of failing there every time.
 - **Rename or move an address keeping its mail.** Settings → Addresses → ⋯ → Rename or move moves
   every message, attachment, draft, folder, setting and who answers to the new address, on the same
   domain or another; the old address keeps delivering to it for 30 days. Agents use `rename_address`.
