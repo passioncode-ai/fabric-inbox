@@ -5,7 +5,7 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 0.21.1 (2026-10-20)
 
 - **An update the system cleared away is downloaded again.** macOS empties its caches when the
   disk runs short, and that is where a downloaded update waits. The app now notices, fetches the
