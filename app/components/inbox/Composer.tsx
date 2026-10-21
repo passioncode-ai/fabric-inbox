@@ -18,6 +18,7 @@ import { missingOriginals, prepareMessage } from "./compose-payload";
 import { sendSavedDraft, signatureFor, swapSignature } from "./server-drafts";
 import type { SyncStatus } from "./use-drafts";
 import { useT } from "../../lib/i18n";
+import EmailIframe from "~/components/EmailIframe";
 export type { Draft } from "./draft-store";
 export default function Composer({
   draft,
@@ -589,6 +590,13 @@ export default function Composer({
                 </li>
               ))}
             </ul>
+          )}
+          {draft.forwardHtml && (
+            // The original goes below the text as it was, with its links and buttons (operator, 2026-10-21).
+            <details className="fi-forward-original">
+              <summary>{t("The original message goes below your text as it was, with its links and buttons. Show it")}</summary>
+              <EmailIframe messageKey={draft.id + ":forward"} body={draft.forwardHtml} autoSize />
+            </details>
           )}
           {draft.mode === "forward" && (
             <>

@@ -9,6 +9,7 @@
  * comes back here as a conflict for the person to settle.
  */
 import { htmlToText, textToHtml } from "../../../shared/mail/text";
+import { splitForward, withForward, withForwardText } from "../../../shared/mail/forward";
 import type { MailAttachment } from "../../../shared/mail/attachments";
 import { loadAttachments, type AttachmentStorage } from "./attachment-store";
 import type { Draft, ServerFile } from "./draft-store";
@@ -89,7 +90,7 @@ export async function syncDraft(draft: Draft, files: AttachmentStorage, request:
     const id = draft.serverId ?? draft.id;
     try {
       const saved = await request<{ id: string; revision: number; attachments: ServerFile[] }>(`${cfBox(draft.accountId)}/drafts/${encodeURIComponent(id)}`, {
-        to: draft.to, ...(draft.cc ? { cc: draft.cc } : {}), ...(draft.bcc ? { bcc: draft.bcc } : {}), subject: draft.subject, body: textToHtml(draft.text),
+        to: draft.to, ...(draft.cc ? { cc: draft.cc } : {}), ...(draft.bcc ? { bcc: draft.bcc } : {}), subject: draft.subject, body: draft.forwardHtml ? withForward(draft.text, draft.forwardHtml) : textToHtml(draft.text),
         ...(draft.mode === "reply" && draft.originalId ? { in_reply_to: draft.originalId } : {}), ...(draft.threadId ? { thread_id: draft.threadId } : {}),
         ...(local.length ? { attachments: local } : {}), keep_attachments: before.map((f) => f.id), expected_revision: Number(draft.serverRevision ?? 0),
       }, "PUT");
@@ -106,7 +107,8 @@ export async function syncDraft(draft: Draft, files: AttachmentStorage, request:
   } catch {
     return { ok: false, reason: "incomplete", message: msg("{keeper} saves a draft once it has a recipient with a valid address; until then it is kept on this device.", { keeper: keeper(draft.accountId) }) };
   }
-  const message = { to, cc, bcc, subject: draft.subject, text: draft.text,
+  const message = { to, cc, bcc, subject: draft.subject,
+    ...(draft.forwardHtml ? { text: withForwardText(draft.text, draft.forwardHtml), html: withForward(draft.text, draft.forwardHtml) } : { text: draft.text }),
     ...(draft.threadId ? { threadId: draft.threadId } : {}), ...(draft.inReplyTo ? { inReplyTo: draft.inReplyTo } : {}), ...(draft.references ? { references: draft.references } : {}) };
   let serverId = draft.serverId, serverRevision = draft.serverRevision;
   try {
@@ -188,7 +190,7 @@ export function rebaseEdit(before: Draft | undefined, input: Draft, uploaded: Re
 
 /** The part of a draft the server holds; a change to any of it is still to be saved. */
 export function contentKey(d: Draft): string {
-  return JSON.stringify([d.accountId, d.to, d.cc ?? "", d.bcc ?? "", d.subject, d.text, (d.attachments ?? []).map((a) => a.id), (d.serverFiles ?? []).map((f) => f.id)]);
+  return JSON.stringify([d.accountId, d.to, d.cc ?? "", d.bcc ?? "", d.subject, d.text, d.forwardHtml ?? "", (d.attachments ?? []).map((a) => a.id), (d.serverFiles ?? []).map((f) => f.id)]);
 }
 
 /** Sends the saved draft from the server; it leaves Drafts there once accepted. Throws the server's refusal. */
@@ -239,14 +241,18 @@ export async function openServerDraft(row: Pick<ServerDraftRow, "accountId" | "s
   if (provider(row.accountId) === "cloudflare") {
     const d = await request<{ id: string; revision: number; to: string; cc: string | null; bcc: string | null; subject: string; body: string;
       inReplyTo: string | null; threadId: string | null; attachments: ServerFile[] }>(`${cfBox(row.accountId)}/drafts/${encodeURIComponent(row.serverId)}`);
-    return { ...common, id: d.id, to: d.to, ...(d.cc ? { cc: d.cc } : {}), ...(d.bcc ? { bcc: d.bcc } : {}), subject: d.subject, text: htmlToText(d.body),
+    // A forward's original comes back as the original, not as text to edit.
+    const parts = splitForward(d.body);
+    return { ...common, id: d.id, to: d.to, ...(d.cc ? { cc: d.cc } : {}), ...(d.bcc ? { bcc: d.bcc } : {}), subject: d.subject, text: htmlToText(parts.before),
+      ...(parts.original !== null ? { forwardHtml: parts.original } : {}),
       mode: d.inReplyTo ? "reply" : "new", ...(d.inReplyTo ? { originalId: d.inReplyTo } : {}), ...(d.threadId ? { threadId: d.threadId } : {}),
       serverRevision: d.revision, serverFiles: cfFiles(d.attachments) };
   }
   const d = await request<{ draftId: string; revision: string; to: string; cc: string | null; bcc: string | null; subject: string; text: string; html: string;
     threadId: string | null; inReplyTo: string | null; references: string | null; attachments: ServerFile[] }>(`${gmailBase(row.accountId)}/drafts/${encodeURIComponent(row.serverId)}/content`);
+  const parts = splitForward(d.html || "");
   return { ...common, id: crypto.randomUUID(), to: d.to, ...(d.cc ? { cc: d.cc } : {}), ...(d.bcc ? { bcc: d.bcc } : {}), subject: d.subject,
-    text: d.text || htmlToText(d.html), mode: d.inReplyTo ? "reply" : "new", ...(d.threadId ? { threadId: d.threadId } : {}),
+    ...(parts.original !== null ? { text: htmlToText(parts.before), forwardHtml: parts.original } : { text: d.text || htmlToText(d.html) }), mode: d.inReplyTo ? "reply" : "new", ...(d.threadId ? { threadId: d.threadId } : {}),
     ...(d.inReplyTo ? { inReplyTo: d.inReplyTo } : {}), ...(d.references ? { references: d.references } : {}), serverRevision: d.revision, serverFiles: d.attachments.map((f) => ({ ...f })) };
 }
 

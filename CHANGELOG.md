@@ -16,6 +16,11 @@ is cut and published: [docs/release.md](docs/release.md).
   replied, You replied. Needs a reply keeps only the ones waiting for someone, with their numbers.
   Turn it on in Settings → Addresses for every address, a domain or one address; it is off until
   you do. Agents read the same statuses with `list_agent_threads`.
+- **A forwarded message keeps its buttons and links.** Forwarding an HTML message sends it as it
+  was, below what you write, instead of turning it into text. The composer shows the original that
+  goes with it.
+- **Right-click a link in a message** in the Mac app to open it in your browser or copy it; a mail
+  address offers Write to This Address and Copy Address.
 
 ## 0.21.2 (2026-10-21)
 

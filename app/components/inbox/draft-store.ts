@@ -18,6 +18,8 @@ export type Draft = {
   attachments?: AttachmentRef[];
   pendingAttachments?: string[];
   forwardSource?: ForwardSource;
+  /** A forward's original as it was (its HTML, buttons and links), sent below the text (operator, 2026-10-21). */
+  forwardHtml?: string;
   subject: string;
   text: string;
   idempotencyKey: string;
@@ -185,6 +187,7 @@ function content(value: unknown, legacy = false): Omit<Draft, "id"> {
               ? undefined
               : [...(d.pendingAttachments as string[])],
           forwardSource: forwardSource(d.forwardSource),
+          ...(typeof d.forwardHtml === "string" && d.forwardHtml.length <= 1_000_000 ? { forwardHtml: d.forwardHtml } : {}),
           serverId: d.serverId as string | undefined,
           serverRevision: d.serverRevision as number | string | undefined,
           serverFiles: serverFiles(d.serverFiles),

@@ -1886,3 +1886,16 @@ body {
 .fi-agent-pick select { flex: 1; min-width: 0; font-size: 12px; color: var(--pc-text); background: var(--pc-panel); border: 1px solid var(--pc-border); border-radius: 6px; padding: 4px 6px; }
 .fi-agent-note { margin: 0; padding: 10px 16px; font-size: 12px; color: var(--pc-text-muted); border-bottom: 1px solid var(--pc-border); }
 .fi-agent-chat { flex: 1; min-height: 0; overflow: hidden; }
+
+/* A forward's original, shown under the composer as it will be sent (operator, 2026-10-21). */
+.fi-forward-original {
+  margin: 8px 0;
+  border: 1px solid var(--pc-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.fi-forward-original summary {
+  font-size: 12px;
+  color: var(--pc-muted);
+  cursor: pointer;
+}

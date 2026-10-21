@@ -35,7 +35,6 @@ import {
 import { fabric } from "~/services/fabric";
 import type { Mail } from "~/services/fabric";
 import type { Email } from "~/types";
-import { htmlToPlainText } from "~/lib/utils";
 import EmailIframe from "~/components/EmailIframe";
 import { replyAllRecipients, replyRecipient } from "~/components/inbox/send-state";
 import Composer, { type Draft } from "~/components/inbox/Composer";
@@ -53,6 +52,7 @@ import {
 } from "~/components/inbox/model";
 import { useDrafts } from "~/components/inbox/use-drafts";
 import ReplyFilter from "~/components/inbox/ReplyFilter";
+import { forwardBody } from "../../shared/mail/forward";
 import { isAgentState, type AgentStatusSettings } from "../../shared/mail/agent-state";
 import ConversationList from "~/components/inbox/ConversationList";
 import { loadConversation, markRead, messageBody, type ThreadRow } from "~/components/inbox/thread";
@@ -806,15 +806,17 @@ export default function UnifiedInbox() {
         mode === "new"
           ? ""
           : (mode === "reply" ? "Re: " : "Fwd: ") + (m?.subject ?? ""),
+      // A forward of an HTML message carries the original as it was, below the text (its buttons and
+      // links keep working: operator, 2026-10-21); a text message is quoted as text, as before.
       text:
         mode === "forward"
           ? signed + "\n\n" + t("Forwarded message") + "\n" + t("From:") + " " +
             m?.from +
             "\n" + t("Subject:") + " " +
             m?.subject +
-            "\n\n" +
-            (m?.text || (m?.html ? htmlToPlainText(m.html) : ""))
+            (m?.html ? "" : "\n\n" + (m?.text ?? ""))
           : signed,
+      ...(mode === "forward" && m?.html ? { forwardHtml: forwardBody(m.html) } : {}),
       mode,
       originalId: selected?.providerMessageId,
       forwardSource:

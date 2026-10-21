@@ -360,6 +360,10 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Squirrel.Mac did not accept the verified update.": "Squirrel.Mac не принял проверенное обновление.",
 	"Squirrel.Mac did not answer.": "Squirrel.Mac не ответил.",
 	"This version was not accepted by macOS before; it is tried again later.": "macOS уже отклонила эту версию; попробуем позже.",
+	"Open Link in Browser": "Открыть ссылку в браузере",
+	"Copy Link": "Скопировать ссылку",
+	"Write to This Address": "Написать на этот адрес",
+	"Copy Address": "Скопировать адрес",
 };
 
 /** Every update text is wrapped in desktop/main.cjs now (LC-16); nothing is reserved. */
