@@ -52,7 +52,9 @@ works; the live tool schemas have every input.
 - **Rename or move:** `rename_address { address, to }` moves everything (mail, attachments, drafts,
   folders, settings, who answers, category labels) to `to`; the old address delivers to it for 30 days.
   `state: running` means call again with the same addresses (it continues, nothing twice);
-  `rename_status` reads where it stands.
+  `rename_status` reads where it stands. Until it ends the old mailbox is read-only and the address
+  cannot be removed, paused or made the catch-all; new mail already lands in `to`. `cancel_rename`
+  undoes it while `cancellable` is true (before the new address is routed).
 - **Mail arrives elsewhere:** `check_address_routing` says where it goes; `route_address_here`
   points it at this server.
 - **Hide from the sidebar:** `set_hidden_addresses` (it keeps receiving).

@@ -97,7 +97,12 @@ as Fabric Switchboard, Fabric and Fabric Dashboards.
    purges `~/Library/Caches` when the disk runs short. While an update waits, the app looks every
    5 minutes whether the bundle `ShipItState.plist` names still exists (`squirrelStaged`); when it is gone
    (`update_staged lost` in the log) the ready state is dropped and the release is fetched and verified
-   again, and a quit over missing files records no install (`update_install skipped`). Measured on
+   again, and a quit over missing files records no install (`update_install skipped`). Only files that
+   are gone count as lost: a look that fails (`plutil` timing out under load) changes nothing. A lost
+   update also removes ShipIt's waiting launchd job (`launchctl remove ai.passioncode.fabric-inbox.ShipIt`,
+   once; Squirrel.Mac submits it again with the next download). The same version lost a second time is
+   fetched again only after 6 hours (`LOST_BACKOFF_MS`), unless the person chooses **Check for Updates…**
+   or **Restart to Install Update**, which fetch at once whether automatic updates are on or off. Measured on
    2026-10-20 (B-51): with 188 MB free the staged 0.20.0 was purged, ShipIt failed at each quit with
    *Could not read update request* and the installed copy stayed on 0.19.0.
    From the third failed check in a row the app no longer stays silent: the menu item reads

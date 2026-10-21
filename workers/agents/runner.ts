@@ -386,10 +386,13 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     thread = [];
   }
   const received = Date.parse(email.date);
-  // B-131: the waiting reply this run already sent is not an answer; the real one still goes out.
-  const waitingSent = run.acknowledged ? deps.htmlToText(run.acknowledged.text).trim().slice(0, 60) : "";
+  // B-131: a waiting reply is not an answer: not this run's, and not one sent for an earlier message of
+  // the same conversation (review 2026-10-21: it silenced a held follow-up), so the real one still goes out.
+  const waitingTexts = [run.acknowledged?.text, agent.replyPolicy.waitingReply?.en, agent.replyPolicy.waitingReply?.ru,
+    DEFAULT_WAITING_REPLY.en, DEFAULT_WAITING_REPLY.ru].filter((t): t is string => !!t?.trim())
+    .map((t) => deps.htmlToText(t).trim().slice(0, 60));
   const answeredAfter = thread.some((m) => m.folder_id === "sent" && Date.parse(m.date) > received
-    && !(waitingSent && deps.htmlToText(m.body).trim().startsWith(waitingSent)));
+    && !waitingTexts.some((w) => deps.htmlToText(m.body).trim().startsWith(w)));
   const headers = parseStoredHeaders(email.raw_headers);
   const replyTo = replyToAddress(headers);
   const ownDomains = deps.servedDomains ? await deps.servedDomains().catch(() => [] as string[]) : [];
@@ -559,7 +562,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     response = await deps.model({ agent, system: systemPrompt(agent, mailboxId, tools, passages, senderName, prefetched, !!deps.check), prompt, tools, trace: run.id });
     run.modelCalls = response.calls ? { ...response.calls } : { calls: 1, failed: 0, recovered: 0 };
   } catch (error) {
-    run.modelCalls = { calls: 1, failed: 1, recovered: 0 };
+    const counted = (error as { calls?: { calls: number; failed: number; recovered: number } }).calls;
+    run.modelCalls = counted ? { ...counted } : { calls: 1, failed: 1, recovered: 0 };
     return finish("failed", msg("The model could not answer ({error}); the message is left for the operator", { error: (error as Error).message }));
   }
   // No structured answer and no text: nothing was decided, so the message waits for a person

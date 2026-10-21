@@ -23,7 +23,11 @@ to answer. The answer is kept per app as `disclosedAt` in `<userData>/analytics-
 PassionCode app's answer does not answer for this one; the shared switch in `installation.json` stays
 the one on/off). A start that waited is counted after the answer; an install that sent counts before
 this rule is asked once, told so, and is not counted as a new install; an unreadable state file asks
-again rather than sending. Tests: `A7-012: …` in `tests/desktop-analytics.test.ts`.
+again rather than sending. The question waits while a hub's connect dialog (Allow or Deny) is open and is
+asked after it. The box comes ticked because the shared switch is on by default (ADR-0127 keeps that default;
+the person sees it and answers before anything is sent). Every event carries the system it runs on
+(`osName`: macOS, Windows or Linux). Tests: `A7-012: …` and `review 2026-10-21: …` in
+`tests/desktop-analytics.test.ts`.
 
 ## What is sent
 
@@ -36,7 +40,7 @@ same in fabric-switchboard#75). Nothing else identifies the Mac or the person.
 
 | Event | When | Props (besides `install_id`) |
 |---|---|---|
-| `app_installed` | the first start of this app on this Mac (once; kept in `<userData>/analytics-state.json`) | `first_passioncode_app` (no PassionCode app had run here before), `server_configured` |
+| `app_installed` | the first start of this app on this Mac (once; kept in `<userData>/analytics-state.json`) | `first_passioncode_app` (no PassionCode app had run here before: this app made the shared file at its launch, also when the event waited for the person's answer), `server_configured` |
 | `app_started` | every start | `launch`: `ordinary`, or `link` when a `fabric-inbox://connect` link opened the app |
 | `app_updated` | the first start of a new version (an automatic update or a manual one) | `from`: the version this app last started as |
 | `app_active` | once per UTC day, when the app starts or its window comes forward | `server` (whether counts were read); with a signed-in server: `gmail`, `cloudflare` (mailboxes), `agents`, `agent_keys` — counts only |

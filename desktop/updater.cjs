@@ -77,8 +77,12 @@ const feedURL = (repository, platform = 'darwin', arch = 'x64') =>
  *   (whether this user can replace the app's bundle), now, setTimer(fn, ms) → handle,
  *   clearTimer(handle), log, onChange }
  */
+/** A version lost twice from the staging cache waits this long before it is fetched again on its own. */
+const LOST_BACKOFF_MS = 6 * 3600 * 1000;
+
 function createUpdater(deps) {
-  const { autoUpdater, fs, userData, feed, appVersion, fetchFeed, verifier, replaceable = async () => true, staged = async () => true, now = Date.now,
+  const { autoUpdater, fs, userData, feed, appVersion, fetchFeed, verifier, replaceable = async () => true, staged = async () => true,
+    forgetStaged = async () => {}, now = Date.now,
     setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (h) => clearTimeout(h), log = () => {}, onChange = () => {} } = deps;
   const switchFile = path.join(userData, SWITCH_FILE);
   const installFile = path.join(userData, INSTALL_FILE);
@@ -100,6 +104,7 @@ function createUpdater(deps) {
   let declined = null;     // { version, until }: a version Squirrel.Mac refused is not fetched again soon
   let wired = false;
   let installing = false;  // Restart to Install Update was chosen: the quit is Squirrel.Mac's
+  let losses = { version: '', n: 0 };  // a staged version macOS purged, and how often (B-51)
 
   const set = (next) => { state = next; onChange(status()); };
   function status() { return { state, reason, automatic, readyVersion, heldVersion, runbook, error: lastError, lastCheck, installing, failures, stuck: failures >= STUCK_AFTER }; }
@@ -164,16 +169,32 @@ function createUpdater(deps) {
    * state is dropped and the release is fetched and verified again.
    */
   async function stagedNow() {
-    try { return await staged(); } catch { return false; }
+    // Only files that are gone count as lost; a look that failed (plutil timing out under load) is not a
+    // reason to download the release again (review 2026-10-21).
+    try { return await staged(); } catch { return true; }
   }
-  async function keepStaged() {
+  /**
+   * Whether the ready update is still staged; when it is not, the ready state is dropped, ShipIt's stale
+   * request is forgotten (launchd would restart ShipIt for nothing), and the release is fetched again:
+   * at once when a person asked or updates are automatic, after LOST_BACKOFF_MS when the same version was
+   * lost twice (a disk that stays short would otherwise download it every five minutes).
+   */
+  async function keepStaged(byPerson = false) {
     if (state !== 'ready') return true;
-    if (await stagedNow()) { schedule(0); return true; }
-    log({ event: 'update_staged', outcome: 'lost', version: readyVersion });
+    const version = readyVersion;
+    const present = await stagedNow();
+    if (state !== 'ready' || readyVersion !== version) return true;  // another look already acted
+    if (present) { schedule(0); return true; }
+    losses = losses.version === version ? { version, n: losses.n + 1 } : { version, n: 1 };
+    log({ event: 'update_staged', outcome: 'lost', version, times: losses.n });
     readyVersion = '';
     declined = null;
     set('idle');
-    if (automatic) await check({ manual: false }); else schedule(0);
+    try { await forgetStaged(); } catch { /* nothing else depends on it */ }
+    if (byPerson || manual.length) await check({ manual: true });
+    else if (automatic && losses.n < 2) await check({ manual: false });
+    else if (automatic) schedule(LOST_BACKOFF_MS);
+    else schedule(0);
     return false;
   }
   function stopWatchdog() { if (watchdog) clearTimer(watchdog); watchdog = null; }
@@ -333,7 +354,7 @@ function createUpdater(deps) {
     checkNow() {
       if (state === 'ready') return stagedNow().then((ok) => (ok ? { outcome: 'ready', version: readyVersion }
         // The staged files are gone: say so by fetching it again, and answer with what that check finds.
-        : new Promise((resolve) => { manual.push(resolve); void keepStaged(); })));
+        : new Promise((resolve) => { manual.push(resolve); void keepStaged(true); })));
       if (state === 'downloading') return Promise.resolve({ outcome: 'downloading' });
       if (state === 'checking') return new Promise((resolve) => { manual.push(resolve); });
       if (!['idle', 'error', 'held'].includes(state)) return Promise.resolve({ outcome: 'unavailable', reason });
@@ -359,7 +380,7 @@ function createUpdater(deps) {
       installing = true;
       log({ event: 'update_restart', outcome: 'requested', version: readyVersion });
       void stagedNow().then(async (ok) => {
-        if (!ok) { installing = false; onChange(status()); await keepStaged(); return; }
+        if (!ok) { installing = false; onChange(status()); await keepStaged(true); return; }
         await recordInstall(readyVersion);
         log({ event: 'update_install', outcome: 'started', version: readyVersion });
         try { autoUpdater.quitAndInstall(); } catch { abandonInstall('failed'); return; }
@@ -393,13 +414,15 @@ function createUpdater(deps) {
  * (`updateBundleURL`) and that bundle's Info.plist exists. `readPlist` turns the state file into an object.
  */
 async function squirrelStaged({ fs, cacheDir, bundleId, readPlist }) {
+  const gone = (error) => error && (error.code === 'ENOENT' || error.code === 'ENOTDIR');
   const stateFile = path.join(cacheDir, `${bundleId}.ShipIt`, 'ShipItState.plist');
-  const state = await readPlist(stateFile);
+  try { await fs.access(stateFile); } catch (error) { if (gone(error)) return false; throw error; }
+  const state = await readPlist(stateFile);  // a failure here is "unknown", not "lost"
   const url = state && typeof state.updateBundleURL === 'string' ? state.updateBundleURL : '';
   if (!url.startsWith('file://')) return false;
-  const bundle = fileURLToPath(url);
-  await fs.access(path.join(bundle, 'Contents', 'Info.plist'));
+  try { await fs.access(path.join(fileURLToPath(url), 'Contents', 'Info.plist')); }
+  catch (error) { if (gone(error)) return false; throw error; }
   return true;
 }
 
-module.exports = { squirrelStaged, createUpdater, readFeed, feedFor, feedURL, compareVersions, FIRST_CHECK_MS, CHECK_EVERY_MS, RETRY_MS, HANDOFF_TIMEOUT_MS, DECLINED_FOR_MS, SWITCH_FILE, STUCK_AFTER };
+module.exports = { LOST_BACKOFF_MS, squirrelStaged, createUpdater, readFeed, feedFor, feedURL, compareVersions, FIRST_CHECK_MS, CHECK_EVERY_MS, RETRY_MS, HANDOFF_TIMEOUT_MS, DECLINED_FOR_MS, SWITCH_FILE, STUCK_AFTER };

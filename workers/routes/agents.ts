@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { renameAddress, renameStatus } from "../lib/address-rename";
+import { cancelRename, renameAddress, renameStatus } from "../lib/address-rename";
 import { z } from "zod";
 import type { Env } from "../types";
 import { AGENT_TEMPLATES, readAssignment } from "../agents/definition";
@@ -245,7 +245,11 @@ agentsRouter.get("/api/project-addresses", async (c) => {
       c.env.AGENT_REGISTRY ? registry(c).listAgents() : Promise.resolve([]),
       deliveryIssues(c.env.BUCKET),
       listIncomingFailures(c.env.BUCKET).catch(() => []),
-      pausedAddresses(c.env.BUCKET).catch(() => new Map<string, string>()),
+      // A finding of 2026-10-21: an unreadable pause list is said so (`pausedUnknown`), not shown as "nothing paused".
+      pausedAddresses(c.env.BUCKET).catch((error: unknown) => {
+        console.warn(JSON.stringify({ event: "paused_list_unreadable", error: (error as Error)?.message?.slice(0, 200) }));
+        return null;
+      }),
     ]);
     const names = new Map<string, string>(agents.map((a) => [a.id, a.name] as [string, string]));
     const domains = await allServedDomains(c.env);
@@ -257,6 +261,7 @@ agentsRouter.get("/api/project-addresses", async (c) => {
         unknownAddressPolicy: typeof policies[domain] === "string" ? policies[domain] : "reject",
         catchAll: await effectiveCatchAll(c.env, domain) }))),
       routingConfigured: !!cloudflareToken(c.env),
+      ...(paused === null ? { pausedUnknown: true } : {}),
       addresses: served.map(({ email, settings }) => {
         const assignment = readAssignment(settings);
         return {
@@ -269,7 +274,7 @@ agentsRouter.get("/api/project-addresses", async (c) => {
             ? (settings.forwarding as { email?: string }).email ?? null : null,
           deliveryIssue: issues.get(email) ?? null,
           // B-27: since when the address is paused (an empty string when the time is unreadable), or null.
-          paused: paused.has(email) ? paused.get(email)! : null,
+          paused: paused?.has(email) ? paused.get(email)! : null,
         };
       }),
       unknownRecipients: unknown.filter((u) => !served.some((s) => s.email === u.address)),
@@ -381,6 +386,11 @@ agentsRouter.post("/api/project-addresses/:email/rename", async (c) => {
   const parsed = RenameInput.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: msg("Give the new address") }, 400);
   const result = await renameAddress(c.env, c.req.param("email"), parsed.data.to);
+  return c.json(result.body, result.status);
+});
+/** Review 2026-10-21: a rename that has not routed the new address yet can be cancelled. */
+agentsRouter.delete("/api/project-addresses/:email/rename", async (c) => {
+  const result = await cancelRename(c.env, c.req.param("email"));
   return c.json(result.body, result.status);
 });
 agentsRouter.get("/api/project-addresses/:email/rename", async (c) => {

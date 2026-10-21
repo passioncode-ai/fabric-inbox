@@ -374,7 +374,7 @@ const getSendStatus = defineTool({
 
 const listAddresses = defineTool({
   name: "list_addresses", title: "List addresses", level: "read", readOnly: true,
-  description: "The Cloudflare addresses this server keeps mail for: each with its display name, its agent, where a copy is forwarded and any delivery problem; the served domains with their catch-all; recent mail to addresses that do not exist; and incomingFailures — mail the server could neither take nor refuse (whom it was for, when, its size, why; never the sender or content), which clear_incoming_failures removes once read. Give address to get one address's settings: display name, signature, its reply agent, its forwarding copy, and the chat assistant's instructions for that mailbox (agentSystemPrompt, set with update_address assistantPrompt).",
+  description: "The Cloudflare addresses this server keeps mail for: each with its display name, its agent, where a copy is forwarded and any delivery problem; the served domains with their catch-all; recent mail to addresses that do not exist; and incomingFailures — mail the server could neither take nor refuse (whom it was for, when, its size, why; never the sender or content), which clear_incoming_failures removes once read. Give address to get one address's settings: display name, signature, its reply agent, its forwarding copy, and the chat assistant's instructions for that mailbox (agentSystemPrompt, set with update_address assistantPrompt). An address paused carries `paused` (since when); `pausedUnknown: true` means the pause list could not be read, so `paused: null` does not prove an address takes mail.",
   input: { address: address.optional() },
   routes: ["GET /api/project-addresses", "GET /api/v1/mailboxes", "GET /api/v1/mailboxes/:mailboxId", "GET /api/v1/config"],
   async call(a, ctx) {
@@ -1140,7 +1140,7 @@ const resumeAddress = defineTool({
 
 const renameAddressTool = defineTool({
   name: "rename_address", title: "Rename or move an address", level: "admin", target: (a) => a.address,
-  description: "Renames an address, or moves it to another served domain, keeping everything: its messages, attachments, drafts, folders, settings, signature, who answers and category labels move to the new address, which gets its own Cloudflare rule. The old address delivers to the new one for 30 days, then follows the domain's catch-all. A large mailbox answers state running with the step reached: call again with the same addresses to go on (nothing is copied twice). Refused before any change for the domain's catch-all, a paused address, an address still sending, or a new address that exists.",
+  description: "Renames an address, or moves it to another served domain, keeping everything: its messages, attachments, drafts, folders, settings, signature, who answers and category labels move to the new address, which gets its own Cloudflare rule. The old address delivers to the new one for 30 days, then follows the domain's catch-all. A large mailbox answers state running with the step reached: call again with the same addresses to go on (nothing is copied twice). From the first call mail for the old address goes to the new one, and the old mailbox takes no changes until the rename ends (read-only), so nothing is lost; it is emptied only after every message was found in the new one. Refused before any change for the domain's catch-all, a paused address, an address still sending or handling new mail, an address in another rename, a new address that exists or whose Cloudflare rule sends mail elsewhere. cancel_rename undoes it until the new address is routed.",
   input: { address, to: z.string().email().max(254).describe("The new address, on a domain served here") },
   routes: ["POST /api/project-addresses/:email/rename"],
   call: (a, ctx) => post(ctx, `/api/project-addresses/${enc(a.address.toLowerCase())}/rename`, { to: a.to.toLowerCase() }),
@@ -1148,9 +1148,16 @@ const renameAddressTool = defineTool({
 
 const renameStatusTool = defineTool({
   name: "rename_status", title: "Read a rename", level: "read", readOnly: true, target: (a) => a.address,
-  description: "Where a rename of this address stands: running with its step and messages copied, or done with the new address (while the old one still delivers to it).",
+  description: "Where a rename of this address stands: running with its step, messages copied and whether it can still be cancelled (cancel_rename), or done with the new address (while the old one still delivers to it).",
   input: { address }, routes: ["GET /api/project-addresses/:email/rename"],
   call: (a, ctx) => get(ctx, `/api/project-addresses/${enc(a.address.toLowerCase())}/rename`),
+});
+
+const cancelRenameTool = defineTool({
+  name: "cancel_rename", title: "Cancel a rename", level: "admin", target: (a) => a.address,
+  description: "Cancels a rename of this address that has not routed the new address yet: the old address takes its mail and changes again, and the new mailbox the rename made is removed (the old one keeps every file). A rename past that point is refused: call rename_address again to finish it.",
+  input: { address }, routes: ["DELETE /api/project-addresses/:email/rename"],
+  call: (a, ctx) => del(ctx, `/api/project-addresses/${enc(a.address.toLowerCase())}/rename`),
 });
 
 const routeAddress = defineTool({
@@ -1620,7 +1627,7 @@ export const TOOLS: readonly ToolDef[] = [
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,
-  checkAddress, createAddress, createAddresses, updateAddress, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
+  checkAddress, createAddress, createAddresses, updateAddress, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, clearIncomingFailures, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,

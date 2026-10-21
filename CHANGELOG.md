@@ -5,6 +5,30 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.21.2 (2026-10-21)
+
+- **A rename loses nothing while it runs.** From the moment a rename starts, new mail for the old
+  address lands in the new one, and the old mailbox takes no changes until the move ends. It is
+  emptied only after every message was found at the new address. Before, a message that arrived
+  while a large mailbox was being copied could be lost with the old one, and messages already at
+  the new address could be removed by the copy. A rename that has not reached the new address's
+  routing can be cancelled (Cancel the rename, or `cancel_rename`), and reopening the dialog shows
+  one that was started. An address being renamed cannot be removed, paused or made the catch-all.
+- **Agent keys and hidden addresses follow a rename.** A key limited to the old address now works
+  on the new one, and a hidden address stays hidden.
+- **The daily quality report counts late replies.** A day is reported a day after it ends, so a
+  reply sent after midnight to an evening message counts as a reply. A day is never reported twice
+  for an address, a draft a person answers later counts as answered by a person, and two failed
+  model calls count as two.
+- **An update the disk lost twice waits instead of downloading every five minutes**, and Check for
+  Updates answers even with automatic updates off.
+- **Usage counts on Windows and Linux name their system**, and the usage question waits until a
+  hub's connect dialog is answered.
+- **The address list says when it could not read which addresses are paused** (`pausedUnknown`),
+  instead of showing every address as taking mail.
+- **`npm run deploy` refuses a checkout with uncommitted changes**, so a deployed version is always
+  the code of the commit it is tagged with.
+
 ## 0.21.1 (2026-10-20)
 
 - **An update the system cleared away is downloaded again.** macOS empties its caches when the

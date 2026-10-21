@@ -193,9 +193,10 @@ export const NARROWING = { revision: 1, header: NARROW_HEADER, intersection: "ex
  */
 export function narrowingSupported(capabilities: unknown, need: number = NARROWING.revision): boolean {
   const entry = (capabilities as { experimental?: Record<string, unknown> } | null | undefined)?.experimental?.[NARROWING_CAPABILITY] as
-    { revision?: unknown; header?: unknown; intersection?: unknown; commaInId?: unknown } | undefined;
+    { revision?: unknown; header?: unknown; intersection?: unknown; commaInId?: unknown; emptyScope?: unknown } | undefined;
+  // Every promise the hub relies on is checked, the empty-scope refusal too (review 2026-10-21).
   return !!entry && typeof entry.revision === "number" && Number.isInteger(entry.revision) && entry.revision >= need
-    && entry.header === NARROW_HEADER && entry.intersection === "exact" && entry.commaInId === "refused";
+    && entry.header === NARROW_HEADER && entry.intersection === "exact" && entry.commaInId === "refused" && entry.emptyScope === "refused";
 }
 
 export function narrowPrincipal(principal: Principal | null, header: string | null): Principal | null {

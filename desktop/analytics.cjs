@@ -107,9 +107,13 @@ function cleanCounts(counts) {
  * The analytics client. Every dependency is passed in, so tests drive it with a fake clock, file
  * system and server; main.cjs passes Electron's.
  */
+/** Aptabase's operating system names (review 2026-10-21: Windows and Linux were reported as macOS). */
+const OS_NAMES = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
+
 function createAnalytics(deps) {
   const { fs, appData, userData, fetch: send, now = Date.now, uuid, random = Math.random, log = () => {},
-    appVersion = '', osVersion = '', locale = '', engineVersion = '' } = deps;
+    appVersion = '', osVersion = '', locale = '', engineVersion = '', platform = 'darwin' } = deps;
+  const osName = OS_NAMES[platform] || String(platform).slice(0, 20);
   const bundle = deps.bundle || null;
   const host = bundle ? bundle.host : '';
   const shared = installationFile(appData);
@@ -157,7 +161,7 @@ function createAnalytics(deps) {
       at,
       body: {
         timestamp: new Date(at).toISOString(), sessionId: sessionId(at), eventName,
-        systemProps: { isDebug: environment !== 'production', locale: String(locale).slice(0, 10), osName: 'macOS', osVersion: String(osVersion).slice(0, 100),
+        systemProps: { isDebug: environment !== 'production', locale: String(locale).slice(0, 10), osName, osVersion: String(osVersion).slice(0, 100),
           appVersion: String(appVersion).slice(0, 50), appBuildNumber: '', sdkVersion: SDK, engineName: 'Electron', engineVersion: String(engineVersion).slice(0, 30) },
         props: { ...props, install_id: installId, iid: installId, environment },
       },
@@ -202,9 +206,11 @@ function createAnalytics(deps) {
   }
 
   /** The start itself, once the switch is on and answered: the install once per app, then the start. */
-  async function begin(installation, { launch = 'ordinary', serverConfigured = false } = {}) {
+  async function begin(installation, { launch = 'ordinary', serverConfigured = false, created } = {}) {
       installId = installation.value.id;
-      if (!state.installed && track('app_installed', { first_passioncode_app: installation.created, server_configured: !!serverConfigured })) {
+      // A start that waited for the answer keeps whether this app made the shared file at launch (review 2026-10-21).
+      const first = typeof created === 'boolean' ? created : installation.created;
+      if (!state.installed && track('app_installed', { first_passioncode_app: first, server_configured: !!serverConfigured })) {
         state.installed = true;
         await saveState();
       }
@@ -242,7 +248,7 @@ function createAnalytics(deps) {
       await loadState();
       if (installation.value.analytics === false) return;
       if (!state.disclosedAt) {
-        deferred = options;
+        deferred = { ...options, created: installation.created };
         log({ event: 'analytics_pending', reason: 'not_answered' });
         return;
       }

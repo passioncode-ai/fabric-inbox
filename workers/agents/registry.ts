@@ -1,5 +1,5 @@
 import { EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, runEvent, waitingEvent, type AgentEvent } from "./events";
-import { qualityDay } from "./quality";
+import { mailChannel, qualityDay } from "./quality";
 import { JUDGE_SAMPLE, judgesFor, openRouterJudge, qualityOf, type JudgeInput, type JudgeVerdict } from "./judge";
 import { readAllSettings } from "../lib/mailbox-store";
 import { DurableObject } from "cloudflare:workers";
@@ -48,6 +48,17 @@ export const ESCALATE_WITHIN_MS = 3 * 86_400_000;
 export const RUN_TEXT_KEPT_MS = 30 * 86_400_000;
 /** B-130: missed quality days are caught up to this many days back. */
 const QUALITY_CATCH_UP_DAYS = 7;
+/**
+ * Review 2026-10-21: a day is reported this long after it closes, so a reply sent after midnight to a
+ * message of the day's evening counts as a reply, not as a message nobody answered.
+ */
+export const QUALITY_SETTLE_MS = 86_400_000;
+/** Days reported in one alarm; the rest follow in the next (an alarm is bounded in time). */
+const QUALITY_DAYS_PER_PASS = 2;
+/** A waiting message whose mailbox could not be read is looked at again after this long. */
+export const WAIT_CHECK_RETRY_MS = 15 * 60_000;
+/** A draft escalated as waiting is looked at again this often, until a person answers it or it ages out. */
+export const PERSON_CHECK_MS = 3_600_000;
 /** Longest an answer waits for its spam check before the agent runs anyway (B-30). */
 export const MAX_SPAM_HOLD_MS = 15 * 60_000;
 const MAX_AGENTS = 100;
@@ -147,8 +158,11 @@ export class AgentRegistryDO extends DurableObject<Env> {
     let draft: { to: string; subject: string; text: string } | null = null;
     const now = new Date().toISOString();
     const html = `<p>${input.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")}</p>`;
+    // Every preview shares the run id of email "preview": its model calls get a trace of their own.
+    const trace = `preview-${crypto.randomUUID().slice(0, 8)}`;
     const deps: RunnerDeps = {
       ...real,
+      model: (request) => real.model({ ...request, trace }),
       registry: {
         beginRun: async (run) => ({ claimed: true, run }),
         saveRun: async () => {},
@@ -221,7 +235,9 @@ export class AgentRegistryDO extends DurableObject<Env> {
       console.warn(JSON.stringify({ event: "waiting_supervision_failed", error: (error as Error).message?.slice(0, 200) }));
       return null;
     });
-    this.redactOldRuns();
+    try { this.redactOldRuns(); } catch (error) {
+      console.warn(JSON.stringify({ event: "run_redact_failed", error: (error as Error).message?.slice(0, 200) }));
+    }
     const qualityDue = await this.emitQualityDays().catch((error) => {
       console.warn(JSON.stringify({ event: "quality_daily_failed", error: (error as Error).message?.slice(0, 200) }));
       return Date.now() + 3_600_000;
@@ -427,7 +443,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
         const stale = prior.status === "running" && Date.now() - Date.parse(prior.updatedAt) > RUN_STALE_MS && prior.phase !== "sending";
         if (!stale) return { claimed: false, run: this.present(prior) };
         // B-94: marked a re-run, so tools that may act are not called a second time.
-        const again = { ...run, createdAt: prior.createdAt, ...(prior.attempt ? { attempt: prior.attempt } : {}), rerun: true,
+        // The message came once: a re-run keeps when it was received, or its first-reply time would restart.
+        const again = { ...run, createdAt: prior.createdAt, ...(prior.receivedAt ? { receivedAt: prior.receivedAt } : {}), ...(prior.attempt ? { attempt: prior.attempt } : {}), rerun: true,
           // B-131: an escalation and a waiting reply happen once per message, across its retries.
           ...(prior.escalatedAt ? { escalatedAt: prior.escalatedAt } : {}), ...(prior.acknowledged ? { acknowledged: prior.acknowledged } : {}) };
         this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?",
@@ -467,14 +484,22 @@ export class AgentRegistryDO extends DurableObject<Env> {
    */
   protected redactOldRuns(now = Date.now()) {
     const before = new Date(now - RUN_TEXT_KEPT_MS).toISOString();
-    for (const row of this.rows("SELECT id, body FROM agent_runs WHERE created_at < ? AND json_extract(body, '$.redacted') IS NULL LIMIT 200", before)) {
-      const run = JSON.parse(String(row.body)) as AgentRun;
-      run.sender = ""; run.subject = ""; run.redacted = true;
-      if (run.sent) run.sent = { ...run.sent, to: "", subject: "", body: "" };
-      if (run.acknowledged) run.acknowledged = { ...run.acknowledged, text: "" };
-      run.toolCalls = run.toolCalls.map((c) => ({ ...c, result: "" }));
-      delete run.question; delete run.intent; delete run.summary;
-      this.ctx.storage.sql.exec("UPDATE agent_runs SET body = ? WHERE id = ?", JSON.stringify(run), String(row.id));
+    for (const row of this.rows("SELECT id, mailbox_id, email_id, status, created_at, body FROM agent_runs WHERE created_at < ? AND json_extract(body, '$.redacted') IS NULL LIMIT 200", before)) {
+      // One unreadable row must not stop the others, nor the alarm (review 2026-10-21): it is cleared to its counts.
+      try {
+        const run = JSON.parse(String(row.body)) as AgentRun;
+        run.sender = ""; run.subject = ""; run.redacted = true;
+        if (run.sent) run.sent = { ...run.sent, to: "", subject: "", body: "" };
+        if (run.acknowledged) run.acknowledged = { ...run.acknowledged, text: "" };
+        run.toolCalls = (run.toolCalls ?? []).map((c) => ({ ...c, result: "" }));
+        delete run.question; delete run.intent; delete run.summary;
+        this.ctx.storage.sql.exec("UPDATE agent_runs SET body = ? WHERE id = ?", JSON.stringify(run), String(row.id));
+      } catch (error) {
+        console.warn(JSON.stringify({ event: "run_redact_failed", run: String(row.id), error: (error as Error).message?.slice(0, 200) }));
+        const cleared = { id: String(row.id), mailboxId: String(row.mailbox_id), emailId: String(row.email_id), status: String(row.status), reason: "",
+          sender: "", subject: "", toolCalls: [], createdAt: String(row.created_at), updatedAt: String(row.created_at), redacted: true };
+        this.ctx.storage.sql.exec("UPDATE agent_runs SET body = ? WHERE id = ?", JSON.stringify(cleared), String(row.id));
+      }
     }
   }
 
@@ -483,8 +508,9 @@ export class AgentRegistryDO extends DurableObject<Env> {
    * reported (the last QUALITY_CATCH_UP_DAYS at most). Answers when the next day closes.
    */
   protected async emitQualityDays(now = Date.now()): Promise<number> {
-    const today = new Date(now).toISOString().slice(0, 10);
-    const next = Date.parse(`${today}T00:00:00.000Z`) + 86_400_000 + 5 * 60_000;
+    // A day is reported QUALITY_SETTLE_MS after it closes: "today" here is the day that settles next.
+    const today = new Date(now - QUALITY_SETTLE_MS).toISOString().slice(0, 10);
+    const next = Date.parse(`${today}T00:00:00.000Z`) + 86_400_000 + QUALITY_SETTLE_MS + 5 * 60_000;
     const last = (await this.ctx.storage.get<string>("quality_day")) ?? null;
     const days: string[] = [];
     for (let i = QUALITY_CATCH_UP_DAYS; i >= 1; i--) {
@@ -492,6 +518,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
       if (last ? day > last : i === 1) days.push(day);
     }
     if (!days.length) return next;
+    const more = days.length > QUALITY_DAYS_PER_PASS;
+    days.splice(QUALITY_DAYS_PER_PASS);
     const served = (await readAllSettings(this.env.BUCKET)).flatMap(({ email, settings }) => {
       const assignment = readAssignment(settings);
       return assignment && assignment !== "off" ? [email.toLowerCase()] : [];
@@ -507,7 +535,11 @@ export class AgentRegistryDO extends DurableObject<Env> {
         } catch (error) {
           console.warn(JSON.stringify({ event: "quality_received_unreadable", error: (error as Error).message?.slice(0, 200) }));
         }
-        const runs = this.rows("SELECT body FROM agent_runs WHERE mailbox_id = ? AND created_at >= ?", address, since)
+        // A day already reported for this address (a pass cut off after it) is not reported twice.
+        if (this.rows("SELECT 1 FROM agent_events WHERE run_id = ? AND json_extract(body, '$.data.value.channel') = ? LIMIT 1",
+          `quality-${day}`, mailChannel(address)).length) continue;
+        // Runs of the week, and every run still waiting for a person however old (its queue counts now).
+        const runs = this.rows("SELECT body FROM agent_runs WHERE mailbox_id = ? AND (created_at >= ? OR status IN ('held', 'drafted'))", address, since)
           .map((r) => JSON.parse(String(r.body)) as AgentRun);
         const judged = await this.judgeDay(address, day, runs).catch((error) => {
           console.warn(JSON.stringify({ event: "judge_day_failed", error: (error as Error).message?.slice(0, 200) }));
@@ -520,7 +552,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
       await this.ctx.storage.put("quality_day", day);
       console.log(JSON.stringify({ event: "quality_daily_emitted", day, addresses: served.length }));
     }
-    return next;
+    return more ? now + 1000 : next;
   }
 
   /** Test seam: one verdict from a judge of another vendor; production asks OpenRouter (B-132). */
@@ -571,39 +603,70 @@ export class AgentRegistryDO extends DurableObject<Env> {
    */
   protected async superviseWaiting(now = Date.now()): Promise<number | null> {
     const from = new Date(now - ESCALATE_WITHIN_MS).toISOString();
+    const at = new Date(now).toISOString();
     const pending = (where: string, ...args: string[]) => this.rows(`SELECT id, mailbox_id, email_id, body, created_at FROM agent_runs
       WHERE status IN ('held', 'drafted') AND created_at >= ? AND json_extract(body, '$.escalatedAt') IS NULL ${where}
       ORDER BY created_at LIMIT 20`, from, ...args);
-    for (const row of pending("AND created_at <= ?", new Date(now - WAIT_SLA_MS).toISOString())) {
+    /** Whether a person answered a drafted run: sent the draft or wrote their own reply after the message. */
+    const answered = async (run: AgentRun): Promise<boolean> => {
+      const box = this.deps(run.mailboxId).mailbox;
+      const email = await box.email(run.emailId);
+      if (!email) return true;
+      const thread = email.thread_id ? await box.thread(email.thread_id) : [];
+      const received = Date.parse(email.date);
+      return thread.some((m) => m.folder_id === "sent" && Date.parse(m.date) > received);
+    };
+    const due = "AND (json_extract(body, '$.waitCheckAt') IS NULL OR json_extract(body, '$.waitCheckAt') <= ?)";
+    for (const row of pending(`AND created_at <= ? ${due}`, new Date(now - WAIT_SLA_MS).toISOString(), at)) {
       const run = JSON.parse(String(row.body)) as AgentRun;
       let waiting = true;
       if (run.status === "drafted") {
-        // A person who sent the draft, or wrote their own reply, has answered it.
-        try {
-          const box = this.deps(run.mailboxId).mailbox;
-          const email = await box.email(run.emailId);
-          if (!email) waiting = false;
-          else {
-            const thread = email.thread_id ? await box.thread(email.thread_id) : [];
-            const received = Date.parse(email.date);
-            waiting = !thread.some((m) => m.folder_id === "sent" && Date.parse(m.date) > received);
-          }
-        } catch (error) {
+        try { waiting = !(await answered(run)); }
+        catch (error) {
+          // Review 2026-10-21: looked at again later, not on every alarm a second apart.
           console.warn(JSON.stringify({ event: "waiting_check_failed", run: run.id, error: (error as Error).message?.slice(0, 200) }));
+          this.ctx.storage.sql.exec("UPDATE agent_runs SET body = json_set(body, '$.waitCheckAt', ?) WHERE id = ?",
+            new Date(now + WAIT_CHECK_RETRY_MS).toISOString(), run.id);
           continue;
         }
       }
-      const at = new Date(now).toISOString();
       run.escalatedAt = at;
-      if (run.status === "drafted") run.answeredByPerson = !waiting;
+      delete run.waitCheckAt;
+      if (run.status === "drafted") {
+        run.answeredByPerson = !waiting;
+        if (waiting) run.personCheckAt = new Date(now + PERSON_CHECK_MS).toISOString();
+      }
       this.ctx.storage.transactionSync(() => {
-        this.ctx.storage.sql.exec("UPDATE agent_runs SET body = ? WHERE id = ? AND status = ?", JSON.stringify(run), run.id, run.status);
-        if (waiting) this.appendEvent(run.id, waitingEvent(run, at));
+        const written = this.ctx.storage.sql.exec("UPDATE agent_runs SET body = ? WHERE id = ? AND status = ?", JSON.stringify(run), run.id, run.status).rowsWritten;
+        // A run that changed meanwhile (answered, sent) is not escalated (review 2026-10-21).
+        if (waiting && written === 1) this.appendEvent(run.id, waitingEvent(run, at));
       });
       if (waiting) console.log(JSON.stringify({ event: "agent_waiting_escalated", run: run.id, status: run.status }));
     }
-    const next = pending("")[0]?.created_at;
-    return typeof next === "string" ? Math.max(now + 1000, Date.parse(next) + WAIT_SLA_MS) : null;
+    // Review 2026-10-21: a draft escalated as waiting is looked at again, so a person who answers it
+    // later is counted as having answered (answeredByPerson), not as a message nobody took.
+    const recheck = () => this.rows(`SELECT body FROM agent_runs WHERE status = 'drafted' AND created_at >= ?
+      AND json_extract(body, '$.personCheckAt') IS NOT NULL ORDER BY json_extract(body, '$.personCheckAt') LIMIT 20`, from);
+    for (const row of recheck()) {
+      const run = JSON.parse(String(row.body)) as AgentRun;
+      if (Date.parse(run.personCheckAt!) > now) break;
+      let done = false;
+      try { done = await answered(run); }
+      catch (error) { console.warn(JSON.stringify({ event: "waiting_check_failed", run: run.id, error: (error as Error).message?.slice(0, 200) })); }
+      const update = done
+        ? "UPDATE agent_runs SET body = json_remove(json_set(body, '$.answeredByPerson', json('true')), '$.personCheckAt') WHERE id = ? AND status = 'drafted'"
+        : "UPDATE agent_runs SET body = json_set(body, '$.personCheckAt', ?) WHERE id = ? AND status = 'drafted'";
+      if (done) this.ctx.storage.sql.exec(update, run.id);
+      else this.ctx.storage.sql.exec(update, new Date(now + PERSON_CHECK_MS).toISOString(), run.id);
+    }
+    const times = [
+      ...pending("").map((r) => {
+        const run = JSON.parse(String(r.body)) as AgentRun;
+        return Math.max(Date.parse(String(r.created_at)) + WAIT_SLA_MS, run.waitCheckAt ? Date.parse(run.waitCheckAt) : 0);
+      }),
+      ...recheck().slice(0, 1).map((r) => Date.parse((JSON.parse(String(r.body)) as AgentRun).personCheckAt!)),
+    ].filter((t) => Number.isFinite(t));
+    return times.length ? Math.max(now + 1000, Math.min(...times)) : null;
   }
 
   /**

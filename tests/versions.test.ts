@@ -20,6 +20,7 @@ test("npm run deploy records the server's version on the Worker", () => {
   assert.match(scripts.deploy, /wrangler deploy --var FABRIC_SERVER_VERSION:\$npm_package_version --tag \$\(git rev-parse --short=12 HEAD\)$/);
   // B-62: each version is tagged with its commit, which the deployment receipt reads back.
   assert.equal(scripts["deploy:receipt"], "node scripts/deploy-receipt.mjs");
+  assert.match(scripts.deploy, /^node scripts\/deploy-receipt\.mjs --require-clean && /, "a dirty tree is not deployed (review 2026-10-21)");
 });
 
 // The release notes come from CHANGELOG.md (desktop/dist-mac.mjs refuses a version without its

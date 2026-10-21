@@ -621,6 +621,14 @@ test("B-27: pausing switches the address's rule off and keeps its mailbox; resum
     assert.equal(cf.calls.filter((c) => c.method === "PUT").at(-1)?.body?.enabled, true);
     assert.ok(!h.objects.has("paused/support@project.invalid.json"));
     assert.equal((await h.call("GET", "/api/project-addresses")).body.addresses[0].paused, null);
+    assert.equal((await h.call("GET", "/api/project-addresses")).body.pausedUnknown, undefined);
+    // A finding of 2026-10-21: an unreadable pause list is said so, not shown as nothing paused.
+    const list0 = h.env.BUCKET.list;
+    h.env.BUCKET.list = async (o: { prefix: string }) => { if (o.prefix === "paused/") throw new Error("R2 down"); return list0(o); };
+    const unknown = await h.call("GET", "/api/project-addresses");
+    h.env.BUCKET.list = list0;
+    assert.equal(unknown.status, 200);
+    assert.equal(unknown.body.pausedUnknown, true);
     // A missing address, and the domain's catch-all mailbox, are refused.
     assert.equal((await h.call("POST", "/api/project-addresses/ghost@project.invalid/pause")).status, 404);
     const withCatchAll = environment({ token: true, policy: JSON.stringify({ "project.invalid": "catch_all:support@project.invalid" }) });

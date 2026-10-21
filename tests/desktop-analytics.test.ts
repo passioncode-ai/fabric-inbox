@@ -346,6 +346,7 @@ test("A7-012: nothing is queued or sent before the person answers; the answer st
   // Yes: the start that waited happens now, and the answer is kept, so the next launch does not ask again.
   assert.equal(await a.setEnabled(true), true);
   assert.deepEqual(srv.events().map((e: any) => e.eventName), ["app_installed", "app_started"]);
+  assert.equal(srv.events()[0].props.first_passioncode_app, true, "this app made the shared file at launch, before the answer (review 2026-10-21)");
   assert.equal(a.status().pending, false);
   const again = client(m, { server: server() });
   await again.a.start({});
@@ -380,4 +381,18 @@ test("A7-012: an install that sent counts before this rule is asked once and is 
   await b.a.start({});
   assert.equal(b.a.status().pending, true);
   assert.equal(b.srv.batches.length, 0);
+});
+
+test("review 2026-10-21: the operating system is named for the platform the app runs on", async () => {
+  for (const [platform, name] of [["darwin", "macOS"], ["win32", "Windows"], ["linux", "Linux"]] as const) {
+    const { a, srv } = client(machine(), { platform });
+    await a.start({});
+    assert.equal(srv.events()[0].systemProps.osName, name);
+  }
+});
+
+test("review 2026-10-21: the usage question waits while a hub's connect dialog is open, and is asked after it", () => {
+  const main = readFileSync("desktop/main.cjs", "utf8");
+  assert.match(main, /if \(connecting \|\| pendingLinks\.length\) return;/);
+  assert.match(main, /finally \{ connecting = false; \}\n  if \(analytics\) void askUsageCounts\(BrowserWindow\.getFocusedWindow\(\)\);/);
 });

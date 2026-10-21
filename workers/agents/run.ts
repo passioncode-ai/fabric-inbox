@@ -79,6 +79,10 @@ export interface AgentRun {
   acknowledged?: { at: string; status: "accepted" | "unknown"; text: string };
   /** B-131: a drafted run whose conversation had a reply sent after the message when it was supervised. */
   answeredByPerson?: boolean;
+  /** Review 2026-10-21: when a waiting check whose mailbox could not be read is tried again. */
+  waitCheckAt?: string;
+  /** Review 2026-10-21: when an escalated draft is looked at again for a person's answer. */
+  personCheckAt?: string;
   /** B-130: when the message came (its Date when plausible, else when the run began), and when its answer was accepted. */
   receivedAt?: string;
   repliedAt?: string;

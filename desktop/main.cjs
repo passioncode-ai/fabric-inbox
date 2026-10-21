@@ -319,7 +319,7 @@ async function startAnalytics() {
   // the cookie key from the Keychain, so a pending Keychain prompt held every count back (0.11.0).
   const send = globalThis.fetch;
   analytics = usage.createAnalytics({ fs, bundle, fetch: send, uuid: randomUUID, appData: app.getPath('appData'), userData: app.getPath('userData'),
-    appVersion: app.getVersion(), osVersion: typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : '',
+    appVersion: app.getVersion(), platform: process.platform, osVersion: typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : '',
     locale: typeof app.getLocale === 'function' ? app.getLocale() : '', engineVersion: (process.versions && process.versions.electron) || '',
     log: logEvent });
   await analytics.start({ launch: launchedByLink ? 'link' : 'ordinary', serverConfigured: !!config });
@@ -381,7 +381,11 @@ async function startUpdates() {
   const staged = process.platform === 'darwin'
     ? () => updates.squirrelStaged({ fs, cacheDir: path.join(app.getPath('home'), 'Library', 'Caches'), bundleId: 'ai.passioncode.fabric-inbox', readPlist })
     : async () => true;
-  updater = updates.createUpdater({ autoUpdater, fs, userData: app.getPath('userData'), feed, appVersion: app.getVersion(), fetchFeed, verifier, replaceable, staged,
+  // ShipIt waits under launchd for a bundle that is gone; Squirrel.Mac submits the job again with the next download.
+  const forgetStaged = process.platform === 'darwin'
+    ? () => new Promise((resolve) => execFile('/bin/launchctl', ['remove', 'ai.passioncode.fabric-inbox.ShipIt'], { timeout: 10000 }, () => resolve()))
+    : async () => {};
+  updater = updates.createUpdater({ autoUpdater, fs, userData: app.getPath('userData'), feed, appVersion: app.getVersion(), fetchFeed, verifier, replaceable, staged, forgetStaged,
     setTimer, clearTimer: clearTimeout, log: logEvent, onChange: () => { installMenu(); notifyReady(); } });
   await updater.start({ packaged: app.isPackaged, mas: !!process.mas, inApplications: target.installed, packageManager: target.packageManager });
   installMenu();
@@ -525,6 +529,8 @@ function aboutUsageCounts() {
 let usageAsked = false;
 async function askUsageCounts(win) {
   if (usageAsked || !analytics || !analytics.status().pending || !win || win.isDestroyed()) return;
+  // Review 2026-10-21: a hub's Allow/Deny comes first; the question waits until it is answered.
+  if (connecting || pendingLinks.length) return;
   usageAsked = true;
   const before = analytics.status().sentBefore;
   const { response, checkboxChecked } = await dialog.showMessageBox(win, { type: 'question', title: t('Usage counts'),
@@ -551,6 +557,7 @@ async function drainLinks() {
   connecting = true;
   try { while (pendingLinks.length) await handleConnectLink(pendingLinks.shift()); }
   finally { connecting = false; }
+  if (analytics) void askUsageCounts(BrowserWindow.getFocusedWindow());
 }
 const attend = connector.attendWith(app);
 /** The window a connect prompt is attached to: the open one, else the mail (or setup) window opened for it. */

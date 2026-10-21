@@ -6,6 +6,7 @@ import { allowedAddresses, allServedDomains, createMailbox, deleteMailbox, readS
 import { checkLocalPart, suggestDisplayName } from "../../shared/address-name";
 import { Folders } from "../../shared/folders";
 import { msg } from "../../shared/i18n";
+import { pausedKey, renameOf } from "./rename-journal";
 
 /**
  * The one way an address is created or removed (SCN-021, SCN-032, MB-1), used by
@@ -224,6 +225,8 @@ export async function removeAddress(env: Env, rawEmail: string): Promise<OpResul
   const email = rawEmail.trim().toLowerCase();
   const domain = domainOf(email);
   if (!(await env.BUCKET.head(settingsKey(email)))) return { status: 404, body: { error: msg("Address not found") } };
+  const renaming = await renameOf(env.BUCKET, email);
+  if (renaming) return { status: 409, body: { error: msg("{email} takes part in a rename ({from} to {to}); finish or cancel it first.", { email, from: renaming.from, to: renaming.to }) } };
   const catchAll = await effectiveCatchAll(env, domain);
   if (catchAll?.mailbox === email)
     return { status: 409, body: { error: catchAll.source === "deployment"
@@ -257,7 +260,7 @@ export async function removeAddress(env: Env, rawEmail: string): Promise<OpResul
 /* ------------------------------------------------------------ pause (B-27) */
 
 /** A paused address keeps its mailbox and mail; this marker makes delivery treat it as unknown. */
-export const pausedKey = (email: string) => `paused/${email.toLowerCase()}.json`;
+export { pausedKey } from "./rename-journal";
 
 /** The paused addresses and since when (B-27). */
 export async function pausedAddresses(bucket: R2Bucket): Promise<Map<string, string>> {
@@ -284,6 +287,8 @@ export async function pauseAddress(env: Env, rawEmail: string, now = Date.now())
   const email = rawEmail.trim().toLowerCase();
   const domain = domainOf(email);
   if (!(await env.BUCKET.head(settingsKey(email)))) return { status: 404, body: { error: msg("Address not found") } };
+  const renaming = await renameOf(env.BUCKET, email);
+  if (renaming) return { status: 409, body: { error: msg("{email} takes part in a rename ({from} to {to}); finish or cancel it first.", { email, from: renaming.from, to: renaming.to }) } };
   const catchAll = await effectiveCatchAll(env, domain);
   if (catchAll?.mailbox === email)
     return { status: 409, body: { error: msg("{email} keeps mail for every other address on {domain}. Choose another catch-all (or none) first.", { email, domain }) } };
