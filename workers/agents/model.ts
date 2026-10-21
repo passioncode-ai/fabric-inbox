@@ -194,8 +194,9 @@ export async function openRouterAgentModel(apiKey: string, request: ModelRequest
     // A turn the fallback answered after the writer failed or gave no answer counts as recovered.
     if (second.decision || !first) return { ...second, model: fallback, calls: { calls: 2, failed, recovered: second.decision ? 1 : 0 } };
   } catch (error) {
-    if (!first) throw error;
     failed++;
+    // Review 2026-10-21: both calls failed; the error carries them, so the day counts two failed calls, not one.
+    if (!first) throw Object.assign(error instanceof Error ? error : new Error(String(error)), { calls: { calls: 2, failed, recovered: 0 } });
     console.warn(JSON.stringify({ event: "reply_model_failed", trace, model: fallback, error: (error as Error).message?.slice(0, 200) }));
   }
   return { ...first, model: primary, calls: { calls: 2, failed, recovered: 0 } };

@@ -41,7 +41,9 @@ const subjectKey = (subject: string) => subject.toLowerCase().replace(/^(\s*(re|
 
 /** When a run's first reply left: its waiting reply, or the answer it sent; null while none did. */
 export function firstReplyAt(run: AgentRun): number | null {
-  const times = [run.acknowledged?.status === "accepted" ? Date.parse(run.acknowledged.at) : NaN, run.repliedAt ? Date.parse(run.repliedAt) : NaN]
+  // A run sent before `repliedAt` existed (2026-10-19) was saved as sent at its last update: that is its reply time.
+  const replied = run.repliedAt ?? (run.status === "sent" && run.sent ? run.updatedAt : undefined);
+  const times = [run.acknowledged?.status === "accepted" ? Date.parse(run.acknowledged.at) : NaN, replied ? Date.parse(replied) : NaN]
     .filter((t) => Number.isFinite(t));
   return times.length ? Math.min(...times) : null;
 }

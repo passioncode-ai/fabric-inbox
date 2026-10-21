@@ -81,4 +81,9 @@ test("the reply lane asks the fallback model when the first one ends without a s
   calls.length = 0;
   r = await openRouterAgentModel("k", req, {}, run({ "xiaomi/mimo-v2.6-pro": { decision: null, text: "prose" }, "deepseek/deepseek-v4.1-flash": new Error("down") }));
   assert.deepEqual([r.model, r.text, r.decision], ["xiaomi/mimo-v2.6-pro", "prose", null], "neither answered: the first prose comes back");
+  // Review 2026-10-21: both calls failing throws, and the error carries both calls for the day's counts.
+  const both = await openRouterAgentModel("k", req, {}, run({ "xiaomi/mimo-v2.6-pro": new Error("down"), "deepseek/deepseek-v4.1-flash": new Error("down too") }))
+    .then(() => null, (error: { message: string; calls?: unknown }) => error);
+  assert.equal(both?.message, "down too");
+  assert.deepEqual(both?.calls, { calls: 2, failed: 2, recovered: 0 });
 });

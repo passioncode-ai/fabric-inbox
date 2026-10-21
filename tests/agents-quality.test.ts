@@ -78,3 +78,13 @@ test("B-130: the first reply is the waiting reply when it came first", () => {
   assert.equal(firstReplyAt(r), Date.parse(`${DAY}T12:00:00.000Z`));
   assert.equal(firstReplyAt(run({ status: "held", repliedAt: undefined })), null);
 });
+
+test("review 2026-10-21: a run sent before repliedAt existed counts as delivered at its last update", () => {
+  n = 0;
+  const old = run({ repliedAt: undefined, updatedAt: `${DAY}T10:05:00.000Z`, sent: { to: "ann@customer.invalid", subject: "Re", body: "Hi", outboxId: "o" } });
+  assert.equal(firstReplyAt(old), Date.parse(`${DAY}T10:05:00.000Z`));
+  const v = qualityDay({ address: "support@acme.example", day: DAY, received: 1, runs: [old], now: NOW, modeOf: () => "auto" });
+  assert.equal(v.coverage.delivered, 1);
+  assert.equal(v.coverage.firstReplyP50Ms, 5 * 60_000);
+  assert.equal(firstReplyAt(run({ status: "drafted", repliedAt: undefined })), null, "a draft is no reply");
+});
