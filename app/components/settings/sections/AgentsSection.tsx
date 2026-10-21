@@ -354,6 +354,15 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
                 <textarea className="fi-input" rows={3} value={policy.waitingReply?.ru ?? ""} disabled={!policy.waitingReply?.en}
                   onChange={(e) => policy.waitingReply && set("replyPolicy", { ...policy, waitingReply: { en: policy.waitingReply.en, ...(e.target.value.trim() ? { ru: e.target.value } : {}) } })} />
               </label>
+              <label className="fi-field">{t("Reply when it stops trying")}
+                <span className="fi-hint">{t("Sent once, 30 days after the message came, if it is still not answered: name another way to get help. Empty: a short apology and the hand-off reply below; with no hand-off reply, nothing is sent.")}</span>
+                <textarea className="fi-input" rows={3} value={policy.closingReply?.en ?? ""}
+                  onChange={(e) => set("replyPolicy", { ...policy, closingReply: e.target.value.trim() ? { ...policy.closingReply, en: e.target.value } : undefined })} />
+              </label>
+              <label className="fi-field">{t("That reply in Russian")}
+                <textarea className="fi-input" rows={3} value={policy.closingReply?.ru ?? ""} disabled={!policy.closingReply?.en}
+                  onChange={(e) => policy.closingReply && set("replyPolicy", { ...policy, closingReply: { en: policy.closingReply.en, ...(e.target.value.trim() ? { ru: e.target.value } : {}) } })} />
+              </label>
             </>}
             <label className="fi-check"><input type="checkbox" checked={!!policy.knowledgeIsEvidence}
               onChange={(e) => set("replyPolicy", { ...policy, knowledgeIsEvidence: e.target.checked })} />

@@ -102,6 +102,14 @@
       "type": "integer",
       "minimum": 1,
       "description": "The message has waited this many whole hours for a person past the SLA of 4 hours: held or drafted (event kind agent.waiting, sent once per run; B-131)."
+    },
+    "closed": {
+      "type": "boolean",
+      "description": "The message's second agent.waiting (B-141): its retries ended after 30 days without an answer."
+    },
+    "closingSent": {
+      "type": "boolean",
+      "description": "With closed: a fixed closing reply naming another route was sent (the policy's closingReply, else the default apology and its hand-off reply)."
     }
   }
 }

@@ -122,6 +122,11 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   Nobody waits without a word (B-131): a held message (`holdUnsure`) still unanswered a day after it came
   gets `waitingReply: { en, ru? }` once (a default text when unset; it stays held and is answered when the
   knowledge has it), and a message held or drafted 4 hours without a reply raises one `agent.waiting` event.
+  So does a message whose run failed before anything was sent (it is tried again hourly for a day, then like
+  a held one) or that the safety check held back. When the retries end (30 days), the message gets
+  `closingReply: { en, ru? }` once (unset: a short apology and the `handoff.reply`; nothing without either)
+  and a second `agent.waiting` with `closed: true`. A held retry is skipped while the knowledge's revision
+  is the same, and runs at once when it changes; one gap report per message.
   After each UTC day, `list_agent_events` carries one `support.quality_daily` per agent address (B-130): replies
   and first-reply p50/p90, repeats, errors and model calls, answered vs handed to a person, the person queue;
   a field not measured is null and listed in `notMeasured`. Sender, subject and texts leave runs after 30 days.

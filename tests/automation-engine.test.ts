@@ -123,14 +123,32 @@ test("transport exception is unknown and cannot be blindly repeated", async () =
   assert.equal(s.run.status, "unknown");
   assert.equal(calls, 1);
 });
-test("analysis failure is explicit and produces no side effect", async () => {
+test("B-141: an AI condition that fails is logged and tried again, then fails after three attempts; nothing is executed", async () => {
   const s = setup();
   s.deps.analyze = async () => {
     throw Error("bad response");
   };
-  await processRun(s.run, s.deps);
-  assert.equal(s.run.status, "failed");
+  const logged: string[] = [];
+  const warn = console.warn;
+  console.warn = (line: string) => { logged.push(line); };
+  try {
+    await processRun(s.run, s.deps);
+    assert.equal(s.run.status, "pending", "tried again, not silently failed");
+    assert.ok(s.run.retryAt && Date.parse(s.run.retryAt) > Date.now() + 50_000, "after a minute");
+    assert.match(s.run.detail ?? "", /attempt 1 of 3/);
+    await processRun(s.run, s.deps);
+    assert.equal(s.run.status, "pending");
+    assert.ok(Date.parse(s.run.retryAt!) > Date.now() + 4 * 60_000, "then after five minutes");
+    await processRun(s.run, s.deps);
+    assert.equal(s.run.status, "failed");
+    assert.equal(s.run.attempts, 3);
+    assert.match(s.run.detail ?? "", /after 3 attempts/);
+  } finally { console.warn = warn; }
   assert.equal(s.effects, 0);
+  const events = logged.map((l) => JSON.parse(l));
+  assert.deepEqual(events.map((e) => [e.event, e.attempt, e.retry]), [["automation_analysis_failed", 1, true], ["automation_analysis_failed", 2, true], ["automation_analysis_failed", 3, false]]);
+  assert.equal(events[0].error, "bad response");
+  assert.ok(!JSON.stringify(events).includes("x@example.com"), "no message data in the log");
 });
 test("an already running record is not replayed", async () => {
   const s = setup();

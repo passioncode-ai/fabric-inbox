@@ -84,3 +84,37 @@ export function appendHtml(html: string, ...blocks: string[]): string {
   const close = html.search(/<\/body\s*>/i);
   return close >= 0 ? html.slice(0, close) + extra + html.slice(close) : html + extra;
 }
+
+/** A line that starts the quoted earlier mail, as mail clients write it (English, Russian and a few more). */
+const QUOTE_HEADER = [
+  /(?:^|\s)(wrote|writes|a écrit|schrieb|escribió|ha scritto|escreveu|napisał\(a\)|napisał|написал\(а\)|написала|написал|пишет|написав)\s?:\s*$/iu,
+  /\d{4}\s*г\.?,?\s*(в\s*)?\d{1,2}:\d{2}.*:\s*$/i,
+  /^-{2,}\s*(original message|исходное сообщение)\s*-{2,}$/i,
+];
+const OUTLOOK_FROM = /^(from|от):\s+\S/i;
+const OUTLOOK_NEXT = /^(sent|date|отправлено|дата):\s+\S/i;
+
+/**
+ * The part of a message its sender wrote now (B-141): its text up to the quoted earlier mail. Cut at the
+ * first quote block (`<blockquote>`, a Gmail, Thunderbird, Yahoo or Fabric quote container) and at the
+ * first quote header line ("On … wrote:", "… написал(а):", an Outlook "From: … Sent:" block, "Original
+ * Message"); lines starting with ">" are left out. A forwarded message is kept: it is what was sent.
+ */
+export function newText(html: string): string {
+  if (!html) return "";
+  const container = html.search(/<blockquote\b|<div[^>]*class=["'][^"']*\b(gmail_quote|moz-cite-prefix|yahoo_quoted|fabric-quote)\b/i);
+  const lines = htmlToText(container >= 0 ? html.slice(0, container) : html).split("\n");
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!.trim();
+    if (QUOTE_HEADER.some((r) => r.test(line))) {
+      // "On Mon, 20 Oct 2026 at 10:00, Ann\n<ann@x> wrote:": the header's first half is on the line above.
+      if (kept.length && /^(on|le|am|el|il|em|w|в)\s/iu.test(kept[kept.length - 1]!.trim()) && !/[.!?]$/.test(kept[kept.length - 1]!.trim())) kept.pop();
+      break;
+    }
+    if (OUTLOOK_FROM.test(line) && lines.slice(i + 1, i + 4).some((l) => OUTLOOK_NEXT.test(l.trim()))) break;
+    if (line.startsWith(">")) continue;
+    kept.push(lines[i]!);
+  }
+  return kept.join("\n").trim();
+}
