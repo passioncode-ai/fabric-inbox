@@ -557,7 +557,7 @@ async function drainLinks() {
   connecting = true;
   try { while (pendingLinks.length) await handleConnectLink(pendingLinks.shift()); }
   finally { connecting = false; }
-  void askUsageCounts(BrowserWindow.getFocusedWindow());
+  if (analytics) void askUsageCounts(BrowserWindow.getFocusedWindow());
 }
 const attend = connector.attendWith(app);
 /** The window a connect prompt is attached to: the open one, else the mail (or setup) window opened for it. */

@@ -394,5 +394,5 @@ test("review 2026-10-21: the operating system is named for the platform the app 
 test("review 2026-10-21: the usage question waits while a hub's connect dialog is open, and is asked after it", () => {
   const main = readFileSync("desktop/main.cjs", "utf8");
   assert.match(main, /if \(connecting \|\| pendingLinks\.length\) return;/);
-  assert.match(main, /finally \{ connecting = false; \}\n  void askUsageCounts\(BrowserWindow\.getFocusedWindow\(\)\);/);
+  assert.match(main, /finally \{ connecting = false; \}\n  if \(analytics\) void askUsageCounts\(BrowserWindow\.getFocusedWindow\(\)\);/);
 });
