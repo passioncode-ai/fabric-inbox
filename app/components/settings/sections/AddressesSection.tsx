@@ -463,8 +463,31 @@ function RenameDialog({ open, from, domains, onClose, onDone }: { open: boolean;
   const [domain, setDomain] = useState(from.slice(from.lastIndexOf("@") + 1));
   const [working, setWorking] = useState("");
   const [problem, setProblem] = useState("");
-  useEffect(() => { if (open) { setName(localPart(from)); setDomain(from.slice(from.lastIndexOf("@") + 1)); setProblem(""); } }, [open, from]);
-  const to = `${name.trim().toLowerCase()}@${domain}`;
+  // Review 2026-10-21: a rename already started (cut off, or started by an agent) is shown, continued or cancelled here.
+  const [started, setStarted] = useState<{ to: string; cancellable: boolean } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    setName(localPart(from)); setDomain(from.slice(from.lastIndexOf("@") + 1)); setProblem(""); setStarted(null);
+    let live = true;
+    fabric<{ state: string; to: string; cancellable?: boolean }>(`/api/project-addresses/${encodeURIComponent(from)}/rename`)
+      .then((r) => {
+        if (!live || r.state !== "running") return;
+        setStarted({ to: r.to, cancellable: !!r.cancellable });
+        setName(localPart(r.to)); setDomain(r.to.slice(r.to.lastIndexOf("@") + 1));
+      })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [open, from]);
+  const to = started?.to ?? `${name.trim().toLowerCase()}@${domain}`;
+  const cancelStarted = async () => {
+    setProblem(""); setWorking(t("Cancelling the rename…"));
+    try {
+      await fabric(`/api/project-addresses/${encodeURIComponent(from)}/rename`, undefined, "DELETE");
+      setStarted(null); setName(localPart(from)); setDomain(from.slice(from.lastIndexOf("@") + 1));
+    } catch (error) {
+      setProblem(error instanceof ApiError ? t.text(error.message) : t("The rename could not be cancelled."));
+    } finally { setWorking(""); }
+  };
   const submit = async () => {
     setProblem("");
     try {
@@ -482,19 +505,21 @@ function RenameDialog({ open, from, domains, onClose, onDone }: { open: boolean;
     <Dialog open={open} title={t("Rename or move {email}", { email: from })} onClose={onClose} busy={!!working}>
       <form onSubmit={(e) => { e.preventDefault(); void submit(); }}>
         <p>{t("Every message, attachment, draft, folder, setting, signature and who answers moves to the new address. The old address delivers to the new one for 30 days, then follows the domain's catch-all.")}</p>
+        {started && <p className="fi-hint" role="status">{t("A rename to {email} has started and is not finished. Until it ends, {from} takes no changes; its new mail already goes to {email}.", { email: started.to, from })}</p>}
         <label className="fi-field">{t("New name")}
-          <input className="fi-input" data-autofocus required value={name} onChange={(e) => setName(e.target.value)} disabled={!!working} />
+          <input className="fi-input" data-autofocus required value={name} onChange={(e) => setName(e.target.value)} disabled={!!working || !!started} />
         </label>
         <label className="fi-field">{t("Domain")}
-          <select className="fi-input" value={domain} onChange={(e) => setDomain(e.target.value)} disabled={!!working}>
+          <select className="fi-input" value={domain} onChange={(e) => setDomain(e.target.value)} disabled={!!working || !!started}>
             {domains.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
         </label>
         {working && <p className="fi-hint" role="status">{working}</p>}
         {problem && <p className="fi-action-result is-error" role="alert">{problem}</p>}
         <div className="fi-dialog-actions">
-          <button type="button" className="fi-secondary" onClick={onClose} disabled={!!working}>{t("Cancel")}</button>
-          <button type="submit" className="fi-primary" disabled={!!working || !name.trim() || to === from}>{working ? working : t("Rename")}</button>
+          <button type="button" className="fi-secondary" onClick={onClose} disabled={!!working}>{t("Close")}</button>
+          {started?.cancellable && <button type="button" className="fi-secondary" onClick={() => void cancelStarted()} disabled={!!working}>{t("Cancel the rename")}</button>}
+          <button type="submit" className="fi-primary" disabled={!!working || !name.trim() || to === from}>{working ? working : started ? t("Finish the rename") : t("Rename")}</button>
         </div>
       </form>
     </Dialog>

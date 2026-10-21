@@ -281,7 +281,9 @@ export class MailboxDO extends DurableObject<Env> {
     const rows = this.outbox.recoverable();
     if (rows.length) await this.armRecovery();
     for (const row of rows) await this.sender.process(row.id);
-    // Spam and Discarded past their 30 days go; the next wake-up is set for the oldest left.
+    // Spam and Discarded past their 30 days go; the next wake-up is set for the oldest left. Not while a
+    // rename copies this mailbox: the copied rows name the same files (B-27).
+    if (await this.ctx.storage.get("renaming")) return;
     await this.purgeSpam();
     await this.purgeDiscarded();
   }
@@ -1014,36 +1016,72 @@ export class MailboxDO extends DurableObject<Env> {
 	 */
 	async exportPage(table: RenameTable, after: number, limit = 200): Promise<{ rows: RenameRow[]; next: number | null }> {
 		if (!RENAME_TABLES.includes(table)) throw new Error(`not a mail table: ${table}`);
+		const size = Math.min(Math.max(limit, 1), 500);
 		const rows = this.ctx.storage.sql.exec<Record<string, SqlStorageValue>>(
-			`SELECT rowid AS _rowid, * FROM ${table} WHERE rowid > ? ORDER BY rowid LIMIT ?`, after, Math.min(Math.max(limit, 1), 500)).toArray();
+			`SELECT rowid AS _rowid, * FROM ${table} WHERE rowid > ? ORDER BY rowid LIMIT ?`, after, size).toArray();
 		const next = rows.length ? Number(rows[rows.length - 1]!._rowid) : null;
-		return { rows: rows.map(({ _rowid, ...row }) => row), next: rows.length < Math.min(Math.max(limit, 1), 500) ? null : next };
+		return { rows: rows.map(({ _rowid, ...row }) => row), next: rows.length < size ? null : next };
 	}
 
-	/** Rows from another mailbox's `exportPage`, kept with their ids; a row already here is left as it is (a repeat adds nothing). */
+	/**
+	 * Rows from another mailbox's `exportPage`, kept with their ids. A row already here is replaced by the
+	 * copy (a repeat changes nothing; a row that changed in the old mailbox since is brought up to date).
+	 * A copied folder whose name another folder here already has gets a free name (" (2)", " (3)" …).
+	 */
 	async importRows(table: RenameTable, rows: RenameRow[]): Promise<number> {
 		if (!RENAME_TABLES.includes(table)) throw new Error(`not a mail table: ${table}`);
 		const columns = new Set(this.ctx.storage.sql.exec<{ name: string }>(`PRAGMA table_info(${table})`).toArray().map((c) => c.name));
-		let added = 0;
+		let written = 0;
 		this.ctx.storage.transactionSync(() => {
-			for (const row of rows) {
+			for (const raw of rows) {
+				const row = { ...raw };
+				if (table === "folders" && typeof row.name === "string") {
+					const clash = (name: string) => this.ctx.storage.sql.exec("SELECT 1 FROM folders WHERE name = ? AND id != ?", name, row.id as SqlStorageValue).toArray().length > 0;
+					for (let n = 2; clash(String(row.name)) && n < 100; n++) row.name = `${raw.name} (${n})`;
+				}
 				const names = Object.keys(row).filter((k) => columns.has(k));
 				if (!names.length) continue;
-				const cursor = this.ctx.storage.sql.exec(`INSERT OR IGNORE INTO ${table} (${names.join(", ")}) VALUES (${names.map(() => "?").join(", ")})`,
+				// An upsert, never INSERT OR REPLACE: a replace deletes the row first, and the foreign keys cascade
+				// (a folder's messages, a message's attachments) would take rows this mailbox already holds.
+				const update = names.filter((k) => k !== "id");
+				const cursor = this.ctx.storage.sql.exec(`INSERT INTO ${table} (${names.join(", ")}) VALUES (${names.map(() => "?").join(", ")})`
+					+ (update.length ? ` ON CONFLICT(id) DO UPDATE SET ${update.map((k) => `${k} = excluded.${k}`).join(", ")}` : " ON CONFLICT(id) DO NOTHING"),
 					...names.map((k) => row[k] as SqlStorageValue));
-				added += cursor.rowsWritten > 0 ? 1 : 0;
+				written += cursor.rowsWritten > 0 ? 1 : 0;
 			}
 		});
-		return added;
+		return written;
 	}
 
-	/** Messages per folder, and sends still in flight: what a rename checks before and after copying. */
-	async renameCounts(): Promise<{ folders: Record<string, number>; attachments: number; pendingSends: number }> {
-		const folders = Object.fromEntries(this.ctx.storage.sql.exec<{ folder_id: string; n: number }>(
-			"SELECT folder_id, COUNT(*) AS n FROM emails GROUP BY folder_id").toArray().map((r) => [String(r.folder_id), Number(r.n)]));
-		const attachments = Number(this.ctx.storage.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM attachments").one().n);
-		const pendingSends = Number(this.ctx.storage.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM outbox WHERE status IN ('pending', 'sending')").one().n);
-		return { folders, attachments, pendingSends };
+	/** The ids a rename must find in the new mailbox: every message and every attachment row. */
+	async renameIds(): Promise<{ emails: string[]; attachments: string[] }> {
+		return {
+			emails: this.ctx.storage.sql.exec<{ id: string }>("SELECT id FROM emails").toArray().map((r) => String(r.id)),
+			attachments: this.ctx.storage.sql.exec<{ id: string }>("SELECT id FROM attachments").toArray().map((r) => String(r.id)),
+		};
+	}
+
+	/**
+	 * What would be lost if this mailbox were emptied now: sends not settled (pending, sending, unknown,
+	 * or a Sent copy still owed) and incoming mail whose automation or forwarded copy is still owed.
+	 */
+	async renameBlockers(): Promise<{ sends: number; incoming: number }> {
+		const sends = Number(this.ctx.storage.sql.exec<{ n: number }>(
+			"SELECT COUNT(*) AS n FROM outbox WHERE status IN ('pending', 'sending', 'unknown') OR projection_status = 'pending' AND status = 'accepted'").one().n);
+		const incoming = Number(this.ctx.storage.sql.exec<{ n: number }>(
+			"SELECT COUNT(*) AS n FROM incoming_receipts WHERE automation_status = 'pending' OR forward_status IN ('owed', 'sending')").one().n);
+		return { sends, incoming };
+	}
+
+	/** While a rename copies this mailbox its Spam and Discarded are not purged (the copy names their files). */
+	async setRenaming(on: boolean): Promise<void> {
+		if (on) await this.ctx.storage.put("renaming", true); else await this.ctx.storage.delete("renaming");
+	}
+
+	/** After a rename copied mail here: Spam and Discarded keep their 30 days from now on too. */
+	async armPurges(): Promise<void> {
+		await this.armDiscardPurge();
+		await this.purgeSpam();
 	}
 
 	/**

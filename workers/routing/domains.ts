@@ -5,6 +5,7 @@ import { installRelay, type RelayInstallResult } from "../relay/install";
 import type { DomainRouting, RouteAction } from "./email-routing";
 import { setupFromRouting } from "./to-setup";
 import { applySetup } from "../lib/apply-setup";
+import { pausedKey, renameOf } from "../lib/rename-journal";
 import {
   addServedDomains, allServedDomains, readAllSettings, removeCatchAll, removeServedDomain,
   servedDomains, setCatchAll, storedCatchAll, updateSettings,
@@ -321,6 +322,11 @@ export class DomainManager {
    */
   async bringAddress(domain: string, email: string): Promise<ConnectResult> {
     if (domainOf(email) !== domain) throw new BringRefused(400, msg("{address} is not on {domain}", { address: email, domain }));
+    // Review 2026-10-21: bringing it here turns its rule on, which a paused address must not have, and an
+    // address taking part in a rename is about to move.
+    if (await this.env.BUCKET.head(pausedKey(email))) throw new BringRefused(409, msg("{address} is paused here. Resume it instead.", { address: email }));
+    const renaming = await renameOf(this.env.BUCKET, email);
+    if (renaming) throw new BringRefused(409, msg("{email} takes part in a rename ({from} to {to}); finish or cancel it first.", { email, from: renaming.from, to: renaming.to }));
     const ctx = await this.zone(domain);
     if (!ctx) throw new BringRefused(404, msg("{domain} is not a domain in any Cloudflare account this server has a token for.", { domain }));
     const { zone, api } = ctx;

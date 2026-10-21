@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { renameAddress, renameStatus } from "../lib/address-rename";
+import { cancelRename, renameAddress, renameStatus } from "../lib/address-rename";
 import { z } from "zod";
 import type { Env } from "../types";
 import { AGENT_TEMPLATES, readAssignment } from "../agents/definition";
@@ -381,6 +381,11 @@ agentsRouter.post("/api/project-addresses/:email/rename", async (c) => {
   const parsed = RenameInput.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: msg("Give the new address") }, 400);
   const result = await renameAddress(c.env, c.req.param("email"), parsed.data.to);
+  return c.json(result.body, result.status);
+});
+/** Review 2026-10-21: a rename that has not routed the new address yet can be cancelled. */
+agentsRouter.delete("/api/project-addresses/:email/rename", async (c) => {
+  const result = await cancelRename(c.env, c.req.param("email"));
   return c.json(result.body, result.status);
 });
 agentsRouter.get("/api/project-addresses/:email/rename", async (c) => {

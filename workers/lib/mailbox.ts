@@ -10,6 +10,7 @@
 import { createMiddleware } from "hono/factory";
 import type { MailboxDO } from "../durableObject";
 import type { Env } from "../types";
+import { msg } from "../../shared/i18n";
 
 export type MailboxContext = {
 	Bindings: Env;
@@ -28,6 +29,13 @@ export const requireMailbox = createMiddleware<MailboxContext>(async (c, next) =
 	const obj = await c.env.BUCKET.head(key);
 	if (!obj) {
 		return c.json({ error: "Not found" }, 404);
+	}
+
+	// B-27: a mailbox being renamed is frozen until the rename ends or is cancelled. Reading goes on;
+	// a change made now would not reach the new address (review 2026-10-21).
+	if (c.req.method !== "GET" && c.req.method !== "HEAD"
+		&& await c.env.BUCKET.head(`renames/${mailboxId.toLowerCase()}.json`)) {
+		return c.json({ error: msg("{email} is being renamed. Wait until the rename ends, or cancel it.", { email: mailboxId }) }, 409);
 	}
 
 	// Instantiate DO stub

@@ -517,19 +517,19 @@ async function resolveRecipient(candidates: string[], allowedAddresses: string[]
 	let paused: string | null = null;
 	for (const address of onServedDomain) {
 		if (allowedAddresses.length && !allowedAddresses.includes(address)) continue;
-		if (await env.BUCKET.head(`mailboxes/${address}.json`)) {
-			// B-27: a paused address keeps its mail but takes none; its mail follows the domain's catch-all.
-			if (await env.BUCKET.head(pausedKey(address))) { paused ??= address; continue; }
-			return { mailboxId: address };
-		}
-	}
-	// B-27: an address renamed keeping its mail delivers to its new address while its alias lasts.
-	for (const address of onServedDomain) {
-		if (allowedAddresses.length && !allowedAddresses.includes(address)) continue;
+		// B-27: an address being renamed, or renamed, delivers to its new address as soon as that exists,
+		// even while the old mailbox is still there to be copied (review 2026-10-21: mail that landed in the
+		// old mailbox after its copy was emptied with it). Until the new one exists, the old one takes it,
+		// and the rename copies it.
 		const to = await renamedTo(env.BUCKET, address).catch(() => null);
 		if (to && await env.BUCKET.head(`mailboxes/${to}.json`) && !(await env.BUCKET.head(pausedKey(to)))) {
 			console.log(JSON.stringify({ event: "renamed_address_mail", domain: domainOf(address) }));
 			return { mailboxId: to };
+		}
+		if (await env.BUCKET.head(`mailboxes/${address}.json`)) {
+			// B-27: a paused address keeps its mail but takes none; its mail follows the domain's catch-all.
+			if (await env.BUCKET.head(pausedKey(address))) { paused ??= address; continue; }
+			return { mailboxId: address };
 		}
 	}
 	const address = paused ?? onServedDomain[0];

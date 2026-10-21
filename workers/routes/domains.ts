@@ -5,7 +5,8 @@ import { allServedDomains, isDomainName, listMailboxAddresses, removeCatchAll, s
 import { CloudflareApiError, TOKEN_PERMISSIONS, ACCOUNT_TOKEN_PERMISSIONS } from "../routing/cloudflare-api";
 import { CloudflareAccounts, isAccountId } from "../routing/accounts";
 import { currentRelay, readRelays } from "../relay/install";
-import { effectiveCatchAll } from "../lib/address-ops";
+import { effectiveCatchAll, pausedKey } from "../lib/address-ops";
+import { renameOf } from "../lib/rename-journal";
 import { BringRefused, DomainManager, type ConnectResult, type Step } from "../routing/domains";
 import { msg } from "../../shared/i18n";
 
@@ -216,6 +217,11 @@ domainsRouter.put("/api/domains/:domain/catch-all", async (c) => {
   if (!(await allServedDomains(c.env)).includes(domain)) return c.json({ error: msg("{domain} is not served here", { domain }) }, 400);
   if (mailbox && (!mailbox.endsWith("@" + domain) || !(await listMailboxAddresses(c.env.BUCKET)).includes(mailbox)))
     return c.json({ error: msg("Choose an address that exists on this domain") }, 400);
+  // Review 2026-10-21: a paused address takes no mail, and one taking part in a rename is about to move.
+  if (mailbox && await c.env.BUCKET.head(pausedKey(mailbox)))
+    return c.json({ error: msg("{email} is paused. Resume it before it keeps mail for other addresses.", { email: mailbox }) }, 409);
+  const renaming = mailbox ? await renameOf(c.env.BUCKET, mailbox) : null;
+  if (renaming) return c.json({ error: msg("{email} takes part in a rename ({from} to {to}); finish or cancel it first.", { email: mailbox!, from: renaming.from, to: renaming.to }) }, 409);
   const effective = await effectiveCatchAll(c.env, domain);
   if (effective?.source === "deployment")
     return c.json({ error: msg("The catch-all of {domain} is set in this deployment (UNKNOWN_ADDRESS_POLICY → {mailbox}); change it there.", { domain, mailbox: effective.mailbox }) }, 409);
