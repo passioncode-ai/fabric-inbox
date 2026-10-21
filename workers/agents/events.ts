@@ -28,6 +28,8 @@ export interface AgentEventValue {
   category?: string; handoff?: boolean; fallback?: boolean; dissatisfied?: boolean;
   /** B-131: the message has waited for a person past the SLA (event kind agent.waiting), in whole hours. */
   waitingHours?: number;
+  /** B-141: the second agent.waiting of a message: its retries ended after 30 days; whether a closing reply naming another route went out. */
+  closed?: boolean; closingSent?: boolean;
 }
 
 /**
@@ -87,9 +89,11 @@ export const EVENTS_KEPT_MS = 7 * 86_400_000;
  * B-131: the one escalation of a message still waiting for a person past the SLA: held (the agent
  * was not sure) or drafted (a person sends it). Emitted once per run, at `at`.
  */
-export function waitingEvent(run: AgentRun, at: string): AgentEvent {
+export function waitingEvent(run: AgentRun, at: string, closing?: { closed: true; sent: boolean }): AgentEvent {
   const hours = Math.max(1, Math.floor((Date.parse(at) - Date.parse(run.createdAt)) / 3_600_000));
-  const what = run.status === "drafted" ? "a draft a person has not sent" : "no answer yet";
+  const what = run.status === "drafted" ? "a draft a person has not sent"
+    : run.status === "failed" ? "no answer after an agent error"
+    : run.status === "skipped" ? "no answer: the safety check held it back" : "no answer yet";
   const value: AgentEventValue = {
     runId: run.id, address: run.mailboxId,
     ...(run.agentId ? { agentId: run.agentId } : {}), ...(run.agentVersion ? { agentVersion: run.agentVersion } : {}),
@@ -98,9 +102,14 @@ export function waitingEvent(run: AgentRun, at: string): AgentEvent {
     sources: (run.sources ?? []).slice(0, 32).map((s) => cut(s.title)),
     ...(run.category ? { category: cut(run.category, 60) } : {}),
     waitingHours: hours,
+    ...(closing ? { closed: true, closingSent: closing.sent } : {}),
   };
+  const days = Math.floor(hours / 24);
+  const text = closing
+    ? `A message to ${run.mailboxId} got no answer in ${days} days; the agent stopped trying${closing.sent ? " and sent a reply naming another route" : " and sent nothing"}.`
+    : `A message to ${run.mailboxId} has waited ${hours} hours with ${what}.`;
   return { at, link: messageLink(`cloudflare:${run.mailboxId}`, run.emailId, run.id), kind: "agent.waiting", level: "warning",
-    text: cut(`A message to ${run.mailboxId} has waited ${hours} hours with ${what}.`), data: { schema: AGENT_EVENT_SCHEMA, value } };
+    text: cut(text), data: { schema: AGENT_EVENT_SCHEMA, value } };
 }
 
 /** B-130: the day's quality of one agent address (support.quality_daily); counts only. */

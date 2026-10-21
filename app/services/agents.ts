@@ -26,7 +26,7 @@ export interface AgentInput {
   /** Knowledge collections the agent may search (KN-3). */
   collections: string[];
   tools: ToolGrant[];
-  replyPolicy: { mode: ReplyMode; allowedIntents: string[]; dailySendLimit: number | null; draftFollowUps?: boolean; draftTopics?: string[]; requireEvidence?: boolean; holdUnsure?: boolean; waitingReply?: { en: string; ru?: string };
+  replyPolicy: { mode: ReplyMode; allowedIntents: string[]; dailySendLimit: number | null; draftFollowUps?: boolean; draftTopics?: string[]; requireEvidence?: boolean; holdUnsure?: boolean; waitingReply?: { en: string; ru?: string }; closingReply?: { en: string; ru?: string };
     knowledgeIsEvidence?: boolean; fallbackReply?: { en: string; ru?: string }; categories?: string[];
     handoff?: { categories: string[]; topics: string[]; reply: { en: string; ru?: string }; replies?: Record<string, { en: string; ru?: string }> } };
 }

@@ -57,6 +57,8 @@ const bundle = await build({
         async pump() { return this.alarm(); }
         async retryHeldNow(now) { return this.retryHeld(now); }
         async superviseNow(now) { return this.superviseWaiting(now); }
+        async closeNow(now) { return this.closeExpired(now); }
+        async seedFacts(rows) { for (const r of rows) this.ctx.storage.sql.exec("INSERT OR REPLACE INTO agent_facts (endpoint, revision, seen_at) VALUES (?, ?, ?)", r.endpoint, r.revision, r.at); }
         async qualityNow(now) { return this.emitQualityDays(now); }
         async forgetQualityDay() { await this.ctx.storage.delete('quality_day'); }
         async judgeAnswer(models, input) {
@@ -128,6 +130,8 @@ const bundle = await build({
               case 'forgetQualityDay': await reg.forgetQualityDay(); return Response.json(true);
               case 'redact': await reg.redactNow(c.now); return Response.json(true);
               case 'supervise': return Response.json({ next: await reg.superviseNow(c.now) });
+              case 'close': return Response.json({ next: await reg.closeNow(c.now) });
+              case 'seedFacts': await reg.seedFacts(c.rows); return Response.json(true);
               case 'seedThread': await box(c.mailbox).seedThread(c.rows); return Response.json(true);
               case 'byIds': return Response.json(await reg.runsByIds(c.ids));
               case 'again': return Response.json(await reg.answerAgain(c.id));
@@ -911,5 +915,117 @@ test("review 2026-10-21: a reply after midnight counts for the evening's message
     assert.equal(events.length, 1, "once per day and address");
     assert.equal(events[0].data.value.coverage.delivered, 1);
     assert.equal(events[0].data.value.coverage.firstReplyP50Ms, 2 * 3_600_000);
+  } finally { await mf.dispose(); }
+});
+
+// ── B-141: review 2026-10-21 of the reply lanes ──
+
+const b141 = { mailboxId: "a@project.invalid", sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1 };
+const rid = (name: string) => "agent-" + name.replace(/[^0-9a-f]/g, "0").padEnd(32, "0").slice(0, 32);
+
+test("B-141: a run that failed before anything was sent, and one the safety check skipped, are escalated once at 4 hours; an old failure is not", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const box = b141.mailboxId;
+    const now = Date.now();
+    const at = (h: number) => new Date(now - h * 3_600_000).toISOString();
+    await command("seedThread", { mailbox: box, rows: [{ id: "answered", folder: "inbox", date: at(6), thread: "t-a" }, { id: "reply", folder: "sent", date: at(1), thread: "t-a" },
+      { id: "model", folder: "inbox", date: at(6), thread: "t-m" }, { id: "steer", folder: "inbox", date: at(6), thread: "t-s" }, { id: "legacy", folder: "inbox", date: at(6), thread: "t-l" }] });
+    await command("begin", { run: { ...b141, id: rid("model"), emailId: "model", status: "failed", failure: "model", createdAt: at(5), updatedAt: at(5) } });
+    await command("begin", { run: { ...b141, id: rid("steer"), emailId: "steer", status: "skipped", injection: true, createdAt: at(5), updatedAt: at(5) } });
+    await command("begin", { run: { ...b141, id: rid("answered"), emailId: "answered", status: "failed", failure: "safety", createdAt: at(5), updatedAt: at(5) } });
+    await command("begin", { run: { ...b141, id: rid("legacy"), emailId: "legacy", status: "failed", createdAt: at(5), updatedAt: at(5) } });
+    await command("supervise", { now });
+    await command("supervise", { now });
+    const waiting = ((await command("events", {})).events as { kind: string; text: string; data: { value: { runId: string } } }[]).filter((e) => e.kind === "agent.waiting");
+    assert.deepEqual(waiting.map((e) => e.data.value.runId).sort(), [rid("model"), rid("steer")].sort());
+    assert.match(waiting.find((e) => e.data.value.runId === rid("model"))!.text, /after an agent error/);
+    assert.match(waiting.find((e) => e.data.value.runId === rid("steer"))!.text, /safety check/);
+  } finally { await mf.dispose(); }
+});
+
+test("B-141: a run that failed before anything was sent is tried again an hour later; a failure from before the mark is not", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const now = Date.parse("2026-10-21T12:00:00.000Z");
+    const at = (h: number) => new Date(now - h * 3_600_000).toISOString();
+    await command("begin", { run: { ...b141, id: rid("due"), emailId: "due", status: "failed", failure: "model", createdAt: at(2), updatedAt: at(1.5) } });
+    await command("begin", { run: { ...b141, id: rid("soon"), emailId: "soon", status: "failed", failure: "safety", createdAt: at(2), updatedAt: at(0.5) } });
+    await command("begin", { run: { ...b141, id: rid("legacy"), emailId: "legacy", status: "failed", createdAt: at(2), updatedAt: at(1.5) } });
+    await command("begin", { run: { ...b141, id: rid("unknown"), emailId: "unknown", status: "send_unknown", createdAt: at(2), updatedAt: at(1.5) } });
+    const r = await command("retry-held", { now });
+    assert.equal(r.queue, 1, "only the marked failure that is due");
+    assert.equal(r.next, Date.parse(at(0.5)) + 3_600_000);
+  } finally { await mf.dispose(); }
+});
+
+test("B-141: a held run is answered again at once when its knowledge changed, and its due try is skipped while the knowledge is the same", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const endpoint = "https://kb.project.invalid/mcp";
+    const now = Date.now();
+    const at = (h: number) => new Date(now - h * 3_600_000).toISOString();
+    const heldFacts = { agent: "support@1", revisions: { [endpoint]: "r1" } };
+    await command("begin", { run: { ...b141, id: rid("moved"), emailId: "moved", status: "held", heldFacts, createdAt: at(3), updatedAt: at(2) } });
+    await command("seedFacts", { rows: [{ endpoint, revision: "r2", at: now - 3_600_000 }] });
+    let r = await command("retry-held", { now });
+    assert.equal(r.queue, 1, "not due for ten more hours, but the knowledge moved: answered again now");
+    const [moved] = await command("byIds", { ids: [rid("moved")] }) as { heldFacts?: unknown; attempt?: number }[];
+    assert.deepEqual(moved.heldFacts, heldFacts, "an automatic retry keeps what it compares with");
+
+    const fresh = await fixture();
+    try {
+      await fresh.command("begin", { run: { ...b141, id: rid("same"), emailId: "same", status: "held", heldFacts, createdAt: at(20), updatedAt: at(13) } });
+      await fresh.command("seedFacts", { rows: [{ endpoint, revision: "r1", at: now - 3_600_000 }] });
+      r = await fresh.command("retry-held", { now });
+      assert.equal(r.queue, 0, "due, but a later run saw the same revision: nothing is called");
+      assert.ok(Math.abs(r.next - (now + 12 * 3_600_000)) < 1000, "the next try moves on by its interval");
+      // Without a later sighting the try goes ahead, and the runner compares the revision itself.
+      await fresh.command("begin", { run: { ...b141, id: rid("unseen"), emailId: "unseen", status: "held", heldFacts: { agent: "support@1", revisions: { "https://other.project.invalid/mcp": "r1" } }, createdAt: at(20), updatedAt: at(13) } });
+      assert.equal((await fresh.command("retry-held", { now })).queue, 1);
+      // A person's answer again drops the comparison.
+      await fresh.command("begin", { run: { ...b141, id: rid("person"), emailId: "person", status: "held", heldFacts, createdAt: at(2), updatedAt: at(1) } });
+      assert.equal((await fresh.command("again", { id: rid("person") })).run.heldFacts, undefined);
+    } finally { await fresh.mf.dispose(); }
+  } finally { await mf.dispose(); }
+});
+
+test("B-141: day 30: a held message gets one closing reply naming another route and a second agent.waiting; a drafting address sends nothing", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const box = "support@project.invalid";
+    const policy = { mode: "auto", holdUnsure: true, dailySendLimit: 20, allowedIntents: [],
+      handoff: { categories: [], topics: [], reply: { en: "Write to @help_manager in Telegram.", ru: "Напишите @help_manager в Telegram." } } };
+    await command("create", { id: "support", input: { ...support, replyPolicy: policy } });
+    await command("setup", { mailbox: box, settings: { agent: { id: "support" } }, model: {} });
+    const now = Date.now();
+    const at = (d: number) => new Date(now - d * 86_400_000).toISOString();
+    await command("seedThread", { mailbox: box, rows: [{ id: "old", folder: "inbox", date: at(30.1), thread: "t-old" }, { id: "older", folder: "inbox", date: at(40), thread: "t-older" },
+      { id: "young", folder: "inbox", date: at(10), thread: "t-young" }] });
+    const run = (id: string, days: number) => ({ ...b141, mailboxId: box, id: rid(id), emailId: id, status: "held", escalatedAt: at(days), createdAt: at(days), updatedAt: at(1) });
+    await command("begin", { run: run("old", 30.1) });
+    await command("begin", { run: run("older", 40) });
+    await command("begin", { run: run("young", 10) });
+    const first = await command("close", { now });
+    const sent = await command("sent", { mailbox: box }) as { subject: string }[];
+    assert.equal(sent.length, 1, "one closing reply, for the message whose retries just ended");
+    const [closed] = await command("byIds", { ids: [rid("old")] }) as { closedAt?: string; closing?: { status: string } }[];
+    assert.ok(closed.closedAt);
+    assert.equal(closed.closing?.status, "accepted");
+    const events = ((await command("events", {})).events as { kind: string; data: { value: { runId: string; closed?: boolean; closingSent?: boolean } } }[]).filter((e) => e.kind === "agent.waiting");
+    assert.deepEqual(events.map((e) => [e.data.value.runId, e.data.value.closed, e.data.value.closingSent]), [[rid("old"), true, true]]);
+    assert.ok(Math.abs(first.next - (Date.parse(at(10)) + 30 * 86_400_000)) < 1000, "the next is the young one's day 30");
+    await command("close", { now: now + 1000 });
+    assert.equal((await command("sent", { mailbox: box })).length, 1, "once");
+    const [older] = await command("byIds", { ids: [rid("older")] }) as { closedAt?: string }[];
+    assert.equal(older.closedAt, undefined, "a backlog from before the rule is left alone");
+    // A drafting address: closed and escalated, nothing sent.
+    await command("update", { id: "support", input: { ...support, replyPolicy: { ...policy, mode: "draft" } }, expected: 1 });
+    await command("seedThread", { mailbox: box, rows: [{ id: "drafty", folder: "inbox", date: at(30.1), thread: "t-d" }] });
+    await command("begin", { run: run("drafty", 30.1) });
+    await command("close", { now });
+    assert.equal((await command("sent", { mailbox: box })).length, 1);
+    const [drafty] = await command("byIds", { ids: [rid("drafty")] }) as { closing?: { status: string } }[];
+    assert.equal(drafty.closing?.status, "not_sent");
   } finally { await mf.dispose(); }
 });

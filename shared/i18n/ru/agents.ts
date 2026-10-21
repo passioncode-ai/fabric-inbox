@@ -95,6 +95,8 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"Reply while the answer is not there": "Ответ, пока ответа нет",
 	"Sent once, a day after the message came, if it is still not answered. Empty: a short default saying the answer follows in the same thread.": "Отправляется один раз, через сутки после письма, если ответа всё ещё нет. Пусто: короткий текст по умолчанию, что ответ придёт в этой же переписке.",
 	"That reply in Russian": "Этот ответ по-русски",
+	"Reply when it stops trying": "Ответ, когда попытки закончились",
+	"Sent once, 30 days after the message came, if it is still not answered: name another way to get help. Empty: a short apology and the hand-off reply below; with no hand-off reply, nothing is sent.": "Отправляется один раз, через 30 дней после письма, если ответа так и нет: назовите другой способ получить помощь. Пусто: короткое извинение и ответ о передаче человеку ниже; без ответа о передаче ничего не отправляется.",
 	"No drafts: when it is not sure, it does not answer, reports the question to the knowledge and answers once it is there": "Без черновиков: если нет уверенности, не отвечает, передаёт вопрос в базу знаний и отвечает, когда ответ там появится",
 	"Comma-separated. The agent labels every message with one; the label shows on its answers and events.": "Через запятую. Агент помечает каждое письмо одной из них; метка видна в его ответах и событиях.",
 	"Categories a person handles": "Категории, которые ведёт человек",

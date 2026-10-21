@@ -19,7 +19,7 @@ import {
   type ToolGrant,
 } from "./definition";
 import { RUN_OUTCOMES, runIdFor, type AgentRun, type RunOutcome } from "./run";
-import { runAgent, type RunnerDeps } from "./runner";
+import { closeRun, runAgent, type RunnerDeps } from "./runner";
 import { productionDeps, toolTokens } from "./deps";
 import { readToolInfo, type ToolInfo } from "./tool-schema";
 import { CLAIM_POLL_MS, CLAIM_TTL_MS, decideClaim, type MessageClaim } from "./dedupe";
@@ -37,6 +37,14 @@ export const HELD_RETRY_MS = 12 * 3_600_000;
 export const HELD_FAST_MS = 7 * 86_400_000;
 export const HELD_LATE_RETRY_MS = 24 * 3_600_000;
 export const HELD_FOR_MS = 30 * 86_400_000;
+/**
+ * B-141: a run that failed before anything was sent (the model, the safety check, reading the agent) is
+ * tried again every FAILED_RETRY_MS for its first FAILED_FAST_MS, then like a held one.
+ */
+export const FAILED_RETRY_MS = 3_600_000;
+export const FAILED_FAST_MS = 86_400_000;
+/** B-141: held runs answered again at once in one pass when their knowledge changed; the rest follow. */
+const RETRY_AT_ONCE = 20;
 /**
  * B-131 (support quality standard A6): a message waiting for a person (held, or a draft nobody sent)
  * is escalated once WAIT_SLA_MS after it came, the mail first-reply target. Runs older than
@@ -81,6 +89,8 @@ type Row = Record<string, string | number | null>;
  */
 export class AgentRegistryDO extends DurableObject<Env> {
   private draining: Promise<void> | undefined;
+  /** B-141: a run saved a knowledge revision other than the last one seen: held runs are looked at again soon. */
+  private factsMoved = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -210,20 +220,87 @@ export class AgentRegistryDO extends DurableObject<Env> {
       WHERE turn = 1 ORDER BY attempts, enqueued_at LIMIT ?`, Date.now(), BATCH);
   }
 
-  /** Held runs due another try go back to the queue (answer_again); answers when the next one is due. */
+  /**
+   * Held runs, and runs that failed before anything was sent (B-141), due another try go back to the queue
+   * (answer_again); answers when the next one is due. B-141: a run held for missing knowledge is tried at
+   * once when a later run saw its knowledge at another revision, and is not tried (its next try moves on)
+   * when a later run saw the same revision; otherwise the runner itself compares the revision.
+   */
   protected async retryHeld(now = Date.now()): Promise<number | null> {
     const since = new Date(now - HELD_FOR_MS).toISOString();
-    const rows = this.rows("SELECT id, created_at, updated_at FROM agent_runs WHERE status = 'held' AND created_at >= ? ORDER BY updated_at LIMIT 20", since);
+    const rows = this.rows(`SELECT id, status, body, created_at, updated_at FROM agent_runs WHERE created_at >= ?
+      AND (status = 'held' OR (status = 'failed' AND json_extract(body, '$.failure') IS NOT NULL)) ORDER BY updated_at LIMIT 200`, since);
+    const seen = new Map(this.rows("SELECT endpoint, revision, seen_at FROM agent_facts").map((r) => [String(r.endpoint), { revision: String(r.revision), at: Number(r.seen_at) }]));
     let next: number | null = null;
+    let retried = 0;
     for (const row of rows) {
       const age = now - Date.parse(String(row.created_at));
-      const due = Date.parse(String(row.updated_at)) + (age < HELD_FAST_MS ? HELD_RETRY_MS : HELD_LATE_RETRY_MS);
-      if (due <= now) {
-        const result = await this.answerAgain(String(row.id));
+      const last = Date.parse(String(row.updated_at));
+      const interval = row.status === "failed" && age < FAILED_FAST_MS ? FAILED_RETRY_MS : age < HELD_FAST_MS ? HELD_RETRY_MS : HELD_LATE_RETRY_MS;
+      let due = last + interval;
+      let held: AgentRun["heldFacts"];
+      try { held = row.status === "held" ? (JSON.parse(String(row.body)) as AgentRun).heldFacts : undefined; } catch { held = undefined; }
+      if (held && Object.keys(held.revisions).length) {
+        const later = Object.entries(held.revisions).map(([endpoint, revision]) => ({ revision, now: seen.get(endpoint) }))
+          .map((x) => ({ ...x, now: x.now && x.now.at > last ? x.now : undefined }));
+        if (later.some((x) => x.now && x.now.revision !== x.revision)) due = Math.min(due, now);
+        else if (due <= now && later.every((x) => x.now && x.now.revision === x.revision)) {
+          // The knowledge is the same as at the last attempt: the next try moves on, nothing is called.
+          const at = new Date(now).toISOString();
+          this.ctx.storage.sql.exec("UPDATE agent_runs SET updated_at = ?, body = json_set(body, '$.updatedAt', ?) WHERE id = ? AND status = 'held'", at, at, String(row.id));
+          console.log(JSON.stringify({ event: "held_retry_unchanged", run: row.id }));
+          due = now + interval;
+        }
+      }
+      if (due <= now && retried < RETRY_AT_ONCE) {
+        retried++;
+        const result = await this.answerAgain(String(row.id), { keepFacts: true });
         if (!result.ok) console.warn(JSON.stringify({ event: "held_retry_refused", run: row.id, reason: result.reason }));
-      } else if (next === null || due < next) next = due;
+      } else {
+        const at = due <= now ? now + 1000 : due;
+        if (next === null || at < next) next = at;
+      }
     }
     return next;
+  }
+
+  /**
+   * B-141: a held or failed run whose retries ended (HELD_FOR_MS) gets one closing reply naming another
+   * route (closeRun) and a second agent.waiting event. Runs older than HELD_FOR_MS + ESCALATE_WITHIN_MS
+   * when first seen are left alone, as a backlog from before this rule. Answers when the next is due.
+   */
+  protected async closeExpired(now = Date.now()): Promise<number | null> {
+    const oldest = new Date(now - HELD_FOR_MS - ESCALATE_WITHIN_MS).toISOString();
+    const at = new Date(now).toISOString();
+    const open = (where: string, ...args: string[]) => this.rows(`SELECT id, body, created_at FROM agent_runs WHERE created_at >= ?
+      AND (status = 'held' OR (status = 'failed' AND json_extract(body, '$.failure') IS NOT NULL)) AND json_extract(body, '$.closedAt') IS NULL ${where}
+      ORDER BY created_at LIMIT 20`, oldest, ...args);
+    const due = open("AND created_at <= ? AND (json_extract(body, '$.closeCheckAt') IS NULL OR json_extract(body, '$.closeCheckAt') <= ?)",
+      new Date(now - HELD_FOR_MS).toISOString(), at);
+    for (const row of due) {
+      const run = JSON.parse(String(row.body)) as AgentRun;
+      let result: Awaited<ReturnType<typeof closeRun>>;
+      try { result = await closeRun(run, this.deps(run.mailboxId)); }
+      catch (error) { result = { status: "retry", reason: (error as Error).message?.slice(0, 120) ?? "error" }; }
+      if (result.status === "retry") {
+        console.warn(JSON.stringify({ event: "agent_closing_deferred", run: run.id, reason: result.reason }));
+        this.ctx.storage.sql.exec("UPDATE agent_runs SET body = json_set(body, '$.closeCheckAt', ?) WHERE id = ?", new Date(now + PERSON_CHECK_MS).toISOString(), run.id);
+        continue;
+      }
+      run.closedAt = at;
+      run.closing = { status: result.status, ...(result.reason ? { reason: result.reason } : {}) };
+      delete run.closeCheckAt;
+      this.ctx.storage.transactionSync(() => {
+        const written = this.ctx.storage.sql.exec("UPDATE agent_runs SET body = ? WHERE id = ? AND status = ?", JSON.stringify(run), run.id, run.status).rowsWritten;
+        if (written === 1) this.appendEvent(run.id, waitingEvent(run, at, { closed: true, sent: result.status !== "not_sent" }));
+      });
+      console.log(JSON.stringify({ event: "agent_closing", run: run.id, status: result.status, reason: result.reason ?? null }));
+    }
+    const times = open("").map((r) => {
+      const run = JSON.parse(String(r.body)) as AgentRun;
+      return Math.max(Date.parse(String(r.created_at)) + HELD_FOR_MS, run.closeCheckAt ? Date.parse(run.closeCheckAt) : 0);
+    }).filter((t) => Number.isFinite(t));
+    return times.length ? Math.max(now + 1000, Math.min(...times)) : null;
   }
 
   private async drain() {
@@ -235,6 +312,10 @@ export class AgentRegistryDO extends DurableObject<Env> {
       console.warn(JSON.stringify({ event: "waiting_supervision_failed", error: (error as Error).message?.slice(0, 200) }));
       return null;
     });
+    const closeDue = await this.closeExpired().catch((error) => {
+      console.warn(JSON.stringify({ event: "agent_closing_failed", error: (error as Error).message?.slice(0, 200) }));
+      return Date.now() + PERSON_CHECK_MS;
+    });
     try { this.redactOldRuns(); } catch (error) {
       console.warn(JSON.stringify({ event: "run_redact_failed", error: (error as Error).message?.slice(0, 200) }));
     }
@@ -242,7 +323,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
       console.warn(JSON.stringify({ event: "quality_daily_failed", error: (error as Error).message?.slice(0, 200) }));
       return Date.now() + 3_600_000;
     });
-    const heldDue = [retryDue, waitDue, qualityDue].filter((t): t is number => t !== null).reduce((a, b) => Math.min(a, b));
+    let heldDue: number | null = [retryDue, waitDue, closeDue, qualityDue].filter((t): t is number => t !== null).reduce((a, b) => Math.min(a, b));
     // One message per mailbox at a time: two messages of one thread read the thread
     // before either answer exists, and would both be answered.
     const batch = this.nextBatch();
@@ -276,7 +357,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
           // Given up: said in the history, not only in the logs (reliability audit L3).
           const at = new Date().toISOString();
           await this.beginRun({ id: await runIdFor(mailboxId, emailId), mailboxId, emailId, sender: "", subject: "",
-            status: "failed", reason: msg("The message could not be read for its agent after {attempts} attempts ({error}); it is left for you in the inbox.", { attempts, error: (error as Error).message.slice(0, 160) }),
+            status: "failed", failure: "read", reason: msg("The message could not be read for its agent after {attempts} attempts ({error}); it is left for you in the inbox.", { attempts, error: (error as Error).message.slice(0, 160) }),
             toolCalls: [], createdAt: at, updatedAt: at }).catch(() => undefined);
           this.ctx.storage.sql.exec("DELETE FROM agent_queue WHERE mailbox_id = ? AND email_id = ?", mailboxId, emailId);
         } else {
@@ -285,6 +366,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
         }
       }
     }));
+    // B-141: a run of this batch saw the knowledge at a new revision: held runs are looked at in a second.
+    if (this.factsMoved) { this.factsMoved = false; heldDue = Math.min(heldDue ?? Infinity, Date.now() + 1000); }
     // Back off when nothing in the batch could start, so a broken mailbox is not hammered; a
     // message waiting for a stale run wakes the queue when that run turns stale.
     const due = this.rows("SELECT MIN(next_at) AS t FROM agent_queue")[0]?.t;
@@ -446,7 +529,10 @@ export class AgentRegistryDO extends DurableObject<Env> {
         // The message came once: a re-run keeps when it was received, or its first-reply time would restart.
         const again = { ...run, createdAt: prior.createdAt, ...(prior.receivedAt ? { receivedAt: prior.receivedAt } : {}), ...(prior.attempt ? { attempt: prior.attempt } : {}), rerun: true,
           // B-131: an escalation and a waiting reply happen once per message, across its retries.
-          ...(prior.escalatedAt ? { escalatedAt: prior.escalatedAt } : {}), ...(prior.acknowledged ? { acknowledged: prior.acknowledged } : {}) };
+          ...(prior.escalatedAt ? { escalatedAt: prior.escalatedAt } : {}), ...(prior.acknowledged ? { acknowledged: prior.acknowledged } : {}),
+          // B-141: what the last attempt held for, the gaps already reported and the closing are the message's, not the attempt's.
+          ...(prior.heldFacts ? { heldFacts: prior.heldFacts } : {}), ...(prior.gapsReported ? { gapsReported: prior.gapsReported } : {}),
+          ...(prior.closedAt ? { closedAt: prior.closedAt, ...(prior.closing ? { closing: prior.closing } : {}) } : {}) };
         this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?",
           again.status, JSON.stringify(again), again.updatedAt, again.id);
         return { claimed: true, run: again };
@@ -465,6 +551,13 @@ export class AgentRegistryDO extends DurableObject<Env> {
       const before = this.rows("SELECT status FROM agent_runs WHERE id = ?", run.id)[0]?.status;
       this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?",
         run.status, JSON.stringify(run), run.updatedAt, run.id);
+      // B-141: the newest revision each knowledge endpoint answered with.
+      for (const [endpoint, revision] of Object.entries(run.factsRevisions ?? {})) {
+        const prior = this.rows("SELECT revision FROM agent_facts WHERE endpoint = ?", endpoint)[0];
+        if (prior && String(prior.revision) !== revision) this.factsMoved = true;
+        this.ctx.storage.sql.exec(`INSERT INTO agent_facts (endpoint, revision, seen_at) VALUES (?, ?, ?)
+          ON CONFLICT(endpoint) DO UPDATE SET revision = excluded.revision, seen_at = excluded.seen_at`, endpoint, revision, Date.now());
+      }
       // B-118: a run that just ended (its status changed to a final one) appends one event.
       const event = before !== run.status ? runEvent(run) : null;
       if (event) this.appendEvent(run.id, event);
@@ -599,13 +692,17 @@ export class AgentRegistryDO extends DurableObject<Env> {
 
   /**
    * B-131: escalates, once, each message still waiting for a person WAIT_SLA_MS after it came: a held
-   * run, or a drafted one whose conversation has no reply sent after it. Answers when the next is due.
+   * run, or a drafted one whose conversation has no reply sent after it. B-141: also a run that failed
+   * before anything was sent, and one skipped because it looked like an attempt to steer the agent, unless
+   * a reply was sent after the message. Answers when the next is due.
    */
   protected async superviseWaiting(now = Date.now()): Promise<number | null> {
     const from = new Date(now - ESCALATE_WITHIN_MS).toISOString();
     const at = new Date(now).toISOString();
     const pending = (where: string, ...args: string[]) => this.rows(`SELECT id, mailbox_id, email_id, body, created_at FROM agent_runs
-      WHERE status IN ('held', 'drafted') AND created_at >= ? AND json_extract(body, '$.escalatedAt') IS NULL ${where}
+      WHERE (status IN ('held', 'drafted') OR (status = 'failed' AND json_extract(body, '$.failure') IS NOT NULL)
+        OR (status = 'skipped' AND json_extract(body, '$.injection') = 1))
+      AND created_at >= ? AND json_extract(body, '$.escalatedAt') IS NULL ${where}
       ORDER BY created_at LIMIT 20`, from, ...args);
     /** Whether a person answered a drafted run: sent the draft or wrote their own reply after the message. */
     const answered = async (run: AgentRun): Promise<boolean> => {
@@ -620,7 +717,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
     for (const row of pending(`AND created_at <= ? ${due}`, new Date(now - WAIT_SLA_MS).toISOString(), at)) {
       const run = JSON.parse(String(row.body)) as AgentRun;
       let waiting = true;
-      if (run.status === "drafted") {
+      if (run.status !== "held") {
         try { waiting = !(await answered(run)); }
         catch (error) {
           // Review 2026-10-21: looked at again later, not on every alarm a second apart.
@@ -693,7 +790,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
    * attempt and answers by the agent's policy. A sent answer, or one whose send may have happened, is
    * never repeated; a run going on now is left alone.
    */
-  async answerAgain(id: string): Promise<{ ok: true; run: AgentRun } | { ok: false; reason: string }> {
+  async answerAgain(id: string, options: { keepFacts?: boolean } = {}): Promise<{ ok: true; run: AgentRun } | { ok: false; reason: string }> {
     const prior = this.rows("SELECT body FROM agent_runs WHERE id = ?", id)[0];
     if (!prior) return { ok: false, reason: msg("This agent run is not kept any more") };
     const run = JSON.parse(String(prior.body)) as AgentRun;
@@ -702,6 +799,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
     if (run.status === "running" && Date.now() - Date.parse(run.updatedAt) <= RUN_STALE_MS) return { ok: false, reason: msg("The agent is answering this message now.") };
     const again: AgentRun = { ...run, status: "running", reason: "", attempt: (run.attempt ?? 1) + 1, updatedAt: new Date(0).toISOString() };
     delete again.phase;
+    // B-141: a person answering it again wants the model to look, whatever the knowledge's revision.
+    if (!options.keepFacts) delete again.heldFacts;
     this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?", again.status, JSON.stringify(again), again.updatedAt, id);
     await this.enqueue(run.mailboxId, run.emailId);
     return { ok: true, run: this.present(again) };

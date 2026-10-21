@@ -154,6 +154,12 @@ export const ReplyPolicySchema = z.object({
    * fact, and the message is still answered once the knowledge has it.
    */
   waitingReply: LocalizedText.optional(),
+  /**
+   * B-141: a message still not answered when its retries end (30 days, HELD_FOR_MS) gets this fixed text once,
+   * naming another route. Unset: a short default apology followed by `handoff.reply`, the route the policy
+   * already names; with neither, nothing is sent. Auto mode only; it states no fact.
+   */
+  closingReply: LocalizedText.optional(),
   /** Labels the agent puts on every message (the model picks one), shown on the run and in its events. */
   categories: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
   /**

@@ -479,12 +479,12 @@ test("no em dash leaves in a reply: the model's dashes and the fixed texts' beco
   assert.match(JSON.stringify(handed.effects.sends), /handles this, write to support/);
 });
 
-test("a gap report's request id is the same for the same question and new for another (a held retry asks anew)", async () => {
-  const a = await gapRequestId("agent-1", "unanswered", "How to log in");
+test("B-141: a gap report's request id names the message and the kind, never the wording (a held retry is the same report)", async () => {
+  const a = await gapRequestId("agent-1", "unanswered");
   assert.match(a, /^agent-1-[0-9a-f]{12}$/);
-  assert.equal(a, await gapRequestId("agent-1", "unanswered", "How to log in"));
-  assert.notEqual(a, await gapRequestId("agent-1", "unanswered", "Why no code by SMS"));
-  assert.notEqual(a, await gapRequestId("agent-1", "outdated", "How to log in"));
+  assert.equal(a, await gapRequestId("agent-1", "unanswered"));
+  assert.notEqual(a, await gapRequestId("agent-1", "outdated"));
+  assert.notEqual(a, await gapRequestId("agent-2", "unanswered"));
 });
 
 test("tool results are read in rank order: the first is the answer, later ones are not (data agent contract)", async () => {
@@ -585,7 +585,7 @@ test("B-85: an abstained answer's results are unverified candidates, not facts; 
   assert.match(run.reason, /No confident answer/);
   const gaps = calls.filter((c) => c.tool === "acme.gaps.submit");
   assert.equal(gaps.length, 1);
-  assert.deepEqual(gaps[0].args, { requestId: await gapRequestId(run.id, "unanswered", "How to delete an account and its data"), kind: "unanswered", channel: "email", question: "How to delete an account and its data" });
+  assert.deepEqual(gaps[0].args, { requestId: await gapRequestId(run.id, "unanswered"), kind: "unanswered", channel: "email", question: "How to delete an account and its data" });
   assert.equal(run.toolCalls.find((c) => c.name.endsWith(":gap"))?.ok, true);
 });
 
@@ -656,7 +656,7 @@ test("B-85: a confident answer the model still cannot ground (grounded: false, w
   const run = (await h.run())!;
   assert.equal(run.status, "drafted");
   const gaps = calls.filter((c) => c.tool === "acme.gaps.submit");
-  assert.deepEqual(gaps.map((g) => g.args), [{ requestId: await gapRequestId(run.id, "unanswered", "How to recover a lost phone's account"), kind: "unanswered", channel: "email", question: "How to recover a lost phone's account" }]);
+  assert.deepEqual(gaps.map((g) => g.args), [{ requestId: await gapRequestId(run.id, "unanswered"), kind: "unanswered", channel: "email", question: "How to recover a lost phone's account" }]);
 });
 
 test("B-117: a question without an answer is kept on the run with its thread; a failed gap report is tried once more", async () => {
@@ -1095,4 +1095,169 @@ test("B-131: a message held a day gets one waiting reply, stays held, and the re
   assert.equal(limited.status, "held");
   assert.equal(limited.acknowledged, undefined);
   assert.equal(full.effects.sends.length, 0);
+});
+
+// ── B-141: review 2026-10-21 of the reply lanes ──
+
+const unsureTool = async (grant: { tool: string }) => (grant.tool === "gaps.submit" ? "{}" : JSON.stringify({ abstained: true, revision: { wiki: "w1", ledger: "d1" }, results: [] }));
+const holding = () => autonomous({ fallbackReply: undefined, holdUnsure: true });
+
+test("B-141: a failure before anything was sent is marked with its cause; an injection skip is marked; a sent run carries neither", async () => {
+  const model = harness({ model: async () => { throw new Error("rate limited"); } });
+  const m = (await model.run())!;
+  assert.deepEqual([m.status, m.failure], ["failed", "model"]);
+  const empty = harness({ model: async () => ({ decision: null, text: "" }) });
+  assert.equal((await empty.run())!.failure, "model");
+  const safety = harness({ injection: "error" });
+  assert.deepEqual([(await safety.run())!.status, (await safety.run())!.failure], ["failed", "safety"]);
+  const steer = harness({ injection: true });
+  const st = (await steer.run())!;
+  assert.deepEqual([st.status, st.injection, st.failure], ["skipped", true, undefined]);
+  const agentGone = harness({ settings: { agent: { id: "support" } } });
+  agentGone.deps.registry.getAgent = async () => { throw new Error("registry unreadable"); };
+  assert.equal((await agentGone.run())!.failure, "agent");
+  const unknown = harness({ send: async () => { throw new Error("socket closed"); } });
+  const u = (await unknown.run())!;
+  assert.deepEqual([u.status, u.failure], ["send_unknown", undefined], "a send that may have happened is never retried");
+  const ok = (await harness().run())!;
+  assert.deepEqual([ok.failure, ok.injection], [undefined, undefined]);
+});
+
+test("B-141: a gap is reported only when the knowledge abstained or the answer was not grounded, never for a failed tool or a checker's rejection", async () => {
+  const gaps: Record<string, unknown>[] = [];
+  const onGap = (out: () => string) => async (grant: { tool: string }, args: Record<string, unknown>) => {
+    if (grant.tool === "gaps.submit") { gaps.push(args); return "{}"; } return out(); };
+  // The knowledge tool is down: the model cannot ground its answer, but nothing is missing from the knowledge.
+  const down = harness({ agent: holding(), email: { subject: "Login", body: "<p>I cannot log in.</p>" },
+    callTool: async (grant, args) => { if (grant.tool === "gaps.submit") { gaps.push(args); return "{}"; } throw new Error("503 knowledge node down"); },
+    model: async () => ({ decision: answer({ intent: "login", grounded: false, question: "Why can the user not log in?" }), text: "" }) });
+  const r1 = (await down.run())!;
+  assert.equal(r1.status, "held", r1.reason);
+  assert.equal(gaps.length, 0, "a tool outage is not a gap");
+  assert.equal(r1.unanswered, undefined);
+  // The knowledge answered and the checker rejected the answer: not a gap either.
+  const rejected = harness({ agent: holding(), email: { subject: "Theme", body: "<p>How do I change the theme?</p>" },
+    callTool: onGap(() => JSON.stringify({ abstained: false, results: [{ id: "fact:theme", coverage: 0.9 }] })),
+    model: async () => ({ decision: answer({ intent: "how-to", summary: "The user asks how to change the theme." }), text: "", model: "xiaomi/mimo-v2.6-pro" }) });
+  rejected.deps.check = async () => ({ approved: false, reason: "names a menu the facts do not", model: "qwen/qwen3.8-flash" });
+  const r2 = (await rejected.run())!;
+  assert.equal(r2.status, "held");
+  assert.equal(gaps.length, 0, "a checker's rejection is not a gap");
+  assert.equal(r2.heldFacts, undefined, "and its retry is not skipped while the knowledge stays the same");
+  // The knowledge abstained: one gap, keyed by the run and its kind.
+  const missing = harness({ agent: holding(), email: { subject: "Login", body: "<p>I cannot log in.</p>" }, callTool: onGap(() => JSON.stringify({ abstained: true, results: [] })),
+    model: async () => ({ decision: answer({ intent: "login", grounded: false, question: "Why can the user not log in?" }), text: "" }) });
+  const r3 = (await missing.run())!;
+  assert.equal(gaps.length, 1);
+  assert.equal(gaps[0]!.requestId, await gapRequestId(r3.id, "unanswered"));
+  assert.deepEqual(r3.gapsReported, ["unanswered"]);
+});
+
+test("B-141: a retry of a message whose gap was reported does not report it again, whatever the new wording", async () => {
+  const gaps: Record<string, unknown>[] = [];
+  const h = harness({ agent: holding(), email: { subject: "Login", body: "<p>I cannot log in.</p>" },
+    callTool: async (grant, args) => { if (grant.tool === "gaps.submit") { gaps.push(args); return "{}"; } return JSON.stringify({ abstained: true, results: [] }); },
+    model: async () => ({ decision: answer({ intent: "login", grounded: false, question: "Login code does not arrive" }), text: "" }) });
+  const begin = h.deps.registry.beginRun;
+  h.deps.registry.beginRun = async (run) => begin({ ...run, attempt: 2, gapsReported: ["unanswered"] });
+  const run = (await h.run())!;
+  assert.equal(run.status, "held");
+  assert.equal(gaps.length, 0);
+  const record = run.toolCalls.find((c) => c.name.endsWith(":gap"))!;
+  assert.equal(record.ok, true, "shown as reported");
+  // A conflict from the knowledge base (the id was used with other words) counts as reported, not as a failure.
+  const conflict = harness({ agent: holding(), email: { subject: "Login", body: "<p>I cannot log in.</p>" },
+    callTool: async (grant) => { if (grant.tool === "gaps.submit") throw new Error("requestId x was already used for a different report; send it with a new requestId."); return JSON.stringify({ abstained: true, results: [] }); },
+    model: async () => ({ decision: answer({ intent: "login", grounded: false, question: "q" }), text: "" }) });
+  const c = (await conflict.run())!;
+  assert.deepEqual(c.gapsReported, ["unanswered"]);
+  assert.equal(c.toolCalls.find((x) => x.name.endsWith(":gap"))!.ok, true);
+});
+
+test("B-141: a message held for missing knowledge is not given to the model again while the knowledge's revision is the same", async () => {
+  const first = harness({ agent: holding(), email: { subject: "Login", body: "<p>I cannot log in.</p>" }, callTool: unsureTool,
+    model: async () => ({ decision: answer({ intent: "login", grounded: false, question: "Why can the user not log in?" }), text: "" }) });
+  const held = (await first.run())!;
+  assert.equal(held.status, "held");
+  assert.deepEqual(held.heldFacts?.revisions, { "https://kb.project.invalid/mcp": JSON.stringify({ ledger: "d1", wiki: "w1" }) });
+  assert.equal(held.heldFacts?.agent, "support@3");
+  assert.deepEqual(held.factsRevisions, held.heldFacts?.revisions);
+  const again = (revision: string, extra: Partial<AgentRun> = {}) => {
+    const h = harness({ agent: holding(), email: { subject: "Login", body: "<p>I cannot log in.</p>" },
+      callTool: async (grant) => (grant.tool === "gaps.submit" ? "{}" : JSON.stringify({ abstained: true, revision: JSON.parse(revision), results: [] })),
+      model: async () => ({ decision: answer({ intent: "login", grounded: false, question: "Why can the user not log in?" }), text: "" }) });
+    const begin = h.deps.registry.beginRun;
+    h.deps.registry.beginRun = async (run) => begin({ ...run, attempt: 2, heldFacts: held.heldFacts, gapsReported: held.gapsReported, ...extra });
+    return h;
+  };
+  const same = again(JSON.stringify({ wiki: "w1", ledger: "d1" }));
+  const r = (await same.run())!;
+  assert.equal(same.effects.modelCalls, 0, "the model is not asked again");
+  assert.equal(r.status, "held");
+  assert.match(r.reason, /has not changed/);
+  assert.equal(r.question, "Why can the user not log in?");
+  assert.deepEqual(r.heldFacts, held.heldFacts, "kept for the next try");
+  const moved = again(JSON.stringify({ wiki: "w2", ledger: "d1" }));
+  await moved.run();
+  assert.equal(moved.effects.modelCalls, 1, "a new revision is answered by the model");
+  const newVersion = again(JSON.stringify({ wiki: "w1", ledger: "d1" }), { heldFacts: { ...held.heldFacts!, agent: "support@2" } });
+  await newVersion.run();
+  assert.equal(newVersion.effects.modelCalls, 1, "an edited agent is answered by the model");
+  // The waiting reply still goes out a day after the message, on a skipped try too.
+  const dayOld = again(JSON.stringify({ wiki: "w1", ledger: "d1" }), { createdAt: new Date(Date.now() - 25 * 3_600_000).toISOString() });
+  const d = (await dayOld.run())!;
+  assert.equal(dayOld.effects.modelCalls, 0);
+  assert.equal(dayOld.effects.sends.length, 1);
+  assert.ok(d.acknowledged);
+});
+
+test("B-141: hand-off topics are matched on what the sender wrote now, not on the quoted earlier mail", async () => {
+  const confidentTool = async () => JSON.stringify({ abstained: false, results: [{ id: "fact:x", coverage: 0.9 }] });
+  const quoted = harness({ agent: autonomous(), callTool: confidentTool,
+    email: { subject: "Re: Login", body: "<p>Thanks, the code arrived.</p><div class=\"gmail_quote\">On Mon, Support wrote:<blockquote>Write to us about the Account Shop order.</blockquote></div>" },
+    model: async () => ({ decision: answer({ intent: "login", category: "login" }), text: "" }) });
+  assert.equal((await quoted.run())!.handoff, undefined);
+  const plain = harness({ agent: autonomous(), callTool: confidentTool,
+    email: { subject: "Re: Login", body: "<p>Thanks. Also, my Account Shop order is broken.</p><p>On Mon, 20 Oct 2026 at 10:00, Support &lt;s@x.invalid&gt; wrote:</p><p>&gt; earlier</p>" },
+    model: async () => ({ decision: answer({ intent: "login", category: "login" }), text: "" }) });
+  assert.equal((await plain.run())!.handoff, true);
+});
+
+test("B-141: the closing reply names another route: the policy's own, else an apology and the hand-off reply; never from a drafting address", async () => {
+  const { closeRun, DEFAULT_CLOSING_REPLY } = await import("../workers/agents/runner");
+  const base = (h: ReturnType<typeof harness>) => ({ id: "agent-" + "c".repeat(32), mailboxId: MAILBOX, emailId: "incoming-1", sender: "", subject: "",
+    agentId: "support", agentVersion: 3, status: "held" as const, reason: "", toolCalls: [], createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z", _h: h });
+  const ru = harness({ agent: holding(), email: { subject: "Вход", body: "<p>Не могу войти.</p>" } });
+  const r1 = await closeRun(base(ru), ru.deps);
+  assert.equal(r1.status, "accepted");
+  const sent = ru.effects.sends[0] as any;
+  assert.equal(sent.idempotencyKey, `agent-${"c".repeat(32)}:closing`);
+  assert.equal(sent.request.auto_submitted, true);
+  assert.equal(sent.request.text, `${DEFAULT_CLOSING_REPLY.ru}\n\nЭтим занимается человек: напишите менеджеру поддержки.`);
+  const own = harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true, closingReply: { en: "Please write to @help in Telegram." } }) });
+  await closeRun(base(own), own.deps);
+  assert.equal((own.effects.sends[0] as any).request.text, "Please write to @help in Telegram.");
+  const noRoute = harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true, handoff: undefined }) });
+  assert.deepEqual(await closeRun(base(noRoute), noRoute.deps), { status: "not_sent", reason: "no other route in the policy" });
+  const drafting = harness({ agent: agent({ replyPolicy: { mode: "draft" } }) });
+  assert.equal((await closeRun(base(drafting), drafting.deps)).status, "not_sent");
+  const answered = harness({ agent: holding(), thread: [
+    { id: "incoming-1", sender: "ann@customer.invalid", recipient: MAILBOX, date: "2026-09-28T10:00:00.000Z", folder_id: "inbox", body: "q" },
+    { id: "mine", sender: MAILBOX, recipient: "ann@customer.invalid", date: "2026-09-29T10:00:00.000Z", folder_id: "sent", body: "It costs 10 EUR." }] });
+  assert.deepEqual(await closeRun(base(answered), answered.deps), { status: "not_sent", reason: "answered" });
+  const limited = harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true, dailySendLimit: 1 }), sentToday: 1 });
+  assert.equal((await closeRun(base(limited), limited.deps)).status, "retry");
+  for (const h of [noRoute, drafting, answered, limited]) assert.equal(h.effects.sends.length, 0);
+});
+
+test("B-141: the new part of a mail stops at the quoted history in English, Russian, Gmail, Outlook and > quotes", async () => {
+  const { newText } = await import("../shared/mail/text");
+  assert.equal(newText("<p>Refund please</p><blockquote>old refund talk</blockquote>"), "Refund please");
+  assert.equal(newText("<div>New</div><div class=\"gmail_quote\">On Mon wrote:<br>old</div>"), "New");
+  assert.equal(newText("Thanks<br>On Mon, 20 Oct 2026 at 10:00, Ann<br>&lt;a@x&gt; wrote:<br>&gt; old"), "Thanks");
+  assert.equal(newText("Спасибо<br>пн, 20 окт. 2026 г. в 10:00, Ann &lt;a@x&gt;:<br>старое"), "Спасибо");
+  assert.equal(newText("Спасибо<br>20 октября Иван написал(а):<br>старое"), "Спасибо");
+  assert.equal(newText("Hi<br>From: Support<br>Sent: Monday<br>Subject: x<br>old"), "Hi");
+  assert.equal(newText("Hi<br>&gt; quoted line<br>more"), "Hi\nmore");
+  assert.equal(newText("As I said before, I wrote twice.<br>Still nothing."), "As I said before, I wrote twice.\nStill nothing.");
 });

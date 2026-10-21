@@ -5,6 +5,28 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.23.0 (2026-10-21)
+
+- **A message the agent could not handle is no longer left in silence.** When the model, the safety
+  check or reading the agent fails before anything was sent, the agent tries again an hour later
+  (then like a message it was not sure of), and after 4 hours one `agent.waiting` event says the
+  message still waits. A message the safety check held back gets that event too.
+- **When the retries end, the sender hears where to turn.** A message still unanswered 30 days after
+  it came gets one fixed reply naming another way to get help: the address's own reply when its policy
+  sets one (Settings → Agents, Reply when it stops trying; `closingReply` for agents), else a short
+  apology followed by its hand-off reply. A drafting address sends nothing. A second `agent.waiting`
+  event says the agent stopped trying.
+- **Retries follow the knowledge.** A message held because the knowledge had no answer is not given to
+  the model again while the knowledge is at the same revision, and is answered again within seconds
+  once a newer revision is seen, instead of at the next 12-hour try.
+- **One gap report per message.** A question is reported to the knowledge only when the knowledge had
+  no answer, not when a tool was down or the checker rejected the reply, and a retry of the same
+  message does not report it again.
+- **Hand-off topics read only what the sender wrote now**, not the quoted earlier mail, so a reply that
+  quotes a refund conversation is not handed to a person for that.
+- **An automation rule whose AI condition fails is tried again** (three attempts, a minute and five
+  minutes apart) and the failure is logged, instead of failing silently.
+
 ## 0.22.0 (2026-10-21)
 
 - **A conversation reads as one page.** Its messages stand one under another, the oldest at the top

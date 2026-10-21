@@ -17,6 +17,12 @@ export interface RunDependencies {
   execute(run: Run, email: RuleEmail): Promise<string>;
 }
 export class ActionRejected extends Error {}
+/**
+ * B-141: reading or analysing a message (the AI condition) is tried this many times, ANALYSIS_RETRY_MS[n]
+ * apart, before the run fails; nothing was executed, so trying again is safe.
+ */
+export const MAX_ANALYSIS_ATTEMPTS = 3;
+export const ANALYSIS_RETRY_MS = [60_000, 5 * 60_000];
 /** Persist running before crossing any effect boundary. Interrupted runs are never replayed blindly. */
 export async function processRun(
   run: Run,
@@ -82,10 +88,21 @@ export async function processRun(
       await save();
       return run;
     }
-  } catch {
-    run.status = "failed";
-    run.detail =
-      msg("Could not read or analyze this message; no action was executed");
+  } catch (error) {
+    const attempts = run.attempts ?? 1;
+    const retry = attempts < MAX_ANALYSIS_ATTEMPTS;
+    // Codes and the error's own words, never the message or its analysis.
+    console.warn(JSON.stringify({ event: "automation_analysis_failed", rule: run.rule.id, version: run.rule.version, attempt: attempts, retry,
+      error: String(error instanceof Error ? error.message : error).slice(0, 200) }));
+    if (retry) {
+      run.status = "pending";
+      run.retryAt = new Date(Date.now() + ANALYSIS_RETRY_MS[Math.min(attempts, ANALYSIS_RETRY_MS.length) - 1]!).toISOString();
+      run.detail = msg("Could not read or analyze this message (attempt {attempt} of {max}); it is tried again", { attempt: attempts, max: MAX_ANALYSIS_ATTEMPTS });
+    } else {
+      run.status = "failed";
+      delete run.retryAt;
+      run.detail = msg("Could not read or analyze this message after {max} attempts; no action was executed", { max: MAX_ANALYSIS_ATTEMPTS });
+    }
     await save();
     return run;
   }

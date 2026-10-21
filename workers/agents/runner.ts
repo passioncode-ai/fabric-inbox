@@ -1,6 +1,6 @@
 import { scrubPersonal } from "./events";
 import { queryLanguage } from "./language";
-import { htmlToText as linesOf } from "../../shared/mail/text";
+import { htmlToText as linesOf, newText } from "../../shared/mail/text";
 import type { SendMailCommand, SendMailResult } from "../../shared/mail/send";
 import { LEGACY_INSTRUCTIONS, callArguments, legacyAgentId, modelSchema, publicOnlyProblem, readAssignment, type AgentVersion, type ToolGrant } from "./definition";
 import { decide, isFollowUpSubject, matchedTopic, type ModelDecision } from "./policy";
@@ -38,6 +38,42 @@ export const DEFAULT_WAITING_REPLY = {
   en: "Thank you for your message. We are checking the answer and will reply in this thread as soon as we have it.",
   ru: "Спасибо за письмо. Мы уточняем ответ и напишем в этой переписке, как только он будет готов.",
 };
+/**
+ * B-141: the opening of the closing reply when the policy names none of its own; the policy's hand-off
+ * reply follows it, naming another route. No fact, only that no answer was found.
+ */
+export const DEFAULT_CLOSING_REPLY = {
+  en: "We are sorry: we could not find a reliable answer to your question.",
+  ru: "Извините, мы не нашли точного ответа на ваш вопрос.",
+};
+
+/**
+ * B-141: a knowledge answer's revision (its top-level `revision`, a string or an object such as
+ * `{ledger, wiki}`), as one stable string; null when the output carries none.
+ */
+export function revisionOf(text: string): string | null {
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { return null; }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const revision = (value as Record<string, unknown>).revision;
+  if (typeof revision === "string") return revision.trim() ? revision.slice(0, 200) : null;
+  if (!revision || typeof revision !== "object") return null;
+  const sorted = (v: unknown): unknown => (v && typeof v === "object" && !Array.isArray(v)
+    ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([k, x]) => [k, sorted(x)])) : v);
+  return JSON.stringify(sorted(revision)).slice(0, 400);
+}
+
+/** B-141: where a knowledge tool's revision is kept: its endpoint without query or fragment. */
+export function factsKey(endpoint: string): string {
+  try { const url = new URL(endpoint); return `${url.origin}${url.pathname}`; } catch { return endpoint; }
+}
+
+/** The texts of the waiting replies a run may have sent: such a reply in Sent is not an answer (B-131). */
+function waitingTextsOf(run: AgentRun, agent: AgentVersion | null, htmlToText: (h: string) => string): string[] {
+  return [run.acknowledged?.text, agent?.replyPolicy.waitingReply?.en, agent?.replyPolicy.waitingReply?.ru,
+    DEFAULT_WAITING_REPLY.en, DEFAULT_WAITING_REPLY.ru].filter((t): t is string => !!t?.trim())
+    .map((t) => htmlToText(t).trim().slice(0, 60));
+}
 
 export interface RunnerThreadMessage {
   id: string;
@@ -81,9 +117,12 @@ export function withoutDashes(text: string): string {
   return text.replace(/(\S)[ \t]+(?:\u2014|\u2013|--|-)[ \t]+(?=\S)/g, "$1, ").replace(/\u2014/g, "-");
 }
 
-/** A gap report's request id: the run's id and the first 12 hex digits of SHA-256 over its kind and question. */
-export async function gapRequestId(runId: string, kind: string, question: string): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${kind}\n${question}`)));
+/**
+ * A gap report's request id: the run's id and the first 12 hex digits of SHA-256 over its kind. B-141: never
+ * over the question's wording, so every attempt at one message files the same report.
+ */
+export async function gapRequestId(runId: string, kind: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(kind)));
   return `${runId}-${Array.from(digest.slice(0, 6), (b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
 
@@ -356,14 +395,18 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   const claim = await deps.registry.beginRun(draftRun);
   if (!claim.claimed) return claim.run;
   const run = claim.run;
-  const finish = async (status: AgentRun["status"], reason: string) => {
+  const finish = async (status: AgentRun["status"], reason: string, failure?: AgentRun["failure"]) => {
     run.status = status;
     run.reason = reason;
     delete run.phase;
+    // B-141: a failure before anything was sent is retried and escalated; any other end clears the mark.
+    if (status === "failed" && failure) run.failure = failure; else delete run.failure;
+    if (status !== "held") delete run.heldFacts;
+    if (run.factsRevisions && !Object.keys(run.factsRevisions).length) delete run.factsRevisions;
     await deps.registry.saveRun(run);
     return run;
   };
-  if (resolveError || !agent) return finish("failed", msg("Could not read the agent for this address: {error}", { error: String(resolveError) }));
+  if (resolveError || !agent) return finish("failed", msg("Could not read the agent for this address: {error}", { error: String(resolveError) }), "agent");
   run.agentId = agent.id;
   run.agentVersion = agent.version;
   if (answeredFrom) return finish("skipped", duplicateReason(answeredFrom));
@@ -374,7 +417,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   } catch (error) {
     return sendStarted
       ? finish("send_unknown", msg("The send may or may not have happened ({error}). Check Sent before answering again.", { error: (error as Error).message }))
-      : finish("failed", msg("The answer could not be completed ({error}); the message is left for the operator", { error: (error as Error).message }));
+      : finish("failed", msg("The answer could not be completed ({error}); the message is left for the operator", { error: (error as Error).message }), "answer");
   }
 
   async function answer(agent: AgentVersion, settings: Record<string, unknown> | null, email: RunnerEmail): Promise<AgentRun> {
@@ -388,9 +431,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   const received = Date.parse(email.date);
   // B-131: a waiting reply is not an answer: not this run's, and not one sent for an earlier message of
   // the same conversation (review 2026-10-21: it silenced a held follow-up), so the real one still goes out.
-  const waitingTexts = [run.acknowledged?.text, agent.replyPolicy.waitingReply?.en, agent.replyPolicy.waitingReply?.ru,
-    DEFAULT_WAITING_REPLY.en, DEFAULT_WAITING_REPLY.ru].filter((t): t is string => !!t?.trim())
-    .map((t) => deps.htmlToText(t).trim().slice(0, 60));
+  const waitingTexts = waitingTextsOf(run, agent, deps.htmlToText);
   const answeredAfter = thread.some((m) => m.folder_id === "sent" && Date.parse(m.date) > received
     && !waitingTexts.some((w) => deps.htmlToText(m.body).trim().startsWith(w)));
   const headers = parseStoredHeaders(email.raw_headers);
@@ -401,8 +442,9 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
 
   const prompt = userPrompt(email, thread, mailboxId, deps.htmlToText);
   const scan = await deps.injection(prompt);
-  if (scan.error) return finish("failed", msg("The safety check could not run ({error}); the message is left for the operator", { error: scan.error }));
-  if (scan.flagged) return finish("skipped", msg("The message may be trying to steer the agent; left for the operator"));
+  if (scan.error) return finish("failed", msg("The safety check could not run ({error}); the message is left for the operator", { error: scan.error }), "safety");
+  // B-141: never answered, but escalated at 4 hours like a held message, so a person sees it.
+  if (scan.flagged) { run.injection = true; return finish("skipped", msg("The message may be trying to steer the agent; left for the operator")); }
 
   // Knowledge (KN-4): passages from the agent's own collections, found before the
   // model runs; a failed search is recorded and keeps the answer a draft.
@@ -424,6 +466,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   }
 
   const toolCalls: ToolCallRecord[] = run.toolCalls;
+  const factsRevisions: Record<string, string> = {};
+  run.factsRevisions = factsRevisions;
   /** One call of a granted tool, recorded; `ok` is false when nothing of it may be used. */
   const callGrant = async (grant: ToolGrant, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> => {
     const started = Date.now();
@@ -455,6 +499,9 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       }
       record.ok = true;
       record.result = text.slice(0, RESULT_PREVIEW_CHARS);
+      // B-141: the knowledge's revision, abstained or not: a held retry compares it with the last attempt's.
+      const revision = revisionOf(text);
+      if (revision) factsRevisions[factsKey(grant.endpoint)] = revision;
       // A confident answer is what an evidence-only policy sends on, and what a sent answer is traced to.
       factTexts.push(`[${grant.name}]\n${text.slice(0, 4000)}`);
       const trace = evidenceOf(grant.name, text);
@@ -492,6 +539,42 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // Line breaks kept and entities decoded: the data agent reads a mail by sentence — the subject, then
   // the body's first sentence — and skips a quoted reply by its header at a line start.
   const opening = `${email.subject}\n${linesOf(email.body).slice(0, 600)}`;
+  const localized = (text: { en: string; ru?: string }) => (queryLanguage(opening) === "ru" && text.ru ? text.ru : text.en);
+  /**
+   * Not sure, so not answered yet: the run is held and tried again (retryHeld). B-131: nobody waits without
+   * a word; a day after the message came, one fixed reply says the answer follows here.
+   */
+  const hold = async (reason: string): Promise<AgentRun> => {
+    const policy = agent.replyPolicy;
+    if (!run.acknowledged && Date.now() - Date.parse(run.createdAt) >= SAFE_DEFAULT_MS) {
+      const text = localized(policy.waitingReply ?? DEFAULT_WAITING_REPLY);
+      const signature = settings?.signature as { enabled?: boolean; text?: string } | undefined;
+      const signed = withoutDashes(signature?.enabled && signature.text?.trim() ? `${text}\n\n${signature.text.trim()}` : text);
+      if (!(await deps.registry.reserveSend(mailboxId, policy.dailySendLimit)))
+        return finish("held", msg("{reason}. The waiting reply was not sent: the daily send limit is reached", { reason }));
+      const to = replyTo || email.sender;
+      let status: "accepted" | "unknown" | null = null;
+      try {
+        const result = await deps.mailbox.send({
+          mailboxId, idempotencyKey: `${run.id}:waiting`, kind: "reply", originalEmailId: email.id,
+          request: {
+            from: typeof settings?.fromName === "string" && settings.fromName.trim()
+              ? { email: mailboxId, name: settings.fromName.trim().slice(0, 100) } : mailboxId,
+            to, subject: replySubject(email.subject), text: signed, html: textHtml(signed), auto_submitted: true,
+          },
+        });
+        status = "error" in result || result.status === "failed" ? null : result.status === "accepted" ? "accepted" : "unknown";
+      } catch {
+        // The send may have happened: never sent twice, so it counts as sent with an unknown outcome.
+        status = "unknown";
+      }
+      if (!status) return finish("held", msg("{reason}. The waiting reply was refused; it is tried again with the next attempt", { reason }));
+      run.acknowledged = { at: new Date().toISOString(), status, text: signed.slice(0, 2000) };
+      console.log(JSON.stringify({ event: "agent_waiting_reply_sent", run: run.id, status }));
+      return finish("held", msg("{reason}. A reply saying the answer follows was sent", { reason }));
+    }
+    return finish("held", reason);
+  };
   const prefetchGrants = agent.tools.filter((grant) => grant.prefetch);
   // The knowledge tools read English and Russian; a message in another language is asked as its
   // English restatement, never as it is, or it can match a wrong fact with full confidence.
@@ -527,6 +610,19 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     return { name: grant.name, ok: result.ok, text: result.ok ? result.text : "", abstained: result.ok && abstainedOutput(result.text) };
   }));
   if (prefetched.some((r) => r.abstained)) abstainedAny = true;
+  // B-141: a message held for missing knowledge is not given to the model again while the knowledge is the
+  // same: every endpoint answered with the revision of the last attempt, for the same agent version. Only
+  // the tools' own answers count; an agent that also searches collections is always answered again.
+  const last = run.heldFacts;
+  const unchanged = !!last && last.agent === `${agent.id}@${agent.version}` && !collections.length && prefetchGrants.length > 0
+    && prefetched.every((r) => r.ok) && Object.keys(last.revisions).length > 0
+    && Object.entries(last.revisions).every(([endpoint, revision]) => factsRevisions[endpoint] === revision);
+  if (unchanged) {
+    if (last!.question) { run.question = last!.question; run.unanswered = true; }
+    run.threadId = (email.thread_id as string | null | undefined) || email.id;
+    console.log(JSON.stringify({ event: "agent_held_unchanged", run: run.id, attempt: run.attempt ?? 1 }));
+    return hold(msg("Not sure, so not answered yet: the knowledge has not changed since the last attempt"));
+  }
 
   const asked = new Set<string>();
   if (collections.length) tools.push({
@@ -564,12 +660,12 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   } catch (error) {
     const counted = (error as { calls?: { calls: number; failed: number; recovered: number } }).calls;
     run.modelCalls = counted ? { ...counted } : { calls: 1, failed: 1, recovered: 0 };
-    return finish("failed", msg("The model could not answer ({error}); the message is left for the operator", { error: (error as Error).message }));
+    return finish("failed", msg("The model could not answer ({error}); the message is left for the operator", { error: (error as Error).message }), "model");
   }
   // No structured answer and no text: nothing was decided, so the message waits for a person
   // instead of reading as a deliberate skip.
   if (!response.decision && !response.text.trim())
-    return finish("failed", msg("The agent did not produce an answer; the message is left for the operator"));
+    return finish("failed", msg("The agent did not produce an answer; the message is left for the operator"), "model");
   const proposal: ModelDecision = response.decision ?? {
     decision: "draft",
     intent: "",
@@ -602,7 +698,11 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // Reported when the knowledge abstained, or when the model could not ground its answer and says what
   // was asked; one report per run, whatever the number of calls (B-85, data agent README "Reporting gaps").
   const question = scrubPersonal((proposal.question ?? "").trim()).slice(0, 1000);
-  const unanswered = abstainedAny || proposal.grounded === false;
+  // B-141: a gap is what the knowledge lacks: it abstained, or it answered and the model still could not
+  // ground the reply. A tool that failed or was withheld, or a knowledge search that failed, says nothing
+  // about the knowledge, so it is not a gap; neither is a checker's rejection (it comes later).
+  const outage = !!knowledgeProblem || toolCalls.some((c) => !c.ok && c.name !== "search_knowledge" && !c.name.endsWith(":gap"));
+  const unanswered = abstainedAny || (proposal.grounded === false && !outage);
   // B-117: the question is kept on the run, with its conversation, for the Unanswered questions list.
   if (question && unanswered) { run.question = question; run.unanswered = true; }
   run.threadId = (email.thread_id as string | null | undefined) || email.id;
@@ -618,19 +718,29 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       const started = Date.now();
       const record: ToolCallRecord = { name: `${grant.name}:gap`, host: hostOf(grant.endpoint), ok: false, ms: 0, result: "" };
       toolCalls.push(record);
+      // B-141: one report per message and kind, however many times it is tried again.
+      if ((run.gapsReported ?? []).includes(kind)) {
+        record.ok = true;
+        record.result = msg("Already reported for this message").slice(0, RESULT_PREVIEW_CHARS);
+        continue;
+      }
+      const reported = () => { run.gapsReported = [...new Set([...(run.gapsReported ?? []), kind])]; };
       try {
         const channel = typeof grant.fixed?.channel === "string" ? grant.fixed.channel : "email";
-        // The request id names this report: the same question from this message is one report, and a run
-        // answered again with another question (a held retry) is a new one — the knowledge base refuses a
-        // reused id with other content (live 2026-10-18: "already used for a different report").
-        const requestId = await gapRequestId(run.id, kind, text);
+        // B-141: the request id names the message and the kind, not the wording, so a retry that words the
+        // question anew is the same report (the knowledge base answers a reused id with other words as a conflict).
+        const requestId = await gapRequestId(run.id, kind);
         const report = () => deps.callTool({ ...grant, tool: grant.gaps!.tool }, { requestId, kind, channel, question: text });
         // Tried once more on failure, with the same request id, so the knowledge base counts it once (B-117).
         const out = await report().catch(() => report());
         record.ok = true;
         record.result = out.slice(0, RESULT_PREVIEW_CHARS);
+        reported();
       } catch (error) {
-        record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
+        const text = (error as Error).message;
+        // The id was used before with other words: the message's gap is already there.
+        if (/already used for a different report|conflict/i.test(text)) { record.ok = true; reported(); }
+        record.result = msg("Error: {error}", { error: text }).slice(0, RESULT_PREVIEW_CHARS);
       } finally {
         record.ms = Date.now() - started;
       }
@@ -662,9 +772,9 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // fixed texts, so nothing unverified is sent; the daily and rate limits still keep a draft.
   let body = proposal.body.trim();
   if (policy.mode === "auto" && outcome.action !== "skip") {
-    const localized = (text: { en: string; ru?: string }) => (queryLanguage(opening) === "ru" && text.ru ? text.ru : text.en);
     const handoff = policy.handoff;
-    const handText = `${email.subject}\n${deps.htmlToText(email.body)}\n${run.summary ?? ""}`;
+    // B-141: only what the sender wrote now; a topic in the quoted history of an earlier answer is not this message's.
+    const handText = `${email.subject}\n${newText(email.body)}\n${run.summary ?? ""}`;
     if (handoff && ((run.category && handoff.categories.some((c) => c.toLowerCase() === run.category!.toLowerCase())) || matchedTopic(handoff.topics, handText))) {
       if (!(outcome.action === "draft" && outcome.capacity)) outcome = { action: "send", reason: msg("Handed to a person: the reply says whom to contact") };
       const own = run.category ? Object.entries(handoff.replies ?? {}).find(([c]) => c.toLowerCase() === run.category!.toLowerCase())?.[1] : undefined;
@@ -704,41 +814,16 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       body = localized(policy.fallbackReply);
       run.fallback = true;
     } else if (outcome.action === "draft" && !outcome.capacity && policy.holdUnsure) {
-      // No drafts: what the agent is not sure of is not answered yet. The question goes to the knowledge
-      // owner, and the message is answered again (answer_again) once the knowledge has it.
+      // No drafts: what the agent is not sure of is not answered yet. A question the knowledge lacks goes to
+      // its owner, and the message is answered again (answer_again) once the knowledge has it.
       const held = scrubPersonal((proposal.question || proposal.summary || "").trim()).slice(0, 1000);
-      if (held) { run.question = held; run.unanswered = true; await reportGap("unanswered", held); }
-      const reason = msg("Not sure, so not answered yet: {reason}", { reason: outcome.reason });
-      // B-131: nobody waits without a word. A day after the message came, one fixed reply says the
-      // answer follows here; the run stays held and is answered once the knowledge has it.
-      if (!run.acknowledged && Date.now() - Date.parse(run.createdAt) >= SAFE_DEFAULT_MS) {
-        const text = localized(policy.waitingReply ?? DEFAULT_WAITING_REPLY);
-        const signature = settings?.signature as { enabled?: boolean; text?: string } | undefined;
-        const signed = withoutDashes(signature?.enabled && signature.text?.trim() ? `${text}\n\n${signature.text.trim()}` : text);
-        if (!(await deps.registry.reserveSend(mailboxId, policy.dailySendLimit)))
-          return finish("held", msg("{reason}. The waiting reply was not sent: the daily send limit is reached", { reason }));
-        const to = replyTo || email.sender;
-        let status: "accepted" | "unknown" | null = null;
-        try {
-          const result = await deps.mailbox.send({
-            mailboxId, idempotencyKey: `${run.id}:waiting`, kind: "reply", originalEmailId: email.id,
-            request: {
-              from: typeof settings?.fromName === "string" && settings.fromName.trim()
-                ? { email: mailboxId, name: settings.fromName.trim().slice(0, 100) } : mailboxId,
-              to, subject: replySubject(email.subject), text: signed, html: textHtml(signed), auto_submitted: true,
-            },
-          });
-          status = "error" in result || result.status === "failed" ? null : result.status === "accepted" ? "accepted" : "unknown";
-        } catch {
-          // The send may have happened: never sent twice, so it counts as sent with an unknown outcome.
-          status = "unknown";
-        }
-        if (!status) return finish("held", msg("{reason}. The waiting reply was refused; it is tried again with the next attempt", { reason }));
-        run.acknowledged = { at: new Date().toISOString(), status, text: signed.slice(0, 2000) };
-        console.log(JSON.stringify({ event: "agent_waiting_reply_sent", run: run.id, status }));
-        return finish("held", msg("{reason}. A reply saying the answer follows was sent", { reason }));
-      }
-      return finish("held", reason);
+      // B-141: only a gap in the knowledge is reported (not a failed tool, a listed topic or a checker's
+      // rejection), and only then is the retry skipped while the knowledge stays the same.
+      if (held && unanswered) { run.question = held; run.unanswered = true; await reportGap("unanswered", held); }
+      if (unanswered && !collections.length && Object.keys(factsRevisions).length)
+        run.heldFacts = { agent: `${agent.id}@${agent.version}`, revisions: { ...factsRevisions }, ...(run.question ? { question: run.question } : {}) };
+      else delete run.heldFacts;
+      return hold(msg("Not sure, so not answered yet: {reason}", { reason: outcome.reason }));
     }
   }
   if (outcome.action === "skip") return finish("skipped", outcome.reason);
@@ -763,7 +848,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       return await saveDraft(msg("Daily send limit of {limit} reached", { limit: policy.dailySendLimit ?? 0 }));
     }
   } catch (error) {
-    return finish("failed", msg("Could not save the answer: {error}", { error: (error as Error).message }));
+    return finish("failed", msg("Could not save the answer: {error}", { error: (error as Error).message }), "save");
   }
 
   // The effect boundary. Anything after the call started is unknown unless the
@@ -804,6 +889,57 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     return saveDraft(msg("The provider rejected the send ({code}); saved as a draft", { code: result.errorCode ?? "failed" }));
   }
   return finish("send_unknown", msg("The provider did not confirm the send. Check Sent before answering again."));
+  }
+}
+
+/** What happened to a run's closing reply: sent, sent with an unknown outcome, not sent (and why), or try later. */
+export type ClosingResult = { status: "accepted" | "unknown" | "not_sent"; reason?: string } | { status: "retry"; reason: string };
+
+/**
+ * B-141: the end of a message's retries (HELD_FOR_MS). A held message, or one whose run failed before
+ * anything was sent, gets one fixed reply naming another route: the policy's `closingReply`, else the
+ * default apology and its `handoff.reply`. Nothing goes out from a drafting address, without a route, to
+ * a message moved to Spam or Trash, or to one already answered in its conversation. Idempotency key
+ * `<run>:closing`, within the daily send limit (at the limit: tried again later).
+ */
+export async function closeRun(run: AgentRun, deps: RunnerDeps): Promise<ClosingResult> {
+  const agent = run.agentId ? await deps.registry.getAgent(run.agentId) : null;
+  if (!agent) return { status: "not_sent", reason: "no agent" };
+  const policy = agent.replyPolicy;
+  if (policy.mode !== "auto") return { status: "not_sent", reason: "drafting address" };
+  const handoff = policy.handoff?.reply;
+  const text = policy.closingReply ?? (handoff
+    ? { en: `${DEFAULT_CLOSING_REPLY.en}\n\n${handoff.en}`, ...(handoff.ru ? { ru: `${DEFAULT_CLOSING_REPLY.ru}\n\n${handoff.ru}` } : {}) } : null);
+  if (!text) return { status: "not_sent", reason: "no other route in the policy" };
+  const email = await deps.mailbox.email(run.emailId);
+  if (!email || email.folder_id === "spam" || email.folder_id === "trash") return { status: "not_sent", reason: "message gone" };
+  const thread = email.thread_id ? await deps.mailbox.thread(email.thread_id) : [];
+  const received = Date.parse(email.date);
+  const waiting = waitingTextsOf(run, agent, deps.htmlToText);
+  if (thread.some((m) => m.folder_id === "sent" && Date.parse(m.date) > received && !waiting.some((w) => deps.htmlToText(m.body).trim().startsWith(w))))
+    return { status: "not_sent", reason: "answered" };
+  const settings = await deps.mailbox.settings();
+  const opening = `${email.subject}\n${linesOf(email.body).slice(0, 600)}`;
+  const chosen = queryLanguage(opening) === "ru" && text.ru ? text.ru : text.en;
+  const signature = settings?.signature as { enabled?: boolean; text?: string } | undefined;
+  const signed = withoutDashes(signature?.enabled && signature.text?.trim() ? `${chosen}\n\n${signature.text.trim()}` : chosen);
+  if (!(await deps.registry.reserveSend(run.mailboxId, policy.dailySendLimit))) return { status: "retry", reason: "daily send limit" };
+  const mailboxId = run.mailboxId;
+  try {
+    const result = await deps.mailbox.send({
+      mailboxId, idempotencyKey: `${run.id}:closing`, kind: "reply", originalEmailId: email.id,
+      request: {
+        from: typeof settings?.fromName === "string" && settings.fromName.trim() ? { email: mailboxId, name: settings.fromName.trim().slice(0, 100) } : mailboxId,
+        to: replyToAddress(parseStoredHeaders(email.raw_headers)) || email.sender, subject: replySubject(email.subject),
+        text: signed, html: textHtml(signed), auto_submitted: true,
+      },
+    });
+    if ("error" in result) return { status: "retry", reason: String(result.error).slice(0, 120) };
+    if (result.status === "failed") return { status: "not_sent", reason: `provider refused (${result.errorCode ?? "failed"})` };
+    return { status: result.status === "accepted" ? "accepted" : "unknown" };
+  } catch {
+    // The send may have happened: never sent twice.
+    return { status: "unknown" };
   }
 }
 

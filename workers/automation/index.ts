@@ -491,7 +491,8 @@ export class AutomationDO extends DurableObject<Env> {
     const pending = [
       ...(await this.ctx.storage.list<Run>({ prefix: "run:" })).values(),
     ]
-      .filter((r) => r.status === "pending")
+      // B-141: a run waiting out its retry delay is not taken yet.
+      .filter((r) => r.status === "pending" && !(r.retryAt && Date.parse(r.retryAt) > Date.now()))
       .slice(0, 10);
     for (const run of pending)
       await processRun(run, {
@@ -508,10 +509,14 @@ export class AutomationDO extends DurableObject<Env> {
         analyze: (rule, email) => this.analyze(rule, email),
         execute: (r, email) => this.execute(r, email),
       });
-    const remains = [
+    const waiting = [
       ...(await this.ctx.storage.list<Run>({ prefix: "run:" })).values(),
-    ].some((r) => r.status === "pending");
-    if (remains) await this.ctx.storage.setAlarm(Date.now() + 1000);
+    ].filter((r) => r.status === "pending");
+    if (waiting.length) {
+      // The soonest a pending run may be taken: now for a fresh one, its retry time for one that failed (B-141).
+      const soonest = Math.min(...waiting.map((r) => (r.retryAt ? Date.parse(r.retryAt) : 0)));
+      await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, Number.isFinite(soonest) ? soonest : 0));
+    }
     // Once a day the store is kept bounded, so reading every run stays cheap.
     const today = new Date().toISOString().slice(0, 10);
     if ((await this.ctx.storage.get<string>("pruned:day")) !== today) {

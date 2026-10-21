@@ -94,6 +94,29 @@ export interface AgentRun {
   judgement?: import("./judge").JudgeVerdict;
   /** B-130: the sender, subject and texts were removed 30 days after the run began; counts stay. */
   redacted?: boolean;
+  /**
+   * Review 2026-10-21 (B-141): why a run failed before anything was sent (the model, the safety check, reading
+   * the agent or the message, completing or saving the answer). Such a run is retried like a held one and
+   * escalated at 4 hours; a failure after the send began is never marked, so it is never retried.
+   */
+  failure?: "model" | "safety" | "agent" | "read" | "answer" | "save";
+  /** B-141: skipped because the message looked like an attempt to steer the agent; escalated at 4 hours, never retried. */
+  injection?: boolean;
+  /** B-141: the revision each knowledge endpoint answered with in this run (its `revision`), by endpoint. */
+  factsRevisions?: Record<string, string>;
+  /**
+   * B-141: held for missing knowledge (the tool abstained or the answer was not grounded) with these revisions,
+   * this agent version and question. A retry while every revision is the same is held again without the model;
+   * a revision seen to change answers it again at once. Kept across retries; answer_again by a person drops it.
+   */
+  heldFacts?: { agent: string; revisions: Record<string, string>; question?: string };
+  /** B-141: gap kinds already reported for this message; a retry does not report them again. */
+  gapsReported?: string[];
+  /** B-141: when the retries ended (HELD_FOR_MS) and the closing reply was handled; set once per message. */
+  closedAt?: string;
+  closing?: { status: "accepted" | "unknown" | "not_sent"; reason?: string };
+  /** B-141: when a closing that could not go out (send limit, unreadable mailbox) is tried again. */
+  closeCheckAt?: string;
   createdAt: string;
   updatedAt: string;
 }

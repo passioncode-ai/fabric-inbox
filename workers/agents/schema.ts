@@ -60,4 +60,12 @@ export const AGENT_REGISTRY_STEPS: readonly SchemaStep[] = [
       at TEXT NOT NULL,
       body TEXT NOT NULL)`,
   ]),
+  // B-141: the newest revision each knowledge endpoint answered with, and when (ms), so a held message is
+  // answered again at once when its knowledge changes, and not at all while it stays the same.
+  statements("5_agent_facts", [
+    `CREATE TABLE IF NOT EXISTS agent_facts (
+      endpoint TEXT PRIMARY KEY,
+      revision TEXT NOT NULL,
+      seen_at INTEGER NOT NULL)`,
+  ]),
 ];
