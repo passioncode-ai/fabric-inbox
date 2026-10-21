@@ -59,6 +59,14 @@ const bundle = await build({
         async superviseNow(now) { return this.superviseWaiting(now); }
         async qualityNow(now) { return this.emitQualityDays(now); }
         async forgetQualityDay() { await this.ctx.storage.delete('quality_day'); }
+        hookFetch = async (url, init) => {
+          const script = JSON.parse(await (await this.env.BUCKET.get('test/hook.json'))?.text() || '{"status":200}');
+          const calls = JSON.parse(await (await this.env.BUCKET.get('test/hook-calls.json'))?.text() || '[]');
+          calls.push({ url, headers: init.headers, body: init.body });
+          await this.env.BUCKET.put('test/hook-calls.json', JSON.stringify(calls));
+          return new Response('ok', { status: script.status });
+        };
+        async hooksNow(now) { return this.deliverHooks(now); }
         async judgeAnswer(models, input) {
           const script = JSON.parse(await (await this.env.BUCKET.get('test/judge.json'))?.text() || 'null');
           if (!script) return null;
@@ -133,6 +141,10 @@ const bundle = await build({
               case 'again': return Response.json(await reg.answerAgain(c.id));
               case 'save': await reg.saveRun(c.run); return Response.json(true);
               case 'events': return Response.json(await reg.listEvents(c.after, c.limit));
+              case 'hooks': return Response.json({ next: await reg.hooksNow(c.now) });
+              case 'hookStates': return Response.json(await reg.hookStates(c.ids));
+              case 'r2put': await env.BUCKET.put(c.key, c.text); return Response.json(true);
+              case 'r2get': return Response.json(JSON.parse(await (await env.BUCKET.get(c.key))?.text() || 'null'));
               case 'seed': await box(c.mailbox).seed(c.rows); return Response.json(true);
               case 'volume': return Response.json(await mailVolume(env, c.days, c.now));
               case 'sent': return Response.json(await box(c.mailbox).sentLog());
@@ -911,5 +923,52 @@ test("review 2026-10-21: a reply after midnight counts for the evening's message
     assert.equal(events.length, 1, "once per day and address");
     assert.equal(events[0].data.value.coverage.delivered, 1);
     assert.equal(events[0].data.value.coverage.firstReplyP50Ms, 2 * 3_600_000);
+  } finally { await mf.dispose(); }
+});
+
+test("B-137: agent events go to a webhook in order, signed, from after the hook was made; a refusal waits and an event refused 8 times is passed over", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const base = { mailboxId: "a@project.invalid", sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1 };
+    const at = new Date().toISOString();
+    const run = (n: string, status: string, extra: Record<string, unknown> = {}) => ({ ...base, id: "agent-" + n.repeat(32).slice(0, 32), emailId: "m" + n, status: "running", createdAt: at, updatedAt: at, ...extra, final: status });
+    // An event from before the hook: never sent.
+    const old = run("1", "failed");
+    await command("begin", { run: { ...old, status: "running" } });
+    await command("save", { run: { ...old, status: "failed" } });
+    const hook = { id: "hook-0000aaaa", url: "https://hooks.example/fabric", kinds: ["agent.needs_look", "agent.handoff"], secret: "s3cret", createdAt: at };
+    await command("r2put", { key: "config/event-hooks.json", text: JSON.stringify({ hooks: [hook] }) });
+    const now = Date.now();
+    assert.equal((await command("hooks", { now })).next, null, "the first pass only places the hook after the history");
+    assert.deepEqual(await command("r2get", { key: "test/hook-calls.json" }), null);
+    // Two new events: one of its kinds, one not.
+    for (const [n, status] of [["2", "failed"], ["3", "sent"]] as const) {
+      const r = run(n, status);
+      await command("begin", { run: { ...r, status: "running" } });
+      await command("save", { run: { ...r, status, ...(status === "sent" ? { sent: { to: "x@y.invalid", subject: "Re: s", body: "Hi", outboxId: "o" } } : {}) } });
+    }
+    await command("hooks", { now });
+    const calls = await command("r2get", { key: "test/hook-calls.json" }) as { url: string; headers: Record<string, string>; body: string }[];
+    assert.equal(calls.length, 1, "only the kinds it asked for");
+    assert.equal(calls[0].url, "https://hooks.example/fabric");
+    const event = JSON.parse(calls[0].body);
+    assert.equal(event.kind, "agent.needs_look");
+    assert.equal(calls[0].headers["X-Fabric-Event-Id"], event.id);
+    const { createHmac } = await import("node:crypto");
+    assert.equal(calls[0].headers["X-Fabric-Signature"], "sha256=" + createHmac("sha256", "s3cret").update(`${calls[0].headers["X-Fabric-Timestamp"]}.${calls[0].body}`).digest("hex"));
+    // A refusal: tried again later, then passed over after 8 tries.
+    await command("r2put", { key: "test/hook.json", text: JSON.stringify({ status: 500 }) });
+    const r4 = run("4", "failed");
+    await command("begin", { run: { ...r4, status: "running" } });
+    await command("save", { run: { ...r4, status: "failed" } });
+    let next = (await command("hooks", { now })).next;
+    assert.equal(next, now + 60_000, "the first retry a minute later");
+    assert.equal((await command("hookStates", { ids: [hook.id] }))[hook.id].attempts, 1);
+    let t = now;
+    for (let i = 0; i < 7; i++) { t = next; next = (await command("hooks", { now: t })).next ?? t; }
+    const state = (await command("hookStates", { ids: [hook.id] }))[hook.id];
+    assert.equal(state.attempts, 0, "passed over after 8 tries");
+    assert.equal(state.lastError, "HTTP 500");
+    assert.equal((await command("r2get", { key: "test/hook-calls.json" }) as unknown[]).length, 9, "one delivery, then eight refused tries");
   } finally { await mf.dispose(); }
 });

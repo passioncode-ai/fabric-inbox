@@ -648,3 +648,16 @@ test("B-27: with a catch-all elsewhere the pause says where mail goes; without a
   assert.equal((await h.call("DELETE", "/api/project-addresses/sales@project.invalid")).status, 200);
   assert.ok(!h.objects.has("paused/sales@project.invalid.json"), "a removed address leaves no pause mark behind");
 });
+
+test("B-135: the list marks both addresses of a rename in progress", async () => {
+  const h = environment({ token: false });
+  assert.equal((await h.call("POST", "/api/project-addresses", { localPart: "old", domain: "project.invalid" })).status, 201);
+  assert.equal((await h.call("POST", "/api/project-addresses", { localPart: "new", domain: "project.invalid" })).status, 201);
+  await h.env.BUCKET.put("renames/old@project.invalid.json", JSON.stringify({ from: "old@project.invalid", to: "new@project.invalid", step: "copy" }));
+  const list = await h.call("GET", "/api/project-addresses");
+  const of = (email: string) => list.body.addresses.find((a: any) => a.email === email);
+  assert.deepEqual(of("old@project.invalid").renaming, { from: "old@project.invalid", to: "new@project.invalid" });
+  assert.deepEqual(of("new@project.invalid").renaming, { from: "old@project.invalid", to: "new@project.invalid" });
+  await h.env.BUCKET.delete("renames/old@project.invalid.json");
+  assert.equal((await h.call("GET", "/api/project-addresses")).body.addresses[0].renaming, null);
+});

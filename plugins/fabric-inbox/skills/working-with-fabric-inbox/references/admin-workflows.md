@@ -134,6 +134,10 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   someone. It covers the addresses where the reply status is on: `get_agent_status`, and `set_agent_status`
   per workspace, domain or address (off by default; null follows the level above). `read_thread` marks each
   sent message `sentBy` (agent, agent_waiting, person) and each one that came in with its `agentRun`.
+  To have events pushed instead of polled (a helpdesk, a support group): `add_event_hook { url, kinds? }`
+  (https; default kinds agent.handoff, agent.needs_look, agent.waiting) answers a secret once: verify each
+  POST's `X-Fabric-Signature` (sha256= HMAC of `<X-Fabric-Timestamp>.<body>`) and treat `X-Fabric-Event-Id`
+  as the idempotency key. `list_event_hooks` shows delivery and the last error; `remove_event_hook` stops one.
   Test an agent with `preview_agent_answer` (an outside sender, the text): it returns what the agent would do and
   the reply, sending and storing nothing.
 - **A shared knowledge base or other remote tool:** grant it in `tools` (its host must be in

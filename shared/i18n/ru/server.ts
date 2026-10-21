@@ -728,4 +728,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Give enabled (on or off), domains or addresses": "Укажите enabled (вкл или выкл), домены или адреса",
 	"The reply status settings changed several times at once; try again": "Настройки статуса ответа изменились несколько раз одновременно; попробуйте ещё раз",
 	"Unknown reply status": "Неизвестный статус ответа",
+	"Give the https URL, and the event kinds if not the default": "Укажите адрес https и виды событий, если нужны не стандартные",
+	"Keep the secret now: it is not shown again. Each delivery is signed with it (X-Fabric-Signature).": "Сохраните секрет сейчас: больше он не показывается. Им подписана каждая доставка (X-Fabric-Signature).",
+	"No such hook": "Такой подписки нет",
 };

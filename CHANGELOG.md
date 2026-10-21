@@ -5,6 +5,22 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.23.0 (2026-10-21)
+
+- **Agent events can reach your helpdesk in seconds.** A webhook gets each hand-off, each message
+  that needs a look and each message waiting for a person as it happens, signed so the receiver can
+  check it came from your server (`add_event_hook`). It retries for about a day when the receiver is
+  down, and never sends an event twice under a new id.
+- **Correct price answers are no longer held back.** The check before an answer is sent now accepts
+  a sum worked out from your prices (a yearly price per month, a discount applied once) and still
+  refuses a wrong one. Measured before and after on price questions: no correct answer refused, no
+  wrong one let through.
+- **The address list shows a rename in progress** on both addresses, with Finish or cancel the
+  rename in the address's menu.
+- **Setup says how often you sign in again**: the code Cloudflare emails you is needed once every
+  30 days.
+- **An older copy of the app no longer drops spam settings** a newer one added.
+
 ## 0.22.0 (2026-10-21)
 
 - **A conversation reads as one page.** Its messages stand one under another, the oldest at the top

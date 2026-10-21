@@ -1,4 +1,5 @@
 import { EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, runEvent, waitingEvent, type AgentEvent } from "./events";
+import { MAX_ATTEMPTS as HOOK_MAX_ATTEMPTS, RETRY_MS as HOOK_RETRY_MS, readHooks, sendHook, type HookCursor } from "./event-hooks";
 import { mailChannel, qualityDay } from "./quality";
 import { JUDGE_SAMPLE, judgesFor, openRouterJudge, qualityOf, type JudgeInput, type JudgeVerdict } from "./judge";
 import { readAllSettings } from "../lib/mailbox-store";
@@ -285,15 +286,21 @@ export class AgentRegistryDO extends DurableObject<Env> {
         }
       }
     }));
+    // B-137: the events of this pass (and any a hook still owes) go to the webhooks.
+    const hookDue = await this.deliverHooks().catch((error) => {
+      console.warn(JSON.stringify({ event: "event_hooks_failed", error: (error as Error).message?.slice(0, 200) }));
+      return Date.now() + 60_000;
+    });
+    const otherDue = [heldDue, hookDue].filter((t): t is number => t !== null).reduce<number | null>((a, b) => (a === null ? b : Math.min(a, b)), null);
     // Back off when nothing in the batch could start, so a broken mailbox is not hammered; a
     // message waiting for a stale run wakes the queue when that run turns stale.
     const due = this.rows("SELECT MIN(next_at) AS t FROM agent_queue")[0]?.t;
     if (due !== null && due !== undefined) {
       const soonest = Number(due) <= Date.now() ? Date.now() + (batch.length && failures === batch.length ? 30_000 : 1000) : Number(due);
-      await this.ctx.storage.setAlarm(heldDue !== null ? Math.min(soonest, heldDue) : soonest);
-    } else if (heldDue !== null) {
-      // Nothing queued, but a held message is due another try then.
-      await this.ctx.storage.setAlarm(heldDue);
+      await this.ctx.storage.setAlarm(otherDue !== null ? Math.min(soonest, otherDue) : soonest);
+    } else if (otherDue !== null) {
+      // Nothing queued, but a held message is due another try then, or a hook another delivery.
+      await this.ctx.storage.setAlarm(otherDue);
     }
   }
 
@@ -667,6 +674,64 @@ export class AgentRegistryDO extends DurableObject<Env> {
       ...recheck().slice(0, 1).map((r) => Date.parse((JSON.parse(String(r.body)) as AgentRun).personCheckAt!)),
     ].filter((t) => Number.isFinite(t));
     return times.length ? Math.max(now + 1000, Math.min(...times)) : null;
+  }
+
+  /** Test seam: how a hook is called; production uses the Worker's fetch. */
+  protected hookFetch: typeof fetch = (input, init) => fetch(input, init);
+
+  /**
+   * B-137: delivers each hook the events of its kinds after its cursor, in order, at most 20 a pass;
+   * a refusal waits HOOK_RETRY_MS and an event refused HOOK_MAX_ATTEMPTS times is passed over with a log line.
+   * Answers when the next delivery is due, or null with no hook or nothing owed.
+   */
+  protected async deliverHooks(now = Date.now()): Promise<number | null> {
+    const hooks = await readHooks(this.env.BUCKET);
+    if (!hooks.length) return null;
+    const top = Number(this.rows("SELECT MAX(seq) AS s FROM agent_events")[0]?.s ?? 0);
+    let due: number | null = null;
+    const soon = (t: number) => { due = due === null ? t : Math.min(due, t); };
+    for (const hook of hooks) {
+      const key = `hook:${hook.id}`;
+      // A hook first seen starts after the newest event: it never receives the history.
+      let cursor: HookCursor = (await this.ctx.storage.get<HookCursor>(key)) ?? { after: top, attempts: 0, nextAt: 0 };
+      if (cursor.nextAt > now) { soon(cursor.nextAt); await this.ctx.storage.put(key, cursor); continue; }
+      const rows = this.rows("SELECT seq, body FROM agent_events WHERE seq > ? ORDER BY seq LIMIT 50", cursor.after);
+      let sent = 0;
+      for (const row of rows) {
+        const seq = Number(row.seq);
+        const event = JSON.parse(String(row.body)) as AgentEvent;
+        if (!hook.kinds.includes(event.kind)) { cursor = { ...cursor, after: seq }; continue; }
+        if (sent >= 20) { soon(now + 1000); break; }
+        const result = await sendHook(hook, { id: String(seq), ...event }, this.hookFetch, now);
+        if (result.ok) { cursor = { after: seq, attempts: 0, nextAt: 0, lastDeliveredAt: new Date(now).toISOString() }; sent++; continue; }
+        const attempts = cursor.attempts + 1;
+        console.warn(JSON.stringify({ event: "event_hook_refused", hook: hook.id, seq, attempts, error: result.error }));
+        if (attempts >= HOOK_MAX_ATTEMPTS) {
+          console.error(JSON.stringify({ event: "event_hook_dropped", hook: hook.id, seq, kind: event.kind }));
+          cursor = { ...cursor, after: seq, attempts: 0, nextAt: 0, lastError: result.error };
+          continue;
+        }
+        cursor = { ...cursor, attempts, nextAt: now + HOOK_RETRY_MS[Math.min(attempts - 1, HOOK_RETRY_MS.length - 1)]!, lastError: result.error };
+        soon(cursor.nextAt);
+        break;
+      }
+      if (rows.length === 50 && !cursor.nextAt) soon(now + 1000);
+      await this.ctx.storage.put(key, cursor);
+    }
+    return due;
+  }
+
+  /** B-137: each hook's delivery state, by hook id (none for a hook no pass has seen yet). */
+  async hookStates(ids: string[]): Promise<Record<string, HookCursor>> {
+    const out: Record<string, HookCursor> = {};
+    for (const id of ids.slice(0, 20)) { const c = await this.ctx.storage.get<HookCursor>(`hook:${id}`); if (c) out[id] = c; }
+    return out;
+  }
+
+  /** B-137: wakes the delivery at once (a hook just added or tested). */
+  async wakeHooks(): Promise<void> {
+    const at = await this.ctx.storage.getAlarm();
+    if (at === null || at > Date.now() + 1000) await this.ctx.storage.setAlarm(Date.now() + 1000);
   }
 
   /**

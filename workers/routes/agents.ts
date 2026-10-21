@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono";
 import { cancelRename, renameAddress, renameStatus } from "../lib/address-rename";
+import { renamesInProgress } from "../lib/rename-journal";
 import { z } from "zod";
 import type { Env } from "../types";
 import { AGENT_TEMPLATES, readAssignment } from "../agents/definition";
@@ -17,6 +18,7 @@ import {
 import { BATCH_MAX, checkLocalPart } from "../../shared/address-name";
 import { ROUTING_NOT_CONFIGURED, routingClient, RoutingError, type RoutingStatus } from "../routing/email-routing";
 import { msg } from "../../shared/i18n";
+import { HookInvalid, addHook, readHooks, removeHook, type HookCursor } from "../agents/event-hooks";
 
 /**
  * SCR-09 (project addresses) and SCR-10 (agents). Behind the same Access and
@@ -150,6 +152,33 @@ agentsRouter.get("/api/agent-events", async (c) => {
   } catch (error) { return registryFailure(c, error); }
 });
 
+/** B-137: webhooks that receive the agent events (the secret is shown once, when a hook is made). */
+agentsRouter.get("/api/event-hooks", async (c) => {
+  c.header("Cache-Control", "no-store");
+  const hooks = await readHooks(c.env.BUCKET);
+  const states = c.env.AGENT_REGISTRY && hooks.length ? await registry(c).hookStates(hooks.map((h) => h.id)).catch(() => ({} as Record<string, HookCursor>)) : {};
+  return c.json({ hooks: hooks.map(({ secret: _secret, ...h }) => ({ ...h, delivery: states[h.id] ?? null })) });
+});
+agentsRouter.post("/api/event-hooks", async (c) => {
+  const body = await c.req.json().catch(() => null) as { url?: unknown; kinds?: unknown } | null;
+  if (!body || typeof body.url !== "string" || (body.kinds !== undefined && !(Array.isArray(body.kinds) && body.kinds.every((k) => typeof k === "string"))))
+    return c.json({ error: msg("Give the https URL, and the event kinds if not the default") }, 400);
+  try {
+    const hook = await addHook(c.env.BUCKET, { url: body.url, kinds: body.kinds as string[] | undefined });
+    if (c.env.AGENT_REGISTRY) await registry(c).wakeHooks().catch(() => undefined);
+    console.log(JSON.stringify({ event: "event_hook_added", kinds: hook.kinds.length }));
+    return c.json({ hook: { id: hook.id, url: hook.url, kinds: hook.kinds, createdAt: hook.createdAt }, secret: hook.secret,
+      note: msg("Keep the secret now: it is not shown again. Each delivery is signed with it (X-Fabric-Signature).") }, 201);
+  } catch (error) {
+    if (error instanceof HookInvalid) return c.json({ error: error.message }, 400);
+    throw error;
+  }
+});
+agentsRouter.delete("/api/event-hooks/:id", async (c) => {
+  const removed = await removeHook(c.env.BUCKET, c.req.param("id"));
+  return removed ? c.json({ removed: true }) : c.json({ error: msg("No such hook") }, 404);
+});
+
 /** Mail volume per agent address and UTC day (B-126): counts only, for the support monitor. */
 agentsRouter.get("/api/agent-volume", async (c) => {
   if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
@@ -239,13 +268,15 @@ async function unknownRecipients(bucket: R2Bucket) {
 agentsRouter.get("/api/project-addresses", async (c) => {
   c.header("Cache-Control", "no-store");
   try {
-    const [served, unknown, agents, issues, failures, paused] = await Promise.all([
+    const [served, unknown, agents, issues, failures, renames, paused] = await Promise.all([
       readAllSettings(c.env.BUCKET),
       unknownRecipients(c.env.BUCKET),
       c.env.AGENT_REGISTRY ? registry(c).listAgents() : Promise.resolve([]),
       deliveryIssues(c.env.BUCKET),
       listIncomingFailures(c.env.BUCKET).catch(() => []),
       // A finding of 2026-10-21: an unreadable pause list is said so (`pausedUnknown`), not shown as "nothing paused".
+      // B-135: renames in progress, so the list marks both addresses of each.
+      renamesInProgress(c.env.BUCKET).catch(() => []),
       pausedAddresses(c.env.BUCKET).catch((error: unknown) => {
         console.warn(JSON.stringify({ event: "paused_list_unreadable", error: (error as Error)?.message?.slice(0, 200) }));
         return null;
@@ -275,6 +306,10 @@ agentsRouter.get("/api/project-addresses", async (c) => {
           deliveryIssue: issues.get(email) ?? null,
           // B-27: since when the address is paused (an empty string when the time is unreadable), or null.
           paused: paused?.has(email) ? paused.get(email)! : null,
+          renaming: (() => {
+            const j = renames.find((r) => r.from === email.toLowerCase() || r.to === email.toLowerCase());
+            return j ? { from: j.from, to: j.to } : null;
+          })(),
         };
       }),
       unknownRecipients: unknown.filter((u) => !served.some((s) => s.email === u.address)),
