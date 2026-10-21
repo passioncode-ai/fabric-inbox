@@ -456,6 +456,32 @@ const listAgentEvents = defineTool({
   call: (a, ctx) => get(ctx, "/api/agent-events", { after: a.after, limit: a.limit }),
 });
 
+const HOOK_KIND_NAMES = ["agent.sent", "agent.drafted", "agent.skipped", "agent.unanswered", "agent.needs_look", "agent.not_helped", "agent.handoff", "agent.waiting", "support.quality_daily"] as const;
+const listEventHooks = defineTool({
+  name: "list_event_hooks", title: "Webhooks of agent events", level: "read", readOnly: true,
+  description: "The webhooks that receive the reply agents' events (the same events as list_agent_events), each with its URL, its kinds and its delivery: the last event delivered (after), tries of the next one, when it is tried again and its last error. Never the secret.",
+  input: {}, routes: ["GET /api/event-hooks"],
+  call: (_a, ctx) => get(ctx, "/api/event-hooks"),
+});
+
+const addEventHook = defineTool({
+  name: "add_event_hook", title: "Send agent events to a webhook", level: "admin", target: (a) => a.url,
+  description: "Sends each new agent event of these kinds (default agent.handoff, agent.needs_look, agent.waiting) to an https URL as JSON, in order and at least once: the event's id (X-Fabric-Event-Id) is its idempotency key. Each POST is signed: X-Fabric-Signature is sha256= and the HMAC-SHA256 hex of `<X-Fabric-Timestamp>.<body>` with the secret this call answers once. A refusal (not 2xx, or no answer in 10 s) is tried again after 1 min, 5 min, 30 min, 2 h, then every 6 h; an event refused 8 times is passed over. Events from before the hook are not sent. At most 10 hooks.",
+  input: {
+    url: z.string().url().max(2048).describe("https URL on a public host"),
+    kinds: z.array(z.enum(HOOK_KIND_NAMES)).max(9).optional().describe("Event kinds; none: agent.handoff, agent.needs_look, agent.waiting"),
+  },
+  routes: ["POST /api/event-hooks"],
+  call: (a, ctx) => post(ctx, "/api/event-hooks", { url: a.url, kinds: a.kinds }),
+});
+
+const removeEventHook = defineTool({
+  name: "remove_event_hook", title: "Stop a webhook", level: "admin", target: (a) => a.id,
+  description: "Stops a webhook: nothing more is sent to it. Its id comes from list_event_hooks.",
+  input: { id: z.string().regex(/^hook-[0-9a-f]{8}$/) }, routes: ["DELETE /api/event-hooks/:id"],
+  call: (a, ctx) => del(ctx, `/api/event-hooks/${enc(a.id)}`),
+});
+
 const AGENT_STATE_NAMES = ["unanswered", "new_after_agent", "error", "needs_data", "agent_draft", "working", "agent_replied", "person_replied"] as const;
 const listAgentThreads = defineTool({
   name: "list_agent_threads", title: "Conversations by reply status", level: "read", readOnly: true,
@@ -1657,7 +1683,7 @@ const agentActivity = defineTool({
 
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listFolders, getSendStatus,
-  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
+  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,

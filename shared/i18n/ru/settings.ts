@@ -284,4 +284,9 @@ export const SETTINGS: Readonly<Record<string, string>> = {
 	"As the domain (shown)": "Как у домена (показывается)",
 	"As the domain (hidden)": "Как у домена (скрыт)",
 	"The change could not be saved. Try again.": "Изменение не сохранилось. Попробуйте ещё раз.",
+	"Renaming": "Переименовывается",
+	"Taking a rename": "Принимает переименование",
+	"Being renamed to {email}": "Переименовывается в {email}",
+	"Taking the mail of {email}": "Принимает почту {email}",
+	"Finish or cancel the rename of {email}…": "Завершить или отменить переименование {email}…",
 };

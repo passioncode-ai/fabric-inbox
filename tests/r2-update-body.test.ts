@@ -53,3 +53,12 @@ for (const [name, key, update] of stores) {
     assert.equal(bucket.objects.get(key)?.value, before, "nothing replaced what could not be read");
   });
 }
+
+test("B-33: a field a newer version added to the spam lists survives a change made by this version", async () => {
+  const bucket = fakeBucket();
+  await bucket.put("config/spam.json", JSON.stringify({ blockedSenders: [], blockedDomains: [], allowedSenders: [], allowedDomains: [], futureRules: [{ x: 1 }] }));
+  await updateSpamLists(bucket as unknown as R2Bucket, (l) => ({ ...l, blockedDomains: [...l.blockedDomains, "new.example.org"] }));
+  const stored = JSON.parse(await (await bucket.get("config/spam.json"))!.text());
+  assert.deepEqual(stored.futureRules, [{ x: 1 }]);
+  assert.deepEqual(stored.blockedDomains, ["new.example.org"]);
+});
