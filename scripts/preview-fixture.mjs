@@ -112,6 +112,22 @@ let messages = rows.map(([sender, subject, snippet, a], i) => ({
   folder: "inbox",
   threadId: "thread-" + i,
 }));
+// B-138: a conversation the reply agent answered, then a newer message nobody answered; and marks.
+const STATES = { "message-0": "new_after_agent", "message-3": "agent_replied", "message-7": "error" };
+for (const m of messages) if (STATES[m.providerMessageId]) m.agentState = STATES[m.providerMessageId];
+messages[0].threadCount = 4;
+const OPEN_STATES = ["unanswered", "new_after_agent", "error", "needs_data", "agent_draft"];
+const at = (h) => new Date(Date.now() - h * 3600000).toISOString();
+const conversation = [
+  { id: "c1", folder_id: "inbox", sender: "maya@example.com", sender_name: "Maya Chen", recipient: "hello@example.com", date: at(30), subject: "A few thoughts on the new direction", thread_id: "thread-0", read: 1,
+    body: "<p>Hi! How do I move my workspace to the new plan?</p><p>Maya</p>", agent_run: { id: "agent-" + "a".repeat(32), status: "sent", agentId: "support" } },
+  { id: "c2", folder_id: "sent", sender: "hello@example.com", recipient: "maya@example.com", date: at(29), subject: "Re: A few thoughts on the new direction", thread_id: "thread-0", read: 1, sent_by: "agent",
+    body: "<p>Hello Maya,</p><p>Open Settings, then Plan, and choose the new plan. Your workspace moves with everything in it.</p><p>Studio support</p>" },
+  { id: "c3", folder_id: "inbox", sender: "maya@example.com", sender_name: "Maya Chen", recipient: "hello@example.com", date: at(5), subject: "Re: A few thoughts on the new direction", thread_id: "thread-0", read: 1,
+    body: "<p>Thanks. I did that, but the old invoices are gone. Where are they now?</p>" },
+  { id: "message-0", folder_id: "inbox", sender: "maya@example.com", sender_name: "Maya Chen", recipient: "hello@example.com", date: messages[0].date, subject: messages[0].subject, thread_id: "thread-0", read: 0,
+    body: "<p>The quieter layout is working. I left a few notes on the account switcher.</p><p>Synthetic preview message, not real mail.</p>" },
+];
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   if (!url.pathname.startsWith("/api/")) {
@@ -171,7 +187,23 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+  if (url.pathname === "/api/agent-status") {
+    json({ enabled: false, domains: { "example.com": true }, addresses: {} });
+    return;
+  }
+  if (decodeURIComponent(url.pathname) === "/api/v1/mailboxes/hello@example.com/threads/thread-0") {
+    json(conversation);
+    return;
+  }
   if (url.pathname === "/api/inbox") {
+    const reply = url.searchParams.get("reply");
+    if (reply) {
+      const wanted = reply === "open" ? OPEN_STATES : [reply];
+      const replyCounts = {};
+      for (const m of messages) if (m.agentState) replyCounts[m.agentState] = (replyCounts[m.agentState] ?? 0) + 1;
+      json({ accounts, messages: messages.filter((m) => wanted.includes(m.agentState)), issues: [], hasMore: false, replyCounts });
+      return;
+    }
     let filtered = messages.filter(
       (m) =>
         (!url.searchParams.get("account") ||

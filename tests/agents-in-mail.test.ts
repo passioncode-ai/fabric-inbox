@@ -45,7 +45,9 @@ test("the reader shows the run and opens the agent's draft in the composer; the 
   assert.match(route, /<AgentRunPanel message=\{selected\} onOpenDraft=\{\(draftId\) => \{/);
   assert.match(route, /saved\.openServer\(\{ accountId: selected\.accountId, serverId: draftId,/);
   const row = readFileSync("app/components/inbox/TriagedList.tsx", "utf8");
-  assert.match(row, /\{message\.agentRun && \(/);
+  // B-138: the conversation's reply status, where it is shown, says more than the run on this one message.
+  assert.match(row, /\{message\.agentState \? \(/);
+  assert.match(row, /\) : message\.agentRun && \(/);
   const panel = readFileSync("app/components/inbox/AgentRunPanel.tsx", "utf8");
   assert.match(panel, /fabric<AgentRunView>\(`\/api\/agent-runs\/\$\{encodeURIComponent\(id!\)\}`\)/);
 });

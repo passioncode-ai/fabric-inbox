@@ -708,6 +708,138 @@ body {
   border: 1px solid var(--pc-border);
   border-radius: 4px;
 }
+/* B-138: the conversation as cells, oldest at the top; each message whole in its own cell. */
+.fi-thread-cells {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.fi-thread-cell {
+  border: 1px solid var(--pc-border);
+  border-radius: 8px;
+  overflow: hidden;
+  scroll-margin-top: 12px;
+}
+.fi-thread-cell.is-open {
+  border-color: var(--pc-accent);
+}
+.fi-thread-cell.is-agent {
+  border-left: 3px solid var(--pc-accent);
+}
+.fi-thread-cell.is-outgoing:not(.is-agent) {
+  border-left: 3px solid var(--pc-muted);
+}
+.fi-thread-cell-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--pc-surface-hover, rgba(127, 127, 127, 0.06));
+}
+.fi-thread-cell-who {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fi-thread-cell-who:disabled {
+  cursor: default;
+  color: inherit;
+  opacity: 1;
+}
+.fi-thread-cell-body {
+  padding: 8px 12px 10px;
+}
+.fi-thread-cell.is-open > .fi-thread-cell-body {
+  padding: 0;
+}
+.fi-thread-cell-head time {
+  font-size: 12px;
+  color: var(--pc-muted);
+  white-space: nowrap;
+}
+.fi-thread-cell-body > .fi-thread-text {
+  margin: 0;
+}
+.fi-thread-cell iframe {
+  display: block;
+  width: 100%;
+}
+.fi-thread-chip.is-agent {
+  border-color: var(--pc-accent);
+  background: var(--pc-accent);
+  color: var(--pc-on-accent, #1a1a1a);
+}
+.fi-thread-chip.needs-look {
+  border-color: var(--pc-danger, #b42318);
+  color: var(--pc-danger, #b42318);
+}
+.fi-thread-earlier {
+  margin: 0 0 10px;
+  border: 0;
+  padding: 2px 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--pc-link, var(--pc-accent));
+  cursor: pointer;
+}
+.fi-reply-select {
+  font: inherit;
+  font-size: 12px;
+}
+.fi-reply-status {
+  margin-top: 24px;
+  text-align: left;
+}
+.fi-reply-status h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+.fi-switch-row,
+.fi-reply-status-address {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+.fi-switch-row {
+  justify-content: flex-start;
+}
+.fi-reply-status-domain {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--pc-border);
+  border-radius: 8px;
+}
+.fi-reply-status-domain legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 550;
+}
+.fi-reply-status-address span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .fi-agent-tag {
   display: inline-block;
   margin-top: 4px;
@@ -1754,3 +1886,16 @@ body {
 .fi-agent-pick select { flex: 1; min-width: 0; font-size: 12px; color: var(--pc-text); background: var(--pc-panel); border: 1px solid var(--pc-border); border-radius: 6px; padding: 4px 6px; }
 .fi-agent-note { margin: 0; padding: 10px 16px; font-size: 12px; color: var(--pc-text-muted); border-bottom: 1px solid var(--pc-border); }
 .fi-agent-chat { flex: 1; min-height: 0; overflow: hidden; }
+
+/* A forward's original, shown under the composer as it will be sent (operator, 2026-10-21). */
+.fi-forward-original {
+  margin: 8px 0;
+  border: 1px solid var(--pc-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.fi-forward-original summary {
+  font-size: 12px;
+  color: var(--pc-muted);
+  cursor: pointer;
+}

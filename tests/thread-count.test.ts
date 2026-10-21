@@ -10,7 +10,7 @@ import { MemoryStore } from "./memory-store";
 import { GmailCache } from "../workers/providers/gmail-cache";
 import { AccountService, type AccountRecord } from "../workers/providers/account-service";
 import { seal, configuration } from "../workers/providers/google-oauth";
-import { markRead, messageText, unreadOf, type ThreadRow } from "../app/components/inbox/thread";
+import { markRead, messageBody, messageText, unreadOf, type ThreadRow } from "../app/components/inbox/thread";
 import type { Message } from "../workers/providers/gmail-client";
 
 const message = (id: string, threadId: string, over: Partial<Message> = {}): Message => ({
@@ -110,16 +110,17 @@ test("a message shown in place reads as plain text", async () => {
   assert.equal(await messageText({ ...m, provider: "gmail", accountId: "gmail:g1" }, async (url) => { assert.equal(url, "/api/accounts/g1/messages/m1"); return { text: " Hi ", html: "<p>x</p>" }; }), "Hi");
 });
 
-test("the list shows the count and the reader offers Show and Mark conversation read", () => {
+test("the list shows the count, and the reader reads the conversation whole and marks it read (B-138)", async () => {
   const list = readFileSync("app/components/inbox/TriagedList.tsx", "utf8");
   assert.match(list, /\(message\.threadCount \?\? 0\) > 1/);
   const conversation = readFileSync("app/components/inbox/ConversationList.tsx", "utf8");
-  assert.match(conversation, /aria-expanded=\{shown\}/);
-  assert.match(conversation, /t\("Mark conversation read"\)/);
-  assert.match(conversation, /onMarkRead\(unread, true\)/);
+  assert.match(conversation, /onMarkRead\(unread, true\)/, "opening the conversation reads it");
+  assert.match(conversation, /t\("Mark conversation read"\)/, "a refusal offers to try again");
   const route = readFileSync("app/routes/unified-inbox.tsx", "utf8");
   assert.match(route, /onMarkRead=\{markConversationRead\}/);
-  assert.match(route, /loadText=\{\(message\) => messageText\(message, \(url\) => fabric\(url\)\)\}/);
+  assert.match(route, /loadBody=\{\(message\) => messageBody\(message, \(url\) => fabric\(url\)\)\}/);
+  const m = row("m1").message;
+  assert.deepEqual(await messageBody({ ...m, provider: "gmail", accountId: "gmail:g1" }, async () => ({ text: " Hi ", html: "<p>x</p>" })), { html: "<p>x</p>", text: "Hi" });
 });
 
 test("agents see the count too: list_messages passes threadCount through", () => {

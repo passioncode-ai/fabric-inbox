@@ -59,6 +59,8 @@ export type InboxMessage = {
   categories?: { id: string; name: string; reason: string }[];
   /** A reply agent's run on this message (B-115): what it did, so the list can mark it and the reader show it. */
   agentRun?: { id: string; status: string; agentId?: string; agentVersion?: number; draftId?: string };
+  /** B-138: where its conversation stands, on an address whose reply status is shown. */
+  agentState?: import("../../../shared/mail/agent-state").AgentState;
   /** In a category's own view: why the message belongs there. */
   categoryReason?: string;
   spamReason?: string;
@@ -75,6 +77,8 @@ export type InboxData = {
   cursor?: string;
   /** Present when the page is one category's view. */
   category?: import("~/services/categories").Category;
+  /** B-138: in the reply-status view, conversations per state before the filter. */
+  replyCounts?: Partial<Record<import("../../../shared/mail/agent-state").AgentState, number>>;
 };
 export type OpenMessage = {
   subject: string;

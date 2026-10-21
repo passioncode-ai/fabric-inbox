@@ -22,6 +22,7 @@ import { TEST_POLL_MS, agentLine, domainOptions, testStep } from "./add-address-
 import { addAddressText } from "./add-address-text";
 import ConfiguredAddresses from "./ConfiguredAddresses";
 import SignatureForm from "./SignatureForm";
+import ReplyStatusSettings from "./ReplyStatusSettings";
 
 interface AddressEntry extends ListEntry {
   address: ProjectAddress;
@@ -100,6 +101,9 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
       <h2>{t("Choose an address")}</h2>
       <p>{t("Its routing, its copy, its name and signature, and who answers it open here.")}</p>
       {canAdd && <button type="button" className="fi-primary" onClick={openAdd}><PlusIcon size={16} /> {t("Add address")}</button>}
+      {!loading && !failed && all.length > 0 && (
+        <ReplyStatusSettings groups={groupIds.map((d) => ({ domain: d, addresses: entries.filter((e) => e.group === d).map((e) => e.key.toLowerCase()) }))} />
+      )}
     </PanelPlaceholder>
   ) : loading ? <SkeletonPanel label={t("Loading this address…")} /> : !selected ? (
     <PanelPlaceholder>

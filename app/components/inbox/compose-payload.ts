@@ -6,6 +6,7 @@ import {
 import { recipientAddresses } from "./send-state";
 import type { Draft } from "./draft-store";
 import { msg } from "../../../shared/i18n";
+import { withForward, withForwardText } from "../../../shared/mail/forward";
 
 export function missingOriginals(draft: Draft) {
   // An original is included while its bytes wait here or once they are on the server.
@@ -52,7 +53,10 @@ export async function prepareMessage(draft: Draft, storage: AttachmentStorage) {
     ...(cc.length ? { cc } : {}),
     ...(bcc.length ? { bcc } : {}),
     subject: draft.subject,
-    text: draft.text,
+    // A forward carries its original as it was: buttons and links still work (operator, 2026-10-21).
+    ...(draft.forwardHtml
+      ? { text: withForwardText(draft.text, draft.forwardHtml), html: withForward(draft.text, draft.forwardHtml) }
+      : { text: draft.text }),
     idempotencyKey: draft.idempotencyKey,
     ...(attachments.length ? { attachments } : {}),
   };

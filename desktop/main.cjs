@@ -1,6 +1,6 @@
 'use strict';
 const electron = require('electron');
-const { app, BrowserWindow, Menu, ipcMain, shell, dialog, session, WebContentsView, Notification, Tray, nativeImage } = electron;
+const { app, BrowserWindow, Menu, ipcMain, shell, dialog, session, WebContentsView, Notification, Tray, nativeImage, clipboard } = electron;
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -9,6 +9,7 @@ const deployer = require('./cloudflare-deploy.cjs');
 const profile = require('./profile.cjs');
 const connector = require('./connect.cjs');
 const { menuTemplate } = require('./menu.cjs');
+const { contextMenuTemplate } = require('./context-menu.cjs');
 const usage = require('./analytics.cjs');
 const backup = require('./backup.cjs');
 const updates = require('./updater.cjs');
@@ -263,6 +264,14 @@ function loadMail() {
     return { action: 'deny' };
   });
   win.webContents.on('will-attach-webview', event => event.preventDefault());
+  // A right-click on a link or a button in a message offers to open it in the browser or copy it
+  // (operator, 2026-10-21); the person chose it, so no second question. Messages' own frames included.
+  win.webContents.on('context-menu', (_event, params) => {
+    const items = contextMenuTemplate(params, { t,
+      open: (url) => { shell.openExternal(url).catch(() => logEvent({ event: 'context_menu_open', outcome: 'failed' })); },
+      copy: (text) => clipboard.writeText(text) });
+    if (items.length && !win.isDestroyed()) Menu.buildFromTemplate(items).popup({ window: win });
+  });
   win.webContents.on('page-title-updated', event => event.preventDefault());
   win.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
     if (mainFrame && code !== -3) failure();

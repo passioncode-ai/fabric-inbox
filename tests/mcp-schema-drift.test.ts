@@ -79,6 +79,7 @@ const BODIES: Record<string, string[]> = {
   "POST /api/agents/:id/preview": ["address", "from", "subject", "text"], // workers/routes/agents.ts
   "POST /api/domains/:domain/release": ["force"], // workers/routes/domains.ts
   "PUT /api/inbox/hidden": ["hide", "show"], // workers/routes/inbox.ts
+  "PUT /api/agent-status": ["enabled", "domains", "addresses"], // workers/routes/inbox.ts (B-138)
   "POST /api/v1/mailboxes/:mailboxId/folders": ["name"], // workers/index.ts
   "PUT /api/v1/mailboxes/:mailboxId/folders/:id": ["name"],
   "POST /api/v1/mailboxes/:mailboxId/emails/:id/move": ["folderId"],
