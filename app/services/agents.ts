@@ -55,6 +55,8 @@ export interface ProjectAddress {
   deliveryIssue: { target: string; problem: string; count: number; lastAt: string } | null;
   /** B-27: since when the address is paused ("" when unknown), or null. */
   paused?: string | null;
+  /** B-135: a rename this address takes part in (as `from` or as `to`), or null. */
+  renaming?: { from: string; to: string } | null;
 }
 export interface ProjectAddresses {
   domains: { domain: string; unknownAddressPolicy: string;

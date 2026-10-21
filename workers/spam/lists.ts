@@ -21,9 +21,13 @@ export class SpamListConflict extends Error {}
 export async function updateSpamLists(bucket: R2Bucket, change: (lists: SpamLists) => SpamLists): Promise<SpamLists> {
   for (let attempt = 0; attempt < 5; attempt++) {
     const object = await bucket.get(SPAM_LISTS_KEY);
-    const current = object ? normaliseLists(await bodyForUpdate(object)) : { ...EMPTY_SPAM_LISTS };
+    const raw = object ? await bodyForUpdate(object) : null;
+    const current = object ? normaliseLists(raw) : { ...EMPTY_SPAM_LISTS };
     const next = normaliseLists(change(current));
-    const written = await bucket.put(SPAM_LISTS_KEY, JSON.stringify(next), {
+    // B-33: fields a newer version added are kept as they are, so this code never drops them.
+    const kept = raw && typeof raw === "object" && !Array.isArray(raw)
+      ? Object.fromEntries(Object.entries(raw as Record<string, unknown>).filter(([k]) => !(k in EMPTY_SPAM_LISTS))) : {};
+    const written = await bucket.put(SPAM_LISTS_KEY, JSON.stringify({ ...kept, ...next }), {
       httpMetadata: { contentType: "application/json" },
       // A first write succeeds only while nothing is there (RFC 7232 If-None-Match: *).
       onlyIf: object ? { etagMatches: object.etag } : new Headers({ "If-None-Match": "*" }),

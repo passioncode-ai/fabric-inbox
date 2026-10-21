@@ -150,7 +150,8 @@ function AddressRowContent({ entry, agents, unread }: { entry: AddressEntry; age
         <span className="fi-row-meta">{a.forwardTo ? t("{answerer} · copy to {destination}", { answerer, destination: a.forwardTo }) : answerer}</span>
       </span>
       <span className="fi-row-side">
-        {a.paused != null ? <Badge tone="warn">{t("Paused")}</Badge>
+        {a.renaming ? <Badge tone="warn">{a.renaming.from === a.email.toLowerCase() ? t("Renaming") : t("Taking a rename")}</Badge>
+          : a.paused != null ? <Badge tone="warn">{t("Paused")}</Badge>
           : a.deliveryIssue ? <Badge tone="bad" title={t.text(a.deliveryIssue.problem)}>{t("Copy failing")}</Badge>
           : entry.orphan ? <Badge tone="warn">{t("Not received")}</Badge>
           : routing.data ? <RoutingBadge state={routing.data.state} /> : null}
@@ -272,12 +273,16 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
         {routing.data && <RoutingBadge state={routing.data.state} />}
         {catchAll && <Badge>{t("Catch-all for {domain}", { domain: a.domain })}</Badge>}
         {a.paused != null && <Badge tone="warn">{t("Paused")}</Badge>}
+        {a.renaming && <Badge tone="warn">{a.renaming.from === a.email.toLowerCase()
+          ? t("Being renamed to {email}", { email: a.renaming.to }) : t("Taking the mail of {email}", { email: a.renaming.from })}</Badge>}
         {unread > 0 && <Badge>{t.plural(unread, { one: "{n} unread", other: "{n} unread" })}</Badge>}
       </>}
       menu={<ActionMenu label={t("More actions for {email}", { email: a.email })} actions={[
         { label: t("Open its mail"), onSelect: () => navigate("/?account=" + encodeURIComponent("cloudflare:" + a.email)) },
         a.paused != null ? { label: t("Resume {email}", { email: a.email }), onSelect: resume } : { label: t("Pause {email}…", { email: a.email }), onSelect: () => void pause() },
-        ...(catchAll || a.paused != null ? [] : [{ label: t("Rename or move {email}…", { email: a.email }), onSelect: () => setRenaming(true) }]),
+        // B-135: a rename in progress is finished or cancelled from its own dialog.
+        ...(a.renaming?.from === a.email.toLowerCase() ? [{ label: t("Finish or cancel the rename of {email}…", { email: a.email }), onSelect: () => setRenaming(true) }]
+          : catchAll || a.paused != null || a.renaming ? [] : [{ label: t("Rename or move {email}…", { email: a.email }), onSelect: () => setRenaming(true) }]),
         { label: t("Remove {email}…", { email: a.email }), danger: true, onSelect: () => void remove() },
       ]} />}>
       <PanelBlock title={t("Who answers")}>
