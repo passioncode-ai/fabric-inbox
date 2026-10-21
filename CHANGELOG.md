@@ -24,6 +24,8 @@ is cut and published: [docs/release.md](docs/release.md).
   Updates answers even with automatic updates off.
 - **Usage counts on Windows and Linux name their system**, and the usage question waits until a
   hub's connect dialog is answered.
+- **The address list says when it could not read which addresses are paused** (`pausedUnknown`),
+  instead of showing every address as taking mail.
 - **`npm run deploy` refuses a checkout with uncommitted changes**, so a deployed version is always
   the code of the commit it is tagged with.
 
