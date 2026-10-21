@@ -286,7 +286,7 @@ const readMessageTool = defineTool({
 
 const readThread = defineTool({
   name: "read_thread", title: "Read a conversation", level: "read", readOnly: true,
-  description: "Every message of a conversation, oldest first, as plain text: a Cloudflare mailbox's, or a Gmail, IMAP or Outlook account's as synced here (IMAP conversations are put together from Message-ID, In-Reply-To and References). threadId comes from list_messages or read_message.",
+  description: "Every message of a conversation, oldest first, as plain text: a Cloudflare mailbox's, or a Gmail, IMAP or Outlook account's as synced here (IMAP conversations are put together from Message-ID, In-Reply-To and References). In a Cloudflare mailbox each sent message carries sentBy (agent: the reply agent's answer; agent_waiting: its waiting reply; person) and each message that came in carries agentRun (the reply agent's run on it, with its status) when there is one. threadId comes from list_messages or read_message.",
   input: { accountId, threadId: z.string().min(1).max(300), maxChars: z.number().int().min(500).max(50_000).default(8000).describe("Longest body returned per message") },
   routes: ["GET /api/v1/mailboxes/:mailboxId/threads/:threadId", "GET /api/accounts/:accountId/messages", "GET /api/accounts/:accountId/messages/:messageId"],
   async call(a, ctx) {
@@ -313,7 +313,8 @@ const readThread = defineTool({
     const account = cloudflareOnly(parsed, "Reading a conversation");
     const emails = (await get(ctx, `${box(account.mailbox)}/threads/${enc(a.threadId)}`)) as Record<string, unknown>[];
     return { messages: emails.map((e) => { const body = clip(htmlToText(String(e.body ?? "")), a.maxChars);
-      return { messageId: e.id, subject: e.subject, from: e.sender, to: e.recipient, date: e.date, folder: e.folder_id, read: !!e.read, text: body.text, truncated: body.truncated }; }) };
+      return { messageId: e.id, subject: e.subject, from: e.sender, to: e.recipient, date: e.date, folder: e.folder_id, read: !!e.read,
+        ...(e.sent_by ? { sentBy: e.sent_by } : {}), ...(e.agent_run ? { agentRun: e.agent_run } : {}), text: body.text, truncated: body.truncated }; }) };
   },
 });
 
@@ -453,6 +454,38 @@ const listAgentEvents = defineTool({
   input: { after: z.string().max(128).optional().describe("The cursor from the previous page"), limit: z.number().int().min(1).max(200).default(50) },
   routes: ["GET /api/agent-events"],
   call: (a, ctx) => get(ctx, "/api/agent-events", { after: a.after, limit: a.limit }),
+});
+
+const AGENT_STATE_NAMES = ["unanswered", "new_after_agent", "error", "needs_data", "agent_draft", "working", "agent_replied", "person_replied"] as const;
+const listAgentThreads = defineTool({
+  name: "list_agent_threads", title: "Conversations by reply status", level: "read", readOnly: true,
+  description: "Conversations on Cloudflare addresses by where they stand, newest first, each as its last message that came in with agentState: unanswered (nobody replied), new_after_agent (the agent answered earlier, a newer message has no reply), error (the agent's run failed or its send may not have left), needs_data (held for knowledge it lacks, a waiting reply at most), agent_draft (the agent left a draft for a person), working, agent_replied, person_replied. counts gives every state's number before the filter. Looks at the addresses where the reply status is on (get_agent_status), or the one named (on or not), and each one's 200 most recent conversations.",
+  input: {
+    states: z.array(z.enum(AGENT_STATE_NAMES)).max(8).optional().describe("Only these states; none: every state"),
+    address: z.string().email().max(254).optional().describe("Only this address, whether its reply status is on or not"),
+    limit: z.number().int().min(1).max(200).default(50),
+  },
+  routes: ["GET /api/agent-threads"],
+  call: (a, ctx) => get(ctx, "/api/agent-threads", { state: a.states?.length ? a.states.join(",") : undefined, address: a.address?.toLowerCase(), limit: a.limit }),
+});
+
+const getAgentStatus = defineTool({
+  name: "get_agent_status", title: "Where the reply status is shown", level: "read", readOnly: true,
+  description: "Where the reply status of conversations (list_agent_threads, the inbox's marks and filter) is shown: enabled for the whole workspace, then a choice per domain, then per address; an address follows its domain, a domain the workspace. Off until someone turns it on.",
+  input: {}, routes: ["GET /api/agent-status"],
+  call: (_a, ctx) => get(ctx, "/api/agent-status"),
+});
+
+const setAgentStatus = defineTool({
+  name: "set_agent_status", title: "Show or hide the reply status", level: "admin", target: (a) => `enabled ${a.enabled ?? "-"} domains ${Object.keys(a.domains ?? {}).length} addresses ${Object.keys(a.addresses ?? {}).length}`,
+  description: "Turns the reply status of conversations on or off: for the whole workspace (enabled), for a domain or for an address. null for a domain or an address makes it follow the level above again. Changes nothing else; answers the settings after the change.",
+  input: {
+    enabled: z.boolean().optional(),
+    domains: z.record(z.string().min(3).max(253), z.boolean().nullable()).optional(),
+    addresses: z.record(z.string().email().max(254), z.boolean().nullable()).optional(),
+  },
+  routes: ["PUT /api/agent-status"],
+  call: (a, ctx) => put(ctx, "/api/agent-status", { enabled: a.enabled, domains: a.domains, addresses: a.addresses }),
 });
 
 const agentMailVolume = defineTool({
@@ -1623,7 +1656,7 @@ const agentActivity = defineTool({
 
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listFolders, getSendStatus,
-  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, agentMailVolume, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
+  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,

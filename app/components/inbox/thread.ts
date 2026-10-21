@@ -1,5 +1,6 @@
 import { displaySender } from "../../../shared/mail/sender";
 import { htmlToText } from "../../../shared/mail/text";
+import type { SentBy } from "../../../shared/mail/agent-state";
 import { messagePath, rawAccount, type InboxMessage } from "./model";
 
 /**
@@ -15,6 +16,10 @@ export interface ThreadRow {
   at: number;
   /** In Trash, Spam or Discarded: not part of the conversation as the reader shows it (B-114). */
   removed?: boolean;
+  /** B-138: who sent a sent message: the reply agent (its answer or its waiting reply) or a person. */
+  sentBy?: SentBy;
+  /** The message's HTML as the thread route gives it (Cloudflare), so its cell shows it without another request. */
+  body?: string;
 }
 
 type Request = (url: string) => Promise<unknown>;
@@ -32,11 +37,14 @@ function fromCloudflare(open: InboxMessage, e: Record<string, unknown>): ThreadR
       subject: String(e.subject ?? ""), sender: displaySender(e.sender as string, e.sender_name as string | null, e.raw_headers as string | null) || String(e.sender ?? ""),
       recipient: String(e.recipient ?? ""), date: String(e.date ?? ""),
       read: !!e.read, starred: !!e.starred, snippet: snippetOf(e.body as string), threadId: open.threadId,
+      ...(e.agent_run && typeof e.agent_run === "object" ? { agentRun: e.agent_run as InboxMessage["agentRun"] } : {}),
     },
     kind: folder === "sent" ? "sent" : folder === "draft" ? "draft" : "received",
     open: id === open.providerMessageId,
     at: Date.parse(String(e.date ?? "")) || 0,
     ...(folder === "trash" || folder === "spam" || folder === "discarded" ? { removed: true } : {}),
+    ...(e.sent_by === "agent" || e.sent_by === "agent_waiting" || e.sent_by === "person" ? { sentBy: e.sent_by } : {}),
+    ...(typeof e.body === "string" ? { body: e.body } : {}),
   };
 }
 
@@ -107,6 +115,12 @@ export async function markRead(rows: ThreadRow[], send: Send, whole: boolean): P
     : send(messagePath(r.message) + "/read", { read: true })));
   const refused = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
   if (refused) throw refused.reason;
+}
+
+/** A message as its cell shows it (B-138): its HTML when it has one, else its text. */
+export async function messageBody(message: InboxMessage, request: Request): Promise<{ html: string; text: string }> {
+  const m = (await request(messagePath(message))) as { text?: string | null; html?: string | null; body?: string | null } | null;
+  return { html: String(m?.html ?? m?.body ?? ""), text: String(m?.text ?? "").trim() };
 }
 
 /** A message's text for the conversation (B-114): its plain text, or its HTML read as text. */

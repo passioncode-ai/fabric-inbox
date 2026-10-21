@@ -128,6 +128,12 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   Its `quality` comes from a daily judge (B-132): up to 30 sent answers per address, rubric v1, a model of
   another vendor than the writer and checker; the verdict and its note are on the run (`list_agent_runs`).
   `agent_mail_volume { days }` gives per-address, per-day counts (received, agent runs, no run, spam).
+  Where each conversation stands: `list_agent_threads { states?, address? }` (unanswered, new_after_agent,
+  error, needs_data, agent_draft, working, agent_replied, person_replied; `counts` for all). Start with
+  `states: ["unanswered", "new_after_agent", "error", "needs_data", "agent_draft"]`, the ones waiting for
+  someone. It covers the addresses where the reply status is on: `get_agent_status`, and `set_agent_status`
+  per workspace, domain or address (off by default; null follows the level above). `read_thread` marks each
+  sent message `sentBy` (agent, agent_waiting, person) and each one that came in with its `agentRun`.
   Test an agent with `preview_agent_answer` (an outside sender, the text): it returns what the agent would do and
   the reply, sending and storing nothing.
 - **A shared knowledge base or other remote tool:** grant it in `tools` (its host must be in

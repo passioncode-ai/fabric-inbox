@@ -51,7 +51,7 @@ test("a message without a thread, or a thread the server cannot read, is shown a
   assert.equal(lone.length, 1, "the open message stays even if the thread answer misses it");
 });
 
-test("the reader shows the conversation above the open message and opens any of its messages", async () => {
+test("the reader shows the conversation as cells, oldest first, and opens any of its messages", async () => {
   const { readFileSync } = await import("node:fs");
   const route = readFileSync("app/routes/unified-inbox.tsx", "utf8");
   assert.match(route, /queryKey: \["conversation", selected\?\.accountId, selected\?\.threadId\]/);
@@ -60,4 +60,21 @@ test("the reader shows the conversation above the open message and opens any of 
   const list = readFileSync("app/components/inbox/ConversationList.tsx", "utf8");
   assert.match(list, /if \(rows\.length < 2\) return null;/);
   assert.match(list, /aria-current=\{open \? "true" : undefined\}/);
+  // B-138: every message whole in its own cell; the open one's cell is the reader's own content.
+  assert.match(list, /<div className="fi-thread-cell-body">\{open \? renderOpen\(\) : <CellBody row=\{row\} loadBody=\{loadBody\} \/>\}<\/div>/);
+  assert.match(route, /const threaded = \(conversation\.data\?\.length \?\? 0\) > 1;/);
+  assert.match(route, /renderOpen=\{\(\) => openContent\} \/>\s+\) : openContent\}/, "one message alone reads as before");
+});
+
+test("B-138: a Cloudflare conversation carries who sent each reply and what the agent did with each message that came in", async () => {
+  const rows = await loadConversation(open(), async () => [
+    { id: "m1", subject: "Plan", sender: "ann@x.invalid", recipient: "me@x.invalid", date: "2026-10-12T09:00:00Z", folder_id: "inbox", thread_id: "t1", body: "<p>First</p>",
+      agent_run: { id: "agent-" + "a".repeat(32), status: "sent", agentId: "support" } },
+    { id: "s1", subject: "Re: Plan", sender: "me@x.invalid", recipient: "ann@x.invalid", date: "2026-10-12T09:01:00Z", folder_id: "sent", thread_id: "t1", body: "Hello", sent_by: "agent" },
+    { id: "m2", subject: "Re: Plan", sender: "ann@x.invalid", recipient: "me@x.invalid", date: "2026-10-13T10:00:00Z", folder_id: "inbox", thread_id: "t1", body: "Second" },
+    { id: "s2", subject: "Re: Plan", sender: "me@x.invalid", recipient: "ann@x.invalid", date: "2026-10-13T11:00:00Z", folder_id: "sent", thread_id: "t1", body: "Mine", sent_by: "person" },
+  ]);
+  assert.deepEqual(rows.map((r) => [r.message.providerMessageId, r.sentBy ?? null, r.message.agentRun?.status ?? null]),
+    [["m1", null, "sent"], ["s1", "agent", null], ["m2", null, null], ["s2", "person", null]]);
+  assert.equal(rows[0]!.body, "<p>First</p>", "the cell shows the message without another request");
 });

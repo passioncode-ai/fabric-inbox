@@ -52,8 +52,10 @@ import {
   type OpenMessage,
 } from "~/components/inbox/model";
 import { useDrafts } from "~/components/inbox/use-drafts";
+import ReplyFilter from "~/components/inbox/ReplyFilter";
+import { isAgentState, type AgentStatusSettings } from "../../shared/mail/agent-state";
 import ConversationList from "~/components/inbox/ConversationList";
-import { loadConversation, markRead, messageText, type ThreadRow } from "~/components/inbox/thread";
+import { loadConversation, markRead, messageBody, type ThreadRow } from "~/components/inbox/thread";
 import AgentRunPanel from "~/components/inbox/AgentRunPanel";
 import { openFromLink } from "~/components/inbox/open-link";
 import { untouchedDraft } from "~/components/inbox/draft-store";
@@ -157,6 +159,9 @@ export default function UnifiedInbox() {
   const categoryParam = params.get("category") ?? "";
   const providerParam = params.get("provider");
   const providerFilter = providerParam === "gmail" || providerParam === "imap" || providerParam === "outlook" ? providerParam : "";
+  // B-138: the list by reply status ("open": every state waiting for someone), on addresses where it is shown.
+  const replyParam = params.get("reply") ?? "";
+  const replyFilter = replyParam === "open" || isAgentState(replyParam) ? replyParam : "";
   const unreadOnly = params.get("unread") === "1",
     groupParam = params.get("group"),
     group = isTriageGroup(groupParam) ? groupParam : undefined,
@@ -263,7 +268,7 @@ export default function UnifiedInbox() {
   }, [rulesOpen]);
   const { archiveKey, discardKey } = triageKeys(mac);
   const windowActive = useWindowActive();
-  const listKey = ["unified-inbox", accountId, domainFilter, providerFilter, categoryParam, folder, search, unreadOnly];
+  const listKey = ["unified-inbox", accountId, domainFilter, providerFilter, categoryParam, folder, search, unreadOnly, replyFilter];
   // A page answers with every change shown since its read started that the server may not have yet (B-95).
   const readPage = (pageParam: string, startedAt = Date.now()) =>
       fabric<InboxData>(
@@ -278,6 +283,7 @@ export default function UnifiedInbox() {
             ...(domainFilter ? { domain: domainFilter } : {}),
             ...(categoryParam ? { category: categoryParam } : {}),
             ...(providerFilter ? { provider: providerFilter } : {}),
+            ...(replyFilter ? { reply: replyFilter } : {}),
           }),
       ).then((page) => withPendingChanges(page, startedAt));
   const list = useInfiniteQuery({
@@ -326,6 +332,15 @@ export default function UnifiedInbox() {
     queryFn: () => fabric<CategoryList>("/api/categories"),
     retry: false,
   });
+  // B-138: whether the reply status is shown anywhere; the filter appears only then (off by default).
+  const replyStatus = useQuery({
+    queryKey: ["agent-status"],
+    queryFn: () => fabric<AgentStatusSettings>("/api/agent-status"),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const replyShown = !!replyStatus.data && (replyStatus.data.enabled || Object.values(replyStatus.data.domains).some(Boolean)
+    || Object.values(replyStatus.data.addresses).some(Boolean));
   const listReadAt = useRef(0);
   useEffect(() => {
     if (!list.dataUpdatedAt || listReadAt.current === list.dataUpdatedAt) return;
@@ -860,6 +875,55 @@ export default function UnifiedInbox() {
   // page read after Load older). With mail already shown it costs the list a one-line bar (B6-01);
   // with nothing to show it keeps the full panel.
   const refreshFailed = list.isError || list.isRefetchError || (olderLoaded && (head.isError || head.isRefetchError));
+  // B-138: a conversation of more than one message reads as cells, oldest at the top; the open message's
+  // own content (what the agent did, its body, its attachments) is its cell's.
+  const threaded = (conversation.data?.length ?? 0) > 1;
+  const openContent = selected && detail.data ? (
+                      <>
+                        <AgentRunPanel message={selected} onOpenDraft={(draftId) => {
+                          void saved.openServer({ accountId: selected.accountId, serverId: draftId, revision: 0, to: "", subject: "", date: "", snippet: "", files: 0 })
+                            .then((opened) => { if (opened) setComposeOpen(true); });
+                        }} />
+                        <div className="fi-message-body">
+                          {/* HTML when the message has it (sandboxed), the text part otherwise:
+                              Gmail sends both, and text-first dropped every layout. */}
+                          {reading?.html ? (
+                            <EmailIframe
+                              messageKey={selected.id}
+                              body={reading.html}
+                              inlineAttachments={reading.inline}
+                              autoSize
+                            />
+                          ) : detail.data.text ? (
+                            <pre>{detail.data.text}</pre>
+                          ) : (
+                            <p>{t("No message body.")}</p>
+                          )}
+                        </div>
+                        {!!reading?.listed.length && (
+                          <div className="fi-attachments">
+                            <h3>{t("Attachments")}</h3>
+                            {reading.listed.map((a) => (
+                              <button
+                                className="fi-secondary"
+                                key={a.id}
+                                disabled={busy || downloading === a.id}
+                                onClick={() => void download(a)}
+                              >
+                                {downloading === a.id ? (
+                                  <span role="status">{t("Downloading…")}</span>
+                                ) : (
+                                  <>
+                                    {a.filename} ↓{" "}
+                                    <small>{t("{size} KB", { size: Math.ceil(a.size / 1024) })}</small>
+                                  </>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+  ) : null;
   return (
     <main className={"fi-app" + (selected ? " fi-has-selection" : "") + (agentOpen && agentWide ? " fi-agent-open" : "")}>
       <aside className="fi-sidebar" aria-label={t("Mailbox navigation")}>
@@ -1182,6 +1246,9 @@ export default function UnifiedInbox() {
               >
                 {t("Unread only")}
               </button>
+              {(replyShown || !!replyFilter) && folder === "inbox" && !categoryParam && (
+                <ReplyFilter value={replyFilter} counts={list.data?.pages[0]?.replyCounts} onChange={(next) => scope({ reply: next })} />
+              )}
               {folder !== "spam" && (counts.length > 1 || !!group) && (
                 <div className="fi-chip-row" role="group" aria-label={t("Show one group")}>
                   <button type="button" className="fi-chip" aria-pressed={!group} onClick={() => scope({ group: "" })}>
@@ -1444,9 +1511,6 @@ export default function UnifiedInbox() {
                   detail.data && (
                     <>
                       <div className="fi-reader-scroll">
-                        <ConversationList rows={conversation.data ?? []} openId={selected.providerMessageId}
-                          onOpen={(message) => setSelected(message)} loadText={(message) => messageText(message, (url) => fabric(url))}
-                          onMarkRead={markConversationRead} />
                         <header className="fi-message-header">
                           <span className="fi-eyebrow">
                             {selected.provider === "cloudflare"
@@ -1463,6 +1527,7 @@ export default function UnifiedInbox() {
                               {restoredRules.length === 0 && <Link to={settingsPath("discard")}>{TT.bannerLink}</Link>}
                             </p>
                           )}
+                          {!threaded && (
                           <div className="fi-sender">
                             <span className="fi-avatar">
                               {senderName(detail.data.from)
@@ -1478,49 +1543,13 @@ export default function UnifiedInbox() {
                               {listDate(detail.data.date, undefined, t)}
                             </time>
                           </div>
-                        </header>
-                        <AgentRunPanel message={selected} onOpenDraft={(draftId) => {
-                          void saved.openServer({ accountId: selected.accountId, serverId: draftId, revision: 0, to: "", subject: "", date: "", snippet: "", files: 0 })
-                            .then((opened) => { if (opened) setComposeOpen(true); });
-                        }} />
-                        <div className="fi-message-body">
-                          {/* HTML when the message has it (sandboxed), the text part otherwise:
-                              Gmail sends both, and text-first dropped every layout. */}
-                          {reading?.html ? (
-                            <EmailIframe
-                              messageKey={selected.id}
-                              body={reading.html}
-                              inlineAttachments={reading.inline}
-                              autoSize
-                            />
-                          ) : detail.data.text ? (
-                            <pre>{detail.data.text}</pre>
-                          ) : (
-                            <p>{t("No message body.")}</p>
                           )}
-                        </div>
-                        {!!reading?.listed.length && (
-                          <div className="fi-attachments">
-                            <h3>{t("Attachments")}</h3>
-                            {reading.listed.map((a) => (
-                              <button
-                                className="fi-secondary"
-                                key={a.id}
-                                disabled={busy || downloading === a.id}
-                                onClick={() => void download(a)}
-                              >
-                                {downloading === a.id ? (
-                                  <span role="status">{t("Downloading…")}</span>
-                                ) : (
-                                  <>
-                                    {a.filename} ↓{" "}
-                                    <small>{t("{size} KB", { size: Math.ceil(a.size / 1024) })}</small>
-                                  </>
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                        </header>
+                        {threaded ? (
+                          <ConversationList rows={conversation.data ?? []} openId={selected.providerMessageId}
+                            onOpen={(message) => setSelected(message)} loadBody={(message) => messageBody(message, (url) => fabric(url))}
+                            onMarkRead={markConversationRead} renderOpen={() => openContent} />
+                        ) : openContent}
                       </div>
                       <footer className="fi-reply-bar">
                         <button

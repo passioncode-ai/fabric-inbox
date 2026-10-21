@@ -8,6 +8,8 @@ import { changeHidden, HiddenConflict, readHidden } from "../lib/hidden-accounts
 import { REMOTE_ACCOUNT, parseRemoteAccount } from "../../shared/mail/accounts";
 import { msg } from "../../shared/i18n";
 import { runIdFor, type AgentRun } from "../agents/run";
+import { AgentStatusConflict, AgentStatusInvalid, attachAgentStates, changeAgentStatus, listAgentThreads, readAgentStatus } from "../lib/agent-status";
+import { isAgentState, OPEN_STATES } from "../../shared/mail/agent-state";
 
 export interface InboxSources {
   cloudflareAccounts(): Promise<InboxAccount[]>;
@@ -276,6 +278,37 @@ inboxRouter.post("/api/inbox/refresh", async (c) => {
   }
 });
 
+/** B-138: whether the reply status is shown, for the workspace, each domain and each address (off by default). */
+inboxRouter.get("/api/agent-status", async (c) => {
+  c.header("Cache-Control", "no-store");
+  return c.json(await readAgentStatus(c.env.BUCKET));
+});
+inboxRouter.put("/api/agent-status", async (c) => {
+  const body = await c.req.json().catch(() => null) as Record<string, unknown> | null;
+  const map = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, boolean | null> : undefined);
+  if (!body || typeof body !== "object" || (body.enabled !== undefined && typeof body.enabled !== "boolean")
+    || (body.domains !== undefined && !map(body.domains)) || (body.addresses !== undefined && !map(body.addresses)))
+    return c.json({ error: msg("Give enabled (on or off), domains or addresses") }, 400);
+  try {
+    return c.json(await changeAgentStatus(c.env.BUCKET, { enabled: body.enabled as boolean | undefined, domains: map(body.domains), addresses: map(body.addresses) }));
+  } catch (error) {
+    if (error instanceof AgentStatusInvalid) return c.json({ error: error.message }, 400);
+    if (error instanceof AgentStatusConflict) return c.json({ error: msg("The reply status settings changed several times at once; try again") }, 409);
+    throw error;
+  }
+});
+
+/** B-138: conversations by reply status, newest first, on the addresses where it is shown (or the one named). */
+inboxRouter.get("/api/agent-threads", async (c) => {
+  c.header("Cache-Control", "no-store");
+  const params = new URL(c.req.url).searchParams;
+  const states = (params.get("state") || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!states.every(isAgentState)) return c.json({ error: msg("Unknown reply status") }, 400);
+  const limit = Math.min(200, Math.max(1, Number(params.get("limit") || 100) || 100));
+  const ownDomains = await allServedDomains(c.env).catch(() => [] as string[]);
+  return c.json(await listAgentThreads(c.env, { states: states.filter(isAgentState), address: params.get("address") || undefined, limit, ownDomains }));
+});
+
 inboxRouter.get("/api/inbox", async c => {
   c.header("Cache-Control", "no-store");
   try {
@@ -283,13 +316,16 @@ inboxRouter.get("/api/inbox", async c => {
     const params = new URL(c.req.url).searchParams;
     const categoryId = params.get("category") || "";
     if (categoryId) return c.json(await readCategory(c.env, categoryId, params, await allServedDomains(c.env).catch(() => [] as string[])));
+    const reply = params.get("reply") || "";
+    if (reply) return c.json(await readReplyView(c.env, reply, params, await allServedDomains(c.env).catch(() => [] as string[])));
     const [ownDomains, hidden, catchAlls] = await Promise.all([
       allServedDomains(c.env).catch(() => [] as string[]),
       readHidden(c.env.BUCKET).catch(() => [] as string[]),
       catchAllMailboxes(c.env).catch(() => new Set<string>()),
     ]);
     return c.json(await readInbox(params, inboxSources(c.env), { decorate: (page) => Promise.all([markCategories(c.env, page),
-      c.env.AGENT_REGISTRY ? attachAgentRuns(page, (ids) => c.env.AGENT_REGISTRY.getByName("workspace").runsByIds(ids)) : undefined]).then(() => undefined), ownDomains,
+      c.env.AGENT_REGISTRY ? attachAgentRuns(page, (ids) => c.env.AGENT_REGISTRY.getByName("workspace").runsByIds(ids)) : undefined,
+      attachAgentStates(c.env, page)]).then(() => undefined), ownDomains,
       hidden: new Set(hidden), catchAlls }));
   } catch (error) {
     if (error instanceof InboxRequestError) return c.json({ error: error.message }, error.status);
@@ -332,6 +368,31 @@ async function markCategories(env: Env, page: InboxMessage[]) {
       m.triage = { ...m.triage, importance: "important", reasons: [`Category: ${raised.name}`, ...m.triage.reasons.filter((r) => !r.startsWith("Category: "))] };
     }
   }
+}
+
+/**
+ * B-138: the list by reply status: `reply` is one state, or "open" for every state that waits for
+ * someone. The addresses where the status is on; one address with `account`, one domain with `domain`.
+ * One page (the newest 100), with every state's count for the filter's numbers.
+ */
+async function readReplyView(env: Env, reply: string, params: URLSearchParams, ownDomains: string[]): Promise<InboxResponse & { replyCounts: Record<string, number> }> {
+  const states = reply === "open" ? [...OPEN_STATES] : isAgentState(reply) ? [reply] : null;
+  if (!states) throw new InboxRequestError("invalid_filter");
+  const account = params.get("account") || "";
+  const domain = (params.get("domain") || "").trim().toLowerCase();
+  const sources = inboxSources(env);
+  const issues: InboxIssue[] = [];
+  // Every account, as the feed lists them, so the sidebar stays whole while the list is filtered.
+  const accounts = (await Promise.allSettled([sources.cloudflareAccounts(), sources.remoteAccounts()])).flatMap((r, i) => {
+    if (r.status === "rejected") { issues.push({ provider: i === 0 ? "cloudflare" : "gmail", error: publicError(r.reason) }); return []; }
+    return r.value;
+  });
+  const found = await listAgentThreads(env, { states, address: account.startsWith("cloudflare:") ? account.slice(11) : undefined, ownDomains });
+  for (const i of found.issues) issues.push({ accountId: i.accountId, provider: "cloudflare", error: i.error });
+  const messages = found.messages.filter((m) => !domain || m.accountId.endsWith("@" + domain));
+  await Promise.all([markCategories(env, messages),
+    env.AGENT_REGISTRY ? attachAgentRuns(messages, (ids) => env.AGENT_REGISTRY.getByName("workspace").runsByIds(ids)) : undefined]);
+  return { accounts, messages, issues, hasMore: false, replyCounts: found.counts as Record<string, number> };
 }
 
 /**

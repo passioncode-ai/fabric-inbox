@@ -5,6 +5,18 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.22.0 (2026-10-21)
+
+- **A conversation reads as one page.** Its messages stand one under another, the oldest at the top
+  and the newest at the bottom, each shown whole in its own cell. A reply says whether the agent sent
+  it or a person did, and a message that came in says what the agent did with it. Opening the
+  conversation lands on the message you opened.
+- **See which conversations still need a reply.** Each conversation on your addresses can carry its
+  status: No reply, New after the agent, Agent error, Agent lacks data, Agent's draft waits, Agent
+  replied, You replied. Needs a reply keeps only the ones waiting for someone, with their numbers.
+  Turn it on in Settings → Addresses for every address, a domain or one address; it is off until
+  you do. Agents read the same statuses with `list_agent_threads`.
+
 ## 0.21.2 (2026-10-21)
 
 - **A rename loses nothing while it runs.** From the moment a rename starts, new mail for the old

@@ -30,6 +30,7 @@ import { DISCARD_RETENTION_MS } from '../../shared/mail/discard';
 import { listDrafts as listDraftRows, saveDraft as saveDraftRows, type DraftSql, type DraftSummary, type SaveDraftInput, type SaveDraftResult } from '../lib/mailbox-drafts';
 import { htmlToText } from '../../shared/mail/text';
 import { msg } from "../../shared/i18n";
+import type { SentBy, ThreadFacts } from "../../shared/mail/agent-state";
 
 
 /** Reject control characters before durable reservation and after reply-header derivation. */
@@ -699,6 +700,58 @@ export class MailboxDO extends DurableObject<Env> {
 			starred: !!email.starred,
 			attachments: emailAttachments,
 		};
+	}
+
+	/**
+	 * B-138: the facts each conversation's reply status is read from (shared/mail/agent-state.ts): its
+	 * last message that came in, its last message sent and who sent it (the reply agent's answers carry
+	 * the run's id as their outbox key, `<run>:waiting` for its waiting reply), and whether the agent had
+	 * answered before. A conversation is its thread, or the message itself when it has none. Without
+	 * `threadIds`, the `limit` conversations whose mail came in last.
+	 */
+	async agentThreads(options: { threadIds?: string[]; limit?: number } = {}): Promise<ThreadFacts[]> {
+		const OUT = "('sent', 'draft', 'trash', 'spam', 'discarded')";
+		let keys = (options.threadIds ?? []).filter((k) => typeof k === "string" && k).slice(0, 500);
+		if (!options.threadIds) {
+			const limit = Math.min(500, Math.max(1, Number(options.limit) || 200));
+			keys = this.ctx.storage.sql.exec<{ k: string }>(
+				`SELECT coalesce(thread_id, id) AS k FROM emails WHERE folder_id NOT IN ${OUT} GROUP BY k ORDER BY max(date) DESC LIMIT ?`, limit,
+			).toArray().map((r) => String(r.k));
+		}
+		if (!keys.length) return [];
+		const rows = this.ctx.storage.sql.exec<{ id: string; k: string; folder_id: string; date: string; key: string | null }>(
+			`SELECT e.id, coalesce(e.thread_id, e.id) AS k, e.folder_id, e.date, o.idempotency_key AS key
+			   FROM emails e LEFT JOIN outbox o ON o.id = e.id
+			  WHERE coalesce(e.thread_id, e.id) IN (SELECT value FROM json_each(?))`, JSON.stringify(keys),
+		).toArray();
+		const byThread = new Map<string, typeof rows>();
+		for (const r of rows) byThread.set(String(r.k), [...(byThread.get(String(r.k)) ?? []), r]);
+		const sentBy = (key: string | null): SentBy => !key || !key.startsWith("agent-") ? "person" : key.endsWith(":waiting") ? "agent_waiting" : "agent";
+		return keys.flatMap((k) => {
+			const list = byThread.get(k);
+			if (!list) return [];
+			const at = (r: { date: string }) => Date.parse(r.date) || 0;
+			const inbound = list.filter((r) => !["sent", "draft", "trash", "spam", "discarded"].includes(r.folder_id)).sort((a, b) => at(b) - at(a))[0];
+			const sent = list.filter((r) => r.folder_id === "sent").sort((a, b) => at(b) - at(a));
+			const last = sent[0];
+			return [{
+				threadId: k,
+				lastInbound: inbound ? { id: String(inbound.id), at: at(inbound) } : null,
+				lastSent: last ? { id: String(last.id), at: at(last), by: sentBy(last.key) } : null,
+				agentAnsweredBefore: !!inbound && sent.some((r) => sentBy(r.key) === "agent" && at(r) < at(inbound)),
+			}];
+		});
+	}
+
+	/** B-138: who sent each message of a conversation (the agent, its waiting reply, or a person), by message id. */
+	async sentByIds(ids: string[]): Promise<Record<string, SentBy>> {
+		const wanted = ids.filter((id) => typeof id === "string" && id).slice(0, 500);
+		if (!wanted.length) return {};
+		const rows = this.ctx.storage.sql.exec<{ id: string; key: string | null }>(
+			`SELECT e.id, o.idempotency_key AS key FROM emails e LEFT JOIN outbox o ON o.id = e.id
+			  WHERE e.folder_id = 'sent' AND e.id IN (SELECT value FROM json_each(?))`, JSON.stringify(wanted),
+		).toArray();
+		return Object.fromEntries(rows.map((r) => [String(r.id), !r.key || !String(r.key).startsWith("agent-") ? "person" : String(r.key).endsWith(":waiting") ? "agent_waiting" : "agent"]));
 	}
 
 	/**

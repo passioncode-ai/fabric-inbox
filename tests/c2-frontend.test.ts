@@ -123,7 +123,7 @@ const page = (over: Record<string, unknown> = {}) => ({ accounts: [account], mes
 function renderSearch(query: string, state: Record<string, unknown>) {
   // retryOnMount false: a list that already failed is shown as failed, not fetched again on render.
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false, staleTime: Infinity } } });
-  const listKey = ["unified-inbox", "", "", "", "", "inbox", query, false];
+  const listKey = ["unified-inbox", "", "", "", "", "inbox", query, false, ""];
   client.getQueryCache().build(client, { queryKey: listKey }).setState({ fetchStatus: "idle", ...state } as never);
   const router = createMemoryRouter([{ path: "/", element: createElement(UnifiedInbox) }], { initialEntries: ["/?query=" + encodeURIComponent(query)] });
   return renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(RouterProvider, { router })));

@@ -6,6 +6,7 @@ import { TRIAGE_GROUPS, type Triage, type TriageGroup } from "../../../shared/ma
 import { triageText } from "./triage-text";
 import { useT, type T } from "../../lib/i18n";
 import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
+import { replyStateLabel, replyStateOpen } from "./reply-state";
 
 /** The group, or the specific reason an automated message was raised (e.g. "Payment problem"). */
 function tagText(tri: Triage, t: T): string {
@@ -68,7 +69,10 @@ function MessageRow({ message, account, selected, marked, onSelect, showGroup, c
       {message.categoryReason && <span className="fi-category-reason">{t("Why: {reason}", { reason: t.text(message.categoryReason) })}</span>}
       {message.spamReason && <span className="fi-category-reason fi-spam-reason">{t("Why in Spam: {reason}", { reason: t.text(message.spamReason) })}</span>}
       {message.discardReason && <span className="fi-category-reason fi-spam-reason">{triageText(t).whyDiscarded} {t.text(message.discardReason)}</span>}
-      {message.agentRun && (
+      {message.agentState ? (
+        // B-138: where the conversation stands; it says more than the agent's run on this one message.
+        <span className={"fi-agent-tag" + (replyStateOpen(message.agentState) ? " needs-look" : "")}>{replyStateLabel(message.agentState, t)}</span>
+      ) : message.agentRun && (
         <span className={"fi-agent-tag" + (agentRunNeedsLook(message.agentRun.status) ? " needs-look" : "")}>{agentRunLabel(message.agentRun.status, t)}</span>
       )}
       <span className="fi-message-account">

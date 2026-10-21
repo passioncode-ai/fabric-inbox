@@ -725,4 +725,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"The address could not be saved: {error}": "Не удалось сохранить адрес: {error}",
 	"Mail for {address} already arrives here.": "Почта для {address} уже приходит сюда.",
 	"Mail for {address} now arrives here.": "Теперь почта для {address} приходит сюда.",
+	"Give enabled (on or off), domains or addresses": "Укажите enabled (вкл или выкл), домены или адреса",
+	"The reply status settings changed several times at once; try again": "Настройки статуса ответа изменились несколько раз одновременно; попробуйте ещё раз",
+	"Unknown reply status": "Неизвестный статус ответа",
 };

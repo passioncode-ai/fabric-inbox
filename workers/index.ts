@@ -13,6 +13,7 @@ import { AttachmentValidationError, MAX_ATTACHMENTS, storedAttachmentName, valid
 import { allServedDomains, createMailbox, deleteMailbox, listMailboxAddresses, readSettings, storedCatchAll, updateSettings, readAllSettings, allowedAddresses as allowedAddressList } from "./lib/mailbox-store";
 import { createAddress, pausedKey, removeAddress } from "./lib/address-ops";
 import { renamedTo } from "./lib/address-rename";
+import { runIdFor } from "./agents/run";
 import { routingClient } from "./routing/email-routing";
 import { handleSendEmail, handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
 import { Folders, isBuiltInFolder } from "../shared/folders";
@@ -360,7 +361,25 @@ app.post("/api/v1/mailboxes/:mailboxId/emails/:id/move", async (c: AppContext) =
 // -- Threads --------------------------------------------------------
 
 app.get("/api/v1/mailboxes/:mailboxId/threads/:threadId", async (c: AppContext) => {
-	return c.json(await (c.var.mailboxStub as any).getThreadEmails(c.req.param("threadId")!));
+	const rows = await (c.var.mailboxStub as any).getThreadEmails(c.req.param("threadId")!) as Record<string, unknown>[];
+	// B-138: who sent each message (the reply agent, its waiting reply, or a person) and what the agent did
+	// with each one that came in. Read beside the thread; a part that cannot be read leaves rows unmarked.
+	const mailboxId = decodeURIComponent(c.req.param("mailboxId")!).toLowerCase();
+	const sentIds = rows.filter((r) => r.folder_id === "sent").map((r) => String(r.id));
+	const inbound = rows.filter((r) => !["sent", "draft"].includes(String(r.folder_id))).map((r) => String(r.id));
+	const [sentBy, runs] = await Promise.all([
+		sentIds.length ? (c.var.mailboxStub as any).sentByIds(sentIds).catch(() => ({})) as Promise<Record<string, string>> : Promise.resolve({} as Record<string, string>),
+		inbound.length && c.env.AGENT_REGISTRY
+			? Promise.all(inbound.map((id) => runIdFor(mailboxId, id))).then((ids) => c.env.AGENT_REGISTRY.getByName("workspace").runsByIds(ids)
+				.then((found) => new Map(found.map((r) => [r.emailId, r] as const)))).catch(() => new Map())
+			: Promise.resolve(new Map()),
+	]);
+	return c.json(rows.map((r) => {
+		const run = (runs as Map<string, { id: string; status: string; agentId?: string; agentVersion?: number; draftId?: string }>).get(String(r.id));
+		return { ...r, ...(sentBy[String(r.id)] ? { sent_by: sentBy[String(r.id)] } : {}),
+			...(run ? { agent_run: { id: run.id, status: run.status, ...(run.agentId ? { agentId: run.agentId } : {}),
+				...(run.agentVersion ? { agentVersion: run.agentVersion } : {}), ...(run.draftId ? { draftId: run.draftId } : {}) } } : {}) };
+	}));
 });
 
 app.post("/api/v1/mailboxes/:mailboxId/threads/:threadId/read", async (c: AppContext) => {
