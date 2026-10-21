@@ -18,6 +18,7 @@
 - 2026-10-19: final pass, B-131, B-130, B-132, B-27 pause, B-62, B-133, release 0.21.0; PRs #182 to #190; Worker `630251a8` at `392dedc` (receipt linked).
 - 2026-10-21: review of everything since 0.20.0 (B-134), release 0.21.2; PR #201 (`98b3941`); Worker `04676c3b` (receipt linked).
 - 2026-10-21: B-138 conversations and reply status, B-139 link menu, B-140 forward HTML, release 0.22.0; PR #203 (`166df43`); Worker `baf18e50` (receipt linked).
+- 2026-10-21: B-135, B-136, B-137, B-33, B-43, release 0.24.0; PR #207 (`01c77df`); Worker `2042be1c` (receipt linked).
 
 | Date | Branch / commit | Task | Gate |
 |---|---|---|---|
@@ -35,6 +36,7 @@
 | 2026-09-30 | `main` a9f9516 (0.8.0 tree, see the cloudflare-accounts brief) | several Cloudflare accounts, the relay, the Email Routing apex fix, door presets | 431 tests, typecheck, build, UX lint, brand lint 0 errors, four planted defects caught, server deployed, tokens probed live |
 
 ## Recent log
+- 2026-10-21 (0.24.0): *Symptom:* the release PR was ready as 0.23.0 when another session had already released 0.23.0 with other work. *Surfaced:* `gh pr list` before merging. *Owned by:* two sessions on one repository after a mass resume, each taking the next version without a reservation. *Fix:* rebased, renumbered to 0.24.0, a new branch instead of a force-push. *Next time:* before cutting a release, `git fetch` and read `origin/main`'s version and tags, and take the version under the CHANGELOG lease.
 - 2026-10-21 (B-138): *Symptom:* four search tests failed after a list filter was added, though search had not changed. *Surfaced:* stage 6, the full suite. *Owned by:* the tests, which seed the list's query cache under its exact key; a new key part made their state invisible. *Fix:* the key in the tests. *Next time:* a change to `listKey` in `app/routes/unified-inbox.tsx` updates `tests/c2-frontend.test.ts` in the same commit.
 - 2026-10-21 (review B-134): *Symptom:* a rename's copy step was idempotent by its own tests, yet the first test that delivered mail during a rename lost one message: `INSERT OR REPLACE` on `folders` deleted the row first and `ON DELETE CASCADE` took the messages already in that folder. *Surfaced:* the new test of mail arriving mid-rename, written from a review finding. *Owned by:* the first B-27 design (its tests copied into an empty target only). *Fix:* an upsert (`ON CONFLICT(id) DO UPDATE`), the alias and a freeze before the copy, verification by id. *Next time:* a copy into a store with foreign keys is tested with rows already in the target, and a move is tested with writes arriving during it.
 - 2026-10-21 (review B-134): *Symptom:* agent-sync refused every lease after a pause, reporting "held by another run". *Surfaced:* stage 7, the commit. *Owned by:* the machine's pre-push check of private terms, which scans the working tree on every push, a lease ref's too; a new board row named a customer. *Fix:* the name replaced by a neutral one. *Next time:* "held by another run" with no lease ref on `origin` means the push itself failed: run the push by hand to see why.
