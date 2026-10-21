@@ -25,7 +25,7 @@
 	"scripts": {
 		"build": "react-router build",
 		"cf-typegen": "wrangler types --strict-vars=false",
-		"deploy": "npm run build && wrangler deploy --var FABRIC_SERVER_VERSION:$npm_package_version --tag $(git rev-parse --short=12 HEAD)",
+		"deploy": "node scripts/deploy-receipt.mjs --require-clean && npm run build && wrangler deploy --var FABRIC_SERVER_VERSION:$npm_package_version --tag $(git rev-parse --short=12 HEAD)",
 		"deploy:receipt": "node scripts/deploy-receipt.mjs",
 		"dev": "react-router dev",
 		"preview": "npm run build && vite preview",

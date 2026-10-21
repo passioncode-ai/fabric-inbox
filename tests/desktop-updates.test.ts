@@ -532,9 +532,58 @@ test("B-51: squirrelStaged reads ShipIt's state file and looks for the bundle it
   const state = { updateBundleURL: pathToFileURL(bundle + path.sep).href };
   const readPlist = async () => state;
   const check = () => updates.squirrelStaged({ fs: fsPromises, cacheDir: home, bundleId: id, readPlist });
-  await assert.rejects(check(), "no bundle yet");
+  assert.equal(await check(), false, "no state file: nothing staged");
+  mkdirSync(path.join(home, `${id}.ShipIt`), { recursive: true });
+  writeFileSync(path.join(home, `${id}.ShipIt`, "ShipItState.plist"), "<plist/>");
+  assert.equal(await check(), false, "a state file naming a bundle that is gone");
+  await assert.rejects(updates.squirrelStaged({ fs: fsPromises, cacheDir: home, bundleId: id, readPlist: async () => { throw new Error("plutil timed out"); } }),
+    "a state file that could not be read is unknown, not lost");
   mkdirSync(path.join(bundle, "Contents"), { recursive: true });
   writeFileSync(path.join(bundle, "Contents", "Info.plist"), "<plist/>");
   assert.equal(await check(), true);
   assert.equal(await updates.squirrelStaged({ fs: fsPromises, cacheDir: home, bundleId: id, readPlist: async () => ({}) }), false);
+});
+
+test("review 2026-10-21: a staged update lost twice waits before it is fetched again, ShipIt's stale job is forgotten, and a failed look loses nothing", async () => {
+  const disk = { staged: true as boolean | "error" };
+  let forgotten = 0;
+  const h = updater({ staged: async () => { if (disk.staged === "error") throw new Error("plutil timed out"); return disk.staged; }, forgetStaged: async () => { forgotten++; } });
+  const up = h.make();
+  await up.start(RELEASED);
+  await h.advance(90 * 1000);
+  h.u.emit("update-downloaded", {}, "notes", "0.12.0");
+  await settle();
+  // A look that fails is not a loss.
+  disk.staged = "error";
+  await h.advance(5 * MINUTE);
+  assert.equal(up.status().state, "ready");
+  assert.equal(forgotten, 0);
+  // Lost once: forgotten and fetched again at once.
+  disk.staged = false;
+  await h.advance(5 * MINUTE);
+  await until(() => h.calls.filter((c) => c === "download").length === 2);
+  assert.equal(forgotten, 1);
+  h.u.emit("update-downloaded", {}, "notes", "0.12.0");
+  await settle();
+  // Lost again: not downloaded every five minutes while the disk stays short.
+  await h.advance(5 * MINUTE);
+  await until(() => up.status().state === "idle");
+  assert.equal(h.calls.filter((c) => c === "download").length, 2);
+  assert.ok(h.pending().includes(updates.LOST_BACKOFF_MS));
+  assert.equal(forgotten, 2);
+});
+
+test("review 2026-10-21: Check for Updates answers when the staged files are gone even with automatic updates off", async () => {
+  const disk = { staged: true };
+  const h = updater({ staged: async () => disk.staged });
+  const up = h.make();
+  await up.start(RELEASED);
+  await h.advance(90 * 1000);
+  h.u.emit("update-downloaded", {}, "notes", "0.12.0");
+  await settle();
+  await up.setAutomatic(false);
+  disk.staged = false;
+  h.verdicts.push({ outcome: "current", version: "0.11.0" });
+  const answer = await Promise.race([up.checkNow(), new Promise((r) => setTimeout(() => r("hung"), 2000))]);
+  assert.notEqual(answer, "hung");
 });

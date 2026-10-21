@@ -6,6 +6,7 @@
 // version whose tag is not this checkout's commit, or a dirty tree, is reported "unlinked".
 //
 //   CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… node scripts/deploy-receipt.mjs [--root <checkout>] [--out <dir>] [--expect-version <id>]
+//   node scripts/deploy-receipt.mjs --require-clean   (exit 1 when tracked files differ from HEAD; `npm run deploy` runs it first)
 //
 // --root reads another checkout (the one the deploy ran from); by default this script's own.
 //
@@ -76,6 +77,13 @@ export async function makeReceipt({ root, token, account, script, fetchImpl, exp
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : undefined; };
+  // `npm run deploy` runs this first (review 2026-10-21): a version tagged with a commit is that commit's
+  // code only when no tracked file differs from it, so a dirty tree is not deployed at all.
+  if (process.argv.includes("--require-clean")) {
+    const state = gitState(arg("--root") ?? fileURLToPath(new URL("..", import.meta.url)));
+    if (state.dirty) { console.error("Not deployed: tracked files differ from the commit the version would be tagged with. Commit or stash them first."); process.exit(1); }
+    process.exit(0);
+  }
   const token = process.env.CLOUDFLARE_API_TOKEN, account = process.env.CLOUDFLARE_ACCOUNT_ID;
   if (!token || !account) { console.error("CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are needed (from the vault, never typed)."); process.exit(1); }
   const root = arg("--root") ?? fileURLToPath(new URL("..", import.meta.url));

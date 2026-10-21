@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 // @ts-expect-error a plain .mjs script
@@ -59,4 +59,14 @@ test("B-62: another commit's tag, no tag, a dirty tree, a split deployment or an
   const before = buildDigest(c.root).sha256;
   writeFileSync(join(c.root, "build/server/index.js"), "export default { changed: true }\n");
   assert.notEqual(buildDigest(c.root).sha256, before);
+});
+
+test("review 2026-10-21: --require-clean refuses a tree whose tracked files differ from HEAD", () => {
+  const { root } = checkout();
+  const run = () => spawnSync(process.execPath, ["scripts/deploy-receipt.mjs", "--require-clean", "--root", root], { encoding: "utf8" });
+  assert.equal(run().status, 0, "build/ is untracked and does not count");
+  writeFileSync(join(root, "a.txt"), "changed\n");
+  const dirty = run();
+  assert.equal(dirty.status, 1);
+  assert.match(dirty.stderr, /Not deployed/);
 });

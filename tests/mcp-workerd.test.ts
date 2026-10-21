@@ -443,6 +443,8 @@ test("B-62: initialize names the narrowing capability from the source, and a hub
   assert.equal(narrowingSupported({ experimental: { [NARROWING_CAPABILITY]: { ...NARROWING, revision: 0 } } }), false);
   assert.equal(narrowingSupported({ experimental: { [NARROWING_CAPABILITY]: { ...NARROWING, revision: "1" } } }), false);
   assert.equal(narrowingSupported({ experimental: { [NARROWING_CAPABILITY]: { ...NARROWING, intersection: "union" } } }), false);
+  const { emptyScope: _, ...withoutEmpty } = NARROWING;
+  assert.equal(narrowingSupported({ experimental: { [NARROWING_CAPABILITY]: withoutEmpty } }), false, "a server that does not promise to refuse an empty scope (review 2026-10-21)");
   assert.equal(narrowingSupported({ experimental: { [NARROWING_CAPABILITY]: { ...NARROWING } } }, 2), false, "a hub needing a later revision refuses this one");
   assert.equal(narrowingSupported(null), false);
 });
