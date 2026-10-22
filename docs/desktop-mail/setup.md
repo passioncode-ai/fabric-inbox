@@ -364,10 +364,12 @@ node scripts/register-fabric-service.mjs --origin https://<server> < key.json
 ```
 
 It writes the descriptor `fabric-inbox.default.json` and its token file, both 0600, where Fabric
-Dashboards reads them. The token travels in one header, `Fabric-Access`, which the server's Access
-application reads (`read_service_tokens_from_header`): **Create my server** sets it on a new server;
-for a server made before 0.28.0 set it once on its Access application (Zero Trust, Access,
-Applications, the server's application, or the API's `read_service_tokens_from_header: "Fabric-Access"`).
+Dashboards reads them. The token travels in one header, `Authorization` (the only header Cloudflare
+accepts for this), as the JSON `{"cf-access-client-id": …, "cf-access-client-secret": …}`, which the
+server's Access application reads (`read_service_tokens_from_header`): **Create my server** sets it on
+a new server; for a server made before 0.28.1 set it once with the API (`GET` the application, then
+`PUT` it whole with `read_service_tokens_from_header: "Authorization"`; it took effect within a minute
+on the owner's server). The usual two headers keep working.
 
 ## Categories
 

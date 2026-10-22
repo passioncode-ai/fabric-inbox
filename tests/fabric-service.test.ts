@@ -124,7 +124,7 @@ test("B-87: the registration writes the remote descriptor the contract accepts a
   const out = register({ origin: "https://mail.example.invalid", key: JSON.stringify({ key: { clientId: "abc.access" }, clientSecret: "s".repeat(32) }), env, version: "0.28.0" });
   const descriptor = JSON.parse(read(out.descriptor, "utf8"));
   validate("service-descriptor", descriptor);
-  assert.deepEqual([descriptor.placement, descriptor.origin, descriptor.auth.header, descriptor.auth.scheme], ["remote", "https://mail.example.invalid", "Fabric-Access", "none"]);
+  assert.deepEqual([descriptor.placement, descriptor.origin, descriptor.auth.header, descriptor.auth.scheme], ["remote", "https://mail.example.invalid", "Authorization", "none"]);
   assert.deepEqual(JSON.parse(read(out.tokenFile, "utf8")), { "cf-access-client-id": "abc.access", "cf-access-client-secret": "s".repeat(32) });
   for (const f of [out.descriptor, out.tokenFile]) assert.equal(statSync(f).mode & 0o777, 0o600, f);
   assert.ok(!JSON.stringify(descriptor).includes("s".repeat(32)), "the secret is only in the token file");
