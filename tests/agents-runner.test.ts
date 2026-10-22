@@ -1261,3 +1261,25 @@ test("B-141: the new part of a mail stops at the quoted history in English, Russ
   assert.equal(newText("Hi<br>&gt; quoted line<br>more"), "Hi\nmore");
   assert.equal(newText("As I said before, I wrote twice.<br>Still nothing."), "As I said before, I wrote twice.\nStill nothing.");
 });
+
+test("silentHandoff: a listed sender or topic is passed to a person with no reply at all and no model call (2026-10-22)", async () => {
+  const { runEvent } = await import("../workers/agents/events");
+  const { silentSender } = await import("../workers/agents/runner");
+  const silentHandoff = { senders: ["@desk.invalid", "lead@other.invalid"], topics: ["aml review"] };
+  for (const sender of ["compliance@desk.invalid", "Agent@EU.Desk.invalid", "lead@other.invalid"]) {
+    const h = harness({ agent: autonomous({ silentHandoff }), email: { sender, subject: "Re: your payments", body: "<p>We need the order details.</p>" } });
+    const r = (await h.run())!;
+    assert.deepEqual([r.status, r.handoff, h.effects.sends.length, h.effects.drafts.length, h.effects.modelCalls], ["skipped", true, 0, 0, 0], sender);
+    assert.equal(runEvent(r)?.kind, "agent.handoff");
+  }
+  const byTopic = harness({ agent: autonomous({ silentHandoff }), email: { sender: "ticket@helpdesk.invalid", subject: "Re: AML review: 12 payments", body: "<p>Received.</p>" } });
+  assert.equal((await byTopic.run())!.handoff, true);
+  assert.equal(byTopic.effects.sends.length, 0);
+  // Another sender of the same domain's look-alike, and a mail without the topic, are answered as before.
+  const other = harness({ agent: autonomous({ silentHandoff }), email: { sender: "ann@notdesk.invalid", subject: "Login", body: "<p>I cannot log in.</p>" },
+    callTool: async () => JSON.stringify({ abstained: false, results: [{ id: "f", coverage: 0.9 }] }) });
+  assert.equal((await other.run())!.status, "sent");
+  assert.equal(silentSender(["@desk.invalid"], [null, "x@desk.invalid"]), true, "Reply-To counts");
+  assert.equal(silentSender(["@desk.invalid"], ["x@desk.invalid.evil"]), false);
+  assert.throws(() => AgentInputSchema.parse({ name: "A", instructions: "B", replyPolicy: { silentHandoff: { senders: ["not a sender"] } } }));
+});

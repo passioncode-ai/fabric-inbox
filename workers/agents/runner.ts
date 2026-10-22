@@ -348,6 +348,17 @@ function userPrompt(email: RunnerEmail, thread: RunnerThreadMessage[], mailboxId
  * workspace answers is recorded as a skipped duplicate, or waits while that address has
  * not started (B-22, `workers/agents/dedupe.ts`).
  */
+/** Whether an address (From or Reply-To) is one of `senders`: a full address, or `@domain` with its subdomains. */
+export function silentSender(senders: readonly string[], addresses: readonly (string | null | undefined)[]): boolean {
+  const list = addresses.map((a) => (a ?? "").trim().toLowerCase()).filter((a) => a.includes("@"));
+  return senders.some((entry) => {
+    const s = entry.trim().toLowerCase();
+    if (!s.startsWith("@") && s.includes("@")) return list.includes(s);
+    const domain = s.replace(/^@/, "");
+    return list.some((a) => { const d = a.slice(a.lastIndexOf("@") + 1); return d === domain || d.endsWith("." + domain); });
+  });
+}
+
 export async function runAgent(input: { mailboxId: string; emailId: string }, deps: RunnerDeps): Promise<AgentRun | AwaitingAnswer | null> {
   const mailboxId = input.mailboxId.toLowerCase();
   const found = await deps.mailbox.email(input.emailId);
@@ -437,6 +448,12 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   const headers = parseStoredHeaders(email.raw_headers);
   const replyTo = replyToAddress(headers);
   const ownDomains = deps.servedDomains ? await deps.servedDomains().catch(() => [] as string[]) : [];
+  // A person answers these senders and topics: nothing is sent, not even a fixed text, and no model runs.
+  const silent = agent.replyPolicy.silentHandoff;
+  if (silent && (silentSender(silent.senders, [email.sender, replyTo]) || matchedTopic(silent.topics, `${email.subject}\n${newText(email.body)}`))) {
+    run.handoff = true;
+    return finish("skipped", msg("Passed to a person: mail from this sender or on this topic is answered by a person, so nothing was sent"));
+  }
   const skip = prefilter({ mailboxId, sender: email.sender, headers, answeredAfter, ownDomains, replyTo, subject: email.subject });
   if (skip) return finish("skipped", SKIP_TEXT[skip]);
 

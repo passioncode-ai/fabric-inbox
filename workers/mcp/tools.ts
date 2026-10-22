@@ -1281,10 +1281,23 @@ const enableSending = defineTool({
 
 const addDestination = defineTool({
   name: "add_forward_destination", title: "Add a forwarding destination", level: "admin", additive: true, target: (a) => a.email,
-  description: "Adds an address that copies may be forwarded to, in one Cloudflare account (the server's unless account is given: add it in the account of the domain whose copies go there). Cloudflare emails it a verification link; it can be used once someone clicks it.",
-  input: { email: z.string().email().max(320), account: cloudflareAccount.optional() }, routes: ["POST /api/domains/destinations"],
+  description: "Adds an address that copies may be forwarded to, in one Cloudflare account (the server's unless account is given: add it in the account of the domain whose copies go there). Cloudflare emails it a verification link; it can be used once someone clicks it. Calling it again for an address already added changes nothing (`created: false`) and sends no new link; with resend: true a destination still waiting gets a new link (Cloudflare's API has none, so it is removed and added again; `resent: true`), and a confirmed one answers `resent: false`.",
+  input: { email: z.string().email().max(320), account: cloudflareAccount.optional(), resend: z.boolean().default(false).describe("Send the verification link again when the destination is still waiting") },
+  routes: ["POST /api/domains/destinations"],
   async call(a, ctx) {
-    return unwrap(await ctx.api.request("POST", "/api/domains/destinations", { body: { email: a.email }, ...(a.account ? { query: { account: a.account } } : {}) }));
+    return unwrap(await ctx.api.request("POST", "/api/domains/destinations", { body: { email: a.email, ...(a.resend ? { resend: true } : {}) }, ...(a.account ? { query: { account: a.account } } : {}) }));
+  },
+});
+
+const removeDestination = defineTool({
+  name: "remove_forward_destination", title: "Remove a forwarding destination", level: "admin", target: (a) => a.email,
+  description: "Removes an address from an account's forwarding destinations (the server's account unless account is given). Refused (409) while an address here forwards a copy to it (stop it with update_address forwardTo: null) or a Cloudflare rule of that account forwards to it: Cloudflare would switch those rules off. When some domains' rules cannot be read the answer names them in `unread`; force: true removes it anyway. Adding it again needs a new click on Cloudflare's link. Two calls.",
+  input: { email: z.string().email().max(320), account: cloudflareAccount.optional(), force: z.boolean().default(false).describe("Remove even when some domains' rules could not be read") },
+  routes: ["DELETE /api/domains/destinations/:email"],
+  confirm: (a) => `Remove ${a.email} from the forwarding destinations${a.account ? ` of account ${a.account}` : ""}: copies can no longer go there, and using it again needs a new confirmation by its owner.`,
+  async call(a, ctx) {
+    const query: Record<string, string> = { ...(a.account ? { account: a.account } : {}), ...(a.force ? { force: "true" } : {}) };
+    return unwrap(await ctx.api.request("DELETE", `/api/domains/destinations/${enc(a.email.toLowerCase())}`, Object.keys(query).length ? { query } : {}));
   },
 });
 
@@ -1357,7 +1370,9 @@ const agentInput = z.object({
     handoff: z.object({ categories: z.array(z.string().min(1).max(60)).max(30).default([]), topics: z.array(z.string().min(1).max(400)).max(30).default([]),
       reply: z.object({ en: z.string().min(1).max(3000), ru: z.string().min(1).max(3000).optional() }),
       replies: z.record(z.object({ en: z.string().min(1).max(3000), ru: z.string().min(1).max(3000).optional() })).optional().describe("A category's own fixed reply, over reply") }).optional()
-      .describe("Messages a person handles: these categories, or these topics (as draftTopics), get this fixed reply naming whom to contact") }).optional(),
+      .describe("Messages a person handles: these categories, or these topics (as draftTopics), get this fixed reply naming whom to contact"),
+    silentHandoff: z.object({ senders: z.array(z.string().min(3).max(320)).max(50).default([]), topics: z.array(z.string().min(1).max(400)).max(30).default([]) }).optional()
+      .describe("Mail a person answers with no reply from the agent at all: senders (a full address, or @domain with its subdomains, From or Reply-To) and topics (as draftTopics). Passed to a person before any model call; the run raises agent.handoff") }).optional(),
 }).describe("The agent's whole definition; saving makes a new version");
 
 const previewAgentAnswer = defineTool({
@@ -1687,7 +1702,7 @@ export const TOOLS: readonly ToolDef[] = [
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,
-  checkAddress, createAddress, createAddresses, updateAddress, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination,
+  checkAddress, createAddress, createAddresses, updateAddress, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination, removeDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, clearIncomingFailures, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,
