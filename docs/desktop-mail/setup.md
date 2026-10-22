@@ -367,9 +367,11 @@ It writes the descriptor `fabric-inbox.default.json` and its token file, both 06
 Dashboards reads them. The token travels in one header, `Authorization` (the only header Cloudflare
 accepts for this), as the JSON `{"cf-access-client-id": …, "cf-access-client-secret": …}`, which the
 server's Access application reads (`read_service_tokens_from_header`): **Create my server** sets it on
-a new server; for a server made before 0.28.1 set it once with the API (`GET` the application, then
-`PUT` it whole with `read_service_tokens_from_header: "Authorization"`; it took effect within a minute
-on the owner's server). The usual two headers keep working.
+a new server, and from 0.29.1 an older server gets it at its next update, from the app or by
+**Create my server** again (B-148; the application's other fields are kept, and a refusal is said and
+never stops the update). By hand: `GET` the application, then `PUT` it whole with
+`read_service_tokens_from_header: "Authorization"`; it took effect within a minute on the owner's
+server. The usual two headers keep working.
 
 ## Categories
 

@@ -159,3 +159,29 @@ export async function selfUpdate(input: { api: CloudflareApi; accountId: string;
   }
   return { version: manifest.version, uploaded };
 }
+
+/** The one header Access reads an agent key from for the fabric-service descriptor (B-87 part 4). */
+export const SERVICE_TOKEN_HEADER = "Authorization";
+
+/**
+ * B-148: a server made before 0.28.1 has an Access application that reads an agent key only from the
+ * two usual headers. Sets `read_service_tokens_from_header` on the application whose aud is the
+ * server's POLICY_AUD, keeping every other field (Cloudflare's PUT replaces the whole application).
+ * Never throws: the outcome is said, and a failure leaves the server as it was.
+ */
+export async function ensureAccessHeader(api: CloudflareApi, accountId: string, aud: string | undefined): Promise<"set" | "already" | "no_app" | `failed: ${string}`> {
+  if (!aud) return "no_app";
+  try {
+    const apps = await api.list<Record<string, unknown> & { id?: string; aud?: string; read_service_tokens_from_header?: string }>(
+      `/accounts/${accountId}/access/apps`, msg("read Access applications (Access: Apps and Policies: Edit)"), 100);
+    const app = apps.find((a) => a.aud === aud);
+    if (!app?.id) return "no_app";
+    if (app.read_service_tokens_from_header === SERVICE_TOKEN_HEADER) return "already";
+    const { id, uid: _uid, aud: _aud, created_at: _c, updated_at: _u, policies: _p, ...rest } = app as Record<string, unknown> & { id: string };
+    await api.call(`/accounts/${accountId}/access/apps/${id}`, { method: "PUT", body: { ...rest, read_service_tokens_from_header: SERVICE_TOKEN_HEADER },
+      what: msg("let agent keys in one header (Access: Apps and Policies: Edit)") });
+    return "set";
+  } catch (error) {
+    return `failed: ${(error as Error).message.slice(0, 160)}`;
+  }
+}

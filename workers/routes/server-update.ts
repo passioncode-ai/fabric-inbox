@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { version } from "../../package.json";
 import type { Env } from "../types";
 import { accountIdFor, cloudflareApi, CloudflareApiError } from "../routing/cloudflare-api";
-import { checkManifest, selfUpdate, SelfUpdateRefused } from "../lib/self-update";
+import { checkManifest, ensureAccessHeader, selfUpdate, SelfUpdateRefused } from "../lib/self-update";
 import { msg } from "../../shared/i18n";
 
 /**
@@ -52,8 +52,10 @@ serverUpdateRouter.post("/api/server/self-update", async (c) => {
     };
     const result = await selfUpdate({ api, accountId, script: scriptOf(c.env), manifest,
       files: { module: (name) => bytesOf(`module:${name}`), asset: (hash) => bytesOf(`asset:${hash}`) } });
-    console.log(JSON.stringify({ event: "server_self_update", outcome: "done", from: version, to: result.version, uploaded: result.uploaded, ms: Date.now() - started }));
-    return c.json({ updated: true, from: version, to: result.version });
+    // B-148: a server made before 0.28.1 learns to take an agent key in one header (fabric-service).
+    const accessHeader = await ensureAccessHeader(api, accountId, c.env.POLICY_AUD);
+    console.log(JSON.stringify({ event: "server_self_update", outcome: "done", from: version, to: result.version, uploaded: result.uploaded, accessHeader: accessHeader.startsWith("failed") ? "failed" : accessHeader, ms: Date.now() - started }));
+    return c.json({ updated: true, from: version, to: result.version, accessHeader });
   } catch (error) {
     if (error instanceof SelfUpdateRefused) {
       console.log(JSON.stringify({ event: "server_self_update", outcome: "refused", status: error.status }));

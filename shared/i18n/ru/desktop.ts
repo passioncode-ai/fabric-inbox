@@ -375,6 +375,8 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"This computer could not send the update ({error}).": "Этот компьютер не смог отправить обновление ({error}).",
 	"Update Server to {version}": "Обновить сервер до {version}",
 	"Updating Server…": "Сервер обновляется…",
+	"Agent keys can now also reach it in one header, for Fabric Dashboards.": "Теперь ключи агентов проходят и в одном заголовке, для Fabric Dashboards.",
+	"Agent keys could not be let in one header ({error}); Fabric Dashboards needs that.": "Не удалось пустить ключи агентов в одном заголовке ({error}); это нужно Fabric Dashboards.",
 };
 
 /** Every update text is wrapped in desktop/main.cjs now (LC-16); nothing is reserved. */
