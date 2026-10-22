@@ -4,7 +4,7 @@
 // account — to the plugin's dependency-free onboard (plugins/fabric-inbox/scripts/onboard.mjs:
 // connect, register, prove, status, forget), which it runs for every other command.
 //
-//   node scripts/onboard.mjs server [--token-env NAME] [--account ID] [--subdomain NAME] [--team NAME] [--email ADDRESS] [--json]
+//   node scripts/onboard.mjs server [--token-env NAME] [--account ID] [--subdomain NAME] [--team NAME] [--email ADDRESS | --access-group ID] [--json]
 //   node scripts/onboard.mjs connect | register | prove | status | forget   (see the plugin's onboard.mjs)
 //
 // The Cloudflare token is typed into a hidden prompt, or read from the environment variable
@@ -75,7 +75,7 @@ export async function stepServer(opts, { say, deployer = require('../desktop/clo
   const account = opts.account ? accounts.find((a) => a.id === opts.account) : accounts.length === 1 ? accounts[0] : null;
   if (!account) throw new OnboardError('choose_account', `The token reaches ${accounts.length} accounts; pass --account with one of: ${accounts.map((a) => `${a.id} (${a.name})`).join(', ')}.`);
   const bundleDir = await bundle(say);
-  const result = await deployer.deploy({ token, accountId: account.id, bundleDir, subdomain: opts.subdomain, team: opts.team, email: opts.email,
+  const result = await deployer.deploy({ token, accountId: account.id, bundleDir, subdomain: opts.subdomain, team: opts.team, email: opts.email, accessGroup: opts['access-group'],
     onStep: (s) => say({ step: `server.${s.id}`, outcome: s.outcome, detail: s.detail }) });
   const record = { ...readRecord(), server: result.origin, accessOrigin: result.accessOrigin, account: account.id };
   writeRecord(record);

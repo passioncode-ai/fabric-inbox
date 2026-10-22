@@ -51,8 +51,20 @@ function degradedOf(env: Env): { source: string; reason: string; setup?: true }[
   const out: { source: string; reason: string; setup?: true }[] = [];
   if (!cloudflareApi(env)) out.push({ source: "cloudflare", reason: "No Cloudflare token on the server: domains, addresses and self-update are off.", setup: true });
   if (!env.AGENT_REGISTRY) out.push({ source: "agents", reason: "Reply agents are not configured on this server." });
-  if (!env.OPENROUTER_API_KEY) out.push({ source: "models", reason: "No OpenRouter key: reply agents cannot write answers.", setup: true });
+  if (!env.OPENROUTER_API_KEY) out.push({ source: "models", reason: "No OpenRouter key: reply agents write on the server's own Workers AI and no checker approves an answer before it is sent.", setup: true });
   return out;
+}
+
+/** Where the server says how its model calls are signed in, for the descriptor's `runner` (DEC-0061). */
+export const RUNNER_EXTENSION = "https://passioncode.ai/fabric-inbox/runner";
+
+/**
+ * The kind of credential the reply agents' model calls use, never the credential (DEC-0061): an issued
+ * OpenRouter key when the server has one (writer, fallback and checker, workers/agents/deps.ts), else
+ * Workers AI under the deployment's own account. The injection scan is Workers AI either way.
+ */
+export function runnerOf(env: Pick<Env, "OPENROUTER_API_KEY">): { credentialKind: "key" | "platform-metered" } {
+  return { credentialKind: env.OPENROUTER_API_KEY ? "key" : "platform-metered" };
 }
 
 export async function wellKnownDocument(env: Env): Promise<Record<string, unknown>> {
@@ -70,6 +82,7 @@ export async function wellKnownDocument(env: Env): Promise<Record<string, unknow
       mcp: { path: "/mcp", transport: "streamable-http", auth: "own" },
     },
     update: { available: null },
+    extensions: { [RUNNER_EXTENSION]: runnerOf(env) },
   };
 }
 

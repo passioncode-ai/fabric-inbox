@@ -5,6 +5,18 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.29.2 (2026-10-23)
+
+- **An organization can run its own server.** An organization deploys the server into its own
+  Cloudflare account and lets in its group of administrators instead of one address
+  (`onboard.mjs server --access-group`); setup has a section for it (B-87).
+- **Fabric shows how the agents' model calls are paid for.** The server says whether they use an
+  OpenRouter key or Cloudflare's own Workers AI, and a server an organization offers to others names
+  where they reach it, who controls it and the most sensitive data it may receive (B-87).
+- **A clearer health note.** Without an OpenRouter key the agents still answer, on Workers AI, but
+  nothing checks an answer before it is sent; the server now says that instead of saying they cannot
+  answer.
+
 ## 0.29.1 (2026-10-22)
 
 - **An older server can be shown in Fabric Dashboards too.** Its next update, from the app or by

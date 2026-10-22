@@ -74,6 +74,7 @@ function fakeCloudflare(o: FakeOptions = {}) {
       case "GET /accounts/acc/access/identity_providers": return paged(state.idps);
       case "POST /accounts/acc/access/identity_providers": state.idps.push({ type: body.type }); return ok(body);
       case "GET /accounts/acc/access/apps": return paged(state.apps);
+      case "GET /accounts/acc/access/groups/0b8e2f4a-1c3d-4e5f-8a9b-0c1d2e3f4a5b": return ok({ id: "0b8e2f4a-1c3d-4e5f-8a9b-0c1d2e3f4a5b", name: "Inbox administrators" });
       case "POST /accounts/acc/access/apps": { const app = { ...body, aud: "new-aud" }; state.apps.push(app); return ok(app); }
       case "PUT /accounts/acc/access/apps/app-old": { state.accessPut = body; Object.assign(state.apps.find((x: any) => x.id === "app-old")!, body); return ok(body); }
       case "POST /accounts/acc/workers/scripts/fabric-inbox/assets-upload-session": {
@@ -156,6 +157,23 @@ test("a new account gets a web address, storage, sign-in, protection and a runni
   assert.match(parts["assets/chunk.js"].text, /export const x/);
   assert.equal(fake.state.workersDev, true);
   assert.ok(!JSON.stringify(r.steps).includes(TOKEN), "no step shows the token");
+});
+
+test("B-87 part 2: an organization's server lets in its Access group of administrators instead of one email", async () => {
+  const { out } = fixtureBundle();
+  const group = "0b8e2f4a-1c3d-4e5f-8a9b-0c1d2e3f4a5b";
+  const fake = fakeCloudflare();
+  const r = await run(fake, out, { email: "", accessGroup: group.toUpperCase() });
+  assert.ifError(r.error);
+  assert.deepEqual(fake.state.apps[0].policies, [{ name: "Administrators", decision: "allow", precedence: 1, include: [{ group: { id: group } }] }]);
+  assert.match(r.steps.find((s: any) => s.id === "access").detail, /Inbox administrators/);
+  // A group that is not in the account, or not an id, is refused before an application is made.
+  for (const accessGroup of ["admins", "1b8e2f4a-1c3d-4e5f-8a9b-0c1d2e3f4a5b"]) {
+    const other = fakeCloudflare();
+    const refused = await run(other, out, { email: "", accessGroup });
+    assert.ok(refused.error, accessGroup);
+    assert.equal(other.state.apps.length, 0, accessGroup);
+  }
 });
 
 test("running it again updates the server in place and keeps its domains, secrets and sign-in rules", async () => {

@@ -83,6 +83,7 @@ class DeployError extends Error {
 const TOKEN = /^[A-Za-z0-9._-]{20,300}$/;
 const NAME = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,253}\.[^\s@]{2,63}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function client(token, fetchImpl = (input, init) => fetch(input, init)) {
   if (typeof token !== 'string' || !TOKEN.test(token.trim())) throw new DeployError(t('This does not look like a Cloudflare API token. Copy it again from the page Cloudflare showed after creating it.'));
@@ -255,8 +256,9 @@ async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, mani
 
 /**
  * Creates or updates the server. Returns { origin, accessOrigin, steps }.
- * options: token, accountId, email (who may sign in), subdomain and team (only
- * when missing), bundleDir, fetchImpl, readFile, onStep.
+ * options: token, accountId, email (who may sign in) or accessGroup (an organization's Access group
+ * of the server's administrators, B-87 part 2: every member signs in as the owner), subdomain and team
+ * (only when missing), bundleDir, fetchImpl, readFile, onStep.
  */
 async function deploy(options) {
   const { token, accountId, bundleDir, fetchImpl, readFile = fs.readFile, onStep = () => {} } = options;
@@ -317,6 +319,7 @@ async function deploy(options) {
   });
 
   // 5. The Access application: only this email passes
+  let groupName = null;
   const aud = await attempt('access', 'Only you can open it', async () => {
     const email = String(options.email || '').trim().toLowerCase();
     const apps = await c.list(`${a}/access/apps`, t('read Access applications (Access: Apps and Policies: Edit)'));
@@ -344,15 +347,28 @@ async function deploy(options) {
       const current = (settings.result?.bindings || []).find((b) => b.type === 'plain_text' && b.name === 'POLICY_AUD')?.text;
       if (current) { report('access', 'Only you can open it', 'already', t('The server keeps the sign-in it already has (on its own address); nothing was changed.')); return current; }
     }
-    if (!EMAIL.test(email)) throw new DeployError(t('Enter the email address you will sign in with.'));
+    const group = String(options.accessGroup || '').trim().toLowerCase();
+    let include;
+    if (group) {
+      if (!UUID.test(group)) throw new DeployError(t('An Access group is named by its id, as Zero Trust shows it.'));
+      // The group must exist in this account: a policy naming a missing group lets nobody in.
+      const found = await c.call(`${a}/access/groups/${group}`, { what: t('read the Access group (Access: Organizations, Identity Providers, and Groups: Edit)') });
+      include = [{ group: { id: group } }];
+      groupName = found.result?.name || group;
+    } else {
+      if (!EMAIL.test(email)) throw new DeployError(t('Enter the email address you will sign in with.'));
+      include = [{ email: { email } }];
+    }
     const created = await c.call(`${a}/access/apps`, { method: 'POST', what: t('protect the server (Access: Apps and Policies: Edit)'), body: {
       name: 'Fabric Inbox', domain: host, type: 'self_hosted', session_duration: '720h', app_launcher_visible: false,
       // B-87 part 4: a host on the person's computer (Fabric Dashboards) sends an agent key in one header
       // (Authorization, the only one Access accepts here) as JSON; the two usual headers still work.
       read_service_tokens_from_header: SERVICE_TOKEN_HEADER,
-      policies: [{ name: 'Owner', decision: 'allow', precedence: 1, include: [{ email: { email } }] }],
+      policies: [{ name: group ? 'Administrators' : 'Owner', decision: 'allow', precedence: 1, include }],
     } });
-    report('access', 'Only you can open it', 'done', t('Only {email} can open the server, with a code sent by email.', { email }));
+    report('access', 'Only you can open it', 'done', group
+      ? t('Only the members of the Access group {group} can open the server, each as its administrator.', { group: groupName })
+      : t('Only {email} can open the server, with a code sent by email.', { email }));
     return created.result.aud;
   });
 
