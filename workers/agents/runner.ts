@@ -4,6 +4,7 @@ import { htmlToText as linesOf, newText } from "../../shared/mail/text";
 import type { SendMailCommand, SendMailResult } from "../../shared/mail/send";
 import { LEGACY_INSTRUCTIONS, callArguments, legacyAgentId, modelSchema, publicOnlyProblem, readAssignment, type AgentVersion, type ToolGrant } from "./definition";
 import { decide, isFollowUpSubject, matchedTopic, type ModelDecision } from "./policy";
+import { MAX_RECEIPTS, type UsageReceipt } from "./usage";
 import { parseStoredHeaders, prefilter, replyToAddress, SKIP_TEXT } from "./prefilter";
 import { RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type AwaitingAnswer, type ToolCallRecord } from "./run";
 import { answeringOrder, duplicateReason, electAnswerer, messageKey, type MessageClaim } from "./dedupe";
@@ -170,7 +171,9 @@ export interface ModelRequest {
 /** `decision` is null when the model finished without calling submit_answer. */
 export type ModelResponse = { decision: ModelDecision | null; text: string; /** The model that wrote it, when known. */ model?: string;
   /** B-130: calls made for this answer, how many failed, and whether a fallback recovered the turn. */
-  calls?: { calls: number; failed: number; recovered: number } };
+  calls?: { calls: number; failed: number; recovered: number };
+  /** B-147: one receipt per model call made for this answer. */
+  usage?: import("./usage").UsageReceipt[] };
 
 export interface RunnerDeps {
   registry: {
@@ -209,7 +212,7 @@ export interface RunnerDeps {
    * An independent check, by a model of another vendor than `writer`, of an answer about to be sent
    * without a person. Absent: no check (a server without a reply-lane key).
    */
-  check?(writer: string, input: { message: string; facts: string; answer: string }): Promise<{ approved: boolean; reason: string; model: string }>;
+  check?(writer: string, input: { message: string; facts: string; answer: string }): Promise<{ approved: boolean; reason: string; model: string; usage?: import("./usage").UsageReceipt[] }>;
   /** Searches only the collections named; an empty list finds nothing (KN-4). */
   knowledge: { search(query: string, collections: string[], limit: number): Promise<KnowledgeHit[]> };
   callTool(grant: ToolGrant, args: Record<string, unknown>): Promise<string>;
@@ -674,9 +677,12 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     const senderName = typeof settings?.fromName === "string" && settings.fromName.trim() && settings.fromName.trim().toLowerCase() !== mailboxId ? settings.fromName.trim() : "";
     response = await deps.model({ agent, system: systemPrompt(agent, mailboxId, tools, passages, senderName, prefetched, !!deps.check), prompt, tools, trace: run.id });
     run.modelCalls = response.calls ? { ...response.calls } : { calls: 1, failed: 0, recovered: 0 };
+    if (response.usage?.length) run.usage = response.usage.slice(0, MAX_RECEIPTS);
   } catch (error) {
     const counted = (error as { calls?: { calls: number; failed: number; recovered: number } }).calls;
     run.modelCalls = counted ? { ...counted } : { calls: 1, failed: 1, recovered: 0 };
+    const spent = (error as { usage?: UsageReceipt[] }).usage;
+    if (spent?.length) run.usage = spent.slice(0, MAX_RECEIPTS);
     return finish("failed", msg("The model could not answer ({error}); the message is left for the operator", { error: (error as Error).message }), "model");
   }
   // No structured answer and no text: nothing was decided, so the message waits for a person
@@ -813,11 +819,14 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
           record.ok = verdict.approved;
           record.result = `${verdict.model}: ${verdict.approved ? "approved" : "rejected"} — ${verdict.reason}`.slice(0, RESULT_PREVIEW_CHARS);
           run.checkedBy = verdict.model;
+          if (verdict.usage?.length) run.usage = [...(run.usage ?? []), ...verdict.usage].slice(0, MAX_RECEIPTS);
           if (run.modelCalls) run.modelCalls.calls++;
           if (!verdict.approved) outcome = { action: "draft", reason: msg("The checker did not approve the answer ({reason})", { reason: verdict.reason }) };
         } catch (error) {
           record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
           if (run.modelCalls) { run.modelCalls.calls++; run.modelCalls.failed++; }
+          const spent = (error as { usage?: UsageReceipt[] }).usage;
+          if (spent?.length) run.usage = [...(run.usage ?? []), ...spent].slice(0, MAX_RECEIPTS);
           outcome = { action: "draft", reason: msg("The answer could not be checked ({error})", { error: (error as Error).message.slice(0, 120) }) };
         } finally {
           record.ms = Date.now() - started;

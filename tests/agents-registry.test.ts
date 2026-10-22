@@ -145,7 +145,7 @@ const bundle = await build({
               case 'again': return Response.json(await reg.answerAgain(c.id));
               case 'save': await reg.saveRun(c.run); return Response.json(true);
               case 'events': return Response.json(await reg.listEvents(c.after, c.limit));
-              case 'modelCalls': return Response.json(await reg.modelCallsPerDay(c.since));
+              case 'modelCalls': return Response.json(await reg.modelUsagePerDay(c.since));
               case 'hooks': return Response.json({ next: await reg.hooksNow(c.now) });
               case 'hookStates': return Response.json(await reg.hookStates(c.ids));
               case 'r2put': await env.BUCKET.put(c.key, c.text); return Response.json(true);
@@ -1102,9 +1102,14 @@ test("B-87: model calls per day and model come from each run's own count, the ch
     // A run that called no model (a hand-off before the model, a skip) counts nothing.
     await command("begin", { run: { ...base, ...at("22"), id: "d", emailId: "d", status: "skipped" } });
     await command("begin", { run: { ...base, ...at("10"), id: "e", emailId: "e", model: "w/one", modelCalls: { calls: 1, failed: 0, recovered: 0 } } });
+    // B-147: a run with receipts counts them, tokens and charge included; an unmeasured one adds no tokens.
+    await command("begin", { run: { ...base, ...at("22"), id: "f", emailId: "f", model: "w/one", modelCalls: { calls: 2, failed: 1, recovered: 1 },
+      usage: [{ model: "w/one", inputTokens: 0, outputTokens: 0, costUsd: null, measured: false }, { model: "w/three", inputTokens: 1500, outputTokens: 60, costUsd: 0.0021, measured: true }] } });
+    const plain = (day: string, model: string, calls: number) => ({ day, model, calls, unpricedCalls: calls, unmeasuredCalls: calls, inputTokens: 0, outputTokens: 0, costUsd: 0 });
     assert.deepEqual(await command("modelCalls", { since: "2026-10-15T00:00:00.000Z" }), [
-      { day: "2026-10-21", model: "c/two", calls: 1 }, { day: "2026-10-21", model: "w/one", calls: 3 },
-      { day: "2026-10-22", model: "c/two", calls: 1 }, { day: "2026-10-22", model: "w/one", calls: 1 },
+      plain("2026-10-21", "c/two", 1), plain("2026-10-21", "w/one", 3),
+      plain("2026-10-22", "c/two", 1), plain("2026-10-22", "w/one", 2),
+      { day: "2026-10-22", model: "w/three", calls: 1, unpricedCalls: 0, unmeasuredCalls: 0, inputTokens: 1500, outputTokens: 60, costUsd: 0.0021 },
     ]);
   } finally { await mf.dispose(); }
 });

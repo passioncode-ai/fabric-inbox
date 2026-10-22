@@ -88,6 +88,8 @@ export interface AgentRun {
   repliedAt?: string;
   /** B-130: model calls this run made (writer, fallback, checker), how many failed, and turns a fallback recovered. */
   modelCalls?: { calls: number; failed: number; recovered: number };
+  /** B-147: one receipt per model call (writer, fallback, checker): tokens and the provider's charge, no content. */
+  usage?: import("./usage").UsageReceipt[];
   /** B-130: drafted because a daily or rate limit was reached, not for what the answer says. */
   limited?: boolean;
   /** B-132: the daily judge's verdict on the answer this run sent (rubric v1); counts leave, the note stays here. */

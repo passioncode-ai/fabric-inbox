@@ -95,17 +95,16 @@ test("B-87: what does not work is named in degraded, a missing setup marked as s
   } finally { await mf.dispose(); }
 });
 
-test("B-87: the usage report counts calls per day and model, every one unpriced and unmeasured, never 0 USD", () => {
-  const report = usageReport([
-    { day: "2026-10-21", model: "xiaomi/mimo-v2.6-pro", calls: 3 },
-    { day: "2026-10-21", model: "deepseek/deepseek-v4.1-flash", calls: 1 },
-    { day: "2026-10-22", model: "@cf/meta/llama", calls: 2 },
-    { day: "2026-10-22", model: "unknown", calls: 0 },
-  ], "default", new Date("2026-10-22T12:00:00Z"));
+test("B-87: a run without receipts is counted per day and model, unpriced and unmeasured, never 0 USD", () => {
+  const row = (day: string, model: string, calls: number) => ({ day, model, calls, unpricedCalls: calls, unmeasuredCalls: calls, inputTokens: 0, outputTokens: 0, costUsd: 0 });
+  const report = usageReport([row("2026-10-21", "xiaomi/mimo-v2.6-pro", 3), row("2026-10-21", "deepseek/deepseek-v4.1-flash", 1),
+    row("2026-10-22", "@cf/meta/llama", 2), row("2026-10-22", "unknown", 0)], "default", new Date("2026-10-22T12:00:00Z"));
   validate("service-usage", report);
   assert.deepEqual(report.days.map((d) => [d.date, d.calls, d.unpricedCalls, d.unmeasuredCalls, d.costUsd]), [["2026-10-21", 4, 4, 4, null], ["2026-10-22", 2, 2, 2, null]]);
   assert.deepEqual(report.days[1]!.byModel.map((m) => [m.provider, m.route, m.costBasis]), [["workers-ai", "platform-metered", "unknown"]]);
   assert.deepEqual(providerOf("qwen/qwen3.8-flash"), { provider: "openrouter", route: "key" });
+  const priced = usageReport([{ day: "2026-10-22", model: "x/a", calls: 2, unpricedCalls: 0, unmeasuredCalls: 0, inputTokens: 10, outputTokens: 2, costUsd: 0.01 }], "default");
+  validate("service-usage", priced);
 });
 
 test("B-87: an agent key reaches the three fabric-service reads besides /mcp, and nothing else of the app", () => {

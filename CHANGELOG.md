@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.29.0 (2026-10-22)
+
+- **What the reply agents spent, in dollars.** Every model call an agent makes now keeps its token
+  counts and the charge OpenRouter reports, and the server's usage report sums them per day and model,
+  so Fabric Dashboards shows the spend instead of an unknown. A call without a reported charge is still
+  shown as unknown, never as free (B-147).
+
 ## 0.28.1 (2026-10-22)
 
 - **Registering the server in Fabric Dashboards works with Cloudflare.** Cloudflare Access takes a

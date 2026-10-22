@@ -2,6 +2,7 @@ import { deadline } from "../lib/deadline";
 import { generateText, hasToolCall, jsonSchema, stepCountIs, ToolChoiceViolationError, type LanguageModel, type ModelMessage } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { receiptOf, unmeasured, type UsageReceipt } from "./usage";
 import { z } from "zod";
 import type { ModelDecision } from "./policy";
 import type { ModelRequest, ModelResponse } from "./runner";
@@ -90,7 +91,9 @@ export async function runModel(model: LanguageModel, request: ModelRequest): Pro
     abortSignal: limit.signal,
     maxRetries: 1,
   }).finally(limit.clear);
-  if (decision) return { decision, text: result.text };
+  const id = (model as { modelId?: string }).modelId || "unknown";
+  const usage: UsageReceipt[] = [receiptOf(id, result)];
+  if (decision) return { decision, text: result.text, usage };
   const messages: ModelMessage[] = [
     { role: "user", content: request.prompt },
     ...result.response.messages,
@@ -112,13 +115,15 @@ export async function runModel(model: LanguageModel, request: ModelRequest): Pro
       maxRetries: 0,
     }).finally(finalLimit.clear);
     lastText = last.text;
+    usage.push(receiptOf(id, last));
   } catch (error) {
+    usage.push(unmeasured(id));
     // Refusing the one allowed call, or running out of time for it, is "no answer";
     // whatever text the first call produced is kept for a draft.
     const aborted = (error as Error)?.name === "AbortError" || (error as Error)?.name === "TimeoutError";
     if (!ToolChoiceViolationError.isInstance(error) && !aborted) throw error;
   }
-  return { decision, text: (result.text || lastText).trim() };
+  return { decision, text: (result.text || lastText).trim(), usage };
 }
 
 /** The agent on Workers AI (`AGENT_MODEL`, default kimi-k2.5). */
@@ -181,25 +186,32 @@ export async function openRouterAgentModel(apiKey: string, request: ModelRequest
   let first: ModelResponse | null = null;
   const trace = request.trace;
   let failed = 0;
+  // B-147: OpenRouter's usage accounting returns each call's charge; a failed call leaves an unmeasured receipt.
+  const usage: UsageReceipt[] = [];
+  const chat = (id: string) => provider.chat(id, { usage: { include: true } });
   try {
-    first = await run(provider.chat(primary), request);
-    if (first.decision) return { ...first, model: primary, calls: { calls: 1, failed: 0, recovered: 0 } };
+    first = await run(chat(primary), request);
+    usage.push(...(first.usage ?? [unmeasured(primary)]));
+    if (first.decision) return { ...first, model: primary, calls: { calls: 1, failed: 0, recovered: 0 }, usage };
     console.warn(JSON.stringify({ event: "reply_model_no_answer", trace, model: primary, prose: first.text.trim().length > 0 }));
   } catch (error) {
     failed++;
+    usage.push(unmeasured(primary));
     console.warn(JSON.stringify({ event: "reply_model_failed", trace, model: primary, error: (error as Error).message?.slice(0, 200) }));
   }
   try {
-    const second = await run(provider.chat(fallback), request);
+    const second = await run(chat(fallback), request);
+    usage.push(...(second.usage ?? [unmeasured(fallback)]));
     // A turn the fallback answered after the writer failed or gave no answer counts as recovered.
-    if (second.decision || !first) return { ...second, model: fallback, calls: { calls: 2, failed, recovered: second.decision ? 1 : 0 } };
+    if (second.decision || !first) return { ...second, model: fallback, calls: { calls: 2, failed, recovered: second.decision ? 1 : 0 }, usage };
   } catch (error) {
     failed++;
+    usage.push(unmeasured(fallback));
     // Review 2026-10-21: both calls failed; the error carries them, so the day counts two failed calls, not one.
-    if (!first) throw Object.assign(error instanceof Error ? error : new Error(String(error)), { calls: { calls: 2, failed, recovered: 0 } });
+    if (!first) throw Object.assign(error instanceof Error ? error : new Error(String(error)), { calls: { calls: 2, failed, recovered: 0 }, usage });
     console.warn(JSON.stringify({ event: "reply_model_failed", trace, model: fallback, error: (error as Error).message?.slice(0, 200) }));
   }
-  return { ...first, model: primary, calls: { calls: 2, failed, recovered: 0 } };
+  return { ...first, model: primary, calls: { calls: 2, failed, recovered: 0 }, usage };
 }
 
 /** The restatement on OpenRouter's fast model (runner.ts B-122). */
@@ -226,26 +238,29 @@ export const CHECK_SYSTEM = [
  * An independent check of an answer by a model of another vendor than the one that wrote it. Throws
  * when no checker answers; the runner treats that as not approved.
  */
-export async function openRouterCheck(apiKey: string, writer: string, input: { message: string; facts: string; answer: string }): Promise<{ approved: boolean; reason: string; model: string }> {
+export async function openRouterCheck(apiKey: string, writer: string, input: { message: string; facts: string; answer: string }): Promise<{ approved: boolean; reason: string; model: string; usage: UsageReceipt[] }> {
   const provider = openRouter(apiKey);
   let last: unknown = null;
+  const usage: UsageReceipt[] = [];
   for (const model of checkersFor(writer)) {
     const limit = deadline(30_000);
     try {
       const result = await generateText({
         // A verdict, not an essay: reasoning off, or it spends the output budget and leaves no JSON
         // (measured 2026-10-17 on real facts: both checkers answered empty at 200 tokens).
-        abortSignal: limit.signal, model: provider.chat(model), system: CHECK_SYSTEM, maxOutputTokens: 400,
+        abortSignal: limit.signal, model: provider.chat(model, { usage: { include: true } }), system: CHECK_SYSTEM, maxOutputTokens: 400,
         providerOptions: { openrouter: { reasoning: { enabled: false } } },
         prompt: `<message>\n${input.message.slice(0, 6000)}\n</message>\n\n<facts>\n${input.facts.slice(0, 16000) || "(none)"}\n</facts>\n\n<answer>\n${input.answer.slice(0, 6000)}\n</answer>`,
       });
+      usage.push(receiptOf(model, result));
       const json = /\{[\s\S]*\}/.exec(result.text)?.[0];
       const verdict = json ? (JSON.parse(json) as { approved?: unknown; reason?: unknown }) : null;
-      if (verdict && typeof verdict.approved === "boolean") return { approved: verdict.approved, reason: String(verdict.reason ?? "").slice(0, 300), model };
+      if (verdict && typeof verdict.approved === "boolean") return { approved: verdict.approved, reason: String(verdict.reason ?? "").slice(0, 300), model, usage };
       last = new Error("the checker did not answer in JSON");
     } catch (error) {
+      if (usage.length === 0 || usage[usage.length - 1]!.model !== model) usage.push(unmeasured(model));
       last = error;
     } finally { limit.clear(); }
   }
-  throw new Error(`no checker answered: ${(last as Error | null)?.message ?? "none of another vendor"}`);
+  throw Object.assign(new Error(`no checker answered: ${(last as Error | null)?.message ?? "none of another vendor"}`), { usage });
 }
