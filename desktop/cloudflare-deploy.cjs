@@ -32,7 +32,7 @@ const DEFAULT_SCRIPT = 'fabric-inbox';
 const DEFAULT_BUCKET = 'fabric-inbox';
 const TOKEN_PAGE = 'https://dash.cloudflare.com/profile/api-tokens';
 /** The one header Access reads an agent key from, for the fabric-service descriptor (B-87 part 4). */
-const SERVICE_TOKEN_HEADER = 'Fabric-Access';
+const SERVICE_TOKEN_HEADER = 'Authorization';
 
 /** What the token needs: running the server (as on the Domains screen) plus creating it. */
 const PERMISSIONS = [
@@ -333,8 +333,8 @@ async function deploy(options) {
     if (!EMAIL.test(email)) throw new DeployError(t('Enter the email address you will sign in with.'));
     const created = await c.call(`${a}/access/apps`, { method: 'POST', what: t('protect the server (Access: Apps and Policies: Edit)'), body: {
       name: 'Fabric Inbox', domain: host, type: 'self_hosted', session_duration: '720h', app_launcher_visible: false,
-      // B-87 part 4: a host on the person's computer (Fabric Dashboards) sends an agent key in one header,
-      // the descriptor's, as {"cf-access-client-id","cf-access-client-secret"}; the two usual headers still work.
+      // B-87 part 4: a host on the person's computer (Fabric Dashboards) sends an agent key in one header
+      // (Authorization, the only one Access accepts here) as JSON; the two usual headers still work.
       read_service_tokens_from_header: SERVICE_TOKEN_HEADER,
       policies: [{ name: 'Owner', decision: 'allow', precedence: 1, include: [{ email: { email } }] }],
     } });

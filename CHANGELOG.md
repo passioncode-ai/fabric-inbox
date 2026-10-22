@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.28.1 (2026-10-22)
+
+- **Registering the server in Fabric Dashboards works with Cloudflare.** Cloudflare Access takes a
+  key in one header only as `Authorization`, so a new server's sign-in and the registration use that
+  header (B-87).
+
 ## 0.28.0 (2026-10-22)
 
 - **Your server shows in Fabric Dashboards.** The server answers as a Fabric service: its version and

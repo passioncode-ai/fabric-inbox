@@ -6,15 +6,15 @@
 //
 // The key is an agent key of the server (Settings, Agent access, New key, level Read), read from
 // stdin as {"clientId","clientSecret"} (or the server's own answer, {"key":{"clientId"},"clientSecret"}),
-// never from an argument. Cloudflare Access reads it from one header, Fabric-Access, as
-// {"cf-access-client-id","cf-access-client-secret"} (read_service_tokens_from_header on the server's
+// never from an argument. Cloudflare Access reads it from one header, Authorization (the only one it
+// accepts there), as {"cf-access-client-id","cf-access-client-secret"} (read_service_tokens_from_header on the server's
 // Access application; Create my server sets it). Files are written 0600, atomically.
 import { mkdirSync, readFileSync, renameSync, writeFileSync, chmodSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 export const SERVICE_ID = "fabric-inbox";
-export const HEADER = "Fabric-Access";
+export const HEADER = "Authorization";
 
 /** The services directory a host reads (FABRIC_SERVICES_DIR, else the platform's default, DEC-0032). */
 export function servicesDir(env = process.env, platform = process.platform, home = os.homedir()) {
