@@ -47,6 +47,7 @@ function fakeCloudflare(options: { deny?: RegExp; buckets?: string[][]; tag?: st
       return ok({ jwt: "completion-jwt" });
     }
     if (auth !== "Bearer server-token") return fail(401, 10000, "Authentication error");
+    if (path === "/accounts") return ok(url.searchParams.get("page") === "1" ? [{ id: ACCOUNT, name: "Owner" }] : []);
     if (path === `${a}/workers/scripts`) return ok(url.searchParams.get("page") === "1" ? [{ id: "fabric-inbox", ...(options.tag === null ? {} : { migration_tag: options.tag ?? "v1" }) }] : []);
     if (path === `${a}/workers/scripts/fabric-inbox/settings`) return ok({ bindings: [{ type: "r2_bucket", name: "BUCKET", bucket_name: "owner-mail" }, { type: "secret_text", name: "CLOUDFLARE_API_TOKEN" }] });
     if (path === `${a}/workers/scripts/fabric-inbox/assets-upload-session`) return ok({ jwt: "session-jwt", buckets: options.buckets ?? [["hash-a"]] });
@@ -167,4 +168,15 @@ test("B-44: a token without Workers Scripts is named; a server without a token s
     const b = await bare.send(manifest());
     assert.deepEqual([b.status, b.body.code], [409, "not_configured"]);
   } finally { await denied.mf.dispose(); await bare.mf.dispose(); }
+});
+
+test("B-44: a server deployed with wrangler (no CLOUDFLARE_ACCOUNT_ID) finds its account from its token and updates itself", async () => {
+  const { mf, cf, send } = await fixture({ bindings: { CLOUDFLARE_API_TOKEN: "server-token" } });
+  try {
+    const r = await (await mf.dispatchFetch("http://localhost/api/server")).json() as any;
+    assert.deepEqual(r.selfUpdate, { available: true });
+    const u = await send(manifest());
+    assert.equal(u.status, 200, JSON.stringify(u.body));
+    assert.ok(cf.put, "uploaded into the account the token showed");
+  } finally { await mf.dispose(); }
 });

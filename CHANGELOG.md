@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.27.1 (2026-10-22)
+
+- **A server deployed by hand also updates itself.** A server without `CLOUDFLARE_ACCOUNT_ID` (one
+  deployed with wrangler) now finds its Cloudflare account from its token, as its other Cloudflare
+  calls do, instead of saying it cannot update itself (B-44).
+
 ## 0.27.0 (2026-10-22)
 
 - **Your server is updated without a new Cloudflare token.** After the app updates itself, it sends

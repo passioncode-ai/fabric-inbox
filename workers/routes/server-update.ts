@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { version } from "../../package.json";
 import type { Env } from "../types";
-import { cloudflareApi, CloudflareApiError, configuredAccountId } from "../routing/cloudflare-api";
+import { accountIdFor, cloudflareApi, CloudflareApiError } from "../routing/cloudflare-api";
 import { checkManifest, selfUpdate, SelfUpdateRefused } from "../lib/self-update";
 import { msg } from "../../shared/i18n";
 
@@ -17,24 +17,24 @@ export const MAX_BUNDLE_BYTES = 60 * 1024 * 1024;
 
 const scriptOf = (env: Env) => env.EMAIL_ROUTING_WORKER || "fabric-inbox";
 
-serverUpdateRouter.get("/api/server", (c) => {
+serverUpdateRouter.get("/api/server", async (c) => {
   c.header("Cache-Control", "no-store");
-  const token = !!cloudflareApi(c.env);
-  const account = configuredAccountId(c.env);
-  return c.json({
-    version,
-    // Whether this server can take an update from the app without a new token.
-    selfUpdate: token && account
-      ? { available: true }
-      : { available: false, reason: !token ? msg("This server has no Cloudflare token.") : msg("This server does not know its Cloudflare account (CLOUDFLARE_ACCOUNT_ID).") },
-  });
+  const api = cloudflareApi(c.env);
+  if (!api) return c.json({ version, selfUpdate: { available: false, reason: msg("This server has no Cloudflare token.") } });
+  // CLOUDFLARE_ACCOUNT_ID when set (Create my server sets it); otherwise the account the token
+  // shows runs this server's script (a server deployed with wrangler has no such var).
+  try { await accountIdFor(api, c.env); }
+  catch (error) { return c.json({ version, selfUpdate: { available: false, reason: (error as Error).message } }); }
+  return c.json({ version, selfUpdate: { available: true } });
 });
 
 serverUpdateRouter.post("/api/server/self-update", async (c) => {
   c.header("Cache-Control", "no-store");
   const api = cloudflareApi(c.env);
-  const accountId = configuredAccountId(c.env);
-  if (!api || !accountId) return c.json({ error: msg("This server cannot update itself: it has no Cloudflare token or does not know its account. Update it from the app with a token."), code: "not_configured" }, 409);
+  if (!api) return c.json({ error: msg("This server cannot update itself: it has no Cloudflare token or does not know its account. Update it from the app with a token."), code: "not_configured" }, 409);
+  let accountId: string;
+  try { accountId = await accountIdFor(api, c.env); }
+  catch (error) { return c.json({ error: (error as Error).message, code: "not_configured" }, 409); }
   const length = Number(c.req.header("content-length") ?? 0);
   if (length > MAX_BUNDLE_BYTES) return c.json({ error: msg("The bundle is larger than a server update may be."), code: "too_large" }, 413);
   let form: FormData;

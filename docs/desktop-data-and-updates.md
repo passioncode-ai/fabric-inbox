@@ -162,8 +162,9 @@ Create my server gave it with Workers Scripts: Edit. The same checks as the app'
 never an older or equal version, never a storage step that deletes or moves data, every setting and
 secret of the running server kept (`keep_bindings`), its mail bucket kept. It happens at once when
 **Install Updates Automatically** is on; otherwise the app menu offers **Update Server to
-<version>**. It is checked once per launch and server. A server without a token or without
-`CLOUDFLARE_ACCOUNT_ID` says so (`selfUpdate.available: false`), and a token without Workers Scripts:
+<version>**. It is checked once per launch and server. The server's account is `CLOUDFLARE_ACCOUNT_ID` when set, otherwise the one account its token
+shows running this server's script (a server deployed with wrangler has no such var). A server
+without a token, or whose account cannot be told that way, says so (`selfUpdate.available: false`), and a token without Workers Scripts:
 Edit is named in the refusal; then **Create my server** with a token updates it as before. Only a
 person reaches the route (an agent key is limited to `/mcp`). The log has `server_update` (`done`,
 `failed` with a `code`).

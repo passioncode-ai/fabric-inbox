@@ -751,7 +751,6 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Cloudflare asked for a file the bundle does not carry ({hash}).": "Cloudflare запросил файл, которого нет в пакете ({hash}).",
 	"Cloudflare did not take the new server ({error}). The running server is unchanged.": "Cloudflare не принял новый сервер ({error}). Работающий сервер не изменился.",
 	"This server has no Cloudflare token.": "У этого сервера нет токена Cloudflare.",
-	"This server does not know its Cloudflare account (CLOUDFLARE_ACCOUNT_ID).": "Этот сервер не знает свой аккаунт Cloudflare (CLOUDFLARE_ACCOUNT_ID).",
 	"This server cannot update itself: it has no Cloudflare token or does not know its account. Update it from the app with a token.": "Этот сервер не может обновить себя сам: у него нет токена Cloudflare или он не знает свой аккаунт. Обновите его из приложения с токеном.",
 	"The bundle is larger than a server update may be.": "Пакет больше, чем допустимо для обновления сервера.",
 	"The update could not be read: send the bundle as multipart form data.": "Не удалось прочитать обновление: отправьте пакет как multipart form data.",
