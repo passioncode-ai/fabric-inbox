@@ -24,6 +24,7 @@ import { readDiscardStore, updateDiscardStore } from "./discard/store";
 import { cloudflareWorkspace } from "./discard/workspace";
 import type { Env } from "./types";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
+import { TRANSIENT_DO } from "./lib/do-retry";
 import { incomingFailure, recordIncomingFailure } from "./incoming-log";
 import { cleanSenderName } from "../shared/mail/sender";
 
@@ -831,13 +832,6 @@ async function settleRelayedCopy(env: Env, mailboxId: string, emailId: string, t
 // The Email Routing entry point. A failure is logged and rethrown, so the
 // platform records an error instead of a handled message; swallowing it here
 // used to make a lost message look delivered.
-/**
- * Durable Object failures a second attempt survives: the object was reset (a deploy restarting it,
- * a storage operation past its timeout) or briefly unreachable. Seen live on 2026-09-28, a minute
- * after a deploy: "Durable Object storage operation exceeded timeout which caused object to be
- * reset", and the message was never redelivered.
- */
-const TRANSIENT_DO = /storage operation exceeded timeout|caused object to be reset|Durable Object reset|Network connection lost|Durable Object is overloaded|internal error; reference/i;
 
 /**
  * The same delivery over bytes already read. A spread (`{ ...event }`) is not enough: the runtime's

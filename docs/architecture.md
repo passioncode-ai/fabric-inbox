@@ -88,7 +88,9 @@ accounts with a keyset cursor per filter scope (`account`, `domain` = its Cloudf
 `provider`, `category`, `folder`, `q`, `unread`). Cloudflare mailboxes are read by a pool of 8;
 the Gmail, IMAP and Outlook accounts, all in one accounts object, are read in one call for their
 pages (`GmailAccountsDO.inboxPages`) and one for their counts (`inboxCountsMany`), each account
-answering its page or its own error code (B-24); unread is counted for every inbox; a failed inbox
+answering its page or its own error code (B-24); each of these reads, and every GET or HEAD of a
+mailbox route, is tried once more after its object was reset or replaced mid-call
+(`workers/lib/do-retry.ts`, B-142; a change is never repeated); unread is counted for every inbox; a failed inbox
 keeps `hasMore` true so Load older stays. The same email
 in several inboxes (one RFC Message-ID) is one row with `alsoIn`. Each message carries `triage`
 from `shared/mail/triage.ts (triage)`: one of ten groups and important / normal / low, from header

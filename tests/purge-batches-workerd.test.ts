@@ -39,6 +39,9 @@ const bundle = await build({
           }
         }
         async r2Down(on) { await this.ctx.storage.put('r2-down', on); }
+        // The test makes every pass itself. The mailbox's own alarm (armed 1 s after a full pass) ran
+        // the next pass between two calls on a loaded machine, so the third call found nothing (B-129).
+        async alarm() {}
         async state(folder) {
           const rows = this.ctx.storage.sql.exec('SELECT COUNT(*) AS n FROM emails WHERE folder_id = ?', folder).one().n;
           const files = (await this.env.BUCKET.list({ prefix: 'bodies/' })).objects.length + (await this.env.BUCKET.list({ prefix: 'attachments/' })).objects.length;

@@ -11,6 +11,7 @@ import { createMiddleware } from "hono/factory";
 import type { MailboxDO } from "../durableObject";
 import type { Env } from "../types";
 import { msg } from "../../shared/i18n";
+import { readRetrying } from "./do-retry";
 
 export type MailboxContext = {
 	Bindings: Env;
@@ -43,7 +44,9 @@ export const requireMailbox = createMiddleware<MailboxContext>(async (c, next) =
 	const id = ns.idFromName(mailboxId);
 	const stub = ns.get(id);
 
-	c.set("mailboxStub", stub);
+	// A read survives a mailbox object reset or replaced mid-call (a deploy): it is tried once more.
+	// A change is not repeated, since a call that failed this way may have happened.
+	c.set("mailboxStub", c.req.method === "GET" || c.req.method === "HEAD" ? readRetrying(stub) : stub);
 	
 	await next();
 });

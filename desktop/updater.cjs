@@ -29,6 +29,8 @@ const FIRST_CHECK_MS = 90 * 1000;
 const CHECK_EVERY_MS = 5 * 60 * 1000;
 const RETRY_MS = 5 * 60 * 1000;
 const RESTART_TIMEOUT_MS = 60 * 1000;
+/** A launch this soon after an install began came before ShipIt could run: interrupted, not failed. */
+const INTERRUPTED_MS = 2 * 60 * 1000;
 const HANDOFF_TIMEOUT_MS = 15 * 60 * 1000;
 const DECLINED_FOR_MS = 24 * 3600 * 1000;
 const STUCK_AFTER = 3;
@@ -138,7 +140,13 @@ function createUpdater(deps) {
     await fs.rm(installFile, { force: true });
     if (!pending || typeof pending.version !== 'string') return;
     const installed = compareVersions(appVersion, pending.version) >= 0;
-    log({ event: 'update_install', outcome: installed ? 'installed' : 'failed', version: pending.version, running: appVersion });
+    // An app started again within INTERRUPTED_MS of the quit ran before ShipIt could install (it waits
+    // for every copy of the app to end): the update is still staged and installs at the next quit.
+    // Seen on the owner's Mac on 2026-10-20 and 2026-10-21, a new launch 6 to 18 s after the quit.
+    const startedAt = Date.parse(pending.at);
+    const afterS = Number.isFinite(startedAt) ? Math.max(0, Math.round((now() - startedAt) / 1000)) : undefined;
+    const outcome = installed ? 'installed' : afterS !== undefined && afterS * 1000 < INTERRUPTED_MS ? 'interrupted' : 'failed';
+    log({ event: 'update_install', outcome, version: pending.version, running: appVersion, ...(afterS !== undefined ? { after_s: afterS } : {}) });
   }
   async function recordInstall(version) {
     try { await fs.writeFile(installFile, JSON.stringify({ version, from: appVersion, at: new Date(now()).toISOString() }) + '\n', { mode: 0o600 }); }

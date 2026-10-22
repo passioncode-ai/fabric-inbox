@@ -50,6 +50,12 @@ test("a 25,000-message cache lists its newest page and counts it without scannin
   let migrations = 0;
   while (!(await service.migrateCache("a", 2_000))) migrations++;
   assert.ok(migrations < 20);
+  // The conversation index (B-114) is built in the same budget and may need more rounds on a loaded
+  // machine; left unfinished, the next read builds it and its rows were counted as the page's (B-129).
+  const cache = (service as unknown as { cache: { indexThreads(a: string, deadline: number): Promise<boolean> } }).cache;
+  let indexing = 0;
+  while (!(await cache.indexThreads("a", Date.now() + 2_000))) indexing++;
+  assert.ok(indexing < 20);
   const page = await service.listInboxMessages("a", inbox);
   assert.equal(page.length, 51, "a full page and one more to say there is more");
   assert.equal(page[0].providerMessageId, "m024999", "the newest inbox message first");

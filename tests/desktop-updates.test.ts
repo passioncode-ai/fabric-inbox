@@ -77,7 +77,7 @@ function updater(extra: Record<string, unknown> = {}) {
     clock = until;
   };
   const pending = () => timers.filter((t) => t.live).map((t) => t.ms);
-  return { make, u, calls, lines, userData, feedState, verdicts, advance, pending, cleans };
+  return { make, u, calls, lines, userData, feedState, verdicts, advance, pending, cleans, clock: () => clock };
 }
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 /** Waits (real time, briefly) for a file write the code awaits before it acts. */
@@ -194,6 +194,16 @@ test("the next launch says whether the install happened", async () => {
     await h.make().start(RELEASED);
     assert.deepEqual(events(h.lines), [`update_install:${outcome}`]);
     assert.ok(!existsSync(path.join(h.userData, "update-install.json")), "read once");
+  }
+  // Started again 6 s after the quit (the owner's Mac, 2026-10-21): ShipIt had not run yet, the update
+  // stays staged for the next quit, so it is "interrupted"; 10 minutes later it is a failure.
+  for (const [ago, outcome] of [[6, "interrupted"], [600, "failed"]] as const) {
+    const h = updater({ appVersion: "0.11.0" });
+    const at = new Date(h.clock() - ago * 1000).toISOString();
+    writeFileSync(path.join(h.userData, "update-install.json"), JSON.stringify({ version: "0.12.0", from: "0.11.0", at }));
+    await h.make().start(RELEASED);
+    assert.deepEqual(events(h.lines), [`update_install:${outcome}`]);
+    assert.equal((h.lines[0] as { after_s?: number }).after_s, ago);
   }
   const quit = updater();
   const up = quit.make();
