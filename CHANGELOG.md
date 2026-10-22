@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.27.0 (2026-10-22)
+
+- **Your server is updated without a new Cloudflare token.** After the app updates itself, it sends
+  the server it carries to your server once you are signed in, and the server installs it with the
+  token it already holds; your mail and settings are kept. It happens by itself when Install Updates
+  Automatically is on, otherwise the app menu offers Update Server. Agents can read the server's
+  version with `get_server` (B-44).
+
 ## 0.26.0 (2026-10-22)
 
 - **A forwarding destination can be removed, and a waiting one can get its link again.** Settings →

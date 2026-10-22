@@ -11,6 +11,7 @@ const connector = require('./connect.cjs');
 const { menuTemplate } = require('./menu.cjs');
 const { contextMenuTemplate } = require('./context-menu.cjs');
 const newMail = require('./new-mail.cjs');
+const serverUpdates = require('./server-update.cjs');
 const usage = require('./analytics.cjs');
 const backup = require('./backup.cjs');
 const updates = require('./updater.cjs');
@@ -83,6 +84,9 @@ let launchedByLink = false;
 // Automatic updates (docs/desktop-data-and-updates.md): off unless this build carries a feed.
 let updater = null;
 let mailNotifier = null;
+let serverUpdater = null;
+/** Settles once the app's own updater is set up (its switch also governs the server's update, B-44). */
+let updatesStarted = Promise.resolve();
 /** Open at Login (the organization's lifecycle rule, 2026-10-16): the module and its last read state. */
 let autostart = null;
 let loginItem = null;
@@ -301,6 +305,7 @@ function loadMail() {
       })();
     }
     if (current.origin === snapshot.origin) void countActive();
+    if (current.origin === snapshot.origin && serverUpdater) void serverUpdater.onSignedIn(snapshot.origin);
     if (!setupOpened && current.origin === snapshot.origin && current.pathname !== SETUP_PAGE && await readPendingSetup()) {
       setupOpened = true;
       void win.loadURL(new URL(`${SETUP_PAGE}?source=desktop`, snapshot.origin).href).catch(failure);
@@ -455,6 +460,34 @@ function startNewMail() {
     notify: (title, body, onClick) => notify(title, body, onClick),
     focused: () => !!(mailWindow && !mailWindow.isDestroyed() && mailWindow.isFocused()) });
   void mailNotifier.start().then(installMenu);
+}
+/**
+ * B-44: the server is updated through itself, without a new Cloudflare token: after the person signs
+ * in, an older server gets the server this app carries (automatic when updates are; else the menu).
+ */
+function startServerUpdates() {
+  const ses = () => (config ? session.fromPartition(policy.partitionFor(config)) : null);
+  const read = async (pathname) => {
+    const s = ses();
+    if (!s) return null;
+    try {
+      const response = await s.fetch(new URL(pathname, config.origin).href, { redirect: 'manual', credentials: 'include', headers: { Accept: 'application/json' } });
+      if (response.status !== 200 || !(response.headers.get('content-type') || '').toLowerCase().includes('json')) return null;
+      return await response.json();
+    } catch { return null; }
+  };
+  const post = async (pathname, form) => {
+    const s = ses();
+    if (!s) return null;
+    // Chromium's fetch takes bytes, not a FormData: encode it here with its boundary.
+    const encoded = new Response(form);
+    const response = await s.fetch(new URL(pathname, config.origin).href, { method: 'POST', redirect: 'manual', credentials: 'include',
+      headers: { Accept: 'application/json', 'Content-Type': encoded.headers.get('content-type') }, body: Buffer.from(await encoded.arrayBuffer()) });
+    return { status: response.status, body: await response.json().catch(() => null) };
+  };
+  serverUpdater = serverUpdates.createServerUpdater({ appVersion: () => app.getVersion(), bundleDir: serverBundleDir, readBundle: deployer.readBundle,
+    readFile: (file) => fs.readFile(file), read, post, t, log: logEvent, automatic: async () => { await updatesStarted; return !!(updater && updater.status().automatic); },
+    notify: (title, body) => notify(title, body), onChange: () => installMenu() });
 }
 /**
  * Every launch: Open at Login is turned on once for an installed copy and read again; a login item the
@@ -952,6 +985,7 @@ function installMenu() {
     automatic: { checked: !!(state && state.automatic), enabled: !!updater && !['off', 'unavailable'].includes(state.state), click: (item) => { if (updater) void updater.setAutomatic(item.checked); } },
     usage: { checked: !!(analytics && analytics.status().enabled), enabled: !!analytics, click: (item) => void toggleAnalytics(item), about: aboutUsageCounts },
     login: { checked: !!(loginItem && loginItem.enabled), enabled: !!(loginItem && loginItem.supported), click: (item) => void toggleLogin(item) },
+    serverUpdate: serverUpdater ? serverUpdater.menuItem(() => void serverUpdater.update({ manual: true })) : null,
     newMail: { checked: !!(mailNotifier && mailNotifier.enabled()), enabled: !!mailNotifier, click: (item) => { if (mailNotifier) void mailNotifier.setEnabled(item.checked).then(installMenu); } },
     openSettings, showServer: () => showSetup(), showCloudflare: () => showSetup('', 'cloudflare'),
     connectGmail: () => { if (config) void openExternal(policy.gmailConnectURL(config), true); else showSetup(t('Set the server address before connecting Gmail.')); },
@@ -1051,10 +1085,11 @@ if (ownsInstance) app.whenReady().then(async () => {
   // about to enter again, with their drafts in it.
   if (await readConfig()) await profile.sweepProfile({ fs, userData: app.getPath('userData'), keepPartition: config ? policy.partitionFor(config) : null, keepPartitions: !config,
     debugging: app.commandLine.hasSwitch('remote-debugging-port'), log: logEvent });
+  startServerUpdates();
   config ? loadMail() : showSetup(notice);
   appReady = true;
   void startAnalytics().catch(() => {});
-  void startUpdates().catch(() => logEvent({ event: 'update_check', outcome: 'check_failed', reason: 'not_started' }));
+  updatesStarted = startUpdates().catch(() => logEvent({ event: 'update_check', outcome: 'check_failed', reason: 'not_started' }));
   startTray();
   startNewMail();
   void startAutostart().catch(() => logEvent({ event: 'login_item', outcome: 'failed', reason: 'not_started' }));

@@ -687,12 +687,12 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   3. Enter the email that signs in (and, the first time, names for the workers.dev address and the sign-in page), Create my server -> eight steps are shown as they run: web address, storage, sign-in page, codes by email, only you can open it, upload, start, publish.
   4. The server opens in the app -> sign in with the emailed code -> Settings → Domains opens.
 - **Expected result:** A person with only a Cloudflare account has their own server running and is signed in, without a terminal.
-- **Alt paths:** Fabric Inbox → Connect Cloudflare account… runs the same flow for an existing server, which is updated in place (only missing storage migrations; DOMAINS, secrets and sign-in rules kept). Then set up Gmail (optional), ticked before Create my server, opens the Gmail setup (SCN-051) after sign-in instead of Domains.
+- **Alt paths:** After the app updates itself, an older server is updated with no token (B-44): once the person is signed in, the app sends the server it carries to the server, which uploads it with its own token; automatic when Install Updates Automatically is on, otherwise the app menu offers Update Server to <version>; the app says when it is done or why not (a server without Workers Scripts: Edit, or without its account id, keeps running and the person uses the token flow below). Fabric Inbox → Connect Cloudflare account… runs the same flow for an existing server, which is updated in place (only missing storage migrations; DOMAINS, secrets and sign-in rules kept). Then set up Gmail (optional), ticked before Create my server, opens the Gmail setup (SCN-051) after sign-in instead of Domains.
 - **UI elements:** SCR-01 (Create my server: token, details, progress).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A token Cloudflare does not accept, a missing permission (named), R2 or Zero Trust not turned on yet (the dashboard step is named) or a taken name stop at that step; Continue runs the rest again and what is done stays done; a server newer than the app is refused.
 - **Status:** validated
-- **Coverage:** desktop/cloudflare-deploy.cjs, desktop/main.cjs, desktop/preload.cjs, desktop/setup.html, desktop/setup.js, scripts/server-bundle.mjs, tests/desktop-deploy.test.ts
+- **Coverage:** desktop/cloudflare-deploy.cjs, desktop/server-update.cjs, workers/routes/server-update.ts, workers/lib/self-update.ts, desktop/main.cjs, desktop/preload.cjs, desktop/setup.html, desktop/setup.js, scripts/server-bundle.mjs, tests/desktop-deploy.test.ts, tests/server-self-update.test.ts, tests/desktop-server-update.test.ts
 - **Product:** unobserved
 - **Today:** Built and tested against a fake Cloudflare; the upload, update and Access application were exercised live on the owner's account with a throwaway Worker; a full first run on a new account has not been observed.
 

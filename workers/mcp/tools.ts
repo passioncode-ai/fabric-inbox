@@ -386,6 +386,13 @@ const listAddresses = defineTool({
   },
 });
 
+const getServer = defineTool({
+  name: "get_server", title: "Show the server's version", level: "read", readOnly: true,
+  description: "The version this server runs, and whether it can take an update from the person's app without a new Cloudflare token (selfUpdate.available, with the reason when it cannot). Updating it is the app's act, not an agent's.",
+  input: {}, routes: ["GET /api/server"],
+  call: (_a, ctx) => get(ctx, "/api/server"),
+});
+
 const checkRouting = defineTool({
   name: "check_address_routing", title: "Check an address's routing", level: "read", readOnly: true,
   description: "Asks Cloudflare whether mail for this address reaches this server (a rule here, the catch-all, a rule elsewhere, or nothing).",
@@ -1702,7 +1709,7 @@ export const TOOLS: readonly ToolDef[] = [
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,
-  checkAddress, createAddress, createAddresses, updateAddress, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination, removeDestination,
+  getServer, checkAddress, createAddress, createAddresses, updateAddress, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination, removeDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, clearIncomingFailures, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,
@@ -1722,6 +1729,7 @@ export const NOT_TOOLS: Readonly<Record<string, string>> = {
   "GET /api/accounts/outlook/callback": "Microsoft's OAuth redirect back to the browser (and the end of an administrator's approval)",
   "POST /api/accounts/imap": "Connecting an IMAP account takes the person's app password: an agent must never receive a person's password, so the person enters it in Settings → Accounts; list_mail_providers gives the presets and where to go",
   "PUT /api/accounts/:accountId/password": "A new app password is the person's secret, entered in Settings → Accounts: an agent must never receive a person's password; list_mail_providers says which accounts need one (status reconnect_required)",
+  "POST /api/server/self-update": "Replacing the server's code is the person's app's act (B-44): it sends the bundle it carries, signed with the app; an agent never uploads server code",
   "POST /api/agent-keys": "Agent keys are issued by a person in the app (its answer carries the key's secret); an agent cannot mint keys. list_agent_keys reads them",
   "DELETE /api/agent-keys/:id": "Agent keys are revoked by a person in the app (Settings → Agent access); list_agent_keys reads them",
   "POST /api/cloudflare/accounts": "A Cloudflare token is a secret: a person pastes it in Settings → Accounts, so it never passes through an agent's transcript",

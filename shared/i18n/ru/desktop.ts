@@ -367,6 +367,14 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Notify About New Mail": "Уведомлять о новой почте",
 	"New mail": "Новое письмо",
 	"New messages: {n}": "Новых писем: {n}",
+	"Your server is updated": "Сервер обновлён",
+	"It now runs {version}; your mail and settings are kept.": "Теперь он работает на {version}; почта и настройки сохранены.",
+	"The server did not answer.": "Сервер не ответил.",
+	"Your server could not be updated": "Не удалось обновить сервер",
+	"{reason} It keeps running {version}.": "{reason} Он продолжает работать на {version}.",
+	"This computer could not send the update ({error}).": "Этот компьютер не смог отправить обновление ({error}).",
+	"Update Server to {version}": "Обновить сервер до {version}",
+	"Updating Server…": "Сервер обновляется…",
 };
 
 /** Every update text is wrapped in desktop/main.cjs now (LC-16); nothing is reserved. */
