@@ -87,7 +87,10 @@ as Fabric Switchboard, Fabric and Fabric Dashboards.
    the very bytes that were checked. Squirrel.Mac's `ShipIt` installs it when the person quits;
    the menu reads **Restart to Install Update** for anyone who wants it at once. A running session
    is never stopped for an update. The next start logs whether the install happened
-   (`update_install installed` or `failed`, from `update-install.json`).
+   (`update_install installed`, `interrupted` or `failed`, from `update-install.json`, with
+   `after_s`, the seconds since the install began). `interrupted` is a launch within 2 minutes of
+   the quit: ShipIt waits for every copy of the app to end, so the update was not installed yet and
+   stays staged for the next quit (seen on the owner's Mac, a new launch 6 to 18 s after the quit).
    The updater reads and removes this folder with Node's own file system (`original-fs`): Electron's
    treats the downloaded app's `app.asar` as a folder and could not remove it, so every check of
    0.12.0 failed with `ENOTEMPTY` and no later release was installed (B-86, fixed in 0.15.2;
@@ -130,7 +133,7 @@ as Fabric Switchboard, Fabric and Fabric Dashboards.
    with codes only: `update_check` (`current`, `ready`, `check_failed`, `download_failed`,
    `signature_failed`, `install_failed`, `needs_migration`, with a short `reason` code such as
    `zip_sha256` or `codesign`), `update_download` (`started`, `done`), `update_install`
-   (`started`, `installed`, `failed`, `timeout`), `update_restart` (`requested`, `refused`),
+   (`started`, `installed`, `interrupted`, `failed`, `timeout`), `update_restart` (`requested`, `refused`),
    `auto_update` (`on`, `off`).
 
 Copies that never check, with the reason the log and **Check for Updates…** give:

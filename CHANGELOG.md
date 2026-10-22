@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.25.1 (2026-10-22)
+
+- **Your inbox no longer shows an account as unavailable for a moment after a server update.** When
+  the server restarts a mailbox in the middle of reading it, the read is tried once more instead of
+  failing.
+- **The update log tells an interrupted install from a failed one.** When the app is opened again
+  before the update had time to install, the log says so; the update installs at the next quit.
+
 ## 0.25.0 (2026-10-22)
 
 - **Notifications of new mail, when you want them.** Turn on Notify About New Mail in the app menu
