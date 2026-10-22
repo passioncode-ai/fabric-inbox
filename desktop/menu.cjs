@@ -7,6 +7,7 @@
 /**
  * ctx: { t, update: { label, enabled, click }, automatic: { checked, enabled, click },
  *        usage: { checked, enabled, click, about }, login: { checked, enabled, click }, newMail: { checked, enabled, click },
+ *        serverUpdate: { label, enabled, click } or null (B-44),
  *        openSettings, showServer, showCloudflare,
  *        connectGmail, retry, console (opens the agent console, or null) }
  */
@@ -16,6 +17,8 @@ function menuTemplate(platform, ctx) {
   const updates = [
     { label: ctx.update.label, enabled: ctx.update.enabled, click: ctx.update.click },
     { label: t('Install Updates Automatically'), type: 'checkbox', checked: ctx.automatic.checked, enabled: ctx.automatic.enabled, click: ctx.automatic.click },
+    // B-44: shown only while the server is older than the server this app carries.
+    ...(ctx.serverUpdate ? [{ label: ctx.serverUpdate.label, enabled: ctx.serverUpdate.enabled, click: ctx.serverUpdate.click }] : []),
   ];
   const usage = [
     { label: t('Share Anonymous Usage Counts'), type: 'checkbox', checked: ctx.usage.checked, enabled: ctx.usage.enabled, click: ctx.usage.click },

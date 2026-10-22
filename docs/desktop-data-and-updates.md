@@ -152,8 +152,21 @@ sha256 and size. Both are listed in the GPG-signed `SHA256SUMS`, which is what t
 rehearsal is ever offered as an update. A release that is pulled back is replaced by publishing a newer
 version; a published release is never rewritten.
 
-The server is updated separately: **Create my server** uploads the server the app carries
-(B-44 records that this still asks for a token each time).
+The server is updated through itself, without a new Cloudflare token (B-44,
+[`desktop/server-update.cjs`](../desktop/server-update.cjs),
+[`workers/routes/server-update.ts`](../workers/routes/server-update.ts)). Once the person is signed in,
+the app reads `GET /api/server` through the mail window's session; when the server is older than the
+server the app carries (always the app's own version), it sends that bundle to
+`POST /api/server/self-update`, and the server uploads it to Cloudflare with its own token, the one
+Create my server gave it with Workers Scripts: Edit. The same checks as the app's own upload apply:
+never an older or equal version, never a storage step that deletes or moves data, every setting and
+secret of the running server kept (`keep_bindings`), its mail bucket kept. It happens at once when
+**Install Updates Automatically** is on; otherwise the app menu offers **Update Server to
+<version>**. It is checked once per launch and server. A server without a token or without
+`CLOUDFLARE_ACCOUNT_ID` says so (`selfUpdate.available: false`), and a token without Workers Scripts:
+Edit is named in the refusal; then **Create my server** with a token updates it as before. Only a
+person reaches the route (an agent key is limited to `/mcp`). The log has `server_update` (`done`,
+`failed` with a `code`).
 
 
 ## Windows and Linux
