@@ -21,6 +21,8 @@
 - 2026-10-21: B-135, B-136, B-137, B-33, B-43, release 0.24.0; PR #207 (`01c77df`); Worker `2042be1c` (receipt linked).
 - 2026-10-22: B-41 new-mail notifications (off by default), release 0.25.0; PR #209 (`c4c9656`); Worker `eabf172e` (receipt linked).
 - 2026-10-22: B-142 reads retry a Durable Object reset, B-143 interrupted installs, B-129, release 0.25.1; PR #211 (`49bb7ca`); Worker `02ce0a4f` (receipt linked).
+- 2026-10-22: B-145 (PB-08) remove and re-send forwarding destinations, B-146 silent hand-off, B-144 closed, release 0.26.0; PR #213 (`a529346`); Worker `719f8d15` (receipt linked). Lessons: an ask on the Fabric board can sit on no board here, so read the board at every start and file each ask as a row; a GitHub job can stay `in_progress` after every step finished, so read its steps (`gh api …/jobs/<id>`) before waiting longer; `git push --delete` with many refs at once deleted nothing behind the pre-push hook, one ref per push worked; the private-data check reads only tracked files, so run it after `git add` (a 32-hex test id was refused at push).
+- 2026-10-22: B-44 the server updates itself without a new token, releases 0.27.0 and 0.27.1; PRs #214 (`b2191bf`), #215 (`91270cb`); Worker `1bbe0d36` (receipt linked). Lesson: a fake that always sets a binding hides the deployments that lack it; read the live server (`get_server`) right after the deploy, and keep a test for the server made by hand.
 
 | Date | Branch / commit | Task | Gate |
 |---|---|---|---|
