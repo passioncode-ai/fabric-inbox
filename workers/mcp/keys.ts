@@ -125,8 +125,13 @@ export function identityMayUse(claims: AccessClaims, pathname: string): boolean 
   // Only a person opens the app; anything else Access admits (a service token, or a policy
   // added later that admits by network or country) is limited to the agent protocol, where its
   // key is checked, and to a relay's hand-over (workers/relay/ingress.ts), where its relay is.
-  return (typeof claims.email === "string" && !!claims.email) || pathname === MCP_PATH || RELAY_PATHS.includes(pathname);
+  // The fabric-service routes (B-87 part 4) read only: the well-known document, events and usage; each checks the key.
+  return (typeof claims.email === "string" && !!claims.email) || pathname === MCP_PATH || RELAY_PATHS.includes(pathname)
+    || FABRIC_SERVICE_READS.includes(pathname);
 }
+
+/** The fabric-service routes an agent key may read (workers/routes/fabric-service.ts). */
+export const FABRIC_SERVICE_READS: readonly string[] = ["/.well-known/fabric-service", "/fabric/v1/events", "/fabric/v1/usage"];
 
 /** Where a relay in another account hands over mail; kept here so the gate reads one list. */
 export const RELAY_PATHS: readonly string[] = ["/relay/incoming", "/relay/forwarded"];

@@ -340,6 +340,35 @@ service token let through by one Service Auth policy named `Fabric Inbox agents 
 server's own Access application; the application's other policies are left as they are. What
 agents can do, and the rule that keeps it complete: [docs/agents/mcp.md](../agents/mcp.md).
 
+## In Fabric Dashboards (fabric-service)
+
+The server is a `fabric-service/0.1` service in the remote placement (B-87 part 4,
+[`workers/routes/fabric-service.ts`](../../workers/routes/fabric-service.ts)), so Fabric Dashboards on
+your computer shows its health, the reply agents' events and the model calls they made:
+
+| Route | What |
+|---|---|
+| `GET /.well-known/fabric-service` | the version, the build (its commit), `ready` or `degraded` with what does not work |
+| `GET /fabric/v1/events?after=&limit=` | the reply agents' events, the same feed as `list_agent_events` |
+| `GET /fabric/v1/usage` | model calls per UTC day and model over 31 days (DEC-0021); runs keep no tokens or price, so every call is unpriced and unmeasured: the cost reads unknown, never $0 |
+
+Only a person or a registered agent key reaches them; anyone else gets 401 with an empty body. A key
+reaches nothing else of the app this way (`identityMayUse`), and the MCP surface keeps its own keys
+(`auth: "own"`), so the descriptor's key is never an MCP caller.
+
+To register a server on your computer: in Agent access make a **Read** key named for Fabric
+Dashboards, then run, with the key's JSON on stdin (never as an argument):
+
+```sh
+node scripts/register-fabric-service.mjs --origin https://<server> < key.json
+```
+
+It writes the descriptor `fabric-inbox.default.json` and its token file, both 0600, where Fabric
+Dashboards reads them. The token travels in one header, `Fabric-Access`, which the server's Access
+application reads (`read_service_tokens_from_header`): **Create my server** sets it on a new server;
+for a server made before 0.28.0 set it once on its Access application (Zero Trust, Access,
+Applications, the server's application, or the API's `read_service_tokens_from_header: "Fabric-Access"`).
+
 ## Categories
 
 **Categories** (`/categories`, or **+** beside CATEGORIES in the sidebar) are views of the mail

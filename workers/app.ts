@@ -10,6 +10,7 @@ import { withSecurityHeaders } from "./lib/security-headers";
 import { handleIncomingEmail } from "./index";
 import { api } from "./api";
 import { handleMcp } from "./mcp/handler";
+import { fabricServiceRouter } from "./routes/fabric-service";
 import { handleRelayForwarded, handleRelayIncoming, RELAY_FORWARDED, RELAY_INCOMING } from "./relay/ingress";
 import { identityMayUse, MCP_PATH, type AccessClaims } from "./mcp/keys";
 export { AutomationDO } from "./automation";
@@ -110,6 +111,9 @@ app.use("*", async (c, next) => {
 });
 
 // The agent protocol (docs/agents/mcp.md). Before the API routes and the React Router catch-all.
+// fabric-service/0.1 (B-87 part 4): read routes for a host on the operator's computer, each checking the key.
+app.route("/", fabricServiceRouter);
+
 app.all(MCP_PATH, (c) => handleMcp(c.req.raw, c.env, c.executionCtx as ExecutionContext, c.get("access") ?? null));
 
 // Mail carried by a relay in another Cloudflare account (workers/relay/): its own identity, checked there.
