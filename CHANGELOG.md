@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.25.0 (2026-10-22)
+
+- **Notifications of new mail, when you want them.** Turn on Notify About New Mail in the app menu
+  and the Mac app tells you about each new message, even with its window closed, and opens it when
+  you click. It is off until you turn it on, and it never announces mail that was already there.
+
 ## 0.24.0 (2026-10-21)
 
 - **Agent events can reach your helpdesk in seconds.** A webhook gets each hand-off, each message

@@ -364,6 +364,9 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Copy Link": "Скопировать ссылку",
 	"Write to This Address": "Написать на этот адрес",
 	"Copy Address": "Скопировать адрес",
+	"Notify About New Mail": "Уведомлять о новой почте",
+	"New mail": "Новое письмо",
+	"New messages: {n}": "Новых писем: {n}",
 };
 
 /** Every update text is wrapped in desktop/main.cjs now (LC-16); nothing is reserved. */

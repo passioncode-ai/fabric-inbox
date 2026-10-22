@@ -76,5 +76,5 @@ test("the app keeps running when its last window closes, and the ready-update no
   assert.doesNotMatch(closed, /app\.quit\(\)/, "closing the window never quits");
   assert.match(main, /now\.readyVersion === notifiedReady\) return;\n  notifiedReady = now\.readyVersion;/);
   assert.match(main, /t\('Restart to finish updating'\)/);
-  assert.match(main, /startTray\(\);\n  void startAutostart\(\)/, "tray and Open at Login at every launch");
+  assert.match(main, /startTray\(\);\n  startNewMail\(\);\n  void startAutostart\(\)/, "tray, new-mail notifications (off by default, B-41) and Open at Login at every launch");
 });

@@ -10,6 +10,7 @@ const profile = require('./profile.cjs');
 const connector = require('./connect.cjs');
 const { menuTemplate } = require('./menu.cjs');
 const { contextMenuTemplate } = require('./context-menu.cjs');
+const newMail = require('./new-mail.cjs');
 const usage = require('./analytics.cjs');
 const backup = require('./backup.cjs');
 const updates = require('./updater.cjs');
@@ -81,6 +82,7 @@ let analytics = null;
 let launchedByLink = false;
 // Automatic updates (docs/desktop-data-and-updates.md): off unless this build carries a feed.
 let updater = null;
+let mailNotifier = null;
 /** Open at Login (the organization's lifecycle rule, 2026-10-16): the module and its last read state. */
 let autostart = null;
 let loginItem = null;
@@ -176,6 +178,7 @@ async function retirePartition(partition) {
 async function saveConfig(next) {
   await writePrivate(configPath(), next);
   config = next;
+  if (mailNotifier) mailNotifier.reset();
   await backup.saveBackup({ fs, appData: app.getPath('appData'), config: next, log: logEvent });
 }
 function showSetup(message = '', start = '') {
@@ -422,6 +425,36 @@ function notifyReady() {
   logEvent({ event: 'update_ready_notice', version: now.readyVersion });
   notify(t('Restart to finish updating'), t('Fabric Inbox {version} is ready. Click to restart now, or it is installed when you quit.', { version: now.readyVersion }),
     () => void restartToUpdate());
+}
+/**
+ * B-41: new-mail notifications, off until the person turns them on in the app menu. The inbox is read
+ * through the mail window's session (its sign-in cookie), so a signed-out or unreachable server reads
+ * as nothing new; clicking a notification opens that message in the mail window.
+ */
+function startNewMail() {
+  const read = async (pathname) => {
+    if (!config) return null;
+    try {
+      const response = await session.fromPartition(policy.partitionFor(config)).fetch(new URL(pathname, config.origin).href,
+        { redirect: 'manual', credentials: 'include', headers: { Accept: 'application/json' } });
+      if (response.status !== 200 || !(response.headers.get('content-type') || '').toLowerCase().includes('json')) return null;
+      return await response.json();
+    } catch { return null; }
+  };
+  const open = (link) => {
+    if (!config) return;
+    if (mailWindow && !mailWindow.isDestroyed()) {
+      mailWindow.show(); mailWindow.focus();
+      void mailWindow.loadURL(new URL(link, config.origin).href).catch(() => {});
+      return;
+    }
+    openAfterSignIn = link;
+    loadMail();
+  };
+  mailNotifier = newMail.createNewMailNotifier({ fs, userData: app.getPath('userData'), read, open, t, log: logEvent,
+    notify: (title, body, onClick) => notify(title, body, onClick),
+    focused: () => !!(mailWindow && !mailWindow.isDestroyed() && mailWindow.isFocused()) });
+  void mailNotifier.start().then(installMenu);
 }
 /**
  * Every launch: Open at Login is turned on once for an installed copy and read again; a login item the
@@ -919,6 +952,7 @@ function installMenu() {
     automatic: { checked: !!(state && state.automatic), enabled: !!updater && !['off', 'unavailable'].includes(state.state), click: (item) => { if (updater) void updater.setAutomatic(item.checked); } },
     usage: { checked: !!(analytics && analytics.status().enabled), enabled: !!analytics, click: (item) => void toggleAnalytics(item), about: aboutUsageCounts },
     login: { checked: !!(loginItem && loginItem.enabled), enabled: !!(loginItem && loginItem.supported), click: (item) => void toggleLogin(item) },
+    newMail: { checked: !!(mailNotifier && mailNotifier.enabled()), enabled: !!mailNotifier, click: (item) => { if (mailNotifier) void mailNotifier.setEnabled(item.checked).then(installMenu); } },
     openSettings, showServer: () => showSetup(), showCloudflare: () => showSetup('', 'cloudflare'),
     connectGmail: () => { if (config) void openExternal(policy.gmailConnectURL(config), true); else showSetup(t('Set the server address before connecting Gmail.')); },
     retry: loadMail,
@@ -1022,6 +1056,7 @@ if (ownsInstance) app.whenReady().then(async () => {
   void startAnalytics().catch(() => {});
   void startUpdates().catch(() => logEvent({ event: 'update_check', outcome: 'check_failed', reason: 'not_started' }));
   startTray();
+  startNewMail();
   void startAutostart().catch(() => logEvent({ event: 'login_item', outcome: 'failed', reason: 'not_started' }));
   for (const arg of process.argv || []) queueLink(arg);
   void drainLinks();

@@ -82,6 +82,7 @@
 | SCN-077 | Let my coding agent set everything up | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
 | SCN-078 | Work through my coding agent in the console | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
 | SCN-079 | See which conversations still need a reply | Find and handle a conversation | P-01 | ST-002, FLW-02 | draft | — |
+| SCN-080 | Be told when new mail arrives | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1617,3 +1618,23 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** shared/mail/agent-state.ts, workers/lib/agent-status.ts, workers/durableObject/index.ts (`agentThreads`, `sentByIds`), workers/routes/inbox.ts (`/api/agent-status`, `/api/agent-threads`, `readReplyView`), workers/index.ts (thread route `sent_by`, `agent_run`), workers/mcp/tools.ts (`list_agent_threads`, `get_agent_status`, `set_agent_status`), app/components/inbox/ReplyFilter.tsx, app/components/inbox/reply-state.ts, app/components/inbox/TriagedList.tsx, app/components/inbox/ConversationList.tsx, app/components/settings/sections/ReplyStatusSettings.tsx, tests/agent-state.test.ts, tests/agent-state-workerd.test.ts, tests/thread-view.test.ts
 - **Product:** unobserved
 - **Today:** Built 2026-10-21 (B-138). The operator chose off by default, with a choice per account (domain) and per mailbox (address).
+
+### SCN-080: Be told when new mail arrives
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07; operator decision 2026-10-22 (B-41: yes, off by default)
+- **Entry point:** the app menu's Notify About New Mail (macOS: the Fabric Inbox menu; Windows and Linux: File)
+- **Preconditions:** The desktop app, signed in to its server.
+- **Steps:**
+  1. Turn on Notify About New Mail -> mail already waiting is not announced; the system may ask once to allow notifications.
+  2. A new message arrives -> within about five minutes a notification names its sender and subject, also with the window closed (the app keeps running).
+  3. Click it -> the mail window opens on that message.
+- **Expected result:** I hear about new mail without keeping the inbox in front, and only when I asked for it.
+- **Alt paths:** More than three new at once: one notification with their count and senders, which opens the inbox. The mail window in front: no notification (the inbox shows it). Signed out or the server unreachable: nothing is announced; the check runs again five minutes later. A new server: it starts again from what that server already holds. Turned off: no timer runs.
+- **UI elements:** the menu checkbox; system notifications.
+- **States covered:** empty, success, error
+- **Errors & recovery:** The choice cannot be saved: the switch stays as it was. Notifications blocked in System Settings: the system shows nothing; the menu still says on.
+- **Status:** draft
+- **Coverage:** desktop/new-mail.cjs, desktop/main.cjs (`startNewMail`), desktop/menu.cjs, tests/desktop-new-mail.test.ts
+- **Product:** unobserved
+- **Today:** Built 2026-10-22 (B-41).
