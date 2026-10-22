@@ -4,6 +4,7 @@ import type { Env } from "../types";
 import { BUILD_ID, SOURCE } from "../../shared/build";
 import { cloudflareApi } from "../routing/cloudflare-api";
 import { principalFor, readAgentKeys, type AccessClaims } from "../mcp/keys";
+import type { ModelUsageRow } from "../agents/registry";
 
 /**
  * Fabric Inbox as a Fabric service in the remote placement (fabric-service/0.1, contract DEC-0015,
@@ -94,19 +95,26 @@ export function providerOf(model: string): { provider: string; route: "key" | "p
   return model.startsWith("@cf/") || !model.includes("/") ? { provider: "workers-ai", route: "platform-metered" } : { provider: "openrouter", route: "key" };
 }
 
+/** A cost that is the sum of what was priced, or null when nothing was (DEC-0021: unknown is never 0). */
+const priced = (calls: number, unpriced: number, cost: number) => (unpriced >= calls ? null : Number(cost.toFixed(8)));
+
 /**
- * The DEC-0021 report from the reply agents' runs: calls per UTC day and model over the last 31 days.
- * Runs keep no tokens or price, so every call is unpriced and unmeasured (cost null, token totals a
- * lower bound of 0), which a host shows as unknown rather than free.
+ * The DEC-0021 report from the reply agents' runs, per UTC day and model over the last 31 days. A call
+ * with a receipt (B-147) brings its tokens and OpenRouter's charge; an older run's calls stay unpriced and
+ * unmeasured, so a host shows a lower bound or unknown, never a free day.
  */
-export function usageReport(rows: { day: string; model: string; calls: number }[], instance: string, now = new Date()) {
-  const byDay = new Map<string, { model: string; calls: number }[]>();
+export function usageReport(rows: ModelUsageRow[], instance: string, now = new Date()) {
+  const byDay = new Map<string, ModelUsageRow[]>();
   for (const r of rows) if (r.calls > 0) byDay.set(r.day, [...(byDay.get(r.day) ?? []), r]);
   const days = [...byDay].sort(([a], [b]) => a.localeCompare(b)).slice(-31).map(([date, models]) => {
-    const byModel = models.map((m) => ({ ...providerOf(m.model), model: m.model.slice(0, 128), costBasis: "unknown",
-      calls: m.calls, unpricedCalls: m.calls, unmeasuredCalls: m.calls, inputTokens: 0, outputTokens: 0, costUsd: null }));
-    const calls = byModel.reduce((n, m) => n + m.calls, 0);
-    return { date, calls, unpricedCalls: calls, unmeasuredCalls: calls, inputTokens: 0, outputTokens: 0, costUsd: null, byModel };
+    const byModel = models.map((m) => ({ ...providerOf(m.model), model: m.model.slice(0, 128),
+      costBasis: m.unpricedCalls === 0 ? "provider" : m.unpricedCalls < m.calls ? "mixed" : "unknown",
+      calls: m.calls, unpricedCalls: m.unpricedCalls, unmeasuredCalls: m.unmeasuredCalls,
+      inputTokens: m.inputTokens, outputTokens: m.outputTokens, costUsd: priced(m.calls, m.unpricedCalls, m.costUsd) }));
+    const sum = (k: "calls" | "unpricedCalls" | "unmeasuredCalls" | "inputTokens" | "outputTokens") => byModel.reduce((n, m) => n + m[k], 0);
+    const known = byModel.reduce((n, m) => n + (m.costUsd ?? 0), 0);
+    return { date, calls: sum("calls"), unpricedCalls: sum("unpricedCalls"), unmeasuredCalls: sum("unmeasuredCalls"),
+      inputTokens: sum("inputTokens"), outputTokens: sum("outputTokens"), costUsd: priced(sum("calls"), sum("unpricedCalls"), known), byModel };
   });
   return { protocol: "fabric-service/0.1", service: { id: SERVICE_ID, instance }, generatedAt: now.toISOString(), currency: "USD", days };
 }
@@ -116,6 +124,6 @@ fabricServiceRouter.get(USAGE_PATH, async (c) => {
   c.header("Cache-Control", "no-store");
   const now = new Date();
   const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 30)).toISOString();
-  const rows = c.env.AGENT_REGISTRY ? await c.env.AGENT_REGISTRY.getByName("workspace").modelCallsPerDay(since) : [];
+  const rows = c.env.AGENT_REGISTRY ? await c.env.AGENT_REGISTRY.getByName("workspace").modelUsagePerDay(since) : [];
   return c.json(usageReport(rows, instanceOf(c.env), now));
 });

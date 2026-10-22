@@ -1283,3 +1283,14 @@ test("silentHandoff: a listed sender or topic is passed to a person with no repl
   assert.equal(silentSender(["@desk.invalid"], ["x@desk.invalid.evil"]), false);
   assert.throws(() => AgentInputSchema.parse({ name: "A", instructions: "B", replyPolicy: { silentHandoff: { senders: ["not a sender"] } } }));
 });
+
+test("B-147: the run keeps the writer's and the checker's receipts, and a failed model call's", async () => {
+  const receipt = (model: string, cost: number | null) => ({ model, inputTokens: 100, outputTokens: 10, costUsd: cost, measured: cost !== null });
+  const h = harness({ agent: autoAgent(), email: { subject: "Price", body: "<p>How much?</p>" },
+    model: async () => ({ decision: answer(), text: "", model: "x/writer", usage: [receipt("x/writer", 0.001)] }) });
+  h.deps.check = async () => ({ approved: true, reason: "ok", model: "y/checker", usage: [receipt("y/checker", 0.0002)] });
+  const r = (await h.run())!;
+  assert.deepEqual(r.usage?.map((u) => [u.model, u.costUsd]), [["x/writer", 0.001], ["y/checker", 0.0002]]);
+  const failed = harness({ agent: autoAgent(), model: async () => { throw Object.assign(new Error("down"), { calls: { calls: 2, failed: 2, recovered: 0 }, usage: [receipt("x/a", null), receipt("x/b", null)] }); } });
+  assert.deepEqual((await failed.run())!.usage?.map((u) => u.measured), [false, false]);
+});

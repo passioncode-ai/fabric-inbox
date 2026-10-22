@@ -88,6 +88,9 @@ type Row = Record<string, string | number | null>;
  * agent runs and per-address daily send counters in SQLite so each change is
  * transactional (REQ-P2, REQ-P3).
  */
+/** One day and model of the agents' model calls (B-87 part 4, B-147). */
+export interface ModelUsageRow { day: string; model: string; calls: number; unpricedCalls: number; unmeasuredCalls: number; inputTokens: number; outputTokens: number; costUsd: number }
+
 export class AgentRegistryDO extends DurableObject<Env> {
   private draining: Promise<void> | undefined;
   /** B-141: a run saved a knowledge revision other than the last one seen: held runs are looked at again soon. */
@@ -891,28 +894,49 @@ export class AgentRegistryDO extends DurableObject<Env> {
   }
 
   /**
-   * B-87 part 4: the model calls the reply agents made since `since`, per UTC day and model, from each
-   * run's own count (B-130): the writer (fallback included) and the checker. Runs record no tokens or
-   * price, so the usage report marks every call unmeasured and unpriced.
+   * The model calls the reply agents made since `since`, per UTC day and model (B-87 part 4, DEC-0021):
+   * from each run's receipts (B-147: tokens and the provider's charge per call) when it has them, else
+   * from its call count (B-130), the writer and the checker apart, unpriced and unmeasured.
    */
-  async modelCallsPerDay(since: string): Promise<{ day: string; model: string; calls: number }[]> {
+  async modelUsagePerDay(since: string): Promise<ModelUsageRow[]> {
     const rows = this.rows(`SELECT substr(created_at, 1, 10) AS day, json_extract(body, '$.model') AS model,
-      json_extract(body, '$.checkedBy') AS checker, json_extract(body, '$.modelCalls.calls') AS calls
-      FROM agent_runs WHERE created_at >= ? AND (json_extract(body, '$.model') IS NOT NULL OR json_extract(body, '$.modelCalls.calls') > 0)`, since);
-    const out = new Map<string, number>();
-    const add = (day: string, model: string, n: number) => { if (n > 0) out.set(`${day}\u0000${model}`, (out.get(`${day}\u0000${model}`) ?? 0) + n); };
+      json_extract(body, '$.checkedBy') AS checker, json_extract(body, '$.modelCalls.calls') AS calls, json_extract(body, '$.usage') AS usage
+      FROM agent_runs WHERE created_at >= ? AND (json_extract(body, '$.model') IS NOT NULL OR json_extract(body, '$.modelCalls.calls') > 0
+        OR json_array_length(json_extract(body, '$.usage')) > 0)`, since);
+    const out = new Map<string, ModelUsageRow>();
+    const add = (day: string, model: string, part: { calls: number; priced: number; measured: number; inputTokens: number; outputTokens: number; costUsd: number }) => {
+      if (part.calls <= 0) return;
+      const key = `${day}\u0000${model}`;
+      const row = out.get(key) ?? { day, model, calls: 0, unpricedCalls: 0, unmeasuredCalls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
+      row.calls += part.calls; row.unpricedCalls += part.calls - part.priced; row.unmeasuredCalls += part.calls - part.measured;
+      row.inputTokens += part.inputTokens; row.outputTokens += part.outputTokens; row.costUsd += part.costUsd;
+      out.set(key, row);
+    };
+    const none = { priced: 0, measured: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
     for (const r of rows) {
       const day = String(r.day);
+      let receipts: { model?: unknown; inputTokens?: unknown; outputTokens?: unknown; costUsd?: unknown; measured?: unknown }[] = [];
+      try { receipts = typeof r.usage === "string" ? JSON.parse(r.usage) : []; } catch { receipts = []; }
+      if (Array.isArray(receipts) && receipts.length) {
+        for (const x of receipts) {
+          const priced = typeof x.costUsd === "number" && x.costUsd >= 0;
+          const measured = x.measured === true;
+          add(day, typeof x.model === "string" && x.model ? x.model : "unknown", { calls: 1, priced: priced ? 1 : 0, measured: measured ? 1 : 0,
+            inputTokens: measured && typeof x.inputTokens === "number" ? x.inputTokens : 0,
+            outputTokens: measured && typeof x.outputTokens === "number" ? x.outputTokens : 0,
+            costUsd: priced ? (x.costUsd as number) : 0 });
+        }
+        continue;
+      }
       const writer = typeof r.model === "string" && r.model ? r.model : "unknown";
       const checker = typeof r.checker === "string" && r.checker ? r.checker : null;
       // A run before B-130 counted nothing: its answer was one writer call, and one check when it names a checker.
       const calls = typeof r.calls === "number" ? r.calls : (writer !== "unknown" ? 1 : 0) + (checker ? 1 : 0);
       const checks = checker ? 1 : 0;
-      add(day, writer, Math.max(0, calls - checks));
-      if (checker) add(day, checker, checks);
+      add(day, writer, { calls: Math.max(0, calls - checks), ...none });
+      if (checker) add(day, checker, { calls: checks, ...none });
     }
-    return [...out].map(([k, calls]) => { const [day, model] = k.split("\u0000"); return { day: day!, model: model!, calls }; })
-      .sort((a, b) => (a.day === b.day ? a.model.localeCompare(b.model) : a.day.localeCompare(b.day)));
+    return [...out.values()].sort((a, b) => (a.day === b.day ? a.model.localeCompare(b.model) : a.day.localeCompare(b.day)));
   }
 
   async listRuns(options: { mailboxId?: string; limit?: number; before?: string; outcome?: RunOutcome; agentId?: string } = {}): Promise<AgentRun[]> {
