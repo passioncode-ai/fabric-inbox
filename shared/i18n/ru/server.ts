@@ -734,4 +734,11 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Give the https URL, and the event kinds if not the default": "Укажите адрес https и виды событий, если нужны не стандартные",
 	"Keep the secret now: it is not shown again. Each delivery is signed with it (X-Fabric-Signature).": "Сохраните секрет сейчас: больше он не показывается. Им подписана каждая доставка (X-Fabric-Signature).",
 	"No such hook": "Такой подписки нет",
+	"Passed to a person: mail from this sender or on this topic is answered by a person, so nothing was sent": "Передано человеку: на письма от этого отправителя или на эту тему отвечает человек, поэтому ничего не отправлено",
+	"{address} is not a forwarding destination of this Cloudflare account.": "{address} не адрес пересылки в этом аккаунте Cloudflare.",
+	"{address} still gets a copy from {list}. Stop those copies first (Copy tab of each address).": "{address} всё ещё получает копии от {list}. Сначала отключите эти копии (вкладка «Копия» у каждого адреса).",
+	"Cloudflare rules still forward to {address}: {list}. Removing it would switch them off; change them first.": "Правила Cloudflare всё ещё пересылают на {address}: {list}. Удаление их отключит; сначала измените их.",
+	"The rules of {list} could not be read, so it is not known whether they forward to {address}. Remove it anyway with force.": "Не удалось прочитать правила {list}, поэтому неизвестно, пересылают ли они на {address}. Удалить всё равно можно с force.",
+	"remove a forwarding destination (Email Routing Addresses: Edit)": "удалить адрес пересылки (Email Routing Addresses: Edit)",
+	"the catch-all of {domain}": "общий ящик {domain}",
 };

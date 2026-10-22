@@ -289,4 +289,11 @@ export const SETTINGS: Readonly<Record<string, string>> = {
 	"Being renamed to {email}": "Переименовывается в {email}",
 	"Taking the mail of {email}": "Принимает почту {email}",
 	"Finish or cancel the rename of {email}…": "Завершить или отменить переименование {email}…",
+	"Cloudflare sent a new confirmation link to {email}.": "Cloudflare отправил новую ссылку для подтверждения на {email}.",
+	"{email} is no longer a forwarding destination.": "{email} больше не адрес пересылки.",
+	"No link arrived, or it expired? Cloudflare can send a new one.": "Ссылка не пришла или устарела? Cloudflare может прислать новую.",
+	"Send the link again": "Отправить ссылку ещё раз",
+	"Stop the copies above first: an address that copies here would lose its copy.": "Сначала отключите копии выше: адрес, который пересылает сюда копию, её потеряет.",
+	"Remove {email}?": "Удалить {email}?",
+	"Copies can no longer go to this address. Using it again needs a new confirmation by its owner.": "Копии больше не смогут приходить на этот адрес. Чтобы снова его использовать, владельцу придётся подтвердить его заново.",
 };

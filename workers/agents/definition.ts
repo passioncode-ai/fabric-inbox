@@ -177,6 +177,17 @@ export const ReplyPolicySchema = z.object({
     replies: z.record(z.string().trim().min(1).max(60), LocalizedText).optional()
       .refine((r) => !r || Object.keys(r).length <= 30, "At most 30 category replies"),
   }).strict().optional(),
+  /**
+   * Mail a person answers and the agent never replies to, not even with a fixed text (2026-10-22, for a
+   * payment provider's compliance desk): a sender (a full address, or a domain as `@example.com`, its
+   * subdomains included, read from From and Reply-To) or a topic (as in draftTopics, read in the subject
+   * and the new text). The run ends at once, before any model call, as a hand-off (`agent.handoff`).
+   */
+  silentHandoff: z.object({
+    senders: z.array(z.string().trim().toLowerCase().min(3).max(320)
+      .refine((v) => /^@?[^@\s]+\.[^@\s]+$/.test(v) || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v), "An address or @domain")).max(50).default([]),
+    topics: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
+  }).strict().optional(),
 }).strict();
 export type ReplyPolicy = z.infer<typeof ReplyPolicySchema>;
 

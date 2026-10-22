@@ -515,6 +515,41 @@ export class DomainManager {
     return { id: d.id, email: d.email.toLowerCase(), verified: d.verified ?? null, status: d.status };
   }
 
+  /**
+   * Deletes a destination from an account (PB-08). Cloudflare disables every routing rule that
+   * still forwards to it, so the caller checks `destinationUsers` first.
+   */
+  async removeDestination(id: string, accountId?: string): Promise<void> {
+    const { account, api } = await this.accountApi(accountId);
+    await api.call(`/accounts/${account}/email/routing/addresses/${encodeURIComponent(id)}`, { method: "DELETE", what: msg("remove a forwarding destination (Email Routing Addresses: Edit)") });
+  }
+
+  /**
+   * The Cloudflare rules of an account that forward to `email` (a rule or a catch-all), and the
+   * domains whose rules could not be read: removing the destination would switch the rules off.
+   */
+  async destinationUsers(email: string, accountId?: string): Promise<{ domains: string[]; rules: string[]; unread: string[] }> {
+    const { account, api } = await this.accountApi(accountId);
+    const forwards = (r: Rule | null) => !!r && r.actions?.some((a) => a.type === "forward" && a.value?.some((v) => v.toLowerCase() === email)) === true;
+    const zones = await this.accounts.zonesOf(account, api);
+    const rules: string[] = [];
+    const unread: string[] = [];
+    await Promise.all(zones.map(async (zone) => {
+      const ctx = { zone, api } as ZoneContext;
+      try {
+        const settings = await api.call<{ enabled?: boolean }>(`/zones/${zone.id}/email/routing`, { what: msg("read Email Routing (Email Routing Rules: Edit)") });
+        if (settings.enabled !== true) return;
+        const [list, catchAll] = await Promise.all([
+          this.rules(ctx),
+          api.call<Rule>(`/zones/${zone.id}/email/routing/rules/catch_all`, { what: msg("read the catch-all rule (Email Routing Rules: Edit)") }),
+        ]);
+        for (const r of list) if (forwards(r)) rules.push(address(r) ?? zone.name);
+        if (forwards(catchAll)) rules.push(msg("the catch-all of {domain}", { domain: zone.name }));
+      } catch { unread.push(zone.name); }
+    }));
+    return { domains: zones.map((z) => z.name.toLowerCase()), rules: rules.sort(), unread: unread.sort() };
+  }
+
   /** The destinations that apply to an address: those of its domain's account. */
   async destinationsFor(email: string): Promise<Destination[]> {
     const ctx = await this.zone(domainOf(email));

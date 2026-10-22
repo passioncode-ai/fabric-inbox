@@ -97,6 +97,8 @@ export default function DestinationsSection({ id }: { id: string | null }) {
           </ul>
         )}
       </PanelBlock>
+      <DestinationActions destination={selected.destination} account={account} copied={copiers(selected.destination.email).length > 0}
+        onRemoved={() => navigate(hrefFor(null), { replace: true, preventScrollReset: true })} />
     </Panel>
   );
 
@@ -117,6 +119,63 @@ export default function DestinationsSection({ id }: { id: string | null }) {
       <AddDestinationDialog open={adding && connected} account={account} accountName={current?.name}
         onClose={() => setParam("add", null)} onAdded={(d) => navigate(hrefFor(d.id), { replace: true, preventScrollReset: true })} />
     </>
+  );
+}
+
+/**
+ * Send the link again (a destination still waiting) and Remove (PB-08). Cloudflare's API has no
+ * resend, so the server removes the waiting destination and adds it again. Removing is refused while
+ * an address here or a Cloudflare rule of the account still forwards to it; the answer names them.
+ */
+function DestinationActions({ destination, account, copied, onRemoved }: {
+  destination: Destination; account?: string; copied: boolean; onRemoved: () => void;
+}) {
+  const t = useT();
+  const client = useQueryClient();
+  const notify = useNotify();
+  const [working, setWorking] = useState<"resend" | "remove" | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [problem, setProblem] = useState("");
+  const query = account ? `?account=${account}` : "";
+  async function resend() {
+    setWorking("resend"); setProblem("");
+    try {
+      await fabric(`/api/domains/destinations${query}`, { email: destination.email, resend: true });
+      await client.invalidateQueries({ queryKey: DESTINATIONS_KEY });
+      notify(t("Cloudflare sent a new confirmation link to {email}.", { email: destination.email }));
+    } catch (error) { setProblem(t.text(errorText(error))); } finally { setWorking(null); }
+  }
+  async function remove() {
+    setWorking("remove"); setProblem("");
+    try {
+      await fabric(`/api/domains/destinations/${encodeURIComponent(destination.email)}${query}`, undefined, "DELETE");
+      await client.invalidateQueries({ queryKey: DESTINATIONS_KEY });
+      notify(t("{email} is no longer a forwarding destination.", { email: destination.email }));
+      setConfirming(false);
+      onRemoved();
+    } catch (error) { setConfirming(false); setProblem(t.text(errorText(error))); } finally { setWorking(null); }
+  }
+  return (
+    <PanelBlock title={t("Change")}>
+      {!destination.verified && <p>{t("No link arrived, or it expired? Cloudflare can send a new one.")}</p>}
+      <div className="fi-dialog-actions">
+        {!destination.verified && (
+          <button type="button" className="fi-secondary" disabled={working !== null} onClick={() => void resend()}>
+            {working === "resend" ? t("Sending…") : t("Send the link again")}</button>
+        )}
+        <button type="button" className="fi-danger" disabled={working !== null || copied} onClick={() => setConfirming(true)}>{t("Remove")}</button>
+      </div>
+      {copied && <p>{t("Stop the copies above first: an address that copies here would lose its copy.")}</p>}
+      {problem && <p className="fi-action-result is-error" role="alert">{problem}</p>}
+      <Dialog open={confirming} title={t("Remove {email}?", { email: destination.email })} onClose={() => setConfirming(false)} busy={working === "remove"}>
+        <p>{t("Copies can no longer go to this address. Using it again needs a new confirmation by its owner.")}</p>
+        <div className="fi-dialog-actions">
+          <button type="button" className="fi-secondary" onClick={() => setConfirming(false)} disabled={working === "remove"}>{t("Cancel")}</button>
+          <button type="button" className="fi-danger" data-autofocus onClick={() => void remove()} disabled={working === "remove"}>
+            {working === "remove" ? t("Removing…") : t("Remove")}</button>
+        </div>
+      </Dialog>
+    </PanelBlock>
   );
 }
 

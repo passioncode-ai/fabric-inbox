@@ -85,6 +85,13 @@ function fakeCloudflare(options: { deny?: RegExp } = {}) {
       const list = zones.filter((z) => !name || z.name === name).map((z) => ({ id: z.id, name: z.name, status: "active", account: { id: "acc-1", name: "Test account" } }));
       return ok(page > 1 ? [] : list);
     }
+    const dest = path.match(/^\/accounts\/acc-1\/email\/routing\/addresses\/([^/]+)$/);
+    if (dest && method === "DELETE") {
+      const index = destinations.findIndex((x) => x.id === dest[1]);
+      if (index < 0) return fail(404, 1001, "Destination not found");
+      const [gone] = destinations.splice(index, 1);
+      return ok(gone);
+    }
     if (path === "/accounts/acc-1/email/routing/addresses") {
       if (method === "GET") return ok(page > 1 ? [] : destinations);
       const d = { id: id(), email: body.email, verified: null, status: "pending" };
@@ -317,6 +324,61 @@ test("forwarding destinations are listed and added; Cloudflare sends the confirm
     assert.equal(added.body.destination.email, "new@gmail.invalid");
     assert.equal((await call("/api/domains/destinations", "POST", { email: "new@gmail.invalid" })).body.created, false);
     assert.equal((await call("/api/domains/destinations", "POST", { email: "me@base.invalid" })).status, 400);
+  } finally { await mf.dispose(); }
+});
+
+test("PB-08: a waiting destination gets its link again; a confirmed one has nothing to send", async () => {
+  const { mf, cf, call } = await fixture();
+  try {
+    const before = cf.destinations.find((d) => d.email === "pending@gmail.invalid")!.id;
+    const again = await call("/api/domains/destinations", "POST", { email: "pending@gmail.invalid", resend: true });
+    assert.equal(again.status, 200, JSON.stringify(again.body));
+    assert.equal(again.body.resent, true);
+    assert.notEqual(again.body.destination.id, before, "removed and added again, so Cloudflare sends a new link");
+    assert.deepEqual(cf.writes.filter((w) => w.includes("/email/routing/addresses")), [`DELETE /accounts/acc-1/email/routing/addresses/${before}`, "POST /accounts/acc-1/email/routing/addresses"]);
+    const writes = cf.writes.length;
+    const confirmed = await call("/api/domains/destinations", "POST", { email: "owner@gmail.invalid", resend: true });
+    assert.deepEqual([confirmed.status, confirmed.body.resent, confirmed.body.created], [200, false, false]);
+    // Without resend, adding it again stays a no-op that sends nothing (the playbook's question).
+    assert.deepEqual((await call("/api/domains/destinations", "POST", { email: "pending@gmail.invalid" })).body.resent, undefined);
+    assert.equal(cf.writes.length, writes, "neither call wrote to Cloudflare");
+  } finally { await mf.dispose(); }
+});
+
+test("PB-08: a destination is removed only when nothing forwards to it", async () => {
+  const { mf, cf, call, putR2 } = await fixture();
+  try {
+    const del = (email: string, q = "") => call(`/api/domains/destinations/${encodeURIComponent(email)}${q}`, "DELETE");
+    assert.equal((await del("nobody@gmail.invalid")).status, 404);
+    assert.equal((await del("not-an-address")).status, 400);
+    // Cloudflare rules and the catch-all of product.invalid forward to it: removing would switch them off.
+    const used = await del("owner@gmail.invalid");
+    assert.equal(used.status, 409, JSON.stringify(used.body));
+    assert.deepEqual(used.body.rules, ["old@product.invalid", "support@product.invalid", "the catch-all of product.invalid"]);
+    assert.ok(cf.destinations.some((d) => d.email === "owner@gmail.invalid"));
+    // An address here that copies to it, on a domain of that account.
+    await call("/api/domains/destinations", "POST", { email: "copy@gmail.invalid" });
+    await putR2(mailboxKey("hello@product.invalid"), { fromName: "Hello", forwarding: { enabled: true, email: "copy@gmail.invalid" } });
+    const copied = await del("copy@gmail.invalid");
+    assert.equal(copied.status, 409);
+    assert.deepEqual(copied.body.copies, ["hello@product.invalid"]);
+    await putR2(mailboxKey("hello@product.invalid"), { fromName: "Hello", forwarding: { enabled: false, email: "" } });
+    const removed = await del("copy@gmail.invalid");
+    assert.deepEqual([removed.status, removed.body.removed], [200, true]);
+    assert.ok(!cf.destinations.some((d) => d.email === "copy@gmail.invalid"));
+  } finally { await mf.dispose(); }
+});
+
+test("PB-08: rules that cannot be read stop the removal unless forced", async () => {
+  const { mf, cf, call } = await fixture({ deny: /^GET \/zones\/z-product\/email\/routing\/rules$/ });
+  try {
+    const path = `/api/domains/destinations/${encodeURIComponent("pending@gmail.invalid")}`;
+    const first = await call(path, "DELETE");
+    assert.equal(first.status, 409);
+    assert.deepEqual(first.body.unread, ["product.invalid"]);
+    assert.ok(cf.destinations.some((d) => d.email === "pending@gmail.invalid"));
+    const forced = await call(path + "?force=true", "DELETE");
+    assert.deepEqual([forced.status, forced.body.removed], [200, true]);
   } finally { await mf.dispose(); }
 });
 

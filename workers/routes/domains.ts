@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { Env } from "../types";
-import { allServedDomains, isDomainName, listMailboxAddresses, removeCatchAll, servedDomains, setCatchAll } from "../lib/mailbox-store";
+import { allServedDomains, isDomainName, listMailboxAddresses, readAllSettings, removeCatchAll, servedDomains, setCatchAll } from "../lib/mailbox-store";
 import { CloudflareApiError, TOKEN_PERMISSIONS, ACCOUNT_TOKEN_PERMISSIONS } from "../routing/cloudflare-api";
 import { CloudflareAccounts, isAccountId } from "../routing/accounts";
 import { currentRelay, readRelays } from "../relay/install";
@@ -112,7 +112,7 @@ domainsRouter.get("/api/domains/destinations", async (c) => {
   catch (error) { return failure(c, error, "destinations_read_failed"); }
 });
 
-export const DestinationInput = z.object({ email: z.string().trim().toLowerCase().email().max(90) }).strict();
+export const DestinationInput = z.object({ email: z.string().trim().toLowerCase().email().max(90), resend: z.boolean().optional() }).strict();
 domainsRouter.post("/api/domains/destinations", async (c) => {
   const parsed = DestinationInput.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: msg("Enter an email address") }, 400);
@@ -124,11 +124,58 @@ domainsRouter.post("/api/domains/destinations", async (c) => {
   if (!m) return c.json({ error: NOT_CONNECTED }, 503);
   try {
     const existing = (await m.destinations(account)).find((d) => d.email === parsed.data.email);
-    if (existing) return c.json({ destination: existing, created: false });
+    // PB-08: Cloudflare's API has no "send the link again"; a destination still waiting is
+    // removed and added once more, which sends a new link. A confirmed one has nothing to send.
+    if (existing && parsed.data.resend && !existing.verified) {
+      await m.removeDestination(existing.id, account);
+      const destination = await m.addDestination(parsed.data.email, account);
+      console.log(JSON.stringify({ event: "destination_link_resent" }));
+      return c.json({ destination, created: false, resent: true });
+    }
+    if (existing) return c.json({ destination: existing, created: false, ...(parsed.data.resend ? { resent: false } : {}) });
     const destination = await m.addDestination(parsed.data.email, account);
     console.log(JSON.stringify({ event: "destination_added", verified: !!destination.verified }));
     return c.json({ destination, created: true }, 201);
   } catch (error) { return failure(c, error, "destination_add_failed"); }
+});
+
+/**
+ * Removes a forwarding destination from its Cloudflare account (PB-08). Refused while an address
+ * here copies to it or a Cloudflare rule of that account forwards to it: Cloudflare would switch
+ * those rules off and the copies would fail. `force` removes it when some domains' rules could
+ * not be read; it never overrides a known use.
+ */
+domainsRouter.delete("/api/domains/destinations/:email", async (c) => {
+  const email = decodeURIComponent(c.req.param("email")).trim().toLowerCase();
+  if (!z.string().email().max(320).safeParse(email).success) return c.json({ error: msg("Enter an email address") }, 400);
+  const account = accountParam(c);
+  if (account === null) return c.json({ error: msg("Not a Cloudflare account id") }, 400);
+  const force = c.req.query("force") === "true";
+  const m = manager(c);
+  if (!m) return c.json({ error: NOT_CONNECTED }, 503);
+  try {
+    const destination = (await m.destinations(account)).find((d) => d.email === email);
+    if (!destination) return c.json({ error: msg("{address} is not a forwarding destination of this Cloudflare account.", { address: email }) }, 404);
+    const [users, settings] = await Promise.all([m.destinationUsers(email, account), readAllSettings(c.env.BUCKET)]);
+    const own = new Set(users.domains);
+    const copies = settings.filter(({ email: a, settings: s }) => {
+      const f = s.forwarding as { enabled?: boolean; email?: string } | undefined;
+      return f?.enabled === true && f.email?.toLowerCase() === email && own.has(a.slice(a.lastIndexOf("@") + 1));
+    }).map(({ email: a }) => a).sort();
+    if (copies.length || users.rules.length) return c.json({
+      error: copies.length
+        ? msg("{address} still gets a copy from {list}. Stop those copies first (Copy tab of each address).", { address: email, list: copies.join(", ") })
+        : msg("Cloudflare rules still forward to {address}: {list}. Removing it would switch them off; change them first.", { address: email, list: users.rules.join(", ") }),
+      copies, rules: users.rules,
+    }, 409);
+    if (users.unread.length && !force) return c.json({
+      error: msg("The rules of {list} could not be read, so it is not known whether they forward to {address}. Remove it anyway with force.", { list: users.unread.join(", "), address: email }),
+      unread: users.unread,
+    }, 409);
+    await m.removeDestination(destination.id, account);
+    console.log(JSON.stringify({ event: "destination_removed", verified: !!destination.verified, forced: force && users.unread.length > 0 }));
+    return c.json({ removed: true, destination });
+  } catch (error) { return failure(c, error, "destination_remove_failed"); }
 });
 
 domainsRouter.get("/api/domains/:domain", async (c) => {

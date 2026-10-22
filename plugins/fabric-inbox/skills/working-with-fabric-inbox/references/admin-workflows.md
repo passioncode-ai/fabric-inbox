@@ -88,6 +88,16 @@ A copy goes only to a **verified** destination **in the address's own Cloudflare
 `list_domains` with `destinations: true` and that domain's `account` → if absent,
 `add_forward_destination` with the same `account` (Cloudflare emails it a link; someone must click
 it) → once verified, `update_address` with `forwardTo`, or `create_address` with it.
+Calling `add_forward_destination` again sends no new link; `resend: true` does, for one still
+waiting. Removing one: first `update_address { forwardTo: null }` on every address that copies to
+it, then `remove_forward_destination` (two calls); it is refused while a Cloudflare rule of the
+account forwards there, and names domains whose rules it could not read (`force: true` then).
+
+## A person answers, the agent stays silent
+
+`save_agent` with `replyPolicy.silentHandoff { senders: ["@desk.example", "lead@other.example"],
+topics: ["aml review"] }`: such mail gets no reply at all, no model runs, and the run raises
+`agent.handoff` (watch it with `add_event_hook` or `list_agent_events`).
 
 ## Spam
 

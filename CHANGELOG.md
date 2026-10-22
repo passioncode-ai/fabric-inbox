@@ -5,6 +5,17 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.26.0 (2026-10-22)
+
+- **A forwarding destination can be removed, and a waiting one can get its link again.** Settings →
+  Forwarding destinations has Send the link again for an address still waiting, and Remove, which
+  is offered once no address copies there; the server also refuses it while a Cloudflare rule of the
+  account forwards there, and says which. Agents get `remove_forward_destination` and
+  `add_forward_destination { resend: true }` (PB-08).
+- **A reply agent can leave chosen senders or topics to a person, with no reply at all.** The
+  agent's policy takes `silentHandoff` (addresses, @domains, topics); such mail is passed to a person
+  before any model call and raises `agent.handoff`.
+
 ## 0.25.1 (2026-10-22)
 
 - **Your inbox no longer shows an account as unavailable for a moment after a server update.** When
