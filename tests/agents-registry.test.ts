@@ -145,6 +145,7 @@ const bundle = await build({
               case 'again': return Response.json(await reg.answerAgain(c.id));
               case 'save': await reg.saveRun(c.run); return Response.json(true);
               case 'events': return Response.json(await reg.listEvents(c.after, c.limit));
+              case 'modelCalls': return Response.json(await reg.modelCallsPerDay(c.since));
               case 'hooks': return Response.json({ next: await reg.hooksNow(c.now) });
               case 'hookStates': return Response.json(await reg.hookStates(c.ids));
               case 'r2put': await env.BUCKET.put(c.key, c.text); return Response.json(true);
@@ -1086,5 +1087,24 @@ test("B-137: agent events go to a webhook in order, signed, from after the hook 
     assert.equal(state.attempts, 0, "passed over after 8 tries");
     assert.equal(state.lastError, "HTTP 500");
     assert.equal((await command("r2get", { key: "test/hook-calls.json" }) as unknown[]).length, 9, "one delivery, then eight refused tries");
+  } finally { await mf.dispose(); }
+});
+
+test("B-87: model calls per day and model come from each run's own count, the checker apart from the writer", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const base = { mailboxId: "a@project.invalid", sender: "x@y.invalid", subject: "s", reason: "r", toolCalls: [], agentId: "support", agentVersion: 1, status: "sent" };
+    const at = (d: string) => ({ createdAt: `2026-10-${d}T08:00:00.000Z`, updatedAt: `2026-10-${d}T08:00:00.000Z` });
+    await command("begin", { run: { ...base, ...at("21"), id: "a", emailId: "a", model: "w/one", checkedBy: "c/two", modelCalls: { calls: 3, failed: 1, recovered: 1 } } });
+    await command("begin", { run: { ...base, ...at("21"), id: "b", emailId: "b", model: "w/one", modelCalls: { calls: 1, failed: 0, recovered: 0 } } });
+    // Before B-130 a run counted nothing: one writer call, one check when it names a checker.
+    await command("begin", { run: { ...base, ...at("22"), id: "c", emailId: "c", model: "w/one", checkedBy: "c/two" } });
+    // A run that called no model (a hand-off before the model, a skip) counts nothing.
+    await command("begin", { run: { ...base, ...at("22"), id: "d", emailId: "d", status: "skipped" } });
+    await command("begin", { run: { ...base, ...at("10"), id: "e", emailId: "e", model: "w/one", modelCalls: { calls: 1, failed: 0, recovered: 0 } } });
+    assert.deepEqual(await command("modelCalls", { since: "2026-10-15T00:00:00.000Z" }), [
+      { day: "2026-10-21", model: "c/two", calls: 1 }, { day: "2026-10-21", model: "w/one", calls: 3 },
+      { day: "2026-10-22", model: "c/two", calls: 1 }, { day: "2026-10-22", model: "w/one", calls: 1 },
+    ]);
   } finally { await mf.dispose(); }
 });

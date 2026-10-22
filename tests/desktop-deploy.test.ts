@@ -136,6 +136,8 @@ test("a new account gets a web address, storage, sign-in, protection and a runni
   assert.deepEqual(r.steps.map((s: any) => `${s.id}:${s.outcome}`), ["subdomain:done", "storage:done", "team:done", "otp:done", "access:done", "files:done", "server:done", "address:done"]);
   assert.deepEqual(fake.state.apps[0].policies[0].include, [{ email: { email: "me@example.com" } }]);
   assert.equal(fake.state.apps[0].domain, "fabric-inbox.someone.workers.dev");
+  // B-87 part 4: an agent key in one header, for the fabric-service descriptor on the person's computer.
+  assert.equal(fake.state.apps[0].read_service_tokens_from_header, "Fabric-Access");
   const upload = fake.state.uploads[0];
   assert.equal(Buffer.from(upload[manifest.assets.files["/favicon.svg"].hash], "base64").toString(), "<svg/>");
 

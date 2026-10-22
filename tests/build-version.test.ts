@@ -57,7 +57,9 @@ test("missing code after an update reloads the page once a minute at most (P3-13
 });
 
 test("the build id is defined once per build, read by both API clients and shown by the app shell (P3-13)", () => {
-  assert.match(readFileSync("vite.config.ts", "utf8"), /define: \{ __FABRIC_BUILD__: JSON\.stringify\(buildId\) \}/);
+  assert.match(readFileSync("vite.config.ts", "utf8"), /define: \{ __FABRIC_BUILD__: JSON\.stringify\(buildId\),/);
+  // B-87 part 4: the source commit beside it, for the fabric-service well-known document.
+  assert.match(readFileSync("vite.config.ts", "utf8"), /__FABRIC_SOURCE__: JSON\.stringify\(sourceBuild\)/);
   assert.match(readFileSync("app/services/fabric.ts", "utf8"), /noteServerBuild\(response\.headers\)/);
   assert.match(readFileSync("app/services/api.ts", "utf8"), /noteServerBuild\(res\.headers\)/);
   const root = readFileSync("app/root.tsx", "utf8");

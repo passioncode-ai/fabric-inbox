@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.28.0 (2026-10-22)
+
+- **Your server shows in Fabric Dashboards.** The server answers as a Fabric service: its version and
+  build, what does not work, the reply agents' events and the model calls they made, to a person or an
+  agent key only. Register it on your computer with `scripts/register-fabric-service.mjs` and a Read
+  key; a new server's Access application takes that key in one header (B-87).
+
 ## 0.27.1 (2026-10-22)
 
 - **A server deployed by hand also updates itself.** A server without `CLOUDFLARE_ACCOUNT_ID` (one

@@ -890,6 +890,31 @@ export class AgentRegistryDO extends DurableObject<Env> {
     return { counts, keptFrom: full && typeof oldest === "string" ? oldest : null };
   }
 
+  /**
+   * B-87 part 4: the model calls the reply agents made since `since`, per UTC day and model, from each
+   * run's own count (B-130): the writer (fallback included) and the checker. Runs record no tokens or
+   * price, so the usage report marks every call unmeasured and unpriced.
+   */
+  async modelCallsPerDay(since: string): Promise<{ day: string; model: string; calls: number }[]> {
+    const rows = this.rows(`SELECT substr(created_at, 1, 10) AS day, json_extract(body, '$.model') AS model,
+      json_extract(body, '$.checkedBy') AS checker, json_extract(body, '$.modelCalls.calls') AS calls
+      FROM agent_runs WHERE created_at >= ? AND (json_extract(body, '$.model') IS NOT NULL OR json_extract(body, '$.modelCalls.calls') > 0)`, since);
+    const out = new Map<string, number>();
+    const add = (day: string, model: string, n: number) => { if (n > 0) out.set(`${day}\u0000${model}`, (out.get(`${day}\u0000${model}`) ?? 0) + n); };
+    for (const r of rows) {
+      const day = String(r.day);
+      const writer = typeof r.model === "string" && r.model ? r.model : "unknown";
+      const checker = typeof r.checker === "string" && r.checker ? r.checker : null;
+      // A run before B-130 counted nothing: its answer was one writer call, and one check when it names a checker.
+      const calls = typeof r.calls === "number" ? r.calls : (writer !== "unknown" ? 1 : 0) + (checker ? 1 : 0);
+      const checks = checker ? 1 : 0;
+      add(day, writer, Math.max(0, calls - checks));
+      if (checker) add(day, checker, checks);
+    }
+    return [...out].map(([k, calls]) => { const [day, model] = k.split("\u0000"); return { day: day!, model: model!, calls }; })
+      .sort((a, b) => (a.day === b.day ? a.model.localeCompare(b.model) : a.day.localeCompare(b.day)));
+  }
+
   async listRuns(options: { mailboxId?: string; limit?: number; before?: string; outcome?: RunOutcome; agentId?: string } = {}): Promise<AgentRun[]> {
     const limit = Math.max(1, Math.min(200, options.limit ?? 50));
     const where: string[] = [];
