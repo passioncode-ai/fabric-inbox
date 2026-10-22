@@ -26,7 +26,9 @@ node scripts/onboard.mjs server --email <their sign-in address> --subdomain <nam
 It asks for the token in the terminal and shows nothing of what is pasted. A secret runner can give
 it instead: `--token-env NAME` reads the variable `NAME` (for example under the Observatory's
 `use_secret.py run … CLOUDFLARE_API_TOKEN -- node scripts/onboard.mjs server --token-env CLOUDFLARE_API_TOKEN`).
-`--token` is refused: a token is never an argument. The token needs the permissions the Mac app
+`--token` is refused: a token is never an argument. For an organization's server, `--access-group <id>`
+replaces `--email`: the Access group of its administrators signs in, each as the owner
+([setup → For an organization](../desktop-mail/setup.md#for-an-organization)). The token needs the permissions the Mac app
 lists (`PERMISSIONS` in [`desktop/cloudflare-deploy.cjs`](../../desktop/cloudflare-deploy.cjs);
 [setup → your own server](../desktop-mail/setup.md#your-own-server-created-by-the-mac-app-recommended)).
 

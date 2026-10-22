@@ -373,6 +373,56 @@ never stops the update). By hand: `GET` the application, then `PUT` it whole wit
 `read_service_tokens_from_header: "Authorization"`; it took effect within a minute on the owner's
 server. The usual two headers keep working.
 
+From 0.29.2 the descriptor also names the server's **runner** (DEC-0061): the kind of credential the
+reply agents' model calls use, never the credential. The server says it in its well-known document
+(extension `https://passioncode.ai/fabric-inbox/runner`, `runnerOf`): `key` with an OpenRouter key
+(the writer, the fallback and the checker), else `platform-metered` (Workers AI under the deployment's
+own account). The script reads it with the key it registers; a server before 0.29.2 names none, and its
+descriptor stays as before.
+
+## For an organization
+
+An organization runs its own server in **its own Cloudflare account** (B-87, organization mode,
+packet [2026-10-23-organization-mode.md](../app-store/tasks/2026-10-23-organization-mode.md)). The
+server is the same one; what differs is the account, who signs in, and that it is offered to others.
+
+1. **A token of the organization's account.** An administrator of that account makes an API token with
+   the permissions **Create my server** lists (`PERMISSIONS` in
+   [`desktop/cloudflare-deploy.cjs`](../../desktop/cloudflare-deploy.cjs)), scoped to that account only.
+2. **An Access group of the server's administrators.** In Zero Trust → Access → Access groups, a group
+   that includes the people who run the server (their emails, or a group of the organization's identity
+   provider). Every member of it signs in as the server's **owner**, with every right: the server has
+   no per-person roles yet (B-149), so this group holds administrators only, never everyone.
+3. **Deploy with the group.** From a checkout of this repository, the token read by name:
+
+   ```sh
+   OBSERVATORY_VAULT_ONLY=1 python3 "$(project-observatory full-path)/tools/use_secret.py" run --vault-only <project> CLOUDFLARE_API_TOKEN -- \
+     node scripts/onboard.mjs server --token-env CLOUDFLARE_API_TOKEN --account <account id> --access-group <group id> --subdomain <name> --team <name>
+   ```
+
+   The Access application's one policy, **Administrators**, includes that group instead of one email;
+   a group id that is not in the account is refused before anything is made. A server that already
+   has an Access application keeps its rules: change its policy in Zero Trust.
+4. **The receipt.** `npm run deploy:receipt` (with `CLOUDFLARE_ACCOUNT_ID` of the organization's account)
+   reads the active deployment and its commit tag and says `linked` or `unlinked`; keep its output with
+   the organization's own records, not in this repository.
+5. **Offer it.** On each computer whose Fabric shows the server, register it as offered to others:
+
+   ```sh
+   node scripts/register-fabric-service.mjs --origin https://<server> --offer \
+     --custody organization-managed --residency <codes, such as DE,EU> --max-data-class <class> < key.json
+   ```
+
+   `peer` says where others reach it (`<origin>/mcp`, with keys of their own), who controls the account
+   (`organization-managed`), where it runs and the most sensitive data it may receive (`public`,
+   `internal`, `confidential` or `restricted`). The organization states residency and the class: Workers
+   run on Cloudflare's network, so residency is where the organization's storage is kept (an R2
+   jurisdiction), not a measurement. An offer grants nobody access; Fabric's share grant or listing does.
+
+Not covered yet: delegated calls from other members' agents (B-83), per-person roles (B-149), and the
+telecom-secrecy check before people read private mail through a shared server (B-87 part 6, a legal
+decision).
+
 ## Categories
 
 **Categories** (`/categories`, or **+** beside CATEGORIES in the sidebar) are views of the mail

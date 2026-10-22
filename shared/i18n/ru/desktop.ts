@@ -200,6 +200,9 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"The server keeps the sign-in it already has (on its own address); nothing was changed.": "У сервера уже настроен вход (на его собственном адресе); ничего не изменено.",
 	"Enter the email address you will sign in with.": "Введите адрес почты, с которым будете входить.",
 	"Only {email} can open the server, with a code sent by email.": "Открыть сервер может только {email} — по коду, который приходит на почту.",
+	"An Access group is named by its id, as Zero Trust shows it.": "Группа Access задаётся своим идентификатором, как его показывает Zero Trust.",
+	"read the Access group (Access: Organizations, Identity Providers, and Groups: Edit)": "прочитать группу Access (Access: Organizations, Identity Providers, and Groups: Edit)",
+	"Only the members of the Access group {group} can open the server, each as its administrator.": "Открыть сервер могут только участники группы Access {group}, и каждый из них входит как администратор.",
 
 	// The first-run window (desktop/setup.html, desktop/setup.js)
 	"Welcome to Fabric Inbox": "Добро пожаловать в Fabric Inbox",

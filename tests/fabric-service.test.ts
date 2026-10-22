@@ -71,6 +71,8 @@ test("B-87: a registered agent key or a person reads the well-known document; an
     assert.deepEqual(doc.degraded.map((d: any) => d.source), ["agents"]);
     assert.deepEqual(doc.surfaces.events, { path: "/fabric/v1/events" });
     assert.deepEqual(doc.surfaces.usage, { path: "/fabric/v1/usage" });
+    // DEC-0061: with an OpenRouter key the reply agents' calls are signed in with an issued key.
+    assert.deepEqual(doc.extensions["https://passioncode.ai/fabric-inbox/runner"], { credentialKind: "key" });
     assert.ok(doc.service.build.commit || doc.service.build.digest);
     assert.equal((await get("/.well-known/fabric-service", { email: "owner@owner.example" })).status, 200);
     assert.equal((await get("/fabric/v1/usage", { common_name: "other-app.access" })).status, 401);
@@ -85,6 +87,9 @@ test("B-87: what does not work is named in degraded, a missing setup marked as s
     validate("service-well-known", doc);
     assert.equal(doc.status, "degraded");
     assert.deepEqual(doc.degraded.map((d: any) => [d.source, d.setup === true]), [["cloudflare", true], ["agents", false], ["models", true]]);
+    // Without one they still answer, on the deployment's own Workers AI: platform-metered, and unchecked.
+    assert.match(doc.degraded[2].reason, /Workers AI/);
+    assert.deepEqual(doc.extensions["https://passioncode.ai/fabric-inbox/runner"], { credentialKind: "platform-metered" });
     // Without agents the events page is empty and keeps the cursor it was given.
     const events = JSON.parse((await get("/fabric/v1/events?after=41", { common_name: "known.access" })).text);
     validate("service-events-page", events);
@@ -129,4 +134,33 @@ test("B-87: the registration writes the remote descriptor the contract accepts a
   assert.ok(!JSON.stringify(descriptor).includes("s".repeat(32)), "the secret is only in the token file");
   assert.throws(() => tokenFromKey("{}"), /clientId/);
   for (const origin of ["http://mail.example.invalid", "https://mail.example.invalid/app", "https://10.0.0.1"]) assert.throws(() => descriptorFor({ origin, tokenFile: "/t", version: "1" }), /origin/);
+});
+
+test("B-87 part 5: the descriptor names the server's runner, and an offered server its peer, as the contract accepts", async () => {
+  const { descriptorFor, runnerFrom, peerFor, readWellKnown, RUNNER_EXTENSION } = await import("../scripts/register-fabric-service.mjs");
+  const origin = "https://mail.example.com";
+  const runner = runnerFrom({ extensions: { [RUNNER_EXTENSION]: { credentialKind: "platform-metered" } } });
+  const peer = peerFor({ origin, custody: "organization-managed", residency: "DE, EU,DE", maxDataClass: "confidential" });
+  assert.deepEqual(peer, { endpoint: "https://mail.example.com/mcp", custody: "organization-managed", residency: ["DE", "EU"], maxDataClass: "confidential" });
+  const descriptor = descriptorFor({ origin, tokenFile: "/t", version: "0.29.2", runner, peer });
+  validate("service-descriptor", descriptor);
+  assert.deepEqual(descriptor.runner, { credentialKind: "platform-metered" });
+  validate("service-descriptor", descriptorFor({ origin, tokenFile: "/t", version: "0.29.2", runner: { credentialKind: "key" } }));
+  // A server before 0.29.2 names no runner: its descriptor stays as before, and it cannot be offered.
+  assert.equal(runnerFrom({ extensions: {} }), null);
+  assert.equal("runner" in descriptorFor({ origin, tokenFile: "/t", version: "1" }), false);
+  assert.throws(() => descriptorFor({ origin, tokenFile: "/t", version: "1", peer }), /runner/);
+  assert.throws(() => runnerFrom({ extensions: { [RUNNER_EXTENSION]: { credentialKind: "subscription" } } }), /unknown credential kind/);
+  for (const bad of [{ custody: "mine" }, { maxDataClass: "Confidential" }, { residency: "" }, { residency: "de" }, { residency: "XA" }, { residency: "QM,DE" }])
+    assert.throws(() => peerFor({ origin, custody: "personal", residency: "DE", maxDataClass: "internal", ...bad }), /--/);
+  // The well-known document is read with the descriptor's own one-header key, never a query string.
+  let seen: any;
+  const doc = await readWellKnown(`${origin}/`, "{\"cf-access-client-id\":\"a.access\"}", async (url: string, init: any) => {
+    seen = { url, init };
+    return new Response(JSON.stringify({ extensions: {} }), { status: 200 });
+  });
+  assert.deepEqual(doc, { extensions: {} });
+  assert.equal(seen.url, "https://mail.example.com/.well-known/fabric-service");
+  assert.equal(seen.init.headers.Authorization, "{\"cf-access-client-id\":\"a.access\"}");
+  await assert.rejects(readWellKnown(origin, "x", async () => new Response("", { status: 401 })), /HTTP 401/);
 });
