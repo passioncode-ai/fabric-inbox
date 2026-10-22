@@ -19,6 +19,7 @@
 - 2026-10-21: review of everything since 0.20.0 (B-134), release 0.21.2; PR #201 (`98b3941`); Worker `04676c3b` (receipt linked).
 - 2026-10-21: B-138 conversations and reply status, B-139 link menu, B-140 forward HTML, release 0.22.0; PR #203 (`166df43`); Worker `baf18e50` (receipt linked).
 - 2026-10-21: B-135, B-136, B-137, B-33, B-43, release 0.24.0; PR #207 (`01c77df`); Worker `2042be1c` (receipt linked).
+- 2026-10-22: B-41 new-mail notifications (off by default), release 0.25.0; PR #209 (`c4c9656`); Worker `eabf172e` (receipt linked).
 
 | Date | Branch / commit | Task | Gate |
 |---|---|---|---|
