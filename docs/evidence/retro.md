@@ -25,6 +25,7 @@
 - 2026-10-22: B-44 the server updates itself without a new token, releases 0.27.0 and 0.27.1; PRs #214 (`b2191bf`), #215 (`91270cb`); Worker `1bbe0d36` (receipt linked). Lesson: a fake that always sets a binding hides the deployments that lack it; read the live server (`get_server`) right after the deploy, and keep a test for the server made by hand.
 - 2026-10-22: B-87 part 4 the server as a fabric-service in the remote placement, releases 0.28.0 and 0.28.1; PRs #218 (`f2e81c0`), #219 (`582fd91`); Worker `7464d582` (receipt linked). Lessons: a provider setting documented as "the header you want" may accept one value only, so try it on the live account before building around a name; Cloudflare answers a bare Python client with error 1010 before Access, so give a live probe a User-Agent; an Access setting took about a minute to apply.
 - 2026-10-22: B-147 usage receipts, release 0.29.0; PR #221 (`d4a5867`); Worker `c2883361` (receipt linked). Lesson: a release run can fail on a package download outside the repository (Windows signing); the next patch release carries the work, and the handoff names the version that has no release.
+- 2026-10-22: B-148 one-header key on older servers, release 0.29.1; PR #223 (`44ff029`); Worker `9a382a09` (receipt linked). Lesson: one string in two dictionaries fails the locale gate; a string shared by the server and the desktop app lives in `server.ts`.
 
 | Date | Branch / commit | Task | Gate |
 |---|---|---|---|
