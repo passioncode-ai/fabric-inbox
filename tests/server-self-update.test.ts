@@ -30,6 +30,9 @@ function fakeCloudflare(options: { deny?: RegExp; buckets?: string[][]; tag?: st
   const writes: string[] = [];
   let put: { metadata: any; modules: Record<string, string> } | null = null;
   const uploaded: Record<string, string> = {};
+  const accessApp: Record<string, unknown> = { id: "app-1", uid: "u", aud: "aud-1", name: "Fabric Inbox", domain: "mail.example.invalid", type: "self_hosted",
+    session_duration: "720h", created_at: "x", updated_at: "y", policies: [{ id: "p1" }] };
+  let accessPut: any = null;
   const ok = (result: unknown) => new Response(JSON.stringify({ success: true, errors: [], result }), { headers: { "content-type": "application/json" } });
   const fail = (status: number, code: number, message: string) => new Response(JSON.stringify({ success: false, errors: [{ code, message }] }), { status });
   async function handle(request: Request): Promise<Response> {
@@ -47,6 +50,8 @@ function fakeCloudflare(options: { deny?: RegExp; buckets?: string[][]; tag?: st
       return ok({ jwt: "completion-jwt" });
     }
     if (auth !== "Bearer server-token") return fail(401, 10000, "Authentication error");
+    if (path === `${a}/access/apps` && request.method === "GET") return ok(url.searchParams.get("page") === "1" ? [{ ...accessApp }] : []);
+    if (path === `${a}/access/apps/app-1` && request.method === "PUT") { accessPut = await request.json(); Object.assign(accessApp, accessPut); return ok(accessApp); }
     if (path === "/accounts") return ok(url.searchParams.get("page") === "1" ? [{ id: ACCOUNT, name: "Owner" }] : []);
     if (path === `${a}/workers/scripts`) return ok(url.searchParams.get("page") === "1" ? [{ id: "fabric-inbox", ...(options.tag === null ? {} : { migration_tag: options.tag ?? "v1" }) }] : []);
     if (path === `${a}/workers/scripts/fabric-inbox/settings`) return ok({ bindings: [{ type: "r2_bucket", name: "BUCKET", bucket_name: "owner-mail" }, { type: "secret_text", name: "CLOUDFLARE_API_TOKEN" }] });
@@ -60,7 +65,7 @@ function fakeCloudflare(options: { deny?: RegExp; buckets?: string[][]; tag?: st
     }
     return fail(404, 1003, `Fake has no ${request.method} ${path}`);
   }
-  return { handle, writes, uploaded, get put() { return put; } };
+  return { handle, writes, uploaded, accessApp, get put() { return put; }, get accessPut() { return accessPut; } };
 }
 
 function manifest(over: Record<string, unknown> = {}) {
@@ -124,7 +129,8 @@ test("B-44: a newer bundle is uploaded with the server's own token, keeping its 
   try {
     const r = await send(manifest());
     assert.equal(r.status, 200, JSON.stringify(r.body));
-    assert.deepEqual(r.body, { updated: true, from: version, to: next(version) });
+    // Without POLICY_AUD (a server without Access) there is no application to change.
+    assert.deepEqual(r.body, { updated: true, from: version, to: next(version), accessHeader: "no_app" });
     assert.deepEqual(cf.uploaded, { "hash-a": Buffer.from("body").toString("base64") }, "only the file Cloudflare asked for, base64 as the API wants");
     const meta = cf.put!.metadata;
     assert.deepEqual(meta.keep_bindings, ["secret_text", "secret_key", "plain_text", "json"]);
@@ -178,5 +184,20 @@ test("B-44: a server deployed with wrangler (no CLOUDFLARE_ACCOUNT_ID) finds its
     const u = await send(manifest());
     assert.equal(u.status, 200, JSON.stringify(u.body));
     assert.ok(cf.put, "uploaded into the account the token showed");
+  } finally { await mf.dispose(); }
+});
+
+test("B-148: an update lets agent keys in one header on the server's own Access application, once, keeping its other fields", async () => {
+  const { mf, cf, send } = await fixture({ bindings: { CLOUDFLARE_API_TOKEN: "server-token", CLOUDFLARE_ACCOUNT_ID: ACCOUNT, POLICY_AUD: "aud-1" } });
+  try {
+    const r = await send(manifest());
+    assert.equal(r.body.accessHeader, "set");
+    assert.equal(cf.accessPut.read_service_tokens_from_header, "Authorization");
+    assert.deepEqual([cf.accessPut.name, cf.accessPut.domain, cf.accessPut.session_duration], ["Fabric Inbox", "mail.example.invalid", "720h"]);
+    for (const k of ["id", "uid", "aud", "created_at", "updated_at", "policies"]) assert.ok(!(k in cf.accessPut), k);
+    const { ensureAccessHeader } = await import("../workers/lib/self-update");
+    assert.equal(await ensureAccessHeader({ list: async () => [{ id: "x", aud: "aud-1", read_service_tokens_from_header: "Authorization" }] } as never, ACCOUNT, "aud-1"), "already");
+    assert.match(await ensureAccessHeader({ list: async () => { throw new Error("refused"); } } as never, ACCOUNT, "aud-1"), /^failed: refused/);
+    assert.equal(await ensureAccessHeader({ list: async () => [{ id: "x", aud: "other" }] } as never, ACCOUNT, "aud-1"), "no_app");
   } finally { await mf.dispose(); }
 });

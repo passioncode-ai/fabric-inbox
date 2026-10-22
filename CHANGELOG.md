@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.29.1 (2026-10-22)
+
+- **An older server can be shown in Fabric Dashboards too.** Its next update, from the app or by
+  Create my server, lets agent keys reach it in one header, the way a new server is made; its other
+  sign-in settings stay as they are (B-148).
+
 ## 0.29.0 (2026-10-22)
 
 - **What the reply agents spent, in dollars.** Every model call an agent makes now keeps its token

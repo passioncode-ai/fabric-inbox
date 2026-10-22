@@ -321,7 +321,21 @@ async function deploy(options) {
     const email = String(options.email || '').trim().toLowerCase();
     const apps = await c.list(`${a}/access/apps`, t('read Access applications (Access: Apps and Policies: Edit)'));
     const existing = apps.find((x) => String(x.domain || '').toLowerCase() === host);
-    if (existing) { report('access', 'Only you can open it', 'already', t('The server is already protected; its sign-in rules were kept as they are.')); return existing.aud; }
+    if (existing) {
+      // B-148: an application made before 0.28.1 learns to take an agent key in one header; nothing else changes.
+      // A failure here is said and never stops the update.
+      let note = t('The server is already protected; its sign-in rules were kept as they are.');
+      if (existing.read_service_tokens_from_header !== SERVICE_TOKEN_HEADER && existing.id) {
+        try {
+          const { id, uid, aud, created_at, updated_at, policies, ...rest } = existing;
+          await c.call(`${a}/access/apps/${id}`, { method: 'PUT', what: t('let agent keys in one header (Access: Apps and Policies: Edit)'),
+            body: { ...rest, read_service_tokens_from_header: SERVICE_TOKEN_HEADER } });
+          note += ' ' + t('Agent keys can now also reach it in one header, for Fabric Dashboards.');
+        } catch (e) { note += ' ' + t('Agent keys could not be let in one header ({error}); Fabric Dashboards needs that.', { error: e.message }); }
+      }
+      report('access', 'Only you can open it', 'already', note);
+      return existing.aud;
+    }
     // A server already signed in some other way (its own domain's Access app) keeps that
     // sign-in: a new app for workers.dev would replace POLICY_AUD and lock its owner out.
     const running = (await c.list(`${a}/workers/scripts`, t('read Workers (Workers Scripts: Edit)'), 100)).find((x) => x.id === SCRIPT);

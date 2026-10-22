@@ -40,7 +40,7 @@ interface FakeOptions { subdomain?: string | null; org?: string | null; script?:
 function fakeCloudflare(o: FakeOptions = {}) {
   const state = {
     subdomain: o.subdomain ?? null as string | null, org: o.org ?? null as string | null, bucket: false,
-    idps: [] as { type: string }[], apps: [] as { domain: string; aud: string }[],
+    idps: [] as { type: string }[], apps: [] as Record<string, unknown>[], accessPut: null as any,
     script: o.script ?? null as FakeOptions["script"], uploads: [] as Record<string, string>[], put: null as null | { metadata: any; parts: Record<string, { type: string; text: string }> },
     workersDev: false,
   };
@@ -75,6 +75,7 @@ function fakeCloudflare(o: FakeOptions = {}) {
       case "POST /accounts/acc/access/identity_providers": state.idps.push({ type: body.type }); return ok(body);
       case "GET /accounts/acc/access/apps": return paged(state.apps);
       case "POST /accounts/acc/access/apps": { const app = { ...body, aud: "new-aud" }; state.apps.push(app); return ok(app); }
+      case "PUT /accounts/acc/access/apps/app-old": { state.accessPut = body; Object.assign(state.apps.find((x: any) => x.id === "app-old")!, body); return ok(body); }
       case "POST /accounts/acc/workers/scripts/fabric-inbox/assets-upload-session": {
         const known = state.uploads.flatMap((u) => Object.keys(u));
         const missing = Object.values(body.manifest as Record<string, { hash: string }>).map((f) => f.hash).filter((h) => !known.includes(h));
@@ -171,6 +172,23 @@ test("running it again updates the server in place and keeps its domains, secret
   assert.equal(metadata.bindings.find((b: any) => b.name === "DOMAINS").text, "mine.example");
   assert.equal(fake.state.apps.length, 1);
   assert.equal(metadata.bindings.find((b: any) => b.name === "MAIL_CREDENTIAL_KEY"), undefined, "the credential key made the first time is never sent again");
+});
+
+test("B-148: an Access application made before 0.28.1 learns to take an agent key in one header, nothing else changed", async () => {
+  const { out } = fixtureBundle();
+  const fake = fakeCloudflare();
+  await run(fake, out);
+  const made = fake.state.apps[0]!;
+  fake.state.apps[0] = { id: "app-old", uid: "u", aud: made.aud, domain: made.domain, name: "Fabric Inbox", type: "self_hosted", policies: [{ id: "p" }] };
+  const again = await run(fake, out, { subdomain: undefined, team: undefined, email: undefined });
+  assert.ifError(again.error);
+  assert.equal(fake.state.accessPut.read_service_tokens_from_header, "Authorization");
+  assert.equal(fake.state.accessPut.domain, made.domain);
+  for (const k of ["id", "uid", "aud", "policies"]) assert.ok(!(k in fake.state.accessPut), k);
+  assert.match(again.steps.find((s: any) => s.id === "access").detail, /one header/);
+  fake.state.accessPut = null;
+  await run(fake, out, { subdomain: undefined, team: undefined, email: undefined });
+  assert.equal(fake.state.accessPut, null, "set once");
 });
 
 test("a new server gets its credential key once; a server with a key (either name) never gets another", async () => {

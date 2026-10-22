@@ -754,4 +754,5 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"This server cannot update itself: it has no Cloudflare token or does not know its account. Update it from the app with a token.": "Этот сервер не может обновить себя сам: у него нет токена Cloudflare или он не знает свой аккаунт. Обновите его из приложения с токеном.",
 	"The bundle is larger than a server update may be.": "Пакет больше, чем допустимо для обновления сервера.",
 	"The update could not be read: send the bundle as multipart form data.": "Не удалось прочитать обновление: отправьте пакет как multipart form data.",
+	"let agent keys in one header (Access: Apps and Policies: Edit)": "пускать ключи агентов в одном заголовке (Access: Apps and Policies: Edit)",
 };
