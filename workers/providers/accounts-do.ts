@@ -309,6 +309,14 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     // Discarded mail past its 30 days goes to its account's Trash, a few messages a tick.
     await this.serial(() => this.service.purgeDiscarded()).catch((error: unknown) =>
       console.warn(JSON.stringify({ event: "discarded_purge_failed", error: (error as Error)?.message?.slice(0, 200) })));
+    // B-34: once a day the markers of long-delivered events are forgotten, a page per tick until the pass ends.
+    const today = new Date().toISOString().slice(0, 10);
+    if ((await this.ctx.storage.get<string>("events-prune:day")) !== today) {
+      await this.serial(() => this.service.pruneDeliveredEvents()).then(async (r) => {
+        if (r.removed || r.stamped) console.log(JSON.stringify({ event: "delivered_events_pruned", removed: r.removed, stamped: r.stamped }));
+        if (r.done) await this.ctx.storage.put("events-prune:day", today);
+      }, (error: unknown) => console.warn(JSON.stringify({ event: "delivered_events_prune_failed", error: (error as Error)?.message?.slice(0, 200) })));
+    }
     // Release the account lock before invoking automations: a rule may RPC back
     // into this object to read or send mail. Holding it would deadlock the rule.
     try {

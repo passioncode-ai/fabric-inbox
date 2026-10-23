@@ -7,7 +7,6 @@ import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import PostalMime from "postal-mime";
 import { z } from "zod";
-import { type StoredAttachment } from "./lib/attachments";
 import { textToHtml } from "./lib/email-helpers";
 import { AttachmentValidationError, MAX_ATTACHMENTS, storedAttachmentName, validateAttachments } from "../shared/mail/attachments";
 import { allServedDomains, createMailbox, deleteMailbox, listMailboxAddresses, readSettings, storedCatchAll, updateSettings, readAllSettings, allowedAddresses as allowedAddressList } from "./lib/mailbox-store";
@@ -28,6 +27,7 @@ import { TRANSIENT_DO } from "./lib/do-retry";
 import { incomingFailure, recordIncomingFailure } from "./incoming-log";
 import { cleanSenderName } from "../shared/mail/sender";
 import { recordUnknownRecipient } from "./lib/unknown-recipients";
+import { storeInboundAttachments } from "./lib/inbound-attachments";
 
 type AppContext = Context<MailboxContext>;
 
@@ -618,17 +618,9 @@ async function receiveEmail(event: IncomingEmailEvent, env: Env, ctx: ExecutionC
     return { mailboxId, emailId: messageId, inserted: false };
   }
 
-	const attachmentData: StoredAttachment[] = [];
-	if (parsedEmail.attachments) {
-		for (const [index, att] of parsedEmail.attachments.entries()) {
-			const attId = `${messageId}-${index}`;
-			const filename = storedAttachmentName(att.filename);
-			await env.BUCKET.put(`attachments/${messageId}/${attId}/${filename}`, att.content);
-			attachmentData.push({ id: attId, email_id: messageId, filename, mimetype: att.mimeType,
-				size: typeof att.content === "string" ? att.content.length : att.content.byteLength,
-				content_id: att.contentId || null, disposition: att.disposition || "attachment" });
-		}
-	}
+	// B-34: a few writes at a time, and at most INBOUND_MAX_ATTACHMENTS files (each write is a subrequest).
+	const { stored: attachmentData, dropped } = await storeInboundAttachments(env.BUCKET, messageId, parsedEmail.attachments ?? [], storedAttachmentName);
+	if (dropped) console.warn(JSON.stringify({ event: "inbound_attachments_capped", mailboxId, kept: attachmentData.length, dropped }));
 
 	const extractMsgId = (s: string) => { const m = s.match(/<([^>]+)>/); return m ? m[1] : s.trim().split(/\s+/)[0]; };
 	const inReplyTo = parsedEmail.inReplyTo ? extractMsgId(parsedEmail.inReplyTo) : null;

@@ -534,7 +534,7 @@ flowchart LR
 | Mailbox settings, agent assignment | R2 `mailboxes/<address>.json` |
 | Mail, drafts (with their revision), folders, attachments metadata, outbox, incoming journal | `MailboxDO` SQLite, one per address |
 | Main-window drafts, cached on the device until saved to the server | browser `localStorage` (`fabric-inbox:workbench-drafts:v2:*`) and IndexedDB for files not yet uploaded |
-| Attachment bytes | R2 `attachments/<emailId>/<attachmentId>/<filename>` |
+| Attachment bytes (an incoming message's written six at a time, at most 100, B-34) | R2 `attachments/<emailId>/<attachmentId>/<filename>` |
 | Unknown recipients (counted on the object's etag; at most 500 a domain, the one seen longest ago giving way after 30 days, B-10) | R2 `unknown-recipients/<domain>/<address>.json` (`workers/lib/unknown-recipients.ts`) |
 | Domains served at runtime, catch-all mailboxes | R2 `config/domains.json`, `config/catch-all.json` |
 | Which Cloudflare accounts show; which account each domain was last seen in | R2 `config/cloudflare-accounts.json`, `config/domain-accounts.json` (a cache) |
