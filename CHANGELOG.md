@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.30.2 (2026-10-23)
+
+- **Linux: a clear warning without the sandbox.** Where the AppImage has to run without Chromium's
+  sandbox (Ubuntu 24.04 by default), the app now says so when it starts and shows how to keep the
+  sandbox with the .deb package; you can still continue, and ask not to be told again (B-99).
+
 ## 0.30.1 (2026-10-23)
 
 - **Members tidy their own mail.** A member of a shared server can empty Spam and bring back discarded

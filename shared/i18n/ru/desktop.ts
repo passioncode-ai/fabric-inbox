@@ -380,6 +380,10 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Updating Server…": "Сервер обновляется…",
 	"Agent keys can now also reach it in one header, for Fabric Dashboards.": "Теперь ключи агентов проходят и в одном заголовке, для Fabric Dashboards.",
 	"Agent keys could not be let in one header ({error}); Fabric Dashboards needs that.": "Не удалось пустить ключи агентов в одном заголовке ({error}); это нужно Fabric Dashboards.",
+	"Fabric Inbox is running without its sandbox": "Fabric Inbox работает без песочницы",
+	"This system does not let the AppImage use Chromium's sandbox, which keeps a harmful message from reaching the rest of your computer. The .deb package keeps the sandbox: install it to read mail with that protection.": "Эта система не даёт AppImage включить песочницу Chromium, которая не пускает вредное письмо дальше приложения, к остальному компьютеру. Пакет .deb сохраняет песочницу: установите его, чтобы читать почту с этой защитой.",
+	"How to keep the sandbox": "Как сохранить песочницу",
+	"Do not warn me again on this computer": "Больше не предупреждать на этом компьютере",
 };
 
 /** Every update text is wrapped in desktop/main.cjs now (LC-16); nothing is reserved. */

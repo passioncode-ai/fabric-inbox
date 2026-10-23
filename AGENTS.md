@@ -190,7 +190,7 @@ signed release must create it without a prompt (`docs/release.md`, upgrade check
   ([docs/desktop-data-and-updates.md → Windows and Linux](docs/desktop-data-and-updates.md#windows-and-linux)):
   the profile is `%APPDATA%\Fabric Inbox` / `~/.config/Fabric Inbox` with its log under `logs`; no
   Keychain item — the cookie key is DPAPI on Windows and the Secret Service on Linux, where the app
-  refuses to start without one (PL-05, `key_store_refused`); the connect dialog flashes the taskbar
+  refuses to start without one (PL-05, `key_store_refused`); without Chromium's sandbox (an AppImage where user namespaces are off) it warns once per launch until the person dismisses it (B-99, profile file `sandbox-warning`); the connect dialog flashes the taskbar
   entry instead of bouncing the Dock, and the listener is looked up with `netstat` + `tasklist`
   (Windows) or `ss`, else `/proc` (Linux), instead of `lsof`; an update is the verified NSIS
   installer run once, detached, as the app quits (`/S --updated`: the one child that outlives the

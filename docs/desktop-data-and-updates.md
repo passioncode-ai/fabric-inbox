@@ -198,7 +198,10 @@ Ubuntu 22.04 and later); the `.deb` declares it with every library Electron load
 `libfuse.so.2` (`sudo apt install libfuse2` or `libfuse2t64` on Ubuntu 22.04 and later). Chromium's
 sandbox: the `.deb` keeps it through its SUID `chrome-sandbox`; an AppImage cannot carry a SUID helper,
 so where unprivileged user namespaces are off (Ubuntu 24.04's default) its launcher starts the app with
-`--no-sandbox` and the app logs `sandbox_off`. On such systems install the `.deb`.
+`--no-sandbox` and the app logs `sandbox_off`. On such systems install the `.deb`. From 0.30.2 the app also
+says so on screen at launch (B-99, decided 2026-10-23: warn, never refuse): Continue, or How to keep the
+sandbox, which opens this section; Do not warn me again on this computer writes the profile file
+`sandbox-warning` (`off`), and its answer is logged as `sandbox_warning`.
 
 Uninstalling on Windows (Settings → Apps, or `Uninstall Fabric Inbox.exe`) removes the program
 and the link registration and leaves the profile, as on the Mac; removing `%APPDATA%\Fabric Inbox`

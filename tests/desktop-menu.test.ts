@@ -42,6 +42,20 @@ test("PL-05: Linux without a Secret Service (basic_text) is refused; other platf
   assert.equal(keyStoreRefusal("darwin", null), null);
 });
 
+test("B-99: Linux without Chromium's sandbox warns at launch until the person asks not to be told again; never elsewhere", () => {
+  const { sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL } = require("../desktop/policy.cjs");
+  assert.equal(sandboxWarning("linux", true, false), true);
+  assert.equal(sandboxWarning("linux", true, true), false, "dismissed on this computer");
+  assert.equal(sandboxWarning("linux", false, false), false, "the sandbox is on (the .deb)");
+  for (const p of ["darwin", "win32"]) assert.equal(sandboxWarning(p, true, false), false, p);
+  assert.equal(SANDBOX_WARNING_FILE, "sandbox-warning");
+  assert.match(SANDBOX_HELP_URL, /^https:\/\/github\.com\/passioncode-ai\/fabric-inbox\/blob\/main\/docs\/desktop-data-and-updates\.md#windows-and-linux$/);
+  // The launch shows the dialog through the policy, records the answer and keeps the dismissal in the profile.
+  const main = require("node:fs").readFileSync(new URL("../desktop/main.cjs", import.meta.url), "utf8");
+  assert.match(main, /policy\.sandboxWarning\(process\.platform, app\.commandLine\.hasSwitch\('no-sandbox'\)/);
+  assert.match(main, /event: 'sandbox_warning'/);
+});
+
 test("Open at Login is a checkbox in the app menu on macOS and in File on Windows and Linux (lifecycle rule 2026-10-16)", () => {
   const login = { checked: true, enabled: true, click: () => {} };
   const mac = menuTemplate("darwin", { ...ctx, login });
