@@ -63,6 +63,15 @@ function signInDone(url, config) {
   const u = parseWebURL(url);
   return !!u && !!config && u.origin === config.origin;
 }
+/**
+ * B-11: what Retry connection does. A mail window that loaded this server is reloaded, so its page's
+ * leave warning still asks before unsaved work goes; one that failed, is gone, or shows another
+ * server is made again.
+ */
+function retryAction(state, config) {
+  if (!state || !state.alive || state.failed || !config || state.origin !== config.origin) return 'load';
+  return 'reload';
+}
 function gmailConnectURL(config) { return new URL('/api/accounts/gmail/connect', config.origin).href; }
 /** Where the server opens after Create my server: Domains, or the Gmail setup when it was asked for (SCN-030, SCN-051). */
 function afterDeployPage(input) { return input && input.gmail === true ? '/settings/accounts?connect=gmail' : '/settings/domains'; }
@@ -136,4 +145,4 @@ function sandboxWarning(platform, noSandbox, dismissed) {
 }
 const SANDBOX_HELP_URL = 'https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/desktop-data-and-updates.md#windows-and-linux';
 
-module.exports = { signInHandoff, signInDone, sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL, keyStoreRefusal, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };
+module.exports = { retryAction, signInHandoff, signInDone, sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL, keyStoreRefusal, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };

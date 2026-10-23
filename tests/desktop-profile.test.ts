@@ -140,7 +140,8 @@ async function boot({ config, packaged = true, switches = [] as string[], files 
       super(); this.options = options;
       const partition = options.webPreferences.session?.partition ?? options.webPreferences.partition;
       const frame = { url: "" };
-      this.webContents = Object.assign(new EventEmitter(), { session: sessionFor(partition), mainFrame: frame, setWindowOpenHandler() {}, getURL: () => frame.url });
+      this.webContents = Object.assign(new EventEmitter(), { session: sessionFor(partition), mainFrame: frame, setWindowOpenHandler() {}, getURL: () => frame.url,
+        reload: () => log.push(`reload ${partition}`) });
       log.push(`window ${partition}`);
       windows.push(this);
     }
@@ -232,6 +233,7 @@ test("changing the server retires the old server's storage once the new one answ
   h.menu()[3].submenu.find((i: any) => i.label === "Retry connection").click();
   await h.settle();
   assert.ok(!h.log.some((l) => l.startsWith("clear-") || l.startsWith(`rm ${P}`)), "same server: nothing is cleared");
+  assert.ok(h.log.includes(`reload ${policy.partitionFor({ origin: A })}`), "B-11: Retry reloads the same server's window, so its leave warning holds");
   h.openSettings();
   const answer = await h.handlers.get("fabric:setup-save")!(h.setupSender(), { origin: B, accessOrigin: "" });
   assert.equal(answer.ok, true);

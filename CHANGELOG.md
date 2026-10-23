@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.32.2 (2026-10-23)
+
+- **Retry keeps your unsaved work.** Retry connection (⌘R) now reloads the mail window instead of
+  replacing it, and a page with unsaved work asks Leave this page? first. Closing a window with
+  unsaved work asks the same question instead of doing nothing. A window that could not reach your
+  server is closed rather than kept hidden in the background (B-11).
+
 ## 0.32.1 (2026-10-23)
 
 - **Big messages arrive faster and safely.** The files of an incoming message are now saved several
