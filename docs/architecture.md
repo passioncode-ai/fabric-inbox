@@ -535,7 +535,7 @@ flowchart LR
 | Mail, drafts (with their revision), folders, attachments metadata, outbox, incoming journal | `MailboxDO` SQLite, one per address |
 | Main-window drafts, cached on the device until saved to the server | browser `localStorage` (`fabric-inbox:workbench-drafts:v2:*`) and IndexedDB for files not yet uploaded |
 | Attachment bytes | R2 `attachments/<emailId>/<attachmentId>/<filename>` |
-| Unknown recipients | R2 `unknown-recipients/<domain>/<address>.json` |
+| Unknown recipients (counted on the object's etag; at most 500 a domain, the one seen longest ago giving way after 30 days, B-10) | R2 `unknown-recipients/<domain>/<address>.json` (`workers/lib/unknown-recipients.ts`) |
 | Domains served at runtime, catch-all mailboxes | R2 `config/domains.json`, `config/catch-all.json` |
 | Which Cloudflare accounts show; which account each domain was last seen in | R2 `config/cloudflare-accounts.json`, `config/domain-accounts.json` (a cache) |
 | Relays in other accounts (no secrets: account, service token id and Client ID, server address, version) | R2 `config/relays.json` |
@@ -552,7 +552,7 @@ flowchart LR
 | A body too large for a row | R2 `bodies/<id>.html` (`emails.body_key`) |
 | Addresses hidden from the sidebar and All inboxes | R2 `config/hidden-accounts.json` |
 | When each Cloudflare address was made (the sidebar lists one made in the last 7 days before its first message; older addresses have no entry) | R2 `config/address-created.json` |
-| Rules, rule runs | `AutomationDO` storage, one per account |
+| Rules, rule runs, the run queue (`queue:<run id>` while a run is pending or running, B-07), day counters (actions and AI checks, B-05) | `AutomationDO` storage, one per account |
 | Gmail and Outlook tokens and IMAP app passwords (AES-GCM envelopes, version 2 names its key; see "Mail providers"), IMAP server names and folder state, Outlook folder ids and delta links, message cache of all three (layout 2: rows, bodies, date index, inbox counters; see "Gmail sync, cache and refresh"), set-aside messages, send and draft receipts, moved-message aliases, IMAP draft ids, Outlook Graph ids of drafts and sends (`gid:`) | `GmailAccountsDO` (`workspace`) |
 | The Outlook app registration's client secret, and its end date | Worker secret `MICROSOFT_CLIENT_SECRET`, var `MICROSOFT_CLIENT_SECRET_EXPIRES` |
 | Outlook drafts | the Outlook account's Drafts folder, read live |

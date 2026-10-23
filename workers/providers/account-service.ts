@@ -21,6 +21,7 @@ import {
 import { GmailClient, ProviderError, exchangeCode, makeMime, type Fetcher, type Message, type SendInput } from "./gmail-client";
 import type { InboxReadOptions, InboxMessage } from "../../shared/mail/inbox";
 import { isGmailReason, type GmailReason } from "../../shared/mail/gmail-reasons";
+import { REMOTE_SEND_LIMITS } from "../../shared/mail/send-limits";
 import { DISCARDED_LABEL, GMAIL_FOLDERS, GmailCache, gmailInboxMessage, inFolder, keyPart, msgKey, type GmailFolder, type InboxCounts, type IndexRow, type StoredMessage } from "./gmail-cache";
 export { GMAIL_FOLDERS, type GmailFolder } from "./gmail-cache";
 import { credentialKeys, hasCredentialKey, openCredentials, sealCredentials, type CredentialEnvironment, type CredentialKeys } from "./credentials";
@@ -211,6 +212,21 @@ function hiddenByFirstLayout(account: AccountRecord, row: StoredMessage) {
   return account.provider === "gmail" && account.sync.mode === "history" && row.generation !== account.sync.generation;
 }
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{1,128}$/;
+/**
+ * B-06: one account's sending budget (shared/mail/send-limits.ts). A send past it is refused before
+ * anything is reserved or handed over, so the same attempt may be sent again later; a send the
+ * provider refused before taking it gives its place back.
+ */
+export { REMOTE_SEND_LIMITS };
+const sendLogKey = (accountId: string) => "sendlog:" + keyPart(accountId);
+/** Takes one send from the account's budget inside the reservation's transaction; throws send_rate_limited. */
+async function takeSend(tx: Store, accountId: string, now: number): Promise<number> {
+  const log = ((await tx.get<number[]>(sendLogKey(accountId))) ?? []).filter((at) => typeof at === "number" && at > now - 86_400_000);
+  if (log.filter((at) => at > now - 3_600_000).length >= REMOTE_SEND_LIMITS.hour || log.length >= REMOTE_SEND_LIMITS.day)
+    throw new ProviderError("send_rate_limited", 429);
+  await tx.put(sendLogKey(accountId), [...log, now]);
+  return now;
+}
 
 /** How providers reach their servers; the tests give in-process fakes. */
 export interface ProviderDeps {
@@ -887,11 +903,12 @@ export class AccountService {
       if (old) {
         if (old.digest !== digest)
           throw new ProviderError("idempotency_conflict", 409);
-        return { fresh: false, receipt: old };
+        return { fresh: false, receipt: old, taken: undefined };
       }
       const receipt: StoredSend = { status: "sending", idempotencyKey, digest };
+      const taken = kind === "send" ? await takeSend(tx, accountId, Date.now()) : undefined;
       await tx.put(key, receipt);
-      return { fresh: true, receipt };
+      return { fresh: true, receipt, taken };
     });
     const receipt = reservation.receipt;
     if (!reservation.fresh) {
@@ -914,6 +931,7 @@ export class AccountService {
       // out of reach): nothing left, so the reservation goes and the same key may try again.
       if (error instanceof NotSentError) {
         await this.store.delete(key);
+        if (reservation.taken !== undefined) await this.giveSendBack(accountId, reservation.taken);
         throw new ProviderError(error.code, error.status);
       }
       receipt.status = "unknown";
@@ -925,6 +943,14 @@ export class AccountService {
     await this.store.put(key, receipt);
     const { digest: _, ...publicReceipt } = receipt;
     return publicReceipt;
+  }
+  /** B-06: a send the provider refused before taking it gives its place in the budget back. */
+  private async giveSendBack(accountId: string, at: number) {
+    await this.store.transaction(async (tx) => {
+      const log = (await tx.get<number[]>(sendLogKey(accountId))) ?? [];
+      const i = log.indexOf(at);
+      if (i >= 0) await tx.put(sendLogKey(accountId), [...log.slice(0, i), ...log.slice(i + 1)]);
+    });
   }
   async setRead(accountId: string, messageId: string, read: boolean) {
     if (typeof read !== "boolean")
@@ -1284,6 +1310,7 @@ export class AccountService {
       /* Local removal is still possible when the provider or the encryption key is unavailable. */
     }
     await this.store.delete("account:" + accountId);
+    await this.store.delete(sendLogKey(accountId));
     await this.cache.clear(keyPart(accountId));
     for (const prefix of [
       "attempts:" + accountId + ":",
@@ -1450,10 +1477,11 @@ export class AccountService {
       if (expectedRevision !== undefined && current !== expectedRevision) throw new ProviderError("draft_conflict", 409);
       const reservation = await this.store.transaction(async (tx) => {
         const existing = await tx.get<StoredSend>(key);
-        if (existing) { if (existing.digest !== digest) throw new ProviderError("idempotency_conflict", 409); return { fresh: false, receipt: existing }; }
+        if (existing) { if (existing.digest !== digest) throw new ProviderError("idempotency_conflict", 409); return { fresh: false, receipt: existing, taken: undefined }; }
         const receipt: StoredSend = { status: "sending", idempotencyKey, digest };
+        const taken = await takeSend(tx, accountId, Date.now());
         await tx.put(key, receipt);
-        return { fresh: true, receipt };
+        return { fresh: true, receipt, taken };
       });
       if (!reservation.fresh) return answer(reservation.receipt);
       const receipt = reservation.receipt;
@@ -1463,6 +1491,7 @@ export class AccountService {
       } catch (error) {
         if (error instanceof NotSentError) {
           await this.store.delete(key);
+          if (reservation.taken !== undefined) await this.giveSendBack(accountId, reservation.taken);
           throw new ProviderError(error.code, error.status);
         }
         receipt.status = "unknown";

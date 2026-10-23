@@ -429,6 +429,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Action outcome is uncertain. Check the provider before repeating it.": "Результат действия неизвестен. Прежде чем повторять, проверьте у провайдера.",
 	"Processing was interrupted. Verify the outcome before repeating.": "Обработка прервалась. Прежде чем повторять, проверьте результат.",
 	"Daily rule limit reached": "Исчерпан дневной лимит запусков правил",
+	"Daily limit of AI checks reached": "Исчерпан дневной лимит проверок ИИ для этого правила",
 	"Cancelled by user": "Отменено пользователем",
 	"Matched rule conditions": "Условия правила выполнены",
 	"Forward was not attempted: attachments require manual handling": "Пересылка не выполнялась: вложения нужно обработать вручную",

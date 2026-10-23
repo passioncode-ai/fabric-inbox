@@ -149,6 +149,8 @@ export type Run = {
   analysis?: Analysis;
   detail?: string;
   approved?: boolean;
+  /** B-05: false until the run takes its action from the rule's daily limit; absent on runs stored before B-05, which took it when queued. */
+  counted?: boolean;
   proposal?: { action: Rule["action"]; emailDigest: string };
 };
 /** Only configured string values are interpolated. Email cannot change argument keys, endpoint or tool. */

@@ -43,6 +43,10 @@ function setup() {
       date: "",
     }),
     analyze: async () => ({ matches: true, summary: "x", draft: "x" }),
+    claimDaily: async (_r: Run) => {
+      writes.push("claim");
+      return true;
+    },
     execute: async () => {
       effects++;
       return "Archived";
@@ -207,4 +211,41 @@ test("known rejection before execution remains failed rather than unknown", asyn
   await processRun(s.run, s.deps);
   assert.equal(s.run.status, "failed");
   assert.equal(s.run.detail, "No attachments supported");
+});
+
+test("B-05: the daily limit is taken only after every condition, the AI condition included, matched", async () => {
+  const s = setup();
+  s.run.counted = false;
+  s.deps.analyze = async () => ({ matches: false, summary: "", draft: "" });
+  await processRun(s.run, s.deps);
+  assert.equal(s.run.status, "skipped");
+  assert.ok(!s.writes.includes("claim"), "a message the AI condition turns away costs no action");
+});
+test("B-05: past the daily limit the run is skipped with the reason and nothing is executed", async () => {
+  const s = setup();
+  s.run.counted = false;
+  s.deps.claimDaily = async () => false;
+  await processRun(s.run, s.deps);
+  assert.equal(s.run.status, "skipped");
+  assert.match(s.run.detail ?? "", /Daily rule limit reached/);
+  assert.equal(s.effects, 0);
+});
+test("B-05: an approval run takes the limit once, when it is proposed, not again when approved", async () => {
+  const s = setup();
+  s.run.counted = false;
+  s.run.rule.mode = "approval";
+  s.setRule({ ...rule, mode: "approval" });
+  await processRun(s.run, s.deps);
+  assert.equal(s.run.status, "waiting_approval");
+  s.run.status = "pending";
+  s.run.approved = true;
+  await processRun(s.run, s.deps);
+  assert.equal(s.run.status, "succeeded");
+  assert.equal(s.writes.filter((w) => w === "claim").length, 1);
+});
+test("B-05: a run stored before B-05 (no counted field) took its count when queued and is not asked again", async () => {
+  const s = setup();
+  await processRun(s.run, s.deps);
+  assert.equal(s.run.status, "succeeded");
+  assert.ok(!s.writes.includes("claim"));
 });

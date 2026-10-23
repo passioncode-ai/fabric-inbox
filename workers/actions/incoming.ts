@@ -15,6 +15,8 @@ CREATE TABLE incoming_event_payload (
   PRIMARY KEY(delivery_id, part)
 );`;
 export const MAX_INCOMING_ATTEMPTS = 10;
+/** B-34: how long the receipt of an event every consumer took is kept to recognise a redelivery. */
+export const RECEIPT_KEEP_MS = 90 * 86_400_000;
 export class IncomingJournal {
   constructor(private sql: OutboxSql) {}
   has(id: string) { return [...this.sql.exec('SELECT 1 FROM incoming_receipts WHERE delivery_id = ?', id)].length > 0; }
@@ -70,6 +72,13 @@ export class IncomingJournal {
   }
   event(id: string): IncomingMailEvent {
     return JSON.parse([...this.sql.exec('SELECT content FROM incoming_event_payload WHERE delivery_id = ? ORDER BY part', id)].map(r => r.content).join(''));
+  }
+  /**
+   * B-34: forgets receipts of events every consumer took before `before`, keeping any whose copy is
+   * still owed or being sent; set-aside and pending ones always stay. Their payload is already gone.
+   */
+  prune(before: number): number {
+    return [...this.sql.exec("DELETE FROM incoming_receipts WHERE automation_status = 'accepted' AND received_at < ? AND (forward_status IS NULL OR forward_status = 'settled') RETURNING 1", before)].length;
   }
   attempted(id: string) { this.sql.exec('UPDATE incoming_receipts SET attempts = attempts + 1 WHERE delivery_id = ?', id); }
   /** Caller commits acknowledgement and payload removal atomically. */

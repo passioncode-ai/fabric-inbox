@@ -18,6 +18,7 @@ import { missingOriginals, prepareMessage } from "./compose-payload";
 import { sendSavedDraft, signatureFor, swapSignature } from "./server-drafts";
 import type { SyncStatus } from "./use-drafts";
 import { useT } from "../../lib/i18n";
+import { REMOTE_SEND_LIMITS } from "../../../shared/mail/send-limits";
 import EmailIframe from "~/components/EmailIframe";
 export type { Draft } from "./draft-store";
 export default function Composer({
@@ -234,6 +235,10 @@ export default function Composer({
         // Saving again meets the change and offers the choice between the two versions.
         void onResync(draft);
         setNotice(t("This draft was changed elsewhere just before sending, so it was not sent. Check it, then send again."));
+      } else if (error instanceof ApiError && error.status === 429 && code === "send_rate_limited") {
+        // B-06: this server's sending budget for the account; nothing was reserved or handed over.
+        if (!(await recover(fixed, "editable"))) return;
+        setNotice(t("Not sent: this account has reached this server's sending limit ({hour} an hour, {day} a day). Nothing went out; send it again later.", { ...REMOTE_SEND_LIMITS }));
       } else if (
         error instanceof ApiError &&
         sendRecovery(!!draft.locked, error.status, error.body) === "failed"

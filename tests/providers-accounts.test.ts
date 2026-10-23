@@ -615,3 +615,28 @@ test("a Gmail message cached before Cc and Reply-To were kept is read again from
   await offline.store.put("message:a:old:body:b:0", JSON.stringify({ text: "t", html: "" }));
   assert.equal((await offline.service.getMessage("a", "old")).text, "t", "when Gmail cannot be reached the cached message is still read");
 });
+test("B-06: an account past its sending budget is refused before anything is reserved or handed over; a refused send gives its place back", async () => {
+  const { REMOTE_SEND_LIMITS } = await import("../workers/providers/account-service");
+  const { NotSentError } = await import("../workers/providers/provider");
+  let sends = 0;
+  const { service, store } = await fixture(async () => { sends++; return json({ id: "sent", threadId: "thread" }); });
+  const request = (key: string) => ({ idempotencyKey: key, to: ["recipient@example.invalid"], subject: "Hello", text: "Fixture" });
+  const now = Date.now();
+  await store.put("sendlog:a", Array.from({ length: REMOTE_SEND_LIMITS.hour }, (_, i) => now - i * 1000));
+  await assert.rejects(service.send("a", request("over-hour")), (e: ProviderError) => e.code === "send_rate_limited" && e.status === 429);
+  assert.equal(sends, 0, "nothing was handed to the provider");
+  assert.equal(await store.get("send:a:over-hour"), undefined, "no reservation: the same attempt may be sent later");
+  assert.equal((await service.send("b", request("other-account"))).status, "accepted", "another account has its own budget");
+  // An hour later the hour is free, but the day is full.
+  await store.put("sendlog:a", Array.from({ length: REMOTE_SEND_LIMITS.day }, (_, i) => now - 2 * 3_600_000 - i * 1000));
+  await assert.rejects(service.send("a", request("over-day")), (e: ProviderError) => e.code === "send_rate_limited");
+  await store.put("sendlog:a", Array.from({ length: REMOTE_SEND_LIMITS.day }, () => now - 25 * 3_600_000));
+  assert.equal((await service.send("a", request("next-day"))).status, "accepted", "sends older than a day no longer count");
+  assert.equal((await store.get<number[]>("sendlog:a"))?.length, 1, "the log keeps only the last day");
+  // Refused before the provider took it: the place is given back.
+  (service as unknown as { withSession: unknown }).withSession = async () => { throw new NotSentError("recipient_rejected", 400); };
+  await assert.rejects(service.send("a", request("refused")), (e: ProviderError) => e.code === "recipient_rejected");
+  assert.equal((await store.get<number[]>("sendlog:a"))?.length, 1);
+  await service.disconnect("a");
+  assert.equal(await store.get("sendlog:a"), undefined, "the budget goes with the account");
+});

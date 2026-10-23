@@ -231,9 +231,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Alt paths:** Return to the previous surface without causing an external action; preserve confirmed saved work.
 - **UI elements:** SCR-05; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** Invalid recipient blocks send inline; rejection preserves draft; unknown outcome is SCN-020.
+- **Errors & recovery:** Invalid recipient blocks send inline; rejection preserves draft; unknown outcome is SCN-020. A Gmail, IMAP or Outlook account past this server's sending limit (50 an hour, 250 a day, whoever sends; B-06) is refused before anything leaves: the draft stays editable and the notice says the limit and to send it again later.
 - **Status:** validated
-- **Coverage:** app/components/inbox/Composer.tsx (`send`); app/components/inbox/send-state.ts (`sendRecovery`); app/components/inbox/server-drafts.ts (`sendSavedDraft`); workers/durableObject/index.ts (`sendDraft`)
+- **Coverage:** app/components/inbox/Composer.tsx (`send`); app/components/inbox/send-state.ts (`sendRecovery`); app/components/inbox/server-drafts.ts (`sendSavedDraft`); workers/durableObject/index.ts (`sendDraft`); workers/providers/account-service.ts (`takeSend`, B-06), shared/mail/send-limits.ts, tests/providers-accounts.test.ts (B-06)
 - **Product:** unobserved
 - **Today:** Partial. Compose requires an explicit sender, saves the draft to the server, saves a locked attempt, then sends the server's draft as it is (one signature, the mailbox's display name) and reports accepted only after provider acceptance; the draft leaves Drafts once accepted, and a change made elsewhere just before sending stops the send with nothing sent. An uncertain attempt locks its fields and exposes Retry same attempt with the same recovery key; a later request refusal alone cannot unlock an earlier uncertain send. While a send is in flight the button reads Sending…, and a validation failure moves focus to the recipient field that failed (To/Cc/Bcc) or to the alert itself (`tests/attachment-composer.test.ts`). No actual provider send or recipient delivery was exercised.
 
@@ -392,7 +392,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Alt paths:** Return to the previous surface without causing an external action; preserve confirmed saved work.
 - **UI elements:** SCR-07; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** Save or pause failure reports the last confirmed state; editing grants requires a new reviewed version.
+- **Errors & recovery:** Save or pause failure reports the last confirmed state; editing grants requires a new reviewed version. The daily action limit counts only messages that met every condition, the AI condition included; one past it is listed as skipped, "Daily rule limit reached", and nothing is done (B-05). An AI condition is checked at most 200 times a day per rule ("Daily limit of AI checks reached").
 - **Status:** validated
 - **Coverage:** app/routes/automation.tsx:464, app/routes/automation.tsx:519, workers/automation/engine.ts:29, tests/automation-integration.test.ts:196
 - **Product:** unobserved

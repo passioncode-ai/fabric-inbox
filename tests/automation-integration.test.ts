@@ -46,9 +46,16 @@ const bundle = await build({
           await this.ctx.storage.put('event:old', { at: new Date(Date.now() - 100 * 86400000).toISOString() });
           await this.ctx.storage.put('event:new', { at: recent });
         }
-        async keys() { return [...(await this.ctx.storage.list()).keys()].filter((k) => !k.startsWith('rule:')).sort(); }
+        async keys() { return [...(await this.ctx.storage.list()).keys()].filter((k) => !k.startsWith('rule:') && k !== 'queue-ready').sort(); }
         async pruneNow() { return this.prune(Date.now()); }
         async runOf(id) { return this.ctx.storage.get('run:' + id); }
+        async queueKeys() { return [...(await this.ctx.storage.list({ prefix: 'queue:' })).keys()].sort(); }
+        async legacyPending(run) {
+          // A store from before the queue (B-07): runs only, no queue and no marker.
+          for (const key of await this.queueKeys()) await this.ctx.storage.delete(key);
+          await this.ctx.storage.delete('queue-ready');
+          await this.ctx.storage.put('run:' + run.id, run);
+        }
         async interruptAfterRunning(id) {
           const run = await this.ctx.storage.get('run:' + id);
           await this.ctx.storage.put('run:' + id, {...run, status:'running'});
@@ -76,6 +83,8 @@ const bundle = await build({
             case 'seed-old': await automation.seedOld(); result = await automation.keys(); break;
             case 'prune': result = { removed: await automation.pruneNow(), keys: await automation.keys() }; break;
             case 'run': result = await automation.runOf(command.id); break;
+            case 'queue': result = await automation.queueKeys(); break;
+            case 'legacy-pending': await automation.legacyPending(command.run); result = {}; break;
             case 'interrupt': await automation.interruptAfterRunning(command.id); result = {}; break;
             case 'state': result = {runs:await automation.runs(), effects:await mailbox.effectCount(), email:command.id ? await mailbox.getEmail(command.id) : null}; break;
             case 'receive': {
@@ -359,6 +368,49 @@ test("old finished runs, day counters and event receipts are pruned; waiting and
     // A run nobody approved for 14 days is cancelled with its reason, then pruned like any other (bug hunt 2026-10-12).
     const waiting = await f.command("run", { id: "old-waiting" });
     assert.equal(waiting.status, "cancelled");
-    assert.match(waiting.error, /nobody approved it within 14 days/);
+    assert.match(waiting.detail, /nobody approved it within 14 days/, "the reason is the run's detail, the field the run list shows");
+  } finally { await f.mf.dispose(); }
+});
+
+test("B-07: the queue follows the run (queued on arrival, gone once done) and is built once from an older store", async () => {
+  const f = await fixture();
+  try {
+    await f.command("rule", { rule: rule("mark_read", "automatic") });
+    await f.command("seed", { email });
+    const [run] = await f.command("ingest", { email });
+    assert.deepEqual(await f.command("queue"), ["queue:" + run.id], "a pending run is queued");
+    await f.command("pump");
+    assert.equal((await f.command("run", { id: run.id })).status, "succeeded");
+    assert.deepEqual(await f.command("queue"), [], "a finished run leaves the queue");
+    const second = { ...email, id: "message-2" };
+    await f.command("seed", { email: second });
+    const legacy = { id: "legacy", key: "legacy-key", account: "me@example.invalid", emailId: second.id, subject: second.subject,
+      rule: rule("mark_read", "automatic"), status: "pending", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), attempts: 0 };
+    await f.command("legacy-pending", { run: legacy });
+    assert.deepEqual(await f.command("queue"), []);
+    await f.command("pump");
+    const done = await f.command("run", { id: "legacy" });
+    assert.equal(done.status, "succeeded", "a pending run stored before the queue existed is still taken");
+    assert.equal(done.counted, undefined, "a run queued before B-05 took its count then and is not counted again");
+    assert.deepEqual(await f.command("queue"), []);
+  } finally { await f.mf.dispose(); }
+});
+
+test("B-05: the daily limit counts actions; a run past it is skipped with the reason and changes nothing", async () => {
+  const f = await fixture();
+  try {
+    await f.command("rule", { rule: { ...rule("mark_read", "automatic"), dailyLimit: 1 } });
+    const first = { ...email, id: "limit-1" }, second = { ...email, id: "limit-2" };
+    await f.command("seed", { email: first });
+    await f.command("seed", { email: second });
+    await f.command("ingest", { email: first });
+    const runs = await f.command("ingest", { email: second });
+    assert.ok(runs.every((r: { status: string }) => r.status === "pending"), "both are queued; the limit is taken when the action is");
+    await f.command("pump");
+    const state = await f.command("state", {});
+    const statuses = state.runs.map((r: { status: string }) => r.status).sort();
+    assert.deepEqual(statuses, ["skipped", "succeeded"]);
+    assert.match(state.runs.find((r: { status: string }) => r.status === "skipped").detail, /Daily rule limit reached/);
+    assert.equal(state.effects, 1, "one action, the other changed nothing");
   } finally { await f.mf.dispose(); }
 });
