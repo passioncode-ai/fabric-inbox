@@ -1,6 +1,6 @@
 import type { Env } from "../types";
 import type { ApplyResult, Setup } from "../../shared/setup";
-import { addServedDomains, createMailbox, readSettings, setCatchAll, settingsKey } from "./mailbox-store";
+import { addServedDomains, createMailbox, readSettings, setCatchAll, updateSettings } from "./mailbox-store";
 import { msg } from "../../shared/i18n";
 
 /**
@@ -38,7 +38,11 @@ export async function applySetup(env: Env, setup: Setup): Promise<ApplyResult> {
     if (forwarding) next.forwarding = forwarding;
     if (box.agent && !agentProblem) next.agent = box.agent;
     const changed = JSON.stringify(next) !== JSON.stringify(current);
-    if (changed) await env.BUCKET.put(settingsKey(box.address), JSON.stringify(next));
+    // B-29: only over the version read, so a mailbox deleted meanwhile is not made again by this write.
+    if (changed && !(await updateSettings(env.BUCKET, box.address, (latest) => ({ ...latest, ...(forwarding ? { forwarding } : {}), ...(box.agent && !agentProblem ? { agent: box.agent } : {}) })))) {
+      result.mailboxes.push({ address: box.address, outcome: "refused", reason: msg("The address was deleted while the setup was applied") });
+      continue;
+    }
     result.mailboxes.push({ address: box.address, outcome: changed ? "updated" : "unchanged", ...(agentProblem ? { reason: agentProblem } : {}) });
   }
   const catchAllReady = setup.catchAll.filter((c) => result.mailboxes.some((m) => m.address === c.mailbox && m.outcome !== "refused"));

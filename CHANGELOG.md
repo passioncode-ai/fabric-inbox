@@ -5,6 +5,17 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.32.3 (2026-10-24)
+
+- **A rule says plainly when an account refused.** When an account refuses a rule's action before
+  doing anything (a sending limit, a message that is gone, a rejected address), the run is marked
+  failed with the reason, instead of uncertain. An archive or mark-read of a message removed
+  meanwhile no longer reports success (B-15).
+- **Mail without a sender joins no conversation by subject.** A message with no From address is
+  never put into someone else's thread because its subject matches (B-15).
+- **A deleted address stays deleted.** An agent assignment or an applied setup saved at the moment
+  an address is deleted no longer brings it back (B-29).
+
 ## 0.32.2 (2026-10-23)
 
 - **Retry keeps your unsaved work.** Retry connection (⌘R) now reloads the mail window instead of

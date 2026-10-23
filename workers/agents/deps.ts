@@ -50,7 +50,8 @@ export function productionDeps(env: Env, mailboxId: string, registry: Registry):
         const settings = await object.json<Record<string, unknown>>();
         // Never overwrite an assignment the operator made meanwhile.
         if (settings.agent !== undefined) return;
-        await env.BUCKET.put(settingsKey, JSON.stringify({ ...settings, agent: { id: agentId } }));
+        // B-29: written on the version read, so an address deleted meanwhile is not made again by this write.
+        await env.BUCKET.put(settingsKey, JSON.stringify({ ...settings, agent: { id: agentId } }), { onlyIf: { etagMatches: object.etag } });
       },
       async email(id) {
         const email = await stub.getEmail(id);

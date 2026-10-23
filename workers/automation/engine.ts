@@ -25,6 +25,22 @@ export interface RunDependencies {
 }
 export class ActionRejected extends Error {}
 /**
+ * B-15: what an account refuses before anything is handed over or changed. The accounts object's
+ * errors cross RPC as their message (the code), not their class, so the code is matched; anything
+ * else (a lost connection, a provider outage) stays an uncertain outcome.
+ */
+const KNOWN_REFUSALS = new Set(["send_rate_limited", "message_not_found", "not_supported", "account_not_found", "invalid_message",
+  "invalid_address", "invalid_attachment", "invalid_header", "message_too_large", "sender_mismatch", "idempotency_conflict",
+  "recipient_rejected", "sender_rejected", "message_rejected", "smtputf8_unsupported"]);
+export async function refusalsKnown<T>(work: () => Promise<T>): Promise<T> {
+  try { return await work(); }
+  catch (error) {
+    const code = (error as Error)?.message ?? "";
+    if (KNOWN_REFUSALS.has(code)) throw new ActionRejected(msg("The account refused it ({code}); nothing was done", { code }));
+    throw error;
+  }
+}
+/**
  * B-141: reading or analysing a message (the AI condition) is tried this many times, ANALYSIS_RETRY_MS[n]
  * apart, before the run fails; nothing was executed, so trying again is safe.
  */

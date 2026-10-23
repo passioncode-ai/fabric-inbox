@@ -187,6 +187,8 @@ test("a subject thread is joined only by one of its own participants, not an add
     assert.equal(await op({ op: "threadBySubject", subject: "Weekly report", sender: "bob@x.com" }), "t-first");
     assert.equal(await op({ op: "threadBySubject", subject: "Weekly report", sender: "jimbob@x.com" }), null, "jimbob@x.com is not bob@x.com");
     assert.equal(await op({ op: "threadBySubject", subject: "Weekly report", sender: "ob@x.co" }), null);
+    assert.equal(await op({ op: "threadBySubject", subject: "Weekly report" }), null, "B-15: a message with no From address joins no thread by subject");
+    assert.equal(await op({ op: "threadBySubject", subject: "Weekly report", sender: "  " }), null);
   } finally { await mf.dispose(); }
 });
 

@@ -776,4 +776,8 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Say approve: true or false.": "Укажите approve: true или false.",
 	"Nothing is waiting under that code: it expired, or was answered already.": "Под этим кодом ничего не ждёт: срок истёк или ответ уже дан.",
 	"Saving your answer": "Сохранение вашего ответа",
+	"The account refused it ({code}); nothing was done": "Аккаунт отказал ({code}); ничего не сделано",
+	"The message is no longer in this mailbox; nothing was changed": "Письма больше нет в этом ящике; ничего не изменено",
+	"The forward was refused: {reason}": "Пересылка отклонена: {reason}",
+	"The address was deleted while the setup was applied": "Адрес удалили, пока применялась настройка",
 };

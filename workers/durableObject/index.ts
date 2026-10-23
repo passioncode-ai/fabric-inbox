@@ -1313,6 +1313,8 @@ export class MailboxDO extends DurableObject<Env> {
 		);
 
 		const normalizedSender = senderAddress?.toLowerCase().trim();
+		// B-15: a message with no From address joins no thread by its subject: it could not be checked as a participant.
+		if (!normalizedSender) return null;
 
 		for (const row of result) {
 			const rowSubject = String((row as any).subject || "")
@@ -1321,12 +1323,10 @@ export class MailboxDO extends DurableObject<Env> {
 				.toLowerCase();
 			if (rowSubject !== normalized) continue;
 
-			if (normalizedSender) {
-				// Exact addresses: a substring test let jimbob@x.com join bob@x.com's thread (bug hunt 2026-10-12).
-				const participants = new Set(`${(row as any).senders || ""},${(row as any).recipients || ""}`.split(/[,\s]+/).map((a) => a.trim()).filter(Boolean));
-				if (!participants.has(normalizedSender)) {
-					continue;
-				}
+			// Exact addresses: a substring test let jimbob@x.com join bob@x.com's thread (bug hunt 2026-10-12).
+			const participants = new Set(`${(row as any).senders || ""},${(row as any).recipients || ""}`.split(/[,\s]+/).map((a) => a.trim()).filter(Boolean));
+			if (!participants.has(normalizedSender)) {
+				continue;
 			}
 
 			return String((row as any).thread_id);
