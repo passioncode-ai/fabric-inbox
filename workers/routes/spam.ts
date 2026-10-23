@@ -103,7 +103,11 @@ spamRouter.post("/api/spam/release", (c) => move(c, false));
 /** Deletes everything in Spam now, in every Cloudflare mailbox; Gmail keeps its own 30 days. */
 spamRouter.post("/api/spam/empty", async (c) => {
   try {
-    const addresses = await listMailboxAddresses(c.env.BUCKET);
+    // `addresses` empties only those Cloudflare mailboxes (a member's, B-149); absent, every one.
+    const body = (await c.req.json().catch(() => null)) as { addresses?: unknown } | null;
+    const all = await listMailboxAddresses(c.env.BUCKET);
+    const only = Array.isArray(body?.addresses) ? new Set(body.addresses.filter((a): a is string => typeof a === "string").map((a) => a.toLowerCase())) : null;
+    const addresses = only ? all.filter((a) => only.has(a.toLowerCase())) : all;
     const counts = await Promise.allSettled(addresses.map((a) => c.env.MAILBOX.get(c.env.MAILBOX.idFromName(a)).purgeSpam({ all: true })));
     const deleted = counts.reduce((n, r) => n + (r.status === "fulfilled" ? r.value : 0), 0);
     const failed = counts.filter((r) => r.status === "rejected").length;

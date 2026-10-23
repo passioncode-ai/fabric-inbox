@@ -202,6 +202,13 @@ test("SCN-039 / B8: Delete all now with one address failing deletes the rest and
 
     const clean = await call("/s/api/spam/empty", "POST", {}, { purge: { [MAILBOX]: 0, "a@shop.invalid": 0, "b@shop.invalid": 0 } });
     assert.deepEqual([clean.status, clean.body], [200, { deleted: 0, failed: 0 }], "an empty Spam is not an error");
+
+    // B-149: a member's Delete all now names their addresses; only those are emptied.
+    await call("/recorded"); // reading it empties it
+    const mine = await call("/s/api/spam/empty", "POST", { addresses: ["A@shop.invalid"] }, { purge: { "a@shop.invalid": 4 } });
+    assert.deepEqual([mine.status, mine.body], [200, { deleted: 4, failed: 0 }]);
+    const after = ((await call("/recorded")).body as [string, string, unknown][]).filter((r) => r[0] === "purge");
+    assert.deepEqual(after.map((p) => p[1]), ["a@shop.invalid"]);
   } finally { await mf.dispose(); }
 });
 

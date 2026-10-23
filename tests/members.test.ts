@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hono } from "hono";
 import { readMembers, standingOf, updateMembers, MembersError, MEMBERS_KEY, type Member } from "../workers/lib/members";
-import { memberGate } from "../workers/lib/member-gate";
+import { memberBody, memberGate } from "../workers/lib/member-gate";
 import { membersRouter } from "../workers/routes/members";
 import { scopedApi } from "../workers/mcp/scope";
 
@@ -91,4 +91,16 @@ test("B-149: a member's refusals from the scoped feed speak to the person, not t
   const api = { request: async () => ({ status: 200, contentType: "application/json", data: {} }) };
   await assert.rejects(scopedApi(api, ["cloudflare:sales@owner.example"], "person").request("GET", "/api/v1/mailboxes/other@owner.example/emails"), /You reach only sales@owner.example/);
   await assert.rejects(scopedApi(api, ["cloudflare:sales@owner.example"]).request("GET", "/api/v1/mailboxes/other@owner.example/emails"), /This key is limited/);
+});
+
+test("B-149: a member empties Spam and brings back discarded mail in their own mailboxes only, never taking back a shared rule", () => {
+  const mine = ["cloudflare:sales@owner.example", "gmail:g1"];
+  assert.equal(memberGate("POST", "/api/spam/empty", mine), "body");
+  assert.equal(memberGate("POST", "/api/discard/restore", mine), "body");
+  assert.equal(memberGate("DELETE", "/api/discard/rules/l-0000aaaa", mine), "refuse");
+  assert.deepEqual(memberBody("POST /api/spam/empty", {}, mine), { body: { addresses: ["sales@owner.example"] } });
+  const restore = { messages: [{ accountId: "gmail:g1", providerMessageId: "m1" }], unlearn: true };
+  assert.deepEqual(memberBody("POST /api/discard/restore", restore, mine), { body: { ...restore, unlearn: false } });
+  assert.deepEqual(memberBody("POST /api/discard/restore", { messages: [{ accountId: "gmail:other", providerMessageId: "m1" }] }, mine), { refuse: true });
+  assert.deepEqual(memberBody("POST /api/discard/restore", { messages: [] }, mine), { refuse: true });
 });
