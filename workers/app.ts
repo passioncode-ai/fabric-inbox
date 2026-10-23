@@ -4,7 +4,7 @@
 
 import { routeAgentRequest } from "agents";
 import { Hono } from "hono";
-import { jwtVerify, createRemoteJWKSet } from "jose";
+import { jwtVerify, createRemoteJWKSet, decodeJwt } from "jose";
 import { createRequestHandler } from "react-router";
 import { withSecurityHeaders } from "./lib/security-headers";
 import { handleIncomingEmail } from "./index";
@@ -13,6 +13,7 @@ import { handleMcp } from "./mcp/handler";
 import { fabricServiceRouter } from "./routes/fabric-service";
 import { handleRelayForwarded, handleRelayIncoming, RELAY_FORWARDED, RELAY_INCOMING } from "./relay/ingress";
 import { identityMayUse, MCP_PATH, type AccessClaims } from "./mcp/keys";
+import { audienceFor, serviceAudience } from "./mcp/service-access";
 export { AutomationDO } from "./automation";
 export { GmailAccountsDO } from "./providers/accounts-do";
 export { AgentRegistryDO } from "./agents/registry";
@@ -92,14 +93,18 @@ app.use("*", async (c, next) => {
 
 	try {
 		const { issuer, certsUrl } = getAccessUrls(TEAM_DOMAIN);
+		// B-150: the fabric-service routes have an Access application of their own; its token is
+		// accepted on those routes only (workers/mcp/service-access.ts).
+		const pathname = new URL(c.req.url).pathname;
+		const audience = await audienceFor(pathname, decodeJwt(token).aud, POLICY_AUD, () => serviceAudience(c.env.BUCKET));
 		const { payload } = await jwtVerify(token, accessKeySet(certsUrl), {
 			issuer,
-			audience: POLICY_AUD,
+			audience,
 		});
 		c.set("access", payload as AccessClaims);
 		// An agent's service token opens the agent protocol only; its level is checked there.
 		// Everywhere else it would act with the owner's full rights.
-		if (!identityMayUse(payload as AccessClaims, new URL(c.req.url).pathname))
+		if (!identityMayUse(payload as AccessClaims, pathname))
 			return c.text("An agent key can only use the agent protocol at /mcp", 403);
 	} catch {
 		return c.text("Invalid or expired Access token", 403);

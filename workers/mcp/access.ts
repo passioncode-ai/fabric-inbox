@@ -22,6 +22,8 @@ const WHAT_APPS = "let agent keys through the server's sign-in (Access: Apps and
 const READ_ONLY = new Set(["id", "uid", "aud", "created_at", "updated_at", "policies"]);
 
 export const policyName = (aud: string) => `Fabric Inbox agents ${aud.slice(0, 12)}`;
+/** The path-scoped application of the fabric-service routes (B-150, workers/mcp/service-access.ts). */
+export const serviceAppName = (aud: string) => `Fabric Inbox service ${aud.slice(0, 12)}`;
 const tokenRule = (tokenId: string) => ({ service_token: { token_id: tokenId } });
 const ruleToken = (rule: Record<string, unknown>) => (rule.service_token as { token_id?: string } | undefined)?.token_id;
 
@@ -113,6 +115,10 @@ export class AgentAccess {
       const ids = existing.include.map(ruleToken).filter((id): id is string => !!id && id !== tokenId);
       if (ids.length) await this.writePolicy(account, app.aud, existing, ids);
       else {
+        // The service application holds only this policy, so it goes first (B-150): a policy still in
+        // use cannot be deleted, and an application with no policy lets nobody in anyway.
+        const service = (await this.api.list<AccessApp>(`/accounts/${account}/access/apps`, WHAT_APPS)).find((a) => a.name === serviceAppName(app.aud));
+        if (service) await this.api.call(`/accounts/${account}/access/apps/${service.id}`, { method: "DELETE", what: WHAT_APPS });
         await this.attach(account, app.id, existing.id, false);
         await this.api.call(`/accounts/${account}/access/policies/${existing.id}`, { method: "DELETE", what: WHAT_APPS });
       }

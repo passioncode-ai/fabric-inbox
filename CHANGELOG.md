@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.29.4 (2026-10-23)
+
+- **A clear refusal for Fabric without a key.** The server's health, events and usage pages now answer
+  a request without an agent key with "not allowed" instead of sending it to the sign-in page, so
+  Fabric Dashboards can tell a refusal from a moved page; everything else still asks a person to sign
+  in. The server sets this up itself the first time an agent key reads them (B-150).
+
 ## 0.29.3 (2026-10-23)
 
 - **The server's Fabric pages refuse other sites.** Its health, events and usage pages answer only

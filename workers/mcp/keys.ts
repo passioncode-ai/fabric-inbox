@@ -92,7 +92,7 @@ export async function updateAgentKeys(bucket: R2Bucket, change: (keys: AgentKey[
 }
 
 /** The verified Access JWT's claims this module reads. */
-export interface AccessClaims { email?: unknown; common_name?: unknown; sub?: unknown }
+export interface AccessClaims { email?: unknown; common_name?: unknown; sub?: unknown; aud?: unknown }
 
 /**
  * An email is a person signed in through Access: the owner, at every level. A `common_name`
