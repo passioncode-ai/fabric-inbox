@@ -15,7 +15,8 @@ function harness(o: { app?: string; bundle?: string | null; server?: unknown; au
   const u = createServerUpdater({
     appVersion: o.app ?? "0.27.0", bundleDir: "/b", t,
     readBundle: async () => (o.bundle === null ? null : manifest(o.bundle ?? o.app ?? "0.27.0")),
-    readFile: async (p: string) => new TextEncoder().encode(`bytes of ${p}`),
+    // Windows joins with backslashes; the bytes read are what matters, so the path is compared with forward slashes.
+    readFile: async (p: string) => new TextEncoder().encode(`bytes of ${p.replace(/\\/g, "/")}`),
     read: async (p: string) => { reads.push(p); return o.server === undefined ? { version: "0.26.0", selfUpdate: { available: true } } : o.server; },
     post: async (_p: string, form: FormData) => { posts.push(form); return o.post ? o.post(form) : { status: 200, body: { updated: true, from: "0.26.0", to: "0.27.0" } }; },
     automatic: async () => o.automatic ?? true, log: (e: unknown) => logs.push(e), notify: (title: string) => notes.push(title),
