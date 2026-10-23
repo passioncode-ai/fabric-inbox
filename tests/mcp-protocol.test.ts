@@ -28,3 +28,21 @@ test("a tool whose confirmation depends on its arguments runs at once when they 
   const asked = JSON.parse((await runTool(maybe, { x: "prune" }, ctx, ledger())).content[0]!.text);
   assert.equal(asked.needsConfirmation, true);
 });
+
+test("B-38: a key the owner approves for is told to wait for the person, and a code not yet approved changes nothing", async () => {
+  const careful: Principal = { ...admin, label: "Careful", approval: "owner" } as Principal;
+  const ran: string[] = [];
+  const del = defineTool({ ...change, name: "delete_thing", confirm: () => "Deletes the thing.", call: async () => { ran.push("x"); return { deleted: true }; } } as never);
+  let issued: Record<string, unknown> = {};
+  const asked = JSON.parse((await runTool(del, { x: "1" }, { ...ctx, principal: careful }, ledger({ issueConfirmation: async (input) => { issued = input; return { code: "CODE", expiresAt: 0 }; } }))).content[0]!.text);
+  assert.equal(asked.needsApproval, true);
+  assert.equal(issued.owner, true);
+  assert.equal(issued.callerLabel, "Careful");
+  const waiting = await runTool(del, { x: "1", confirm: "CODE" }, { ...ctx, principal: careful }, ledger({ consumeConfirmation: async () => "waiting" }));
+  assert.equal(waiting.isError, true);
+  assert.equal(JSON.parse(waiting.content[0]!.text).waitingForApproval, true);
+  assert.deepEqual(ran, [], "nothing ran before the approval");
+  const plain = JSON.parse((await runTool(del, { x: "1" }, ctx, ledger({ issueConfirmation: async (input) => { issued = input; return { code: "CODE", expiresAt: 0 }; } }))).content[0]!.text);
+  assert.equal(plain.needsConfirmation, true, "a key without owner approval keeps the code as before");
+  assert.equal(issued.owner, undefined);
+});

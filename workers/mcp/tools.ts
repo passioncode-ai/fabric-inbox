@@ -1690,13 +1690,13 @@ const createCredentialKey = defineTool({
 
 const listAgentKeys = defineTool({
   name: "list_agent_keys", title: "List agent keys", level: "admin", readOnly: true,
-  description: "The agent keys of this server, without secrets: each key's name, level, how it sends and its daily limit, the mailboxes it is limited to (\"domain:<domain>\" is every address on that domain, later ones too), when it was made and when it expires, and the address agents connect to. Keys are made and revoked by a person in Settings → Agent access.",
+  description: "The agent keys of this server, without secrets: each key's name, level, how it sends and its daily limit, the mailboxes it is limited to (\"domain:<domain>\" is every address on that domain, later ones too), whether the owner approves its irreversible actions (approval \"owner\") or the key confirms them itself (\"agent\"), when it was made and when it expires, and the address agents connect to. Keys are made and revoked by a person in Settings → Agent access.",
   input: {},
   routes: ["GET /api/agent-keys"],
   async call(_a, ctx) {
     const data = (await get(ctx, "/api/agent-keys")) as { keys?: Record<string, unknown>[]; mcpUrl?: unknown };
     return { keys: (data.keys ?? []).map((k) => ({ id: k.id, name: k.name, level: k.level, send: k.send, dailySendLimit: k.dailySendLimit,
-      accounts: k.accounts ?? null, createdAt: k.createdAt, expiresAt: k.expiresAt ?? null })), mcpUrl: data.mcpUrl };
+      accounts: k.accounts ?? null, approval: k.approval ?? "agent", createdAt: k.createdAt, expiresAt: k.expiresAt ?? null })), mcpUrl: data.mcpUrl };
   },
 });
 
@@ -1728,6 +1728,10 @@ export const TOOLS: readonly ToolDef[] = [
  * Routes no tool calls, each with why (AP-5). Anything else the Worker serves must be behind a tool.
  */
 export const NOT_TOOLS: Readonly<Record<string, string>> = {
+  // B-38: approving an agent's irreversible action is the owner's; an agent able to approve it, or to turn approval off, would make it no approval.
+  "GET /api/agent-keys/approvals": "What waits for the owner's approval is answered by the owner in Agent access; the waiting agent is told by its own call (B-38)",
+  "POST /api/agent-keys/approvals/:code": "Only the owner approves or refuses an agent's irreversible action; an agent approving it would defeat the approval (B-38)",
+  "PATCH /api/agent-keys/:id": "Whether the owner approves a key's irreversible actions is the owner's setting; an agent switching it off would defeat it (B-38)",
   "GET /api/accounts/gmail/connect": "Connecting Gmail is a person's consent in a browser (Google's OAuth page and a cookie); gmail_connect_link gives the person this address",
   "POST /api/accounts/gmail/connect": "Connecting Gmail is a person's consent in a browser (Google's OAuth page and a cookie)",
   "GET /api/accounts/gmail/callback": "Google's OAuth redirect back to the browser",

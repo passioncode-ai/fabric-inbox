@@ -16,7 +16,9 @@ import {
 
 type Level = "read" | "mail" | "admin";
 type Send = "drafts" | "send";
-export interface AgentKey { id: string; clientId: string; name: string; level: Level; send: Send; dailySendLimit: number; createdAt: string; expiresAt: string | null; accounts?: string[] | null }
+export interface AgentKey { id: string; clientId: string; name: string; level: Level; send: Send; dailySendLimit: number; createdAt: string; expiresAt: string | null; accounts?: string[] | null; approval?: "agent" | "owner" }
+/** B-38: an irreversible action an agent asked for that waits for the owner. */
+interface Approval { code: string; callerLabel: string; tool: string; summary: string; createdAt: number; expiresAt: number; approved: boolean }
 interface Mailbox { id: string; email?: string; name?: string }
 interface KeysState { keys: AgentKey[]; mcpUrl: string; canIssue: boolean }
 interface NewKey { key: AgentKey; clientSecret: string; mcpUrl: string; configs: { claudeCode: string; json: unknown; jsonFromEnvironment: unknown } }
@@ -38,6 +40,11 @@ export const AGENT_CONNECT_COMMAND = "scripts/onboard.mjs connect --level mail";
 export const AGENT_CONNECT_GUIDE = "docs/agents/onboard.md, passioncode-ai/fabric-inbox";
 export const KEYS_KEY = ["agent-keys"];
 export const JOURNAL = "journal";
+export const APPROVALS = "approvals";
+export const APPROVALS_KEY = ["agent-approvals"];
+/** B-38: who answers a key's irreversible actions. */
+export const approvalText = (k: Pick<AgentKey, "approval">, t: T = englishT) =>
+  k.approval === "owner" ? t("You approve each one in Agent access") : t("The agent confirms them itself, with a one-time code");
 
 export const sendingText = (k: Pick<AgentKey, "level" | "send" | "dailySendLimit">, t: T = englishT) =>
   k.level === "read" ? t("Sends nothing") : k.level === "admin" || k.send === "send" ? t("Can send, {n} a day", { n: k.dailySendLimit }) : t("Drafts only");
@@ -69,6 +76,9 @@ function Copy({ text, label }: { text: string; label: string }) {
 export default function AgentAccessSection({ id }: { id: string | null }) {
   const t = useT();
   const keys = useQuery({ queryKey: KEYS_KEY, queryFn: () => fabric<KeysState>("/api/agent-keys") });
+  // B-38: what waits for the owner; looked at again every 30 s while this screen is open and visible.
+  const approvals = useQuery({ queryKey: APPROVALS_KEY, refetchInterval: 30_000, queryFn: () => fabric<{ approvals: Approval[] }>("/api/agent-keys/approvals") });
+  const waiting = (approvals.data?.approvals ?? []).filter((a) => !a.approved).length;
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -83,9 +93,13 @@ export default function AgentAccessSection({ id }: { id: string | null }) {
     <LoadFailure what={t("Agent keys")} error={keys.error} onRetry={() => void keys.refetch()} retrying={keys.isFetching} />
   ) : (
     <SelectableList label={t("Agent keys")} groups={groups} selected={id} hrefFor={(e) => settingsPath("agent-access", e.key)}
-      pinned={[{ key: JOURNAL, href: settingsPath("agent-access", JOURNAL), content: (
-        <span className="fi-row-main"><span className="fi-row-title">{t("What agents changed")}</span><span className="fi-row-meta">{t("Every change an outside agent made, newest first")}</span></span>
-      ) }]}
+      pinned={[
+        ...((approvals.data?.approvals.length ?? 0) > 0 ? [{ key: APPROVALS, href: settingsPath("agent-access", APPROVALS), content: (
+          <span className="fi-row-main"><span className="fi-row-title">{t("Waiting for your approval")}</span><span className="fi-row-meta">{t.plural(waiting, { one: "{n} action an agent cannot do without you", other: "{n} actions agents cannot do without you" })}</span></span>
+        ) }] : []),
+        { key: JOURNAL, href: settingsPath("agent-access", JOURNAL), content: (
+          <span className="fi-row-main"><span className="fi-row-title">{t("What agents changed")}</span><span className="fi-row-meta">{t("Every change an outside agent made, newest first")}</span></span>
+        ) }]}
       renderRow={(e) => (
         <>
           <span className="fi-row-main">
@@ -113,6 +127,8 @@ export default function AgentAccessSection({ id }: { id: string | null }) {
     </PanelPlaceholder>
   ) : id === JOURNAL ? (
     <Panel title={t("What agents changed")} closeTo={settingsPath("agent-access")}><Journal /></Panel>
+  ) : id === APPROVALS ? (
+    <Panel title={t("Waiting for your approval")} closeTo={settingsPath("agent-access")}><Approvals state={approvals} /></Panel>
   ) : keys.isPending ? <SkeletonPanel label={t("Loading this key…")} /> : !selected ? (
     <PanelPlaceholder>
       <h2>{t("This key is not here")}</h2>
@@ -158,14 +174,24 @@ function KeyPanel({ agentKey: k, mcpUrl, onRevoked }: { agentKey: AgentKey; mcpU
     });
     if (done) onRevoked();
   };
+  // B-38: the owner turns their approval of this key's irreversible actions on or off.
+  const setApproval = (approval: "agent" | "owner") => void work.run(t("Saving…"), async () => {
+    try {
+      await fabric(`/api/agent-keys/${encodeURIComponent(k.id)}`, { approval }, "PATCH");
+      return approval === "owner" ? t("{name} now waits for your approval before anything it cannot undo.", { name: k.name }) : t("{name} confirms what it cannot undo itself again.", { name: k.name });
+    } finally { await client.invalidateQueries({ queryKey: KEYS_KEY }); }
+  });
   return (
     <Panel title={k.name} subtitle={`${levelTitle(k.level, t)} · ${sendingText(k, t)}`} closeTo={settingsPath("agent-access")}
-      menu={<ActionMenu label={t("More actions for {name}", { name: k.name })} actions={[{ label: t("Revoke…"), danger: true, onSelect: () => void revoke() }]} />}>
+      menu={<ActionMenu label={t("More actions for {name}", { name: k.name })} actions={[
+        k.approval === "owner" ? { label: t("Stop asking me to approve"), onSelect: () => setApproval("agent") } : { label: t("Ask me to approve what it cannot undo"), onSelect: () => setApproval("owner") },
+        { label: t("Revoke…"), danger: true, onSelect: () => void revoke() }]} />}>
       <PanelBlock>
         <ul className="fi-facts">
           <li><strong>{t("Level")}</strong> {levelTitle(k.level, t)} — {levels(t).find((l) => l.id === k.level)?.hint}</li>
           <li><strong>{t("Sending")}</strong> {sendingText(k, t)}</li>
           <li><strong>{t("Mailboxes")}</strong> {scopeText(k, t)}</li>
+          <li><strong>{t("What cannot be undone")}</strong> {approvalText(k, t)}</li>
           <li><strong>{t("Made")}</strong> {day(k.createdAt, t)}</li>
           <li><strong>{t("Expires")}</strong> {day(k.expiresAt, t)}</li>
           <li><strong>Client ID</strong> <code>{k.clientId}</code> <Copy text={k.clientId} label={t("Copy")} /></li>
@@ -175,6 +201,45 @@ function KeyPanel({ agentKey: k, mcpUrl, onRevoked }: { agentKey: AgentKey; mcpU
         <ActionResult result={work.result} />
       </PanelBlock>
     </Panel>
+  );
+}
+
+/** B-38: the irreversible actions agents asked for; approving lets the agent's code work once, refusing deletes it. */
+function Approvals({ state }: { state: { data?: { approvals: Approval[] }; isPending: boolean; isError: boolean; error: unknown; isFetching: boolean; refetch: () => unknown } }) {
+  const t = useT();
+  const client = useQueryClient();
+  const work = useWork("approvals");
+  const decide = (a: Approval, approve: boolean) => void work.run(approve ? t("Approving…") : t("Refusing…"), async () => {
+    try {
+      await fabric(`/api/agent-keys/approvals/${encodeURIComponent(a.code)}`, { approve });
+      return approve ? t("Approved: {name} can do it now, once.", { name: a.callerLabel }) : t("Refused: {name} cannot do it with that code.", { name: a.callerLabel });
+    } finally { await client.invalidateQueries({ queryKey: APPROVALS_KEY }); }
+  });
+  return (
+    <PanelBlock>
+      {state.isPending ? <SkeletonRows rows={2} label={t("Loading…")} /> : state.isError ? (
+        <LoadFailure what={t("Waiting for your approval")} error={state.error} onRetry={() => void state.refetch()} retrying={state.isFetching} />
+      ) : !state.data?.approvals.length ? (
+        <p className="fi-hint">{t("Nothing waits for your approval.")}</p>
+      ) : (
+        <ul className="fi-facts">
+          {state.data.approvals.map((a) => (
+            <li key={a.code}>
+              <strong>{a.callerLabel}</strong> <code>{a.tool}</code>: {a.summary}
+              <span className="fi-hint"> {t("Asked {when}; waits until {until}.", { when: t.dateTime(a.createdAt), until: t.dateTime(a.expiresAt) })}</span>
+              {a.approved ? <span className="fi-hint"> {t("Approved: the agent has not used it yet.")}</span> : (
+                <span className="fi-buttons">
+                  <button type="button" className="fi-primary" onClick={() => decide(a, true)}>{t("Approve")}</button>
+                  <button type="button" className="fi-secondary" onClick={() => decide(a, false)}>{t("Refuse")}</button>
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="fi-hint">{t("An agent whose key asks you sees nothing change until you approve; it then calls again with the same code. Refusing deletes the code.")}</p>
+      <ActionResult result={work.result} />
+    </PanelBlock>
   );
 }
 
@@ -213,7 +278,7 @@ function Journal() {
   );
 }
 
-const blankForm = () => ({ name: "", level: "mail" as Level, send: "drafts" as Send, dailySendLimit: 50, duration: "1y" as (typeof DURATIONS)[number]["id"], limited: false, accounts: [] as string[] });
+const blankForm = () => ({ name: "", level: "mail" as Level, send: "drafts" as Send, dailySendLimit: 50, duration: "1y" as (typeof DURATIONS)[number]["id"], limited: false, accounts: [] as string[], approval: "agent" as "agent" | "owner" });
 
 /** A new key: the form, then its secret, shown once. Closing after the secret was shown keeps the key. */
 export function NewKeyDialog({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: (key: AgentKey) => void }) {
@@ -326,6 +391,8 @@ export function NewKeyDialog({ open, onClose, onDone }: { open: boolean; onClose
               )}
             </fieldset>
           )}
+          <label className="fi-check"><input type="checkbox" checked={form.approval === "owner"} onChange={(e) => setForm({ ...form, approval: e.target.checked ? "owner" : "agent" })} />
+            <span><strong>{t("Ask me to approve what it cannot undo")}</strong> {t("(deleting for good, removing an address and the like wait for you here)")}</span></label>
           <label className="fi-field">{t("Expires after")}
             <select className="fi-input" value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value as typeof form.duration })}>
               {DURATIONS.map((d) => <option key={d.id} value={d.id}>{t.text(d.title)}</option>)}

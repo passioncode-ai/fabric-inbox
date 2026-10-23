@@ -259,7 +259,7 @@ test("list_agent_keys lists the keys without anything secret (parity gap 11)", a
     createdAt: "2026-10-01T00:00:00Z", expiresAt: null, accounts: ["cloudflare:support@shop.invalid"], clientSecret: "never" }], mcpUrl: "https://mail.shop.invalid/mcp", canIssue: true }) });
   const listed = await call(api, "list_agent_keys", {});
   assert.deepEqual(listed.data.keys, [{ id: "k1", name: "Research", level: "read", send: "drafts", dailySendLimit: 50, accounts: ["cloudflare:support@shop.invalid"],
-    createdAt: "2026-10-01T00:00:00Z", expiresAt: null }]);
+    approval: "agent", createdAt: "2026-10-01T00:00:00Z", expiresAt: null }], "a key from before B-38 reads as confirming its own actions");
   assert.doesNotMatch(JSON.stringify(listed.data), /never|abc\.access/);
 });
 

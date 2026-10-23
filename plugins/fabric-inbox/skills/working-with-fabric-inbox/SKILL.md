@@ -87,7 +87,10 @@ mailboxes your key names.
 - **Two steps are for the person, not for you.** A call that returns `needsConfirmation` changed
   nothing. Show the `summary` to the person; only on their yes, call again with the same arguments
   and `confirm: "<code>"` (valid 5 minutes, once). Never confirm on your own judgement, never
-  reuse a code, never change the arguments between the two calls.
+  reuse a code, never change the arguments between the two calls. A key the owner approves for
+  gets `needsApproval` instead: tell the person what you asked for and that it waits in Settings →
+  Agent access; `waitingForApproval` on the second call means they have not answered yet (call again
+  later with the same code; a refused code is gone).
 - **Read a refusal.** Errors come back as `{ "error": "…" }` with the app's own words (a missing
   Cloudflare permission, a daily limit, an unverified destination). Relay it; do not loop.
 - Everything you change is journalled under your key's name and visible to the owner.

@@ -47,6 +47,7 @@ const bundle = await build({
           }
           if (url.pathname === '/test/inbox') { const b = await request.json(); return Response.json({ id: await env.MAILBOX.get(env.MAILBOX.idFromName(b.mailbox)).testInbox(b.sender, b.subject) }); }
           if (url.pathname === '/test/files') { const b = await request.json(); return Response.json(await env.MAILBOX.get(env.MAILBOX.idFromName(b.mailbox)).testWithFiles(b.files)); }
+          if (url.pathname === '/test/approvals') { const b = await request.json(); const l = env.EMAIL_MCP.getByName('workspace'); if (b.code) return Response.json(await l.decideApproval(b.code, b.approve)); return Response.json(await l.pendingApprovals()); }
           if (url.pathname === '/test/put') { const b = await request.json(); await env.BUCKET.put(b.key, JSON.stringify(b.value)); return Response.json({ ok: true }); }
           return new Response('not found', { status: 404 });
         },
@@ -69,6 +70,7 @@ const KEYS = [
   { id: "k-old", clientId: "old.access", name: "Old", level: "admin", send: "send", dailySendLimit: 50, createdAt: "2025-01-01T00:00:00Z", expiresAt: "2025-06-01T00:00:00Z" },
   { id: "k-scoped", clientId: "scoped.access", name: "Research agent", level: "read", send: "drafts", dailySendLimit: 50, createdAt: "2026-10-03T00:00:00Z", expiresAt: null, accounts: ["cloudflare:other@shop.invalid"] },
   { id: "k-domain", clientId: "domain.access", name: "Domain agent", level: "read", send: "drafts", dailySendLimit: 50, createdAt: "2026-10-23T00:00:00Z", expiresAt: null, accounts: ["domain:shop.invalid"] },
+  { id: "k-owner", clientId: "owner-approves.access", name: "Careful agent", level: "admin", send: "send", dailySendLimit: 50, createdAt: "2026-10-23T00:00:00Z", expiresAt: null, approval: "owner" },
   { id: "k-scoped-mail", clientId: "scoped-mail.access", name: "Scoped mailer", level: "mail", send: "drafts", dailySendLimit: 50, createdAt: "2026-10-03T00:00:00Z", expiresAt: null, accounts: [`cloudflare:${"support@shop.invalid"}`] },
 ];
 
@@ -468,5 +470,43 @@ test("B-36: a key limited to a domain reaches every address on it, one made late
     const other = await call(key, "list_mailbox_messages", { accountId: "cloudflare:x@elsewhere.invalid" });
     assert.equal(other.isError, true, "another domain is refused");
     for (const t of await names(key)) assert.ok(!["list_addresses", "list_domains", "list_rules"].includes(t), `a domain-limited key must not see ${t}`);
+  } finally { await mf.dispose(); }
+});
+
+test("B-38: a key whose irreversible actions the owner approves waits for the owner; refused, its code is gone; approved, it works once", async () => {
+  const { mf, as, call } = await fixture();
+  try {
+    const approvals = async (body: Record<string, unknown> = {}) => (await mf.dispatchFetch("http://localhost/test/approvals", { method: "POST", body: JSON.stringify(body) })).json() as Promise<any>;
+    const agent = await as("owner-approves.access");
+    const make = async (subject: string) => (await call(agent, "save_draft", { accountId: `cloudflare:${MAILBOX}`, to: "ann@customer.invalid", subject, text: "x" })).data.draftId;
+    const listed = async () => (await call(agent, "list_mailbox_messages", { accountId: `cloudflare:${MAILBOX}`, folder: "draft" })).data.messages.map((m: { subject: string }) => m.subject).sort();
+    const first = { accountId: `cloudflare:${MAILBOX}`, messageId: await make("Refused one") };
+    const second = { accountId: `cloudflare:${MAILBOX}`, messageId: await make("Approved one") };
+
+    const asked = await call(agent, "delete_message", first);
+    assert.equal(asked.data.needsApproval, true, JSON.stringify(asked.data));
+    assert.match(asked.data.next, /Agent access/);
+    const early = await call(agent, "delete_message", { ...first, confirm: asked.data.confirm });
+    assert.equal(early.isError, true);
+    assert.equal(early.data.waitingForApproval, true, "the code does not work before the owner answers");
+    const waiting = await approvals();
+    assert.equal(waiting.length, 1);
+    assert.equal(waiting[0].callerLabel, "Careful agent");
+    assert.equal(waiting[0].approved, false);
+    assert.equal(await approvals({ code: asked.data.confirm, approve: false }), true);
+    const refused = await call(agent, "delete_message", { ...first, confirm: asked.data.confirm });
+    assert.equal(refused.isError, true);
+    assert.equal(refused.data.waitingForApproval, undefined, "a refused code is gone, not waiting");
+    assert.deepEqual(await listed(), ["Approved one", "Refused one"], "nothing was deleted");
+
+    const asked2 = await call(agent, "delete_message", second);
+    assert.equal(await approvals({ code: asked2.data.confirm, approve: true }), true);
+    assert.equal((await approvals())[0].approved, true, "an approved action is listed until used");
+    const done = await call(agent, "delete_message", { ...second, confirm: asked2.data.confirm });
+    assert.equal(done.isError, false, JSON.stringify(done.data));
+    assert.deepEqual(await listed(), ["Refused one"]);
+    assert.equal((await call(agent, "delete_message", { ...second, confirm: asked2.data.confirm })).isError, true, "it works once");
+    assert.deepEqual(await approvals(), [], "nothing left waiting");
+    assert.equal(await approvals({ code: "NOSUCHCODE", approve: true }), false);
   } finally { await mf.dispose(); }
 });

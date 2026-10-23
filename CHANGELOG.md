@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.32.0 (2026-10-23)
+
+- **Approve what an agent cannot undo.** A key can now ask you first: tick Ask me to approve what it
+  cannot undo when you make it, or turn it on later from the key's menu in Settings → Agent access.
+  Deleting mail for good, removing an address and similar actions then wait under Waiting for your
+  approval, with Approve and Refuse, for up to a day. Nothing changes until you approve, and an agent
+  cannot approve for you. Keys without it work as before (B-38).
+
 ## 0.31.0 (2026-10-23)
 
 - **Give an agent a whole domain.** In Settings → Agent access, a Read or Mail key can now reach

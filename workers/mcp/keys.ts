@@ -33,12 +33,17 @@ export interface AgentKey {
    * workspace (AP-11). Only Read and Mail keys can be limited; an empty list reaches nothing.
    */
   accounts: string[] | null;
+  /**
+   * B-38: "owner" when an irreversible action of this key waits for the owner's approval in Agent
+   * access before its confirmation code works; absent, the agent confirms with the code alone (AP-4).
+   */
+  approval?: "owner";
 }
 
 /** Who is calling the protocol, after Access and the key registry. */
 export type Principal =
   | { kind: "owner"; label: string; level: "admin"; send: "send"; dailySendLimit: null; keyId: null; accounts: null }
-  | { kind: "agent"; label: string; level: Level; send: SendMode; dailySendLimit: number; keyId: string; accounts: readonly string[] | null };
+  | { kind: "agent"; label: string; level: Level; send: SendMode; dailySendLimit: number; keyId: string; accounts: readonly string[] | null; approval?: "owner" };
 
 const rank: Record<Level, number> = { read: 0, mail: 1, admin: 2 };
 export const levelAllows = (have: Level, need: Level) => rank[have] >= rank[need];
@@ -60,6 +65,7 @@ function normaliseKey(raw: unknown): AgentKey | null {
     expiresAt: typeof k.expiresAt === "string" ? k.expiresAt : null,
     // A limit on an Admin key cannot hold (admin tools act on the whole workspace): it reaches nothing.
     accounts: accounts && level === "admin" ? [] : accounts,
+    ...(k.approval === "owner" ? { approval: "owner" as const } : {}),
   };
 }
 
@@ -107,7 +113,8 @@ export function principalFor(claims: AccessClaims, keys: AgentKey[], now = Date.
   if (!key) return null;
   if (key.expiresAt && Date.parse(key.expiresAt) <= now) return null;
   // An admin key can make rules and reply agents that send; it is never Drafts only (agent-keys.ts sendFor).
-  return { kind: "agent", label: key.name, level: key.level, send: key.level === "admin" ? "send" : key.send, dailySendLimit: key.dailySendLimit, keyId: key.id, accounts: key.accounts };
+  return { kind: "agent", label: key.name, level: key.level, send: key.level === "admin" ? "send" : key.send, dailySendLimit: key.dailySendLimit, keyId: key.id, accounts: key.accounts,
+    ...(key.approval === "owner" ? { approval: "owner" as const } : {}) };
 }
 
 /** A service token: no person behind it. */
