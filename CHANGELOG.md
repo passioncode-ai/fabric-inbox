@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.29.3 (2026-10-23)
+
+- **The server's Fabric pages refuse other sites.** Its health, events and usage pages answer only
+  requests from the server itself or from a host on your computer; a page of another site that tries to
+  read them is refused, even while you are signed in.
+
 ## 0.29.2 (2026-10-23)
 
 - **An organization can run its own server.** An organization deploys the server into its own

@@ -6,7 +6,7 @@ import { Miniflare } from "miniflare";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { version } from "../package.json";
-import { usageReport, providerOf } from "../workers/routes/fabric-service";
+import { usageReport, providerOf, crossSite } from "../workers/routes/fabric-service";
 import { identityMayUse } from "../workers/mcp/keys";
 
 /**
@@ -46,8 +46,8 @@ async function fixture(bindings: Record<string, string> = {}) {
   });
   await mf.dispatchFetch("http://localhost/r2?key=config/agent-keys.json", { method: "PUT",
     body: JSON.stringify({ keys: [{ id: "k1", clientId: "known.access", name: "Fabric Dashboards", level: "read", send: "none", dailySendLimit: null, createdAt: "2026-10-22T00:00:00Z", expiresAt: null }] }) });
-  const get = async (path: string, claims?: Record<string, string>) => {
-    const r = await mf.dispatchFetch("http://localhost" + path, claims ? { headers: { "x-test-claims": JSON.stringify(claims) } } : {});
+  const get = async (path: string, claims?: Record<string, string>, extra: Record<string, string> = {}) => {
+    const r = await mf.dispatchFetch("http://localhost" + path, { headers: { ...(claims ? { "x-test-claims": JSON.stringify(claims) } : {}), ...extra } });
     return { status: r.status, text: await r.text() };
   };
   return { mf, get };
@@ -163,4 +163,20 @@ test("B-87 part 5: the descriptor names the server's runner, and an offered serv
   assert.equal(seen.url, "https://mail.example.com/.well-known/fabric-service");
   assert.equal(seen.init.headers.Authorization, "{\"cf-access-client-id\":\"a.access\"}");
   await assert.rejects(readWellKnown(origin, "x", async () => new Response("", { status: 401 })), /HTTP 401/);
+});
+
+test("B-87: a request from another site or origin is refused with 403 on all three routes, even with a key", async () => {
+  const { mf, get } = await fixture({ CLOUDFLARE_API_TOKEN: "t", OPENROUTER_API_KEY: "k" });
+  const key = { common_name: "known.access" };
+  try {
+    for (const p of ["/.well-known/fabric-service", "/fabric/v1/events", "/fabric/v1/usage"]) {
+      assert.equal((await get(p, key, { Origin: "https://evil.example" })).status, 403, p);
+      assert.equal((await get(p, key, { "Sec-Fetch-Site": "cross-site" })).status, 403, p);
+      // The server's own pages and a host (no Origin) still read it.
+      assert.equal((await get(p, key, { Origin: "http://localhost", "Sec-Fetch-Site": "same-origin" })).status, 200, p);
+      assert.equal((await get(p, key)).status, 200, p);
+    }
+  } finally { await mf.dispose(); }
+  assert.equal(crossSite("https://a.example/x", "https://a.example", "same-origin"), null);
+  assert.match(crossSite("https://a.example/x", "https://a.example:8443", undefined)!, /origin/);
 });

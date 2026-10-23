@@ -352,7 +352,10 @@ your computer shows its health, the reply agents' events and the model calls the
 | `GET /fabric/v1/events?after=&limit=` | the reply agents' events, the same feed as `list_agent_events` |
 | `GET /fabric/v1/usage` | model calls per UTC day and model over 31 days (DEC-0021): from 0.29.0 each call's tokens and OpenRouter's own charge (usage accounting, one receipt per call on the run, no content); a call without a reported charge (Workers AI, a failed call, a run before 0.29.0) stays unpriced, so the cost reads as a lower bound or unknown, never $0 |
 
-Only a person or a registered agent key reaches them; anyone else gets 401 with an empty body. A key
+Only a person or a registered agent key reaches them; anyone else gets 401 with an empty body from
+the Worker (in front of it, Cloudflare Access sends a request with no credential to its sign-in page
+with a 302). From 0.29.3 a request another site's page makes (a foreign `Origin`, or
+`Sec-Fetch-Site: cross-site`) gets 403, even with the person's sign-in (B-150). A key
 reaches nothing else of the app this way (`identityMayUse`), and the MCP surface keeps its own keys
 (`auth: "own"`), so the descriptor's key is never an MCP caller.
 
