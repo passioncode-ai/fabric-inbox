@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://fabric.passioncode.ai/agent-contract/0.1.0/schemas/service-usage.schema.json",
   "title": "Service usage report (fabric-service/0.1, DEC-0021, DEC-0027)",
-  "description": "What a service spent on model and paid-tool calls, self-reported from its own usage receipts, in UTC days. An unknown cost is null, never 0.",
+  "description": "What a service's model and paid-tool calls cost (money, and a subscription's estimate apart by route, DEC-0110), self-reported from its own usage receipts, in UTC days. An unknown cost is null, never 0.",
   "type": "object",
   "required": [
     "protocol",
@@ -57,7 +57,7 @@
     },
     "byGrant": {
       "type": "array",
-      "description": "DEC-0037: spend in the report's window attributed to each grant that authorized it (grant check receipts).",
+      "description": "DEC-0037: cost in the report's window attributed to each grant that authorized it (grant check receipts), a subscription's estimate included (DEC-0110).",
       "items": {
         "type": "object",
         "required": [
@@ -100,7 +100,7 @@
     "byProject": {
       "type": "array",
       "maxItems": 256,
-      "description": "DEC-0065 (CON-OE-13): spend in the report's window by the project the service ran it for, the service's own run attribution. It names no caller, session or person (DL-22). A call the service ran for no project is in no row. Sums and unknown costs: FAC-SEM-025.",
+      "description": "DEC-0065 (CON-OE-13): cost in the report's window by the project the service ran it for, a subscription's estimate included (DEC-0110), the service's own run attribution. It names no caller, session or person (DL-22). A call the service ran for no project is in no row. Sums and unknown costs: FAC-SEM-025.",
       "items": {
         "type": "object",
         "required": [
