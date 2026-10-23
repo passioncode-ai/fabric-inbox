@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fabric } from "~/services/fabric";
 import { useT } from "~/lib/i18n";
+import { useMe } from "~/lib/me";
 import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
 import type { InboxMessage } from "./model";
 
@@ -22,10 +23,12 @@ const AGAIN = new Set(["drafted", "held", "skipped", "failed", "interrupted", "s
  */
 export default function AgentRunPanel({ message, onOpenDraft }: { message: InboxMessage; onOpenDraft: (draftId: string) => void }) {
   const t = useT();
-  const id = message.agentRun?.id;
+  // A member of a shared server does not see the reply agents' runs (B-149): agents are the administrator's.
+  const me = useMe();
+  const id = me.data?.role === "member" ? undefined : message.agentRun?.id;
   const run = useQuery({
     queryKey: ["agent-run", id],
-    enabled: !!id,
+    enabled: !!id && !me.isPending,
     queryFn: () => fabric<AgentRunView>(`/api/agent-runs/${encodeURIComponent(id!)}`),
     staleTime: 15_000,
   });
@@ -35,7 +38,7 @@ export default function AgentRunPanel({ message, onOpenDraft }: { message: Inbox
     mutationFn: () => fabric<AgentRunView>(`/api/agent-runs/${encodeURIComponent(id!)}/again`, {}, "POST"),
     onSuccess: () => void client.invalidateQueries({ queryKey: ["agent-run", id] }),
   });
-  if (!message.agentRun) return null;
+  if (!message.agentRun || !id) return null;
   const r = run.data;
   const status = r?.status ?? message.agentRun.status;
   return (

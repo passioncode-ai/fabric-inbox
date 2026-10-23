@@ -402,10 +402,12 @@ server is the same one; what differs is the account, who signs in, and that it i
 1. **A token of the organization's account.** An administrator of that account makes an API token with
    the permissions **Create my server** lists (`PERMISSIONS` in
    [`desktop/cloudflare-deploy.cjs`](../../desktop/cloudflare-deploy.cjs)), scoped to that account only.
-2. **An Access group of the server's administrators.** In Zero Trust → Access → Access groups, a group
-   that includes the people who run the server (their emails, or a group of the organization's identity
-   provider). Every member of it signs in as the server's **owner**, with every right: the server has
-   no per-person roles yet (B-149), so this group holds administrators only, never everyone.
+2. **An Access group of the people who may sign in.** In Zero Trust → Access → Access groups, a group
+   that includes the people who use the server (their emails, or a group of the organization's identity
+   provider). Access decides who may sign in at all; the server's **People** list (Settings → People,
+   from 0.30.0) decides what each reaches. While nobody is listed, everyone the group lets in is an
+   administrator, so the first administrator lists the people before the group grows beyond the
+   administrators.
 3. **Deploy with the group.** From a checkout of this repository, the token read by name:
 
    ```sh
@@ -432,9 +434,15 @@ server is the same one; what differs is the account, who signs in, and that it i
    run on Cloudflare's network, so residency is where the organization's storage is kept (an R2
    jurisdiction), not a measurement. An offer grants nobody access; Fabric's share grant or listing does.
 
-Not covered yet: delegated calls from other members' agents (B-83), per-person roles (B-149), and the
-telecom-secrecy check before people read private mail through a shared server (B-87 part 6, a legal
-decision).
+6. **People.** In Settings → People an administrator adds each person by their sign-in email as an
+   **Administrator** (everything) or a **Member** with the mailboxes they read and answer. A member sees
+   only those mailboxes' mail: no settings, categories, rules, agents' runs or other mailboxes, and no
+   agent protocol (`workers/lib/member-gate.ts`). A person the group lets in who is not listed is refused
+   with a sentence naming who to ask. The list always keeps an administrator; `list_members` reads it for
+   an agent, and only a person changes it (B-149).
+
+Not covered yet: delegated calls from other members' agents (B-83), and the telecom-secrecy check
+before people read private mail through a shared server (B-87 part 6, a legal decision).
 
 ## Categories
 

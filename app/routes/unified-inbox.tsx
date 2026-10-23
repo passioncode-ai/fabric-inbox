@@ -33,6 +33,7 @@ import {
   WarningOctagonIcon,
 } from "@phosphor-icons/react";
 import { fabric } from "~/services/fabric";
+import { useMe } from "~/lib/me";
 import type { Mail } from "~/services/fabric";
 import type { Email } from "~/types";
 import EmailIframe from "~/components/EmailIframe";
@@ -327,10 +328,16 @@ export default function UnifiedInbox() {
   }, []);
   // Categories and their counts are read with the list, not on a clock of their own, so the
   // sidebar's numbers and the messages always come from the same moment (P2-11).
+  // B-149: a member of a shared server sees their own mailboxes; what the whole workspace shares
+  // (categories, the reply status setting, refreshing every account, settings) is the administrator's.
+  const me = useMe();
+  const manages = me.isSuccess ? me.data.role !== "member" : me.isError;
+  const isMember = me.data?.role === "member";
   const categoryList = useQuery({
     queryKey: ["categories"],
     queryFn: () => fabric<CategoryList>("/api/categories"),
     retry: false,
+    enabled: manages,
   });
   // B-138: whether the reply status is shown anywhere; the filter appears only then (off by default).
   const replyStatus = useQuery({
@@ -338,6 +345,7 @@ export default function UnifiedInbox() {
     queryFn: () => fabric<AgentStatusSettings>("/api/agent-status"),
     staleTime: 60_000,
     retry: false,
+    enabled: manages,
   });
   const replyShown = !!replyStatus.data && (replyStatus.data.enabled || Object.values(replyStatus.data.domains).some(Boolean)
     || Object.values(replyStatus.data.addresses).some(Boolean));
@@ -479,7 +487,7 @@ export default function UnifiedInbox() {
   const outlookSetup = useQuery({
     queryKey: ["microsoft-setup"],
     queryFn: () => fabric<{ secretExpiry: SecretExpiry | null }>("/api/microsoft-setup"),
-    enabled: accounts.some((a) => a.provider === "outlook"),
+    enabled: manages && accounts.some((a) => a.provider === "outlook"),
     staleTime: 60_000,
   });
   const secretSoon = outlookSetup.data?.secretExpiry?.state === "soon" ? outlookSetup.data.secretExpiry : null;
@@ -554,7 +562,8 @@ export default function UnifiedInbox() {
   async function checkForMail() {
     setChecking(true);
     try {
-      const scope = refreshScope({ accountId, domain: domainFilter });
+      // A member's refresh reads the list again; checking every account is the administrator's.
+      const scope = isMember ? null : refreshScope({ accountId, domain: domainFilter });
       let summary = { ok: true, text: t("Updated just now.") };
       if (scope !== null) {
         try {
@@ -957,10 +966,12 @@ export default function UnifiedInbox() {
           <span className="fi-counter">{draftRows(saved.drafts, serverDrafts.data?.drafts ?? []).length}</span>
         </button>
         {/* What the reply agents did, one click away (B-115): Settings → Agents → Recent answers. */}
-        <Link className="fi-nav-item" to={settingsPath("agents")}>
-          <RobotIcon size={18} />
-          <span>{t("Agents' answers")}</span>
-        </Link>
+        {!isMember && (
+          <Link className="fi-nav-item" to={settingsPath("agents")}>
+            <RobotIcon size={18} />
+            <span>{t("Agents' answers")}</span>
+          </Link>
+        )}
         <div className="fi-section-label">{t("WORKSPACE")}</div>
         <button
           className={"fi-nav-item" + (!accountId && !domainFilter && !categoryParam && !providerFilter ? " is-active" : "")}
@@ -989,8 +1000,10 @@ export default function UnifiedInbox() {
             </button>
           ))}
         </nav>
-        <CategorySidebar categories={categories} accounts={accounts} active={categoryParam}
-          onOpen={(id) => scope({ category: id, account: "", domain: "", provider: "" })} />
+        {!isMember && (
+          <CategorySidebar categories={categories} accounts={accounts} active={categoryParam}
+            onOpen={(id) => scope({ category: id, account: "", domain: "", provider: "" })} />
+        )}
         <AccountSidebar
           accounts={accounts}
           accountId={accountId}
@@ -1000,6 +1013,7 @@ export default function UnifiedInbox() {
           onScope={(patch) => scope({ ...patch, category: "" })}
           hidden={hidden}
           busy={busy}
+          canManage={!isMember}
           onHidden={(change) => perform(async () => {
             const r = await fabric<{ hidden: string[] }>("/api/inbox/hidden", change, "PUT");
             client.setQueryData(["hidden-accounts"], r);
@@ -1018,15 +1032,19 @@ export default function UnifiedInbox() {
           }).then(() => undefined)}
         />
         <div className="fi-sidebar-bottom">
-          <button className="fi-nav-item" onClick={() => setRulesOpen(true)}>
-            <SparkleIcon size={19} />
-            <span>{t("Rules & history")}</span>
-            <CaretRightIcon size={14} />
-          </button>
-          <Link className="fi-nav-item" to="/settings">
-            <GearSixIcon size={19} />
-            <span>{t("Settings")}</span>
-          </Link>
+          {!isMember && (
+            <>
+              <button className="fi-nav-item" onClick={() => setRulesOpen(true)}>
+                <SparkleIcon size={19} />
+                <span>{t("Rules & history")}</span>
+                <CaretRightIcon size={14} />
+              </button>
+              <Link className="fi-nav-item" to="/settings">
+                <GearSixIcon size={19} />
+                <span>{t("Settings")}</span>
+              </Link>
+            </>
+          )}
           <button className="fi-nav-item" onClick={() => setShortcutsOpen(true)} aria-keyshortcuts="?">
             <KeyboardIcon size={19} />
             <span>{TT.shortcutsNav}</span>

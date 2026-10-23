@@ -1640,3 +1640,43 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** desktop/new-mail.cjs, desktop/main.cjs (`startNewMail`), desktop/menu.cjs, tests/desktop-new-mail.test.ts
 - **Product:** unobserved
 - **Today:** Built 2026-10-22 (B-41).
+
+### SCN-081: Share the server with other people
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07; operator 2026-10-23 (B-149, organization mode)
+- **Entry point:** SCR-17
+- **Preconditions:** Signed in as the server's administrator (or nobody is listed yet). Cloudflare Access lets the people in, for an organization through its Access group.
+- **Steps:**
+  1. Open Settings → People -> what the list does; nobody listed means everyone who can sign in is an administrator.
+  2. Add a person: their sign-in email, Member or Administrator, and for a member the mailboxes they may read; Add -> they are listed; the first person added also lists me as an administrator.
+  3. Open a person -> Change… their role or mailboxes, or Remove… them (Remove, Keep).
+- **Expected result:** A member reaches only their mailboxes; a person Access lets in who is not listed is refused with a sentence naming who to ask; an administrator has every right.
+- **Alt paths:** A member with no mailbox ticked: Add stays off. Removing the last administrator, or the last person: refused with the reason. Removing myself: I am asked first and can no longer open the server.
+- **UI elements:** SCR-17 (Add a person, Role, Mailboxes, Change…, Remove…).
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** The list changed at the same time: try again. A list in R2 that cannot be read lets nobody in and says to delete it to start over.
+- **Status:** draft
+- **Coverage:** app/components/settings/sections/PeopleSection.tsx, workers/routes/members.ts, workers/lib/members.ts, workers/app.ts, tests/members.test.ts
+- **Product:** unobserved
+- **Today:** Built 2026-10-23 (B-149).
+
+### SCN-082: Work as a member of a shared server
+- **Persona:** P-02
+- **Feature:** Handle mail across accounts
+- **Traces:** ST-001, JTBD-01; operator 2026-10-23 (B-149)
+- **Entry point:** SCR-01
+- **Preconditions:** An administrator listed me as a member with one or more mailboxes; Cloudflare Access lets me sign in.
+- **Steps:**
+  1. Sign in -> All inboxes shows the mail of my mailboxes only, and the sidebar lists only them.
+  2. Open, read, answer, forward, move and mark messages, and keep drafts, in those mailboxes.
+  3. Refresh -> the list is read again.
+- **Expected result:** I handle my mailboxes' mail and see nothing of the rest of the server: no settings, categories, rules, agents' runs or other mailboxes.
+- **Alt paths:** No mailbox given yet: the sidebar says to ask the administrator. Settings opened from a link: a page says settings are the administrators'. A mailbox the administrator took away: its routes answer that I reach only my own.
+- **UI elements:** SCR-01 (the sidebar without Settings, Rules & history, Agents' answers, categories, Add address and Hide), SCR-02 (the administrators-only page).
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** An action only an administrator may take (emptying Spam, restoring discarded mail, a mailbox's own settings) is refused with a sentence that says so.
+- **Status:** draft
+- **Coverage:** workers/lib/member-gate.ts, workers/app.ts, workers/mcp/scope.ts, app/lib/me.ts, app/routes/unified-inbox.tsx, app/components/inbox/AccountSidebar.tsx, app/routes/settings.tsx, tests/members.test.ts
+- **Product:** unobserved
+- **Today:** Built 2026-10-23 (B-149).
