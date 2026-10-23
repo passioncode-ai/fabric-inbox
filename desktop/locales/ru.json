@@ -192,6 +192,7 @@
  "Share anonymous usage counts?": "Делиться анонимными счётчиками использования?",
  "Share usage counts": "Делиться счётчиками",
  "Show All": "Показать все",
+ "Sign in": "Вход",
  "Sign in to Fabric Inbox first: the mail window opens for it.": "Сначала войдите в Fabric Inbox — для этого откроется окно почты.",
  "Sign in to Fabric Inbox in the window that opened, then connect again from {client}.": "Войдите в Fabric Inbox в открывшемся окне, затем снова подключитесь из {client}.",
  "Sign in with a code by email": "Вход по коду из письма",

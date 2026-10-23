@@ -384,6 +384,7 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"This system does not let the AppImage use Chromium's sandbox, which keeps a harmful message from reaching the rest of your computer. The .deb package keeps the sandbox: install it to read mail with that protection.": "Эта система не даёт AppImage включить песочницу Chromium, которая не пускает вредное письмо дальше приложения, к остальному компьютеру. Пакет .deb сохраняет песочницу: установите его, чтобы читать почту с этой защитой.",
 	"How to keep the sandbox": "Как сохранить песочницу",
 	"Do not warn me again on this computer": "Больше не предупреждать на этом компьютере",
+	"Sign in": "Вход",
 };
 
 /** Every update text is wrapped in desktop/main.cjs now (LC-16); nothing is reserved. */

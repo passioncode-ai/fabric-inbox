@@ -1699,3 +1699,23 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** desktop/policy.cjs (`sandboxWarning`), desktop/main.cjs, tests/desktop-menu.test.ts
 - **Product:** unobserved
 - **Today:** Built 2026-10-23 (B-99).
+
+### SCN-084: Sign in through my organization's identity provider
+- **Persona:** P-02
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07; B-02
+- **Entry point:** SCR-01
+- **Preconditions:** The server's Cloudflare Access signs people in through an identity provider (Google Workspace, Okta, Microsoft Entra and others), not only with a code by email.
+- **Steps:**
+  1. Open the app -> Access's sign-in page in the mail window; choose the organization's provider, or Access goes there by itself.
+  2. A Sign in window opens with the provider's page -> sign in there as in a browser.
+  3. The provider hands back -> the Sign in window closes and the mail opens, signed in.
+- **Expected result:** I sign in with my organization's account inside the app; the browser is not involved and the app keeps the sign-in.
+- **Alt paths:** Close the Sign in window -> the mail window stays on Access's sign-in page; choosing again reopens it. A link in a message or the app to any other website still opens in the browser.
+- **UI elements:** the Sign in window (the provider's own page).
+- **States covered:** loading, success
+- **Errors & recovery:** The provider refuses or fails: its own page says so in the Sign in window; closing it and choosing again starts over.
+- **Status:** draft
+- **Coverage:** desktop/policy.cjs (`signInHandoff`, `signInDone`), desktop/main.cjs (`openSignIn`), tests/desktop-policy.test.ts
+- **Product:** unobserved
+- **Today:** Built 2026-10-23 (B-02); not yet walked against a real provider.
