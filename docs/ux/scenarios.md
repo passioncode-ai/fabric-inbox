@@ -110,7 +110,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Alt paths:** Return to the previous surface without causing an external action; preserve confirmed saved work.
 - **UI elements:** SCR-01; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** Denied or expired session stays at sign-in; retry preserves unsent local work.
+- **Errors & recovery:** Denied or expired session stays at sign-in; retry preserves unsent local work: Retry connection (⌘R) reloads a mail window that loaded this server, and a page with unsaved work asks Leave this page? (Leave, Stay) before it goes (B-11). A window that could not reach the server is closed and the setup window offers Retry.
 - **Status:** validated
 - **Coverage:** desktop/main.cjs:30, desktop/main.cjs:74, desktop/setup.html:14
 - **Product:** unobserved

@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 const require = createRequire(import.meta.url);
+const policy = require('../desktop/policy.cjs');
 const { serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, partitionFor, isSetupSender } = require('../desktop/policy.cjs');
 const config = validateConfig({ origin: 'https://mail.example.com', accessOrigin: 'https://team.cloudflareaccess.com' });
 
@@ -115,6 +117,7 @@ test('a failed remote load cannot close recovery when Chromium finishes its erro
     }
     isDestroyed() { return this.destroyed; }
     hide() { this.visible = false; }
+    destroy() { this.destroyed = true; this.visible = false; this.emit('closed'); }
     show() { this.visible = true; }
     focus() {}
     setTitle() {}
@@ -154,7 +157,7 @@ test('a failed remote load cannot close recovery when Chromium finishes its erro
   mail.webContents.emit('did-fail-load', {}, -102, 'connection refused', config.origin, true);
   assert.equal(windows.length, 2);
   const recovery = windows[1];
-  assert.equal(mail.visible, false);
+  assert.equal(mail.destroyed, true, "B-11: a window that could not load is closed, not left hidden");
   mail.webContents.emit('did-finish-load');
   assert.equal(recovery.destroyed, false);
   assert.equal(recovery.visible, true);
@@ -212,4 +215,17 @@ test("the public app carries no personal setup: nothing under desktop/ names a d
     const text = readFileSync(file, "utf8");
     for (const d of domains) assert.equal(text.includes(d), false, `${file} mentions a deployment's domain`);
   }
+});
+
+test("B-11: Retry connection reloads a mail window that loaded this server, so its leave warning holds; otherwise it makes a new one", () => {
+  const config = { origin: "https://mail.example" };
+  assert.equal(policy.retryAction({ alive: true, failed: false, origin: "https://mail.example" }, config), "reload");
+  assert.equal(policy.retryAction({ alive: true, failed: true, origin: "https://mail.example" }, config), "load", "a window that failed to load is made again");
+  assert.equal(policy.retryAction({ alive: false, failed: false, origin: "https://mail.example" }, config), "load");
+  assert.equal(policy.retryAction({ alive: true, failed: false, origin: "https://old.example" }, config), "load", "another server: a new window");
+  assert.equal(policy.retryAction({ alive: true, failed: false, origin: "https://mail.example" }, null), "load");
+  const main = readFileSync(new URL("../desktop/main.cjs", import.meta.url), "utf8");
+  assert.match(main, /retry: retryMail/, "the menu's Retry connection goes through retryMail");
+  assert.match(main, /'will-prevent-unload'/, "the page's leave warning is answered in a dialog, not cancelled silently");
+  assert.match(main, /loadFailed = true;[\s\S]{0,200}win\.destroy\(\);/, "a window that could not load is closed, not left hidden");
 });

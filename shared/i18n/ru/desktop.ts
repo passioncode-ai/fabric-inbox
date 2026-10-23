@@ -385,6 +385,10 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"How to keep the sandbox": "Как сохранить песочницу",
 	"Do not warn me again on this computer": "Больше не предупреждать на этом компьютере",
 	"Sign in": "Вход",
+	"Leave": "Уйти",
+	"Stay": "Остаться",
+	"Leave this page?": "Уйти со страницы?",
+	"Changes you made may not be saved.": "Внесённые изменения могут не сохраниться.",
 };
 
 /** Every update text is wrapped in desktop/main.cjs now (LC-16); nothing is reserved. */

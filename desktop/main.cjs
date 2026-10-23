@@ -54,6 +54,9 @@ const setupURL = pathToFileURL(path.join(__dirname, 'setup.html')).href;
 let config = null;
 let setupWindow = null;
 let mailWindow = null;
+/** B-11: whether the current mail window failed to load, and which server it shows. */
+let mailFailed = false;
+let mailOrigin = null;
 let notice = '';
 // Which step the setup window opens on: '' (welcome or server settings) or 'cloudflare'.
 let setupStart = '';
@@ -251,6 +254,14 @@ function openSignIn(parent, ses, url, snapshot) {
 /** The server's Settings screen, and its Setup page that applies a setup chosen in this app. */
 const SETTINGS_PAGE = '/settings';
 const SETUP_PAGE = '/settings/app/setup';
+/** B-11: Retry connection reloads a mail window that loaded this server (its leave warning holds), else makes one. */
+function retryMail() {
+  const win = mailWindow;
+  if (policy.retryAction({ alive: !!win && !win.isDestroyed(), failed: mailFailed, origin: mailOrigin }, config) === 'reload') {
+    win.show(); win.focus(); win.webContents.reload(); return;
+  }
+  loadMail();
+}
 function loadMail() {
   if (!config) { showSetup(); return; }
   if (mailWindow && !mailWindow.isDestroyed()) { mailWindow.destroy(); }
@@ -273,13 +284,17 @@ function loadMail() {
     show: true, webPreferences: securePreferences({ session: ses, preload: path.join(__dirname, 'mail-preload.cjs') }) });
   let setupOpened = false;
   mailWindow = win;
+  mailFailed = false;
+  mailOrigin = snapshot.origin;
   let loadTimer;
   let loadFailed = false;
   const failure = () => {
     clearTimeout(loadTimer);
     if (quitting || win.isDestroyed() || mailWindow !== win || loadFailed) return;
     loadFailed = true;
-    win.hide();
+    mailFailed = true;
+    // B-11: a window that could not load is closed, not kept hidden; Retry makes a new one.
+    win.destroy();
     showSetup(t('Fabric Inbox could not reach the server. Check your connection, then retry. Mail is not available offline in this version.'));
   };
   const navigate = (kind) => (event, url, _inPlace, isMainFrame) => {
@@ -314,6 +329,15 @@ function loadMail() {
     if (items.length && !win.isDestroyed()) Menu.buildFromTemplate(items).popup({ window: win });
   });
   win.webContents.on('page-title-updated', event => event.preventDefault());
+  // B-11: the page asks before unsaved work is left (a reload, Retry connection, closing the window);
+  // the person answers here, since Electron would otherwise cancel the unload without a word.
+  win.webContents.on('will-prevent-unload', (event) => {
+    if (quitting || win.isDestroyed()) { event.preventDefault(); return; }
+    const choice = dialog.showMessageBoxSync(win, { type: 'question', buttons: [t('Leave'), t('Stay')], defaultId: 1, cancelId: 1,
+      title: t('Leave this page?'), message: t('Leave this page?'), detail: t('Changes you made may not be saved.') });
+    logEvent({ event: 'leave_warning', outcome: choice === 0 ? 'left' : 'stayed' });
+    if (choice === 0) event.preventDefault();
+  });
   win.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
     if (mainFrame && code !== -3) failure();
   });
@@ -912,7 +936,7 @@ function installIPC() {
       await saveConfig(next); track('server_connected', { method: 'entered' }); loadMail(); return { ok: true };
     } catch (error) { return { ok: false, error: error instanceof Error && !error.code ? t.text(error.message) : t('The server setting could not be saved. Try again.') }; }
   });
-  ipcMain.handle('fabric:setup-retry', event => { trusted(event); loadMail(); return { ok: true }; });
+  ipcMain.handle('fabric:setup-retry', event => { trusted(event); retryMail(); return { ok: true }; });
   // The interface language (L10N-01): the first-run window reads it; the mail window reads this
   // Mac's choice and sets it from Settings → App → Language, and the menus follow at once.
   ipcMain.handle('fabric:setup-locale', event => { trusted(event); return i18n.forWindow(); });
@@ -1023,7 +1047,7 @@ function installMenu() {
     newMail: { checked: !!(mailNotifier && mailNotifier.enabled()), enabled: !!mailNotifier, click: (item) => { if (mailNotifier) void mailNotifier.setEnabled(item.checked).then(installMenu); } },
     openSettings, showServer: () => showSetup(), showCloudflare: () => showSetup('', 'cloudflare'),
     connectGmail: () => { if (config) void openExternal(policy.gmailConnectURL(config), true); else showSetup(t('Set the server address before connecting Gmail.')); },
-    retry: loadMail,
+    retry: retryMail,
     console: consoleAvailable() ? openConsole : null,
   })));
 }
