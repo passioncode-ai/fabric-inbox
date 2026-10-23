@@ -355,7 +355,17 @@ your computer shows its health, the reply agents' events and the model calls the
 Only a person or a registered agent key reaches them; anyone else gets 401 with an empty body from
 the Worker (in front of it, Cloudflare Access sends a request with no credential to its sign-in page
 with a 302). From 0.29.3 a request another site's page makes (a foreign `Origin`, or
-`Sec-Fetch-Site: cross-site`) gets 403, even with the person's sign-in (B-150). A key
+`Sec-Fetch-Site: cross-site`) gets 403, even with the person's sign-in (B-150).
+
+From 0.29.4 these three routes have an **Access application of their own**, `Fabric Inbox service
+<audience>`, on `/.well-known/fabric-service` and `/fabric/v1` only: it carries only the agents' Service
+Auth policy and answers a request with no key with 401 instead of the sign-in redirect, so a host can
+tell a refusal from a moved page; every other path keeps the person's sign-in. The server makes it
+itself the first time an agent key reads one of these routes (and only when it has its Cloudflare
+token), keeps its audience in R2 (`config/fabric-service-access.json`) and accepts a token of that
+audience on these routes alone (`workers/mcp/service-access.ts`). The last key's revocation deletes it.
+Access's 401 carries its own HTML page, so a host that wants an empty body from the well-known route
+still sees one (asked of the contract, B-150). A key
 reaches nothing else of the app this way (`identityMayUse`), and the MCP surface keeps its own keys
 (`auth: "own"`), so the descriptor's key is never an MCP caller.
 

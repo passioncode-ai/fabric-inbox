@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { identityMayUse, normaliseKeys, principalFor, updateAgentKeys, readAgentKeys, type AgentKey } from "../workers/mcp/keys";
-import { AgentAccess, policyName } from "../workers/mcp/access";
+import { AgentAccess, policyName, serviceAppName } from "../workers/mcp/access";
+import { audienceFor, ensureServiceApp, serviceAudience, forgetServiceAudience, SERVICE_ACCESS_KEY } from "../workers/mcp/service-access";
+import { provisionServiceAccess } from "../workers/routes/fabric-service";
 import { CloudflareApi } from "../workers/routing/cloudflare-api";
 
 const key = (over: Partial<AgentKey> = {}): AgentKey => ({
@@ -70,6 +72,7 @@ function fakeCloudflare(opts: { failPolicy?: boolean; dropOwnerOnPut?: boolean }
     policies: [] as { id: string; name: string; decision: string; include: Record<string, unknown>[] }[],
     tokens: [] as { id: string; client_id: string }[],
     appPuts: [] as Record<string, unknown>[],
+    appPosts: [] as Record<string, any>[],
   };
   let n = 0;
   const ok = (result: unknown) => new Response(JSON.stringify({ success: true, result }), { status: 200 });
@@ -79,12 +82,17 @@ function fakeCloudflare(opts: { failPolicy?: boolean; dropOwnerOnPut?: boolean }
     const method = init?.method ?? "GET";
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     if (path === "/accounts/acc/access/apps" && method === "GET") return ok(state.apps);
+    if (path === "/accounts/acc/access/apps" && method === "POST") { const a = { id: `app${++n}`, aud: `svc-aud-${n}`, ...body }; state.apps.push(a); state.appPosts.push(body); return ok(a); }
+    if (/^\/accounts\/acc\/access\/apps\/app\d+$/.test(path) && path !== "/accounts/acc/access/apps/app1" && method === "DELETE") {
+      const id = path.split("/").pop(); if (state.policies.length === 0) return new Response("{}", { status: 500 }); state.apps = state.apps.filter((a) => a.id !== id); return ok({ id }); }
     if (path === "/accounts/acc/access/policies" && method === "GET") return ok(state.policies);
     if (path === "/accounts/acc/access/service_tokens" && method === "POST") { const t = { id: `tok${++n}`, client_id: `cid${n}.access`, client_secret: `secret${n}`, name: body.name, expires_at: "2027-01-01T00:00:00Z" }; state.tokens.push(t); return ok(t); }
     if (path.startsWith("/accounts/acc/access/service_tokens/") && method === "DELETE") { const id = path.split("/").pop(); state.tokens = state.tokens.filter((t) => t.id !== id); return ok({ id }); }
     if (path === "/accounts/acc/access/policies" && method === "POST") { if (opts.failPolicy) return new Response(JSON.stringify({ success: false, errors: [{ code: 12130, message: "policy refused" }] }), { status: 400 }); const p = { id: `pol${++n}`, ...body }; state.policies.push(p); return ok(p); }
     if (path.startsWith("/accounts/acc/access/policies/") && method === "PUT") { const id = path.split("/").pop(); const p = state.policies.find((x) => x.id === id)!; Object.assign(p, body); return ok(p); }
-    if (path.startsWith("/accounts/acc/access/policies/") && method === "DELETE") { const id = path.split("/").pop(); state.policies = state.policies.filter((x) => x.id !== id); return ok({ id }); }
+    if (path.startsWith("/accounts/acc/access/policies/") && method === "DELETE") { const id = path.split("/").pop();
+      if (state.apps.some((a) => a.id !== "app1" && (a.policies ?? []).some((p) => p.id === id))) return new Response(JSON.stringify({ success: false, errors: [{ message: "policy in use" }] }), { status: 409 });
+      state.policies = state.policies.filter((x) => x.id !== id); return ok({ id }); }
     if (path === "/accounts/acc/access/apps/app1" && method === "GET") return ok(state.apps[0]);
     if (path === "/accounts/acc/access/apps/app1" && method === "PUT") {
       state.appPuts.push(body);
@@ -93,7 +101,8 @@ function fakeCloudflare(opts: { failPolicy?: boolean; dropOwnerOnPut?: boolean }
     }
     return new Response(JSON.stringify({ success: false, errors: [{ message: `unexpected ${method} ${path}` }] }), { status: 404 });
   };
-  return { state, access: new AgentAccess(new CloudflareApi("t", fetcher as typeof fetch), { CLOUDFLARE_ACCOUNT_ID: "acc", POLICY_AUD: "aud-123456789012345" }) };
+  const api = new CloudflareApi("t", fetcher as typeof fetch);
+  return { state, api, access: new AgentAccess(api, { CLOUDFLARE_ACCOUNT_ID: "acc", POLICY_AUD: "aud-123456789012345" }) };
 }
 
 test("a key's token is let through by one Service Auth policy on the server's own app, keeping its other policies and settings (AP-7)", async () => {
@@ -162,4 +171,50 @@ test("a bare 403 from Cloudflare names the permission to add, not just the statu
   const api = new CloudflareApi("t", (async () => new Response(JSON.stringify({ success: false, errors: [{ code: 12006 }] }), { status: 403 })) as typeof fetch);
   await assert.rejects(api.call("/accounts/a/access/service_tokens", { method: "POST", what: "manage agent keys (Access: Service Tokens: Edit)" }),
     /not allowed to manage agent keys \(Access: Service Tokens: Edit\).*code 12006/);
+});
+
+test("B-150: the fabric routes get an Access application of their own, agent keys only, 401 instead of a sign-in redirect", async () => {
+  const { state, api, access } = fakeCloudflare();
+  const aud = "aud-123456789012345";
+  assert.deepEqual(await ensureServiceApp(api, "acc", aud, "x.workers.dev"), { state: "no_keys" }, "no key, no policy to attach");
+  const key = await access.create("Fabric Dashboards", "1y");
+  const made = await ensureServiceApp(api, "acc", aud, "x.workers.dev");
+  assert.equal(made.state, "created");
+  const body = state.appPosts[0]!;
+  assert.equal(body.name, serviceAppName(aud));
+  assert.deepEqual(body.self_hosted_domains, ["x.workers.dev/.well-known/fabric-service", "x.workers.dev/fabric/v1"]);
+  assert.equal(body.service_auth_401_redirect, true);
+  assert.equal(body.read_service_tokens_from_header, "Authorization");
+  assert.deepEqual(body.policies, [{ id: state.policies[0]!.id, precedence: 1 }], "only the agents' Service Auth policy, no person");
+  assert.equal((await ensureServiceApp(api, "acc", aud, "x.workers.dev")).state, "already");
+  assert.equal(state.appPosts.length, 1);
+  // The last key's revocation removes the service application first, then the policy it used.
+  await access.revoke(key.id);
+  assert.deepEqual(state.apps.map((a) => a.id), ["app1"]);
+  assert.deepEqual(state.policies, []);
+});
+
+test("B-150: only a key that came through the server's own application starts the provisioning, and R2 keeps the audience", async () => {
+  const objects = new Map<string, string>();
+  const bucket = { get: async (k: string) => (objects.has(k) ? { json: async () => JSON.parse(objects.get(k)!) } : null), put: async (k: string, v: string) => { objects.set(k, v); } } as unknown as R2Bucket;
+  const env = { POLICY_AUD: "aud-1", BUCKET: bucket } as any;
+  assert.equal(await provisionServiceAccess(env, "x.workers.dev", { email: "owner@owner.example", aud: ["aud-1"] }), "not_a_key");
+  assert.equal(await provisionServiceAccess(env, "x.workers.dev", { common_name: "k.access", aud: ["svc-aud"] }), "already");
+  assert.equal(await provisionServiceAccess(env, "x.workers.dev", { common_name: "k.access", aud: ["aud-1"] }, 1), "no_token");
+  assert.equal(await provisionServiceAccess(env, "x.workers.dev", { common_name: "k.access", aud: ["aud-1"] }, 2), "waiting", "tried at most once in 10 minutes");
+  objects.set(SERVICE_ACCESS_KEY, JSON.stringify({ aud: "svc-aud", appId: "a", createdAt: "2026-10-23T00:00:00Z" }));
+  forgetServiceAudience();
+  assert.equal(await serviceAudience(bucket, 10), "svc-aud");
+  objects.delete(SERVICE_ACCESS_KEY);
+  assert.equal(await serviceAudience(bucket, 20), "svc-aud", "cached for a minute");
+  assert.equal(await serviceAudience(bucket, 70_000), null);
+});
+
+test("B-150: a token of the service application is checked against its audience on the fabric routes only", async () => {
+  const lookup = async () => "svc-aud";
+  assert.equal(await audienceFor("/fabric/v1/usage", ["svc-aud"], "aud-1", lookup), "svc-aud");
+  assert.equal(await audienceFor("/.well-known/fabric-service", "svc-aud", "aud-1", lookup), "svc-aud");
+  assert.equal(await audienceFor("/fabric/v1/events", ["aud-1"], "aud-1", async () => { throw new Error("not read"); }), "aud-1", "the server's own token needs no lookup");
+  for (const p of ["/api/inbox", "/mcp", "/fabric/v1/login-code", "/"]) assert.equal(await audienceFor(p, ["svc-aud"], "aud-1", lookup), "aud-1", p);
+  assert.equal(await audienceFor("/fabric/v1/usage", ["svc-aud"], "aud-1", async () => null), "aud-1", "no service application: only the server's own");
 });

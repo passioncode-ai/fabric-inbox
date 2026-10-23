@@ -2,8 +2,9 @@ import { Hono, type Context } from "hono";
 import { version } from "../../package.json";
 import type { Env } from "../types";
 import { BUILD_ID, SOURCE } from "../../shared/build";
-import { cloudflareApi } from "../routing/cloudflare-api";
+import { accountIdFor, cloudflareApi } from "../routing/cloudflare-api";
 import { principalFor, readAgentKeys, type AccessClaims } from "../mcp/keys";
+import { ensureServiceApp, forgetServiceAudience, readServiceAccess, SERVICE_ACCESS_KEY } from "../mcp/service-access";
 import type { ModelUsageRow } from "../agents/registry";
 
 /**
@@ -36,6 +37,39 @@ async function allowed(c: C): Promise<boolean> {
   const keys = claims.common_name ? await readAgentKeys(c.env.BUCKET).catch(() => []) : [];
   return principalFor(claims, keys) !== null;
 }
+
+let provisioning: { at: number } | null = null;
+/**
+ * B-150: when an agent key reads these routes through the server's own Access application, the
+ * routes' own application is made (once; a failure is tried again after 10 minutes), so a request
+ * with no credential gets Access's 401 here instead of a 302 to the sign-in page.
+ */
+export async function provisionServiceAccess(env: Env, host: string, claims: AccessClaims | undefined, now = Date.now()): Promise<string> {
+  if (!claims?.common_name || !env.POLICY_AUD) return "not_a_key";
+  const aud: unknown[] = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+  if (!aud.includes(env.POLICY_AUD)) return "already";
+  if (provisioning && now - provisioning.at < 600_000) return "waiting";
+  provisioning = { at: now };
+  const api = cloudflareApi(env);
+  if (!api) return "no_token";
+  try {
+    const known = await readServiceAccess(env.BUCKET);
+    const result = await ensureServiceApp(api, await accountIdFor(api, env), env.POLICY_AUD, host);
+    if (result.state === "no_keys") return "no_keys";
+    if (known?.aud !== result.access.aud) await env.BUCKET.put(SERVICE_ACCESS_KEY, JSON.stringify(result.access));
+    forgetServiceAudience();
+    console.log(JSON.stringify({ event: "fabric_service_access", state: result.state }));
+    return result.state;
+  } catch (error) {
+    console.error(JSON.stringify({ event: "fabric_service_access_failed", error: (error as Error).message.slice(0, 200) }));
+    return "failed";
+  }
+}
+
+const provision = (c: C) => {
+  const work = provisionServiceAccess(c.env, new URL(c.req.url).host, c.get("access"));
+  try { c.executionCtx.waitUntil(work); } catch { void work; }
+};
 
 const refused = () => new Response(null, { status: 401, headers: { "Cache-Control": "no-store" } });
 
@@ -105,6 +139,7 @@ fabricServiceRouter.get(WELL_KNOWN_PATH, async (c) => {
   const blocked = foreign(c);
   if (blocked) return blocked;
   if (!(await allowed(c))) return refused();
+  provision(c);
   c.header("Cache-Control", "no-store");
   return c.json(await wellKnownDocument(c.env));
 });
@@ -113,6 +148,7 @@ fabricServiceRouter.get(EVENTS_PATH, async (c) => {
   const blocked = foreign(c);
   if (blocked) return blocked;
   if (!(await allowed(c))) return refused();
+  provision(c);
   c.header("Cache-Control", "no-store");
   if (!c.env.AGENT_REGISTRY) return c.json({ events: [], cursor: c.req.query("after") || null });
   const after = c.req.query("after");
@@ -155,6 +191,7 @@ fabricServiceRouter.get(USAGE_PATH, async (c) => {
   const blocked = foreign(c);
   if (blocked) return blocked;
   if (!(await allowed(c))) return refused();
+  provision(c);
   c.header("Cache-Control", "no-store");
   const now = new Date();
   const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 30)).toISOString();
