@@ -15,7 +15,7 @@ import {
   type RuleEmail,
   type Analysis,
 } from "./policy";
-import { processRun, ActionRejected } from "./engine";
+import { processRun, ActionRejected, refusalsKnown } from "./engine";
 import { invokeTool } from "./mcp";
 import { parseRemoteAccount } from "../../shared/mail/accounts";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
@@ -438,11 +438,11 @@ export class AutomationDO extends DurableObject<Env> {
       const provider = this.env.GMAIL_ACCOUNTS.getByName("workspace");
       const id = remote.id;
       if (action.type === "archive") {
-        await provider.archive(id, email.id);
+        await refusalsKnown(() => provider.archive(id, email.id));
         return msg("Archived");
       }
       if (action.type === "mark_read") {
-        await provider.setRead(id, email.id, true);
+        await refusalsKnown(() => provider.setRead(id, email.id, true));
         return msg("Marked read");
       }
       const input = {
@@ -467,10 +467,8 @@ export class AutomationDO extends DurableObject<Env> {
         throw new ActionRejected(
           msg("AI did not produce a draft; nothing was saved"),
         );
-      const result =
-        action.type === "draft"
-          ? await provider.createDraft(id, input)
-          : await provider.send(id, input);
+      const result = await refusalsKnown(() =>
+        action.type === "draft" ? provider.createDraft(id, input) : provider.send(id, input));
       if (result.status !== "accepted")
         throw new Error("Provider did not confirm the action");
       return action.type === "draft"
@@ -478,12 +476,13 @@ export class AutomationDO extends DurableObject<Env> {
         : remote.provider === "gmail" ? msg("Forward accepted by Gmail") : msg("Forward accepted by the mail server");
     }
     const stub = this.env.MAILBOX.get(this.env.MAILBOX.idFromName(run.account));
+    // B-15: a message gone from the mailbox meanwhile changes nothing, so it is not reported done.
     if (action.type === "archive") {
-      await stub.moveEmail(email.id, "archive");
+      if (!(await stub.moveEmail(email.id, "archive"))) throw new ActionRejected(msg("The message is no longer in this mailbox; nothing was changed"));
       return msg("Archived");
     }
     if (action.type === "mark_read") {
-      await stub.updateEmail(email.id, { read: true });
+      if (!(await stub.updateEmail(email.id, { read: true }))) throw new ActionRejected(msg("The message is no longer in this mailbox; nothing was changed"));
       return msg("Marked read");
     }
     if (action.type === "draft") {
@@ -521,7 +520,9 @@ export class AutomationDO extends DurableObject<Env> {
         html: email.body,
       },
     });
-    if ("error" in result || result.status !== "accepted")
+    // B-15: a refusal before sending is known; only an answer that is not "accepted" leaves it uncertain.
+    if ("error" in result) throw new ActionRejected(msg("The forward was refused: {reason}", { reason: result.error }));
+    if (result.status !== "accepted")
       throw new Error("Forward was not accepted");
     return msg("Forward accepted by email provider");
   }
