@@ -40,7 +40,7 @@ export function validateNewKey(raw: unknown): { ok: true; value: NewKeyInput } |
   const accounts: string[] = [];
   for (const a of asked) {
     const id = normaliseAccountId(a);
-    if (!id) return { ok: false, error: msg('{value} is not an account: use "cloudflare:<address>", "gmail:<id>", "imap:<id>" or "outlook:<id>".', { value: JSON.stringify(a.slice(0, 80)) }) };
+    if (!id) return { ok: false, error: msg('{value} is not an account: use "cloudflare:<address>", "domain:<domain>", "gmail:<id>", "imap:<id>" or "outlook:<id>".', { value: JSON.stringify(a.slice(0, 80)) }) };
     if (!accounts.includes(id)) accounts.push(id);
   }
   return { ok: true, value: { ...rest, accounts } };

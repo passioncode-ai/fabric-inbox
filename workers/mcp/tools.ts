@@ -1690,7 +1690,7 @@ const createCredentialKey = defineTool({
 
 const listAgentKeys = defineTool({
   name: "list_agent_keys", title: "List agent keys", level: "admin", readOnly: true,
-  description: "The agent keys of this server, without secrets: each key's name, level, how it sends and its daily limit, the mailboxes it is limited to, when it was made and when it expires, and the address agents connect to. Keys are made and revoked by a person in Settings → Agent access.",
+  description: "The agent keys of this server, without secrets: each key's name, level, how it sends and its daily limit, the mailboxes it is limited to (\"domain:<domain>\" is every address on that domain, later ones too), when it was made and when it expires, and the address agents connect to. Keys are made and revoked by a person in Settings → Agent access.",
   input: {},
   routes: ["GET /api/agent-keys"],
   async call(_a, ctx) {

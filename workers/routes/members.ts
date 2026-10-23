@@ -47,7 +47,8 @@ membersRouter.put("/api/members/:email", async (c) => {
   if (!parsed.success) return c.json({ error: msg("Choose Administrator or Member.") }, 400);
   let accounts: string[] | null = null;
   if (parsed.data.role === "member") {
-    accounts = [...new Set((parsed.data.accounts ?? []).map(normaliseAccountId).filter((a): a is string => !!a))];
+    // A member names mailboxes only: a whole-domain entry (B-36, agent keys) is not a member's.
+    accounts = [...new Set((parsed.data.accounts ?? []).map(normaliseAccountId).filter((a): a is string => !!a && !a.startsWith("domain:")))];
     if (!accounts.length) return c.json({ error: msg("Choose at least one mailbox for a member.") }, 400);
   }
   try {

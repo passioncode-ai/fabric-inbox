@@ -41,9 +41,13 @@ export const JOURNAL = "journal";
 
 export const sendingText = (k: Pick<AgentKey, "level" | "send" | "dailySendLimit">, t: T = englishT) =>
   k.level === "read" ? t("Sends nothing") : k.level === "admin" || k.send === "send" ? t("Can send, {n} a day", { n: k.dailySendLimit }) : t("Drafts only");
-/** Which mailboxes a key reaches (AP-11): the whole workspace, or the ones it names. */
+/** Which mailboxes a key reaches (AP-11): the whole workspace, or the ones it names; a domain (B-36) takes in its later addresses too. */
 export const scopeText = (k: Pick<AgentKey, "accounts">, t: T = englishT) =>
-  !k.accounts ? t("All mailboxes") : k.accounts.length ? t("Only {mailboxes}", { mailboxes: t.list(k.accounts.map((a) => a.replace(/^cloudflare:/, ""))) }) : t("No mailbox");
+  !k.accounts ? t("All mailboxes") : k.accounts.length ? t("Only {mailboxes}", { mailboxes: t.list(k.accounts.map((a) =>
+    a.startsWith("domain:") ? t("every address at {domain}", { domain: a.slice("domain:".length) }) : a.replace(/^cloudflare:/, ""))) }) : t("No mailbox");
+/** The domains of the Cloudflare addresses listed, each once, for a whole-domain limit (B-36). */
+export const mailboxDomains = (mailboxes: readonly { id: string }[]) =>
+  [...new Set(mailboxes.filter((m) => m.id.startsWith("cloudflare:")).map((m) => m.id.slice(m.id.lastIndexOf("@") + 1)))].sort();
 const day = (iso: string | null, t: T) => (iso ? t.date(iso, { year: "numeric", month: "short", day: "numeric" }) : t("never"));
 const levelTitle = (level: Level, t: T) => levels(t).find((l) => l.id === level)?.title ?? level;
 
@@ -301,6 +305,16 @@ export function NewKeyDialog({ open, onClose, onDone }: { open: boolean; onClose
                 <div style={{ marginLeft: 24 }}>
                   {mailboxes.isPending && <p role="status" className="fi-hint">{t("Loading mailboxes…")}</p>}
                   {mailboxes.isError && <LoadFailure what={t("Mailboxes")} error={mailboxes.error} onRetry={() => void mailboxes.refetch()} retrying={mailboxes.isFetching} />}
+                  {mailboxDomains(mailboxes.data?.accounts ?? []).map((domain) => {
+                    const id = `domain:${domain}`;
+                    return (
+                      <label key={id} className="fi-check">
+                        <input type="checkbox" checked={form.accounts.includes(id)}
+                          onChange={(e) => setForm({ ...form, accounts: e.target.checked ? [...form.accounts, id] : form.accounts.filter((a) => a !== id) })} />
+                        <span><strong>{t("Every address at {domain}", { domain })}</strong> {t("(and the ones made there later)")}</span>
+                      </label>
+                    );
+                  })}
                   {mailboxes.data?.accounts.map((m) => (
                     <label key={m.id} className="fi-check">
                       <input type="checkbox" checked={form.accounts.includes(m.id)}

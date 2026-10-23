@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { normaliseKeys, principalFor, type AgentKey, type Principal } from "../workers/mcp/keys";
 import { runTool, toolsFor, type Api, type ApiResponse, type Ledger } from "../workers/mcp/protocol";
-import { normaliseAccountId, scopedApi, toolFitsScope } from "../workers/mcp/scope";
+import { describeScope, expandDomains, narrowPrincipal, normaliseAccountId, scopedApi, toolFitsScope } from "../workers/mcp/scope";
 import { TOOLS } from "../workers/mcp/tools";
 import { validateNewKey } from "../workers/routes/agent-keys";
 
@@ -245,4 +245,31 @@ test("export_setup returns the setup itself, not the bytes of its file (bug hunt
   const tool = TOOLS.find((t) => t.name === "export_setup")!;
   const out = await (tool as any).call({ fromCloudflare: false }, { api });
   assert.deepEqual(out, setup);
+});
+
+test("B-36: a key may name a whole domain; it becomes the addresses on exactly that domain, later ones too, and nothing else", async () => {
+  assert.equal(normaliseAccountId("domain:Owner.Example"), "domain:owner.example");
+  for (const bad of ["domain:", "domain:owner", "domain:a/b.example", "domain:a%40b.example", "domain:a,b.example", "domain:x@owner.example"])
+    assert.equal(normaliseAccountId(bad), null, bad);
+  const made = validateNewKey({ name: "Domain agent", level: "mail", accounts: ["domain:owner.example", "gmail:g1"] });
+  assert.ok(made.ok);
+  assert.deepEqual(made.ok && made.value.accounts, ["domain:owner.example", "gmail:g1"]);
+  assert.ok(!validateNewKey({ name: "Ops", level: "admin", accounts: ["domain:owner.example"] }).ok, "an Admin key stays workspace-wide");
+  const addresses = ["research@owner.example", "Contact@owner.example", "a@sub.owner.example", "b@other.example"];
+  assert.deepEqual(expandDomains(["domain:owner.example", "gmail:g1"], addresses), ["gmail:g1", RESEARCH, "cloudflare:contact@owner.example"],
+    "exactly that domain: not a subdomain, not another domain; Gmail entries stay");
+  assert.deepEqual(expandDomains(["domain:owner.example"], [...addresses, "later@owner.example"]).at(-1), "cloudflare:later@owner.example", "an address made later is in");
+  assert.deepEqual(expandDomains(["domain:empty.example"], addresses), [], "a domain with no address reaches nothing (fails closed)");
+  assert.deepEqual(expandDomains([RESEARCH, "domain:owner.example"], ["research@owner.example"]), [RESEARCH], "no duplicate");
+  assert.equal(describeScope(["domain:owner.example", RESEARCH]), "every address at owner.example, research@owner.example");
+  // After expansion the scoped API sees concrete mailboxes only: the other domain stays refused.
+  const { api, calls } = fakeApi();
+  const s = scopedApi(api, expandDomains(["domain:owner.example"], addresses));
+  await s.request("GET", "/api/v1/mailboxes/contact%40owner.example/emails");
+  await assert.rejects(s.request("GET", "/api/v1/mailboxes/b%40other.example/emails"), (e: Error & { status?: number }) => e.status === 403);
+  await assert.rejects(s.request("GET", "/api/v1/mailboxes/a%40sub.owner.example/emails"), (e: Error & { status?: number }) => e.status === 403);
+  assert.equal(calls.length, 1);
+  // A narrowing header cannot widen a limited key to a domain it was not given.
+  const limited = { kind: "agent", label: "k", level: "read", send: "drafts", dailySendLimit: 0, keyId: "k", accounts: [RESEARCH] } as Principal;
+  assert.deepEqual(narrowPrincipal(limited, "domain:other.example")?.accounts, []);
 });

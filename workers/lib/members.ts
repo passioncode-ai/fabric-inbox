@@ -44,7 +44,7 @@ function normaliseMember(raw: unknown): Member | null {
   if (!email) return null;
   // An unknown role is the safest one; a member with a damaged list reaches nothing.
   const role: Role = m.role === "admin" ? "admin" : "member";
-  return { email, role, accounts: role === "admin" ? null : normaliseAccounts(m.accounts) ?? [],
+  return { email, role, accounts: role === "admin" ? null : (normaliseAccounts(m.accounts) ?? []).filter((a) => !a.startsWith("domain:")),
     addedAt: typeof m.addedAt === "string" ? m.addedAt : new Date(0).toISOString() };
 }
 

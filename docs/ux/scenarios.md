@@ -83,6 +83,10 @@
 | SCN-078 | Work through my coding agent in the console | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
 | SCN-079 | See which conversations still need a reply | Find and handle a conversation | P-01 | ST-002, FLW-02 | draft | — |
 | SCN-080 | Be told when new mail arrives | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
+| SCN-081 | Share the server with other people | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
+| SCN-082 | Work as a member of a shared server | Handle mail across accounts | P-02 | ST-001 | draft | — |
+| SCN-083 | Start the Linux AppImage where the sandbox is off | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
+| SCN-084 | Sign in through my organization's identity provider | Resume and manage preferences | P-02 | ST-007, FLW-07 | draft | — |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -946,10 +950,10 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** The server has its Cloudflare token with Access: Service Tokens and Access: Apps and Policies.
 - **Steps:**
   1. Open Agent access from the sidebar -> what it is, and that these are not the reply agents.
-  2. Name the agent, choose Read, Mail or Admin, and for Mail or Admin Drafts only or Can send with a daily number; for Read or Mail choose All mailboxes or Only these mailboxes and tick them (an Admin key reaches every mailbox); choose when it expires; Make key.
+  2. Name the agent, choose Read, Mail or Admin, and for Mail or Admin Drafts only or Can send with a daily number; for Read or Mail choose All mailboxes or Only these mailboxes and tick them, or tick Every address at a domain, which takes in the addresses made there later too (B-36; an Admin key reaches every mailbox); choose when it expires; Make key.
   3. The key's Client ID and Client Secret, the Claude Code command and the JSON for other clients are shown once, each with Copy; I saved it closes them.
 - **Expected result:** The agent connects to /mcp with the two headers and sees only the tools its level and sending allow; a key limited to mailboxes sees only the tools that stay inside a mailbox, and is refused, with the mailboxes it may use named, on any other mailbox or shared setting. The key list shows each key's mailboxes (All mailboxes, or Only ...).
-- **Alt paths:** The server has no Cloudflare token: the form is replaced by where to add one. Only these mailboxes with none ticked: Make key stays off. A limited key whose only mailbox is gone gets an empty list with the reason, not a failure.
+- **Alt paths:** The server has no Cloudflare token: the form is replaced by where to add one. Only these mailboxes with none ticked: Make key stays off. A limited key whose only mailbox is gone gets an empty list with the reason, not a failure. A domain limit reaches exactly that domain's Cloudflare addresses at each call, not its subdomains; a domain with no address yet reaches nothing.
 - **UI elements:** SCR-15 (name, Level, Sending, Mailboxes, Expires after, Make key, the one-time secret panel with Copy).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** A token without the permission names it; a key Cloudflare made but the server could not save is deleted again, and the error says to try again.
