@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.32.1 (2026-10-23)
+
+- **Big messages arrive faster and safely.** The files of an incoming message are now saved several
+  at a time, and a message is kept with at most 100 of them, so one made of hundreds of tiny parts
+  cannot stop its own delivery (B-34).
+- **Connected accounts keep their records small.** Gmail, IMAP and Outlook accounts forget, after 90
+  days, which old messages they already handed to your rules and agents (B-34).
+
 ## 0.32.0 (2026-10-23)
 
 - **Approve what an agent cannot undo.** A key can now ask you first: tick Ask me to approve what it

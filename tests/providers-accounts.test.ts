@@ -640,3 +640,30 @@ test("B-06: an account past its sending budget is refused before anything is res
   await service.disconnect("a");
   assert.equal(await store.get("sendlog:a"), undefined, "the budget goes with the account");
 });
+test("B-34: markers of events delivered long ago are forgotten, a page at a time; pending, set-aside and recent ones stay", async () => {
+  const { EVENT_KEEP_MS } = await import("../workers/providers/account-service");
+  const { service, store } = await fixture(async () => json({}));
+  const now = Date.now();
+  await store.put("event:a:old", { accountId: "a", messageId: "old", delivered: true, deliveredAt: now - EVENT_KEEP_MS - 1000 });
+  await store.put("event:a:recent", { accountId: "a", messageId: "recent", delivered: true, deliveredAt: now - 1000 });
+  await store.put("event:a:legacy", { accountId: "a", messageId: "legacy", delivered: true });
+  await store.put("event:a:waiting", { accountId: "a", messageId: "waiting", delivered: false });
+  await store.put("pending:event:a:waiting", { accountId: "a", messageId: "waiting", delivered: false });
+  await store.put("dead:event:a:gone", { accountId: "a", messageId: "gone", delivered: false });
+  const first = await service.pruneDeliveredEvents(now, 2);
+  assert.equal(first.done, false, "a page of two leaves more");
+  let total = { removed: first.removed, stamped: first.stamped };
+  for (let i = 0; i < 5; i++) {
+    const r = await service.pruneDeliveredEvents(now, 2);
+    total = { removed: total.removed + r.removed, stamped: total.stamped + r.stamped };
+    if (r.done) break;
+  }
+  assert.deepEqual(total, { removed: 1, stamped: 1 });
+  assert.equal(await store.get("event:a:old"), undefined);
+  assert.ok(await store.get("event:a:recent"));
+  assert.equal((await store.get<{ deliveredAt: number }>("event:a:legacy"))?.deliveredAt, now, "a marker from before is stamped, not dropped");
+  for (const key of ["event:a:waiting", "pending:event:a:waiting", "dead:event:a:gone"]) assert.ok(await store.get(key), key);
+  assert.equal(await store.get("events-prune:cursor"), undefined, "a finished pass starts over next time");
+  const later = await service.pruneDeliveredEvents(now + EVENT_KEEP_MS + 2000, 100);
+  assert.equal(later.removed, 2, "a keep later the stamped and the recent ones go too");
+});

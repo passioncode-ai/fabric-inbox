@@ -128,6 +128,8 @@ interface PendingEvent {
   accountId: string;
   messageId: string;
   delivered: boolean;
+  /** B-34: when it was handed on; a marker kept past EVENT_KEEP_MS is forgotten (`pruneDeliveredEvents`). */
+  deliveredAt?: number;
   /** Failed deliveries so far, when the next may run, and the last error (reliability audit M3). */
   attempts?: number;
   nextAt?: number;
@@ -212,6 +214,9 @@ function hiddenByFirstLayout(account: AccountRecord, row: StoredMessage) {
   return account.provider === "gmail" && account.sync.mode === "history" && row.generation !== account.sync.generation;
 }
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{1,128}$/;
+/** B-34: how long the marker of an event handed on is kept to recognise a replay of it. */
+export const EVENT_KEEP_MS = 90 * 86_400_000;
+const EVENT_PRUNE_CURSOR = "events-prune:cursor";
 /**
  * B-06: one account's sending budget (shared/mail/send-limits.ts). A send past it is refused before
  * anything is reserved or handed over, so the same attempt may be sent again later; a send the
@@ -1358,7 +1363,7 @@ export class AccountService {
         } catch (error) {
           if (error instanceof ProviderError && error.status === 404) {
             await this.store.transaction(async (tx) => {
-              await tx.put(key.slice("pending:".length), { ...event, delivered: true });
+              await tx.put(key.slice("pending:".length), { ...event, delivered: true, deliveredAt: now });
               await tx.delete(key);
             });
             continue;
@@ -1382,7 +1387,7 @@ export class AccountService {
         }) : false;
         if (verdict && discarded) {
           await this.store.transaction(async (tx) => {
-            await tx.put(key.slice("pending:".length), { ...event, delivered: true });
+            await tx.put(key.slice("pending:".length), { ...event, delivered: true, deliveredAt: now });
             await tx.delete(key);
           });
           result.discarded++;
@@ -1401,7 +1406,7 @@ export class AccountService {
           date: message.date || new Date(message.timestamp || Date.now()).toISOString(),
         });
         await this.store.transaction(async (tx) => {
-          await tx.put(key.slice("pending:".length), { ...event, delivered: true });
+          await tx.put(key.slice("pending:".length), { ...event, delivered: true, deliveredAt: now });
           await tx.delete(key);
         });
         result.delivered++;
@@ -1422,6 +1427,28 @@ export class AccountService {
       }
     }
     return result;
+  }
+  /**
+   * B-34: forgets the markers of events handed on more than EVENT_KEEP_MS ago, at most `batch` keys a
+   * call, from where the last call stopped; a marker from before `deliveredAt` existed is stamped now
+   * and forgotten one keep later. Pending and set-aside events are never touched. A replay that old
+   * does not happen: Gmail's history is days long, Outlook takes only mail newer than its start, and an
+   * IMAP message's id carries its folder's UIDVALIDITY. True once a whole pass has ended.
+   */
+  async pruneDeliveredEvents(now = Date.now(), batch = 500): Promise<{ removed: number; stamped: number; done: boolean }> {
+    const after = await this.store.get<string>(EVENT_PRUNE_CURSOR);
+    const rows = await this.store.list<PendingEvent>({ prefix: "event:", limit: batch, ...(after ? { startAfter: after } : {}) });
+    let removed = 0, stamped = 0, last: string | undefined;
+    for (const [key, event] of rows) {
+      last = key;
+      if (!event?.delivered) continue;
+      if (typeof event.deliveredAt !== "number") { await this.store.put(key, { ...event, deliveredAt: now }); stamped++; }
+      else if (event.deliveredAt < now - EVENT_KEEP_MS) { await this.store.delete(key); removed++; }
+    }
+    const done = rows.size < batch;
+    if (done) await this.store.delete(EVENT_PRUNE_CURSOR);
+    else if (last) await this.store.put(EVENT_PRUNE_CURSOR, last);
+    return { removed, stamped, done };
   }
   // ── Composing and reading in full ──
   /** Every header of one message, read from the provider (the cache keeps only those the feed needs). */
