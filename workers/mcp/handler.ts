@@ -8,7 +8,8 @@ import { api } from "../api";
 import type { Env } from "../types";
 import { principalFor, readAgentKeys, type AccessClaims, type Principal } from "./keys";
 import { ApiError, buildServer, type Api, type Ledger } from "./protocol";
-import { NARROW_HEADER, narrowPrincipal, scopedApi } from "./scope";
+import { NARROW_HEADER, expandDomains, namesDomain, narrowPrincipal, scopedApi } from "./scope";
+import { listMailboxAddresses } from "../lib/mailbox-store";
 import { TOOLS } from "./tools";
 import { instructionsFor, PROTOCOL_NAME } from "./instructions";
 import { version } from "../../package.json";
@@ -95,7 +96,11 @@ export async function handleMcp(request: Request, env: Env, ctx: ExecutionContex
   if (unsafe) return unsafe;
   let principal: Principal | null;
   try {
-    principal = narrowPrincipal(await resolvePrincipal(claims, env, import.meta.env.DEV), request.headers.get(NARROW_HEADER));
+    // B-36: whole-domain entries become today's addresses before narrowing, and once more after it
+    // (a narrowing header may name a domain too), so every check below sees concrete mailboxes.
+    const expand = async (p: Principal | null): Promise<Principal | null> =>
+      p?.accounts && namesDomain(p.accounts) ? { ...p, accounts: expandDomains(p.accounts, await listMailboxAddresses(env.BUCKET)) } as Principal : p;
+    principal = await expand(narrowPrincipal(await expand(await resolvePrincipal(claims, env, import.meta.env.DEV)), request.headers.get(NARROW_HEADER)));
   } catch (error) {
     console.error(JSON.stringify({ event: "mcp.keys_unreadable", error: String(error) }));
     return refuse(503, "The agent keys could not be read; try again");

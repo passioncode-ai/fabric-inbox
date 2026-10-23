@@ -104,3 +104,9 @@ test("B-149: a member empties Spam and brings back discarded mail in their own m
   assert.deepEqual(memberBody("POST /api/discard/restore", { messages: [{ accountId: "gmail:other", providerMessageId: "m1" }] }, mine), { refuse: true });
   assert.deepEqual(memberBody("POST /api/discard/restore", { messages: [] }, mine), { refuse: true });
 });
+
+test("B-36: a member names mailboxes only; a whole-domain entry is not kept", async () => {
+  const { normaliseMembers } = await import("../workers/lib/members");
+  const read = normaliseMembers({ members: [{ email: "m@owner.example", role: "member", accounts: ["domain:owner.example", "cloudflare:m@owner.example"] }] });
+  assert.deepEqual(read[0]?.accounts, ["cloudflare:m@owner.example"]);
+});

@@ -14,11 +14,15 @@ import type { Principal } from "./keys";
 import { parseRemoteAccount } from "../../shared/mail/accounts";
 import { msg } from "../../shared/i18n";
 
-/** "cloudflare:<address>" (a bare address counts), "gmail:<id>" or "imap:<id>", the way list_accounts names it; null otherwise. */
+/**
+ * "cloudflare:<address>" (a bare address counts), "gmail:<id>" or "imap:<id>", the way list_accounts
+ * names it, or "domain:<domain>": every Cloudflare address on that domain, later ones too (B-36); null otherwise.
+ */
 export function normaliseAccountId(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const v = value.trim();
   if (v.startsWith("cloudflare:")) return cloudflareId(v.slice(11));
+  if (v.startsWith("domain:")) return domainId(v.slice(7));
   const remote = parseRemoteAccount(v);
   if (remote) return v;
   if (/^(gmail|imap|outlook):/.test(v)) return null;
@@ -27,6 +31,24 @@ export function normaliseAccountId(value: unknown): string | null {
 // No "%": the mailbox routes decode their parameter once more, so "x%40y@d.com" would name another mailbox.
 // No ",": a narrowing header is a comma list, so "a,b@d.com" would name two.
 const cloudflareId = (address: string) => (/^[^@\s/:%,]+@[^@\s/:%,]+\.[^@\s/:%,]+$/.test(address) ? `cloudflare:${address.toLowerCase()}` : null);
+const domainId = (domain: string) => (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(domain) ? `domain:${domain.toLowerCase()}` : null);
+const DOMAIN_PREFIX = "domain:";
+
+/**
+ * B-36: a limit's whole-domain entries become the Cloudflare addresses on exactly that domain now (not
+ * its subdomains), so every check after this one sees concrete mailboxes only. A domain with no address
+ * yet adds none; a limit that ends up naming nothing reaches nothing.
+ */
+export function expandDomains(accounts: readonly string[], addresses: readonly string[]): string[] {
+  const domains = accounts.filter((a) => a.startsWith(DOMAIN_PREFIX)).map((a) => a.slice(DOMAIN_PREFIX.length));
+  const concrete = accounts.filter((a) => !a.startsWith(DOMAIN_PREFIX));
+  for (const address of addresses) {
+    const id = cloudflareId(address);
+    if (id && domains.includes(address.slice(address.lastIndexOf("@") + 1).toLowerCase()) && !concrete.includes(id)) concrete.push(id);
+  }
+  return concrete;
+}
+export const namesDomain = (accounts: readonly string[] | null) => !!accounts?.some((a) => a.startsWith(DOMAIN_PREFIX));
 
 /**
  * A stored key's accounts: absent or null is the whole workspace. Anything present is a limit: its
@@ -38,9 +60,9 @@ export function normaliseAccounts(raw: unknown): string[] | null {
   return [...new Set(raw.map(normaliseAccountId).filter((a): a is string => !!a))];
 }
 
-/** How a limit reads to a person: its addresses and its Gmail and IMAP account ids. */
+/** How a limit reads to a person: its addresses, its domains and its Gmail and IMAP account ids. */
 export const describeScope = (accounts: readonly string[]) =>
-  accounts.length ? accounts.map((a) => a.replace(/^cloudflare:/, "")).join(", ") : "no mailbox";
+  accounts.length ? accounts.map((a) => a.startsWith(DOMAIN_PREFIX) ? `every address at ${a.slice(DOMAIN_PREFIX.length)}` : a.replace(/^cloudflare:/, "")).join(", ") : "no mailbox";
 
 /** The feed's routes: answered for the key's mailboxes only. */
 export const FEED_ROUTES = new Set(["GET /api/inbox", "GET /api/accounts", "GET /api/inbox/hidden"]);

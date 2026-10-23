@@ -14,7 +14,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Invalid key": "Недопустимый ключ",
 	"An Admin key manages the whole workspace, so it cannot be limited to mailboxes. Choose Read or Mail.": "Ключ уровня «Администратор» управляет всем рабочим пространством, поэтому его нельзя ограничить отдельными ящиками. Выберите «Чтение» или «Почта».",
 	"Choose at least one mailbox, or leave the limit out for the whole workspace.": "Выберите хотя бы один почтовый ящик или не задавайте ограничение — тогда ключ действует во всём рабочем пространстве.",
-	"{value} is not an account: use \"cloudflare:<address>\", \"gmail:<id>\", \"imap:<id>\" or \"outlook:<id>\".": "{value} — не аккаунт: укажите \"cloudflare:<address>\", \"gmail:<id>\", \"imap:<id>\" или \"outlook:<id>\".",
+	"{value} is not an account: use \"cloudflare:<address>\", \"domain:<domain>\", \"gmail:<id>\", \"imap:<id>\" or \"outlook:<id>\".": "{value} — не аккаунт: укажите \"cloudflare:<address>\", \"domain:<domain>\", \"gmail:<id>\", \"imap:<id>\" или \"outlook:<id>\".",
 	"This server has no Cloudflare token, so it cannot make agent keys. Save one as CLOUDFLARE_API_TOKEN (Domains shows the permissions).": "У этого сервера нет токена Cloudflare, поэтому он не может создавать ключи агентов. Сохраните токен как CLOUDFLARE_API_TOKEN (нужные права показаны в разделе «Домены»).",
 	"Another agent key is being made or revoked; try again in a moment.": "Сейчас создаётся или отзывается другой ключ агента; попробуйте ещё раз чуть позже.",
 	"Reading the agent keys": "Чтение ключей агентов",

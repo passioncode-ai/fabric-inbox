@@ -68,6 +68,7 @@ const KEYS = [
   { id: "k-admin", clientId: "admin.access", name: "Admin", level: "admin", send: "send", dailySendLimit: 50, createdAt: "2026-09-29T00:00:00Z", expiresAt: null },
   { id: "k-old", clientId: "old.access", name: "Old", level: "admin", send: "send", dailySendLimit: 50, createdAt: "2025-01-01T00:00:00Z", expiresAt: "2025-06-01T00:00:00Z" },
   { id: "k-scoped", clientId: "scoped.access", name: "Research agent", level: "read", send: "drafts", dailySendLimit: 50, createdAt: "2026-10-03T00:00:00Z", expiresAt: null, accounts: ["cloudflare:other@shop.invalid"] },
+  { id: "k-domain", clientId: "domain.access", name: "Domain agent", level: "read", send: "drafts", dailySendLimit: 50, createdAt: "2026-10-23T00:00:00Z", expiresAt: null, accounts: ["domain:shop.invalid"] },
   { id: "k-scoped-mail", clientId: "scoped-mail.access", name: "Scoped mailer", level: "mail", send: "drafts", dailySendLimit: 50, createdAt: "2026-10-03T00:00:00Z", expiresAt: null, accounts: [`cloudflare:${"support@shop.invalid"}`] },
 ];
 
@@ -447,4 +448,25 @@ test("B-62: initialize names the narrowing capability from the source, and a hub
   assert.equal(narrowingSupported({ experimental: { [NARROWING_CAPABILITY]: withoutEmpty } }), false, "a server that does not promise to refuse an empty scope (review 2026-10-21)");
   assert.equal(narrowingSupported({ experimental: { [NARROWING_CAPABILITY]: { ...NARROWING } } }, 2), false, "a hub needing a later revision refuses this one");
   assert.equal(narrowingSupported(null), false);
+});
+
+test("B-36: a key limited to a domain reaches every address on it, one made later too, and nothing on another domain, end to end", async () => {
+  const { mf, as, call } = await fixture();
+  try {
+    const put = (key: string, value: unknown) => mf.dispatchFetch("http://localhost/test/put", { method: "POST", body: JSON.stringify({ key, value }) });
+    const inbox = (mailbox: string, subject: string) => mf.dispatchFetch("http://localhost/test/inbox", { method: "POST", body: JSON.stringify({ mailbox, sender: "news@letter.invalid", subject }) });
+    await put("mailboxes/later@shop.invalid.json", { agent: "off" });
+    await put("mailboxes/x@elsewhere.invalid.json", { agent: "off" });
+    await inbox(MAILBOX, "for support");
+    await inbox("later@shop.invalid", "for later");
+    await inbox("x@elsewhere.invalid", "for elsewhere");
+    const key = await as("domain.access");
+    const feed = await call(key, "list_messages", {});
+    assert.equal(feed.isError, false, JSON.stringify(feed.data));
+    const subjects = feed.data.messages.map((m: { subject: string }) => m.subject).sort();
+    assert.deepEqual(subjects, ["for later", "for support"], "both addresses of the domain, none of the other");
+    const other = await call(key, "list_mailbox_messages", { accountId: "cloudflare:x@elsewhere.invalid" });
+    assert.equal(other.isError, true, "another domain is refused");
+    for (const t of await names(key)) assert.ok(!["list_addresses", "list_domains", "list_rules"].includes(t), `a domain-limited key must not see ${t}`);
+  } finally { await mf.dispose(); }
 });

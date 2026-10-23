@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.31.0 (2026-10-23)
+
+- **Give an agent a whole domain.** In Settings → Agent access, a Read or Mail key can now reach
+  every address at a domain, including addresses you make there later, instead of a fixed list of
+  mailboxes. It reaches nothing on other domains and nothing your whole workspace shares. Admin keys
+  still reach everything: to keep an agent to one domain, give it a Mail key with that domain (B-36).
+
 ## 0.30.4 (2026-10-23)
 
 - **A rule's daily limit counts what it does.** The limit now counts the messages a rule acts on,
