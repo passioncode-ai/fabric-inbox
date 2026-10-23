@@ -14,6 +14,13 @@ export interface RunDependencies {
   currentRule(id: string): Promise<Rule | undefined>;
   email(id: string): Promise<RuleEmail>;
   analyze(rule: Rule, email: RuleEmail): Promise<Analysis>;
+  /**
+   * B-05: takes one action from the rule's daily limit, false when today's is used up. Called once a
+   * run's every condition (the AI condition included) matched, so a message the AI condition turns
+   * away costs nothing. Only a run stored with `counted: false` is asked, and once: a run stored before
+   * B-05 took its count when it was queued.
+   */
+  claimDaily(run: Run): Promise<boolean>;
   execute(run: Run, email: RuleEmail): Promise<string>;
 }
 export class ActionRejected extends Error {}
@@ -76,6 +83,15 @@ export async function processRun(
       run.detail = msg("AI condition did not match");
       await save();
       return run;
+    }
+    if (run.counted === false) {
+      if (!(await deps.claimDaily(run))) {
+        run.status = "skipped";
+        run.detail = msg("Daily rule limit reached");
+        await save();
+        return run;
+      }
+      run.counted = true;
     }
     if (current.mode === "approval" && !run.approved) {
       run.status = "waiting_approval";

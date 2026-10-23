@@ -17,6 +17,7 @@ export const COMPOSE: Readonly<Record<string, string>> = {
 	"This draft was changed elsewhere just before sending, so it was not sent. Check it, then send again.": "Черновик изменили в другом месте прямо перед отправкой, поэтому он не отправлен. Проверьте его и отправьте снова.",
 	"The provider did not accept this attempt. Correct the draft and send again, or discard it.": "Провайдер не принял письмо. Исправьте черновик и отправьте снова или удалите его.",
 	"Send refused: {reason}. Correct the message or reconnect.": "Отправка отклонена: {reason}. Исправьте письмо или переподключите аккаунт.",
+	"Not sent: this account has reached this server's sending limit ({hour} an hour, {day} a day). Nothing went out; send it again later.": "Не отправлено: этот аккаунт исчерпал лимит отправки на этом сервере ({hour} в час, {day} в сутки). Письмо не ушло; отправьте его позже.",
 	"Acceptance is not confirmed. Retry the same attempt; its recovery key prevents a duplicate send.": "Провайдер пока не подтвердил приём. Повторите ту же попытку — дважды письмо не уйдёт.",
 	"A message can carry up to 10 files, 5 MiB together. Remove a file before adding another.": "В письме может быть до 10 файлов, всего до 5 МиБ. Уберите файл, прежде чем добавить другой.",
 	"File loading failed. {reason}": "Не удалось загрузить файлы. {reason}",

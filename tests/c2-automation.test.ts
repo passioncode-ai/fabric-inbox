@@ -40,7 +40,7 @@ const bundle = await build({
         constructor(ctx, env) { super(ctx, {...env, AI:{run:forbidden}}); }
         async alarm() {}
         async pump() { return super.alarm(); }
-        async keys() { return [...(await this.ctx.storage.list()).keys()].filter((k) => !k.startsWith('rule:')).sort(); }
+        async keys() { return [...(await this.ctx.storage.list()).keys()].filter((k) => !k.startsWith('rule:') && k !== 'queue-ready').sort(); }
         async putRuns(runs) { for (const r of runs) await this.ctx.storage.put('run:' + r.id, r); }
       }
       export default {

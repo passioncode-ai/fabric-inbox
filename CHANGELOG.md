@@ -5,6 +5,23 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.30.4 (2026-10-23)
+
+- **A rule's daily limit counts what it does.** The limit now counts the messages a rule acts on,
+  once every condition, the AI condition included, matched; before, every message that only passed
+  the sender and subject check used one up, so a rule with an AI condition could stop for the day
+  without acting once. An AI condition is checked at most 200 times a day per rule (B-05).
+- **A sending limit for Gmail, IMAP and Outlook accounts.** Each account sends at most 50 messages an
+  hour and 250 a day through your server, whoever sends: you, a rule or an agent. That stays below
+  Gmail's and Outlook's own daily caps, so a runaway rule or agent is stopped here before the provider
+  suspends the account. A message past it is not sent, stays editable, and can be sent again later (B-06).
+- **Rules keep up with a long history.** The server now reads only the runs still waiting when it
+  works through a rule's queue, not every run it keeps, and a run nobody approved within 14 days
+  shows why it was cancelled (B-07).
+- **Mail to unknown addresses is counted exactly.** Deliveries arriving at the same moment all count,
+  and a domain keeps at most 500 unknown addresses, the one unseen longest giving way after 30 days,
+  so mail sent to random addresses cannot fill your storage (B-10).
+
 ## 0.30.3 (2026-10-23)
 
 - **Sign in with your organization's account.** When your server signs people in through Google

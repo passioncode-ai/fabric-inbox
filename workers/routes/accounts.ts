@@ -81,6 +81,8 @@ accountsRouter.onError((error, c) => {
     idempotency_conflict: 409,
     reconnect_required: 401,
     rate_limited: 429,
+    // B-06: this server's own sending budget for the account; nothing was handed over.
+    send_rate_limited: 429,
     sync_backoff: 429,
     invalid_read_state: 400,
     invalid_starred_state: 400,

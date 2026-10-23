@@ -29,6 +29,26 @@ const REVIEW_KEEP = 100;
 const REVIEW_REQUIRED = "rule_review_required";
 class ReviewRequired extends Error { constructor() { super(REVIEW_REQUIRED); } }
 /**
+ * B-07: the queue. One `queue:<run id>` key, valued with the time it may be taken (0 = now), lives while
+ * its run is pending or running, so waking up and draining read the queue, never every run kept.
+ * `queue-ready` records that the queue was built once from the runs stored before it existed.
+ */
+const QUEUED = new Set<string>(["pending", "running"]);
+const QUEUE = "queue:";
+const QUEUE_READY = "queue-ready";
+interface RunWriter { put(key: string, value: unknown): Promise<void>; delete(key: string): Promise<boolean> }
+/** Every write of a run goes through here, so the queue follows the run's status in the same write. */
+async function putRun(store: RunWriter, run: Run): Promise<void> {
+  await store.put("run:" + run.id, run);
+  if (QUEUED.has(run.status)) await store.put(QUEUE + run.id, run.retryAt ? Date.parse(run.retryAt) || 0 : 0);
+  else await store.delete(QUEUE + run.id);
+}
+/**
+ * B-05: an AI condition is checked at most this many times a day per rule; the daily limit itself counts
+ * actions, taken only once every condition matched (`claimDaily`).
+ */
+export const ANALYSIS_DAILY_LIMIT = 200;
+/**
  * What a review covers: everything that decides what the rule does — not its saved version, whether it
  * is on, or its name (a rename changes no behaviour). The editor's ruleReviewKey is stricter (it keeps
  * the name), so anything it lets through passes here.
@@ -48,17 +68,40 @@ export class AutomationDO extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
-      const runs = await ctx.storage.list<Run>({ prefix: "run:" });
-      for (const [key, run] of runs)
+      let pending = false;
+      for (const run of await this.queuedRuns())
         if (run.status === "running") {
           run.status = "unknown";
           run.detail =
             msg("Processing was interrupted. Verify the outcome before repeating.");
-          await ctx.storage.put(key, run);
-        }
-      if ([...runs.values()].some((r) => r.status === "pending"))
-        await ctx.storage.setAlarm(Date.now() + 1000);
+          await putRun(ctx.storage, run);
+        } else if (run.status === "pending") pending = true;
+      if (pending) await ctx.storage.setAlarm(Date.now() + 1000);
     });
+  }
+  /** The queue (B-07), built once from every stored run when an older store has none yet. */
+  private async queue(): Promise<Map<string, number>> {
+    if (!(await this.ctx.storage.get(QUEUE_READY))) {
+      for (const run of (await this.ctx.storage.list<Run>({ prefix: "run:" })).values())
+        if (QUEUED.has(run.status)) await putRun(this.ctx.storage, run);
+      await this.ctx.storage.put(QUEUE_READY, true);
+    }
+    return this.ctx.storage.list<number>({ prefix: QUEUE });
+  }
+  /** The runs the queue names, read 128 at a time; a key whose run is gone or finished is dropped. */
+  private async queuedRuns(keys?: string[]): Promise<Run[]> {
+    const ids = (keys ?? [...(await this.queue()).keys()]).map((key) => key.slice(QUEUE.length));
+    const runs: Run[] = [];
+    for (let i = 0; i < ids.length; i += 128) {
+      const chunk = ids.slice(i, i + 128);
+      const found = await this.ctx.storage.get<Run>(chunk.map((id) => "run:" + id));
+      for (const id of chunk) {
+        const run = found.get("run:" + id);
+        if (run && QUEUED.has(run.status)) runs.push(run);
+        else await this.ctx.storage.delete(QUEUE + id);
+      }
+    }
+    return runs;
   }
   async rules() {
     return [
@@ -139,9 +182,10 @@ export class AutomationDO extends DurableObject<Env> {
       if (await txn.get(eventKey)) return;
       let pending = false;
       for (const { rule, key, id } of selected) {
-        const counterKey = `count:${now.slice(0, 10)}:${rule.id}`;
-        const count = (await txn.get<number>(counterKey)) ?? 0;
-        const limited = count >= rule.dailyLimit;
+        // B-05: only the AI check is bounded here; the daily limit is taken once every condition matched.
+        const counterKey = `analyses:${now.slice(0, 10)}:${rule.id}`;
+        const count = rule.conditions.ai ? (await txn.get<number>(counterKey)) ?? 0 : 0;
+        const limited = count >= ANALYSIS_DAILY_LIMIT;
         const run: Run = {
           id,
           key,
@@ -153,11 +197,12 @@ export class AutomationDO extends DurableObject<Env> {
           createdAt: now,
           updatedAt: now,
           attempts: 0,
-          ...(limited ? { detail: msg("Daily rule limit reached") } : {}),
+          counted: false,
+          ...(limited ? { detail: msg("Daily limit of AI checks reached") } : {}),
         };
-        await txn.put("run:" + id, run);
+        await putRun(txn, run);
         if (!limited) {
-          await txn.put(counterKey, count + 1);
+          if (rule.conditions.ai) await txn.put(counterKey, count + 1);
           pending = true;
         }
       }
@@ -176,7 +221,7 @@ export class AutomationDO extends DurableObject<Env> {
         throw new Error("Rule changed; approval is no longer valid");
       run.approved = true;
       run.status = "pending";
-      await txn.put("run:" + id, run);
+      await putRun(txn, run);
       await txn.setAlarm(Date.now() + 1000);
     });
     return { status: "pending" };
@@ -191,7 +236,7 @@ export class AutomationDO extends DurableObject<Env> {
         throw new Error("Run cannot be cancelled");
       run.status = "cancelled";
       run.detail = msg("Cancelled by user");
-      await txn.put("run:" + id, run);
+      await putRun(txn, run);
       return run;
     });
   }
@@ -218,7 +263,7 @@ export class AutomationDO extends DurableObject<Env> {
         fresh.status = finding.outcome === "done" ? "succeeded" : "failed";
         fresh.detail = finding.detail;
       }
-      await txn.put("run:" + id, fresh);
+      await putRun(txn, fresh);
       return { outcome: finding.outcome, detail: finding.detail, run: fresh };
     });
   }
@@ -488,33 +533,31 @@ export class AutomationDO extends DurableObject<Env> {
     return this.processing;
   }
   private async drain() {
-    const pending = [
-      ...(await this.ctx.storage.list<Run>({ prefix: "run:" })).values(),
-    ]
-      // B-141: a run waiting out its retry delay is not taken yet.
+    // B-141: a run waiting out its retry delay is not taken yet. B-07: only the queue is read.
+    const due = [...(await this.queue())].filter(([, at]) => at <= Date.now()).map(([key]) => key);
+    const pending = (await this.queuedRuns(due.slice(0, 20)))
       .filter((r) => r.status === "pending" && !(r.retryAt && Date.parse(r.retryAt) > Date.now()))
       .slice(0, 10);
     for (const run of pending)
       await processRun(run, {
-        save: (r) => this.ctx.storage.put("run:" + r.id, r),
+        save: (r) => putRun(this.ctx.storage, r),
         start: (r) =>
           this.ctx.storage.transaction(async (txn) => {
             const fresh = await txn.get<Run>("run:" + r.id);
             if (fresh?.status !== "pending") return false;
-            await txn.put("run:" + r.id, { ...r, status: "running" });
+            await putRun(txn, { ...r, status: "running" });
             return true;
           }),
         currentRule: (id) => this.ctx.storage.get<Rule>("rule:" + id),
         email: (id) => this.readEmail(run.account, id),
         analyze: (rule, email) => this.analyze(rule, email),
+        claimDaily: (r) => this.claimDaily(r),
         execute: (r, email) => this.execute(r, email),
       });
-    const waiting = [
-      ...(await this.ctx.storage.list<Run>({ prefix: "run:" })).values(),
-    ].filter((r) => r.status === "pending");
+    const waiting = [...(await this.ctx.storage.list<number>({ prefix: QUEUE })).values()];
     if (waiting.length) {
       // The soonest a pending run may be taken: now for a fresh one, its retry time for one that failed (B-141).
-      const soonest = Math.min(...waiting.map((r) => (r.retryAt ? Date.parse(r.retryAt) : 0)));
+      const soonest = Math.min(...waiting);
       await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, Number.isFinite(soonest) ? soonest : 0));
     }
     // Once a day the store is kept bounded, so reading every run stays cheap.
@@ -526,9 +569,19 @@ export class AutomationDO extends DurableObject<Env> {
     }
   }
 
+  /** B-05: one action from the rule's daily limit (UTC day), or false when today's is used up. */
+  private claimDaily(run: Run): Promise<boolean> {
+    return this.ctx.storage.transaction(async (txn) => {
+      const key = `count:${new Date().toISOString().slice(0, 10)}:${run.rule.id}`;
+      const count = (await txn.get<number>(key)) ?? 0;
+      if (count >= run.rule.dailyLimit) return false;
+      await txn.put(key, count + 1);
+      return true;
+    });
+  }
   /**
    * Deletes what nobody needs any more (reliability audit M5): finished runs older than 30 days,
-   * day counters older than 3 days, event receipts older than 90 days (the mailbox dedupes a
+   * day counters (actions and AI checks) older than 3 days, event receipts older than 90 days (the mailbox dedupes a
    * redelivery itself). A run waiting for approval or a device is never removed.
    */
   protected async prune(now: number): Promise<number> {
@@ -543,11 +596,13 @@ export class AutomationDO extends DurableObject<Env> {
       // A run waiting for an approval or a device that never came was kept for ever and read into
       // memory on every alarm (bug hunt 2026-10-12): after 14 days it is cancelled, with the reason.
       else if ((run.status === "waiting_approval" || run.status === "waiting_device") && run.createdAt < waitCutoff) {
-        await this.ctx.storage.put(key, { ...run, status: "cancelled", error: msg("Expired: nobody approved it within 14 days"), updatedAt: new Date(now).toISOString() });
+        // Its reason is the run's detail, the field the run list shows (it was written as `error` before).
+        await putRun(this.ctx.storage, { ...run, status: "cancelled", detail: msg("Expired: nobody approved it within 14 days"), updatedAt: new Date(now).toISOString() });
       }
     }
-    for (const key of (await this.ctx.storage.list({ prefix: "count:" })).keys())
-      if (key.slice("count:".length, "count:".length + 10) < dayCutoff) gone.push(key);
+    for (const prefix of ["count:", "analyses:"])
+      for (const key of (await this.ctx.storage.list({ prefix })).keys())
+        if (key.slice(prefix.length, prefix.length + 10) < dayCutoff) gone.push(key);
     for (const [key, value] of await this.ctx.storage.list<{ at?: string }>({ prefix: "event:" }))
       if (value?.at && value.at < eventCutoff) gone.push(key);
     for (let i = 0; i < gone.length; i += 128) await this.ctx.storage.delete(gone.slice(i, i + 128));

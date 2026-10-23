@@ -1528,11 +1528,11 @@ const ruleChange = z.object({
   id: z.string().min(1).max(100).describe("The rule's id: an existing one is changed, a new one is made"),
   name: z.string().min(1).max(100).optional(), enabled: z.boolean().optional().describe("New rules start off (false)"),
   mode: z.enum(["approval", "automatic"]).optional().describe("New rules wait for approval"), conditions: ruleConditions.optional(), action: ruleAction.optional(),
-  dailyLimit: z.number().int().min(1).max(100).optional().describe("New rules: 20"),
+  dailyLimit: z.number().int().min(1).max(100).optional().describe("Actions a day (UTC), counted once every condition, the AI condition included, matched. New rules: 20"),
 });
 const saveRule = defineTool({
   name: "save_rule", title: "Create or change a rule", level: "admin", target: (a) => `${a.accountId} ${a.rule.id}`,
-  description: "Creates an automation rule of one account, or changes one (same id): only the fields you give change, so renaming a rule keeps it on, its mode and its limit. Enabling a new or changed rule needs dry_run_rule of the same rule first (within a day), as the app asks; otherwise the save is refused with 409. A new rule needs name, conditions and action and starts off, in approval mode, 20 runs a day. The server numbers each saved version. A rule in approval mode waits for approve_rule_run; turn a rule off with enabled: false.",
+  description: "Creates an automation rule of one account, or changes one (same id): only the fields you give change, so renaming a rule keeps it on, its mode and its limit. Enabling a new or changed rule needs dry_run_rule of the same rule first (within a day), as the app asks; otherwise the save is refused with 409. A new rule needs name, conditions and action and starts off, in approval mode, 20 actions a day (an AI condition is checked at most 200 times a day per rule). The server numbers each saved version. A rule in approval mode waits for approve_rule_run; turn a rule off with enabled: false.",
   input: { accountId, rule: ruleChange },
   routes: ["GET /api/automation/:account/rules", "PUT /api/automation/:account/rules"],
   async call(a, ctx) {

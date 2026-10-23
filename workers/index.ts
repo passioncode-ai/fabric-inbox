@@ -27,6 +27,7 @@ import { requireMailbox, type MailboxContext } from "./lib/mailbox";
 import { TRANSIENT_DO } from "./lib/do-retry";
 import { incomingFailure, recordIncomingFailure } from "./incoming-log";
 import { cleanSenderName } from "../shared/mail/sender";
+import { recordUnknownRecipient } from "./lib/unknown-recipients";
 
 type AppContext = Context<MailboxContext>;
 
@@ -510,23 +511,14 @@ async function unknownAddressPolicy(env: Env, domain: string): Promise<{ kind: "
 	return { kind: "reject" };
 }
 
-// Records that an unknown address received mail, for the Create address list.
-// Only the address, its domain, counts and times are kept: no sender, subject or body.
-async function recordUnknownRecipient(env: Env, address: string, action: "rejected" | "catch_all") {
-	const key = `unknown-recipients/${domainOf(address)}/${address}.json`;
-	const now = new Date().toISOString();
-	const previous = await env.BUCKET.get(key);
-	const prior = previous ? ((await previous.json()) as { firstSeen?: string; count?: number }) : null;
-	await env.BUCKET.put(key, JSON.stringify({
-		address, domain: domainOf(address), action,
-		firstSeen: prior?.firstSeen ?? now, lastSeen: now, count: (prior?.count ?? 0) + 1,
-	}));
-}
-
 /** The unknown-address count is bookkeeping: a failure there is logged and never fails the delivery (bug hunt 2026-10-12). */
 async function countUnknown(env: Env, address: string, outcome: "catch_all" | "rejected"): Promise<void> {
-	await recordUnknownRecipient(env, address, outcome).catch((error: unknown) =>
-		console.warn(JSON.stringify({ event: "unknown_recipient_count_failed", outcome, error: (error as Error)?.message?.slice(0, 120) })));
+	const counted = await recordUnknownRecipient(env.BUCKET, address, outcome).catch((error: unknown) => {
+		console.warn(JSON.stringify({ event: "unknown_recipient_count_failed", outcome, error: (error as Error)?.message?.slice(0, 120) }));
+		return null;
+	});
+	// B-10: the domain already holds its share of recently seen unknown addresses; the mail itself is handled as before.
+	if (counted === "capped") console.warn(JSON.stringify({ event: "unknown_recipient_capped", outcome, domain: domainOf(address) }));
 }
 
 async function resolveRecipient(candidates: string[], allowedAddresses: string[], env: Env): Promise<Route> {
