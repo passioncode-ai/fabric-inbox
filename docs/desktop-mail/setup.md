@@ -436,7 +436,7 @@ server is the same one; what differs is the account, who signs in, and that it i
 
 6. **People.** In Settings → People an administrator adds each person by their sign-in email as an
    **Administrator** (everything) or a **Member** with the mailboxes they read and answer. A member sees
-   only those mailboxes' mail: no settings, categories, rules, agents' runs or other mailboxes, and no
+   only those mailboxes' mail (emptying Spam and bringing back discarded mail in them too): no settings, categories, rules, agents' runs or other mailboxes, and no
    agent protocol (`workers/lib/member-gate.ts`). A person the group lets in who is not listed is refused
    with a sentence naming who to ask. The list always keeps an administrator; `list_members` reads it for
    an agent, and only a person changes it (B-149).

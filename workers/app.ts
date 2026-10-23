@@ -15,7 +15,7 @@ import { handleRelayForwarded, handleRelayIncoming, RELAY_FORWARDED, RELAY_INCOM
 import { identityMayUse, MCP_PATH, type AccessClaims } from "./mcp/keys";
 import { audienceFor, serviceAudience } from "./mcp/service-access";
 import { membersCached, MembersError, standingOf, type Standing } from "./lib/members";
-import { memberGate } from "./lib/member-gate";
+import { memberBody, memberGate } from "./lib/member-gate";
 import { inProcessApi } from "./mcp/handler";
 import { scopedApi } from "./mcp/scope";
 import { ApiError } from "./mcp/protocol";
@@ -144,9 +144,19 @@ app.use("*", async (c, next) => {
 	const gate = memberGate(c.req.method, url.pathname, standing.accounts);
 	if (gate === "pass") return next();
 	if (gate === "refuse") return refuse(msg("Only an administrator of this server can do that. You reach your own mailboxes."));
+	const inProcess = inProcessApi(url.origin, c.env, c.executionCtx as ExecutionContext);
+	if (gate === "body") {
+		// Answered here, before the same-origin boundary below, so it is held to that rule here too.
+		const origin = c.req.header("origin");
+		if (origin && origin !== url.origin) return c.json({ error: "Cross-origin request refused" }, 403);
+		const narrowed = memberBody(`${c.req.method} ${url.pathname}`, await c.req.json().catch(() => null), standing.accounts);
+		if ("refuse" in narrowed) return refuse(msg("Only an administrator of this server can do that. You reach your own mailboxes."));
+		const answer = await inProcess.request(c.req.method as "POST", url.pathname, { body: narrowed.body });
+		return c.json(answer.data as object, answer.status as 200);
+	}
 	// The feed: answered for the member's mailboxes only, as for an agent key limited to them.
 	try {
-		const scoped = scopedApi(inProcessApi(url.origin, c.env, c.executionCtx as ExecutionContext), standing.accounts, "person");
+		const scoped = scopedApi(inProcess, standing.accounts, "person");
 		const answer = await scoped.request("GET", url.pathname, { query: Object.fromEntries(url.searchParams) });
 		return c.json(answer.data as object, answer.status as 200);
 	} catch (error) {

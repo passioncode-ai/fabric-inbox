@@ -9,7 +9,13 @@ import { MCP_PATH } from "../mcp/keys";
 /** Routes any signed-in person may call: who they are on this server. */
 export const SELF_ROUTES = new Set(["GET /api/me"]);
 
-export type Gate = "pass" | "feed" | "refuse";
+export type Gate = "pass" | "feed" | "body" | "refuse";
+
+/**
+ * Routes a member may call with a body narrowed to their mailboxes (`memberBody`): emptying Spam
+ * in their own mailboxes, and bringing back discarded mail of their own mailboxes.
+ */
+export const BODY_ROUTES = new Set(["POST /api/spam/empty", "POST /api/discard/restore"]);
 
 /**
  * A mailbox's own settings (its forwarding, reply agent, signature), deleting it, and an account's
@@ -32,8 +38,27 @@ export function memberGate(method: string, pathname: string, accounts: readonly 
   const route = `${method === "HEAD" ? "GET" : method} ${pathname}`;
   if (SELF_ROUTES.has(route)) return "pass";
   if (FEED_ROUTES.has(route)) return "feed";
+  if (BODY_ROUTES.has(route)) return "body";
   if (ADMIN_MAILBOX_ACTIONS.some((a) => a.methods.includes(method) && a.path.test(pathname))) return "refuse";
   const allowed = new Set(accounts);
   const account = accountOfPath(pathname, allowed);
   return account && allowed.has(account) ? "pass" : "refuse";
+}
+
+/**
+ * A member's body for a `body` route, or why it is refused. Emptying Spam empties their Cloudflare
+ * mailboxes only; a restore must name their own mailboxes' messages, and never takes back a discard
+ * rule, since the rules are the whole workspace's.
+ */
+export function memberBody(route: string, body: unknown, accounts: readonly string[]): { body: unknown } | { refuse: true } {
+  if (route === "POST /api/spam/empty")
+    return { body: { addresses: accounts.filter((a) => a.startsWith("cloudflare:")).map((a) => a.slice(11)) } };
+  if (route === "POST /api/discard/restore") {
+    const b = (body && typeof body === "object" ? body : {}) as { messages?: unknown };
+    const messages = Array.isArray(b.messages) ? b.messages : [];
+    const mine = new Set(accounts);
+    if (!messages.length || !messages.every((m) => !!m && typeof m === "object" && mine.has(String((m as { accountId?: unknown }).accountId)))) return { refuse: true };
+    return { body: { ...b, unlearn: false } };
+  }
+  return { refuse: true };
 }

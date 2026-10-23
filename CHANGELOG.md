@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.30.1 (2026-10-23)
+
+- **Members tidy their own mail.** A member of a shared server can empty Spam and bring back discarded
+  mail in their own mailboxes; the discard rules the whole server shares stay with the administrators
+  (B-149).
+
 ## 0.30.0 (2026-10-23)
 
 - **Share a server with other people.** Settings has a new section, People: add someone by the email

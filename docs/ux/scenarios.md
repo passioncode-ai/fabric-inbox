@@ -1675,7 +1675,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Alt paths:** No mailbox given yet: the sidebar says to ask the administrator. Settings opened from a link: a page says settings are the administrators'. A mailbox the administrator took away: its routes answer that I reach only my own.
 - **UI elements:** SCR-01 (the sidebar without Settings, Rules & history, Agents' answers, categories, Add address and Hide), SCR-02 (the administrators-only page).
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** An action only an administrator may take (emptying Spam, restoring discarded mail, a mailbox's own settings) is refused with a sentence that says so.
+- **Errors & recovery:** Delete all now in Spam empties my Cloudflare mailboxes only; Not discarded brings back my own mailboxes' mail and takes back no shared discard rule. An action only an administrator may take (a mailbox's own settings and signature, discard rules) is refused with a sentence that says so.
 - **Status:** draft
 - **Coverage:** workers/lib/member-gate.ts, workers/app.ts, workers/mcp/scope.ts, app/lib/me.ts, app/routes/unified-inbox.tsx, app/components/inbox/AccountSidebar.tsx, app/routes/settings.tsx, tests/members.test.ts
 - **Product:** unobserved
