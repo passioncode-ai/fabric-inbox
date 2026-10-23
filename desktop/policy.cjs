@@ -103,4 +103,16 @@ function keyStoreRefusal(platform, backend) {
   return backend === 'basic_text' ? 'basic_text' : null;
 }
 
-module.exports = { keyStoreRefusal, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };
+/**
+ * B-99 (decided 2026-10-23: warn, never refuse): on Linux without Chromium's sandbox (an AppImage
+ * where user namespaces are off, Ubuntu 24.04's default) the app says so on screen at launch, with
+ * the way to keep the sandbox (the .deb), until the person asks not to be told again on this
+ * computer. Refusing would leave the AppImage unusable on the systems that need the warning most.
+ */
+const SANDBOX_WARNING_FILE = 'sandbox-warning';
+function sandboxWarning(platform, noSandbox, dismissed) {
+  return platform === 'linux' && !!noSandbox && !dismissed;
+}
+const SANDBOX_HELP_URL = 'https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/desktop-data-and-updates.md#windows-and-linux';
+
+module.exports = { sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL, keyStoreRefusal, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };

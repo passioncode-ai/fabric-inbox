@@ -1680,3 +1680,22 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** workers/lib/member-gate.ts, workers/app.ts, workers/mcp/scope.ts, app/lib/me.ts, app/routes/unified-inbox.tsx, app/components/inbox/AccountSidebar.tsx, app/routes/settings.tsx, tests/members.test.ts
 - **Product:** unobserved
 - **Today:** Built 2026-10-23 (B-149).
+
+### SCN-083: Start the Linux AppImage where the sandbox is off
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07; B-99 (decided 2026-10-23: warn, never refuse)
+- **Entry point:** SCR-01
+- **Preconditions:** The AppImage on a Linux system without unprivileged user namespaces (Ubuntu 24.04's default), so its launcher starts the app with `--no-sandbox`.
+- **Steps:**
+  1. Open the AppImage -> before any window, a warning: Fabric Inbox is running without its sandbox, why it matters, and that the .deb keeps it.
+  2. Continue -> the app opens as usual; or How to keep the sandbox -> the install notes open in the browser and the app opens.
+- **Expected result:** I know my mail is read without Chromium's sandbox and how to keep it, and I can still use the app.
+- **Alt paths:** Do not warn me again on this computer: the warning does not come back on this computer. The .deb, or a system with user namespaces on: no warning.
+- **UI elements:** the launch warning (Continue, How to keep the sandbox, Do not warn me again on this computer).
+- **States covered:** success
+- **Errors & recovery:** The choice cannot be saved: the warning comes back at the next launch.
+- **Status:** draft
+- **Coverage:** desktop/policy.cjs (`sandboxWarning`), desktop/main.cjs, tests/desktop-menu.test.ts
+- **Product:** unobserved
+- **Today:** Built 2026-10-23 (B-99).

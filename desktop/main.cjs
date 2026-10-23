@@ -1062,6 +1062,17 @@ if (ownsInstance) app.whenReady().then(async () => {
   // B-99: an AppImage's AppRun adds --no-sandbox where user namespaces are off (Ubuntu 24.04's default);
   // the .deb keeps the sandbox through its SUID chrome-sandbox. Said in the log, never silent.
   if (process.platform === 'linux' && app.commandLine.hasSwitch('no-sandbox')) logEvent({ event: 'sandbox_off', appImage: !!process.env.APPIMAGE });
+  // ...and on screen once per launch, until the person asks not to be told again (B-99: warn, not refuse).
+  const dismissedFile = path.join(app.getPath('userData'), policy.SANDBOX_WARNING_FILE);
+  if (policy.sandboxWarning(process.platform, app.commandLine.hasSwitch('no-sandbox'), fsSync.existsSync(dismissedFile))) {
+    const answer = await dialog.showMessageBox({ type: 'warning', title: 'Fabric Inbox', message: t('Fabric Inbox is running without its sandbox'),
+      detail: t('This system does not let the AppImage use Chromium\'s sandbox, which keeps a harmful message from reaching the rest of your computer. The .deb package keeps the sandbox: install it to read mail with that protection.'),
+      buttons: [t('Continue'), t('How to keep the sandbox')], defaultId: 1, cancelId: 0,
+      checkboxLabel: t('Do not warn me again on this computer'), checkboxChecked: false });
+    logEvent({ event: 'sandbox_warning', answer: answer.response === 1 ? 'help' : 'continue', dismissed: !!answer.checkboxChecked });
+    if (answer.checkboxChecked) { try { fsSync.writeFileSync(dismissedFile, 'off\n', { mode: 0o600 }); } catch { /* asked again next launch */ } }
+    if (answer.response === 1) void electron.shell.openExternal(policy.SANDBOX_HELP_URL);
+  }
   // PL-05: no Secret Service on Linux means no protected sign-in; say so and stop (never plain text).
   const refusal = policy.keyStoreRefusal(process.platform, process.platform === 'linux' && electron.safeStorage && typeof electron.safeStorage.getSelectedStorageBackend === 'function'
     ? electron.safeStorage.getSelectedStorageBackend() : null);
