@@ -15,6 +15,13 @@ Owns the accounts and decides who may receive mail or connected-tool data. Wants
 - **decision_status:** accepted
 - **validation_status:** unvalidated
 
+### P-02: Member of a shared server
+Reads and answers the mail of the mailboxes an administrator gave them on a server their organization runs, and nothing else. B-149 (operator, 2026-10-23: organization mode with members); no invented demographic or usage frequency.
+- **Status:** proposed
+- **evidence_kind:** brief
+- **decision_status:** accepted
+- **validation_status:** unvalidated
+
 ## Jobs to Be Done
 
 ### JTBD-01: Handle mail across accounts

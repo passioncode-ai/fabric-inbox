@@ -14,6 +14,12 @@ import { fabricServiceRouter } from "./routes/fabric-service";
 import { handleRelayForwarded, handleRelayIncoming, RELAY_FORWARDED, RELAY_INCOMING } from "./relay/ingress";
 import { identityMayUse, MCP_PATH, type AccessClaims } from "./mcp/keys";
 import { audienceFor, serviceAudience } from "./mcp/service-access";
+import { membersCached, MembersError, standingOf, type Standing } from "./lib/members";
+import { memberGate } from "./lib/member-gate";
+import { inProcessApi } from "./mcp/handler";
+import { scopedApi } from "./mcp/scope";
+import { ApiError } from "./mcp/protocol";
+import { msg } from "../shared/i18n";
 export { AutomationDO } from "./automation";
 export { GmailAccountsDO } from "./providers/accounts-do";
 export { AgentRegistryDO } from "./agents/registry";
@@ -60,7 +66,7 @@ function getAccessUrls(teamDomain: string) {
 }
 
 // Main app that wraps the API and adds React Router fallback
-const app = new Hono<{ Bindings: Env; Variables: { access?: AccessClaims } }>();
+const app = new Hono<{ Bindings: Env; Variables: { access?: AccessClaims; standing?: Standing } }>();
 
 // No page of this app may be framed by another site (clickjacking on Approve,
 // Send or Disconnect), and served files are never content-sniffed.
@@ -110,9 +116,43 @@ app.use("*", async (c, next) => {
 		return c.text("Invalid or expired Access token", 403);
 	}
 
-	// Authorization model note: once a teammate passes the shared Cloudflare
-	// Access policy, they can access all mailboxes in this app by design.
+	// Authorization model: Access says who may pass; the list of people (B-149, the next middleware)
+	// says what each reaches. With nobody listed, everyone Access lets in is an administrator.
 	return next();
+});
+
+// B-149: a person's role on a shared server. Access says who may pass; config/members.json says
+// what they reach. With no list every person is an administrator, as before (workers/lib/members.ts).
+app.use("*", async (c, next) => {
+	if (import.meta.env.DEV) return next();
+	const email = c.get("access")?.email;
+	if (typeof email !== "string" || !email) return next(); // an agent key: its own checks
+	let standing: Standing;
+	try {
+		standing = standingOf(await membersCached(c.env.BUCKET), email);
+	} catch (error) {
+		console.error(JSON.stringify({ event: "members_unreadable", error: (error as Error).message.slice(0, 200) }));
+		return c.text(error instanceof MembersError ? error.message : "The server's list of people cannot be read; try again in a moment.", 503);
+	}
+	c.set("standing", standing);
+	if (standing.role === "admin") return next();
+	const url = new URL(c.req.url);
+	const isApi = url.pathname.startsWith("/api/");
+	const refuse = (text: string) => (isApi ? c.json({ error: text }, 403) : c.text(text, 403));
+	if (standing.role === "none")
+		return refuse(msg("{email} is not on this server's list of people. Ask its administrator to add you.", { email: standing.email }));
+	const gate = memberGate(c.req.method, url.pathname, standing.accounts);
+	if (gate === "pass") return next();
+	if (gate === "refuse") return refuse(msg("Only an administrator of this server can do that. You reach your own mailboxes."));
+	// The feed: answered for the member's mailboxes only, as for an agent key limited to them.
+	try {
+		const scoped = scopedApi(inProcessApi(url.origin, c.env, c.executionCtx as ExecutionContext), standing.accounts, "person");
+		const answer = await scoped.request("GET", url.pathname, { query: Object.fromEntries(url.searchParams) });
+		return c.json(answer.data as object, answer.status as 200);
+	} catch (error) {
+		if (error instanceof ApiError) return c.json({ error: error.message }, error.status as 403);
+		throw error;
+	}
 });
 
 // The agent protocol (docs/agents/mcp.md). Before the API routes and the React Router catch-all.

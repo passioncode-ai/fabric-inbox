@@ -21,6 +21,7 @@ import { agentKeysRouter } from "./routes/agent-keys";
 import { gmailSetupRouter } from "./routes/gmail-setup";
 import { credentialKeyRouter } from "./routes/credential-key";
 import { microsoftSetupRouter } from "./routes/microsoft-setup";
+import { membersRouter } from "./routes/members";
 import type { Env } from "./types";
 import { BUILD_HEADER, BUILD_ID } from "../shared/build";
 
@@ -46,4 +47,5 @@ api.route("/", agentKeysRouter);
 api.route("/", gmailSetupRouter);
 api.route("/", credentialKeyRouter);
 api.route("/", microsoftSetupRouter);
+api.route("/", membersRouter);
 api.route("/", mailboxApi);

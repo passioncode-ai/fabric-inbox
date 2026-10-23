@@ -393,6 +393,13 @@ const getServer = defineTool({
   call: (_a, ctx) => get(ctx, "/api/server"),
 });
 
+const listMembers = defineTool({
+  name: "list_members", title: "List the people on this server", level: "admin", readOnly: true,
+  description: "Who signs in to this shared server and what they reach (B-149): each person's email, role (admin: everything; member: only their mailboxes) and a member's mailboxes. open: true means nobody is listed, so everyone Cloudflare Access lets in is an administrator. Adding or removing a person is the administrator's act in the app, not an agent's.",
+  input: {}, routes: ["GET /api/members"],
+  call: (_a, ctx) => get(ctx, "/api/members"),
+});
+
 const checkRouting = defineTool({
   name: "check_address_routing", title: "Check an address's routing", level: "read", readOnly: true,
   description: "Asks Cloudflare whether mail for this address reaches this server (a rule here, the catch-all, a rule elsewhere, or nothing).",
@@ -1709,7 +1716,7 @@ export const TOOLS: readonly ToolDef[] = [
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,
-  getServer, checkAddress, createAddress, createAddresses, updateAddress, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination, removeDestination,
+  getServer, listMembers, checkAddress, createAddress, createAddresses, updateAddress, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination, removeDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, clearIncomingFailures, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,
@@ -1729,6 +1736,9 @@ export const NOT_TOOLS: Readonly<Record<string, string>> = {
   "GET /api/accounts/outlook/callback": "Microsoft's OAuth redirect back to the browser (and the end of an administrator's approval)",
   "POST /api/accounts/imap": "Connecting an IMAP account takes the person's app password: an agent must never receive a person's password, so the person enters it in Settings → Accounts; list_mail_providers gives the presets and where to go",
   "PUT /api/accounts/:accountId/password": "A new app password is the person's secret, entered in Settings → Accounts: an agent must never receive a person's password; list_mail_providers says which accounts need one (status reconnect_required)",
+  "GET /api/me": "The signed-in person's own role on the server, for the app's screens; an agent's level is its key's (list_members shows everyone's)",
+  "PUT /api/members/:email": "Who may read whose mail on a shared server is a person's act (B-149), like issuing agent keys; list_members reads the list",
+  "DELETE /api/members/:email": "Removing a person from a shared server is an administrator's act in the app (B-149); list_members reads the list",
   "POST /api/server/self-update": "Replacing the server's code is the person's app's act (B-44): it sends the bundle it carries, signed with the app; an agent never uploads server code",
   "POST /api/agent-keys": "Agent keys are issued by a person in the app (its answer carries the key's secret); an agent cannot mint keys. list_agent_keys reads them",
   "DELETE /api/agent-keys/:id": "Agent keys are revoked by a person in the app (Settings → Agent access); list_agent_keys reads them",

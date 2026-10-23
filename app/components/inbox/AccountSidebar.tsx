@@ -20,6 +20,8 @@ interface Props {
   /** Hide or show addresses; resolves when saved. */
   onHidden: (change: { hide?: string[]; show?: string[] }) => Promise<void>;
   busy?: boolean;
+  /** False for a member of a shared server (B-149): no adding, hiding or connecting, which are the administrator's. */
+  canManage?: boolean;
 }
 
 const FILTER_KEY = "fabric-inbox:address-filter";
@@ -48,7 +50,7 @@ export function syncLabel(a: { status: string; importing?: number }, t: T = engl
  * the last 7 days);
  * any address can be hidden, and hidden ones wait in their own list.
  */
-export default function AccountSidebar({ accounts, accountId, domain, provider = "", loading, onScope, hidden, onHidden, busy }: Props) {
+export default function AccountSidebar({ accounts, accountId, domain, provider = "", loading, onScope, hidden, onHidden, busy, canManage = true }: Props) {
   const t = useT();
   const [filter, setFilterState] = useState<AddressFilter>("mail");
   useEffect(() => { setFilterState(readFilter()); }, []);
@@ -106,7 +108,7 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
     <>
       <div className="fi-section-label">
         {t("ADDRESSES")}
-        <Link to="/settings/addresses?add=1" aria-label={t("Add an address")}>+</Link>
+        {canManage && <Link to="/settings/addresses?add=1" aria-label={t("Add an address")}>+</Link>}
       </div>
       {accounts.length > 0 && (
         <div className="fi-address-filter" role="group" aria-label={t("Which addresses to list")}>
@@ -151,11 +153,11 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
                         )}
                         <Count n={a.unread} label={a.email} stale={a.countsStale} />
                       </button>
-                      <button type="button" className="fi-address-hide" disabled={busy} aria-label={t("Hide {email}", { email: a.email })}
+                      {canManage && <button type="button" className="fi-address-hide" disabled={busy} aria-label={t("Hide {email}", { email: a.email })}
                         title={t("Hide: out of All inboxes and the counts; it keeps receiving")}
                         onClick={() => void onHidden({ hide: [a.id] })}>
                         <EyeSlashIcon size={13} aria-hidden="true" />
-                      </button>
+                      </button>}
                     </li>
                   ))}
                 </ul>
@@ -165,7 +167,7 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
         })}
       </nav>
       {!accounts.length && !loading && (
-        <p className="fi-sidebar-empty">{t("No addresses yet. Add an address on one of your domains, or connect Gmail.")}</p>
+        <p className="fi-sidebar-empty">{canManage ? t("No addresses yet. Add an address on one of your domains, or connect Gmail.") : t("No mailbox is shared with you yet. Ask this server's administrator.")}</p>
       )}
       {notListed > 0 && (
         <div className="fi-address-note">
@@ -174,7 +176,7 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
               {t("{n} without mail not listed.", { n: notListed })}{" "}
               <button type="button" className="fi-text-button" onClick={() => setFilter("all")}>{t("Show")}</button>
               {" · "}
-              <button type="button" className="fi-text-button" disabled={busy} onClick={() => setConfirmHideEmpty(true)}>{t("Hide them…")}</button>
+              {canManage && <button type="button" className="fi-text-button" disabled={busy} onClick={() => setConfirmHideEmpty(true)}>{t("Hide them…")}</button>}
             </>
           ) : (
             <span role="alert">
@@ -207,21 +209,25 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
                     <span className="fi-address-name">{a.email}</span>
                     <Count n={a.unread} label={a.email} />
                   </button>
-                  <button type="button" className="fi-address-hide is-shown" disabled={busy} aria-label={t("Show {email} again", { email: a.email })} title={t("Show again")}
+                  {canManage && <button type="button" className="fi-address-hide is-shown" disabled={busy} aria-label={t("Show {email} again", { email: a.email })} title={t("Show again")}
                     onClick={() => void onHidden({ show: [a.id] })}>
                     <EyeIcon size={13} aria-hidden="true" />
-                  </button>
+                  </button>}
                 </li>
               ))}
             </ul>
           )}
         </div>
       )}
-      <div className="fi-add-links">
-        <Link className="fi-add-account" to="/settings/addresses?add=1"><AtIcon size={15} /> {t("Add address")}</Link>
-        <Link className="fi-add-account" to="/settings/accounts?connect=gmail"><GoogleLogoIcon size={15} /> {t("Connect Gmail")}</Link>
-        <Link className="fi-add-account" to="/settings/accounts?connect=imap"><EnvelopeSimpleIcon size={15} /> {t("Connect other mail")}</Link>
-      </div>
+      {canManage ? (
+        <div className="fi-add-links">
+          <Link className="fi-add-account" to="/settings/addresses?add=1"><AtIcon size={15} /> {t("Add address")}</Link>
+          <Link className="fi-add-account" to="/settings/accounts?connect=gmail"><GoogleLogoIcon size={15} /> {t("Connect Gmail")}</Link>
+          <Link className="fi-add-account" to="/settings/accounts?connect=imap"><EnvelopeSimpleIcon size={15} /> {t("Connect other mail")}</Link>
+        </div>
+      ) : (
+        <p className="fi-sidebar-empty">{t("You see the mailboxes this server's administrator gave you.")}</p>
+      )}
     </>
   );
 }

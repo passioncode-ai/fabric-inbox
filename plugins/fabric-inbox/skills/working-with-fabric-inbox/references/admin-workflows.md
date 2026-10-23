@@ -215,7 +215,10 @@ IMAP presets (servers, the first step at the provider, its help page) and where 
 person enters the password — an agent never receives one. `disconnect_account` (two-step)
 disconnects a Gmail, IMAP or Outlook account;
 `list_agent_keys` lists the keys (no secrets); keys are made in Settings → Agent access and tokens
-pasted in Settings → Accounts.
+pasted in Settings → Accounts. On a shared server, `list_members` lists the people: each email, its
+role (`admin`: everything; `member`: only its mailboxes) and a member's mailboxes; `open: true` means
+nobody is listed and everyone who can sign in is an administrator. Adding or removing a person is
+the administrator's act in Settings → People, never an agent's.
 
 ## Checking your own work
 

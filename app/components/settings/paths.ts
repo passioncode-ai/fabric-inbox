@@ -9,7 +9,7 @@
 import { msg } from "../../../shared/i18n";
 
 export const SECTION_IDS = [
-  "addresses", "domains", "accounts", "destinations", "agents", "knowledge", "categories", "spam", "discard", "agent-access", "app",
+  "addresses", "domains", "accounts", "destinations", "agents", "knowledge", "categories", "spam", "discard", "agent-access", "people", "app",
 ] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 
@@ -45,6 +45,8 @@ export const SECTIONS: readonly SectionInfo[] = [
     description: msg("Collections of documents your agents search when they answer.") },
   { id: "agent-access", label: msg("Agent access"), group: "agents",
     description: msg("Keys for AI agents you run elsewhere, and what they changed.") },
+  { id: "people", label: msg("People"), group: "app",
+    description: msg("Who signs in to this server: administrators manage it, members read their own mailboxes.") },
   { id: "app", label: msg("App"), group: "app",
     description: msg("Theme, your server, setups, and the desktop app.") },
 ];

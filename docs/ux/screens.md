@@ -22,6 +22,7 @@
 | SCR-14 | Settings → Spam rules | FLW-02 | deferred | built | app/components/settings/sections/SpamSection.tsx, workers/routes/spam.ts |
 | SCR-15 | Settings → Agent access | FLW-07 | deferred | built | app/components/settings/sections/AgentAccessSection.tsx, workers/routes/agent-keys.ts |
 | SCR-16 | Settings → Discard rules | FLW-02 | deferred | built | app/components/settings/sections/DiscardSection.tsx, workers/routes/discard.ts |
+| SCR-17 | Settings → People | FLW-07 | deferred | built | app/components/settings/sections/PeopleSection.tsx, workers/routes/members.ts |
 
 ## Design system
 - **Style pack:** canonical Fabric tokens (Kumo and Tailwind retained); see [brand provenance](../desktop-mail/brand-source.json).
@@ -319,3 +320,22 @@ Records retain designed status because their complete target state sets have not
 - **Resources:** [Flow specification](flows.md), [shared interaction requirements](scenarios.md).
 - **Status:** built
 - **Today:** Built in 0.12 (WS8); seen in the local Worker on 2026-10-06.
+
+### SCR-17: Settings → People
+- **Part of:** SCR-02 Settings (People section, under This app); the list, panel, ⋯ menu and confirmation follow SCR-02.
+- **Used by:** FLW-07
+- **Purpose:** Say who signs in to a shared server and what each reaches: administrators everything, members only their mailboxes.
+- **Elements:** What it is (Cloudflare Access decides who can sign in, this list what they reach; nobody listed means everyone is an administrator); Administrators and Members (email, (you), what they reach, role); Add a person (Their sign-in email; Role: Member, Administrator; Mailboxes for a member; Add); a person's panel: Role, Reaches, Added; Change… and Remove… (Remove and Keep).
+- **States:**
+
+| State | Trigger | Figma frame | Behavior |
+|---|---|---|---|
+| success | Available result | deferred | People listed by role; a change says what was done. |
+| empty | No relevant data | deferred | Nobody is listed: everyone who can sign in is an administrator. |
+| loading | Pending operation | deferred | Loading people; Saving… with the button disabled. |
+| error | Operation cannot complete | deferred | A failed load offers Retry; removing the last administrator, or a member without a mailbox, is refused with the reason. |
+
+- **Coverage:** app/components/settings/sections/PeopleSection.tsx (PeopleSection, PersonPanel, PersonDialog); workers/routes/members.ts; workers/lib/members.ts
+- **Scenarios:** SCN-081, SCN-082
+- **Resources:** [Flow specification](flows.md), [shared interaction requirements](scenarios.md).
+- **Status:** built

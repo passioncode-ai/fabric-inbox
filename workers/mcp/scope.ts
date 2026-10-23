@@ -12,6 +12,7 @@
 import { ApiError, type Api, type ApiResponse, type ToolDef } from "./protocol";
 import type { Principal } from "./keys";
 import { parseRemoteAccount } from "../../shared/mail/accounts";
+import { msg } from "../../shared/i18n";
 
 /** "cloudflare:<address>" (a bare address counts), "gmail:<id>" or "imap:<id>", the way list_accounts names it; null otherwise. */
 export function normaliseAccountId(value: unknown): string | null {
@@ -42,7 +43,7 @@ export const describeScope = (accounts: readonly string[]) =>
   accounts.length ? accounts.map((a) => a.replace(/^cloudflare:/, "")).join(", ") : "no mailbox";
 
 /** The feed's routes: answered for the key's mailboxes only. */
-const FEED_ROUTES = new Set(["GET /api/inbox", "GET /api/accounts", "GET /api/inbox/hidden"]);
+export const FEED_ROUTES = new Set(["GET /api/inbox", "GET /api/accounts", "GET /api/inbox/hidden"]);
 const MAILBOX_ROUTE = /^[A-Z]+ \/api\/v1\/mailboxes\/:mailboxId(\/|$)/;
 const GMAIL_ROUTE = /^[A-Z]+ \/api\/accounts\/:accountId(\/|$)/;
 
@@ -56,7 +57,7 @@ export function toolFitsScope(tool: Pick<ToolDef, "routes">): boolean {
  * `/api/accounts/<id>` path names the account by its own id, which is unique across Gmail and
  * IMAP: it is about whichever of `gmail:<id>` and `imap:<id>` the key holds.
  */
-function accountOfPath(pathname: string, allowed: ReadonlySet<string>): string | null {
+export function accountOfPath(pathname: string, allowed: ReadonlySet<string>): string | null {
   const parts = pathname.split("/");
   try {
     if (pathname.startsWith("/api/v1/mailboxes/") && parts[4]) return normaliseAccountId(`cloudflare:${decodeURIComponent(parts[4])}`);
@@ -70,8 +71,12 @@ function accountOfPath(pathname: string, allowed: ReadonlySet<string>): string |
   return null;
 }
 
-const refuse = (accounts: readonly string[]) =>
-  new ApiError(403, `This key is limited to ${describeScope(accounts)}; it cannot reach that.`, null);
+/** Who the limit is on: an agent key (its caller reads English) or a person in the app (B-149). */
+export type ScopeSubject = "key" | "person";
+const refuse = (accounts: readonly string[], who: ScopeSubject = "key") =>
+  new ApiError(403, who === "person"
+    ? msg("You reach only {mailboxes}; this is not one of them.", { mailboxes: describeScope(accounts) })
+    : `This key is limited to ${describeScope(accounts)}; it cannot reach that.`, null);
 
 /** Wraps the app's API for a key limited to `accounts`. */
 type Feed = { accounts?: { id?: unknown }[]; messages?: { accountId?: unknown; date?: unknown }[]; issues?: { accountId?: unknown }[]; hasMore?: boolean; cursor?: unknown };
@@ -86,7 +91,7 @@ function cursorAccounts(cursor: unknown): string[] | null {
 }
 
 /** Wraps the app's API for a key limited to `accounts`. */
-export function scopedApi(api: Api, accounts: readonly string[]): Api {
+export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubject = "key"): Api {
   const allowed = new Set(accounts);
   const allowedLower = new Set(accounts.map((a) => a.toLowerCase()));
   const mine = (id: unknown) => allowed.has(String(id));
@@ -96,7 +101,7 @@ export function scopedApi(api: Api, accounts: readonly string[]): Api {
       const route = `${method} ${pathname}`;
       if (FEED_ROUTES.has(route)) return narrowFeed(route, init);
       const account = accountOfPath(pathname, allowed);
-      if (!account || !allowed.has(account)) throw refuse(accounts);
+      if (!account || !allowed.has(account)) throw refuse(accounts, who);
       return api.request(method, path, init);
     },
   };
@@ -131,12 +136,14 @@ export function scopedApi(api: Api, accounts: readonly string[]): Api {
       // A category is the workspace's, and its view reads every mailbox regardless of account.
       const category = init.query?.category;
       if (category !== undefined && category !== null && category !== "")
-        throw new ApiError(403, `Categories are shared by the whole workspace; this key is limited to ${describeScope(accounts)}.`, null);
+        throw new ApiError(403, who === "person"
+          ? msg("Categories are shared by the whole workspace; you reach only {mailboxes}.", { mailboxes: describeScope(accounts) })
+          : `Categories are shared by the whole workspace; this key is limited to ${describeScope(accounts)}.`, null);
       const asked = init.query?.account;
       const named = asked !== undefined && asked !== null && asked !== "";
       if (named) {
         const account = normaliseAccountId(asked);
-        if (!account || !allowed.has(account)) throw refuse(accounts);
+        if (!account || !allowed.has(account)) throw refuse(accounts, who);
         return oneFeed(init, account, true);
       }
       if (accounts.length === 1) return oneFeed(init, accounts[0]!, false);
@@ -154,7 +161,9 @@ export function scopedApi(api: Api, accounts: readonly string[]): Api {
       return { status: 200, contentType: "application/json", data: {
         accounts: pages.flatMap((p) => p.accounts ?? []), messages, hasMore: more,
         issues: [...pages.flatMap((p) => p.issues ?? []),
-          ...(more ? [{ provider: "scope", error: `This key reaches ${accounts.length} mailboxes; page one mailbox at a time with accountId.` }] : [])],
+          ...(more ? [{ provider: "scope", error: who === "person"
+            ? msg("You reach {count} mailboxes; open one of them to see older mail.", { count: accounts.length })
+            : `This key reaches ${accounts.length} mailboxes; page one mailbox at a time with accountId.` }] : [])],
       } };
     }
     const response = await api.request("GET", route.slice(4), init);

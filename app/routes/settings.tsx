@@ -4,7 +4,7 @@
 
 import {
 	ArrowBendUpRightIcon, AtIcon, BooksIcon, CaretLeftIcon, FunnelSimpleIcon, GearSixIcon, GlobeIcon, PlugIcon, ProhibitIcon, XCircleIcon,
-	RobotIcon, UserCircleIcon, type Icon,
+	RobotIcon, UserCircleIcon, UsersThreeIcon, type Icon,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useParams, type MetaArgs } from "react-router";
@@ -23,6 +23,8 @@ import SpamSection from "~/components/settings/sections/SpamSection";
 import DiscardSection from "~/components/settings/sections/DiscardSection";
 import AgentAccessSection from "~/components/settings/sections/AgentAccessSection";
 import AppSection from "~/components/settings/sections/AppSection";
+import PeopleSection from "~/components/settings/sections/PeopleSection";
+import { useMe } from "~/lib/me";
 import { metaT, useT } from "~/lib/i18n";
 import { msg } from "../../shared/i18n";
 
@@ -33,7 +35,7 @@ export function meta({ matches }: MetaArgs) {
 
 const ICONS: Record<SectionId, Icon> = {
 	addresses: AtIcon, domains: GlobeIcon, accounts: UserCircleIcon, destinations: ArrowBendUpRightIcon,
-	categories: FunnelSimpleIcon, spam: ProhibitIcon, discard: XCircleIcon, agents: RobotIcon, knowledge: BooksIcon, "agent-access": PlugIcon, app: GearSixIcon,
+	categories: FunnelSimpleIcon, spam: ProhibitIcon, discard: XCircleIcon, agents: RobotIcon, knowledge: BooksIcon, "agent-access": PlugIcon, people: UsersThreeIcon, app: GearSixIcon,
 };
 
 const GROUP_LABEL = { mail: msg("Mail"), agents: msg("Agents"), app: msg("This app") } as const;
@@ -47,6 +49,7 @@ const GROUP_LABEL = { mail: msg("Mail"), agents: msg("Agents"), app: msg("This a
 export default function Settings() {
 	const t = useT();
 	const { section, id, tab } = useParams();
+	const me = useMe();
 	// Steps of the last action on each domain outlive its panel and the section (DomainsSection).
 	const [steps, setSteps] = useState<Record<string, Step[]>>({});
 	const memory = useMemo(() => ({
@@ -62,6 +65,18 @@ export default function Settings() {
 			current.scrollIntoView({ block: "nearest", inline: "nearest" });
 	}, [section]);
 
+	// B-149: a member of a shared server has no settings; the server is its administrator's.
+	if (me.data?.role === "member") return (
+		<div className="fi-settings">
+			<main className="fi-settings-main">
+				<div className="fi-panel-placeholder">
+					<h2>{t("Settings are for this server's administrators")}</h2>
+					<p>{t("You read and answer the mail of the mailboxes shared with you. To get another mailbox, or a change in how this server works, ask its administrator.")}</p>
+					<Link to="/" className="fi-secondary">{t("Back to mail")}</Link>
+				</div>
+			</main>
+		</div>
+	);
 	if (!section) return <Navigate to={settingsPath(DEFAULT_SECTION)} replace />;
 	if (!isSection(section)) return <Navigate to={settingsPath(DEFAULT_SECTION)} replace />;
 	const item = id ?? null;
@@ -100,6 +115,7 @@ export default function Settings() {
 							{section === "spam" && <SpamSection id={item} />}
 							{section === "discard" && <DiscardSection id={item} />}
 							{section === "agent-access" && <AgentAccessSection id={item} />}
+							{section === "people" && <PeopleSection id={item} />}
 							{section === "app" && <AppSection id={item} />}
 						</WorkProvider>
 					</main>

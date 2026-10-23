@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.30.0 (2026-10-23)
+
+- **Share a server with other people.** Settings has a new section, People: add someone by the email
+  they sign in with, as an administrator who manages everything or as a member who reads and answers
+  only the mailboxes you give them. A member sees just those mailboxes, with no settings, categories,
+  rules or other people's mail. Someone who can sign in but is not on the list is told to ask the
+  administrator. While nobody is listed, the server works exactly as before (B-149).
+
 ## 0.29.4 (2026-10-23)
 
 - **A clear refusal for Fabric without a key.** The server's health, events and usage pages now answer
