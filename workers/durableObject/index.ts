@@ -12,7 +12,7 @@ import * as schema from "../db/schema";
 import { Folders, isBuiltInFolder, FOLDER_DISPLAY_NAMES } from "../../shared/folders";
 import type { Env } from "../types";
 import { applyMigrations, mailboxMigrations } from "./migrations";
-import { IncomingJournal } from '../actions/incoming';
+import { IncomingJournal, RECEIPT_KEEP_MS } from '../actions/incoming';
 import type { IncomingMailEvent } from '../../shared/mail/incoming';
 import { SqlOutboxStore, journal, type OutboxRow } from '../actions/outbox-store';
 import type { OutboxEntry } from '../../shared/mail/outbox';
@@ -1695,6 +1695,13 @@ export class MailboxDO extends DurableObject<Env> {
         const dead = this.ctx.storage.transactionSync(() => this.incoming.failed(item.delivery_id, message));
         console.warn(JSON.stringify({ event: dead ? "incoming_delivery_dead" : "incoming_delivery_retry", mailboxId: item.mailbox_id, deliveryId: item.delivery_id, error: message }));
       }
+    }
+    // B-34: once a day the receipts of long-settled events go, so the journal stays bounded.
+    const today = new Date().toISOString().slice(0, 10);
+    if ((await this.ctx.storage.get<string>("incoming:pruned-day")) !== today) {
+      const removed = this.ctx.storage.transactionSync(() => this.incoming.prune(Date.now() - RECEIPT_KEEP_MS));
+      await this.ctx.storage.put("incoming:pruned-day", today);
+      if (removed) console.log(JSON.stringify({ event: "incoming_receipts_pruned", count: removed }));
     }
     // Wake for the next event whose backoff ends, not only on the next arrival.
     const due = this.incoming.nextDue();

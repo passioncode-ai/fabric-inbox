@@ -18,6 +18,7 @@ const bundle = await build({
       export class TestMailbox extends MailboxDO {
         constructor(ctx, env) { super(ctx, {...env, AI:{run:forbidden}, EMAIL:{send:forbidden}}); }
         async dueNow() { this.ctx.storage.sql.exec("UPDATE incoming_receipts SET next_at = 0 WHERE automation_status = 'pending'"); await this.flushIncomingEvents(); }
+        async ageReceipts() { this.ctx.storage.sql.exec("UPDATE incoming_receipts SET received_at = ?", Date.now() - 100 * 86400000); await this.ctx.storage.delete('incoming:pruned-day'); }
         async receipts() { return this.ctx.storage.sql.exec('SELECT automation_status AS s, attempts AS a FROM incoming_receipts').toArray(); }
         async addSent(recipient) { this.ctx.storage.sql.exec("INSERT INTO emails (id, folder_id, subject, sender, recipient, date, body) VALUES (?, 'sent', 'Hi', 'me@p.invalid', ?, ?, '')", crypto.randomUUID(), recipient, new Date().toISOString()); }
       }
@@ -57,6 +58,7 @@ const bundle = await build({
           if (c.op === 'due') { await box.dueNow(); return Response.json(true); }
           if (c.op === 'retry') return Response.json(await box.retryIncoming());
           if (c.op === 'receipts') return Response.json(await box.receipts());
+          if (c.op === 'age') { await box.ageReceipts(); return Response.json(true); }
           return new Response('?', { status: 400 });
         }
       };
@@ -143,5 +145,18 @@ test("a long message reads whole in its thread as alone; a long attachment name 
     assert.equal(await op({ op: "known", address: "x@example.invalid" }), false, "not a part of another address");
     await op({ op: "sent", recipient: "Friend <x@example.invalid>, other@example.invalid" });
     assert.equal(await op({ op: "known", address: "x@example.invalid" }), true);
+  } finally { await mf.dispose(); }
+});
+
+test("B-34: receipts of long-settled events are forgotten once a day; set-aside ones stay", async () => {
+  const { mf, op, receive } = await fixture();
+  try {
+    await receive("An ordinary message");
+    await receive("poison one");
+    for (let i = 0; i < 12; i++) await op({ op: "due" });
+    await op({ op: "age" });
+    await receive("A new message");
+    const receipts = await op({ op: "receipts" }) as { s: string }[];
+    assert.deepEqual(receipts.map((r) => r.s).sort(), ["accepted", "dead"], "the old accepted receipt went; the set-aside one and today's stay");
   } finally { await mf.dispose(); }
 });

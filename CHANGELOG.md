@@ -21,6 +21,8 @@ is cut and published: [docs/release.md](docs/release.md).
 - **Mail to unknown addresses is counted exactly.** Deliveries arriving at the same moment all count,
   and a domain keeps at most 500 unknown addresses, the one unseen longest giving way after 30 days,
   so mail sent to random addresses cannot fill your storage (B-10).
+- **The incoming mail journal stays small.** Once a day each address forgets the receipts of mail
+  its rules, agents and categories took more than 90 days ago (B-34).
 
 ## 0.30.3 (2026-10-23)
 
