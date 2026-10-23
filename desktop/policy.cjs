@@ -42,6 +42,27 @@ function navigation(urlString, config) {
   if (url.protocol === 'https:' || loopback(url.hostname)) return 'external';
   return 'deny';
 }
+/**
+ * B-02: sign-in through an identity provider the server's Access sends to (Google, Okta, Microsoft
+ * Entra, …). Its pages open in the app's own sign-in window, on the mail window's session, so the
+ * cookie the sign-in ends with is the app's; a page anywhere else still goes to the browser.
+ * `kind` is how the mail window was asked to leave: `redirect` (the server's or Access's own answer,
+ * never a click in a message) or `navigate` (a click on Access's sign-in page). Only an https
+ * destination outside the app's origins is handed over, and only from those two places.
+ */
+function signInHandoff(kind, currentURL, targetURL, config) {
+  const target = parseWebURL(targetURL);
+  if (!target || target.protocol !== 'https:' || !config) return false;
+  if (navigation(targetURL, config) !== 'external') return false;
+  if (kind === 'redirect') return true;
+  const current = parseWebURL(currentURL);
+  return kind === 'navigate' && !!current && !!config.accessOrigin && current.origin === config.accessOrigin;
+}
+/** Where the sign-in window gives back: a page of the server, after which the mail window opens it. */
+function signInDone(url, config) {
+  const u = parseWebURL(url);
+  return !!u && !!config && u.origin === config.origin;
+}
 function gmailConnectURL(config) { return new URL('/api/accounts/gmail/connect', config.origin).href; }
 /** Where the server opens after Create my server: Domains, or the Gmail setup when it was asked for (SCN-030, SCN-051). */
 function afterDeployPage(input) { return input && input.gmail === true ? '/settings/accounts?connect=gmail' : '/settings/domains'; }
@@ -115,4 +136,4 @@ function sandboxWarning(platform, noSandbox, dismissed) {
 }
 const SANDBOX_HELP_URL = 'https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/desktop-data-and-updates.md#windows-and-linux';
 
-module.exports = { sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL, keyStoreRefusal, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };
+module.exports = { signInHandoff, signInDone, sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL, keyStoreRefusal, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };

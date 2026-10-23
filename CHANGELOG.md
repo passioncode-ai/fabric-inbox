@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.30.3 (2026-10-23)
+
+- **Sign in with your organization's account.** When your server signs people in through Google
+  Workspace, Okta, Microsoft Entra or another identity provider, the app now opens that sign-in in its
+  own window and keeps you signed in, instead of sending you to the browser, where the sign-in never
+  reached the app (B-02).
+
 ## 0.30.2 (2026-10-23)
 
 - **Linux: a clear warning without the sandbox.** Where the AppImage has to run without Chromium's

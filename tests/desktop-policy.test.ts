@@ -44,6 +44,32 @@ test('navigation isolates remote content and sends only safe websites outside', 
   for (const value of ['file:///etc/passwd', 'data:text/html,x', 'javascript:alert(1)', 'mailto:person@example.com', 'https://user:pass@example.net', 'http://example.net', 'fabric://open']) assert.equal(navigation(value, config), 'deny');
 });
 
+test('B-02: an identity provider Access sends to signs in inside the app; anything else still goes to the browser', () => {
+  const { signInHandoff, signInDone } = require('../desktop/policy.cjs');
+  const idp = 'https://accounts.google.example/o/oauth2/auth?client_id=x';
+  // Access's answer redirects to the provider: handed to the sign-in window.
+  assert.equal(signInHandoff('redirect', 'https://mail.example.com/', idp, config), true);
+  // A click on Access's own sign-in page (choose a provider): handed over too.
+  assert.equal(signInHandoff('navigate', 'https://team.cloudflareaccess.com/cdn-cgi/access/login/mail.example.com', idp, config), true);
+  // A click anywhere in the app or a message: the browser, as before.
+  assert.equal(signInHandoff('navigate', 'https://mail.example.com/inbox', idp, config), false);
+  assert.equal(signInHandoff('navigate', '', idp, config), false);
+  // Only https outside the app's own origins; nothing without a configuration.
+  for (const target of ['http://accounts.google.example/', 'https://mail.example.com/x', 'https://team.cloudflareaccess.com/x', 'javascript:alert(1)'])
+    assert.equal(signInHandoff('redirect', 'https://mail.example.com/', target, config), false, target);
+  assert.equal(signInHandoff('redirect', 'https://mail.example.com/', idp, null), false);
+  // The sign-in ends when the provider hands back to the server itself.
+  assert.equal(signInDone('https://mail.example.com/cdn-cgi/access/authorized?token=x', config), true);
+  for (const u of ['https://team.cloudflareaccess.com/cdn-cgi/access/callback', 'https://mail.example.com.evil.example/', idp]) assert.equal(signInDone(u, config), false, u);
+  // The mail window hands main-frame navigations over through the policy; the sign-in window has no preload.
+  const main = require('node:fs').readFileSync(new URL('../desktop/main.cjs', import.meta.url), 'utf8');
+  assert.match(main, /policy\.signInHandoff\(kind, win\.webContents\.getURL\(\), url, snapshot\)/);
+  const signIn = main.slice(main.indexOf('function openSignIn'), main.indexOf('/** The server\'s Settings screen'));
+  assert.match(signIn, /securePreferences\(\{ session: ses \}\)/);
+  assert.doesNotMatch(signIn, /preload/i);
+  assert.match(signIn, /setWindowOpenHandler\(\(\) => \(\{ action: 'deny' \}\)\)/);
+});
+
 test('Gmail starts at server route, never by forwarding supplied OAuth query', () => {
   assert.equal(navigation('https://mail.example.com/api/accounts/gmail/connect?redirect=evil', config), 'gmail');
   assert.equal(gmailConnectURL(config), 'https://mail.example.com/api/accounts/gmail/connect');

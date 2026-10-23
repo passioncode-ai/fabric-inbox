@@ -218,6 +218,36 @@ async function openExternal(url, force = false) {
   } catch { showSetup(t('The browser could not be opened. Try again from the Account menu.')); }
   finally { openingExternal = false; }
 }
+let signInWindow = null;
+/**
+ * B-02: the sign-in window. An identity provider's pages (Google, Okta, Microsoft Entra, …) load here,
+ * on the mail window's session so the cookie Access sets at the end is the app's, but with no preload,
+ * no permission, no new windows and https only. When the provider hands back to the server, the window
+ * closes and the mail window opens that page, signed in. Closing it leaves the mail window as it was.
+ */
+function openSignIn(parent, ses, url, snapshot) {
+  if (signInWindow && !signInWindow.isDestroyed()) { void signInWindow.loadURL(url); signInWindow.focus(); return; }
+  logEvent({ event: 'signin_window', host: (() => { try { return new URL(url).hostname; } catch { return null; } })() });
+  const sw = new BrowserWindow({ title: t('Sign in'), parent, modal: process.platform !== 'linux', width: 520, height: 720, show: true,
+    webPreferences: securePreferences({ session: ses }) });
+  signInWindow = sw;
+  const done = (target) => {
+    if (sw.isDestroyed()) return;
+    logEvent({ event: 'signin_window', outcome: 'done' });
+    sw.destroy();
+    if (!parent.isDestroyed()) void parent.loadURL(target).catch(() => {});
+  };
+  const guard = (event, target) => { if (!/^https:/i.test(String(target))) event.preventDefault(); };
+  sw.webContents.on('will-navigate', guard);
+  sw.webContents.on('will-redirect', guard);
+  // The server's page has answered (its response set the cookie): hand it to the mail window.
+  sw.webContents.on('did-navigate', (_event, target) => { if (policy.signInDone(target, snapshot)) done(target); });
+  sw.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  sw.webContents.on('will-attach-webview', event => event.preventDefault());
+  sw.webContents.on('page-title-updated', event => event.preventDefault());
+  sw.on('closed', () => { if (signInWindow === sw) signInWindow = null; });
+  void sw.loadURL(url).catch(() => {});
+}
 /** The server's Settings screen, and its Setup page that applies a setup chosen in this app. */
 const SETTINGS_PAGE = '/settings';
 const SETUP_PAGE = '/settings/app/setup';
@@ -252,12 +282,16 @@ function loadMail() {
     win.hide();
     showSetup(t('Fabric Inbox could not reach the server. Check your connection, then retry. Mail is not available offline in this version.'));
   };
-  const navigate = (event, url) => {
+  const navigate = (kind) => (event, url, _inPlace, isMainFrame) => {
     if (policy.navigation(url, snapshot) === 'internal') return;
-    event.preventDefault(); void openExternal(url);
+    event.preventDefault();
+    // B-02: an identity provider Access sends to signs in inside the app's own sign-in window.
+    const mainFrame = event.isMainFrame ?? isMainFrame ?? true;
+    if (mainFrame && policy.signInHandoff(kind, win.webContents.getURL(), url, snapshot)) { openSignIn(win, ses, url, snapshot); return; }
+    void openExternal(url);
   };
-  win.webContents.on('will-navigate', navigate);
-  win.webContents.on('will-redirect', navigate);
+  win.webContents.on('will-navigate', navigate('navigate'));
+  win.webContents.on('will-redirect', navigate('redirect'));
   win.webContents.on('will-frame-navigate', event => {
     // Main-frame navigation is handled above. Message subframes cannot leave app content.
     if (event.isMainFrame) return;

@@ -441,6 +441,12 @@ server is the same one; what differs is the account, who signs in, and that it i
    with a sentence naming who to ask. The list always keeps an administrator; `list_members` reads it for
    an agent, and only a person changes it (B-149).
 
+People sign in with whatever the Access group allows. From 0.30.3 the Mac, Windows and Linux app signs
+in through an identity provider too (Google Workspace, Okta, Microsoft Entra and others, set up in Zero
+Trust → Settings → Authentication): when Access sends the mail window to the provider, its pages open in
+the app's own Sign in window on the same session, with no access to the app, and the mail opens signed
+in when the provider hands back (B-02, SCN-084). Any other website still opens in the browser.
+
 Not covered yet: delegated calls from other members' agents (B-83), and the telecom-secrecy check
 before people read private mail through a shared server (B-87 part 6, a legal decision).
 
