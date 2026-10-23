@@ -39,6 +39,21 @@ async function allowed(c: C): Promise<boolean> {
 
 const refused = () => new Response(null, { status: 401, headers: { "Cache-Control": "no-store" } });
 
+/**
+ * fabric-service/0.1 rule 1: a request a page of another site makes is refused on every path, the
+ * well-known one included, even when the browser carries the person's sign-in. A host sends no Origin.
+ */
+export function crossSite(url: string, origin: string | undefined, fetchSite: string | undefined): string | null {
+  if (fetchSite?.toLowerCase() === "cross-site") return "A request from another site is refused.";
+  if (origin && origin !== new URL(url).origin) return "A request from another origin is refused.";
+  return null;
+}
+
+const foreign = (c: C): Response | null => {
+  const reason = crossSite(c.req.url, c.req.header("Origin"), c.req.header("Sec-Fetch-Site"));
+  return reason ? new Response(reason, { status: 403, headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" } }) : null;
+};
+
 async function build(): Promise<Record<string, unknown>> {
   if (SOURCE) return { commit: SOURCE.commit, dirty: SOURCE.dirty, builtAt: SOURCE.builtAt };
   // A build outside Git: its own build id stands for it, hashed into the digest form.
@@ -87,12 +102,16 @@ export async function wellKnownDocument(env: Env): Promise<Record<string, unknow
 }
 
 fabricServiceRouter.get(WELL_KNOWN_PATH, async (c) => {
+  const blocked = foreign(c);
+  if (blocked) return blocked;
   if (!(await allowed(c))) return refused();
   c.header("Cache-Control", "no-store");
   return c.json(await wellKnownDocument(c.env));
 });
 
 fabricServiceRouter.get(EVENTS_PATH, async (c) => {
+  const blocked = foreign(c);
+  if (blocked) return blocked;
   if (!(await allowed(c))) return refused();
   c.header("Cache-Control", "no-store");
   if (!c.env.AGENT_REGISTRY) return c.json({ events: [], cursor: c.req.query("after") || null });
@@ -133,6 +152,8 @@ export function usageReport(rows: ModelUsageRow[], instance: string, now = new D
 }
 
 fabricServiceRouter.get(USAGE_PATH, async (c) => {
+  const blocked = foreign(c);
+  if (blocked) return blocked;
   if (!(await allowed(c))) return refused();
   c.header("Cache-Control", "no-store");
   const now = new Date();
