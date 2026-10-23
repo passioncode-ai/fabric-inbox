@@ -11,6 +11,8 @@ import type { Env } from "../types";
 import { migrateSchema, statements } from "../lib/do-schema";
 
 export const CONFIRM_TTL_MS = 5 * 60_000;
+/** B-38: an action waiting for the owner's approval waits a day, not five minutes: a person answers it. */
+export const APPROVAL_TTL_MS = 24 * 60 * 60_000;
 export const JOURNAL_KEPT = 5000;
 const MAX_OPEN_CODES = 200;
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -26,7 +28,17 @@ export const LEDGER_STEPS = [
   ]),
   // One key change at a time: making and revoking read and write Cloudflare's policy in several calls.
   statements("2_locks", [`CREATE TABLE IF NOT EXISTS mcp_locks (name TEXT PRIMARY KEY, holder TEXT NOT NULL, expires_at INTEGER NOT NULL)`]),
+  // B-38: a code issued to a key whose irreversible actions the owner approves works only once approved.
+  statements("3_owner_approval", [
+    `ALTER TABLE mcp_confirmations ADD COLUMN needs_owner INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE mcp_confirmations ADD COLUMN approved_at INTEGER`,
+    `ALTER TABLE mcp_confirmations ADD COLUMN caller_label TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE mcp_confirmations ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0`,
+  ]),
 ];
+
+/** B-38: one action an agent asked for that waits for the owner, as Agent access lists it. */
+export interface PendingApproval { code: string; caller: string; callerLabel: string; tool: string; summary: string; createdAt: number; expiresAt: number; approved: boolean }
 
 export type JournalOutcome = "done" | "failed" | "refused" | "confirmation_asked";
 export interface JournalEntry { id: number; at: number; caller: string; callerLabel: string; tool: string; target: string; outcome: JournalOutcome; detail: string }
@@ -61,22 +73,47 @@ export class EmailMCP extends DurableObject<Env> {
   /** Upstream's McpAgent set alarms on this class; one still pending finds nothing to do. */
   async alarm(): Promise<void> {}
 
-  /** A code for one irreversible call: the same caller, tool and arguments, within five minutes. */
-  issueConfirmation(input: { caller: string; tool: string; argsHash: string; summary: string }, now = Date.now()): { code: string; expiresAt: number } {
+  /**
+   * A code for one irreversible call: the same caller, tool and arguments, within five minutes; with
+   * `owner` (B-38) it works only after the owner approved it, within a day.
+   */
+  issueConfirmation(input: { caller: string; tool: string; argsHash: string; summary: string; owner?: boolean; callerLabel?: string }, now = Date.now()): { code: string; expiresAt: number } {
     this.sql.exec("DELETE FROM mcp_confirmations WHERE expires_at <= ?", now);
     const open = Number([...this.sql.exec("SELECT COUNT(*) AS n FROM mcp_confirmations WHERE caller = ?", input.caller)][0]?.n ?? 0);
     if (open >= MAX_OPEN_CODES) throw new Error("Too many actions are waiting for confirmation; confirm or let them expire first");
     const code = newCode();
-    const expiresAt = now + CONFIRM_TTL_MS;
-    this.sql.exec("INSERT INTO mcp_confirmations (code, caller, tool, args_hash, summary, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-      code, input.caller, input.tool, input.argsHash, input.summary, expiresAt);
+    const expiresAt = now + (input.owner ? APPROVAL_TTL_MS : CONFIRM_TTL_MS);
+    this.sql.exec("INSERT INTO mcp_confirmations (code, caller, tool, args_hash, summary, expires_at, needs_owner, caller_label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      code, input.caller, input.tool, input.argsHash, input.summary, expiresAt, input.owner ? 1 : 0, (input.callerLabel ?? "").slice(0, 200), now);
     return { code, expiresAt };
   }
 
-  /** Spends a code once. Wrong caller, tool, arguments or an expired code: nothing is spent. */
-  consumeConfirmation(input: { code: string; caller: string; tool: string; argsHash: string }, now = Date.now()): boolean {
-    const row = [...this.sql.exec("SELECT caller, tool, args_hash, expires_at FROM mcp_confirmations WHERE code = ?", input.code.trim().toUpperCase())][0];
+  /** B-38: actions waiting for the owner, and approved ones not yet used, newest first. */
+  pendingApprovals(now = Date.now()): PendingApproval[] {
+    this.sql.exec("DELETE FROM mcp_confirmations WHERE expires_at <= ?", now);
+    return [...this.sql.exec("SELECT code, caller, caller_label, tool, summary, created_at, expires_at, approved_at FROM mcp_confirmations WHERE needs_owner = 1 ORDER BY created_at DESC LIMIT 200")]
+      .map((r) => ({ code: String(r.code), caller: String(r.caller), callerLabel: String(r.caller_label), tool: String(r.tool), summary: String(r.summary),
+        createdAt: Number(r.created_at), expiresAt: Number(r.expires_at), approved: r.approved_at !== null }));
+  }
+
+  /** B-38: the owner's answer. Approve lets the code work once; deny deletes it. False when there is no such waiting action. */
+  decideApproval(code: string, approve: boolean, now = Date.now()): boolean {
+    const id = code.trim().toUpperCase();
+    const row = [...this.sql.exec("SELECT expires_at FROM mcp_confirmations WHERE code = ? AND needs_owner = 1", id)][0];
+    if (!row || Number(row.expires_at) <= now) return false;
+    if (approve) this.sql.exec("UPDATE mcp_confirmations SET approved_at = ? WHERE code = ?", now, id);
+    else this.sql.exec("DELETE FROM mcp_confirmations WHERE code = ?", id);
+    return true;
+  }
+
+  /**
+   * Spends a code once. Wrong caller, tool, arguments or an expired code: nothing is spent. A code the
+   * owner has not approved yet (B-38) answers "waiting" and stays.
+   */
+  consumeConfirmation(input: { code: string; caller: string; tool: string; argsHash: string }, now = Date.now()): boolean | "waiting" {
+    const row = [...this.sql.exec("SELECT caller, tool, args_hash, expires_at, needs_owner, approved_at FROM mcp_confirmations WHERE code = ?", input.code.trim().toUpperCase())][0];
     if (!row || row.caller !== input.caller || row.tool !== input.tool || row.args_hash !== input.argsHash || Number(row.expires_at) <= now) return false;
+    if (Number(row.needs_owner) === 1 && row.approved_at === null) return "waiting";
     this.sql.exec("DELETE FROM mcp_confirmations WHERE code = ?", input.code.trim().toUpperCase());
     return true;
   }

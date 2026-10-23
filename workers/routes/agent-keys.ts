@@ -25,6 +25,8 @@ const NewKey = z.object({
   duration: z.enum(Object.keys(TOKEN_DURATIONS) as [TokenDuration, ...TokenDuration[]]).default("1y"),
   /** Mailboxes this key may reach (AP-11); left out, the whole workspace. */
   accounts: z.array(z.string().max(400)).max(50).optional(),
+  /** B-38: "owner" when the owner approves each irreversible action of this key in Agent access. */
+  approval: z.enum(["agent", "owner"]).default("agent"),
 }).strict();
 
 export type NewKeyInput = Omit<z.infer<typeof NewKey>, "accounts"> & { accounts: string[] | null };
@@ -52,7 +54,7 @@ export function validateNewKey(raw: unknown): { ok: true; value: NewKeyInput } |
  */
 export const sendFor = (level: AgentKey["level"], send: AgentKey["send"]): AgentKey["send"] => (level === "read" ? "drafts" : level === "admin" ? "send" : send);
 
-const publicKey = (k: AgentKey) => ({ id: k.id, clientId: k.clientId, name: k.name, level: k.level, send: k.send, dailySendLimit: k.dailySendLimit, createdAt: k.createdAt, expiresAt: k.expiresAt, accounts: k.accounts });
+const publicKey = (k: AgentKey) => ({ id: k.id, clientId: k.clientId, name: k.name, level: k.level, send: k.send, dailySendLimit: k.dailySendLimit, createdAt: k.createdAt, expiresAt: k.expiresAt, accounts: k.accounts, approval: k.approval ?? "agent" });
 
 function access(c: C): AgentAccess | Response {
   const api = cloudflareApi(c.env);
@@ -113,6 +115,7 @@ agentKeysRouter.post("/api/agent-keys", async (c) => {
   const key: AgentKey = {
     id: token.id, clientId: token.client_id, name: input.name, level: input.level, send: sendFor(input.level, input.send),
     dailySendLimit: input.dailySendLimit, createdAt: new Date().toISOString(), expiresAt: token.expires_at ?? null, accounts: input.accounts,
+    ...(input.approval === "owner" ? { approval: "owner" as const } : {}),
   };
   try {
     await updateAgentKeys(c.env.BUCKET, (keys) => [...keys.filter((k) => k.id !== key.id), key]);
@@ -145,6 +148,45 @@ agentKeysRouter.delete("/api/agent-keys/:id", (c) => alone(c, async () => {
   }
   return c.json({ revoked: id });
 }));
+
+/** B-38: turn the owner's approval of a key's irreversible actions on or off; nothing else of a key changes here. */
+agentKeysRouter.patch("/api/agent-keys/:id", (c) => alone(c, async () => {
+  const body = z.object({ approval: z.enum(["agent", "owner"]) }).safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: msg("Say whether you approve this key's irreversible actions: approval \"owner\" or \"agent\".") }, 400);
+  const id = c.req.param("id");
+  let changed: AgentKey | undefined;
+  try {
+    await updateAgentKeys(c.env.BUCKET, (keys) => keys.map((k) => {
+      if (k.id !== id) return k;
+      const { approval: _old, ...rest } = k;
+      changed = body.data.approval === "owner" ? { ...rest, approval: "owner" } : rest;
+      return changed;
+    }));
+  } catch (error) { return failure(c, error, msg("Saving the key")); }
+  if (!changed) return c.json({ error: msg("No such agent key") }, 404);
+  console.log(JSON.stringify({ event: "agent_key_approval", keyId: id, approval: body.data.approval }));
+  return c.json({ key: publicKey(changed) });
+}));
+
+/** B-38: the irreversible actions agents asked for that wait for the owner, and approved ones not yet used. */
+agentKeysRouter.get("/api/agent-keys/approvals", async (c) => {
+  c.header("Cache-Control", "no-store");
+  try { return c.json({ approvals: await c.env.EMAIL_MCP.getByName("workspace").pendingApprovals() }); }
+  catch (error) { return failure(c, error, msg("Reading what waits for your approval")); }
+});
+
+/** B-38: the owner approves (the agent's code then works once) or refuses (the code is deleted). */
+agentKeysRouter.post("/api/agent-keys/approvals/:code", async (c) => {
+  c.header("Cache-Control", "no-store");
+  const body = z.object({ approve: z.boolean() }).safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: msg("Say approve: true or false.") }, 400);
+  try {
+    const done = await c.env.EMAIL_MCP.getByName("workspace").decideApproval(c.req.param("code"), body.data.approve);
+    if (!done) return c.json({ error: msg("Nothing is waiting under that code: it expired, or was answered already.") }, 404);
+    console.log(JSON.stringify({ event: "agent_action_decided", approved: body.data.approve }));
+    return c.json({ approved: body.data.approve });
+  } catch (error) { return failure(c, error, msg("Saving your answer")); }
+});
 
 agentKeysRouter.get("/api/agent-keys/journal", async (c) => {
   c.header("Cache-Control", "no-store");

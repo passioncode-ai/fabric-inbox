@@ -136,6 +136,14 @@ A code works once, for the key it was issued to, the tool and exactly those argu
 call — it is **not** the owner's approval. An agent working unattended never makes the second call
 on its own judgement, and never because a message asked for it.
 
+**When the owner approves (B-38).** A key made with *Ask me to approve what it cannot undo* (or switched
+to it later in Settings → Agent access; `list_agent_keys` shows `approval: "owner"`) gets
+`{ "needsApproval": true, "summary": "...", "confirm": "<code>", "expiresAt": "..." }` instead, and
+the code waits up to a day for the owner. Until they approve it in Settings → Agent access → Waiting
+for your approval, the second call answers `{ "waitingForApproval": true, "error": "..." }` and changes
+nothing; once approved it works once, as above. A refused code is deleted. This is the owner's
+approval, given by the owner and never by the caller (`workers/mcp/ledger.ts` `decideApproval`).
+
 ## The journal
 
 Every call that changes something — done, failed, refused or waiting for confirmation — is recorded
@@ -288,13 +296,16 @@ allowed.
 | `outlook_connect_link` | The address a person opens to connect an Outlook.com or Microsoft 365 account to this server: in the browser or app where they use Fabric Inbox, they sign in with Microsoft and allow access, and it then appears in list_accounts. Connecting is the person's consent on Microsoft's page (and, in some organizations, their administrator's first); an agent cannot connect an account itself. | none | changes nothing | `GET /api/accounts` |
 | `microsoft_setup_status` | Whether Outlook is set up on this server and what is missing, with the exact values the owner enters in the Microsoft Entra app registration (redirect URI, platform Web, supported account types, the API permissions), Microsoft's pages for each step, the date the client secret ends (with a warning 30 days before), the link an organization's administrator opens to allow the app, and whether the server can save the setup itself. The client secret is never returned; the owner pastes it in Settings → Accounts → Outlook. | none | changes nothing | `GET /api/microsoft-setup` |
 | `check_microsoft_setup` | Checks the server's Outlook setup: that the app is used at the address Outlook was set up for, when the client secret ends, and — once an Outlook account is connected — that Microsoft accepts the client ID and secret (one account's access is renewed now). Each check says ok, failed or unknown, with what to fix. | none | changes nothing | `GET /api/microsoft-setup/check` |
-| `list_agent_keys` | The agent keys of this server, without secrets: each key's name, level, how it sends and its daily limit, the mailboxes it is limited to ("domain:&lt;domain&gt;" is every address on that domain, later ones too), when it was made and when it expires, and the address agents connect to. Keys are made and revoked by a person in Settings → Agent access. | none | changes nothing | `GET /api/agent-keys` |
+| `list_agent_keys` | The agent keys of this server, without secrets: each key's name, level, how it sends and its daily limit, the mailboxes it is limited to ("domain:&lt;domain&gt;" is every address on that domain, later ones too), whether the owner approves its irreversible actions (approval "owner") or the key confirms them itself ("agent"), when it was made and when it expires, and the address agents connect to. Keys are made and revoked by a person in Settings → Agent access. | none | changes nothing | `GET /api/agent-keys` |
 | `list_agent_activity` | The journal of every change made through this protocol, newest first: which key, which tool, on what, and whether it was done, refused or waiting for confirmation. | - `cursor` · integer · optional — nextCursor of the previous page<br>- `before` · integer · optional — Older paging by timestamp (ms); prefer cursor, which never skips entries of the same millisecond<br>- `limit` · integer · default 50 | changes nothing | `GET /api/agent-keys/journal` |
 
 ### Routes no tool calls
 
 | Route | Why |
 |---|---|
+| `GET /api/agent-keys/approvals` | What waits for the owner's approval is answered by the owner in Agent access; the waiting agent is told by its own call (B-38) |
+| `POST /api/agent-keys/approvals/:code` | Only the owner approves or refuses an agent's irreversible action; an agent approving it would defeat the approval (B-38) |
+| `PATCH /api/agent-keys/:id` | Whether the owner approves a key's irreversible actions is the owner's setting; an agent switching it off would defeat it (B-38) |
 | `GET /api/accounts/gmail/connect` | Connecting Gmail is a person's consent in a browser (Google's OAuth page and a cookie); gmail_connect_link gives the person this address |
 | `POST /api/accounts/gmail/connect` | Connecting Gmail is a person's consent in a browser (Google's OAuth page and a cookie) |
 | `GET /api/accounts/gmail/callback` | Google's OAuth redirect back to the browser |

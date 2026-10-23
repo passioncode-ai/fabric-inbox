@@ -52,8 +52,9 @@ export const defineTool = <S extends ZodRawShape>(def: ToolDef<S>): ToolDef => d
 
 /** The ledger's calls the protocol makes (the `EmailMCP` Durable Object, or a fake in tests). */
 export interface Ledger {
-  issueConfirmation(input: { caller: string; tool: string; argsHash: string; summary: string }): Promise<{ code: string; expiresAt: number }>;
-  consumeConfirmation(input: { code: string; caller: string; tool: string; argsHash: string }): Promise<boolean>;
+  issueConfirmation(input: { caller: string; tool: string; argsHash: string; summary: string; owner?: boolean; callerLabel?: string }): Promise<{ code: string; expiresAt: number }>;
+  /** True once spent; "waiting" while the owner has not approved it (B-38). */
+  consumeConfirmation(input: { code: string; caller: string; tool: string; argsHash: string }): Promise<boolean | "waiting">;
   reserveSend(caller: string, limit: number | null): Promise<{ ok: boolean; used: number; limit: number | null }>;
   refundSend(caller: string): Promise<void>;
   record(entry: { at: number; caller: string; callerLabel: string; tool: string; target: string; outcome: "done" | "failed" | "refused" | "confirmation_asked"; detail: string }): Promise<void>;
@@ -154,14 +155,24 @@ export async function runTool(tool: ToolDef, rawArgs: Record<string, unknown>, c
     catch (error) { await journal("failed", errorText(error)); return text({ error: errorText(error) }, true); }
     if (summary === null) { /* nothing irreversible in these arguments */ }
     else if (!confirm) {
-      const { code, expiresAt } = await ledger.issueConfirmation({ caller, tool: tool.name, argsHash: hash, summary });
+      // B-38: a key whose irreversible actions the owner approves gets a code that works only once approved.
+      const owner = ctx.principal.kind === "agent" && ctx.principal.approval === "owner";
+      const { code, expiresAt } = await ledger.issueConfirmation({ caller, tool: tool.name, argsHash: hash, summary, ...(owner ? { owner, callerLabel: ctx.principal.label } : {}) });
       await journal("confirmation_asked", summary);
+      if (owner)
+        return text({ needsApproval: true, summary, confirm: code, expiresAt: new Date(expiresAt).toISOString(),
+          next: `Nothing has changed yet. The person you work for approves this in Fabric Inbox, Settings → Agent access (Waiting for your approval). Once they have, call ${tool.name} again with the same arguments and confirm: "${code}". Tell them what you asked for.` });
       return text({ needsConfirmation: true, summary, confirm: code, expiresAt: new Date(expiresAt).toISOString(),
         next: `Nothing has changed yet. To do this, call ${tool.name} again with the same arguments and confirm: "${code}".` });
     }
-    else if (!(await ledger.consumeConfirmation({ code: confirm, caller, tool: tool.name, argsHash: hash }))) {
-      await journal("refused", "confirmation code not valid");
-      return text({ error: "The confirmation code is not valid: it expired, was used, or was issued for other arguments. Call without confirm to get a new one." }, true);
+    else {
+      const spent = await ledger.consumeConfirmation({ code: confirm, caller, tool: tool.name, argsHash: hash });
+      if (spent === "waiting")
+        return text({ waitingForApproval: true, error: "The person you work for has not approved this yet (Settings → Agent access, Waiting for your approval). Nothing has changed; call again with the same code once they have." }, true);
+      if (!spent) {
+        await journal("refused", "confirmation code not valid");
+        return text({ error: "The confirmation code is not valid: it expired, was used, was refused by the owner, or was issued for other arguments. Call without confirm to get a new one." }, true);
+      }
     }
   }
   if (tool.sends) {

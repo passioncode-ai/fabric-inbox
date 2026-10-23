@@ -87,6 +87,7 @@
 | SCN-082 | Work as a member of a shared server | Handle mail across accounts | P-02 | ST-001 | draft | — |
 | SCN-083 | Start the Linux AppImage where the sandbox is off | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
 | SCN-084 | Sign in through my organization's identity provider | Resume and manage preferences | P-02 | ST-007, FLW-07 | draft | — |
+| SCN-085 | Approve what an agent cannot undo | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -950,7 +951,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** The server has its Cloudflare token with Access: Service Tokens and Access: Apps and Policies.
 - **Steps:**
   1. Open Agent access from the sidebar -> what it is, and that these are not the reply agents.
-  2. Name the agent, choose Read, Mail or Admin, and for Mail or Admin Drafts only or Can send with a daily number; for Read or Mail choose All mailboxes or Only these mailboxes and tick them, or tick Every address at a domain, which takes in the addresses made there later too (B-36; an Admin key reaches every mailbox); choose when it expires; Make key.
+  2. Name the agent, choose Read, Mail or Admin, and for Mail or Admin Drafts only or Can send with a daily number; for Read or Mail choose All mailboxes or Only these mailboxes and tick them, or tick Every address at a domain, which takes in the addresses made there later too (B-36; an Admin key reaches every mailbox); tick Ask me to approve what it cannot undo when the person wants to approve each irreversible action (SCN-085); choose when it expires; Make key.
   3. The key's Client ID and Client Secret, the Claude Code command and the JSON for other clients are shown once, each with Copy; I saved it closes them.
 - **Expected result:** The agent connects to /mcp with the two headers and sees only the tools its level and sending allow; a key limited to mailboxes sees only the tools that stay inside a mailbox, and is refused, with the mailboxes it may use named, on any other mailbox or shared setting. The key list shows each key's mailboxes (All mailboxes, or Only ...).
 - **Alt paths:** The server has no Cloudflare token: the form is replaced by where to add one. Only these mailboxes with none ticked: Make key stays off. A limited key whose only mailbox is gone gets an empty list with the reason, not a failure. A domain limit reaches exactly that domain's Cloudflare addresses at each call, not its subdomains; a domain with no address yet reaches nothing.
@@ -1723,3 +1724,23 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** desktop/policy.cjs (`signInHandoff`, `signInDone`), desktop/main.cjs (`openSignIn`), tests/desktop-policy.test.ts
 - **Product:** unobserved
 - **Today:** Built 2026-10-23 (B-02); not yet walked against a real provider.
+
+### SCN-085: Approve what an agent cannot undo
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07, JTBD-03; B-38 (operator 2026-10-23: "выбирай лучшие решения"; decided: off by default, the owner turns it on per key)
+- **Entry point:** SCR-15
+- **Preconditions:** An agent key with Ask me to approve what it cannot undo (ticked when it was made, or More actions → Ask me to approve what it cannot undo).
+- **Steps:**
+  1. The agent asks for something it cannot undo (deleting mail for good, removing an address and the like) -> nothing changes; it is told to ask the person.
+  2. Agent access shows Waiting for your approval with how many actions wait -> open it -> each lists the key, the action, what it does, when it was asked and until when it waits.
+  3. Approve -> the agent's next call with its code does it, once; or Refuse -> the code is deleted and the agent is told it is not valid.
+- **Expected result:** An agent whose key asks the owner never does anything irreversible until the owner approved that exact action in the app; a key without it confirms with its one-time code as before.
+- **Alt paths:** An approved action stays listed (Approved: the agent has not used it yet) until the agent uses it or it expires after a day. More actions → Stop asking me to approve returns the key to its own code.
+- **UI elements:** SCR-15 (Waiting for your approval, Approve, Refuse; the key's What cannot be undone fact and its menu item).
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** An answer to an action that expired or was answered already says so (404); a list that cannot load offers Retry. Agents cannot approve: the approval routes have no tool (`NOT_TOOLS`).
+- **Status:** draft
+- **Coverage:** app/components/settings/sections/AgentAccessSection.tsx (`Approvals`, `approvalText`), workers/routes/agent-keys.ts (`/api/agent-keys/approvals`, PATCH `/api/agent-keys/:id`), workers/mcp/ledger.ts (`decideApproval`, `pendingApprovals`), workers/mcp/protocol.ts (`needsApproval`, `waitingForApproval`), tests/mcp-workerd.test.ts (B-38), tests/mcp-protocol.test.ts (B-38)
+- **Product:** unobserved
+- **Today:** Built in 0.32.0; the list is read again every 30 s while Agent access is open.

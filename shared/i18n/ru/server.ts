@@ -771,4 +771,9 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Choose Administrator or Member.": "Выберите «Администратор» или «Участник».",
 	"Choose at least one mailbox for a member.": "Выберите для участника хотя бы один почтовый ящик.",
 	"{email} is not on the list.": "{email} нет в списке.",
+	"Say whether you approve this key's irreversible actions: approval \"owner\" or \"agent\".": "Укажите, одобряете ли вы необратимые действия этого ключа: approval \"owner\" или \"agent\".",
+	"Reading what waits for your approval": "Чтение того, что ждёт вашего одобрения",
+	"Say approve: true or false.": "Укажите approve: true или false.",
+	"Nothing is waiting under that code: it expired, or was answered already.": "Под этим кодом ничего не ждёт: срок истёк или ответ уже дан.",
+	"Saving your answer": "Сохранение вашего ответа",
 };
