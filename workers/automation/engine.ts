@@ -31,7 +31,9 @@ export class ActionRejected extends Error {}
  */
 const KNOWN_REFUSALS = new Set(["send_rate_limited", "message_not_found", "not_supported", "account_not_found", "invalid_message",
   "invalid_address", "invalid_attachment", "invalid_header", "message_too_large", "sender_mismatch", "idempotency_conflict",
-  "recipient_rejected", "sender_rejected", "message_rejected", "smtputf8_unsupported"]);
+  "recipient_rejected", "sender_rejected", "message_rejected", "smtputf8_unsupported",
+  // Gmail's own refusals: nothing was sent or changed (B-15 (3)).
+  "gmail_api_disabled", "insufficient_scope", "reconnect_required", "rate_limited", "provider_auth_failed"]);
 export async function refusalsKnown<T>(work: () => Promise<T>): Promise<T> {
   try { return await work(); }
   catch (error) {

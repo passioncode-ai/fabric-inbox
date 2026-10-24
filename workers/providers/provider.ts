@@ -105,8 +105,11 @@ export interface PageResult {
 
 /** A send that the provider refused before any part of the message was handed over: safe to retry. */
 export class NotSentError extends Error {
-  constructor(public code: string, public status = 502) {
+  /** B-15: the provider's own error, when there was one, so the account can still say why (`noteProblem`). */
+  providerError?: Error;
+  constructor(public code: string, public status = 502, providerError?: Error) {
     super(code);
+    if (providerError) this.providerError = providerError;
   }
 }
 

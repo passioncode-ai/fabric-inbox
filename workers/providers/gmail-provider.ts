@@ -9,6 +9,7 @@ import { GmailClient, ProviderError, makeMime, normalizeMessage, type Credential
 import { DISCARDED_LABEL, type GmailCache } from "./gmail-cache";
 import { GmailSync, importPercent, normalizeSync, type SyncState } from "./gmail-sync";
 import type { AccountBase, AccountLabel, DraftUpdate, DraftView, MailProvider, MessageChange, ProviderCapabilities, ProviderSession } from "./provider";
+import { NotSentError } from "./provider";
 
 export interface GmailAccount extends AccountBase {
   provider: "gmail";
@@ -179,13 +180,27 @@ class GmailSession implements ProviderSession {
       throw error;
     }
   }
+  /**
+   * B-15: what Gmail refused is not sent, so the receipt is not left unknown. No access token to send
+   * with, or an answer from Gmail from 400 to 499 (refused, unauthorized, forbidden, not found,
+   * throttled), means nothing left; no answer at all or a 5xx stays uncertain.
+   */
+  private async refusedIsNotSent<T>(work: () => Promise<T>): Promise<T> {
+    try { await this.client.ready(); }
+    catch (error) { if (error instanceof ProviderError) throw new NotSentError(error.code, error.status, error); throw error; }
+    try { return await work(); }
+    catch (error) {
+      if (error instanceof ProviderError && error.status >= 400 && error.status < 500) throw new NotSentError(error.code, error.status, error);
+      throw error;
+    }
+  }
   async send(input: SendInput) {
-    const result = await this.client.send(makeMime(this.account.email, input), input.threadId);
+    const result = await this.refusedIsNotSent(() => this.client.send(makeMime(this.account.email, input), input.threadId));
     if (!result.id) throw new ProviderError("invalid_send_receipt");
     return { id: result.id, threadId: result.threadId };
   }
   async createDraft(input: SendInput) {
-    const result = await this.client.createDraft(makeMime(this.account.email, input), input.threadId);
+    const result = await this.refusedIsNotSent(() => this.client.createDraft(makeMime(this.account.email, input), input.threadId));
     if (!result.id || !result.message?.id) throw new ProviderError("invalid_send_receipt");
     return { draftId: result.id, id: result.message.id, threadId: result.message.threadId };
   }
@@ -232,7 +247,7 @@ class GmailSession implements ProviderSession {
     await draftOrMissing(this.client.deleteDraft(draftId));
   }
   async sendDraft(draftId: string) {
-    const sent = await this.client.sendDraft(draftId);
+    const sent = await this.refusedIsNotSent(() => this.client.sendDraft(draftId));
     if (!sent.id) throw new ProviderError("invalid_send_receipt");
     return { id: sent.id, threadId: sent.threadId };
   }

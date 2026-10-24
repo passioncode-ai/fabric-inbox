@@ -667,3 +667,19 @@ test("B-34: markers of events delivered long ago are forgotten, a page at a time
   const later = await service.pruneDeliveredEvents(now + EVENT_KEEP_MS + 2000, 100);
   assert.equal(later.removed, 2, "a keep later the stamped and the recent ones go too");
 });
+test("B-15: what Gmail refused is not sent (the same attempt may go again); no answer or a 5xx stays unknown", async () => {
+  for (const status of [400, 403, 429]) {
+    let calls = 0;
+    const { service, store } = await fixture(async () => { calls++; return new Response(JSON.stringify({ error: { code: status } }), { status }); });
+    const request = { idempotencyKey: `refused-${status}`, to: ["recipient@example.invalid"], subject: "Hello", text: "Fixture" };
+    await assert.rejects(service.send("a", request), (e: ProviderError) => e instanceof ProviderError, `${status} is a refusal`);
+    assert.equal(await store.get(`send:a:refused-${status}`), undefined, `${status}: no receipt is kept, so the same key may send again`);
+    assert.equal((await store.get<number[]>("sendlog:a"))?.length ?? 0, 0, `${status}: the sending budget is given back`);
+    assert.equal(calls, 1);
+  }
+  const outage = await fixture(async () => new Response("down", { status: 503 }));
+  const unsure = await outage.service.send("a", { idempotencyKey: "outage", to: ["recipient@example.invalid"], subject: "Hello", text: "Fixture" });
+  assert.equal(unsure.status, "unknown", "a 5xx may have been sent: it stays unknown");
+  const lost = await fixture(async () => { throw new Error("socket lost"); });
+  assert.equal((await lost.service.send("a", { idempotencyKey: "lost", to: ["recipient@example.invalid"], subject: "Hello", text: "Fixture" })).status, "unknown");
+});
