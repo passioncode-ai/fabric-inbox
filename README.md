@@ -278,8 +278,9 @@ npm run desktop:linux -- --arch arm64   # release/Fabric-Inbox-<version>-linux-a
 Only committed files are packaged (as on the Mac). [`.github/workflows/platforms.yml`](.github/workflows/platforms.yml)
 builds all four (the Windows installers on Windows, the Linux packages on Linux) nightly and on a pull request that touches `desktop/`, installs each, and launches
 it with a throwaway profile ([`scripts/smoke-desktop.mjs`](scripts/smoke-desktop.mjs)), which passes only once a window
-has drawn its first page (the `window_shown` log event) and the agent console's PTY has run a fixed echo
-(`--console-check`: the app's `--fabric-check-console` switch, the `console_check` event); the release run launches each
+has drawn its first page (the `window_shown` log event) and the agent console's PTY has run a fixed echo and then
+stopped a waiting shell with no process forked (`--console-check`: the app's `--fabric-check-console` switch, the
+`console_check` event; B-102); the release run launches each
 installed package the same way.
 
 ## Deploy

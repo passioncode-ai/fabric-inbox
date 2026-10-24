@@ -19,6 +19,16 @@ const RING_BYTES = 1024 * 1024;
 const STOP_GRACE_MS = 2000;
 const LEVELS = ['read', 'mail', 'admin'];
 
+/**
+ * node-pty's spawn options for this platform. On Windows the PTY runs on the conpty.dll node-pty
+ * ships (`useConptyDll`): without it, stopping a session forks node-pty's process-list helper with
+ * `child_process.fork`, which in the packaged app (the RunAsNode fuse off) starts a second copy of
+ * Fabric Inbox instead of Node (B-102).
+ */
+function ptyOptions(platform, options) {
+  return platform === 'win32' ? { ...options, useConptyDll: true } : options;
+}
+
 /** The agents the console can open, in the order offered. `args` builds the command line. */
 const RUNTIMES = [
   {
@@ -151,10 +161,10 @@ function createConsole(deps) {
       await fs.mkdir(folder, { recursive: true, mode: 0o700 });
       const configPath = path.join(folder, 'mcp.json');
       await fs.writeFile(configPath, JSON.stringify(mcpConfig(mcpUrl, names), null, 2), { mode: 0o600 });
-      child = pty.spawn(runtime.file, spec.args({ configPath, brief: briefFor(origin), mcpUrl, env: names, resume }), {
+      child = pty.spawn(runtime.file, spec.args({ configPath, brief: briefFor(origin), mcpUrl, env: names, resume }), ptyOptions(platform, {
         name: 'xterm-256color', cols: Math.max(2, Math.min(1000, cols | 0)), rows: Math.max(1, Math.min(500, rows | 0)), cwd,
         env: sessionEnv(env, { loginPath, names, key, origin }),
-      });
+      }));
     } catch (error) {
       await end(pending, 'spawn_failed');
       set({ phase: 'idle', error: 'spawn', detail: String(error && error.message || error) });
@@ -230,29 +240,56 @@ function ptyCheckCommand(platform, env = process.env) {
     ? { file: path.join(env.SystemRoot || env.windir || 'C:\\Windows', 'System32', 'cmd.exe'), args: ['/d', '/c', `echo ${PTY_CHECK_TOKEN}`] }
     : { file: '/bin/sh', args: ['-c', `echo ${PTY_CHECK_TOKEN}`] };
 }
-/**
- * B-105: proves a built app can load node-pty and run a process in a PTY, as the agent console does:
- * the fixed echo must print its token and exit by itself within `timeoutMs`. Answers ok, or failed
- * with a short reason (load, spawn, no output, no exit). The process ends by itself: nothing is killed
- * unless the time runs out.
- */
-function checkPty({ loadPty, platform = process.platform, env = process.env, timeoutMs = 15_000, setTimer = setTimeout, clearTimer = clearTimeout }) {
+/** What the stop half of the check (B-102) runs: a shell that waits until it is stopped. */
+function ptyHoldCommand(platform, env = process.env) {
+  return platform === 'win32'
+    ? { file: path.join(env.SystemRoot || env.windir || 'C:\\Windows', 'System32', 'cmd.exe'), args: ['/d', '/k'] }
+    : { file: '/bin/sh', args: ['-c', 'exec sleep 60'] };
+}
+
+/** Runs `command` in a PTY; resolves with what it printed and how it ended, or `timeout`. */
+function runInPty(pty, platform, env, { file, args }, { timeoutMs, setTimer, clearTimer, onSpawn = () => {} }) {
   return new Promise((resolve) => {
-    let pty, child;
-    try { pty = loadPty(); } catch (error) { resolve({ outcome: 'failed', reason: `load: ${String(error && error.message || error).slice(0, 120)}` }); return; }
-    const { file, args } = ptyCheckCommand(platform, env);
-    let out = '', done = false;
-    const finish = (result) => { if (done) return; done = true; clearTimer(timer); resolve(result); };
-    const timer = setTimer(() => {
-      try { child && child.kill(); } catch { /* gone */ }
-      finish({ outcome: 'failed', reason: out.includes(PTY_CHECK_TOKEN) ? 'no exit' : 'no output' });
-    }, timeoutMs);
+    let child, out = '', done = false;
+    const finish = (result) => { if (done) return; done = true; clearTimer(timer); resolve({ out, ...result }); };
+    const timer = setTimer(() => { try { child && child.kill(); } catch { /* gone */ } finish({ timeout: true }); }, timeoutMs);
     try {
-      child = pty.spawn(file, args, { name: 'xterm-256color', cols: 80, rows: 24, cwd: platform === 'win32' ? (env.SystemRoot || 'C:\\') : '/', env: { PATH: env.PATH || '' } });
-    } catch (error) { finish({ outcome: 'failed', reason: `spawn: ${String(error && error.message || error).slice(0, 120)}` }); return; }
+      child = pty.spawn(file, args, ptyOptions(platform, { name: 'xterm-256color', cols: 80, rows: 24, cwd: platform === 'win32' ? (env.SystemRoot || 'C:\\') : '/', env: { PATH: env.PATH || '' } }));
+    } catch (error) { finish({ spawnError: String(error && error.message || error).slice(0, 120) }); return; }
     child.onData((data) => { out += data; });
-    child.onExit(({ exitCode }) => finish(out.includes(PTY_CHECK_TOKEN) && exitCode === 0 ? { outcome: 'ok' } : { outcome: 'failed', reason: out.includes(PTY_CHECK_TOKEN) ? `exit ${exitCode}` : 'no output' }));
+    child.onExit(({ exitCode }) => finish({ exitCode }));
+    onSpawn(child);
   });
 }
 
-module.exports = { createConsole, findRuntimes, searchPath, sessionEnv, mcpConfig, briefFor, ring, checkPty, ptyCheckCommand, PTY_CHECK_TOKEN, RUNTIMES, LEVELS };
+/**
+ * B-105, B-102: proves a built app runs the agent console's PTY as the console does. First a fixed
+ * echo must print its token and exit by itself; then a waiting shell is stopped the way Stop stops a
+ * session and must end with no process forked meanwhile (on Windows a fork starts a second app).
+ * Answers ok, or failed with a short reason (load, spawn, no output, no exit, stop: ...).
+ * `childProcess` is the module node-pty forks through; its `fork` is counted during the stop.
+ */
+async function checkPty({ loadPty, platform = process.platform, env = process.env, timeoutMs = 15_000, setTimer = setTimeout, clearTimer = clearTimeout, childProcess = require('node:child_process') }) {
+  let pty;
+  try { pty = loadPty(); } catch (error) { return { outcome: 'failed', reason: `load: ${String(error && error.message || error).slice(0, 120)}` }; }
+  const timing = { timeoutMs, setTimer, clearTimer };
+  const echo = await runInPty(pty, platform, env, ptyCheckCommand(platform, env), timing);
+  if (echo.spawnError) return { outcome: 'failed', reason: `spawn: ${echo.spawnError}` };
+  const printed = echo.out.includes(PTY_CHECK_TOKEN);
+  if (echo.timeout) return { outcome: 'failed', reason: printed ? 'no exit' : 'no output' };
+  if (!printed) return { outcome: 'failed', reason: 'no output' };
+  if (echo.exitCode !== 0) return { outcome: 'failed', reason: `exit ${echo.exitCode}` };
+
+  const fork = childProcess.fork;
+  let forks = 0;
+  childProcess.fork = function counted(...args) { forks++; return fork.apply(this, args); };
+  try {
+    const held = await runInPty(pty, platform, env, ptyHoldCommand(platform, env), { ...timing, onSpawn: (child) => setTimer(() => { try { child.kill(); } catch { /* gone */ } }, 500) });
+    if (held.spawnError) return { outcome: 'failed', reason: `stop: spawn: ${held.spawnError}` };
+    if (forks) return { outcome: 'failed', reason: `stop: forked ${forks}` };
+    if (held.timeout) return { outcome: 'failed', reason: 'stop: no exit' };
+  } finally { childProcess.fork = fork; }
+  return { outcome: 'ok' };
+}
+
+module.exports = { createConsole, findRuntimes, searchPath, sessionEnv, mcpConfig, briefFor, ring, checkPty, ptyCheckCommand, ptyHoldCommand, ptyOptions, PTY_CHECK_TOKEN, RUNTIMES, LEVELS };

@@ -143,6 +143,22 @@ function keyStoreRefusal(platform, backend) {
 }
 
 /**
+ * B-111: Chromium picks the Linux key store by the desktop it recognizes (GNOME and its kin use the
+ * Secret Service, KDE uses KWallet); on any other desktop (Sway, i3, a bare X session) it picks
+ * `basic_text` without asking, and the app then refuses to run though gnome-keyring may be running.
+ * So on a desktop Chromium does not recognize the app asks for the Secret Service itself; without
+ * one Chromium still falls back to `basic_text`, and the refusal above stands. A store the person
+ * named with --password-store always wins. Answers the switch's value, or null for none.
+ */
+const KEY_STORE_DESKTOPS = ['gnome', 'kde', 'unity', 'x-cinnamon', 'cinnamon', 'pantheon', 'xfce', 'deepin', 'ukui', 'lxqt', 'budgie'];
+function passwordStoreFor(platform, env = {}, named = false) {
+  if (platform !== 'linux' || named) return null;
+  if (env.KDE_FULL_SESSION) return null;
+  const desktops = String(env.XDG_CURRENT_DESKTOP || '').toLowerCase().split(':').map((d) => d.trim()).filter(Boolean);
+  return desktops.some((d) => KEY_STORE_DESKTOPS.includes(d)) ? null : 'gnome-libsecret';
+}
+
+/**
  * B-99 (decided 2026-10-23: warn, never refuse): on Linux without Chromium's sandbox (an AppImage
  * where user namespaces are off, Ubuntu 24.04's default) the app says so on screen at launch, with
  * the way to keep the sandbox (the .deb), until the person asks not to be told again on this
@@ -154,4 +170,4 @@ function sandboxWarning(platform, noSandbox, dismissed) {
 }
 const SANDBOX_HELP_URL = 'https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/desktop-data-and-updates.md#windows-and-linux';
 
-module.exports = { permissionAllowed, retryAction, signInHandoff, signInDone, sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL, keyStoreRefusal, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };
+module.exports = { permissionAllowed, retryAction, signInHandoff, signInDone, sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL, keyStoreRefusal, passwordStoreFor, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };

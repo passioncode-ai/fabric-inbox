@@ -66,3 +66,14 @@ test("Open at Login is a checkbox in the app menu on macOS and in File on Window
   }
   assert.ok(!menuTemplate("darwin", ctx)[0].submenu.some((i: any) => i.label === "Open at Login"), "absent without the context");
 });
+
+test("B-111: on a Linux desktop Chromium does not recognize the app asks for the Secret Service; a named store or a known desktop is left alone", () => {
+  const { passwordStoreFor } = require("../desktop/policy.cjs");
+  for (const desktop of ["sway", "i3", "Hyprland", "", "niri"]) assert.equal(passwordStoreFor("linux", { XDG_CURRENT_DESKTOP: desktop }), "gnome-libsecret", desktop);
+  assert.equal(passwordStoreFor("linux", {}), "gnome-libsecret");
+  for (const desktop of ["GNOME", "ubuntu:GNOME", "KDE", "X-Cinnamon", "XFCE", "Budgie:GNOME", "LXQt"]) assert.equal(passwordStoreFor("linux", { XDG_CURRENT_DESKTOP: desktop }), null, desktop);
+  assert.equal(passwordStoreFor("linux", { KDE_FULL_SESSION: "true" }), null);
+  assert.equal(passwordStoreFor("linux", { XDG_CURRENT_DESKTOP: "sway" }, true), null, "--password-store from the person wins");
+  assert.equal(passwordStoreFor("win32", { XDG_CURRENT_DESKTOP: "sway" }), null);
+  assert.equal(passwordStoreFor("darwin", {}), null);
+});
