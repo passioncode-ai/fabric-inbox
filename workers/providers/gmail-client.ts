@@ -52,7 +52,8 @@ export function forbidden(reasons: string[]): ProviderError {
     return new ProviderError("insufficient_scope", 403, "insufficient_scope");
   if (reasons.some((r) => /^(userRateLimitExceeded|rateLimitExceeded|RATE_LIMIT_EXCEEDED)$/.test(r)))
     return new ProviderError("rate_limited", 429);
-  return new ProviderError("provider_failed", 502);
+  // B-15: a 403 Gmail gave no known reason for is still Gmail's refusal (it keeps its status).
+  return new ProviderError("provider_failed", 403);
 }
 export type Fetcher = (
   input: string | URL | Request,
@@ -360,6 +361,10 @@ export class GmailClient {
     private persist: (credentials: Credentials) => Promise<void>,
     private http: Fetcher = fetch,
   ) {}
+  /** B-15: a valid access token before a write, so a token that cannot be had is known before anything is sent. */
+  async ready(): Promise<void> {
+    await this.token();
+  }
   private async token(force = false) {
     if (!force && this.credentials.expiresAt > Date.now() + 60000)
       return this.credentials.accessToken;
@@ -471,7 +476,8 @@ export class GmailClient {
                 ? "history_expired"
                 : "not_found"
               : "provider_failed",
-        response.status === 429 ? 429 : response.status === 404 ? 404 : response.status === 401 ? 401 : 502,
+        // B-15: a 400 keeps its status, so a send can tell Gmail's refusal from an outage.
+        response.status === 429 ? 429 : response.status === 404 ? 404 : response.status === 401 ? 401 : response.status === 400 ? 400 : 502,
       );
     // A DELETE answers 204 with no body.
     if (response.status === 204) return undefined as T;

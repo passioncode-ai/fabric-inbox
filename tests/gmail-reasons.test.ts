@@ -188,11 +188,11 @@ test("a write whose grant is gone updates the account, as a sync would (audit: 4
   assert.equal(account.reason, "access_revoked");
 });
 
-test("a send that meets the Gmail API switched off is an unknown outcome and the account says why", async () => {
+test("a send that meets the Gmail API switched off is refused, not sent (B-15), and the account says why", async () => {
   const { service, store } = await fixture(async () => json(apiDisabled, 403));
-  const receipt = await service.send("a", { idempotencyKey: "k1", to: ["b@example.invalid"], subject: "s", text: "t" });
-  assert.equal(receipt.status, "unknown");
-  assert.equal(receipt.error, "gmail_api_disabled");
+  await assert.rejects(service.send("a", { idempotencyKey: "k1", to: ["b@example.invalid"], subject: "s", text: "t" }),
+    (e: ProviderError) => e.code === "gmail_api_disabled");
+  assert.equal(await store.get("send:a:k1"), undefined, "no receipt: once the API is on, the same attempt may go");
   assert.equal((await saved(store)).reason, "gmail_api_disabled");
 });
 

@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.32.4 (2026-10-24)
+
+- **A message Gmail refused says so.** When Gmail refuses a message you send or save as a draft (the
+  Gmail API switched off, a missing permission, too many messages, a sign-in that ended), Fabric Inbox
+  now knows it was not sent: the same message can be sent again, and the account still says what to
+  fix. Before, it was marked uncertain, as if it might have gone (B-15).
+
 ## 0.32.3 (2026-10-24)
 
 - **A rule says plainly when an account refused.** When an account refuses a rule's action before

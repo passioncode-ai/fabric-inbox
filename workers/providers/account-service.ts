@@ -937,6 +937,8 @@ export class AccountService {
       if (error instanceof NotSentError) {
         await this.store.delete(key);
         if (reservation.taken !== undefined) await this.giveSendBack(accountId, reservation.taken);
+        // B-15: the account still says why (an API switched off, a scope missing, a grant gone).
+        if (error.providerError) await this.noteProblem(account.id, error.providerError);
         throw new ProviderError(error.code, error.status);
       }
       receipt.status = "unknown";
@@ -1519,6 +1521,7 @@ export class AccountService {
         if (error instanceof NotSentError) {
           await this.store.delete(key);
           if (reservation.taken !== undefined) await this.giveSendBack(accountId, reservation.taken);
+          if (error.providerError) await this.noteProblem(account.id, error.providerError);
           throw new ProviderError(error.code, error.status);
         }
         receipt.status = "unknown";
