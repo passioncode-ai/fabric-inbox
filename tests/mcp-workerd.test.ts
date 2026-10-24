@@ -47,7 +47,7 @@ const bundle = await build({
           }
           if (url.pathname === '/test/inbox') { const b = await request.json(); return Response.json({ id: await env.MAILBOX.get(env.MAILBOX.idFromName(b.mailbox)).testInbox(b.sender, b.subject) }); }
           if (url.pathname === '/test/files') { const b = await request.json(); return Response.json(await env.MAILBOX.get(env.MAILBOX.idFromName(b.mailbox)).testWithFiles(b.files)); }
-          if (url.pathname === '/test/approvals') { const b = await request.json(); const l = env.EMAIL_MCP.getByName('workspace'); if (b.code) return Response.json(await l.decideApproval(b.code, b.approve)); return Response.json(await l.pendingApprovals()); }
+          if (url.pathname === '/test/approvals') { const b = await request.json(); const l = env.EMAIL_MCP.getByName('workspace'); if (b.drop) return Response.json(await l.dropSelfConfirmations(b.drop)); if (b.code) return Response.json(await l.decideApproval(b.code, b.approve)); return Response.json(await l.pendingApprovals()); }
           if (url.pathname === '/test/put') { const b = await request.json(); await env.BUCKET.put(b.key, JSON.stringify(b.value)); return Response.json({ ok: true }); }
           return new Response('not found', { status: 404 });
         },
@@ -508,5 +508,20 @@ test("B-38: a key whose irreversible actions the owner approves waits for the ow
     assert.equal((await call(agent, "delete_message", { ...second, confirm: asked2.data.confirm })).isError, true, "it works once");
     assert.deepEqual(await approvals(), [], "nothing left waiting");
     assert.equal(await approvals({ code: "NOSUCHCODE", approve: true }), false);
+  } finally { await mf.dispose(); }
+});
+
+test("review 2026-10-24: switching a key to the owner's approval voids the codes it was given before", async () => {
+  const { mf, as, call } = await fixture();
+  try {
+    const admin = await as("admin.access");
+    const draft = await call(admin, "save_draft", { accountId: `cloudflare:${MAILBOX}`, to: "ann@customer.invalid", subject: "Keep", text: "x" });
+    const args = { accountId: `cloudflare:${MAILBOX}`, messageId: draft.data.draftId };
+    const asked = await call(admin, "delete_message", args);
+    assert.equal(asked.data.needsConfirmation, true);
+    const dropped = await (await mf.dispatchFetch("http://localhost/test/approvals", { method: "POST", body: JSON.stringify({ drop: "key:k-admin" }) })).json();
+    assert.equal(dropped, 1);
+    const late = await call(admin, "delete_message", { ...args, confirm: asked.data.confirm });
+    assert.equal(late.isError, true, "the old code no longer works");
   } finally { await mf.dispose(); }
 });

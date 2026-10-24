@@ -40,7 +40,8 @@ interface RunWriter { put(key: string, value: unknown): Promise<void>; delete(ke
 /** Every write of a run goes through here, so the queue follows the run's status in the same write. */
 async function putRun(store: RunWriter, run: Run): Promise<void> {
   await store.put("run:" + run.id, run);
-  if (QUEUED.has(run.status)) await store.put(QUEUE + run.id, run.retryAt ? Date.parse(run.retryAt) || 0 : 0);
+  // A running run is queued with -1: it is never due and never sets the alarm (review 2026-10-24).
+  if (QUEUED.has(run.status)) await store.put(QUEUE + run.id, run.status === "running" ? -1 : run.retryAt ? Date.parse(run.retryAt) || 0 : 0);
   else await store.delete(QUEUE + run.id);
 }
 /**
@@ -535,8 +536,14 @@ export class AutomationDO extends DurableObject<Env> {
   }
   private async drain() {
     // B-141: a run waiting out its retry delay is not taken yet. B-07: only the queue is read.
-    const due = [...(await this.queue())].filter(([, at]) => at <= Date.now()).map(([key]) => key);
-    const pending = (await this.queuedRuns(due.slice(0, 20)))
+    const queue = await this.queue();
+    const taken = await this.queuedRuns([...queue].filter(([, at]) => at <= Date.now()).map(([key]) => key).slice(0, 40));
+    // A run still "running" when a drain starts was cut off in an earlier pass of this object (drains
+    // never overlap): it becomes unknown, as at start-up, instead of waking this object every second.
+    for (const run of taken)
+      if (run.status === "running")
+        await putRun(this.ctx.storage, { ...run, status: "unknown", detail: msg("Processing was interrupted. Verify the outcome before repeating."), updatedAt: new Date().toISOString() });
+    const pending = taken
       .filter((r) => r.status === "pending" && !(r.retryAt && Date.parse(r.retryAt) > Date.now()))
       .slice(0, 10);
     for (const run of pending)
@@ -555,7 +562,7 @@ export class AutomationDO extends DurableObject<Env> {
         claimDaily: (r) => this.claimDaily(r),
         execute: (r, email) => this.execute(r, email),
       });
-    const waiting = [...(await this.ctx.storage.list<number>({ prefix: QUEUE })).values()];
+    const waiting = [...(await this.ctx.storage.list<number>({ prefix: QUEUE })).values()].filter((at) => at >= 0);
     if (waiting.length) {
       // The soonest a pending run may be taken: now for a fresh one, its retry time for one that failed (B-141).
       const soonest = Math.min(...waiting);

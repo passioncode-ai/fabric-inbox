@@ -60,10 +60,16 @@ const levelTitle = (level: Level, t: T) => levels(t).find((l) => l.id === level)
 
 function Copy({ text, label }: { text: string; label: string }) {
   const t = useT();
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState<"" | "copied" | "failed">("");
+  const copy = () => {
+    const writing = navigator.clipboard?.writeText(text);
+    // B-15 (7): a refused copy says so rather than leaving the button as it was.
+    if (!writing) { setDone("failed"); return; }
+    void writing.then(() => setDone("copied"), () => setDone("failed"));
+  };
   return (
-    <button type="button" className="fi-text-button" onClick={() => { void navigator.clipboard?.writeText(text).then(() => setDone(true), () => setDone(false)); }}>
-      {done ? t("Copied") : label}
+    <button type="button" className="fi-text-button" onClick={copy}>
+      {done === "copied" ? t("Copied") : done === "failed" ? t("Copy failed") : label}
     </button>
   );
 }

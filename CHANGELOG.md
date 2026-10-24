@@ -5,6 +5,23 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.32.5 (2026-10-24)
+
+- **Copy works in the Mac app.** The Copy buttons in Agent access, the Gmail setup and the agent
+  panel copy again in the desktop app, and say so when copying fails (B-15).
+- **Old account links open the inbox.** An old address of one Gmail, IMAP or Outlook account now opens
+  that account in the unified inbox, unless this computer still keeps a draft written there (B-15).
+- **Tidier storage.** A draft discarded by the chat assistant, or replaced through the older drafts
+  route, takes its files with it, and a body saved halfway is cleaned up (B-15).
+- **Easier with the keyboard and a screen reader** in the older mailbox view: the Agent and MCP tabs
+  and the Move to folder menu say what they are, and Escape closes the menu (B-15).
+- **No mail lands in a deleted address.** A message arriving while its address is being deleted is no
+  longer kept in the emptied mailbox; it goes where mail to an unknown address goes (B-29).
+- **Fixes found in review.** A key limited to a domain works when a hub narrows it to that domain
+  (B-36); turning on Ask me to approve voids codes the agent was given just before (B-38); a rule run
+  cut off mid-way no longer keeps the server busy (B-07); applying a setup skips a mailbox it cannot
+  save instead of stopping (B-29).
+
 ## 0.32.4 (2026-10-24)
 
 - **A message Gmail refused says so.** When Gmail refuses a message you send or save as a draft (the

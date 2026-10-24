@@ -59,6 +59,9 @@ const bundle = await build({
           if (c.op === 'retry') return Response.json(await box.retryIncoming());
           if (c.op === 'receipts') return Response.json(await box.receipts());
           if (c.op === 'age') { await box.ageReceipts(); return Response.json(true); }
+          if (c.op === 'purge') { await box.purge(); return Response.json(true); }
+          if (c.op === 'created') { await env.BUCKET.put('config/address-created.json', JSON.stringify({ created: { 'me@p.invalid': Date.now() + 1000 } })); await box.reopen(); return Response.json(true); }
+          if (c.op === 'receive-safe') { try { const bytes = new TextEncoder().encode(c.raw); return Response.json(await receiveEmail({ to: 'me@p.invalid', from: 'a@x.invalid', rawSize: bytes.length, raw: new Response(bytes).body, setReject() {} }, env, ctx)); } catch (e) { return Response.json({ threw: String(e.message) }); } }
           return new Response('?', { status: 400 });
         }
       };
@@ -158,5 +161,20 @@ test("B-34: receipts of long-settled events are forgotten once a day; set-aside 
     await receive("A new message");
     const receipts = await op({ op: "receipts" }) as { s: string }[];
     assert.deepEqual(receipts.map((r) => r.s).sort(), ["accepted", "dead"], "the old accepted receipt went; the set-aside one and today's stay");
+  } finally { await mf.dispose(); }
+});
+
+test("B-29: a delivery that reaches a mailbox purged meanwhile is refused; once the address is made again it is taken", async () => {
+  const { mf, op } = await fixture();
+  try {
+    const raw = (n: number) => `From: a@x.invalid\r\nTo: me@p.invalid\r\nSubject: After ${n}\r\nMessage-ID: <late${n}@x.invalid>\r\nContent-Type: text/plain\r\n\r\nLate ${n}.\r\n`;
+    await op({ op: "purge" });
+    const refused = await op({ op: "receive-safe", raw: raw(1) });
+    assert.match(String(refused.threw), /mailbox_closed/, "nothing lands in the emptied mailbox");
+    assert.equal((await op({ op: "counts" })).total, 0);
+    await op({ op: "created" });
+    const taken = await op({ op: "receive-safe", raw: raw(2) });
+    assert.equal(taken.threw, undefined, JSON.stringify(taken));
+    assert.equal((await op({ op: "counts" })).total, 1);
   } finally { await mf.dispose(); }
 });

@@ -262,62 +262,6 @@ export async function toolDraftEmail(
 	};
 }
 
-// ── update_draft ───────────────────────────────────────────────────
-
-export async function toolUpdateDraft(
-	env: Env,
-	mailboxId: string,
-	params: {
-		draftId: string;
-		to?: string;
-		subject?: string;
-		bodyHtml?: string;
-	},
-): Promise<
-	| { status: string; newDraftId: string; oldDraftId: string; message: string }
-	| { error: string }
-> {
-	const stub = getMailboxStub(env, mailboxId);
-
-	const oldDraft = (await stub.getEmail(params.draftId)) as EmailFull | null;
-	if (!oldDraft) {
-		return { error: "Draft not found" };
-	}
-
-	// Verify the body BEFORE deleting the old draft to prevent data loss
-	const newDraftId = crypto.randomUUID();
-	const rawBody = params.bodyHtml ?? oldDraft.body ?? "";
-	const verifiedBody = await verifyDraft(env.AI, rawBody);
-
-	if (!verifiedBody) {
-		return { error: "Draft verification failed — keeping existing draft unchanged. Please try again." };
-	}
-
-	await stub.deleteEmail(params.draftId);
-	await stub.createEmail(
-		Folders.DRAFT,
-		{
-			id: newDraftId,
-			subject: params.subject ?? oldDraft.subject,
-			sender: mailboxId.toLowerCase(),
-			recipient: (params.to ?? oldDraft.recipient).toLowerCase(),
-			date: new Date().toISOString(),
-			body: verifiedBody,
-			in_reply_to: oldDraft.in_reply_to || null,
-			email_references: oldDraft.email_references || null,
-			thread_id: oldDraft.thread_id || newDraftId,
-		},
-		[],
-	);
-
-	return {
-		status: "draft_updated",
-		newDraftId,
-		oldDraftId: params.draftId,
-		message: "Draft updated in Drafts folder.",
-	};
-}
-
 // ── mark_email_read ────────────────────────────────────────────────
 
 export async function toolMarkEmailRead(
@@ -362,23 +306,11 @@ export async function toolDiscardDraft(
 	if (email.folder_id !== Folders.DRAFT) {
 		return { error: "Cannot discard: email is not a draft" };
 	}
-	await stub.deleteEmail(draftId);
+	// B-15 (2): the draft's files go with it, as when it is deleted from the app.
+	const attachments = (await stub.deleteEmail(draftId)) as { id: string; filename: string }[] | null;
+	if (attachments?.length) await env.BUCKET.delete(attachments.map((a) => `attachments/${draftId}/${a.id}/${a.filename}`))
+		.catch((error: unknown) => console.warn(JSON.stringify({ event: "draft_cleanup_failed", error: (error as Error).message })));
 	return { status: "discarded", draftId };
-}
-
-// ── delete_email ───────────────────────────────────────────────────
-
-export async function toolDeleteEmail(
-	env: Env,
-	mailboxId: string,
-	emailId: string,
-) {
-	const stub = getMailboxStub(env, mailboxId);
-	const result = await stub.deleteEmail(emailId);
-	if (result === null) {
-		return { error: "Email not found", emailId };
-	}
-	return { status: "deleted", emailId };
 }
 
 // ── send_reply ─────────────────────────────────────────────────────

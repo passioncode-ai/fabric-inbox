@@ -211,7 +211,9 @@ signed release must create it without a prompt (`docs/release.md`, upgrade check
 - **Notifications (F2), decided 2026-10-22 (B-41): yes, off by default.** The person turns on Notify
   About New Mail in the app menu; then the main process reads the unread inbox every 5 min, with or
   without a window, and shows system notifications (the row above). Web pages still get no permission
-  (`desktop/main.cjs` `rejectPermissions`): notifications come from the main process only.
+  (`desktop/main.cjs` `rejectPermissions`) but one: the mail window's own server may write to the
+  clipboard, so its Copy buttons work (B-15; `policy.permissionAllowed`); notifications come from the
+  main process only.
 
 ## Organisation
 

@@ -220,7 +220,12 @@ app.post("/api/v1/mailboxes/:mailboxId/drafts", async (c: AppContext) => {
 		date: now, body, in_reply_to: in_reply_to || null, email_references: null,
 		thread_id: thread_id || in_reply_to || messageId,
 	}, []);
-	if (previous) await stub.deleteEmail(previous.id);
+	if (previous) {
+		// B-15 (2): the replaced draft's files go with it.
+		const files = (await stub.deleteEmail(previous.id)) as { id: string; filename: string }[] | null;
+		if (files?.length) await c.env.BUCKET.delete(files.map((a) => `attachments/${previous.id}/${a.id}/${a.filename}`))
+			.catch((error: unknown) => console.warn(JSON.stringify({ event: "draft_cleanup_failed", error: (error as Error).message })));
+	}
 	return c.json({ id: messageId, status: "draft", subject: subject || "", recipient: to || "", date: now }, 201);
 });
 
@@ -859,7 +864,8 @@ async function receiveEmailResilient(event: IncomingEmailEvent, env: Env, ctx: E
 		return await attempt();
 	} catch (error) {
 		const message = (error as Error)?.message ?? "";
-		if (!TRANSIENT_DO.test(message)) throw error;
+		// B-29: a mailbox deleted while this delivery resolved it: the retry resolves the address again.
+		if (!TRANSIENT_DO.test(message) && !message.includes("mailbox_closed")) throw error;
 		console.warn(JSON.stringify({ event: "incoming_retry", error: message.slice(0, 200) }));
 		await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
 		return attempt();

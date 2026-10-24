@@ -146,9 +146,11 @@ function securePreferences(extra = {}) {
     contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false,
     webviewTag: false, ...extra };
 }
-function rejectPermissions(ses) {
-  ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  ses.setPermissionCheckHandler(() => false);
+/** Every permission is refused; `clipboardFrom` (the mail window's server) may write to the clipboard (B-15 (7)). */
+function rejectPermissions(ses, clipboardFrom = null) {
+  ses.setPermissionRequestHandler((contents, permission, callback, details) =>
+    callback(policy.permissionAllowed(permission, details?.requestingUrl || contents?.getURL?.() || '', clipboardFrom)));
+  ses.setPermissionCheckHandler((_contents, permission, requestingOrigin) => policy.permissionAllowed(permission, requestingOrigin, clipboardFrom));
 }
 /**
  * Reads server.json; false when it exists but cannot be used. A missing one is restored from the
@@ -274,7 +276,7 @@ function loadMail() {
   if (previousPartition && previousPartition !== partition) retireAfterLoad = previousPartition;
   if (retireAfterLoad === partition) retireAfterLoad = null;
   const ses = session.fromPartition(partition);
-  rejectPermissions(ses);
+  rejectPermissions(ses, snapshot.origin);
   // A download remains an explicit user choice; never auto-save attachment files.
   ses.removeAllListeners('will-download');
   ses.on('will-download', (_event, item) => {
