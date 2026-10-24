@@ -5,6 +5,7 @@
 // answer serves the person. Verdicts stay on the run; only counts leave (quality.ts).
 import { generateText } from "ai";
 import { openRouter } from "./model";
+import { receiptOf } from "./usage";
 import { scrubPersonal } from "./events";
 import type { QualityDaily } from "./quality";
 
@@ -66,6 +67,31 @@ export function parseVerdict(text: string, model: string): JudgeVerdict | null {
 }
 
 export interface JudgeInput { message: string; earlier: string; answer: string }
+/** What a judge reads: the message, the reply before it, and the answer, each cut to its bound. */
+export const judgePrompt = (input: JudgeInput) =>
+  `<message>\n${input.message.slice(0, 4000)}\n</message>\n\n<earlier_reply>\n${input.earlier.slice(0, 2000) || "(none)"}\n</earlier_reply>\n\n<answer>\n${input.answer.slice(0, 4000)}\n</answer>`;
+
+/** B-152: one model's verdict on one answer for a comparison, with what it cost and took; never a word of the mail. */
+export interface BenchResult { ok: boolean; checks: Record<Check, Mark> | null; helped: JudgeVerdict["helped"] | null; costUsd: number | null; ms: number; error?: string }
+export async function benchJudge(apiKey: string, model: string, input: JudgeInput, reasoning: boolean, now: () => number = Date.now): Promise<BenchResult> {
+  const started = now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), reasoning ? 120_000 : 45_000);
+  try {
+    const result = await generateText({
+      abortSignal: controller.signal, model: openRouter(apiKey).chat(model, { usage: { include: true } }), system: JUDGE_SYSTEM,
+      temperature: reasoning ? undefined : 0, maxOutputTokens: reasoning ? 6000 : 300,
+      providerOptions: { openrouter: { reasoning: { enabled: reasoning } } },
+      prompt: judgePrompt(input),
+    });
+    const verdict = parseVerdict(result.text, model);
+    const costUsd = receiptOf(model, result as never).costUsd;
+    return verdict ? { ok: true, checks: verdict.checks, helped: verdict.helped, costUsd, ms: now() - started }
+      : { ok: false, checks: null, helped: null, costUsd, ms: now() - started, error: "not the rubric's JSON" };
+  } catch (error) {
+    return { ok: false, checks: null, helped: null, costUsd: null, ms: now() - started, error: String((error as Error)?.message ?? error).slice(0, 120) };
+  } finally { clearTimeout(timer); }
+}
 
 /** One verdict from the first judge of another vendor that answers in the rubric's JSON; throws when none does. */
 export async function openRouterJudge(apiKey: string, models: readonly string[], input: JudgeInput): Promise<JudgeVerdict> {
@@ -78,7 +104,7 @@ export async function openRouterJudge(apiKey: string, models: readonly string[],
       const result = await generateText({
         abortSignal: controller.signal, model: provider.chat(model), system: JUDGE_SYSTEM, temperature: 0, maxOutputTokens: 300,
         providerOptions: { openrouter: { reasoning: { enabled: false } } },
-        prompt: `<message>\n${input.message.slice(0, 4000)}\n</message>\n\n<earlier_reply>\n${input.earlier.slice(0, 2000) || "(none)"}\n</earlier_reply>\n\n<answer>\n${input.answer.slice(0, 4000)}\n</answer>`,
+        prompt: judgePrompt(input),
       });
       const verdict = parseVerdict(result.text, model);
       if (verdict) return verdict;

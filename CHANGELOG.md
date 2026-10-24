@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.33.0 (2026-10-24)
+
+- **Compare judge models.** A new agent tool, `judge_bench`, has several models grade the same sent
+  answers of one address with the daily quality judge's rubric, beside a stronger reference model, so
+  a team can choose its judge on its own mail. It works a slice at a time and reports what it cost;
+  its results carry marks, costs and times, never the mail's words (B-152).
+
 ## 0.32.5 (2026-10-24)
 
 - **Copy works in the Mac app.** The Copy buttons in Agent access, the Gmail setup and the agent

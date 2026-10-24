@@ -188,6 +188,27 @@ agentsRouter.get("/api/agent-volume", async (c) => {
   } catch (error) { return registryFailure(c, error); }
 });
 
+/** B-152: a judge comparison over one address's sent answers, a slice per call (an administrator's). */
+const BENCH_MODEL = /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/;
+const benchBody = z.object({
+  address: z.string().email().max(254),
+  days: z.number().int().min(1).max(90).optional(),
+  runs: z.number().int().min(1).max(200).optional(),
+  models: z.array(z.string().max(100).regex(BENCH_MODEL)).max(12).optional(),
+  reference: z.string().max(100).regex(BENCH_MODEL).optional(),
+  restart: z.boolean().optional(),
+  offset: z.number().int().min(0).optional(),
+});
+agentsRouter.post("/api/agent-bench", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  c.header("Cache-Control", "no-store");
+  const body = benchBody.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: msg("Give the address, and optionally days, runs, models, reference, restart and offset") }, 400);
+  try {
+    return c.json(await registry(c).judgeBench(body.data.address, body.data));
+  } catch (error) { return registryFailure(c, error); }
+});
+
 agentsRouter.get("/api/agent-runs", async (c) => {
   if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
   const limit = Number(c.req.query("limit") || 50);

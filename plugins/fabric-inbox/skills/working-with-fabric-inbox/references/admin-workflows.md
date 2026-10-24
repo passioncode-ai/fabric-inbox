@@ -142,6 +142,9 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   a field not measured is null and listed in `notMeasured`. Sender, subject and texts leave runs after 30 days.
   Its `quality` comes from a daily judge (B-132): up to 30 sent answers per address, rubric v1, a model of
   another vendor than the writer and checker; the verdict and its note are on the run (`list_agent_runs`).
+  To choose a judge on your own mail, `judge_bench { address, days?, runs?, models?, reference? }` (B-152) has
+  each model grade the same sent answers with that rubric beside a reference with reasoning on; call it
+  again until `done`, then page `lines` (hashes, marks, cost, ms; no words of the mail). It spends OpenRouter.
   `agent_mail_volume { days }` gives per-address, per-day counts (received, agent runs, no run, spam).
   Where each conversation stands: `list_agent_threads { states?, address? }` (unanswered, new_after_agent,
   error, needs_data, agent_draft, working, agent_replied, person_replied; `counts` for all). Start with
