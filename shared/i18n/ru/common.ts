@@ -182,6 +182,7 @@ export const COMMON: Readonly<Record<string, string>> = {
 	"Connect an account": "Подключить аккаунт",
 	"Connect Cloudflare": "Подключить Cloudflare",
 	"Copied": "Скопировано",
+	"Copy failed": "Не удалось скопировать",
 	"Create the address": "Создать адрес",
 	"Creating…": "Создаём…",
 	"Credential name (optional)": "Название учётных данных (необязательно)",

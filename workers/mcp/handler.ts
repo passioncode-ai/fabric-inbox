@@ -96,11 +96,14 @@ export async function handleMcp(request: Request, env: Env, ctx: ExecutionContex
   if (unsafe) return unsafe;
   let principal: Principal | null;
   try {
-    // B-36: whole-domain entries become today's addresses before narrowing, and once more after it
-    // (a narrowing header may name a domain too), so every check below sees concrete mailboxes.
-    const expand = async (p: Principal | null): Promise<Principal | null> =>
-      p?.accounts && namesDomain(p.accounts) ? { ...p, accounts: expandDomains(p.accounts, await listMailboxAddresses(env.BUCKET)) } as Principal : p;
-    principal = await expand(narrowPrincipal(await expand(await resolvePrincipal(claims, env, import.meta.env.DEV)), request.headers.get(NARROW_HEADER)));
+    // B-36: whole-domain entries, the key's and the narrowing header's, become today's addresses
+    // before they meet, so every check below sees concrete mailboxes and a key narrowed by its own
+    // domain keeps it.
+    const base = await resolvePrincipal(claims, env, import.meta.env.DEV);
+    const header = request.headers.get(NARROW_HEADER);
+    const addresses = namesDomain(base?.accounts ?? null) || /domain:/i.test(header ?? "") ? await listMailboxAddresses(env.BUCKET) : [];
+    const expanded = base?.accounts && namesDomain(base.accounts) ? { ...base, accounts: expandDomains(base.accounts, addresses) } as Principal : base;
+    principal = narrowPrincipal(expanded, header, addresses);
   } catch (error) {
     console.error(JSON.stringify({ event: "mcp.keys_unreadable", error: String(error) }));
     return refuse(503, "The agent keys could not be read; try again");

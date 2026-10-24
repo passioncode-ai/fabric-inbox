@@ -272,4 +272,8 @@ test("B-36: a key may name a whole domain; it becomes the addresses on exactly t
   // A narrowing header cannot widen a limited key to a domain it was not given.
   const limited = { kind: "agent", label: "k", level: "read", send: "drafts", dailySendLimit: 0, keyId: "k", accounts: [RESEARCH] } as Principal;
   assert.deepEqual(narrowPrincipal(limited, "domain:other.example")?.accounts, []);
+  // Review 2026-10-24: a key limited to a domain, narrowed by that same domain, keeps its addresses.
+  const domainKey = { ...limited, accounts: expandDomains(["domain:owner.example"], addresses) } as Principal;
+  assert.deepEqual(narrowPrincipal(domainKey, "domain:owner.example", addresses)?.accounts, [RESEARCH, "cloudflare:contact@owner.example"]);
+  assert.deepEqual(narrowPrincipal(domainKey, "domain:other.example", addresses)?.accounts, [], "another domain still narrows to nothing");
 });

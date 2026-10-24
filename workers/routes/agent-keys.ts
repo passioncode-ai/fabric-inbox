@@ -164,6 +164,8 @@ agentKeysRouter.patch("/api/agent-keys/:id", (c) => alone(c, async () => {
     }));
   } catch (error) { return failure(c, error, msg("Saving the key")); }
   if (!changed) return c.json({ error: msg("No such agent key") }, 404);
+  // A code this key was given before the switch no longer works on its own (review 2026-10-24).
+  if (body.data.approval === "owner") await c.env.EMAIL_MCP.getByName("workspace").dropSelfConfirmations(`key:${id}`);
   console.log(JSON.stringify({ event: "agent_key_approval", keyId: id, approval: body.data.approval }));
   return c.json({ key: publicKey(changed) });
 }));

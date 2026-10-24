@@ -168,3 +168,18 @@ test("several accounts' pages and counts come back from one call, each its own r
   assert.deepEqual(await service.inboxCountsMany(["a", "missing"]), { a: { unread: 1, total: 2 }, missing: { error: "account_not_found" } });
   await assert.rejects(service.inboxPages(Array.from({ length: 101 }, (_, i) => "x" + i), inbox), /account_limit/);
 });
+
+test("B-15 (4): a save whose transaction fails leaves no body chunk behind", async () => {
+  const { GmailCache } = await import("../workers/providers/gmail-cache");
+  const data = new Map<string, unknown>();
+  const store = {
+    async get(k: string) { return data.get(k) as never; }, async put(k: string, v: unknown) { data.set(k, v); },
+    async delete(k: string) { return data.delete(k); },
+    async list({ prefix = "" } = {}) { return new Map([...data].filter(([k]) => k.startsWith(prefix))) as never; },
+    async transaction() { throw new Error("storage reset"); },
+  };
+  const cache = new GmailCache(store as never);
+  const message = { providerMessageId: "m1", threadId: "t", labels: ["INBOX"], subject: "s", from: "a@x", to: "", date: "", timestamp: 1, snippet: "", text: "hello", html: "", attachments: [] } as never;
+  await assert.rejects(cache.save("acc", message, "g1"), /storage reset/);
+  assert.deepEqual([...data.keys()].filter((k) => k.startsWith("body:")), [], "the chunks written before the failed transaction are gone");
+});

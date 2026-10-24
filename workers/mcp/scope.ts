@@ -230,9 +230,10 @@ export function narrowingSupported(capabilities: unknown, need: number = NARROWI
     && entry.header === NARROW_HEADER && entry.intersection === "exact" && entry.commaInId === "refused" && entry.emptyScope === "refused";
 }
 
-export function narrowPrincipal(principal: Principal | null, header: string | null): Principal | null {
+export function narrowPrincipal(principal: Principal | null, header: string | null, addresses: readonly string[] = []): Principal | null {
   if (!principal || header === null) return principal;
-  const named = normaliseAccounts(header.split(",").map((s) => s.trim()).filter(Boolean)) ?? [];
+  // B-36: a domain the header names is that domain's addresses, as the key's own domains are.
+  const named = expandDomains(normaliseAccounts(header.split(",").map((s) => s.trim()).filter(Boolean)) ?? [], addresses);
   const accounts = principal.accounts ? named.filter((a) => principal.accounts!.includes(a)) : named;
   return { ...principal, accounts } as Principal;
 }

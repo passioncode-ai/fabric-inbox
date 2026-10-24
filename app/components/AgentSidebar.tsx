@@ -53,10 +53,21 @@ export default function AgentSidebar() {
 
 	return (
 		<div className="flex flex-col h-full">
-			{/* Tab bar */}
-			<div className="flex items-center border-b border-kumo-line shrink-0">
+			{/* Tab bar: a tab list, so screen readers and arrow keys know the two panels (B-15 (6)). */}
+			<div role="tablist" aria-label={t("Agent panel")} className="flex items-center border-b border-kumo-line shrink-0"
+				onKeyDown={(e) => {
+					if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+					const next = activeTab === "agent" ? "mcp" : "agent";
+					setActiveTab(next);
+					(e.currentTarget.querySelector(`#agent-tab-${next}`) as HTMLElement | null)?.focus();
+				}}>
 				<button
 					type="button"
+					role="tab"
+					id="agent-tab-agent"
+					aria-selected={activeTab === "agent"}
+					aria-controls="agent-panel-agent"
+					tabIndex={activeTab === "agent" ? 0 : -1}
 					onClick={() => setActiveTab("agent")}
 					className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 bg-transparent cursor-pointer ${
 						activeTab === "agent"
@@ -69,6 +80,11 @@ export default function AgentSidebar() {
 				</button>
 				<button
 					type="button"
+					role="tab"
+					id="agent-tab-mcp"
+					aria-selected={activeTab === "mcp"}
+					aria-controls="agent-panel-mcp"
+					tabIndex={activeTab === "mcp" ? 0 : -1}
 					onClick={() => setActiveTab("mcp")}
 					className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 bg-transparent cursor-pointer ${
 						activeTab === "mcp"
@@ -83,10 +99,10 @@ export default function AgentSidebar() {
 
 			{/* Tab content — keep agent mounted so chat isn't lost */}
 			<div className="flex-1 min-h-0 overflow-hidden">
-				<div className={activeTab === "agent" ? "h-full" : "hidden"}>
+				<div id="agent-panel-agent" role="tabpanel" aria-labelledby="agent-tab-agent" className={activeTab === "agent" ? "h-full" : "hidden"}>
 					<LazyAgentPanel />
 				</div>
-				{activeTab === "mcp" && <MCPPanel />}
+				{activeTab === "mcp" && <div id="agent-panel-mcp" role="tabpanel" aria-labelledby="agent-tab-mcp" className="h-full"><MCPPanel /></div>}
 			</div>
 		</div>
 	);

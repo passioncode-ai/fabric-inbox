@@ -244,6 +244,11 @@ export class GmailCache {
       parts = Math.max(1, Math.ceil(data.length / CHUNK));
       for (let i = 0; i < parts; i++) await this.store.put(`${bodyPrefix(a, message.providerMessageId)}${blobId}:${i}`, data.slice(i * CHUNK, (i + 1) * CHUNK));
     }
+    // B-15 (4): a transaction that fails takes the chunks just written with it, so none is orphaned.
+    const dropNew = async (error: unknown) => {
+      for (let i = 0; i < parts; i++) await this.store.delete(`${bodyPrefix(a, message.providerMessageId)}${blobId}:${i}`).catch(() => false);
+      throw error;
+    };
     const kept = await this.store.transaction(async (tx) => {
       const previous = await tx.get<StoredMessage>(key);
       const keepBody = options.bodyless && previous && !previous.bodyless && previous.parts > 0;
@@ -254,7 +259,7 @@ export class GmailCache {
       await tx.put<StoredMessage>(key, row);
       await this.index(tx, a, row.message, 1);
       return row.blobId;
-    });
+    }).catch(dropNew);
     await this.dropBodies(a, message.providerMessageId, kept);
   }
 

@@ -72,6 +72,15 @@ function retryAction(state, config) {
   if (!state || !state.alive || state.failed || !config || state.origin !== config.origin) return 'load';
   return 'reload';
 }
+/**
+ * B-15 (7): the one permission a page gets. The mail window refuses every permission, which also
+ * stopped its Copy buttons; writing to the clipboard is let through for the server's own pages only
+ * (a message's frame has another origin), and nothing else.
+ */
+function permissionAllowed(permission, origin, serverOrigin) {
+  if (permission !== 'clipboard-sanitized-write' || !serverOrigin || !origin) return false;
+  try { return new URL(origin).origin === new URL(serverOrigin).origin; } catch { return false; }
+}
 function gmailConnectURL(config) { return new URL('/api/accounts/gmail/connect', config.origin).href; }
 /** Where the server opens after Create my server: Domains, or the Gmail setup when it was asked for (SCN-030, SCN-051). */
 function afterDeployPage(input) { return input && input.gmail === true ? '/settings/accounts?connect=gmail' : '/settings/domains'; }
@@ -145,4 +154,4 @@ function sandboxWarning(platform, noSandbox, dismissed) {
 }
 const SANDBOX_HELP_URL = 'https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/desktop-data-and-updates.md#windows-and-linux';
 
-module.exports = { retryAction, signInHandoff, signInDone, sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL, keyStoreRefusal, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };
+module.exports = { permissionAllowed, retryAction, signInHandoff, signInDone, sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL, keyStoreRefusal, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };

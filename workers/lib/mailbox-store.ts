@@ -201,6 +201,10 @@ export async function createMailbox(env: Env, rawEmail: string, name: string, se
     console.warn(JSON.stringify({ event: "address_created_unrecorded", error: (error as Error).message })));
   // Creating the folders now makes the mailbox usable before its first message; the mailbox makes
   // them itself on first use, so a failure here does not undo the address.
+  // B-29: a mailbox purged before (the address deleted once) takes deliveries again.
+  const box = env.MAILBOX.get(env.MAILBOX.idFromName(email));
+  await (async () => box.reopen())().catch((error: unknown) =>
+    console.warn(JSON.stringify({ event: "mailbox_reopen_deferred", error: (error as Error).message })));
   await env.MAILBOX.get(env.MAILBOX.idFromName(email)).getFolders().catch((error: unknown) =>
     console.warn(JSON.stringify({ event: "mailbox_folders_deferred", error: (error as Error).message })));
   return { status: "created", settings: finalSettings };

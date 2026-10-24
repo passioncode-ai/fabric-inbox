@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useParams, type MetaArgs } from "react-router";
+import { Link, useNavigate, useParams, type MetaArgs } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@cloudflare/kumo";
 import { metaT, useT } from "../lib/i18n";
@@ -21,7 +21,33 @@ export function meta({ matches }: MetaArgs) {
   const t = metaT(matches);
   return [{ title: t("Gmail · Fabric Inbox") }];
 }
+/**
+ * B-15 (9): the old page of one Gmail, IMAP or Outlook account. The unified inbox reads every
+ * account now, so the address opens the account there; only a draft this device still keeps for
+ * the account (or an uncertain send's recovery) holds the person here, so nothing kept is lost.
+ */
 export default function GmailInbox() {
+  const { accountId = "" } = useParams();
+  const navigate = useNavigate();
+  const [stay, setStay] = useState<boolean | null>(null);
+  useEffect(() => {
+    let kept = false;
+    try { const saved = restoreGmailDraft(localStorage, accountId); kept = !!saved.draft || saved.locked; }
+    catch { kept = true; /* unreadable: the page below sets it aside and says so */ }
+    if (kept) { setStay(true); return; }
+    let live = true;
+    void fabric<{ accounts?: { id: string; provider?: string }[] }>("/api/accounts")
+      .then((d) => {
+        if (!live) return;
+        const account = d.accounts?.find((a) => a.id === accountId);
+        navigate(account ? `/?account=${encodeURIComponent(`${account.provider ?? "gmail"}:${account.id}`)}` : "/", { replace: true });
+      }, () => { if (live) setStay(true); });
+    return () => { live = false; };
+  }, [accountId, navigate]);
+  return stay ? <GmailAccountPage /> : null;
+}
+
+function GmailAccountPage() {
   const t = useT();
   const { accountId = "" } = useParams(),
     base = accountPath(accountId);

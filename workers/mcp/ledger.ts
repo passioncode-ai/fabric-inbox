@@ -96,6 +96,11 @@ export class EmailMCP extends DurableObject<Env> {
         createdAt: Number(r.created_at), expiresAt: Number(r.expires_at), approved: r.approved_at !== null }));
   }
 
+  /** B-38: a key switched to the owner's approval loses the codes it was given before, so none of them works on its own. */
+  dropSelfConfirmations(caller: string): number {
+    return [...this.sql.exec("DELETE FROM mcp_confirmations WHERE caller = ? AND needs_owner = 0 RETURNING 1", caller)].length;
+  }
+
   /** B-38: the owner's answer. Approve lets the code work once; deny deletes it. False when there is no such waiting action. */
   decideApproval(code: string, approve: boolean, now = Date.now()): boolean {
     const id = code.trim().toUpperCase();

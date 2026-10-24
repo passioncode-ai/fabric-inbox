@@ -211,8 +211,13 @@ function MoveToFolderMenu({ folders, onMove }: { folders: Folder[]; onMove: (id:
 		const handler = (e: MouseEvent) => {
 			if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
 		};
+		// B-15 (6): Escape closes the menu, as any menu does.
+		const escape = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
 		document.addEventListener("mousedown", handler);
-		return () => document.removeEventListener("mousedown", handler);
+		document.addEventListener("keydown", escape);
+		// The first folder takes the focus, so the keyboard reaches the menu it opened.
+		ref.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+		return () => { document.removeEventListener("mousedown", handler); document.removeEventListener("keydown", escape); };
 	}, [open]);
 
 	return (
@@ -225,16 +230,19 @@ function MoveToFolderMenu({ folders, onMove }: { folders: Folder[]; onMove: (id:
 					icon={<FolderSimpleIcon size={18} />}
 					onClick={() => setOpen((o) => !o)}
 					aria-label={t("Move to folder")}
+					aria-haspopup="menu"
+					aria-expanded={open}
 				/>
 			</Tooltip>
 			{open && (
-				<div className="absolute top-full left-0 z-50 mt-1 min-w-[160px] rounded-lg border border-kumo-line bg-kumo-elevated shadow-lg py-1">
-					<div className="px-3 py-1.5 text-xs font-medium text-kumo-subtle">{t("Move to")}</div>
-					<div className="h-px bg-kumo-line my-1" />
+				<div role="menu" aria-label={t("Move to")} className="absolute top-full left-0 z-50 mt-1 min-w-[160px] rounded-lg border border-kumo-line bg-kumo-elevated shadow-lg py-1">
+					<div aria-hidden="true" className="px-3 py-1.5 text-xs font-medium text-kumo-subtle">{t("Move to")}</div>
+					<div role="separator" className="h-px bg-kumo-line my-1" />
 					{folders.map((f) => (
 						<button
 							key={f.id}
 							type="button"
+							role="menuitem"
 							className="w-full text-left px-3 py-1.5 text-sm text-kumo-default hover:bg-kumo-overlay transition-colors"
 							onClick={() => { onMove(f.id); setOpen(false); }}
 						>

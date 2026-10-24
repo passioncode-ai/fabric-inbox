@@ -39,9 +39,14 @@ export async function applySetup(env: Env, setup: Setup): Promise<ApplyResult> {
     if (box.agent && !agentProblem) next.agent = box.agent;
     const changed = JSON.stringify(next) !== JSON.stringify(current);
     // B-29: only over the version read, so a mailbox deleted meanwhile is not made again by this write.
-    if (changed && !(await updateSettings(env.BUCKET, box.address, (latest) => ({ ...latest, ...(forwarding ? { forwarding } : {}), ...(box.agent && !agentProblem ? { agent: box.agent } : {}) })))) {
-      result.mailboxes.push({ address: box.address, outcome: "refused", reason: msg("The address was deleted while the setup was applied") });
-      continue;
+    if (changed) {
+      // A mailbox whose settings kept changing under this write is refused alone; the rest goes on.
+      const written = await updateSettings(env.BUCKET, box.address, (latest) => ({ ...latest, ...(forwarding ? { forwarding } : {}), ...(box.agent && !agentProblem ? { agent: box.agent } : {}) }))
+        .catch((error: unknown) => (error as Error)?.message ?? "error");
+      if (written === null || typeof written === "string") {
+        result.mailboxes.push({ address: box.address, outcome: "refused", reason: written === null ? msg("The address was deleted while the setup was applied") : written });
+        continue;
+      }
     }
     result.mailboxes.push({ address: box.address, outcome: changed ? "updated" : "unchanged", ...(agentProblem ? { reason: agentProblem } : {}) });
   }

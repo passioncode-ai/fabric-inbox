@@ -30,6 +30,11 @@ import { DISCARD_RETENTION_MS } from '../../shared/mail/discard';
 import { listDrafts as listDraftRows, saveDraft as saveDraftRows, type DraftSql, type DraftSummary, type SaveDraftInput, type SaveDraftResult } from '../lib/mailbox-drafts';
 import { htmlToText } from '../../shared/mail/text';
 import { msg } from "../../shared/i18n";
+import { readCreated } from "../lib/address-created";
+
+/** B-29: when this mailbox was purged; while set, deliveries are refused with MAILBOX_CLOSED. */
+const CLOSED_KEY = "mailbox:closed-at";
+export const MAILBOX_CLOSED = "mailbox_closed";
 import type { SentBy, ThreadFacts } from "../../shared/mail/agent-state";
 
 
@@ -1058,7 +1063,26 @@ export class MailboxDO extends DurableObject<Env> {
 		await this.ctx.storage.deleteAll();
 		// This live instance keeps serving the address: rebuild an empty schema.
 		applyMigrations(this.ctx.storage.sql, mailboxMigrations, this.ctx.storage);
+		// B-29: a delivery that found the address before this purge must not land in the emptied mailbox.
+		await this.ctx.storage.put(CLOSED_KEY, Date.now());
 		return keys;
+	}
+
+	/** B-29: the address was made again (createMailbox): deliveries come in again. */
+	async reopen(): Promise<void> {
+		await this.ctx.storage.delete(CLOSED_KEY);
+	}
+
+	/**
+	 * B-29: true while this mailbox was purged and its address not made again since. An address made
+	 * after the purge (its creation record is newer) opens it, so a lost `reopen` call loses no mail.
+	 */
+	private async closedFor(address: string): Promise<boolean> {
+		const closedAt = await this.ctx.storage.get<number>(CLOSED_KEY);
+		if (!closedAt) return false;
+		const created = (await readCreated((this.env as Env).BUCKET).catch(() => ({} as Record<string, number>)))[address.toLowerCase()];
+		if (created && created > closedAt) { await this.ctx.storage.delete(CLOSED_KEY); return false; }
+		return true;
 	}
 
 	/* -------------------------------------------- rename an address (B-27) */
@@ -1404,6 +1428,8 @@ export class MailboxDO extends DurableObject<Env> {
    */
   async receiveEmailOnce(email: EmailData, attachments: AttachmentData[], mailboxId: string,
     verdict: { spam?: string | null; discard?: string | null; screen?: boolean; copyOwed?: boolean } = {}) {
+    // B-29: a delivery resolved before this address was deleted is refused; its retry resolves the address again.
+    if (await this.closedFor(mailboxId)) throw new Error(MAILBOX_CLOSED);
     // The alarm is durable before the event; inbox insertion and automation intent
     // share a transaction, so a crash cannot create an unqueued new message.
     await this.armRecovery();

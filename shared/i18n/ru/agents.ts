@@ -399,4 +399,5 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"Refuse": "Отклонить",
 	"An agent whose key asks you sees nothing change until you approve; it then calls again with the same code. Refusing deletes the code.": "Пока вы не одобрите, у агента с таким ключом ничего не меняется; после одобрения он вызывает действие снова с тем же кодом. Отклонение удаляет код.",
 	"(deleting for good, removing an address and the like wait for you here)": "(удаление навсегда, удаление адреса и подобное ждут вас здесь)",
+	"Agent panel": "Панель агента",
 };

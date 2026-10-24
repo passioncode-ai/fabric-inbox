@@ -16,26 +16,27 @@ import { msg } from "../../shared/i18n";
 
 function CopyButton({ text }: { text: string }) {
 	const t = useT();
-	const [copied, setCopied] = useState(false);
+	const [copied, setCopied] = useState<"" | "copied" | "failed">("");
 
 	const handleCopy = async () => {
 		try {
 			await navigator.clipboard.writeText(text);
-			setCopied(true);
-			setTimeout(() => setCopied(false), 2000);
+			setCopied("copied");
 		} catch {
-			// Clipboard API unavailable or permission denied — ignore silently
+			// B-15 (7): a copy the browser or the app refused says so instead of doing nothing.
+			setCopied("failed");
 		}
+		setTimeout(() => setCopied(""), 2000);
 	};
 
 	return (
-		<Tooltip content={copied ? t("Copied!") : t("Copy")} asChild>
+		<Tooltip content={copied === "copied" ? t("Copied!") : copied === "failed" ? t("Copy failed") : t("Copy")} asChild>
 			<Button
 				variant="ghost"
 				shape="square"
 				size="sm"
 				icon={
-					copied ? (
+					copied === "copied" ? (
 						<CheckIcon size={12} weight="bold" className="text-kumo-success" />
 					) : (
 						<CopyIcon size={12} />

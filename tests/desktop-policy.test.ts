@@ -229,3 +229,16 @@ test("B-11: Retry connection reloads a mail window that loaded this server, so i
   assert.match(main, /'will-prevent-unload'/, "the page's leave warning is answered in a dialog, not cancelled silently");
   assert.match(main, /loadFailed = true;[\s\S]{0,200}win\.destroy\(\);/, "a window that could not load is closed, not left hidden");
 });
+
+test("B-15 (7): the mail window may write to the clipboard from its own server only; every other permission stays refused", () => {
+  const server = "https://mail.example";
+  assert.equal(policy.permissionAllowed("clipboard-sanitized-write", "https://mail.example", server), true);
+  assert.equal(policy.permissionAllowed("clipboard-sanitized-write", "https://mail.example/settings/agent-access", server), true, "a page URL of the server");
+  assert.equal(policy.permissionAllowed("clipboard-sanitized-write", "https://evil.example", server), false, "another site");
+  assert.equal(policy.permissionAllowed("clipboard-sanitized-write", "null", server), false, "a message's opaque frame");
+  assert.equal(policy.permissionAllowed("clipboard-sanitized-write", "https://mail.example", null), false, "no server: nothing");
+  for (const p of ["clipboard-read", "notifications", "media", "geolocation", "openExternal"]) assert.equal(policy.permissionAllowed(p, server, server), false, p);
+  const main = readFileSync(new URL("../desktop/main.cjs", import.meta.url), "utf8");
+  assert.match(main, /rejectPermissions\(ses, snapshot\.origin\)/, "only the mail window passes its server");
+  assert.equal((main.match(/rejectPermissions\([^)]*\)/g) ?? []).filter((c) => c.includes(",") && !c.includes("clipboardFrom")).length, 1, "the setup window and the console keep refusing everything");
+});

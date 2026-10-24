@@ -414,3 +414,18 @@ test("B-05: the daily limit counts actions; a run past it is skipped with the re
     assert.equal(state.effects, 1, "one action, the other changed nothing");
   } finally { await f.mf.dispose(); }
 });
+
+test("review 2026-10-24: a run left running is made unknown by the next drain, not retried every second", async () => {
+  const f = await fixture();
+  try {
+    await f.command("rule", { rule: rule("mark_read", "automatic") });
+    await f.command("seed", { email });
+    const [run] = await f.command("ingest", { email });
+    await f.command("interrupt", { id: run.id });
+    await f.command("pump");
+    const after = await f.command("run", { id: run.id });
+    assert.equal(after.status, "unknown");
+    assert.match(after.detail, /interrupted/);
+    assert.deepEqual(await f.command("queue"), [], "it left the queue");
+  } finally { await f.mf.dispose(); }
+});
