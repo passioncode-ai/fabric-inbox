@@ -223,4 +223,36 @@ function createConsole(deps) {
   };
 }
 
-module.exports = { createConsole, findRuntimes, searchPath, sessionEnv, mcpConfig, briefFor, ring, RUNTIMES, LEVELS };
+/** What the launch check (B-105) runs in a PTY: a fixed echo, nothing the person's machine supplies. */
+const PTY_CHECK_TOKEN = 'fabric-pty-ok';
+function ptyCheckCommand(platform, env = process.env) {
+  return platform === 'win32'
+    ? { file: path.join(env.SystemRoot || env.windir || 'C:\\Windows', 'System32', 'cmd.exe'), args: ['/d', '/c', `echo ${PTY_CHECK_TOKEN}`] }
+    : { file: '/bin/sh', args: ['-c', `echo ${PTY_CHECK_TOKEN}`] };
+}
+/**
+ * B-105: proves a built app can load node-pty and run a process in a PTY, as the agent console does:
+ * the fixed echo must print its token and exit by itself within `timeoutMs`. Answers ok, or failed
+ * with a short reason (load, spawn, no output, no exit). The process ends by itself: nothing is killed
+ * unless the time runs out.
+ */
+function checkPty({ loadPty, platform = process.platform, env = process.env, timeoutMs = 15_000, setTimer = setTimeout, clearTimer = clearTimeout }) {
+  return new Promise((resolve) => {
+    let pty, child;
+    try { pty = loadPty(); } catch (error) { resolve({ outcome: 'failed', reason: `load: ${String(error && error.message || error).slice(0, 120)}` }); return; }
+    const { file, args } = ptyCheckCommand(platform, env);
+    let out = '', done = false;
+    const finish = (result) => { if (done) return; done = true; clearTimer(timer); resolve(result); };
+    const timer = setTimer(() => {
+      try { child && child.kill(); } catch { /* gone */ }
+      finish({ outcome: 'failed', reason: out.includes(PTY_CHECK_TOKEN) ? 'no exit' : 'no output' });
+    }, timeoutMs);
+    try {
+      child = pty.spawn(file, args, { name: 'xterm-256color', cols: 80, rows: 24, cwd: platform === 'win32' ? (env.SystemRoot || 'C:\\') : '/', env: { PATH: env.PATH || '' } });
+    } catch (error) { finish({ outcome: 'failed', reason: `spawn: ${String(error && error.message || error).slice(0, 120)}` }); return; }
+    child.onData((data) => { out += data; });
+    child.onExit(({ exitCode }) => finish(out.includes(PTY_CHECK_TOKEN) && exitCode === 0 ? { outcome: 'ok' } : { outcome: 'failed', reason: out.includes(PTY_CHECK_TOKEN) ? `exit ${exitCode}` : 'no output' }));
+  });
+}
+
+module.exports = { createConsole, findRuntimes, searchPath, sessionEnv, mcpConfig, briefFor, ring, checkPty, ptyCheckCommand, PTY_CHECK_TOKEN, RUNTIMES, LEVELS };

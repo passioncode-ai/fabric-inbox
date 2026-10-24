@@ -1162,6 +1162,9 @@ if (ownsInstance) app.whenReady().then(async () => {
     debugging: app.commandLine.hasSwitch('remote-debugging-port'), log: logEvent });
   startServerUpdates();
   config ? loadMail() : showSetup(notice);
+  // B-105: a launch check asks the built app to prove the agent console's PTY works (a fixed echo).
+  if (app.commandLine.hasSwitch('fabric-check-console'))
+    void consoleCore.checkPty({ loadPty }).then((result) => logEvent({ event: 'console_check', ...result }));
   appReady = true;
   void startAnalytics().catch(() => {});
   updatesStarted = startUpdates().catch(() => logEvent({ event: 'update_check', outcome: 'check_failed', reason: 'not_started' }));

@@ -14,7 +14,7 @@ test("the smoke verdict: a window drawn (B-105), refused for no key store, or no
   const refused = verdictOf(['{"event":"key_store_refused","backend":"basic_text"}']);
   assert.equal(refused.ok, false);
   assert.match(refused.reason, /no system key store \(basic_text\)/);
-  assert.deepEqual(parseSmokeArgs(["--exe", "/x/fabric-inbox", "--timeout", "30", "--", "--no-sandbox"]), { exe: "/x/fabric-inbox", timeout: 30, extra: ["--no-sandbox"] });
+  assert.deepEqual(parseSmokeArgs(["--exe", "/x/fabric-inbox", "--timeout", "30", "--", "--no-sandbox"]), { exe: "/x/fabric-inbox", timeout: 30, extra: ["--no-sandbox"], consoleCheck: false });
   assert.throws(() => parseSmokeArgs([]), /--exe is required/);
 });
 
@@ -23,4 +23,15 @@ test("the smoke dismisses the sandbox warning under the name the app reads (B-99
   const { createRequire } = await import("node:module");
   const policy = createRequire(import.meta.url)("../desktop/policy.cjs");
   assert.ok(readFileSync(new URL("../scripts/smoke-desktop.mjs", import.meta.url), "utf8").includes(`'${policy.SANDBOX_WARNING_FILE}'`));
+});
+
+test("with --console-check the smoke also waits for the PTY check, and fails on its failure (B-105)", async () => {
+  const { verdictOf, parseSmokeArgs } = await import("../scripts/smoke-desktop.mjs");
+  assert.equal(parseSmokeArgs(["--exe", "/x", "--console-check"]).consoleCheck, true);
+  const shown = ['{"event":"profile_sweep","outcome":"ok"}', '{"event":"window_shown","window":"setup"}'];
+  assert.equal(verdictOf(shown, { consoleCheck: true }), null, "a window alone is not enough");
+  assert.equal(verdictOf([...shown, '{"event":"console_check","outcome":"ok"}'], { consoleCheck: true }).ok, true);
+  const failed = verdictOf([...shown, '{"event":"console_check","outcome":"failed","reason":"load: no module"}'], { consoleCheck: true });
+  assert.equal(failed.ok, false);
+  assert.match(failed.reason, /PTY did not run \(load: no module\)/);
 });
