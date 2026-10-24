@@ -254,3 +254,46 @@ test("a release build writes its platform's feed, naming the installer or the Ap
   assert.match(source, /platform === 'win32' \? \/-setup\\\.exe\$\/ : \/\\\.AppImage\$\//);
   assert.match(source, /feedFor\(\{ repository, version, zipName: updatable\.name, sha256: updatable\.sha256, size: updatable\.bytes/);
 });
+
+test("B-108: on Windows a downloaded update waits under %LOCALAPPDATA%, never in the roaming profile; the roaming folders are left to remove", () => {
+  const { updateCacheDirs } = require("../desktop/platform-installer.cjs");
+  const win = updateCacheDirs({ platform: "win32", env: { LOCALAPPDATA: "C:\\Users\\p\\AppData\\Local" }, cache: "C:\\Users\\p\\AppData\\Roaming", name: "Fabric Inbox" });
+  assert.equal(win.updates, "C:\\Users\\p\\AppData\\Local\\Fabric Inbox\\updates");
+  assert.equal(win.pending, "C:\\Users\\p\\AppData\\Local\\Fabric Inbox\\pending-update");
+  assert.deepEqual(win.legacy, ["C:\\Users\\p\\AppData\\Roaming\\Fabric Inbox\\updates", "C:\\Users\\p\\AppData\\Roaming\\Fabric Inbox\\pending-update"]);
+  const noLocal = updateCacheDirs({ platform: "win32", env: {}, cache: "C:\\Users\\p\\AppData\\Roaming", name: "Fabric Inbox" });
+  assert.equal(noLocal.updates, "C:\\Users\\p\\AppData\\Roaming\\Fabric Inbox\\updates");
+  assert.deepEqual(noLocal.legacy, [], "with nowhere else to go nothing is removed");
+  const linux = updateCacheDirs({ platform: "linux", env: { LOCALAPPDATA: "x" }, cache: "/var/cache/x", name: "Fabric Inbox" });
+  assert.deepEqual(linux, { updates: "/var/cache/x/Fabric Inbox/updates", pending: "/var/cache/x/Fabric Inbox/pending-update", legacy: [] });
+  const mac = updateCacheDirs({ platform: "darwin", cache: "/var/cache/y", name: "Fabric Inbox" });
+  assert.equal(mac.updates, "/var/cache/y/Fabric Inbox/updates");
+});
+
+test("B-108: on Windows a folder the ACL keeps from this user is not replaceable, though W_OK says it is", async () => {
+  const { canWrite } = require("../desktop/platform-installer.cjs");
+  const made: string[] = [];
+  const fsFake = (deny: boolean) => ({
+    access: async () => {},
+    stat: async () => ({ isDirectory: () => true }),
+    writeFile: async (file: string) => { if (deny) throw Object.assign(new Error("EPERM"), { code: "EPERM" }); made.push(file); },
+    rm: async (file: string) => { made.splice(made.indexOf(file), 1); },
+  });
+  const paths = ["C:\\Program Files\\Fabric Inbox"];
+  assert.equal(await canWrite({ platform: "win32", fs: fsFake(true), paths, probeName: () => "probe" }), false);
+  assert.equal(await canWrite({ platform: "win32", fs: fsFake(false), paths, probeName: () => "probe" }), true);
+  assert.deepEqual(made, [], "the probe file is removed");
+  // Elsewhere the permission bits answer, and nothing is written.
+  const posix = { access: async () => {}, stat: async () => { throw new Error("not asked"); }, writeFile: async () => { throw new Error("not asked"); }, rm: async () => {} };
+  assert.equal(await canWrite({ platform: "linux", fs: posix, paths: ["/opt/x"] }), true);
+  assert.equal(await canWrite({ platform: "linux", fs: { ...posix, access: async () => { throw new Error("EACCES"); } }, paths: ["/opt/x"] }), false);
+  assert.equal(await canWrite({ platform: "win32", fs: posix, paths: [] }), false, "nothing to write is not replaceable");
+});
+
+test("B-108: canWrite really writes and removes its probe in a folder this user owns", async () => {
+  const { canWrite } = require("../desktop/platform-installer.cjs");
+  const { mkdtempSync, readdirSync } = require("node:fs");
+  const dir = mkdtempSync(path.join(os.tmpdir(), "fi-canwrite-"));
+  assert.equal(await canWrite({ platform: "win32", fs: require("node:fs/promises"), paths: [dir] }), true);
+  assert.deepEqual(readdirSync(dir), []);
+});

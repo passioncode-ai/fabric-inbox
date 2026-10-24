@@ -127,4 +127,39 @@ function updateTarget({ platform, arch, execPath, env = {}, installedOnMac = fal
   return { fileName: () => '', installed: false, packageManager: false, writable: [], runningApp: execPath };
 }
 
-module.exports = { createPlatformInstaller, updateTarget };
+/**
+ * B-108: where a downloaded update waits. Electron's `cache` path on Windows is the roaming
+ * %APPDATA%, which a domain profile copies to every machine the person signs in to; ~100 MB of
+ * installer has no place there, so Windows keeps it under %LOCALAPPDATA%\<app> (PL-06's data root).
+ * `legacy` names the roaming folders earlier versions used, removed once at launch.
+ */
+function updateCacheDirs({ platform, env = {}, cache, name }) {
+  const join = platform === 'win32' ? path.win32.join : path.posix.join;
+  const old = { updates: join(cache, name, 'updates'), pending: join(cache, name, 'pending-update') };
+  if (platform !== 'win32' || !env.LOCALAPPDATA) return { ...old, legacy: [] };
+  const root = path.win32.join(env.LOCALAPPDATA, name);
+  const now = { updates: path.win32.join(root, 'updates'), pending: path.win32.join(root, 'pending-update') };
+  return { ...now, legacy: [old.updates, old.pending].filter((dir) => dir.toLowerCase() !== now.updates.toLowerCase() && dir.toLowerCase() !== now.pending.toLowerCase()) };
+}
+
+/**
+ * Whether this user can write every path in `paths`. POSIX permission bits answer that, so
+ * `fs.access(W_OK)` does elsewhere; on Windows it reads only the read-only attribute and ignores the
+ * folder's ACL (B-108), so a folder is asked by creating and removing a file in it.
+ */
+async function canWrite({ platform, fs, paths, constants = require('node:fs').constants, probeName = () => `.fabric-write-check-${process.pid}-${Date.now()}` }) {
+  if (!paths.length) return false;
+  for (const where of paths) {
+    try {
+      await fs.access(where, constants.W_OK);
+      if (platform !== 'win32') continue;
+      if (!(await fs.stat(where)).isDirectory()) continue;
+      const probe = path.win32.join(where, probeName());
+      await fs.writeFile(probe, '', { flag: 'wx' });
+      await fs.rm(probe, { force: true });
+    } catch { return false; }
+  }
+  return true;
+}
+
+module.exports = { createPlatformInstaller, updateTarget, updateCacheDirs, canWrite };

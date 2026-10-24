@@ -41,6 +41,11 @@ app.setName(app.isPackaged ? 'Fabric Inbox' : 'Fabric Inbox Development');
 if (!app.isPackaged && !app.commandLine.hasSwitch('user-data-dir')) {
   app.setPath('userData', path.join(app.getPath('appData'), 'Fabric Inbox Development'));
 }
+// B-111: on a Linux desktop Chromium does not recognize (Sway, i3), ask for the Secret Service when the
+// session bus has one, rather than the plain-text store Chromium would pick; before ready, when Chromium chooses.
+const passwordStore = policy.passwordStoreFor(process.platform, process.env, app.commandLine.hasSwitch('password-store'),
+  () => policy.secretServiceOnBus(require('node:child_process').execFileSync));
+if (passwordStore) app.commandLine.appendSwitch('password-store', passwordStore);
 app.enableSandbox();
 const ownsInstance = app.requestSingleInstanceLock();
 if (!ownsInstance) app.quit();
@@ -413,9 +418,12 @@ async function startUpdates() {
   const target = platformInstaller.updateTarget({ platform: process.platform, arch: process.arch, execPath: process.execPath, env: process.env,
     installedOnMac: typeof app.isInApplicationsFolder === 'function' && app.isInApplicationsFolder(), exists: existsSync });
   // macOS: Squirrel.Mac installs. Windows and Linux: the verified installer or AppImage (PL-03).
+  const cacheDirs = platformInstaller.updateCacheDirs({ platform: process.platform, env: process.env, cache: app.getPath('cache'), name: app.getName() });
+  // B-108: what earlier versions staged in the roaming %APPDATA% goes once the installer it held has run.
+  for (const dir of cacheDirs.legacy) void fs.rm(dir, { recursive: true, force: true }).catch(() => {});
   const autoUpdater = process.platform === 'darwin' ? electron.autoUpdater
     : platformInstaller.createPlatformInstaller({ platform: process.platform, app, spawn, fs: updateFs.promises, appImage: target.appImage, log: logEvent,
-      stagingDir: path.join(app.getPath('cache'), app.getName(), 'pending-update') });
+      stagingDir: cacheDirs.pending });
   if (typeof autoUpdater.clean === 'function') void autoUpdater.clean();
   let feed = null;
   try { feed = updates.readFeed(await fs.readFile(path.join(__dirname, 'updates.json'), 'utf8')); } catch { feed = null; }
@@ -445,17 +453,14 @@ async function startUpdates() {
     }
     verifier = updateVerify.createVerifier({ repository, appVersion: app.getVersion(), appName: 'Fabric Inbox',
       zipName: target.fileName, runningApp: target.runningApp, platform: process.platform, arch: process.arch, requireAuthenticode,
-      dir: path.join(app.getPath('cache'), app.getName(), 'updates'), fetch: globalThis.fetch, exec, fs: updateFs.promises, createWriteStream: updateFs.createWriteStream, key, log: logEvent });
+      dir: cacheDirs.updates, fetch: globalThis.fetch, exec, fs: updateFs.promises, createWriteStream: updateFs.createWriteStream, key, log: logEvent });
   } catch (error) {
     logEvent({ event: 'update_check', outcome: 'check_failed', reason: 'no_release_key' });
   }
   // The timers hold no process open: quitting is never delayed by an update check.
   const setTimer = (fn, ms) => { const handle = setTimeout(fn, ms); if (handle.unref) handle.unref(); return handle; };
   // The update replaces the app in place: this user must be able to write it and its folder.
-  const replaceable = async () => {
-    if (!target.writable.length) return false;
-    try { for (const where of target.writable) await fs.access(where, fsConstants.W_OK); return true; } catch { return false; }
-  };
+  const replaceable = () => platformInstaller.canWrite({ platform: process.platform, fs, paths: target.writable, constants: fsConstants });
   // B-51: the staged update lives in ~/Library/Caches, which macOS purges when the disk runs short.
   const readPlist = async (file) => JSON.parse((await new Promise((resolve, reject) => execFile('/usr/bin/plutil', ['-convert', 'json', '-o', '-', file],
     { timeout: 10000, maxBuffer: 1024 * 1024 }, (error, stdout) => (error ? reject(error) : resolve(stdout))))));

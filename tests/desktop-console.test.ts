@@ -226,3 +226,15 @@ test("a key left by a crash is revoked only on its own server; another server's 
   assert.deepEqual(out, { revoked: 2, kept: 1 });
   assert.deepEqual(JSON.parse(readFileSync(path.join(dir, "keys.json"), "utf8")), [{ id: "theirs", origin: "https://other.workers.dev" }]);
 });
+
+test("B-102: on Windows a session runs on node-pty's own conpty.dll, so Stop forks nothing; elsewhere no such option", async () => {
+  const runtime = { id: "claude", name: "Claude Code", file: "C:\\Users\\p\\AppData\\Roaming\\npm\\claude.cmd" };
+  const win = setup({ platform: "win32" });
+  assert.deepEqual(await win.c.start({ runtime }), { ok: true });
+  assert.equal(win.p.spawned[0].opts.useConptyDll, true);
+  await win.c.stop();
+  assert.deepEqual(win.p.child.killed, [undefined], "Windows stops through node-pty's kill, never a process-group signal");
+  const mac = setup();
+  assert.deepEqual(await mac.c.start({ runtime: { ...runtime, file: "/opt/homebrew/bin/claude" } }), { ok: true });
+  assert.equal("useConptyDll" in mac.p.spawned[0].opts, false);
+});

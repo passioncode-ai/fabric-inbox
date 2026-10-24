@@ -188,7 +188,9 @@ signed release must create it without a prompt (`docs/release.md`, upgrade check
 - **Windows and Linux (fabric-workspace knowledge/platforms.md PL-01…PL-08).** The same processes,
   timers and budgets as the table above; what differs
   ([docs/desktop-data-and-updates.md → Windows and Linux](docs/desktop-data-and-updates.md#windows-and-linux)):
-  the profile is `%APPDATA%\Fabric Inbox` / `~/.config/Fabric Inbox` with its log under `logs`; no
+  the profile is `%APPDATA%\Fabric Inbox` / `~/.config/Fabric Inbox` with its log under `logs` (on Windows against
+  PL-06's `%LOCALAPPDATA%`: Electron's own profile folder, and moving it would sign every Windows user out; a
+  downloaded update waits under `%LOCALAPPDATA%\Fabric Inbox`, B-108); no
   Keychain item — the cookie key is DPAPI on Windows and the Secret Service on Linux, where the app
   refuses to start without one (PL-05, `key_store_refused`); without Chromium's sandbox (an AppImage where user namespaces are off) it warns once per launch until the person dismisses it (B-99, profile file `sandbox-warning`); the connect dialog flashes the taskbar
   entry instead of bouncing the Dock, and the listener is looked up with `netstat` + `tasklist`
@@ -207,7 +209,9 @@ signed release must create it without a prompt (`docs/release.md`, upgrade check
   LF on every OS (`.gitattributes`), since signed fixtures and source-reading tests compare bytes;
   the arm64 installer's payload is packed with the BCJ filter (`installerFilter` in
   `desktop/dist-platform.mjs`), because NSIS's unpacker skips files under 7-Zip's own ARM64 filter;
-  the `.deb` installs to `/opt/fabric-inbox`, since Chromium's zygote cannot start from a path with a space.
+  the `.deb` installs to `/opt/fabric-inbox`, since Chromium's zygote cannot start from a path with a space;
+  the agent console's PTY runs on node-pty's own conpty.dll (`useConptyDll`), because node-pty's default
+  ConPTY stop forks a helper, which with the `RunAsNode` fuse off starts a second app (B-102).
 - **Notifications (F2), decided 2026-10-22 (B-41): yes, off by default.** The person turns on Notify
   About New Mail in the app menu; then the main process reads the unread inbox every 5 min, with or
   without a window, and shows system notifications (the row above). Web pages still get no permission

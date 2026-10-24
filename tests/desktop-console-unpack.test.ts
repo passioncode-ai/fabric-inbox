@@ -15,7 +15,7 @@ import { CONSOLE_ASAR, verifyConsoleUnpacked } from "../desktop/console-assets.m
 
 const PTY_FILES: Record<string, string[]> = {
   darwin: ["prebuilds/darwin-arm64/pty.node", "prebuilds/darwin-arm64/spawn-helper", "prebuilds/darwin-x64/pty.node", "prebuilds/darwin-x64/spawn-helper"],
-  win32: ["prebuilds/win32-x64/pty.node", "prebuilds/win32-x64/conpty.node", "prebuilds/win32-x64/conpty/OpenConsole.exe"],
+  win32: ["prebuilds/win32-x64/pty.node", "prebuilds/win32-x64/conpty.node", "prebuilds/win32-x64/conpty/conpty.dll", "prebuilds/win32-x64/conpty/OpenConsole.exe"],
   linux: ["build/Release/pty.node"],
 };
 
@@ -63,7 +63,14 @@ test("B-84: verifyConsoleUnpacked names what is missing, so a build without it f
     const dir = path.join(base, "app.asar.unpacked", "node_modules", "node-pty", "prebuilds", "win32-arm64");
     mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, "pty.node"), "");
+    writeFileSync(path.join(dir, "conpty.node"), "");
+    // B-102: the console runs on node-pty's own conpty.dll; a build without it cannot start a session.
+    assert.deepEqual(verifyConsoleUnpacked(base, { platform: "win32", arch: "arm64" }).missing, ["prebuilds/win32-arm64/conpty/conpty.dll", "prebuilds/win32-arm64/conpty/OpenConsole.exe"]);
+    mkdirSync(path.join(dir, "conpty"));
+    writeFileSync(path.join(dir, "conpty", "conpty.dll"), "");
+    writeFileSync(path.join(dir, "conpty", "OpenConsole.exe"), "");
     assert.deepEqual(verifyConsoleUnpacked(base, { platform: "win32", arch: "arm64" }).missing, []);
-    assert.deepEqual(verifyConsoleUnpacked(base, { platform: "win32", arch: "x64" }).missing, ["prebuilds/win32-x64/pty.node"]);
+    assert.deepEqual(verifyConsoleUnpacked(base, { platform: "win32", arch: "x64" }).missing,
+      ["pty.node", "conpty.node", "conpty/conpty.dll", "conpty/OpenConsole.exe"].map((f) => `prebuilds/win32-x64/${f}`));
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

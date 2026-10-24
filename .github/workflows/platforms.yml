@@ -71,6 +71,22 @@ jobs:
           chmod +x release/Fabric-Inbox-*-linux-${{ matrix.arch }}.AppImage
           dbus-run-session -- bash -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null && \
             xvfb-run -a node scripts/smoke-desktop.mjs --exe "$(ls release/Fabric-Inbox-*-linux-${{ matrix.arch }}.AppImage)" --timeout 120 --console-check'
+      - name: Smoke — a desktop Chromium does not recognize, keyring running (B-111)
+        # Sway names itself; the app asks for the Secret Service the session bus has.
+        env:
+          XDG_CURRENT_DESKTOP: sway
+        run: |
+          dbus-run-session -- bash -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null && \
+            xvfb-run -a node scripts/smoke-desktop.mjs --exe /usr/bin/fabric-inbox --timeout 120'
+      - name: Refused on that desktop without a running Secret Service (B-111, PL-05)
+        env:
+          XDG_CURRENT_DESKTOP: sway
+        run: |
+          set +e
+          dbus-run-session -- xvfb-run -a node scripts/smoke-desktop.mjs --exe /usr/bin/fabric-inbox --timeout 60 > refused-sway.json 2>&1
+          status=$?
+          cat refused-sway.json
+          test $status -ne 0 && grep -q 'no system key store' refused-sway.json
       - name: Refused without a Secret Service (PL-05)
         run: |
           set +e

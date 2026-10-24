@@ -143,6 +143,43 @@ function keyStoreRefusal(platform, backend) {
 }
 
 /**
+ * B-111: Chromium picks the Linux key store by the desktop it recognizes (GNOME and its kin use the
+ * Secret Service, KDE uses KWallet); on any other desktop (Sway, i3, a bare X session) it picks
+ * `basic_text` without asking, and the app then refuses to run though gnome-keyring may be running.
+ * So on a desktop Chromium does not recognize, the app asks for the Secret Service itself, but only
+ * when one is on the session bus (`secretService()`, asked only then): named without one, Chromium
+ * reports the Secret Service while keeping the key in plain text, and PL-05's refusal would never
+ * fire (measured in the platforms run of PR #262). A store the person named with --password-store
+ * always wins. Answers the switch's value, or null for none.
+ */
+const KEY_STORE_DESKTOPS = ['gnome', 'kde', 'unity', 'x-cinnamon', 'cinnamon', 'pantheon', 'xfce', 'deepin', 'ukui', 'lxqt', 'budgie'];
+function passwordStoreFor(platform, env = {}, named = false, secretService = () => false) {
+  if (platform !== 'linux' || named) return null;
+  if (env.KDE_FULL_SESSION) return null;
+  const desktops = String(env.XDG_CURRENT_DESKTOP || '').toLowerCase().split(':').map((d) => d.trim()).filter(Boolean);
+  if (desktops.some((d) => KEY_STORE_DESKTOPS.includes(d))) return null;
+  if (!env.DBUS_SESSION_BUS_ADDRESS) return null;
+  return secretService() ? 'gnome-libsecret' : null;
+}
+
+/**
+ * Whether a Secret Service is running on the session bus, read with `dbus-send` (2 s at most). One
+ * the bus could only start on demand does not count: started that way, gnome-keyring may have no
+ * unlocked collection, and Chromium would again keep the key in plain text. No bus, no `dbus-send`
+ * or no answer reads as none.
+ */
+const SECRETS_NAME = 'org.freedesktop.secrets';
+function secretServiceOnBus(execFileSync) {
+  const ask = (method, ...args) => {
+    try {
+      return String(execFileSync('dbus-send', ['--session', '--dest=org.freedesktop.DBus', '--type=method_call', '--print-reply',
+        '/org/freedesktop/DBus', `org.freedesktop.DBus.${method}`, ...args], { timeout: 2000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
+    } catch { return ''; }
+  };
+  return /boolean true/.test(ask('NameHasOwner', `string:${SECRETS_NAME}`));
+}
+
+/**
  * B-99 (decided 2026-10-23: warn, never refuse): on Linux without Chromium's sandbox (an AppImage
  * where user namespaces are off, Ubuntu 24.04's default) the app says so on screen at launch, with
  * the way to keep the sandbox (the .deb), until the person asks not to be told again on this
@@ -154,4 +191,4 @@ function sandboxWarning(platform, noSandbox, dismissed) {
 }
 const SANDBOX_HELP_URL = 'https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/desktop-data-and-updates.md#windows-and-linux';
 
-module.exports = { permissionAllowed, retryAction, signInHandoff, signInDone, sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL, keyStoreRefusal, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };
+module.exports = { permissionAllowed, retryAction, signInHandoff, signInDone, sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL, keyStoreRefusal, passwordStoreFor, secretServiceOnBus, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };

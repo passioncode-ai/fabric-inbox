@@ -5,6 +5,19 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.33.5 (2026-10-24)
+
+- **Stopping the agent console on Windows no longer opens a second Fabric Inbox.** The console's
+  terminal now runs on its own console host, and every Windows and Linux build is checked by stopping a
+  running session as well as starting one (B-102).
+- **Updates on Windows are kept on this computer only.** A downloaded update waits in the local
+  application data folder instead of the roaming profile, which a work account may copy to every
+  computer, and the old copy is removed. An app folder you cannot write to is now noticed, so the app
+  says it cannot update itself there instead of failing later (B-108).
+- **Linux desktops such as Sway and i3 can start the app.** On a desktop the browser engine does not
+  recognize, the app now asks for the system keyring itself, so a running GNOME Keyring keeps the
+  sign-in safe instead of the app refusing to start (B-111).
+
 ## 0.33.4 (2026-10-24)
 
 - **Updates are tried for real before a release counts as done.** After each release is published, the

@@ -84,7 +84,8 @@ export const CONSOLE_ASAR = { unpackDir: path.join('node_modules', 'node-pty') }
 /** The files node-pty must find outside app.asar on each platform (paths inside node_modules/node-pty). */
 function unpackedFiles(platform, arch) {
   if (platform === 'darwin') return ['arm64', 'x64'].flatMap((a) => [`prebuilds/darwin-${a}/pty.node`, `prebuilds/darwin-${a}/spawn-helper`]);
-  if (platform === 'win32') return [`prebuilds/win32-${arch}/pty.node`];
+  // B-102: the console runs on node-pty's own conpty.dll (useConptyDll), which it loads beside conpty.node.
+  if (platform === 'win32') return ['pty.node', 'conpty.node', 'conpty/conpty.dll', 'conpty/OpenConsole.exe'].map((f) => `prebuilds/win32-${arch}/${f}`);
   if (platform === 'linux') return ['build/Release/pty.node'];
   throw new Error(`No console PTY for ${platform}.`);
 }
