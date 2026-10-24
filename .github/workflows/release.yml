@@ -444,6 +444,28 @@ jobs:
         run: node desktop/dist-platform.mjs --platform linux --arch ${{ matrix.arch }} --out release
       - name: The built update passes the app's checks, before signing the release set
         run: node scripts/run-in-electron.mjs scripts/check-update-release.mjs --before-signing --platform linux --arch ${{ matrix.arch }} --dir release --version "$VERSION" --repository "$GITHUB_REPOSITORY"
+      # B-105: the packages this release publishes are installed and launched until a window draws,
+      # as platforms.yml does for its own builds (Chromium picks the Secret Service from the desktop
+      # session; xvfb has none, so name GNOME).
+      - name: System packages for the launch (Secret Service, display, AppImage runtime)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gnome-keyring dbus-x11 xvfb libsecret-1-0 libgtk-3-0 libnss3 libxss1 libasound2t64 xdg-utils libfuse2t64
+      - name: Install the .deb and launch it with a throwaway profile
+        env:
+          XDG_CURRENT_DESKTOP: GNOME
+        run: |
+          sudo apt-get install -y -q "./release/Fabric-Inbox-$VERSION-linux-${{ matrix.arch }}.deb"
+          dbus-run-session -- bash -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null && \
+            xvfb-run -a node scripts/smoke-desktop.mjs --exe /usr/bin/fabric-inbox --timeout 120'
+      - name: Launch the AppImage with a throwaway profile
+        env:
+          XDG_CURRENT_DESKTOP: GNOME
+          APPIMAGE_FILE: release/Fabric-Inbox-${{ needs.gate.outputs.version }}-linux-${{ matrix.arch }}.AppImage
+        run: |
+          chmod +x "$APPIMAGE_FILE"
+          dbus-run-session -- bash -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null && \
+            xvfb-run -a node scripts/smoke-desktop.mjs --exe "$APPIMAGE_FILE" --timeout 120'
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-linux-${{ matrix.arch }}
