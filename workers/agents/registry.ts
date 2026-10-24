@@ -703,7 +703,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
 
   /** Test seam: one model's bench verdict; production asks OpenRouter (B-152). */
   protected async benchAnswer(model: string, input: JudgeInput, reasoning: boolean): Promise<BenchResult> {
-    if (!this.env.OPENROUTER_API_KEY) return { ok: false, checks: null, helped: null, costUsd: null, ms: 0, error: "no OpenRouter key on this server" };
+    if (!this.env.OPENROUTER_API_KEY) return { ok: false, checks: null, helped: null, costUsd: null, ms: 0, reasoning, error: "no OpenRouter key on this server" };
     return benchJudge(this.env.OPENROUTER_API_KEY, model, input, reasoning);
   }
 

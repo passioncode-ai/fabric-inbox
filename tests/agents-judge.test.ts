@@ -29,3 +29,31 @@ test("B-132: the day's quality family counts helped among questions and pass/fai
   assert.deepEqual([q.quality.addressedPass, q.quality.addressedFail, q.quality.actionablePass, q.quality.actionableFail], [2, 1, 2, 0]);
   assert.equal(qualityOf([]), null);
 });
+
+test("B-152: a bench model that cannot answer with reasoning off is asked again with the least reasoning, and the result says so", async () => {
+  const { benchJudge } = await import("../workers/agents/judge");
+  const real = globalThis.fetch;
+  const bodies: Record<string, any>[] = [];
+  const verdict = '{"language":"PASS","addressed":"PASS","policySafe":"PASS","routing":"PASS","actionable":"FAIL","continuity":"PASS","question":true,"helped":"partly","note":"x"}';
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    bodies.push(body);
+    if (body.reasoning?.enabled === false)
+      return new Response(JSON.stringify({ error: { code: 400, message: "Reasoning is mandatory for this endpoint and cannot be disabled." } }), { status: 400, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ id: "r", object: "chat.completion", created: 1, model: body.model,
+      choices: [{ index: 0, message: { role: "assistant", content: verdict }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: 0.0002 } }), { headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    const input = { message: "How do I?", earlier: "", answer: "Open Settings." };
+    const forced = await benchJudge("k", "maker/always-reasons", input, false);
+    assert.equal(forced.ok, true);
+    assert.equal(forced.reasoning, true);
+    assert.equal(forced.checks?.actionable, "FAIL");
+    assert.deepEqual(bodies.map((b) => b.reasoning), [{ enabled: false }, { effort: "low" }]);
+    bodies.length = 0;
+    const plain = await benchJudge("k", "maker/plain", input, true);
+    assert.equal(plain.reasoning, true);
+    assert.deepEqual(bodies.map((b) => b.reasoning), [{ enabled: true }], "the reference reasons from the start, once");
+  } finally { globalThis.fetch = real; }
+});

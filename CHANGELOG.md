@@ -5,6 +5,11 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.33.1 (2026-10-24)
+
+- **Judge comparison covers every model.** A model that cannot answer with reasoning switched off is
+  asked again with the least reasoning instead of failing, and its results say it reasoned (B-152).
+
 ## 0.33.0 (2026-10-24)
 
 - **Compare judge models.** A new agent tool, `judge_bench`, has several models grade the same sent
