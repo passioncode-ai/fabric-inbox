@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.33.4 (2026-10-24)
+
+- **Updates are tried for real before a release counts as done.** After each release is published, the
+  previous Linux release is started, updates itself to the new one, and must start again as the new
+  version (B-105).
+
 ## 0.33.3 (2026-10-24)
 
 - **The agent console is checked in every Windows and Linux build.** Before a build is accepted, the
