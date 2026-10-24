@@ -5,7 +5,10 @@
 // it; fails with the reason otherwise. The AppImage's sandbox warning (B-99) is a modal dialog no CI
 // session can answer, so the throwaway profile starts with it dismissed; its own tests cover it.
 //
-//   node scripts/smoke-desktop.mjs --exe "<path to the executable>" [--timeout 60] [-- <extra app args>]
+// With --console-check it also asks the app to run a fixed echo in a PTY (`--fabric-check-console`) and
+// passes only when that reports ok (`console_check`), proving the packaged node-pty loads and spawns.
+//
+//   node scripts/smoke-desktop.mjs --exe "<path to the executable>" [--timeout 60] [--console-check] [-- <extra app args>]
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -13,11 +16,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export function parseSmokeArgs(argv) {
-  const out = { exe: '', timeout: 60, extra: [] };
+  const out = { exe: '', timeout: 60, extra: [], consoleCheck: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--') { out.extra = argv.slice(i + 1); break; }
     if (argv[i] === '--exe') out.exe = argv[++i];
     else if (argv[i] === '--timeout') out.timeout = Number(argv[++i]);
+    else if (argv[i] === '--console-check') out.consoleCheck = true;
     else throw new Error(`Unknown option ${argv[i]}`);
   }
   if (!out.exe) throw new Error('--exe is required');
@@ -26,7 +30,7 @@ export function parseSmokeArgs(argv) {
 }
 
 /** Reads the app's JSON lines: the verdict once one is reached, else null. */
-export function verdictOf(lines) {
+export function verdictOf(lines, { consoleCheck = false } = {}) {
   const events = [];
   for (const line of lines) {
     const at = line.indexOf('{');
@@ -39,15 +43,17 @@ export function verdictOf(lines) {
   const sweep = events.find((e) => e.event === 'profile_sweep');
   if (sweep && sweep.outcome !== 'ok') return { ok: false, reason: `profile_sweep ${sweep.outcome}`, events: names };
   const shown = events.find((e) => e.event === 'window_shown');
-  if (shown) return shown.outcome === 'failed' ? { ok: false, reason: `the ${shown.window} window did not load (${shown.code})`, events: names }
-    : { ok: true, events: names };
+  if (shown && shown.outcome === 'failed') return { ok: false, reason: `the ${shown.window} window did not load (${shown.code})`, events: names };
+  const check = events.find((e) => e.event === 'console_check');
+  if (check && check.outcome !== 'ok') return { ok: false, reason: `the agent console's PTY did not run (${check.reason})`, events: names };
+  if (shown && (!consoleCheck || check)) return { ok: true, events: names };
   return null;
 }
 
-export async function smoke({ exe, timeout, extra }) {
+export async function smoke({ exe, timeout, extra, consoleCheck = false }) {
   const profile = mkdtempSync(path.join(os.tmpdir(), 'fabric-smoke-'));
   writeFileSync(path.join(profile, 'sandbox-warning'), 'off\n'); // desktop/policy.cjs SANDBOX_WARNING_FILE
-  const child = spawn(exe, [`--user-data-dir=${profile}`, ...extra], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
+  const child = spawn(exe, [`--user-data-dir=${profile}`, ...(consoleCheck ? ['--fabric-check-console'] : []), ...extra], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
   const lines = [];
   let buffer = '';
   const take = (chunk) => { buffer += chunk.toString('utf8'); const parts = buffer.split(/\r?\n/); buffer = parts.pop(); lines.push(...parts); };
@@ -59,9 +65,9 @@ export async function smoke({ exe, timeout, extra }) {
   let verdict = null;
   while (Date.now() < deadline && !verdict && !exited) {
     await new Promise((r) => setTimeout(r, 250));
-    verdict = verdictOf(lines);
+    verdict = verdictOf(lines, { consoleCheck });
   }
-  verdict ??= verdictOf(lines) ?? { ok: false, reason: exited ? `the app exited (${exited.code ?? exited.signal}) before a window drew` : `no window within ${timeout} s`, events: [] };
+  verdict ??= verdictOf(lines, { consoleCheck }) ?? { ok: false, reason: exited ? `the app exited (${exited.code ?? exited.signal}) before a window drew` : consoleCheck && verdictOf(lines) ? `no console check within ${timeout} s` : `no window within ${timeout} s`, events: [] };
   // Stop the whole tree: Electron's helpers are its children.
   try {
     if (process.platform === 'win32') spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });

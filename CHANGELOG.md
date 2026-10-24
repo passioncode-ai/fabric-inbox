@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.33.3 (2026-10-24)
+
+- **The agent console is checked in every Windows and Linux build.** Before a build is accepted, the
+  installed app runs a harmless command in the console's terminal, so a build whose console cannot
+  start no longer passes (B-105).
+
 ## 0.33.2 (2026-10-24)
 
 - **Stricter launch checks for Windows and Linux.** Each build is now accepted only after its first
