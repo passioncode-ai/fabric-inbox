@@ -30,6 +30,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	// Agents and project addresses (workers/routes/agents.ts)
 	"Agents are unavailable right now": "Агенты сейчас недоступны",
 	"Agents are not configured on this server": "На этом сервере агенты не настроены",
+	"Give the address, and optionally days, runs, models, reference, restart and offset": "Укажите адрес и при желании days, runs, models, reference, restart и offset",
 	"No such knowledge collection: {names}": "Такой коллекции знаний нет: {names}",
 	"Agent not found": "Агент не найден",
 	"Not a valid name": "Недопустимое имя",

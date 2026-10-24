@@ -68,4 +68,14 @@ export const AGENT_REGISTRY_STEPS: readonly SchemaStep[] = [
       revision TEXT NOT NULL,
       seen_at INTEGER NOT NULL)`,
   ]),
+  // B-152: a judge comparison over one address's sent answers: one row per answer and model, holding a
+  // verdict line with no words of the mail (hashes, marks, cost, time), filled a slice per call.
+  statements("6_judge_bench", [
+    `CREATE TABLE IF NOT EXISTS judge_bench (
+      address TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      line TEXT,
+      PRIMARY KEY (address, run_id, model))`,
+  ]),
 ];

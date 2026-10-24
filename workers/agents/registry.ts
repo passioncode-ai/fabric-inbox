@@ -1,7 +1,8 @@
 import { EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, runEvent, waitingEvent, type AgentEvent } from "./events";
 import { MAX_ATTEMPTS as HOOK_MAX_ATTEMPTS, RETRY_MS as HOOK_RETRY_MS, readHooks, sendHook, type HookCursor } from "./event-hooks";
 import { mailChannel, qualityDay } from "./quality";
-import { JUDGE_SAMPLE, judgesFor, openRouterJudge, qualityOf, type JudgeInput, type JudgeVerdict } from "./judge";
+import { JUDGE_SAMPLE, benchJudge, judgesFor, openRouterJudge, qualityOf, type BenchResult, type JudgeInput, type JudgeVerdict } from "./judge";
+import { BENCH_MODELS, BENCH_REFERENCE, BENCH_RUNS_DEFAULT, BENCH_RUNS_MAX, BENCH_SLICE, benchLine, benchRuns, turnHash, type BenchLine } from "./bench";
 import { readAllSettings } from "../lib/mailbox-store";
 import { DurableObject } from "cloudflare:workers";
 import { migrateSchema } from "../lib/do-schema";
@@ -698,6 +699,81 @@ export class AgentRegistryDO extends DurableObject<Env> {
     }
     if (calls) console.log(JSON.stringify({ event: "judge_day", day, calls, failed }));
     return qualityOf(ofDay.flatMap((r) => (r.judgement ? [r.judgement] : [])));
+  }
+
+  /** Test seam: one model's bench verdict; production asks OpenRouter (B-152). */
+  protected async benchAnswer(model: string, input: JudgeInput, reasoning: boolean): Promise<BenchResult> {
+    if (!this.env.OPENROUTER_API_KEY) return { ok: false, checks: null, helped: null, costUsd: null, ms: 0, error: "no OpenRouter key on this server" };
+    return benchJudge(this.env.OPENROUTER_API_KEY, model, input, reasoning);
+  }
+
+  /**
+   * B-152: a judge comparison over one address's sent answers. The first call (or restart) picks the
+   * newest `runs` answers of the last `days` and one row per answer and model (the reference too);
+   * every call grades one slice of rows still open and answers the progress, and the lines once all
+   * are graded (paged by offset). A message gone since is counted as gone, not graded.
+   */
+  async judgeBench(address: string, options: { days?: number; runs?: number; models?: string[]; reference?: string; restart?: boolean; offset?: number }, now = Date.now()) {
+    address = address.toLowerCase();
+    const reference = options.reference ?? BENCH_REFERENCE;
+    const count = () => this.rows("SELECT COUNT(*) AS n, SUM(line IS NULL) AS open FROM judge_bench WHERE address = ?", address)[0]!;
+    if (options.restart) this.ctx.storage.sql.exec("DELETE FROM judge_bench WHERE address = ?", address);
+    if (!Number(count().n)) {
+      const days = Math.min(Math.max(Math.trunc(options.days ?? 30), 1), 90);
+      const since = new Date(now - days * 86_400_000).toISOString();
+      const all = this.rows("SELECT body FROM agent_runs WHERE mailbox_id = ? AND status = 'sent' AND created_at >= ?", address, since)
+        .map((r) => JSON.parse(String(r.body)) as AgentRun);
+      const picked = benchRuns(all, since, Math.min(Math.max(Math.trunc(options.runs ?? BENCH_RUNS_DEFAULT), 1), BENCH_RUNS_MAX));
+      const models = [...new Set([...(options.models?.length ? options.models : BENCH_MODELS), reference])];
+      this.ctx.storage.transactionSync(() => {
+        for (const run of picked) for (const model of models)
+          this.ctx.storage.sql.exec("INSERT OR IGNORE INTO judge_bench (address, run_id, model, line) VALUES (?, ?, ?, NULL)", address, run.id, model);
+      });
+    }
+    const open = this.rows("SELECT run_id, model FROM judge_bench WHERE address = ? AND line IS NULL ORDER BY run_id, model LIMIT ?", address, BENCH_SLICE);
+    if (open.length) {
+      const deps = this.deps(address);
+      const inputs = new Map<string, Promise<{ run: AgentRun; input: JudgeInput } | null>>();
+      const inputOf = (runId: string) => {
+        if (!inputs.has(runId)) inputs.set(runId, (async () => {
+          const [run] = await this.runsByIds([runId]);
+          if (!run?.sent?.body || run.redacted) return null;
+          const email = await deps.mailbox.email(run.emailId);
+          if (!email) return null;
+          const thread = email.thread_id ? await deps.mailbox.thread(email.thread_id) : [];
+          const received = Date.parse(email.date);
+          const earlier = thread.filter((m) => m.folder_id === "sent" && Date.parse(m.date) < received).at(-1);
+          return { run, input: { message: `${email.subject}\n${deps.htmlToText(email.body)}`, earlier: earlier ? deps.htmlToText(earlier.body) : "", answer: run.sent.body } };
+        })());
+        return inputs.get(runId)!;
+      };
+      await Promise.all(open.map(async (row) => {
+        const runId = String(row.run_id), model = String(row.model);
+        let line: BenchLine | { gone: true };
+        try {
+          const found = await inputOf(runId);
+          if (!found) line = { gone: true };
+          else line = benchLine(await turnHash(address, runId), address, found.run, model, model === reference,
+            await this.benchAnswer(model, found.input, model === reference));
+        } catch (error) {
+          // The mailbox did not answer: left open, graded on a later call.
+          console.warn(JSON.stringify({ event: "judge_bench_failed", trace: runId, error: (error as Error).message?.slice(0, 200) }));
+          return;
+        }
+        this.ctx.storage.sql.exec("UPDATE judge_bench SET line = ? WHERE address = ? AND run_id = ? AND model = ?", JSON.stringify(line), address, runId, model);
+      }));
+    }
+    const { n, open: left } = count();
+    const lines = this.rows("SELECT line FROM judge_bench WHERE address = ? AND line IS NOT NULL ORDER BY run_id, model", address)
+      .map((r) => JSON.parse(String(r.line)) as BenchLine | { gone: true });
+    const graded = lines.filter((l): l is BenchLine => !("gone" in l));
+    const costUsd = Math.round(graded.reduce((sum, l) => sum + (l.costUsd ?? 0), 0) * 10_000) / 10_000;
+    const done = Number(left ?? 0) === 0;
+    const offset = Math.max(0, Math.trunc(options.offset ?? 0));
+    return {
+      address, reference, total: Number(n), graded: graded.length, gone: lines.length - graded.length, open: Number(left ?? 0), costUsd, done,
+      ...(done ? { lines: graded.slice(offset, offset + 500), nextOffset: offset + 500 < graded.length ? offset + 500 : null } : {}),
+    };
   }
 
   /**

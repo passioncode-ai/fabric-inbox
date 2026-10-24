@@ -528,6 +528,22 @@ const setAgentStatus = defineTool({
   call: (a, ctx) => put(ctx, "/api/agent-status", { enabled: a.enabled, domains: a.domains, addresses: a.addresses }),
 });
 
+const judgeBench = defineTool({
+  name: "judge_bench", title: "Compare judge models", level: "admin", target: (a) => a.address,
+  description: "Compares judge models over one address's sent answers (B-152): each model grades the same answers with the production rubric of the daily quality judge, and a reference model with reasoning on grades them too. The first call (or restart: true) picks the newest `runs` sent answers of the last `days`; every call grades one slice (6 calls on OpenRouter, paid from the server's key) and answers the progress: total, graded, gone (the message was deleted since), open and costUsd so far. Call it again until done: true; then lines holds one line per answer and model, 500 per page (offset, nextOffset): turn (a hash of the address and run, the same for every model), channel, drafter (the model that wrote the answer), prod (the production judge's verdict, null when it was not judged), model, reference, ok, checks, helped, costUsd, ms. A line carries no words of the mail.",
+  input: {
+    address: z.string().email().max(254).describe("The address whose answers are graded"),
+    days: z.number().int().min(1).max(90).default(30).describe("How many days back, on the first call"),
+    runs: z.number().int().min(1).max(200).default(60).describe("At most this many answers, newest first, on the first call"),
+    models: z.array(z.string().max(100)).max(12).optional().describe("OpenRouter model ids; none: the seven named on 2026-10-24"),
+    reference: z.string().max(100).optional().describe("The reference model, asked with reasoning on; default anthropic/claude-opus-5.5"),
+    restart: z.boolean().optional().describe("Drop this address's comparison and pick the answers again"),
+    offset: z.number().int().min(0).optional().describe("Where the page of lines starts, once done"),
+  },
+  routes: ["POST /api/agent-bench"],
+  call: (a, ctx) => post(ctx, "/api/agent-bench", { address: a.address.toLowerCase(), days: a.days, runs: a.runs, models: a.models, reference: a.reference, restart: a.restart, offset: a.offset }),
+});
+
 const agentMailVolume = defineTool({
   name: "agent_mail_volume", title: "Mail volume of agent addresses", level: "read", readOnly: true,
   description: "How much mail came to each address a reply agent answers, per UTC day over the last days (1–30, today included): messages received (spam apart), messages a reply agent ran on, and messages with no agent run — counts only, never a sender, subject or text. Use it with list_agent_events to see what share of the mail the agents saw. runsKeptFrom names the day before which agent runs were pruned (null: none were). A message deleted for good is no longer counted.",
@@ -1712,7 +1728,7 @@ const agentActivity = defineTool({
 
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listFolders, getSendStatus,
-  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
+  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,

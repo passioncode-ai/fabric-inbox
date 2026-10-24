@@ -76,6 +76,13 @@ const bundle = await build({
           if (script.throw) throw new Error(script.throw);
           return { ...script.verdict, model: models[0] };
         }
+        async benchAnswer(model, input, reasoning) {
+          const calls = JSON.parse(await (await this.env.BUCKET.get('test/bench-calls.json'))?.text() || '[]');
+          calls.push({ model, reasoning, answer: input.answer });
+          await this.env.BUCKET.put('test/bench-calls.json', JSON.stringify(calls));
+          if (model === 'bad/model') return { ok: false, checks: null, helped: null, costUsd: null, ms: 5, error: 'not the rubric' };
+          return { ok: true, checks: { language: 'PASS', addressed: 'PASS', policySafe: 'PASS', routing: 'PASS', actionable: 'PASS', continuity: 'PASS' }, helped: 'yes', costUsd: 0.001, ms: 10 };
+        }
         async redactNow(now) { return this.redactOldRuns(now); }
         async batchMailboxes() { return this.nextBatch().map((r) => r.mailbox_id); }
         async overlap() { return this.maxInflight ?? {}; }
@@ -133,6 +140,7 @@ const bundle = await build({
               case 'preview': return Response.json(await reg.previewAnswer(c.id, c.input));
               case 'retry-held': return Response.json({ next: await reg.retryHeldNow(c.now), queue: await reg.queueLength() });
               case 'judgeScript': await env.BUCKET.put('test/judge.json', JSON.stringify(c.script)); return Response.json(true);
+              case 'bench': return Response.json(await reg.judgeBench(c.address, c.options ?? {}, c.now));
               case 'judgeLast': return Response.json(JSON.parse(await (await env.BUCKET.get('test/judge-last.json'))?.text() || 'null'));
               case 'quality': return Response.json({ next: await reg.qualityNow(c.now) });
               case 'forgetQualityDay': await reg.forgetQualityDay(); return Response.json(true);
@@ -892,6 +900,49 @@ test("B-132: with no judge, or every call failing, quality is not measured rathe
     const event = ((await command("events", {})).events as { kind: string; data: { value: Record<string, any> } }[]).find((e) => e.kind === "support.quality_daily")!;
     assert.equal(event.data.value.quality.judged, null);
     assert.ok(event.data.value.notMeasured.includes("quality"));
+  } finally { await mf.dispose(); }
+});
+
+test("B-152: a judge comparison grades each sent answer with every model and the reference, a slice per call, with no words of the mail in its lines", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const box = "support@project.invalid";
+    await command("seedThread", { mailbox: box, rows: [{ id: "a", folder: "inbox", date: "2026-10-18T09:00:00.000Z", thread: "t1" },
+      { id: "b", folder: "inbox", date: "2026-10-19T09:00:00.000Z", thread: "t2" }] });
+    const base = { mailboxId: box, sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1, model: "xiaomi/mimo-v2.6-pro" };
+    const sent = (body: string) => ({ to: "x@y.invalid", subject: "Re: s", body, outboxId: "o" });
+    const prod = { rubric: "v1", model: "qwen/qwen3.8-flash", checks: { language: "PASS", addressed: "FAIL", policySafe: "PASS", routing: "PASS", actionable: "PASS", continuity: "PASS" }, question: true, helped: "no", note: "secret note" };
+    await command("begin", { run: { ...base, id: "agent-" + "b1".repeat(16), emailId: "a", status: "sent", createdAt: "2026-10-18T09:00:10.000Z", updatedAt: "2026-10-18T09:01:00.000Z", sent: sent("Private answer one"), judgement: prod } });
+    await command("begin", { run: { ...base, id: "agent-" + "b2".repeat(16), emailId: "b", status: "sent", createdAt: "2026-10-19T09:00:10.000Z", updatedAt: "2026-10-19T09:01:00.000Z", sent: sent("Private answer two") } });
+    await command("begin", { run: { ...base, id: "agent-" + "b3".repeat(16), emailId: "gone", status: "sent", createdAt: "2026-10-19T10:00:10.000Z", updatedAt: "2026-10-19T10:01:00.000Z", sent: sent("Answer to a deleted message") } });
+    await command("begin", { run: { ...base, id: "agent-" + "b4".repeat(16), emailId: "a", status: "skipped", createdAt: "2026-10-19T11:00:10.000Z", updatedAt: "2026-10-19T11:01:00.000Z" } });
+    await command("begin", { run: { ...base, id: "agent-" + "b5".repeat(16), emailId: "a", status: "sent", createdAt: "2026-08-01T09:00:10.000Z", updatedAt: "2026-08-01T09:01:00.000Z", sent: sent("Too old") } });
+    const now = Date.parse("2026-10-24T00:00:00.000Z");
+    const options = { models: ["good/model", "bad/model"], reference: "ref/model" };
+    const first = await command("bench", { address: "Support@project.invalid", options, now });
+    assert.equal(first.total, 9, "three sent answers in 30 days, three models each");
+    assert.equal(first.done, false);
+    assert.equal(first.graded + first.gone, 6, "one slice of six per call");
+    let last = first;
+    for (let i = 0; i < 3 && !last.done; i++) last = await command("bench", { address: box, options: {}, now });
+    assert.equal(last.done, true);
+    assert.equal(last.gone, 3, "the deleted message's three rows are counted, not graded");
+    assert.equal(last.lines.length, 6);
+    const calls = JSON.parse(JSON.stringify(await command("r2get", { key: "test/bench-calls.json" }))) as { model: string; reasoning: boolean }[];
+    assert.ok(calls.every((c) => c.reasoning === (c.model === "ref/model")), "reasoning only for the reference");
+    const lines = last.lines as Record<string, any>[];
+    const judged = lines.filter((l) => l.prod);
+    assert.equal(judged.length, 3);
+    assert.deepEqual(judged[0].prod.checks, prod.checks);
+    assert.equal(new Set(lines.map((l) => l.turn)).size, 2, "one hash per answer, the same for every model");
+    assert.ok(lines.every((l) => /^[0-9a-f]{16}$/.test(l.turn) && l.channel === `mail:${box}` && l.drafter === "xiaomi/mimo-v2.6-pro"));
+    assert.equal(lines.filter((l) => l.reference).length, 2);
+    assert.equal(lines.filter((l) => !l.ok).length, 2, "a model off the rubric is a line with ok false");
+    assert.equal(last.costUsd, 0.004);
+    const text = JSON.stringify(last);
+    for (const word of ["Private answer", "secret note", "x@y.invalid", "agent-"]) assert.ok(!text.includes(word), word);
+    const again = await command("bench", { address: box, options: { restart: true, runs: 1, models: ["good/model"], reference: "ref/model" }, now });
+    assert.equal(again.total, 2, "restart picks again: the newest answer, one model and the reference");
   } finally { await mf.dispose(); }
 });
 
