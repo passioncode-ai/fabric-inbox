@@ -204,6 +204,9 @@ function showSetup(message = '', start = '') {
   setupWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   setupWindow.webContents.on('will-attach-webview', event => event.preventDefault());
   setupWindow.on('closed', () => { setupWindow = null; });
+  // B-105: the first page drawn (or not) is said in the log, so a launch check sees a window, not only startup.
+  setupWindow.webContents.once('did-finish-load', () => logEvent({ event: 'window_shown', window: 'setup' }));
+  setupWindow.webContents.once('did-fail-load', (_event, code) => logEvent({ event: 'window_shown', window: 'setup', outcome: 'failed', code }));
   setupWindow.loadFile(path.join(__dirname, 'setup.html'));
 }
 async function openExternal(url, force = false) {
@@ -348,6 +351,7 @@ function loadMail() {
     clearTimeout(loadTimer);
     if (win.isDestroyed() || mailWindow !== win || loadFailed) return;
     win.show(); win.setTitle('Fabric Inbox');
+    logEvent({ event: 'window_shown', window: 'mail' });
     if (setupWindow && !setupWindow.isDestroyed()) setupWindow.close();
     // A chosen setup is applied by the server's Setup page once the person is
     // signed in there (the page loads only behind Access).

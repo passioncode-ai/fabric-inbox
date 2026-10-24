@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.33.2 (2026-10-24)
+
+- **Stricter launch checks for Windows and Linux.** Each build is now accepted only after its first
+  window has drawn, not as soon as it starts up, so a build that starts but cannot show a window no
+  longer passes (B-105).
+
 ## 0.33.1 (2026-10-24)
 
 - **Judge comparison covers every model.** A model that cannot answer with reasoning switched off is
