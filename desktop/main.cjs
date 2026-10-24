@@ -41,9 +41,10 @@ app.setName(app.isPackaged ? 'Fabric Inbox' : 'Fabric Inbox Development');
 if (!app.isPackaged && !app.commandLine.hasSwitch('user-data-dir')) {
   app.setPath('userData', path.join(app.getPath('appData'), 'Fabric Inbox Development'));
 }
-// B-111: on a Linux desktop Chromium does not recognize (Sway, i3), ask for the Secret Service rather
-// than the plain-text store Chromium would pick; before ready, when Chromium chooses.
-const passwordStore = policy.passwordStoreFor(process.platform, process.env, app.commandLine.hasSwitch('password-store'));
+// B-111: on a Linux desktop Chromium does not recognize (Sway, i3), ask for the Secret Service when the
+// session bus has one, rather than the plain-text store Chromium would pick; before ready, when Chromium chooses.
+const passwordStore = policy.passwordStoreFor(process.platform, process.env, app.commandLine.hasSwitch('password-store'),
+  () => policy.secretServiceOnBus(require('node:child_process').execFileSync));
 if (passwordStore) app.commandLine.appendSwitch('password-store', passwordStore);
 app.enableSandbox();
 const ownsInstance = app.requestSingleInstanceLock();

@@ -67,13 +67,29 @@ test("Open at Login is a checkbox in the app menu on macOS and in File on Window
   assert.ok(!menuTemplate("darwin", ctx)[0].submenu.some((i: any) => i.label === "Open at Login"), "absent without the context");
 });
 
-test("B-111: on a Linux desktop Chromium does not recognize the app asks for the Secret Service; a named store or a known desktop is left alone", () => {
+test("B-111: on a Linux desktop Chromium does not recognize the app asks for the Secret Service, only when the session bus has one", () => {
   const { passwordStoreFor } = require("../desktop/policy.cjs");
-  for (const desktop of ["sway", "i3", "Hyprland", "", "niri"]) assert.equal(passwordStoreFor("linux", { XDG_CURRENT_DESKTOP: desktop }), "gnome-libsecret", desktop);
-  assert.equal(passwordStoreFor("linux", {}), "gnome-libsecret");
-  for (const desktop of ["GNOME", "ubuntu:GNOME", "KDE", "X-Cinnamon", "XFCE", "Budgie:GNOME", "LXQt"]) assert.equal(passwordStoreFor("linux", { XDG_CURRENT_DESKTOP: desktop }), null, desktop);
-  assert.equal(passwordStoreFor("linux", { KDE_FULL_SESSION: "true" }), null);
-  assert.equal(passwordStoreFor("linux", { XDG_CURRENT_DESKTOP: "sway" }, true), null, "--password-store from the person wins");
-  assert.equal(passwordStoreFor("win32", { XDG_CURRENT_DESKTOP: "sway" }), null);
-  assert.equal(passwordStoreFor("darwin", {}), null);
+  const bus = { DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus" };
+  const has = () => true, none = () => false;
+  for (const desktop of ["sway", "i3", "Hyprland", "", "niri"]) assert.equal(passwordStoreFor("linux", { ...bus, XDG_CURRENT_DESKTOP: desktop }, false, has), "gnome-libsecret", desktop);
+  assert.equal(passwordStoreFor("linux", { XDG_CURRENT_DESKTOP: "sway" }, false, has), null, "no session bus: Chromium's own choice, so PL-05 still refuses");
+  assert.equal(passwordStoreFor("linux", { ...bus, XDG_CURRENT_DESKTOP: "sway" }, false, none), null, "no Secret Service: never named, or Chromium keeps the key in plain text while reporting libsecret");
+  let asked = 0;
+  for (const desktop of ["GNOME", "ubuntu:GNOME", "KDE", "X-Cinnamon", "XFCE", "Budgie:GNOME", "LXQt"])
+    assert.equal(passwordStoreFor("linux", { ...bus, XDG_CURRENT_DESKTOP: desktop }, false, () => { asked++; return true; }), null, desktop);
+  assert.equal(asked, 0, "a recognized desktop asks the bus nothing");
+  assert.equal(passwordStoreFor("linux", { ...bus, KDE_FULL_SESSION: "true" }, false, has), null);
+  assert.equal(passwordStoreFor("linux", { ...bus, XDG_CURRENT_DESKTOP: "sway" }, true, has), null, "--password-store from the person wins");
+  assert.equal(passwordStoreFor("win32", { ...bus, XDG_CURRENT_DESKTOP: "sway" }, false, has), null);
+  assert.equal(passwordStoreFor("darwin", bus, false, has), null);
+});
+
+test("B-111: only a Secret Service running on the session bus counts; one it could start, no dbus-send or no answer is none", () => {
+  const { secretServiceOnBus } = require("../desktop/policy.cjs");
+  const calls: string[][] = [];
+  const reply = (owned: boolean) => (_file: string, args: string[]) => { calls.push(args); return `method return\n   boolean ${owned}\n`; };
+  assert.equal(secretServiceOnBus(reply(true)), true);
+  assert.equal(secretServiceOnBus(reply(false)), false, "activatable only is not enough");
+  assert.ok(calls.every((a) => a.includes("org.freedesktop.DBus.NameHasOwner") && a.includes("string:org.freedesktop.secrets")));
+  assert.equal(secretServiceOnBus(() => { throw Object.assign(new Error("spawn dbus-send ENOENT"), { code: "ENOENT" }); }), false);
 });
