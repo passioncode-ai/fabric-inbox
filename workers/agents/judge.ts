@@ -72,25 +72,40 @@ export const judgePrompt = (input: JudgeInput) =>
   `<message>\n${input.message.slice(0, 4000)}\n</message>\n\n<earlier_reply>\n${input.earlier.slice(0, 2000) || "(none)"}\n</earlier_reply>\n\n<answer>\n${input.answer.slice(0, 4000)}\n</answer>`;
 
 /** B-152: one model's verdict on one answer for a comparison, with what it cost and took; never a word of the mail. */
-export interface BenchResult { ok: boolean; checks: Record<Check, Mark> | null; helped: JudgeVerdict["helped"] | null; costUsd: number | null; ms: number; error?: string }
+export interface BenchResult { ok: boolean; checks: Record<Check, Mark> | null; helped: JudgeVerdict["helped"] | null; costUsd: number | null; ms: number; reasoning: boolean; error?: string }
+/** OpenRouter's refusal for a model that always reasons (asked with reasoning off). */
+export const REASONING_MANDATORY = /reasoning is mandatory/i;
 export async function benchJudge(apiKey: string, model: string, input: JudgeInput, reasoning: boolean, now: () => number = Date.now): Promise<BenchResult> {
   const started = now();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), reasoning ? 120_000 : 45_000);
+  const ask = async (on: boolean, effort?: "low") => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), on ? 120_000 : 45_000);
+    try {
+      return await generateText({
+        abortSignal: controller.signal, model: openRouter(apiKey).chat(model, { usage: { include: true } }), system: JUDGE_SYSTEM,
+        temperature: on ? undefined : 0, maxOutputTokens: on ? 6000 : 300,
+        providerOptions: { openrouter: { reasoning: effort ? { effort } : { enabled: on } } },
+        prompt: judgePrompt(input),
+      });
+    } finally { clearTimeout(timer); }
+  };
+  let used = reasoning;
   try {
-    const result = await generateText({
-      abortSignal: controller.signal, model: openRouter(apiKey).chat(model, { usage: { include: true } }), system: JUDGE_SYSTEM,
-      temperature: reasoning ? undefined : 0, maxOutputTokens: reasoning ? 6000 : 300,
-      providerOptions: { openrouter: { reasoning: { enabled: reasoning } } },
-      prompt: judgePrompt(input),
-    });
+    let result;
+    try { result = await ask(reasoning); }
+    catch (error) {
+      // A model that always reasons is asked again with the least reasoning, and the line says so.
+      if (reasoning || !REASONING_MANDATORY.test(String((error as Error)?.message ?? error))) throw error;
+      used = true;
+      result = await ask(true, "low");
+    }
     const verdict = parseVerdict(result.text, model);
     const costUsd = receiptOf(model, result as never).costUsd;
-    return verdict ? { ok: true, checks: verdict.checks, helped: verdict.helped, costUsd, ms: now() - started }
-      : { ok: false, checks: null, helped: null, costUsd, ms: now() - started, error: "not the rubric's JSON" };
+    return verdict ? { ok: true, checks: verdict.checks, helped: verdict.helped, costUsd, ms: now() - started, reasoning: used }
+      : { ok: false, checks: null, helped: null, costUsd, ms: now() - started, reasoning: used, error: "not the rubric's JSON" };
   } catch (error) {
-    return { ok: false, checks: null, helped: null, costUsd: null, ms: now() - started, error: String((error as Error)?.message ?? error).slice(0, 120) };
-  } finally { clearTimeout(timer); }
+    return { ok: false, checks: null, helped: null, costUsd: null, ms: now() - started, reasoning: used, error: String((error as Error)?.message ?? error).slice(0, 120) };
+  }
 }
 
 /** One verdict from the first judge of another vendor that answers in the rubric's JSON; throws when none does. */

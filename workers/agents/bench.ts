@@ -27,6 +27,8 @@ export interface BenchLine {
   helped: string | null;
   costUsd: number | null;
   ms: number;
+  /** Whether the model reasoned: the reference always, a model that cannot answer without it too. */
+  reasoning: boolean;
   error?: string;
 }
 
@@ -45,5 +47,5 @@ export async function turnHash(address: string, runId: string): Promise<string> 
 export function benchLine(turn: string, address: string, run: AgentRun, model: string, reference: boolean, result: BenchResult): BenchLine {
   const prod = run.judgement ? { model: run.judgement.model, checks: { ...run.judgement.checks }, helped: run.judgement.helped } : null;
   return { turn, channel: `mail:${address}`, drafter: run.model ?? null, prod, model, reference, ok: result.ok, checks: result.checks,
-    helped: result.helped, costUsd: result.costUsd, ms: result.ms, ...(result.error ? { error: result.error } : {}) };
+    helped: result.helped, costUsd: result.costUsd, ms: result.ms, reasoning: result.reasoning, ...(result.error ? { error: result.error } : {}) };
 }

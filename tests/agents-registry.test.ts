@@ -80,8 +80,8 @@ const bundle = await build({
           const calls = JSON.parse(await (await this.env.BUCKET.get('test/bench-calls.json'))?.text() || '[]');
           calls.push({ model, reasoning, answer: input.answer });
           await this.env.BUCKET.put('test/bench-calls.json', JSON.stringify(calls));
-          if (model === 'bad/model') return { ok: false, checks: null, helped: null, costUsd: null, ms: 5, error: 'not the rubric' };
-          return { ok: true, checks: { language: 'PASS', addressed: 'PASS', policySafe: 'PASS', routing: 'PASS', actionable: 'PASS', continuity: 'PASS' }, helped: 'yes', costUsd: 0.001, ms: 10 };
+          if (model === 'bad/model') return { ok: false, checks: null, helped: null, costUsd: null, ms: 5, reasoning, error: 'not the rubric' };
+          return { ok: true, checks: { language: 'PASS', addressed: 'PASS', policySafe: 'PASS', routing: 'PASS', actionable: 'PASS', continuity: 'PASS' }, helped: 'yes', costUsd: 0.001, ms: 10, reasoning };
         }
         async redactNow(now) { return this.redactOldRuns(now); }
         async batchMailboxes() { return this.nextBatch().map((r) => r.mailbox_id); }
@@ -937,6 +937,7 @@ test("B-152: a judge comparison grades each sent answer with every model and the
     assert.equal(new Set(lines.map((l) => l.turn)).size, 2, "one hash per answer, the same for every model");
     assert.ok(lines.every((l) => /^[0-9a-f]{16}$/.test(l.turn) && l.channel === `mail:${box}` && l.drafter === "xiaomi/mimo-v2.6-pro"));
     assert.equal(lines.filter((l) => l.reference).length, 2);
+    assert.ok(lines.every((l) => l.reasoning === l.reference), "each line says whether its model reasoned");
     assert.equal(lines.filter((l) => !l.ok).length, 2, "a model off the rubric is a line with ok false");
     assert.equal(last.costUsd, 0.004);
     const text = JSON.stringify(last);
