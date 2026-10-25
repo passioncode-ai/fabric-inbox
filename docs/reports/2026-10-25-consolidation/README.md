@@ -254,9 +254,23 @@ Still open, proceeding on the defaults of section 7: Q5 (residency), Q8 (custom 
 Q9 (model credential), Q10 (update policy), Q12 (audit location: Inbox), Q13 (CI exception),
 Q14 (commercial terms; not needed while the first organization is the operator's own).
 
+### Release train "Organization R1" (fabric-workspace, 2026-10-25)
+
+The organization's integration is coordinated from one page
+([knowledge/integration.md](https://github.com/passioncode-ai/fabric-workspace/blob/main/knowledge/integration.md)).
+Inbox's part is in iteration I2: the first organization is the platform's own, then an internal
+pilot organization. Rows filed on 2026-10-25 (`d60fd3e`): B-168 (their N-8, the support address
+and its agent) and B-169 (their N-9, the deploy into the organization's account with a receipt),
+both before wave W1 (earliest 2026-11-14); B-83 waits for Fabric's issuer (target 2026-11-21) and
+gates wave W2 (end of November). Legal questions are handled by the organization's lawyers outside
+the software; this backlog carries no legal row (operator, 2026-10-25). Inbox reported on board
+thread `5f2358e3` and agreed to the coordination; the open point with the organization service
+(sign-in without a required identity provider, several accounts per organization) is asked on
+thread `1a429d8e`.
+
 ## 9. Next
 
 1. Answers to section 7 (or the defaults) are written into the organization-mode packet.
 2. Group A lands as one pull request.
 3. Group B by its order, each through `task-pipeline`; group C starts with its design packet (M0).
-4. The handoff's "Exact next task" points here until group B is done.
+4. The handoff's "Exact next task" is B-155, then B-154, then B-169 and B-168 before wave W1.
