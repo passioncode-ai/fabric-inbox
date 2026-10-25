@@ -305,8 +305,10 @@ inboxRouter.get("/api/agent-threads", async (c) => {
   const states = (params.get("state") || "").split(",").map((s) => s.trim()).filter(Boolean);
   if (!states.every(isAgentState)) return c.json({ error: msg("Unknown reply status") }, 400);
   const limit = Math.min(200, Math.max(1, Number(params.get("limit") || 100) || 100));
+  const abandoned = params.get("abandoned");
+  if (abandoned !== null && abandoned !== "1" && abandoned !== "0") return c.json({ error: msg("Unknown reply status") }, 400);
   const ownDomains = await allServedDomains(c.env).catch(() => [] as string[]);
-  return c.json(await listAgentThreads(c.env, { states: states.filter(isAgentState), address: params.get("address") || undefined, limit, ownDomains }));
+  return c.json(await listAgentThreads(c.env, { states: states.filter(isAgentState), abandoned: abandoned === "1", address: params.get("address") || undefined, limit, ownDomains }));
 });
 
 inboxRouter.get("/api/inbox", async c => {
@@ -376,7 +378,8 @@ async function markCategories(env: Env, page: InboxMessage[]) {
  * One page (the newest 100), with every state's count for the filter's numbers.
  */
 async function readReplyView(env: Env, reply: string, params: URLSearchParams, ownDomains: string[]): Promise<InboxResponse & { replyCounts: Record<string, number> }> {
-  const states = reply === "open" ? [...OPEN_STATES] : isAgentState(reply) ? [reply] : null;
+  // B-170: "abandoned" is every open state, kept only past ABANDONED_AFTER_MS.
+  const states = reply === "open" || reply === "abandoned" ? [...OPEN_STATES] : isAgentState(reply) ? [reply] : null;
   if (!states) throw new InboxRequestError("invalid_filter");
   const account = params.get("account") || "";
   const domain = (params.get("domain") || "").trim().toLowerCase();
@@ -387,12 +390,12 @@ async function readReplyView(env: Env, reply: string, params: URLSearchParams, o
     if (r.status === "rejected") { issues.push({ provider: i === 0 ? "cloudflare" : "gmail", error: publicError(r.reason) }); return []; }
     return r.value;
   });
-  const found = await listAgentThreads(env, { states, address: account.startsWith("cloudflare:") ? account.slice(11) : undefined, ownDomains });
+  const found = await listAgentThreads(env, { states, abandoned: reply === "abandoned", address: account.startsWith("cloudflare:") ? account.slice(11) : undefined, ownDomains });
   for (const i of found.issues) issues.push({ accountId: i.accountId, provider: "cloudflare", error: i.error });
   const messages = found.messages.filter((m) => !domain || m.accountId.endsWith("@" + domain));
   await Promise.all([markCategories(env, messages),
     env.AGENT_REGISTRY ? attachAgentRuns(messages, (ids) => env.AGENT_REGISTRY.getByName("workspace").runsByIds(ids)) : undefined]);
-  return { accounts, messages, issues, hasMore: false, replyCounts: found.counts as Record<string, number> };
+  return { accounts, messages, issues, hasMore: false, replyCounts: { ...found.counts, abandoned: found.abandoned } as Record<string, number> };
 }
 
 /**

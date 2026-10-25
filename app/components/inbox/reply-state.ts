@@ -12,6 +12,7 @@ export function replyStateLabel(state: AgentState, t: T): string {
     case "working": return t("Agent is answering");
     case "agent_replied": return t("Agent replied");
     case "person_replied": return t("You replied");
+    case "no_reply_needed": return t("No reply needed");
   }
 }
 /** A state that waits for someone, shown louder. */

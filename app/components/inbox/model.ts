@@ -61,6 +61,7 @@ export type InboxMessage = {
   agentRun?: { id: string; status: string; agentId?: string; agentVersion?: number; draftId?: string };
   /** B-138: where its conversation stands, on an address whose reply status is shown. */
   agentState?: import("../../../shared/mail/agent-state").AgentState;
+  agentAbandoned?: boolean;
   /** In a category's own view: why the message belongs there. */
   categoryReason?: string;
   spamReason?: string;
@@ -78,7 +79,7 @@ export type InboxData = {
   /** Present when the page is one category's view. */
   category?: import("~/services/categories").Category;
   /** B-138: in the reply-status view, conversations per state before the filter. */
-  replyCounts?: Partial<Record<import("../../../shared/mail/agent-state").AgentState, number>>;
+  replyCounts?: Partial<Record<import("../../../shared/mail/agent-state").AgentState | "abandoned", number>>;
 };
 export type OpenMessage = {
   subject: string;

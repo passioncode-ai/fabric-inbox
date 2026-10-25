@@ -7,7 +7,7 @@
  */
 import type { Env } from "../types";
 import type { InboxMessage } from "../../shared/mail/inbox";
-import { agentState, agentStatusOn, DEFAULT_AGENT_STATUS, type AgentState, type AgentStatusSettings, type ThreadFacts } from "../../shared/mail/agent-state";
+import { agentState, agentStatusOn, DEFAULT_AGENT_STATUS, isAbandoned, type AgentState, type AgentStatusSettings, type ThreadFacts } from "../../shared/mail/agent-state";
 import { bodyForUpdate } from "./r2-json";
 import { readAllSettings } from "./mailbox-store";
 import { runIdFor, type AgentRun } from "../agents/run";
@@ -64,17 +64,23 @@ export async function changeAgentStatus(bucket: R2Bucket, change: AgentStatusCha
 type RunsByIds = (ids: string[]) => Promise<AgentRun[]>;
 const box = (env: Env, address: string) => env.MAILBOX.get(env.MAILBOX.idFromName(address));
 
-/** Each conversation's state from its facts and the run on its last message that came in. */
-async function statesOf(address: string, facts: ThreadFacts[], runsByIds: RunsByIds | null): Promise<Map<string, { state: AgentState; facts: ThreadFacts }>> {
+export interface ThreadState { state: AgentState; abandoned: boolean; facts: ThreadFacts; runId: string; run?: AgentRun }
+
+/**
+ * Each conversation's state from its facts and the run on its last message that came in, and whether
+ * it is abandoned at `now` (B-170).
+ */
+export async function statesOf(address: string, facts: ThreadFacts[], runsByIds: RunsByIds | null, now = Date.now()): Promise<Map<string, ThreadState>> {
   const inbound = facts.filter((f) => f.lastInbound);
   const ids = await Promise.all(inbound.map((f) => runIdFor(address, f.lastInbound!.id)));
   // No registry, or one that cannot answer: states are read without the agent's run (never a guess at it).
   const runs = runsByIds && ids.length ? await runsByIds(ids).catch(() => [] as AgentRun[]) : [];
-  const byId = new Map(runs.map((r) => [r.id, r.status]));
-  const out = new Map<string, { state: AgentState; facts: ThreadFacts }>();
+  const byId = new Map(runs.map((r) => [r.id, r]));
+  const out = new Map<string, ThreadState>();
   inbound.forEach((f, i) => {
-    const state = agentState(f, byId.get(ids[i]!));
-    if (state) out.set(f.threadId, { state, facts: f });
+    const run = byId.get(ids[i]!);
+    const state = agentState(f, run ? { status: run.status, injection: run.injection === true } : undefined);
+    if (state) out.set(f.threadId, { state, abandoned: isAbandoned(state, f, now), facts: f, runId: ids[i]!, ...(run ? { run } : {}) });
   });
   return out;
 }
@@ -102,7 +108,7 @@ export async function attachAgentStates(env: Env, page: InboxMessage[]): Promise
       const states = await statesOf(address, await box(env, address).agentThreads({ threadIds: keys }), registryOf(env));
       for (const m of messages) {
         const found = states.get(m.threadId || m.providerMessageId);
-        if (found) m.agentState = found.state;
+        if (found) { m.agentState = found.state; if (found.abandoned) m.agentAbandoned = true; }
       }
     } catch (error) {
       console.warn(JSON.stringify({ event: "agent_state_unreadable", error: (error as Error)?.message?.slice(0, 200) }));
@@ -112,8 +118,10 @@ export async function attachAgentStates(env: Env, page: InboxMessage[]): Promise
 
 export interface AgentThreadsAnswer {
   messages: InboxMessage[];
-  /** Conversations per state across the addresses looked at, before the `states` filter. */
+  /** Conversations per state across the addresses looked at, before the `states` and `abandoned` filters. */
   counts: Partial<Record<AgentState, number>>;
+  /** B-170: how many of them are abandoned (isAbandoned), before the filters. */
+  abandoned: number;
   addresses: string[];
   issues: { accountId: string; error: string }[];
 }
@@ -123,7 +131,7 @@ export interface AgentThreadsAnswer {
  * message that came in with its state, newest first; `states` keeps only those. Each address looks at
  * its `perAddress` most recent conversations.
  */
-export async function listAgentThreads(env: Env, options: { states?: AgentState[]; address?: string; limit?: number; perAddress?: number; ownDomains?: string[] } = {}): Promise<AgentThreadsAnswer> {
+export async function listAgentThreads(env: Env, options: { states?: AgentState[]; abandoned?: boolean; address?: string; limit?: number; perAddress?: number; ownDomains?: string[] } = {}): Promise<AgentThreadsAnswer> {
   const settings = await readAgentStatus(env.BUCKET);
   const all = (await readAllSettings(env.BUCKET)).map(({ email }) => email.toLowerCase());
   const named = options.address?.trim().toLowerCase();
@@ -131,24 +139,29 @@ export async function listAgentThreads(env: Env, options: { states?: AgentState[
   const limit = Math.min(200, Math.max(1, options.limit ?? 100));
   const wanted = options.states?.length ? new Set(options.states) : null;
   const counts: Partial<Record<AgentState, number>> = {};
+  let abandoned = 0;
   const issues: AgentThreadsAnswer["issues"] = [];
   const messages: InboxMessage[] = [];
   await Promise.all(addresses.map(async (address) => {
     try {
       const facts = await box(env, address).agentThreads({ limit: options.perAddress ?? 200 });
       const states = await statesOf(address, facts, registryOf(env));
-      const keep = new Map<string, AgentState>();
-      for (const { state, facts: f } of states.values()) {
+      const keep = new Map<string, { state: AgentState; abandoned: boolean }>();
+      for (const { state, abandoned: gone, facts: f } of states.values()) {
         counts[state] = (counts[state] ?? 0) + 1;
-        if (!wanted || wanted.has(state)) keep.set(f.lastInbound!.id, state);
+        if (gone) abandoned++;
+        if ((!wanted || wanted.has(state)) && (!options.abandoned || gone)) keep.set(f.lastInbound!.id, { state, abandoned: gone });
       }
       if (!keep.size) return;
       const found = await box(env, address).inboxMessagesByIds(address, [...keep.keys()].slice(0, 100), options.ownDomains ?? []);
-      for (const m of found as InboxMessage[]) messages.push({ ...m, agentState: keep.get(m.providerMessageId) });
+      for (const m of found as InboxMessage[]) {
+        const k = keep.get(m.providerMessageId);
+        messages.push({ ...m, agentState: k?.state, ...(k?.abandoned ? { agentAbandoned: true } : {}) });
+      }
     } catch (error) {
       issues.push({ accountId: `cloudflare:${address}`, error: (error as Error)?.message?.slice(0, 200) || "unreadable" });
     }
   }));
   messages.sort((a, b) => (b.timestamp ?? Date.parse(b.date)) - (a.timestamp ?? Date.parse(a.date)));
-  return { messages: messages.slice(0, limit), counts, addresses, issues };
+  return { messages: messages.slice(0, limit), counts, abandoned, addresses, issues };
 }

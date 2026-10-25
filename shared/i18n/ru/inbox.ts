@@ -349,5 +349,7 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Agent lacks data": "Агенту не хватило данных",
 	"Agent's draft waits": "Черновик агента ждёт",
 	"You replied": "Вы ответили",
+	"No reply needed": "Ответ не нужен",
+	"Abandoned": "Брошено",
 	"The original message goes below your text as it was, with its links and buttons. Show it": "Исходное письмо уйдёт под вашим текстом как было, со ссылками и кнопками. Показать",
 };

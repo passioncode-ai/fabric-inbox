@@ -3,7 +3,7 @@
 // answer (a paraphrase), the passages it used — never the sender, the subject or a message's text.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runEvent } from "../workers/agents/events";
+import { abandonedEvent, runEvent } from "../workers/agents/events";
 
 const run = (over: Record<string, unknown> = {}) => ({
   id: "agent-0123456789abcdef0123456789abcdef", mailboxId: "support@x.invalid", emailId: "e1", sender: "Ann Lee <ann@private.invalid>",
@@ -48,4 +48,23 @@ test("every event carries the run's topic and one-sentence summary, scrubbed of 
   const { scrubPersonal } = await import("../workers/agents/events");
   assert.equal(scrubPersonal("see https://x.invalid/a?token=1 now"), "see […] now");
   assert.equal(scrubPersonal("version 12.4.1 on iOS 18"), "version 12.4.1 on iOS 18", "versions are not phone numbers");
+});
+
+test("B-170: an abandoned conversation is one warning with its state and hours, never the sender, subject or text", () => {
+  const at = "2026-10-17T08:00:00.000Z";
+  const e = abandonedEvent({ address: "support@x.invalid", emailId: "e1", runId: "agent-0123456789abcdef0123456789abcdef",
+    run: run({ status: "held", unanswered: true, question: "Write to ann@private.invalid about it", sent: { to: "ann@private.invalid", subject: "Re", body: "Hi Ann", outboxId: "o" } }),
+    state: "needs_data", receivedAt: Date.parse("2026-10-14T08:00:00.000Z") }, at);
+  assert.equal(e.kind, "agent.abandoned");
+  assert.equal(e.level, "warning");
+  assert.equal(e.text, "A conversation on support@x.invalid has had no reply for 3 days (needs data).");
+  assert.equal(e.data.value.status, "held");
+  assert.equal((e.data.value as any).state, "needs_data");
+  assert.equal((e.data.value as any).abandonedHours, 72);
+  assert.match(e.link, /run=agent-0123456789abcdef0123456789abcdef/);
+  for (const leak of ["ann@private.invalid", "Ann Lee", "ZX-QWERTY", "Hi Ann"]) assert.ok(!JSON.stringify(e).includes(leak), leak);
+  const none = abandonedEvent({ address: "support@x.invalid", emailId: "e2", runId: "agent-" + "f".repeat(32), agentId: "support", state: "unanswered", receivedAt: Date.parse(at) - 50 * 3_600_000 }, at);
+  assert.equal(none.data.value.status, "none");
+  assert.equal(none.data.value.agentId, "support");
+  assert.equal((none.data.value as any).abandonedHours, 50);
 });

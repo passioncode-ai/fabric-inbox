@@ -4,7 +4,7 @@
  * agent's run on the last message that came in, and the list, its filter and the agent tools read it.
  */
 export const AGENT_STATES = [
-  "unanswered", "new_after_agent", "error", "needs_data", "agent_draft", "working", "agent_replied", "person_replied",
+  "unanswered", "new_after_agent", "error", "needs_data", "agent_draft", "working", "agent_replied", "person_replied", "no_reply_needed",
 ] as const;
 export type AgentState = (typeof AGENT_STATES)[number];
 export const isAgentState = (value: unknown): value is AgentState => typeof value === "string" && (AGENT_STATES as readonly string[]).includes(value);
@@ -28,8 +28,20 @@ export interface ThreadFacts {
 
 const ERROR = new Set(["failed", "interrupted", "send_failed", "send_unknown"]);
 
-/** The state, or null for a conversation with nothing that came in (only mail you sent). */
-export function agentState(facts: ThreadFacts, runStatus: string | undefined): AgentState | null {
+/**
+ * The agent's run on the last message that came in, as far as the state needs it: its status, and
+ * whether the safety check held it back (B-141: such a skip waits for a person, it is no decision).
+ */
+export interface RunFacts { status: string; injection?: boolean }
+
+/**
+ * The state, or null for a conversation with nothing that came in (only mail you sent). A run the
+ * agent skipped on purpose (empty mail, a newsletter, an auto-reply, one of the server's own
+ * addresses, a copy answered from another address) is `no_reply_needed` (B-170): left alone by a
+ * decision, not forgotten.
+ */
+export function agentState(facts: ThreadFacts, run: string | RunFacts | undefined): AgentState | null {
+  const runStatus = typeof run === "string" ? run : run?.status;
   const inbound = facts.lastInbound;
   if (!inbound) return null;
   const sent = facts.lastSent;
@@ -44,7 +56,18 @@ export function agentState(facts: ThreadFacts, runStatus: string | undefined): A
   if (runStatus === "running") return "working";
   // Sent, but its copy is not in Sent yet: the answer left.
   if (runStatus === "sent") return "agent_replied";
+  if (runStatus === "skipped" && !(typeof run === "object" && run.injection)) return "no_reply_needed";
   return facts.agentAnsweredBefore ? "new_after_agent" : "unanswered";
+}
+
+/**
+ * B-170 (operator, 2026-10-25): a conversation is abandoned when it still waits for someone and its
+ * last message that came in is ABANDONED_AFTER_MS old with no reply. The agent's waiting reply is no
+ * answer, so a message still held for knowledge two days later is abandoned too.
+ */
+export const ABANDONED_AFTER_MS = 48 * 3_600_000;
+export function isAbandoned(state: AgentState, facts: ThreadFacts, now: number): boolean {
+  return OPEN_STATES.includes(state) && !!facts.lastInbound && now - facts.lastInbound.at >= ABANDONED_AFTER_MS;
 }
 
 /**

@@ -57,6 +57,7 @@ const bundle = await build({
         async pump() { return this.alarm(); }
         async retryHeldNow(now) { return this.retryHeld(now); }
         async superviseNow(now) { return this.superviseWaiting(now); }
+        async abandonNow(now) { return this.superviseAbandoned(now); }
         async closeNow(now) { return this.closeExpired(now); }
         async seedFacts(rows) { for (const r of rows) this.ctx.storage.sql.exec("INSERT OR REPLACE INTO agent_facts (endpoint, revision, seen_at) VALUES (?, ?, ?)", r.endpoint, r.revision, r.at); }
         async qualityNow(now) { return this.emitQualityDays(now); }
@@ -146,6 +147,7 @@ const bundle = await build({
               case 'forgetQualityDay': await reg.forgetQualityDay(); return Response.json(true);
               case 'redact': await reg.redactNow(c.now); return Response.json(true);
               case 'supervise': return Response.json({ next: await reg.superviseNow(c.now) });
+              case 'abandon': return Response.json({ next: await reg.abandonNow(c.now) });
               case 'close': return Response.json({ next: await reg.closeNow(c.now) });
               case 'seedFacts': await reg.seedFacts(c.rows); return Response.json(true);
               case 'seedThread': await box(c.mailbox).seedThread(c.rows); return Response.json(true);
@@ -292,6 +294,42 @@ test("B-118: a run that ends appends one event; the feed pages forward by cursor
     assert.ok(Number(all.events[1].id) > Number(all.events[0].id), "ids increase");
     const none = await command("events", { after: all.cursor, limit: 50 });
     assert.deepEqual(none, { events: [], cursor: null });
+  } finally { await mf.dispose(); }
+});
+
+test("B-170: a conversation on an agent address still open two days later is reported once as agent.abandoned", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const box = "support@project.invalid";
+    await command("setup", { mailbox: box, settings: { agent: { id: "support" } } });
+    await command("setup", { mailbox: "plain@project.invalid", settings: {} });
+    const now = Date.parse("2026-10-20T12:00:00.000Z");
+    const ago = (h: number) => new Date(now - h * 3_600_000).toISOString();
+    await command("seedThread", { mailbox: box, rows: [
+      { id: "old", folder: "inbox", date: ago(72), thread: "t1" },
+      { id: "skipped", folder: "inbox", date: ago(72), thread: "t2" },
+      { id: "fresh", folder: "inbox", date: ago(1), thread: "t3" },
+      { id: "backlog", folder: "inbox", date: ago(240), thread: "t4" },
+    ] });
+    await command("seedThread", { mailbox: "plain@project.invalid", rows: [{ id: "x", folder: "inbox", date: ago(72), thread: "t9" }] });
+    const id = await command("runId", { mailbox: box, emailId: "skipped" });
+    const run = { id, mailboxId: box, emailId: "skipped", sender: "x@y.invalid", subject: "s", reason: "Mailing list", toolCalls: [], agentId: "support", agentVersion: 1,
+      status: "running", createdAt: ago(72), updatedAt: ago(72) };
+    await command("begin", { run });
+    await command("save", { run: { ...run, status: "skipped" } });
+
+    const first = await command("abandon", { now });
+    assert.equal(first.next, now + 3_600_000);
+    const kinds = async () => (await command("events", { after: "0", limit: 50 })).events.filter((e: any) => e.kind === "agent.abandoned");
+    const found = await kinds();
+    assert.equal(found.length, 1, "only the open one in the reporting window; not the skipped, the fresh, the backlog or an address without an agent");
+    assert.deepEqual(found[0].data.value, { runId: await command("runId", { mailbox: box, emailId: "old" }), address: box, agentId: "support",
+      status: "none", unanswered: false, sources: [], state: "unanswered", abandonedHours: 72 });
+    assert.equal(found[0].level, "warning");
+
+    assert.equal((await command("abandon", { now: now + 60_000 })).next, now + 3_600_000, "not looked at again before the hour");
+    await command("abandon", { now: now + 3 * 3_600_000 });
+    assert.equal((await kinds()).length, 1, "reported once");
   } finally { await mf.dispose(); }
 });
 
