@@ -16,7 +16,8 @@ report:
     before an organization sees the product, the first-organization rollout (never deployed
     into an organization's account yet; blocked on two outside dependencies and a legal
     check), peer asks from the board, and a later backlog. Fourteen questions decide the
-    rollout; each carries a recommended default.
+    rollout; the operator answered seven on 2026-10-25 (section 8), which turned the
+    first-organization rollout into multi-organization support in Inbox.
   sources:
     - name: "Task board (B rows)"
       path: "docs/evidence/backlog.md"
@@ -170,24 +171,36 @@ One pull request, under the agent-sync lease on both registers:
 | B5 | Access policy gets a members group beside administrators | B-149 gave members a role, Access still admits only the administrators' group | organization-mode packet |
 | B6 | B-72: judge spam scoring and the AI panel checked on the deployed server | user-facing AI never verified live | `docs/evidence/backlog.md:96` |
 
-### Group C. First organization (product plan)
+### Group C. Organizations in Inbox (product plan)
 
-The first organization is called Acme here. Milestones, each with its exit check:
+Revised on 2026-10-25 by the operator's answers (section 8): Inbox does not grow a one-off
+"organization deploy"; it supports **many organizations** the way every PassionCode.ai product
+does. The organization model is the shared one (its sources are being collected; the design
+packet cites them and Inbox follows them, it does not define its own). The first organization is
+one already served by the existing server: its Cloudflare account is connected there as another
+account (`deployments/` inventory: one server, three other accounts, 22 domains, 36 mailboxes).
+
+The target flow, in the operator's words condensed: a person installs Inbox; activates an
+organization in it; attaches one or several accounts (Cloudflare, providers) to that
+organization; an administrator, a person or an administrator's agent, issues work addresses;
+each person signs in to Inbox with their work address, which is added to the organization and
+bound to their workplace as its primary address. One app holds a person's private space and
+every organization they belong to.
 
 | M | Milestone | Exit check | Depends on |
 |---|---|---|---|
-| M0 | Decisions | the questions of section 7 answered and written into the organization-mode packet | the operator |
-| M1 | Acme's server | Create my server run into Acme's Cloudflare account from the runbook; `npm run deploy:receipt` passes; B-19 walked | Q1, Q8; Acme's token (a person) |
-| M2 | Sign-in | Acme's identity provider walked live (B-02, SCN-084); Access with administrators and members (B5) | Q7; Acme's Zero Trust (a person) |
-| M3 | People | members added, invited (no invitation path exists today), a leaver removed by an agent (B2), people changes audited (B3), one source of truth for membership | Q2, Q6, Q11, Q12 |
-| M4 | Mail | the addresses Acme starts with; private mail only after the legal check (B-87 part 6); provider accounts if Acme uses them (B-55, B-56, B-57) | Q3; legal |
-| M5 | Agents | reply agents on Acme's addresses with Acme's model credential; delegated calls (B-83) if they gate the pilot | Q4, Q9; Fabric's issuer |
-| M6 | Operations | updates policy for Acme's Macs, residency (B4), the server in Fabric Dashboards, an error log read after each deploy | Q5, Q10 |
-| M7 | Acceptance and terms | a written acceptance with receipts; licence and billing for Inbox in Acme's cloud | Q14 |
+| M0 | Design packet | `docs/app-store/tasks/<date>-organizations.md`: entities and ids aligned with the shared organization model (person, organization, account, workplace, member, role, agent); scenarios in `docs/ux/scenarios.md` first | the shared model's sources |
+| M1 | Organizations as objects | create and activate an organization; attach one or several Cloudflare accounts and provider accounts to it; today's "other accounts" become accounts of an organization, the owner's private space stays separate; migration of the existing server's data without loss | M0 |
+| M2 | Inbox's own sign-in | a person signs in with a work address and no third-party identity provider (design choice in M0: invitation link, then a passkey or a one-time code; a code cannot go only to the address being activated, since its mailbox is not readable before sign-in); Google Workspace group as an option an administrator turns on | M0 |
+| M3 | People and workplaces | an administrator (or an agent with owner approval, B2) issues addresses, adds and removes people; the address is bound to a workplace as primary; people changes and member sends audited (B3); a leaver loses access at once | M1, M2 |
+| M4 | Access levels | per person and per mailbox: read; read and send; configure agents; administer. A member may have their own signature, their own Gmail, Outlook and IMAP accounts, their own agents and the console, each as the level allows | M3 |
+| M5 | Delegated calls | B-83 accepted (required by the operator): calls by other members' agents carry the delegation chain | Fabric's delegation issuer |
+| M6 | Operations | residency (B4), the organization's server in Fabric Dashboards, update policy for its Macs (Q10), an error log read after each deploy | M1 |
+| M7 | Acceptance | the first organization walked end to end with receipts: activate, attach its account, issue addresses, people sign in, mail flows, agents answer, a leaver is removed | M1 to M6 |
 
-The release that carries groups A, B and the code parts of C is one integrated release
-(working name 0.40, "organization"): every branch merged into `main`, one changelog entry, one
-handoff, every scenario it touches walked. That release is the project we integrate into Acme.
+The release that carries groups A, B and C is one integrated release (working name 0.40,
+"organizations"): every branch merged into `main`, one changelog entry, one handoff, every
+scenario it touches walked. That release is the project we integrate.
 
 ### Group D. Peer asks (after group B)
 
@@ -225,9 +238,25 @@ Each has a recommended default; the plan proceeds on the default until answered.
 | Q13 | CI: keep running `ci` on every push (the release guard depends on it) as a written exception, or move to nightly? | keep it and write the exception down | group A |
 | Q14 | Licence and billing for Inbox in Acme's own cloud: AGPL as is, or a commercial licence; billed per member? | commercial licence, per member per month, agreed with Acme | M7 |
 
-## 8. Next
+## 8. Decisions (operator, 2026-10-25)
+
+| Q | Decision | Consequence |
+|---|---|---|
+| Q1 | Inbox supports many organizations: create and add organizations, attach one or several accounts to each, separated from the start, consistent with every PassionCode.ai product | group C rewritten as organizations in Inbox; the first organization is the one already served by the existing server |
+| Q2 | People sign in as members | M2 to M4 |
+| Q3 | The legal assessment (B-87 part 6) is done | personal mailboxes allowed; B-87 part 6 closes with the operator's statement as its receipt, the assessment's place and jurisdiction to be linked |
+| Q4 | B-83 is required | M5 is on the critical path; the plan depends on Fabric's delegation issuer |
+| Q6, Q7 | Inbox's own sign-in with work addresses, no dependency on a third party; a Google Workspace group connection as an option to turn on | M2 |
+| Q11 | A member may have their own signature, their own provider accounts, their own agents and the console; levels: read, read and send, configure agents, administer, granted per person | M4 |
+| DEC-0121 | Adopted: every button is an agent tool; acts that change people, keys or the server go through the owner approval B-38 ships | B2; answer request `e1b2cc69` with the row id |
+
+Still open, proceeding on the defaults of section 7: Q5 (residency), Q8 (custom domain),
+Q9 (model credential), Q10 (update policy), Q12 (audit location: Inbox), Q13 (CI exception),
+Q14 (commercial terms; not needed while the first organization is the operator's own).
+
+## 9. Next
 
 1. Answers to section 7 (or the defaults) are written into the organization-mode packet.
 2. Group A lands as one pull request.
-3. Group B by its order, each through `task-pipeline`, then group C by milestone.
+3. Group B by its order, each through `task-pipeline`; group C starts with its design packet (M0).
 4. The handoff's "Exact next task" points here until group B is done.
