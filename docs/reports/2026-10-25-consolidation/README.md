@@ -16,8 +16,8 @@ report:
     before an organization sees the product, the first-organization rollout (never deployed
     into an organization's account yet; blocked on two outside dependencies and a legal
     check), peer asks from the board, and a later backlog. Fourteen questions decide the
-    rollout; the operator answered seven on 2026-10-25 (section 8), which turned the first-
-    organization rollout into multi-organization support in Inbox.
+    rollout; the operator answered seven on 2026-10-25 (section 8), which turned the
+    first-organization rollout into multi-organization support in Inbox.
   sources:
     - name: "Task board (B rows)"
       path: "docs/evidence/backlog.md"
