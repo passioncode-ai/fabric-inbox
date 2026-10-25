@@ -1294,3 +1294,20 @@ test("B-147: the run keeps the writer's and the checker's receipts, and a failed
   const failed = harness({ agent: autoAgent(), model: async () => { throw Object.assign(new Error("down"), { calls: { calls: 2, failed: 2, recovered: 0 }, usage: [receipt("x/a", null), receipt("x/b", null)] }); } });
   assert.deepEqual((await failed.run())!.usage?.map((u) => u.measured), [false, false]);
 });
+
+test("B-171: an account's run writes from the account's address, keeps its account id as the key, and is never migrated", async () => {
+  const h = harness({ settings: { agent: { id: "support" }, fromName: "Acme Support" } });
+  h.deps.mailbox.address = "Help@Acme.example";
+  const run = (await runAgent({ mailboxId: "gmail:acc-1", emailId: "incoming-1" }, h.deps))!;
+  assert.equal(run.status, "sent");
+  assert.equal(run.mailboxId, "gmail:acc-1", "the registry's key");
+  const command = h.effects.sends[0] as any;
+  assert.equal(command.mailboxId, "gmail:acc-1");
+  assert.deepEqual(command.request.from, { email: "help@acme.example", name: "Acme Support" });
+
+  const none = harness({ settings: null });
+  none.deps.mailbox.address = "help@acme.example";
+  assert.equal(await runAgent({ mailboxId: "gmail:acc-1", emailId: "incoming-1" }, none.deps), null, "no agent chosen: no run");
+  assert.deepEqual(none.effects.ensured, [], "no migrated agent for an account");
+  assert.equal(none.effects.sends.length, 0);
+});
