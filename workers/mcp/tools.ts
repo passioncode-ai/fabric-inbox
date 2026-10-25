@@ -464,13 +464,13 @@ const answerAgain = defineTool({
 
 const listAgentEvents = defineTool({
   name: "list_agent_events", title: "Reply agents' events", level: "read", readOnly: true,
-  description: "What reply agents did, as a feed another agent reads by cursor: one event per run that ended (sent, drafted, left alone, a question without an answer, handed to a person, a reply saying an earlier answer did not help, or needs a look), with the address, agent, intent, category, whether the answer was grounded, the question it could not answer (a paraphrase) and the passages it used — never the sender, subject or message text; each event's link opens the message and its run in the inbox. Two more kinds: agent.waiting (a message held or drafted 4 hours without a reply, once per message) and support.quality_daily (one per agent address and closed UTC day: the support quality standard's coverage, quality, stability and autonomy counts; a field not measured is null and named in notMeasured; schema docs/agents/support-quality-daily.schema.json). Without after: the newest events; pass the returned cursor as after to read only what is new.",
+  description: "What reply agents did, as a feed another agent reads by cursor: one event per run that ended (sent, drafted, left alone, a question without an answer, handed to a person, a reply saying an earlier answer did not help, or needs a look), with the address, agent, intent, category, whether the answer was grounded, the question it could not answer (a paraphrase) and the passages it used, never the sender, subject or message text; each event's link opens the message and its run in the inbox. Three more kinds: agent.waiting (a message held or drafted 4 hours without a reply, once per message), agent.abandoned (a conversation on an agent address still waiting for someone 48 hours after its last message came in, with its state and hours, once per message; status none when no run exists) and support.quality_daily (one per agent address and closed UTC day: the support quality standard's coverage, quality, stability and autonomy counts; a field not measured is null and named in notMeasured; schema docs/agents/support-quality-daily.schema.json). Without after: the newest events; pass the returned cursor as after to read only what is new.",
   input: { after: z.string().max(128).optional().describe("The cursor from the previous page"), limit: z.number().int().min(1).max(200).default(50) },
   routes: ["GET /api/agent-events"],
   call: (a, ctx) => get(ctx, "/api/agent-events", { after: a.after, limit: a.limit }),
 });
 
-const HOOK_KIND_NAMES = ["agent.sent", "agent.drafted", "agent.skipped", "agent.unanswered", "agent.needs_look", "agent.not_helped", "agent.handoff", "agent.waiting", "support.quality_daily"] as const;
+const HOOK_KIND_NAMES = ["agent.sent", "agent.drafted", "agent.skipped", "agent.unanswered", "agent.needs_look", "agent.not_helped", "agent.handoff", "agent.waiting", "agent.abandoned", "support.quality_daily"] as const;
 const listEventHooks = defineTool({
   name: "list_event_hooks", title: "Webhooks of agent events", level: "read", readOnly: true,
   description: "The webhooks that receive the reply agents' events (the same events as list_agent_events), each with its URL, its kinds and its delivery: the last event delivered (after), tries of the next one, when it is tried again and its last error. Never the secret.",
@@ -483,7 +483,7 @@ const addEventHook = defineTool({
   description: "Sends each new agent event of these kinds (default agent.handoff, agent.needs_look, agent.waiting) to an https URL as JSON, in order and at least once: the event's id (X-Fabric-Event-Id) is its idempotency key. Each POST is signed: X-Fabric-Signature is sha256= and the HMAC-SHA256 hex of `<X-Fabric-Timestamp>.<body>` with the secret this call answers once. A refusal (not 2xx, or no answer in 10 s) is tried again after 1 min, 5 min, 30 min, 2 h, then every 6 h; an event refused 8 times is passed over. Events from before the hook are not sent. At most 10 hooks.",
   input: {
     url: z.string().url().max(2048).describe("https URL on a public host"),
-    kinds: z.array(z.enum(HOOK_KIND_NAMES)).max(9).optional().describe("Event kinds; none: agent.handoff, agent.needs_look, agent.waiting"),
+    kinds: z.array(z.enum(HOOK_KIND_NAMES)).max(10).optional().describe("Event kinds; none: agent.handoff, agent.needs_look, agent.waiting, agent.abandoned"),
   },
   routes: ["POST /api/event-hooks"],
   call: (a, ctx) => post(ctx, "/api/event-hooks", { url: a.url, kinds: a.kinds }),
@@ -496,17 +496,18 @@ const removeEventHook = defineTool({
   call: (a, ctx) => del(ctx, `/api/event-hooks/${enc(a.id)}`),
 });
 
-const AGENT_STATE_NAMES = ["unanswered", "new_after_agent", "error", "needs_data", "agent_draft", "working", "agent_replied", "person_replied"] as const;
+const AGENT_STATE_NAMES = ["unanswered", "new_after_agent", "error", "needs_data", "agent_draft", "working", "agent_replied", "person_replied", "no_reply_needed"] as const;
 const listAgentThreads = defineTool({
   name: "list_agent_threads", title: "Conversations by reply status", level: "read", readOnly: true,
-  description: "Conversations on Cloudflare addresses by where they stand, newest first, each as its last message that came in with agentState: unanswered (nobody replied), new_after_agent (the agent answered earlier, a newer message has no reply), error (the agent's run failed or its send may not have left), needs_data (held for knowledge it lacks, a waiting reply at most), agent_draft (the agent left a draft for a person), working, agent_replied, person_replied. counts gives every state's number before the filter. Looks at the addresses where the reply status is on (get_agent_status), or the one named (on or not), and each one's 200 most recent conversations.",
+  description: "Conversations on Cloudflare addresses by where they stand, newest first, each as its last message that came in with agentState: unanswered (nobody replied), new_after_agent (the agent answered earlier, a newer message has no reply), error (the agent's run failed or its send may not have left), needs_data (held for knowledge it lacks, a waiting reply at most), agent_draft (the agent left a draft for a person), working, agent_replied, person_replied, no_reply_needed (the agent left it alone on purpose: empty mail, a newsletter, an auto-reply, one of this server's addresses, a copy answered from another address; not one the safety check held back). The first five wait for someone; agentAbandoned marks one still waiting 48 hours after it came in (the agent's waiting reply is no answer), and abandoned: true keeps only those. counts gives every state's number and abandoned how many are abandoned, before the filters. Looks at the addresses where the reply status is on (get_agent_status), or the one named (on or not), and each one's 200 most recent conversations.",
   input: {
-    states: z.array(z.enum(AGENT_STATE_NAMES)).max(8).optional().describe("Only these states; none: every state"),
+    states: z.array(z.enum(AGENT_STATE_NAMES)).max(9).optional().describe("Only these states; none: every state"),
+    abandoned: z.boolean().optional().describe("Only conversations still waiting for someone 48 hours after their last message came in"),
     address: z.string().email().max(254).optional().describe("Only this address, whether its reply status is on or not"),
     limit: z.number().int().min(1).max(200).default(50),
   },
   routes: ["GET /api/agent-threads"],
-  call: (a, ctx) => get(ctx, "/api/agent-threads", { state: a.states?.length ? a.states.join(",") : undefined, address: a.address?.toLowerCase(), limit: a.limit }),
+  call: (a, ctx) => get(ctx, "/api/agent-threads", { state: a.states?.length ? a.states.join(",") : undefined, abandoned: a.abandoned ? "1" : undefined, address: a.address?.toLowerCase(), limit: a.limit }),
 });
 
 const getAgentStatus = defineTool({

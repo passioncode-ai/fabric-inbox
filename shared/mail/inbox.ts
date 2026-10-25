@@ -64,6 +64,8 @@ export interface InboxMessage {
   agentRun?: { id: string; status: string; agentId?: string; agentVersion?: number; draftId?: string };
   /** B-138: where its conversation stands on an address whose reply status is shown (shared/mail/agent-state.ts). */
   agentState?: import("./agent-state").AgentState;
+  /** B-170: its conversation still waits for someone 48 hours after the last message that came in (isAbandoned). */
+  agentAbandoned?: boolean;
   /** In a category's own view: why this message belongs there. */
   categoryReason?: string;
   /** Why it is in Spam (SP-4): a rule, the model, the operator, or Gmail. */

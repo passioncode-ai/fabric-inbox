@@ -162,7 +162,7 @@ export default function UnifiedInbox() {
   const providerFilter = providerParam === "gmail" || providerParam === "imap" || providerParam === "outlook" ? providerParam : "";
   // B-138: the list by reply status ("open": every state waiting for someone), on addresses where it is shown.
   const replyParam = params.get("reply") ?? "";
-  const replyFilter = replyParam === "open" || isAgentState(replyParam) ? replyParam : "";
+  const replyFilter = replyParam === "open" || replyParam === "abandoned" || isAgentState(replyParam) ? replyParam : "";
   const unreadOnly = params.get("unread") === "1",
     groupParam = params.get("group"),
     group = isTriageGroup(groupParam) ? groupParam : undefined,

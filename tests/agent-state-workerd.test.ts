@@ -17,7 +17,7 @@ const bundle = await build({
         async seed(rows) {
           for (const r of rows) {
             this.ctx.storage.sql.exec("INSERT INTO emails (id, folder_id, subject, sender, recipient, date, body, thread_id) VALUES (?, ?, 's', 'x@outside.invalid', 'a', ?, '', ?)",
-              r.id, r.folder, new Date(Date.UTC(2026, 9, 20, 0, r.at)).toISOString(), r.thread);
+              r.id, r.folder, r.date || new Date(Date.UTC(2026, 9, 20, 0, r.at)).toISOString(), r.thread);
             if (r.key) this.ctx.storage.sql.exec("INSERT INTO outbox (id, mailbox_id, idempotency_key, payload_hash, status, created_at, updated_at, projection_status) VALUES (?, 'a', ?, 'h', 'accepted', 0, 0, 'complete')", r.id, r.key);
           }
         }
@@ -26,7 +26,7 @@ const bundle = await build({
         const out = [];
         for (const [email, status] of Object.entries(statuses)) {
           const id = await runIdFor(env.ADDRESS, email);
-          if (ids.includes(id)) out.push({ id, status, emailId: email });
+          if (ids.includes(id)) out.push({ id, ...(typeof status === 'object' ? status : { status }), emailId: email });
         }
         return out;
       } }) });
@@ -100,7 +100,7 @@ test("B-138: a mailbox's conversations read as their reply status: who answered 
     const all = await call("list", { address: ADDRESS, statuses, options: { address: ADDRESS } });
     const state = (id: string) => all.messages.find((m: any) => m.providerMessageId === id)?.agentState;
     assert.equal(state("m1"), "agent_replied");
-    assert.equal(state("m3"), "new_after_agent");
+    assert.equal(state("m3"), "no_reply_needed", "B-170: the agent skipped the follow-up on purpose");
     assert.equal(state("m4"), "error");
     assert.equal(state("m5"), "needs_data", "the agent's waiting reply is not an answer");
     assert.equal(state("m6"), "person_replied");
@@ -110,7 +110,7 @@ test("B-138: a mailbox's conversations read as their reply status: who answered 
     assert.equal(all.messages[0].providerMessageId, "m8", "newest first");
 
     const open = await call("list", { address: ADDRESS, statuses, options: { address: ADDRESS, states: ["unanswered", "new_after_agent", "error"] } });
-    assert.deepEqual(open.messages.map((m: any) => m.providerMessageId).sort(), ["m3", "m4", "m7"]);
+    assert.deepEqual(open.messages.map((m: any) => m.providerMessageId).sort(), ["m4", "m7"]);
     assert.equal(open.counts.person_replied, 1, "counts are every state's, before the filter");
   } finally { await mf.dispose(); }
 });
@@ -125,7 +125,7 @@ test("B-138: off by default: nothing is marked or listed until the workspace, th
     assert.equal((await call("read")).enabled, false);
 
     await call("change", { change: { domains: { "shop.invalid": true } } });
-    assert.deepEqual((await call("attach", { address: ADDRESS, statuses, page })).map((m: any) => m.agentState), ["unanswered", "new_after_agent"]);
+    assert.deepEqual((await call("attach", { address: ADDRESS, statuses, page })).map((m: any) => m.agentState), ["unanswered", "no_reply_needed"]);
     assert.equal((await call("list", { address: ADDRESS, statuses })).messages.length, 7);
 
     await call("change", { change: { addresses: { [ADDRESS]: false } } });
@@ -134,5 +134,29 @@ test("B-138: off by default: nothing is marked or listed until the workspace, th
     assert.deepEqual(after, { enabled: true, domains: { "shop.invalid": true }, addresses: {} }, "null follows the level above again");
     assert.match((await call("change", { change: { domains: { "not a domain": true } } })).threw, /Not a domain/);
     assert.match((await call("change", { change: { addresses: { [ADDRESS]: "yes" } } })).threw, /on, off or null/);
+  } finally { await mf.dispose(); }
+});
+
+test("B-170: open conversations two days old are abandoned, in the list, the count, the filter and the feed's mark", async () => {
+  const { mf, call } = await fixture();
+  try {
+    const recent = new Date(Date.now() - 3_600_000).toISOString();
+    await call("setup", { address: ADDRESS, rows: [...rows, { id: "m9", folder: "inbox", date: recent, thread: "t8" }, { id: "m10", folder: "inbox", at: 12, thread: "t9" }] });
+    const held = { ...statuses, m10: { status: "skipped", injection: true } };
+    const all = await call("list", { address: ADDRESS, statuses: held, options: { address: ADDRESS } });
+    const of = (id: string) => all.messages.find((m: any) => m.providerMessageId === id);
+    assert.equal(of("m9").agentState, "unanswered");
+    assert.equal(of("m9").agentAbandoned, undefined, "an hour old is not abandoned");
+    assert.equal(of("m10").agentState, "unanswered", "the safety check's skip is no decision");
+    for (const id of ["m4", "m5", "m7", "m8", "m10"]) assert.equal(of(id).agentAbandoned, true, id);
+    for (const id of ["m1", "m3", "m6"]) assert.equal(of(id).agentAbandoned, undefined, id);
+    assert.equal(all.abandoned, 5);
+    const gone = await call("list", { address: ADDRESS, statuses: held, options: { address: ADDRESS, abandoned: true } });
+    assert.deepEqual(gone.messages.map((m: any) => m.providerMessageId).sort(), ["m10", "m4", "m5", "m7", "m8"]);
+    assert.equal(gone.abandoned, 5);
+    assert.equal(gone.counts.unanswered, 3, "counts before the filter");
+    await call("change", { change: { addresses: { [ADDRESS]: true } } });
+    const page = [{ accountId: `cloudflare:${ADDRESS}`, providerMessageId: "m7", threadId: "t6" }, { accountId: `cloudflare:${ADDRESS}`, providerMessageId: "m9", threadId: "t8" }];
+    assert.deepEqual((await call("attach", { address: ADDRESS, statuses: held, page })).map((m: any) => m.agentAbandoned), [true, undefined]);
   } finally { await mf.dispose(); }
 });

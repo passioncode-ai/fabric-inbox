@@ -1,4 +1,5 @@
-import { EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, runEvent, waitingEvent, type AgentEvent } from "./events";
+import { abandonedEvent, EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, runEvent, waitingEvent, type AgentEvent } from "./events";
+import { statesOf } from "../lib/agent-status";
 import { MAX_ATTEMPTS as HOOK_MAX_ATTEMPTS, RETRY_MS as HOOK_RETRY_MS, readHooks, sendHook, type HookCursor } from "./event-hooks";
 import { mailChannel, qualityDay } from "./quality";
 import { JUDGE_SAMPLE, benchJudge, judgesFor, openRouterJudge, qualityOf, type BenchResult, type JudgeInput, type JudgeVerdict } from "./judge";
@@ -53,6 +54,14 @@ const RETRY_AT_ONCE = 20;
  * ESCALATE_WITHIN_MS when first seen are not escalated: a backlog from before this rule stays quiet.
  */
 export const WAIT_SLA_MS = 4 * 3_600_000;
+/**
+ * B-170: how often the conversations of agent addresses are looked at for abandoned ones, how old a
+ * message may be to be reported at all (an older backlog is never reported at once), and how many
+ * events one look writes.
+ */
+export const ABANDON_CHECK_MS = 3_600_000;
+export const ABANDON_REPORT_WITHIN_MS = 7 * 86_400_000;
+const ABANDON_EVENTS_PER_PASS = 20;
 export const ESCALATE_WITHIN_MS = 3 * 86_400_000;
 /** B-130: a run's sender, subject and texts are removed this long after it began; its counts stay. */
 export const RUN_TEXT_KEPT_MS = 30 * 86_400_000;
@@ -328,7 +337,11 @@ export class AgentRegistryDO extends DurableObject<Env> {
       console.warn(JSON.stringify({ event: "quality_daily_failed", error: (error as Error).message?.slice(0, 200) }));
       return Date.now() + 3_600_000;
     });
-    let heldDue: number | null = [retryDue, waitDue, closeDue, qualityDue].filter((t): t is number => t !== null).reduce((a, b) => Math.min(a, b));
+    const abandonDue = await this.superviseAbandoned().catch((error) => {
+      console.warn(JSON.stringify({ event: "abandoned_supervision_failed", error: (error as Error).message?.slice(0, 200) }));
+      return Date.now() + ABANDON_CHECK_MS;
+    });
+    let heldDue: number | null = [retryDue, waitDue, closeDue, qualityDue, abandonDue].filter((t): t is number => t !== null).reduce((a, b) => Math.min(a, b));
     // One message per mailbox at a time: two messages of one thread read the thread
     // before either answer exists, and would both be answered.
     const batch = this.nextBatch();
@@ -850,6 +863,51 @@ export class AgentRegistryDO extends DurableObject<Env> {
       ...recheck().slice(0, 1).map((r) => Date.parse((JSON.parse(String(r.body)) as AgentRun).personCheckAt!)),
     ].filter((t) => Number.isFinite(t));
     return times.length ? Math.max(now + 1000, Math.min(...times)) : null;
+  }
+
+  /**
+   * B-170 (operator, 2026-10-25): once an hour, each agent address's recent conversations are read
+   * as list_agent_threads reads them, and every one still waiting for someone ABANDONED_AFTER_MS after
+   * its last message came in gets one agent.abandoned event (keyed `abandoned-<run id of that message>`,
+   * so a later message of the same conversation is reported on its own). Messages older than
+   * ABANDON_REPORT_WITHIN_MS are not reported. An address that cannot be read is skipped until the
+   * next look. Answers when the next look is due.
+   */
+  protected async superviseAbandoned(now = Date.now()): Promise<number> {
+    const due = (await this.ctx.storage.get<number>("abandoned_check_at")) ?? 0;
+    if (due > now) return due;
+    const served = (await readAllSettings(this.env.BUCKET)).flatMap(({ email, settings }) => {
+      const assignment = readAssignment(settings);
+      return assignment && assignment !== "off" ? [{ address: email.toLowerCase(), agentId: assignment.id }] : [];
+    });
+    const at = new Date(now).toISOString();
+    let written = 0;
+    let more = false;
+    for (const { address, agentId } of served) {
+      if (written >= ABANDON_EVENTS_PER_PASS) { more = true; break; }
+      let states;
+      try {
+        const facts = await this.env.MAILBOX.get(this.env.MAILBOX.idFromName(address)).agentThreads({ limit: 200 });
+        states = await statesOf(address, facts, (ids) => this.runsByIds(ids), now);
+      } catch (error) {
+        console.warn(JSON.stringify({ event: "abandoned_unreadable", error: (error as Error).message?.slice(0, 200) }));
+        continue;
+      }
+      const found = [...states.values()].filter((s) => s.abandoned && now - s.facts.lastInbound!.at <= ABANDON_REPORT_WITHIN_MS)
+        .sort((a, b) => a.facts.lastInbound!.at - b.facts.lastInbound!.at);
+      for (const s of found) {
+        const key = `abandoned-${s.runId}`;
+        if (this.rows("SELECT 1 FROM agent_events WHERE run_id = ? LIMIT 1", key).length) continue;
+        if (written >= ABANDON_EVENTS_PER_PASS) { more = true; break; }
+        this.appendEvent(key, abandonedEvent({ address, emailId: s.facts.lastInbound!.id, runId: s.runId, run: s.run, agentId,
+          state: s.state, receivedAt: s.facts.lastInbound!.at }, at));
+        written++;
+      }
+    }
+    if (written) console.log(JSON.stringify({ event: "agent_abandoned_reported", events: written }));
+    const next = more ? now + 1000 : now + ABANDON_CHECK_MS;
+    await this.ctx.storage.put("abandoned_check_at", next);
+    return next;
   }
 
   /** Test seam: how a hook is called; production uses the Worker's fetch. */

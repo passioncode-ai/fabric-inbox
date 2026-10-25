@@ -71,7 +71,11 @@ function MessageRow({ message, account, selected, marked, onSelect, showGroup, c
       {message.discardReason && <span className="fi-category-reason fi-spam-reason">{triageText(t).whyDiscarded} {t.text(message.discardReason)}</span>}
       {message.agentState ? (
         // B-138: where the conversation stands; it says more than the agent's run on this one message.
-        <span className={"fi-agent-tag" + (replyStateOpen(message.agentState) ? " needs-look" : "")}>{replyStateLabel(message.agentState, t)}</span>
+        <>
+          <span className={"fi-agent-tag" + (replyStateOpen(message.agentState) ? " needs-look" : "")}>{replyStateLabel(message.agentState, t)}</span>
+          {/* B-170: still waiting for someone two days after it came in. */}
+          {message.agentAbandoned && <span className="fi-agent-tag needs-look">{t("Abandoned")}</span>}
+        </>
       ) : message.agentRun && (
         <span className={"fi-agent-tag" + (agentRunNeedsLook(message.agentRun.status) ? " needs-look" : "")}>{agentRunLabel(message.agentRun.status, t)}</span>
       )}

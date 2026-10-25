@@ -41,8 +41,10 @@
         "send_failed",
         "send_unknown",
         "failed",
-        "interrupted"
-      ]
+        "interrupted",
+        "none"
+      ],
+      "description": "The run's status; none (B-170, agent.abandoned only): no run of the reply agent exists for the message."
     },
     "intent": {
       "type": "string",
@@ -110,6 +112,21 @@
     "closingSent": {
       "type": "boolean",
       "description": "With closed: a fixed closing reply naming another route was sent (the policy's closingReply, else the default apology and its hand-off reply)."
+    },
+    "state": {
+      "enum": [
+        "unanswered",
+        "new_after_agent",
+        "error",
+        "needs_data",
+        "agent_draft"
+      ],
+      "description": "B-170, agent.abandoned only: where the conversation stands (list_agent_threads agentState)."
+    },
+    "abandonedHours": {
+      "type": "integer",
+      "minimum": 48,
+      "description": "B-170, agent.abandoned only: whole hours since the conversation's last message came in, with no reply (the agent's waiting reply is none); sent once per message, at 48 hours or later."
     }
   }
 }

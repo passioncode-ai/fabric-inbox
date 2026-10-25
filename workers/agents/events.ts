@@ -12,7 +12,7 @@ export const AGENT_EVENT_SCHEMA = "https://github.com/passioncode-ai/fabric-inbo
 
 export interface AgentEvent {
   at: string;
-  kind: "agent.sent" | "agent.drafted" | "agent.skipped" | "agent.unanswered" | "agent.needs_look" | "agent.not_helped" | "agent.handoff" | "agent.waiting" | "support.quality_daily";
+  kind: "agent.sent" | "agent.drafted" | "agent.skipped" | "agent.unanswered" | "agent.needs_look" | "agent.not_helped" | "agent.handoff" | "agent.waiting" | "agent.abandoned" | "support.quality_daily";
   level: "info" | "notice" | "warning";
   text: string;
   /** Opens the message and its run in the inbox (B-119): a path under the server's origin. */
@@ -30,6 +30,8 @@ export interface AgentEventValue {
   waitingHours?: number;
   /** B-141: the second agent.waiting of a message: its retries ended after 30 days; whether a closing reply naming another route went out. */
   closed?: boolean; closingSent?: boolean;
+  /** B-170 (agent.abandoned): where the conversation stands and how many whole hours its last message has waited. */
+  state?: string; abandonedHours?: number;
 }
 
 /**
@@ -110,6 +112,29 @@ export function waitingEvent(run: AgentRun, at: string, closing?: { closed: true
     : `A message to ${run.mailboxId} has waited ${hours} hours with ${what}.`;
   return { at, link: messageLink(`cloudflare:${run.mailboxId}`, run.emailId, run.id), kind: "agent.waiting", level: "warning",
     text: cut(text), data: { schema: AGENT_EVENT_SCHEMA, value } };
+}
+
+/**
+ * B-170 (operator, 2026-10-25): a conversation on an agent address still waits for someone two days
+ * after its last message came in. Emitted once per message by the registry's hourly look; `run` is the
+ * reply agent's run on that message when there is one.
+ */
+export function abandonedEvent(input: { address: string; emailId: string; runId: string; run?: AgentRun; agentId?: string; state: string; receivedAt: number }, at: string): AgentEvent {
+  const hours = Math.max(48, Math.floor((Date.parse(at) - input.receivedAt) / 3_600_000));
+  const run = input.run;
+  const agentId = run?.agentId ?? input.agentId;
+  const value: AgentEventValue = {
+    runId: input.runId, address: input.address,
+    ...(agentId ? { agentId } : {}), ...(run?.agentVersion ? { agentVersion: run.agentVersion } : {}),
+    status: run?.status ?? "none", unanswered: run?.unanswered === true,
+    ...(run?.unanswered && run.question ? { question: cut(scrubPersonal(run.question)) } : {}),
+    sources: (run?.sources ?? []).slice(0, 32).map((s) => cut(s.title)),
+    ...(run?.category ? { category: cut(run.category, 60) } : {}),
+    state: input.state, abandonedHours: hours,
+  };
+  return { at, link: messageLink(`cloudflare:${input.address}`, input.emailId, run?.id), kind: "agent.abandoned", level: "warning",
+    text: cut(`A conversation on ${input.address} has had no reply for ${Math.floor(hours / 24)} days (${input.state.replace(/_/g, " ")}).`),
+    data: { schema: AGENT_EVENT_SCHEMA, value } };
 }
 
 /** B-130: the day's quality of one agent address (support.quality_daily); counts only. */

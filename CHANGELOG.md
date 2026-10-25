@@ -5,6 +5,18 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.34.0 (2026-10-25)
+
+- **The reply status tells mail the agent left alone on purpose from mail nobody took.** A message the
+  agent decided needs no answer (an empty message, a newsletter, an auto-reply, mail from one of your own
+  addresses, a copy answered from another address) is now marked No reply needed instead of No reply, so
+  Needs a reply lists only what waits for someone. A message the safety check held back still waits
+  (B-170).
+- **Abandoned conversations are marked, filtered and reported.** A conversation still waiting for someone
+  two days after its last message came in is marked Abandoned, and the Abandoned filter lists them with
+  their number; the agent's "we are looking into it" reply does not count as an answer. Agents learn of
+  each one once through the new agent.abandoned event, sent to new event webhooks by default (B-170).
+
 ## 0.33.5 (2026-10-24)
 
 - **Stopping the agent console on Windows no longer opens a second Fabric Inbox.** The console's

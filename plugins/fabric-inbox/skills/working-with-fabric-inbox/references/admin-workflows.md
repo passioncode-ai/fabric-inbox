@@ -146,14 +146,16 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   each model grade the same sent answers with that rubric beside a reference with reasoning on; call it
   again until `done`, then page `lines` (hashes, marks, cost, ms; no words of the mail). It spends OpenRouter.
   `agent_mail_volume { days }` gives per-address, per-day counts (received, agent runs, no run, spam).
-  Where each conversation stands: `list_agent_threads { states?, address? }` (unanswered, new_after_agent,
-  error, needs_data, agent_draft, working, agent_replied, person_replied; `counts` for all). Start with
-  `states: ["unanswered", "new_after_agent", "error", "needs_data", "agent_draft"]`, the ones waiting for
-  someone. It covers the addresses where the reply status is on: `get_agent_status`, and `set_agent_status`
+  Where each conversation stands: `list_agent_threads { states?, abandoned?, address? }` (unanswered,
+  new_after_agent, error, needs_data, agent_draft, working, agent_replied, person_replied, no_reply_needed;
+  `counts` for all, `abandoned` for how many wait 48 hours). Start with `abandoned: true` (taken by nobody for
+  two days, a waiting reply is no answer), then `states: ["unanswered", "new_after_agent", "error",
+  "needs_data", "agent_draft"]`, the ones waiting for someone; no_reply_needed is mail the agent left alone
+  on purpose (empty, a newsletter, an auto-reply, an own address). It covers the addresses where the reply status is on: `get_agent_status`, and `set_agent_status`
   per workspace, domain or address (off by default; null follows the level above). `read_thread` marks each
   sent message `sentBy` (agent, agent_waiting, person) and each one that came in with its `agentRun`.
   To have events pushed instead of polled (a helpdesk, a support group): `add_event_hook { url, kinds? }`
-  (https; default kinds agent.handoff, agent.needs_look, agent.waiting) answers a secret once: verify each
+  (https; default kinds agent.handoff, agent.needs_look, agent.waiting, agent.abandoned) answers a secret once: verify each
   POST's `X-Fabric-Signature` (sha256= HMAC of `<X-Fabric-Timestamp>.<body>`) and treat `X-Fabric-Event-Id`
   as the idempotency key. `list_event_hooks` shows delivery and the last error; `remove_event_hook` stops one.
   Test an agent with `preview_agent_answer` (an outside sender, the text): it returns what the agent would do and

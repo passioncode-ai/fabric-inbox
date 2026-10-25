@@ -9,9 +9,9 @@
 import type { AgentEvent } from "./events";
 
 export const HOOKS_KEY = "config/event-hooks.json";
-export const DEFAULT_HOOK_KINDS = ["agent.handoff", "agent.needs_look", "agent.waiting"] as const;
+export const DEFAULT_HOOK_KINDS = ["agent.handoff", "agent.needs_look", "agent.waiting", "agent.abandoned"] as const;
 export const HOOK_KINDS = ["agent.sent", "agent.drafted", "agent.skipped", "agent.unanswered", "agent.needs_look", "agent.not_helped",
-  "agent.handoff", "agent.waiting", "support.quality_daily"] as const;
+  "agent.handoff", "agent.waiting", "agent.abandoned", "support.quality_daily"] as const;
 /** Waits before the next try of a refused event: 1 min, 5 min, 30 min, 2 h, then every 6 h. */
 export const RETRY_MS = [60_000, 300_000, 1_800_000, 7_200_000, 21_600_000];
 export const MAX_ATTEMPTS = 8;

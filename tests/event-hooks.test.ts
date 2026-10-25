@@ -28,7 +28,7 @@ test("a hook's URL is https on a public host, with no credentials in it", () => 
 test("a hook is added with the default kinds and a secret, listed, and removed", async () => {
   const b = bucket();
   const hook = await addHook(b, { url: "https://hooks.example/fabric" });
-  assert.deepEqual(hook.kinds, ["agent.handoff", "agent.needs_look", "agent.waiting"]);
+  assert.deepEqual(hook.kinds, ["agent.handoff", "agent.needs_look", "agent.waiting", "agent.abandoned"], "B-170: abandoned conversations by default");
   assert.match(hook.secret, /^[0-9a-f]{64}$/);
   assert.equal((await readHooks(b)).length, 1);
   await assert.rejects(addHook(b, { url: "https://hooks.example/x", kinds: ["agent.nope"] }), /Unknown event kinds/);
