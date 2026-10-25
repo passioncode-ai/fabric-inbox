@@ -1,0 +1,79 @@
+# B-171: reply agents on Gmail, IMAP and Outlook accounts (task packet)
+
+Status: planned 2026-10-25, not started. Board row: B-171 in [the board](../../evidence/backlog.md).
+
+## Why
+
+The operator, 2026-10-25: the agents that work in mail must run and be deployed in the cloud, and an
+agent that lives only on the Mac must be able to run there. On the owner's server every reply agent
+already runs in the Worker (`AgentRegistryDO`), with its knowledge tool on a public host; but a reply
+agent can be put only on a Cloudflare address. Mail of a Gmail, IMAP or Outlook account is answered
+only by an outside agent holding a key, and every change by such a key in the journal of 2026-10-25
+came from Claude Code or a service's own job on a Mac (`list_agent_activity`).
+
+## What is there (2026-10-25, `0309026`)
+
+- The accounts' incoming-event queue: each provider's sync queues an Inbox message once
+  (`workers/providers/gmail-sync.ts`, `imap/sync.ts` `queueEvent`, `outlook/sync.ts` `queueEvent`);
+  `AccountService.drainEvents` (`workers/providers/account-service.ts`) hands each to
+  `GmailAccountsDO.drain` (`workers/providers/accounts-do.ts`), which feeds rules (`AUTOMATIONS`) and
+  categories, with retries and a dead-letter after 10 tries. Reply agents are not fed.
+- The runner (`workers/agents/runner.ts`) reaches its mailbox only through `RunnerDeps`;
+  `productionDeps` (`workers/agents/deps.ts`) builds them from a MailboxDO and the R2 settings
+  `mailboxes/<address>.json`, and uses the address as the From of every reply.
+- `AccountService.send` and `createDraft` take an idempotency key (`/^[A-Za-z0-9_.:-]{1,128}$/`),
+  which the run id and its `:waiting` and `:closing` keys fit; their receipt is `sending`, `accepted`,
+  `unknown` or `failed`.
+- An account has no settings object: no assignment, From name or signature.
+- The runner uses its `mailboxId` as the address everywhere: the From of the waiting, answer and
+  closing replies (`runner.ts` around `runAgent`'s sends and `closeRun`), the prompts (`selfBlock`,
+  `systemPrompt`), the prefilter's own-address check and `electAnswerer`. An account run needs the
+  account's email there and its id only as the registry's key.
+- A reply agent's mail carries `Auto-Submitted: auto-replied` (RFC 3834) so auto-responders do not
+  answer it; `SendInput` of the accounts (`gmail-client.ts`) has no header field yet.
+
+## Decisions (agent, 2026-10-25; by the operator's goal and the safest reversible option)
+
+1. **Assignment** lives in R2 `accounts/<accountId>.json` (`{ agent, fromName?, signature? }`), the
+   shape and etag write of `mailboxes/<address>.json`, so `readAssignment` reads both. Off by default:
+   no account is answered until someone chooses an agent for it.
+2. **The run's mailbox id is the account id** (`gmail:<id>`, `imap:<id>`, `outlook:<id>`): a colon
+   never occurs in an address, so the registry tells the two apart; the run id stays
+   `runIdFor(accountId, providerMessageId)`.
+3. **Replies leave from the account itself** through `AccountService.send`, key = the run id; the
+   receipt maps `accepted` to accepted, `sending` and `unknown` to unknown (never retried), `failed` to
+   failed. Drafts go through `createDraft` with the same key; a drafting agent cannot be put on an
+   account whose provider cannot keep drafts (refused at assignment, with the reason).
+4. **The prefilter reads the message's headers** by `getHeaders` once per run, before any model call;
+   a header read that fails holds the run as a failure (B-141 retries it), never answers blind.
+5. **One answer per message** across Cloudflare addresses and accounts: `electAnswerer` counts an
+   account address with an agent like an agent address.
+6. **Events and quality** name the account's email as `address`; its quality channel is
+   `mail:<domain>:<local part>` of that email.
+7. **The reply status** (B-138, B-170) for accounts is a later phase: until then an account's message
+   shows its run (`agentRun`), as a Cloudflare address did before B-138.
+
+## Requirements
+
+| REQ | What | Verified by |
+|---|---|---|
+| REQ-1 | An account with an agent: a new Inbox message is enqueued once, answered by policy, the reply leaves from the account in the same conversation | workerd test over `GmailAccountsDO` + `AgentRegistryDO` with a fake provider |
+| REQ-2 | An account without an agent: nothing is enqueued, no run, no legacy agent created | same test |
+| REQ-3 | A send whose outcome is unknown is never sent again; a refused one is failed with the reason | unit test on the receipt mapping |
+| REQ-4 | The prefilter, dedupe, waiting reply, held retries and closing reply work for an account run | registry tests on an account id |
+| REQ-5 | Assign and clear an agent on an account: route, MCP tool, the account's settings screen; a drafting agent on an account without drafts is refused | route and MCP tests, SCN for the screen |
+| REQ-6 | Docs: architecture rows, SCN, `docs/agents/mcp.md`, the skill | `npm test` (mcp coverage, docs, skill) |
+
+## Phases
+
+1. **Server** (REQ-1 to REQ-4): account settings store; `RunnerDeps.mailbox.address` (the email the
+   runner writes from and about, the mailbox id for a Cloudflare address); account deps; an
+   `autoSubmitted` flag on the accounts' `SendInput` carried by Gmail, IMAP (SMTP) and Outlook; the
+   enqueue in `drain`; the registry's choice of deps by id.
+2. **Assignment** (REQ-5): `PUT /api/accounts/:id/agent`, the MCP tool, the account settings screen
+   (through super-ux: the scenario first).
+3. **Reply status for accounts** (B-138, B-170 on accounts): thread facts from the accounts' cache.
+
+## Exact next step
+
+Phase 1, starting with a failing workerd test for REQ-1 and REQ-2.
