@@ -617,8 +617,11 @@ read with a default where it is missing, never assumed present.
 
 ## Boundaries worth knowing
 
-- Access admits a person to the whole workspace; there is no per-mailbox authorization. An agent
-  key is limited by level and sending mode, not by mailbox.
+- Access admits a person; the server's members list (B-149, R2 `config/members.json`,
+  `workers/lib/member-gate.ts`) then limits a member to the mailboxes granted to them (no settings,
+  keys, `/mcp` or agents), and a person on the list as an administrator, or any person while the
+  list is empty, reaches the whole workspace. An agent key is limited by level and sending mode, and
+  a Read or Mail key may name its accounts (Mailbox scope above, `workers/mcp/scope.ts`).
 - Tool output reaches the model and the run record (bounded), never the rule journal.
 - `checkSendRateLimit` reads the same budget the outbox enforces (20/hour, 100/day per address).
 - An IMAP account is read on the poll interval (default 5 minutes) or Refresh: no IDLE, so new
