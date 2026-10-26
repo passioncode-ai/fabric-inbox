@@ -105,3 +105,46 @@ test("the menu offers the switch on every platform, and the app starts the notif
   assert.match(main, /startTray\(\);\n  startNewMail\(\);/);
   assert.match(main, /if \(mailNotifier\) mailNotifier\.reset\(\);/, "a new server starts from its own baseline");
 });
+
+test("N-5: account mail that syncs after a newer message is still announced", async () => {
+  const h = harness([msg("cf1", 1000)], { on: true });
+  await h.n.start();
+  await h.n.check();                                        // learns cf1
+  h.setPage({ messages: [msg("cf2", 3000), msg("cf1", 1000)] });
+  await h.n.check();
+  assert.deepEqual(h.shown.map((s) => s.body), ["Subject cf2"]);
+  const gmail = msg("g1", 2000, { accountId: "gmail:a1", id: JSON.stringify(["gmail:a1", "g1"]) });
+  h.setPage({ messages: [msg("cf2", 3000), gmail, msg("cf1", 1000)] });
+  await h.n.check();
+  assert.deepEqual(h.shown.map((s) => s.body), ["Subject cf2", "Subject g1"], "older-stamped, but new to the feed");
+});
+
+test("N-6: the same email in two accounts, or a merged row whose id changes, is announced once", async () => {
+  const h = harness([], { on: true });
+  await h.n.start();
+  await h.n.check();
+  h.setPage({ messages: [msg("cf", 1000, { rfcMessageId: "<one@x.invalid>" })] });
+  await h.n.check();
+  const copy = msg("g", 1500, { accountId: "gmail:a1", id: JSON.stringify(["gmail:a1", "g"]), rfcMessageId: "<one@x.invalid>",
+    alsoIn: ["cloudflare:me@x.invalid"] });
+  h.setPage({ messages: [copy] });
+  await h.n.check();
+  assert.equal(h.shown.length, 1);
+});
+
+test("N-7: a read that was out when the switch went off announces nothing", async () => {
+  let release: (v: unknown) => void = () => {};
+  const userData = mkdtempSync(path.join(os.tmpdir(), "fabric-new-mail-"));
+  writeFileSync(path.join(userData, "new-mail-notifications"), "on\n");
+  let calls = 0;
+  const shown: unknown[] = [];
+  const n = newMail.createNewMailNotifier({ fs: fsPromises, userData, t: (s: string) => s, notify: (...a: unknown[]) => shown.push(a), open: () => {},
+    read: async () => (++calls === 1 ? { messages: [] } : new Promise((r) => { release = r; })), setTimer: () => ({}), clearTimer: () => {} });
+  await n.start();
+  await n.check();                                          // baseline
+  const pending = n.check();
+  await n.setEnabled(false);
+  release({ messages: [msg("late", 5000)] });
+  assert.deepEqual(await pending, []);
+  assert.equal(shown.length, 0);
+});
