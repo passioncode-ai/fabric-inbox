@@ -66,7 +66,7 @@ async function move(c: C, spam: boolean) {
         const moved = spam
           ? await stub.markSpam([m.providerMessageId], list === "none" ? msg("You reported it as spam")
             : list === "domain" ? msg("You reported it as spam; mail from its domain now goes to Spam") : msg("You reported it as spam; mail from this sender now goes to Spam"))
-          : await stub.markNotSpam([m.providerMessageId]);
+          : await stub.markNotSpam([m.providerMessageId], mailbox);
         return { ...m, ok: moved.length > 0, error: moved.length ? undefined : spam ? msg("It is sent mail, a draft, or no longer here") : msg("It is no longer in Spam") };
       }
       // A Gmail or IMAP account: its own spam folder (Gmail's label, or the IMAP Junk folder), which

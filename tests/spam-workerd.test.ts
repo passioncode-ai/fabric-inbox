@@ -132,12 +132,12 @@ async function fixture(bindings: Record<string, string> = {}) {
   };
   await call("/mailbox", "POST", { email: "support@shop.invalid" });
   let n = 0;
-  const receive = async (subject: string, opts: { from?: string; headers?: string; body?: string; attachment?: boolean } = {}) => {
+  const receive = async (subject: string, opts: { from?: string; headers?: string; body?: string; attachment?: boolean; html?: boolean } = {}) => {
     const from = opts.from ?? "ann@customer.invalid";
     const id = `m${++n}-${Date.now()}`;
     const bodyPart = opts.attachment
       ? `Content-Type: multipart/mixed; boundary=b1\r\n\r\n--b1\r\nContent-Type: text/plain\r\n\r\n${opts.body ?? "Hello"}\r\n--b1\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=invoice.pdf\r\nContent-Transfer-Encoding: base64\r\n\r\nJVBERi0x\r\n--b1--\r\n`
-      : `Content-Type: text/plain\r\n\r\n${opts.body ?? "Hello, a question about my order."}\r\n`;
+      : `Content-Type: text/${opts.html ? "html" : "plain"}\r\n\r\n${opts.body ?? "Hello, a question about my order."}\r\n`;
     const out = await call("/receive", "POST", { to: "support@shop.invalid",
       raw: `${opts.headers ?? ""}From: ${from}\r\nTo: support@shop.invalid\r\nSubject: ${subject}\r\nMessage-ID: <${id}@customer.invalid>\r\nDate: ${new Date().toUTCString()}\r\n${bodyPart}` });
     return out.body as { emailId: string; spam?: string; forwards: string[] };
@@ -381,5 +381,31 @@ test("C-3: with the safety check on, a correspondent's message waits for it too,
     await call("/sent", "POST", { mailbox: "support@shop.invalid", to: "friend@partner.invalid" });
     const friend = await receive("Lunch", { from: "friend@partner.invalid", headers: PASS("partner.invalid"), body: "Lunch on Friday at the usual place?" });
     assert.equal((await call("/holds")).body["held:" + friend.emailId], 15 * 60_000);
+  } finally { await mf.dispose(); }
+});
+
+test("C-5: a message that is only a link or an image is judged by the spam model, with its link to read", async () => {
+  const { mf, call, receive } = await fixture({ SAFETY_CHECK: "off" });
+  try {
+    await receive("Action needed", { headers: PASS("customer.invalid"), html: true, body: '<a href="https://login.evil.invalid/verify"><img src="https://evil.invalid/b.png"></a>' });
+    await receive("Re: lunch", { headers: PASS("customer.invalid"), body: "Sent from my iPhone" });
+    await call("/pump", "POST");
+    const prompts = (await call("/prompts")).body as string[];
+    assert.equal(prompts.length, 1, "only the linked one went to the model");
+    assert.match(prompts[0]!, /login\.evil\.invalid\/verify/);
+    const checks = (await call("/checks")).body as { reason: string }[];
+    assert.ok(checks.some((c) => /Too little text/.test(c.reason)), "the empty one is still left alone");
+  } finally { await mf.dispose(); }
+});
+
+test("C-7: a recent message taken out of Spam reaches its agent and categories again, as new mail", async () => {
+  const { mf, call, receive } = await fixture({ SAFETY_CHECK: "off" });
+  try {
+    const blocked = await receive("Invoice 42", { from: "billing@vendor.invalid", headers: FORGED("vendor.invalid"), body: "Your invoice 42 is attached; it is due on Friday." });
+    assert.ok(blocked.spam, "filed in Spam on arrival");
+    assert.deepEqual((await call("/agents")).body, [], "no agent was told while it sat in Spam");
+    const release = await call("/api/spam/release", "POST", { messages: [{ accountId: "cloudflare:support@shop.invalid", providerMessageId: blocked.emailId, sender: "billing@vendor.invalid" }], list: "none" });
+    assert.equal(release.body.moved, 1);
+    assert.deepEqual((await call("/agents")).body, [blocked.emailId], "its agent takes it now");
   } finally { await mf.dispose(); }
 });
