@@ -190,6 +190,11 @@ export interface RunnerDeps {
     reserveSend(mailboxId: string, limit: number | null): Promise<boolean>;
     /** Atomic per workspace: of the copies of one message, one answers (B-22). */
     claimMessage(key: string, mailboxId: string, elected: string): Promise<MessageClaim>;
+    /**
+     * A-5: whether this address's agent sent an answer in the conversation after `since` (ms). An account's thread is
+     * read from its cache, which shows the sent copy only after the next sync; the run's own record does at once.
+     */
+    sentInThreadAfter?(mailboxId: string, threadId: string, since: number): Promise<boolean>;
   };
   /** Whether another address of this workspace has an agent (a mailbox here, not Off). */
   agentServes(address: string): Promise<boolean>;
@@ -462,7 +467,9 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // the same conversation (review 2026-10-21: it silenced a held follow-up), so the real one still goes out.
   const waitingTexts = waitingTextsOf(run, agent, deps.htmlToText);
   const answeredAfter = thread.some((m) => m.folder_id === "sent" && Date.parse(m.date) > received
-    && !waitingTexts.some((w) => deps.htmlToText(m.body).trim().startsWith(w)));
+    && !waitingTexts.some((w) => deps.htmlToText(m.body).trim().startsWith(w)))
+    || (!!email.thread_id && !!deps.registry.sentInThreadAfter
+      && await deps.registry.sentInThreadAfter(run.mailboxId, email.thread_id, received).catch(() => false));
   const headers = parseStoredHeaders(email.raw_headers);
   const replyTo = replyToAddress(headers);
   const ownDomains = deps.servedDomains ? await deps.servedDomains().catch(() => [] as string[]) : [];

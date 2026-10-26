@@ -1429,3 +1429,14 @@ test("A-13: an earlier waiting reply whose policy text has a dash is still known
   assert.notEqual(run.status, "skipped", run.reason);
   assert.equal(h.effects.sends.length, 1, "the real answer goes out");
 });
+
+test("A-5: a second message of a conversation the agent already answered is not answered again before the account's cache shows that answer", async () => {
+  const h = harness({ agent: autonomous(), email: { subject: "Re: order", body: "<p>Also, can you hurry?</p>", thread_id: "t-1" } as never,
+    callTool: async () => JSON.stringify({ abstained: false, results: [{ id: "fact:order", coverage: 0.9 }] }) });
+  const asked: unknown[] = [];
+  h.deps.registry.sentInThreadAfter = async (box, thread, since) => { asked.push([box, thread, typeof since]); return true; };
+  const run = (await h.run())!;
+  assert.equal(run.status, "skipped", run.reason);
+  assert.equal(h.effects.sends.length, 0);
+  assert.deepEqual(asked, [[MAILBOX, "t-1", "number"]]);
+});

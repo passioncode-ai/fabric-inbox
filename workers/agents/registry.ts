@@ -174,6 +174,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
       sentToday: (box) => this.sentToday(box),
       reserveSend: (box, limit) => this.reserveSend(box, limit),
       claimMessage: (key, box, elected) => this.claimMessage(key, box, elected),
+      sentInThreadAfter: (box, thread, since) => this.sentInThreadAfter(box, thread, since),
     };
     if (isAccountMailbox(mailboxId)) return accountDeps(this.env, mailboxId, address ?? mailboxId, registry);
     return productionDeps(this.env, mailboxId, registry);
@@ -1026,6 +1027,12 @@ export class AgentRegistryDO extends DurableObject<Env> {
    * attempt and answers by the agent's policy. A sent answer, or one whose send may have happened, is
    * never repeated; a run going on now is left alone.
    */
+  /** A-5: whether this address's agent sent an answer (not a waiting reply) in the conversation after `since`. */
+  async sentInThreadAfter(mailboxId: string, threadId: string, since: number): Promise<boolean> {
+    return this.rows(`SELECT 1 FROM agent_runs WHERE mailbox_id = ? AND status = 'sent' AND json_extract(body, '$.threadId') = ?
+      AND updated_at > ? LIMIT 1`, mailboxId.toLowerCase(), threadId, new Date(since).toISOString()).length > 0;
+  }
+
   /** A-7: a run queued again (answer again, a held retry) whose message no agent can answer any more. */
   private endQueuedRun(id: string) {
     const row = this.rows("SELECT body FROM agent_runs WHERE id = ?", id)[0];

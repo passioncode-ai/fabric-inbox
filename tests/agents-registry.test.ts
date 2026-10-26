@@ -161,6 +161,7 @@ const bundle = await build({
               case 'seedThread': await box(c.mailbox).seedThread(c.rows); return Response.json(true);
               case 'byIds': return Response.json(await reg.runsByIds(c.ids));
               case 'again': return Response.json(await reg.answerAgain(c.id));
+              case 'sentAfter': return Response.json(await reg.sentInThreadAfter(c.mailbox, c.thread, c.since));
               case 'save': await reg.saveRun(c.run); return Response.json(true);
               case 'events': return Response.json(await reg.listEvents(c.after, c.limit));
               case 'modelCalls': return Response.json(await reg.modelUsagePerDay(c.since));
@@ -1261,5 +1262,20 @@ test("A-7: a run answered again whose message is gone ends as skipped with the r
     assert.equal(pumped.queue, 0);
     assert.equal(after.status, "skipped");
     assert.match(after.reason, /no longer there/);
+  } finally { await mf.dispose(); }
+});
+
+test("A-5: the registry says whether the address's agent sent an answer in a conversation after a moment", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const at = (ms: number) => new Date(ms).toISOString();
+    const run = { id: "run-a5", mailboxId: "gmail:a1", emailId: "e1", sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [],
+      agentId: "support", agentVersion: 1, status: "running", threadId: "t-1", createdAt: at(1000), updatedAt: at(1000) };
+    await command("begin", { run });
+    await command("save", { run: { ...run, status: "sent" } });
+    const since = Date.now() - 60_000;
+    assert.equal(await command("sentAfter", { mailbox: "gmail:a1", thread: "t-1", since }), true);
+    assert.equal(await command("sentAfter", { mailbox: "gmail:a1", thread: "t-2", since }), false);
+    assert.equal(await command("sentAfter", { mailbox: "gmail:a1", thread: "t-1", since: Date.now() + 60_000 }), false, "not after a later message");
   } finally { await mf.dispose(); }
 });
