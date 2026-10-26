@@ -58,3 +58,8 @@ test("B-170: an open conversation with no reply for 48 hours is abandoned; a wai
   assert.equal(agentState(waited, "held"), "needs_data");
   assert.equal(isAbandoned("needs_data", waited, at + ABANDONED_AFTER_MS), true);
 });
+
+test("A-8: a message passed to a person waits for that person; it is not a decision that no reply is needed", () => {
+  assert.equal(agentState(facts(), { status: "skipped", handoff: true }), "unanswered");
+  assert.equal(agentState(facts({ agentAnsweredBefore: true }), { status: "skipped", handoff: true }), "new_after_agent");
+});

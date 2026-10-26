@@ -124,6 +124,16 @@ agentsRouter.put("/api/agents/:id", async (c) => {
   try {
     const problem = await unknownCollections(c, body.agent);
     if (problem) return c.json({ error: problem }, 400);
+    // A-12: an agent that answers an account which cannot keep drafts does not turn to drafting; its answers would wait nowhere.
+    if (body.agent?.replyPolicy?.mode === "draft" && c.env.GMAIL_ACCOUNTS) {
+      const mine = (await accountAssignments(c.env)).filter((a) => a.agentId === c.req.param("id")).map((a) => a.accountId);
+      if (mine.length) {
+        const accounts = (await c.env.GMAIL_ACCOUNTS.getByName("workspace").listAccounts()).accounts;
+        const blocked = accounts.filter((a) => mine.includes(`${a.provider}:${a.id}`) && !a.capabilities?.drafts).map((a) => a.email);
+        if (blocked.length)
+          return c.json({ error: msg("This agent answers {accounts}, which cannot keep drafts. Choose another agent there first, or keep it sending.", { accounts: blocked.join(", ") }) }, 400);
+      }
+    }
     return c.json(await registry(c).updateAgent(c.req.param("id"), body.agent, body.expectedVersion));
   } catch (error) { return registryFailure(c, error); }
 });

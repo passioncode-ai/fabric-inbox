@@ -386,6 +386,9 @@ export class AgentRegistryDO extends DurableObject<Env> {
           this.ctx.storage.sql.exec("UPDATE agent_queue SET next_at = ? WHERE mailbox_id = ? AND email_id = ?", due, mailboxId, emailId);
           return;
         }
+        // A-7: nothing ran (the message moved to Spam or Trash or is gone, the address is off, the agent or account
+        // removed), yet a run queued again on purpose still reads "running": it ends as skipped, not interrupted for good.
+        if (!run) this.endQueuedRun(await runIdFor(mailboxId, emailId));
         this.ctx.storage.sql.exec("DELETE FROM agent_queue WHERE mailbox_id = ? AND email_id = ?", mailboxId, emailId);
       } catch (error) {
         // runAgent records every failure after its claim; reaching here means the
@@ -1023,6 +1026,17 @@ export class AgentRegistryDO extends DurableObject<Env> {
    * attempt and answers by the agent's policy. A sent answer, or one whose send may have happened, is
    * never repeated; a run going on now is left alone.
    */
+  /** A-7: a run queued again (answer again, a held retry) whose message no agent can answer any more. */
+  private endQueuedRun(id: string) {
+    const row = this.rows("SELECT body FROM agent_runs WHERE id = ?", id)[0];
+    if (!row) return;
+    const run = JSON.parse(String(row.body)) as AgentRun;
+    if (run.status !== "running" || !run.requeued) return;
+    const ended: AgentRun = { ...run, status: "skipped", reason: msg("Not answered again: the message is no longer there for its agent (moved, deleted, or the address or agent was turned off)"), updatedAt: new Date().toISOString() };
+    delete ended.requeued;
+    this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?", ended.status, JSON.stringify(ended), ended.updatedAt, id);
+  }
+
   async answerAgain(id: string, options: { keepFacts?: boolean } = {}): Promise<{ ok: true; run: AgentRun } | { ok: false; reason: string }> {
     const prior = this.rows("SELECT body FROM agent_runs WHERE id = ?", id)[0];
     if (!prior) return { ok: false, reason: msg("This agent run is not kept any more") };

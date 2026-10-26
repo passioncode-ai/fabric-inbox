@@ -73,7 +73,8 @@ export function factsKey(endpoint: string): string {
 function waitingTextsOf(run: AgentRun, agent: AgentVersion | null, htmlToText: (h: string) => string): string[] {
   return [run.acknowledged?.text, agent?.replyPolicy.waitingReply?.en, agent?.replyPolicy.waitingReply?.ru,
     DEFAULT_WAITING_REPLY.en, DEFAULT_WAITING_REPLY.ru].filter((t): t is string => !!t?.trim())
-    .map((t) => htmlToText(t).trim().slice(0, 60));
+    // As it was sent: a waiting reply leaves through withoutDashes, so its policy text is compared the same way (A-13).
+    .map((t) => withoutDashes(htmlToText(t)).trim().slice(0, 60));
 }
 
 export interface RunnerThreadMessage {

@@ -1245,3 +1245,21 @@ test("A-2, A-3: a held message released after its hold ran out is answered again
     assert.equal((await command("byIds", { ids: ["run-a2"] }))[0].status, "skipped");
   } finally { await mf.dispose(); }
 });
+
+test("A-7: a run answered again whose message is gone ends as skipped with the reason, not 'running' for good", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const now = new Date().toISOString();
+    const id = await command("runId", { mailbox: "gone@project.invalid", emailId: "e-gone" });
+    const run = { id, mailboxId: "gone@project.invalid", emailId: "e-gone", sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [],
+      agentId: "support", agentVersion: 1, status: "running", createdAt: now, updatedAt: now };
+    await command("begin", { run });
+    await command("save", { run: { ...run, status: "drafted" } });
+    assert.equal((await command("again", { id })).ok, true);
+    const pumped = await command("pump");
+    const [after] = await command("byIds", { ids: [id] });
+    assert.equal(pumped.queue, 0);
+    assert.equal(after.status, "skipped");
+    assert.match(after.reason, /no longer there/);
+  } finally { await mf.dispose(); }
+});
