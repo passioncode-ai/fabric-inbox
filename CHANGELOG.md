@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.36.2 (2026-10-26)
+
+- **Reply agents answer in about 20 seconds instead of running out of time.** The reply model now writes
+  without its long reasoning by default. Replayed on 21 real support messages, it no longer ran out of
+  its 90 seconds (11 times before), and half the answers were ready within 22 seconds instead of 99.
+  REPLY_REASONING=default brings the old behaviour back (B-174).
+
 ## 0.36.1 (2026-10-26)
 
 - **The reply writer's reasoning can be bounded.** A server setting, REPLY_REASONING, sets how hard the

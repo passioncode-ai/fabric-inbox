@@ -109,4 +109,5 @@ test("B-174: the writer's reasoning effort goes to the first model only; a previ
   assert.equal(replyReasoning("LOW"), "low");
   assert.equal(replyReasoning("default"), null);
   assert.equal(replyReasoning("fast"), replyReasoning(undefined), "an unknown value is the built-in default");
+  assert.equal(replyReasoning(undefined), "none", "measured: no reasoning keeps the writer inside its 90 s (2026-10-26)");
 });
