@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.39.1 (2026-10-26)
+
+- **Newsletters built for Outlook are no longer taken for hidden text.** The safety check now skips
+  Outlook's layout comments; on 100 of the owner's recent messages they were the one hidden match in a
+  newsletter (B-178).
+
 ## 0.39.0 (2026-10-26)
 
 - **Mail that tries to steer your agents is held from them.** Every arriving message is now checked for
