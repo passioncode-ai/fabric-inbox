@@ -390,8 +390,11 @@ async function readReplyView(env: Env, reply: string, params: URLSearchParams, o
     if (r.status === "rejected") { issues.push({ provider: i === 0 ? "cloudflare" : "gmail", error: publicError(r.reason) }); return []; }
     return r.value;
   });
-  const found = await listAgentThreads(env, { states, abandoned: reply === "abandoned", address: account.startsWith("cloudflare:") ? account.slice(11) : undefined, ownDomains });
-  for (const i of found.issues) issues.push({ accountId: i.accountId, provider: "cloudflare", error: i.error });
+  const found = await listAgentThreads(env, { states, abandoned: reply === "abandoned", address: account.startsWith("cloudflare:") ? account.slice(11) : parseRemoteAccount(account) ? account.toLowerCase() : undefined, ownDomains });
+  for (const i of found.issues) {
+    const remote = parseRemoteAccount(i.accountId);
+    issues.push({ accountId: i.accountId, provider: remote ? remote.provider : "cloudflare", error: i.error });
+  }
   const messages = found.messages.filter((m) => !domain || m.accountId.endsWith("@" + domain));
   await Promise.all([markCategories(env, messages),
     env.AGENT_REGISTRY ? attachAgentRuns(messages, (ids) => env.AGENT_REGISTRY.getByName("workspace").runsByIds(ids)) : undefined]);

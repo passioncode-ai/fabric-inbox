@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.37.0 (2026-10-26)
+
+- **See where the conversations of a Gmail, IMAP or Outlook account with a reply agent stand.** Like a
+  project address's, each conversation now shows whether the agent replied, you replied, the agent is
+  waiting for information, left it alone on purpose, or nobody has answered, and Abandoned marks one
+  nobody has taken for two days. The Needs a reply and Abandoned filters include these accounts, and
+  outside agents hear about an abandoned one from the agent.abandoned event (B-171).
+
 ## 0.36.4 (2026-10-26)
 
 - **A coding agent can set up a server with Node 26.** The setup script now talks to Cloudflare over a

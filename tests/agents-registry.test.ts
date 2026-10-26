@@ -10,6 +10,7 @@ import { Miniflare } from "miniflare";
 const bundle = await build({
   stdin: {
     contents: `
+      import { DurableObject } from 'cloudflare:workers';
       import { MailboxDO } from './workers/durableObject/index';
       import { AgentRegistryDO } from './workers/agents/registry';
       import { receiveEmail } from './workers/index';
@@ -27,6 +28,13 @@ const bundle = await build({
         async folder(name) { return this.getEmails({folder:name}); }
         async seedThread(rows) { for (const r of rows) this.ctx.storage.sql.exec("INSERT INTO emails (id, folder_id, subject, sender, recipient, date, body, thread_id) VALUES (?, ?, 's', 'x@y.invalid', 'a', ?, '', ?)", r.id, r.folder, r.date, r.thread); }
         async seed(rows) { for (const r of rows) this.ctx.storage.sql.exec("INSERT INTO emails (id, folder_id, subject, sender, recipient, date, body) VALUES (?, ?, 's', 'x@y.invalid', 'a', ?, '')", r.id, r.folder, r.date); }
+      }
+      // B-171 phase 3: an account's conversations, as the accounts object reads them from its cache.
+      export class FakeAccounts extends DurableObject {
+        async listAccounts() { return { accounts: [{ id: 'g1', provider: 'gmail', email: 'Help@Project.invalid' }] }; }
+        async agentThreads(accountId, mailboxId) {
+          return JSON.parse(await (await this.env.BUCKET.get('test/account-threads.json'))?.text() || '[]');
+        }
       }
       export class TestRegistry extends AgentRegistryDO {
         async toolInfo(grant) {
@@ -193,6 +201,7 @@ async function fixture(bindings: Record<string, string> = {}) {
     durableObjects: {
       MAILBOX: { className: "TestMailbox", useSQLite: true },
       AGENT_REGISTRY: { className: "TestRegistry", useSQLite: true },
+      GMAIL_ACCOUNTS: { className: "FakeAccounts", useSQLite: true },
     },
     r2Buckets: ["BUCKET"],
     outboundService: () => new Response("External network disabled for tests", { status: 503 }),
@@ -330,6 +339,18 @@ test("B-170: a conversation on an agent address still open two days later is rep
     assert.equal((await command("abandon", { now: now + 60_000 })).next, now + 3_600_000, "not looked at again before the hour");
     await command("abandon", { now: now + 3 * 3_600_000 });
     assert.equal((await kinds()).length, 1, "reported once");
+
+    // B-171 phase 3: an account with a reply agent is looked at the same way and reported under its email.
+    await command("r2put", { key: "accounts/gmail:g1.json", text: JSON.stringify({ agent: { id: "support" } }) });
+    const late = now + 5 * 3_600_000;
+    await command("r2put", { key: "test/account-threads.json", text: JSON.stringify([
+      { threadId: "a1", lastInbound: { id: "acct-old", at: late - 50 * 3_600_000 }, lastSent: null, agentAnsweredBefore: false },
+      { threadId: "a2", lastInbound: { id: "acct-fresh", at: late - 3_600_000 }, lastSent: null, agentAnsweredBefore: false },
+    ]) });
+    await command("abandon", { now: late });
+    const account = (await kinds()).filter((e: any) => e.data.value.address === "help@project.invalid");
+    assert.deepEqual(account.map((e: any) => [e.data.value.runId, e.data.value.agentId, e.data.value.abandonedHours]),
+      [[await command("runId", { mailbox: "gmail:g1", emailId: "acct-old" }), "support", 50]], "the open account conversation past two days, once");
   } finally { await mf.dispose(); }
 });
 

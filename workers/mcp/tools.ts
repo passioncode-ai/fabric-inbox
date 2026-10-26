@@ -500,11 +500,11 @@ const removeEventHook = defineTool({
 const AGENT_STATE_NAMES = ["unanswered", "new_after_agent", "error", "needs_data", "agent_draft", "working", "agent_replied", "person_replied", "no_reply_needed"] as const;
 const listAgentThreads = defineTool({
   name: "list_agent_threads", title: "Conversations by reply status", level: "read", readOnly: true,
-  description: "Conversations on Cloudflare addresses by where they stand, newest first, each as its last message that came in with agentState: unanswered (nobody replied), new_after_agent (the agent answered earlier, a newer message has no reply), error (the agent's run failed or its send may not have left), needs_data (held for knowledge it lacks, a waiting reply at most), agent_draft (the agent left a draft for a person), working, agent_replied, person_replied, no_reply_needed (the agent left it alone on purpose: empty mail, a newsletter, an auto-reply, one of this server's addresses, a copy answered from another address; not one the safety check held back). The first five wait for someone; agentAbandoned marks one still waiting 48 hours after it came in (the agent's waiting reply is no answer), and abandoned: true keeps only those. counts gives every state's number and abandoned how many are abandoned, before the filters. Looks at the addresses where the reply status is on (get_agent_status), or the one named (on or not), and each one's 200 most recent conversations.",
+  description: "Conversations on Cloudflare addresses, and on Gmail, IMAP or Outlook accounts with a reply agent (named by their email), by where they stand, newest first, each as its last message that came in with agentState: unanswered (nobody replied), new_after_agent (the agent answered earlier, a newer message has no reply), error (the agent's run failed or its send may not have left), needs_data (held for knowledge it lacks, a waiting reply at most), agent_draft (the agent left a draft for a person), working, agent_replied, person_replied, no_reply_needed (the agent left it alone on purpose: empty mail, a newsletter, an auto-reply, one of this server's addresses, a copy answered from another address; not one the safety check held back). The first five wait for someone; agentAbandoned marks one still waiting 48 hours after it came in (the agent's waiting reply is no answer), and abandoned: true keeps only those. counts gives every state's number and abandoned how many are abandoned, before the filters. Looks at the addresses where the reply status is on (get_agent_status), or the one named (on or not), and each one's 200 most recent conversations.",
   input: {
     states: z.array(z.enum(AGENT_STATE_NAMES)).max(9).optional().describe("Only these states; none: every state"),
     abandoned: z.boolean().optional().describe("Only conversations still waiting for someone 48 hours after their last message came in"),
-    address: z.string().email().max(254).optional().describe("Only this address, whether its reply status is on or not"),
+    address: z.string().email().max(254).optional().describe("Only this address or account email, whether its reply status is on or not"),
     limit: z.number().int().min(1).max(200).default(50),
   },
   routes: ["GET /api/agent-threads"],
@@ -513,7 +513,7 @@ const listAgentThreads = defineTool({
 
 const getAgentStatus = defineTool({
   name: "get_agent_status", title: "Where the reply status is shown", level: "read", readOnly: true,
-  description: "Where the reply status of conversations (list_agent_threads, the inbox's marks and filter) is shown: enabled for the whole workspace, then a choice per domain, then per address; an address follows its domain, a domain the workspace. Off until someone turns it on.",
+  description: "Where the reply status of conversations (list_agent_threads, the inbox's marks and filter) is shown: enabled for the whole workspace, then a choice per domain, then per address (an account with a reply agent by its email); an address follows its domain, a domain the workspace. Off until someone turns it on.",
   input: {}, routes: ["GET /api/agent-status"],
   call: (_a, ctx) => get(ctx, "/api/agent-status"),
 });

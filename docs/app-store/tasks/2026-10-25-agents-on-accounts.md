@@ -109,9 +109,22 @@ have no registry test of their own yet.
   `<run>:waiting`, the real answer later under `<run>`, and the closing reply under `<run>:closing`
   (`tests/agents-runner.test.ts` "B-171 REQ-4").
 
+## Phase 3 receipt (2026-10-26)
+
+- `AccountService.agentThreads` (`workers/providers/account-service.ts`): an account's conversations
+  from its cache, the newest 200 of its Inbox or the ones asked for; each through
+  `accountThreadFacts` (`workers/agents/account-threads.ts`): the last message that came in (not
+  sent, not a draft, not in Trash, Spam or Discarded) and the last one sent, the agent's when a send
+  receipt of its run on a message of the conversation names it (`<run>`, `<run>:waiting`), a failed
+  receipt names no one. No thread index yet: nothing (`tests/account-threads-workerd.test.ts`).
+- `workers/lib/agent-status.ts`: `agentAccounts` (the accounts whose `accounts/<id>.json` names an
+  agent, with their email); the feed's marks, `/api/agent-threads`, `list_agent_threads` and
+  `/api/inbox?reply=` include them, chosen by their email and filtered by their id.
+- `superviseAbandoned` reads the accounts too and reports `agent.abandoned` under the account's email
+  (`tests/agents-registry.test.ts` "B-170").
+
 ## Exact next step
 
-Phase 3: the reply status for accounts (B-138, B-170 on accounts): thread facts from the accounts'
-cache, so an account's conversations read answered, waiting, no reply needed or abandoned like an
-address's. Before it, decision 5 the other way: a Cloudflare copy waits for an account listed before
-it in the recipients.
+Decision 5 the other way: a Cloudflare copy waits for an account listed before it in the recipients.
+A per-account line in Settings → Addresses → Reply status (today an account follows the workspace and
+its email's domain, and its own line is set with `set_agent_status`) is a board row.

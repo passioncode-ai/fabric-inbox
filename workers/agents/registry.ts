@@ -1,5 +1,6 @@
 import { abandonedEvent, EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, runEvent, waitingEvent, type AgentEvent } from "./events";
-import { statesOf } from "../lib/agent-status";
+import { agentAccounts, statesOf } from "../lib/agent-status";
+import type { ThreadFacts } from "../../shared/mail/agent-state";
 import { MAX_ATTEMPTS as HOOK_MAX_ATTEMPTS, RETRY_MS as HOOK_RETRY_MS, readHooks, sendHook, type HookCursor } from "./event-hooks";
 import { mailChannel, qualityDay } from "./quality";
 import { JUDGE_SAMPLE, benchJudge, judgesFor, openRouterJudge, qualityOf, type BenchResult, type JudgeInput, type JudgeVerdict } from "./judge";
@@ -891,19 +892,27 @@ export class AgentRegistryDO extends DurableObject<Env> {
   protected async superviseAbandoned(now = Date.now()): Promise<number> {
     const due = (await this.ctx.storage.get<number>("abandoned_check_at")) ?? 0;
     if (due > now) return due;
-    const served = (await readAllSettings(this.env.BUCKET)).flatMap(({ email, settings }) => {
+    const served: { address: string; mailboxId: string; agentId: string; facts: () => Promise<ThreadFacts[]> }[] = (await readAllSettings(this.env.BUCKET)).flatMap(({ email, settings }) => {
       const assignment = readAssignment(settings);
-      return assignment && assignment !== "off" ? [{ address: email.toLowerCase(), agentId: assignment.id }] : [];
+      const address = email.toLowerCase();
+      return assignment && assignment !== "off"
+        ? [{ address, mailboxId: address, agentId: assignment.id, facts: () => this.env.MAILBOX.get(this.env.MAILBOX.idFromName(address)).agentThreads({ limit: 200 }) }] : [];
     });
+    // B-171 phase 3: the accounts a reply agent answers, reported under their email.
+    try {
+      for (const a of await agentAccounts(this.env))
+        served.push({ address: a.email, mailboxId: a.mailboxId, agentId: a.agentId, facts: () => this.env.GMAIL_ACCOUNTS!.getByName("workspace").agentThreads(a.id, a.mailboxId, { limit: 200 }) });
+    } catch (error) {
+      console.warn(JSON.stringify({ event: "abandoned_unreadable", accounts: true, error: (error as Error).message?.slice(0, 200) }));
+    }
     const at = new Date(now).toISOString();
     let written = 0;
     let more = false;
-    for (const { address, agentId } of served) {
+    for (const { address, mailboxId, agentId, facts: read } of served) {
       if (written >= ABANDON_EVENTS_PER_PASS) { more = true; break; }
       let states;
       try {
-        const facts = await this.env.MAILBOX.get(this.env.MAILBOX.idFromName(address)).agentThreads({ limit: 200 });
-        states = await statesOf(address, facts, (ids) => this.runsByIds(ids), now);
+        states = await statesOf(mailboxId, await read(), (ids) => this.runsByIds(ids), now);
       } catch (error) {
         console.warn(JSON.stringify({ event: "abandoned_unreadable", error: (error as Error).message?.slice(0, 200) }));
         continue;

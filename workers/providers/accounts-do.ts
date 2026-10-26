@@ -243,6 +243,10 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
   createDraft(accountId: string, request: SendRequest, options?: SubmitOptions) {
     return this.serial(() => this.service.createDraft(accountId, request, options));
   }
+  /** B-171 phase 3: the account's conversations' facts for the reply status (the cache only). */
+  agentThreads(accountId: string, mailboxId: string, options?: { threadIds?: string[]; limit?: number }) {
+    return this.service.agentThreads(accountId, mailboxId, options);
+  }
   getSendReceipt(accountId: string, key: string) {
     return this.serial(() => this.service.getSendReceipt(accountId, key));
   }

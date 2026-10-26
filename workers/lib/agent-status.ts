@@ -11,6 +11,8 @@ import { agentState, agentStatusOn, DEFAULT_AGENT_STATUS, isAbandoned, type Agen
 import { bodyForUpdate } from "./r2-json";
 import { readAllSettings } from "./mailbox-store";
 import { runIdFor, type AgentRun } from "../agents/run";
+import { isAccountMailbox } from "../agents/account-settings";
+import { readAssignment } from "../agents/definition";
 
 export const AGENT_STATUS_KEY = "config/agent-status.json";
 const ADDRESS = /^[^\s@]{1,64}@[a-z0-9.-]{1,253}$/;
@@ -85,6 +87,35 @@ export async function statesOf(address: string, facts: ThreadFacts[], runsByIds:
   return out;
 }
 
+/**
+ * B-171 phase 3: the Gmail, IMAP and Outlook accounts a reply agent answers (R2 `accounts/<id>.json`),
+ * with their email, the address the reply status is chosen by. An account that cannot be listed
+ * leaves the accounts out; the addresses still answer.
+ */
+export interface AgentAccount { mailboxId: string; id: string; email: string; agentId: string }
+export async function agentAccounts(env: Env): Promise<AgentAccount[]> {
+  if (!env.GMAIL_ACCOUNTS) return [];
+  const chosen: { mailboxId: string; agentId: string }[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await env.BUCKET.list({ prefix: "accounts/", cursor });
+    for (const o of page.objects) {
+      const mailboxId = o.key.slice("accounts/".length).replace(/\.json$/, "");
+      if (!isAccountMailbox(mailboxId)) continue;
+      const assignment = readAssignment(await (await env.BUCKET.get(o.key))?.json<Record<string, unknown>>().catch(() => null));
+      if (assignment && assignment !== "off") chosen.push({ mailboxId, agentId: assignment.id });
+    }
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  if (!chosen.length) return [];
+  const listed = (await env.GMAIL_ACCOUNTS.getByName("workspace").listAccounts()).accounts as { id: string; provider: string; email: string }[];
+  return chosen.flatMap(({ mailboxId, agentId }) => {
+    const a = listed.find((x) => `${x.provider}:${x.id}`.toLowerCase() === mailboxId);
+    return a ? [{ mailboxId, id: a.id, email: a.email.toLowerCase(), agentId }] : [];
+  });
+}
+const accountsDO = (env: Env) => env.GMAIL_ACCOUNTS!.getByName("workspace");
+
 const registryOf = (env: Env): RunsByIds | null => (env.AGENT_REGISTRY ? (ids) => env.AGENT_REGISTRY.getByName("workspace").runsByIds(ids) : null);
 
 /**
@@ -94,9 +125,11 @@ const registryOf = (env: Env): RunsByIds | null => (env.AGENT_REGISTRY ? (ids) =
  */
 export async function attachAgentStates(env: Env, page: InboxMessage[]): Promise<void> {
   const cloudflare = page.filter((m) => m.accountId.startsWith("cloudflare:"));
-  if (!cloudflare.length) return;
+  const remote = page.filter((m) => isAccountMailbox(m.accountId));
+  if (!cloudflare.length && !remote.length) return;
   const settings = await readAgentStatus(env.BUCKET).catch(() => null);
   if (!settings) return;
+  if (remote.length) await attachAccountStates(env, settings, remote);
   const byAddress = new Map<string, InboxMessage[]>();
   for (const m of cloudflare) {
     const address = m.accountId.slice("cloudflare:".length);
@@ -114,6 +147,25 @@ export async function attachAgentStates(env: Env, page: InboxMessage[]): Promise
       console.warn(JSON.stringify({ event: "agent_state_unreadable", error: (error as Error)?.message?.slice(0, 200) }));
     }
   }));
+}
+
+/** B-171 phase 3: the same marks on the messages of accounts a reply agent answers, where the status is on for the account's email. */
+async function attachAccountStates(env: Env, settings: AgentStatusSettings, messages: InboxMessage[]): Promise<void> {
+  try {
+    const accounts = (await agentAccounts(env)).filter((a) => agentStatusOn(settings, a.email));
+    await Promise.all(accounts.map(async (a) => {
+      const mine = messages.filter((m) => m.accountId.toLowerCase() === a.mailboxId);
+      if (!mine.length) return;
+      const threads = [...new Set(mine.map((m) => m.threadId).filter((t): t is string => !!t))];
+      const states = await statesOf(a.mailboxId, await accountsDO(env).agentThreads(a.id, a.mailboxId, { threadIds: threads }), registryOf(env));
+      for (const m of mine) {
+        const found = m.threadId ? states.get(m.threadId) : undefined;
+        if (found) { m.agentState = found.state; if (found.abandoned) m.agentAbandoned = true; }
+      }
+    }));
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "agent_state_unreadable", accounts: true, error: (error as Error)?.message?.slice(0, 200) }));
+  }
 }
 
 export interface AgentThreadsAnswer {
@@ -162,6 +214,31 @@ export async function listAgentThreads(env: Env, options: { states?: AgentState[
       issues.push({ accountId: `cloudflare:${address}`, error: (error as Error)?.message?.slice(0, 200) || "unreadable" });
     }
   }));
+  // B-171 phase 3: the accounts a reply agent answers, chosen by their email like an address.
+  const accounts = await agentAccounts(env).catch((error: unknown) => {
+    issues.push({ accountId: "accounts", error: (error as Error)?.message?.slice(0, 200) || "unreadable" });
+    return [] as AgentAccount[];
+  });
+  const accountsShown = accounts.filter((a) => (named ? a.email === named || a.mailboxId === named : agentStatusOn(settings, a.email)));
+  await Promise.all(accountsShown.map(async (a) => {
+    try {
+      const states = await statesOf(a.mailboxId, await accountsDO(env).agentThreads(a.id, a.mailboxId, { limit: options.perAddress ?? 200 }), registryOf(env));
+      const keep = new Map<string, { state: AgentState; abandoned: boolean }>();
+      for (const { state, abandoned: gone, facts: f } of states.values()) {
+        counts[state] = (counts[state] ?? 0) + 1;
+        if (gone) abandoned++;
+        if ((!wanted || wanted.has(state)) && (!options.abandoned || gone)) keep.set(f.lastInbound!.id, { state, abandoned: gone });
+      }
+      if (!keep.size) return;
+      const found = await accountsDO(env).inboxMessagesByIds(a.id, [...keep.keys()].slice(0, 100), options.ownDomains ?? []);
+      for (const m of found as InboxMessage[]) {
+        const k = keep.get(m.providerMessageId);
+        messages.push({ ...m, agentState: k?.state, ...(k?.abandoned ? { agentAbandoned: true } : {}) });
+      }
+    } catch (error) {
+      issues.push({ accountId: a.mailboxId, error: (error as Error)?.message?.slice(0, 200) || "unreadable" });
+    }
+  }));
   messages.sort((a, b) => (b.timestamp ?? Date.parse(b.date)) - (a.timestamp ?? Date.parse(a.date)));
-  return { messages: messages.slice(0, limit), counts, abandoned, addresses, issues };
+  return { messages: messages.slice(0, limit), counts, abandoned, addresses: [...addresses, ...accountsShown.map((a) => a.email)], issues };
 }
