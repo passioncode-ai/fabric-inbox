@@ -344,7 +344,11 @@ export class CategoriesDO extends DurableObject<Env> {
 
   private async drain() {
     try {
-      const due = this.sql.exec("SELECT * FROM queue WHERE next_at <= ? ORDER BY next_at, enqueued_at LIMIT ?", Date.now(), BATCH).toArray() as Row[];
+      const rows = this.sql.exec("SELECT * FROM queue WHERE next_at <= ? ORDER BY next_at, enqueued_at LIMIT ?", Date.now(), BATCH).toArray() as Row[];
+      // C-13: one row of a message per drain; another (a backfill beside its arrival) waits for the next one, so it
+      // sees the verdicts the first wrote and is never classified twice side by side.
+      const taken = new Set<string>();
+      const due = rows.filter((row) => { const key = `${row.account_id}|${row.message_id}`; if (taken.has(key)) return false; taken.add(key); return true; });
       for (let i = 0; i < due.length; i += CONCURRENCY)
         await Promise.all(due.slice(i, i + CONCURRENCY).map((row) => this.process(row).catch((error: unknown) => {
           // A failure outside the item's own handling: the item waits a minute, the queue goes on (reliability audit L1).

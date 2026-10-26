@@ -218,10 +218,14 @@ const listAccounts = defineTool({
     const feed = (await get(ctx, "/api/inbox", { limit: 1 })) as { accounts: Record<string, unknown>[]; issues: unknown[] };
     const remoteAccounts = (await get(ctx, "/api/accounts")) as { configuration?: string; accounts?: Record<string, unknown>[] };
     const hidden = (await get(ctx, "/api/inbox/hidden")) as { hidden: string[] };
+    // M-3: a Gmail, IMAP or Outlook account's mail set aside after every try, as a Cloudflare address's stuck events.
+    const remoteStuck = new Map((remoteAccounts.accounts ?? []).filter((r) => Number(r.stuckEvents) > 0)
+      .map((r) => [`${r.provider ?? "gmail"}:${r.id}`, Number(r.stuckEvents)] as [string, number]));
     return {
       accounts: feed.accounts.map((a) => ({ accountId: a.id, provider: a.provider, email: a.email, name: a.name, status: a.status,
         unread: a.unread ?? 0, total: a.total ?? 0, hidden: !!a.hidden, catchAll: !!a.catchAll,
-        ...(typeof a.createdAt === "number" ? { createdAt: new Date(a.createdAt).toISOString() } : {}), ...(a.error ? { error: a.error } : {}), ...(a.stuck ? { stuck: a.stuck } : {}),
+        ...(typeof a.createdAt === "number" ? { createdAt: new Date(a.createdAt).toISOString() } : {}), ...(a.error ? { error: a.error } : {}),
+        ...(a.stuck ? { stuck: a.stuck } : remoteStuck.get(String(a.id)) ? { stuck: { dead: remoteStuck.get(String(a.id)), retrying: 0, lastError: null } } : {}),
         ...(a.providerName ? { providerName: a.providerName } : {}), ...(a.capabilities ? { capabilities: a.capabilities } : {}), ...(a.importing !== undefined ? { importing: a.importing } : {}) })),
       gmail: { configuration: remoteAccounts.configuration ?? "configured", accounts: (remoteAccounts.accounts ?? []).filter((a) => (a.provider ?? "gmail") === "gmail").map((a) => ({ accountId: `gmail:${a.id}`, email: a.email, status: a.status, lastSyncAt: a.lastSyncAt ?? null, error: a.error ?? null })) },
       hidden: hidden.hidden,
@@ -1676,9 +1680,13 @@ const dryRunRule = defineTool({
 
 const retryIncoming = defineTool({
   name: "retry_incoming", title: "Retry mail that did not reach its rules", level: "admin", target: (a) => a.accountId,
-  description: "Mail that arrived but did not reach its rules, agent or categories after several tries (list_accounts shows it as stuck) is tried again now.",
-  input: { accountId }, routes: ["POST /api/v1/mailboxes/:mailboxId/incoming/retry"],
-  call: (a, ctx) => post(ctx, `${box(cloudflareOnly(parseAccount(a.accountId), "Retrying").mailbox)}/incoming/retry`),
+  description: "Mail that arrived but did not reach its rules, agent or categories after several tries (list_accounts shows it as stuck, or stuckEvents on a Gmail, IMAP or Outlook account) is tried again now.",
+  input: { accountId }, routes: ["POST /api/v1/mailboxes/:mailboxId/incoming/retry", "POST /api/accounts/:accountId/incoming/retry"],
+  call: (a, ctx) => {
+    const account = parseAccount(a.accountId);
+    // M-3: a Gmail, IMAP or Outlook account's mail set aside is retried at the account.
+    return account.provider === "cloudflare" ? post(ctx, `${box(account.mailbox)}/incoming/retry`) : post(ctx, `${remote(account.remoteId)}/incoming/retry`);
+  },
 });
 
 const exportSetup = defineTool({

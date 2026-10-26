@@ -218,6 +218,13 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     return this.serial(() => this.service.microsoftClientCheck());
   }
   /** History then import pages for one account now; the shared alarm is never moved later (P1-6). */
+  /** M-3: an account's mail set aside after every try reaches its rules, agent and categories again now. */
+  async retryIncoming(accountId: string): Promise<{ revived: number }> {
+    const revived = await this.serial(() => this.service.reviveEvents(accountId));
+    if (revived) await this.drain().catch((error: unknown) =>
+      console.warn(JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
+    return { revived };
+  }
   async sync(accountId: string) {
     const result = await this.scheduler.syncNow(accountId);
     // A sync that worked is reported as working even if handing its events on did not.

@@ -258,3 +258,17 @@ test("M-2: mail Gmail files straight into Spam or Trash is cached but reaches no
   await service.sync("a");
   assert.deepEqual([...(await store.list({ prefix: "pending:event:a:" })).keys()].map((k) => k.slice("pending:event:a:".length)), ["real"]);
 });
+
+test("M-3: an account's mail set aside after every try is counted on the account and made due again on request", async () => {
+  const gmail = new FakeGmail(0);
+  const { service, store } = await fixture(gmail.fetch, { mode: "initial" });
+  await store.put("dead:event:a:m1", { accountId: "a", messageId: "m1", delivered: false, attempts: 10, lastError: "categories down" });
+  await store.put("dead:event:a:m2", { accountId: "a", messageId: "m2", delivered: false, attempts: 10, lastError: "categories down" });
+  const listed = (await service.listAccounts()).accounts.find((x: any) => x.id === "a") as any;
+  assert.equal(listed.stuckEvents, 2);
+  assert.equal(await service.reviveEvents("a"), 2);
+  assert.equal((await store.list({ prefix: "dead:event:a:" })).size, 0);
+  const pending = await store.get<any>("pending:event:a:m1");
+  assert.deepEqual([pending.attempts, pending.nextAt], [0, 0]);
+  assert.equal((await service.listAccounts()).accounts.find((x: any) => x.id === "a")!.stuckEvents, undefined);
+});

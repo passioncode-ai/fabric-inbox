@@ -300,8 +300,36 @@ export class AccountService {
     if (!keys) throw new ProviderError("not_configured", 503);
     return sealCredentials(keys, accountId, value);
   }
+  /**
+   * M-3: new mail of an account that reached no rule, agent or category after every try is set aside
+   * (`dead:event:`); this says how many per account, and `reviveEvents` makes them due again on request.
+   */
+  async stuckEvents(): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    for (const key of (await this.store.list({ prefix: "dead:event:", limit: 1000 })).keys()) {
+      const accountId = key.slice("dead:event:".length).split(":")[0]!;
+      counts.set(accountId, (counts.get(accountId) ?? 0) + 1);
+    }
+    return counts;
+  }
+  async reviveEvents(accountId: string): Promise<number> {
+    let revived = 0;
+    for (;;) {
+      const rows = await this.store.list<PendingEvent>({ prefix: "dead:event:" + accountId + ":", limit: 100 });
+      if (!rows.size) break;
+      await this.store.transaction(async (tx) => {
+        for (const [key, event] of rows) {
+          await tx.put("pending:" + key.slice("dead:".length), { ...event, attempts: 0, nextAt: 0 });
+          await tx.delete(key);
+          revived++;
+        }
+      });
+    }
+    return revived;
+  }
   async listAccounts() {
     const accounts = [...(await this.store.list<AccountRecord>({ prefix: "account:" })).values()];
+    const stuck = await this.stuckEvents().catch(() => new Map<string, number>());
     return {
       configuration: configuration(this.env).status,
       accounts: accounts.map((a) => {
@@ -310,7 +338,8 @@ export class AccountService {
           capabilities = this.capabilities(a);
           if (a.sync.mode === "initial") importing = this.provider(a).progress(a);
         } catch { /* a provider this build does not carry */ }
-        return { ...publicAccount(a), providerName: this.providerName(a), ...(capabilities ? { capabilities } : {}), ...(importing !== undefined ? { importing } : {}) };
+        return { ...publicAccount(a), providerName: this.providerName(a), ...(capabilities ? { capabilities } : {}), ...(importing !== undefined ? { importing } : {}),
+          ...(stuck.get(a.id) ? { stuckEvents: stuck.get(a.id) } : {}) };
       }),
       providers: [
         { id: "gmail", status: configuration(this.env).status },
@@ -1367,6 +1396,8 @@ export class AccountService {
       "skipped:" + accountId + ":",
       "event:" + accountId + ":",
       "pending:event:" + accountId + ":",
+      // M-3: events set aside go with the account too.
+      "dead:event:" + accountId + ":",
       "moved:" + accountId + ":",
       "draft:" + accountId + ":",
       "gid:" + accountId + ":",

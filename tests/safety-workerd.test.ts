@@ -34,6 +34,8 @@ const bundle = await build({
         async pump() { for (let i = 0; i < 20; i++) { await super.alarm(); const n = this.ctx.storage.sql.exec('SELECT COUNT(*) AS n FROM queue WHERE next_at <= ?', Date.now()).one().n; if (!n) break; } }
         async released() { return [...(await this.ctx.storage.list({ prefix: 'released:' })).keys()].map((k) => k.slice(9)).sort(); }
         async queueRows() { return this.ctx.storage.sql.exec('SELECT account_id, payload FROM queue').toArray().map((r) => [r.account_id, JSON.parse(r.payload).accountId]); }
+        async twin(id) { const r = this.ctx.storage.sql.exec("SELECT * FROM queue WHERE message_id = ?", id).one(); this.ctx.storage.sql.exec("INSERT INTO queue (account_id, message_id, target, payload, enqueued_at, next_at) VALUES (?, ?, 'backfill', ?, ?, 0)", r.account_id, r.message_id, r.payload, Date.now()); this.ctx.storage.sql.exec("UPDATE queue SET next_at = 0"); }
+        async drainOnce() { await super.alarm(); }
         async set(k, v) { await this.ctx.storage.put(k, v); }
         async get(k) { return this.ctx.storage.get(k); }
       }
@@ -45,6 +47,8 @@ const bundle = await build({
         if (c.op === 'move') return Response.json(await s.moveAccount(c.from, c.to));
         if (c.op === 'pump') { await s.pump(); return Response.json(true); }
         if (c.op === 'queue') return Response.json(await s.queueRows());
+        if (c.op === 'twin') { await s.twin(c.id); return Response.json(true); }
+        if (c.op === 'drainOnce') { await s.drainOnce(); return Response.json(true); }
         if (c.op === 'set') { await s.set(c.key, c.value); return Response.json(true); }
         if (c.op === 'get') return Response.json(await s.get(c.key) ?? null);
         if (c.op === 'of') return Response.json(await s.safetyOf(c.keys));
@@ -151,5 +155,18 @@ test("an address renamed while its mail waits in the queue: the item is decided 
     assert.equal(of[`${NEW.id}|waiting`]?.state, "clear");
     assert.equal(of[`${CF.id}|held`], undefined);
     assert.deepEqual(await call("released"), ["waiting"]);
+  } finally { await mf.dispose(); }
+});
+
+test("C-13: two queue rows of one message are never decided side by side in one drain", async () => {
+  const { mf, call } = await fixture();
+  try {
+    await call("ingestOnly", { account: CF, event: event("twin", "<p>Where is my order 1234?</p>") });
+    await call("twin", { id: "twin" });
+    assert.equal((await call("queue")).length, 2);
+    await call("drainOnce");
+    assert.equal((await call("queue")).length, 1, "the second row waits for the next drain");
+    await call("pump");
+    assert.equal((await call("queue")).length, 0);
   } finally { await mf.dispose(); }
 });
