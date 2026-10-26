@@ -16,6 +16,11 @@ import { msg } from "../../shared/i18n";
  */
 export const agentKeysRouter = new Hono<{ Bindings: Env }>();
 type C = Context<{ Bindings: Env }>;
+/** The signed-in person's email (Access), or null for an agent key or development. */
+const signedInEmail = (c: C): string | null => {
+  const email = (c as unknown as Context<{ Bindings: Env; Variables: { access?: { email?: unknown } } }>).get("access")?.email;
+  return typeof email === "string" && email ? email.toLowerCase() : null;
+};
 
 const NewKey = z.object({
   name: z.string().trim().min(1, msg("Name the agent this key is for")).max(80),
@@ -54,7 +59,7 @@ export function validateNewKey(raw: unknown): { ok: true; value: NewKeyInput } |
  */
 export const sendFor = (level: AgentKey["level"], send: AgentKey["send"]): AgentKey["send"] => (level === "read" ? "drafts" : level === "admin" ? "send" : send);
 
-const publicKey = (k: AgentKey) => ({ id: k.id, clientId: k.clientId, name: k.name, level: k.level, send: k.send, dailySendLimit: k.dailySendLimit, createdAt: k.createdAt, expiresAt: k.expiresAt, accounts: k.accounts, approval: k.approval ?? "agent" });
+const publicKey = (k: AgentKey) => ({ id: k.id, clientId: k.clientId, name: k.name, level: k.level, send: k.send, dailySendLimit: k.dailySendLimit, createdAt: k.createdAt, expiresAt: k.expiresAt, accounts: k.accounts, approval: k.approval ?? "agent", createdBy: k.createdBy ?? null });
 
 function access(c: C): AgentAccess | Response {
   const api = cloudflareApi(c.env);
@@ -116,6 +121,7 @@ agentKeysRouter.post("/api/agent-keys", async (c) => {
     id: token.id, clientId: token.client_id, name: input.name, level: input.level, send: sendFor(input.level, input.send),
     dailySendLimit: input.dailySendLimit, createdAt: new Date().toISOString(), expiresAt: token.expires_at ?? null, accounts: input.accounts,
     ...(input.approval === "owner" ? { approval: "owner" as const } : {}),
+    ...(signedInEmail(c) ? { createdBy: signedInEmail(c)! } : {}),
   };
   try {
     await updateAgentKeys(c.env.BUCKET, (keys) => [...keys.filter((k) => k.id !== key.id), key]);
@@ -202,3 +208,20 @@ agentKeysRouter.get("/api/agent-keys/journal", async (c) => {
     return c.json({ entries, nextCursor: last ? last.id : null, nextBefore: last ? last.at : null });
   } catch (error) { return failure(c, error, msg("Reading what agents changed")); }
 });
+
+/**
+ * N-4: the keys a person made stop working when they leave the server or stop being its administrator: out of the
+ * registry at once, and their Cloudflare tokens deleted (a failure there is said, the key already works nowhere here).
+ */
+export async function revokeKeysOf(env: Env, email: string): Promise<{ revoked: string[]; warning?: string }> {
+  const who = email.toLowerCase();
+  let removed: AgentKey[] = [];
+  await updateAgentKeys(env.BUCKET, (keys) => { removed = keys.filter((k) => k.createdBy === who); return keys.filter((k) => k.createdBy !== who); });
+  if (!removed.length) return { revoked: [] };
+  console.log(JSON.stringify({ event: "agent_keys_revoked_with_person", count: removed.length }));
+  const api = cloudflareApi(env);
+  if (!api) return { revoked: removed.map((k) => k.id), warning: msg("Their keys no longer work here, but their tokens could not be deleted in Cloudflare (no token on the server); delete them in Zero Trust → Service credentials.") };
+  const cf = new AgentAccess(api, env);
+  const failed = (await Promise.allSettled(removed.map((k) => cf.revoke(k.id)))).filter((r) => r.status === "rejected").length;
+  return { revoked: removed.map((k) => k.id), ...(failed ? { warning: msg("Their keys no longer work here, but Cloudflare did not delete {count} of their tokens; delete them in Zero Trust → Service credentials.", { count: failed }) } : {}) };
+}

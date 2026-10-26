@@ -112,6 +112,8 @@ interface GetEmailsOptions {
 
 /** How long a stranger's message waits for its spam check before its agent runs anyway (B-30). */
 const SPAM_HOLD_MS = 15 * 60_000;
+/** C-7: mail taken out of Spam within this long of arriving reaches its rules, categories and agent again. */
+const NOT_SPAM_REDELIVER_MS = 3 * 86_400_000;
 /** Spam is kept this long, then deleted with its attachments (SP-5). */
 export const SPAM_RETENTION_MS = 30 * 86_400_000;
 /** Messages one retention pass deletes; their files go in one R2 call per R2_DELETE_KEYS keys (B-90). */
@@ -1488,12 +1490,24 @@ export class MailboxDO extends DurableObject<Env> {
   }
 
   /** Moves messages out of Spam back to the inbox; returns the ids that moved. */
-  async markNotSpam(ids: string[]): Promise<string[]> {
+  /** `mailboxId`: this mailbox's address, which its consumers are told (absent: the mail only moves back). */
+  async markNotSpam(ids: string[], mailboxId?: string): Promise<string[]> {
     const moved: string[] = [];
+    let redelivered = 0;
     for (const id of ids.slice(0, 200)) {
-      const row = this.ctx.storage.sql.exec("UPDATE emails SET folder_id = 'inbox', spam_reason = NULL, spam_at = NULL WHERE id = ? AND folder_id = 'spam' RETURNING id", id).toArray();
-      if (row.length) moved.push(id);
+      this.ctx.storage.transactionSync(() => {
+        const row = this.ctx.storage.sql.exec<{ id: string; sender: string; subject: string; body: string; date: string; thread_id: string | null }>(
+          "UPDATE emails SET folder_id = 'inbox', spam_reason = NULL, spam_at = NULL WHERE id = ? AND folder_id = 'spam' RETURNING id, sender, subject, body, date, thread_id", id).toArray()[0];
+        if (!row) return;
+        moved.push(id);
+        // C-7: recent mail taken out of Spam is new mail again: its rules, categories, safety check and reply
+        // agent take it. Older mail only comes back to the inbox (an agent never answers weeks-old mail).
+        if (!mailboxId || Date.now() - (Date.parse(row.date) || 0) > NOT_SPAM_REDELIVER_MS) return;
+        this.incoming.redeliver(mailboxId.toLowerCase(), { id: row.id, sender: row.sender, subject: row.subject, body: row.body, date: row.date, thread_id: row.thread_id });
+        redelivered++;
+      });
     }
+    if (redelivered) await this.flushIncomingEvents();
     return moved;
   }
 

@@ -342,3 +342,19 @@ test("a server signed in on its own domain keeps that sign-in: no second Access 
   assert.equal(fake.state.put!.metadata.bindings.find((b: any) => b.name === "POLICY_AUD").text, "custom-domain-aud");
   assert.match(r.steps.find((s: any) => s.id === "access").detail, /keeps the sign-in it already has/);
 });
+
+test("O-1: updating a server signed in on its own domain keeps it there: workers.dev stays off and the origin is its own", async () => {
+  const { out } = fixtureBundle();
+  const fake = fakeCloudflare({ subdomain: "someone", org: "t.cloudflareaccess.com", script: { migration_tag: "v2", vars: { POLICY_AUD: "custom-domain-aud" } } });
+  fake.state.apps.push({ id: "app-own", domain: "mail.owner.example", aud: "custom-domain-aud" });
+  const r = await run(fake, out, { email: undefined });
+  assert.ifError(r.error);
+  assert.equal(fake.state.workersDev, false, "workers.dev, which no Access app covers, was not published");
+  assert.equal(r.origin, "https://mail.owner.example");
+  // Its address unreadable: no origin, so the person names it.
+  const unknown = fakeCloudflare({ subdomain: "someone", org: "t.cloudflareaccess.com", script: { migration_tag: "v2", vars: { POLICY_AUD: "other-aud" } } });
+  const r2 = await run(unknown, fixtureBundle().out, { email: undefined });
+  assert.ifError(r2.error);
+  assert.equal(r2.origin, null);
+  assert.equal(unknown.state.workersDev, false);
+});

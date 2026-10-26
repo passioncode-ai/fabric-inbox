@@ -48,5 +48,14 @@ test("a new app password and a provider's client secret are the person's to type
   assert.deepEqual((await step("set_account_password", { accountId: "imap:a1" })).error.data, { humanStep: "secret", url: "/settings/accounts/imap%3Aa1" });
   const gmail = await step("set_account_password", { accountId: "gmail:g1" });
   assert.match(gmail.error.error, /^Only an IMAP account has an app password/, "a plain refusal, not a human step");
-  assert.deepEqual((await step("set_provider_setup", { provider: "outlook" })).error.data, { humanStep: "secret", url: "/settings/accounts?connect=outlook" });
+  assert.deepEqual((await step("set_provider_setup", { provider: "outlook" })).error.data, { humanStep: "secret", url: "/settings/accounts?connect=microsoft" }, "the app opens Outlook as microsoft (P-1)");
+});
+
+test("P-1: every connect= link a human step names is a provider Settings → Accounts opens", async () => {
+  const { readFileSync } = await import("node:fs");
+  const providers = readFileSync(new URL("../app/components/settings/sections/providers.ts", import.meta.url), "utf8");
+  const tools = readFileSync(new URL("../workers/mcp/tools.ts", import.meta.url), "utf8");
+  const ids = new Set([...providers.matchAll(/\bid: "([a-z]+)"/g)].map((m) => m[1]));
+  for (const p of ["gmail", "microsoft", "imap", "cloudflare"]) assert.ok(ids.has(p), `providers.ts names ${p}`);
+  for (const m of tools.matchAll(/connect=([a-z]+)/g)) assert.ok(ids.has(m[1]!), `connect=${m[1]}`);
 });

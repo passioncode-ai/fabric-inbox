@@ -70,6 +70,18 @@ export class IncomingJournal {
     this.sql.exec("UPDATE incoming_receipts SET automation_status = 'pending', attempts = 0, next_at = 0 WHERE automation_status = 'dead'");
     return n;
   }
+  /**
+   * C-7: a message a person took out of Spam reaches every consumer again as new mail: its receipt (if kept) is
+   * due again with this event, or a receipt is made. Caller wraps it with the move in one transaction.
+   */
+  redeliver(mailboxId: string, event: IncomingMailEvent) {
+    if (!this.has(event.id)) return this.record(mailboxId, event);
+    this.sql.exec('DELETE FROM incoming_event_payload WHERE delivery_id = ?', event.id);
+    const serialized = JSON.stringify(event);
+    for (let offset = 0, part = 0; offset < serialized.length; offset += 32768, part++)
+      this.sql.exec('INSERT INTO incoming_event_payload(delivery_id, part, content) VALUES (?, ?, ?)', event.id, part, serialized.slice(offset, offset + 32768));
+    this.sql.exec("UPDATE incoming_receipts SET automation_status = 'pending', attempts = 0, next_at = 0, last_error = NULL WHERE delivery_id = ?", event.id);
+  }
   event(id: string): IncomingMailEvent {
     return JSON.parse([...this.sql.exec('SELECT content FROM incoming_event_payload WHERE delivery_id = ? ORDER BY part', id)].map(r => r.content).join(''));
   }

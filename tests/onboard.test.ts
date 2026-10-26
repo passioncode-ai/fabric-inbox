@@ -6,6 +6,8 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 const home = mkdtempSync(path.join(os.tmpdir(), "fabric-onboard-"));
 process.env.HOME = home;
@@ -185,4 +187,54 @@ test("prove: initialize, tools/list and list_accounts with the stored key, JSON 
   await assert.rejects(m.stepProve({}, { say, store, doFetch: refused }), (e: any) => e.code === "prove" && /not accepted/.test(e.message));
   const redirected = async () => new Response(null, { status: 302, headers: { location: "https://me.cloudflareaccess.com/login" } });
   await assert.rejects(m.stepProve({}, { say, store, doFetch: redirected }), (e: any) => /redirected/.test(e.message), "an Access login redirect is a refused key, not an answer");
+});
+
+test("O-9, O-1, O-4: a new server's record drops another server's key; an unknown origin and a Cloudflare refusal are named for the person", async () => {
+  m.writeRecord({ server: "https://old.me.workers.dev", mcpUrl: "https://old.me.workers.dev/mcp", key: { id: "k-old", clientId: "c", level: "mail", send: "drafts", expiresAt: null }, registered: { name: "fabric-inbox" } });
+  const deployer = { accounts: async () => [{ id: "acc1", name: "Mine" }],
+    deploy: async () => ({ origin: "https://fabric-inbox.new.workers.dev", accessOrigin: "https://me.cloudflareaccess.com", steps: [] }) };
+  const record = await m.stepServer({ email: "me@example.com" }, { say, deployer, token: "t", bundle: async () => "/b" });
+  assert.deepEqual([record.key, record.mcpUrl, record.registered], [undefined, undefined, undefined], "the old server's key is not this one's");
+  // The same server updated keeps its key.
+  m.writeRecord({ ...record, key: { id: "k1", clientId: "c", level: "mail", send: "drafts", expiresAt: null }, mcpUrl: "https://fabric-inbox.new.workers.dev/mcp" });
+  assert.equal((await m.stepServer({ email: "me@example.com" }, { say, deployer, token: "t", bundle: async () => "/b" })).key.id, "k1");
+  const own = { ...deployer, deploy: async () => ({ origin: null, accessOrigin: "https://me.cloudflareaccess.com", steps: [] }) };
+  await assert.rejects(m.stepServer({ email: "me@example.com" }, { say, deployer: own, token: "t", bundle: async () => "/b" }),
+    (e: any) => e.code === "origin_unknown" && /Server address/.test(e.human));
+  const { DeployError } = (await import("node:module")).createRequire(import.meta.url)("../desktop/cloudflare-deploy.cjs");
+  for (const [error, code] of [[new DeployError("Missing permission: read storage", { status: 403 }), "permission"],
+    [new DeployError("R2 storage is not turned on for this account yet."), "r2_off"],
+    [new DeployError("Zero Trust is not set up for this account yet (x)."), "zero_trust_off"]] as const) {
+    const failing = { ...deployer, deploy: async () => { throw error; } };
+    await assert.rejects(m.stepServer({ email: "me@example.com" }, { say, deployer: failing, token: "t", bundle: async () => "/b" }),
+      (e: any) => e.code === code && e.human === error.message, code);
+  }
+});
+
+test("O-7: connecting again names the earlier key of the same server, which stays valid until revoked", async () => {
+  m.writeRecord({ server: "https://fabric-inbox.me.workers.dev", key: { id: "k-old", clientId: "c", level: "mail", send: "drafts", expiresAt: null } });
+  const open = (link: string) => { const u = new URL(link); setTimeout(() => fetch(u.searchParams.get("callback")!, { method: "POST", body: JSON.stringify({ state: u.searchParams.get("state"), outcome: "connected",
+    server: "https://fabric-inbox.me.workers.dev", mcpUrl: "https://fabric-inbox.me.workers.dev/mcp",
+    key: { id: "k-new", clientId: "new.access", level: "admin", send: "send", expiresAt: null }, clientSecret: "s" }) }), 10); };
+  events.length = 0;
+  await m.stepConnect({ level: "admin" }, { say, store: fakeStore(), open });
+  const done = events.at(-1);
+  assert.equal(done.replacedKey, "k-old");
+  assert.match(done.human, /k-old/);
+});
+
+test("O-3: a bundle of the same version built from another commit is rebuilt", () => {
+  assert.equal(m.bundleStale({ version: "1.0.0", revision: "aaa" }, "1.0.0", "aaa"), false);
+  assert.equal(m.bundleStale({ version: "1.0.0", revision: "aaa" }, "1.0.0", "bbb"), true, "a fix pulled without a version bump");
+  assert.equal(m.bundleStale({ version: "0.9.0", revision: "aaa" }, "1.0.0", "aaa"), true);
+  assert.equal(m.bundleStale(null, "1.0.0", "aaa"), true);
+  assert.equal(m.bundleStale({ version: "1.0.0", revision: "aaa" }, "1.0.0", null), false, "outside a checkout the version decides");
+});
+
+test("O-6: after signing in to a server the agent set up, the app opens Domains, as after Create my server", () => {
+  const main = readFileSync(new URL("../desktop/main.cjs", import.meta.url), "utf8");
+  const handler = main.slice(main.indexOf("ipcMain.handle('fabric:setup-connect'"), main.indexOf("ipcMain.handle('fabric:pending-setup'"));
+  assert.match(handler, /if \(chosen\.byAgent\) openAfterSignIn = policy\.afterDeployPage\(\{\}\);/);
+  const { afterDeployPage } = (require as never as NodeRequire)("../desktop/policy.cjs");
+  assert.equal(afterDeployPage({}), "/settings/domains");
 });

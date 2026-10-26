@@ -7,6 +7,9 @@ import { msg } from "../../shared/i18n";
 export async function handleSendEmail(c: Context<MailboxContext>, kind: 'send' | 'reply' | 'forward' = 'send') {
   const raw = await c.req.json();
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return c.json({ error: msg('Invalid send request'), code: 'INVALID_REQUEST' }, 400);
+  // M-6: Auto-Submitted is set by the server's own reply agents only (MailboxDO.sendMail over RPC); a person's send,
+  // or an outside agent's through this route, never marks itself automatic, which other agents would skip.
+  delete (raw as { auto_submitted?: unknown }).auto_submitted;
   const result = await c.var.mailboxStub.sendMail({
     mailboxId: c.req.param('mailboxId')!,
     idempotencyKey: c.req.header('Idempotency-Key') ?? raw.idempotencyKey,

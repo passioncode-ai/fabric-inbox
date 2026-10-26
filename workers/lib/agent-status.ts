@@ -81,7 +81,7 @@ export async function statesOf(address: string, facts: ThreadFacts[], runsByIds:
   const out = new Map<string, ThreadState>();
   inbound.forEach((f, i) => {
     const run = byId.get(ids[i]!);
-    const state = agentState(f, run ? { status: run.status, injection: run.injection === true } : undefined);
+    const state = agentState(f, run ? { status: run.status, injection: run.injection === true, handoff: run.handoff === true } : undefined);
     if (state) out.set(f.threadId, { state, abandoned: isAbandoned(state, f, now), facts: f, runId: ids[i]!, ...(run ? { run } : {}) });
   });
   return out;

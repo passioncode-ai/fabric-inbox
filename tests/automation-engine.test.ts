@@ -279,3 +279,31 @@ test("B-178: a rule waits for the message's safety check, never acts on a held m
   await processRun(clear.run, { ...clear.deps, safety: async () => "clear" as const });
   assert.equal(clear.run.status, "succeeded");
 });
+
+test("A-6, A-11: a rule dismissed while it waited for the safety check is not written back; a message a person kept is given up at once", async () => {
+  const at = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
+  // The person dismisses the run while the safety call is out: the stale pending copy is not written over it.
+  const raced = setup();
+  raced.run.createdAt = at(60_000);
+  let stored = "pending";
+  await processRun(raced.run, { ...raced.deps,
+    safety: async () => { stored = "cancelled"; return "pending" as const; },
+    saveIfPending: async () => stored === "pending" });
+  assert.equal(stored, "cancelled", "the dismissal stands");
+  assert.equal(raced.effects, 0);
+  // Kept held by a person: skipped now, not looked at for seven days.
+  const kept = setup();
+  kept.run.createdAt = at(60_000);
+  await processRun(kept.run, { ...kept.deps, safety: async () => "kept" as const });
+  assert.deepEqual([kept.run.status, kept.run.detail], ["skipped", "Kept held by a person after the safety check"]);
+  assert.equal(kept.effects, 0);
+});
+
+test("A-9: a forward that would bring its own message back to the address never runs", async () => {
+  const { forwardLoops } = await import("../workers/automation/policy");
+  const rule = (to: string) => ({ id: "r", version: 1, name: "Fwd", enabled: true, mode: "automatic", conditions: {}, action: { type: "forward", to }, dailyLimit: 20 }) as never;
+  assert.equal(forwardLoops(rule("a@owner.example"), "a@owner.example", { sender: "ann@x.invalid" }), true, "to itself");
+  assert.equal(forwardLoops(rule("b@owner.example"), "a@owner.example", { sender: "A <a@owner.example>" }), true, "mail it sent");
+  assert.equal(forwardLoops(rule("b@owner.example"), "a@owner.example", { sender: "ann@x.invalid" }), false);
+  assert.equal(forwardLoops({ ...rule("x@y.invalid"), action: { type: "archive" } } as never, "a@owner.example", { sender: "a@owner.example" }), false);
+});

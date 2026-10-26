@@ -5,6 +5,29 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.41.0 (2026-10-26)
+
+The second round of fixes from the bug hunt: agents, rules, first setup and access.
+
+- **Updating a server that opens on your own domain keeps it there.** It no longer moved the app to a
+  workers.dev address that nothing protected.
+- **After your coding agent sets up the server, the app opens Domains,** where the first mail starts.
+  The agent's setup says which Cloudflare setting is missing, rebuilds an outdated server, and names the
+  key it replaces so you can revoke it.
+- **Outlook setup links open the Outlook setup.**
+- **Taking a recent message out of Spam treats it as new mail:** its rules, categories and reply agent take it.
+- **A message that is only a link or a picture is checked for spam.**
+- **Mail passed to a person shows as waiting for a reply,** not as needing none.
+- **A message is not answered twice** when two arrive in one Gmail, IMAP or Outlook conversation.
+- **A rule you dismiss while it waits for the safety check stays dismissed,** and a rule gives up at once on
+  a message you kept held.
+- **A forward rule never forwards a message back to its own address.**
+- **An agent that answers an account without drafts cannot be switched to drafting.**
+- **Mail of a Gmail, IMAP or Outlook account that could not reach its rules is shown and can be retried.**
+- **More than 40 categories with descriptions classify again.**
+- **Removing a person, or making them a member, revokes the agent keys they made.**
+- **Only the server's own agents mark their mail as automatic.**
+
 ## 0.40.0 (2026-10-26)
 
 Fixes from a hunt for bugs across mail, agents, rules, categories, spam, access and setup.

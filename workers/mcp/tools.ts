@@ -19,7 +19,7 @@ import { headerValue, parseStoredHeaders } from "../agents/prefilter";
 import { GMAIL_FOLDERS } from "../providers/gmail-cache";
 import { parseRemoteAccount, type RemoteProvider } from "../../shared/mail/accounts";
 import { AttachmentValidationError, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, validateAttachments, type MailAttachment } from "../../shared/mail/attachments";
-import { BATCH_MAX, LOCAL_PART_RE } from "../../shared/address-name";
+import { BATCH_MAX } from "../../shared/address-name";
 import { bareContentId } from "../../shared/mail/inline";
 import { MAX_CURSOR_CHARS } from "../../shared/mail/inbox";
 
@@ -218,10 +218,14 @@ const listAccounts = defineTool({
     const feed = (await get(ctx, "/api/inbox", { limit: 1 })) as { accounts: Record<string, unknown>[]; issues: unknown[] };
     const remoteAccounts = (await get(ctx, "/api/accounts")) as { configuration?: string; accounts?: Record<string, unknown>[] };
     const hidden = (await get(ctx, "/api/inbox/hidden")) as { hidden: string[] };
+    // M-3: a Gmail, IMAP or Outlook account's mail set aside after every try, as a Cloudflare address's stuck events.
+    const remoteStuck = new Map((remoteAccounts.accounts ?? []).filter((r) => Number(r.stuckEvents) > 0)
+      .map((r) => [`${r.provider ?? "gmail"}:${r.id}`, Number(r.stuckEvents)] as [string, number]));
     return {
       accounts: feed.accounts.map((a) => ({ accountId: a.id, provider: a.provider, email: a.email, name: a.name, status: a.status,
         unread: a.unread ?? 0, total: a.total ?? 0, hidden: !!a.hidden, catchAll: !!a.catchAll,
-        ...(typeof a.createdAt === "number" ? { createdAt: new Date(a.createdAt).toISOString() } : {}), ...(a.error ? { error: a.error } : {}), ...(a.stuck ? { stuck: a.stuck } : {}),
+        ...(typeof a.createdAt === "number" ? { createdAt: new Date(a.createdAt).toISOString() } : {}), ...(a.error ? { error: a.error } : {}),
+        ...(a.stuck ? { stuck: a.stuck } : remoteStuck.get(String(a.id)) ? { stuck: { dead: remoteStuck.get(String(a.id)), retrying: 0, lastError: null } } : {}),
         ...(a.providerName ? { providerName: a.providerName } : {}), ...(a.capabilities ? { capabilities: a.capabilities } : {}), ...(a.importing !== undefined ? { importing: a.importing } : {}) })),
       gmail: { configuration: remoteAccounts.configuration ?? "configured", accounts: (remoteAccounts.accounts ?? []).filter((a) => (a.provider ?? "gmail") === "gmail").map((a) => ({ accountId: `gmail:${a.id}`, email: a.email, status: a.status, lastSyncAt: a.lastSyncAt ?? null, error: a.error ?? null })) },
       hidden: hidden.hidden,
@@ -1253,7 +1257,8 @@ const checkAddress = defineTool({
 const createAddress = defineTool({
   name: "create_address", title: "Create an address", level: "admin", additive: true, target: (a) => `${a.localPart}@${a.domain}`,
   description: "Makes a new mailbox on one of your served domains and, when this server can, the Cloudflare rule that sends its mail here. The answer lists its steps (address, rule), each done, already, skipped, failed or not_receiving (the rule exists but Email Routing is off or broken for the domain), the last three with a fix. Optionally sets its display name, signature, agent and a copy to a verified destination. check_address first says whether the name is free; send_test_message and check_test_message then prove it receives.",
-  input: { localPart: z.string().regex(LOCAL_PART_RE).describe("The part before @, lower case (letters, digits, . _ + -, a letter or digit at each end, no two dots together)"), domain,
+  // P-4: checked by the route, as create_addresses' names are, so "Support" is taken (lowered) and a bad name is explained in words.
+  input: { localPart: z.string().min(1).max(320).describe("The part before @ (letters, digits, . _ + -, a letter or digit at each end, no two dots together); upper case is lowered"), domain,
     ...newAddressSettings },
   routes: ["POST /api/project-addresses", "POST /api/v1/mailboxes"],
   call: (a, ctx) => post(ctx, "/api/project-addresses", { localPart: a.localPart, domain: a.domain.toLowerCase(), name: a.name, agent: toAgent(a.agent),
@@ -1676,9 +1681,13 @@ const dryRunRule = defineTool({
 
 const retryIncoming = defineTool({
   name: "retry_incoming", title: "Retry mail that did not reach its rules", level: "admin", target: (a) => a.accountId,
-  description: "Mail that arrived but did not reach its rules, agent or categories after several tries (list_accounts shows it as stuck) is tried again now.",
-  input: { accountId }, routes: ["POST /api/v1/mailboxes/:mailboxId/incoming/retry"],
-  call: (a, ctx) => post(ctx, `${box(cloudflareOnly(parseAccount(a.accountId), "Retrying").mailbox)}/incoming/retry`),
+  description: "Mail that arrived but did not reach its rules, agent or categories after several tries (list_accounts shows it as stuck, or stuckEvents on a Gmail, IMAP or Outlook account) is tried again now.",
+  input: { accountId }, routes: ["POST /api/v1/mailboxes/:mailboxId/incoming/retry", "POST /api/accounts/:accountId/incoming/retry"],
+  call: (a, ctx) => {
+    const account = parseAccount(a.accountId);
+    // M-3: a Gmail, IMAP or Outlook account's mail set aside is retried at the account.
+    return account.provider === "cloudflare" ? post(ctx, `${box(account.mailbox)}/incoming/retry`) : post(ctx, `${remote(account.remoteId)}/incoming/retry`);
+  },
 });
 
 const exportSetup = defineTool({
@@ -1754,6 +1763,9 @@ const gmailConnectLink = defineTool({
   },
 });
 
+/** The provider ids Settings → Accounts opens by (`app/components/settings/sections/providers.ts`): Outlook is `microsoft` (P-1). */
+const settingsProvider = (provider: string) => (provider === "outlook" ? "microsoft" : provider);
+
 // B-154 (DEC-0121 AP-4): the buttons whose step only the person takes. Each tool stands for its
 // button and refuses with human-step-required and the direct link; the person's secret or consent
 // never passes through an agent.
@@ -1770,7 +1782,7 @@ const connectAccount = defineTool({
     const data = (await get(ctx, "/api/accounts")) as { configuration?: string; connectUrl?: string; outlookConnectUrl?: string };
     const url = a.provider === "gmail" ? (data.configuration === "configured" ? data.connectUrl : undefined) : data.outlookConnectUrl;
     if (!url)
-      throw new HumanStepRequired("secret", `/settings/accounts?connect=${a.provider}`,
+      throw new HumanStepRequired("secret", `/settings/accounts?connect=${settingsProvider(a.provider)}`,
         `${a.provider === "gmail" ? "Gmail" : "Outlook"} is not set up on this server yet: the owner enters its client secret at this link first.`);
     throw new HumanStepRequired("consent", url, `The person signs in with ${a.provider === "gmail" ? "Google" : "Microsoft"} and allows access at this link.`);
   },
@@ -1794,7 +1806,7 @@ const setProviderSetup = defineTool({
   input: { provider: z.enum(["gmail", "outlook"]) },
   routes: ["GET /api/accounts"],
   async call(a) {
-    throw new HumanStepRequired("secret", `/settings/accounts?connect=${a.provider}`, `The owner pastes the ${a.provider === "gmail" ? "Google" : "Microsoft"} client secret at this link.`);
+    throw new HumanStepRequired("secret", `/settings/accounts?connect=${settingsProvider(a.provider)}`, `The owner pastes the ${a.provider === "gmail" ? "Google" : "Microsoft"} client secret at this link.`);
   },
 });
 

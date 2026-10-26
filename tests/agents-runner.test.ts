@@ -1418,3 +1418,25 @@ test("B-178: a message the arrival check holds is never read by the model and wa
   for (const h of [held, unread]) assert.equal(h.effects.modelCalls + h.effects.sends.length + h.effects.drafts.length, 0);
   assert.equal(clear.effects.modelCalls, 1);
 });
+
+test("A-13: an earlier waiting reply whose policy text has a dash is still known as a waiting reply, not an answer", async () => {
+  const waiting = "Thanks - we are checking this and will write back soon.";
+  const h = harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true, waitingReply: { en: waiting } } as never), email: { subject: "Login", body: "<p>I cannot log in.</p>" },
+    callTool: async () => JSON.stringify({ abstained: false, results: [{ id: "fact:login", coverage: 0.9 }] }),
+    thread: [{ id: "incoming-1", sender: "ann@customer.invalid", recipient: MAILBOX, date: "2026-09-28T10:00:00.000Z", folder_id: "inbox", body: "<p>I cannot log in.</p>" },
+      { id: "ack", sender: MAILBOX, recipient: "ann@customer.invalid", date: "2026-09-29T10:00:00.000Z", folder_id: "sent", body: `<p>${withoutDashes(waiting)}</p>` }] });
+  const run = (await h.run())!;
+  assert.notEqual(run.status, "skipped", run.reason);
+  assert.equal(h.effects.sends.length, 1, "the real answer goes out");
+});
+
+test("A-5: a second message of a conversation the agent already answered is not answered again before the account's cache shows that answer", async () => {
+  const h = harness({ agent: autonomous(), email: { subject: "Re: order", body: "<p>Also, can you hurry?</p>", thread_id: "t-1" } as never,
+    callTool: async () => JSON.stringify({ abstained: false, results: [{ id: "fact:order", coverage: 0.9 }] }) });
+  const asked: unknown[] = [];
+  h.deps.registry.sentInThreadAfter = async (box, thread, since) => { asked.push([box, thread, typeof since]); return true; };
+  const run = (await h.run())!;
+  assert.equal(run.status, "skipped", run.reason);
+  assert.equal(h.effects.sends.length, 0);
+  assert.deepEqual(asked, [[MAILBOX, "t-1", "number"]]);
+});

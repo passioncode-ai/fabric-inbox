@@ -33,8 +33,8 @@ lands with a test that fails without it (checked for C-1/C-2 by reverting the fi
 | Wave | Closes | State |
 |---|---|---|
 | 1 | Security, mail an agent should not read, lost or doubled work: N-1, N-2, N-3, N-8, C-1, C-2, C-3 (= A-1), C-4, C-6, C-8, C-9, C-11 (= A-11), C-12, A-2, A-3, A-4, M-1, M-2 | 0.40.0 |
-| 2 | Agents, automation, onboarding, parity: A-5…A-10, A-12, A-13, O-1, O-3, O-4, O-6, O-7, O-9, P-1, P-2, P-4, M-3, M-4, M-6, C-5, C-7, C-10, C-13, N-4 | B-182 |
-| 3 | Notifications and the rest: N-5, N-6, N-7, N-9, N-10, O-2, O-5, O-8, O-10, O-11, O-12, P-3, P-5, P-6, M-5, M-7, M-8, M-9 | B-183 |
+| 2 | Agents, automation, onboarding, parity: A-5…A-9, A-12, A-13, O-1, O-3, O-4, O-6, O-7, O-9, P-1, P-4, M-3, M-4, M-6, C-5, C-7, C-10, C-13, N-4 (A-10 and P-2 are no defects, below) | 0.41.0 (B-182) |
+| 3 | Notifications and the rest: N-5, N-6, N-7, N-9, N-10, O-2, O-5, O-6b, O-8, O-10, O-11, O-12, P-3, P-5, P-6, M-5, M-7, M-8, M-9, A-9b, C-7b | B-183 |
 
 ## Findings
 
@@ -143,3 +143,27 @@ Severity: **crit**ical, **high**, **med**ium, **low**. Paths as of `a7091be`.
 - **A-4:** the sender filters read the address inside "Name <address>".
 - **M-1:** `trimReferences` keeps the root and the newest ids within 900 characters, for accounts and Cloudflare mailboxes.
 - **M-2:** Gmail mail labelled Spam or Trash queues no event.
+
+## Wave 2: what changed
+
+- **O-1:** a server whose sign-in is its own domain's Access application keeps that address on update; workers.dev is not published and the origin returned is that domain (null when it cannot be read: the app and `onboard.mjs` ask for it, never assume the known server).
+- **O-3, O-4, O-7, O-9:** `onboard.mjs` rebuilds a bundle of another commit (`bundleStale`), turns Cloudflare refusals into codes with a line for the person (`permission`, `r2_off`, `zero_trust_off`, `server_newer`), names the key a new `connect` replaces (`replacedKey`), and drops another server's key from the record; the skill and `docs/agents/onboard.md` say a first setup needs `--level admin`.
+- **O-6:** after signing in to a server an agent set up, the app opens Settings → Domains (SCN-077 step 2).
+- **P-1, P-4:** Outlook links open `connect=microsoft`; `create_address` takes the names the route takes.
+- **C-5, C-7:** a link or image makes HTML mail judged by the spam model, its first links in the text it reads; a message under three days old taken out of Spam is delivered again to rules, categories, the safety check and the agent (`IncomingJournal.redeliver`).
+- **C-10, C-13:** categories are classified 12 per model call; one queue row of a message per drain.
+- **A-5, A-6, A-7, A-8, A-12, A-13:** an account conversation counts the agent's own sent runs (`sentInThreadAfter`); a rule's waiting write is transactional (`saveIfPending`) and a kept message ends it; a requeued run with no message ends skipped; a hand-off waits for its person; an agent on an account without drafts is not switched to drafting; waiting texts are compared as sent.
+- **A-9:** a forward rule to its own address, or on mail that address sent, never runs (`forwardLoops`).
+- **M-3, M-4, M-6:** account events set aside are counted (`stuckEvents`, in `list_accounts` as `stuck`), retried (`POST /api/accounts/:accountId/incoming/retry`, `retry_incoming`) and removed with the account; account drains run one at a time (`oneAtATime`); `auto_submitted` is dropped from sends through the app's route.
+- **N-4:** a key records who made it (`createdBy`); removing that person, or making them a member, revokes their keys.
+
+## No defects
+
+- **A-10:** the reply status of an address with no agent shows its conversations still waiting for a reply. That is what SCN-079 ("See which conversations still need a reply") asks; agent events (`superviseAbandoned`) already cover only addresses with an agent.
+- **P-2:** a human-step link that is a path is allowed by the contract (`delegation-refusal.schema.json`: `^(https://|/)`, "a path on the service's origin"); the agent knows the origin it called.
+
+## Left for wave 3
+
+- **O-6b:** the empty inbox's text names Gmail and Cloudflare only, not Outlook and IMAP, and its button opens Accounts when Cloudflare is connected but has no address yet.
+- **A-9b:** two addresses forwarding to each other still loop until each rule's daily limit (20 by default).
+- **C-7b:** Not spam on a Gmail, IMAP or Outlook account moves the message but does not deliver it again to rules and the agent.

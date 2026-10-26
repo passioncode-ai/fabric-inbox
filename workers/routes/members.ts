@@ -4,6 +4,7 @@ import type { Env } from "../types";
 import { MAX_MEMBERS, MembersError, normaliseEmail, readMembers, ROLES, updateMembers, forgetMembers, type Member, type Standing } from "../lib/members";
 import { normaliseAccountId } from "../mcp/scope";
 import { msg } from "../../shared/i18n";
+import { revokeKeysOf } from "./agent-keys";
 
 /**
  * People on a shared server (B-149): who signs in as an administrator and who as a member with their
@@ -59,6 +60,11 @@ membersRouter.put("/api/members/:email", async (c) => {
     }, c.get("standing")?.email ?? null);
     forgetMembers();
     console.log(JSON.stringify({ event: "member_saved", role: parsed.data.role, mailboxes: accounts?.length ?? null }));
+    // N-4: a member makes no keys; the keys they made as an administrator go when they become one.
+    if (parsed.data.role === "member") {
+      const keys = await revokeKeysOf(c.env, email).catch((error: unknown) => ({ revoked: [] as string[], warning: (error as Error).message }));
+      return c.json({ members, revokedKeys: keys.revoked, ...(keys.warning ? { warning: keys.warning } : {}) });
+    }
     return c.json({ members });
   } catch (error) { return failure(c, error); }
 });
@@ -72,6 +78,8 @@ membersRouter.delete("/api/members/:email", async (c) => {
     if (!found) return c.json({ error: msg("{email} is not on the list.", { email }) }, 404);
     forgetMembers();
     console.log(JSON.stringify({ event: "member_removed" }));
-    return c.json({ members });
+    // N-4: the keys they made leave with them.
+    const keys = await revokeKeysOf(c.env, email).catch((error: unknown) => ({ revoked: [] as string[], warning: (error as Error).message }));
+    return c.json({ members, revokedKeys: keys.revoked, ...(keys.warning ? { warning: keys.warning } : {}) });
   } catch (error) { return failure(c, error); }
 });

@@ -19,6 +19,7 @@ function harness() {
     BUCKET: bucket,
     AGENT_REGISTRY: { getByName: () => ({
       getAgent: async (id: string) => agents.get(id) ?? null,
+      updateAgent: async (id: string, agent: any) => { agents.set(id, { ...agents.get(id)!, ...agent }); return agents.get(id); },
       listAgents: async () => [...agents.values()],
       listVersions: async () => [{ version: 1, createdAt: '2026-10-26T00:00:00.000Z' }],
     }) },
@@ -75,4 +76,14 @@ test("an unknown agent, an unknown account and a malformed choice are refused an
 test("a member is refused choosing the agent of their own account: it is an administrator's, like disconnecting it", () => {
   assert.equal(memberGate("PUT", "/api/accounts/a1/agent", ["gmail:a1"]), "refuse");
   assert.equal(memberGate("GET", "/api/accounts/a1/messages", ["gmail:a1"]), "pass", "control: their account's mail passes");
+});
+
+test("A-12: an agent answering an account that cannot keep drafts is not switched to drafting", async () => {
+  const h = harness();
+  assert.equal((await h.call("PUT", "/api/accounts/o1/agent", { agent: { id: "sender" } })).status, 200);
+  const refused = await h.call("PUT", "/api/agents/sender", { expectedVersion: 1, agent: { name: "Sender", replyPolicy: { mode: "draft" } } });
+  assert.equal(refused.status, 400);
+  assert.match(refused.body.error, /bob@example\.invalid, which cannot keep drafts/);
+  assert.equal((await h.call("PUT", "/api/agents/sender", { expectedVersion: 1, agent: { name: "Sender", replyPolicy: { mode: "auto" } } })).status, 200, "still sending is fine");
+  assert.equal((await h.call("PUT", "/api/agents/drafter", { expectedVersion: 1, agent: { name: "Drafter", replyPolicy: { mode: "draft" } } })).status, 200, "an agent on no such account drafts as before");
 });

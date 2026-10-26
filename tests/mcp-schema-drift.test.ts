@@ -102,7 +102,7 @@ const BODIES: Record<string, string[]> = {
 const NO_BODY = new Set([
   "POST /api/v1/mailboxes/:mailboxId/threads/:threadId/read", "POST /api/v1/mailboxes/:mailboxId/incoming/retry",
   "POST /api/accounts/:accountId/messages/:messageId/archive", "POST /api/accounts/:accountId/messages/:messageId/inbox",
-  "POST /api/accounts/:accountId/sync", "POST /api/accounts/:accountId/disconnect", "POST /api/categories/:id/seen", "POST /api/agent-runs/:id/again",
+  "POST /api/accounts/:accountId/sync", "POST /api/accounts/:accountId/disconnect", "POST /api/accounts/:accountId/incoming/retry", "POST /api/categories/:id/seen", "POST /api/agent-runs/:id/again",
   "POST /api/automation/:account/runs/:id/approve", "POST /api/automation/:account/runs/:id/dismiss", "POST /api/automation/:account/runs/:id/check",
   "POST /api/project-addresses/:email/routing", "POST /api/project-addresses/:email/test", "POST /api/domains/:domain/sending",
   "POST /api/project-addresses/:email/pause", "POST /api/project-addresses/:email/resume",

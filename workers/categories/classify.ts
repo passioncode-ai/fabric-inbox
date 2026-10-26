@@ -33,8 +33,20 @@ export const SYSTEM = [
   "Return exactly one result per category id given, and no other ids.",
 ].join("\n");
 
+/**
+ * C-10: categories per model call. The answer's 1500 tokens hold about this many results with their reasons; more
+ * in one call were cut off (or over the schema's 40), and every message failed. More categories take more calls.
+ */
+export const CATEGORIES_PER_CALL = 12;
+
 export async function classify(model: LanguageModel, categories: DescribedCategory[], message: ClassifiedMessage & { to: string }): Promise<Verdict[]> {
   if (!categories.length) return [];
+  const chunks: DescribedCategory[][] = [];
+  for (let i = 0; i < categories.length; i += CATEGORIES_PER_CALL) chunks.push(categories.slice(i, i + CATEGORIES_PER_CALL));
+  return (await Promise.all(chunks.map((chunk) => classifyChunk(model, chunk, message)))).flat();
+}
+
+async function classifyChunk(model: LanguageModel, categories: DescribedCategory[], message: ClassifiedMessage & { to: string }): Promise<Verdict[]> {
   const limit = deadline(45_000);
   const { object } = await generateObject({
     model,

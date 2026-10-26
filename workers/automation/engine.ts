@@ -26,7 +26,12 @@ export interface RunDependencies {
    * B-178: where the run's message stands with the arrival safety check: `pending` until it is checked, `held`
    * until a person releases it, else `clear`. Absent: no check here.
    */
-  safety?(run: Run): Promise<"pending" | "held" | "clear">;
+  safety?(run: Run): Promise<"pending" | "held" | "kept" | "clear">;
+  /**
+   * A-6: writes the run only while it is still pending in storage (in one transaction), so a run dismissed while
+   * this one awaited another object is never written back as pending. False: it changed meanwhile, leave it.
+   */
+  saveIfPending?(run: Run): Promise<boolean>;
 }
 
 /** B-178: a rule waits this long for a message's safety check, then acts as before (the check never came). */
@@ -79,17 +84,25 @@ export async function processRun(
   if (deps.safety) {
     const state = await deps.safety(run).catch(() => "pending" as const);
     const age = Date.now() - (Date.parse(run.createdAt) || Date.now());
-    if (state === "held" && age >= HELD_WAIT_MS) {
+    // The safety call awaited another object: a dismiss in the meantime wins (A-6).
+    const saveWaiting = async () => {
+      run.updatedAt = new Date().toISOString();
+      if (deps.saveIfPending) return deps.saveIfPending(run);
+      await deps.save(run);
+      return true;
+    };
+    // A person kept it held (A-11): the rule gives up now, not after seven days of looking.
+    if (state === "kept" || (state === "held" && age >= HELD_WAIT_MS)) {
       run.status = "skipped";
-      run.detail = msg("Held for review by the safety check and never released");
+      run.detail = state === "kept" ? msg("Kept held by a person after the safety check") : msg("Held for review by the safety check and never released");
       delete run.retryAt;
-      await save();
+      await saveWaiting();
       return run;
     }
     if (state === "held" || (state === "pending" && age < SAFETY_WAIT_MS)) {
       run.retryAt = new Date(Date.now() + (state === "held" ? 10 * 60_000 : 60_000)).toISOString();
       run.detail = state === "held" ? msg("Held for review by the safety check") : msg("Waiting for the safety check");
-      await save();
+      await saveWaiting();
       return run;
     }
   }

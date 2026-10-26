@@ -346,6 +346,10 @@ accountsRouter.get("/api/accounts/outlook/callback", async (c) => {
 accountsRouter.post("/api/accounts/:accountId/disconnect", async (c) =>
   c.json(await stub(c.env).disconnect(c.req.param("accountId"))),
 );
+/** M-3: retry the account's new mail that reached no rule, agent or category after every try (list_accounts: stuckEvents). */
+accountsRouter.post("/api/accounts/:accountId/incoming/retry", async (c) =>
+  c.json(await stub(c.env).retryIncoming(c.req.param("accountId"))),
+);
 accountsRouter.post("/api/accounts/:accountId/sync", async (c) =>
   c.json(await stub(c.env).sync(c.req.param("accountId"))),
 );

@@ -89,10 +89,14 @@ export async function stepConnect(opts, { say, store = keyStore(), open = openLi
   const host = new URL(answer.server).host;
   await store.put(host, { clientId: answer.key.clientId, clientSecret: answer.clientSecret });
   if (!(await store.get(host))) throw new OnboardError('key_store', 'The key could not be read back from the key store; it was not kept. Revoke it in Settings → Agent access.');
-  const record = { ...readRecord(), server: answer.server, mcpUrl: answer.mcpUrl,
+  const previous = readRecord();
+  const record = { ...previous, server: answer.server, mcpUrl: answer.mcpUrl,
     key: { id: answer.key.id, clientId: answer.key.clientId, level: answer.key.level, send: answer.key.send, expiresAt: answer.key.expiresAt } };
   writeRecord(record);
-  say({ step: 'connect', outcome: 'done', detail: `Key ${answer.key.id} (${answer.key.level}, ${answer.key.send}) kept in the system key store` });
+  // O-7: the key this one replaces on the same server stays valid until it is revoked; the person is told which.
+  const replaced = previous.key?.id && previous.key.id !== answer.key.id && previous.server && new URL(previous.server).host === host ? previous.key : null;
+  say({ step: 'connect', outcome: 'done', detail: `Key ${answer.key.id} (${answer.key.level}, ${answer.key.send}) kept in the system key store`,
+    ...(replaced ? { replacedKey: replaced.id, human: `This replaces the agent's earlier key ${replaced.id} (${replaced.level}). Revoke it in Settings → Agent access, or the agent revokes it with revoke_agent_key.` } : {}) });
   return record;
 }
 

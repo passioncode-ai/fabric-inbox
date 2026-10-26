@@ -20,6 +20,7 @@ import { accountSettingsKey } from "../agents/account-settings";
 import { readAssignment } from "../agents/definition";
 import { cloudflareSources, readWorkspaceOwnDomains, workspaceKnown, type MailboxNamespace } from "../discard/workspace";
 import { safetyChecks } from "../safety/on";
+import { oneAtATime } from "../lib/one-at-a-time";
 
 interface AutomationStub {
   ingest(
@@ -76,7 +77,12 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     this.tail = result.catch(() => {});
     return result;
   }
-  private async drain() {
+  /**
+   * M-4: one drain at a time. A refresh, a sync and the alarm may each ask while another drain is out on the
+   * network; they wait for it and then look once more, so no event is delivered twice by two drains side by side.
+   */
+  private drain = oneAtATime(() => this.drainOnce());
+  private async drainOnce() {
     if (!this.env.AUTOMATIONS && !this.env.CATEGORIES && !this.env.BUCKET) return;
     // Categories scope by the inbox's address, which the event does not carry.
     let emails: Map<string, string> | undefined;
@@ -212,6 +218,13 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     return this.serial(() => this.service.microsoftClientCheck());
   }
   /** History then import pages for one account now; the shared alarm is never moved later (P1-6). */
+  /** M-3: an account's mail set aside after every try reaches its rules, agent and categories again now. */
+  async retryIncoming(accountId: string): Promise<{ revived: number }> {
+    const revived = await this.serial(() => this.service.reviveEvents(accountId));
+    if (revived) await this.drain().catch((error: unknown) =>
+      console.warn(JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
+    return { revived };
+  }
   async sync(accountId: string) {
     const result = await this.scheduler.syncNow(accountId);
     // A sync that worked is reported as working even if handing its events on did not.

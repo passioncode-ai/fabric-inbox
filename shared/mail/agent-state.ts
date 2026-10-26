@@ -32,7 +32,7 @@ const ERROR = new Set(["failed", "interrupted", "send_failed", "send_unknown"]);
  * The agent's run on the last message that came in, as far as the state needs it: its status, and
  * whether the safety check held it back (B-141: such a skip waits for a person, it is no decision).
  */
-export interface RunFacts { status: string; injection?: boolean }
+export interface RunFacts { status: string; injection?: boolean; handoff?: boolean }
 
 /**
  * The state, or null for a conversation with nothing that came in (only mail you sent). A run the
@@ -56,7 +56,8 @@ export function agentState(facts: ThreadFacts, run: string | RunFacts | undefine
   if (runStatus === "running") return "working";
   // Sent, but its copy is not in Sent yet: the answer left.
   if (runStatus === "sent") return "agent_replied";
-  if (runStatus === "skipped" && !(typeof run === "object" && run.injection)) return "no_reply_needed";
+  // A message passed to a person (silent hand-off) waits for that person, as a held one waits for a decision (A-8).
+  if (runStatus === "skipped" && !(typeof run === "object" && (run.injection || run.handoff))) return "no_reply_needed";
   return facts.agentAnsweredBefore ? "new_after_agent" : "unanswered";
 }
 

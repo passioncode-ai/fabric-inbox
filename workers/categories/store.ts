@@ -38,6 +38,8 @@ export interface QueueItem { accountId: string; accountEmail: string; messageId:
   screen?: boolean;
   /** For the spam check (B-172): the sender's shown name and the domain Cloudflare's MX verified. */
   senderName?: string | null; verified?: string | null;
+  /** C-5: the HTML has a link or an image, so it is judged even with little text; its first links are in `text`. */
+  linked?: boolean;
   /** B-178: the message is checked for instructions aimed at agents; its HTML (at most HTML_CHARS) is what is read. */
   safety?: boolean; html?: string }
 
@@ -79,6 +81,11 @@ export { safetyOn };
 type Row = Record<string, string | number | null>;
 const day = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
 const nextDay = (t = Date.now()) => Date.parse(day(t) + "T00:00:00Z") + 86_400_000 + 5 * 60_000;
+/** C-5: the first links of an HTML body, which stripping its tags drops; the model reads where a message points. */
+const linksOf = (html: string) => {
+  const links = [...html.matchAll(/\bhref\s*=\s*["']?(https?:[^"'\s>]+)/gi)].map((m) => m[1]!).slice(0, 5);
+  return links.length ? "\n" + links.join("\n") : "";
+};
 /** A queued item; its row's account is the authority (an address renamed moves the row, C-1). */
 const queued = (row: Row): QueueItem => ({ ...(JSON.parse(String(row.payload)) as QueueItem), accountId: String(row.account_id) });
 
@@ -309,8 +316,10 @@ export class CategoriesDO extends DurableObject<Env> {
     if (!screen && !safety && !screened.some((c) => inScope(c.scope, account, projects))) return;
     const item: QueueItem = {
       accountId: account.id, accountEmail: account.email, messageId: event.id, sender: event.sender ?? "", subject: event.subject ?? "",
-      text: stripHtmlToText(event.body ?? "").slice(0, TEXT_CHARS), timestamp: Date.parse(event.date) || Date.now(),
-      ...(screen ? { screen: true, senderName: event.senderName ?? null, verified: event.verified ?? null } : {}),
+      text: (stripHtmlToText(event.body ?? "") + linksOf(event.body ?? "")).slice(0, TEXT_CHARS), timestamp: Date.parse(event.date) || Date.now(),
+      // C-5: a link or an image is something to judge, though stripping the HTML leaves no text of it.
+      ...(screen ? { screen: true, senderName: event.senderName ?? null, verified: event.verified ?? null,
+        ...(/\bhref\s*=|<img\b/i.test(event.body ?? "") ? { linked: true } : {}) } : {}),
       // A Cloudflare body is HTML already; an account's is its text, with its HTML beside it.
       ...(safety ? { safety: true, html: (event.html || (account.id.startsWith("cloudflare:") ? event.body : textToHtml(event.body ?? "")) || "").slice(0, HTML_CHARS) } : {}),
     };
@@ -335,7 +344,11 @@ export class CategoriesDO extends DurableObject<Env> {
 
   private async drain() {
     try {
-      const due = this.sql.exec("SELECT * FROM queue WHERE next_at <= ? ORDER BY next_at, enqueued_at LIMIT ?", Date.now(), BATCH).toArray() as Row[];
+      const rows = this.sql.exec("SELECT * FROM queue WHERE next_at <= ? ORDER BY next_at, enqueued_at LIMIT ?", Date.now(), BATCH).toArray() as Row[];
+      // C-13: one row of a message per drain; another (a backfill beside its arrival) waits for the next one, so it
+      // sees the verdicts the first wrote and is never classified twice side by side.
+      const taken = new Set<string>();
+      const due = rows.filter((row) => { const key = `${row.account_id}|${row.message_id}`; if (taken.has(key)) return false; taken.add(key); return true; });
       for (let i = 0; i < due.length; i += CONCURRENCY)
         await Promise.all(due.slice(i, i + CONCURRENCY).map((row) => this.process(row).catch((error: unknown) => {
           // A failure outside the item's own handling: the item waits a minute, the queue goes on (reliability audit L1).
@@ -395,7 +408,7 @@ export class CategoriesDO extends DurableObject<Env> {
     }
     let spamOwed = !!item.screen && target === "*"
       && !this.sql.exec("SELECT 1 FROM spam_checks WHERE account_id = ? AND message_id = ?", item.accountId, item.messageId).toArray().length;
-    if (spamOwed && tooLittleToJudge(item.text)) {
+    if (spamOwed && !item.linked && tooLittleToJudge(item.text)) {
       this.recordSpamCheck(item, "clean", msg("Too little text to judge"), now);
       spamOwed = false;
     }
