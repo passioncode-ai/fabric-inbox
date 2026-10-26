@@ -130,6 +130,7 @@ Every name the Worker reads (`workers/types.ts`). None is in `wrangler.jsonc` (C
 | `AGENT_MODEL` | var | optional | `@cf/moonshotai/kimi-k2.5` | Workers AI model for address agents and the chat (reply agents use it only without `OPENROUTER_API_KEY`) |
 | `OPENROUTER_API_KEY` | secret | optional | — | Reply agents write on OpenRouter (`REPLY_MODEL`, fallback `REPLY_FALLBACK_MODEL`) and every answer sent without a person is approved by a model of another vendor first; without it, Workers AI writes and nothing checks |
 | `REPLY_MODEL` / `REPLY_FALLBACK_MODEL` | var | optional | `xiaomi/mimo-v2.6-pro` / `deepseek/deepseek-v4.1-flash` | The reply-lane writer and its fallback (open vendors only) |
+| `REPLY_REASONING` | var | optional | the provider's own | The writer's reasoning effort on OpenRouter: `none`, `minimal`, `low`, `medium` or `high` (`default`: the provider's own); the fallback keeps its own. `preview_agent_answer` takes `reasoning` to try one for a preview only (B-174) |
 | `AUTOMATION_MODEL` | var | optional | `@cf/meta/llama-4-scout-17b-16e-instruct` | model for rule conditions and rule drafts |
 | `CATEGORY_MODEL` | var | optional | `@cf/meta/llama-4-scout-17b-16e-instruct` | model that reads a new message against the categories described in words |
 | `CATEGORY_DAILY_LIMIT` | var | optional | `500` | messages the category model reads per UTC day; the rest wait for the next day |

@@ -167,6 +167,8 @@ export interface ModelRequest {
   tools: AgentTool[];
   /** B-130: the run id, carried on every model call's log line. */
   trace?: string;
+  /** B-174: the writer's reasoning effort for this call only (a preview's), over `REPLY_REASONING`; null: the provider's default. */
+  reasoning?: "none" | "minimal" | "low" | "medium" | "high" | null;
 }
 /** `decision` is null when the model finished without calling submit_answer. */
 export type ModelResponse = { decision: ModelDecision | null; text: string; /** The model that wrote it, when known. */ model?: string;

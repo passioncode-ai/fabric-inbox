@@ -87,3 +87,26 @@ test("the reply lane asks the fallback model when the first one ends without a s
   assert.equal(both?.message, "down too");
   assert.deepEqual(both?.calls, { calls: 2, failed: 2, recovered: 0 });
 });
+
+test("B-174: the writer's reasoning effort goes to the first model only; a preview's overrides the server's; the variable is read strictly", async () => {
+  const { openRouterAgentModel, replyReasoning } = await import("../workers/agents/model");
+  const decision = { decision: "send" as const, intent: "q", grounded: true, body: "Hi.", reason: "" };
+  const seen: { id: string; reasoning: unknown }[] = [];
+  const run = (fail: boolean) => async (model: unknown) => {
+    const m = model as { modelId: string; settings: { reasoning?: unknown } };
+    seen.push({ id: m.modelId, reasoning: m.settings.reasoning });
+    if (fail && seen.length === 1) throw new Error("The operation timed out after 90000 ms");
+    return { decision, text: "" } as never;
+  };
+  await openRouterAgentModel("k", {} as never, { reasoning: "low" }, run(true));
+  assert.deepEqual(seen, [{ id: "xiaomi/mimo-v2.6-pro", reasoning: { effort: "low" } }, { id: "deepseek/deepseek-v4.1-flash", reasoning: undefined }]);
+  seen.length = 0;
+  await openRouterAgentModel("k", { reasoning: "medium" } as never, { reasoning: "low" }, run(false));
+  assert.deepEqual(seen, [{ id: "xiaomi/mimo-v2.6-pro", reasoning: { effort: "medium" } }], "a preview's effort wins");
+  seen.length = 0;
+  await openRouterAgentModel("k", { reasoning: null } as never, { reasoning: "low" }, run(false));
+  assert.deepEqual(seen, [{ id: "xiaomi/mimo-v2.6-pro", reasoning: undefined }], "null is the provider's own default");
+  assert.equal(replyReasoning("LOW"), "low");
+  assert.equal(replyReasoning("default"), null);
+  assert.equal(replyReasoning("fast"), replyReasoning(undefined), "an unknown value is the built-in default");
+});

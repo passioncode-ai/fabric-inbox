@@ -3,7 +3,7 @@ import { scanPromptInjection } from "../lib/ai";
 import { allServedDomains } from "../lib/mailbox-store";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
 import { callMcpTool, toolResultText, type ToolTokens } from "../automation/mcp";
-import { openRouterAgentModel, openRouterCheck, openRouterParaphrase, workersAiModel, workersAiParaphrase } from "./model";
+import { openRouterAgentModel, openRouterCheck, openRouterParaphrase, replyReasoning, workersAiModel, workersAiParaphrase } from "./model";
 import { legacyAgentId, readAssignment } from "./definition";
 import type { RunnerDeps } from "./runner";
 import { msg } from "../../shared/i18n";
@@ -98,7 +98,8 @@ export function sharedDeps(env: Env, registry: Registry): Omit<RunnerDeps, "mail
     // With a reply-lane key, answers are written on OpenRouter and checked by another vendor before they
     // leave; without one, the server's own Workers AI writes them and nothing checks them.
     ...(env.OPENROUTER_API_KEY ? {
-      model: (request) => openRouterAgentModel(env.OPENROUTER_API_KEY!, request, { primary: env.REPLY_MODEL, fallback: env.REPLY_FALLBACK_MODEL }),
+      model: (request) => openRouterAgentModel(env.OPENROUTER_API_KEY!, request, { primary: env.REPLY_MODEL, fallback: env.REPLY_FALLBACK_MODEL,
+        reasoning: replyReasoning(env.REPLY_REASONING) }),
       paraphrase: (text) => openRouterParaphrase(env.OPENROUTER_API_KEY!, text, env.REPLY_FALLBACK_MODEL),
       check: (writer, input) => openRouterCheck(env.OPENROUTER_API_KEY!, writer, input),
     } satisfies Pick<RunnerDeps, "model" | "paraphrase" | "check"> : {

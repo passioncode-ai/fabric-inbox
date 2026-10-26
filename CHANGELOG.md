@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.36.1 (2026-10-26)
+
+- **The reply writer's reasoning can be bounded.** A server setting, REPLY_REASONING, sets how hard the
+  reply model thinks before it answers, and the preview_agent_answer tool can try another level on one
+  message without changing anything. Until now the writer had no limit and sometimes ran out of its
+  90 seconds, so the backup model wrote the answer instead (B-174).
+
 ## 0.36.0 (2026-10-26)
 
 - **Reply agents answer Gmail, IMAP and Outlook accounts.** Open an account in Settings → Accounts and
