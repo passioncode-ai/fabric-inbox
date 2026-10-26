@@ -123,6 +123,21 @@ function errorDetails(error: unknown): Record<string, unknown> | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
+/**
+ * B-155: whether a send that did not succeed left. `not_sent` only when nothing can have left: a route
+ * that refused before handing the message over (4xx), or a transport that refused it outright (an
+ * outbox entry `failed`). Everything else, an outcome the server marked unknown, a server error or an
+ * answer that never came, is `unknown`: the message may have left, so a client must never send it
+ * again under a new key.
+ */
+export function sendOutcome(error: unknown): "not_sent" | "unknown" {
+  if (!(error instanceof ApiError)) return "unknown";
+  const status = (error.data as { status?: unknown } | null)?.status;
+  if (status === "failed") return "not_sent";
+  if (typeof status === "string") return "unknown";
+  return error.status < 500 ? "not_sent" : "unknown";
+}
+
 const CONFIRM_FIELD = z.string().min(4).max(40).optional()
   .describe("Leave out on the first call. The first call returns what will happen and a code; call again with the same arguments and that code (valid 5 minutes) to do it.");
 
@@ -201,8 +216,13 @@ export async function runTool(tool: ToolDef, rawArgs: Record<string, unknown>, c
     await journal("failed", errorText(error));
     const details = errorDetails(error);
     const traced = tool.sends && (details?.outboxId || details?.idempotencyKey);
-    return text({ error: errorText(error), ...(error instanceof ApiError ? { status: error.status } : {}), ...(details ? { details } : {}),
-      ...(traced ? { next: "Whether it went out is in get_send_status (outboxId for a Cloudflare mailbox, idempotencyKey for Gmail). Retry only with the same idempotencyKey, never a new one." } : {}) }, true);
+    // B-155: a send says whether anything left, so a refusal never reads like an outcome nobody knows.
+    const outcome = tool.sends ? sendOutcome(error) : undefined;
+    const next = outcome === "unknown"
+      ? `It may have left. ${traced ? "Whether it went out is in get_send_status (outboxId for a Cloudflare mailbox, idempotencyKey for Gmail, IMAP or Outlook), or in Sent. " : "Check Sent. "}Retry only with the same idempotencyKey, never a new one.`
+      : outcome === "not_sent" ? "Nothing left. Fix what the error names, then send again." : undefined;
+    return text({ error: errorText(error), ...(error instanceof ApiError ? { status: error.status } : {}), ...(outcome ? { outcome } : {}), ...(details ? { details } : {}),
+      ...(next ? { next } : {}) }, true);
   }
 }
 
