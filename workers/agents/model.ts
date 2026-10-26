@@ -181,11 +181,14 @@ export const openRouter = (apiKey: string) => createOpenRouter({ apiKey, appName
 /**
  * B-174: how hard the writer reasons (OpenRouter `reasoning.effort`, `REPLY_REASONING`). Unbounded, the
  * writer reached the 90 s limit on 12 of 59 calls of one support address in a week; the fallback then
- * wrote the answer. Anything else in the variable leaves the provider's own default.
+ * wrote the answer. Replayed on 21 of that week's messages (preview_agent_answer, 2026-10-26): with the
+ * provider's default 11 timed out (p50 99 s), with "low" 11 (p50 95 s: about 4,400 reasoning tokens
+ * for an 85-character message), with "none" 0 (p50 22 s, p90 33 s), 17 of 21 decisions the same. So
+ * "none" is the default; "default" in the variable asks for the provider's own.
  */
 export const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high"] as const;
 export type ReasoningEffort = typeof REASONING_EFFORTS[number];
-export const DEFAULT_REPLY_REASONING: ReasoningEffort | null = null;
+export const DEFAULT_REPLY_REASONING: ReasoningEffort | null = "none";
 export function replyReasoning(value: string | undefined): ReasoningEffort | null {
   const v = value?.trim().toLowerCase();
   if (v === "default") return null;

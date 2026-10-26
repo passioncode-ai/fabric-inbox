@@ -24,7 +24,7 @@ export interface Env extends Cloudflare.Env {
 	OPENROUTER_API_KEY?: string;
 	REPLY_MODEL?: string;
 	REPLY_FALLBACK_MODEL?: string;
-	/** B-174: the writer's reasoning effort on OpenRouter (none, minimal, low, medium, high; "default" or unset: the default in model.ts). */
+	/** B-174: the writer's reasoning effort on OpenRouter (none, minimal, low, medium, high; unset: none; "default": the provider's own). */
 	REPLY_REASONING?: string;
 	/** Cloudflare API token for Settings → Domains (secret); permissions in workers/routing/cloudflare-api.ts. */
 	CLOUDFLARE_API_TOKEN?: string;
