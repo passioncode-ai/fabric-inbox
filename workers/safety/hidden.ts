@@ -59,7 +59,9 @@ export function splitHidden(html: string): HiddenText {
   const skipping = () => stack.some((e) => e.skips);
   const token = /<!--([\s\S]*?)(-->|$)|<\/?([a-zA-Z][a-zA-Z0-9-]*)((?:"[^"]*"|'[^']*'|[^'">])*)>|([^<]+|<)/g;
   for (let m: RegExpExecArray | null; (m = token.exec(html)); ) {
-    if (m[1] !== undefined) { keepHidden(m[1]); continue; }
+    // Outlook's conditional comments (`<!--[if mso]>…<![endif]-->`) are layout for one client, not hidden words:
+    // measured on the owner's mail, they were the one hidden "signal" in a newsletter.
+    if (m[1] !== undefined) { if (!/^\s*(\[if\b|<!\[endif\]|\[endif\])/i.test(m[1])) keepHidden(m[1]); continue; }
     if (m[5] !== undefined) {
       if (skipping()) continue;
       const text = decode(m[5]);
