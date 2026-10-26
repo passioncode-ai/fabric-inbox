@@ -798,6 +798,8 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"its safety state could not be read ({error})": "не удалось прочитать его состояние проверки безопасности ({error})",
 	"Held for review by the safety check: {reason}": "Задержала проверка безопасности: {reason}",
 	"Links to a known phishing site: {hosts}": "Ведёт на известный фишинговый сайт: {hosts}",
+	"Carries a file that runs code: {files}": "Во вложении файл, который запускает код: {files}",
+	"An attached file gives orders to an AI": "Приложенный файл даёт указания ИИ",
 	"Not answered again: the message is no longer there for its agent (moved, deleted, or the address or agent was turned off)": "Повторного ответа не будет: агенту больше недоступно это письмо (его переместили или удалили, либо адрес или агента выключили)",
 	"Held for review by the safety check and never released": "Задержала проверка безопасности, и письмо так и не отпустили",
 	"Held for review by the safety check": "Задержала проверка безопасности",

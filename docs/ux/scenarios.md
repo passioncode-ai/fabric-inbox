@@ -1800,15 +1800,15 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   1. A message arrives -> with the check of SCN-087, its links are looked up in the server's copy of the Okolos phishing feed (a listed site, or a page under it), and the text of a PDF or document it carries is read and checked like its body.
   2. Nothing found -> it goes on as before.
   3. A link to a listed phishing site, instructions to an AI inside an attached document, or a file that runs code (a program, a script, an Office file with macros) -> the message is held and marked, with which link or file and why.
-  4. Open the message -> the reader names the dangerous link or file; opening such a link asks first.
+  4. Open the message -> the reader names the dangerous link or file; such a link does not open from the message (it keeps its text, struck through, and says why).
   5. Release it, or keep it -> as in SCN-087.
 - **Expected result:** No agent with tools reads or forwards a message that points to a known phishing site or carries a file that steers or runs code, and the person sees why before opening anything.
 - **Alt paths:** The feed cannot be fetched or its signature does not verify: the last good copy stays in use, and a server that never had one checks links as unchecked (said in the verdict), never as clean. An outside agent over MCP gets the notice of SCN-087 with the link or file named. A document whose text cannot be read is checked by its name and type only, and said so.
-- **UI elements:** SCR-03 (Held for review mark, the reader's verdict panel naming the link or file, a warning before a dangerous link opens).
+- **UI elements:** SCR-03 (Held for review mark, the reader's verdict panel naming the link or file, a dangerous link shown without its address).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** As in SCN-087; a feed that is too old (no update for a day) is named in the verdict.
 - **Status:** draft
-- **Coverage:** (to be written with B-179, B-180)
+- **Coverage:** workers/safety/feed.ts (`refreshFeed`, `linksOf`, `phishingLinks`), vendor/okolos/core-feeds (`applyUpdate`, `matchUrl`), workers/safety/files.ts (`readFiles`, `runsCode`), workers/safety/check.ts (`fileSignals`, `riskyFiles`), workers/categories/store.ts (`phishingFeed`, `toText`, `checkSafety`), workers/durableObject/index.ts (the event's `files`), app/components/EmailIframe.tsx (`blockedHosts`), shared/mail/blocked-links.ts, tests/okolos-feed.test.ts, tests/safety-files.test.ts, tests/safety-workerd.test.ts (B-179, B-180), tests/okolos-vendor.test.ts
 - **Product:** unobserved
-- **Today:** Planned 2026-10-26. The safety check reads the body's visible and hidden text (SCN-087); links and attachments are not looked at yet.
+- **Today:** Built 2026-10-26 (B-179, B-180) for Cloudflare mail; a Gmail, IMAP or Outlook account's files are not read on arrival yet (its links are). A link to a listed site is shown without its address rather than asking first: the message frame is sandboxed without dialogs.
 

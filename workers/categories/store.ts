@@ -40,6 +40,8 @@ export interface QueueItem { accountId: string; accountEmail: string; messageId:
   senderName?: string | null; verified?: string | null;
   /** C-5: the HTML has a link or an image, so it is judged even with little text; its first links are in `text`. */
   linked?: boolean;
+  /** B-179: its files, for the safety check (a Cloudflare message's; an account's files are not read here yet). */
+  files?: MailFile[];
   /** B-178: the message is checked for instructions aimed at agents; its HTML (at most HTML_CHARS) is what is read. */
   safety?: boolean; html?: string }
 
@@ -78,6 +80,7 @@ export const DEFAULT_SAFETY_DAILY_CALLS = 2000;
 const HTML_CHARS = 100_000;
 import { safetyOn } from "../safety/on";
 import { FEED_REFRESH_MS, FEED_STALE_MS, linksOf, phishingLinks, refreshFeed, type FeedEnv, type KeptFeed } from "../safety/feed";
+import { readFiles, type MailFile, type ToText } from "../safety/files";
 export { safetyOn };
 type Row = Record<string, string | number | null>;
 const day = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
@@ -123,6 +126,13 @@ export class CategoriesDO extends DurableObject<Env> {
     return scanPromptInjection(this.env.AI, text, { plain: true });
   }
   /** B-178: the review's model, with no tools: `SAFETY_REVIEW_MODEL`, else the spam check's. Overridden in tests. */
+  /** B-179: turns documents into text with Workers AI (overridden in tests); null without the AI binding. */
+  protected toText(): ToText | null {
+    const ai = this.env.AI as unknown as { toMarkdown?: (files: { name: string; blob: Blob }[]) => Promise<{ name: string; format: string; data?: string; error?: string }[]> } | undefined;
+    if (!ai?.toMarkdown) return null;
+    return async (files) => (await ai.toMarkdown!(files)).map((r) => ({ name: r.name, ...(r.format === "markdown" ? { text: r.data ?? "" } : { error: r.error ?? "failed" }) }));
+  }
+
   /** B-180: fetches the signed Okolos feed (overridden in tests). */
   protected feedFetch(): typeof fetch { return (input, init) => fetch(input, init); }
 
@@ -342,7 +352,8 @@ export class CategoriesDO extends DurableObject<Env> {
       ...(screen ? { screen: true, senderName: event.senderName ?? null, verified: event.verified ?? null,
         ...(/\bhref\s*=|<img\b/i.test(event.body ?? "") ? { linked: true } : {}) } : {}),
       // A Cloudflare body is HTML already; an account's is its text, with its HTML beside it.
-      ...(safety ? { safety: true, html: (event.html || (account.id.startsWith("cloudflare:") ? event.body : textToHtml(event.body ?? "")) || "").slice(0, HTML_CHARS) } : {}),
+      ...(safety ? { safety: true, html: (event.html || (account.id.startsWith("cloudflare:") ? event.body : textToHtml(event.body ?? "")) || "").slice(0, HTML_CHARS),
+        ...(event.files?.length ? { files: event.files.map((f) => ({ key: `attachments/${event.id}/${f.id}/${f.filename}`, filename: f.filename, mimetype: f.mimetype, size: f.size })) } : {}) } : {}),
     };
     this.enqueue(item, "*");
     await this.arm(500);
@@ -554,8 +565,14 @@ export class CategoriesDO extends DurableObject<Env> {
   /** Checks one arriving message, reviews it when suspect, and records where it stands. */
   private async checkSafety(item: QueueItem): Promise<void> {
     const now = Date.now();
-    const findings = await inspectMessage({ subject: item.subject, html: item.html ?? "" }, (text) =>
+    // B-179: what its files say, read before the check so their text is checked with the body.
+    const files = item.files?.length && this.env.BUCKET
+      ? await readFiles(item.files, async (key) => (await this.env.BUCKET!.get(key))?.blob() ?? null, this.toText()).catch(() => null)
+      : null;
+    const findings = await inspectMessage({ subject: item.subject, html: item.html ?? "", files: files?.text ?? "" }, (text) =>
       this.spendSafety() ? this.safetyScan(text) : Promise.resolve({ flagged: false, error: msg("The day's safety budget was spent") }));
+    if (files?.risky.length) findings.riskyFiles = files.risky;
+    if (files?.unread.length) findings.unreadFiles = files.unread;
     // B-180: its links against the server's copy of the Okolos phishing feed.
     const feed = await this.phishingFeed(now).catch(() => null);
     if (!feed) findings.feed = "missing";
@@ -570,12 +587,14 @@ export class CategoriesDO extends DurableObject<Env> {
     if (suspect(findings)) {
       state = "held";
       reason = findings.phishing?.length ? msg("Links to a known phishing site: {hosts}", { hosts: findings.phishing.map((p) => p.host).join(", ") })
+        : findings.riskyFiles?.length ? msg("Carries a file that runs code: {files}", { files: findings.riskyFiles.join(", ") })
+        : findings.fileSignals?.length ? msg("An attached file gives orders to an AI")
         : findings.modelError ? msg("Not checked: {error}", { error: findings.modelError })
         : findings.hiddenSignals.length ? msg("Hidden text addresses an AI")
         : findings.visibleStrong.length ? msg("The text gives orders to an AI")
         : msg("The safety model found instructions aimed at an AI");
       // A listed phishing site is the feed's verdict: no review releases it (a person still can).
-      if (!findings.modelError && !findings.phishing?.length && this.spendSafety()) {
+      if (!findings.modelError && !findings.phishing?.length && !findings.riskyFiles?.length && this.spendSafety()) {
         try {
           const { model, name } = this.reviewModel();
           review = await reviewHeld(model, name, { sender: item.sender, to: item.accountEmail, subject: item.subject,

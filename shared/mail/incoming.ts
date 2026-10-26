@@ -16,4 +16,6 @@ export interface IncomingMailEvent {
   verified?: string | null;
   /** Stored in Discarded on arrival by a discard rule: no consumer acts on it, as if deleted. */
   discarded?: boolean;
+  /** B-179: its files (a Cloudflare message's, stored in R2 under `attachments/<id>/<file id>/<name>`), for the safety check. */
+  files?: { id: string; filename: string; mimetype: string; size: number }[];
 }
