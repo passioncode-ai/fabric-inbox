@@ -50,6 +50,11 @@ be made for you: the server makes keys for a signed-in person only.
 node <plugin>/scripts/onboard.mjs connect --level mail
 ```
 
+A mail key reads and answers mail. Setting up the server's first domain, address or reply agent
+(`connect_domain`, `create_address`, `save_agent`) needs `--level admin`. Connecting again replaces
+the stored key; the step names the earlier key (`replacedKey`), which stays valid until it is revoked
+in Settings → Agent access or with `revoke_agent_key`.
+
 (`<plugin>` is the installed `fabric-inbox` plugin, or `plugins/fabric-inbox` in a checkout;
 `node scripts/onboard.mjs connect` does the same.) It opens a `fabric-inbox://connect` link: the app
 comes forward, names you and the level, and **the person chooses Allow**. The key goes from the app

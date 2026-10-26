@@ -1572,7 +1572,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** A coding agent (Claude Code with the fabric-inbox plugin, or a checkout of the repository) and a Cloudflare account; the app installed.
 - **Steps:**
   1. Ask the agent to set up Fabric Inbox -> it runs the server step; I paste the Cloudflare token into its hidden prompt (or my secret runner gives it), and it reports each step as it runs.
-  2. Open the app -> the welcome offers Use the server your agent set up, with its address -> review names the server, its sign-in and that it has no domains or addresses yet -> Connect and apply -> sign in with the emailed code.
+  2. Open the app -> the welcome offers Use the server your agent set up, with its address -> review names the server, its sign-in and that it has no domains or addresses yet -> Connect and apply -> sign in with the emailed code -> Settings → Domains opens, where the first domain starts the mail.
   3. Tell the agent I am signed in -> it asks the app for a key; the app comes forward and asks me (SCN-047) -> Allow.
   4. The agent registers the server with itself and makes a proving call; Settings → Agent access lists its key with its level.
 - **Expected result:** The agent did every step it could; I pasted the token, signed in and allowed the key, and copied no address, Client ID or secret.

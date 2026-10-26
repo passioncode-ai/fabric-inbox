@@ -1754,6 +1754,9 @@ const gmailConnectLink = defineTool({
   },
 });
 
+/** The provider ids Settings → Accounts opens by (`app/components/settings/sections/providers.ts`): Outlook is `microsoft` (P-1). */
+const settingsProvider = (provider: string) => (provider === "outlook" ? "microsoft" : provider);
+
 // B-154 (DEC-0121 AP-4): the buttons whose step only the person takes. Each tool stands for its
 // button and refuses with human-step-required and the direct link; the person's secret or consent
 // never passes through an agent.
@@ -1770,7 +1773,7 @@ const connectAccount = defineTool({
     const data = (await get(ctx, "/api/accounts")) as { configuration?: string; connectUrl?: string; outlookConnectUrl?: string };
     const url = a.provider === "gmail" ? (data.configuration === "configured" ? data.connectUrl : undefined) : data.outlookConnectUrl;
     if (!url)
-      throw new HumanStepRequired("secret", `/settings/accounts?connect=${a.provider}`,
+      throw new HumanStepRequired("secret", `/settings/accounts?connect=${settingsProvider(a.provider)}`,
         `${a.provider === "gmail" ? "Gmail" : "Outlook"} is not set up on this server yet: the owner enters its client secret at this link first.`);
     throw new HumanStepRequired("consent", url, `The person signs in with ${a.provider === "gmail" ? "Google" : "Microsoft"} and allows access at this link.`);
   },
@@ -1794,7 +1797,7 @@ const setProviderSetup = defineTool({
   input: { provider: z.enum(["gmail", "outlook"]) },
   routes: ["GET /api/accounts"],
   async call(a) {
-    throw new HumanStepRequired("secret", `/settings/accounts?connect=${a.provider}`, `The owner pastes the ${a.provider === "gmail" ? "Google" : "Microsoft"} client secret at this link.`);
+    throw new HumanStepRequired("secret", `/settings/accounts?connect=${settingsProvider(a.provider)}`, `The owner pastes the ${a.provider === "gmail" ? "Google" : "Microsoft"} client secret at this link.`);
   },
 });
 

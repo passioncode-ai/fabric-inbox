@@ -323,6 +323,9 @@ async function deploy(options) {
 
   // 5. The Access application: only this email passes
   let groupName = null;
+  // O-1: a server signed in on its own domain is reached there; workers.dev, which no Access app covers, stays off.
+  let keptOrigin = null;
+  let keptSignIn = false;
   const aud = await attempt('access', 'Only you can open it', async () => {
     const email = String(options.email || '').trim().toLowerCase();
     const apps = await c.list(`${a}/access/apps`, t('read Access applications (Access: Apps and Policies: Edit)'));
@@ -348,7 +351,13 @@ async function deploy(options) {
     if (running) {
       const settings = await c.call(`${a}/workers/scripts/${SCRIPT}/settings`, { what: t('read the server settings (Workers Scripts: Edit)') });
       const current = (settings.result?.bindings || []).find((b) => b.type === 'plain_text' && b.name === 'POLICY_AUD')?.text;
-      if (current) { report('access', 'Only you can open it', 'already', t('The server keeps the sign-in it already has (on its own address); nothing was changed.')); return current; }
+      if (current) {
+        keptSignIn = true;
+        const own = apps.find((x) => x.aud === current && x.domain);
+        if (own) keptOrigin = `https://${String(own.domain).replace(/^https?:\/\//, '').split('/')[0]}`;
+        report('access', 'Only you can open it', 'already', t('The server keeps the sign-in it already has (on its own address); nothing was changed.'));
+        return current;
+      }
     }
     const group = String(options.accessGroup || '').trim().toLowerCase();
     let include;
@@ -383,11 +392,13 @@ async function deploy(options) {
 
   // 8. Reachable at its address
   await attempt('address', 'Open it at its address', async () => {
+    if (keptSignIn) { report('address', 'Open it at its address', 'already', keptOrigin || t('It stays at its own address.')); return; }
     await c.call(`${a}/workers/scripts/${SCRIPT}/subdomain`, { method: 'POST', body: { enabled: true, previews_enabled: false }, what: t('publish on workers.dev (Workers Scripts: Edit)') });
     report('address', 'Open it at its address', 'done', `https://${host}`);
   });
 
-  return { origin: `https://${host}`, accessOrigin: `https://${authDomain}`, steps };
+  // A kept sign-in whose address could not be read leaves the origin unknown: the person names it.
+  return { origin: keptSignIn ? keptOrigin : `https://${host}`, accessOrigin: `https://${authDomain}`, steps };
 }
 
 module.exports = { accounts, inspect, deploy, uploadServer, client, readBundle, compareVersions, DeployError, PERMISSIONS, TOKEN_PAGE, SERVICE_TOKEN_HEADER, SCRIPT: DEFAULT_SCRIPT, validName: (v) => NAME.test(v), validEmail: (v) => EMAIL.test(v) };

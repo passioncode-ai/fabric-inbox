@@ -199,6 +199,8 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Codes by email are on.": "Коды по почте включены.",
 	"The server is already protected; its sign-in rules were kept as they are.": "Сервер уже защищён; его правила входа оставлены как есть.",
 	"The server keeps the sign-in it already has (on its own address); nothing was changed.": "У сервера уже настроен вход (на его собственном адресе); ничего не изменено.",
+	"It stays at its own address.": "Сервер остаётся на своём адресе.",
+	"The server was updated, but its address could not be read. Enter it in Server address.": "Сервер обновлён, но его адрес не удалось прочитать. Укажите его в разделе «Адрес сервера».",
 	"Enter the email address you will sign in with.": "Введите адрес почты, с которым будете входить.",
 	"Only {email} can open the server, with a code sent by email.": "Открыть сервер может только {email} — по коду, который приходит на почту.",
 	"An Access group is named by its id, as Zero Trust shows it.": "Группа Access задаётся своим идентификатором, как его показывает Zero Trust.",
