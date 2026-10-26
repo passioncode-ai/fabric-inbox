@@ -328,3 +328,10 @@ test("N-9: a member's All inboxes leaves out an account the administrator hid, a
   await s.request("GET", "/api/inbox", { query: { account: "gmail:hid" } });
   assert.deepEqual(read, ["cloudflare:me@owner.example", "gmail:hid"]);
 });
+
+test("P-3: the account routes and the agent protocol expect the same origin: Gmail's, else Outlook's, else the server's", async () => {
+  const { expectedAccountOrigin } = await import("../workers/providers/app-origin");
+  const outlookOnly = { MICROSOFT_CLIENT_ID: "id", MICROSOFT_CLIENT_SECRET: "s", PUBLIC_APP_URL: "https://mail.owner.example", MAIL_CREDENTIAL_KEY: Buffer.alloc(32, 7).toString("base64") } as never;
+  assert.equal(expectedAccountOrigin(outlookOnly, "https://inbox.owner.example/mcp"), "https://mail.owner.example");
+  assert.equal(expectedAccountOrigin({} as never, "https://inbox.owner.example/mcp"), "https://inbox.owner.example");
+});

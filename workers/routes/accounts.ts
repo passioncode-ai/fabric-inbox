@@ -13,6 +13,7 @@ import { authorizationProblem } from "../gmail-setup/google-check";
 import { projectNumberOf } from "../../shared/mail/gmail-reasons";
 import { ImapConnectBody, ImapPasswordBody } from "../providers/imap/connect";
 import { authorizeOutcome, microsoftConfiguration } from "../providers/outlook/oauth";
+import { expectedAccountOrigin } from "../providers/app-origin";
 import { renderOutlookResult } from "../microsoft-setup/result-page";
 import { OUTLOOK_CONNECT_PATH } from "../../shared/mail/microsoft-setup";
 import { createT, type Locale, type T } from "../../shared/i18n";
@@ -45,7 +46,7 @@ accountsRouter.use("/api/accounts/*", async (c, next) => {
       return c.json({ error: "not_configured", configuration: microsoft }, 503);
     // Browser mutations require the app's own origin: the configured one (PUBLIC_APP_URL, which Gmail
     // and Outlook share), else the server's. Server tools use DO RPC or set it themselves (mcp/handler.ts).
-    const expected = config.status === "configured" ? config.origin : microsoft.status === "configured" ? microsoft.origin : new URL(c.req.url).origin;
+    const expected = expectedAccountOrigin(c.env, c.req.url);
     if (c.req.header("Origin") !== expected)
       return c.json({ error: "invalid_origin" }, 403);
     const length = Number(c.req.header("Content-Length") || 0);

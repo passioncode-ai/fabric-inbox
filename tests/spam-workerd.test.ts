@@ -409,3 +409,14 @@ test("C-7: a recent message taken out of Spam reaches its agent and categories a
     assert.deepEqual((await call("/agents")).body, [blocked.emailId], "its agent takes it now");
   } finally { await mf.dispose(); }
 });
+
+test("M-9: mail to a plus address lands in the mailbox it extends", async () => {
+  const { mf, call } = await fixture({ SAFETY_CHECK: "off" });
+  try {
+    const raw = `${PASS("customer.invalid")}From: ann@customer.invalid\r\nTo: support+orders@shop.invalid\r\nSubject: Order 7\r\nMessage-ID: <plus-1@customer.invalid>\r\nDate: ${new Date().toUTCString()}\r\nContent-Type: text/plain\r\n\r\nWhere is order 7?\r\n`;
+    const out = await call("/receive", "POST", { to: "support+orders@shop.invalid", raw });
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    const ids = (await call("/ids", "POST", { mailbox: "support@shop.invalid" })).body as { id: string }[];
+    assert.ok(ids.some((r) => r.id === out.body.emailId), JSON.stringify(out.body));
+  } finally { await mf.dispose(); }
+});

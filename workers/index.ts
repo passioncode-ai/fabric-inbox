@@ -113,7 +113,7 @@ app.get("/api/v1/mailboxes", async (c) => {
 // Settings → Addresses, so Cloudflare's rule and the catch-all are kept right.
 app.post("/api/v1/mailboxes", async (c) => {
 	const parsed = CreateMailboxBody.safeParse(await c.req.json().catch(() => null));
-	if (!parsed.success) return c.json({ error: "Invalid mailbox: email and name are required" }, 400);
+	if (!parsed.success) return c.json({ error: msg("Enter the address and its name.") }, 400);
 	const { name, email } = parsed.data;
 	const result = await createAddress(c.env, { email, name, agent: "off", createRoute: !!routingClient(c.env) }, null);
 	if (result.status !== 201) return c.json(result.body, result.status);
@@ -124,7 +124,7 @@ app.post("/api/v1/mailboxes", async (c) => {
 app.get("/api/v1/mailboxes/:mailboxId", async (c) => {
 	const mailboxId = c.req.param("mailboxId")!.toLowerCase();
 	const settings = await readSettings(c.env.BUCKET, mailboxId).catch(() => null);
-	if (!settings) return c.json({ error: "Not found" }, 404);
+	if (!settings) return c.json({ error: msg("This mailbox is not on the server.") }, 404);
 	return c.json({ id: mailboxId, name: typeof settings.fromName === "string" && settings.fromName ? settings.fromName : mailboxId, email: mailboxId, settings });
 });
 
@@ -153,7 +153,7 @@ app.put("/api/v1/mailboxes/:mailboxId", async (c) => {
 		}
 		return merged;
 	});
-	if (!next) return c.json({ error: "Not found" }, 404);
+	if (!next) return c.json({ error: msg("This mailbox is not on the server.") }, 404);
 	return c.json({ id: mailboxId, name: typeof next.fromName === "string" ? next.fromName : mailboxId, email: mailboxId, settings: next });
 });
 
@@ -263,7 +263,7 @@ app.get("/api/v1/mailboxes/:mailboxId/drafts", async (c: AppContext) => c.json({
 
 app.get("/api/v1/mailboxes/:mailboxId/drafts/:id", async (c: AppContext) => {
 	const draft = await c.var.mailboxStub.getEmail(c.req.param("id")!);
-	if (!draft || draft.folder_id !== Folders.DRAFT) return c.json({ error: "Draft not found", code: "draft_not_found" }, 404);
+	if (!draft || draft.folder_id !== Folders.DRAFT) return c.json({ error: msg("The draft is not here any more."), code: "draft_not_found" }, 404);
 	return c.json(draftAnswer(draft));
 });
 
@@ -296,7 +296,7 @@ app.put("/api/v1/mailboxes/:mailboxId/drafts/:id", async (c: AppContext) => {
 	});
 	if (!result.ok) {
 		if (added.length) await c.env.BUCKET.delete(added.map((a) => `attachments/${id}/${a.id}/${a.filename}`)).catch(() => undefined);
-		if (result.code === "too_large") return c.json({ error: "Files are limited to 10 and 5 MB together", code: "message_too_large" }, 413);
+		if (result.code === "too_large") return c.json({ error: msg("Attach up to 10 files, 5 MB in all."), code: "message_too_large" }, 413);
 		const message = result.code === "conflict" ? `The draft changed meanwhile (it is at revision ${result.revision}); open it again to see the change`
 			: result.code === "gone" ? "The draft was sent or deleted meanwhile" : "That id is a message, not a draft";
 		return c.json({ error: message, code: result.code === "conflict" ? "draft_conflict" : result.code === "gone" ? "draft_gone" : "not_a_draft",
@@ -309,7 +309,7 @@ app.put("/api/v1/mailboxes/:mailboxId/drafts/:id", async (c: AppContext) => {
 app.delete("/api/v1/mailboxes/:mailboxId/drafts/:id", async (c: AppContext) => {
 	const id = c.req.param("id")!;
 	const attachments = await c.var.mailboxStub.deleteDraft(id);
-	if (attachments === null) return c.json({ error: "Draft not found", code: "draft_not_found" }, 404);
+	if (attachments === null) return c.json({ error: msg("The draft is not here any more."), code: "draft_not_found" }, 404);
 	if (attachments.length) await c.env.BUCKET.delete(attachments.map((a: { id: string; filename: string }) => `attachments/${id}/${a.id}/${a.filename}`))
 		.catch((error: unknown) => console.warn(JSON.stringify({ event: "draft_cleanup_failed", error: (error as Error).message })));
 	return c.body(null, 204);
@@ -337,7 +337,7 @@ app.post("/api/v1/mailboxes/:mailboxId/drafts/:id/send", async (c: AppContext) =
 
 app.get("/api/v1/mailboxes/:mailboxId/emails/:id", async (c: AppContext) => {
 	const email = await c.var.mailboxStub.getEmail(c.req.param("id")!);
-	if (!email) return c.json({ error: "Email not found" }, 404);
+	if (!email) return c.json({ error: msg("Email not found") }, 404);
 	return new Response(JSON.stringify(email), {
 		headers: { "Content-Type": "application/json" },
 	});
@@ -575,6 +575,15 @@ async function resolveRecipient(candidates: string[], allowedAddresses: string[]
 			// B-27: a paused address keeps its mail but takes none; its mail follows the domain's catch-all.
 			if (await env.BUCKET.head(pausedKey(address))) { paused ??= address; continue; }
 			return { mailboxId: address };
+		}
+	}
+	// M-9: mail to user+tag@domain, with no mailbox of that exact name, is the mailbox user@domain's.
+	for (const tagged of onServedDomain) {
+		const base = tagged.replace(/\+[^@]*@/, "@");
+		if (base === tagged || (allowedAddresses.length && !allowedAddresses.includes(base))) continue;
+		if (await env.BUCKET.head(`mailboxes/${base}.json`) && !(await env.BUCKET.head(pausedKey(base)))) {
+			console.log(JSON.stringify({ event: "subaddress_mail", domain: domainOf(base) }));
+			return { mailboxId: base };
 		}
 	}
 	const address = paused ?? onServedDomain[0];
