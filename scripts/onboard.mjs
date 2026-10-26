@@ -71,9 +71,11 @@ async function serverBundle(say) {
   return dir;
 }
 
-export async function stepServer(opts, { say, deployer = require('../desktop/cloudflare-deploy.cjs'), token: given, bundle = serverBundle } = {}) {
+export async function stepServer(opts, { say, deployer = require('../desktop/cloudflare-deploy.cjs'), token: given, bundle = serverBundle,
+  fetchImpl = require('../desktop/http1-fetch.cjs').http1Fetch } = {}) {
   const token = given ?? await readToken({ envName: opts['token-env'] });
-  const accounts = await deployer.accounts(token);
+  // B-175: Cloudflare's API over HTTP/1.1; Node's own fetch (HTTP/2) lost every upload of a deploy on Node 26.
+  const accounts = await deployer.accounts(token, fetchImpl);
   if (!accounts.length) throw new OnboardError('no_account', 'The token reaches no Cloudflare account.');
   const account = opts.account ? accounts.find((a) => a.id === opts.account) : accounts.length === 1 ? accounts[0] : null;
   if (!account) throw new OnboardError('choose_account', `The token reaches ${accounts.length} accounts; pass --account with one of: ${accounts.map((a) => `${a.id} (${a.name})`).join(', ')}.`);
@@ -85,7 +87,7 @@ export async function stepServer(opts, { say, deployer = require('../desktop/clo
   if ((script === undefined) !== (bucket === undefined)) throw new OnboardError('invalid_name', 'Give --script and --bucket together, so a second server never shares the first one\'s storage.');
   const bundleDir = await bundle(say);
   const result = await deployer.deploy({ token, accountId: account.id, bundleDir, subdomain: opts.subdomain, team: opts.team, email: opts.email, accessGroup: opts['access-group'],
-    ...(script ? { scriptName: script, bucketName: bucket } : {}),
+    ...(script ? { scriptName: script, bucketName: bucket } : {}), fetchImpl,
     onStep: (s) => say({ step: `server.${s.id}`, outcome: s.outcome, detail: s.detail }) });
   if (opts['keep-record']) {
     say({ step: 'server', outcome: 'done', detail: result.origin, human: `The server is at ${result.origin}. This computer's record still names its first server; sign in at ${result.origin} with the code sent to your email.` });

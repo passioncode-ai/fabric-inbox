@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.36.4 (2026-10-26)
+
+- **A coding agent can set up a server with Node 26.** The setup script now talks to Cloudflare over a
+  plain connection per request. Before, Node 26 lost the uploads of a deploy and stopped with a network
+  error (B-175).
+
 ## 0.36.3 (2026-10-26)
 
 - **A second server can run in a Cloudflare account that already has one.** An organization without an
