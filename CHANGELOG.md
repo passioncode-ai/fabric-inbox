@@ -5,6 +5,22 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.42.0 (2026-10-26)
+
+The third round of fixes from the bug hunt: notifications and the first steps.
+
+- **New-mail notifications miss nothing and repeat nothing.** Gmail, IMAP and Outlook mail that syncs after
+  a newer message is announced, the same email in two inboxes is announced once, and nothing is shown after
+  you turn notifications off.
+- **A member's All inboxes leaves out the accounts an administrator hid,** as the administrator's does.
+- **Creating your server finishes on a slow connection.**
+- **Mail to a plus address, like you+orders@, lands in your mailbox.**
+- **Replies from the app keep their conversation** in the recipient's mail.
+- **A forwarding copy that never settled no longer blocks renaming an address** after a day.
+- **Agents can act on accounts on a server with only Outlook set up.**
+- **The empty inbox names every way to start:** Gmail, Outlook, other mail, or a domain of your own.
+- **Errors when creating an address show in Russian** in the Russian app.
+
 ## 0.41.0 (2026-10-26)
 
 The second round of fixes from the bug hunt: agents, rules, first setup and access.

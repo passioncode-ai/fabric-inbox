@@ -33,7 +33,7 @@ flowchart LR
 ## Inbound mail on a project address
 
 1. `workers/app.ts (email)` → `handleIncomingEmail` → `receiveEmail` (`workers/index.ts`).
-2. Oversize mail is bounced. The SMTP envelope recipient is resolved by `resolveRecipient`:
+2. Oversize mail is bounced. The SMTP envelope recipient is resolved by `resolveRecipient` (a `user+tag@` address with no mailbox of its own is `user@`'s, M-9):
    a served domain (`DOMAINS`) and an existing `mailboxes/<address>.json` in R2, else the
    domain's catch-all from `UNKNOWN_ADDRESS_POLICY`, else a permanent rejection. Unknown
    addresses are recorded without sender or body (`recordUnknownRecipient`).
