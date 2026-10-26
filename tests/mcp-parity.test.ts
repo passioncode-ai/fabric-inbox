@@ -7,7 +7,7 @@ import { z } from "zod";
 import { TOOLS } from "../workers/mcp/tools";
 import { call, CF, CF_BOX, cfEmail, fakeApi, GMAIL_ACCOUNTS, gmailMessage, HI_BASE64, ok, type Call } from "./mcp-fake-api";
 
-const posted = (calls: Call[]) => calls.find((c) => c.method === "POST" || c.method === "PUT")!.body as Record<string, unknown>;
+const posted = (calls: Call[]) => calls.find((c) => (c.method === "POST" || c.method === "PUT") && !c.path.startsWith("/api/safety/"))!.body as Record<string, unknown>;
 const pdf = { filename: "invoice.pdf", type: "application/pdf", base64: HI_BASE64 };
 
 // ── Gap 1 (part): read_message carries In-Reply-To and Bcc ──────────

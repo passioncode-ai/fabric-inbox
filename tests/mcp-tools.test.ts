@@ -19,7 +19,8 @@ function fakeApi(answers: Record<string, Answer>) {
     async request(method, path, init = {}) {
       const call = { method, path, query: init.query, body: init.body };
       calls.push(call);
-      const answer = answers[`${method} ${path}`];
+      // B-178: a server whose safety check holds nothing, unless the test says otherwise.
+      const answer = answers[`${method} ${path}`] ?? (`${method} ${path}` === "POST /api/safety/lookup" ? ok({ records: {} }) : undefined);
       if (!answer) return { status: 404, data: { error: `no route ${method} ${path}` }, contentType: "application/json" };
       return typeof answer === "function" ? answer(call) : answer;
     },
@@ -73,7 +74,7 @@ test("reply answers the Reply-To address, not the sender, on both providers, and
   assert.equal(read.data.replyTo, "\"Help, Desk\" <help@customer.invalid>, team@customer.invalid");
   const sent = await call(cf.api, "reply", { accountId: `cloudflare:${CF}`, messageId: "m1", text: "Soon.", idempotencyKey: "r1" });
   assert.equal(sent.isError, false, JSON.stringify(sent.data));
-  const body = cf.calls.find((c) => c.method === "POST")!.body as { to: string[] };
+  const body = cf.calls.find((c) => c.method === "POST" && !c.path.startsWith("/api/safety/"))!.body as { to: string[] };
   assert.deepEqual(body.to, ["help@customer.invalid", "team@customer.invalid"]);
 
   const gm = fakeApi({
@@ -85,7 +86,7 @@ test("reply answers the Reply-To address, not the sender, on both providers, and
   assert.equal(gread.data.replyTo, "Help <help@customer.invalid>");
   const gsent = await call(gm.api, "reply", { accountId: "gmail:g1", messageId: "m1", text: "Soon.", idempotencyKey: "r2" });
   assert.equal(gsent.isError, false, JSON.stringify(gsent.data));
-  assert.deepEqual((gm.calls.find((c) => c.method === "POST")!.body as { to: string[] }).to, ["help@customer.invalid"]);
+  assert.deepEqual((gm.calls.find((c) => c.method === "POST" && !c.path.startsWith("/api/safety/"))!.body as { to: string[] }).to, ["help@customer.invalid"]);
 
   const plain = fakeApi({
     [`GET ${CF_BOX}/emails/m1`]: ok(cfEmail({ raw_headers: JSON.stringify([{ key: "reply-to", value: "not an address" }]) })),
@@ -93,7 +94,7 @@ test("reply answers the Reply-To address, not the sender, on both providers, and
     [`POST ${CF_BOX}/emails/m1/reply`]: ok({ id: "ob-2", status: "accepted" }),
   });
   await call(plain.api, "reply", { accountId: `cloudflare:${CF}`, messageId: "m1", text: "Hi.", idempotencyKey: "r3" });
-  assert.deepEqual((plain.calls.find((c) => c.method === "POST")!.body as { to: string[] }).to, ["ann@customer.invalid"], "a Reply-To with no address falls back to the sender");
+  assert.deepEqual((plain.calls.find((c) => c.method === "POST" && !c.path.startsWith("/api/safety/"))!.body as { to: string[] }).to, ["ann@customer.invalid"], "a Reply-To with no address falls back to the sender");
 });
 
 // ── 2. Gmail reply-all ──────────────────────────────────────────────
@@ -108,7 +109,7 @@ test("a Gmail reply-all keeps the Cc and leaves out the account's own address (a
   assert.equal(read.data.cc, "carol@customer.invalid, ME@gmail.invalid");
   const sent = await call(gm.api, "reply", { accountId: "gmail:g1", messageId: "m1", text: "All of you.", idempotencyKey: "r1", replyAll: true });
   assert.equal(sent.isError, false, JSON.stringify(sent.data));
-  const body = gm.calls.find((c) => c.method === "POST")!.body as { to: string[]; cc: string[] };
+  const body = gm.calls.find((c) => c.method === "POST" && !c.path.startsWith("/api/safety/"))!.body as { to: string[]; cc: string[] };
   assert.deepEqual(body.to, ["ann@customer.invalid"]);
   assert.deepEqual(body.cc, ["bob@customer.invalid", "carol@customer.invalid"]);
 });

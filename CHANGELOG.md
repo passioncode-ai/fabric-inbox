@@ -5,6 +5,16 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.39.0 (2026-10-26)
+
+- **Mail that tries to steer your agents is held from them.** Every arriving message is now checked for
+  orders aimed at an AI, in its visible text and in text hidden from you, by fixed signals from Okolos and
+  a light model. A suspect message is reviewed by a second model that has no tools; unless it finds the
+  message safe, the message stays held: rules wait, the reply agent leaves it to you, and agents get a
+  notice instead of its text and attachments and cannot forward it. You see why and the hidden text on
+  the message, and release it or keep it held; an agent can only ask, and the release waits for your
+  approval (B-178).
+
 ## 0.38.0 (2026-10-26)
 
 - **A coding agent hands the person the exact place for the steps only they can take.** Asked to connect

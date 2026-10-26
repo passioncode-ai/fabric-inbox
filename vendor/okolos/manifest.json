@@ -1,0 +1,8 @@
+{
+  "source": "https://github.com/passioncode-ai/okolos",
+  "commit": "5d55f85addd5",
+  "files": {
+    "core-injection/signals.ts": { "from": "packages/core-injection/src/signals.ts", "sha256": "d7e8731a9e47c6bfd3cdd1518fec474f5aaf95d06f0330133c34fc627fe54b59" },
+    "core-injection/chars.ts": { "from": "packages/core-injection/src/chars.ts", "sha256": "23a160e509b986a9d7976b8e47c86fef7915774f87d27933fcb36a93f10431e5" }
+  }
+}

@@ -128,6 +128,8 @@ export interface IncomingEvent {
   subject: string;
   sender: string;
   body: string;
+  /** B-178: the HTML part, for the safety check's hidden text (at most 200,000 characters). */
+  html?: string;
   date: string;
 }
 interface PendingEvent {
@@ -1446,6 +1448,7 @@ export class AccountService {
           sender: message.from,
           // HTML-only mail has no text part; categories strip HTML on ingest (as the backfill does).
           body: message.text || message.html || "",
+          ...(message.html ? { html: message.html.slice(0, 200_000) } : {}),
           date: message.date || new Date(message.timestamp || Date.now()).toISOString(),
         });
         await this.store.transaction(async (tx) => {

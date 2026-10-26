@@ -70,8 +70,11 @@ const MAILBOX_ROUTE = /^[A-Z]+ \/api\/v1\/mailboxes\/:mailboxId(\/|$)/;
 const GMAIL_ROUTE = /^[A-Z]+ \/api\/accounts\/:accountId(\/|$)/;
 
 /** Whether every route of a tool stays inside one mailbox, or reads the feed. */
+/** B-178: the safety check's routes, narrowed to a key's mailboxes by scopedApi (their accounts are in the body). */
+export const SAFETY_ROUTES = new Set(["POST /api/safety/lookup", "GET /api/safety/held", "POST /api/safety/decide"]);
+
 export function toolFitsScope(tool: Pick<ToolDef, "routes">): boolean {
-  return tool.routes.length > 0 && tool.routes.every((r) => FEED_ROUTES.has(r) || MAILBOX_ROUTE.test(r) || GMAIL_ROUTE.test(r));
+  return tool.routes.length > 0 && tool.routes.every((r) => FEED_ROUTES.has(r) || SAFETY_ROUTES.has(r) || MAILBOX_ROUTE.test(r) || GMAIL_ROUTE.test(r));
 }
 
 /**
@@ -122,6 +125,18 @@ export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubje
       const pathname = path.split("?")[0]!;
       const route = `${method} ${pathname}`;
       if (FEED_ROUTES.has(route)) return narrowFeed(route, init);
+      // B-178: the safety check's routes name their messages' accounts in the body, or list every account's.
+      if (route === "POST /api/safety/lookup" || route === "POST /api/safety/decide") {
+        const b = (init.body && typeof init.body === "object" ? init.body : {}) as { keys?: { accountId?: unknown }[]; accountId?: unknown };
+        const named = route === "POST /api/safety/decide" ? [b.accountId] : (b.keys ?? []).map((k) => k?.accountId);
+        if (!named.length || !named.every((id) => typeof id === "string" && allowedLower.has(id.toLowerCase()))) throw refuse(accounts, who);
+        return api.request(method, path, init);
+      }
+      if (route === "GET /api/safety/held") {
+        const response = await api.request(method, path, init);
+        const data = response.data as { held?: { accountId?: unknown }[] } | null;
+        return data && Array.isArray(data.held) ? { ...response, data: { ...data, held: data.held.filter((h) => allowedLower.has(String(h.accountId).toLowerCase())) } } : response;
+      }
       const account = accountOfPath(pathname, allowed);
       if (!account || !allowed.has(account)) throw refuse(accounts, who);
       return api.request(method, path, init);

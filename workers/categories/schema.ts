@@ -47,4 +47,15 @@ export const CATEGORIES_STEPS: readonly SchemaStep[] = [
     `CREATE INDEX IF NOT EXISTS verdicts_parked_by_content ON verdicts_parked(account_id, timestamp)`,
     `CREATE INDEX IF NOT EXISTS verdicts_parked_age ON verdicts_parked(parked_at)`,
   ]),
+  // B-178: each arriving message's safety check (instructions aimed at agents), its review, and who decided last;
+  // and the check's own daily budget.
+  statements("4_safety", [
+    `CREATE TABLE IF NOT EXISTS safety (account_id TEXT NOT NULL, message_id TEXT NOT NULL, state TEXT NOT NULL,
+       findings TEXT NOT NULL, review TEXT, reason TEXT NOT NULL, checked_at INTEGER NOT NULL, decided_by TEXT NOT NULL,
+       decided_at INTEGER NOT NULL, timestamp INTEGER NOT NULL, subject TEXT NOT NULL, sender TEXT NOT NULL,
+       PRIMARY KEY (account_id, message_id))`,
+    `CREATE INDEX IF NOT EXISTS safety_held ON safety(state, timestamp DESC)`,
+    `CREATE INDEX IF NOT EXISTS safety_age ON safety(checked_at)`,
+    `CREATE TABLE IF NOT EXISTS safety_budget (day TEXT PRIMARY KEY, calls INTEGER NOT NULL)`,
+  ]),
 ];

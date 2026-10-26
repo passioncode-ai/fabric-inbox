@@ -1,4 +1,5 @@
 import type { Env } from "../types";
+import { isHeld, safetyKey } from "../safety/state";
 import { scanPromptInjection } from "../lib/ai";
 import { allServedDomains } from "../lib/mailbox-store";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
@@ -95,6 +96,14 @@ export function sharedDeps(env: Env, registry: Registry): Omit<RunnerDeps, "mail
     },
     // The prompt and tool outputs are scanned exactly as the model reads them (bug hunt 2026-10-12).
     injection: (text) => scanPromptInjection(env.AI, text, { plain: true }),
+    // B-178: the arrival check's state; an address's messages are the categories' `cloudflare:<address>`.
+    ...(env.CATEGORIES ? {
+      async held(mailboxId: string, emailId: string) {
+        const accountId = mailboxId.includes("@") ? `cloudflare:${mailboxId.toLowerCase()}` : mailboxId.toLowerCase();
+        const record = (await env.CATEGORIES.getByName("workspace").safetyOf([{ accountId, messageId: emailId }]))[safetyKey(accountId, emailId)];
+        return record && isHeld(record.state) ? record.reason || msg("held for review") : null;
+      },
+    } : {}),
     // With a reply-lane key, answers are written on OpenRouter and checked by another vendor before they
     // leave; without one, the server's own Workers AI writes them and nothing checks them.
     ...(env.OPENROUTER_API_KEY ? {

@@ -38,6 +38,8 @@ function harness(options: {
   /** Other addresses of the workspace that have an agent (B-22). */
   served?: string[];
   claim?: (key: string, mailboxId: string, elected: string) => MessageClaim;
+  /** B-178: the arrival check's answer for the message (a reason when held). */
+  held?: string | null | Error;
 } = {}) {
   const runs = new Map<string, AgentRun>();
   const effects: { sends: unknown[]; drafts: { id: string; text: string }[]; modelCalls: number; assignments: string[]; ensured: string[]; claims: { key: string; mailboxId: string; elected: string }[] } =
@@ -79,6 +81,7 @@ function harness(options: {
       }),
       async createDraft(draft) { if (!effects.drafts.some((d) => d.id === draft.id)) effects.drafts.push({ id: draft.id, text: draft.text }); },
     },
+    ...(options.held !== undefined ? { async held() { if (options.held instanceof Error) throw options.held; return options.held as string | null; } } : {}),
     async injection(text) {
       if (options.injectionFor) return { flagged: options.injectionFor(text) };
       return options.injection === "error" ? { flagged: true, error: "Binding AI needs to be run remotely" } : { flagged: options.injection ?? false };
@@ -1400,4 +1403,18 @@ test("B-171 REQ-4: on an account, a day-old held message gets its waiting reply 
   assert.equal(sends.length, 3);
   assert.equal(sends[2]!.request.idempotencyKey, `${held.id}:closing`);
   assert.deepEqual(sends[2]!.options, { autoSubmitted: true });
+});
+
+test("B-178: a message the arrival check holds is never read by the model and waits for a person, like a flagged one", async () => {
+  const held = harness({ held: "Hidden text addresses an AI" });
+  const run = (await held.run())!;
+  assert.deepEqual([run.status, run.injection], ["skipped", true]);
+  assert.equal(run.reason, "Held for review by the safety check: Hidden text addresses an AI");
+  // A state that cannot be read holds it too; a message never held goes on to the model.
+  const unread = harness({ held: new Error("store reset") });
+  assert.match((await unread.run())!.reason, /^Held for review by the safety check: its safety state could not be read \(store reset\)$/);
+  const clear = harness({ held: null });
+  assert.notEqual((await clear.run())!.status, "skipped");
+  for (const h of [held, unread]) assert.equal(h.effects.modelCalls + h.effects.sends.length + h.effects.drafts.length, 0);
+  assert.equal(clear.effects.modelCalls, 1);
 });

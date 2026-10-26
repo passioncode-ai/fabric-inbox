@@ -42,9 +42,11 @@ export interface GmailBindings extends AccountsEnvironment {
   MAILBOX?: MailboxNamespace;
   AUTOMATIONS?: { getByName(name: string): AutomationStub };
   /** B-171: the reply agents' registry, handed the new mail of an account that has an agent. */
-  AGENT_REGISTRY?: { getByName(name: string): { enqueue(mailboxId: string, emailId: string): Promise<void> } };
-  CATEGORIES?: { getByName(name: string): { ingest(account: { id: string; email: string }, event: { id: string; sender: string; subject: string; body: string; date: string }): Promise<void> } };
+  AGENT_REGISTRY?: { getByName(name: string): { enqueue(mailboxId: string, emailId: string, options?: { holdMs?: number }): Promise<void> } };
+  CATEGORIES?: { getByName(name: string): { ingest(account: { id: string; email: string }, event: { id: string; sender: string; subject: string; body: string; html?: string; date: string }): Promise<void> } };
 }
+/** B-178: how long an account's reply agent waits for the message's safety check, as a Cloudflare address waits for its spam check. */
+const SAFETY_HOLD_MS = 15 * 60_000;
 /** Whether an account has a reply agent chosen for it (off by default: no settings, no agent). */
 async function accountHasAgent(bucket: R2Bucket, account: string): Promise<boolean> {
   const object = await bucket.get(accountSettingsKey(account));
@@ -79,13 +81,16 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     let emails: Map<string, string> | undefined;
     const answered = new Map<string, Promise<boolean>>();
     await this.service.drainEvents(async (event: IncomingEvent) => {
-      const payload = { id: event.emailId, sender: event.sender, subject: event.subject, body: event.body, date: event.date, thread_id: event.threadId };
+      const payload = { id: event.emailId, sender: event.sender, subject: event.subject, body: event.body, date: event.date, thread_id: event.threadId,
+        ...(event.html ? { html: event.html } : {}) };
       // B-171: an account with a reply agent hands its new mail to the agent first; a failure retries the
       // whole event, and enqueuing the same message again changes nothing.
       const registry = this.env.AGENT_REGISTRY, bucket = this.env.BUCKET;
       if (registry && bucket) {
         if (!answered.has(event.account)) answered.set(event.account, accountHasAgent(bucket, event.account));
-        if (await answered.get(event.account)) await registry.getByName("workspace").enqueue(event.account, event.emailId);
+        // B-178: it waits for the message's safety check, which releases it (CategoriesDO.releaseAgent).
+        if (await answered.get(event.account)) await registry.getByName("workspace").enqueue(event.account, event.emailId,
+          this.env.CATEGORIES ? { holdMs: SAFETY_HOLD_MS } : {});
       }
       if (this.env.AUTOMATIONS) await this.env.AUTOMATIONS.getByName(event.account).ingest(event.account, payload);
       if (this.env.CATEGORIES) {

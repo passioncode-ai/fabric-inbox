@@ -5,7 +5,7 @@ import { createWorkersAI } from "workers-ai-provider";
 import type { LanguageModel } from "ai";
 import type { Env } from "../types";
 import type { InboxMessage } from "../../shared/mail/inbox";
-import { stripHtmlToText } from "../lib/email-helpers";
+import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
 import { readInbox } from "../routes/inbox";
 import { inboxSources } from "../lib/inbox-sources";
 import {
@@ -17,6 +17,10 @@ import { judgeSpam, DEFAULT_SPAM_MODEL, type SpamInput, type SpamJudgement } fro
 import { tooLittleToJudge } from "../../shared/mail/spam";
 import { parseRemoteAccount } from "../../shared/mail/accounts";
 import { msg } from "../../shared/i18n";
+import { scanPromptInjection } from "../lib/ai";
+import { inspectMessage, suspect, type SafetyFindings } from "../safety/check";
+import { splitHidden } from "../safety/hidden";
+import { reviewHeld, type SafetyReview } from "../safety/review";
 
 /**
  * Categories (CAT-1..CAT-4): one store per workspace (`getByName("workspace")`).
@@ -33,7 +37,12 @@ export interface QueueItem { accountId: string; accountEmail: string; messageId:
   /** The model also judges it for spam (SP-2): a Cloudflare message no rule decided. */
   screen?: boolean;
   /** For the spam check (B-172): the sender's shown name and the domain Cloudflare's MX verified. */
-  senderName?: string | null; verified?: string | null }
+  senderName?: string | null; verified?: string | null;
+  /** B-178: the message is checked for instructions aimed at agents; its HTML (at most HTML_CHARS) is what is read. */
+  safety?: boolean; html?: string }
+
+export { isHeld, safetyKey, type SafetyRecord, type SafetyState } from "../safety/state";
+import { isHeld, safetyKey, type SafetyRecord, type SafetyState } from "../safety/state";
 export interface VerdictRow { categoryId: string; accountId: string; messageId: string; matched: boolean; reason: string; source: "rule" | "model" | "error"; timestamp: number; subject: string; sender: string }
 export interface CategoryStats { matched: number; fresh: number; classified: number; pending: number; errors: number; waitingBudget: number; backfill: { total: number; done: number; state: "idle" | "running" | "done" | "failed"; detail: string } }
 export type CategoryView = Category & { stats: CategoryStats };
@@ -62,6 +71,11 @@ export const VERDICT_RETENTION_MS = 30 * 86_400_000;
 const PRUNE_BATCH = 500;
 const PRUNE_EVERY_MS = 3_600_000;
 export const DEFAULT_SPAM_DAILY_CALLS = 300;
+/** B-178: model calls of the safety check and its reviews per day; over it a message is held as unchecked. */
+export const DEFAULT_SAFETY_DAILY_CALLS = 2000;
+const HTML_CHARS = 100_000;
+import { safetyOn } from "../safety/on";
+export { safetyOn };
 type Row = Record<string, string | number | null>;
 const day = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
 const nextDay = (t = Date.now()) => Date.parse(day(t) + "T00:00:00Z") + 86_400_000 + 5 * 60_000;
@@ -93,6 +107,20 @@ export class CategoriesDO extends DurableObject<Env> {
   protected dailySpamCalls(): number {
     const n = Number(this.env.SPAM_DAILY_LIMIT);
     return Number.isInteger(n) && n > 0 ? n : DEFAULT_SPAM_DAILY_CALLS;
+  }
+  /** B-178: the light model that reads a message for instructions aimed at agents. Overridden in tests. */
+  protected safetyScan(text: string): Promise<{ flagged: boolean; error?: string }> {
+    return scanPromptInjection(this.env.AI, text, { plain: true });
+  }
+  /** B-178: the review's model, with no tools: `SAFETY_REVIEW_MODEL`, else the spam check's. Overridden in tests. */
+  protected reviewModel(): { model: LanguageModel; name: string } {
+    const workersai = createWorkersAI({ binding: this.env.AI });
+    const name = this.env.SAFETY_REVIEW_MODEL || this.env.SPAM_MODEL || DEFAULT_SPAM_MODEL;
+    return { model: workersai(name as Parameters<typeof workersai>[0]), name };
+  }
+  protected dailySafetyCalls(): number {
+    const n = Number(this.env.SAFETY_DAILY_LIMIT);
+    return Number.isInteger(n) && n > 0 ? n : DEFAULT_SAFETY_DAILY_CALLS;
   }
   /** Moves a message the model judged spam (SP-2). Overridden in tests. */
   protected async moveToSpam(item: QueueItem, reason: string): Promise<boolean> {
@@ -268,17 +296,21 @@ export class CategoriesDO extends DurableObject<Env> {
    * Idempotent by (account, message): a redelivery is a no-op. Nothing is queued when
    * no enabled screened category exists, so an idle workspace costs nothing.
    */
-  async ingest(account: AccountRef, event: { id: string; sender: string; subject: string; body: string; date: string; screen?: boolean; spam?: boolean;
+  async ingest(account: AccountRef, event: { id: string; sender: string; subject: string; body: string; html?: string; date: string; screen?: boolean; spam?: boolean;
     senderName?: string | null; verified?: string | null }): Promise<void> {
     if (event.spam) return;
     const screened = (await this.categories()).filter((c) => c.enabled && c.kind === "screened");
     const projects = await this.listProjects();
     const screen = !!event.screen && account.id.startsWith("cloudflare:");
-    if (!screen && !screened.some((c) => inScope(c.scope, account, projects))) return;
+    // Without the AI binding the check is not set up here (a test, a partial deploy), as without this store.
+    const safety = safetyOn(this.env) && !!this.env.AI;
+    if (!screen && !safety && !screened.some((c) => inScope(c.scope, account, projects))) return;
     const item: QueueItem = {
       accountId: account.id, accountEmail: account.email, messageId: event.id, sender: event.sender ?? "", subject: event.subject ?? "",
       text: stripHtmlToText(event.body ?? "").slice(0, TEXT_CHARS), timestamp: Date.parse(event.date) || Date.now(),
       ...(screen ? { screen: true, senderName: event.senderName ?? null, verified: event.verified ?? null } : {}),
+      // A Cloudflare body is HTML already; an account's is its text, with its HTML beside it.
+      ...(safety ? { safety: true, html: (event.html || (account.id.startsWith("cloudflare:") ? event.body : textToHtml(event.body ?? "")) || "").slice(0, HTML_CHARS) } : {}),
     };
     this.enqueue(item, "*");
     await this.arm(500);
@@ -324,14 +356,18 @@ export class CategoriesDO extends DurableObject<Env> {
   private async process(row: Row) {
     await this.decide(row);
     const item = JSON.parse(String(row.payload)) as QueueItem;
-    if (item.screen && this.sql.exec("SELECT 1 FROM spam_checks WHERE account_id = ? AND message_id = ?", item.accountId, item.messageId).toArray().length)
-      await this.releaseAgent(item);
+    if (!item.screen && !item.safety) return;
+    // The agent answers once its spam check has answered (B-30) and its safety check let it through (B-178).
+    const spamDone = !item.screen || this.sql.exec("SELECT 1 FROM spam_checks WHERE account_id = ? AND message_id = ?", item.accountId, item.messageId).toArray().length > 0;
+    const state = item.safety ? this.safetyState(item.accountId, item.messageId) : "clear";
+    if (spamDone && state !== undefined && !isHeld(state)) await this.releaseAgent(item);
   }
 
-  /** The agent of a Cloudflare message held for its spam check may answer now. Overridden in tests. */
+  /** The agent of a message held for its checks may answer now: a Cloudflare address's, or an account's (B-178). Overridden in tests. */
   protected async releaseAgent(item: QueueItem): Promise<void> {
-    if (!this.env.AGENT_REGISTRY || !item.accountId.startsWith("cloudflare:")) return;
-    await this.env.AGENT_REGISTRY.getByName("workspace").release(item.accountId.slice("cloudflare:".length), item.messageId)
+    if (!this.env.AGENT_REGISTRY) return;
+    const mailbox = item.accountId.startsWith("cloudflare:") ? item.accountId.slice("cloudflare:".length) : item.accountId;
+    await this.env.AGENT_REGISTRY.getByName("workspace").release(mailbox, item.messageId)
       .catch((error: unknown) => console.warn(JSON.stringify({ event: "agent_release_failed", error: (error as Error)?.message?.slice(0, 200) })));
   }
 
@@ -339,6 +375,8 @@ export class CategoriesDO extends DurableObject<Env> {
   private async decide(row: Row) {
     const item = JSON.parse(String(row.payload)) as QueueItem;
     const target = String(row.target);
+    // B-178: the safety check comes first and never fails the item: what it cannot check it holds.
+    if (item.safety && target === "*" && this.safetyState(item.accountId, item.messageId) === undefined) await this.checkSafety(item);
     const account: AccountRef = { id: item.accountId, email: item.accountEmail };
     const projects = await this.listProjects();
     const owed = (await this.categories()).filter((c) => c.enabled && c.kind === "screened" && (target === "*" || c.id === target)
@@ -456,6 +494,93 @@ export class CategoriesDO extends DurableObject<Env> {
     this.sql.exec("INSERT OR REPLACE INTO spam_checks (account_id, message_id, verdict, reason, checked_at) VALUES (?, ?, ?, ?, ?)",
       item.accountId, item.messageId, verdict, reason.slice(0, 300), now);
     this.sql.exec("DELETE FROM spam_checks WHERE checked_at < ?", now - 90 * 86_400_000);
+  }
+
+  // ── Safety (B-178) ─────────────────────────────────────────────
+
+  private safetyState(accountId: string, messageId: string): SafetyState | undefined {
+    const row = this.sql.exec("SELECT state FROM safety WHERE account_id = ? AND message_id = ?", accountId, messageId).toArray()[0] as Row | undefined;
+    return row ? (String(row.state) as SafetyState) : undefined;
+  }
+
+  /** One call from today's safety budget; false when it is spent. */
+  private spendSafety(): boolean {
+    const today = day();
+    const used = Number((this.sql.exec("SELECT COALESCE(MAX(calls), 0) AS n FROM safety_budget WHERE day = ?", today).one() as Row).n);
+    if (used >= this.dailySafetyCalls()) return false;
+    this.sql.exec("INSERT INTO safety_budget (day, calls) VALUES (?, 1) ON CONFLICT(day) DO UPDATE SET calls = calls + 1", today);
+    this.sql.exec("DELETE FROM safety_budget WHERE day < ?", day(Date.now() - 30 * 86_400_000));
+    return true;
+  }
+
+  /** Checks one arriving message, reviews it when suspect, and records where it stands. */
+  private async checkSafety(item: QueueItem): Promise<void> {
+    const now = Date.now();
+    const findings = await inspectMessage({ subject: item.subject, html: item.html ?? "" }, (text) =>
+      this.spendSafety() ? this.safetyScan(text) : Promise.resolve({ flagged: false, error: msg("The day's safety budget was spent") }));
+    let state: SafetyState = "clear";
+    let reason = "";
+    let review: SafetyReview | null = null;
+    if (suspect(findings)) {
+      state = "held";
+      reason = findings.modelError ? msg("Not checked: {error}", { error: findings.modelError })
+        : findings.hiddenSignals.length ? msg("Hidden text addresses an AI")
+        : findings.visibleStrong.length ? msg("The text gives orders to an AI")
+        : msg("The safety model found instructions aimed at an AI");
+      if (!findings.modelError && this.spendSafety()) {
+        try {
+          const { model, name } = this.reviewModel();
+          review = await reviewHeld(model, name, { sender: item.sender, to: item.accountEmail, subject: item.subject,
+            visible: splitHidden(item.html ?? "").visible, findings });
+          if (review.verdict === "safe") { state = "released"; reason = msg("Reviewed: nothing aimed at an AI"); }
+        } catch (error) {
+          reason = msg("{reason}; the review could not run", { reason });
+          console.warn(JSON.stringify({ event: "safety_review_failed", account: item.accountId, error: (error as Error)?.message?.slice(0, 200) }));
+        }
+      }
+      console.log(JSON.stringify({ event: "safety_held", account: item.accountId, state, verdict: review?.verdict ?? null,
+        hidden: findings.hiddenSignals, visible: findings.visibleStrong, model: findings.model, unchecked: !!findings.modelError }));
+    }
+    this.sql.exec(`INSERT OR REPLACE INTO safety (account_id, message_id, state, findings, review, reason, checked_at, decided_by, decided_at, timestamp, subject, sender)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      item.accountId, item.messageId, state, JSON.stringify(findings), review ? JSON.stringify(review) : null, reason.slice(0, 300), now,
+      review ? "review" : "check", now, item.timestamp, item.subject.slice(0, 300), item.sender.slice(0, 300));
+    this.sql.exec("DELETE FROM safety WHERE checked_at < ? AND state = 'clear'", now - 90 * 86_400_000);
+  }
+
+  /** Where these messages stand with the safety check (B-178); a message never checked is absent. */
+  async safetyOf(keys: { accountId: string; messageId: string }[]): Promise<Record<string, SafetyRecord>> {
+    const out: Record<string, SafetyRecord> = {};
+    for (const k of keys.slice(0, 200)) {
+      const row = this.sql.exec("SELECT * FROM safety WHERE account_id = ? AND message_id = ?", k.accountId, k.messageId).toArray()[0] as Row | undefined;
+      if (row) out[safetyKey(k.accountId, k.messageId)] = {
+        state: String(row.state) as SafetyState, reason: String(row.reason), findings: JSON.parse(String(row.findings)) as SafetyFindings,
+        review: row.review ? JSON.parse(String(row.review)) as SafetyReview : null, checkedAt: Number(row.checked_at), decidedBy: String(row.decided_by),
+        decidedAt: Number(row.decided_at), subject: String(row.subject), sender: String(row.sender), timestamp: Number(row.timestamp),
+      };
+    }
+    return out;
+  }
+
+  /** The held messages, newest first (B-178). */
+  async heldMessages(limit = 100): Promise<{ accountId: string; messageId: string; state: SafetyState; reason: string; subject: string; sender: string; timestamp: number }[]> {
+    return (this.sql.exec("SELECT account_id, message_id, state, reason, subject, sender, timestamp FROM safety WHERE state IN ('held', 'kept') ORDER BY timestamp DESC LIMIT ?",
+      Math.min(500, Math.max(1, limit))).toArray() as Row[]).map((r) => ({ accountId: String(r.account_id), messageId: String(r.message_id), state: String(r.state) as SafetyState,
+      reason: String(r.reason), subject: String(r.subject), sender: String(r.sender), timestamp: Number(r.timestamp) }));
+  }
+
+  /**
+   * A person (or the owner's approved agent) decides a held message (B-178): `release` lets it through and wakes its
+   * reply agent; `keep` keeps it held. Null when the message was never held.
+   */
+  async decideHeld(key: { accountId: string; messageId: string }, action: "release" | "keep", by: string): Promise<SafetyState | null> {
+    const state = this.safetyState(key.accountId, key.messageId);
+    if (!state || state === "clear") return null;
+    const next: SafetyState = action === "release" ? "released" : "kept";
+    this.sql.exec("UPDATE safety SET state = ?, decided_by = ?, decided_at = ?, reason = ? WHERE account_id = ? AND message_id = ?", next, by.slice(0, 120), Date.now(),
+      action === "release" ? msg("Released by a person") : msg("Kept held by a person"), key.accountId, key.messageId);
+    if (next === "released") await this.releaseAgent({ accountId: key.accountId, accountEmail: "", messageId: key.messageId, sender: "", subject: "", text: "", timestamp: 0 });
+    return next;
   }
 
   /** One spam-only model call from today's spam budget; false when it is spent. */

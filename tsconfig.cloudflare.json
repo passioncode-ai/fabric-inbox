@@ -7,6 +7,7 @@
     "app/**/.client/**/*",
     "workers/**/*",
     "shared/**/*",
+    "vendor/**/*",
     "worker-configuration.d.ts"
   ],
   "compilerOptions": {
