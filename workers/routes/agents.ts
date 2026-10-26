@@ -4,6 +4,7 @@ import { renamesInProgress } from "../lib/rename-journal";
 import { z } from "zod";
 import type { Env } from "../types";
 import { AGENT_TEMPLATES, readAssignment } from "../agents/definition";
+import { isAccountMailbox, updateAccountSettings } from "../agents/account-settings";
 import { registryError } from "../agents/errors";
 import { RUN_OUTCOMES, type RunOutcome } from "../agents/run";
 import { allServedDomains, createMailbox, deleteMailbox, isDomainName, readAllSettings, readSettings, settingsKey, storedCatchAll, updateSettings } from "../lib/mailbox-store";
@@ -45,6 +46,24 @@ async function assignments(env: Env) {
   return all.map(({ email, settings }) => ({ email, assignment: readAssignment(settings) ?? null }));
 }
 
+/** B-171: which Gmail, IMAP and Outlook accounts each agent answers (R2 `accounts/<provider>:<id>.json`). */
+async function accountAssignments(env: Env): Promise<{ accountId: string; agentId: string }[]> {
+  const out: { accountId: string; agentId: string }[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await env.BUCKET.list({ prefix: "accounts/", cursor });
+    const rows = await Promise.all(page.objects.map(async (o) => {
+      const accountId = o.key.slice("accounts/".length).replace(/\.json$/, "");
+      if (!isAccountMailbox(accountId)) return null;
+      const assignment = readAssignment(await (await env.BUCKET.get(o.key))?.json<Record<string, unknown>>().catch(() => null));
+      return assignment && assignment !== "off" ? { accountId, agentId: assignment.id } : null;
+    }));
+    out.push(...rows.filter((r): r is { accountId: string; agentId: string } => !!r));
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  return out;
+}
+
 agentsRouter.use("/api/agents/*", async (c, next) => {
   if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
   await next();
@@ -56,11 +75,12 @@ agentsRouter.use("/api/agents", async (c, next) => {
 
 agentsRouter.get("/api/agents", async (c) => {
   try {
-    const [agents, served] = await Promise.all([registry(c).listAgents(), assignments(c.env)]);
+    const [agents, served, accounts] = await Promise.all([registry(c).listAgents(), assignments(c.env), accountAssignments(c.env)]);
     return c.json({
       agents: agents.map((agent) => ({
         ...agent,
         addresses: served.filter((s) => s.assignment && s.assignment !== "off" && s.assignment.id === agent.id).map((s) => s.email),
+        accounts: accounts.filter((a) => a.agentId === agent.id).map((a) => a.accountId),
       })),
       templates: AGENT_TEMPLATES,
       toolHosts: (c.env.AUTOMATION_MCP_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean),
@@ -89,10 +109,11 @@ agentsRouter.post("/api/agents", async (c) => {
 agentsRouter.get("/api/agents/:id", async (c) => {
   try {
     const id = c.req.param("id");
-    const [agent, versions, served] = await Promise.all([registry(c).getAgent(id), registry(c).listVersions(id), assignments(c.env)]);
+    const [agent, versions, served, accounts] = await Promise.all([registry(c).getAgent(id), registry(c).listVersions(id), assignments(c.env), accountAssignments(c.env)]);
     if (!agent) return c.json({ error: msg("Agent not found") }, 404);
     return c.json({ agent, versions: versions.map((v) => ({ version: v.version, createdAt: v.createdAt })),
-      addresses: served.filter((s) => s.assignment && s.assignment !== "off" && s.assignment.id === id).map((s) => s.email) });
+      addresses: served.filter((s) => s.assignment && s.assignment !== "off" && s.assignment.id === id).map((s) => s.email),
+      accounts: accounts.filter((a) => a.agentId === id).map((a) => a.accountId) });
   } catch (error) { return registryFailure(c, error); }
 });
 
@@ -484,6 +505,33 @@ agentsRouter.put("/api/project-addresses/:email/agent", async (c) => {
   const email = c.req.param("email").toLowerCase();
   const next = await updateSettings(c.env.BUCKET, email, (s) => ({ ...s, agent: parsed.data.agent }));
   return next ? c.json({ email, agent: parsed.data.agent }) : c.json({ error: msg("Address not found") }, 404);
+});
+
+/**
+ * B-171 phase 2: the reply agent of a Gmail, IMAP or Outlook account (`:accountId` as the account
+ * routes take it, without its provider), or Off. Written to R2 `accounts/<provider>:<id>.json`
+ * conditionally on its version. An agent that drafts is refused on an account that cannot keep
+ * drafts: its answers would have nowhere to wait (decision 3 of the B-171 packet).
+ */
+agentsRouter.put("/api/accounts/:accountId/agent", async (c) => {
+  const parsed = AgentAssignmentInput.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: msg("Choose an agent or Off") }, 400);
+  if (!c.env.GMAIL_ACCOUNTS) return c.json({ error: msg("Mail accounts are not configured on this server") }, 503);
+  const id = c.req.param("accountId");
+  const account = (await c.env.GMAIL_ACCOUNTS.getByName("workspace").listAccounts()).accounts.find((a) => a.id === id);
+  if (!account) return c.json({ error: msg("Account not found") }, 404);
+  const agent = parsed.data.agent;
+  if (agent !== "off") {
+    if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured") }, 503);
+    const chosen = await registry(c).getAgent(agent.id);
+    if (!chosen) return c.json({ error: msg("The chosen agent does not exist") }, 400);
+    if (chosen.replyPolicy.mode === "draft" && !account.capabilities?.drafts)
+      return c.json({ error: msg("{agent} leaves its answers as drafts, and this account cannot keep drafts. Choose an agent that sends, or Off.", { agent: chosen.name }) }, 400);
+  }
+  const accountId = `${account.provider}:${account.id}`;
+  await updateAccountSettings(c.env.BUCKET, accountId, (s) => ({ ...s, agent }));
+  console.log(JSON.stringify({ event: "account_agent_set", provider: account.provider, agent: agent === "off" ? "off" : "on" }));
+  return c.json({ accountId, email: account.email, agent });
 });
 
 /**

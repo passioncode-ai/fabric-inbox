@@ -36,6 +36,8 @@ export interface Agent extends AgentInput {
   createdAt: string;
   updatedAt?: string;
   addresses?: string[];
+  /** B-171: the Gmail, IMAP and Outlook accounts it answers, as `<provider>:<id>`. */
+  accounts?: string[];
 }
 export interface AgentList {
   agents: Agent[];

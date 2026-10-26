@@ -1350,3 +1350,54 @@ test("B-171: an agent on an account answers from the account itself, marked auto
   assert.equal(skipped.effects.modelCalls, 0, "skipped before any model call");
   assert.equal(sends.length, 1);
 });
+
+test("B-171 REQ-4: on an account, a day-old held message gets its waiting reply from the account, the real answer later, and the closing reply its own key", async () => {
+  const { closeRun, DEFAULT_WAITING_REPLY } = await import("../workers/agents/runner");
+  const sends: { request: SendRequest; options?: SubmitOptions }[] = [];
+  const message = { id: "acc-1:m1", accountId: "acc-1", providerMessageId: "m1", threadId: "t1", subject: "Login", from: "ann@customer.invalid",
+    to: "help@acme.example", cc: "", replyTo: "", date: "2026-10-25T08:00:00.000Z", rfcMessageId: "<m1@customer.invalid>", references: "",
+    timestamp: 0, snippet: "I cannot log in", text: "I cannot log in to the app.", html: "", read: false, archived: false, labels: ["INBOX"], attachments: [] };
+  const port: AccountsPort = {
+    listAccounts: async () => ({ accounts: [] }),
+    getMessage: async () => message,
+    getHeaders: async () => ({ headers: [] }),
+    listMessages: async () => ({ messages: [message] }),
+    async send(_id, request, options) { sends.push({ request, options }); return { status: "accepted", idempotencyKey: request.idempotencyKey, providerMessageId: "out-" + sends.length }; },
+    createDraft: async (_id, request) => ({ status: "accepted", idempotencyKey: request.idempotencyKey }),
+    getSendReceipt: async () => { throw new Error("receipt_not_found"); },
+  };
+  const bucket = { get: async () => ({ json: async () => ({ agent: { id: "support" } }) }) } as unknown as R2Bucket;
+  const onAccount = (h: ReturnType<typeof harness>) => { h.deps.mailbox = accountMailbox({ BUCKET: bucket }, port, "gmail:acc-1", "help@acme.example"); return h; };
+  const dayOld = (h: ReturnType<typeof harness>, extra: Partial<AgentRun> = {}) => {
+    const begin = h.deps.registry.beginRun;
+    h.deps.registry.beginRun = async (run) => begin({ ...run, createdAt: new Date(Date.now() - 25 * 3_600_000).toISOString(), ...extra });
+  };
+  const unsure = async (grant: { tool: string }) => (grant.tool === "gaps.submit" ? "{}" : JSON.stringify({ abstained: true, results: [] }));
+  const old = onAccount(harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true }), callTool: unsure,
+    model: async () => ({ decision: answer({ intent: "login", grounded: false, question: "Why can the user not log in?" }), text: "" }) }));
+  dayOld(old);
+  const held = (await runAgent({ mailboxId: "gmail:acc-1", emailId: "m1" }, old.deps))!;
+  assert.equal(held.status, "held", held.reason);
+  assert.equal(sends.length, 1, "one waiting reply");
+  assert.equal(sends[0]!.request.idempotencyKey, `${held.id}:waiting`, "its own key, never the answer's");
+  assert.equal(sends[0]!.request.text, DEFAULT_WAITING_REPLY.en);
+  assert.deepEqual(sends[0]!.options, { autoSubmitted: true });
+  assert.equal(sends[0]!.request.inReplyTo, "<m1@customer.invalid>", "in the same conversation");
+  assert.equal(held.acknowledged?.status, "accepted");
+  // The next retry finds the answer: it leaves under the run's own key, after the waiting reply.
+  const later = onAccount(harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true }),
+    callTool: async () => JSON.stringify({ abstained: false, results: [{ id: "fact:login", coverage: 0.9 }] }) }));
+  dayOld(later, { acknowledged: held.acknowledged });
+  const answered = (await runAgent({ mailboxId: "gmail:acc-1", emailId: "m1" }, later.deps))!;
+  assert.equal(answered.status, "sent", answered.reason);
+  assert.equal(sends.length, 2);
+  assert.equal(sends[1]!.request.idempotencyKey, answered.id);
+  // Given up after a month: the closing reply leaves from the account under its own key too.
+  const closing = onAccount(harness({ agent: holding() }));
+  const closed = await closeRun({ id: held.id, mailboxId: "gmail:acc-1", emailId: "m1", sender: "", subject: "", agentId: "support", agentVersion: 3,
+    status: "held", reason: "", toolCalls: [], createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z" }, closing.deps);
+  assert.equal(closed.status, "accepted");
+  assert.equal(sends.length, 3);
+  assert.equal(sends[2]!.request.idempotencyKey, `${held.id}:closing`);
+  assert.deepEqual(sends[2]!.options, { autoSubmitted: true });
+});

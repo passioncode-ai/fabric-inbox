@@ -10,6 +10,7 @@ import { imapErrorText } from "../../../lib/imap-errors";
 import { settingsPath } from "../paths";
 import { ActionMenu, ActionResult, Badge, Panel, PanelBlock, errorText, useConfirm, useWork, type ConfirmRequest } from "../ui";
 import { GMAIL_KEY } from "./data";
+import { AccountAgent } from "./AccountAgent";
 import { accountStatusText } from "./providers";
 
 /**
@@ -244,6 +245,7 @@ export function ImapPanel({ account: a, entryKey, onRemoved }: { account: Accoun
         </div>
         <ActionResult result={work.result} />
       </PanelBlock>
+      <AccountAgent account={a} provider="imap" />
       {changing && <NewPassword account={a} name={name} helpUrl={p?.appPasswordUrl} onDone={() => setChanging(false)} />}
       <PanelBlock title={t("Servers")}>
         <p>{t("Incoming: {imap} (SSL/TLS, port {imapPort}). Sending: {smtp} ({security}, port {smtpPort}).", {

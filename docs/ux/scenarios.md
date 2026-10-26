@@ -88,6 +88,7 @@
 | SCN-083 | Start the Linux AppImage where the sandbox is off | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
 | SCN-084 | Sign in through my organization's identity provider | Resume and manage preferences | P-02 | ST-007, FLW-07 | draft | — |
 | SCN-085 | Approve what an agent cannot undo | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
+| SCN-086 | Put a reply agent on a Gmail, IMAP or Outlook account | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | — |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1744,3 +1745,24 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** app/components/settings/sections/AgentAccessSection.tsx (`Approvals`, `approvalText`), workers/routes/agent-keys.ts (`/api/agent-keys/approvals`, PATCH `/api/agent-keys/:id`), workers/mcp/ledger.ts (`decideApproval`, `pendingApprovals`), workers/mcp/protocol.ts (`needsApproval`, `waitingForApproval`), tests/mcp-workerd.test.ts (B-38), tests/mcp-protocol.test.ts (B-38)
 - **Product:** unobserved
 - **Today:** Built in 0.32.0; the list is read again every 30 s while Agent access is open.
+
+### SCN-086: Put a reply agent on a Gmail, IMAP or Outlook account
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, JTBD-02, JRN-02; B-171 (operator 2026-10-25: the agents that work in mail run in the cloud and keep the threads of requests)
+- **Entry point:** SCR-02 (Settings → Accounts → an account)
+- **Preconditions:** A connected Gmail, IMAP or Outlook account; at least one reply agent (SCN-022).
+- **Steps:**
+  1. Open the account -> Who answers shows Off (no account is answered until someone chooses an agent).
+  2. Choose an agent -> it is saved; the account says it is answered by that agent, and the agent lists the account beside its addresses.
+  3. New mail arrives in the account's Inbox -> the agent answers it by its reply policy; a reply leaves from the account itself, in the same conversation, marked as automatic; a draft waits in the account's own drafts.
+  4. Choose Off -> new mail stays for the person; what was answered keeps its record.
+- **Expected result:** A mail account is answered like a project address, from the server, with no window open on the Mac.
+- **Alt paths:** An agent that drafts cannot be chosen for an account that cannot keep drafts: its line says why, and the server refuses it with the reason. Mail that arrived before the choice is not answered.
+- **UI elements:** SCR-02 (Who answers on the account's panel, the agent's policy line, the saved message).
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** A choice that fails to save keeps the previous one visibly with the reason; agents that cannot be listed leave the choice disabled with Retry; an agent deleted later leaves the account Off.
+- **Status:** draft
+- **Coverage:** workers/routes/agents.ts (PUT /api/accounts/:accountId/agent, `accountAssignments`), workers/agents/account-settings.ts (`updateAccountSettings`), workers/lib/member-gate.ts, workers/mcp/tools.ts (`set_account_agent`), app/components/settings/sections/AccountAgent.tsx, tests/account-agent.test.ts, tests/agents-accounts-workerd.test.ts, tests/agents-runner.test.ts (B-171)
+- **Product:** unobserved
+- **Today:** Built in 0.36.0 (B-171 phase 2); the server side ran dormant from 0.35.0. The reply status of an account's conversations (B-138, B-170) is a later phase: an account's message shows its agent run.

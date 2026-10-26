@@ -438,7 +438,7 @@ const getSpam = defineTool({
 
 const listAgents = defineTool({
   name: "list_agents", title: "List reply agents", level: "read", readOnly: true,
-  description: "The agents that answer mail on your addresses: instructions, knowledge, tools, reply policy and the addresses each answers; the templates; the tool hosts allowed. Give agentId for one agent with its versions.",
+  description: "The agents that answer mail on your addresses: instructions, knowledge, tools, reply policy, the addresses and the Gmail, IMAP or Outlook accounts each answers; the templates; the tool hosts allowed. Give agentId for one agent with its versions.",
   input: { agentId: z.string().max(100).optional() },
   routes: ["GET /api/agents", "GET /api/agents/:id"],
   call: (a, ctx) => (a.agentId ? get(ctx, `/api/agents/${enc(a.agentId)}`) : get(ctx, "/api/agents")),
@@ -1209,6 +1209,18 @@ const updateAddress = defineTool({
   },
 });
 
+const setAccountAgent = defineTool({
+  name: "set_account_agent", title: "Choose the reply agent of an account", level: "admin", target: (a) => a.accountId,
+  description: "Chooses which reply agent answers the new Inbox mail of a Gmail, IMAP or Outlook account, or \"off\" (the default: no account is answered until an agent is chosen). The agent's replies leave from the account itself, in the same conversation, marked as automatic; an agent that drafts leaves its drafts in the account. An agent that drafts is refused on an account that cannot keep drafts (capabilities.drafts false in list_accounts). Only mail that arrives after the choice is answered. list_agents names the accounts each agent answers. For a Cloudflare address use update_address.",
+  input: { accountId, agent: agentChoice },
+  routes: ["PUT /api/accounts/:accountId/agent"],
+  async call(a, ctx) {
+    const account = parseAccount(a.accountId);
+    if (account.provider === "cloudflare") throw new ApiError(400, "A Cloudflare address's agent is chosen with update_address", null);
+    return put(ctx, `${remote(account.remoteId)}/agent`, { agent: toAgent(a.agent) });
+  },
+});
+
 const removeAddress = defineTool({
   name: "remove_address", title: "Remove an address", level: "admin", target: (a) => a.address,
   description: "Removes a mailbox: its Cloudflare rule, and all of its mail and attachments, permanently. Takes two calls: the first says how much mail would go and gives a code.",
@@ -1742,7 +1754,7 @@ export const TOOLS: readonly ToolDef[] = [
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,
-  getServer, listMembers, checkAddress, createAddress, createAddresses, updateAddress, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination, removeDestination,
+  getServer, listMembers, checkAddress, createAddress, createAddresses, updateAddress, setAccountAgent, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination, removeDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, clearIncomingFailures, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,

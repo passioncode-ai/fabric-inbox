@@ -94,9 +94,24 @@ Cloudflare copy never waits for it; an account copy does wait for an address lis
 REQ-4's waiting, held and closing replies on an account are exercised through the same deps but
 have no registry test of their own yet.
 
+## Phase 2 receipt (2026-10-26)
+
+- `PUT /api/accounts/:accountId/agent` (`workers/routes/agents.ts`): Off or an agent, written to R2
+  `accounts/<provider>:<id>.json` conditionally on its version (`updateAccountSettings`); an unknown
+  account 404, an unknown agent 400, an agent that drafts on an account without drafts 400 with the
+  reason, nothing written on a refusal (`tests/account-agent.test.ts`).
+- A member is refused (`workers/lib/member-gate.ts`), like disconnecting the account.
+- `GET /api/agents` and `GET /api/agents/:id` list the accounts each agent answers.
+- Tool `set_account_agent` (admin); `docs/agents/mcp.md`, the schema-drift map and the skill.
+- Settings → Accounts: Who answers on the Gmail, Outlook and IMAP panels (`AccountAgent.tsx`); an agent
+  that drafts is listed disabled with the reason on an account without drafts; scenario SCN-086.
+- REQ-4: on an account, a day-old held message gets its waiting reply from the account under
+  `<run>:waiting`, the real answer later under `<run>`, and the closing reply under `<run>:closing`
+  (`tests/agents-runner.test.ts` "B-171 REQ-4").
+
 ## Exact next step
 
-Phase 2 (REQ-5): the scenario first (super-ux, `docs/ux/scenarios.md`), then
-`PUT /api/accounts/:id/agent` writing `accounts/<id>.json` with an etag, its MCP tool, the account
-settings screen; a drafting agent on an account without drafts is refused. Then a registry test of
-an account run's waiting and closing replies (REQ-4).
+Phase 3: the reply status for accounts (B-138, B-170 on accounts): thread facts from the accounts'
+cache, so an account's conversations read answered, waiting, no reply needed or abandoned like an
+address's. Before it, decision 5 the other way: a Cloudflare copy waits for an account listed before
+it in the recipients.

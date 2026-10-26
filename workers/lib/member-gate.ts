@@ -19,11 +19,11 @@ export const BODY_ROUTES = new Set(["POST /api/spam/empty", "POST /api/discard/r
 
 /**
  * A mailbox's own settings (its forwarding, reply agent, signature), deleting it, and an account's
- * connection are an administrator's: forwarding alone could send someone else's mail away.
+ * connection and reply agent (B-171) are an administrator's: forwarding alone could send someone else's mail away.
  */
 const ADMIN_MAILBOX_ACTIONS = [
   { methods: ["PUT", "DELETE"], path: /^\/api\/v1\/mailboxes\/[^/]+\/?$/ },
-  { methods: ["POST", "PUT", "DELETE"], path: /^\/api\/accounts\/[^/]+\/(disconnect|password)\/?$/ },
+  { methods: ["POST", "PUT", "DELETE"], path: /^\/api\/accounts\/[^/]+\/(disconnect|password|agent)\/?$/ },
 ];
 
 /**
