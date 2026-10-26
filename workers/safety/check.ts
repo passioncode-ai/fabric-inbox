@@ -19,6 +19,10 @@ export interface SafetyFindings {
   model: boolean;
   /** The model could not answer; the message is held as unchecked. */
   modelError?: string;
+  /** B-180: links to sites the Okolos phishing feed lists, by host. */
+  phishing?: { host: string; entry: string }[];
+  /** B-180: the server had no copy of the feed (`missing`), or one not updated for a day (`stale`). */
+  feed?: "missing" | "stale";
 }
 
 export type SafetyScan = (text: string) => Promise<{ flagged: boolean; error?: string }>;
@@ -46,5 +50,5 @@ export async function inspectMessage(input: SafetyInput, scan: SafetyScan): Prom
 
 /** Suspect: held until reviewed. */
 export function suspect(f: SafetyFindings): boolean {
-  return f.visibleStrong.length > 0 || f.hiddenSignals.length > 0 || f.model || !!f.modelError;
+  return f.visibleStrong.length > 0 || f.hiddenSignals.length > 0 || f.model || !!f.modelError || !!f.phishing?.length;
 }

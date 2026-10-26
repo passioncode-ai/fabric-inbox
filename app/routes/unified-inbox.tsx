@@ -907,6 +907,7 @@ export default function UnifiedInbox() {
                               body={reading.html}
                               inlineAttachments={reading.inline}
                               autoSize
+                              blockedHosts={selected.held?.links}
                             />
                           ) : detail.data.text ? (
                             <pre>{detail.data.text}</pre>

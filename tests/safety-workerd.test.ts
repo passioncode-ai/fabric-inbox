@@ -29,6 +29,7 @@ const bundle = await build({
               usage: { inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, text: 1, reasoning: 0 } }, warnings: [] };
           } }) };
         }
+        feedFetch() { const store = this.ctx.storage; return async () => new Response((await store.get('test:feed')) || '{}', { status: (await store.get('test:feed')) ? 200 : 503 }); }
         async releaseAgent(item) { await this.ctx.storage.put('released:' + item.messageId, true); }
         async alarm() {}
         async pump() { for (let i = 0; i < 20; i++) { await super.alarm(); const n = this.ctx.storage.sql.exec('SELECT COUNT(*) AS n FROM queue WHERE next_at <= ?', Date.now()).one().n; if (!n) break; } }
@@ -168,5 +169,36 @@ test("C-13: two queue rows of one message are never decided side by side in one 
     assert.equal((await call("queue")).length, 1, "the second row waits for the next drain");
     await call("pump");
     assert.equal((await call("queue")).length, 0);
+  } finally { await mf.dispose(); }
+});
+
+test("B-180: a link to a site the Okolos feed lists holds the message, named by host, and no review releases it", async () => {
+  const { webcrypto } = await import("node:crypto");
+  const { serialiseUpdate } = await import("../vendor/okolos/core-feeds/apply");
+  const keys = await webcrypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]) as CryptoKeyPair;
+  const publicKey = Buffer.from(await webcrypto.subtle.exportKey("raw", keys.publicKey)).toString("base64");
+  const update = { kind: "snapshot", body: { name: "phishing", version: 7, updatedAt: "2026-10-26T00:00:00Z", entries: ["login-bank.invalid"] } } as const;
+  const signature = Buffer.from(await webcrypto.subtle.sign({ name: "Ed25519" }, keys.privateKey, new TextEncoder().encode(serialiseUpdate(update as never)))).toString("base64");
+  const { mf, call } = await fixture({ AI: {}, OKOLOS_FEED_URL: "https://feed.invalid/feeds/phishing", OKOLOS_FEED_PUBLIC_KEY: publicKey });
+  try {
+    await call("set", { key: "test:feed", value: JSON.stringify({ update, signature }) });
+    await call("set", { key: "test:review", value: "safe" });
+    await call("ingest", { account: CF, event: event("phish", '<p>Your account is locked. <a href="https://secure.login-bank.invalid/verify">Unlock it</a></p>') });
+    await call("ingest", { account: CF, event: event("fine", '<p>See <a href="https://docs.ok.invalid/guide">the guide</a></p>') });
+    const of = await call("of", { keys: [{ accountId: CF.id, messageId: "phish" }, { accountId: CF.id, messageId: "fine" }] });
+    const held = of[`${CF.id}|phish`];
+    assert.deepEqual([held.state, held.reason, held.review], ["held", "Links to a known phishing site: secure.login-bank.invalid", null], "the review that says safe is not asked");
+    assert.deepEqual(held.findings.phishing, [{ host: "secure.login-bank.invalid", entry: "login-bank.invalid" }]);
+    assert.equal(of[`${CF.id}|fine`].state, "clear");
+    assert.deepEqual(await call("released"), ["fine"]);
+  } finally { await mf.dispose(); }
+});
+
+test("B-180: with no feed to read, links are said to be unchecked and nothing is held for that alone", async () => {
+  const { mf, call } = await fixture({ AI: {}, OKOLOS_FEED_URL: "https://feed.invalid/feeds/phishing" });
+  try {
+    await call("ingest", { account: CF, event: event("nofeed", '<p>See <a href="https://anything.invalid/">this</a></p>') });
+    const r = (await call("of", { keys: [{ accountId: CF.id, messageId: "nofeed" }] }))[`${CF.id}|nofeed`];
+    assert.deepEqual([r.state, r.findings.feed], ["clear", "missing"]);
   } finally { await mf.dispose(); }
 });

@@ -77,12 +77,13 @@ export const DEFAULT_SPAM_DAILY_CALLS = 300;
 export const DEFAULT_SAFETY_DAILY_CALLS = 2000;
 const HTML_CHARS = 100_000;
 import { safetyOn } from "../safety/on";
+import { FEED_REFRESH_MS, FEED_STALE_MS, linksOf, phishingLinks, refreshFeed, type FeedEnv, type KeptFeed } from "../safety/feed";
 export { safetyOn };
 type Row = Record<string, string | number | null>;
 const day = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
 const nextDay = (t = Date.now()) => Date.parse(day(t) + "T00:00:00Z") + 86_400_000 + 5 * 60_000;
 /** C-5: the first links of an HTML body, which stripping its tags drops; the model reads where a message points. */
-const linksOf = (html: string) => {
+const linkLines = (html: string) => {
   const links = [...html.matchAll(/\bhref\s*=\s*["']?(https?:[^"'\s>]+)/gi)].map((m) => m[1]!).slice(0, 5);
   return links.length ? "\n" + links.join("\n") : "";
 };
@@ -122,6 +123,26 @@ export class CategoriesDO extends DurableObject<Env> {
     return scanPromptInjection(this.env.AI, text, { plain: true });
   }
   /** B-178: the review's model, with no tools: `SAFETY_REVIEW_MODEL`, else the spam check's. Overridden in tests. */
+  /** B-180: fetches the signed Okolos feed (overridden in tests). */
+  protected feedFetch(): typeof fetch { return (input, init) => fetch(input, init); }
+
+  /**
+   * B-180: the server's copy of the Okolos phishing feed, fetched again when older than FEED_REFRESH_MS. A failed
+   * fetch keeps the last good copy, said once in the log; null when the server never had one.
+   */
+  private async phishingFeed(now = Date.now()): Promise<KeptFeed | null> {
+    const kept = (await this.ctx.storage.get<KeptFeed>("okolos:feed")) ?? null;
+    if (kept && now - kept.fetchedAt < FEED_REFRESH_MS) return kept;
+    const tried = await this.ctx.storage.get<number>("okolos:tried");
+    if (tried && now - tried < FEED_REFRESH_MS) return kept;
+    await this.ctx.storage.put("okolos:tried", now);
+    const result = await refreshFeed(this.env as FeedEnv, kept, this.feedFetch(), now);
+    if (result.kept && result.kept !== kept) await this.ctx.storage.put("okolos:feed", result.kept);
+    if (result.outcome === "refused" || result.outcome === "unreachable")
+      console.warn(JSON.stringify({ event: "okolos_feed_kept", outcome: result.outcome, detail: result.detail ?? null, version: kept?.snapshot.version ?? null }));
+    return result.kept;
+  }
+
   protected reviewModel(): { model: LanguageModel; name: string } {
     const workersai = createWorkersAI({ binding: this.env.AI });
     const name = this.env.SAFETY_REVIEW_MODEL || this.env.SPAM_MODEL || DEFAULT_SPAM_MODEL;
@@ -316,7 +337,7 @@ export class CategoriesDO extends DurableObject<Env> {
     if (!screen && !safety && !screened.some((c) => inScope(c.scope, account, projects))) return;
     const item: QueueItem = {
       accountId: account.id, accountEmail: account.email, messageId: event.id, sender: event.sender ?? "", subject: event.subject ?? "",
-      text: (stripHtmlToText(event.body ?? "") + linksOf(event.body ?? "")).slice(0, TEXT_CHARS), timestamp: Date.parse(event.date) || Date.now(),
+      text: (stripHtmlToText(event.body ?? "") + linkLines(event.body ?? "")).slice(0, TEXT_CHARS), timestamp: Date.parse(event.date) || Date.now(),
       // C-5: a link or an image is something to judge, though stripping the HTML leaves no text of it.
       ...(screen ? { screen: true, senderName: event.senderName ?? null, verified: event.verified ?? null,
         ...(/\bhref\s*=|<img\b/i.test(event.body ?? "") ? { linked: true } : {}) } : {}),
@@ -535,16 +556,26 @@ export class CategoriesDO extends DurableObject<Env> {
     const now = Date.now();
     const findings = await inspectMessage({ subject: item.subject, html: item.html ?? "" }, (text) =>
       this.spendSafety() ? this.safetyScan(text) : Promise.resolve({ flagged: false, error: msg("The day's safety budget was spent") }));
+    // B-180: its links against the server's copy of the Okolos phishing feed.
+    const feed = await this.phishingFeed(now).catch(() => null);
+    if (!feed) findings.feed = "missing";
+    else {
+      if (now - feed.fetchedAt > FEED_STALE_MS) findings.feed = "stale";
+      const phishing = phishingLinks(linksOf(item.html ?? ""), feed.snapshot);
+      if (phishing.length) findings.phishing = phishing;
+    }
     let state: SafetyState = "clear";
     let reason = "";
     let review: SafetyReview | null = null;
     if (suspect(findings)) {
       state = "held";
-      reason = findings.modelError ? msg("Not checked: {error}", { error: findings.modelError })
+      reason = findings.phishing?.length ? msg("Links to a known phishing site: {hosts}", { hosts: findings.phishing.map((p) => p.host).join(", ") })
+        : findings.modelError ? msg("Not checked: {error}", { error: findings.modelError })
         : findings.hiddenSignals.length ? msg("Hidden text addresses an AI")
         : findings.visibleStrong.length ? msg("The text gives orders to an AI")
         : msg("The safety model found instructions aimed at an AI");
-      if (!findings.modelError && this.spendSafety()) {
+      // A listed phishing site is the feed's verdict: no review releases it (a person still can).
+      if (!findings.modelError && !findings.phishing?.length && this.spendSafety()) {
         try {
           const { model, name } = this.reviewModel();
           review = await reviewHeld(model, name, { sender: item.sender, to: item.accountEmail, subject: item.subject,

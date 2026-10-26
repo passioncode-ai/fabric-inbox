@@ -43,3 +43,13 @@ test("a message's links are read from its HTML and text, and only listed sites (
   assert.deepEqual(phishingLinks(["https://mail.login-bank.invalid/x"], feed).map((l) => l.host), ["mail.login-bank.invalid"], "a subdomain of a listed host");
   assert.deepEqual(phishingLinks(["https://evil.invalid/payments"], feed), [], "a path entry covers what is under it, not its neighbours");
 });
+
+test("B-180: in the reader, a link to a listed host or one under it does not open; others do", async () => {
+  const { isBlockedLink } = await import("../shared/mail/blocked-links");
+  const hosts = ["secure.login-bank.invalid"];
+  assert.equal(isBlockedLink("https://secure.login-bank.invalid/verify?x=1", hosts), true);
+  assert.equal(isBlockedLink("https://a.secure.login-bank.invalid/", hosts), true);
+  assert.equal(isBlockedLink("https://login-bank.invalid/", hosts), false, "its parent is not named by the verdict");
+  assert.equal(isBlockedLink("mailto:x@y.invalid", hosts), false);
+  assert.equal(isBlockedLink("not a url", hosts), false);
+});
