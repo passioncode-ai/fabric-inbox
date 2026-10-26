@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.36.0 (2026-10-26)
+
+- **Reply agents answer Gmail, IMAP and Outlook accounts.** Open an account in Settings → Accounts and
+  choose who answers it. The server does the work, so the Mac can stay closed. Replies leave from the
+  account itself, in the same conversation. An agent that drafts keeps its drafts in the account, and it
+  cannot be chosen for an account without drafts. Agents make the same choice with the new
+  set_account_agent tool (B-171).
+
 ## 0.35.0 (2026-10-26)
 
 - **Sign-in codes, account notices and customers' messages stay out of Spam.** The spam check now says

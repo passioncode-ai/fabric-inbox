@@ -14,6 +14,7 @@ import {
   SelectableList, SkeletonPanel, SkeletonRows, errorText, useConfirm, useWork,
 } from "../ui";
 import { DOMAINS_KEY, GMAIL_KEY, refreshMail, useDomains, useGmailAccounts } from "./data";
+import { AccountAgent } from "./AccountAgent";
 import { PermissionTable } from "./DomainsSection";
 import { AVAILABILITY_TEXT, PROVIDERS, accountStatusText, availability, type ProviderEntry, type ProviderId } from "./providers";
 import { GmailConnectStep, GmailProblem, GmailSetupWizard, useGmailSetup } from "./GmailSetup";
@@ -267,6 +268,7 @@ function GmailPanel({ account: a, entryKey, onRemoved, onSetup }: { account: Acc
         </div>
         <ActionResult result={work.result} />
       </PanelBlock>
+      <AccountAgent account={a} provider="gmail" />
     </Panel>
   );
 }
@@ -320,6 +322,7 @@ function OutlookPanel({ account: a, entryKey, onRemoved, onSetup }: { account: A
         </div>
         <ActionResult result={work.result} />
       </PanelBlock>
+      <AccountAgent account={a} provider="outlook" />
     </Panel>
   );
 }

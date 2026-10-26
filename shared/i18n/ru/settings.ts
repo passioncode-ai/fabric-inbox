@@ -177,6 +177,8 @@ export const SETTINGS: Readonly<Record<string, string>> = {
 	"{email} takes mail again.": "{email} снова принимает почту.",
 	"Who answers": "Кто отвечает",
 	"An agent answers new mail within its reply policy; Off keeps the mail for you.": "Агент отвечает на новую почту в рамках правил ответа. «Выключено» — почту читаете вы.",
+	"An agent answers new mail in this account's inbox within its reply policy, from the account itself; Off keeps the mail for you.": "Агент отвечает на новую почту во входящих этого аккаунта в рамках правил ответа и пишет с самого аккаунта. При «Выключено» почту читаете вы.",
+	"{agent} (drafts; this account keeps no drafts)": "{agent} (пишет черновики, а этот аккаунт их не хранит)",
 	"Drafts with its old prompt (set on next message)": "Черновики по прежнему промпту (обновится со следующим письмом)",
 	"Off — I read it myself": "Выключено — почту читаю я",
 	"Deleted agent — Off": "Удалённый агент — выключено",

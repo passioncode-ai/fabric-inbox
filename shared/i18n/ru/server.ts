@@ -498,6 +498,8 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Too little text to judge": "Слишком мало текста для оценки",
 	"The day's spam budget was spent": "Дневной лимит проверки на спам исчерпан",
 	"The model judged it spam": "Модель сочла его спамом",
+	"Account not found": "Аккаунт не найден",
+	"{agent} leaves its answers as drafts, and this account cannot keep drafts. Choose an agent that sends, or Off.": "{agent} оставляет ответы черновиками, а этот аккаунт не хранит черновики. Выберите агента, который отправляет ответы, или «Выключено».",
 	"Email not found": "Письмо не найдено",
 	"Shows your domain {domain} as its name but comes from {sender}": "Подписано вашим доменом {domain}, но пришло с {sender}",
 	"The spam check is not set up on this server": "Проверка на спам на этом сервере не настроена",

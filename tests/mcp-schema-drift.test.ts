@@ -54,6 +54,7 @@ const BODIES: Record<string, string[]> = {
   "POST /api/project-addresses/batch": keys(CreateAddresses),
   "PUT /api/project-addresses/:email/copy": keys(CopyInput),
   "PUT /api/project-addresses/:email/agent": keys(AgentAssignmentInput),
+  "PUT /api/accounts/:accountId/agent": keys(AgentAssignmentInput),
   "POST /api/knowledge/collections": keys(CollectionInput),
   "PUT /api/knowledge/collections/:id": keys(CollectionChange),
   "POST /api/knowledge/collections/:id/documents": keys(DocumentsInput),

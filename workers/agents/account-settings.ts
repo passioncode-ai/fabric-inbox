@@ -18,3 +18,25 @@ export function accountSettingsKey(accountId: string): string {
 export function accountIdOf(mailboxId: string): string {
   return mailboxId.slice(mailboxId.indexOf(":") + 1);
 }
+
+/**
+ * Changes an account's settings conditionally on the version read (B-171 phase 2), as
+ * `updateSettings` does for an address; the first write succeeds only while nothing is there, so two
+ * screens choosing an agent at once never lose one choice.
+ */
+export async function updateAccountSettings(
+  bucket: R2Bucket,
+  accountId: string,
+  change: (settings: Record<string, unknown>) => Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const key = accountSettingsKey(accountId);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const object = await bucket.get(key);
+    const next = change(object ? await object.json<Record<string, unknown>>() : {});
+    const written = await bucket.put(key, JSON.stringify(next), {
+      onlyIf: object ? { etagMatches: object.etag } : new Headers({ "If-None-Match": "*" }),
+    });
+    if (written) return next;
+  }
+  throw new Error("The account's settings changed several times at once; try again");
+}

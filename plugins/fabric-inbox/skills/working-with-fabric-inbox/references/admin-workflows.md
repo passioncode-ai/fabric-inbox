@@ -124,6 +124,10 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
 - **Create:** `list_agents` (templates, allowed tool hosts) → `save_agent` with the whole
   definition (a new agent drafts every answer until `replyPolicy.mode` is `auto`) →
   `update_address` with `agent: { agentId }` for each address it answers.
+- **On a Gmail, IMAP or Outlook account:** `set_account_agent` with the account's `accountId`
+  (`list_accounts`) and `agent: { agentId }`, or `"off"`. Replies leave from the account itself; an
+  agent that drafts is refused on an account whose `capabilities.drafts` is false. `list_agents` names
+  each agent's `accounts` beside its `addresses`. Only mail that arrives after the choice is answered.
 - **Change:** `list_agents` with `agentId` → `save_agent` with `agentId`, the full `agent`, and
   `expectedVersion` = its current version. A conflict means someone changed it meanwhile: read
   again, merge, retry.
