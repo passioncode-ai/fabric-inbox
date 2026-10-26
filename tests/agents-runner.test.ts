@@ -5,6 +5,8 @@ import { AgentInputSchema, type AgentVersion } from "../workers/agents/definitio
 import type { AgentRun } from "../workers/agents/run";
 import type { ModelDecision } from "../workers/agents/policy";
 import type { MessageClaim } from "../workers/agents/dedupe";
+import { accountMailbox, type AccountsPort } from "../workers/agents/account-deps";
+import type { SendRequest, SubmitOptions } from "../workers/providers/account-service";
 
 // Runner logic with every effect recorded. The registry is an in-memory model
 // of AgentRegistryDO's contract (claim once, versions, daily budget); the real
@@ -1293,4 +1295,58 @@ test("B-147: the run keeps the writer's and the checker's receipts, and a failed
   assert.deepEqual(r.usage?.map((u) => [u.model, u.costUsd]), [["x/writer", 0.001], ["y/checker", 0.0002]]);
   const failed = harness({ agent: autoAgent(), model: async () => { throw Object.assign(new Error("down"), { calls: { calls: 2, failed: 2, recovered: 0 }, usage: [receipt("x/a", null), receipt("x/b", null)] }); } });
   assert.deepEqual((await failed.run())!.usage?.map((u) => u.measured), [false, false]);
+});
+
+test("B-171: an account's run writes from the account's address, keeps its account id as the key, and is never migrated", async () => {
+  const h = harness({ settings: { agent: { id: "support" }, fromName: "Acme Support" } });
+  h.deps.mailbox.address = "Help@Acme.example";
+  const run = (await runAgent({ mailboxId: "gmail:acc-1", emailId: "incoming-1" }, h.deps))!;
+  assert.equal(run.status, "sent");
+  assert.equal(run.mailboxId, "gmail:acc-1", "the registry's key");
+  const command = h.effects.sends[0] as any;
+  assert.equal(command.mailboxId, "gmail:acc-1");
+  assert.deepEqual(command.request.from, { email: "help@acme.example", name: "Acme Support" });
+
+  const none = harness({ settings: null });
+  none.deps.mailbox.address = "help@acme.example";
+  assert.equal(await runAgent({ mailboxId: "gmail:acc-1", emailId: "incoming-1" }, none.deps), null, "no agent chosen: no run");
+  assert.deepEqual(none.effects.ensured, [], "no migrated agent for an account");
+  assert.equal(none.effects.sends.length, 0);
+});
+
+test("B-171: an agent on an account answers from the account itself, marked automatic, and its prefilter reads the account's headers", async () => {
+  const sends: { request: SendRequest; options?: SubmitOptions }[] = [];
+  let headers = [{ key: "Precedence", value: "first-class" }];
+  const message = { id: "acc-1:m1", accountId: "acc-1", providerMessageId: "m1", threadId: "t1", subject: "Price?", from: "ann@customer.invalid",
+    to: "help@acme.example", cc: "", replyTo: "", date: "2026-10-26T08:00:00.000Z", rfcMessageId: "<m1@customer.invalid>", references: "",
+    timestamp: 0, snippet: "How much", text: "How much is it?", html: "", read: false, archived: false, labels: ["INBOX"], attachments: [] };
+  const port: AccountsPort = {
+    listAccounts: async () => ({ accounts: [] }),
+    getMessage: async () => message,
+    getHeaders: async () => ({ headers }),
+    listMessages: async () => ({ messages: [message] }),
+    async send(_id, request, options) { sends.push({ request, options }); return { status: "accepted", idempotencyKey: request.idempotencyKey, providerMessageId: "out-1" }; },
+    createDraft: async (_id, request) => ({ status: "accepted", idempotencyKey: request.idempotencyKey }),
+    getSendReceipt: async () => { throw new Error("receipt_not_found"); },
+  };
+  const bucket = { get: async () => ({ json: async () => ({ agent: { id: "support" } }) }) } as unknown as R2Bucket;
+  const h = harness();
+  h.deps.mailbox = accountMailbox({ BUCKET: bucket }, port, "gmail:acc-1", "help@acme.example");
+  const run = (await runAgent({ mailboxId: "gmail:acc-1", emailId: "m1" }, h.deps))!;
+  assert.equal(run.status, "sent", run.reason);
+  assert.equal(run.mailboxId, "gmail:acc-1");
+  assert.equal(sends.length, 1);
+  assert.deepEqual(sends[0]!.options, { autoSubmitted: true });
+  assert.equal(sends[0]!.request.idempotencyKey, run.id, "the run's key: a retry is the same send");
+  assert.deepEqual(sends[0]!.request.to, ["ann@customer.invalid"]);
+  assert.equal(sends[0]!.request.inReplyTo, "<m1@customer.invalid>");
+  assert.deepEqual(h.effects.claims.map((c) => c.mailboxId), ["help@acme.example"], "the answerer is elected under the account's address");
+
+  headers = [{ key: "Auto-Submitted", value: "auto-replied" }];
+  const skipped = harness();
+  skipped.deps.mailbox = accountMailbox({ BUCKET: bucket }, port, "gmail:acc-1", "help@acme.example");
+  const second = (await runAgent({ mailboxId: "gmail:acc-1", emailId: "m1" }, skipped.deps))!;
+  assert.equal(second.status, "skipped");
+  assert.equal(skipped.effects.modelCalls, 0, "skipped before any model call");
+  assert.equal(sends.length, 1);
 });

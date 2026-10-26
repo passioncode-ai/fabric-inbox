@@ -18,7 +18,7 @@
  */
 import type { MailAttachment } from "../../shared/mail/attachments";
 import type { RemoteProvider } from "../../shared/mail/accounts";
-import type { Message, SendInput } from "./gmail-client";
+import type { Message, OutgoingMessage, SendInput } from "./gmail-client";
 import type { CredentialEnvelope } from "./credentials";
 import type { GmailReason } from "../../shared/mail/gmail-reasons";
 
@@ -149,8 +149,8 @@ export interface ProviderSession {
   /** Every header of one message. */
   headers(messageId: string): Promise<{ key: string; value: string }[]>;
   /** Sends a message from the account. Throws NotSentError when nothing left; any other failure is an unknown outcome. */
-  send(input: SendInput): Promise<SendResult>;
-  createDraft(input: SendInput): Promise<SendResult & { draftId: string }>;
+  send(input: OutgoingMessage): Promise<SendResult>;
+  createDraft(input: OutgoingMessage): Promise<SendResult & { draftId: string }>;
   listDrafts(cursor?: string): Promise<{ drafts: DraftView[]; nextCursor: string | null }>;
   getDraft(draftId: string): Promise<DraftView>;
   /** The draft's current revision, read before a send that names the one it read. */

@@ -25,7 +25,7 @@
  *   the subject, body and recipients, then the files removed and added.
  */
 import { validateAttachments, type MailAttachment } from "../../../shared/mail/attachments";
-import { ProviderError, rawMime, type Fetcher, type Message, type SendInput } from "../gmail-client";
+import { ProviderError, rawMime, type Fetcher, type Message, type SendInput, type OutgoingMessage } from "../gmail-client";
 import type { GmailCache, StoredMessage } from "../gmail-cache";
 import type { Store } from "../google-oauth";
 import { rawHeaders } from "../imap/mime";
@@ -249,7 +249,7 @@ export class OutlookSession implements ProviderSession {
   }
 
   /** A new draft from MIME made here, with its files; its Graph id and conversation. */
-  private async create(input: SendInput): Promise<{ graphId: string; conversationId?: string }> {
+  private async create(input: OutgoingMessage): Promise<{ graphId: string; conversationId?: string }> {
     const files = validateAttachments(input.attachments);
     const domain = this.account.email.split("@").pop() || "fabric-inbox.invalid";
     const headers = [`Message-ID: <${crypto.randomUUID()}@${domain}>`];
@@ -285,7 +285,7 @@ export class OutlookSession implements ProviderSession {
     return { id: await this.remember(graphId), threadId: await threadOf(conversationId, graphId) };
   }
 
-  async send(input: SendInput): Promise<SendResult> {
+  async send(input: OutgoingMessage): Promise<SendResult> {
     let draft: { graphId: string; conversationId?: string };
     try {
       draft = await this.create(input);
@@ -298,7 +298,7 @@ export class OutlookSession implements ProviderSession {
     return this.sendExisting(draft.graphId, draft.conversationId, true);
   }
 
-  async createDraft(input: SendInput) {
+  async createDraft(input: OutgoingMessage) {
     const draft = await this.create(input);
     const id = await this.remember(draft.graphId);
     return { draftId: id, id, threadId: await threadOf(draft.conversationId, draft.graphId) };

@@ -15,7 +15,7 @@
  */
 import PostalMime from "postal-mime";
 import { validateAttachments, type MailAttachment } from "../../../shared/mail/attachments";
-import { ProviderError, rawMime, type Message, type SendInput } from "../gmail-client";
+import { ProviderError, rawMime, type Message, type SendInput, type OutgoingMessage } from "../gmail-client";
 import type { GmailCache, StoredMessage } from "../gmail-cache";
 import type { Store } from "../google-oauth";
 import { hasCredentialKey, type CredentialEnvironment } from "../credentials";
@@ -289,7 +289,7 @@ class ImapSession implements ProviderSession {
   }
 
   /** The message as it is sent and as it is kept: Date and Message-ID added, Bcc only in the kept copy. */
-  private compose(input: SendInput) {
+  private compose(input: OutgoingMessage) {
     const date = new Date();
     const domain = this.account.email.split("@").pop() || "fabric-inbox.invalid";
     const rfcId = `<${crypto.randomUUID()}@${domain}>`;
@@ -302,7 +302,7 @@ class ImapSession implements ProviderSession {
     };
   }
 
-  async send(input: SendInput): Promise<SendResult> {
+  async send(input: OutgoingMessage): Promise<SendResult> {
     const m = this.compose(input);
     const recipients = [...input.to, ...(input.cc ?? []), ...(input.bcc ?? [])];
     await sendSmtp(smtpOptions(this.account.server, this.password, this.provider.sockets, this.account.email), { from: this.account.email, recipients }, m.wire);
@@ -373,7 +373,7 @@ class ImapSession implements ProviderSession {
       ...(withBody ? { text: m.text, html: m.html } : {}),
     };
   }
-  async createDraft(input: SendInput) {
+  async createDraft(input: OutgoingMessage) {
     const saved = await this.appendDraft(input);
     await this.remember(saved.id, saved.id);
     return { draftId: saved.id, id: saved.id, threadId: saved.threadId };

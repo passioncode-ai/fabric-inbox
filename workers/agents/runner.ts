@@ -191,6 +191,12 @@ export interface RunnerDeps {
   /** Whether another address of this workspace has an agent (a mailbox here, not Off). */
   agentServes(address: string): Promise<boolean>;
   mailbox: {
+    /**
+     * B-171: the address the agent writes from and about (the From of its replies, its prompts, its
+     * own-address check, the answerer election). Absent: the run's mailbox id, which for a Cloudflare
+     * address is that address; an account's mailbox id is its account id, never an address.
+     */
+    address?: string;
     settings(): Promise<Record<string, unknown> | null>;
     saveAssignment(agentId: string): Promise<void>;
     email(id: string): Promise<RunnerEmail | null>;
@@ -364,6 +370,7 @@ export function silentSender(senders: readonly string[], addresses: readonly (st
 
 export async function runAgent(input: { mailboxId: string; emailId: string }, deps: RunnerDeps): Promise<AgentRun | AwaitingAnswer | null> {
   const mailboxId = input.mailboxId.toLowerCase();
+  const address = (deps.mailbox.address ?? mailboxId).toLowerCase();
   const found = await deps.mailbox.email(input.emailId);
   if (!found) return null;
   // Moved to Spam or Trash before its turn (the spam model runs beside the agent, SP-2):
@@ -401,7 +408,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // that waits leaves no run, and one answered elsewhere never reaches the model.
   let answeredFrom: string | null = null;
   if (agent) {
-    const shared = await claimMessage(mailboxId, email, deps);
+    const shared = await claimMessage(address, email, deps);
     if (shared?.outcome === "wait") return { status: "waiting", owner: shared.owner, until: shared.until };
     if (shared?.outcome === "duplicate") answeredFrom = shared.owner;
   }
@@ -457,10 +464,10 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     run.handoff = true;
     return finish("skipped", msg("Passed to a person: mail from this sender or on this topic is answered by a person, so nothing was sent"));
   }
-  const skip = prefilter({ mailboxId, sender: email.sender, headers, answeredAfter, ownDomains, replyTo, subject: email.subject });
+  const skip = prefilter({ mailboxId: address, sender: email.sender, headers, answeredAfter, ownDomains, replyTo, subject: email.subject });
   if (skip) return finish("skipped", SKIP_TEXT[skip]);
 
-  const prompt = userPrompt(email, thread, mailboxId, deps.htmlToText);
+  const prompt = userPrompt(email, thread, address, deps.htmlToText);
   const scan = await deps.injection(prompt);
   if (scan.error) return finish("failed", msg("The safety check could not run ({error}); the message is left for the operator", { error: scan.error }), "safety");
   // B-141: never answered, but escalated at 4 hours like a held message, so a person sees it.
@@ -579,7 +586,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
           mailboxId, idempotencyKey: `${run.id}:waiting`, kind: "reply", originalEmailId: email.id,
           request: {
             from: typeof settings?.fromName === "string" && settings.fromName.trim()
-              ? { email: mailboxId, name: settings.fromName.trim().slice(0, 100) } : mailboxId,
+              ? { email: address, name: settings.fromName.trim().slice(0, 100) } : address,
             to, subject: replySubject(email.subject), text: signed, html: textHtml(signed), auto_submitted: true,
           },
         });
@@ -674,8 +681,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
 
   let response: ModelResponse;
   try {
-    const senderName = typeof settings?.fromName === "string" && settings.fromName.trim() && settings.fromName.trim().toLowerCase() !== mailboxId ? settings.fromName.trim() : "";
-    response = await deps.model({ agent, system: systemPrompt(agent, mailboxId, tools, passages, senderName, prefetched, !!deps.check), prompt, tools, trace: run.id });
+    const senderName = typeof settings?.fromName === "string" && settings.fromName.trim() && settings.fromName.trim().toLowerCase() !== address ? settings.fromName.trim() : "";
+    response = await deps.model({ agent, system: systemPrompt(agent, address, tools, passages, senderName, prefetched, !!deps.check), prompt, tools, trace: run.id });
     run.modelCalls = response.calls ? { ...response.calls } : { calls: 1, failed: 0, recovered: 0 };
     if (response.usage?.length) run.usage = response.usage.slice(0, MAX_RECEIPTS);
   } catch (error) {
@@ -893,8 +900,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       // The mailbox's display name, as a person replying from this address would send.
       request: {
         from: typeof settings?.fromName === "string" && settings.fromName.trim()
-          ? { email: mailboxId, name: settings.fromName.trim().slice(0, 100) }
-          : mailboxId,
+          ? { email: address, name: settings.fromName.trim().slice(0, 100) }
+          : address,
         to: reply.to, subject: reply.subject, text: reply.text, html: textHtml(reply.text),
         auto_submitted: true,
       },
@@ -951,11 +958,12 @@ export async function closeRun(run: AgentRun, deps: RunnerDeps): Promise<Closing
   const signed = withoutDashes(signature?.enabled && signature.text?.trim() ? `${chosen}\n\n${signature.text.trim()}` : chosen);
   if (!(await deps.registry.reserveSend(run.mailboxId, policy.dailySendLimit))) return { status: "retry", reason: "daily send limit" };
   const mailboxId = run.mailboxId;
+  const address = (deps.mailbox.address ?? mailboxId).toLowerCase();
   try {
     const result = await deps.mailbox.send({
       mailboxId, idempotencyKey: `${run.id}:closing`, kind: "reply", originalEmailId: email.id,
       request: {
-        from: typeof settings?.fromName === "string" && settings.fromName.trim() ? { email: mailboxId, name: settings.fromName.trim().slice(0, 100) } : mailboxId,
+        from: typeof settings?.fromName === "string" && settings.fromName.trim() ? { email: address, name: settings.fromName.trim().slice(0, 100) } : address,
         to: replyToAddress(parseStoredHeaders(email.raw_headers)) || email.sender, subject: replySubject(email.subject),
         text: signed, html: textHtml(signed), auto_submitted: true,
       },
@@ -974,7 +982,7 @@ export async function closeRun(run: AgentRun, deps: RunnerDeps): Promise<Closing
  * the copy cannot be matched with others and answers on its own. Addresses outside the served
  * domains are never looked up: no mailbox of this workspace can live there.
  */
-async function claimMessage(mailboxId: string, email: RunnerEmail, deps: RunnerDeps): Promise<MessageClaim | null> {
+async function claimMessage(address: string, email: RunnerEmail, deps: RunnerDeps): Promise<MessageClaim | null> {
   const key = await messageKey(email);
   if (!key) return null;
   let domains: string[] | undefined;
@@ -984,14 +992,16 @@ async function claimMessage(mailboxId: string, email: RunnerEmail, deps: RunnerD
     if (domains.length && !domains.some((d) => domain === d || domain.endsWith("." + d))) return false;
     return deps.agentServes(address);
   };
-  const elected = await electAnswerer(mailboxId, answeringOrder(email), serves);
-  return deps.registry.claimMessage(key, mailboxId, elected);
+  const elected = await electAnswerer(address, answeringOrder(email), serves);
+  return deps.registry.claimMessage(key, address, elected);
 }
 
 async function resolveAgent(mailboxId: string, settings: Record<string, unknown> | null, deps: RunnerDeps): Promise<AgentVersion | null> {
   const assignment = readAssignment(settings);
   if (assignment === "off") return null;
   if (assignment) return deps.registry.getAgent(assignment.id);
+  // B-171: an account (its mailbox id is "<provider>:<id>") is answered only by an agent someone chose.
+  if (mailboxId.includes(":")) return null;
   // A mailbox from before the registry keeps its behaviour: its own prompt, drafts only.
   const prompt = typeof settings?.agentSystemPrompt === "string" && settings.agentSystemPrompt.trim() ? settings.agentSystemPrompt : LEGACY_INSTRUCTIONS;
   const id = legacyAgentId(mailboxId);

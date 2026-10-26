@@ -1,6 +1,6 @@
 # B-171: reply agents on Gmail, IMAP and Outlook accounts (task packet)
 
-Status: planned 2026-10-25, not started. Board row: B-171 in [the board](../../evidence/backlog.md).
+Status: phase 1 (server) done 2026-10-26 on branch `b171-agents-on-accounts`; phases 2 and 3 open. Board row: B-171 in [the board](../../evidence/backlog.md).
 
 ## Why
 
@@ -74,6 +74,29 @@ came from Claude Code or a service's own job on a Mac (`list_agent_activity`).
    (through super-ux: the scenario first).
 3. **Reply status for accounts** (B-138, B-170 on accounts): thread facts from the accounts' cache.
 
+## Phase 1 receipt (2026-10-26)
+
+- The runner writes from `deps.mailbox.address` and never migrates an account (`tests/agents-runner.test.ts` B-171).
+- `workers/agents/account-deps.ts`: the message and its real headers from the account, the thread (what
+  the account sent read whole), replies and drafts at the account under the run's key, receipts mapped
+  (`tests/agents-accounts.test.ts`, 9 tests: REQ-3, decision 4).
+- `OutgoingMessage.autoSubmitted` in `rawMime` for Gmail, IMAP and Outlook; set only through
+  `SubmitOptions`, a request body's field is dropped (`tests/gmail-drafts.test.ts` B-171).
+- `GmailAccountsDO.drain` enqueues for the registry when `accounts/<id>.json` names an agent
+  (`tests/agents-accounts-workerd.test.ts`: REQ-1, REQ-2; red on the old drain, green on the new).
+- The registry picks the account's effects by id and reads its email when a run starts (`runDeps`).
+- An end-to-end run over an account: sent from the account, marked automatic, skipped on an
+  `Auto-Submitted` header before any model call (`tests/agents-runner.test.ts` B-171).
+- Gate: `npm test` 1600 tests, 0 failed; `npm run typecheck` 0.
+
+Not yet: decision 5 holds only one way (an account address is outside the served domains, so a
+Cloudflare copy never waits for it; an account copy does wait for an address listed before it);
+REQ-4's waiting, held and closing replies on an account are exercised through the same deps but
+have no registry test of their own yet.
+
 ## Exact next step
 
-Phase 1, starting with a failing workerd test for REQ-1 and REQ-2.
+Phase 2 (REQ-5): the scenario first (super-ux, `docs/ux/scenarios.md`), then
+`PUT /api/accounts/:id/agent` writing `accounts/<id>.json` with an etag, its MCP tool, the account
+settings screen; a drafting agent on an account without drafts is refused. Then a registry test of
+an account run's waiting and closing replies (REQ-4).

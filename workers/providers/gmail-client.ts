@@ -156,6 +156,14 @@ export const SEND_INPUT_FIELDS = ["to", "cc", "bcc", "subject", "text", "html", 
 type MissingSendField = Exclude<keyof SendInput, (typeof SEND_INPUT_FIELDS)[number]>;
 const _everySendField: [MissingSendField] extends [never] ? true : never = true;
 void _everySendField;
+/**
+ * What a provider session sends: the request's fields, plus `autoSubmitted`, which only the server's
+ * own reply agents set (B-171) and no request body can: the message then carries
+ * `Auto-Submitted: auto-replied` (RFC 3834), so other auto-responders do not answer it.
+ */
+export interface OutgoingMessage extends SendInput {
+  autoSubmitted?: boolean;
+}
 export function normalizeMessage(
   accountId: string,
   raw: GmailMessage,
@@ -248,7 +256,7 @@ function base64Text(text: string) {
   return btoa(chunks.join(''));
 }
 /** The message as Gmail's API takes it: the RFC 5322 text, base64url without padding. */
-export function makeMime(sender: string, input: SendInput): string {
+export function makeMime(sender: string, input: OutgoingMessage): string {
   return base64Text(rawMime(sender, input)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 /**
@@ -256,7 +264,7 @@ export function makeMime(sender: string, input: SendInput): string {
  * encoded words). `extraHeaders` go before MIME-Version (an SMTP send adds Date and Message-ID,
  * which Gmail adds itself); `omitBcc` leaves Bcc out of the copy handed to an SMTP server.
  */
-export function rawMime(sender: string, input: SendInput, extraHeaders: string[] = [], options: { omitBcc?: boolean } = {}): string {
+export function rawMime(sender: string, input: OutgoingMessage, extraHeaders: string[] = [], options: { omitBcc?: boolean } = {}): string {
   const attachments = validateAttachments(input.attachments);
   address(sender);
   if (input.threadId !== undefined && (typeof input.threadId !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(input.threadId)))
@@ -306,6 +314,7 @@ export function rawMime(sender: string, input: SendInput, extraHeaders: string[]
   }
   if (input.inReplyTo) h.push("In-Reply-To: " + safeHeader(input.inReplyTo));
   if (input.references) h.push("References: " + safeHeader(input.references));
+  if (input.autoSubmitted === true) h.push("Auto-Submitted: auto-replied");
   const body = (text: string) =>
     base64Text(text)
       .match(/.{1,76}/g)

@@ -20,7 +20,6 @@ export function toolTokens(env: Env): ToolTokens {
   }
 }
 
-/** The production effects of one run, all scoped to the mailbox being answered. */
 /**
  * Whether an address with a mailbox here has an agent that will answer: not Off, and an assigned agent
  * that still exists — or none assigned yet, as a pre-registry mailbox migrates on its first message,
@@ -33,12 +32,13 @@ export async function assignmentServes(assignment: ReturnType<typeof readAssignm
   return !registry.agentState || (await registry.agentState(legacyAgentId(address))) !== "deleted";
 }
 
+/** The production effects of one run, all scoped to the Cloudflare mailbox being answered. */
 export function productionDeps(env: Env, mailboxId: string, registry: Registry): RunnerDeps {
   const box = mailboxId.toLowerCase();
   const stub = env.MAILBOX.get(env.MAILBOX.idFromName(box));
   const settingsKey = `mailboxes/${box}.json`;
   return {
-    registry,
+    ...sharedDeps(env, registry),
     mailbox: {
       async settings() {
         const object = await env.BUCKET.get(settingsKey);
@@ -81,6 +81,13 @@ export function productionDeps(env: Env, mailboxId: string, registry: Registry):
         }, []);
       },
     },
+  };
+}
+
+/** Everything a run needs but its mailbox: the same for a Cloudflare address and an account (B-171). */
+export function sharedDeps(env: Env, registry: Registry): Omit<RunnerDeps, "mailbox"> {
+  return {
+    registry,
     async agentServes(address) {
       const object = await env.BUCKET.get(`mailboxes/${address.toLowerCase()}.json`);
       if (!object) return false;
