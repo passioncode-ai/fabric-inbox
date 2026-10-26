@@ -82,8 +82,9 @@ mailboxes your key names.
 - **Every send carries your own `idempotencyKey`** — stable for that one message (e.g.
   `reply-<messageId>`). Unsure whether it went out → call again with the **same** key, or
   `get_send_status`; a failed send's `details` carry its `outboxId` (Cloudflare) or
-  `idempotencyKey` (Gmail, IMAP, Outlook) for it. A receipt `unknown` means the connection went after the
-  message was handed over: check Sent, never send again under a new key.
+  `idempotencyKey` (Gmail, IMAP, Outlook) for it. A failed send says its outcome: not_sent (refused
+  before anything left: fix it and send again) or unknown (it may have left: check Sent or
+  `get_send_status`, never send again under a new key); a receipt `unknown` means the same.
 - **Two steps are for the person, not for you.** A call that returns `needsConfirmation` changed
   nothing. Show the `summary` to the person; only on their yes, call again with the same arguments
   and `confirm: "<code>"` (valid 5 minutes, once). Never confirm on your own judgement, never

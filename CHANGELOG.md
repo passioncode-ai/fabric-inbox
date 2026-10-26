@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.37.1 (2026-10-26)
+
+- **A coding agent can tell a message that did not leave from one that may have.** When a send fails,
+  the answer now says whether nothing left (fix the cause and send again) or the outcome is unknown
+  (check Sent before anything else and never send it again under a new key), so a customer no longer
+  risks getting the same reply twice (B-155).
+
 ## 0.37.0 (2026-10-26)
 
 - **See where the conversations of a Gmail, IMAP or Outlook account with a reply agent stand.** Like a

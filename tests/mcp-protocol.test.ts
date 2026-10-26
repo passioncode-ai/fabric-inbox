@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { defineTool, runTool, type Ledger } from "../workers/mcp/protocol";
+import { ApiError, defineTool, runTool, sendOutcome, type Ledger } from "../workers/mcp/protocol";
 import type { Principal } from "../workers/mcp/keys";
 
 const admin: Principal = { kind: "agent", label: "Admin", level: "admin", send: "send", dailySendLimit: 5, keyId: "k", accounts: null };
@@ -45,4 +45,29 @@ test("B-38: a key the owner approves for is told to wait for the person, and a c
   const plain = JSON.parse((await runTool(del, { x: "1" }, ctx, ledger({ issueConfirmation: async (input) => { issued = input; return { code: "CODE", expiresAt: 0 }; } }))).content[0]!.text);
   assert.equal(plain.needsConfirmation, true, "a key without owner approval keeps the code as before");
   assert.equal(issued.owner, undefined);
+});
+
+test("B-155: a send that failed says whether anything left; a refusal never reads like an unknown outcome", async () => {
+  const refunds: string[] = [];
+  const send = (error: unknown) => defineTool({ ...change, name: "send_thing", sends: true, call: async () => { throw error; } } as never);
+  const run = async (error: unknown) => JSON.parse((await runTool(send(error), { x: "1" }, ctx, ledger({ refundSend: async () => { refunds.push("r"); } }))).content[0]!.text);
+  // Refused before anything was handed over: the key's send is given back, nothing left.
+  const refused = await run(new ApiError(400, "invalid_message", { error: "invalid_message" }));
+  assert.deepEqual([refused.outcome, refused.next], ["not_sent", "Nothing left. Fix what the error names, then send again."]);
+  // The transport refused it outright (an outbox entry failed): nothing left either.
+  const rejected = await run(new ApiError(502, "Email was not accepted by the transport", { id: "o1", mailboxId: "a@x.invalid", status: "failed", errorCode: "E_RECIPIENT_SUPPRESSED" }));
+  assert.equal(rejected.outcome, "not_sent");
+  // Handed over, then the answer was lost: it may have left.
+  const lost = await run(new ApiError(409, "Send outcome is unknown; do not resend automatically", { id: "o2", mailboxId: "a@x.invalid", status: "unknown", errorCode: "TRANSPORT_OUTCOME_UNKNOWN" }));
+  assert.equal(lost.outcome, "unknown");
+  assert.match(lost.next, /^It may have left\. Whether it went out is in get_send_status .*never a new one\.$/);
+  assert.equal(lost.details.outboxId, "o2");
+  // A server error, or an error with no answer at all: never claimed as not sent.
+  assert.equal((await run(new ApiError(500, "internal", null))).outcome, "unknown");
+  assert.equal((await run(new Error("connection reset"))).outcome, "unknown");
+  assert.equal(refunds.length, 1, "only the refusal before dispatch gives the send back");
+  // A tool that does not send carries no outcome.
+  const plain = JSON.parse((await runTool(defineTool({ ...change, name: "plain_thing", call: async () => { throw new ApiError(400, "no", null); } } as never), { x: "1" }, ctx, ledger())).content[0]!.text);
+  assert.equal(plain.outcome, undefined);
+  assert.equal(sendOutcome(new ApiError(409, "conflict", { code: "IDEMPOTENCY_CONFLICT" })), "not_sent", "a conflict sent nothing under this call");
 });
