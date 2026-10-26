@@ -331,7 +331,8 @@ test("create_address passes the signature; create_addresses passes the same sett
   assert.equal(r.isError, false, JSON.stringify(r.data));
   assert.deepEqual(posted(calls), { domain: "shop.invalid", localParts: ["sales", "hello"], name: undefined, agent: { id: "a1" },
     signature: undefined, createRoute: "auto", forwardTo: "me@x.invalid" });
-  assert.throws(() => z.object(TOOLS.find((t) => t.name === "create_address")!.input).parse({ localPart: "first..last", domain: "shop.invalid" }), "two dots are refused before the call");
+  // P-4: the route judges a name, as for create_addresses: "Support" is lowered there and two dots are refused in words.
+  assert.doesNotThrow(() => z.object(TOOLS.find((t) => t.name === "create_address")!.input).parse({ localPart: "Support", domain: "shop.invalid" }));
 });
 
 test("check_test_message reads whether the test arrived", async () => {
