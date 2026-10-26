@@ -192,6 +192,7 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"R2 storage is not turned on for this account yet. Open R2 in the Cloudflare dashboard once and turn it on (the free tier is enough), then continue.": "Хранилище R2 для этого аккаунта ещё не включено. Один раз откройте R2 в панели Cloudflare и включите его (бесплатного тарифа достаточно), затем продолжите.",
 	"The storage could not be created: {reason}": "Не удалось создать хранилище: {reason}",
 	"Created the storage for your mail (R2 bucket fabric-inbox).": "Создано хранилище для вашей почты (R2-бакет fabric-inbox).",
+	"Created the storage for your mail (R2 bucket {name}).": "Создано хранилище для вашей почты (R2-бакет {name}).",
 	"Sign-in runs at {host}.": "Страница входа — {host}.",
 	"Choose a team name for your sign-in page: letters, digits and dashes.": "Выберите имя команды для страницы входа: латинские буквы, цифры и дефисы.",
 	"Zero Trust is not set up for this account yet ({reason}). Open Zero Trust in the Cloudflare dashboard once and choose the Free plan, then continue.": "Zero Trust для этого аккаунта ещё не настроен ({reason}). Один раз откройте Zero Trust в панели Cloudflare и выберите тариф Free, затем продолжите.",

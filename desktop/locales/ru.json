@@ -67,6 +67,7 @@
  "Create my server on Cloudflare": "Создать мой сервер в Cloudflare",
  "Create your server on Cloudflare": "Создание сервера в Cloudflare",
  "Created the storage for your mail (R2 bucket fabric-inbox).": "Создано хранилище для вашей почты (R2-бакет fabric-inbox).",
+ "Created the storage for your mail (R2 bucket {name}).": "Создано хранилище для вашей почты (R2-бакет {name}).",
  "Creating your server…": "Создаём ваш сервер…",
  "Cut": "Вырезать",
  "Dark theme": "Тёмная тема",

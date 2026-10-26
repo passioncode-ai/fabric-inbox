@@ -4,7 +4,10 @@
 // account — to the plugin's dependency-free onboard (plugins/fabric-inbox/scripts/onboard.mjs:
 // connect, register, prove, status, forget), which it runs for every other command.
 //
-//   node scripts/onboard.mjs server [--token-env NAME] [--account ID] [--subdomain NAME] [--team NAME] [--email ADDRESS | --access-group ID] [--json]
+//   node scripts/onboard.mjs server [--token-env NAME] [--account ID] [--subdomain NAME] [--team NAME] [--email ADDRESS | --access-group ID]
+//                                  [--script NAME --bucket NAME --keep-record] [--json]
+//   A second server in an account that already runs one (B-169) takes its own Worker and storage names
+//   (--script, --bucket), and --keep-record leaves this computer's record and welcome setup on the first.
 //   node scripts/onboard.mjs connect | register | prove | status | forget   (see the plugin's onboard.mjs)
 //
 // The Cloudflare token is typed into a hidden prompt, or read from the environment variable
@@ -74,9 +77,20 @@ export async function stepServer(opts, { say, deployer = require('../desktop/clo
   if (!accounts.length) throw new OnboardError('no_account', 'The token reaches no Cloudflare account.');
   const account = opts.account ? accounts.find((a) => a.id === opts.account) : accounts.length === 1 ? accounts[0] : null;
   if (!account) throw new OnboardError('choose_account', `The token reaches ${accounts.length} accounts; pass --account with one of: ${accounts.map((a) => `${a.id} (${a.name})`).join(', ')}.`);
+  const script = opts.script === undefined ? undefined : String(opts.script).trim().toLowerCase();
+  const bucket = opts.bucket === undefined ? undefined : String(opts.bucket).trim().toLowerCase();
+  for (const [flag, value] of [['--script', script], ['--bucket', bucket]])
+    if (value !== undefined && !deployer.validName(value)) throw new OnboardError('invalid_name', `${flag} takes letters, digits and dashes.`);
+  // Both or neither: a second Worker on the first one's storage would read and write the first server's mail.
+  if ((script === undefined) !== (bucket === undefined)) throw new OnboardError('invalid_name', 'Give --script and --bucket together, so a second server never shares the first one\'s storage.');
   const bundleDir = await bundle(say);
   const result = await deployer.deploy({ token, accountId: account.id, bundleDir, subdomain: opts.subdomain, team: opts.team, email: opts.email, accessGroup: opts['access-group'],
+    ...(script ? { scriptName: script, bucketName: bucket } : {}),
     onStep: (s) => say({ step: `server.${s.id}`, outcome: s.outcome, detail: s.detail }) });
+  if (opts['keep-record']) {
+    say({ step: 'server', outcome: 'done', detail: result.origin, human: `The server is at ${result.origin}. This computer's record still names its first server; sign in at ${result.origin} with the code sent to your email.` });
+    return { server: result.origin, accessOrigin: result.accessOrigin, account: account.id };
+  }
   const record = { ...readRecord(), server: result.origin, accessOrigin: result.accessOrigin, account: account.id };
   writeRecord(record);
   // The app offers this server first on its welcome screen (B-80): the person confirms and signs in.

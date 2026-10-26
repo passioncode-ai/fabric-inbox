@@ -199,7 +199,7 @@ export function parseArgs(argv) {
     if (!m) throw new OnboardError('usage', `Unexpected argument ${rest[i]}`);
     const [, key, inline] = m;
     if (key === 'token') throw new OnboardError('usage', 'The token is never an argument: use the hidden prompt, or --token-env NAME.');
-    if (['json', 'send', 'replace'].includes(key)) opts[key] = true;
+    if (['json', 'send', 'replace', 'keep-record'].includes(key)) opts[key] = true;
     else opts[key] = inline ?? rest[++i];
   }
   return { command, opts };

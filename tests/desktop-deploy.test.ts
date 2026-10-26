@@ -42,7 +42,7 @@ function fakeCloudflare(o: FakeOptions = {}) {
     subdomain: o.subdomain ?? null as string | null, org: o.org ?? null as string | null, bucket: false,
     idps: [] as { type: string }[], apps: [] as Record<string, unknown>[], accessPut: null as any,
     script: o.script ?? null as FakeOptions["script"], uploads: [] as Record<string, string>[], put: null as null | { metadata: any; parts: Record<string, { type: string; text: string }> },
-    workersDev: false,
+    workersDev: false, names: { script: null as string | null, bucket: null as string | null },
   };
   const ok = (result: unknown) => new Response(JSON.stringify({ success: true, errors: [], result }), { status: 200 });
   const fail = (status: number, code: number, message: string) => new Response(JSON.stringify({ success: false, errors: [{ code, message }] }), { status });
@@ -63,7 +63,11 @@ function fakeCloudflare(o: FakeOptions = {}) {
     const body = typeof init.body === "string" ? JSON.parse(init.body) : init.body;
     const page = Number(u.searchParams.get("page") ?? 1);
     const paged = (list: unknown[]) => ok(page > 1 ? [] : list);
-    switch (`${method} ${route}`) {
+    // B-169: a second server under its own names is answered as the first; the names it used are kept.
+    let key = `${method} ${route}`;
+    const named = /^(\w+ \/accounts\/acc\/(?:workers\/scripts|r2\/buckets))\/([a-z0-9-]+)(\/.*)?$/.exec(key);
+    if (named && named[2] !== "fabric-inbox") { (named[1].endsWith("buckets") ? state.names.bucket = named[2] : state.names.script = named[2]); key = `${named[1]}/fabric-inbox${named[3] ?? ""}`; }
+    switch (key) {
       case "GET /accounts": return paged([{ id: "acc", name: "Someone's account" }]);
       case "GET /accounts/acc/workers/subdomain": return state.subdomain ? ok({ subdomain: state.subdomain }) : fail(404, 10007, "no subdomain");
       case "PUT /accounts/acc/workers/subdomain": state.subdomain = body.subdomain; return ok({ subdomain: body.subdomain });
@@ -174,6 +178,28 @@ test("B-87 part 2: an organization's server lets in its Access group of administ
     assert.ok(refused.error, accessGroup);
     assert.equal(other.state.apps.length, 0, accessGroup);
   }
+});
+
+test("B-169: a second server in the account takes its own Worker and storage, routes its addresses to itself and names its commit", async () => {
+  const { out } = fixtureBundle();
+  const manifestPath = path.join(out, "manifest.json");
+  writeFileSync(manifestPath, JSON.stringify({ ...JSON.parse(readFileSync(manifestPath, "utf8")), revision: "0123456789abcdef0123456789abcdef01234567" }));
+  const fake = fakeCloudflare({ subdomain: "someone", org: "someone-team.cloudflareaccess.com" });
+  const r = await run(fake, out, { scriptName: "org-inbox", bucketName: "org-inbox" });
+  assert.ifError(r.error);
+  assert.deepEqual(fake.state.names, { script: "org-inbox", bucket: "org-inbox" });
+  assert.equal(r.origin, "https://org-inbox.someone.workers.dev");
+  assert.equal(fake.state.apps[0].domain, "org-inbox.someone.workers.dev", "its own Access application");
+  const { metadata } = fake.state.put!;
+  const binding = (name: string) => metadata.bindings.find((b: any) => b.name === name);
+  assert.equal(binding("BUCKET").bucket_name, "org-inbox", "never the first server's storage");
+  assert.equal(binding("EMAIL_ROUTING_WORKER").text, "org-inbox", "its addresses' rules and its updates point at itself");
+  assert.deepEqual(metadata.annotations, { "workers/tag": "0123456789ab" });
+  assert.match(r.steps.find((s: any) => s.id === "storage").detail, /R2 bucket org-inbox/);
+  // The first server's own deploy sends no such variable.
+  const first = fakeCloudflare();
+  assert.ifError((await run(first, out)).error);
+  assert.equal(first.state.put!.metadata.bindings.find((b: any) => b.name === "EMAIL_ROUTING_WORKER"), undefined);
 });
 
 test("running it again updates the server in place and keeps its domains, secrets and sign-in rules", async () => {

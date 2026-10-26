@@ -240,6 +240,9 @@ async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, mani
       ...(current ? { keep_bindings: ['secret_text', 'secret_key', 'plain_text', 'json'] } : {}),
       assets: { jwt: assetsJwt, config: manifest.assets.config },
       observability: manifest.worker.observability,
+      // B-169: the version names the commit it was built from, as `npm run deploy` does, so
+      // scripts/deploy-receipt.mjs can link what runs to the code.
+      ...(/^[0-9a-f]{12,40}$/.test(String(manifest.revision || '')) ? { annotations: { 'workers/tag': manifest.revision.slice(0, 12) } } : {}),
     };
     const form = new FormData();
     form.set('metadata', JSON.stringify(metadata));
@@ -295,7 +298,7 @@ async function deploy(options) {
       .catch((e) => { throw e.isPermission ? e : new DeployError(/R2|enable|subscription|billing/i.test(e.message)
         ? t('R2 storage is not turned on for this account yet. Open R2 in the Cloudflare dashboard once and turn it on (the free tier is enough), then continue.')
         : t('The storage could not be created: {reason}', { reason: e.message })); });
-    report('storage', 'Storage for your mail', 'done', t('Created the storage for your mail (R2 bucket fabric-inbox).'));
+    report('storage', 'Storage for your mail', 'done', BUCKET === DEFAULT_BUCKET ? t('Created the storage for your mail (R2 bucket fabric-inbox).') : t('Created the storage for your mail (R2 bucket {name}).', { name: BUCKET }));
   });
 
   // 3. Zero Trust team: the sign-in page
@@ -374,7 +377,9 @@ async function deploy(options) {
 
   // 6–7. Static files, then the Worker with its settings and the token
   await uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, manifest, bundleDir, readFile, attempt, report,
-    vars: { POLICY_AUD: aud, TEAM_DOMAIN: `https://${authDomain}` }, allowDowngrade: options.allowDowngrade === true });
+    // B-169: a server under another name routes its addresses and updates itself under that name, never the first server's.
+    vars: { POLICY_AUD: aud, TEAM_DOMAIN: `https://${authDomain}`, ...(SCRIPT !== DEFAULT_SCRIPT ? { EMAIL_ROUTING_WORKER: SCRIPT } : {}) },
+    allowDowngrade: options.allowDowngrade === true });
 
   // 8. Reachable at its address
   await attempt('address', 'Open it at its address', async () => {

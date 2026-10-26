@@ -76,6 +76,24 @@ test("server: one account is used; several need --account; the person is told wh
   await assert.rejects(m.stepServer({}, { say, deployer: two, token: "t", bundle: async () => "/b" }), (e: any) => e.code === "choose_account");
 });
 
+test("B-169: a second server in the same account takes its own Worker and storage, and --keep-record leaves the first one's record", async () => {
+  const { validName } = (await import("node:module")).createRequire(import.meta.url)("../desktop/cloudflare-deploy.cjs");
+  const seen: any[] = [];
+  const deployer = { validName, accounts: async () => [{ id: "acc1", name: "Mine" }],
+    deploy: async (o: any) => { seen.push(o); return { origin: `https://${o.scriptName ?? "fabric-inbox"}.me.workers.dev`, accessOrigin: "https://me.cloudflareaccess.com", steps: [] }; } };
+  m.writeRecord({ server: "https://fabric-inbox.me.workers.dev" });
+  const before = readFileSync(m.recordPath(), "utf8");
+  const second = await m.stepServer({ "access-group": "g1", script: "Org-Inbox", bucket: "org-inbox", "keep-record": true }, { say, deployer, token: "t", bundle: async () => "/b" });
+  assert.deepEqual([seen[0].scriptName, seen[0].bucketName, seen[0].accessGroup], ["org-inbox", "org-inbox", "g1"]);
+  assert.equal(second.server, "https://org-inbox.me.workers.dev");
+  assert.equal(readFileSync(m.recordPath(), "utf8"), before, "the first server's record is untouched");
+  assert.match(events.at(-1).human, /still names its first server/);
+  for (const opts of [{ script: "org-inbox" }, { bucket: "org-inbox" }, { script: "bad name", bucket: "x" }])
+    await assert.rejects(m.stepServer(opts, { say, deployer, token: "t", bundle: async () => "/b" }), (e: any) => e.code === "invalid_name");
+  assert.equal(seen.length, 1, "a refused name deploys nothing");
+  assert.equal(m.parseArgs(["server", "--keep-record", "--script", "org-inbox"]).opts["keep-record"], true);
+});
+
 test("connect: the app's answer reaches only the one-shot listener with the right state, and the key goes to the store", async () => {
   const store = fakeStore();
   const open = (link: string) => {
