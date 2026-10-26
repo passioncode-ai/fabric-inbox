@@ -19,7 +19,7 @@ import { headerValue, parseStoredHeaders } from "../agents/prefilter";
 import { GMAIL_FOLDERS } from "../providers/gmail-cache";
 import { parseRemoteAccount, type RemoteProvider } from "../../shared/mail/accounts";
 import { AttachmentValidationError, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, validateAttachments, type MailAttachment } from "../../shared/mail/attachments";
-import { BATCH_MAX, LOCAL_PART_RE } from "../../shared/address-name";
+import { BATCH_MAX } from "../../shared/address-name";
 import { bareContentId } from "../../shared/mail/inline";
 import { MAX_CURSOR_CHARS } from "../../shared/mail/inbox";
 
@@ -1257,7 +1257,8 @@ const checkAddress = defineTool({
 const createAddress = defineTool({
   name: "create_address", title: "Create an address", level: "admin", additive: true, target: (a) => `${a.localPart}@${a.domain}`,
   description: "Makes a new mailbox on one of your served domains and, when this server can, the Cloudflare rule that sends its mail here. The answer lists its steps (address, rule), each done, already, skipped, failed or not_receiving (the rule exists but Email Routing is off or broken for the domain), the last three with a fix. Optionally sets its display name, signature, agent and a copy to a verified destination. check_address first says whether the name is free; send_test_message and check_test_message then prove it receives.",
-  input: { localPart: z.string().regex(LOCAL_PART_RE).describe("The part before @, lower case (letters, digits, . _ + -, a letter or digit at each end, no two dots together)"), domain,
+  // P-4: checked by the route, as create_addresses' names are, so "Support" is taken (lowered) and a bad name is explained in words.
+  input: { localPart: z.string().min(1).max(320).describe("The part before @ (letters, digits, . _ + -, a letter or digit at each end, no two dots together); upper case is lowered"), domain,
     ...newAddressSettings },
   routes: ["POST /api/project-addresses", "POST /api/v1/mailboxes"],
   call: (a, ctx) => post(ctx, "/api/project-addresses", { localPart: a.localPart, domain: a.domain.toLowerCase(), name: a.name, agent: toAgent(a.agent),

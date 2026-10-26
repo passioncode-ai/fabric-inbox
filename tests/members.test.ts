@@ -141,3 +141,26 @@ test("N-8: a member's held mail is looked up and decided for their own mailboxes
   await assert.rejects(() => s.request("POST", "/api/safety/decide", { body: { accountId: "cloudflare:other@owner.example", messageId: "m", action: "release" } }), /You reach only/);
   assert.deepEqual(calls, ["POST /api/safety/lookup"]);
 });
+
+test("N-4: the keys a person made go when they leave the server or become a member; others' keys stay", async () => {
+  const { bucket } = fakeBucket();
+  const { AGENT_KEYS_KEY } = await import("../workers/mcp/keys").then((m: any) => ({ AGENT_KEYS_KEY: m.AGENT_KEYS_KEY ?? "config/agent-keys.json" }));
+  const key = (id: string, createdBy?: string) => ({ id, clientId: id + ".access", name: id, level: "admin", send: "send", dailySendLimit: 50, createdAt: "2026-10-26T00:00:00Z", expiresAt: null, accounts: null, ...(createdBy ? { createdBy } : {}) });
+  await bucket.put(AGENT_KEYS_KEY, JSON.stringify({ keys: [key("k-ann", "ann@owner.example"), key("k-bob", "bob@owner.example"), key("k-old")] }));
+  const app = new Hono<{ Bindings: { BUCKET: R2Bucket }; Variables: { standing?: unknown } }>();
+  app.use("*", async (c, next) => { c.set("standing", { role: "admin", email: "owner@owner.example", listed: true }); await next(); });
+  app.route("/", membersRouter as unknown as Hono);
+  const call = async (method: string, path: string, body?: unknown) => {
+    const r = await app.request(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { "Content-Type": "application/json" } }, { BUCKET: bucket });
+    return { status: r.status, data: await r.json() as any };
+  };
+  await call("PUT", "/api/members/ann%40owner.example", { role: "admin" });
+  await call("PUT", "/api/members/bob%40owner.example", { role: "admin" });
+  const demoted = await call("PUT", "/api/members/bob%40owner.example", { role: "member", accounts: ["sales@owner.example"] });
+  assert.deepEqual(demoted.data.revokedKeys, ["k-bob"]);
+  assert.match(demoted.data.warning, /Zero Trust/, "with no Cloudflare token here, the token is named for deletion");
+  const removed = await call("DELETE", "/api/members/ann%40owner.example");
+  assert.deepEqual(removed.data.revokedKeys, ["k-ann"]);
+  const left = JSON.parse(await (await bucket.get(AGENT_KEYS_KEY))!.text()).keys.map((k: any) => k.id);
+  assert.deepEqual(left, ["k-old"], "a key from before the record stays; the operator sees it in Agent access");
+});

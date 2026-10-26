@@ -807,6 +807,8 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Released by a person": "Отпустил человек",
 	"Kept held by a person": "Человек оставил задержанным",
 	"Kept held by a person after the safety check": "Человек оставил письмо задержанным после проверки безопасности",
+	"Their keys no longer work here, but their tokens could not be deleted in Cloudflare (no token on the server); delete them in Zero Trust → Service credentials.": "Их ключи здесь больше не работают, но их токены не удалось удалить в Cloudflare (на сервере нет токена); удалите их в Zero Trust → Service credentials.",
+	"Their keys no longer work here, but Cloudflare did not delete {count} of their tokens; delete them in Zero Trust → Service credentials.": "Их ключи здесь больше не работают, но Cloudflare не удалил их токены ({count}); удалите их в Zero Trust → Service credentials.",
 	"Name one or more messages": "Укажите одно или несколько писем",
 	"Name the message and release or keep": "Укажите письмо и выберите: отпустить или оставить",
 	"The safety check is not available on this server": "Проверка безопасности на этом сервере недоступна",

@@ -38,6 +38,8 @@ export interface AgentKey {
    * access before its confirmation code works; absent, the agent confirms with the code alone (AP-4).
    */
   approval?: "owner";
+  /** N-4: the person who made it (their sign-in email); their keys go when they leave or stop being an administrator. */
+  createdBy?: string;
 }
 
 /** Who is calling the protocol, after Access and the key registry. */
@@ -66,6 +68,7 @@ function normaliseKey(raw: unknown): AgentKey | null {
     // A limit on an Admin key cannot hold (admin tools act on the whole workspace): it reaches nothing.
     accounts: accounts && level === "admin" ? [] : accounts,
     ...(k.approval === "owner" ? { approval: "owner" as const } : {}),
+    ...(typeof k.createdBy === "string" && k.createdBy ? { createdBy: k.createdBy.toLowerCase() } : {}),
   };
 }
 

@@ -305,3 +305,11 @@ test("N-3: an admin key narrowed to a mailbox loses that mailbox's administrator
   await assert.rejects(() => s.request("PUT", "/api/accounts/g1/agent", { body: { agent: "off" } }), /limited to/);
   assert.equal(calls.length, 0);
 });
+
+test("P-4: create_address takes a name as the route does, upper case included; the route explains a bad one", async () => {
+  const { z } = await import("zod");
+  const tool = TOOLS.find((t) => t.name === "create_address")!;
+  const schema = z.object(tool.input as never);
+  assert.equal(schema.safeParse({ localPart: "Support", domain: "owner.example" }).success, true);
+  assert.equal(schema.safeParse({ localPart: "", domain: "owner.example" }).success, false);
+});
