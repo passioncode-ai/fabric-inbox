@@ -21,6 +21,16 @@ export class ApiError extends Error {
   constructor(readonly status: number, message: string, readonly data: unknown) { super(message); }
 }
 
+/**
+ * B-154 (DEC-0121 AP-4): a step only the person takes (a consent, a typed secret). The tool that stands
+ * for the button refuses with the contract's `human-step-required` and the direct link to that step, so
+ * the agent hands the person the exact place instead of a description.
+ */
+export type HumanStep = "sign-in" | "consent" | "payment" | "secret" | "spend-above-limit" | "passkey";
+export class HumanStepRequired extends Error {
+  constructor(readonly humanStep: HumanStep, readonly url: string, message: string) { super(message); }
+}
+
 export interface ToolContext { api: Api; principal: Principal }
 
 export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
@@ -209,6 +219,10 @@ export async function runTool(tool: ToolDef, rawArgs: Record<string, unknown>, c
     }
     return text(result ?? { ok: true });
   } catch (error) {
+    if (error instanceof HumanStepRequired) {
+      const refusal = { error: { code: "human-step-required", message: error.message, data: { humanStep: error.humanStep, url: error.url } } };
+      return { ...text(refusal, true), structuredContent: refusal };
+    }
     // A route that refused (4xx) sent nothing; an unknown failure keeps the send counted — and so does
     // a 409 whose answer says the outcome is unknown: the message may have left (B-50).
     const outcomeUnknown = error instanceof ApiError && (error.data as { status?: unknown } | null)?.status === "unknown";

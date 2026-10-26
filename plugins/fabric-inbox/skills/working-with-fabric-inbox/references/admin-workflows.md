@@ -229,7 +229,11 @@ Google Cloud; `check_gmail_setup` checks the saved client with Google and names 
 the app registration, the client secret's end date), and `outlook_connect_link` gives the address
 they open to connect Outlook; `list_mail_providers` lists the
 IMAP presets (servers, the first step at the provider, its help page) and where in the app the
-person enters the password — an agent never receives one. `disconnect_account` (two-step)
+person enters the password — an agent never receives one. When the person asks you to connect an
+account, enter an app password or save a provider's setup, call `connect_account`,
+`set_account_password` or `set_provider_setup`: each answers the refusal human-step-required with
+`data.humanStep` (consent or secret) and `data.url`, the exact place; give the person that link and
+say what they do there. `disconnect_account` (two-step)
 disconnects a Gmail, IMAP or Outlook account;
 `list_agent_keys` lists the keys (no secrets); keys are made in Settings → Agent access and tokens
 pasted in Settings → Accounts. On a shared server, `list_members` lists the people: each email, its
