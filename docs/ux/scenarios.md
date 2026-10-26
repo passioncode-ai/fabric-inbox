@@ -89,6 +89,7 @@
 | SCN-084 | Sign in through my organization's identity provider | Resume and manage preferences | P-02 | ST-007, FLW-07 | draft | — |
 | SCN-085 | Approve what an agent cannot undo | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
 | SCN-086 | Put a reply agent on a Gmail, IMAP or Outlook account | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | — |
+| SCN-088 | A message with a phishing link or a dangerous file is marked and kept from agents | Find and handle a conversation | P-01 | ST-002, FLW-02 | draft | — |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1788,3 +1789,26 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** workers/safety/hidden.ts (`splitHidden`), workers/safety/check.ts (`inspectMessage`, `suspect`), workers/safety/review.ts (`reviewHeld`), vendor/okolos/core-injection (`analyse`), workers/categories/store.ts (`checkSafety`, `safetyOf`, `heldMessages`, `decideHeld`, `releaseAgent`), workers/routes/safety.ts, workers/agents/runner.ts (`held`), workers/automation/engine.ts (`safety`), workers/mcp/tools.ts (`heldOf`, `list_held_messages`, `decide_held_message`), workers/mcp/scope.ts (`SAFETY_ROUTES`), app/components/inbox/HeldPanel.tsx, app/components/inbox/TriagedList.tsx, tests/safety-check.test.ts, tests/safety-workerd.test.ts, tests/mcp-held.test.ts, tests/agents-runner.test.ts (B-178), tests/automation-engine.test.ts (B-178), tests/mcp-scope.test.ts (B-178), tests/okolos-vendor.test.ts
 - **Product:** unobserved
 - **Today:** Built 2026-10-26 (B-178). Before it, the safety check ran only inside a reply agent's run; outside agents over MCP and automation rules read such mail unmarked. Not yet read: attachments' text and links (B-179).
+
+### SCN-088: A message with a phishing link or a dangerous file is marked and kept from agents
+- **Persona:** P-01
+- **Feature:** Find and handle a conversation
+- **Traces:** ST-002, ST-008, FLW-02, JTBD-01, JTBD-02; B-179, B-180 (operator 2026-10-26: protection from attachments (PDF and others) and links; links checked against phishing databases through Okolos; Fabric Inbox guarded by Okolos)
+- **Entry point:** SCR-03 (the list and the reader)
+- **Preconditions:** Mail arrives at a Cloudflare address or a connected Gmail, IMAP or Outlook account; the safety check of SCN-087 is on; the server has a copy of the Okolos phishing feed (it fetches the signed feed itself and checks its signature).
+- **Steps:**
+  1. A message arrives -> with the check of SCN-087, its links are looked up in the server's copy of the Okolos phishing feed (a listed site, or a page under it), and the text of a PDF or document it carries is read and checked like its body.
+  2. Nothing found -> it goes on as before.
+  3. A link to a listed phishing site, instructions to an AI inside an attached document, or a file that runs code (a program, a script, an Office file with macros) -> the message is held and marked, with which link or file and why.
+  4. Open the message -> the reader names the dangerous link or file; opening such a link asks first.
+  5. Release it, or keep it -> as in SCN-087.
+- **Expected result:** No agent with tools reads or forwards a message that points to a known phishing site or carries a file that steers or runs code, and the person sees why before opening anything.
+- **Alt paths:** The feed cannot be fetched or its signature does not verify: the last good copy stays in use, and a server that never had one checks links as unchecked (said in the verdict), never as clean. An outside agent over MCP gets the notice of SCN-087 with the link or file named. A document whose text cannot be read is checked by its name and type only, and said so.
+- **UI elements:** SCR-03 (Held for review mark, the reader's verdict panel naming the link or file, a warning before a dangerous link opens).
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** As in SCN-087; a feed that is too old (no update for a day) is named in the verdict.
+- **Status:** draft
+- **Coverage:** (to be written with B-179, B-180)
+- **Product:** unobserved
+- **Today:** Planned 2026-10-26. The safety check reads the body's visible and hidden text (SCN-087); links and attachments are not looked at yet.
+
