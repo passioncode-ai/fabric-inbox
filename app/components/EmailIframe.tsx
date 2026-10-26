@@ -3,6 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import DOMPurify from "dompurify";
+import { isBlockedLink } from "../../shared/mail/blocked-links";
 import { mailImagePolicy, type InlineAttachments } from "~/lib/mail-image-policy";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { hasRemoteContent } from "../lib/mail-content";
@@ -13,8 +14,23 @@ import { useT } from "../lib/i18n";
  * longer navigate the app's own tab (a target="_top" link used to replace the
  * inbox with any page, e.g. a fake sign-in).
  */
-export function sanitizeMailHtml(html: string): string {
+/**
+ * B-180: links to hosts the server's Okolos feed lists do not open from the message: they lose their address and keep
+ * their text, struck through, with why in their title. `blocked` holds the hosts while one sanitize runs (it is synchronous).
+ */
+let blocked: { hosts: string[]; title: string } | null = null;
+const blockedHost = (href: string | null) => !!blocked && isBlockedLink(href, blocked.hosts);
+
+export function sanitizeMailHtml(html: string, block?: { hosts: string[]; title: string }): string {
 	installLinkHook();
+	blocked = block?.hosts.length ? { hosts: block.hosts.map((h) => h.toLowerCase()), title: block.title } : null;
+	try {
+		return sanitizeNow(html);
+	} finally {
+		blocked = null;
+	}
+}
+function sanitizeNow(html: string): string {
 	// <style> stays: the frame is sandboxed without same-origin, its CSP limits
 	// images to the allowed set, and newsletters fall apart without their CSS.
 	return DOMPurify.sanitize(html, {
@@ -29,6 +45,12 @@ function installLinkHook() {
 	linkHookInstalled = true;
 	DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 		if (node.tagName === "A" || node.tagName === "AREA") {
+			if (blockedHost(node.getAttribute("href"))) {
+				node.removeAttribute("href");
+				node.setAttribute("title", blocked!.title);
+				node.setAttribute("style", "text-decoration: line-through; cursor: not-allowed");
+				return;
+			}
 			node.setAttribute("target", "_blank");
 			node.setAttribute("rel", "noopener noreferrer");
 		}
@@ -43,6 +65,8 @@ interface EmailIframeProps {
 	inlineAttachments?: InlineAttachments;
 	/** When true, iframe auto-sizes to content height instead of filling parent */
 	autoSize?: boolean;
+	/** B-180: hosts of known phishing sites this message links to; their links do not open. */
+	blockedHosts?: string[];
 }
 
 /**
@@ -61,7 +85,7 @@ interface EmailIframeProps {
  * - A strict CSP meta tag blocks external resource loads inside the
  *   iframe as a defense-in-depth layer.
  */
-export default function EmailIframe({ body, messageKey, inlineAttachments, autoSize }: EmailIframeProps) {
+export default function EmailIframe({ body, messageKey, inlineAttachments, autoSize, blockedHosts }: EmailIframeProps) {
 	const t = useT();
 	const iframeRef = useRef<HTMLIFrameElement>(null);
 	const [height, setHeight] = useState(autoSize ? 100 : 0);
@@ -99,7 +123,7 @@ export default function EmailIframe({ body, messageKey, inlineAttachments, autoS
 		const iframe = iframeRef.current;
 		if (!iframe) return;
 
-		const cleanBody = sanitizeMailHtml(body);
+		const cleanBody = sanitizeMailHtml(body, blockedHosts?.length ? { hosts: blockedHosts, title: t("Blocked: a known phishing site") } : undefined);
 
 		const padding = autoSize ? "0" : "24px";
 
@@ -176,7 +200,7 @@ ul, ol { padding-left: 20px; margin: 4px 0; }
 </head>
 <body>${cleanBody}${heightScript}</body>
 </html>`;
-	}, [body, autoSize, remoteImages, inlineKey]);
+	}, [body, autoSize, remoteImages, inlineKey, (blockedHosts ?? []).join(",")]);
 
 	return (
 		<div className={autoSize ? "" : "flex h-full min-h-0 flex-col"}>

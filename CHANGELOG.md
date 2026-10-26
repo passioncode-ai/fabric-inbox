@@ -5,6 +5,15 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.43.0 (2026-10-26)
+
+- **Mail that links to a known phishing site is held from your agents.** The server keeps a copy of Okolos's
+  signed phishing list and checks every link in arriving mail against it. Such a message is held, the site is
+  named, and its links do not open from the message.
+- **Attached files are checked too.** A file that runs code, such as a program, a script or an Office file with
+  macros, holds the message. The text of an attached PDF or document is checked for orders to an AI, like hidden
+  text in the message.
+
 ## 0.42.0 (2026-10-26)
 
 The third round of fixes from the bug hunt: notifications and the first steps.

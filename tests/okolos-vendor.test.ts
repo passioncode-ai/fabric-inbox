@@ -13,6 +13,6 @@ const manifest = JSON.parse(readFileSync(new URL("manifest.json", dir), "utf8"))
 test("every vendored Okolos file is byte for byte the pinned one, and nothing unlisted is there", () => {
   for (const [file, pin] of Object.entries(manifest.files))
     assert.equal(createHash("sha256").update(readFileSync(new URL(file, dir))).digest("hex"), pin.sha256, `${file} differs from Okolos ${manifest.commit}:${pin.from}`);
-  const present = readdirSync(new URL("core-injection/", dir)).map((f) => `core-injection/${f}`).sort();
+  const present = ["core-injection", "core-feeds"].flatMap((d) => readdirSync(new URL(`${d}/`, dir)).map((f) => `${d}/${f}`)).sort();
   assert.deepEqual(present, Object.keys(manifest.files).sort());
 });

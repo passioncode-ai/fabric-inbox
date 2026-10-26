@@ -1,8 +1,22 @@
 {
   "source": "https://github.com/passioncode-ai/okolos",
-  "commit": "5d55f85addd5",
+  "commit": "5d664c5",
   "files": {
-    "core-injection/signals.ts": { "from": "packages/core-injection/src/signals.ts", "sha256": "d7e8731a9e47c6bfd3cdd1518fec474f5aaf95d06f0330133c34fc627fe54b59" },
-    "core-injection/chars.ts": { "from": "packages/core-injection/src/chars.ts", "sha256": "23a160e509b986a9d7976b8e47c86fef7915774f87d27933fcb36a93f10431e5" }
+    "core-injection/signals.ts": {
+      "from": "packages/core-injection/src/signals.ts",
+      "sha256": "d7e8731a9e47c6bfd3cdd1518fec474f5aaf95d06f0330133c34fc627fe54b59"
+    },
+    "core-injection/chars.ts": {
+      "from": "packages/core-injection/src/chars.ts",
+      "sha256": "23a160e509b986a9d7976b8e47c86fef7915774f87d27933fcb36a93f10431e5"
+    },
+    "core-feeds/apply.ts": {
+      "from": "packages/core-feeds/src/apply.ts",
+      "sha256": "8523dd8c93a655c7fb64ca29625f4239294bd9b3c15497a90cc7c8772ccbf229"
+    },
+    "core-feeds/lookup.ts": {
+      "from": "packages/core-feeds/src/lookup.ts",
+      "sha256": "6933c9a57ad441d348954fb1b0363930f8f166fba1ab414c62959b1657f32154"
+    }
   }
 }

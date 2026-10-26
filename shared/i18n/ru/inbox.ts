@@ -355,6 +355,7 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"The original message goes below your text as it was, with its links and buttons. Show it": "Исходное письмо уйдёт под вашим текстом как было, со ссылками и кнопками. Показать",
 	// B-178: a message held from agents by the arrival safety check (SCN-087).
 	"Held for review": "Задержано для проверки",
+	"Blocked: a known phishing site": "Ссылка закрыта: известный фишинговый сайт",
 	"Released for agents": "Отпущено для агентов",
 	"Agents that can act (send, forward, use tools) do not get this message's text until you release it.": "Агенты, которые могут действовать (отправлять, пересылать, вызывать инструменты), не получат текст этого письма, пока вы его не отпустите.",
 	"Why it is held could not load.": "Не удалось загрузить, почему письмо задержано.",

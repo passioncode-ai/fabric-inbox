@@ -364,8 +364,9 @@ async function markCategories(env: Env, page: InboxMessage[]) {
   const keys = page.map((m) => ({ accountId: m.accountId.toLowerCase(), messageId: m.providerMessageId }));
   const safety = await env.CATEGORIES.getByName("workspace").safetyOf(keys).catch(() => ({} as Record<string, never>));
   for (const m of page) {
-    const s = (safety as Record<string, { state: string; reason: string; review: { verdict: string } | null }>)[`${m.accountId.toLowerCase()}|${m.providerMessageId}`];
-    if (s && (s.state === "held" || s.state === "kept")) m.held = { reason: s.reason, verdict: s.review?.verdict ?? null };
+    const s = (safety as Record<string, { state: string; reason: string; review: { verdict: string } | null; findings: { phishing?: { host: string }[] } }>)[`${m.accountId.toLowerCase()}|${m.providerMessageId}`];
+    if (s && (s.state === "held" || s.state === "kept"))
+      m.held = { reason: s.reason, verdict: s.review?.verdict ?? null, ...(s.findings.phishing?.length ? { links: s.findings.phishing.map((p) => p.host) } : {}) };
   }
   const found = await env.CATEGORIES.getByName("workspace").membership(page.map((m) => ({ accountId: m.accountId, messageId: m.providerMessageId })));
   for (const m of page) {

@@ -122,7 +122,7 @@ function CellBody({ row, loadBody }: { row: ThreadRow; loadBody: (message: Inbox
     enabled: !carried,
     staleTime: 300_000,
   });
-  if (carried) return row.body ? <EmailIframe messageKey={row.message.id} body={row.body} autoSize /> : <p className="fi-thread-text">{t("This message has no text.")}</p>;
+  if (carried) return row.body ? <EmailIframe messageKey={row.message.id} body={row.body} autoSize blockedHosts={row.message.held?.links} /> : <p className="fi-thread-text">{t("This message has no text.")}</p>;
   if (body.isPending) return <p className="fi-thread-text is-loading">{t("Loading…")}</p>;
   if (body.isError)
     return (
@@ -131,6 +131,6 @@ function CellBody({ row, loadBody }: { row: ThreadRow; loadBody: (message: Inbox
         <button type="button" className="fi-thread-action" onClick={() => void body.refetch()}>{t("Try again")}</button>
       </p>
     );
-  if (body.data.html) return <EmailIframe messageKey={row.message.id} body={body.data.html} autoSize />;
+  if (body.data.html) return <EmailIframe messageKey={row.message.id} body={body.data.html} autoSize blockedHosts={row.message.held?.links} />;
   return <div className="fi-thread-text">{body.data.text || t("This message has no text.")}</div>;
 }

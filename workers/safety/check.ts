@@ -19,12 +19,22 @@ export interface SafetyFindings {
   model: boolean;
   /** The model could not answer; the message is held as unchecked. */
   modelError?: string;
+  /** B-180: links to sites the Okolos phishing feed lists, by host. */
+  phishing?: { host: string; entry: string }[];
+  /** B-180: the server had no copy of the feed (`missing`), or one not updated for a day (`stale`). */
+  feed?: "missing" | "stale";
+  /** B-179: signals in the text of its attached documents (any signal, as for hidden text). */
+  fileSignals?: SignalName[];
+  /** B-179: attached files that run code, by name. */
+  riskyFiles?: string[];
+  /** B-179: attached documents whose text could not be read, by name. */
+  unreadFiles?: string[];
 }
 
 export type SafetyScan = (text: string) => Promise<{ flagged: boolean; error?: string }>;
 
 /** What the check reads: the message as HTML (a text-only message escaped into HTML) and its subject. */
-export interface SafetyInput { subject: string; html: string }
+export interface SafetyInput { subject: string; html: string; /** B-179: the text of its attached documents. */ files?: string }
 
 const MODEL_CHARS = 16_000;
 
@@ -33,7 +43,11 @@ export async function inspectMessage(input: SafetyInput, scan: SafetyScan): Prom
   const shown = `${input.subject}\n${visible}`;
   const v = analyse(shown);
   const h = hidden ? analyse(hidden) : { signals: [] as SignalName[] };
-  const forModel = hidden ? `${shown.slice(0, MODEL_CHARS / 2)}\n\n[Text the reader does not see]\n${hidden.slice(0, MODEL_CHARS / 2)}` : shown.slice(0, MODEL_CHARS);
+  const files = input.files?.trim() ?? "";
+  const f = files ? analyse(files) : { signals: [] as SignalName[] };
+  let forModel = hidden ? `${shown.slice(0, MODEL_CHARS / 2)}\n\n[Text the reader does not see]\n${hidden.slice(0, MODEL_CHARS / 2)}` : shown.slice(0, MODEL_CHARS);
+  // B-179: an attached document's text is read like hidden text: the model sees a part of it beside the body.
+  if (files) forModel = `${forModel.slice(0, (MODEL_CHARS * 2) / 3)}\n\n[Text of the attached files]\n${files.slice(0, MODEL_CHARS / 3)}`;
   const result = await scan(forModel).catch((error: unknown) => ({ flagged: false, error: (error as Error)?.message ?? "failed" }));
   return {
     visibleStrong: [...v.strong],
@@ -41,10 +55,12 @@ export async function inspectMessage(input: SafetyInput, scan: SafetyScan): Prom
     hidden: hidden.slice(0, HIDDEN_CHARS),
     model: !!result.flagged && !result.error,
     ...(result.error ? { modelError: result.error.slice(0, 200) } : {}),
+    ...(f.signals.length ? { fileSignals: [...f.signals] } : {}),
   };
 }
 
 /** Suspect: held until reviewed. */
 export function suspect(f: SafetyFindings): boolean {
-  return f.visibleStrong.length > 0 || f.hiddenSignals.length > 0 || f.model || !!f.modelError;
+  return f.visibleStrong.length > 0 || f.hiddenSignals.length > 0 || f.model || !!f.modelError || !!f.phishing?.length
+    || !!f.riskyFiles?.length || !!f.fileSignals?.length;
 }

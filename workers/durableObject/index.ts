@@ -1454,6 +1454,7 @@ export class MailboxDO extends DurableObject<Env> {
         discard_reason: discard, discarded_at: discard ? now : null, ...(discard ? { read: true } : {}) }, attachments);
       this.incoming.record(mailboxId, { id: email.id, sender: email.sender, subject: email.subject,
         body: email.body, date: email.date, thread_id: email.thread_id,
+        ...(attachments.length ? { files: attachments.slice(0, 20).map((a) => ({ id: a.id, filename: a.filename, mimetype: a.mimetype, size: a.size })) } : {}),
         ...(spam ? { spam: true } : discard ? { discarded: true }
           : verdict.screen ? { screen: true, senderName: email.sender_name ?? null, verified: verdict.verified ?? null } : {}) });
       if (verdict.copyOwed && !spam && !discard) this.ctx.storage.sql.exec("UPDATE incoming_receipts SET forward_status = 'owed' WHERE delivery_id = ?", email.id);
