@@ -90,6 +90,7 @@
 | SCN-085 | Approve what an agent cannot undo | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
 | SCN-086 | Put a reply agent on a Gmail, IMAP or Outlook account | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | — |
 | SCN-088 | A message with a phishing link or a dangerous file is marked and kept from agents | Find and handle a conversation | P-01 | ST-002, FLW-02 | draft | — |
+| SCN-089 | Prepare an outreach campaign with my agent | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | tests/campaigns-workerd.test.ts |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1811,4 +1812,25 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** workers/safety/feed.ts (`refreshFeed`, `linksOf`, `phishingLinks`), vendor/okolos/core-feeds (`applyUpdate`, `matchUrl`), workers/safety/files.ts (`readFiles`, `runsCode`), workers/safety/check.ts (`fileSignals`, `riskyFiles`), workers/categories/store.ts (`phishingFeed`, `toText`, `checkSafety`), workers/durableObject/index.ts (the event's `files`), app/components/EmailIframe.tsx (`blockedHosts`), shared/mail/blocked-links.ts, tests/okolos-feed.test.ts, tests/safety-files.test.ts, tests/safety-workerd.test.ts (B-179, B-180), tests/okolos-vendor.test.ts
 - **Product:** unobserved
 - **Today:** Built 2026-10-26 (B-179, B-180) for Cloudflare mail; a Gmail, IMAP or Outlook account's files are not read on arrival yet (its links are). A link to a listed site is shown without its address rather than asking first: the message frame is sandboxed without dialogs.
+
+### SCN-089: Prepare an outreach campaign with my agent
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, JTBD-02; B-181 (operator 2026-10-26: an agent runs a server-side sending loop over a list of addresses and messages; the interface stays personal, agent, support and automation inbox); [the plan](../app-store/tasks/2026-10-27-outreach.md)
+- **Entry point:** an agent over MCP (the screen comes in step 3)
+- **Preconditions:** A connected Gmail, Outlook or IMAP account to send from; an agent with a mail key.
+- **Steps:**
+  1. Ask the agent to prepare a campaign -> it creates one with a name, the account to send from, the steps (a first message and up to three follow-ups, each a number of days after the one before) and the sending window; defaults are human-paced (30 a day, Monday to Friday 09:00 to 17:00, 5 to 10 minutes apart).
+  2. Give it the list -> it adds the recipients with their fields (name, company and any other); an address on the suppression list, a repeat, or one that is not an address is left out and said so.
+  3. Ask for a preview -> it shows each step as one recipient will get it, with `{{field}}` filled and a missing field named before anything can be sent.
+  4. Ask for a dry run -> it says what would leave when, from which account, without sending.
+- **Expected result:** A campaign that can be launched once sending exists (step 2 of the plan), with every message checked against its fields and the suppression list, and nothing sent yet.
+- **Alt paths:** A Cloudflare address offered as the sender is refused with why (Cloudflare's own sending is for transactional mail only). A step whose text uses a field some recipients lack: the preview names them, and a fallback (`{{first_name|there}}`) fills the gap. Someone asks not to be written to: the agent adds the address or the whole domain to the suppression list.
+- **UI elements:** none yet (agent tools; the screen comes with step 3).
+- **States covered:** empty, error, success
+- **Errors & recovery:** A list over the limit is cut and said so; a campaign that is running is not edited in ways that change what was already sent.
+- **Status:** draft
+- **Coverage:** `tests/campaign.test.ts` (fields, fallbacks, the window, the plan), `tests/campaigns-workerd.test.ts` (the whole path over the routes: the sender check, recipients left out with why, the preview's missing fields, the dry run's spacing, the version a draft change needs, the suppression list), `tests/mcp-schema-drift.test.ts` (the tools' bodies).
+- **Product:** unobserved
+- **Today:** Step 1 built 2026-10-27 (B-181, 0.44.0): the tools `save_campaign`, `add_campaign_recipients`, `preview_campaign`, `dry_run_campaign`, `list_suppression`, `change_suppression` and their reads. Nothing sends yet; the sending loop is step 2.
 

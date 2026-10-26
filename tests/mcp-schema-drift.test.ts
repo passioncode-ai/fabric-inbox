@@ -97,6 +97,12 @@ const BODIES: Record<string, string[]> = {
   "POST /api/project-addresses/:email/rename": ["to"], // workers/routes/agents.ts RenameInput (B-27)
   "POST /api/accounts/:accountId/messages/:messageId/trashed": ["trashed"],
   "POST /api/automation/:account/dry-run": ["emailId", "rule"], // workers/automation/index.ts
+  "POST /api/campaigns": ["campaign"], // workers/routes/campaigns.ts (B-181)
+  "PUT /api/campaigns/:id": ["campaign", "expectedVersion"],
+  "POST /api/campaigns/:id/recipients": ["recipients", "remove"],
+  "POST /api/campaigns/:id/preview": ["email"],
+  "POST /api/campaigns/:id/dry-run": ["count"],
+  "POST /api/suppression": ["add", "remove", "reason"],
 };
 /** Written routes whose body carries nothing (or that take a whole document as it is). */
 const NO_BODY = new Set([

@@ -550,6 +550,7 @@ flowchart LR
 | Agents, versions, runs (last 2000), send counters, agent queue, message claims (7 days) | `AgentRegistryDO` SQLite (`workspace`) |
 | Knowledge collections, documents, chunks, FTS5 index | `KnowledgeDO` SQLite (`workspace`), migration `fabric-v3` |
 | Projects, categories, verdicts, category queue, model budget, backfills, spam checks and their budget | `CategoriesDO` SQLite (`workspace`), migration `fabric-v4` |
+| Outreach campaigns (definition and version, state), their recipients with fields and status, the do-not-write list (addresses and domains) (B-181) | `CampaignsDO` SQLite (`workspace`), migration `fabric-v5` |
 | Spam lists (blocked and allowed senders and domains) | R2 `config/spam.json` |
 | Discard rules (list or sender, why, counts) and the Always allow list | R2 `config/discard.json` |
 | Why a message is in Discarded, and since when | `MailboxDO` `emails.discard_reason`, `emails.discarded_at`; `GmailAccountsDO` `discarded:<acc>:<id>` |
@@ -570,8 +571,8 @@ flowchart LR
 | Agent protocol confirmations, send counts, journal | `EmailMCP` SQLite (`workspace`) |
 
 **Schema versions.** `MailboxDO` runs `workers/durableObject/migrations.ts` (`d1_migrations`).
-`AgentRegistryDO`, `KnowledgeDO`, `CategoriesDO` and `EmailMCP` run their own step lists
-(`workers/{agents,knowledge,categories}/schema.ts`) through `migrateSchema`
+`AgentRegistryDO`, `KnowledgeDO`, `CategoriesDO`, `CampaignsDO` and `EmailMCP` run their own step lists
+(`workers/{agents,knowledge,categories,campaigns}/schema.ts`) through `migrateSchema`
 (`workers/lib/do-schema.ts`): each object records the steps it ran in `schema_steps`; a step runs
 once, in one transaction with its record, so a failed step leaves nothing and is retried on the next
 start; step 1 is the schema as released before versioning (`IF NOT EXISTS`), so older objects record
@@ -594,6 +595,7 @@ read with a default where it is missing, never assumed present.
 | `workers/discard/`, `shared/mail/discard.ts`, `workers/routes/discard.ts` | Discarded: rules in R2, why, matching and safety on arrival, the routes |
 | `workers/knowledge/` | knowledge store (`KnowledgeDO`) and pure text work (chunking, FTS query quoting) |
 | `workers/automation/` | rules engine, policy, MCP client |
+| `workers/campaigns/`, `shared/mail/campaign.ts`, `workers/routes/campaigns.ts` | outreach campaigns (B-181, SCN-089): `CampaignsDO`, the pure rules (fields and fallbacks, the window, spacing, the do-not-write list) and the routes; step 1 prepares, previews and dry-runs, nothing sends |
 | `workers/providers/` | the provider interface, credentials, account service, `GmailAccountsDO`, scheduler, cache; Gmail OAuth, client, sync loop and provider |
 | `workers/providers/imap/` | IMAP/SMTP: the imapflow connection, the SMTP client and its sockets, MIME and labels, the sync, the provider and session, connect input |
 | `workers/providers/outlook/` | Outlook through Microsoft Graph: sign-in and tokens, the Graph client (immutable ids, throttling), ids and labels, the delta sync, the provider and session |
