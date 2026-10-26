@@ -101,7 +101,8 @@ app.use("*", async (c, next) => {
 		const { issuer, certsUrl } = getAccessUrls(TEAM_DOMAIN);
 		// B-150: the fabric-service routes have an Access application of their own; its token is
 		// accepted on those routes only (workers/mcp/service-access.ts).
-		const pathname = new URL(c.req.url).pathname;
+		// The path the router matches (decoded as Hono decodes it), never the raw one: N-1.
+		const pathname = c.req.path;
 		const audience = await audienceFor(pathname, decodeJwt(token).aud, POLICY_AUD, () => serviceAudience(c.env.BUCKET));
 		const { payload } = await jwtVerify(token, accessKeySet(certsUrl), {
 			issuer,
@@ -137,11 +138,14 @@ app.use("*", async (c, next) => {
 	c.set("standing", standing);
 	if (standing.role === "admin") return next();
 	const url = new URL(c.req.url);
-	const isApi = url.pathname.startsWith("/api/");
+	// Gated on the path the router matches: "/%61pi/members" is routed as "/api/members", so judging
+	// the raw "/%61pi/..." as a page let a member reach every route, /mcp included (N-1).
+	const path = c.req.path;
+	const isApi = path.startsWith("/api/");
 	const refuse = (text: string) => (isApi ? c.json({ error: text }, 403) : c.text(text, 403));
 	if (standing.role === "none")
 		return refuse(msg("{email} is not on this server's list of people. Ask its administrator to add you.", { email: standing.email }));
-	const gate = memberGate(c.req.method, url.pathname, standing.accounts);
+	const gate = memberGate(c.req.method, path, standing.accounts);
 	if (gate === "pass") return next();
 	if (gate === "refuse") return refuse(msg("Only an administrator of this server can do that. You reach your own mailboxes."));
 	const inProcess = inProcessApi(url.origin, c.env, c.executionCtx as ExecutionContext);
@@ -149,15 +153,21 @@ app.use("*", async (c, next) => {
 		// Answered here, before the same-origin boundary below, so it is held to that rule here too.
 		const origin = c.req.header("origin");
 		if (origin && origin !== url.origin) return c.json({ error: "Cross-origin request refused" }, 403);
-		const narrowed = memberBody(`${c.req.method} ${url.pathname}`, await c.req.json().catch(() => null), standing.accounts);
+		const narrowed = memberBody(`${c.req.method} ${path}`, await c.req.json().catch(() => null), standing.accounts);
 		if ("refuse" in narrowed) return refuse(msg("Only an administrator of this server can do that. You reach your own mailboxes."));
-		const answer = await inProcess.request(c.req.method as "POST", url.pathname, { body: narrowed.body });
+		const answer = await inProcess.request(c.req.method as "POST", path, { body: narrowed.body });
 		return c.json(answer.data as object, answer.status as 200);
 	}
-	// The feed: answered for the member's mailboxes only, as for an agent key limited to them.
+	// The feed and the safety check's routes: answered for the member's mailboxes only, as for an agent key limited to them.
 	try {
 		const scoped = scopedApi(inProcess, standing.accounts, "person");
-		const answer = await scoped.request("GET", url.pathname, { query: Object.fromEntries(url.searchParams) });
+		const reads = c.req.method === "GET" || c.req.method === "HEAD";
+		if (!reads) {
+			const origin = c.req.header("origin");
+			if (origin && origin !== url.origin) return c.json({ error: "Cross-origin request refused" }, 403);
+		}
+		const answer = await scoped.request(reads ? "GET" : (c.req.method as "POST"), path,
+			{ query: Object.fromEntries(url.searchParams), ...(reads ? {} : { body: await c.req.json().catch(() => null) }) });
 		return c.json(answer.data as object, answer.status as 200);
 	} catch (error) {
 		if (error instanceof ApiError) return c.json({ error: error.message }, error.status as 403);

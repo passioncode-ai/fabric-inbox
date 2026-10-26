@@ -293,3 +293,15 @@ test("B-178: a limited key reads the safety state and the held list of its own m
   await assert.rejects(api.request("POST", "/api/safety/decide", { body: { accountId: "gmail:other", messageId: "m2", action: "keep" } }), /limited to/);
   assert.equal(seen.filter((s) => s.path === "/api/safety/decide").length, 0);
 });
+
+test("N-3: an admin key narrowed to a mailbox loses that mailbox's administrator actions, as a member does", async () => {
+  const narrowed = narrowPrincipal({ kind: "agent", label: "Fabric", level: "admin", send: "send", dailySendLimit: 50, keyId: "k", accounts: null } as Principal, "gmail:g1")!;
+  const names = toolsFor(narrowed, TOOLS).map((t) => t.name);
+  for (const t of ["disconnect_account", "set_account_agent"]) assert.ok(!names.includes(t), t);
+  assert.ok(names.includes("read_message"));
+  const { api, calls } = fakeApi();
+  const s = scopedApi(api, ["gmail:g1"]);
+  await assert.rejects(() => s.request("POST", "/api/accounts/g1/disconnect", { body: {} }), /limited to/);
+  await assert.rejects(() => s.request("PUT", "/api/accounts/g1/agent", { body: { agent: "off" } }), /limited to/);
+  assert.equal(calls.length, 0);
+});

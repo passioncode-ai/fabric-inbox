@@ -45,7 +45,8 @@ async function fixture(bindings: Record<string, string> = {}) {
     r2Buckets: ["BUCKET"], bindings: { POLICY_AUD: "aud", TEAM_DOMAIN: "https://team.example.invalid", ...bindings },
   });
   await mf.dispatchFetch("http://localhost/r2?key=config/agent-keys.json", { method: "PUT",
-    body: JSON.stringify({ keys: [{ id: "k1", clientId: "known.access", name: "Fabric Dashboards", level: "read", send: "none", dailySendLimit: null, createdAt: "2026-10-22T00:00:00Z", expiresAt: null }] }) });
+    body: JSON.stringify({ keys: [{ id: "k1", clientId: "known.access", name: "Fabric Dashboards", level: "read", send: "none", dailySendLimit: null, createdAt: "2026-10-22T00:00:00Z", expiresAt: null },
+      { id: "k2", clientId: "narrow.access", name: "One mailbox", level: "read", send: "none", dailySendLimit: null, createdAt: "2026-10-22T00:00:00Z", expiresAt: null, accounts: ["cloudflare:a@owner.example"] }] }) });
   const get = async (path: string, claims?: Record<string, string>, extra: Record<string, string> = {}) => {
     const r = await mf.dispatchFetch("http://localhost" + path, { headers: { ...(claims ? { "x-test-claims": JSON.stringify(claims) } : {}), ...extra } });
     return { status: r.status, text: await r.text() };
@@ -179,4 +180,14 @@ test("B-87: a request from another site or origin is refused with 403 on all thr
   } finally { await mf.dispose(); }
   assert.equal(crossSite("https://a.example/x", "https://a.example", "same-origin"), null);
   assert.match(crossSite("https://a.example/x", "https://a.example:8443", undefined)!, /origin/);
+});
+
+test("N-2: a key limited to some mailboxes, by its list or by the narrowing header, does not read every mailbox's agent events", async () => {
+  const { mf, get } = await fixture();
+  try {
+    assert.equal((await get("/fabric/v1/events", { common_name: "narrow.access" })).status, 403);
+    assert.equal((await get("/fabric/v1/events", { common_name: "known.access" }, { "X-Fabric-Accounts": "cloudflare:a@owner.example" })).status, 403);
+    assert.equal((await get("/fabric/v1/events", { common_name: "known.access" })).status, 200, "a whole-workspace key still does");
+    assert.equal((await get("/fabric/v1/events", { email: "owner@owner.example" })).status, 200, "and the owner");
+  } finally { await mf.dispose(); }
 });

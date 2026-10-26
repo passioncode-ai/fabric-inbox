@@ -5,7 +5,7 @@ import type { SendMailCommand, SendMailResult } from "../../shared/mail/send";
 import { LEGACY_INSTRUCTIONS, callArguments, legacyAgentId, modelSchema, publicOnlyProblem, readAssignment, type AgentVersion, type ToolGrant } from "./definition";
 import { decide, isFollowUpSubject, matchedTopic, type ModelDecision } from "./policy";
 import { MAX_RECEIPTS, type UsageReceipt } from "./usage";
-import { parseStoredHeaders, prefilter, replyToAddress, SKIP_TEXT } from "./prefilter";
+import { bareAddress, parseStoredHeaders, prefilter, replyToAddress, SKIP_TEXT } from "./prefilter";
 import { RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type AwaitingAnswer, type ToolCallRecord } from "./run";
 import { answeringOrder, duplicateReason, electAnswerer, messageKey, type MessageClaim } from "./dedupe";
 import type { KnowledgeHit } from "../knowledge/store";
@@ -366,7 +366,7 @@ function userPrompt(email: RunnerEmail, thread: RunnerThreadMessage[], mailboxId
  */
 /** Whether an address (From or Reply-To) is one of `senders`: a full address, or `@domain` with its subdomains. */
 export function silentSender(senders: readonly string[], addresses: readonly (string | null | undefined)[]): boolean {
-  const list = addresses.map((a) => (a ?? "").trim().toLowerCase()).filter((a) => a.includes("@"));
+  const list = addresses.map((a) => bareAddress(a ?? "")).filter((a) => a.includes("@"));
   return senders.some((entry) => {
     const s = entry.trim().toLowerCase();
     if (!s.startsWith("@") && s.includes("@")) return list.includes(s);

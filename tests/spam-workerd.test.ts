@@ -304,7 +304,8 @@ test("hiding an address through the route takes its mail out of All inboxes; sho
 });
 
 test("a stranger's message is held for its agent until the spam check answers; a correspondent's is not held (B-30)", async () => {
-  const { mf, call, receive } = await fixture();
+  // The safety check off: only the spam check's hold is measured here (with it on, every message waits for it, C-3).
+  const { mf, call, receive } = await fixture({ SAFETY_CHECK: "off" });
   try {
     await call("/sent", "POST", { mailbox: "support@shop.invalid", to: "friend@partner.invalid" });
     const stranger = await receive("A question", { from: "ann@customer.invalid", headers: PASS("customer.invalid"), body: "Hello, when does my order arrive? I paid last week." });
@@ -371,5 +372,14 @@ test("check_spam runs the check again on a stored message and changes nothing: r
     const spent = (await call(path, "POST", {})).body;
     assert.deepEqual([spent.model, spent.modelSkipped], [null, "The day's spam budget was spent"]);
     assert.equal((await call("/api/v1/mailboxes/support@shop.invalid/emails/nope/spam-check", "POST", {})).status, 404);
+  } finally { await mf.dispose(); }
+});
+
+test("C-3: with the safety check on, a correspondent's message waits for it too, so no agent answers before it could be held", async () => {
+  const { mf, call, receive } = await fixture();
+  try {
+    await call("/sent", "POST", { mailbox: "support@shop.invalid", to: "friend@partner.invalid" });
+    const friend = await receive("Lunch", { from: "friend@partner.invalid", headers: PASS("partner.invalid"), body: "Lunch on Friday at the usual place?" });
+    assert.equal((await call("/holds")).body["held:" + friend.emailId], 15 * 60_000);
   } finally { await mf.dispose(); }
 });

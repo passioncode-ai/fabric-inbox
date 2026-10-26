@@ -157,8 +157,9 @@ export class GmailSync {
         throw error;
       }
       await this.cache.save(accountId, message, sync.generation);
-      // A stable event key survives history replay and is kept after acknowledgement.
-      if (added.has(id) && !message.labels.includes("SENT") && !message.labels.includes("DRAFT")) {
+      // A stable event key survives history replay and is kept after acknowledgement. Mail Gmail filed in Spam or
+      // Trash reaches no rule, agent or category, as on IMAP, Outlook and Cloudflare (M-2, SP-1).
+      if (added.has(id) && !["SENT", "DRAFT", "SPAM", "TRASH"].some((l) => message.labels.includes(l))) {
         const eventKey = "event:" + accountId + ":" + id;
         await this.store.transaction(async (tx) => {
           const old = await tx.get<{ delivered: boolean }>(eventKey);

@@ -6,6 +6,7 @@ import { accountIdFor, cloudflareApi } from "../routing/cloudflare-api";
 import { principalFor, readAgentKeys, type AccessClaims } from "../mcp/keys";
 import { ensureServiceApp, forgetServiceAudience, readServiceAccess, SERVICE_ACCESS_KEY } from "../mcp/service-access";
 import type { ModelUsageRow } from "../agents/registry";
+import { NARROW_HEADER } from "../mcp/scope";
 
 /**
  * Fabric Inbox as a Fabric service in the remote placement (fabric-service/0.1, contract DEC-0015,
@@ -144,10 +145,23 @@ fabricServiceRouter.get(WELL_KNOWN_PATH, async (c) => {
   return c.json(await wellKnownDocument(c.env));
 });
 
+/**
+ * N-2: the events name every address's runs, so a key limited to some mailboxes (by its own list or by
+ * the narrowing header) does not read them, as it is not offered list_agent_events either (AP-11).
+ */
+async function limitedKey(c: C): Promise<boolean> {
+  const claims = c.get("access");
+  if (!claims?.common_name) return false;
+  if (c.req.header(NARROW_HEADER)) return true;
+  const principal = principalFor(claims, await readAgentKeys(c.env.BUCKET).catch(() => []));
+  return principal?.kind === "agent" && principal.accounts !== null;
+}
+
 fabricServiceRouter.get(EVENTS_PATH, async (c) => {
   const blocked = foreign(c);
   if (blocked) return blocked;
   if (!(await allowed(c))) return refused();
+  if (await limitedKey(c)) return c.json({ error: "This key is limited to some mailboxes; the events of every mailbox are not for it." }, 403);
   provision(c);
   c.header("Cache-Control", "no-store");
   if (!c.env.AGENT_REGISTRY) return c.json({ events: [], cursor: c.req.query("after") || null });

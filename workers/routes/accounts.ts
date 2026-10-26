@@ -532,7 +532,7 @@ accountsRouter.post("/api/accounts/:accountId/drafts", async (c) => {
 export const GmailDraftUpdateBody = z.object({
   to: z.array(z.string()).max(100).default([]), cc: z.array(z.string()).max(100).optional(), bcc: z.array(z.string()).max(100).optional(),
   subject: z.string().max(998).default(""), text: z.string().max(1_000_000), html: z.string().max(1_000_000).optional(),
-  threadId: z.string().max(200).optional(), inReplyTo: z.string().max(998).optional(), references: z.string().max(998).optional(),
+  threadId: z.string().max(200).optional(), inReplyTo: z.string().max(998).optional(), references: z.string().max(20_000).optional(),
   attachments: z.array(z.unknown()).max(10).optional(),
   /** The draft's message id when it was read; absent overwrites. */
   expectedRevision: z.string().max(200).optional(),

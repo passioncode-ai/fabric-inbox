@@ -3,7 +3,7 @@
  * mailboxes (workers/mcp/scope.ts): a route about exactly one of their mailboxes passes; the feed
  * is answered for their mailboxes only; everything else, including every setting, is refused.
  */
-import { accountOfPath, FEED_ROUTES } from "../mcp/scope";
+import { accountOfPath, adminMailboxAction, FEED_ROUTES, SAFETY_ROUTES } from "../mcp/scope";
 import { MCP_PATH } from "../mcp/keys";
 
 /** Routes any signed-in person may call: who they are on this server. */
@@ -17,14 +17,6 @@ export type Gate = "pass" | "feed" | "body" | "refuse";
  */
 export const BODY_ROUTES = new Set(["POST /api/spam/empty", "POST /api/discard/restore"]);
 
-/**
- * A mailbox's own settings (its forwarding, reply agent, signature), deleting it, and an account's
- * connection and reply agent (B-171) are an administrator's: forwarding alone could send someone else's mail away.
- */
-const ADMIN_MAILBOX_ACTIONS = [
-  { methods: ["PUT", "DELETE"], path: /^\/api\/v1\/mailboxes\/[^/]+\/?$/ },
-  { methods: ["POST", "PUT", "DELETE"], path: /^\/api\/accounts\/[^/]+\/(disconnect|password|agent)\/?$/ },
-];
 
 /**
  * `pass`: let the request through as it is; `feed`: answer it through the scoped API; `refuse`: 403.
@@ -37,9 +29,10 @@ export function memberGate(method: string, pathname: string, accounts: readonly 
   if (!pathname.startsWith("/api/")) return "pass";
   const route = `${method === "HEAD" ? "GET" : method} ${pathname}`;
   if (SELF_ROUTES.has(route)) return "pass";
-  if (FEED_ROUTES.has(route)) return "feed";
+  // The feed, and the safety check's routes (B-178), are answered for the member's mailboxes only (N-8).
+  if (FEED_ROUTES.has(route) || SAFETY_ROUTES.has(route)) return "feed";
   if (BODY_ROUTES.has(route)) return "body";
-  if (ADMIN_MAILBOX_ACTIONS.some((a) => a.methods.includes(method) && a.path.test(pathname))) return "refuse";
+  if (adminMailboxAction(method, pathname)) return "refuse";
   const allowed = new Set(accounts);
   const account = accountOfPath(pathname, allowed);
   return account && allowed.has(account) ? "pass" : "refuse";

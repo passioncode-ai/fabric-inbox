@@ -246,3 +246,15 @@ test("failed syncs wait longer each time, up to 15 minutes (P1-7)", async () => 
   }
   assert.deepEqual(waits, [1, 2, 4, 8, 15, 15]);
 });
+
+test("M-2: mail Gmail files straight into Spam or Trash is cached but reaches no rule, agent or category", async () => {
+  const gmail = new FakeGmail(0);
+  const { service, store } = await fixture(gmail.fetch, { mode: "initial" });
+  await service.sync("a");
+  await service.sync("a");
+  gmail.deliver("phish", ["SPAM", "UNREAD"]);
+  gmail.deliver("binned", ["TRASH"]);
+  gmail.deliver("real", ["INBOX", "UNREAD"]);
+  await service.sync("a");
+  assert.deepEqual([...(await store.list({ prefix: "pending:event:a:" })).keys()].map((k) => k.slice("pending:event:a:".length)), ["real"]);
+});

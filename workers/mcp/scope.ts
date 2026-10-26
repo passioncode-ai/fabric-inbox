@@ -73,8 +73,24 @@ const GMAIL_ROUTE = /^[A-Z]+ \/api\/accounts\/:accountId(\/|$)/;
 /** B-178: the safety check's routes, narrowed to a key's mailboxes by scopedApi (their accounts are in the body). */
 export const SAFETY_ROUTES = new Set(["POST /api/safety/lookup", "GET /api/safety/held", "POST /api/safety/decide"]);
 
+/**
+ * A mailbox's own settings (its forwarding, reply agent, signature), deleting it, and an account's
+ * connection and reply agent (B-171) are an administrator's: forwarding alone could send someone else's
+ * mail away. Refused to a member (workers/lib/member-gate.ts) and to any limited or narrowed key, an
+ * admin key narrowed by the header included (N-3).
+ */
+const ADMIN_MAILBOX_ACTIONS = [
+  { methods: ["PUT", "DELETE"], path: /^\/api\/v1\/mailboxes\/[^/]+\/?$/ },
+  { methods: ["POST", "PUT", "DELETE"], path: /^\/api\/accounts\/[^/]+\/(disconnect|password|agent)\/?$/ },
+];
+export const adminMailboxAction = (method: string, pathname: string) => ADMIN_MAILBOX_ACTIONS.some((a) => a.methods.includes(method) && a.path.test(pathname));
+
 export function toolFitsScope(tool: Pick<ToolDef, "routes">): boolean {
-  return tool.routes.length > 0 && tool.routes.every((r) => FEED_ROUTES.has(r) || SAFETY_ROUTES.has(r) || MAILBOX_ROUTE.test(r) || GMAIL_ROUTE.test(r));
+  return tool.routes.length > 0 && tool.routes.every((r) => {
+    const [method, path] = r.split(" ") as [string, string];
+    if (adminMailboxAction(method, path)) return false;
+    return FEED_ROUTES.has(r) || SAFETY_ROUTES.has(r) || MAILBOX_ROUTE.test(r) || GMAIL_ROUTE.test(r);
+  });
 }
 
 /**
@@ -137,6 +153,7 @@ export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubje
         const data = response.data as { held?: { accountId?: unknown }[] } | null;
         return data && Array.isArray(data.held) ? { ...response, data: { ...data, held: data.held.filter((h) => allowedLower.has(String(h.accountId).toLowerCase())) } } : response;
       }
+      if (adminMailboxAction(method, pathname)) throw refuse(accounts, who);
       const account = accountOfPath(pathname, allowed);
       if (!account || !allowed.has(account)) throw refuse(accounts, who);
       return api.request(method, path, init);

@@ -1224,3 +1224,24 @@ test("B-87: model calls per day and model come from each run's own count, the ch
     ]);
   } finally { await mf.dispose(); }
 });
+
+test("A-2, A-3: a held message released after its hold ran out is answered again, as a fresh attempt whose tools may act", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const now = new Date().toISOString();
+    const run = { id: "run-a2", mailboxId: "a@project.invalid", emailId: "e-a2", sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [],
+      agentId: "support", agentVersion: 1, status: "running", createdAt: now, updatedAt: now };
+    assert.equal((await command("begin", { run })).claimed, true);
+    await command("save", { run: { ...run, status: "skipped", injection: true, reason: "Held for review by the safety check" } });
+    await command("release", { mailbox: "a@project.invalid", emailId: "e-a2" });
+    const [after] = await command("byIds", { ids: ["run-a2"] });
+    assert.equal(after.injection, undefined, "no longer the held skip");
+    assert.equal(after.attempt, 2, "queued again");
+    const again = await command("begin", { run: { ...run, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } });
+    assert.deepEqual([again.claimed, again.run.rerun], [true, false], "answered again on purpose is not an interrupted re-run");
+    // A message whose run was not a safety skip is not woken by a late release.
+    await command("save", { run: { ...run, id: "run-a2", status: "skipped", reason: "spam" } });
+    await command("release", { mailbox: "a@project.invalid", emailId: "e-a2" });
+    assert.equal((await command("byIds", { ids: ["run-a2"] }))[0].status, "skipped");
+  } finally { await mf.dispose(); }
+});

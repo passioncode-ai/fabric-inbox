@@ -76,11 +76,14 @@ export function parseStoredHeaders(raw: string | null | undefined): { key: strin
   }
 }
 
+/** "Ann <ann@x.example>" is ann@x.example: an account's sender is the From header as written (A-4). */
+export const bareAddress = (value: string) => (value.match(/<([^<>]+)>/)?.[1] ?? value).trim().toLowerCase();
+
 export function prefilter(input: PrefilterInput): SkipReason | null {
-  const sender = input.sender.trim().toLowerCase();
+  const sender = bareAddress(input.sender);
   if (!sender || !sender.includes("@")) return "no_sender";
   if (sender === input.mailboxId.trim().toLowerCase()) return "own_address";
-  const replyTo = (input.replyTo ?? "").trim().toLowerCase();
+  const replyTo = bareAddress(input.replyTo ?? "");
   const domains = (input.ownDomains ?? []).map((d) => d.toLowerCase());
   if (domains.length && (ours(sender, domains) || (replyTo && ours(replyTo, domains)))) return "own_domain";
   const h = (name: string) => headerValue(input.headers, name)?.trim().toLowerCase();

@@ -5,6 +5,31 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.40.0 (2026-10-26)
+
+Fixes from a hunt for bugs across mail, agents, rules, categories, spam, access and setup.
+
+- **A member reaches only their own mailboxes, however the address is written.** An address with
+  encoded characters could open a server's settings to a member. It is now judged as the server reads it.
+- **Keys limited to some mailboxes see only those.** Such a key no longer reads every mailbox's agent
+  events, and a key narrowed to one account can no longer disconnect it or change its reply agent.
+- **Members see and decide held mail in their own mailboxes.**
+- **Every message waits for the safety check before its reply agent answers,** a known sender's too.
+  When the check cannot run, nothing waits for it.
+- **A held message you release later is answered.** Before, a message released after 15 minutes was
+  never answered, and answering a message again treated tools that act as unsafe.
+- **Mail that pretends to come from someone you know is checked.** When the sender's own domain says the
+  message is not from it, writing to that sender before, or allowing them, no longer lets it skip the
+  spam check.
+- **Spam lists take international domains,** and a sender name that shows your domain is caught wherever
+  it shows it.
+- **Replies in long conversations send from Gmail, IMAP and Outlook.** A conversation of about 14
+  messages made the reply fail.
+- **Mail Gmail puts in Spam or Trash reaches no rule, agent or category.**
+- **On Gmail, IMAP and Outlook, the reply agent recognizes senders with a name** ("Shop
+  <no-reply@shop.example>"): no-reply senders, your own addresses and people you hand to a person.
+- **Renaming an address no longer leaves its waiting mail stuck,** and its held mail stays held.
+
 ## 0.39.1 (2026-10-26)
 
 - **Newsletters built for Outlook are no longer taken for hidden text.** The safety check now skips

@@ -140,7 +140,13 @@ export class AgentRegistryDO extends DurableObject<Env> {
   async release(mailboxId: string, emailId: string): Promise<void> {
     const changed = this.ctx.storage.sql.exec("UPDATE agent_queue SET next_at = 0 WHERE mailbox_id = ? AND email_id = ? AND next_at > ? RETURNING email_id",
       mailboxId.toLowerCase(), emailId, Date.now()).toArray().length;
-    if (!changed) return;
+    if (!changed) {
+      // A-2: released after its hold ran out, the run already ended skipped for the safety check: it is answered now.
+      const row = this.rows("SELECT id, body FROM agent_runs WHERE mailbox_id = ? AND email_id = ?", mailboxId.toLowerCase(), emailId)[0];
+      const run = row ? (JSON.parse(String(row.body)) as AgentRun) : null;
+      if (run?.status === "skipped" && run.injection) await this.answerAgain(String(row!.id));
+      return;
+    }
     const next = Date.now() + 200;
     const current = await this.ctx.storage.getAlarm();
     if (current === null || current > next) await this.ctx.storage.setAlarm(next);
@@ -567,7 +573,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
         if (!stale) return { claimed: false, run: this.present(prior) };
         // B-94: marked a re-run, so tools that may act are not called a second time.
         // The message came once: a re-run keeps when it was received, or its first-reply time would restart.
-        const again = { ...run, createdAt: prior.createdAt, ...(prior.receivedAt ? { receivedAt: prior.receivedAt } : {}), ...(prior.attempt ? { attempt: prior.attempt } : {}), rerun: true,
+        // A run queued again on purpose is a fresh attempt: its tools may act (A-3).
+        const again = { ...run, createdAt: prior.createdAt, ...(prior.receivedAt ? { receivedAt: prior.receivedAt } : {}), ...(prior.attempt ? { attempt: prior.attempt } : {}), rerun: !prior.requeued,
           // B-131: an escalation and a waiting reply happen once per message, across its retries.
           ...(prior.escalatedAt ? { escalatedAt: prior.escalatedAt } : {}), ...(prior.acknowledged ? { acknowledged: prior.acknowledged } : {}),
           // B-141: what the last attempt held for, the gaps already reported and the closing are the message's, not the attempt's.
@@ -1023,8 +1030,9 @@ export class AgentRegistryDO extends DurableObject<Env> {
     if (run.status === "sent") return { ok: false, reason: msg("This message was already answered; it is not sent twice.") };
     if (run.status === "send_unknown" || run.phase === "sending") return { ok: false, reason: msg("This answer may have been sent already; check Sent before answering again.") };
     if (run.status === "running" && Date.now() - Date.parse(run.updatedAt) <= RUN_STALE_MS) return { ok: false, reason: msg("The agent is answering this message now.") };
-    const again: AgentRun = { ...run, status: "running", reason: "", attempt: (run.attempt ?? 1) + 1, updatedAt: new Date(0).toISOString() };
+    const again: AgentRun = { ...run, status: "running", reason: "", attempt: (run.attempt ?? 1) + 1, updatedAt: new Date(0).toISOString(), requeued: true };
     delete again.phase;
+    delete again.injection;
     // B-141: a person answering it again wants the model to look, whatever the knowledge's revision.
     if (!options.keepFacts) delete again.heldFacts;
     this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?", again.status, JSON.stringify(again), again.updatedAt, id);
