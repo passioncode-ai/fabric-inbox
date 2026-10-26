@@ -201,9 +201,13 @@ export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubje
         return oneFeed(init, account, true);
       }
       if (accounts.length === 1) return oneFeed(init, accounts[0]!, false);
-      // Several mailboxes: each one's first page, merged, newest first. It cannot be paged as one.
+      // Several mailboxes: each one's first page, merged, newest first. It cannot be paged as one. An account the
+      // administrator hid from All inboxes is left out here too, as in theirs; it is read when named (N-9).
+      const hiddenAnswer = await api.request("GET", "/api/inbox/hidden").catch(() => null);
+      const hidden = new Set(((hiddenAnswer?.data as { hidden?: unknown[] } | null)?.hidden ?? []).map((h) => String(h).toLowerCase()));
+      const shown = accounts.filter((a) => !hidden.has(a.toLowerCase()));
       const pages: Feed[] = [];
-      for (const account of accounts) {
+      for (const account of shown.length ? shown : accounts) {
         const page = await oneFeed(init, account, false);
         if (page.status < 200 || page.status >= 300) return page;
         pages.push(page.data as Feed);

@@ -123,7 +123,8 @@ test("the feed is narrowed to the key's mailboxes, in the request and in the ans
 
 test("a key with several mailboxes gets each one's feed merged, one page, newest first (list_accounts works)", async () => {
   const calls: (string | undefined)[] = [];
-  const api: Api = { async request(_m, _p, init = {}) {
+  const api: Api = { async request(_m, p, init = {}) {
+    if (p === "/api/inbox/hidden") return { status: 200, contentType: "application/json", data: { hidden: [] } };
     const account = String(init.query?.account);
     calls.push(account);
     const n = account === RESEARCH ? 1 : 2;
@@ -312,4 +313,25 @@ test("P-4: create_address takes a name as the route does, upper case included; t
   const schema = z.object(tool.input as never);
   assert.equal(schema.safeParse({ localPart: "Support", domain: "owner.example" }).success, true);
   assert.equal(schema.safeParse({ localPart: "", domain: "owner.example" }).success, false);
+});
+
+test("N-9: a member's All inboxes leaves out an account the administrator hid, as the administrator's does; named, it is read", async () => {
+  const read: string[] = [];
+  const api = { request: async (_m: string, path: string, init: any = {}) => {
+    if (path === "/api/inbox/hidden") return { status: 200, contentType: "application/json", data: { hidden: ["gmail:hid"] } };
+    read.push(String(init.query?.account));
+    return { status: 200, contentType: "application/json", data: { accounts: [{ id: init.query?.account }], messages: [], hasMore: false } };
+  } };
+  const s = scopedApi(api as never, ["cloudflare:me@owner.example", "gmail:hid"], "person");
+  await s.request("GET", "/api/inbox", { query: {} });
+  assert.deepEqual(read, ["cloudflare:me@owner.example"]);
+  await s.request("GET", "/api/inbox", { query: { account: "gmail:hid" } });
+  assert.deepEqual(read, ["cloudflare:me@owner.example", "gmail:hid"]);
+});
+
+test("P-3: the account routes and the agent protocol expect the same origin: Gmail's, else Outlook's, else the server's", async () => {
+  const { expectedAccountOrigin } = await import("../workers/providers/app-origin");
+  const outlookOnly = { MICROSOFT_CLIENT_ID: "id", MICROSOFT_CLIENT_SECRET: "s", PUBLIC_APP_URL: "https://mail.owner.example", MAIL_CREDENTIAL_KEY: Buffer.alloc(32, 7).toString("base64") } as never;
+  assert.equal(expectedAccountOrigin(outlookOnly, "https://inbox.owner.example/mcp"), "https://mail.owner.example");
+  assert.equal(expectedAccountOrigin({} as never, "https://inbox.owner.example/mcp"), "https://inbox.owner.example");
 });

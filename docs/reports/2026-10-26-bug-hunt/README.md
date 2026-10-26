@@ -34,7 +34,8 @@ lands with a test that fails without it (checked for C-1/C-2 by reverting the fi
 |---|---|---|
 | 1 | Security, mail an agent should not read, lost or doubled work: N-1, N-2, N-3, N-8, C-1, C-2, C-3 (= A-1), C-4, C-6, C-8, C-9, C-11 (= A-11), C-12, A-2, A-3, A-4, M-1, M-2 | 0.40.0 |
 | 2 | Agents, automation, onboarding, parity: A-5…A-9, A-12, A-13, O-1, O-3, O-4, O-6, O-7, O-9, P-1, P-4, M-3, M-4, M-6, C-5, C-7, C-10, C-13, N-4 (A-10 and P-2 are no defects, below) | 0.41.0 (B-182) |
-| 3 | Notifications and the rest: N-5, N-6, N-7, N-9, N-10, O-2, O-5, O-6b, O-8, O-10, O-11, O-12, P-3, P-5, P-6, M-5, M-7, M-8, M-9, A-9b, C-7b | B-183 |
+| 3 | Notifications and the rest: N-5, N-6, N-7, N-9, O-2, O-6b, P-3, P-6, M-5, M-8, M-9 | 0.42.0 (B-183) |
+| Later | Low or unproven: N-10, O-5, O-8, O-10, O-11, O-12, P-5, M-7, A-9b, C-7b | B-184 |
 
 ## Findings
 
@@ -167,3 +168,17 @@ Severity: **crit**ical, **high**, **med**ium, **low**. Paths as of `a7091be`.
 - **O-6b:** the empty inbox's text names Gmail and Cloudflare only, not Outlook and IMAP, and its button opens Accounts when Cloudflare is connected but has no address yet.
 - **A-9b:** two addresses forwarding to each other still loop until each rule's daily limit (20 by default).
 - **C-7b:** Not spam on a Gmail, IMAP or Outlook account moves the message but does not deliver it again to rules and the agent.
+
+## Wave 3: what changed
+
+- **N-5, N-6, N-7:** the new-mail notifier remembers the messages it has seen (their Message-ID and row, the last 500) instead of a timestamp, so account mail that syncs late is announced and one email in two inboxes is announced once; a read that was out when the switch went off, or the server changed, shows nothing (`desktop/new-mail.cjs`).
+- **N-9:** a member's (or a limited key's) All inboxes leaves out accounts the administrator hid; named, they are read.
+- **O-2:** an upload's deadline grows with its size (60 s plus 25 KB/s; the server bundle about 7 minutes).
+- **O-6b:** the empty inbox names Gmail, Outlook, other mail and a domain, with Connect an account and Add a domain.
+- **P-3:** the account routes and the agent protocol take the same expected origin (`expectedAccountOrigin`).
+- **P-6:** the first session's mailbox and draft errors are in the dictionary.
+- **M-5:** a reply from the app carries the parent's Message-ID in References (`replyReferences`).
+- **M-8:** a forwarding copy owed for over a day no longer blocks a rename.
+- **M-9:** mail to `user+tag@domain` with no mailbox of that name lands in `user@domain`.
+
+What is left (B-184) blocks nothing found so far: each is low or depends on a provider's live behaviour.

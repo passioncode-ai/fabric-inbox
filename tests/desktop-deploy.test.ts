@@ -358,3 +358,11 @@ test("O-1: updating a server signed in on its own domain keeps it there: workers
   assert.equal(r2.origin, null);
   assert.equal(unknown.state.workersDev, false);
 });
+
+test("O-2: an upload has time for its size; other calls keep a minute", () => {
+  const form = new FormData();
+  form.append("index.js", new Blob(["x".repeat(9_500_000)], { type: "application/javascript+module" }), "index.js");
+  const ms = deployer.uploadTimeout(form);
+  assert.ok(ms >= 6 * 60_000 && ms <= 8 * 60_000, String(ms));
+  assert.equal(deployer.uploadTimeout(new FormData()), 60_000);
+});

@@ -85,6 +85,13 @@ const NAME = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,253}\.[^\s@]{2,63}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+/** O-2: 60 s plus the time the form's bytes take at 25 KB/s (the server is about 9.5 MB: about 7 minutes in all). */
+function uploadTimeout(form) {
+  let bytes = 0;
+  for (const [, v] of form.entries()) bytes += typeof v === 'string' ? v.length : (v && v.size) || 0;
+  return 60_000 + Math.ceil(bytes / 25_000) * 1000;
+}
+
 function client(token, fetchImpl = (input, init) => fetch(input, init)) {
   if (typeof token !== 'string' || !TOKEN.test(token.trim())) throw new DeployError(t('This does not look like a Cloudflare API token. Copy it again from the page Cloudflare showed after creating it.'));
   const bearer = token.trim();
@@ -95,7 +102,8 @@ function client(token, fetchImpl = (input, init) => fetch(input, init)) {
         method,
         headers: { Authorization: `Bearer ${auth || bearer}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
         body: form ?? (body !== undefined ? JSON.stringify(body) : undefined),
-        signal: AbortSignal.timeout(60_000),
+        // O-2: an upload has time for its size (about 25 KB/s at the least), so a slow connection finishes it.
+        signal: AbortSignal.timeout(form ? uploadTimeout(form) : 60_000),
       });
     } catch (error) {
       throw new DeployError(error.name === 'TimeoutError' ? t('Cloudflare did not answer (timed out). Check the connection and continue.') : t('Cloudflare did not answer (network error). Check the connection and continue.'));
@@ -401,4 +409,4 @@ async function deploy(options) {
   return { origin: keptSignIn ? keptOrigin : `https://${host}`, accessOrigin: `https://${authDomain}`, steps };
 }
 
-module.exports = { accounts, inspect, deploy, uploadServer, client, readBundle, compareVersions, DeployError, PERMISSIONS, TOKEN_PAGE, SERVICE_TOKEN_HEADER, SCRIPT: DEFAULT_SCRIPT, validName: (v) => NAME.test(v), validEmail: (v) => EMAIL.test(v) };
+module.exports = { accounts, inspect, deploy, uploadServer, client, uploadTimeout, readBundle, compareVersions, DeployError, PERMISSIONS, TOKEN_PAGE, SERVICE_TOKEN_HEADER, SCRIPT: DEFAULT_SCRIPT, validName: (v) => NAME.test(v), validEmail: (v) => EMAIL.test(v) };

@@ -14,6 +14,7 @@ import {
 import { useWindowActive } from "~/hooks/useWindowActive";
 import { pollInterval } from "~/lib/window-activity";
 import { keepGmailDraft, restoreGmailDraft, setAsideUnreadableDraft, type GmailDraft } from "~/lib/gmail-draft";
+import { replyReferences } from "../../shared/mail/references";
 const field = "w-full rounded-md border border-kumo-line bg-kumo-base p-2";
 type Draft = GmailDraft;
 type Receipt = { status: string; providerMessageId?: string; error?: string };
@@ -166,7 +167,7 @@ function GmailAccountPage() {
         ? {
             threadId: mail?.threadId,
             inReplyTo: mail?.rfcMessageId,
-            references: mail?.references,
+            references: replyReferences(mail?.references, mail?.rfcMessageId),
           }
         : {}),
       idempotencyKey: crypto.randomUUID(),

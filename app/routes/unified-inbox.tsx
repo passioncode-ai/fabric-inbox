@@ -88,6 +88,7 @@ import type { SecretExpiry } from "../../shared/mail/microsoft-setup";
 import { pollInterval, subscribeWindowActivity } from "~/lib/window-activity";
 import AgentDock, { useWideAgentLayout } from "~/components/inbox/AgentDock";
 import { agentAccount, sourceMessage, type SavedDraft, type Source } from "~/components/agent-chat";
+import { replyReferences } from "../../shared/mail/references";
 /** How often the list in view is read again while the window is active. */
 const INBOX_POLL_MS = 60_000;
 /** The product's name as the empty reader shows it: the same in every language. */
@@ -840,7 +841,7 @@ export default function UnifiedInbox() {
           : undefined,
       threadId: mode === "reply" ? m?.threadId : undefined,
       inReplyTo: mode === "reply" ? m?.rfcMessageId : undefined,
-      references: mode === "reply" ? m?.references : undefined,
+      references: mode === "reply" ? replyReferences(m?.references, m?.rfcMessageId) : undefined,
       idempotencyKey: crypto.randomUUID(),
     });
     setComposeOpen(true);
@@ -1340,7 +1341,7 @@ export default function UnifiedInbox() {
                   {!accounts.length && issues.length
                     ? t("The server could not read the list of inboxes. Retry in a moment.")
                     : !accounts.length
-                      ? t("Connect Gmail and your Cloudflare mailboxes. Then read them together or focus on one.")
+                      ? t("Connect Gmail, Outlook or another mail account, or add a domain on Cloudflare for your own addresses. Then read them together or focus on one.")
                       : search
                         ? t(issues.length ? "Some inboxes could not be searched; the others have no match." : "Try another search or return to your inbox.")
                         : categoryParam
@@ -1352,7 +1353,11 @@ export default function UnifiedInbox() {
                             : folderEmpty(folder, t)?.[1] ?? t("New messages will appear here after your accounts sync.")}
                 </p>
                 {!accounts.length && !issues.length ? (
-                  <Link className="fi-primary" to="/accounts">{t("Connect an account")}</Link>
+                  // O-6b: mail starts from an account, or from a domain for addresses of your own.
+                  <>
+                    <Link className="fi-primary" to="/accounts">{t("Connect an account")}</Link>
+                    <Link className="fi-secondary" to="/settings/domains">{t("Add a domain")}</Link>
+                  </>
                 ) : search ? (
                   <button className="fi-secondary" onClick={() => scope({ query: "" })}>{t("Clear search")}</button>
                 ) : unreadOnly ? (

@@ -13,7 +13,7 @@ import { listMailboxAddresses } from "../lib/mailbox-store";
 import { TOOLS } from "./tools";
 import { instructionsFor, PROTOCOL_NAME } from "./instructions";
 import { version } from "../../package.json";
-import { configuration } from "../providers/google-oauth";
+import { expectedAccountOrigin } from "../providers/app-origin";
 
 /** Calls the app's own routes in-process, with no Origin header (the same-origin rule does not apply). */
 export function inProcessApi(origin: string, env: Env, ctx: ExecutionContext): Api {
@@ -30,10 +30,7 @@ export function inProcessApi(origin: string, env: Env, ctx: ExecutionContext): A
       // The account routes take changes only from the app's own origin (accounts.ts: Gmail's
       // configured one, else the server's); this call comes from the server itself, after the agent
       // protocol's own checks.
-      if (method !== "GET" && url.pathname.startsWith("/api/accounts/")) {
-        const gmail = configuration(env);
-        headers.Origin = gmail.status === "configured" ? gmail.origin : url.origin;
-      }
+      if (method !== "GET" && url.pathname.startsWith("/api/accounts/")) headers.Origin = expectedAccountOrigin(env as never, url.href);
       const response = await api.fetch(new Request(url, {
         method,
         headers,

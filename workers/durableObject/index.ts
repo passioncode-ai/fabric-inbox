@@ -114,6 +114,8 @@ interface GetEmailsOptions {
 const SPAM_HOLD_MS = 15 * 60_000;
 /** C-7: mail taken out of Spam within this long of arriving reaches its rules, categories and agent again. */
 const NOT_SPAM_REDELIVER_MS = 3 * 86_400_000;
+/** M-8: how long a forwarding copy still owed holds a rename of its address. */
+const COPY_BLOCKS_RENAME_MS = 86_400_000;
 /** Spam is kept this long, then deleted with its attachments (SP-5). */
 export const SPAM_RETENTION_MS = 30 * 86_400_000;
 /** Messages one retention pass deletes; their files go in one R2 call per R2_DELETE_KEYS keys (B-90). */
@@ -1149,7 +1151,10 @@ export class MailboxDO extends DurableObject<Env> {
 		const sends = Number(this.ctx.storage.sql.exec<{ n: number }>(
 			"SELECT COUNT(*) AS n FROM outbox WHERE status IN ('pending', 'sending', 'unknown') OR projection_status = 'pending' AND status = 'accepted'").one().n);
 		const incoming = Number(this.ctx.storage.sql.exec<{ n: number }>(
-			"SELECT COUNT(*) AS n FROM incoming_receipts WHERE automation_status = 'pending' OR forward_status IN ('owed', 'sending')").one().n);
+			// M-8: a forwarding copy owed or being sent for over a day (a report that never came, a redelivery that never
+			// did) no longer holds the rename: it would hold it for ever.
+			"SELECT COUNT(*) AS n FROM incoming_receipts WHERE automation_status = 'pending' OR (forward_status IN ('owed', 'sending') AND received_at > ?)",
+			Date.now() - COPY_BLOCKS_RENAME_MS).one().n);
 		return { sends, incoming };
 	}
 

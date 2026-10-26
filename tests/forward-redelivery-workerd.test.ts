@@ -19,6 +19,7 @@ const bundle = await build({
       export class TestMailbox extends MailboxDO {
         constructor(ctx, env) { super(ctx, { ...env, AI: { run: forbidden }, EMAIL: { send: forbidden } }); }
         async setStatus(id, status) { this.ctx.storage.sql.exec('UPDATE incoming_receipts SET forward_status = ? WHERE delivery_id = ?', status, id); }
+        async age(id, ms) { this.ctx.storage.sql.exec("UPDATE incoming_receipts SET received_at = ?, automation_status = 'accepted' WHERE delivery_id = ?", Date.now() - ms, id); }
         async status(id) { return this.ctx.storage.sql.exec('SELECT forward_status AS s FROM incoming_receipts WHERE delivery_id = ?', id).toArray()[0]?.s ?? null; }
       }
       const box = (env) => env.MAILBOX.get(env.MAILBOX.idFromName('support@shop.invalid'));
@@ -30,6 +31,8 @@ const bundle = await build({
         }
         if (b.op === 'set') { await box(env).setStatus(b.id, b.status); return Response.json({ ok: true }); }
         if (b.op === 'status') return Response.json({ status: await box(env).status(b.id) });
+        if (b.op === 'age') { await box(env).age(b.id, b.ms); return Response.json({ ok: true }); }
+        if (b.op === 'blockers') return Response.json(await box(env).renameBlockers());
         if (b.op === 'issue') { const o = await env.BUCKET.get('delivery-issues/support@shop.invalid.json'); return Response.json(o ? await o.json() : null); }
         const bytes = new TextEncoder().encode(b.raw);
         const forwards = [];
@@ -110,4 +113,17 @@ test("within one delivery, a retry after the copy left settles it as sent, witho
   } finally {
     await mf.dispose();
   }
+});
+
+test("M-8: a forwarding copy still owed after a day no longer holds a rename of its address", async () => {
+  const { mf, call } = await fixture();
+  try {
+    await call({ op: "setup" });
+    const out = await call({ raw: RAW });
+    await call({ op: "set", id: out.emailId, status: "owed" });
+    await call({ op: "age", id: out.emailId, ms: 60_000 });
+    assert.equal((await call({ op: "blockers" })).incoming, 1, "a fresh owed copy holds it");
+    await call({ op: "age", id: out.emailId, ms: 2 * 86_400_000 });
+    assert.equal((await call({ op: "blockers" })).incoming, 0, "after a day it does not");
+  } finally { await mf.dispose(); }
 });

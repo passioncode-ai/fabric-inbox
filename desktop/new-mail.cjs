@@ -14,7 +14,10 @@ const FIRST_CHECK_MS = 60 * 1000;
 const CHECK_EVERY_MS = 5 * 60 * 1000;
 /** More new messages than this at once make one summary instead of one notification each. */
 const SINGLE_MAX = 3;
-const INBOX_PATH = '/api/inbox?folder=inbox&unread=1&limit=20';
+const PAGE_SIZE = 20;
+const INBOX_PATH = `/api/inbox?folder=inbox&unread=1&limit=${PAGE_SIZE}`;
+/** How many message keys are remembered as seen. */
+const SEEN_MAX = 500;
 
 /** The sender's name from `Name <address>`, else the address. */
 function senderName(sender) {
@@ -35,7 +38,12 @@ function createNewMailNotifier(deps) {
   const file = path.join(userData, SWITCH_FILE);
   let enabled = false;
   let timer = null;
-  let baseline = null;          // { at, ids }: the newest message seen and the ids at that time
+  // What was seen: each message's keys (its Message-ID, and its row), the last SEEN_MAX of them. A timestamp
+  // watermark missed account mail that synced after a newer Cloudflare message (N-5) and announced a copy
+  // twice when its merged row changed id (N-6). `floor`: older than the first page's oldest is old mail.
+  let seen = null;
+  let floor = 0;
+  let generation = 0;
   let lastOutcome = '';
 
   const say = (outcome, extra = {}) => { if (outcome !== lastOutcome) log({ event: 'new_mail_check', outcome, ...extra }); lastOutcome = outcome; };
@@ -44,28 +52,33 @@ function createNewMailNotifier(deps) {
     timer = enabled ? setTimer(() => { timer = null; void check().finally(() => schedule(CHECK_EVERY_MS)); }, ms) : null;
     if (timer && timer.unref) timer.unref();
   }
+  // The same email in two inboxes shares its Message-ID (the feed merges them under one row, `alsoIn`).
+  const keysOf = (m) => [`row:${m.accountId}|${m.providerMessageId}`, ...(m.rfcMessageId ? [`rfc:${m.rfcMessageId}`] : [])];
+  function remember(keys) {
+    for (const k of keys) { seen.delete(k); seen.add(k); }
+    while (seen.size > SEEN_MAX) seen.delete(seen.values().next().value);
+  }
 
   /** One read: new unread messages since the last one, announced unless the person is looking at the app. */
   async function check() {
     if (!enabled) return [];
+    const mine = generation;
     let page;
     try { page = await read(INBOX_PATH); } catch { page = null; }
+    // N-7: switched off, or the server changed, while this read was out: its answer is stale.
+    if (!enabled || mine !== generation) return [];
     if (!page || !Array.isArray(page.messages)) { say('unreadable'); return []; }
     const messages = page.messages.filter((m) => m && !m.read && typeof m.providerMessageId === 'string' && typeof m.accountId === 'string')
       .map((m) => ({ ...m, at: Number(m.timestamp) || Date.parse(m.date) || 0 }));
-    const newest = messages.reduce((n, m) => Math.max(n, m.at), 0);
-    if (!baseline) {
-      baseline = { at: newest, ids: new Set(messages.filter((m) => m.at === newest).map((m) => m.id)) };
+    if (!seen) {
+      seen = new Set();
+      for (const m of messages) remember(keysOf(m));
+      floor = messages.length >= PAGE_SIZE ? messages.reduce((n, m) => Math.min(n, m.at), Infinity) : 0;
       say('baseline');
       return [];
     }
-    const fresh = messages.filter((m) => m.at > baseline.at || (m.at === baseline.at && !baseline.ids.has(m.id)))
-      .sort((a, b) => a.at - b.at);
-    if (newest >= baseline.at) {
-      const ids = new Set(newest === baseline.at ? baseline.ids : []);
-      for (const m of messages) if (m.at === newest) ids.add(m.id);
-      baseline = { at: newest, ids };
-    }
+    const fresh = messages.filter((m) => m.at >= floor && !keysOf(m).some((k) => seen.has(k))).sort((a, b) => a.at - b.at);
+    for (const m of messages) remember(keysOf(m));
     if (!fresh.length) { say('none'); return []; }
     say('new', { count: fresh.length });
     if (focused()) return fresh;   // the person is looking at the inbox: it shows them already
@@ -83,7 +96,7 @@ function createNewMailNotifier(deps) {
     async start() {
       try { enabled = (await fs.readFile(file, 'utf8')).trim() === 'on'; } catch { enabled = false; }
       log({ event: 'new_mail_notifications', outcome: enabled ? 'on' : 'off' });
-      baseline = null;
+      seen = null; generation++;
       schedule(FIRST_CHECK_MS);
     },
     enabled: () => enabled,
@@ -94,14 +107,14 @@ function createNewMailNotifier(deps) {
         await fs.writeFile(file, on ? 'on\n' : 'off\n', { mode: 0o600 });
       } catch (error) { log({ event: 'new_mail_notifications', outcome: 'not_saved', code: (error && error.code) || 'error' }); return false; }
       enabled = !!on;
-      baseline = null;
+      seen = null; generation++;
       lastOutcome = '';
       log({ event: 'new_mail_notifications', outcome: enabled ? 'on' : 'off' });
       if (enabled) { await check(); schedule(CHECK_EVERY_MS); } else schedule(0);
       return true;
     },
     /** The server changed: what was seen on the old one says nothing about the new one. */
-    reset() { baseline = null; },
+    reset() { seen = null; generation++; },
     check,
   };
 }

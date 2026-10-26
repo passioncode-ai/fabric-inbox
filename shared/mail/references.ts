@@ -19,3 +19,9 @@ export function trimReferences(value: string | readonly string[], max = REFERENC
   }
   return [root, ...recent].join(" ");
 }
+
+/** M-5: a reply's References: the parent's own chain, then the parent's Message-ID, within one header line. */
+export function replyReferences(parentReferences: string | null | undefined, parentMessageId: string | null | undefined): string | undefined {
+  const chain = trimReferences([parentReferences ?? "", parentMessageId ?? ""].join(" "));
+  return chain || undefined;
+}

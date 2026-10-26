@@ -30,3 +30,10 @@ test("a Cloudflare mailbox's reply trims the chain the same way", () => {
   assert.ok(h.References!.length <= 900);
   assert.ok(h.References!.startsWith(ids[0]!));
 });
+
+test("M-5: a reply from the app carries the parent's chain and the parent's own Message-ID", async () => {
+  const { replyReferences } = await import("../shared/mail/references");
+  assert.equal(replyReferences(undefined, "<p@x.invalid>"), "<p@x.invalid>", "a reply to the first message has a References header");
+  assert.equal(replyReferences("<a@x.invalid> <b@x.invalid>", "<p@x.invalid>"), "<a@x.invalid> <b@x.invalid> <p@x.invalid>");
+  assert.equal(replyReferences(undefined, undefined), undefined);
+});

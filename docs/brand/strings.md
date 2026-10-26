@@ -117,7 +117,7 @@ Locations name the source function while the integration branch is being formatt
 | state.inbox.no_match | No matching mail | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-005 | proposed |
 | state.inbox.empty | Nothing here yet | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-004 | proposed |
 | state.inbox.no_accounts | Your mail, in one place | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-004 | proposed |
-| state.inbox.connect_hint | Connect Gmail and your Cloudflare mailboxes. Then read them together or focus on one. | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-004 | proposed |
+| state.inbox.connect_hint | Connect Gmail, Outlook or another mail account, or add a domain on Cloudflare for your own addresses. Then read them together or focus on one. | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-004 | proposed |
 | action.inbox.older | Load older messages | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-005 | proposed |
 | action.inbox.back | Back to messages | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-004 | proposed |
 | action.inbox.archive | Archive message | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-011 | proposed |
