@@ -5,6 +5,24 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.35.0 (2026-10-26)
+
+- **Sign-in codes, account notices and customers' messages stay out of Spam.** The spam check now says
+  what a message is before it decides: a code, a sign-in link, an account, billing or verification notice
+  from the service it is about, or a customer writing to your support address, stays in the inbox even
+  when you never wrote to the sender. Phishing, scams, cold outreach and bulk marketing still go to Spam.
+  The check also sees which domain the receiving server confirmed sent the message, so a code from the
+  service's own domain is told apart from a fake notice that only uses its name, and a stranger that signs
+  itself with your own domain goes to Spam. Measured on 422 real messages: good mail sent to Spam fell
+  from 24.5% to 2.3%, and spam caught rose from 72.6% to 87.9% (B-172).
+- **See why a message went to Spam.** The new check_spam agent tool runs the check again on one message
+  and shows the rules' verdict, the confirmed domain and what the model decided, without moving anything
+  (B-172).
+- **Agents can page through the whole inbox.** Past the second page of 100 messages, the next page used
+  to be refused; it now loads (B-173).
+- **Groundwork for reply agents on Gmail, IMAP and Outlook accounts.** The server can now run a reply
+  agent on a connected account; choosing one comes in a later version (B-171).
+
 ## 0.34.0 (2026-10-25)
 
 - **The reply status tells mail the agent left alone on purpose from mail nobody took.** A message the

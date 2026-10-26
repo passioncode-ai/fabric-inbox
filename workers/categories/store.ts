@@ -12,7 +12,8 @@ import {
   CategoryInputSchema, ProjectInputSchema, categoryId, inScope, kindOf, matchesConditions, selectionChanged,
   type AccountRef, type Category, type CategoryInput, type Project, type ProjectInput,
 } from "./definition";
-import { classify, DEFAULT_CATEGORY_MODEL, SPAM_CATEGORY, SPAM_ID, type DescribedCategory } from "./classify";
+import { classify, DEFAULT_CATEGORY_MODEL, type DescribedCategory } from "./classify";
+import { judgeSpam, DEFAULT_SPAM_MODEL, type SpamInput, type SpamJudgement } from "../spam/judge";
 import { tooLittleToJudge } from "../../shared/mail/spam";
 import { parseRemoteAccount } from "../../shared/mail/accounts";
 import { msg } from "../../shared/i18n";
@@ -30,7 +31,9 @@ import { msg } from "../../shared/i18n";
  */
 export interface QueueItem { accountId: string; accountEmail: string; messageId: string; sender: string; subject: string; text: string; timestamp: number;
   /** The model also judges it for spam (SP-2): a Cloudflare message no rule decided. */
-  screen?: boolean }
+  screen?: boolean;
+  /** For the spam check (B-172): the sender's shown name and the domain Cloudflare's MX verified. */
+  senderName?: string | null; verified?: string | null }
 export interface VerdictRow { categoryId: string; accountId: string; messageId: string; matched: boolean; reason: string; source: "rule" | "model" | "error"; timestamp: number; subject: string; sender: string }
 export interface CategoryStats { matched: number; fresh: number; classified: number; pending: number; errors: number; waitingBudget: number; backfill: { total: number; done: number; state: "idle" | "running" | "done" | "failed"; detail: string } }
 export type CategoryView = Category & { stats: CategoryStats };
@@ -73,6 +76,11 @@ export class CategoriesDO extends DurableObject<Env> {
     migrateSchema(ctx.storage, CATEGORIES_STEPS, "CategoriesDO");
   }
 
+  /** The spam check's model (B-172): `SPAM_MODEL`, else the categories' model. Overridden in tests. */
+  protected spamModel(): LanguageModel {
+    const workersai = createWorkersAI({ binding: this.env.AI });
+    return workersai((this.env.SPAM_MODEL || this.env.CATEGORY_MODEL || this.env.AUTOMATION_MODEL || DEFAULT_SPAM_MODEL) as Parameters<typeof workersai>[0]);
+  }
   /** The model. Overridden in tests with a scripted one. */
   protected model(): LanguageModel {
     const workersai = createWorkersAI({ binding: this.env.AI });
@@ -92,6 +100,15 @@ export class CategoriesDO extends DurableObject<Env> {
     const mailbox = item.accountId.slice("cloudflare:".length);
     const moved = await this.env.MAILBOX.get(this.env.MAILBOX.idFromName(mailbox)).markSpam([item.messageId], reason);
     return moved.length > 0;
+  }
+
+  /**
+   * The spam check run again on one stored message (B-172, `check_spam`): the model's kind and reason,
+   * from today's spam budget; nothing is moved or recorded. Null when the budget is spent.
+   */
+  async recheckSpam(input: SpamInput): Promise<SpamJudgement | null> {
+    if (!this.spendSpam()) return null;
+    return judgeSpam(this.spamModel(), input);
   }
 
   /** Today's spam screening, for the Spam rules screen (SP-6). */
@@ -251,7 +268,8 @@ export class CategoriesDO extends DurableObject<Env> {
    * Idempotent by (account, message): a redelivery is a no-op. Nothing is queued when
    * no enabled screened category exists, so an idle workspace costs nothing.
    */
-  async ingest(account: AccountRef, event: { id: string; sender: string; subject: string; body: string; date: string; screen?: boolean; spam?: boolean }): Promise<void> {
+  async ingest(account: AccountRef, event: { id: string; sender: string; subject: string; body: string; date: string; screen?: boolean; spam?: boolean;
+    senderName?: string | null; verified?: string | null }): Promise<void> {
     if (event.spam) return;
     const screened = (await this.categories()).filter((c) => c.enabled && c.kind === "screened");
     const projects = await this.listProjects();
@@ -260,7 +278,7 @@ export class CategoriesDO extends DurableObject<Env> {
     const item: QueueItem = {
       accountId: account.id, accountEmail: account.email, messageId: event.id, sender: event.sender ?? "", subject: event.subject ?? "",
       text: stripHtmlToText(event.body ?? "").slice(0, TEXT_CHARS), timestamp: Date.parse(event.date) || Date.now(),
-      ...(screen ? { screen: true } : {}),
+      ...(screen ? { screen: true, senderName: event.senderName ?? null, verified: event.verified ?? null } : {}),
     };
     this.enqueue(item, "*");
     await this.arm(500);
@@ -342,35 +360,24 @@ export class CategoriesDO extends DurableObject<Env> {
       spamOwed = false;
     }
     let modelError = "";
-    // Which budget pays for the call: the categories' when a category needs the model (spam
-    // rides along), the spam budget when only spam does. Over its budget spam is not judged,
-    // since the message already sits in the inbox; categories wait for the next day.
-    const categoriesPaid = forModel.length ? this.spend() : false;
-    if (forModel.length && !categoriesPaid && !spamOwed) {
-      this.writeVerdicts(item, decided, now);
-      this.sql.exec("UPDATE queue SET next_at = ?, last_error = 'budget' WHERE account_id = ? AND message_id = ? AND target = ?",
-        nextDay(), item.accountId, item.messageId, target);
-      return;
-    }
-    const judgeSpam = spamOwed && (categoriesPaid || this.spendSpam());
-    if (spamOwed && !judgeSpam) this.recordSpamCheck(item, "skipped", msg("The day's spam budget was spent"), now);
-    const asked = [...(categoriesPaid ? forModel : []), ...(judgeSpam ? [SPAM_CATEGORY] : [])];
+    // Spam first, on its own call and its own budget (B-172): a message the model moves to Spam
+    // costs no categories' call. Over its budget spam is not judged, since the message already
+    // sits in the inbox; a failed call is retried with the item, and given up it lets the agent run.
     let spam: { reason: string } | null = null;
-    if (asked.length) {
-      try {
-        const verdicts = await classify(this.model(), asked.map<DescribedCategory>((c) => ({ id: c.id, name: c.name, description: c.description })),
-          { sender: item.sender, subject: item.subject, text: item.text, to: item.accountEmail });
-        for (const v of verdicts) {
-          if (v.id === SPAM_ID) {
-            if (v.match) spam = { reason: v.reason || msg("The model judged it spam") };
-            else this.recordSpamCheck(item, "clean", v.reason, now);
-            continue;
-          }
-          const c = forModel.find((x) => x.id === v.id)!;
-          decided.push({ c, matched: v.match, reason: v.reason || (v.match ? msg("The model placed it here") : msg("The model left it out")), source: "model" });
+    if (spamOwed) {
+      if (!this.spendSpam()) {
+        this.recordSpamCheck(item, "skipped", msg("The day's spam budget was spent"), now);
+        spamOwed = false;
+      } else {
+        try {
+          const j = await judgeSpam(this.spamModel(), { sender: item.sender, senderName: item.senderName ?? undefined, to: item.accountEmail,
+            subject: item.subject, text: item.text, verified: item.verified ?? null });
+          console.log(JSON.stringify({ event: "spam_judged", account: item.accountId, kind: j.kind, spam: j.spam, verified: !!item.verified }));
+          if (j.spam) spam = { reason: j.reason || msg("The model judged it spam") };
+          else { this.recordSpamCheck(item, "clean", j.reason, now); spamOwed = false; }
+        } catch (error) {
+          modelError = (error as Error).message.slice(0, 200);
         }
-      } catch (error) {
-        modelError = (error as Error).message.slice(0, 200);
       }
     }
     if (spam) {
@@ -380,6 +387,7 @@ export class CategoriesDO extends DurableObject<Env> {
         return false;
       });
       this.recordSpamCheck(item, moved ? "spam" : "spam_not_moved", spam.reason, now);
+      spamOwed = false;
       if (moved) {
         this.sql.exec("DELETE FROM verdicts WHERE account_id = ? AND message_id = ?", item.accountId, item.messageId);
         this.sql.exec("DELETE FROM queue WHERE account_id = ? AND message_id = ?", item.accountId, item.messageId);
@@ -387,8 +395,26 @@ export class CategoriesDO extends DurableObject<Env> {
         return;
       }
     }
+    if (modelError) {
+      // The spam call failed: the item waits its backoff whole, categories included (asked again with it).
+      this.retryOrGiveUp(row, item, target, forModel, spamOwed, modelError, now);
+      return;
+    }
+    const categoriesPaid = forModel.length ? this.spend() : false;
+    if (forModel.length && categoriesPaid) {
+      try {
+        const verdicts = await classify(this.model(), forModel.map<DescribedCategory>((c) => ({ id: c.id, name: c.name, description: c.description })),
+          { sender: item.sender, subject: item.subject, text: item.text, to: item.accountEmail });
+        for (const v of verdicts) {
+          const c = forModel.find((x) => x.id === v.id)!;
+          decided.push({ c, matched: v.match, reason: v.reason || (v.match ? msg("The model placed it here") : msg("The model left it out")), source: "model" });
+        }
+      } catch (error) {
+        modelError = (error as Error).message.slice(0, 200);
+      }
+    }
     if (forModel.length && !categoriesPaid) {
-      // Spam was judged on its own budget; the categories wait for tomorrow's.
+      // Spam was judged (or skipped) on its own budget; the categories wait for tomorrow's.
       this.writeVerdicts(item, decided, now);
       this.sql.exec("UPDATE queue SET next_at = ?, last_error = 'budget', payload = ? WHERE account_id = ? AND message_id = ? AND target = ?",
         nextDay(), JSON.stringify({ ...item, screen: false }), item.accountId, item.messageId, target);
@@ -399,6 +425,11 @@ export class CategoriesDO extends DurableObject<Env> {
       this.sql.exec("DELETE FROM queue WHERE account_id = ? AND message_id = ? AND target = ?", item.accountId, item.messageId, target);
       return;
     }
+    this.retryOrGiveUp(row, item, target, forModel, spamOwed, modelError, now);
+  }
+
+  /** A model call failed: the item waits its backoff, or after MAX_ATTEMPTS is given up, said on each category and on the spam check. */
+  private retryOrGiveUp(row: Row, item: QueueItem, target: string, forModel: Category[], spamOwed: boolean, modelError: string, now: number) {
     const attempts = Number(row.attempts) + 1;
     if (attempts >= MAX_ATTEMPTS) {
       // Given up: said on the category, never silently dropped; a spam check given up lets the agent run.

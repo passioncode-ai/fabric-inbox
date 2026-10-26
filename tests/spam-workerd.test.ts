@@ -18,7 +18,7 @@ const bundle = await build({
       import { CategoriesDO } from './workers/categories/store';
       import { inboxRouter } from './workers/routes/inbox';
       import { spamRouter } from './workers/routes/spam';
-      import { receiveEmail } from './workers/index';
+      import { receiveEmail, app as mainApp } from './workers/index';
       import { updateSpamLists } from './workers/spam/lists';
       import { MockLanguageModelV3 } from 'ai/test';
       const forbidden = () => { throw new Error('External AI is forbidden in this test'); };
@@ -43,15 +43,26 @@ const bundle = await build({
       export class TestCategories extends CategoriesDO {
         calls = 0;
         async callCount() { return this.calls; }
+        spamPrompts = [];
+        down = 0;
+        async prompts() { return this.spamPrompts; }
+        async failNext(n) { this.down = n; }
+        async due() { this.ctx.storage.sql.exec('UPDATE queue SET next_at = 0'); }
+        spamModel() { return this.model(); }
         model() {
           return new MockLanguageModelV3({ doGenerate: async (options) => {
             this.calls++;
+            if (this.down > 0) { this.down--; throw new Error('model down'); }
             const text = JSON.stringify(options.prompt);
+            if (!text.includes('\\"categories\\"')) this.spamPrompts.push(text);
             const input = JSON.parse(text.match(/\\{\\\\"categories[\\s\\S]*?\\\\"}}/)?.[0].replace(/\\\\"/g, '"') || '{}');
             const email = (input.email?.subject + ' ' + input.email?.text).toLowerCase();
-            const results = (input.categories || []).map((c) => ({ id: c.id, match: c.id === '__spam' && email.includes('seo services'),
-              reason: email.includes('seo services') ? 'Unsolicited SEO outreach from a stranger' : 'A person with a real question' }));
-            return { content: [{ type: 'text', text: JSON.stringify({ results }) }], finishReason: { unified: 'stop', raw: 'stop' },
+            // B-172: the spam check is its own call, answered with the message's kind.
+            const spamCall = !text.includes('\\"categories\\"');
+            const seo = (spamCall ? text : email).toLowerCase().includes('seo services');
+            const results = (input.categories || []).map((c) => ({ id: c.id, match: false, reason: 'unrelated' }));
+            const answer = spamCall ? { kind: seo ? 'cold_outreach' : 'customer', reason: seo ? 'Unsolicited SEO outreach from a stranger' : 'A person with a real question' } : { results };
+            return { content: [{ type: 'text', text: JSON.stringify(answer) }], finishReason: { unified: 'stop', raw: 'stop' },
               usage: { inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, text: 1, reasoning: 0 } }, warnings: [] };
           }});
         }
@@ -71,6 +82,10 @@ const bundle = await build({
       app.post('/pump', async (c) => { await c.env.CATEGORIES.getByName('workspace').pump(); return c.json({ ok: true }); });
       app.get('/calls', async (c) => c.json(await c.env.CATEGORIES.getByName('workspace').callCount()));
       app.get('/checks', async (c) => c.json(await c.env.CATEGORIES.getByName('workspace').checks()));
+      app.get('/prompts', async (c) => c.json(await c.env.CATEGORIES.getByName('workspace').prompts()));
+      app.all('/api/v1/*', (c) => mainApp.fetch(c.req.raw, c.env, c.executionCtx));
+      app.post('/due', async (c) => { await c.env.CATEGORIES.getByName('workspace').due(); return c.json({ ok: true }); });
+      app.post('/fail', async (c) => { await c.env.CATEGORIES.getByName('workspace').failNext((await c.req.json()).n); return c.json({ ok: true }); });
       app.get('/agents', async (c) => c.json(await c.env.AGENT_REGISTRY.getByName('workspace').seen()));
       app.get('/holds', async (c) => c.json(await c.env.AGENT_REGISTRY.getByName('workspace').holds()));
       app.post('/folder', async (c) => { const b = await c.req.json(); return c.json(await box(c.env, b.mailbox).folderOf(b.id)); });
@@ -301,5 +316,60 @@ test("a stranger's message is held for its agent until the spam check answers; a
     await call("/pump", "POST");
     holds = (await call("/holds")).body;
     assert.equal(holds["released:" + stranger.emailId], true, "released once the check answered");
+  } finally { await mf.dispose(); }
+});
+
+test("the spam check sees the sender's shown name and the domain Cloudflare verified; an unsigned message has none (B-172)", async () => {
+  const { mf, call, receive } = await fixture();
+  try {
+    const code = await receive("Your sign-in code", { from: "Acme Pay <no-reply@acme.invalid>", headers: PASS("acme.invalid"), body: "Your code is 482913. It expires in 10 minutes." });
+    await receive("Order 7 shipped", { from: "orders@shop-mail.acme.invalid",
+      headers: "Authentication-Results: mx.cloudflare.net; dkim=pass header.d=acme.invalid; dmarc=none; spf=none\r\n", body: "Your order 7 is on its way to you today." });
+    await receive("A question", { from: "bea@customer.invalid", body: "How do I change the email on my account?" });
+    await call("/pump", "POST");
+    const prompts = ((await call("/prompts")).body as string[]).map((p) => p.replace(/\\"/g, '"'));
+    assert.equal(prompts.length, 3, "one spam call per stranger");
+    const of = (needle: string) => prompts.find((p) => p.includes(needle)) ?? "";
+    assert.match(of("482913"), /"from":"Acme Pay <no-reply@acme\.invalid>"/);
+    assert.match(of("482913"), /"verified":"acme\.invalid"/, "DMARC passed: the From domain");
+    assert.match(of("Order 7"), /"verified":"acme\.invalid"/, "a DKIM signature of the parent domain is aligned");
+    assert.match(of("change the email"), /"verified":null/, "nothing verified");
+    assert.equal((await call("/folder", "POST", { mailbox: "support@shop.invalid", id: code.emailId })).body.folder_id, "inbox", "a code is not spam");
+  } finally { await mf.dispose(); }
+});
+
+test("a spam call that fails is asked again with its backoff, and the agent waits for it (B-172)", async () => {
+  const { mf, call, receive } = await fixture();
+  try {
+    await call("/fail", "POST", { n: 1 });
+    const pitch = await receive("Grow your traffic", { from: "bob@agency.test", headers: PASS("agency.test"), body: "We offer SEO services at a great price." });
+    await call("/pump", "POST");
+    assert.equal((await call("/folder", "POST", { mailbox: "support@shop.invalid", id: pitch.emailId })).body.folder_id, "inbox", "not judged yet");
+    assert.deepEqual((await call("/checks")).body, [], "no check recorded while it waits");
+    assert.equal((await call("/holds")).body["released:" + pitch.emailId], undefined, "its agent is still held");
+    await call("/due", "POST");
+    await call("/pump", "POST");
+    assert.equal((await call("/folder", "POST", { mailbox: "support@shop.invalid", id: pitch.emailId })).body.folder_id, "spam", "judged on the retry");
+  } finally { await mf.dispose(); }
+});
+
+test("check_spam runs the check again on a stored message and changes nothing: rules, verified domain, the model's kind, from the spam budget (B-172)", async () => {
+  const { mf, call, receive } = await fixture({ SPAM_DAILY_LIMIT: "3" });
+  try {
+    const pitch = await receive("Grow your traffic", { from: "bob@agency.test", headers: PASS("agency.test"), body: "We offer SEO services at a great price." });
+    await call("/pump", "POST");
+    const path = `/api/v1/mailboxes/support@shop.invalid/emails/${pitch.emailId}/spam-check`;
+    const checked = (await call(path, "POST", {})).body;
+    assert.equal(checked.folder, "spam");
+    assert.deepEqual(checked.rules, { verdict: "screen", reason: "" });
+    assert.equal(checked.verified, "agency.test");
+    assert.deepEqual(checked.model, { spam: true, kind: "cold_outreach", reason: "Unsolicited SEO outreach from a stranger" });
+    assert.equal((await call("/folder", "POST", { mailbox: "support@shop.invalid", id: pitch.emailId })).body.folder_id, "spam", "nothing moved");
+    assert.equal((await call("/checks")).body.length, 1, "nothing recorded");
+    assert.equal((await call("/api/spam")).body.model.used, 2, "the arrival's call and this one");
+    await call(path, "POST", {});
+    const spent = (await call(path, "POST", {})).body;
+    assert.deepEqual([spent.model, spent.modelSkipped], [null, "The day's spam budget was spent"]);
+    assert.equal((await call("/api/v1/mailboxes/support@shop.invalid/emails/nope/spam-check", "POST", {})).status, 404);
   } finally { await mf.dispose(); }
 });

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readInbox, inboxRouter } from '../workers/routes/inbox';
-import { inboxPage, inboxIdentity, type InboxMessage, type InboxAccount, type InboxReadOptions } from '../shared/mail/inbox';
+import { inboxPage, inboxIdentity, MAX_CURSOR_CHARS, type InboxMessage, type InboxAccount, type InboxReadOptions } from '../shared/mail/inbox';
 const accounts: InboxAccount[] = [
   { id: 'cloudflare:me@example.invalid', provider: 'cloudflare', email: 'me@example.invalid', name: 'Me', status: 'connected' },
   { id: 'gmail:a', provider: 'gmail', email: 'a@example.invalid', name: 'A', status: 'connected' },
@@ -160,4 +160,19 @@ test('one account failing inside the batch is that account\'s issue; a batch tha
   assert.deepEqual(down.issues.map(i => [i.accountId, i.error]), [['gmail:a', 'account_unavailable'], ['gmail:b', 'account_unavailable']]);
   assert.ok(down.accounts.filter(x => x.provider === 'gmail').every(x => x.countsStale));
   assert.ok(!JSON.stringify(down).includes('private') && !JSON.stringify(page).includes('secret'));
+});
+
+test('B-173: a cursor deep in the feed, with every fingerprint it keeps and a long query, fits what the agent tool accepts', async () => {
+  const rows = accounts.flatMap((a) => Array.from({ length: 150 }, (_, i) => ({ ...message(a, `m${i}`, 10_000 - i), rfcMessageId: `<${a.id}-${i}-${'x'.repeat(40)}@mail.example.invalid>` })));
+  let cursor: string | undefined, longest = 0, pages = 0;
+  do {
+    const params = new URLSearchParams({ limit: '100', query: 'q'.repeat(200), ...(cursor ? { cursor } : {}) });
+    const s = { ...sources(rows), messages: async (a: InboxAccount, o: InboxReadOptions) => inboxPage(rows.filter((m) => m.accountId === a.id), { ...o, query: undefined }) };
+    const page = await readInbox(params, s);
+    cursor = page.cursor; pages++;
+    longest = Math.max(longest, cursor?.length ?? 0);
+  } while (cursor && pages < 6);
+  assert.ok(pages >= 4, 'paged past the second page');
+  assert.ok(longest > 2000, `the old limit was too small (${longest})`);
+  assert.ok(longest <= MAX_CURSOR_CHARS, `${longest} fits ${MAX_CURSOR_CHARS}`);
 });

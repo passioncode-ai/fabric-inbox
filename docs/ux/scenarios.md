@@ -873,17 +873,17 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** The server runs 0.6 or later; mail arrives at a Cloudflare address.
 - **Steps:**
   1. A forged message arrives (it claims one of the operator's domains or fails DMARC where its domain asks to reject) -> it is stored in Spam with the reason, and no agent, rule or category sees it.
-  2. A message from a stranger arrives -> the model reads it once; spam moves to Spam with its reason, anything else stays.
+  2. A message from a stranger arrives -> a stranger signing itself with one of the operator's domains goes to Spam; otherwise the model reads it once and names what it is first: a code, an account or billing notice from the service it is about, or a customer writing to a support address stays; phishing, a scam, cold outreach or bulk marketing moves to Spam with its reason.
   3. Open Spam -> every message says why it is there; the banner says it is deleted after 30 days.
 - **Expected result:** The inbox holds mail meant for the operator; what was taken out can be checked in one place.
-- **Alt paths:** A sender the operator wrote to is never read by the model; an almost empty message is left alone; Delete all now empties Spam after a confirmation.
+- **Alt paths:** A sender the operator wrote to is never read by the model; an almost empty message is left alone; Delete all now empties Spam after a confirmation; an agent asks why a message is where it is with check_spam, which changes nothing.
 - **UI elements:** SCR-03 (Spam folder, Why in Spam, banner, Delete all now…).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** If the lists cannot be read the message goes to the inbox; a model that is down or over its budget leaves the message where it is; a Spam that cannot be emptied in some addresses says how many.
 - **Status:** validated
-- **Coverage:** shared/mail/spam.ts, workers/index.ts (spamVerdict), workers/durableObject/index.ts (receiveEmailOnce, purgeSpam), workers/categories/store.ts, app/routes/unified-inbox.tsx (SpamBanner), tests/spam.test.ts, tests/spam-workerd.test.ts, tests/c2-spam-workerd.test.ts (lists unreadable: the message is screened by the model, not blocked; partial Delete all counts the failure), tests/c2-spam.test.ts
+- **Coverage:** shared/mail/spam.ts, workers/index.ts (spamVerdict, spam-check route), workers/spam/judge.ts, workers/durableObject/index.ts (receiveEmailOnce, purgeSpam), workers/categories/store.ts, app/routes/unified-inbox.tsx (SpamBanner), tests/spam.test.ts, tests/spam-judge.test.ts, tests/spam-workerd.test.ts, tests/c2-spam-workerd.test.ts (lists unreadable: the message is screened by the model, not blocked; partial Delete all counts the failure), tests/c2-spam.test.ts
 - **Product:** unobserved
-- **Today:** Live on 2026-09-29; the first live verdict was a false positive on an almost empty message, which the model no longer reads.
+- **Today:** Live on 2026-09-29; the first live verdict was a false positive on an almost empty message, which the model no longer reads. On 2026-10-26 sign-in codes and customers' requests were found in Spam (B-172); the check that names the kind first sent 0 of 17 such messages to Spam on the measured set.
 
 ### SCN-040: Report spam, or bring a message back
 - **Persona:** P-01

@@ -16,6 +16,8 @@ export interface Env extends Cloudflare.Env {
 	CATEGORY_DAILY_LIMIT?: string;
 	/** Messages the spam model reads per UTC day (SP-2); default 300. Beyond it new mail is not judged by the model. */
 	SPAM_DAILY_LIMIT?: string;
+	/** Workers AI model of the spam check (B-172); defaults to CATEGORY_MODEL, then AUTOMATION_MODEL, then llama-4-scout. */
+	SPAM_MODEL?: string;
 	/** Workers AI model for address agents and the chat; defaults to @cf/moonshotai/kimi-k2.5. */
 	AGENT_MODEL?: string;
 	/** OpenRouter key for reply agents (secret): with it, answers are written by REPLY_MODEL (fallback REPLY_FALLBACK_MODEL) and approved by a checker of another vendor. */

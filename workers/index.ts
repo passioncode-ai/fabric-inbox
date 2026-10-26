@@ -7,7 +7,8 @@ import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import PostalMime from "postal-mime";
 import { z } from "zod";
-import { textToHtml } from "./lib/email-helpers";
+import { stripHtmlToText, textToHtml } from "./lib/email-helpers";
+import { msg } from "../shared/i18n";
 import { AttachmentValidationError, MAX_ATTACHMENTS, storedAttachmentName, validateAttachments } from "../shared/mail/attachments";
 import { allServedDomains, createMailbox, deleteMailbox, listMailboxAddresses, readSettings, storedCatchAll, updateSettings, readAllSettings, allowedAddresses as allowedAddressList } from "./lib/mailbox-store";
 import { createAddress, pausedKey, removeAddress } from "./lib/address-ops";
@@ -16,7 +17,7 @@ import { runIdFor } from "./agents/run";
 import { routingClient } from "./routing/email-routing";
 import { handleSendEmail, handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
 import { Folders, isBuiltInFolder } from "../shared/folders";
-import { spamCheck, type SpamVerdict } from "../shared/mail/spam";
+import { authResults, spamCheck, tooLittleToJudge, verifiedDomain, type SpamVerdict } from "../shared/mail/spam";
 import { readSpamLists } from "./spam/lists";
 import { autoReason, discardFacts, discardSafety, matchDiscard, recordApplied } from "../shared/mail/discard";
 import { readDiscardStore, updateDiscardStore } from "./discard/store";
@@ -365,6 +366,33 @@ app.post("/api/v1/mailboxes/:mailboxId/emails/:id/move", async (c: AppContext) =
 	return success ? c.json({ status: "moved" }) : c.json({ error: "Folder not found" }, 400);
 });
 
+/**
+ * B-172: the spam check run again on one stored message, to see what it would decide now: the arrival
+ * rules (lists, authenticity, a sender written to) and the model's kind with its reason, from today's
+ * spam budget. Nothing is moved, listed or recorded.
+ */
+app.post("/api/v1/mailboxes/:mailboxId/emails/:id/spam-check", async (c: AppContext) => {
+	const email = await c.var.mailboxStub.getEmail(c.req.param("id")!) as { sender?: string; sender_name?: string | null; subject?: string;
+		body?: string; raw_headers?: string | null; folder_id?: string } | null;
+	if (!email) return c.json({ error: msg("Email not found") }, 404);
+	if (!c.env.CATEGORIES) return c.json({ error: msg("The spam check is not set up on this server") }, 503);
+	let headers: { key: string; value: string }[] = [];
+	try { headers = JSON.parse(email.raw_headers || "[]"); } catch { headers = []; }
+	const sender = (email.sender ?? "").toLowerCase();
+	const rules = await spamVerdict(c.env, c.var.mailboxStub, sender, headers, email.sender_name ?? null);
+	const verified = verifiedDomain(authResults(headers), sender);
+	const text = stripHtmlToText(email.body ?? "").slice(0, 6000);
+	if (tooLittleToJudge(text)) return c.json({ folder: email.folder_id, rules, verified, model: null, modelSkipped: msg("Too little text to judge") });
+	try {
+		const model = await c.env.CATEGORIES.getByName("workspace").recheckSpam({ sender, senderName: email.sender_name ?? undefined,
+			to: c.req.param("mailboxId")!.toLowerCase(), subject: email.subject ?? "", text, verified });
+		if (!model) return c.json({ folder: email.folder_id, rules, verified, model: null, modelSkipped: msg("The day's spam budget was spent") });
+		return c.json({ folder: email.folder_id, rules, verified, model });
+	} catch (error) {
+		return c.json({ error: msg("The spam check could not run: {error}", { error: (error as Error).message.slice(0, 200) }) }, 502);
+	}
+});
+
 // -- Threads --------------------------------------------------------
 
 app.get("/api/v1/mailboxes/:mailboxId/threads/:threadId", async (c: AppContext) => {
@@ -639,7 +667,7 @@ async function receiveEmail(event: IncomingEmailEvent, env: Env, ctx: ExecutionC
 
 	const originalMessageId = parsedEmail.messageId ? extractMsgId(parsedEmail.messageId) : null;
 	const sender = (parsedEmail.from?.address || "").toLowerCase();
-	const verdict = await spamVerdict(env, stub, sender, parsedEmail.headers ?? []);
+	const verdict = await spamVerdict(env, stub, sender, parsedEmail.headers ?? [], parsedEmail.from?.name ?? null);
 	// After spam: mail that matches a discard rule goes straight to Discarded (operator, 2026-10-06).
 	const discard = verdict.verdict === "spam" ? null : await discardVerdict(env, stub, sender, parsedEmail.headers ?? [], threadId);
 
@@ -656,7 +684,8 @@ async function receiveEmail(event: IncomingEmailEvent, env: Env, ctx: ExecutionC
 		thread_id: threadId, message_id: originalMessageId, raw_headers: JSON.stringify(parsedEmail.headers),
 	}, attachmentData, mailboxId, verdict.verdict === "spam" ? { spam: verdict.reason }
 		: discard ? { discard: discard.reason }
-		: { screen: verdict.verdict === "screen", copyOwed: await wantsCopy(env, mailboxId) });
+		: { screen: verdict.verdict === "screen", copyOwed: await wantsCopy(env, mailboxId),
+			...(verdict.verdict === "screen" ? { verified: verifiedDomain(authResults(parsedEmail.headers ?? []), sender) } : {}) });
 
   // The mailbox's incoming-event journal hands the message to automation rules
   // and to the address's agent (AgentRegistryDO.enqueue) durably; nothing here
@@ -691,12 +720,12 @@ async function wantsCopy(env: Env, mailboxId: string): Promise<boolean> {
  * mailbox's sent mail degrades to "no rule decided": mail is never lost to the filter.
  */
 async function spamVerdict(env: Env, stub: { knownCorrespondent(address: string): Promise<boolean> }, sender: string,
-  headers: { key: string; value: string }[]): Promise<SpamVerdict> {
+  headers: { key: string; value: string }[], senderName: string | null = null): Promise<SpamVerdict> {
   try {
     const [lists, ownDomains, known] = await Promise.all([
       readSpamLists(env.BUCKET), allServedDomains(env), sender ? stub.knownCorrespondent(sender) : Promise.resolve(false),
     ]);
-    return spamCheck({ sender, headers, ownDomains, lists, known });
+    return spamCheck({ sender, headers, ownDomains, lists, known, senderName });
   } catch (error) {
     // Not "clean": a failed look-up must not also switch off the model's check and the agents' wait
     // for it. "screen" still delivers to the inbox, so no mail is lost to the filter.

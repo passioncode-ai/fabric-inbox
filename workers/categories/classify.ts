@@ -14,22 +14,6 @@ const TEXT_CHARS = 6000;
 
 export interface DescribedCategory { id: string; name: string; description: string }
 
-/**
- * Spam as one more described category (SP-2): a message from a sender nobody here
- * wrote to is judged in the same call as the categories it is in.
- */
-export const SPAM_ID = "__spam";
-export const SPAM_CATEGORY: DescribedCategory = {
-  id: SPAM_ID,
-  name: "Spam",
-  description: [
-    "Mail the recipient did not ask for and would not want: phishing or fake account and payment notices,",
-    "scams, fake invoices, unsolicited bulk marketing, and cold sales or link-building outreach from strangers.",
-    "Not spam: a person writing to them for a real reason (a question, a complaint, a refund, a job, a partnership they may want),",
-    "replies, receipts, sign-in codes, account and service notices, and newsletters or updates from a service they use.",
-    "Reason in English.",
-  ].join(" "),
-};
 export interface Verdict { id: string; match: boolean; reason: string }
 
 const ResultSchema = z.object({
