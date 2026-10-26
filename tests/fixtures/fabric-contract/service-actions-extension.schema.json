@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fabric.passioncode.ai/agent-contract/0.1.0/schemas/service-actions-extension.schema.json",
+  "title": "extensions/actions/0.1: every action a person can take on a service, and the agent tool that takes it (fabric-actions/0.1, DEC-0121)",
+  "description": "The value of the actions extension key https://fabric.passioncode.ai/agent-contract/extensions/actions/0.1 in a service's well-known document (AP-1): each action its dashboard, app or page lets a person take, the tool on its agent surface that performs it with the same effect, checks, audit record and an idempotency key, and who decides it. A checker reports an invalid value, a repeated id, a humanStep that disagrees with gate and a tool missing from a present surfaces.mcp.capabilities as FAC-SEM-142. docs/specification/service.md#actions.",
+  "type": "object",
+  "required": [
+    "actions"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "$ref": "#/$defs/action"
+      }
+    }
+  },
+  "$defs": {
+    "action": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "tool",
+        "gate"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "interop-common.schema.json#/$defs/requestKey",
+          "description": "The action's id, once in the list (FAC-SEM-142): letters, digits, _ . - up to 64, the shape of an input request's key, which is a job's input action's id (DEC-0121)."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "What the button says to a person."
+        },
+        "tool": {
+          "$ref": "common.schema.json#/$defs/capabilityName",
+          "description": "The capability on the service's agent surface that performs the action; when surfaces.mcp.capabilities is present it lists this name (FAC-SEM-142)."
+        },
+        "gate": {
+          "enum": [
+            "none",
+            "relayed",
+            "human"
+          ],
+          "description": "none: the caller's own act. relayed: the operator decides, and a T0 or T1 caller carries the decision in _meta.decision (AP-2). human: a step only the person takes (AP-4), named by humanStep."
+        },
+        "humanStep": {
+          "enum": [
+            "sign-in",
+            "consent",
+            "payment",
+            "secret",
+            "spend-above-limit",
+            "passkey"
+          ],
+          "description": "Present exactly when gate is human (FAC-SEM-142): the step the tool hands the person with human-step-required."
+        }
+      }
+    }
+  }
+}

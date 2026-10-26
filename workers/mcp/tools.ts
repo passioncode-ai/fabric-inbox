@@ -13,7 +13,7 @@
  * `npm run mcp:docs` (docs/agents/mcp.md). The tests fail until both are done.
  */
 import { z } from "zod";
-import { ApiError, defineTool, unwrap, type ToolContext, type ToolDef } from "./protocol";
+import { ApiError, defineTool, HumanStepRequired, unwrap, type ToolContext, type ToolDef } from "./protocol";
 import { appendHtml, clip, forwardedBlock, forwardedHtml, htmlToText, quotedBlock, quotedHtml, signatureHtml, textToHtml } from "./mail-text";
 import { headerValue, parseStoredHeaders } from "../agents/prefilter";
 import { GMAIL_FOLDERS } from "../providers/gmail-cache";
@@ -1675,6 +1675,50 @@ const gmailConnectLink = defineTool({
   },
 });
 
+// B-154 (DEC-0121 AP-4): the buttons whose step only the person takes. Each tool stands for its
+// button and refuses with human-step-required and the direct link; the person's secret or consent
+// never passes through an agent.
+const connectAccount = defineTool({
+  name: "connect_account", title: "Connect an account (the person's step)", level: "admin", readOnly: true,
+  description: "Stands for the Connect account button. Connecting is the person's own step, so this never connects anything: it answers the refusal human-step-required with data.humanStep (consent: the person signs in with Google or Microsoft and allows access; secret: the person types an IMAP app password, a Cloudflare token, or the owner first sets up Gmail or Outlook on this server) and data.url, the exact place to do it. Give the person that link; list_accounts shows the account once they are done.",
+  input: { provider: z.enum(["gmail", "outlook", "imap", "cloudflare"]).describe("Which kind of account") },
+  routes: ["GET /api/accounts"],
+  async call(a, ctx) {
+    if (a.provider === "imap")
+      throw new HumanStepRequired("secret", "/settings/accounts?connect=imap", "Connecting an IMAP account takes the person's app password: they enter it at this link.");
+    if (a.provider === "cloudflare")
+      throw new HumanStepRequired("secret", "/settings/accounts?connect=cloudflare", "Connecting a Cloudflare account takes a Cloudflare token the person pastes at this link.");
+    const data = (await get(ctx, "/api/accounts")) as { configuration?: string; connectUrl?: string; outlookConnectUrl?: string };
+    const url = a.provider === "gmail" ? (data.configuration === "configured" ? data.connectUrl : undefined) : data.outlookConnectUrl;
+    if (!url)
+      throw new HumanStepRequired("secret", `/settings/accounts?connect=${a.provider}`,
+        `${a.provider === "gmail" ? "Gmail" : "Outlook"} is not set up on this server yet: the owner enters its client secret at this link first.`);
+    throw new HumanStepRequired("consent", url, `The person signs in with ${a.provider === "gmail" ? "Google" : "Microsoft"} and allows access at this link.`);
+  },
+});
+
+const setAccountPassword = defineTool({
+  name: "set_account_password", title: "Enter a new app password (the person's step)", level: "admin", readOnly: true,
+  description: "Stands for Enter a new app password on an IMAP account that needs one (status reconnect_required in list_mail_providers). The password is the person's secret, so this never takes it: it answers the refusal human-step-required with data.humanStep secret and data.url, the account's own page in Settings, where the person types it.",
+  input: { accountId },
+  routes: ["GET /api/accounts"],
+  async call(a) {
+    const account = parseAccount(a.accountId);
+    if (account.provider !== "imap") throw new ApiError(400, "Only an IMAP account has an app password; a Gmail or Outlook account is signed in again with connect_account", null);
+    throw new HumanStepRequired("secret", `/settings/accounts/${enc(a.accountId)}`, "The person types the account's new app password on this page.");
+  },
+});
+
+const setProviderSetup = defineTool({
+  name: "set_provider_setup", title: "Save the Gmail or Outlook setup (the owner's step)", level: "admin", readOnly: true,
+  description: "Stands for saving the Gmail or Outlook setup of this server. Its client secret is the owner's secret, so this never takes it: it answers the refusal human-step-required with data.humanStep secret and data.url, the setup's place in Settings. gmail_setup_status and microsoft_setup_status say what is missing and the values to enter first.",
+  input: { provider: z.enum(["gmail", "outlook"]) },
+  routes: ["GET /api/accounts"],
+  async call(a) {
+    throw new HumanStepRequired("secret", `/settings/accounts?connect=${a.provider}`, `The owner pastes the ${a.provider === "gmail" ? "Google" : "Microsoft"} client secret at this link.`);
+  },
+});
+
 const outlookConnectLink = defineTool({
   name: "outlook_connect_link", title: "Link to connect Outlook", level: "admin", readOnly: true,
   description: "The address a person opens to connect an Outlook.com or Microsoft 365 account to this server: in the browser or app where they use Fabric Inbox, they sign in with Microsoft and allow access, and it then appears in list_accounts. Connecting is the person's consent on Microsoft's page (and, in some organizations, their administrator's first); an agent cannot connect an account itself.",
@@ -1761,7 +1805,7 @@ export const TOOLS: readonly ToolDef[] = [
   updateSpamList, emptySpam, clearIncomingFailures, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,
   disconnectGmail, disconnectAccount, listMailProviders, gmailConnectLink, gmailSetupStatus, checkGmailSetup, createCredentialKey,
-  outlookConnectLink, microsoftSetupStatus, checkMicrosoftSetup, listAgentKeys, agentActivity,
+  outlookConnectLink, connectAccount, setAccountPassword, setProviderSetup, microsoftSetupStatus, checkMicrosoftSetup, listAgentKeys, agentActivity,
 ];
 
 /**
@@ -1778,15 +1822,15 @@ export const NOT_TOOLS: Readonly<Record<string, string>> = {
   "GET /api/accounts/outlook/connect": "Connecting Outlook is a person's consent in a browser (Microsoft's sign-in page and a cookie); outlook_connect_link gives the person this address",
   "POST /api/accounts/outlook/connect": "Connecting Outlook is a person's consent in a browser (Microsoft's sign-in page and a cookie)",
   "GET /api/accounts/outlook/callback": "Microsoft's OAuth redirect back to the browser (and the end of an administrator's approval)",
-  "POST /api/accounts/imap": "Connecting an IMAP account takes the person's app password: an agent must never receive a person's password, so the person enters it in Settings → Accounts; list_mail_providers gives the presets and where to go",
-  "PUT /api/accounts/:accountId/password": "A new app password is the person's secret, entered in Settings → Accounts: an agent must never receive a person's password; list_mail_providers says which accounts need one (status reconnect_required)",
+  "POST /api/accounts/imap": "Connecting an IMAP account takes the person's app password: an agent must never receive a person's password, so the person enters it in Settings → Accounts; connect_account { provider: imap } answers that step with its link (B-154)",
+  "PUT /api/accounts/:accountId/password": "A new app password is the person's secret, entered in Settings → Accounts: an agent must never receive a person's password; list_mail_providers says which accounts need one (status reconnect_required) and set_account_password answers that step with its link (B-154)",
   "GET /api/me": "The signed-in person's own role on the server, for the app's screens; an agent's level is its key's (list_members shows everyone's)",
   "PUT /api/members/:email": "Who may read whose mail on a shared server is a person's act (B-149), like issuing agent keys; list_members reads the list",
   "DELETE /api/members/:email": "Removing a person from a shared server is an administrator's act in the app (B-149); list_members reads the list",
   "POST /api/server/self-update": "Replacing the server's code is the person's app's act (B-44): it sends the bundle it carries, signed with the app; an agent never uploads server code",
   "POST /api/agent-keys": "Agent keys are issued by a person in the app (its answer carries the key's secret); an agent cannot mint keys. list_agent_keys reads them",
   "DELETE /api/agent-keys/:id": "Agent keys are revoked by a person in the app (Settings → Agent access); list_agent_keys reads them",
-  "POST /api/cloudflare/accounts": "A Cloudflare token is a secret: a person pastes it in Settings → Accounts, so it never passes through an agent's transcript",
-  "PUT /api/gmail-setup": "A Google OAuth client secret is a secret: the owner pastes it in Settings → Accounts → Gmail, so it never passes through an agent's transcript; gmail_setup_status and check_gmail_setup read and check the setup",
-  "PUT /api/microsoft-setup": "A Microsoft client secret is a secret: the owner pastes it in Settings → Accounts → Outlook, so it never passes through an agent's transcript; microsoft_setup_status and check_microsoft_setup read and check the setup",
+  "POST /api/cloudflare/accounts": "A Cloudflare token is a secret: a person pastes it in Settings → Accounts, so it never passes through an agent's transcript; connect_account { provider: cloudflare } answers that step with its link (B-154)",
+  "PUT /api/gmail-setup": "A Google OAuth client secret is a secret: the owner pastes it in Settings → Accounts → Gmail, so it never passes through an agent's transcript; gmail_setup_status and check_gmail_setup read and check the setup; set_provider_setup answers that step with its link (B-154)",
+  "PUT /api/microsoft-setup": "A Microsoft client secret is a secret: the owner pastes it in Settings → Accounts → Outlook, so it never passes through an agent's transcript; microsoft_setup_status and check_microsoft_setup read and check the setup; set_provider_setup answers that step with its link (B-154)",
 };

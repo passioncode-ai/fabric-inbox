@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.38.0 (2026-10-26)
+
+- **A coding agent hands the person the exact place for the steps only they can take.** Asked to connect
+  a Gmail, Outlook, IMAP or Cloudflare account, to enter a new app password or to save the Gmail or
+  Outlook setup, the agent now gets the link to that step and says what the person does there; a
+  password, a token or a consent never passes through the agent (B-154).
+
 ## 0.37.1 (2026-10-26)
 
 - **A coding agent can tell a message that did not leave from one that may have.** When a send fails,

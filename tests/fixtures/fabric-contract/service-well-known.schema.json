@@ -297,6 +297,25 @@
             }
           },
           "additionalProperties": false
+        },
+        "a2a": {
+          "description": "DEC-0122. Where the service serves its A2A Agent Card, for a service that answers A2A peers; the card itself names its interfaces and bindings (docs/specification/service.md#a2a-agent-card).",
+          "type": "object",
+          "required": [
+            "path",
+            "protocolVersion"
+          ],
+          "properties": {
+            "path": {
+              "$ref": "service-common.schema.json#/$defs/originPath",
+              "description": "The public Agent Card's path on the service origin, normally /.well-known/agent-card.json (A2A 1.0 section 8.2); on a local placement it answers without the token (docs/specification/service.md#a2a-agent-card)."
+            },
+            "protocolVersion": {
+              "const": "1.0",
+              "description": "The A2A version the card's interfaces expose, 1.0 for contract 0.1.0, as the A2A peer profile pins it (docs/specification/profiles.md#a2a-peer-profile)."
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false,
