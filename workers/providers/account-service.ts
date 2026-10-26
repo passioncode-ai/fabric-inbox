@@ -39,6 +39,9 @@ import { CUSTOM, PRESETS } from "../../shared/mail/imap-presets";
 import { DISCARD_RETENTION_MS, addressOf } from "../../shared/mail/discard";
 import { msg } from "../../shared/i18n";
 import { inlinePictureType } from "../../shared/mail/inline";
+import type { ThreadFacts } from "../../shared/mail/agent-state";
+import { accountThreadFacts } from "../agents/account-threads";
+import { runIdFor } from "../agents/run";
 export { importPercent, type SyncState } from "./gmail-sync";
 
 /** How a sync runs: until when it may start pages, whether it imports, and under whose lock. */
@@ -715,6 +718,35 @@ export class AccountService {
       }
     }
     return page;
+  }
+  /**
+   * B-171 phase 3: the facts of the account's conversations for the reply status, read from the cache
+   * (no request to the provider): the conversations named, or those of the inbox's `limit` newest
+   * messages. A sent message is the reply agent's when the send receipt of the agent's run on a message
+   * of the conversation names it (`<run>`; `<run>:waiting` for its waiting reply). Empty while the
+   * conversation index is being built: no state is better than one read from half a conversation.
+   */
+  async agentThreads(accountId: string, mailboxId: string, options: { threadIds?: string[]; limit?: number } = {}): Promise<ThreadFacts[]> {
+    const account = await this.account(accountId);
+    const limit = Math.min(200, Math.max(1, options.limit ?? 200));
+    const ids = options.threadIds ?? (await this.cache.inboxPage(account.id, { folder: "inbox", query: "", limit }, { provider: account.provider }))
+      .map((m) => m.threadId).filter((t): t is string => !!t);
+    const out: ThreadFacts[] = [];
+    for (const threadId of [...new Set(ids)].slice(0, limit)) {
+      const members = await this.cache.threadMembers(account.id, threadId);
+      if (!members) return [];
+      const rows = await Promise.all(members.map(async (m) => ({ id: m.id, labels: m.labels, at: (await this.cache.row(account.id, m.id))?.message.timestamp ?? 0 })));
+      const agentSent = new Map<string, "agent" | "agent_waiting">();
+      for (const r of rows.filter((x) => !x.labels.includes("SENT") && !x.labels.includes("DRAFT"))) {
+        const run = await runIdFor(mailboxId, r.id);
+        for (const [key, by] of [[run, "agent"], [`${run}:waiting`, "agent_waiting"]] as const) {
+          const receipt = await this.store.get<StoredSend>("send:" + keyPart(account.id) + ":" + key);
+          if (receipt?.providerMessageId && receipt.status !== "failed") agentSent.set(receipt.providerMessageId, by);
+        }
+      }
+      out.push(accountThreadFacts(threadId, rows, agentSent));
+    }
+    return out;
   }
   /**
    * The cached messages with these ids, in the feed's shape, leaving out trash,

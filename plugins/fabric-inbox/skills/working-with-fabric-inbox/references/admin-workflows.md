@@ -162,7 +162,8 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   `counts` for all, `abandoned` for how many wait 48 hours). Start with `abandoned: true` (taken by nobody for
   two days, a waiting reply is no answer), then `states: ["unanswered", "new_after_agent", "error",
   "needs_data", "agent_draft"]`, the ones waiting for someone; no_reply_needed is mail the agent left alone
-  on purpose (empty, a newsletter, an auto-reply, an own address). It covers the addresses where the reply status is on: `get_agent_status`, and `set_agent_status`
+  on purpose (empty, a newsletter, an auto-reply, an own address). It covers the addresses, and the Gmail, IMAP or
+  Outlook accounts with a reply agent (by their email), where the reply status is on: `get_agent_status`, and `set_agent_status`
   per workspace, domain or address (off by default; null follows the level above). `read_thread` marks each
   sent message `sentBy` (agent, agent_waiting, person) and each one that came in with its `agentRun`.
   To have events pushed instead of polled (a helpdesk, a support group): `add_event_hook { url, kinds? }`
