@@ -117,3 +117,10 @@ export function inboxPage(messages: InboxMessage[], options: InboxReadOptions) {
   return messages.filter(m => !options.before || compareInbox(m, options.before) > 0)
     .sort(compareInbox).slice(0, options.limit + 1);
 }
+
+/**
+ * The longest cursor the feed (workers/routes/inbox.ts) makes: 150 fingerprints, the scope and a position, base64 (about
+ * 2,600 characters with a long query). The agent tool's cursor limit is this; until 0.35 it was 2,000,
+ * and an agent could not page past the second page of 100 (B-173, found 2026-10-26).
+ */
+export const MAX_CURSOR_CHARS = 4096;

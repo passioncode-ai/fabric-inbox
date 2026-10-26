@@ -21,6 +21,7 @@ import { parseRemoteAccount, type RemoteProvider } from "../../shared/mail/accou
 import { AttachmentValidationError, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, validateAttachments, type MailAttachment } from "../../shared/mail/attachments";
 import { BATCH_MAX, LOCAL_PART_RE } from "../../shared/address-name";
 import { bareContentId } from "../../shared/mail/inline";
+import { MAX_CURSOR_CHARS } from "../../shared/mail/inbox";
 
 // ── Shared pieces ──────────────────────────────────────────────────
 
@@ -203,7 +204,7 @@ const listMessages = defineTool({
     provider: z.enum(["cloudflare", "gmail", "imap", "outlook"]).optional(), folder: z.enum(["inbox", "sent", "archive", "trash", "starred", "spam", "discarded", "draft"]).default("inbox"),
     unread: z.boolean().optional(), query: z.string().max(500).optional().describe("Text to find in subject, sender, recipient or body"),
     categoryId: z.string().max(100).optional().describe("Only messages in this category (list_categories)"),
-    limit: z.number().int().min(1).max(100).default(25), cursor: z.string().max(2000).optional().describe("From the previous page's nextCursor"),
+    limit: z.number().int().min(1).max(100).default(25), cursor: z.string().max(MAX_CURSOR_CHARS).optional().describe("From the previous page's nextCursor"),
   },
   routes: ["GET /api/inbox", "GET /api/v1/mailboxes/:mailboxId/drafts", "GET /api/accounts/:accountId/drafts"],
   async call(a, ctx) {
@@ -992,6 +993,14 @@ const labelMessages = defineTool({
   },
 });
 
+const checkSpam = defineTool({
+  name: "check_spam", title: "Check a message for spam again", level: "admin", readOnly: true,
+  description: "Runs the spam check again on one message of a Cloudflare mailbox and says what it would decide now, changing nothing: the arrival rules (forgery, the Always spam and Never spam lists, a sender you wrote to) and the model's judgement, which names the message's kind first (transactional, customer, conversation, service_update, other; spam only for phishing, scam, cold_outreach or bulk_marketing) with its reason, and the domain the receiving server verified for it. The model's call counts against today's spam budget; with it spent, or with too little text, model is null and modelSkipped says why. Use it to see why a message went to Spam or stayed out, before mark_spam.",
+  input: { accountId, messageId: z.string().min(1).max(256).describe("The message id within its account (messageId from list_messages)") },
+  routes: ["POST /api/v1/mailboxes/:mailboxId/emails/:id/spam-check"],
+  call: (a, ctx) => post(ctx, `${box(cloudflareOnly(parseAccount(a.accountId), "Checking for spam").mailbox)}/emails/${enc(a.messageId)}/spam-check`),
+});
+
 const markSpam = defineTool({
   name: "mark_spam", title: "Report spam or not spam", level: "mail", target: (a) => `${a.messages.length} message(s) spam=${a.spam}`,
   description: "Moves messages to Spam (spam: true) or back to the Inbox (spam: false), and by default puts the sender on the Always spam or Never spam list so their next mail is judged the same way. For Gmail, IMAP and Outlook accounts it uses the account's own spam folder, which also teaches the provider's filter.",
@@ -1730,7 +1739,7 @@ const agentActivity = defineTool({
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listFolders, getSendStatus,
   listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
-  listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
+  listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,
   getServer, listMembers, checkAddress, createAddress, createAddresses, updateAddress, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination, removeDestination,

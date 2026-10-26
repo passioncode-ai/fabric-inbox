@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { authResults, spamCheck, normaliseLists, listEntry, type SpamLists } from "../shared/mail/spam";
+import { authResults, spamCheck, normaliseLists, listEntry, verifiedDomain, namedDomain, type SpamLists } from "../shared/mail/spam";
 
 // SP-1: the verdict a Cloudflare message gets on arrival, from the operator's lists and the
 // authenticity results Cloudflare's MX wrote. Header values are the shapes seen on live mail.
@@ -91,4 +91,28 @@ test("too little text to judge: a signature or a word is left alone, a short off
   assert.equal(tooLittleToJudge("ok, thanks"), true);
   assert.equal(tooLittleToJudge("We offer SEO services at a great price."), false);
   assert.equal(tooLittleToJudge("see www.x.invalid"), false);
+});
+
+test("the verified domain the spam model sees: DMARC's From domain, else a DKIM signature aligned with the sender (B-172)", () => {
+  assert.equal(verifiedDomain(authResults([pass]), "news@letters.invalid"), "letters.invalid", "DMARC passed");
+  const dkimOnly = (d: string) => authResults([cf(`dkim=pass header.d=${d}; dmarc=none; spf=none`)]);
+  assert.equal(verifiedDomain(dkimOnly("acme.invalid"), "no-reply@mail.acme.invalid"), "acme.invalid", "the parent domain signed it");
+  assert.equal(verifiedDomain(dkimOnly("mail.acme.invalid"), "no-reply@acme.invalid"), "mail.acme.invalid", "a subdomain signed it");
+  assert.equal(verifiedDomain(dkimOnly("esp.invalid"), "no-reply@acme.invalid"), null, "a mailing service's own signature proves nothing about acme");
+  assert.equal(verifiedDomain(dkimOnly("notacme.invalid"), "no-reply@acme.invalid"), null, "a look-alike suffix is not aligned");
+  assert.equal(verifiedDomain(authResults([cf("dkim=fail header.d=acme.invalid; dmarc=fail header.from=acme.invalid policy.dmarc=none; spf=fail")]), "a@acme.invalid"), null);
+  assert.equal(verifiedDomain(null, "a@acme.invalid"), null, "no result from Cloudflare's MX: nothing verified");
+});
+
+test("a stranger wearing one of your domains as its shown name is spam; the Never spam list still wins (B-172)", () => {
+  const worn = { ...base, sender: "noreplay@shoes.invalid", headers: [cf("dkim=pass header.d=shoes.invalid; dmarc=pass header.from=shoes.invalid policy.dmarc=none; spf=pass")] };
+  assert.deepEqual(spamCheck({ ...worn, senderName: "Mail Update ours.invalid" }),
+    { verdict: "spam", reason: "Shows your domain ours.invalid as its name but comes from shoes.invalid" });
+  assert.equal(spamCheck({ ...worn, senderName: "product.invalid" }).verdict, "spam", "the name alone, quoted");
+  assert.equal(spamCheck({ ...worn, senderName: "Ours Support" }).verdict, "screen", "a brand word is not the domain");
+  assert.equal(spamCheck({ ...worn, senderName: "notours.invalid" }).verdict, "screen", "a longer domain ending the same is someone else's");
+  assert.equal(spamCheck({ ...worn, senderName: "ann@ours.invalid via Shoes" }).verdict, "screen", "an address in the name is not the domain worn");
+  assert.equal(spamCheck({ ...worn, senderName: "Mail Update ours.invalid", lists: { ...empty, allowedDomains: ["shoes.invalid"] } }).verdict, "clean");
+  assert.equal(spamCheck({ ...worn, sender: "news@ours.invalid", senderName: "ours.invalid", headers: [cf("dkim=pass header.d=ours.invalid; dmarc=pass header.from=ours.invalid; spf=pass")] }).verdict, "clean", "your own mail may say so");
+  assert.equal(namedDomain("Update for OURS.INVALID.", ["ours.invalid"]), "ours.invalid");
 });

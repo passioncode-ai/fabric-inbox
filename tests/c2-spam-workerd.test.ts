@@ -46,14 +46,18 @@ const bundle = await build({
           await this.ctx.storage.put('test:accepted', [...((await this.ctx.storage.get('test:accepted')) || []), event.id]);
           return super.ingest(account, event);
         }
+        spamModel() { return this.model(); }
         model() {
           return new MockLanguageModelV3({ doGenerate: async (options) => {
             const text = JSON.stringify(options.prompt);
             const input = JSON.parse(text.match(/\\{\\\\"categories[\\s\\S]*?\\\\"}}/)?.[0].replace(/\\\\"/g, '"') || '{}');
             const email = (input.email?.subject + ' ' + input.email?.text).toLowerCase();
-            const results = (input.categories || []).map((c) => ({ id: c.id, match: c.id === '__spam' && email.includes('seo services'),
-              reason: email.includes('seo services') ? 'Unsolicited SEO outreach from a stranger' : 'A person with a real question' }));
-            return { content: [{ type: 'text', text: JSON.stringify({ results }) }], finishReason: { unified: 'stop', raw: 'stop' },
+            // B-172: the spam check is its own call, answered with the message's kind.
+            const spamCall = !text.includes('\\"categories\\"');
+            const seo = (spamCall ? text : email).toLowerCase().includes('seo services');
+            const results = (input.categories || []).map((c) => ({ id: c.id, match: false, reason: 'unrelated' }));
+            const answer = spamCall ? { kind: seo ? 'cold_outreach' : 'customer', reason: seo ? 'Unsolicited SEO outreach from a stranger' : 'A person with a real question' } : { results };
+            return { content: [{ type: 'text', text: JSON.stringify(answer) }], finishReason: { unified: 'stop', raw: 'stop' },
               usage: { inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, text: 1, reasoning: 0 } }, warnings: [] };
           }});
         }

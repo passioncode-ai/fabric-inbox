@@ -105,6 +105,13 @@ topics: ["aml review"] }`: such mail gets no reply at all, no model runs, and th
 `allowedDomains`; `add` or `remove`). Judging messages is `mark_spam` (mail level). `empty_spam` is
 two-step and permanent for Cloudflare mailboxes; Gmail's Spam is not touched.
 
+Why a Cloudflare message went to Spam, or stayed out: `check_spam` runs the check again on it and changes
+nothing. It answers the arrival rules, the domain the receiving server verified, and the model's kind
+with its reason: a transactional notice, a customer, a conversation, a service's update or other keep it;
+phishing, a scam, cold outreach and bulk marketing are spam. Each call counts against the day's spam
+budget. A message the check now keeps is brought back with `mark_spam` `spam: false` (`list: "none"` when
+the sender should not be allowed for good).
+
 ## Discard rules
 
 `list_discard_rules` (each rule with why and its counts, the Always allow list) → `remove_discard_rule`

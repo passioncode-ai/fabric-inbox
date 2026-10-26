@@ -55,6 +55,30 @@ export function authResults(headers: { key: string; value: string }[]): AuthResu
   };
 }
 
+/**
+ * The domain Cloudflare's MX confirmed sent the message (B-172), for the model's spam check: the
+ * From domain when DMARC passed, else a passing DKIM signature aligned with the sender's domain
+ * (the same domain, or one under the other). Null when nothing was confirmed.
+ */
+export function verifiedDomain(auth: AuthResults | null, sender: string): string | null {
+  if (!auth) return null;
+  const domain = domainOf(sender.trim().toLowerCase());
+  if (auth.dmarc === "pass") return auth.fromDomain ?? (domain || null);
+  if (!domain) return null;
+  return auth.dkimDomains.find((d) => d === domain || domain.endsWith("." + d) || d.endsWith("." + domain)) ?? null;
+}
+
+/** One of the domains written as a whole word in a sender's shown name ("Mail Update example.com"). */
+export function namedDomain(name: string, domains: string[]): string | null {
+  const text = name.toLowerCase();
+  return domains.find((d) => {
+    const at = text.indexOf(d);
+    if (at < 0) return false;
+    const before = text[at - 1] ?? " ", after = text[at + d.length] ?? " ";
+    return !/[a-z0-9.@-]/.test(before) && !/[a-z0-9-]/.test(after);
+  }) ?? null;
+}
+
 export function spamCheck(input: {
   sender: string;
   headers: { key: string; value: string }[];
@@ -62,6 +86,8 @@ export function spamCheck(input: {
   lists: SpamLists;
   /** A mailbox here has sent mail to this address. */
   known: boolean;
+  /** The name the From header shows. */
+  senderName?: string | null;
 }): SpamVerdict {
   const sender = input.sender.trim().toLowerCase();
   const domain = domainOf(sender);
@@ -86,6 +112,10 @@ export function spamCheck(input: {
   if (blockedDomain) return { verdict: "spam", reason: msg("You marked {domain} as spam", { domain: blockedDomain }) };
 
   if (own) return { verdict: "clean", reason: msg("From one of your own domains") };
+  // B-172: "Mail Update example.com" <x@elsewhere>: a stranger wearing your domain as its name, the
+  // shape of every "verify your mailbox" phishing seen live; the model let it through as a notice.
+  const worn = namedDomain(input.senderName ?? "", input.ownDomains);
+  if (worn && domain) return { verdict: "spam", reason: msg("Shows your domain {domain} as its name but comes from {sender}", { domain: worn, sender: domain }) };
   if (auth) {
     // Weaker than DMARC: a real sender with a broken SPF record is the operator's to allow (above).
     if (auth.spf === "fail" && !auth.dkimDomains.length && auth.dmarc !== "pass")

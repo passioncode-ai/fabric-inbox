@@ -46,6 +46,7 @@ const bundle = await build({
       export class TestCategories extends CategoriesDO {
         calls = 0;
         async callCount() { return this.calls; }
+        spamModel() { return this.model(); }
         model() {
           const env = this.env;
           return new MockLanguageModelV3({ doGenerate: async (options) => {

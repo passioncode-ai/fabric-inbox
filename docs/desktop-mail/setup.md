@@ -133,7 +133,8 @@ Every name the Worker reads (`workers/types.ts`). None is in `wrangler.jsonc` (C
 | `AUTOMATION_MODEL` | var | optional | `@cf/meta/llama-4-scout-17b-16e-instruct` | model for rule conditions and rule drafts |
 | `CATEGORY_MODEL` | var | optional | `@cf/meta/llama-4-scout-17b-16e-instruct` | model that reads a new message against the categories described in words |
 | `CATEGORY_DAILY_LIMIT` | var | optional | `500` | messages the category model reads per UTC day; the rest wait for the next day |
-| `SPAM_DAILY_LIMIT` | var | optional | `300` | strangers' messages the model reads for spam per UTC day on its own; a check made in the same call as a category does not count; beyond it new mail is not judged by the model |
+| `SPAM_DAILY_LIMIT` | var | optional | `300` | strangers' messages the model reads for spam per UTC day (each check is its own call; `check_spam` counts too); beyond it new mail is not judged by the model |
+| `SPAM_MODEL` | var | optional | `CATEGORY_MODEL`, then `@cf/meta/llama-4-scout-17b-16e-instruct` | Workers AI model of the spam check (B-172) |
 | `AUTOMATION_MCP_HOSTS` | var | agent or rule tools | empty → no tools | exact HTTPS hosts tools may call |
 | `AUTOMATION_TOOL_TOKENS` | secret | tools with credentials | `{}` | JSON map credential name → `{ "host": "<tool host>", "token": "<bearer>" }`, a token bound to the one host it is sent to; agents and rules store only the name. A bare string (configured before 2026-10-12) still works for any allowlisted host and logs `tool_token_unbound` |
 | `MAIL_CREDENTIAL_KEY` | secret | Gmail, Outlook and IMAP accounts | — | the key every account's token or app password is sealed with: made once by Create my server (and by the Gmail or Outlook setup, or Make the key in Settings, when the server has none), never replaced; see "The credential key" below |
