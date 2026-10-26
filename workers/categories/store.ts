@@ -337,7 +337,7 @@ export class CategoriesDO extends DurableObject<Env> {
    * no enabled screened category exists, so an idle workspace costs nothing.
    */
   async ingest(account: AccountRef, event: { id: string; sender: string; subject: string; body: string; html?: string; date: string; screen?: boolean; spam?: boolean;
-    senderName?: string | null; verified?: string | null }): Promise<void> {
+    senderName?: string | null; verified?: string | null; files?: { id: string; filename: string; mimetype: string; size: number }[] }): Promise<void> {
     if (event.spam) return;
     const screened = (await this.categories()).filter((c) => c.enabled && c.kind === "screened");
     const projects = await this.listProjects();

@@ -40,7 +40,8 @@ export async function readFiles(files: MailFile[], get: (key: string) => Promise
       const blob = await get(f.key).catch(() => null);
       if (blob) blobs.push({ name: f.filename, blob }); else unread.push(f.filename);
     }
-    const answers = blobs.length ? await toText(blobs).catch((error: unknown) => blobs.map((b) => ({ name: b.name, error: (error as Error)?.message ?? "failed" }))) : [];
+    const answers: { name: string; text?: string; error?: string }[] = blobs.length
+      ? await toText(blobs).catch((error: unknown) => blobs.map((b) => ({ name: b.name, error: (error as Error)?.message ?? "failed" }))) : [];
     for (const a of answers) {
       if (a.text?.trim()) text += `\n[${a.name}]\n${a.text.trim()}`;
       else unread.push(a.name);

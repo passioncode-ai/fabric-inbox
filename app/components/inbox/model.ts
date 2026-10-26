@@ -63,7 +63,7 @@ export type InboxMessage = {
   agentState?: import("../../../shared/mail/agent-state").AgentState;
   agentAbandoned?: boolean;
   /** B-178: held from agents with tools by the arrival safety check, with why. */
-  held?: { reason: string; verdict: string | null };
+  held?: { reason: string; verdict: string | null; /** B-180: hosts of known phishing sites it links to. */ links?: string[] };
   /** In a category's own view: why the message belongs there. */
   categoryReason?: string;
   spamReason?: string;
