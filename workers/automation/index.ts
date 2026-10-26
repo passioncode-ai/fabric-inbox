@@ -15,6 +15,7 @@ import {
   type Rule,
   type Run,
   type RuleEmail,
+  forwardLoops,
   type Analysis,
 } from "./policy";
 import { processRun, ActionRejected, refusalsKnown } from "./engine";
@@ -173,6 +174,9 @@ export class AutomationDO extends DurableObject<Env> {
       "event:" + (await hash(JSON.stringify([account, email.id])));
     const selected = await Promise.all(
       rules
+        // A-9: a forward that would bring its own message back (to the address itself, or mail this address sent)
+        // loops until the daily limit; it never runs.
+        .filter((rule) => !forwardLoops(rule, account, email))
         .filter((rule) => matchesRule(rule, email))
         .map(async (rule) => {
           const key = runKey(account, email.id, rule.id, rule.version);
@@ -337,10 +341,10 @@ export class AutomationDO extends DurableObject<Env> {
       : { outcome: "not_done", detail: msg("Checked: the message is not marked read.") };
   }
   /** B-178: the run's message as the arrival safety check left it; its account is the categories' account id. */
-  private async safetyOf(run: Run): Promise<"pending" | "held" | "clear"> {
+  private async safetyOf(run: Run): Promise<"pending" | "held" | "kept" | "clear"> {
     const accountId = parseRemoteAccount(run.account) ? run.account.toLowerCase() : `cloudflare:${run.account.toLowerCase()}`;
     const record = (await this.env.CATEGORIES.getByName("workspace").safetyOf([{ accountId, messageId: run.emailId }]))[safetyKey(accountId, run.emailId)];
-    return !record ? "pending" : isHeld(record.state) ? "held" : "clear";
+    return !record ? "pending" : record.state === "kept" ? "kept" : isHeld(record.state) ? "held" : "clear";
   }
   private async readEmail(account: string, id: string): Promise<RuleEmail> {
     const remote = parseRemoteAccount(account);
@@ -557,6 +561,13 @@ export class AutomationDO extends DurableObject<Env> {
     for (const run of pending)
       await processRun(run, {
         save: (r) => putRun(this.ctx.storage, r),
+        saveIfPending: (r) =>
+          this.ctx.storage.transaction(async (txn) => {
+            const fresh = await txn.get<Run>("run:" + r.id);
+            if (fresh?.status !== "pending") return false;
+            await putRun(txn, r);
+            return true;
+          }),
         start: (r) =>
           this.ctx.storage.transaction(async (txn) => {
             const fresh = await txn.get<Run>("run:" + r.id);

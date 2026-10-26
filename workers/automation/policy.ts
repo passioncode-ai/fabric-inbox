@@ -195,3 +195,11 @@ export async function emailDigest(email: RuleEmail): Promise<string> {
     n.toString(16).padStart(2, "0"),
   ).join("");
 }
+
+/** A-9: a forward rule whose run would come back to this same address. */
+export function forwardLoops(rule: Rule, account: string, email: Pick<RuleEmail, "sender">): boolean {
+  if (rule.action.type !== "forward") return false;
+  const bare = (v: string) => (v.match(/<([^<>]+)>/)?.[1] ?? v).trim().toLowerCase();
+  const self = account.trim().toLowerCase();
+  return bare(rule.action.to) === self || bare(email.sender ?? "") === self;
+}

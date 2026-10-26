@@ -806,6 +806,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"{reason}; the review could not run": "{reason}; разбор не выполнился",
 	"Released by a person": "Отпустил человек",
 	"Kept held by a person": "Человек оставил задержанным",
+	"Kept held by a person after the safety check": "Человек оставил письмо задержанным после проверки безопасности",
 	"Name one or more messages": "Укажите одно или несколько писем",
 	"Name the message and release or keep": "Укажите письмо и выберите: отпустить или оставить",
 	"The safety check is not available on this server": "Проверка безопасности на этом сервере недоступна",
