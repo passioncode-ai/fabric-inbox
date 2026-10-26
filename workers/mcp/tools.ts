@@ -1432,9 +1432,11 @@ const previewAgentAnswer = defineTool({
   name: "preview_agent_answer", title: "Preview a reply agent's answer", level: "admin", target: (a) => `${a.agentId} ${a.address}`,
   description: "Runs a reply agent on a message you write, as if it came to the address, and returns what it would do and the reply it would send — nothing is sent, drafted, stored or reported to its knowledge. Use it to test an agent before or after changing it. Mail from a domain this server serves is left alone, as in a real run, so use an outside sender.",
   input: { agentId: z.string().min(1).max(100), address, from: z.string().email().describe("The sender, from outside this server's domains"),
-    subject: z.string().max(500).default(""), text: z.string().min(1).max(20_000).describe("The message, as plain text") },
+    subject: z.string().max(500).default(""), text: z.string().min(1).max(20_000).describe("The message, as plain text"),
+    reasoning: z.enum(["none", "minimal", "low", "medium", "high", "default"]).optional()
+      .describe("Try the writer at this reasoning effort for this preview only (OpenRouter; default: the provider's own); the server's setting is REPLY_REASONING") },
   routes: ["POST /api/agents/:id/preview"],
-  call: (a, ctx) => post(ctx, `/api/agents/${enc(a.agentId)}/preview`, { address: a.address, from: a.from, subject: a.subject, text: a.text }),
+  call: (a, ctx) => post(ctx, `/api/agents/${enc(a.agentId)}/preview`, { address: a.address, from: a.from, subject: a.subject, text: a.text, reasoning: a.reasoning }),
 });
 
 const saveAgent = defineTool({

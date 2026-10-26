@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { Env } from "../types";
 import { AGENT_TEMPLATES, readAssignment } from "../agents/definition";
 import { isAccountMailbox, updateAccountSettings } from "../agents/account-settings";
+import { REASONING_EFFORTS, type ReasoningEffort } from "../agents/model";
 import { registryError } from "../agents/errors";
 import { RUN_OUTCOMES, type RunOutcome } from "../agents/run";
 import { allServedDomains, createMailbox, deleteMailbox, isDomainName, readAllSettings, readSettings, settingsKey, storedCatchAll, updateSettings } from "../lib/mailbox-store";
@@ -146,14 +147,19 @@ agentsRouter.get("/api/agent-runs/:id", async (c) => {
 /** What an agent would answer to a message, sent nowhere (preview_agent_answer). */
 agentsRouter.post("/api/agents/:id/preview", async (c) => {
   if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
-  const body = await c.req.json().catch(() => null) as { address?: unknown; from?: unknown; subject?: unknown; text?: unknown } | null;
+  const body = await c.req.json().catch(() => null) as { address?: unknown; from?: unknown; subject?: unknown; text?: unknown; reasoning?: unknown } | null;
   const address = typeof body?.address === "string" ? body.address.trim() : "";
   const from = typeof body?.from === "string" ? body.from.trim() : "";
   const text = typeof body?.text === "string" ? body.text : "";
   if (!/^[^\s@]+@[^\s@]+$/.test(address) || !/^[^\s@]+@[^\s@]+$/.test(from) || !text.trim() || text.length > 20_000)
     return c.json({ error: msg("A preview needs the address, a sender and the message text") }, 400);
+  // B-174: a preview may try the writer at another reasoning effort ("default": the provider's own).
+  const reasoning = body?.reasoning === undefined ? undefined : body.reasoning === "default" ? null
+    : (REASONING_EFFORTS as readonly unknown[]).includes(body.reasoning) ? body.reasoning as ReasoningEffort : false;
+  if (reasoning === false) return c.json({ error: msg("reasoning is one of none, minimal, low, medium, high or default") }, 400);
   try {
-    return c.json(await registry(c).previewAnswer(c.req.param("id"), { address, from, subject: typeof body?.subject === "string" ? body.subject.slice(0, 500) : "", text }));
+    return c.json(await registry(c).previewAnswer(c.req.param("id"), { address, from, subject: typeof body?.subject === "string" ? body.subject.slice(0, 500) : "", text,
+      ...(reasoning !== undefined ? { reasoning } : {}) }));
   } catch (error) { return registryFailure(c, error); }
 });
 

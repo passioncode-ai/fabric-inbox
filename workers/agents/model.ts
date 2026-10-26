@@ -178,7 +178,21 @@ export const openRouter = (apiKey: string) => createOpenRouter({ apiKey, appName
  * answer (prose alone is no answer: seen live 2026-10-17, a follow-up held because the writer replied in
  * prose and the fallback was not asked). When neither answers, the first one's prose is returned.
  */
-export async function openRouterAgentModel(apiKey: string, request: ModelRequest, models: { primary?: string; fallback?: string } = {},
+/**
+ * B-174: how hard the writer reasons (OpenRouter `reasoning.effort`, `REPLY_REASONING`). Unbounded, the
+ * writer reached the 90 s limit on 12 of 59 calls of one support address in a week; the fallback then
+ * wrote the answer. Anything else in the variable leaves the provider's own default.
+ */
+export const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high"] as const;
+export type ReasoningEffort = typeof REASONING_EFFORTS[number];
+export const DEFAULT_REPLY_REASONING: ReasoningEffort | null = null;
+export function replyReasoning(value: string | undefined): ReasoningEffort | null {
+  const v = value?.trim().toLowerCase();
+  if (v === "default") return null;
+  return (REASONING_EFFORTS as readonly string[]).includes(v ?? "") ? v as ReasoningEffort : DEFAULT_REPLY_REASONING;
+}
+
+export async function openRouterAgentModel(apiKey: string, request: ModelRequest, models: { primary?: string; fallback?: string; reasoning?: ReasoningEffort | null } = {},
   run: (model: LanguageModel, request: ModelRequest) => Promise<ModelResponse> = runModel): Promise<ModelResponse> {
   const provider = openRouter(apiKey);
   const primary = models.primary || REPLY_MODEL;
@@ -188,9 +202,9 @@ export async function openRouterAgentModel(apiKey: string, request: ModelRequest
   let failed = 0;
   // B-147: OpenRouter's usage accounting returns each call's charge; a failed call leaves an unmeasured receipt.
   const usage: UsageReceipt[] = [];
-  const chat = (id: string) => provider.chat(id, { usage: { include: true } });
+  const chat = (id: string, effort?: ReasoningEffort | null) => provider.chat(id, { usage: { include: true }, ...(effort ? { reasoning: { effort } } : {}) });
   try {
-    first = await run(chat(primary), request);
+    first = await run(chat(primary, request.reasoning !== undefined ? request.reasoning : models.reasoning), request);
     usage.push(...(first.usage ?? [unmeasured(primary)]));
     if (first.decision) return { ...first, model: primary, calls: { calls: 1, failed: 0, recovered: 0 }, usage };
     console.warn(JSON.stringify({ event: "reply_model_no_answer", trace, model: primary, prose: first.text.trim().length > 0 }));

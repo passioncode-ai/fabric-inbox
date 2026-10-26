@@ -77,7 +77,7 @@ const BODIES: Record<string, string[]> = {
   // Read by hand in their handlers (no schema to export):
   "POST /api/agents": ["agent"], // workers/routes/agents.ts
   "PUT /api/agents/:id": ["agent", "expectedVersion"], // workers/routes/agents.ts
-  "POST /api/agents/:id/preview": ["address", "from", "subject", "text"], // workers/routes/agents.ts
+  "POST /api/agents/:id/preview": ["address", "from", "subject", "text", "reasoning"], // workers/routes/agents.ts
   "POST /api/domains/:domain/release": ["force"], // workers/routes/domains.ts
   "PUT /api/inbox/hidden": ["hide", "show"], // workers/routes/inbox.ts
   "PUT /api/agent-status": ["enabled", "domains", "addresses"], // workers/routes/inbox.ts (B-138)
