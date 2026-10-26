@@ -1885,6 +1885,91 @@ const agentActivity = defineTool({
   call: (a, ctx) => get(ctx, "/api/agent-keys/journal", { cursor: a.cursor, before: a.before, limit: a.limit }),
 });
 
+// ── B-181 (SCN-089): outreach campaigns, step 1: prepare, preview, dry-run; nothing sends yet ──
+const campaignStep = z.object({
+  subject: z.string().max(300).optional().describe("The subject; {{field}} and {{field|fallback}} are filled per recipient. A follow-up with no subject replies in the same thread."),
+  body: z.string().min(1).max(20_000).describe("Plain text; {{field}} and {{field|fallback}} are filled per recipient."),
+  delayDays: z.number().int().min(0).max(60).optional().describe("Days after the step before (default 3; the first step: after launch)"),
+});
+const campaignInput = z.object({
+  name: z.string().min(1).max(120),
+  sender: accountId.describe("The connected Gmail, Outlook or IMAP account it sends from (list_accounts); a Cloudflare address is refused"),
+  timezone: z.string().max(64).optional().describe("IANA time zone of the sending window (default UTC)"),
+  window: z.object({ days: z.array(z.number().int().min(0).max(6)).optional().describe("0 Sunday … 6 Saturday; default Monday to Friday"),
+    start: z.string().optional().describe("HH:MM, default 09:00"), end: z.string().optional().describe("HH:MM, default 17:00") }).optional(),
+  dailyCap: z.number().int().min(1).max(50).optional().describe("Messages a day from the sender, over a rolling day (default 30, at most 50)"),
+  gapMinutes: z.tuple([z.number().int(), z.number().int()]).optional().describe("A random gap between sends, in minutes (default [5, 10])"),
+  steps: z.array(campaignStep).min(1).max(4).describe("The first message and up to three follow-ups"),
+  stopOnReply: z.boolean().optional(), companyStop: z.boolean().optional().describe("Stop everyone at the same company domain when one replies (default on; free-mail domains excluded)"),
+  postalAddress: z.string().max(300).optional().describe("The sender's postal address, which commercial mail must carry in some countries"),
+});
+const campaignId = z.string().min(1).max(100).describe("The campaign's id (list_campaigns)");
+
+const listCampaigns = defineTool({
+  name: "list_campaigns", title: "List outreach campaigns", level: "read", readOnly: true,
+  description: "The workspace's outreach campaigns with their state (draft until sending exists) and how many recipients stand where (queued, suppressed…).",
+  input: {}, routes: ["GET /api/campaigns"], call: (_a, ctx) => get(ctx, "/api/campaigns"),
+});
+const getCampaign = defineTool({
+  name: "get_campaign", title: "Read a campaign", level: "read", readOnly: true,
+  description: "One campaign: its sender, window, daily cap, steps and recipient counts.",
+  input: { campaignId }, routes: ["GET /api/campaigns/:id"], call: (a, ctx) => get(ctx, `/api/campaigns/${enc(a.campaignId)}`),
+});
+const saveCampaign = defineTool({
+  name: "save_campaign", title: "Prepare an outreach campaign", level: "mail", target: (a) => a.campaignId ?? a.campaign.name,
+  description: "Creates a campaign (no campaignId) or changes a draft (campaignId, with expectedVersion from get_campaign). Human-paced by default: 30 a day, Monday to Friday 09:00 to 17:00, 5 to 10 minutes apart, stop on reply and for the whole company. It sends only from a connected Gmail, Outlook or IMAP account. Nothing is sent: add recipients, preview and dry-run it.",
+  input: { campaignId: campaignId.optional(), expectedVersion: z.number().int().optional(), campaign: campaignInput },
+  routes: ["POST /api/campaigns", "PUT /api/campaigns/:id"],
+  call: (a, ctx) => {
+    const campaign = { ...a.campaign, sender: parseAccount(a.campaign.sender).id };
+    return a.campaignId ? put(ctx, `/api/campaigns/${enc(a.campaignId)}`, { campaign, expectedVersion: a.expectedVersion }) : post(ctx, "/api/campaigns", { campaign });
+  },
+});
+const deleteCampaign = defineTool({
+  name: "delete_campaign", title: "Delete a campaign", level: "mail", target: (a) => a.campaignId,
+  description: "Deletes a campaign and its recipient list (not the suppression list). Two calls.",
+  input: { campaignId }, confirm: (a) => `Delete the campaign ${a.campaignId} and its recipient list.`,
+  routes: ["DELETE /api/campaigns/:id"], call: (a, ctx) => del(ctx, `/api/campaigns/${enc(a.campaignId)}`),
+});
+const addCampaignRecipients = defineTool({
+  name: "add_campaign_recipients", title: "Add or remove campaign recipients", level: "mail", target: (a) => a.campaignId,
+  description: "Adds recipients with their fields (first_name, company and any other, used as {{field}}), up to 5,000 a campaign; an address on the suppression list, a repeat or an invalid one is left out and listed with why. With remove, takes queued recipients out.",
+  input: { campaignId, recipients: z.array(z.object({ email: z.string().max(254), fields: z.record(z.union([z.string(), z.number()])).optional() })).max(5000).optional(),
+    remove: z.array(z.string().max(254)).max(500).optional() },
+  routes: ["POST /api/campaigns/:id/recipients"],
+  call: (a, ctx) => post(ctx, `/api/campaigns/${enc(a.campaignId)}/recipients`, a.remove ? { remove: a.remove } : { recipients: a.recipients ?? [] }),
+});
+const listCampaignRecipients = defineTool({
+  name: "list_campaign_recipients", title: "List a campaign's recipients", level: "read", readOnly: true,
+  description: "A campaign's recipients with their fields and where each stands, filtered by status, paged.",
+  input: { campaignId, status: z.string().max(40).optional(), limit: z.number().int().min(1).max(500).optional(), offset: z.number().int().min(0).optional() },
+  routes: ["GET /api/campaigns/:id/recipients"],
+  call: (a, ctx) => get(ctx, `/api/campaigns/${enc(a.campaignId)}/recipients`, { status: a.status, limit: a.limit, offset: a.offset }),
+});
+const previewCampaign = defineTool({
+  name: "preview_campaign", title: "Preview a campaign", level: "read", readOnly: true,
+  description: "Every step as one recipient gets it (the first, or the one named), and the fields some recipients lack, with how many and examples: fix them or give a fallback ({{field|fallback}}) before sending.",
+  input: { campaignId, email: z.string().max(254).optional() },
+  routes: ["POST /api/campaigns/:id/preview"], call: (a, ctx) => post(ctx, `/api/campaigns/${enc(a.campaignId)}/preview`, { email: a.email }),
+});
+const dryRunCampaign = defineTool({
+  name: "dry_run_campaign", title: "Dry-run a campaign", level: "read", readOnly: true,
+  description: "When the first step would reach each of the first queued recipients (at most 100), from which account, within the window, the daily cap and the gaps. Sends nothing.",
+  input: { campaignId, count: z.number().int().min(1).max(100).optional() },
+  routes: ["POST /api/campaigns/:id/dry-run"], call: (a, ctx) => post(ctx, `/api/campaigns/${enc(a.campaignId)}/dry-run`, { count: a.count }),
+});
+const listSuppression = defineTool({
+  name: "list_suppression", title: "Read the do-not-write list", level: "read", readOnly: true,
+  description: "The addresses and domains no campaign writes to, with why and when each was added.",
+  input: {}, routes: ["GET /api/suppression"], call: (_a, ctx) => get(ctx, "/api/suppression"),
+});
+const changeSuppression = defineTool({
+  name: "change_suppression", title: "Change the do-not-write list", level: "mail", target: (a) => [...(a.add ?? []), ...(a.remove ?? [])].slice(0, 3).join(", "),
+  description: "Adds addresses or domains (a domain covers every address and subdomain under it) that no campaign may write to, with a reason; queued recipients they cover leave every campaign at once. With remove, takes entries off.",
+  input: { add: z.array(z.string().max(254)).max(1000).optional(), remove: z.array(z.string().max(254)).max(1000).optional(), reason: z.string().max(200).optional() },
+  routes: ["POST /api/suppression"], call: (a, ctx) => post(ctx, "/api/suppression", { add: a.add, remove: a.remove, reason: a.reason }),
+});
+
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, decideHeldMessage, listFolders, getSendStatus,
   listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
@@ -1897,6 +1982,7 @@ export const TOOLS: readonly ToolDef[] = [
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,
   disconnectGmail, disconnectAccount, listMailProviders, gmailConnectLink, gmailSetupStatus, checkGmailSetup, createCredentialKey,
   outlookConnectLink, connectAccount, setAccountPassword, setProviderSetup, microsoftSetupStatus, checkMicrosoftSetup, listAgentKeys, agentActivity,
+  listCampaigns, getCampaign, saveCampaign, deleteCampaign, addCampaignRecipients, listCampaignRecipients, previewCampaign, dryRunCampaign, listSuppression, changeSuppression,
 ];
 
 /**

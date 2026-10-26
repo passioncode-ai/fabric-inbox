@@ -5,6 +5,17 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.44.0 (2026-10-27)
+
+- **Your agent can prepare an outreach campaign.** It picks the connected Gmail, Outlook or IMAP account to send
+  from, writes a first message and up to three follow-ups, and adds the people with their names and companies.
+  It is human-paced by default: 30 messages a day, on weekdays from 9 to 5, 5 to 10 minutes apart.
+- **Check it before anything leaves.** The preview shows each message as one person gets it and names the
+  people a field is missing for. The dry run says when each message would go. Nothing is sent yet: sending
+  comes in the next release.
+- **A do-not-write list.** An address or a whole domain on it is never written to by any campaign, and the
+  people it covers leave every campaign at once.
+
 ## 0.43.0 (2026-10-26)
 
 - **Mail that links to a known phishing site is held from your agents.** The server keeps a copy of Okolos's

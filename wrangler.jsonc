@@ -38,6 +38,7 @@
 			{ "name": "AGENT_REGISTRY", "class_name": "AgentRegistryDO" },
 			{ "name": "KNOWLEDGE", "class_name": "KnowledgeDO" },
 			{ "name": "CATEGORIES", "class_name": "CategoriesDO" },
+			{ "name": "CAMPAIGNS", "class_name": "CampaignsDO" },
 			{
 				"name": "MAILBOX",
 				"class_name": "MailboxDO"
@@ -74,6 +75,7 @@
 		{ "tag": "fabric-v1", "new_sqlite_classes": ["AutomationDO", "GmailAccountsDO"] },
 		{ "tag": "fabric-v2", "new_sqlite_classes": ["AgentRegistryDO"] },
 		{ "tag": "fabric-v3", "new_sqlite_classes": ["KnowledgeDO"] },
-		{ "tag": "fabric-v4", "new_sqlite_classes": ["CategoriesDO"] }
+		{ "tag": "fabric-v4", "new_sqlite_classes": ["CategoriesDO"] },
+		{ "tag": "fabric-v5", "new_sqlite_classes": ["CampaignsDO"] }
 	]
 }

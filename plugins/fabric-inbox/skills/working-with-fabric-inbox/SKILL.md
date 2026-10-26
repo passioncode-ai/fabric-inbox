@@ -147,6 +147,14 @@ the rules that would discard it again; `list_messages` with `folder: "discarded"
 `delete_message` is permanent and two-step — prefer trash. An IMAP account offers only what its
 server has: `list_accounts` gives each account's `capabilities` (no Archive folder → no archive).
 
+**Outreach (being built: nothing sends yet).** `save_campaign` prepares a campaign from a connected
+Gmail, Outlook or IMAP account (never a Cloudflare address), human-paced by default (30 a day,
+weekdays 09:00 to 17:00, 5 to 10 minutes apart, stop on reply and for the whole company);
+`add_campaign_recipients` takes the people with their fields (`{{first_name|there}}` in the steps)
+and leaves out repeats, invalid addresses and anyone on the do-not-write list (`list_suppression`,
+`change_suppression`). Before the person approves: `preview_campaign` (and fix the fields it says
+are missing) and `dry_run_campaign` (when each would go). Write only to people the person chose.
+
 ## 5. Administration workflows (`admin` keys)
 
 Load `references/admin-workflows.md` when the task changes how Fabric Inbox is set up: addresses and

@@ -820,4 +820,22 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Name the message and release or keep": "Укажите письмо и выберите: отпустить или оставить",
 	"The safety check is not available on this server": "Проверка безопасности на этом сервере недоступна",
 	"This message is not held": "Это письмо не задержано",
+
+	// Outreach campaigns (workers/routes/campaigns.ts, workers/campaigns/store.ts, shared/mail/campaign.ts; B-181)
+	"A campaign sends from a connected Gmail, Outlook or IMAP account. Cloudflare's own sending is for transactional mail only.": "Кампания отправляет письма из подключённого аккаунта Gmail, Outlook или IMAP. Отправка через Cloudflare предназначена только для транзакционных писем.",
+	"The sending window must end after it starts.": "Окно отправки должно заканчиваться позже, чем начинается.",
+	"The shortest gap between sends must not be longer than the longest.": "Наименьший интервал между письмами не может быть больше наибольшего.",
+	"The first step needs a message.": "В первом шаге нужен текст письма.",
+	"{timezone} is not a time zone.": "{timezone} не является часовым поясом.",
+	"The campaign is not complete: {problem}": "Кампания заполнена не полностью: {problem}",
+	"At most 200 campaigns; delete one first.": "Можно не больше 200 кампаний. Сначала удалите одну.",
+	"No such campaign.": "Такой кампании нет.",
+	"Only a draft campaign can be changed.": "Изменить можно только черновик кампании.",
+	"The campaign changed since it was read; read it again.": "Кампания изменилась после того, как её прочитали. Откройте её заново.",
+	"Pause the campaign before deleting it.": "Перед удалением поставьте кампанию на паузу.",
+	"Campaigns are unavailable right now. Try again.": "Кампании сейчас недоступны. Попробуйте ещё раз.",
+	"Campaigns are not set up on this server; update the server from the app": "На этом сервере нет кампаний. Обновите сервер из приложения",
+	"{sender} is not a connected account of this server.": "{sender} не подключён к этому серверу.",
+	"Give the recipients as a list, each with an email and its fields.": "Передайте получателей списком: у каждого адрес и его поля.",
+	"Say what to add to or remove from the list.": "Укажите, что добавить в список или убрать из него.",
 };

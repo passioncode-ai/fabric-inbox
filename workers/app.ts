@@ -25,6 +25,7 @@ export { GmailAccountsDO } from "./providers/accounts-do";
 export { AgentRegistryDO } from "./agents/registry";
 export { KnowledgeDO } from "./knowledge/store";
 export { CategoriesDO } from "./categories/store";
+export { CampaignsDO } from "./campaigns/store";
 import type { Env } from "./types";
 
 export { MailboxDO } from "./durableObject";
