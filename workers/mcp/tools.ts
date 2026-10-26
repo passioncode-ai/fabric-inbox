@@ -40,6 +40,38 @@ const cloudflareOnly = (account: Account, what: string) => {
   if (account.provider !== "cloudflare") throw new ApiError(400, `${what} is available for Cloudflare mailboxes only`, null);
   return account;
 };
+/**
+ * B-178: the messages of one account the arrival safety check holds from agents, with why. A store that cannot be
+ * read holds every message asked about (an agent never gets unchecked text by accident); a server without the
+ * check (no categories store) holds nothing.
+ */
+interface Held { reason: string; verdict: string | null; reasons: string[]; hidden: string }
+async function heldOf(ctx: ToolContext, account: Account, ids: string[]): Promise<Map<string, Held>> {
+  const out = new Map<string, Held>();
+  if (!ids.length) return out;
+  const accountId = account.id.toLowerCase();
+  let data: { records?: Record<string, { state: string; reason: string; review: { verdict: string; reasons: string[] } | null; findings: { hidden: string } }>; unavailable?: boolean };
+  try {
+    data = (await post(ctx, "/api/safety/lookup", { keys: ids.slice(0, 200).map((messageId) => ({ accountId, messageId })) })) as typeof data;
+  } catch (error) {
+    for (const id of ids) out.set(id, { reason: `its safety state could not be read (${errorMessage(error)}); try again`, verdict: null, reasons: [], hidden: "" });
+    return out;
+  }
+  for (const id of ids) {
+    const r = data.records?.[`${accountId}|${id}`];
+    if (r && (r.state === "held" || r.state === "kept"))
+      out.set(id, { reason: r.reason, verdict: r.review?.verdict ?? null, reasons: r.review?.reasons ?? [], hidden: r.findings.hidden });
+  }
+  return out;
+}
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 200);
+const heldNotice = (h: Held) => `[Held for review by the safety check: ${h.reason}. Its text and attachments are not given to agents until a person releases it in Fabric Inbox; decide_held_message asks the owner for that.]`;
+/** What an agent gets of a held message: its envelope and why, never its text, HTML or attachments. */
+function withhold<T extends { text: string; truncated: boolean; html?: string; attachments?: unknown[] }>(m: T, h: Held): T {
+  return { ...m, text: heldNotice(h), truncated: false, ...(m.html !== undefined ? { html: "" } : {}), ...(m.attachments ? { attachments: [] } : {}),
+    held: { reason: h.reason, verdict: h.verdict, reasons: h.reasons } };
+}
+
 const box = (mailbox: string) => `/api/v1/mailboxes/${enc(mailbox)}`;
 const remote = (id: string) => `/api/accounts/${enc(id)}`;
 
@@ -136,7 +168,9 @@ async function readMessage(ctx: ToolContext, account: Account, id: string, max =
 
 const row = (m: Record<string, unknown>) => ({
   accountId: m.accountId, messageId: m.providerMessageId, threadId: m.threadId ?? null, subject: m.subject, from: m.sender, to: m.recipient,
-  date: m.date, read: m.read, starred: m.starred, snippet: m.snippet,
+  date: m.date, read: m.read, starred: m.starred,
+  // B-178: a held message's snippet is its text too: an agent gets why it is held instead.
+  ...(m.held ? { snippet: "", held: m.held } : { snippet: m.snippet }),
   ...(m.threadCount ? { threadCount: m.threadCount } : {}), ...(m.alsoIn ? { alsoIn: m.alsoIn } : {}), ...(m.categories ? { categories: m.categories } : {}),
   ...(m.spamReason ? { spamReason: m.spamReason } : {}), ...(m.discardReason ? { discardReason: m.discardReason } : {}), ...(m.triage ? { triage: m.triage } : {}),
 });
@@ -281,15 +315,20 @@ const readMessageTool = defineTool({
   description: "One message in full: From, To, Cc, Bcc (your own sent mail and drafts), Reply-To, In-Reply-To and References, the body as plain text, its attachments (ids for get_attachment; contentId names a file the body shows as a picture, `cid:` in its HTML) and why it is in Spam if it is. includeHeaders adds every header, as the app's View source shows them. Reading does not mark it read; use update_messages for that.",
   input: { accountId, messageId, maxChars, includeHtml: z.boolean().default(false).describe("Also return the original HTML"),
     includeHeaders: z.boolean().default(false).describe("Also return every header of the message (View source)") },
-  routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/accounts/:accountId/messages/:messageId", "GET /api/accounts/:accountId/messages/:messageId/headers"],
-  call: (a, ctx) => readMessage(ctx, parseAccount(a.accountId), a.messageId, a.maxChars, a.includeHtml, a.includeHeaders),
+  routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/accounts/:accountId/messages/:messageId", "GET /api/accounts/:accountId/messages/:messageId/headers", "POST /api/safety/lookup"],
+  async call(a, ctx) {
+    const account = parseAccount(a.accountId);
+    const m = await readMessage(ctx, account, a.messageId, a.maxChars, a.includeHtml, a.includeHeaders);
+    const held = (await heldOf(ctx, account, [m.messageId])).get(m.messageId);
+    return held ? withhold(m, held) : m;
+  },
 });
 
 const readThread = defineTool({
   name: "read_thread", title: "Read a conversation", level: "read", readOnly: true,
   description: "Every message of a conversation, oldest first, as plain text: a Cloudflare mailbox's, or a Gmail, IMAP or Outlook account's as synced here (IMAP conversations are put together from Message-ID, In-Reply-To and References). In a Cloudflare mailbox each sent message carries sentBy (agent: the reply agent's answer; agent_waiting: its waiting reply; person) and each message that came in carries agentRun (the reply agent's run on it, with its status) when there is one. threadId comes from list_messages or read_message.",
   input: { accountId, threadId: z.string().min(1).max(300), maxChars: z.number().int().min(500).max(50_000).default(8000).describe("Longest body returned per message") },
-  routes: ["GET /api/v1/mailboxes/:mailboxId/threads/:threadId", "GET /api/accounts/:accountId/messages", "GET /api/accounts/:accountId/messages/:messageId"],
+  routes: ["GET /api/v1/mailboxes/:mailboxId/threads/:threadId", "GET /api/accounts/:accountId/messages", "GET /api/accounts/:accountId/messages/:messageId", "POST /api/safety/lookup"],
   async call(a, ctx) {
     const parsed = parseAccount(a.accountId);
     if (parsed.provider !== "cloudflare") {
@@ -305,32 +344,69 @@ const readThread = defineTool({
       if (!found.length) throw new ApiError(404, `No message of conversation ${a.threadId} is synced in ${parsed.id}`, null);
       found.sort((x, y) => Number(x.timestamp ?? 0) - Number(y.timestamp ?? 0));
       const messages: Record<string, unknown>[] = [];
+      const held = await heldOf(ctx, parsed, found.slice(0, 50).map((m) => String(m.providerMessageId)));
       for (const m of found.slice(0, 50)) {
-        const full = await readMessage(ctx, parsed, String(m.providerMessageId), a.maxChars);
-        messages.push({ messageId: full.messageId, subject: full.subject, from: full.from, to: full.to, date: full.date, folder: full.folder, read: full.read, text: full.text, truncated: full.truncated });
+        const read = await readMessage(ctx, parsed, String(m.providerMessageId), a.maxChars);
+        const h = held.get(read.messageId);
+        const full = h ? withhold(read, h) : read;
+        messages.push({ messageId: full.messageId, subject: full.subject, from: full.from, to: full.to, date: full.date, folder: full.folder, read: full.read, text: full.text, truncated: full.truncated,
+          ...(h ? { held: { reason: h.reason, verdict: h.verdict, reasons: h.reasons } } : {}) });
       }
       return { messages, ...(found.length > 50 ? { more: found.length - 50 } : {}) };
     }
     const account = cloudflareOnly(parsed, "Reading a conversation");
     const emails = (await get(ctx, `${box(account.mailbox)}/threads/${enc(a.threadId)}`)) as Record<string, unknown>[];
+    const held = await heldOf(ctx, account, emails.map((e) => String(e.id)));
     return { messages: emails.map((e) => { const body = clip(htmlToText(String(e.body ?? "")), a.maxChars);
+      const h = held.get(String(e.id));
       return { messageId: e.id, subject: e.subject, from: e.sender, to: e.recipient, date: e.date, folder: e.folder_id, read: !!e.read,
-        ...(e.sent_by ? { sentBy: e.sent_by } : {}), ...(e.agent_run ? { agentRun: e.agent_run } : {}), text: body.text, truncated: body.truncated }; }) };
+        ...(e.sent_by ? { sentBy: e.sent_by } : {}), ...(e.agent_run ? { agentRun: e.agent_run } : {}),
+        ...(h ? { text: heldNotice(h), truncated: false, held: { reason: h.reason, verdict: h.verdict, reasons: h.reasons } } : { text: body.text, truncated: body.truncated }) }; }) };
   },
 });
 
 const toBase64 = (bytes: Uint8Array) => { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); };
 /** Gmail's base64url, unpadded, as the standard padded base64 every other part of the app takes. */
 const fromBase64Url = (data: string) => { const s = data.replace(/-/g, "+").replace(/_/g, "/"); return s + "=".repeat((4 - (s.length % 4)) % 4); };
+const listHeldMessages = defineTool({
+  name: "list_held_messages", title: "Messages held by the safety check", level: "read", readOnly: true,
+  description: "The messages the arrival safety check holds from agents with tools (B-178): text that gives orders to an AI, or hidden text a person does not see addressing one, found by fixed signals and a light model, then reviewed by a model with no tools. Each with why, newest first. Give accountId and messageId for one message's verdict, the review's reasons and the hidden text that was found (quoted, at most 4,000 characters), whether held or not. Their text and attachments are never given to agents while held; read_message answers a notice.",
+  input: { accountId: accountId.optional(), messageId: messageId.optional(), limit: z.number().int().min(1).max(500).default(100) },
+  routes: ["GET /api/safety/held", "POST /api/safety/lookup"],
+  async call(a, ctx) {
+    if (a.accountId && a.messageId) {
+      const account = parseAccount(a.accountId);
+      const data = (await post(ctx, "/api/safety/lookup", { keys: [{ accountId: account.id.toLowerCase(), messageId: a.messageId }] })) as { records: Record<string, unknown>; unavailable?: boolean };
+      return { record: data.records[`${account.id.toLowerCase()}|${a.messageId}`] ?? null, ...(data.unavailable ? { unavailable: true } : {}) };
+    }
+    return get(ctx, "/api/safety/held", { limit: a.limit });
+  },
+});
+
+const decideHeldMessage = defineTool({
+  name: "decide_held_message", title: "Release or keep a held message", level: "admin", target: (a) => `${a.accountId} ${a.messageId} ${a.action}`,
+  // B-178: releasing hands text written to steer an agent to the agents; the owner decides it, whatever the key's setting.
+  ownerApproval: true,
+  confirm: (a) => a.action === "release"
+    ? `Releases the held message ${a.messageId} in ${a.accountId}: rules, the reply agent and agents over MCP read its text and attachments from then on.`
+    : null,
+  description: "Releases a message the safety check holds (rules, the reply agent and agents read it from then on), or keeps it held. Releasing always waits for the owner's approval in Settings → Agent access, whatever the key's setting: an agent never lets through text that may be written to steer it. Keeping it held needs no approval.",
+  input: { accountId, messageId, action: z.enum(["release", "keep"]) },
+  routes: ["POST /api/safety/decide"],
+  call: (a, ctx) => post(ctx, "/api/safety/decide", { accountId: parseAccount(a.accountId).id.toLowerCase(), messageId: a.messageId, action: a.action, by: ctx.principal.label }),
+});
+
 const getAttachment = defineTool({
   name: "get_attachment", title: "Get an attachment", level: "read", readOnly: true,
   description: "The bytes of one attachment, base64-encoded (standard alphabet, padded). Only attachments up to 5 MB come back; a larger one is refused with 413 and is opened in the app. The attachmentId comes from read_message.",
   input: { accountId, messageId, attachmentId: z.string().min(1).max(2048) },
   // The reader's inline route (B-89) answers the same file's bytes for an embedded picture.
-  routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId", "GET /api/accounts/:accountId/messages/:messageId/attachments/:attachmentId",
+  routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId", "GET /api/accounts/:accountId/messages/:messageId/attachments/:attachmentId", "POST /api/safety/lookup",
     "GET /api/accounts/:accountId/messages/:messageId/attachments/:attachmentId/inline"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
+    const held = (await heldOf(ctx, account, [a.messageId])).get(a.messageId);
+    if (held) throw new ApiError(423, heldNotice(held), { held: { reason: held.reason, verdict: held.verdict, reasons: held.reasons } });
     if (account.provider !== "cloudflare") {
       const data = (await get(ctx, `${remote(account.remoteId)}/messages/${enc(a.messageId)}/attachments/${enc(a.attachmentId)}`)) as { data: string; size: number };
       if (data.size > MAX_ATTACHMENT_BYTES) throw new ApiError(413, "The attachment is larger than 5 MB; open it in the app", null);
@@ -887,8 +963,11 @@ const forward = defineTool({
     signature: z.boolean().default(true).describe("Add the address's signature below your note (Cloudflare)") },
   routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/v1/mailboxes/:mailboxId", "GET /api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId",
     "POST /api/v1/mailboxes/:mailboxId/emails/:id/forward", "GET /api/accounts/:accountId/messages/:messageId", "GET /api/accounts/:accountId/messages/:messageId/attachments/:attachmentId",
-    "POST /api/accounts/:accountId/send"],
+    "POST /api/accounts/:accountId/send", "POST /api/safety/lookup"],
   async call(a, ctx) {
+    // B-178: a held message is never sent on by an agent: forwarding is how planted orders reach someone else.
+    const heldForward = (await heldOf(ctx, parseAccount(a.accountId), [a.messageId])).get(a.messageId);
+    if (heldForward) throw new ApiError(423, heldNotice(heldForward), { held: { reason: heldForward.reason, verdict: heldForward.verdict, reasons: heldForward.reasons } });
     const account = parseAccount(a.accountId);
     const added = checkFiles(toMail(Array.isArray(a.attachments) ? a.attachments : undefined));
     const includeOriginals = a.includeOriginalAttachments ?? (typeof a.attachments === "boolean" ? a.attachments : true);
@@ -1795,7 +1874,7 @@ const agentActivity = defineTool({
 });
 
 export const TOOLS: readonly ToolDef[] = [
-  listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listFolders, getSendStatus,
+  listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, decideHeldMessage, listFolders, getSendStatus,
   listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,

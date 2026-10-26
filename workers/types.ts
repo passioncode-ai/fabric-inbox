@@ -18,6 +18,12 @@ export interface Env extends Cloudflare.Env {
 	SPAM_DAILY_LIMIT?: string;
 	/** Workers AI model of the spam check (B-172); defaults to CATEGORY_MODEL, then AUTOMATION_MODEL, then llama-4-scout. */
 	SPAM_MODEL?: string;
+	/** B-178: "off" turns the arrival safety check off (on by default). */
+	SAFETY_CHECK?: string;
+	/** B-178: model calls of the safety check and its reviews per day (default 2000). */
+	SAFETY_DAILY_LIMIT?: string;
+	/** B-178: the review's Workers AI model (default: the spam check's). */
+	SAFETY_REVIEW_MODEL?: string;
 	/** Workers AI model for address agents and the chat; defaults to @cf/moonshotai/kimi-k2.5. */
 	AGENT_MODEL?: string;
 	/** OpenRouter key for reply agents (secret): with it, answers are written by REPLY_MODEL (fallback REPLY_FALLBACK_MODEL) and approved by a checker of another vendor. */

@@ -1766,3 +1766,25 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** workers/routes/agents.ts (PUT /api/accounts/:accountId/agent, `accountAssignments`), workers/agents/account-settings.ts (`updateAccountSettings`), workers/lib/member-gate.ts, workers/mcp/tools.ts (`set_account_agent`), app/components/settings/sections/AccountAgent.tsx, tests/account-agent.test.ts, tests/agents-accounts-workerd.test.ts, tests/agents-runner.test.ts (B-171)
 - **Product:** unobserved
 - **Today:** Built in 0.36.0 (B-171 phase 2); the server side ran dormant from 0.35.0. From 0.37.0 (B-171 phase 3) an account's conversations carry the reply status of SCN-079 and its agent.abandoned events.
+
+### SCN-087: A message that tries to steer agents is held from them
+- **Persona:** P-01
+- **Feature:** Find and handle a conversation
+- **Traces:** ST-002, ST-008, FLW-02, JTBD-01, JTBD-02; B-178 (operator 2026-10-26: a light model checks the whole body, hidden text included, for instructions to agents; such a message is marked and kept from every agent with tools until it is reviewed in a restricted environment, which gives a verdict)
+- **Entry point:** SCR-03 (the list and the reader)
+- **Preconditions:** Mail arrives at a Cloudflare address or a connected Gmail, IMAP or Outlook account; the check is on by default.
+- **Steps:**
+  1. A message arrives -> before any rule, reply agent or outside agent may act on it, its visible text and its hidden text (text styled out of sight, comments, invisible characters) are checked for instructions aimed at an AI: a fixed set of signals and a light model.
+  2. Nothing found -> it goes on as before; nothing is shown.
+  3. Something found -> the message is held: a second model with no tools and no other mail reads it as data and gives a verdict (safe, instructions to agents, or phishing) with its reasons. Safe releases it; otherwise it stays held.
+  4. Open the inbox -> a held message is marked Held for review; the reader shows the verdict, the reasons and the hidden text that was found, quoted as text.
+  5. Release it, or keep it -> released, the rules and the reply agent take it as new mail; kept, it stays held and no agent with tools reads its text.
+- **Expected result:** No agent that can act (send, forward, call a tool) reads text written to steer it, and the person still sees every message and why it was held.
+- **Alt paths:** An outside agent asks for a held message over MCP: it gets the verdict and a notice instead of the text and attachments; an agent may ask to release it, which waits for the owner's approval in Settings → Agent access. A reply agent's run on a held message is skipped and escalated to a person like one the safety check held. The check is not available (the model is down or over its daily budget): the message is held as unchecked, never passed as clean. A message that arrives before the check finishes waits for it (at most 15 minutes, then it is checked again).
+- **UI elements:** SCR-03 (Held for review mark, the reader's verdict panel with Release and Keep held).
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** A release that cannot be saved keeps the message held and says so; the verdict that cannot be read shows the message as held.
+- **Status:** draft
+- **Coverage:** workers/safety/hidden.ts (`splitHidden`), workers/safety/check.ts (`inspectMessage`, `suspect`), workers/safety/review.ts (`reviewHeld`), vendor/okolos/core-injection (`analyse`), workers/categories/store.ts (`checkSafety`, `safetyOf`, `heldMessages`, `decideHeld`, `releaseAgent`), workers/routes/safety.ts, workers/agents/runner.ts (`held`), workers/automation/engine.ts (`safety`), workers/mcp/tools.ts (`heldOf`, `list_held_messages`, `decide_held_message`), workers/mcp/scope.ts (`SAFETY_ROUTES`), app/components/inbox/HeldPanel.tsx, app/components/inbox/TriagedList.tsx, tests/safety-check.test.ts, tests/safety-workerd.test.ts, tests/mcp-held.test.ts, tests/agents-runner.test.ts (B-178), tests/automation-engine.test.ts (B-178), tests/mcp-scope.test.ts (B-178), tests/okolos-vendor.test.ts
+- **Product:** unobserved
+- **Today:** Built 2026-10-26 (B-178). Before it, the safety check ran only inside a reply agent's run; outside agents over MCP and automation rules read such mail unmarked. Not yet read: attachments' text and links (B-179).

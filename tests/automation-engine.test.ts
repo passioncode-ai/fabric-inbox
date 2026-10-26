@@ -249,3 +249,33 @@ test("B-05: a run stored before B-05 (no counted field) took its count when queu
   assert.equal(s.run.status, "succeeded");
   assert.ok(!s.writes.includes("claim"));
 });
+test("B-178: a rule waits for the message's safety check, never acts on a held message, and gives it up after a week", async () => {
+  const at = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
+  // Not checked yet: the run stays pending and comes back in a minute; nothing ran.
+  const waiting = setup();
+  waiting.run.createdAt = at(60_000);
+  await processRun(waiting.run, { ...waiting.deps, safety: async () => "pending" as const });
+  assert.deepEqual([waiting.run.status, waiting.run.detail], ["pending", "Waiting for the safety check"]);
+  assert.ok(Date.parse(waiting.run.retryAt!) > Date.now());
+  assert.equal(waiting.effects, 0);
+  // Held: it waits for a person's release, ten minutes at a time.
+  const held = setup();
+  held.run.createdAt = at(3_600_000);
+  await processRun(held.run, { ...held.deps, safety: async () => "held" as const });
+  assert.deepEqual([held.run.status, held.run.detail], ["pending", "Held for review by the safety check"]);
+  assert.ok(!held.writes.includes("running"), "it never started");
+  // Held for more than a week: given up, said so.
+  const old = setup();
+  old.run.createdAt = at(8 * 86_400_000);
+  await processRun(old.run, { ...old.deps, safety: async () => "held" as const });
+  assert.deepEqual([old.run.status, old.run.detail], ["skipped", "Held for review by the safety check and never released"]);
+  // The check never came within 15 minutes: the rule acts as before; a clear message runs at once.
+  const late = setup();
+  late.run.createdAt = at(16 * 60_000);
+  await processRun(late.run, { ...late.deps, safety: async () => "pending" as const });
+  assert.equal(late.run.status, "succeeded");
+  const clear = setup();
+  clear.run.createdAt = at(1000);
+  await processRun(clear.run, { ...clear.deps, safety: async () => "clear" as const });
+  assert.equal(clear.run.status, "succeeded");
+});

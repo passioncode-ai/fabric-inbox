@@ -58,6 +58,7 @@ import { isAgentState, type AgentStatusSettings } from "../../shared/mail/agent-
 import ConversationList from "~/components/inbox/ConversationList";
 import { loadConversation, markRead, messageBody, type ThreadRow } from "~/components/inbox/thread";
 import AgentRunPanel from "~/components/inbox/AgentRunPanel";
+import HeldPanel from "~/components/inbox/HeldPanel";
 import { openFromLink } from "~/components/inbox/open-link";
 import { untouchedDraft } from "~/components/inbox/draft-store";
 import DraftsDialog, { draftRows } from "~/components/inbox/DraftsDialog";
@@ -891,6 +892,7 @@ export default function UnifiedInbox() {
   const threaded = (conversation.data?.length ?? 0) > 1;
   const openContent = selected && detail.data ? (
                       <>
+                        <HeldPanel message={selected} />
                         <AgentRunPanel message={selected} onOpenDraft={(draftId) => {
                           void saved.openServer({ accountId: selected.accountId, serverId: draftId, revision: 0, to: "", subject: "", date: "", snippet: "", files: 0 })
                             .then((opened) => { if (opened) setComposeOpen(true); });

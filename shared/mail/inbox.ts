@@ -66,6 +66,8 @@ export interface InboxMessage {
   agentState?: import("./agent-state").AgentState;
   /** B-170: its conversation still waits for someone 48 hours after the last message that came in (isAbandoned). */
   agentAbandoned?: boolean;
+  /** B-178: held from agents with tools by the arrival safety check, with why. */
+  held?: { reason: string; verdict: string | null };
   /** In a category's own view: why this message belongs there. */
   categoryReason?: string;
   /** Why it is in Spam (SP-4): a rule, the model, the operator, or Gmail. */

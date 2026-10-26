@@ -210,6 +210,11 @@ export interface RunnerDeps {
   };
   /** flagged when the text looks like an attempt to steer the agent; a failed scan sets error. */
   injection(text: string): Promise<{ flagged: boolean; error?: string }>;
+  /**
+   * B-178: the reason the message is held by the arrival safety check, or null when it is not held (or was never
+   * checked: the run's own scan below still reads it). Absent: no arrival check here.
+   */
+  held?(mailboxId: string, emailId: string): Promise<string | null>;
   model(request: ModelRequest): Promise<ModelResponse>;
   /**
    * What the sender asks, as one or two English sentences without personal details: what a knowledge
@@ -469,6 +474,11 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   const skip = prefilter({ mailboxId: address, sender: email.sender, headers, answeredAfter, ownDomains, replyTo, subject: email.subject });
   if (skip) return finish("skipped", SKIP_TEXT[skip]);
 
+  // B-178: a message held by the arrival check is never read by the model; a person decides it first.
+  if (deps.held) {
+    const held = await deps.held(run.mailboxId, email.id).catch((error: unknown) => msg("its safety state could not be read ({error})", { error: (error as Error)?.message ?? "" }));
+    if (held) { run.injection = true; return finish("skipped", msg("Held for review by the safety check: {reason}", { reason: held })); }
+  }
   const prompt = userPrompt(email, thread, address, deps.htmlToText);
   const scan = await deps.injection(prompt);
   if (scan.error) return finish("failed", msg("The safety check could not run ({error}); the message is left for the operator", { error: scan.error }), "safety");

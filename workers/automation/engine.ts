@@ -22,7 +22,17 @@ export interface RunDependencies {
    */
   claimDaily(run: Run): Promise<boolean>;
   execute(run: Run, email: RuleEmail): Promise<string>;
+  /**
+   * B-178: where the run's message stands with the arrival safety check: `pending` until it is checked, `held`
+   * until a person releases it, else `clear`. Absent: no check here.
+   */
+  safety?(run: Run): Promise<"pending" | "held" | "clear">;
 }
+
+/** B-178: a rule waits this long for a message's safety check, then acts as before (the check never came). */
+export const SAFETY_WAIT_MS = 15 * 60_000;
+/** B-178: a rule waits this long for a held message to be released, then gives it up. */
+export const HELD_WAIT_MS = 7 * 86_400_000;
 export class ActionRejected extends Error {}
 /**
  * B-15: what an account refuses before anything is handed over or changed. The accounts object's
@@ -64,6 +74,24 @@ export async function processRun(
     run.detail = msg("Rule paused or changed");
     await save();
     return run;
+  }
+  // B-178: a rule never reads or acts on a message held from agents; it waits for the check, then for a release.
+  if (deps.safety) {
+    const state = await deps.safety(run).catch(() => "pending" as const);
+    const age = Date.now() - (Date.parse(run.createdAt) || Date.now());
+    if (state === "held" && age >= HELD_WAIT_MS) {
+      run.status = "skipped";
+      run.detail = msg("Held for review by the safety check and never released");
+      delete run.retryAt;
+      await save();
+      return run;
+    }
+    if (state === "held" || (state === "pending" && age < SAFETY_WAIT_MS)) {
+      run.retryAt = new Date(Date.now() + (state === "held" ? 10 * 60_000 : 60_000)).toISOString();
+      run.detail = state === "held" ? msg("Held for review by the safety check") : msg("Waiting for the safety check");
+      await save();
+      return run;
+    }
   }
   run.attempts = (run.attempts ?? 0) + 1;
   if (!(await deps.start(run))) return run;

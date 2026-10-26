@@ -73,7 +73,27 @@ Fix what is in progress first, then:
 M1 (now, configuration) → M2 (arrival check and hold) → M3 and M4 (links and attachments with Okolos) → M5
 (outreach, researched first). Each ends with a release.
 
+## M1 receipt (2026-10-26, configuration on the owner's server)
+
+- Category `government-request` created with `save_category` (scope all, raised to Important). Its first version
+  matched six messages: three Twilio regulatory bundles, a Heleket AML review, a Payssion KYC request, and the
+  message "исходящее за №17416" the operator named, which is not an authority's: a mass complaint of a private person
+  to some twenty Russian state bodies about a personal-data trade, sent to companies' support addresses from a
+  hosting account whose DKIM and DMARC pass (an authenticated cPanel login from a Hetzner address), with a reply to a
+  proton.me address and a 9-page PDF (no JavaScript, no launch action; 44 links to "probiv" forums and data-search
+  services beside state sites). Version 2 excludes private complaints, petitions and requests to forward to an
+  authority, and mass letters. The spam check called that message `customer`: it does not see the reply address or
+  the attachment, evidence for M3.
+
+## M2 receipt (0.39.0)
+
+B-178 as [SCN-087](../../ux/scenarios.md): the arrival safety check, its review, the hold for rules, the reply agent
+and agents over MCP, the reader's panel and `decide_held_message` (release only with the owner's approval). Okolos's
+`analyse` is vendored (`vendor/okolos/`, pinned by hash). Tests: `tests/safety-check.test.ts`,
+`tests/safety-workerd.test.ts`, `tests/mcp-held.test.ts`, and B-178 cases in `tests/agents-runner.test.ts`,
+`tests/automation-engine.test.ts`, `tests/mcp-scope.test.ts`.
+
 ## Exact next step
 
-M2 stage 3: the scenario of a held message (super-ux), then the arrival check in `workers/index.ts` and the
-accounts' `drain`.
+M3 and M4 (B-179, B-180): attachments' text (PDF) and links through the same check, the Okolos phishing feed kept by
+the server, lookalike links, the reply address and the attachment shown to the spam check.

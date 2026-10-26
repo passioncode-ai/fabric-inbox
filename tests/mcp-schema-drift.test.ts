@@ -62,6 +62,9 @@ const BODIES: Record<string, string[]> = {
   "POST /api/spam/report": keys(Report),
   "POST /api/spam/release": keys(Report),
   "POST /api/spam/lists": keys(ListEdit),
+  // B-178 (workers/routes/safety.ts).
+  "POST /api/safety/lookup": ["keys"],
+  "POST /api/safety/decide": ["accountId", "messageId", "action", "by"],
   "POST /api/discard": keys(DiscardInput),
   "POST /api/discard/restore": keys(RestoreInput),
   "POST /api/discard/allowed": keys(AllowEdit),
@@ -114,6 +117,12 @@ const BY_TOOL = "set by the tool";
  * `via` names a tool field whose object is the body (save_category's `category`).
  */
 const MAP: Record<string, Record<string, Record<string, string> & { via?: string }>> = {
+  // B-178: the read tools ask for the messages' safety state themselves; decide names the agent's key as who decided.
+  read_message: { "POST /api/safety/lookup": { keys: `${BY_TOOL}: the message read` } },
+  read_thread: { "POST /api/safety/lookup": { keys: `${BY_TOOL}: the conversation's messages` } },
+  get_attachment: { "POST /api/safety/lookup": { keys: `${BY_TOOL}: the attachment's message` } },
+  list_held_messages: { "POST /api/safety/lookup": { keys: "accountId" } },
+  decide_held_message: { "POST /api/safety/decide": { by: `${BY_TOOL}: the key's label` } },
   save_draft: {
     "PUT /api/v1/mailboxes/:mailboxId/drafts/:id": { body: "text", in_reply_to: "replyToMessageId", thread_id: `${BY_TOOL}: the conversation of the message it answers`,
       keep_attachments: "keepAttachments", expected_revision: "expectedRevision" },
@@ -137,6 +146,7 @@ const MAP: Record<string, Record<string, Record<string, string> & { via?: string
       inReplyTo: `${BY_TOOL}: from the message answered`, references: `${BY_TOOL}: from the message answered` },
   },
   forward: {
+    "POST /api/safety/lookup": { keys: `${BY_TOOL}: the message forwarded` },
     "POST /api/v1/mailboxes/:mailboxId/emails/:id/forward": { from: `${BY_TOOL}: the mailbox and its display name`, in_reply_to: "not offered: a forward starts its own conversation",
       references: "not offered: a forward starts its own conversation", thread_id: "not offered: a forward starts its own conversation" },
     "POST /api/accounts/:accountId/send": { from: `${BY_TOOL}: Gmail sends as the account itself`, threadId: "not offered: a forward starts its own conversation",

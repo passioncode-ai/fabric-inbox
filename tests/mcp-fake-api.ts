@@ -18,7 +18,8 @@ export function fakeApi(answers: Record<string, Answer>) {
     async request(method, path, init = {}) {
       const call = { method, path, query: init.query, body: init.body };
       calls.push(call);
-      const answer = answers[`${method} ${path}`];
+      // B-178: a server whose safety check holds nothing, unless the test says otherwise.
+      const answer = answers[`${method} ${path}`] ?? (`${method} ${path}` === "POST /api/safety/lookup" ? ok({ records: {} }) : undefined);
       if (!answer) return { status: 404, data: { error: `no route ${method} ${path}` }, contentType: "application/json" };
       return typeof answer === "function" ? answer(call) : answer;
     },

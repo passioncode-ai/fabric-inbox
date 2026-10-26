@@ -41,6 +41,8 @@ export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   level: Level;
   /** Sends mail: absent for a *Drafts only* key, and counted against the key's daily allowance. */
   sends?: boolean;
+  /** B-178: its confirmation always waits for the owner's approval (B-38), whatever the key's setting. */
+  ownerApproval?: boolean;
   /** Changes nothing. Tools that change something are journalled. */
   readOnly?: boolean;
   /** Only adds (an address, a sent message): told to clients as not destructive. Every other changing tool is. */
@@ -181,7 +183,7 @@ export async function runTool(tool: ToolDef, rawArgs: Record<string, unknown>, c
     if (summary === null) { /* nothing irreversible in these arguments */ }
     else if (!confirm) {
       // B-38: a key whose irreversible actions the owner approves gets a code that works only once approved.
-      const owner = ctx.principal.kind === "agent" && ctx.principal.approval === "owner";
+      const owner = ctx.principal.kind === "agent" && (ctx.principal.approval === "owner" || !!tool.ownerApproval);
       const { code, expiresAt } = await ledger.issueConfirmation({ caller, tool: tool.name, argsHash: hash, summary, ...(owner ? { owner, callerLabel: ctx.principal.label } : {}) });
       await journal("confirmation_asked", summary);
       if (owner)

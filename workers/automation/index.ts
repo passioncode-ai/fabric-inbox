@@ -1,4 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
+import { isHeld, safetyKey } from "../safety/state";
+import { safetyOn } from "../safety/on";
 import { Hono } from "hono";
 import { generateObject } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
@@ -334,6 +336,12 @@ export class AutomationDO extends DurableObject<Env> {
       ? { outcome: "done", detail: msg("Checked: the message is marked read.") }
       : { outcome: "not_done", detail: msg("Checked: the message is not marked read.") };
   }
+  /** B-178: the run's message as the arrival safety check left it; its account is the categories' account id. */
+  private async safetyOf(run: Run): Promise<"pending" | "held" | "clear"> {
+    const accountId = parseRemoteAccount(run.account) ? run.account.toLowerCase() : `cloudflare:${run.account.toLowerCase()}`;
+    const record = (await this.env.CATEGORIES.getByName("workspace").safetyOf([{ accountId, messageId: run.emailId }]))[safetyKey(accountId, run.emailId)];
+    return !record ? "pending" : isHeld(record.state) ? "held" : "clear";
+  }
   private async readEmail(account: string, id: string): Promise<RuleEmail> {
     const remote = parseRemoteAccount(account);
     if (remote) {
@@ -561,6 +569,7 @@ export class AutomationDO extends DurableObject<Env> {
         analyze: (rule, email) => this.analyze(rule, email),
         claimDaily: (r) => this.claimDaily(r),
         execute: (r, email) => this.execute(r, email),
+        ...(this.env.CATEGORIES && safetyOn(this.env) ? { safety: (r: Run) => this.safetyOf(r) } : {}),
       });
     const waiting = [...(await this.ctx.storage.list<number>({ prefix: QUEUE })).values()].filter((at) => at >= 0);
     if (waiting.length) {

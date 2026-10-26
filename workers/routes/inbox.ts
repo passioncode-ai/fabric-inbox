@@ -360,6 +360,13 @@ export async function attachAgentRuns(page: InboxMessage[], runsByIds: (ids: str
 
 async function markCategories(env: Env, page: InboxMessage[]) {
   if (!env.CATEGORIES || !page.length) return;
+  // B-178: a held message is marked, with why; its snippet is the person's to read, an agent's tool blanks it.
+  const keys = page.map((m) => ({ accountId: m.accountId.toLowerCase(), messageId: m.providerMessageId }));
+  const safety = await env.CATEGORIES.getByName("workspace").safetyOf(keys).catch(() => ({} as Record<string, never>));
+  for (const m of page) {
+    const s = (safety as Record<string, { state: string; reason: string; review: { verdict: string } | null }>)[`${m.accountId.toLowerCase()}|${m.providerMessageId}`];
+    if (s && (s.state === "held" || s.state === "kept")) m.held = { reason: s.reason, verdict: s.review?.verdict ?? null };
+  }
   const found = await env.CATEGORIES.getByName("workspace").membership(page.map((m) => ({ accountId: m.accountId, messageId: m.providerMessageId })));
   for (const m of page) {
     const hits = found[JSON.stringify([m.accountId, m.providerMessageId])];

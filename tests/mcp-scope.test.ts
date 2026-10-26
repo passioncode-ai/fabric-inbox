@@ -277,3 +277,19 @@ test("B-36: a key may name a whole domain; it becomes the addresses on exactly t
   assert.deepEqual(narrowPrincipal(domainKey, "domain:owner.example", addresses)?.accounts, [RESEARCH, "cloudflare:contact@owner.example"]);
   assert.deepEqual(narrowPrincipal(domainKey, "domain:other.example", addresses)?.accounts, [], "another domain still narrows to nothing");
 });
+
+test("B-178: a limited key reads the safety state and the held list of its own mailboxes only, and decides only for them", async () => {
+  const seen: { method: string; path: string }[] = [];
+  const base: Api = { async request(method, path) {
+    seen.push({ method, path });
+    if (path === "/api/safety/held") return { status: 200, contentType: "application/json", data: { held: [{ accountId: "cloudflare:a@shop.invalid", messageId: "m1" }, { accountId: "gmail:other", messageId: "m2" }] } };
+    return { status: 200, contentType: "application/json", data: { records: {} } } as ApiResponse;
+  } };
+  const api = scopedApi(base, ["cloudflare:a@shop.invalid"]);
+  assert.equal((await api.request("POST", "/api/safety/lookup", { body: { keys: [{ accountId: "cloudflare:A@shop.invalid", messageId: "m1" }] } })).status, 200);
+  await assert.rejects(api.request("POST", "/api/safety/lookup", { body: { keys: [{ accountId: "cloudflare:a@shop.invalid", messageId: "m1" }, { accountId: "gmail:other", messageId: "m2" }] } }), /limited to/);
+  await assert.rejects(api.request("POST", "/api/safety/lookup", { body: { keys: [] } }), /limited to/);
+  assert.deepEqual(((await api.request("GET", "/api/safety/held")).data as { held: unknown[] }).held, [{ accountId: "cloudflare:a@shop.invalid", messageId: "m1" }]);
+  await assert.rejects(api.request("POST", "/api/safety/decide", { body: { accountId: "gmail:other", messageId: "m2", action: "keep" } }), /limited to/);
+  assert.equal(seen.filter((s) => s.path === "/api/safety/decide").length, 0);
+});

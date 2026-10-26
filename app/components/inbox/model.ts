@@ -62,6 +62,8 @@ export type InboxMessage = {
   /** B-138: where its conversation stands, on an address whose reply status is shown. */
   agentState?: import("../../../shared/mail/agent-state").AgentState;
   agentAbandoned?: boolean;
+  /** B-178: held from agents with tools by the arrival safety check, with why. */
+  held?: { reason: string; verdict: string | null };
   /** In a category's own view: why the message belongs there. */
   categoryReason?: string;
   spamReason?: string;

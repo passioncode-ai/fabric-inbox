@@ -69,6 +69,8 @@ function MessageRow({ message, account, selected, marked, onSelect, showGroup, c
       {message.categoryReason && <span className="fi-category-reason">{t("Why: {reason}", { reason: t.text(message.categoryReason) })}</span>}
       {message.spamReason && <span className="fi-category-reason fi-spam-reason">{t("Why in Spam: {reason}", { reason: t.text(message.spamReason) })}</span>}
       {message.discardReason && <span className="fi-category-reason fi-spam-reason">{triageText(t).whyDiscarded} {t.text(message.discardReason)}</span>}
+      {/* B-178: kept from agents with tools until a person releases it. */}
+      {message.held && <span className="fi-category-reason fi-spam-reason">{t("Held for review: {reason}", { reason: t.text(message.held.reason) })}</span>}
       {message.agentState ? (
         // B-138: where the conversation stands; it says more than the agent's run on this one message.
         <>
