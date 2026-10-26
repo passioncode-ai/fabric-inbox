@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.36.3 (2026-10-26)
+
+- **A second server can run in a Cloudflare account that already has one.** An organization without an
+  account of its own can now get its own server beside a person's: the setup script takes its own
+  Worker and storage names, and that server routes its addresses and updates itself under its own name,
+  never touching the first server or its mail. Each server version now records the commit it was built
+  from, so a deploy receipt links what runs to the code (B-169).
+
 ## 0.36.2 (2026-10-26)
 
 - **Reply agents answer in about 20 seconds instead of running out of time.** The reply model now writes

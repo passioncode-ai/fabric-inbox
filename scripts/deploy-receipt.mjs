@@ -5,7 +5,7 @@
 // state from Git, the digest from build/. `npm run deploy` tags each version with its commit, so a
 // version whose tag is not this checkout's commit, or a dirty tree, is reported "unlinked".
 //
-//   CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… node scripts/deploy-receipt.mjs [--root <checkout>] [--out <dir>] [--expect-version <id>]
+//   CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… node scripts/deploy-receipt.mjs [--root <checkout>] [--out <dir>] [--expect-version <id>] [--script <worker>]
 //   node scripts/deploy-receipt.mjs --require-clean   (exit 1 when tracked files differ from HEAD; `npm run deploy` runs it first)
 //
 // --root reads another checkout (the one the deploy ran from); by default this script's own.
@@ -87,7 +87,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const token = process.env.CLOUDFLARE_API_TOKEN, account = process.env.CLOUDFLARE_ACCOUNT_ID;
   if (!token || !account) { console.error("CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are needed (from the vault, never typed)."); process.exit(1); }
   const root = arg("--root") ?? fileURLToPath(new URL("..", import.meta.url));
-  const script = /"name"\s*:\s*"([^"]+)"/.exec(readFileSync(join(root, "wrangler.jsonc"), "utf8"))?.[1];
+  // --script names another Worker of the account (a second server, B-169); by default the checkout's own.
+  const script = arg("--script") ?? /"name"\s*:\s*"([^"]+)"/.exec(readFileSync(join(root, "wrangler.jsonc"), "utf8"))?.[1];
   try {
     const receipt = await makeReceipt({ root, token, account, script, expectVersion: arg("--expect-version") });
     const text = JSON.stringify(receipt, null, 2) + "\n";

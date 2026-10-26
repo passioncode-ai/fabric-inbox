@@ -420,8 +420,17 @@ server is the same one; what differs is the account, who signs in, and that it i
    The Access application's one policy, **Administrators**, includes that group instead of one email;
    a group id that is not in the account is refused before anything is made. A server that already
    has an Access application keeps its rules: change its policy in Zero Trust.
-4. **The receipt.** `npm run deploy:receipt` (with `CLOUDFLARE_ACCOUNT_ID` of the organization's account)
-   reads the active deployment and its commit tag and says `linked` or `unlinked`; keep its output with
+
+   **A second server in an account that already runs one** (B-169: an organization without an account
+   of its own, beside a person's server) takes its own Worker and storage names, and leaves this
+   computer's record on the first server: add `--script <name> --bucket <name> --keep-record`. Both
+   names or neither are accepted, so the second server never reads the first one's mail. It gets its own
+   Access application at `<name>.<subdomain>.workers.dev`, `EMAIL_ROUTING_WORKER` set to its own name
+   (the Email Routing rules of its addresses and its self-update point at it, never at the first
+   server), and an empty `DOMAINS`. The account's sign-in page and codes by email are shared.
+4. **The receipt.** `npm run deploy:receipt` (with `CLOUDFLARE_ACCOUNT_ID` of the organization's account;
+   `-- --script <name>` for a second server) reads the active deployment and its commit tag (the
+   deployer tags each version with the bundle's commit) and says `linked` or `unlinked`; keep its output with
    the organization's own records, not in this repository.
 5. **Offer it.** On each computer whose Fabric shows the server, register it as offered to others:
 
