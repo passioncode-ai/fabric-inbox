@@ -26,10 +26,17 @@ export interface AuthResults {
 /** Cloudflare's MX names itself so; results written by anyone else are not trusted. */
 const AUTHSERV = "mx.cloudflare.net";
 export const SPAM_LIST_LIMIT = 2000;
-const ADDRESS = /^[^\s@<>]+@[a-z0-9.-]+\.[a-z]{2,}$/;
-const DOMAIN = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/;
+const TLD = "(?:[a-z]{2,}|xn--[a-z0-9-]+)";
+const ADDRESS = new RegExp(`^[^\\s@<>]+@[a-z0-9.-]+\\.${TLD}$`);
+const DOMAIN = new RegExp(`^[a-z0-9-]+(\\.[a-z0-9-]+)*\\.${TLD}$`);
 
-const domainOf = (address: string) => address.slice(address.lastIndexOf("@") + 1);
+/** A domain as its ASCII form: "магазин.рф" is "xn--80aal0a.xn--p1ai", as mail headers carry it (C-6). */
+export function asciiDomain(domain: string): string {
+  if (/^[\x00-\x7f]*$/.test(domain)) return domain;
+  try { return new URL(`http://${domain}`).hostname; } catch { return domain; }
+}
+
+const domainOf = (address: string) => asciiDomain(address.slice(address.lastIndexOf("@") + 1));
 const under = (domain: string, list: string[]) => list.find((d) => domain === d || domain.endsWith("." + d));
 
 /**
@@ -40,8 +47,9 @@ export function authResults(headers: { key: string; value: string }[]): AuthResu
   const header = headers.find((h) => h.key.toLowerCase() === "authentication-results"
     && h.value.trim().toLowerCase().startsWith(AUTHSERV));
   if (!header) return null;
-  const value = header.value.toLowerCase();
-  const result = (method: string) => [...value.matchAll(new RegExp(`(?:^|[;\\s])${method}=([a-z]+)([^;]*)`, "g"))];
+  // Each result is its own clause; text in a comment or a property (a quoted envelope local part) is not a result.
+  const clauses = header.value.toLowerCase().split(";").slice(1).map((c) => c.replace(/\([^()]*\)/g, " ").trim());
+  const result = (method: string) => clauses.map((c) => c.match(new RegExp(`^${method}=([a-z]+)([\\s\\S]*)$`))).filter((m): m is RegExpMatchArray => !!m);
   const dkim = result("dkim");
   const dmarc = result("dmarc")[0];
   const spf = result("spf")[0];
@@ -72,10 +80,12 @@ export function verifiedDomain(auth: AuthResults | null, sender: string): string
 export function namedDomain(name: string, domains: string[]): string | null {
   const text = name.toLowerCase();
   return domains.find((d) => {
-    const at = text.indexOf(d);
-    if (at < 0) return false;
-    const before = text[at - 1] ?? " ", after = text[at + d.length] ?? " ";
-    return !/[a-z0-9.@-]/.test(before) && !/[a-z0-9-]/.test(after);
+    // Every occurrence: "mail.example.com | example.com Update" wears it in the second (C-9).
+    for (let at = text.indexOf(d); at >= 0; at = text.indexOf(d, at + 1)) {
+      const before = text[at - 1] ?? " ", after = text[at + d.length] ?? " ";
+      if (!/[a-z0-9.@-]/.test(before) && !/[a-z0-9-]/.test(after)) return true;
+    }
+    return false;
   }) ?? null;
 }
 
@@ -89,8 +99,9 @@ export function spamCheck(input: {
   /** The name the From header shows. */
   senderName?: string | null;
 }): SpamVerdict {
-  const sender = input.sender.trim().toLowerCase();
-  const domain = domainOf(sender);
+  const given = input.sender.trim().toLowerCase();
+  const domain = domainOf(given);
+  const sender = given.includes("@") ? given.slice(0, given.lastIndexOf("@") + 1) + domain : given;
   const lists = input.lists;
   const auth = authResults(input.headers);
   const own = under(domain, input.ownDomains);
@@ -104,8 +115,11 @@ export function spamCheck(input: {
       ? msg("Failed DMARC for {domain}, whose owner asks to reject such mail", { domain: auth.fromDomain ?? domain })
       : msg("Failed DMARC for {domain}, whose owner asks to quarantine such mail", { domain: auth.fromDomain ?? domain }) };
 
-  if (lists.allowedSenders.includes(sender)) return { verdict: "clean", reason: msg("You marked this sender as not spam") };
-  const allowedDomain = under(domain, lists.allowedDomains);
+  // C-4: a From whose own domain's DMARC says it is not from there (even under p=none, as gmail.com publishes)
+  // is not the sender the person allowed or wrote to: it goes to the model instead.
+  const disowned = !!auth && auth.dmarc === "fail";
+  if (!disowned && lists.allowedSenders.includes(sender)) return { verdict: "clean", reason: msg("You marked this sender as not spam") };
+  const allowedDomain = disowned ? undefined : under(domain, lists.allowedDomains);
   if (allowedDomain) return { verdict: "clean", reason: msg("You marked {domain} as not spam", { domain: allowedDomain }) };
   if (lists.blockedSenders.includes(sender)) return { verdict: "spam", reason: msg("You marked this sender as spam") };
   const blockedDomain = under(domain, lists.blockedDomains);
@@ -121,13 +135,15 @@ export function spamCheck(input: {
     if (auth.spf === "fail" && !auth.dkimDomains.length && auth.dmarc !== "pass")
       return { verdict: "spam", reason: msg("The sending server is not allowed to send for {domain}, and the message carries no valid signature", { domain }) };
   }
-  if (input.known) return { verdict: "clean", reason: msg("You have written to this sender") };
+  if (input.known && !disowned) return { verdict: "clean", reason: msg("You have written to this sender") };
   return { verdict: "screen", reason: "" };
 }
 
 /** One list entry from an address as shown ("Ann <ann@example.com>"): the address, or its domain. */
 export function listEntry(value: string, kind: "sender" | "domain"): string | null {
-  const address = (value.match(/<([^<>]+)>/)?.[1] ?? value).trim().toLowerCase().replace(/^@/, "");
+  const raw = (value.match(/<([^<>]+)>/)?.[1] ?? value).trim().toLowerCase().replace(/^@/, "");
+  const at = raw.lastIndexOf("@");
+  const address = at < 0 ? asciiDomain(raw) : raw.slice(0, at + 1) + asciiDomain(raw.slice(at + 1));
   if (kind === "sender") return ADDRESS.test(address) ? address : null;
   const domain = address.includes("@") ? domainOf(address) : address;
   return DOMAIN.test(domain) ? domain : null;

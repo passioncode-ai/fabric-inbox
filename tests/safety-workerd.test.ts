@@ -33,6 +33,7 @@ const bundle = await build({
         async alarm() {}
         async pump() { for (let i = 0; i < 20; i++) { await super.alarm(); const n = this.ctx.storage.sql.exec('SELECT COUNT(*) AS n FROM queue WHERE next_at <= ?', Date.now()).one().n; if (!n) break; } }
         async released() { return [...(await this.ctx.storage.list({ prefix: 'released:' })).keys()].map((k) => k.slice(9)).sort(); }
+        async queueRows() { return this.ctx.storage.sql.exec('SELECT account_id, payload FROM queue').toArray().map((r) => [r.account_id, JSON.parse(r.payload).accountId]); }
         async set(k, v) { await this.ctx.storage.put(k, v); }
         async get(k) { return this.ctx.storage.get(k); }
       }
@@ -40,6 +41,10 @@ const bundle = await build({
         const c = await request.json();
         const s = env.CATEGORIES.getByName('workspace');
         if (c.op === 'ingest') { await s.ingest(c.account, c.event); await s.pump(); return Response.json(true); }
+        if (c.op === 'ingestOnly') { await s.ingest(c.account, c.event); return Response.json(true); }
+        if (c.op === 'move') return Response.json(await s.moveAccount(c.from, c.to));
+        if (c.op === 'pump') { await s.pump(); return Response.json(true); }
+        if (c.op === 'queue') return Response.json(await s.queueRows());
         if (c.op === 'set') { await s.set(c.key, c.value); return Response.json(true); }
         if (c.op === 'get') return Response.json(await s.get(c.key) ?? null);
         if (c.op === 'of') return Response.json(await s.safetyOf(c.keys));
@@ -128,4 +133,23 @@ test("SAFETY_CHECK=off, or no AI binding, checks nothing", async () => {
       assert.equal(await call("get", { key: "test:scanned" }), null);
     } finally { await mf.dispose(); }
   }
+});
+
+test("an address renamed while its mail waits in the queue: the item is decided under the new address and leaves the queue; a held message stays held (C-1, C-2)", async () => {
+  const { mf, call } = await fixture();
+  const NEW = { id: "cloudflare:help@shop.invalid", email: "help@shop.invalid" };
+  try {
+    await call("ingest", { account: CF, event: event("held", PLANTED) });
+    await call("ingestOnly", { account: CF, event: event("waiting", "<p>Where is my order 1234?</p>") });
+    assert.deepEqual(await call("queue"), [[CF.id, CF.id]]);
+    assert.ok(await call("move", { from: CF.id, to: NEW.id }) >= 2);
+    assert.deepEqual(await call("queue"), [[NEW.id, NEW.id]], "the payload follows the row");
+    await call("pump");
+    assert.deepEqual(await call("queue"), [], "decided and gone, not spinning under the old address");
+    const of = await call("of", { keys: [{ accountId: NEW.id, messageId: "held" }, { accountId: NEW.id, messageId: "waiting" }, { accountId: CF.id, messageId: "held" }] });
+    assert.equal(of[`${NEW.id}|held`]?.state, "held", "held under its new address, so no agent reads it");
+    assert.equal(of[`${NEW.id}|waiting`]?.state, "clear");
+    assert.equal(of[`${CF.id}|held`], undefined);
+    assert.deepEqual(await call("released"), ["waiting"]);
+  } finally { await mf.dispose(); }
 });

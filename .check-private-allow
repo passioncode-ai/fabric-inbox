@@ -60,3 +60,7 @@ P4:tests/outlook-routes.test.ts:b3c4a34f51f64d96
 P3:tests/desktop-console.test.ts:e21f0b006090b388
 P3:tests/desktop-update-platform.test.ts:c57a6c4994f0b9b9
 P3:tests/desktop-updates.test.ts:da4de8c7a5751230
+
+# Made-up internationalised addresses under the reserved IDN test TLD .テスト (xn--zckzah), C-6 in tests/spam.test.ts
+P2:tests/spam.test.ts:363c45cdf6654969
+P2:tests/spam.test.ts:bb11115de8ee70aa

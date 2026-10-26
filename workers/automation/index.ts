@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { isHeld, safetyKey } from "../safety/state";
-import { safetyOn } from "../safety/on";
+import { safetyChecks } from "../safety/on";
 import { Hono } from "hono";
 import { generateObject } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
@@ -569,7 +569,7 @@ export class AutomationDO extends DurableObject<Env> {
         analyze: (rule, email) => this.analyze(rule, email),
         claimDaily: (r) => this.claimDaily(r),
         execute: (r, email) => this.execute(r, email),
-        ...(this.env.CATEGORIES && safetyOn(this.env) ? { safety: (r: Run) => this.safetyOf(r) } : {}),
+        ...(safetyChecks(this.env as never) ? { safety: (r: Run) => this.safetyOf(r) } : {}),
       });
     const waiting = [...(await this.ctx.storage.list<number>({ prefix: QUEUE })).values()].filter((at) => at >= 0);
     if (waiting.length) {

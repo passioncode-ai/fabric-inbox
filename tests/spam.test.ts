@@ -116,3 +116,34 @@ test("a stranger wearing one of your domains as its shown name is spam; the Neve
   assert.equal(spamCheck({ ...worn, sender: "news@ours.invalid", senderName: "ours.invalid", headers: [cf("dkim=pass header.d=ours.invalid; dmarc=pass header.from=ours.invalid; spf=pass")] }).verdict, "clean", "your own mail may say so");
   assert.equal(namedDomain("Update for OURS.INVALID.", ["ours.invalid"]), "ours.invalid");
 });
+
+test("a From whose own domain's DMARC disowns it is not the sender you allowed or wrote to, even under p=none (C-4)", () => {
+  const forged = cf("dkim=none; spf=pass smtp.mailfrom=attacker.invalid; dmarc=fail header.from=gmail.invalid policy.dmarc=none");
+  assert.equal(spamCheck({ ...base, sender: "friend@gmail.invalid", headers: [forged], known: true }).verdict, "screen");
+  const lists: SpamLists = { ...empty, allowedSenders: ["friend@gmail.invalid"], allowedDomains: ["gmail.invalid"] };
+  assert.equal(spamCheck({ ...base, lists, sender: "friend@gmail.invalid", headers: [forged] }).verdict, "screen");
+  const real = cf("dkim=pass header.d=gmail.invalid; spf=pass; dmarc=pass header.from=gmail.invalid policy.dmarc=none");
+  assert.equal(spamCheck({ ...base, sender: "friend@gmail.invalid", headers: [real], known: true }).verdict, "clean", "the real one still is");
+});
+
+test("a result is read only at the start of its own clause; a comment or a property cannot add one (C-12)", () => {
+  const injected = cf('spf=pass smtp.mailfrom="x dkim=pass header.d=ours.invalid"@evil.invalid (comment dmarc=pass); dkim=none; dmarc=none header.from=ours.invalid');
+  const r = authResults([injected])!;
+  assert.deepEqual([r.dkim, r.dkimDomains, r.dmarc, r.spf], [["none"], [], "none", "pass"]);
+  assert.equal(spamCheck({ ...base, sender: "ceo@ours.invalid", headers: [injected] }).verdict, "spam", "still a forgery of our domain");
+  const folded = { key: "Authentication-Results", value: "mx.cloudflare.net;\r\n dkim=pass\r\n header.d=letters.invalid;\r\n dmarc=pass header.from=letters.invalid" };
+  assert.deepEqual(authResults([folded])?.dkimDomains, ["letters.invalid"], "a folded header reads the same");
+});
+
+test("an internationalised domain can be listed, in either form, and is matched as mail carries it (C-6)", () => {
+  assert.equal(listEntry("a@xn--e1afmkfd.xn--zckzah", "sender"), "a@xn--e1afmkfd.xn--zckzah");
+  assert.equal(listEntry("магазин.テスト", "domain"), "xn--80aairftm.xn--zckzah");
+  const lists: SpamLists = { ...empty, blockedDomains: [listEntry("магазин.テスト", "domain")!] };
+  assert.equal(spamCheck({ ...base, lists, sender: "x@xn--80aairftm.xn--zckzah", headers: [] }).verdict, "spam");
+  assert.equal(spamCheck({ ...base, lists, sender: "x@магазин.テスト", headers: [] }).verdict, "spam");
+});
+
+test("a sender name that wears our domain anywhere in it is caught, not only at its first mention (C-9)", () => {
+  assert.equal(namedDomain("mail.ours.invalid | ours.invalid Mail Update", ["ours.invalid"]), "ours.invalid");
+  assert.equal(namedDomain("mail.ours.invalid team", ["ours.invalid"]), null, "a longer name is not ours");
+});

@@ -79,6 +79,8 @@ export { safetyOn };
 type Row = Record<string, string | number | null>;
 const day = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
 const nextDay = (t = Date.now()) => Date.parse(day(t) + "T00:00:00Z") + 86_400_000 + 5 * 60_000;
+/** A queued item; its row's account is the authority (an address renamed moves the row, C-1). */
+const queued = (row: Row): QueueItem => ({ ...(JSON.parse(String(row.payload)) as QueueItem), accountId: String(row.account_id) });
 
 export class CategoriesDO extends DurableObject<Env> {
   private sql: SqlStorage;
@@ -355,7 +357,7 @@ export class CategoriesDO extends DurableObject<Env> {
   /** Decides the item, then lets its agent run once its spam check has answered (B-30). */
   private async process(row: Row) {
     await this.decide(row);
-    const item = JSON.parse(String(row.payload)) as QueueItem;
+    const item = queued(row);
     if (!item.screen && !item.safety) return;
     // The agent answers once its spam check has answered (B-30) and its safety check let it through (B-178).
     const spamDone = !item.screen || this.sql.exec("SELECT 1 FROM spam_checks WHERE account_id = ? AND message_id = ?", item.accountId, item.messageId).toArray().length > 0;
@@ -373,7 +375,7 @@ export class CategoriesDO extends DurableObject<Env> {
 
   /** Decides every category the item is owed; the item leaves the queue only when all are decided. */
   private async decide(row: Row) {
-    const item = JSON.parse(String(row.payload)) as QueueItem;
+    const item = queued(row);
     const target = String(row.target);
     // B-178: the safety check comes first and never fails the item: what it cannot check it holds.
     if (item.safety && target === "*" && this.safetyState(item.accountId, item.messageId) === undefined) await this.checkSafety(item);
@@ -434,7 +436,9 @@ export class CategoriesDO extends DurableObject<Env> {
       }
     }
     if (modelError) {
-      // The spam call failed: the item waits its backoff whole, categories included (asked again with it).
+      // The spam call failed: the item waits its backoff, its model categories asked again with it; what
+      // the conditions alone decided is filed now, so a spam model that keeps failing never loses it.
+      this.writeVerdicts(item, decided, now);
       this.retryOrGiveUp(row, item, target, forModel, spamOwed, modelError, now);
       return;
     }
@@ -747,7 +751,10 @@ export class CategoriesDO extends DurableObject<Env> {
   async moveAccount(from: string, to: string): Promise<number> {
     let moved = 0;
     this.ctx.storage.transactionSync(() => {
-      for (const table of ["verdicts", "verdicts_parked", "queue", "spam_checks"]) {
+      // A queued item carries its account in its payload too: decided under the old one, its row would never leave.
+      this.sql.exec("UPDATE queue SET payload = json_set(payload, '$.accountId', ?, '$.accountEmail', ?) WHERE account_id = ?",
+        to, to.startsWith("cloudflare:") ? to.slice("cloudflare:".length) : to, from);
+      for (const table of ["verdicts", "verdicts_parked", "queue", "spam_checks", "safety"]) {
         moved += this.sql.exec(`UPDATE OR IGNORE ${table} SET account_id = ? WHERE account_id = ?`, to, from).rowsWritten;
         this.sql.exec(`DELETE FROM ${table} WHERE account_id = ?`, from);
       }

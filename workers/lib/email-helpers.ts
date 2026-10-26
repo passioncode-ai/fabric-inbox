@@ -16,6 +16,7 @@ import { Folders } from "../../shared/folders";
 import type { Env } from "../types";
 import { formatQuotedDate } from "../../shared/dates";
 import { msg } from "../../shared/i18n";
+import { trimReferences } from '../../shared/mail/references';
 
 // ── DO Stub ────────────────────────────────────────────────────────
 
@@ -127,7 +128,7 @@ export function buildThreadingHeaders(
 	return {
 		"In-Reply-To": `<${originalMsgId}>`,
 		...(references.length > 0
-			? { References: references.map((r) => `<${r}>`).join(" ") }
+			? { References: trimReferences(references.map((r) => `<${r}>`)) }
 			: {}),
 	};
 }

@@ -1,6 +1,7 @@
 import { signalsFromHeaders, type TriageSignals } from "../../shared/mail/triage";
 import { validateAttachments, type MailAttachment } from '../../shared/mail/attachments';
 import { bareContentId } from "../../shared/mail/inline";
+import { trimReferences } from "../../shared/mail/references";
 import {
   fromB64,
   GMAIL_SCOPE,
@@ -313,7 +314,7 @@ export function rawMime(sender: string, input: OutgoingMessage, extraHeaders: st
     if (!options.omitBcc) h.push("Bcc: " + bcc);
   }
   if (input.inReplyTo) h.push("In-Reply-To: " + safeHeader(input.inReplyTo));
-  if (input.references) h.push("References: " + safeHeader(input.references));
+  if (input.references) h.push("References: " + safeHeader(trimReferences(input.references)));
   if (input.autoSubmitted === true) h.push("Auto-Submitted: auto-replied");
   const body = (text: string) =>
     base64Text(text)

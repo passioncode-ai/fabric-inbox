@@ -36,6 +36,7 @@ import { readCreated } from "../lib/address-created";
 const CLOSED_KEY = "mailbox:closed-at";
 export const MAILBOX_CLOSED = "mailbox_closed";
 import type { SentBy, ThreadFacts } from "../../shared/mail/agent-state";
+import { safetyChecks } from "../safety/on";
 
 
 /** Reject control characters before durable reservation and after reply-header derivation. */
@@ -1711,9 +1712,10 @@ export class MailboxDO extends DurableObject<Env> {
         // Spam, and mail a discard rule took on arrival, reach no rule, agent or category (SP-1).
         if (!event.spam && !event.discarded) {
           if (env.AUTOMATIONS) await env.AUTOMATIONS.getByName(item.mailbox_id).ingest(item.mailbox_id, event);
-          // A stranger's message waits for its spam check before its agent answers (B-30).
+          // A stranger's message waits for its spam check before its agent answers (B-30), and every message for its
+          // safety check (B-178): a known sender's too, whose agent otherwise ran before the check could hold it (C-3).
           if (env.AGENT_REGISTRY) await env.AGENT_REGISTRY.getByName("workspace").enqueue(item.mailbox_id, event.id,
-            event.screen && env.CATEGORIES ? { holdMs: SPAM_HOLD_MS } : {});
+            (event.screen && env.CATEGORIES) || safetyChecks(env as never) ? { holdMs: SPAM_HOLD_MS } : {});
           if (env.CATEGORIES) await env.CATEGORIES.getByName("workspace").ingest({ id: "cloudflare:" + item.mailbox_id, email: item.mailbox_id }, event);
         }
         this.ctx.storage.transactionSync(() => this.incoming.accepted(item.delivery_id));

@@ -55,6 +55,8 @@ export interface AgentRun {
   attempt?: number;
   /** Run again after an earlier worker on it was interrupted (B-94): tools that may act are not called again. */
   rerun?: boolean;
+  /** Queued again on purpose (answer_again, a held retry, a held message released): a fresh attempt, not an interrupted one (A-3). */
+  requeued?: boolean;
   /** The model that wrote the answer, and the one that approved it before it was sent. */
   model?: string;
   checkedBy?: string;

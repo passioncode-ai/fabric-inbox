@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { prefilter, parseStoredHeaders, type PrefilterInput } from "../workers/agents/prefilter";
+import { silentSender } from "../workers/agents/runner";
 import { decide, type ModelDecision } from "../workers/agents/policy";
 import { AgentInputSchema, agentId, legacyAgentId, readAssignment, ReplyPolicySchema } from "../workers/agents/definition";
 
@@ -74,4 +75,15 @@ test("agent definitions validate and ids are stable", () => {
   assert.throws(() => AgentInputSchema.parse({ name: "a", instructions: "b", tools: [{ ...tool, name: "Bad Name" }] }));
   assert.throws(() => AgentInputSchema.parse({ name: "a", instructions: "b", extra: 1 }));
   assert.equal(AgentInputSchema.parse({ name: "a", instructions: "b" }).replyPolicy.mode, "draft");
+});
+
+test("A-4: an account's sender carries its shown name; the filters read the address inside it", () => {
+  const base = { mailboxId: "me@gmail.invalid", headers: [], answeredAfter: false };
+  assert.equal(prefilter({ ...base, sender: "Me <me@gmail.invalid>" }), "own_address");
+  assert.equal(prefilter({ ...base, sender: "Support <support@owner.example>", ownDomains: ["owner.example"] }), "own_domain");
+  assert.equal(prefilter({ ...base, sender: "Shop <no-reply@shop.example>" }), "no_reply_sender");
+  assert.equal(prefilter({ ...base, sender: "Mail Delivery <mailer-daemon@mx.example>" }), "no_reply_sender");
+  assert.equal(prefilter({ ...base, sender: "Ann <ann@x.example>" }), null, "a person is still answered");
+  assert.equal(silentSender(["ann@x.example"], ["Ann <ann@x.example>"]), true);
+  assert.equal(silentSender(["@x.example"], ["Ann <ann@sub.x.example>"]), true);
 });

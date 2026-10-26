@@ -19,6 +19,7 @@ import { readSpamLists } from "../spam/lists";
 import { accountSettingsKey } from "../agents/account-settings";
 import { readAssignment } from "../agents/definition";
 import { cloudflareSources, readWorkspaceOwnDomains, workspaceKnown, type MailboxNamespace } from "../discard/workspace";
+import { safetyChecks } from "../safety/on";
 
 interface AutomationStub {
   ingest(
@@ -90,7 +91,7 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
         if (!answered.has(event.account)) answered.set(event.account, accountHasAgent(bucket, event.account));
         // B-178: it waits for the message's safety check, which releases it (CategoriesDO.releaseAgent).
         if (await answered.get(event.account)) await registry.getByName("workspace").enqueue(event.account, event.emailId,
-          this.env.CATEGORIES ? { holdMs: SAFETY_HOLD_MS } : {});
+          safetyChecks(this.env as never) ? { holdMs: SAFETY_HOLD_MS } : {});
       }
       if (this.env.AUTOMATIONS) await this.env.AUTOMATIONS.getByName(event.account).ingest(event.account, payload);
       if (this.env.CATEGORIES) {

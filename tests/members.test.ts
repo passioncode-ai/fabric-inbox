@@ -110,3 +110,34 @@ test("B-36: a member names mailboxes only; a whole-domain entry is not kept", as
   const read = normaliseMembers({ members: [{ email: "m@owner.example", role: "member", accounts: ["domain:owner.example", "cloudflare:m@owner.example"] }] });
   assert.deepEqual(read[0]?.accounts, ["cloudflare:m@owner.example"]);
 });
+
+test("N-1: a member is gated on the path the router matches, so an encoded path reaches no route the plain one is refused", async () => {
+  const { Hono } = await import("hono");
+  const mine = ["cloudflare:me@owner.example"];
+  const app = new Hono();
+  app.use("*", async (c, next) => (memberGate(c.req.method, c.req.path, mine) === "pass" ? next() : c.text("refused", 403)));
+  app.put("/api/members/:email", (c) => c.text("made admin"));
+  app.all("/mcp", (c) => c.text("agent protocol"));
+  app.get("/fabric/v1/events", (c) => c.text("events"));
+  app.get("/api/v1/mailboxes/:id/emails", (c) => c.text("mail"));
+  app.get("*", (c) => c.text("page"));
+  for (const [method, path] of [["PUT", "/%61pi/members/x%40owner.example"], ["POST", "/%6dcp"], ["GET", "/f%61bric/v1/events"], ["PUT", "/api/members/x%40owner.example"]] as const)
+    assert.equal((await app.request(path, { method })).status, 403, `${method} ${path}`);
+  assert.equal(await (await app.request("/api/v1/mailboxes/me%40owner.example/emails")).text(), "mail", "their own mailbox still passes");
+  assert.equal(await (await app.request("/inbox")).text(), "page");
+  // The server's own middleware judges that same path, never the raw one.
+  const source = await import("node:fs").then((fs) => fs.readFileSync(new URL("../workers/app.ts", import.meta.url), "utf8"));
+  assert.match(source, /memberGate\(c\.req\.method, path, standing\.accounts\)/);
+  assert.match(source, /const path = c\.req\.path;/);
+});
+
+test("N-8: a member's held mail is looked up and decided for their own mailboxes only", async () => {
+  assert.equal(memberGate("POST", "/api/safety/lookup", ["cloudflare:me@owner.example"]), "feed");
+  assert.equal(memberGate("POST", "/api/safety/decide", ["cloudflare:me@owner.example"]), "feed");
+  const calls: string[] = [];
+  const api = { request: async (method: string, path: string) => { calls.push(`${method} ${path}`); return { status: 200, contentType: "application/json", data: { records: {} } }; } };
+  const s = scopedApi(api as never, ["cloudflare:me@owner.example"], "person");
+  await s.request("POST", "/api/safety/lookup", { body: { keys: [{ accountId: "cloudflare:me@owner.example", messageId: "m" }] } });
+  await assert.rejects(() => s.request("POST", "/api/safety/decide", { body: { accountId: "cloudflare:other@owner.example", messageId: "m", action: "release" } }), /You reach only/);
+  assert.deepEqual(calls, ["POST /api/safety/lookup"]);
+});

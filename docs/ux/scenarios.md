@@ -1774,7 +1774,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** SCR-03 (the list and the reader)
 - **Preconditions:** Mail arrives at a Cloudflare address or a connected Gmail, IMAP or Outlook account; the check is on by default.
 - **Steps:**
-  1. A message arrives -> before any rule, reply agent or outside agent may act on it, its visible text and its hidden text (text styled out of sight, comments, invisible characters) are checked for instructions aimed at an AI: a fixed set of signals and a light model.
+  1. A message arrives (from anyone, a known sender too) -> before any rule, reply agent or outside agent may act on it, its visible text and its hidden text (text styled out of sight, comments, invisible characters) are checked for instructions aimed at an AI: a fixed set of signals and a light model.
   2. Nothing found -> it goes on as before; nothing is shown.
   3. Something found -> the message is held: a second model with no tools and no other mail reads it as data and gives a verdict (safe, instructions to agents, or phishing) with its reasons. Safe releases it; otherwise it stays held.
   4. Open the inbox -> a held message is marked Held for review; the reader shows the verdict, the reasons and the hidden text that was found, quoted as text.
