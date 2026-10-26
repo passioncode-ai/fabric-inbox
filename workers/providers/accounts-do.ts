@@ -3,6 +3,7 @@ import type { InboxReadOptions } from "../../shared/mail/inbox";
 import {
   AccountService,
   type SendRequest,
+  type SubmitOptions,
   type IncomingEvent,
   type MessageFilters,
 } from "./account-service";
@@ -15,6 +16,8 @@ import type { DiscardRestoreTarget } from "./provider";
 import { autoReason, discardFacts, discardSafety, matchDiscard, recordApplied } from "../../shared/mail/discard";
 import { readDiscardStore, updateDiscardStore } from "../discard/store";
 import { readSpamLists } from "../spam/lists";
+import { accountSettingsKey } from "../agents/account-settings";
+import { readAssignment } from "../agents/definition";
 import { cloudflareSources, readWorkspaceOwnDomains, workspaceKnown, type MailboxNamespace } from "../discard/workspace";
 
 interface AutomationStub {
@@ -38,7 +41,16 @@ export interface GmailBindings extends AccountsEnvironment {
   /** The Cloudflare mailboxes, asked whether one of them wrote to a sender a discard rule matches. */
   MAILBOX?: MailboxNamespace;
   AUTOMATIONS?: { getByName(name: string): AutomationStub };
+  /** B-171: the reply agents' registry, handed the new mail of an account that has an agent. */
+  AGENT_REGISTRY?: { getByName(name: string): { enqueue(mailboxId: string, emailId: string): Promise<void> } };
   CATEGORIES?: { getByName(name: string): { ingest(account: { id: string; email: string }, event: { id: string; sender: string; subject: string; body: string; date: string }): Promise<void> } };
+}
+/** Whether an account has a reply agent chosen for it (off by default: no settings, no agent). */
+async function accountHasAgent(bucket: R2Bucket, account: string): Promise<boolean> {
+  const object = await bucket.get(accountSettingsKey(account));
+  if (!object) return false;
+  const assignment = readAssignment(await object.json<Record<string, unknown>>());
+  return !!assignment && assignment !== "off";
 }
 /** One object per Access workspace. Access users intentionally share every account. */
 export class GmailAccountsDO extends DurableObject<GmailBindings> {
@@ -65,8 +77,16 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     if (!this.env.AUTOMATIONS && !this.env.CATEGORIES && !this.env.BUCKET) return;
     // Categories scope by the inbox's address, which the event does not carry.
     let emails: Map<string, string> | undefined;
+    const answered = new Map<string, Promise<boolean>>();
     await this.service.drainEvents(async (event: IncomingEvent) => {
       const payload = { id: event.emailId, sender: event.sender, subject: event.subject, body: event.body, date: event.date, thread_id: event.threadId };
+      // B-171: an account with a reply agent hands its new mail to the agent first; a failure retries the
+      // whole event, and enqueuing the same message again changes nothing.
+      const registry = this.env.AGENT_REGISTRY, bucket = this.env.BUCKET;
+      if (registry && bucket) {
+        if (!answered.has(event.account)) answered.set(event.account, accountHasAgent(bucket, event.account));
+        if (await answered.get(event.account)) await registry.getByName("workspace").enqueue(event.account, event.emailId);
+      }
       if (this.env.AUTOMATIONS) await this.env.AUTOMATIONS.getByName(event.account).ingest(event.account, payload);
       if (this.env.CATEGORIES) {
         emails ??= new Map((await this.service.listAccounts()).accounts.map((a) => [a.provider + ":" + a.id, a.email] as [string, string]));
@@ -217,11 +237,11 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
   inboxCountsMany(accountIds: string[]) {
     return this.service.inboxCountsMany(accountIds);
   }
-  send(accountId: string, request: SendRequest) {
-    return this.serial(() => this.service.send(accountId, request));
+  send(accountId: string, request: SendRequest, options?: SubmitOptions) {
+    return this.serial(() => this.service.send(accountId, request, options));
   }
-  createDraft(accountId: string, request: SendRequest) {
-    return this.serial(() => this.service.createDraft(accountId, request));
+  createDraft(accountId: string, request: SendRequest, options?: SubmitOptions) {
+    return this.serial(() => this.service.createDraft(accountId, request, options));
   }
   getSendReceipt(accountId: string, key: string) {
     return this.serial(() => this.service.getSendReceipt(accountId, key));

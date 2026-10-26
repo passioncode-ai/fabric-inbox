@@ -123,3 +123,14 @@ test("sending a Gmail draft goes out once per key, refuses a moved revision, and
   await rejects(service.sendDraft("a", "r999", "s2"), "draft_not_found");
   await rejects(service.sendDraft("a", "r998", "s1"), "idempotency_conflict");
 });
+
+test("B-171: only the server's own agent marks a message Auto-Submitted; a request body that names the field is ignored", async () => {
+  const { service, gmail } = await fixture();
+  const raw = (id: string) => Buffer.from(gmail.drafts.get(id)!.raw, "base64url").toString();
+  const agent = await service.createDraft("a", { idempotencyKey: "agent-1", to: ["ann@x.invalid"], subject: "Re: Hi", text: "Answer" }, { autoSubmitted: true });
+  assert.match(raw(agent.providerDraftId!), /^Auto-Submitted: auto-replied\r$/m);
+  const outside = await service.createDraft("a", { idempotencyKey: "outside-1", to: ["ann@x.invalid"], subject: "Hi", text: "Mine", autoSubmitted: true } as never);
+  assert.doesNotMatch(raw(outside.providerDraftId!), /Auto-Submitted/i, "a field in the body never reaches the message");
+  const person = await service.createDraft("a", { idempotencyKey: "person-1", to: ["ann@x.invalid"], subject: "Hi", text: "Mine" });
+  assert.doesNotMatch(raw(person.providerDraftId!), /Auto-Submitted/i);
+});

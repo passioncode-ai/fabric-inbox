@@ -18,7 +18,7 @@ import {
   type GmailEnvironment,
   type Store,
 } from "./google-oauth";
-import { GmailClient, ProviderError, exchangeCode, makeMime, type Fetcher, type Message, type SendInput } from "./gmail-client";
+import { GmailClient, ProviderError, exchangeCode, makeMime, type Fetcher, type Message, type OutgoingMessage, type SendInput } from "./gmail-client";
 import type { InboxReadOptions, InboxMessage } from "../../shared/mail/inbox";
 import { isGmailReason, type GmailReason } from "../../shared/mail/gmail-reasons";
 import { REMOTE_SEND_LIMITS } from "../../shared/mail/send-limits";
@@ -103,6 +103,9 @@ export function accountProblem(error: unknown, account: Pick<AccountRecord, "con
 }
 export interface SendRequest extends SendInput {
   idempotencyKey: string;
+}
+export interface SubmitOptions {
+  autoSubmitted?: boolean;
 }
 export interface SendReceipt {
   status: "sending" | "accepted" | "unknown" | "failed";
@@ -840,11 +843,15 @@ export class AccountService {
     await this.putAccount(account);
     return { account: publicAccount(account), more };
   }
-  send(accountId: string, request: SendRequest) {
-    return this.submit("send", accountId, request);
+  /**
+   * `options.autoSubmitted` is the server's own reply agent's (B-171): the message carries
+   * `Auto-Submitted: auto-replied`. A request body never sets it: a field of that name in it is dropped.
+   */
+  send(accountId: string, request: SendRequest, options: SubmitOptions = {}) {
+    return this.submit("send", accountId, request, options);
   }
-  createDraft(accountId: string, request: SendRequest) {
-    return this.submit("draft", accountId, request);
+  createDraft(accountId: string, request: SendRequest, options: SubmitOptions = {}) {
+    return this.submit("draft", accountId, request, options);
   }
   getSendReceipt(accountId: string, idempotencyKey: string) {
     return this.receipt("send", accountId, idempotencyKey);
@@ -875,9 +882,11 @@ export class AccountService {
     kind: "send" | "draft",
     accountId: string,
     request: SendRequest,
+    options: SubmitOptions = {},
   ): Promise<SendReceipt> {
     const account = await this.account(accountId);
-    const { idempotencyKey, ...input } = request;
+    const { idempotencyKey, autoSubmitted: _fromBody, ...rest } = request as SendRequest & { autoSubmitted?: unknown };
+    const input: OutgoingMessage = options.autoSubmitted ? { ...rest, autoSubmitted: true } : rest;
     if (
       typeof idempotencyKey !== "string" ||
       !IDEMPOTENCY_KEY.test(idempotencyKey)

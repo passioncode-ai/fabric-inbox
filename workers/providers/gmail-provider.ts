@@ -5,7 +5,7 @@
  */
 import { validateAttachments, type MailAttachment } from "../../shared/mail/attachments";
 import { configuration, type GmailEnvironment, type Store } from "./google-oauth";
-import { GmailClient, ProviderError, makeMime, normalizeMessage, type Credentials, type Fetcher, type GmailMessage, type Message, type SendInput } from "./gmail-client";
+import { GmailClient, ProviderError, makeMime, normalizeMessage, type Credentials, type Fetcher, type GmailMessage, type Message, type SendInput, type OutgoingMessage } from "./gmail-client";
 import { DISCARDED_LABEL, type GmailCache } from "./gmail-cache";
 import { GmailSync, importPercent, normalizeSync, type SyncState } from "./gmail-sync";
 import type { AccountBase, AccountLabel, DraftUpdate, DraftView, MailProvider, MessageChange, ProviderCapabilities, ProviderSession } from "./provider";
@@ -194,12 +194,12 @@ class GmailSession implements ProviderSession {
       throw error;
     }
   }
-  async send(input: SendInput) {
+  async send(input: OutgoingMessage) {
     const result = await this.refusedIsNotSent(() => this.client.send(makeMime(this.account.email, input), input.threadId));
     if (!result.id) throw new ProviderError("invalid_send_receipt");
     return { id: result.id, threadId: result.threadId };
   }
-  async createDraft(input: SendInput) {
+  async createDraft(input: OutgoingMessage) {
     const result = await this.refusedIsNotSent(() => this.client.createDraft(makeMime(this.account.email, input), input.threadId));
     if (!result.id || !result.message?.id) throw new ProviderError("invalid_send_receipt");
     return { draftId: result.id, id: result.message.id, threadId: result.message.threadId };

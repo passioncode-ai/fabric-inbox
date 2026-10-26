@@ -24,6 +24,7 @@ import {
 import { RUN_OUTCOMES, runIdFor, type AgentRun, type RunOutcome } from "./run";
 import { closeRun, runAgent, type RunnerDeps } from "./runner";
 import { productionDeps, toolTokens } from "./deps";
+import { accountAddress, accountDeps, isAccountMailbox, type AccountsPort } from "./account-deps";
 import { readToolInfo, type ToolInfo } from "./tool-schema";
 import { CLAIM_POLL_MS, CLAIM_TTL_MS, decideClaim, type MessageClaim } from "./dedupe";
 
@@ -153,9 +154,12 @@ export class AgentRegistryDO extends DurableObject<Env> {
     return this.draining;
   }
 
-  /** Test seam: production effects unless a subclass supplies others. */
-  protected deps(mailboxId: string): RunnerDeps {
-    return productionDeps(this.env, mailboxId, {
+  /**
+   * Test seam: production effects unless a subclass supplies others. B-171: an account's run reads
+   * and replies through the account, writing from `address` (its email; see runDeps).
+   */
+  protected deps(mailboxId: string, address?: string): RunnerDeps {
+    const registry: RunnerDeps["registry"] = {
       beginRun: (run) => this.beginRun(run),
       saveRun: (run) => this.saveRun(run),
       getAgent: (id) => this.getAgent(id),
@@ -163,7 +167,16 @@ export class AgentRegistryDO extends DurableObject<Env> {
       sentToday: (box) => this.sentToday(box),
       reserveSend: (box, limit) => this.reserveSend(box, limit),
       claimMessage: (key, box, elected) => this.claimMessage(key, box, elected),
-    });
+    };
+    if (isAccountMailbox(mailboxId)) return accountDeps(this.env, mailboxId, address ?? mailboxId, registry);
+    return productionDeps(this.env, mailboxId, registry);
+  }
+
+  /** The effects of a run that answers: an account's names its email, read now; null when the account is gone. */
+  protected async runDeps(mailboxId: string): Promise<RunnerDeps | null> {
+    if (!isAccountMailbox(mailboxId)) return this.deps(mailboxId);
+    const address = await accountAddress(this.env.GMAIL_ACCOUNTS.getByName("workspace") as unknown as AccountsPort, mailboxId);
+    return address ? this.deps(mailboxId, address) : null;
   }
 
   /**
@@ -349,7 +362,9 @@ export class AgentRegistryDO extends DurableObject<Env> {
     await Promise.all(batch.map(async (item) => {
       const mailboxId = String(item.mailbox_id), emailId = String(item.email_id);
       try {
-        const run = await runAgent({ mailboxId, emailId }, this.deps(mailboxId));
+        // An account removed since the message came: nothing to answer from (B-171).
+        const deps = await this.runDeps(mailboxId);
+        const run = deps ? await runAgent({ mailboxId, emailId }, deps) : null;
         // A copy of a message another address answers (B-22): look again soon, and at the latest
         // when its wait ends, so it is recorded as a duplicate or answered here.
         if (run?.status === "waiting") {
