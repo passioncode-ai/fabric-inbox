@@ -164,6 +164,8 @@ void _everySendField;
  */
 export interface OutgoingMessage extends SendInput {
   autoSubmitted?: boolean;
+  /** B-181: set by the server for a campaign message only: `List-Unsubscribe` (RFC 2369) with this URI. */
+  listUnsubscribe?: string;
 }
 export function normalizeMessage(
   accountId: string,
@@ -316,6 +318,10 @@ export function rawMime(sender: string, input: OutgoingMessage, extraHeaders: st
   if (input.inReplyTo) h.push("In-Reply-To: " + safeHeader(input.inReplyTo));
   if (input.references) h.push("References: " + safeHeader(trimReferences(input.references)));
   if (input.autoSubmitted === true) h.push("Auto-Submitted: auto-replied");
+  if (typeof input.listUnsubscribe === "string" && /^(mailto|https):[^\s<>]{1,900}$/.test(input.listUnsubscribe)) {
+    h.push(`List-Unsubscribe: <${input.listUnsubscribe}>`);
+    if (input.listUnsubscribe.startsWith("https:")) h.push("List-Unsubscribe-Post: List-Unsubscribe=One-Click");
+  }
   const body = (text: string) =>
     base64Text(text)
       .match(/.{1,76}/g)

@@ -45,6 +45,8 @@ export interface GmailBindings extends AccountsEnvironment {
   AUTOMATIONS?: { getByName(name: string): AutomationStub };
   /** B-171: the reply agents' registry, handed the new mail of an account that has an agent. */
   AGENT_REGISTRY?: { getByName(name: string): { enqueue(mailboxId: string, emailId: string, options?: { holdMs?: number }): Promise<void> } };
+  /** B-181: outreach campaigns, told of the new mail of an account they send from (replies, stops, bounces). */
+  CAMPAIGNS?: { getByName(name: string): { inbound(account: string, message: { sender: string; subject: string; body: string; threadId?: string }): Promise<unknown> } };
   CATEGORIES?: { getByName(name: string): { ingest(account: { id: string; email: string }, event: { id: string; sender: string; subject: string; body: string; html?: string; date: string }): Promise<void> } };
 }
 /** B-178: how long an account's reply agent waits for the message's safety check, as a Cloudflare address waits for its spam check. */
@@ -83,7 +85,7 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
    */
   private drain = oneAtATime(() => this.drainOnce());
   private async drainOnce() {
-    if (!this.env.AUTOMATIONS && !this.env.CATEGORIES && !this.env.BUCKET) return;
+    if (!this.env.AUTOMATIONS && !this.env.CATEGORIES && !this.env.BUCKET && !this.env.CAMPAIGNS) return;
     // Categories scope by the inbox's address, which the event does not carry.
     let emails: Map<string, string> | undefined;
     const answered = new Map<string, Promise<boolean>>();
@@ -99,6 +101,9 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
         if (await answered.get(event.account)) await registry.getByName("workspace").enqueue(event.account, event.emailId,
           safetyChecks(this.env as never) ? { holdMs: SAFETY_HOLD_MS } : {});
       }
+      // B-181: a campaign learns of a reply, a stop or a bounce; its failure is logged, never a reason to deliver the event again.
+      if (this.env.CAMPAIGNS) await this.env.CAMPAIGNS.getByName("workspace").inbound(event.account, { sender: event.sender, subject: event.subject, body: event.body, threadId: event.threadId })
+        .catch((error) => console.error(JSON.stringify({ event: "campaign_inbound_failed", error: String((error as Error)?.message ?? error).slice(0, 200) })));
       if (this.env.AUTOMATIONS) await this.env.AUTOMATIONS.getByName(event.account).ingest(event.account, payload);
       if (this.env.CATEGORIES) {
         emails ??= new Map((await this.service.listAccounts()).accounts.map((a) => [a.provider + ":" + a.id, a.email] as [string, string]));

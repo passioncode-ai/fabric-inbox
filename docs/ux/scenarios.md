@@ -91,6 +91,7 @@
 | SCN-086 | Put a reply agent on a Gmail, IMAP or Outlook account | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | — |
 | SCN-088 | A message with a phishing link or a dangerous file is marked and kept from agents | Find and handle a conversation | P-01 | ST-002, FLW-02 | draft | — |
 | SCN-089 | Prepare an outreach campaign with my agent | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | tests/campaigns-workerd.test.ts |
+| SCN-090 | My agent sends the campaign and stops for whoever answers | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | tests/campaigns-sending-workerd.test.ts |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1833,4 +1834,26 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** `tests/campaign.test.ts` (fields, fallbacks, the window, the plan), `tests/campaigns-workerd.test.ts` (the whole path over the routes: the sender check, recipients left out with why, the preview's missing fields, the dry run's spacing, the version a draft change needs, the suppression list), `tests/mcp-schema-drift.test.ts` (the tools' bodies).
 - **Product:** unobserved
 - **Today:** Step 1 built 2026-10-27 (B-181, 0.44.0): the tools `save_campaign`, `add_campaign_recipients`, `preview_campaign`, `dry_run_campaign`, `list_suppression`, `change_suppression` and their reads. Nothing sends yet; the sending loop is step 2.
+
+### SCN-090: My agent sends the campaign and stops for whoever answers
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, JTBD-02; B-181 step 2 ([the plan](../app-store/tasks/2026-10-27-outreach.md), decisions 2 and 3); follows SCN-089
+- **Entry point:** an agent over MCP (the screen comes in step 3)
+- **Preconditions:** A prepared campaign (SCN-089) with recipients, previewed and dry-run; the person approved it.
+- **Steps:**
+  1. Ask the agent to start it -> it confirms the account, the number of people and the daily cap with you, then starts it.
+  2. The server sends it on its own, from your account: one message at a time inside the window, 5 to 10 minutes apart, 10 on the account's first day and 5 more each day up to the cap; every message ends with how to stop them (and your postal address, when given) and carries List-Unsubscribe.
+  3. Someone replies -> nothing more goes to them, nor, by default, to the rest of their company; "unsubscribe" in a reply puts them on the do-not-write list; an automatic reply moves their next message three days on.
+  4. The follow-ups go after their days, in the same conversation.
+  5. Ask for the report -> people by status, messages per step, reply and bounce rates, the next send, and what failed.
+- **Expected result:** The campaign runs at a human pace from your own account, never writes twice to the same person for the same step, and stops for whoever answered or asked.
+- **Alt paths:** Pause it, and resume it later; stop it for good. A message bounces: that person is stopped, and at 5% bounces the campaign pauses with the reason. The account needs signing in again: the campaign pauses with the reason. A send's outcome is unknown: that person is not written to again and is listed as failed.
+- **UI elements:** none yet (agent tools; the screen comes with step 3).
+- **States covered:** loading, error, success
+- **Errors & recovery:** A provider's rate limit holds the account an hour and tries again; a send that failed is listed in the report with why.
+- **Status:** draft
+- **Coverage:** `tests/campaign.test.ts` (the ramp, the window, each step as sent, what an arriving message is), `tests/campaigns-sending-workerd.test.ts` (the loop over a fake account: one send per wake and the gap, the stop line and List-Unsubscribe, a reply stopping the company, unsubscribe, an auto-reply, the follow-up in the thread, the report; bounces pausing, stop).
+- **Product:** unobserved
+- **Today:** Built 2026-10-27 (B-181 step 2, 0.45.0). One-click unsubscribe over HTTPS is not offered yet: the stop is a reply or the `mailto:` List-Unsubscribe (the server is behind Access; a public path for it is a later row).
 

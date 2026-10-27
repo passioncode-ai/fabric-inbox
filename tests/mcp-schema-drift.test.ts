@@ -114,6 +114,7 @@ const NO_BODY = new Set([
   "POST /api/project-addresses/:email/pause", "POST /api/project-addresses/:email/resume",
   "POST /api/spam/empty", "POST /api/credential-key", "POST /api/v1/mailboxes/:mailboxId/emails/:id/spam-check",
   "POST /api/setup/apply", // the setup document itself, passed whole as apply_setup's `setup`
+  "POST /api/campaigns/:id/launch", "POST /api/campaigns/:id/pause", "POST /api/campaigns/:id/stop",
 ]);
 
 const BY_TOOL = "set by the tool";

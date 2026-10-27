@@ -1902,12 +1902,13 @@ const campaignInput = z.object({
   steps: z.array(campaignStep).min(1).max(4).describe("The first message and up to three follow-ups"),
   stopOnReply: z.boolean().optional(), companyStop: z.boolean().optional().describe("Stop everyone at the same company domain when one replies (default on; free-mail domains excluded)"),
   postalAddress: z.string().max(300).optional().describe("The sender's postal address, which commercial mail must carry in some countries"),
+  unsubscribeText: z.string().min(1).max(300).optional().describe("The line under every message on how to stop them, in the campaign's language (default English: reply \"unsubscribe\"); a reply with unsubscribe or отписаться in it puts the person on the do-not-write list"),
 });
 const campaignId = z.string().min(1).max(100).describe("The campaign's id (list_campaigns)");
 
 const listCampaigns = defineTool({
   name: "list_campaigns", title: "List outreach campaigns", level: "read", readOnly: true,
-  description: "The workspace's outreach campaigns with their state (draft until sending exists) and how many recipients stand where (queued, suppressed…).",
+  description: "The workspace's outreach campaigns with their state (draft, running, paused, stopped, finished) and how many people stand where.",
   input: {}, routes: ["GET /api/campaigns"], call: (_a, ctx) => get(ctx, "/api/campaigns"),
 });
 const getCampaign = defineTool({
@@ -1917,7 +1918,7 @@ const getCampaign = defineTool({
 });
 const saveCampaign = defineTool({
   name: "save_campaign", title: "Prepare an outreach campaign", level: "mail", target: (a) => a.campaignId ?? a.campaign.name,
-  description: "Creates a campaign (no campaignId) or changes a draft (campaignId, with expectedVersion from get_campaign). Human-paced by default: 30 a day, Monday to Friday 09:00 to 17:00, 5 to 10 minutes apart, stop on reply and for the whole company. It sends only from a connected Gmail, Outlook or IMAP account. Nothing is sent: add recipients, preview and dry-run it.",
+  description: "Creates a campaign (no campaignId) or changes a draft (campaignId, with expectedVersion from get_campaign). Human-paced by default: 30 a day (the account's first day 10, then 5 more a day), Monday to Friday 09:00 to 17:00, 5 to 10 minutes apart, stop on reply and for the whole company. It sends only from a connected Gmail, Outlook or IMAP account; every message ends with `unsubscribeText` and `postalAddress` and carries List-Unsubscribe. Nothing is sent until launch_campaign: add recipients, preview and dry-run it first.",
   input: { campaignId: campaignId.optional(), expectedVersion: z.number().int().optional(), campaign: campaignInput },
   routes: ["POST /api/campaigns", "PUT /api/campaigns/:id"],
   call: (a, ctx) => {
@@ -1970,6 +1971,34 @@ const changeSuppression = defineTool({
   routes: ["POST /api/suppression"], call: (a, ctx) => post(ctx, "/api/suppression", { add: a.add, remove: a.remove, reason: a.reason }),
 });
 
+const launchCampaign = defineTool({
+  name: "launch_campaign", title: "Start or resume a campaign", level: "mail", sends: true, target: (a) => a.campaignId,
+  description: "Starts a draft campaign, or resumes a paused one: the server then sends it from the chosen account inside its window, daily cap and gaps, follow-ups in the same conversation, until each person replies, unsubscribes, bounces or has had every step. Real mail to real people: confirm the list, the preview and the dry run with the person you work for first. Two calls.",
+  input: { campaignId },
+  confirm: async (a, ctx) => {
+    const c = (await get(ctx, `/api/campaigns/${enc(a.campaignId)}`)) as { name: string; sender: string; dailyCap: number; steps: unknown[]; counts: Record<string, number> };
+    const open = (c.counts.queued ?? 0) + (c.counts.active ?? 0);
+    return `Start the campaign ${quoted(c.name)} from ${c.sender}: ${c.steps.length} step(s) to ${open} person(s), at most ${c.dailyCap} a day. Real mail leaves the account.`;
+  },
+  routes: ["GET /api/campaigns/:id", "POST /api/campaigns/:id/launch"], call: (a, ctx) => post(ctx, `/api/campaigns/${enc(a.campaignId)}/launch`, {}),
+});
+const pauseCampaign = defineTool({
+  name: "pause_campaign", title: "Pause a campaign", level: "mail", target: (a) => a.campaignId,
+  description: "Holds a running campaign: nothing more leaves until launch_campaign resumes it. A campaign also pauses by itself when its account needs attention or 5% of its messages bounce (`reason`).",
+  input: { campaignId }, routes: ["POST /api/campaigns/:id/pause"], call: (a, ctx) => post(ctx, `/api/campaigns/${enc(a.campaignId)}/pause`, {}),
+});
+const stopCampaign = defineTool({
+  name: "stop_campaign", title: "Stop a campaign for good", level: "mail", target: (a) => a.campaignId,
+  description: "Ends a campaign: nobody still waiting for a step gets it, and it cannot be resumed. Two calls.",
+  input: { campaignId }, confirm: (a) => `Stop the campaign ${a.campaignId} for good: nobody still waiting gets another message.`,
+  routes: ["POST /api/campaigns/:id/stop"], call: (a, ctx) => post(ctx, `/api/campaigns/${enc(a.campaignId)}/stop`, {}),
+});
+const campaignReport = defineTool({
+  name: "campaign_report", title: "A campaign's report", level: "read", readOnly: true,
+  description: "What a campaign did: people by status (queued, active, done, replied, unsubscribed, bounced, stopped, failed), messages sent per step, reply and bounce rates, the last send, when the next may leave, why it is paused, and the failed sends.",
+  input: { campaignId }, routes: ["GET /api/campaigns/:id/report"], call: (a, ctx) => get(ctx, `/api/campaigns/${enc(a.campaignId)}/report`),
+});
+
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, decideHeldMessage, listFolders, getSendStatus,
   listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
@@ -1983,6 +2012,7 @@ export const TOOLS: readonly ToolDef[] = [
   disconnectGmail, disconnectAccount, listMailProviders, gmailConnectLink, gmailSetupStatus, checkGmailSetup, createCredentialKey,
   outlookConnectLink, connectAccount, setAccountPassword, setProviderSetup, microsoftSetupStatus, checkMicrosoftSetup, listAgentKeys, agentActivity,
   listCampaigns, getCampaign, saveCampaign, deleteCampaign, addCampaignRecipients, listCampaignRecipients, previewCampaign, dryRunCampaign, listSuppression, changeSuppression,
+  launchCampaign, pauseCampaign, stopCampaign, campaignReport,
 ];
 
 /**

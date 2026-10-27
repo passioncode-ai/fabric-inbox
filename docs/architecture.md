@@ -550,7 +550,7 @@ flowchart LR
 | Agents, versions, runs (last 2000), send counters, agent queue, message claims (7 days) | `AgentRegistryDO` SQLite (`workspace`) |
 | Knowledge collections, documents, chunks, FTS5 index | `KnowledgeDO` SQLite (`workspace`), migration `fabric-v3` |
 | Projects, categories, verdicts, category queue, model budget, backfills, spam checks and their budget | `CategoriesDO` SQLite (`workspace`), migration `fabric-v4` |
-| Outreach campaigns (definition and version, state), their recipients with fields and status, the do-not-write list (addresses and domains) (B-181) | `CampaignsDO` SQLite (`workspace`), migration `fabric-v5` |
+| Outreach campaigns (definition and version, state, why paused), their recipients with fields, status, next step and conversation, every send (the rolling daily cap and the report), each account's next send and first send (the ramp), the do-not-write list (addresses and domains) (B-181) | `CampaignsDO` SQLite (`workspace`), migration `fabric-v5`; schema steps `1_initial`, `2_sending` |
 | Spam lists (blocked and allowed senders and domains) | R2 `config/spam.json` |
 | Discard rules (list or sender, why, counts) and the Always allow list | R2 `config/discard.json` |
 | Why a message is in Discarded, and since when | `MailboxDO` `emails.discard_reason`, `emails.discarded_at`; `GmailAccountsDO` `discarded:<acc>:<id>` |
@@ -595,7 +595,7 @@ read with a default where it is missing, never assumed present.
 | `workers/discard/`, `shared/mail/discard.ts`, `workers/routes/discard.ts` | Discarded: rules in R2, why, matching and safety on arrival, the routes |
 | `workers/knowledge/` | knowledge store (`KnowledgeDO`) and pure text work (chunking, FTS query quoting) |
 | `workers/automation/` | rules engine, policy, MCP client |
-| `workers/campaigns/`, `shared/mail/campaign.ts`, `workers/routes/campaigns.ts` | outreach campaigns (B-181, SCN-089): `CampaignsDO`, the pure rules (fields and fallbacks, the window, spacing, the do-not-write list) and the routes; step 1 prepares, previews and dry-runs, nothing sends |
+| `workers/campaigns/`, `shared/mail/campaign.ts`, `workers/routes/campaigns.ts` | outreach campaigns (B-181, SCN-089): `CampaignsDO`, the pure rules (fields and fallbacks, the window, spacing, the ramp, what an arriving message is, the do-not-write list) and the routes. The loop is `CampaignsDO`'s alarm: one send per account per wake through `GmailAccountsDO.send` with a deterministic idempotency key and `List-Unsubscribe: <mailto:…>`; `GmailAccountsDO`'s drain hands every new inbox message of an account to `CampaignsDO.inbound` (reply, unsubscribe, auto-reply, bounce) |
 | `workers/providers/` | the provider interface, credentials, account service, `GmailAccountsDO`, scheduler, cache; Gmail OAuth, client, sync loop and provider |
 | `workers/providers/imap/` | IMAP/SMTP: the imapflow connection, the SMTP client and its sockets, MIME and labels, the sync, the provider and session, connect input |
 | `workers/providers/outlook/` | Outlook through Microsoft Graph: sign-in and tokens, the Graph client (immutable ids, throttling), ids and labels, the delta sync, the provider and session |
