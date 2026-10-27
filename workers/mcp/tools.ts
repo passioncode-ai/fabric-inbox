@@ -593,7 +593,7 @@ const listAgentThreads = defineTool({
 
 const getAgentStatus = defineTool({
   name: "get_agent_status", title: "Where the reply status is shown", level: "read", readOnly: true,
-  description: "Where the reply status of conversations (list_agent_threads, the inbox's marks and filter) is shown: enabled for the whole workspace, then a choice per domain, then per address (an account with a reply agent by its email); an address follows its domain, a domain the workspace. Off until someone turns it on.",
+  description: "Where the reply status of conversations (list_agent_threads, the inbox's marks and filter) is shown: enabled for the whole workspace, then a choice per domain, then per address (an account with a reply agent by its email; `accounts` lists those accounts); an address follows its domain, a domain the workspace. Off until someone turns it on.",
   input: {}, routes: ["GET /api/agent-status"],
   call: (_a, ctx) => get(ctx, "/api/agent-status"),
 });

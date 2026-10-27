@@ -8,7 +8,7 @@ import { changeHidden, HiddenConflict, readHidden } from "../lib/hidden-accounts
 import { REMOTE_ACCOUNT, parseRemoteAccount } from "../../shared/mail/accounts";
 import { msg } from "../../shared/i18n";
 import { runIdFor, type AgentRun } from "../agents/run";
-import { AgentStatusConflict, AgentStatusInvalid, attachAgentStates, changeAgentStatus, listAgentThreads, readAgentStatus } from "../lib/agent-status";
+import { agentAccounts, AgentStatusConflict, AgentStatusInvalid, attachAgentStates, changeAgentStatus, listAgentThreads, readAgentStatus } from "../lib/agent-status";
 import { isAgentState, OPEN_STATES } from "../../shared/mail/agent-state";
 
 export interface InboxSources {
@@ -281,7 +281,10 @@ inboxRouter.post("/api/inbox/refresh", async (c) => {
 /** B-138: whether the reply status is shown, for the workspace, each domain and each address (off by default). */
 inboxRouter.get("/api/agent-status", async (c) => {
   c.header("Cache-Control", "no-store");
-  return c.json(await readAgentStatus(c.env.BUCKET));
+  // B-176: the Gmail, IMAP and Outlook accounts with a reply agent, by email (their status is chosen by it, as an
+  // address's); accounts that cannot be listed leave the list empty, never the settings unread.
+  const accounts = await agentAccounts(c.env).catch(() => []);
+  return c.json({ ...(await readAgentStatus(c.env.BUCKET)), accounts: accounts.map((a) => ({ email: a.email, accountId: a.mailboxId })) });
 });
 inboxRouter.put("/api/agent-status", async (c) => {
   const body = await c.req.json().catch(() => null) as Record<string, unknown> | null;

@@ -6,6 +6,18 @@ import { agentStatusOn, type AgentStatusSettings } from "../../../../shared/mail
 
 const KEY = ["agent-status"];
 
+/** B-176: the Gmail, IMAP and Outlook accounts with a reply agent join the addresses, each under its email's domain. */
+export function withAccounts(groups: { domain: string; addresses: string[] }[], accounts: { email: string }[] = []): { domain: string; addresses: string[]; accounts: string[] }[] {
+  const out = groups.map((g) => ({ ...g, accounts: [] as string[] }));
+  for (const { email } of accounts) {
+    const address = email.trim().toLowerCase(), domain = address.slice(address.lastIndexOf("@") + 1);
+    if (!domain || out.some((g) => g.addresses.includes(address) || g.accounts.includes(address))) continue;
+    const group = out.find((g) => g.domain === domain) ?? out[out.push({ domain, addresses: [], accounts: [] }) - 1]!;
+    group.accounts.push(address);
+  }
+  return out;
+}
+
 /**
  * Where the inbox shows the reply status of conversations (B-138, operator 2026-10-21): for the
  * whole workspace, then a domain, then an address; each one follows the level above unless it is
@@ -14,12 +26,12 @@ const KEY = ["agent-status"];
 export default function ReplyStatusSettings({ groups }: { groups: { domain: string; addresses: string[] }[] }) {
   const t = useT();
   const client = useQueryClient();
-  const settings = useQuery({ queryKey: KEY, queryFn: () => fabric<AgentStatusSettings>("/api/agent-status"), retry: false });
+  const settings = useQuery({ queryKey: KEY, queryFn: () => fabric<AgentStatusSettings & { accounts?: { email: string }[] }>("/api/agent-status"), retry: false });
   const save = useMutation({
     mutationFn: (change: { enabled?: boolean; domains?: Record<string, boolean | null>; addresses?: Record<string, boolean | null> }) =>
       fabric<AgentStatusSettings>("/api/agent-status", change, "PUT"),
     onSuccess: (next) => {
-      client.setQueryData(KEY, next);
+      client.setQueryData(KEY, (old: { accounts?: unknown } | undefined) => ({ ...next, accounts: old?.accounts }));
       void client.invalidateQueries({ queryKey: ["unified-inbox"] });
     },
   });
@@ -37,7 +49,7 @@ export default function ReplyStatusSettings({ groups }: { groups: { domain: stri
         <input type="checkbox" checked={s.enabled} disabled={busy} onChange={(e) => save.mutate({ enabled: e.target.checked })} />
         {t("Show it for every address")}
       </label>
-      {groups.map((g) => (
+      {withAccounts(groups, s.accounts).map((g) => (
         <fieldset key={g.domain} className="fi-reply-status-domain">
           <legend>
             {g.domain}
@@ -48,11 +60,11 @@ export default function ReplyStatusSettings({ groups }: { groups: { domain: stri
               <option value="off">{t("Hidden")}</option>
             </select>
           </legend>
-          {g.addresses.map((a) => {
+          {[...g.addresses.map((a) => [a, false] as const), ...g.accounts.map((a) => [a, true] as const)].map(([a, account]) => {
             const inherited = agentStatusOn({ ...s, addresses: {} }, a);
             return (
               <label key={a} className="fi-reply-status-address">
-                <span>{a}</span>
+                <span>{a}{account && <span className="fi-hint"> · {t("account with a reply agent")}</span>}</span>
                 <select aria-label={t("Reply status for {address}", { address: a })} value={choice(s.addresses[a])} disabled={busy}
                   onChange={(e) => save.mutate({ addresses: { [a]: parse(e.target.value) } })}>
                   <option value="">{inherited ? t("As the domain (shown)") : t("As the domain (hidden)")}</option>

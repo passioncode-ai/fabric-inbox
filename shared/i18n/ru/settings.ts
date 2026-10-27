@@ -418,4 +418,6 @@ export const SETTINGS: Readonly<Record<string, string>> = {
 	"Waiting for the first message": "Ждёт первого письма",
 	"Why (optional)": "Причина (необязательно)",
 	"Your agent prepares a campaign (save_campaign), adds the people and checks it with you. Here you see what it did and decide whether it runs, waits or ends.": "Кампанию готовит агент (save_campaign): добавляет получателей и согласует её с вами. Здесь видно, что она сделала, и вы решаете, идёт она, ждёт или закончена.",
+	// B-176 (ReplyStatusSettings.tsx)
+	"account with a reply agent": "аккаунт с агентом",
 };
