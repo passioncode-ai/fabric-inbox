@@ -1349,6 +1349,42 @@ const renameAddressTool = defineTool({
   call: (a, ctx) => post(ctx, `/api/project-addresses/${enc(a.address.toLowerCase())}/rename`, { to: a.to.toLowerCase() }),
 });
 
+// B-158 M1 step 3a: a mailbox carried from one server to another, page by page with its ids kept. An agent with an
+// administrator's key on both servers reads with export_mailbox from one and writes with import_mailbox into the other.
+const transferTable = z.enum(["folders", "emails", "attachments"]);
+const exportMailbox = defineTool({
+  name: "export_mailbox", title: "Read a mailbox out to move it", level: "admin", readOnly: true, target: (a) => a.address,
+  description: "Reads a Cloudflare mailbox of this server to copy it into another server (with import_mailbox there), keeping every id. action manifest: its settings, how many messages and attachments it has, and what still holds it (sends not settled, new mail being handled). rows: one page of a table (folders, then emails, then attachments; pass next back as after until it is null), with the files its rows name. file: one of those files as base64 (25 MB at most). ids: every message and attachment id, to check the copy with import_mailbox check. Changes nothing.",
+  input: { address, action: z.enum(["manifest", "rows", "file", "ids"]), table: transferTable.optional().describe("rows"), after: z.number().int().min(0).optional().describe("rows: the previous page's next"),
+    limit: z.number().int().min(1).max(100).optional().describe("rows"), key: z.string().max(600).optional().describe("file: a key from a rows page's files") },
+  routes: ["GET /api/transfer/:email", "GET /api/transfer/:email/rows", "GET /api/transfer/:email/file", "GET /api/transfer/:email/ids"],
+  async call(a, ctx) {
+    const base = `/api/transfer/${enc(a.address.toLowerCase())}`;
+    if (a.action === "manifest") return get(ctx, base);
+    if (a.action === "ids") return get(ctx, `${base}/ids`);
+    if (a.action === "file") { if (!a.key) throw new ApiError(400, "Give key (from a rows page's files)", null); return get(ctx, `${base}/file?key=${enc(a.key)}`); }
+    if (!a.table) throw new ApiError(400, "Give table: folders, emails or attachments", null);
+    return get(ctx, `${base}/rows?table=${a.table}&after=${a.after ?? 0}&limit=${a.limit ?? 100}`);
+  },
+});
+const importMailbox = defineTool({
+  name: "import_mailbox", title: "Write a mailbox in from another server", level: "admin", target: (a) => a.address,
+  description: "Writes into this server a mailbox read with export_mailbox from another server, keeping every id. action open: makes the mailbox here with the settings the manifest gave (no agent answers it until one is chosen here; an existing one is kept). rows: one page of rows exactly as export_mailbox gave them (folders, emails, attachments, in that order); a row already here is brought up to date. file: one file as export_mailbox gave it, after its row (one of the same size already here is kept). check: which of the other server's ids (export_mailbox ids) are still missing here; complete true means every message and attachment arrived. Nothing is deleted, here or there, and mail is still delivered to the other server: routing the address is a separate step.",
+  input: { address, action: z.enum(["open", "rows", "file", "check"]), settings: z.record(z.string(), z.unknown()).optional().describe("open: the manifest's settings"),
+    table: transferTable.optional().describe("rows"), rows: z.array(z.record(z.string(), z.unknown())).max(500).optional().describe("rows: a rows page's rows"),
+    key: z.string().max(600).optional().describe("file"), data: z.string().optional().describe("file: its data as base64"), contentType: z.string().max(200).optional().describe("file"),
+    emails: z.array(z.string()).optional().describe("check: the other server's message ids"), attachments: z.array(z.string()).optional().describe("check: its attachment ids") },
+  routes: ["POST /api/transfer/:email/open", "POST /api/transfer/:email/rows", "PUT /api/transfer/:email/file", "POST /api/transfer/:email/check"],
+  async call(a, ctx) {
+    const base = `/api/transfer/${enc(a.address.toLowerCase())}`;
+    if (a.action === "open") return post(ctx, `${base}/open`, { settings: a.settings ?? {} });
+    if (a.action === "check") return post(ctx, `${base}/check`, { emails: a.emails ?? [], attachments: a.attachments ?? [] });
+    if (a.action === "file") { if (!a.key || a.data === undefined) throw new ApiError(400, "Give key and data (from export_mailbox file)", null); return put(ctx, `${base}/file`, { key: a.key, data: a.data, contentType: a.contentType }); }
+    if (!a.table || !a.rows) throw new ApiError(400, "Give table and rows (from export_mailbox rows)", null);
+    return post(ctx, `${base}/rows`, { table: a.table, rows: a.rows });
+  },
+});
+
 const renameStatusTool = defineTool({
   name: "rename_status", title: "Read a rename", level: "read", readOnly: true, target: (a) => a.address,
   description: "Where a rename of this address stands: running with its step, messages copied and whether it can still be cancelled (cancel_rename), or done with the new address (while the old one still delivers to it).",
@@ -2056,7 +2092,7 @@ export const TOOLS: readonly ToolDef[] = [
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,
-  getServer, listMembers, listAudit, checkAddress, createAddress, createAddresses, updateAddress, setAccountAgent, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination, removeDestination,
+  getServer, listMembers, listAudit, checkAddress, createAddress, createAddresses, updateAddress, setAccountAgent, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, exportMailbox, importMailbox, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination, removeDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, clearIncomingFailures, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,

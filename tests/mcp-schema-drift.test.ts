@@ -95,6 +95,10 @@ const BODIES: Record<string, string[]> = {
   "POST /api/accounts/:accountId/messages/:messageId/labels": ["add", "remove"], // workers/routes/accounts.ts (B-35)
   "POST /api/domains/:domain/bring": ["address"], // workers/routes/domains.ts BringInput (B-28)
   "POST /api/project-addresses/:email/rename": ["to"], // workers/routes/agents.ts RenameInput (B-27)
+  "POST /api/transfer/:email/open": ["settings"], // workers/routes/transfer.ts (B-158 M1 step 3a)
+  "POST /api/transfer/:email/rows": ["table", "rows"],
+  "PUT /api/transfer/:email/file": ["key", "data", "contentType"],
+  "POST /api/transfer/:email/check": ["emails", "attachments"],
   "POST /api/accounts/:accountId/messages/:messageId/trashed": ["trashed"],
   "POST /api/automation/:account/dry-run": ["emailId", "rule"], // workers/automation/index.ts
   "POST /api/campaigns": ["campaign"], // workers/routes/campaigns.ts (B-181)

@@ -1135,6 +1135,18 @@ export class MailboxDO extends DurableObject<Env> {
 		return written;
 	}
 
+	/**
+	 * B-158 M1 step 3: whether an R2 object belongs to this mailbox (a message's stored body, or an attachment of one
+	 * of its messages), so a transfer reads only this mailbox's files from the shared bucket.
+	 */
+	async ownsBlob(key: string): Promise<boolean> {
+		const attachment = /^attachments\/([^/]+)\/([^/]+)\/(.+)$/.exec(key);
+		if (attachment) return this.ctx.storage.sql.exec("SELECT 1 FROM attachments WHERE email_id = ? AND id = ? AND filename = ?",
+			attachment[1]!, attachment[2]!, attachment[3]!).toArray().length > 0;
+		if (key.startsWith("bodies/")) return this.ctx.storage.sql.exec("SELECT 1 FROM emails WHERE body_key = ?", key).toArray().length > 0;
+		return false;
+	}
+
 	/** The ids a rename must find in the new mailbox: every message and every attachment row. */
 	async renameIds(): Promise<{ emails: string[]; attachments: string[] }> {
 		return {

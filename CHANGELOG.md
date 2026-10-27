@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.65.0 (2026-10-27)
+
+- **Agents can copy a mailbox to another server.** An agent with administrator access to two servers, such as your own
+  and your organization's, can now copy an address's mail, attachments, folders and settings from one to the other and
+  check that every message arrived. The original server keeps everything and still receives the mail; moving the
+  address itself comes next.
+
 ## 0.64.0 (2026-10-27)
 
 - **The app holds your own server and your organizations' servers.** The Account menu lists every server you added,
