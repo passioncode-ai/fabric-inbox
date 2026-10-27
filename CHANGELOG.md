@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.61.0 (2026-10-27)
+
+- **A shared server keeps a record of who changed what.** Settings → People now lists recent changes: who added,
+  changed or removed a person and what they gave them, agent keys revoked with a person, and every message a member
+  sent (from which mailbox, to whom and its subject, never its text). Agents read the same record with `list_audit`.
+
 ## 0.60.0 (2026-10-27)
 
 - **Reply agents' logs count what needs a look.** The server's logs now say, for every reply agent run, how it ended,
