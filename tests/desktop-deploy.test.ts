@@ -401,3 +401,21 @@ test("O-4, B-185: a failed step keeps the error's status and code, so a missing 
   const { deployFailure } = await import("../scripts/onboard.mjs");
   assert.equal(deployFailure(r.error).code, "permission");
 });
+
+test("O-12 (B-184): the token page opens with its name and every permission Cloudflare's template link documents", () => {
+  const url = new URL(deployer.tokenTemplateUrl());
+  assert.equal(url.origin + url.pathname, deployer.TOKEN_PAGE);
+  assert.equal(url.searchParams.get("name"), "Fabric Inbox");
+  assert.equal(url.searchParams.get("accountId"), "*");
+  assert.equal(url.searchParams.get("zoneId"), "all");
+  const keys = JSON.parse(url.searchParams.get("permissionGroupKeys")!);
+  assert.deepEqual(keys, [
+    { key: "workers_scripts", type: "edit" }, { key: "workers_r2", type: "edit" }, { key: "access", type: "edit" },
+    { key: "access_acct", type: "edit" }, { key: "account_settings", type: "read" }, { key: "zone", type: "read" },
+    { key: "zone_settings", type: "edit" }, { key: "dns", type: "edit" },
+  ]);
+  // Every key names a permission the token needs: nothing extra is asked for.
+  for (const name of Object.keys(deployer.TEMPLATE_KEYS)) assert.ok(deployer.PERMISSIONS.some((p: { name: string }) => p.name === name), name);
+  assert.match(readFileSync("desktop/main.cjs", "utf8"), /shell\.openExternal\(deployer\.tokenTemplateUrl\(\)\)/);
+  assert.match(readFileSync("desktop/setup.html", "utf8"), /add the missing ones/);
+});

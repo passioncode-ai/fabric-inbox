@@ -845,6 +845,7 @@ async function handleConnectLink(url) {
     },
     identify: connector.listenerWith(execFileAsync),
     mint: ses ? connector.mintWith(ses, config.origin) : async () => ({ ok: false, error: t('No server') }),
+    signedIn: ses ? connector.signedInWith(ses, config.origin) : undefined,
     revoke: ses ? connector.revokeWith(ses, config.origin) : async () => false,
     deliver: connector.deliverTo(request.callback),
     signIn: async () => { loadMail(); },
@@ -974,7 +975,7 @@ function installIPC() {
   });
   ipcMain.handle('fabric:cf-open-token-page', async event => {
     trusted(event);
-    try { await shell.openExternal(deployer.TOKEN_PAGE); return { ok: true }; }
+    try { await shell.openExternal(deployer.tokenTemplateUrl()); return { ok: true }; }
     catch { return { ok: false, error: t('The browser could not be opened. Go to {page} yourself.', { page: deployer.TOKEN_PAGE }) }; }
   });
   ipcMain.handle('fabric:cf-check', async (event, token) => {

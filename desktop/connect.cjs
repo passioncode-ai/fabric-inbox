@@ -263,6 +263,22 @@ function mintWith(ses, origin) {
   };
 }
 
+/**
+ * O-8 (B-184): whether the owner's session can still make a key, asked before the person is: true, false (a
+ * redirect to sign-in or a page instead of JSON), or null when it could not be told (the network), which leaves
+ * the exchange as it was.
+ */
+function signedInWith(ses, origin) {
+  return async () => {
+    try {
+      const response = await ses.fetch(new URL('/api/agent-keys', origin).href, { method: 'GET', redirect: 'manual', credentials: 'include' });
+      const type = (response.headers.get('content-type') || '').toLowerCase();
+      if ((response.status >= 300 && response.status < 400) || response.status === 401 || response.status === 403 || !type.includes('json')) return false;
+      return response.status >= 200 && response.status < 300 ? true : null;
+    } catch { return null; }
+  };
+}
+
 function revokeWith(ses, origin) {
   return async (id) => {
     const response = await ses.fetch(new URL(`/api/agent-keys/${encodeURIComponent(id)}`, origin).href, { method: 'DELETE', redirect: 'manual', credentials: 'include' });
@@ -287,7 +303,7 @@ function deliverTo(callback, { fetch: doFetch = fetch, timeoutMs = 10000 } = {})
  * The whole exchange. Returns { outcome: 'connected' | 'denied' | 'failed', reason? }.
  * The hub hears the outcome whenever it still listens; a secret is never logged.
  */
-async function connect({ request, config, confirm, mint, revoke, deliver, signIn, identify, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), pause = pauseFor, self = process.pid, log = () => {} }) {
+async function connect({ request, config, confirm, mint, revoke, deliver, signIn, identify, signedIn = async () => null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), pause = pauseFor, self = process.pid, log = () => {} }) {
   const say = (event, extra = {}) => log(JSON.stringify({ event: `connect.${event}`, client: request.clientId, level: request.level, ...extra }));
   if (!config) {
     await deliver({ state: request.state, outcome: 'failed', error: 'no_server' });
@@ -304,6 +320,13 @@ async function connect({ request, config, confirm, mint, revoke, deliver, signIn
     await deliver({ state: request.state, outcome: 'failed', error: 'listener_is_self' });
     say('refused', { reason: 'listener_is_self' });
     return { outcome: 'failed', reason: 'listener_is_self' };
+  }
+  // O-8: a lapsed sign-in is found before the person is asked, so an Allow is never answered with a failure.
+  if ((await signedIn()) === false) {
+    await deliver({ state: request.state, outcome: 'failed', error: 'sign_in_required' });
+    await signIn();
+    say('failed', { reason: 'sign_in_required', before: 'prompt' });
+    return { outcome: 'failed', reason: 'sign_in_required' };
   }
   const prompt = promptFor(request, config, listener);
   const asked = await askWhileListening({ prompt, confirm, identify, port, listener, pause });
@@ -354,5 +377,5 @@ async function connect({ request, config, confirm, mint, revoke, deliver, signIn
   return { outcome: 'connected', keyId: key.id };
 }
 
-module.exports = { parseConnectLink, promptFor, listenerWith, mintWith, revokeWith, deliverTo, attendWith, pauseFor, connect,
+module.exports = { parseConnectLink, promptFor, listenerWith, mintWith, signedInWith, revokeWith, deliverTo, attendWith, pauseFor, connect,
   PROMPT_POLL_MS, PROMPT_DEADLINE_MS, SCHEME: 'fabric-inbox' };

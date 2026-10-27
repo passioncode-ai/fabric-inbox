@@ -31,6 +31,21 @@ const API = 'https://api.cloudflare.com/client/v4';
 const DEFAULT_SCRIPT = 'fabric-inbox';
 const DEFAULT_BUCKET = 'fabric-inbox';
 const TOKEN_PAGE = 'https://dash.cloudflare.com/profile/api-tokens';
+/**
+ * O-12 (B-184): Cloudflare's token template keys for the permissions below that have one (its "API token template
+ * URLs" page, read 2026-10-27). A user token URL drops a key it does not know without a word, so only documented
+ * keys are named; the rest (Access service tokens, Email Routing, Email Sending) the person adds from the table.
+ */
+const TEMPLATE_KEYS = {
+  'Workers Scripts': 'workers_scripts', 'Workers R2 Storage': 'workers_r2', 'Access: Apps and Policies': 'access',
+  'Access: Organizations, Identity Providers, and Groups': 'access_acct', 'Account Settings': 'account_settings',
+  Zone: 'zone', 'Zone Settings': 'zone_settings', DNS: 'dns',
+};
+/** The token form opened with its name and every permission Cloudflare's template link can carry. */
+function tokenTemplateUrl(permissions = PERMISSIONS) {
+  const keys = permissions.filter((p) => TEMPLATE_KEYS[p.name]).map((p) => ({ key: TEMPLATE_KEYS[p.name], type: p.level.toLowerCase() }));
+  return `${TOKEN_PAGE}?permissionGroupKeys=${encodeURIComponent(JSON.stringify(keys))}&accountId=*&zoneId=all&name=${encodeURIComponent('Fabric Inbox')}`;
+}
 /** The one header Access reads an agent key from, for the fabric-service descriptor (B-87 part 4). */
 const SERVICE_TOKEN_HEADER = 'Authorization';
 
@@ -427,4 +442,4 @@ async function deploy(options) {
   return { origin: keptSignIn ? keptOrigin : `https://${host}`, accessOrigin: `https://${authDomain}`, steps };
 }
 
-module.exports = { accounts, inspect, deploy, uploadServer, client, uploadTimeout, readBundle, compareVersions, DeployError, PERMISSIONS, TOKEN_PAGE, SERVICE_TOKEN_HEADER, SCRIPT: DEFAULT_SCRIPT, validName: (v) => NAME.test(v), validEmail: (v) => EMAIL.test(v) };
+module.exports = { accounts, inspect, deploy, uploadServer, client, uploadTimeout, readBundle, compareVersions, DeployError, PERMISSIONS, TOKEN_PAGE, TEMPLATE_KEYS, tokenTemplateUrl, SERVICE_TOKEN_HEADER, SCRIPT: DEFAULT_SCRIPT, validName: (v) => NAME.test(v), validEmail: (v) => EMAIL.test(v) };
