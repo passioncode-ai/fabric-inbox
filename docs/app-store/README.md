@@ -191,6 +191,15 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-10-27 (0.76.0: B-189, the quality judge against a person).**
+
+- **0.76.0** (PR #360, `df09a10`, B-189): a person grades a sent answer on the judge's rubric v1 (`grade_agent_answer`, `PUT /api/agent-runs/:id/grade`; an agent key only with the `source` where the person gave it, counted as relayed); `list_answers_to_grade` lists ungraded sent answers blind, judged first; `get_judge_calibration` gives per check and for `helped` the agreement, `judgeHigher`, `judgeLower`, `naDiffers`, rate and Cohen's kappa, `small` under 20 pairs. Packet [2026-10-27-judge-calibration.md](tasks/2026-10-27-judge-calibration.md). CHANGELOG copy check `7371246c`.
+- Live on the owner server: the calibration answers with 0 pairs; the list to grade carries no verdict field (`rubric`, `checks`, `helped`, `judgement` absent).
+- v0.75.0 published (release run 40566244906, 20 assets). Both servers on 0.76.0 from `df09a10` (receipts `linked`); a watcher tags v0.76.0 after `ci` on `df09a10`.
+- B-196 filed: one load-time failure of `account-threads-workerd` (passed alone), target 2026-11-14.
+
+**Exact next task:** a person grades at least 20 answers (`list_answers_to_grade`, then `grade_agent_answer` with their words and where they said them); then read `get_judge_calibration` and decide the judge from the numbers. Meanwhile B-153's rest (answer again when the data agent's `gaps.list` closes a gap; ask its contract on thread `e68f363c`). Waits: SCN-094's approval; SOT-B5 for M2 (B-160); B-168; B-174 on 2026-11-02; B-186, B-187, B-188, B-192 on 2026-11-03; B-143, B-108, B-194 on 2026-11-05; B-196 on 2026-11-14; .github #44; B-72's AI panel turn by a person; B-106 a person's decision.
+
 **State 2026-10-27 (0.75.0: B-153's second look; B-162 live; MD-18 sweep).**
 
 - **0.75.0** (PR #359, `c3c3e40`, B-153): a message an auto agent that holds was not sure of gets one second look 30 minutes later, at most 20 a day per server (`replyPolicy.secondLook`, default on; `AgentRegistryDO.retryHeld`): the same writer with reasoning `medium`, twice the knowledge passages, every prefetched tool also asked about the topic, sent only if the checker approves. The run keeps `secondLook`; `support.diagnosed` carries it once with `look: "second"`, `rescued` and the cause. Packet [2026-10-27-second-look.md](tasks/2026-10-27-second-look.md). CHANGELOG copy check `d83be0d2`.
