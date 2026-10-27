@@ -1661,13 +1661,14 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   1. Open Settings → People -> what the list does; nobody listed means everyone who can sign in is an administrator.
   2. Add a person: their sign-in email, Member or Administrator, and for a member the mailboxes they may read; Add -> they are listed; the first person added also lists me as an administrator.
   3. Open a person -> Change… their role or mailboxes, or Remove… them (Remove, Keep).
+  4. With nobody open, read Recent changes -> who added, changed or removed whom (the role and mailboxes it gave), agent keys revoked with a person, and each message a member sent (mailbox, recipients, subject; never the text), newest first; Show older reads further back (B-156, since 0.61.0).
 - **Expected result:** A member reaches only their mailboxes; a person Access lets in who is not listed is refused with a sentence naming who to ask; an administrator has every right.
 - **Alt paths:** A member with no mailbox ticked: Add stays off. Removing the last administrator, or the last person: refused with the reason. Removing myself: I am asked first and can no longer open the server.
-- **UI elements:** SCR-17 (Add a person, Role, Mailboxes, Change…, Remove…).
+- **UI elements:** SCR-17 (Add a person, Role, Mailboxes, Change…, Remove…, Recent changes, Show older).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** The list changed at the same time: try again. A list in R2 that cannot be read lets nobody in and says to delete it to start over.
 - **Status:** draft
-- **Coverage:** app/components/settings/sections/PeopleSection.tsx, workers/routes/members.ts, workers/lib/members.ts, workers/app.ts, tests/members.test.ts
+- **Coverage:** app/components/settings/sections/PeopleSection.tsx, workers/routes/members.ts, workers/lib/members.ts, workers/lib/audit.ts, workers/app.ts, tests/members.test.ts, tests/audit.test.ts
 - **Product:** unobserved
 - **Today:** Built 2026-10-23 (B-149).
 

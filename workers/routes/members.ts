@@ -5,6 +5,7 @@ import { MAX_MEMBERS, MembersError, normaliseEmail, readMembers, ROLES, updateMe
 import { normaliseAccountId } from "../mcp/scope";
 import { msg } from "../../shared/i18n";
 import { revokeKeysOf } from "./agent-keys";
+import { actorOf, readAudit, recordAudit } from "../lib/audit";
 
 /**
  * People on a shared server (B-149): who signs in as an administrator and who as a member with their
@@ -53,16 +54,23 @@ membersRouter.put("/api/members/:email", async (c) => {
     if (!accounts.length) return c.json({ error: msg("Choose at least one mailbox for a member.") }, 400);
   }
   try {
+    let previous: Member | undefined;
     const members = await updateMembers(c.env.BUCKET, (list) => {
       const old = list.find((m) => m.email === email);
+      previous = old;
       const entry: Member = { email, role: parsed.data.role, accounts, addedAt: old?.addedAt ?? new Date().toISOString() };
       return old ? list.map((m) => (m.email === email ? entry : m)) : [...list, entry];
     }, c.get("standing")?.email ?? null);
     forgetMembers();
     console.log(JSON.stringify({ event: "member_saved", role: parsed.data.role, mailboxes: accounts?.length ?? null }));
+    // B-156: who changed whom, kept. The first person added also lists the editor (updateMembers): that is part of this act.
+    const actor = actorOf(c.req.raw, c.get("standing")?.email);
+    await recordAudit(c.env.BUCKET, actor, { kind: "member_saved", person: email, role: parsed.data.role, mailboxes: accounts,
+      previous: previous ? { role: previous.role, mailboxes: previous.accounts } : null });
     // N-4: a member makes no keys; the keys they made as an administrator go when they become one.
     if (parsed.data.role === "member") {
       const keys = await revokeKeysOf(c.env, email).catch((error: unknown) => ({ revoked: [] as string[], warning: (error as Error).message }));
+      if (keys.revoked.length) await recordAudit(c.env.BUCKET, actor, { kind: "keys_revoked", person: email, keys: keys.revoked });
       return c.json({ members, revokedKeys: keys.revoked, ...(keys.warning ? { warning: keys.warning } : {}) });
     }
     return c.json({ members });
@@ -73,13 +81,28 @@ membersRouter.delete("/api/members/:email", async (c) => {
   const email = normaliseEmail(decodeURIComponent(c.req.param("email")));
   if (!email) return c.json({ error: msg("Enter an email address.") }, 400);
   try {
-    let found = false;
-    const members = await updateMembers(c.env.BUCKET, (list) => { found = list.some((m) => m.email === email); return list.filter((m) => m.email !== email); }, null);
+    let found: Member | undefined;
+    const members = await updateMembers(c.env.BUCKET, (list) => { found = list.find((m) => m.email === email); return list.filter((m) => m.email !== email); }, null);
     if (!found) return c.json({ error: msg("{email} is not on the list.", { email }) }, 404);
     forgetMembers();
     console.log(JSON.stringify({ event: "member_removed" }));
+    const actor = actorOf(c.req.raw, c.get("standing")?.email);
+    await recordAudit(c.env.BUCKET, actor, { kind: "member_removed", person: email, previous: { role: found.role, mailboxes: found.accounts } });
     // N-4: the keys they made leave with them.
     const keys = await revokeKeysOf(c.env, email).catch((error: unknown) => ({ revoked: [] as string[], warning: (error as Error).message }));
+    if (keys.revoked.length) await recordAudit(c.env.BUCKET, actor, { kind: "keys_revoked", person: email, keys: keys.revoked });
     return c.json({ members, revokedKeys: keys.revoked, ...(keys.warning ? { warning: keys.warning } : {}) });
   } catch (error) { return failure(c, error); }
+});
+
+/** B-156: the audit record, newest first: changes to the list of people and what members sent. An administrator's. */
+membersRouter.get("/api/audit", async (c) => {
+  c.header("Cache-Control", "no-store");
+  const limit = Number(c.req.query("limit") ?? 50);
+  try {
+    return c.json(await readAudit(c.env.BUCKET, { limit: Number.isFinite(limit) ? limit : 50, cursor: c.req.query("cursor") || undefined }));
+  } catch (error) {
+    console.error(JSON.stringify({ event: "audit_read_failed", error: (error as Error)?.message?.slice(0, 200) }));
+    return c.json({ error: msg("The record of changes could not be read. Try again.") }, 502);
+  }
 });

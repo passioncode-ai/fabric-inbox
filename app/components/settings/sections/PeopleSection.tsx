@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic @jsxImportSource react */
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { PlusIcon } from "@phosphor-icons/react";
@@ -63,6 +63,7 @@ export default function PeopleSection({ id }: { id: string | null }) {
       <p>{t("Cloudflare Access decides who can sign in at all. This list decides what each of them reaches: an administrator manages everything, a member reads and answers only the mailboxes you give them.")}</p>
       {data?.open && <p>{t("Nobody is listed yet, so everyone who can sign in is an administrator. The first person you add makes you this server's administrator too.")}</p>}
       <button type="button" onClick={() => setAdding(true)}><PlusIcon size={16} /> {t("Add a person")}</button>
+      <AuditBlock />
     </PanelPlaceholder>
   ) : people.isPending ? <SkeletonPanel label={t("Loading…")} /> : !selected ? (
     <PanelPlaceholder>
@@ -188,5 +189,62 @@ function PersonDialog({ open, person, onClose, onDone }: { open: boolean; person
         </div>
       </form>
     </Dialog>
+  );
+}
+
+type AuditRecord = { id: string; at: string; actor: string | null } & (
+  | { kind: "member_saved"; person: string; role: Role; mailboxes: string[] | null; previous: { role: Role; mailboxes: string[] | null } | null }
+  | { kind: "member_removed"; person: string }
+  | { kind: "keys_revoked"; person: string; keys: string[] }
+  | { kind: "member_sent"; mailbox: string; to: string[]; subject: string | null });
+export const AUDIT_KEY = ["audit"];
+
+/** Who did it: a person's email, an agent's key, or the server itself (no sign-in in front of it). */
+const actorText = (actor: string | null, t: T) =>
+  !actor ? t("The server") : actor.startsWith("key:") ? t("An agent ({key})", { key: actor.slice(4) }) : actor.replace(/^owner:/, "");
+
+/** One entry of the record as a sentence; a send names its recipients and subject, never its text. */
+export function auditText(e: AuditRecord, t: T): string {
+  const who = actorText(e.actor, t);
+  if (e.kind === "member_saved") return e.previous
+    ? t("{who} changed {person}. {role}: {reach}.", { who, person: e.person, role: roleTitle(e.role, t), reach: reachText({ role: e.role, accounts: e.mailboxes }, t) })
+    : t("{who} added {person}. {role}: {reach}.", { who, person: e.person, role: roleTitle(e.role, t), reach: reachText({ role: e.role, accounts: e.mailboxes }, t) });
+  if (e.kind === "member_removed") return t("{who} removed {person}.", { who, person: e.person });
+  if (e.kind === "keys_revoked") return t.plural(e.keys.length, { one: "{person}: {n} agent key revoked", other: "{person}: {n} agent keys revoked" }, { person: e.person });
+  const mailbox = e.mailbox.replace(/^cloudflare:/, "");
+  if (!e.to.length) return t("{who} sent a message from {mailbox}", { who, mailbox });
+  return e.subject
+    ? t("{who} sent “{subject}” from {mailbox} to {recipients}", { who, subject: e.subject, mailbox, recipients: t.list(e.to) })
+    : t("{who} sent a message from {mailbox} to {recipients}", { who, mailbox, recipients: t.list(e.to) });
+}
+
+/** B-156 (SCN-081): the record of changes to the list of people and of what members sent, newest first. */
+function AuditBlock() {
+  const t = useT();
+  const audit = useInfiniteQuery({
+    queryKey: AUDIT_KEY, initialPageParam: "",
+    queryFn: ({ pageParam }) => fabric<{ entries: AuditRecord[]; cursor: string | null }>(`/api/audit?limit=20${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ""}`),
+    getNextPageParam: (last) => last.cursor ?? undefined,
+  });
+  const entries = audit.data?.pages.flatMap((p) => p.entries) ?? [];
+  return (
+    <section aria-labelledby="fi-audit-title">
+      <h3 id="fi-audit-title">{t("Recent changes")}</h3>
+      {audit.isPending ? <p role="status" className="fi-hint">{t("Loading changes…")}</p>
+        : audit.isError ? <LoadFailure what={t("Recent changes")} error={audit.error} onRetry={() => void audit.refetch()} retrying={audit.isFetching} />
+        : !entries.length ? <p className="fi-hint">{t("Nothing yet. Adding, changing or removing a person, and every message a member sends, is kept here.")}</p>
+        : (
+          <ul className="fi-facts">
+            {entries.map((e) => (
+              <li key={e.id}><strong>{t.date(e.at, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</strong> {auditText(e, t)}</li>
+            ))}
+          </ul>
+        )}
+      {audit.hasNextPage && (
+        <button type="button" className="fi-secondary" onClick={() => void audit.fetchNextPage()} disabled={audit.isFetchingNextPage}>
+          {audit.isFetchingNextPage ? t("Loading…") : t("Show older")}
+        </button>
+      )}
+    </section>
   );
 }

@@ -16,6 +16,7 @@ import { identityMayUse, MCP_PATH, type AccessClaims } from "./mcp/keys";
 import { handleUnsubscribe, UNSUBSCRIBE_PATH } from "./campaigns/unsubscribe";
 import { audienceFor, serviceAudience } from "./mcp/service-access";
 import { membersCached, MembersError, standingOf, type Standing } from "./lib/members";
+import { memberSent, recordAudit, sendRouteOf } from "./lib/audit";
 import { memberBody, memberGate } from "./lib/member-gate";
 import { inProcessApi } from "./mcp/handler";
 import { scopedApi } from "./mcp/scope";
@@ -155,9 +156,17 @@ app.use("*", async (c, next) => {
 	if (standing.role === "none")
 		return refuse(msg("{email} is not on this server's list of people. Ask its administrator to add you.", { email: standing.email }));
 	const gate = memberGate(c.req.method, path, standing.accounts);
-	if (gate === "pass") return next();
+	if (gate === "pass") {
+		// B-156: what a member sends is kept (recipients and subject, never the text), once the send was accepted.
+		const send = sendRouteOf(c.req.method, path);
+		if (!send) return next();
+		const body = await c.req.raw.clone().json().catch(() => null);
+		await next();
+		if (c.res.ok) await recordAudit(c.env.BUCKET, standing.email, memberSent(send, body, await c.res.clone().json().catch(() => null)));
+		return;
+	}
 	if (gate === "refuse") return refuse(msg("Only an administrator of this server can do that. You reach your own mailboxes."));
-	const inProcess = inProcessApi(url.origin, c.env, c.executionCtx as ExecutionContext);
+	const inProcess = inProcessApi(url.origin, c.env, c.executionCtx as ExecutionContext, standing.email);
 	if (gate === "body") {
 		// Answered here, before the same-origin boundary below, so it is held to that rule here too.
 		const origin = c.req.header("origin");

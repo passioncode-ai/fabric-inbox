@@ -481,6 +481,14 @@ const listMembers = defineTool({
   call: (_a, ctx) => get(ctx, "/api/members"),
 });
 
+const listAudit = defineTool({
+  name: "list_audit", title: "Read the record of people changes and member sends", level: "admin", readOnly: true,
+  description: "The server's audit record (B-156), newest first: each change to the list of people (member_saved with the role and mailboxes before and after, member_removed, keys_revoked) and each message a member sent (member_sent: the mailbox, recipients, subject and message id, never the text), with when and who did it (a person's email, or key:<id> for an agent through this protocol). Pass the returned cursor to read older entries.",
+  input: { limit: z.number().int().min(1).max(200).default(50).describe("Entries per page"), cursor: z.string().max(1000).optional().describe("The cursor from the previous page") },
+  routes: ["GET /api/audit"],
+  call: (a, ctx) => get(ctx, "/api/audit", { limit: a.limit, cursor: a.cursor }),
+});
+
 const checkRouting = defineTool({
   name: "check_address_routing", title: "Check an address's routing", level: "read", readOnly: true,
   description: "Asks Cloudflare whether mail for this address reaches this server (a rule here, the catch-all, a rule elsewhere, or nothing).",
@@ -2048,7 +2056,7 @@ export const TOOLS: readonly ToolDef[] = [
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,
-  getServer, listMembers, checkAddress, createAddress, createAddresses, updateAddress, setAccountAgent, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination, removeDestination,
+  getServer, listMembers, listAudit, checkAddress, createAddress, createAddresses, updateAddress, setAccountAgent, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination, removeDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, clearIncomingFailures, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,

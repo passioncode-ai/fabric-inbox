@@ -7,7 +7,8 @@ import { createMcpHandler } from "agents/mcp";
 import { api } from "../api";
 import type { Env } from "../types";
 import { principalFor, readAgentKeys, type AccessClaims, type Principal } from "./keys";
-import { ApiError, buildServer, type Api, type Ledger } from "./protocol";
+import { ApiError, buildServer, callerId, type Api, type Ledger } from "./protocol";
+import { inProcessActors } from "../lib/audit";
 import { NARROW_HEADER, expandDomains, namesDomain, narrowPrincipal, scopedApi } from "./scope";
 import { listMailboxAddresses } from "../lib/mailbox-store";
 import { TOOLS } from "./tools";
@@ -16,7 +17,7 @@ import { version } from "../../package.json";
 import { expectedAccountOrigin } from "../providers/app-origin";
 
 /** Calls the app's own routes in-process, with no Origin header (the same-origin rule does not apply). */
-export function inProcessApi(origin: string, env: Env, ctx: ExecutionContext): Api {
+export function inProcessApi(origin: string, env: Env, ctx: ExecutionContext, actor?: string): Api {
   return {
     async request(method, path, init = {}) {
       const url = new URL(path, origin);
@@ -31,11 +32,14 @@ export function inProcessApi(origin: string, env: Env, ctx: ExecutionContext): A
       // configured one, else the server's); this call comes from the server itself, after the agent
       // protocol's own checks.
       if (method !== "GET" && url.pathname.startsWith("/api/accounts/")) headers.Origin = expectedAccountOrigin(env as never, url.href);
-      const response = await api.fetch(new Request(url, {
+      const request = new Request(url, {
         method,
         headers,
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
-      }), env, ctx);
+      });
+      // B-156: the audit names the agent behind a change made through the agent protocol.
+      if (actor) inProcessActors.set(request, actor);
+      const response = await api.fetch(request, env, ctx);
       const contentType = response.headers.get("content-type") ?? "";
       // A file (an attachment route answers with Content-Disposition: attachment) is its exact bytes
       // whatever its type says: parsing a .json or decoding a .csv as text would change it.
@@ -119,7 +123,7 @@ export async function handleMcp(request: Request, env: Env, ctx: ExecutionContex
   const server = buildServer(
     { name: PROTOCOL_NAME, version, instructions: instructionsFor(principal, origin) },
     TOOLS,
-    { api: principal.accounts ? scopedApi(inProcessApi(origin, env, ctx), principal.accounts) : inProcessApi(origin, env, ctx), principal },
+    { api: principal.accounts ? scopedApi(inProcessApi(origin, env, ctx, callerId(principal)), principal.accounts) : inProcessApi(origin, env, ctx, callerId(principal)), principal },
     ledgerFor(env),
   );
   return createMcpHandler(server, { route: "/mcp" })(request, env, ctx);
