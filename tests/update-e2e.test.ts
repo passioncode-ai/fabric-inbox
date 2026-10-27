@@ -15,3 +15,16 @@ test("B-105: the update check passes on ready for this version, the install on i
   assert.deepEqual(parseUpdateArgs(["--exe", "/x.AppImage", "--to", "1.2.3"]), { exe: "/x.AppImage", to: "1.2.3", timeout: 600 });
   assert.throws(() => parseUpdateArgs(["--exe", "/x", "--to", "v1.2"]), /--to must be a version/);
 });
+
+test("B-108: --until ready checks where the readied update waits: the staging folder holds it, the roaming one nothing", async () => {
+  const { parseUpdateArgs, stagedVerdict } = await import("../scripts/update-e2e.mjs");
+  assert.deepEqual(parseUpdateArgs(["--exe", "C:/x.exe", "--to", "1.2.3", "--until", "ready", "--staged", "L", "--not-staged", "R"]),
+    { exe: "C:/x.exe", to: "1.2.3", timeout: 600, until: "ready", staged: "L", notStaged: "R" });
+  assert.throws(() => parseUpdateArgs(["--exe", "x", "--to", "1.2.3", "--until", "quit"]), /--until is ready or installed/);
+  const dirs: Record<string, string[]> = { L: ["Fabric-Inbox-1.2.3-win-x64-setup.exe"], R: [], E: [] };
+  const list = (d: string) => dirs[d] ?? [];
+  assert.deepEqual(stagedVerdict({ staged: "L", notStaged: "R" }, list), { ok: true });
+  assert.match(stagedVerdict({ staged: "E" }, list).reason, /nothing waits in E/);
+  assert.match(stagedVerdict({ notStaged: "L" }, list).reason, /L holds Fabric-Inbox-1\.2\.3-win-x64-setup\.exe/);
+  assert.deepEqual(stagedVerdict({}, list), { ok: true }, "nothing asked, nothing checked");
+});

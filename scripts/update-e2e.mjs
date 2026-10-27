@@ -5,9 +5,14 @@
 // update installed (`update_install` installed, running the new version). The AppImage's sandbox
 // warning (B-99) is a modal no CI session answers, so the profile starts with it dismissed.
 //
+// B-108: on Windows the installed app cannot be quit the way a person quits it (it stays in the tray), so
+// `--until ready` ends there and checks where the verified installer waits: `--staged <dir>` must hold a file,
+// `--not-staged <dir>` must hold none (the roaming profile earlier versions used).
+//
 //   node scripts/update-e2e.mjs --exe <old.AppImage> --to <new version> [--timeout 600]
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+//   node scripts/update-e2e.mjs --exe <installed.exe> --to <new version> --until ready --staged <dir> --not-staged <dir>
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,8 +23,12 @@ export function parseUpdateArgs(argv) {
     if (argv[i] === '--exe') out.exe = argv[++i];
     else if (argv[i] === '--to') out.to = argv[++i];
     else if (argv[i] === '--timeout') out.timeout = Number(argv[++i]);
+    else if (argv[i] === '--until') out.until = argv[++i];
+    else if (argv[i] === '--staged') out.staged = argv[++i];
+    else if (argv[i] === '--not-staged') out.notStaged = argv[++i];
     else throw new Error(`Unknown option ${argv[i]}`);
   }
+  if (out.until !== undefined && !['ready', 'installed'].includes(out.until)) throw new Error('--until is ready or installed');
   if (!out.exe) throw new Error('--exe is required');
   if (!/^\d+\.\d+\.\d+$/.test(out.to)) throw new Error('--to must be a version such as 1.2.3');
   if (!Number.isFinite(out.timeout) || out.timeout <= 0) throw new Error('--timeout must be seconds');
@@ -46,6 +55,18 @@ export function readyVerdict(events, to) {
       return { ok: false, reason: `update_check ${e.outcome} ${e.reason || ''}`.trim() };
   }
   return null;
+}
+
+/** B-108: the files in a folder, none when it is missing. */
+export function filesIn(dir) {
+  return existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name) : [];
+}
+
+/** B-108: where a readied update waits: `staged` holds a file, `notStaged` none. */
+export function stagedVerdict({ staged, notStaged }, list = filesIn) {
+  if (staged && !list(staged).length) return { ok: false, reason: `nothing waits in ${staged}` };
+  if (notStaged && list(notStaged).length) return { ok: false, reason: `${notStaged} holds ${list(notStaged).join(', ')}` };
+  return { ok: true };
 }
 
 /** Second launch: the update the first one readied is installed and running. */
@@ -81,6 +102,11 @@ async function until(run, verdictFn, seconds) {
 }
 
 async function stop(run, seconds = 60) {
+  // Windows has no SIGTERM for another process: end the app and its helpers (B-108 never needs a graceful quit).
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/PID', String(run.child.pid), '/T', '/F'], { stdio: 'ignore' });
+    return Promise.race([run.exited, new Promise((r) => setTimeout(() => r(null), seconds * 1000))]);
+  }
   try { process.kill(run.child.pid, 'SIGTERM'); } catch { /* gone */ }
   const ended = await Promise.race([run.exited, new Promise((r) => setTimeout(() => r(null), seconds * 1000))]);
   if (!ended) try { process.kill(-run.child.pid, 'SIGKILL'); } catch { /* gone */ }
@@ -88,15 +114,18 @@ async function stop(run, seconds = 60) {
   return ended;
 }
 
-export async function updateEndToEnd({ exe, to, timeout }) {
+export async function updateEndToEnd({ exe, to, timeout, until: last = 'installed', staged, notStaged }) {
   const profile = mkdtempSync(path.join(os.tmpdir(), 'fabric-update-'));
   writeFileSync(path.join(profile, 'sandbox-warning'), 'off\n'); // desktop/policy.cjs SANDBOX_WARNING_FILE
   const tail = (run) => run.lines.filter((l) => l.includes('"event"')).slice(-20);
   try {
     const first = launch(exe, profile);
     const ready = await until(first, (events) => readyVerdict(events, to), timeout);
+    const where = ready.ok ? stagedVerdict({ staged, notStaged }) : null;
     const firstEnd = await stop(first);
     if (!ready.ok) return { ok: false, stage: 'ready', reason: ready.reason, tail: tail(first) };
+    if (!where.ok) return { ok: false, stage: 'staged', reason: where.reason, tail: tail(first) };
+    if (last === 'ready') return { ok: true, events: eventsOf(first.lines).map((e) => e.event), staged: staged ? filesIn(staged) : null };
     if (!firstEnd) return { ok: false, stage: 'quit', reason: 'the app did not quit on SIGTERM within 60 s', tail: tail(first) };
     const second = launch(exe, profile);
     const installed = await until(second, (events) => installedVerdict(events, to), 120);
@@ -110,6 +139,6 @@ export async function updateEndToEnd({ exe, to, timeout }) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const result = await updateEndToEnd(parseUpdateArgs(process.argv.slice(2)));
-  console.log(JSON.stringify({ ok: result.ok, stage: result.stage ?? null, reason: result.reason ?? null, events: result.events ?? null }, null, 2));
+  console.log(JSON.stringify({ ok: result.ok, stage: result.stage ?? null, reason: result.reason ?? null, events: result.events ?? null, staged: result.staged ?? null }, null, 2));
   if (!result.ok) { console.error((result.tail || []).join('\n')); process.exit(1); }
 }
