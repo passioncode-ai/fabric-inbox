@@ -99,6 +99,10 @@ const BODIES: Record<string, string[]> = {
   "POST /api/transfer/:email/rows": ["table", "rows"],
   "PUT /api/transfer/:email/file": ["key", "data", "contentType"],
   "POST /api/transfer/:email/check": ["emails", "attachments"],
+  "POST /api/transfer/:email/rules": ["rules"], // step 3b
+  "POST /api/transfer/:email/collection": ["name", "description"],
+  "POST /api/transfer/:email/documents": ["collection", "documents"],
+  "POST /api/transfer/:email/agent": ["agent", "collections"],
   "POST /api/accounts/:accountId/messages/:messageId/trashed": ["trashed"],
   "POST /api/automation/:account/dry-run": ["emailId", "rule"], // workers/automation/index.ts
   "POST /api/campaigns": ["campaign"], // workers/routes/campaigns.ts (B-181)
