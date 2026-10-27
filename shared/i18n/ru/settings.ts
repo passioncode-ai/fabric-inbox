@@ -420,4 +420,11 @@ export const SETTINGS: Readonly<Record<string, string>> = {
 	"Your agent prepares a campaign (save_campaign), adds the people and checks it with you. Here you see what it did and decide whether it runs, waits or ends.": "Кампанию готовит агент (save_campaign): добавляет получателей и согласует её с вами. Здесь видно, что она сделала, и вы решаете, идёт она, ждёт или закончена.",
 	// B-176 (ReplyStatusSettings.tsx)
 	"account with a reply agent": "аккаунт с агентом",
+	// B-184 O-5 (DomainsSection.tsx: no domain on Cloudflare)
+	"Your Cloudflare account has no domain yet. Add your domain in Cloudflare, then check again: it is listed here, and you can receive its mail here.": "В вашем аккаунте Cloudflare пока нет доменов. Добавьте домен в Cloudflare и проверьте ещё раз: он появится здесь, и его почту можно будет получать здесь.",
+	"{n} Cloudflare accounts are hidden, so their domains are not listed.": "{n} аккаунт Cloudflare скрыт, поэтому его домены не показаны.|{n} аккаунта Cloudflare скрыты, поэтому их домены не показаны.|{n} аккаунтов Cloudflare скрыто, поэтому их домены не показаны.",
+	"Open Accounts": "Открыть «Аккаунты»",
+	"A token limited to some domains lists only those.": "Токен с доступом только к части доменов показывает только их.",
+	"Open {page} in Cloudflare ↗": "Открыть «{page}» в Cloudflare ↗",
+	"A domain you add to Cloudflare is listed here; then its mail can be received here.": "Домен, добавленный в Cloudflare, появится здесь, и его почту можно будет получать здесь.",
 };

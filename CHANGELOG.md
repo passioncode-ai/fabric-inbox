@@ -5,6 +5,18 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.55.0 (2026-10-27)
+
+- **Not spam on a Gmail, Outlook or IMAP account works like on your own domain.** A message you take out of Spam
+  within three days of its arrival now reaches its rules, categories, safety check and reply agent, once. Before, it
+  only came back to the inbox. No discard rule takes it on the way, and mail that already reached them is not sent
+  to them again.
+- **Settings → Domains with no domain yet says what to do.** When Cloudflare is connected but lists no domain, the
+  list now says why that can be (a hidden account, a token limited to some domains, or no domain yet). It links
+  Cloudflare's own Add a domain page and lets you check again.
+- **Updating your server no longer asks for your email.** The server keeps the sign-in it has, so the form skips the
+  email it would not use. It asks again only if that server has no sign-in of its own.
+
 ## 0.54.0 (2026-10-27)
 
 - **Reply status settings list your accounts with an agent.** In Settings → Addresses, a Gmail, Outlook or IMAP

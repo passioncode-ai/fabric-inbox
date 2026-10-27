@@ -167,6 +167,8 @@ function phase(name) {
 function cfField(id, show) { $(id).hidden = !show; }
 function applyDetails(details) {
   $('#cf-existing').hidden = !details?.existing;
+  // O-11 (B-184): an update keeps the server's sign-in as it is, so the email it would ignore is not asked.
+  cfField('#cf-email-field', !details?.existing);
   cfField('#cf-subdomain-field', !details?.subdomain);
   cfField('#cf-team-field', !details?.team);
 }
@@ -219,7 +221,7 @@ $('#cf-check').addEventListener('click', async () => {
     $('#cf-account-field').hidden = r.accounts.length < 2;
     applyDetails(r.details);
     if (!r.details) { const d = await cf.inspect(select.value); if (d.ok) applyDetails(d.details); else { fail($('#cf-token-error'), d.error); return; } }
-    phase('details'); $('#cf-email').focus();
+    phase('details'); ($('#cf-email-field').hidden ? $('#cf-deploy') : $('#cf-email')).focus();
   } catch { fail($('#cf-token-error'), t('The token could not be checked. Try again.')); }
   finally { button.disabled = false; button.textContent = t('Continue'); }
 });
@@ -241,7 +243,7 @@ async function deploy() {
   const input = { accountId: $('#cf-account').value, email: $('#cf-email').value.trim(),
     subdomain: $('#cf-subdomain').value.trim().toLowerCase(), team: $('#cf-team').value.trim().toLowerCase(),
     gmail: $('#cf-gmail').checked };
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) { fail($('#cf-details-error'), t('Enter the email address you will sign in with.')); $('#cf-email').focus(); return; }
+  if (!$('#cf-email-field').hidden && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) { fail($('#cf-details-error'), t('Enter the email address you will sign in with.')); $('#cf-email').focus(); return; }
   if (!$('#cf-subdomain-field').hidden && !NAME.test(input.subdomain)) { fail($('#cf-details-error'), t('Choose a name for your web address: letters, digits and dashes.')); $('#cf-subdomain').focus(); return; }
   if (!$('#cf-team-field').hidden && !NAME.test(input.team)) { fail($('#cf-details-error'), t('Choose a name for your sign-in page: letters, digits and dashes.')); $('#cf-team').focus(); return; }
   stepState = {}; renderSteps(stepState);
@@ -267,6 +269,8 @@ async function deploy() {
       renderSteps(stepState);
       fail($('#cf-progress-error'), t('{error} Continue runs the remaining steps; what is done stays done.', { error: r.error }));
       $('#cf-retry').hidden = false; $('#cf-back-details').hidden = false;
+      // A server found without a sign-in of its own needs the email after all: Back shows the field.
+      if (String(r.error || '').includes(t('Enter the email address you will sign in with.'))) cfField('#cf-email-field', true);
     }
   } catch { fail($('#cf-progress-error'), t('The server could not be created. Continue to try again.')); $('#cf-retry').hidden = false; }
 }
