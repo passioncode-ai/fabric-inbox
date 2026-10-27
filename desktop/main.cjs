@@ -845,6 +845,7 @@ async function handleConnectLink(url) {
     },
     identify: connector.listenerWith(execFileAsync),
     mint: ses ? connector.mintWith(ses, config.origin) : async () => ({ ok: false, error: t('No server') }),
+    signedIn: ses ? connector.signedInWith(ses, config.origin) : undefined,
     revoke: ses ? connector.revokeWith(ses, config.origin) : async () => false,
     deliver: connector.deliverTo(request.callback),
     signIn: async () => { loadMail(); },

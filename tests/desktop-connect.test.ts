@@ -116,6 +116,35 @@ test("a lapsed sign-in opens the mail window and the hub hears why, with no key 
   assert.deepEqual(seen.delivered, [{ state: STATE, outcome: "failed", error: "sign_in_required" }]);
 });
 
+test("O-8 (B-184): a lapsed sign-in found before the prompt asks nothing, opens sign-in and tells the hub", async () => {
+  const { seen, deps } = world();
+  const out = await connect({ request: request(), config, ...deps, signedIn: async () => false });
+  assert.equal(out.reason, "sign_in_required");
+  assert.equal(seen.prompts.length, 0, "the person is not asked to Allow what would fail");
+  assert.deepEqual(seen.minted, []);
+  assert.equal(seen.signIn, 1);
+  assert.deepEqual(seen.delivered, [{ state: STATE, outcome: "failed", error: "sign_in_required" }]);
+  // Unknown (the network) leaves the exchange as it was.
+  const second = world();
+  assert.equal((await connect({ request: request(), config, ...second.deps, signedIn: async () => null })).outcome, "connected");
+});
+
+test("O-8: the sign-in probe reads the owner's session: JSON is signed in, a redirect or a page is not, a failure is unknown", async () => {
+  const { signedInWith } = await import("../desktop/connect.cjs");
+  const ses = (status: number, type: string, fail = false) => ({ fetch: async (url: string, init: Record<string, unknown>) => {
+    assert.equal(url, "https://inbox.example.com/api/agent-keys");
+    assert.equal(init.method, "GET");
+    assert.equal(init.redirect, "manual");
+    if (fail) throw new Error("offline");
+    return new Response(status === 302 ? null : "{}", { status, headers: { "content-type": type } });
+  } });
+  assert.equal(await signedInWith(ses(200, "application/json"), "https://inbox.example.com")(), true);
+  assert.equal(await signedInWith(ses(302, "text/html"), "https://inbox.example.com")(), false);
+  assert.equal(await signedInWith(ses(200, "text/html"), "https://inbox.example.com")(), false);
+  assert.equal(await signedInWith(ses(500, "application/json"), "https://inbox.example.com")(), null);
+  assert.equal(await signedInWith(ses(200, "application/json", true), "https://inbox.example.com")(), null);
+});
+
 test("with no server set up yet, nothing is asked and the hub hears why", async () => {
   const { seen, deps } = world();
   const out = await connect({ request: request(), config: null, ...deps });
