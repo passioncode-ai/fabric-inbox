@@ -171,6 +171,8 @@ function applyDetails(details) {
   cfField('#cf-email-field', !details?.existing);
   cfField('#cf-subdomain-field', !details?.subdomain);
   cfField('#cf-team-field', !details?.team);
+  // B-193: a new server's storage is made where the person chooses; an existing one keeps its own.
+  cfField('#cf-storage-field', !details?.existing);
 }
 function renderSteps(state) {
   $('#cf-steps').replaceChildren(...CF_STEPS.map(([id, label]) => {
@@ -242,7 +244,7 @@ async function deploy() {
   fail($('#cf-details-error'), ''); fail($('#cf-progress-error'), '');
   const input = { accountId: $('#cf-account').value, email: $('#cf-email').value.trim(),
     subdomain: $('#cf-subdomain').value.trim().toLowerCase(), team: $('#cf-team').value.trim().toLowerCase(),
-    gmail: $('#cf-gmail').checked };
+    gmail: $('#cf-gmail').checked, jurisdiction: $('#cf-storage-field').hidden ? '' : $('#cf-storage').value };
   if (!$('#cf-email-field').hidden && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) { fail($('#cf-details-error'), t('Enter the email address you will sign in with.')); $('#cf-email').focus(); return; }
   if (!$('#cf-subdomain-field').hidden && !NAME.test(input.subdomain)) { fail($('#cf-details-error'), t('Choose a name for your web address: letters, digits and dashes.')); $('#cf-subdomain').focus(); return; }
   if (!$('#cf-team-field').hidden && !NAME.test(input.team)) { fail($('#cf-details-error'), t('Choose a name for your sign-in page: letters, digits and dashes.')); $('#cf-team').focus(); return; }

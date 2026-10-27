@@ -86,6 +86,14 @@
         <input id="cf-team" autocomplete="off" spellcheck="false" aria-describedby="cf-team-help">
         <p id="cf-team-help" class="help" data-i18n>You will sign in at <code><span id="cf-team-preview">name</span>.cloudflareaccess.com</code>.</p>
       </div>
+      <div id="cf-storage-field" hidden>
+        <label for="cf-storage" data-i18n>Where your mail is stored</label>
+        <select id="cf-storage" aria-describedby="cf-storage-help">
+          <option value="" data-i18n>Wherever Cloudflare chooses</option>
+          <option value="eu" data-i18n>In the European Union</option>
+        </select>
+        <p id="cf-storage-help" class="help" data-i18n>Chosen once: the storage keeps the place it is made in.</p>
+      </div>
       <label class="check" for="cf-gmail"><input id="cf-gmail" type="checkbox" aria-describedby="cf-gmail-help"> <span data-i18n>Then set up Gmail (optional)</span></label>
       <p id="cf-gmail-help" class="help" data-i18n>After you sign in, the Gmail setup opens: a Google Cloud app of your own, about ten minutes once. Leave it off to start with your domains; Gmail can be set up any time in Settings → Accounts.</p>
       <p id="cf-details-error" class="error" role="alert" hidden></p>

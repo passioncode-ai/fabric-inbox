@@ -1154,7 +1154,7 @@ function installIPC() {
     const started = Date.now();
     try {
       const result = await deployer.deploy({ token: cloudflareToken, accountId, email: input.email, subdomain: input.subdomain, team: input.team,
-        bundleDir: serverBundleDir, onStep: step => { if (!event.sender.isDestroyed()) event.sender.send('fabric:cf-step', { ...step, label: t.text(step.label), detail: t.text(step.detail) }); } });
+        jurisdiction: deployer.formJurisdiction(input.jurisdiction), bundleDir: serverBundleDir, onStep: step => { if (!event.sender.isDestroyed()) event.sender.send('fabric:cf-step', { ...step, label: t.text(step.label), detail: t.text(step.detail) }); } });
       logEvent({ event: 'server_deploy', outcome: 'ok', ms: Date.now() - started, steps: result.steps.map(s => `${s.id}:${s.outcome}`) });
       cloudflareToken = null;
       // O-1: a server reached at its own domain whose address could not be read returns none; the person names it

@@ -407,6 +407,11 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Stay": "Остаться",
 	"Leave this page?": "Уйти со страницы?",
 	"Changes you made may not be saved.": "Внесённые изменения могут не сохраниться.",
+	// B-193 (SCN-030): where a new server's mail is stored.
+	"Where your mail is stored": "Где хранить почту",
+	"Wherever Cloudflare chooses": "Где выберет Cloudflare",
+	"In the European Union": "В Европейском союзе",
+	"Chosen once: the storage keeps the place it is made in.": "Выбирается один раз: хранилище остаётся там, где его создали.",
 	// B-158 M1 step 3d (SCN-094): moving an address between two servers.
 	"Move an Address": "Перенос адреса",
 	"Move an Address to Another Server…": "Перенести адрес на другой сервер…",
