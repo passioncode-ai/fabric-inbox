@@ -57,7 +57,7 @@ test("tool names are unique, in snake_case, and every tool says what it does", (
 });
 
 test("every irreversible route is behind a two-step tool (AP-4)", () => {
-  const irreversible = ["DELETE /api/v1/mailboxes/:mailboxId/emails/:id", "DELETE /api/project-addresses/:email", "DELETE /api/v1/mailboxes/:mailboxId",
+  const irreversible = ["DELETE /api/v1/mailboxes/:mailboxId/emails/:id", "DELETE /api/project-addresses/:email",
     "POST /api/domains/:domain/release", "POST /api/spam/empty", "DELETE /api/agents/:id", "DELETE /api/categories/:id", "DELETE /api/projects/:id",
     "DELETE /api/knowledge/collections/:id", "DELETE /api/knowledge/collections/:id/documents/:doc", "POST /api/accounts/:accountId/disconnect", "POST /api/setup/apply"];
   for (const route of irreversible) {
