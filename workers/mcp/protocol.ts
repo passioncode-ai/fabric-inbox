@@ -43,6 +43,8 @@ export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   sends?: boolean;
   /** B-178: its confirmation always waits for the owner's approval (B-38), whatever the key's setting. */
   ownerApproval?: boolean;
+  /** B-154 (DEC-0121 AP-4): the person's steps this tool stands for (it refuses with human-step-required), for the actions declaration. */
+  humanSteps?: readonly HumanStep[];
   /** Changes nothing. Tools that change something are journalled. */
   readOnly?: boolean;
   /** Only adds (an address, a sent message): told to clients as not destructive. Every other changing tool is. */

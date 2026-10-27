@@ -78,9 +78,16 @@ Status: steps 1 and 2 in 0.38.0 (2026-10-26). Row: [B-154](../../evidence/backlo
 - Kept out, as decided: `PATCH /api/agent-keys/:id` (switching the owner's approval off), the approvals routes, and
   `POST /api/server/self-update` (it takes the server bundle the app carries; an agent never uploads server code).
 
+## Step 4 receipt (0.52.0)
+
+- `workers/mcp/actions.ts` (`serviceActions`) builds the declaration from `TOOLS`: 81 changing tools as actions, 5
+  `relayed` (the four of step 3 and `decide_held_message`), `human` actions for `connect_account` (consent, and
+  `connect_account.secret`), `set_account_password` and `set_provider_setup` (secret); reads are not actions.
+- The well-known document carries it under the actions extension key; `tests/fabric-service.test.ts` validates it
+  against `service-actions-extension.schema.json` and checks FAC-SEM-142 (ids once, humanStep exactly when human,
+  every changing tool declared, relayed exactly when the owner always approves).
+
 ## Exact next step
 
-Step 4: the actions declaration in the well-known document (`https://fabric.passioncode.ai/agent-contract/extensions/actions/0.1`),
-generated from the tool list with each action's gate (`relayed` for the four tools above and `decide_held_message`,
-`human` for the human-step tools, `none` otherwise), checked against `service-actions-extension.schema.json` and
-FAC-SEM-142 in a test.
+B-154 is done for this server. Left by the row: move the contract pin once the adapter (CT-124) and the hub (CT-125)
+land, and tell the contract's owner on the board that answering approvals stays off the agent surface by design.

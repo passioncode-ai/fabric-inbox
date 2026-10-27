@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.52.0 (2026-10-27)
+
+- **The server tells Fabric which actions an agent can take for you, and who decides each one.** Every action you
+  can take in the app is listed with the agent tool that takes it, and marked as yours to approve or as a step
+  only you can take, like signing in.
+
 ## 0.51.0 (2026-10-27)
 
 - **Your agent can manage people and agent keys, with your approval.** It can add, change or remove a person on a

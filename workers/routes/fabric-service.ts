@@ -1,4 +1,6 @@
 import { Hono, type Context } from "hono";
+import { ACTIONS_EXTENSION, serviceActions } from "../mcp/actions";
+import { TOOLS } from "../mcp/tools";
 import { version } from "../../package.json";
 import type { Env } from "../types";
 import { BUILD_ID, SOURCE } from "../../shared/build";
@@ -132,7 +134,7 @@ export async function wellKnownDocument(env: Env): Promise<Record<string, unknow
       mcp: { path: "/mcp", transport: "streamable-http", auth: "own" },
     },
     update: { available: null },
-    extensions: { [RUNNER_EXTENSION]: runnerOf(env) },
+    extensions: { [RUNNER_EXTENSION]: runnerOf(env), [ACTIONS_EXTENSION]: { actions: serviceActions(TOOLS) } },
   };
 }
 

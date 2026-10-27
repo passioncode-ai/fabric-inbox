@@ -1770,7 +1770,7 @@ const settingsProvider = (provider: string) => (provider === "outlook" ? "micros
 // button and refuses with human-step-required and the direct link; the person's secret or consent
 // never passes through an agent.
 const connectAccount = defineTool({
-  name: "connect_account", title: "Connect an account (the person's step)", level: "admin", readOnly: true,
+  name: "connect_account", title: "Connect an account (the person's step)", level: "admin", readOnly: true, humanSteps: ["consent", "secret"],
   description: "Stands for the Connect account button. Connecting is the person's own step, so this never connects anything: it answers the refusal human-step-required with data.humanStep (consent: the person signs in with Google or Microsoft and allows access; secret: the person types an IMAP app password, a Cloudflare token, or the owner first sets up Gmail or Outlook on this server) and data.url, the exact place to do it. Give the person that link; list_accounts shows the account once they are done.",
   input: { provider: z.enum(["gmail", "outlook", "imap", "cloudflare"]).describe("Which kind of account") },
   routes: ["GET /api/accounts"],
@@ -1789,7 +1789,7 @@ const connectAccount = defineTool({
 });
 
 const setAccountPassword = defineTool({
-  name: "set_account_password", title: "Enter a new app password (the person's step)", level: "admin", readOnly: true,
+  name: "set_account_password", title: "Enter a new app password (the person's step)", level: "admin", readOnly: true, humanSteps: ["secret"],
   description: "Stands for Enter a new app password on an IMAP account that needs one (status reconnect_required in list_mail_providers). The password is the person's secret, so this never takes it: it answers the refusal human-step-required with data.humanStep secret and data.url, the account's own page in Settings, where the person types it.",
   input: { accountId },
   routes: ["GET /api/accounts"],
@@ -1801,7 +1801,7 @@ const setAccountPassword = defineTool({
 });
 
 const setProviderSetup = defineTool({
-  name: "set_provider_setup", title: "Save the Gmail or Outlook setup (the owner's step)", level: "admin", readOnly: true,
+  name: "set_provider_setup", title: "Save the Gmail or Outlook setup (the owner's step)", level: "admin", readOnly: true, humanSteps: ["secret"],
   description: "Stands for saving the Gmail or Outlook setup of this server. Its client secret is the owner's secret, so this never takes it: it answers the refusal human-step-required with data.humanStep secret and data.url, the setup's place in Settings. gmail_setup_status and microsoft_setup_status say what is missing and the values to enter first.",
   input: { provider: z.enum(["gmail", "outlook"]) },
   routes: ["GET /api/accounts"],
