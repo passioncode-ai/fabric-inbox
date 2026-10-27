@@ -237,7 +237,13 @@ mailbox from one to the other with an `admin` key on each:
    documents: `export_mailbox` action `document` for each, and `import_mailbox` action `documents` with up to 100 at a
    time into that id; last, `import_mailbox` action `agent` with setup's `agent` and `collections` mapping the sending
    server's collection ids to the receiving one's. The agent is not assigned to the address there: that waits until
-   the address's mail moves. Category labels are not carried yet.
+   the address's mail moves.
+6. Its labels: `export_mailbox` action `labels` with no `labelTable` gives the `categories` its labels name; then for
+   each `labelTable` value (verdicts, spam_checks, safety) its pages (pass `next` back as `after`), each written with
+   `import_mailbox` action `labels` with the page's `rows` and those `categories`. A category label is kept only when
+   the receiving server has a category with the same id, description and conditions (it is filed under that
+   server's version); the rest come back as `skipped`. Make such a category there first (`save_category`) to keep
+   its labels.
 
 Mail is still delivered to the sending server, and nothing there is deleted: routing the address to the new
 server is a separate step, not built yet. Repeating any step is safe (rows are brought up to date, a file of the

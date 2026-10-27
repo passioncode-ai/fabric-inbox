@@ -236,3 +236,38 @@ transferRouter.post("/api/transfer/:email/agent", async (c) => {
     return c.json({ error: msg("Agents are unavailable right now") }, 503);
   }
 });
+
+// Step 3b part 2: the mailbox's category labels, spam checks and safety checks (CategoriesDO rows of the account
+// `cloudflare:<address>`, the same id on both servers).
+const LABEL_TABLES = ["verdicts", "spam_checks", "safety"] as const;
+const categories = (env: Env) => env.CATEGORIES.getByName("workspace");
+const labelsAccount = (email: string) => `cloudflare:${email}`;
+
+/** The sending side: without `table`, the categories its labels name; with one, a page of that table. */
+transferRouter.get("/api/transfer/:email/labels", async (c) => {
+  const email = addressOf(c);
+  if (!valid(email) || !(await exists(c.env, email))) return nothing(c, email);
+  const table = c.req.query("table");
+  if (!table) return c.json({ categories: await categories(c.env).labelCategories(labelsAccount(email)), tables: LABEL_TABLES });
+  if (!(LABEL_TABLES as readonly string[]).includes(table)) return c.json({ error: msg("Choose a table: {tables}", { tables: LABEL_TABLES.join(", ") }) }, 400);
+  const after = Math.max(0, Number(c.req.query("after") ?? 0) || 0);
+  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 500) || 500, 1), 500);
+  return c.json({ table, ...(await categories(c.env).exportLabels(labelsAccount(email), table, after, limit)) });
+});
+
+/** The receiving side: one page of a labels table, with the sending server's categories to match against. */
+transferRouter.post("/api/transfer/:email/labels", async (c) => {
+  const email = addressOf(c);
+  if (!valid(email) || !(await exists(c.env, email))) return nothing(c, email);
+  const body = await c.req.json<{ table?: unknown; rows?: unknown; categories?: unknown }>().catch(() => ({}) as { table?: unknown; rows?: unknown; categories?: unknown });
+  if (typeof body.table !== "string" || !(LABEL_TABLES as readonly string[]).includes(body.table)) return c.json({ error: msg("Choose a table: {tables}", { tables: LABEL_TABLES.join(", ") }) }, 400);
+  const plain = (row: unknown) => !!row && typeof row === "object" && !Array.isArray(row)
+    && Object.values(row as Record<string, unknown>).every((v) => v === null || typeof v === "string" || typeof v === "number");
+  if (!Array.isArray(body.rows) || body.rows.length > 500 || !body.rows.every(plain)) return c.json({ error: msg("Send the rows as export_mailbox gave them") }, 400);
+  const sources = (Array.isArray(body.categories) ? body.categories : []).flatMap((x) => {
+    const v = x as { id?: unknown; version?: unknown; description?: unknown; conditions?: unknown };
+    return typeof v?.id === "string" && typeof v.version === "number" ? [{ id: v.id, version: v.version, description: String(v.description ?? ""), conditions: v.conditions ?? {} }] : [];
+  });
+  return c.json({ table: body.table, received: body.rows.length,
+    ...(await categories(c.env).importLabels(labelsAccount(email), body.table, body.rows as Record<string, string | number | null>[], sources)) });
+});

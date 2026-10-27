@@ -96,6 +96,13 @@ export function parseAccountFileKey(key: string): { accountId: string; messageId
 import { readFiles, type MailFile, type ToText } from "../safety/files";
 export { safetyOn };
 type Row = Record<string, string | number | null>;
+
+/** The tables of an account's labels a mailbox's move carries, with their columns (CATEGORIES_STEPS). */
+const LABEL_COLUMNS: Record<string, string[]> = {
+  verdicts: ["category_id", "version", "account_id", "message_id", "matched", "reason", "source", "timestamp", "subject", "sender", "classified_at"],
+  spam_checks: ["account_id", "message_id", "verdict", "reason", "checked_at"],
+  safety: ["account_id", "message_id", "state", "findings", "review", "reason", "checked_at", "decided_by", "decided_at", "timestamp", "subject", "sender"],
+};
 const day = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
 const nextDay = (t = Date.now()) => Date.parse(day(t) + "T00:00:00Z") + 86_400_000 + 5 * 60_000;
 /** C-5: the first links of an HTML body, which stripping its tags drops; the model reads where a message points. */
@@ -857,6 +864,61 @@ export class CategoriesDO extends DurableObject<Env> {
       }
     });
     return moved;
+  }
+
+  /**
+   * B-158 M1 step 3b part 2: an account's labels read out to another server, page by page (rowid order). The
+   * categories its verdicts name come with the first call, so the receiving server can tell whether its own
+   * category of that id selects the same mail. Work still queued is not carried: the receiving server classifies
+   * what arrives there.
+   */
+  async exportLabels(accountId: string, table: string, after: number, limit: number): Promise<{ rows: Row[]; next: number | null }> {
+    const columns = LABEL_COLUMNS[table];
+    if (!columns) throw new CategoryError(msg("Choose a table: {tables}", { tables: Object.keys(LABEL_COLUMNS).join(", ") }), "invalid");
+    const rows = this.sql.exec(`SELECT rowid AS r, ${columns.join(", ")} FROM ${table} WHERE account_id = ? AND rowid > ? ORDER BY rowid LIMIT ?`,
+      accountId, after, limit + 1).toArray() as Row[];
+    const page = rows.slice(0, limit);
+    return { rows: page.map(({ r: _r, account_id: _a, ...row }) => row), next: rows.length > limit ? Number(page[page.length - 1].r) : null };
+  }
+
+  async labelCategories(accountId: string): Promise<{ id: string; version: number; name: string; description: string; conditions: unknown }[]> {
+    const ids = new Set((this.sql.exec("SELECT DISTINCT category_id FROM verdicts WHERE account_id = ?", accountId).toArray() as Row[]).map((r) => String(r.category_id)));
+    return (await this.categories()).filter((c) => ids.has(c.id))
+      .map((c) => ({ id: c.id, version: c.version, name: c.name, description: c.description, conditions: c.conditions }));
+  }
+
+  /**
+   * The receiving side. A verdict is kept only for a category here with the same id that selects the same mail (its
+   * description and conditions), filed under this server's version of it; the others are skipped, since a verdict
+   * counts only for its category's version. A row already here is kept, so a repeat changes nothing.
+   */
+  async importLabels(accountId: string, table: string, rows: Row[], sources: { id: string; version: number; description: string; conditions: unknown }[]):
+    Promise<{ written: number; skipped: number }> {
+    const columns = LABEL_COLUMNS[table];
+    if (!columns) throw new CategoryError(msg("Choose a table: {tables}", { tables: Object.keys(LABEL_COLUMNS).join(", ") }), "invalid");
+    const here = new Map((await this.categories()).map((c) => [c.id, c]));
+    const versions = new Map<string, Map<number, number>>();
+    for (const s of sources) {
+      const c = here.get(s.id);
+      if (!c || c.description.trim() !== String(s.description ?? "").trim() || JSON.stringify(c.conditions) !== JSON.stringify(s.conditions)) continue;
+      versions.set(s.id, (versions.get(s.id) ?? new Map()).set(Number(s.version), c.version));
+    }
+    let written = 0, skipped = 0;
+    this.ctx.storage.transactionSync(() => {
+      for (const row of rows.slice(0, 500)) {
+        const values: Row = { ...row, account_id: accountId };
+        if (table === "verdicts") {
+          const version = versions.get(String(row.category_id))?.get(Number(row.version));
+          if (version === undefined) { skipped++; continue; }
+          values.version = version;
+        }
+        const list = columns.map((c) => values[c] ?? null);
+        this.sql.exec(`INSERT OR IGNORE INTO ${table} (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`, ...list);
+        // rowsWritten also counts index entries; changes() is the rows this insert added.
+        written += Number((this.sql.exec("SELECT changes() AS n").one() as Row).n);
+      }
+    });
+    return { written, skipped };
   }
 
   async restore(item: { accountIds: string[]; messageId: string; newMessageId?: string; timestamp?: number; subject?: string; sender?: string }): Promise<number> {
