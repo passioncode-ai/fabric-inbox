@@ -92,6 +92,7 @@
 | SCN-088 | A message with a phishing link or a dangerous file is marked and kept from agents | Find and handle a conversation | P-01 | ST-002, FLW-02 | draft | — |
 | SCN-089 | Prepare an outreach campaign with my agent | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | tests/campaigns-workerd.test.ts |
 | SCN-090 | My agent sends the campaign and stops for whoever answers | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | tests/campaigns-sending-workerd.test.ts |
+| SCN-091 | Watch, start and stop my campaigns in the app | Put an agent on a project address | P-01 | ST-008, FLW-08, SCR-18 | draft | tests/campaigns-section.test.ts |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1856,4 +1857,26 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** `tests/campaign.test.ts` (the ramp, the window, each step as sent, what an arriving message is), `tests/campaigns-sending-workerd.test.ts` (the loop over a fake account: one send per wake and the gap, the stop line and List-Unsubscribe, a reply stopping the company, unsubscribe, an auto-reply, the follow-up in the thread, the report; bounces pausing, stop).
 - **Product:** unobserved
 - **Today:** Built 2026-10-27 (B-181 step 2, 0.45.0). One-click unsubscribe over HTTPS is not offered yet: the stop is a reply or the `mailto:` List-Unsubscribe (the server is behind Access; a public path for it is a later row).
+
+### SCN-091: Watch, start and stop my campaigns in the app
+- **Persona:** P-01
+- **Feature:** Put an agent on a project address
+- **Traces:** ST-008, FLW-08, SCR-18; B-181 step 3 ([the plan](../app-store/tasks/2026-10-27-outreach.md)); follows SCN-089 and SCN-090
+- **Entry point:** Settings → Campaigns
+- **Preconditions:** An administrator of the server; a campaign my agent prepared (SCN-089), or none yet.
+- **Steps:**
+  1. Open Settings → Campaigns -> each campaign with its state, its account and how many of its people were written to.
+  2. Open one -> its report (messages per step, people by status, reply and bounce rates, the last and the next send, why it is paused), its steps as written, and its people by status.
+  3. Start a draft, or resume a paused one -> a confirmation names the account, how many people and the daily cap; after it the campaign is running.
+  4. Pause a running one, or stop one for good from its menu (a confirmation says nobody still waiting gets another message); delete one that is not running.
+  5. Open the do-not-write list -> add addresses or whole domains with a reason, or remove one; who it covers leaves every campaign at once.
+- **Expected result:** I see what my agent's campaigns did and decide, from the app, whether each runs, waits or ends; creating one stays with my agent.
+- **Alt paths:** No campaign yet: the screen says my agent prepares one, and names the tools. A campaign paused by itself: the reason is said in words (bounces, the account needs signing in again).
+- **UI elements:** Campaign list; a campaign's panel (Report, Steps, People with a status filter); Start, Resume, Pause; Stop… and Delete… in the ⋯ menu; the do-not-write list (add form, entries with Remove).
+- **States covered:** empty, loading, error, success
+- **Errors & recovery:** A failed load offers Retry; a refused action (nobody left, not running) is said with the server's reason.
+- **Status:** draft
+- **Coverage:** `tests/campaigns-section.test.ts` (the reasons and states as words, the section's wiring); the routes are covered by `tests/campaigns-workerd.test.ts` and `tests/campaigns-sending-workerd.test.ts`.
+- **Product:** unobserved
+- **Today:** Built 2026-10-27 (B-181 step 3, 0.46.0).
 

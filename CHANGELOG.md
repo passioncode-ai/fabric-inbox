@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.46.0 (2026-10-27)
+
+- **Campaigns in Settings.** See what each of your agent's campaigns did: messages per step, who replied, who asked
+  to stop, what bounced, when the next message goes and why a campaign paused itself. Start, resume, pause or stop
+  one from there.
+- **The stop list.** Add the addresses or whole domains no campaign may write to, with a reason, and remove them.
+
 ## 0.45.0 (2026-10-27)
 
 - **Your agent can start the campaign, and the server sends it.** From your own account, one message at a time,
