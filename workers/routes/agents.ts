@@ -14,6 +14,10 @@ import { DomainManager } from "../routing/domains";
 import { knownCollections } from "./knowledge";
 import { mailVolume } from "../agents/volume";
 import { runSpent } from "../agents/usage";
+import { actorOf } from "../lib/audit";
+import type { Standing } from "../lib/members";
+import type { AgentVersion } from "../agents/definition";
+import { addressesByAgent, agentLearned, publishKnowledge, validatorOf } from "../agents/knowledge-events";
 import { clearIncomingFailures, listIncomingFailures } from "../incoming-log";
 import {
   checkAddresses, createAddress, createAddresses, removeAddress, pauseAddress, resumeAddress, pausedAddresses, routingTestStatus, sendRoutingTest, setForwardCopy, effectiveCatchAll,
@@ -27,8 +31,8 @@ import { HookInvalid, addHook, readHooks, removeHook, type HookCursor } from "..
  * SCR-09 (project addresses) and SCR-10 (agents). Behind the same Access and
  * same-origin boundary as every /api route (workers/app.ts).
  */
-export const agentsRouter = new Hono<{ Bindings: Env }>();
-type C = Context<{ Bindings: Env }>;
+export const agentsRouter = new Hono<{ Bindings: Env; Variables: { standing?: Standing } }>();
+type C = Context<{ Bindings: Env; Variables: { standing?: Standing } }>;
 
 const registry = (c: C) => c.env.AGENT_REGISTRY.getByName("workspace");
 
@@ -64,6 +68,13 @@ async function accountAssignments(env: Env): Promise<{ accountId: string; agentI
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
   return out;
+}
+
+/** B-161: an agent's own knowledge text that changed goes on the events feed (workers/agents/knowledge-events.ts). */
+async function knowledgeChanged(env: Env, raw: Request, email: string | undefined, saved: AgentVersion, before: string) {
+  if ((saved.knowledge ?? "").trim() === before.trim() || !(saved.knowledge ?? "").trim()) return;
+  const addresses = (await addressesByAgent(env).catch(() => new Map<string, string[]>())).get(saved.id) ?? [];
+  await publishKnowledge(env, [agentLearned({ id: saved.id, version: saved.version, knowledge: saved.knowledge ?? "" }, addresses, new Date().toISOString(), validatorOf(actorOf(raw, email)))]);
 }
 
 agentsRouter.use("/api/agents/*", async (c, next) => {
@@ -104,7 +115,9 @@ agentsRouter.post("/api/agents", async (c) => {
   try {
     const problem = await unknownCollections(c, body?.agent ?? body);
     if (problem) return c.json({ error: problem }, 400);
-    return c.json(await registry(c).createAgent(body?.agent ?? body), 201);
+    const created = await registry(c).createAgent(body?.agent ?? body);
+    await knowledgeChanged(c.env, c.req.raw, c.get("standing")?.email, created, "");
+    return c.json(created, 201);
   } catch (error) { return registryFailure(c, error); }
 });
 
@@ -135,7 +148,10 @@ agentsRouter.put("/api/agents/:id", async (c) => {
           return c.json({ error: msg("This agent answers {accounts}, which cannot keep drafts. Choose another agent there first, or keep it sending.", { accounts: blocked.join(", ") }) }, 400);
       }
     }
-    return c.json(await registry(c).updateAgent(c.req.param("id"), body.agent, body.expectedVersion));
+    const before = await registry(c).getAgent(c.req.param("id"));
+    const saved = await registry(c).updateAgent(c.req.param("id"), body.agent, body.expectedVersion);
+    await knowledgeChanged(c.env, c.req.raw, c.get("standing")?.email, saved, before?.knowledge ?? "");
+    return c.json(saved);
   } catch (error) { return registryFailure(c, error); }
 });
 

@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.72.0 (2026-10-27)
+
+- **Knowledge changes reach the agents that share one knowledge base.** When a knowledge document is added, changed
+  or removed, or an agent's own knowledge text changes, the server's events feed says so (`knowledge.learned`,
+  `knowledge.retracted`), with the addresses whose agents read it and who saved the change. Other agents that keep a
+  shared base read it from `list_agent_events` (B-161).
+
 ## 0.71.0 (2026-10-27)
 
 - **What each agent answer cost.** Every reply agent run in `list_agent_runs` now carries `spent`: the calls, tokens

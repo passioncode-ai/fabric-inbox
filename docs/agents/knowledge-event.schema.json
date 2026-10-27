@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/agents/knowledge-event.schema.json",
+  "title": "knowledge.learned and knowledge.retracted, as Fabric Inbox emits them",
+  "description": "B-161: a change of what reply agents answer from, on the server's events feed (/fabric/v1/events, list_agent_events) as data.value. knowledge.learned: a knowledge document added or changed, or an agent's own knowledge text changed; knowledge.retracted: a document removed. A new version is a new ref. addresses are the Cloudflare addresses and connected accounts whose agents read it, so a reader takes only its own mailboxes. answer is the knowledge text as saved, never a sender's words; validatedBy says who saved it: operator (a person signed in to the server), agent (an agent key) or unknown (local development). workers/agents/knowledge-events.ts.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "source", "addresses", "questions", "answer", "truncated", "validatedAt", "validatedBy"],
+      "properties": {
+        "ref": { "type": "string", "pattern": "^(doc:[^/]+/[^@]+|agent:[^@]+)@.+$" },
+        "source": { "enum": ["document", "agent"] },
+        "collectionId": { "type": "string" },
+        "documentId": { "type": "string" },
+        "agentId": { "type": "string" },
+        "version": { "type": "integer", "minimum": 1 },
+        "addresses": { "type": "array", "items": { "type": "string" } },
+        "questions": { "type": "array", "items": { "type": "string" }, "description": "A document's title; empty for an agent's own knowledge text." },
+        "answer": { "type": "string", "maxLength": 8000 },
+        "truncated": { "type": "boolean", "description": "The text was longer than 8000 characters and is cut." },
+        "validatedAt": { "type": "string", "format": "date-time" },
+        "validatedBy": { "enum": ["operator", "agent", "unknown"] }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "source", "collectionId", "documentId", "addresses", "retractedAt", "retractedBy"],
+      "properties": {
+        "ref": { "type": "string", "pattern": "^doc:[^/]+/[^@]+@.+$" },
+        "source": { "const": "document" },
+        "collectionId": { "type": "string" },
+        "documentId": { "type": "string" },
+        "addresses": { "type": "array", "items": { "type": "string" } },
+        "retractedAt": { "type": "string", "format": "date-time" },
+        "retractedBy": { "enum": ["operator", "agent", "unknown"] }
+      }
+    }
+  ]
+}
