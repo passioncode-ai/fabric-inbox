@@ -1163,6 +1163,37 @@ test("B-141: a held run is answered again at once when its knowledge changed, an
   } finally { await mf.dispose(); }
 });
 
+test("B-153: a held message on an auto agent that holds gets one second look 30 minutes later, never twice, at most 20 a day", async () => {
+  const look = async (policy: Record<string, unknown>, runs: [string, number][]) => {
+    const f = await fixture();
+    await f.command("create", { id: "support", input: { ...support, replyPolicy: { ...support.replyPolicy, ...policy } } });
+    const now = Date.now();
+    const at = (min: number) => new Date(now - min * 60_000).toISOString();
+    for (const [id, min] of runs) await f.command("begin", { run: { ...b141, id: rid(id), emailId: id, status: "held", createdAt: at(min), updatedAt: at(min) } });
+    return { ...f, now };
+  };
+  const { mf, command, now } = await look({ holdUnsure: true }, [["due", 31], ["soon", 10]]);
+  try {
+    let r = await command("retry-held", { now });
+    assert.equal(r.queue, 1, "the one held 31 minutes ago");
+    assert.ok(Math.abs(r.next - (now - 10 * 60_000 + 30 * 60_000)) < 1000, "the other's look is the next thing due");
+    const [due] = await command("byIds", { ids: [rid("due")] }) as { secondLook?: { state: string; firstCited: string[] } }[];
+    assert.equal(due.secondLook?.state, "running");
+    assert.deepEqual(due.secondLook?.firstCited, []);
+    await command("save", { run: { ...(await command("byIds", { ids: [rid("due")] }))[0], status: "held", secondLook: { ...due.secondLook, state: "done", cause: "data", rescued: false } } });
+    r = await command("retry-held", { now: now + 60 * 60_000 });
+    assert.equal(r.queue, 2, "the other one's look comes due; the first, held again after its look, gets no second");
+    const [again] = await command("byIds", { ids: [rid("due")] }) as { secondLook?: { state: string } }[];
+    assert.equal(again.secondLook?.state, "done");
+  } finally { await mf.dispose(); }
+  for (const policy of [{ holdUnsure: true, secondLook: false }, { holdUnsure: false }, { holdUnsure: true, mode: "draft" }]) {
+    const f = await look(policy, [["due", 31]]);
+    try { assert.equal((await f.command("retry-held", { now: f.now })).queue, 0, JSON.stringify(policy)); } finally { await f.mf.dispose(); }
+  }
+  const many = await look({ holdUnsure: true }, Array.from({ length: 22 }, (_, i) => [`m${i.toString(16)}`, 40 + i] as [string, number]));
+  try { assert.equal((await many.command("retry-held", { now: many.now })).queue, 20, "at most 20 a day"); } finally { await many.mf.dispose(); }
+});
+
 test("B-141: day 30: a held message gets one closing reply naming another route and a second agent.waiting; a drafting address sends nothing", async () => {
   const { mf, command } = await fixture();
   try {

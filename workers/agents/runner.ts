@@ -7,6 +7,7 @@ import { decide, isFollowUpSubject, matchedTopic, type ModelDecision } from "./p
 import { MAX_RECEIPTS, asRole, type UsageReceipt } from "./usage";
 import { bareAddress, parseStoredHeaders, prefilter, replyToAddress, SKIP_TEXT } from "./prefilter";
 import { RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type AwaitingAnswer, type ToolCallRecord } from "./run";
+import { secondLookCause } from "./learning-events";
 import { answeringOrder, duplicateReason, electAnswerer, messageKey, type MessageClaim } from "./dedupe";
 import type { KnowledgeHit } from "../knowledge/store";
 import { msg } from "../../shared/i18n";
@@ -300,6 +301,8 @@ export function replySubject(subject: string): string {
 
 /** Passages found before the model runs, as the model sees them: an id, where it is from, the text. */
 const PASSAGES = 5;
+/** B-153: how hard the writer reasons on a second look (the first turn has it off for speed, B-174). */
+export const SECOND_LOOK_REASONING = "medium" as const;
 const PASSAGE_CHARS = 1600;
 export function passagesBlock(hits: KnowledgeHit[]): string {
   if (!hits.length) return "(nothing matched)";
@@ -483,6 +486,11 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     run.status = status;
     run.reason = reason;
     delete run.phase;
+    // B-153: the second look's attempt ends here, whatever its outcome: what it found is kept once.
+    if (run.secondLook?.state === "running") {
+      const found = secondLookCause(run, run.secondLook.firstCited);
+      run.secondLook = { ...run.secondLook, state: "done", cause: found.cause, rescued: found.rescued };
+    }
     // B-141: a failure before anything was sent is retried and escalated; any other end clears the mark.
     if (status === "failed" && failure) run.failure = failure; else delete run.failure;
     if (status !== "held") delete run.heldFacts;
@@ -507,6 +515,9 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   }
 
   async function answer(agent: AgentVersion, settings: Record<string, unknown> | null, email: RunnerEmail): Promise<AgentRun> {
+  // B-153: the one second look at a held message: the writer reasons, the search is wider, the checks are the same.
+  const secondLook = run.secondLook?.state === "running";
+  const passageLimit = secondLook ? PASSAGES * 2 : PASSAGES;
 
   let thread: RunnerThreadMessage[] = [];
   try {
@@ -557,7 +568,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   };
   if (collections.length) {
     try {
-      passages = await deps.knowledge.search(`${email.subject}\n${deps.htmlToText(email.body).slice(0, 600)}`, collections, PASSAGES);
+      passages = await deps.knowledge.search(`${email.subject}\n${deps.htmlToText(email.body).slice(0, 600)}`, collections, passageLimit);
       remember(passages);
     } catch (error) {
       knowledgeProblem = (error as Error).message.slice(0, 200);
@@ -711,6 +722,13 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       return { name: grant.name, ok: false, text: "", abstained: false };
     }
     const result = await callGrant(grant, { [grant.prefetch!.argument]: asking });
+    // B-153: a second look also asks about the topic alone (the words the first turn named the message by): a
+    // question whose rare verb kept the right item below the knowledge's floor finds it by its subject.
+    const topic = secondLook ? scrubPersonal(run.topic ?? "").trim().slice(0, 120) : "";
+    if (topic && topic.toLowerCase() !== asking.trim().toLowerCase()) {
+      const wider = await callGrant(grant, { [grant.prefetch!.argument]: topic });
+      if (wider.ok && !abstainedOutput(wider.text)) return { name: grant.name, ok: true, text: `${result.ok ? `${result.text}\n\n` : ""}[asked about "${topic}"]\n${wider.text}`, abstained: false };
+    }
     return { name: grant.name, ok: result.ok, text: result.ok ? result.text : "", abstained: result.ok && abstainedOutput(result.text) };
   }));
   if (prefetched.some((r) => r.abstained)) abstainedAny = measured.abstained = true;
@@ -718,7 +736,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // same: every endpoint answered with the revision of the last attempt, for the same agent version. Only
   // the tools' own answers count; an agent that also searches collections is always answered again.
   const last = run.heldFacts;
-  const unchanged = !!last && last.agent === `${agent.id}@${agent.version}` && !collections.length && prefetchGrants.length > 0
+  const unchanged = !secondLook && !!last && last.agent === `${agent.id}@${agent.version}` && !collections.length && prefetchGrants.length > 0
     && prefetched.every((r) => r.ok) && Object.keys(last.revisions).length > 0
     && Object.entries(last.revisions).every(([endpoint, revision]) => factsRevisions[endpoint] === revision);
   if (unchanged) {
@@ -741,7 +759,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       const record: ToolCallRecord = { name: "search_knowledge", host: "knowledge", ok: false, ms: 0, result: "" };
       toolCalls.push(record);
       try {
-        const hits = await deps.knowledge.search(query, collections, PASSAGES);
+        const hits = await deps.knowledge.search(query, collections, passageLimit);
         remember(hits);
         record.ok = true;
         record.result = msg('{n} passage(s) for "{query}": {refs}', { n: hits.length, query, refs: hits.map((h) => h.ref).join(", ") }).slice(0, RESULT_PREVIEW_CHARS);
@@ -759,7 +777,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   let response: ModelResponse;
   try {
     const senderName = typeof settings?.fromName === "string" && settings.fromName.trim() && settings.fromName.trim().toLowerCase() !== address ? settings.fromName.trim() : "";
-    response = await deps.model({ agent, system: systemPrompt(agent, address, tools, passages, senderName, prefetched, !!deps.check), prompt, tools, trace: run.id });
+    response = await deps.model({ agent, system: systemPrompt(agent, address, tools, passages, senderName, prefetched, !!deps.check), prompt, tools, trace: run.id,
+      ...(secondLook ? { reasoning: SECOND_LOOK_REASONING } : {}) });
     run.modelCalls = response.calls ? { ...response.calls } : { calls: 1, failed: 0, recovered: 0 };
     if (response.usage?.length) run.usage = asRole(response.usage, "writer").slice(0, MAX_RECEIPTS);
   } catch (error) {

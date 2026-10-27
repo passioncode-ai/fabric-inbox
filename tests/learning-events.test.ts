@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { answerCitedEvent, causeOf, CITED_MAX, citedOf, supportDiagnosedEvent } from "../workers/agents/learning-events";
+import { answerCitedEvent, causeOf, CITED_MAX, citedOf, secondLookCause, supportDiagnosedEvent } from "../workers/agents/learning-events";
 import { evidenceOf } from "../workers/agents/runner";
 import type { AgentRun } from "../workers/agents/run";
 
@@ -48,7 +48,7 @@ test("B-162: the cause a turn reads: person, data, draft-or-check; none for an a
   for (const status of ["sent", "drafted", "skipped", "failed", "running"] as const) assert.equal(causeOf({ ...base, status }), null, status);
   const event = supportDiagnosedEvent({ ...base, status: "held", unanswered: true, question: "How do refunds work for order 42?" }, "data");
   assert.deepEqual(event.data.value, { at: base.updatedAt, channel: "email", address: "support@acme.example", runId: "run-1", agentId: "support", agentVersion: 3,
-    category: "billing", question: "How do refunds work for order 42?", cause: "data", rescued: false });
+    category: "billing", question: "How do refunds work for order 42?", cause: "data", rescued: false, look: "turn" });
   assert.equal(event.kind, "support.diagnosed");
 });
 
@@ -62,4 +62,19 @@ test("B-162: the published schemas name every field the events carry and nothing
     for (const key of keys) assert.ok(key in schema.properties, key);
   }
   assert.deepEqual(diagnosed.properties.cause.enum, ["retrieval", "draft-or-check", "data", "person"]);
+});
+
+test("B-153: a second look that sends is rescued: retrieval with a new cited item, else draft-or-check; one that holds reads as the turn does", () => {
+  const sent = { ...base, evidence: [{ tool: "facts", items: ["a", "b"] }] };
+  assert.deepEqual(secondLookCause(sent, ["a"]), { cause: "retrieval", rescued: true });
+  assert.deepEqual(secondLookCause(sent, ["a", "b"]), { cause: "draft-or-check", rescued: true });
+  assert.deepEqual(secondLookCause({ ...base, status: "held", unanswered: true }, []), { cause: "data", rescued: false });
+  assert.deepEqual(secondLookCause({ ...base, status: "held" }, []), { cause: "draft-or-check", rescued: false });
+  assert.deepEqual(secondLookCause({ ...base, status: "skipped" }, []), { cause: null, rescued: false }, "a person answered meanwhile");
+  const event = supportDiagnosedEvent(sent, "retrieval", "second", true);
+  const value = event.data.value as { look: string; rescued: boolean; cause: string };
+  assert.deepEqual([value.look, value.rescued, value.cause, event.level], ["second", true, "retrieval", "info"]);
+  const schema = JSON.parse(readFileSync("docs/agents/support-diagnosed.schema.json", "utf8"));
+  assert.deepEqual(schema.properties.look.enum, ["turn", "second"]);
+  assert.ok(schema.required.includes("look"));
 });

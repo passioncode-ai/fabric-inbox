@@ -1,4 +1,4 @@
-import { answerCitedEvent, causeOf, supportDiagnosedEvent } from "./learning-events";
+import { answerCitedEvent, causeOf, citedOf, supportDiagnosedEvent } from "./learning-events";
 import { abandonedEvent, EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, runEvent, waitingEvent, type AgentEvent } from "./events";
 import { agentAccounts, statesOf } from "../lib/agent-status";
 import type { ThreadFacts } from "../../shared/mail/agent-state";
@@ -49,6 +49,10 @@ export const HELD_FOR_MS = 30 * 86_400_000;
  * tried again every FAILED_RETRY_MS for its first FAILED_FAST_MS, then like a held one.
  */
 export const FAILED_RETRY_MS = 3_600_000;
+/** B-153: a held message gets its one second look this long after it was held, inside its first week. */
+export const SECOND_LOOK_AFTER_MS = 30 * 60_000;
+/** B-153: second looks a server takes in any 24 hours, oldest messages first. */
+export const SECOND_LOOKS_PER_DAY = 20;
 export const FAILED_FAST_MS = 86_400_000;
 /** B-141: held runs answered again at once in one pass when their knowledge changed; the rest follow. */
 const RETRY_AT_ONCE = 20;
@@ -270,9 +274,37 @@ export class AgentRegistryDO extends DurableObject<Env> {
     const seen = new Map(this.rows("SELECT endpoint, revision, seen_at FROM agent_facts").map((r) => [String(r.endpoint), { revision: String(r.revision), at: Number(r.seen_at) }]));
     let next: number | null = null;
     let retried = 0;
+    // B-153: the second looks of the last 24 hours, and which agents take them (an auto agent that holds, not switched off).
+    let looks = Number(this.rows("SELECT COUNT(*) AS n FROM agent_runs WHERE json_extract(body, '$.secondLook.at') >= ?",
+      new Date(now - 86_400_000).toISOString())[0]?.n ?? 0);
+    const looking = new Map<string, boolean>();
+    const takesLook = async (run: AgentRun) => {
+      if (!run.agentId) return false;
+      const key = `${run.agentId}@${run.agentVersion ?? ""}`;
+      if (!looking.has(key)) {
+        const agent = await this.getAgent(run.agentId, run.agentVersion).catch(() => null);
+        const p = agent?.replyPolicy;
+        looking.set(key, !!p && p.mode === "auto" && p.holdUnsure === true && p.secondLook !== false);
+      }
+      return looking.get(key)!;
+    };
     for (const row of rows) {
       const age = now - Date.parse(String(row.created_at));
       const last = Date.parse(String(row.updated_at));
+      if (row.status === "held" && age < HELD_FAST_MS) {
+        let held: AgentRun | null = null;
+        try { held = JSON.parse(String(row.body)) as AgentRun; } catch { held = null; }
+        if (held && !held.secondLook && !held.handoff && !held.injection && await takesLook(held)) {
+          const at = Math.max(Date.parse(String(row.created_at)), last) + SECOND_LOOK_AFTER_MS;
+          if (at <= now && looks < SECOND_LOOKS_PER_DAY) {
+            looks++;
+            const result = await this.answerAgain(String(row.id), { secondLook: true });
+            console.log(JSON.stringify({ event: "agent_second_look", run: row.id, ok: result.ok }));
+            continue;
+          }
+          if (at > now && (next === null || at < next)) next = at;
+        }
+      }
       const interval = row.status === "failed" && age < FAILED_FAST_MS ? FAILED_RETRY_MS : age < HELD_FAST_MS ? HELD_RETRY_MS : HELD_LATE_RETRY_MS;
       let due = last + interval;
       let held: AgentRun["heldFacts"];
@@ -619,9 +651,12 @@ export class AgentRegistryDO extends DurableObject<Env> {
       if (before !== run.status) {
         const cited = answerCitedEvent(run);
         if (cited && !this.rows("SELECT 1 FROM agent_events WHERE run_id = ? LIMIT 1", `cited-${run.id}`).length) this.appendEvent(`cited-${run.id}`, cited);
-        const cause = causeOf(run);
-        const key = `diagnosed-${run.id}-${cause}`;
-        if (cause && !this.rows("SELECT 1 FROM agent_events WHERE run_id = ? LIMIT 1", key).length) this.appendEvent(key, supportDiagnosedEvent(run, cause));
+        // B-153: the second look's own reading, once, in place of the turn's for that attempt.
+        const second = run.secondLook?.state === "done" ? run.secondLook : null;
+        const cause = second ? second.cause ?? null : causeOf(run);
+        const key = second ? `diagnosed-${run.id}-second` : `diagnosed-${run.id}-${cause}`;
+        if (cause && !this.rows("SELECT 1 FROM agent_events WHERE run_id = ? LIMIT 1", key).length)
+          this.appendEvent(key, supportDiagnosedEvent(run, cause, second ? "second" : "turn", second?.rescued === true));
       }
     });
   }
@@ -1065,7 +1100,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
     this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?", ended.status, JSON.stringify(ended), ended.updatedAt, id);
   }
 
-  async answerAgain(id: string, options: { keepFacts?: boolean } = {}): Promise<{ ok: true; run: AgentRun } | { ok: false; reason: string }> {
+  async answerAgain(id: string, options: { keepFacts?: boolean; secondLook?: boolean } = {}): Promise<{ ok: true; run: AgentRun } | { ok: false; reason: string }> {
     const prior = this.rows("SELECT body FROM agent_runs WHERE id = ?", id)[0];
     if (!prior) return { ok: false, reason: msg("This agent run is not kept any more") };
     const run = JSON.parse(String(prior.body)) as AgentRun;
@@ -1077,6 +1112,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
     delete again.injection;
     // B-141: a person answering it again wants the model to look, whatever the knowledge's revision.
     if (!options.keepFacts) delete again.heldFacts;
+    // B-153: the second look is this attempt; what the first turn cited tells a retrieval miss from a drafting one.
+    if (options.secondLook) again.secondLook = { at: new Date().toISOString(), state: "running", firstCited: citedOf(run).cited };
     this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?", again.status, JSON.stringify(again), again.updatedAt, id);
     await this.enqueue(run.mailboxId, run.emailId);
     return { ok: true, run: this.present(again) };

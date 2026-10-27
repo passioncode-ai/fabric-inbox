@@ -149,6 +149,11 @@ export const ReplyPolicySchema = z.object({
    */
   holdUnsure: z.boolean().default(false),
   /**
+   * B-153: a held message gets one second look 30 minutes later: the same writer with reasoning on, a wider
+   * search, the same checks; a checked answer is sent. On by default; only an auto agent that holds is looked at.
+   */
+  secondLook: z.boolean().default(true),
+  /**
    * B-131: a held message (holdUnsure) still unanswered a day after it arrived gets this fixed text, so
    * nobody waits without a word; the default says the answer follows in the same thread. It states no
    * fact, and the message is still answered once the knowledge has it.
@@ -259,7 +264,7 @@ Be brief and friendly; one clear next step per reply.`),
     knowledge: "",
     collections: [],
     tools: [],
-    replyPolicy: { mode: "draft", allowedIntents: ["question", "how-to", "status"], dailySendLimit: 20, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, knowledgeIsEvidence: false, categories: [] },
+    replyPolicy: { mode: "draft", allowedIntents: ["question", "how-to", "status"], dailySendLimit: 20, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, secondLook: true, knowledgeIsEvidence: false, categories: [] },
   },
   sales: {
     name: msg("Sales"),
@@ -268,7 +273,7 @@ Share only prices and terms from the knowledge below. Offer a call for anything 
     knowledge: "",
     collections: [],
     tools: [],
-    replyPolicy: { mode: "draft", allowedIntents: ["pricing", "question"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, knowledgeIsEvidence: false, categories: [] },
+    replyPolicy: { mode: "draft", allowedIntents: ["pricing", "question"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, secondLook: true, knowledgeIsEvidence: false, categories: [] },
   },
   billing: {
     name: msg("Billing"),
@@ -277,6 +282,6 @@ Never promise a refund or change a charge yourself: explain the process from the
     knowledge: "",
     collections: [],
     tools: [],
-    replyPolicy: { mode: "draft", allowedIntents: ["receipt"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, knowledgeIsEvidence: false, categories: [] },
+    replyPolicy: { mode: "draft", allowedIntents: ["receipt"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, secondLook: true, knowledgeIsEvidence: false, categories: [] },
   },
 };

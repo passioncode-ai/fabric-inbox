@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.75.0 (2026-10-27)
+
+- **A second look before a message waits.** When a reply agent was not sure enough to answer and holds a message, it
+  now takes one more look 30 minutes later. This time it thinks the answer through, searches its knowledge wider and
+  sends the reply only if the checker approves it. The events feed says whether the second look saved the message,
+  and why a message still waits: a missed search, a draft that did not pass, a gap in the knowledge, or a question
+  only a person can answer. At most 20 second looks a day per server; Settings → Agents can turn it off (B-153).
+
 ## 0.74.0 (2026-10-27)
 
 - **The shared learning loop hears from email too.** Each answer a reply agent sends from its knowledge now goes on
