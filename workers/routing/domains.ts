@@ -30,7 +30,7 @@ import { msg } from "../../shared/i18n";
  */
 
 export type { Zone } from "./accounts";
-interface Rule {
+export interface Rule {
   id?: string; tag?: string; name?: string; enabled?: boolean; priority?: number;
   matchers?: { type?: string; field?: string; value?: string }[];
   actions?: { type?: string; value?: string[] }[];
@@ -320,6 +320,47 @@ export class DomainManager {
    * this server, switched on if it was off. The catch-all and every other address stay as they are.
    * A request that cannot hold is refused before anything is written (`BringRefused`).
    */
+  /**
+   * B-158 M1 step 3c: an address whose rule sends its mail to another Worker of this account (the server its
+   * mailbox was copied from) is pointed at this one. The rule as it was comes back, so the move can be undone with
+   * `pointAddressBack`; the caller keeps it before anything changes. A rule already pointing here changes nothing.
+   */
+  async addressRule(email: string): Promise<{ ctx: ZoneContext; rule: Rule; action: RouteAction; here: boolean }> {
+    const domain = domainOf(email);
+    if (await this.env.BUCKET.head(pausedKey(email))) throw new BringRefused(409, msg("{address} is paused here. Resume it instead.", { address: email }));
+    const renaming = await renameOf(this.env.BUCKET, email);
+    if (renaming) throw new BringRefused(409, msg("{email} takes part in a rename ({from} to {to}); finish or cancel it first.", { email, from: renaming.from, to: renaming.to }));
+    const ctx = await this.zone(domain);
+    if (!ctx) throw new BringRefused(404, msg("{domain} is not a domain in any Cloudflare account this server has a token for.", { domain }));
+    const rule = (await this.rules(ctx)).find((r) => address(r) === email);
+    if (!rule) throw new BringRefused(404, msg("{address} has no rule of its own in Cloudflare; its mail follows the catch-all. Add it as an address here instead.", { address: email }));
+    return { ctx, rule, action: actionOf(rule), here: rule.enabled !== false && toWorker(rule, ctx.worker) };
+  }
+
+  async pointAddressHere(email: string): Promise<{ previous: Rule; here: boolean; worker: string }> {
+    const { ctx, rule, action, here } = await this.addressRule(email);
+    if (here) return { previous: rule, here: true, worker: ctx.worker };
+    if (action.type !== "worker") throw new BringRefused(409, msg("{address} is not sent to another server's Worker; use bring_address_here for it.", { address: email }));
+    await this.putRule(ctx, rule, { enabled: true, actions: [{ type: "worker", value: [ctx.worker] }] });
+    return { previous: rule, here: false, worker: ctx.worker };
+  }
+
+  /** The way back: the rule as it was before `pointAddressHere`, only while it still points here. */
+  async pointAddressBack(email: string, previous: Rule): Promise<"back" | "already" | "changed"> {
+    const { ctx, rule, here } = await this.addressRule(email);
+    if (JSON.stringify(rule.actions) === JSON.stringify(previous.actions) && rule.enabled === previous.enabled) return "already";
+    if (!here) return "changed";
+    await this.putRule(ctx, rule, { enabled: previous.enabled !== false, actions: previous.actions });
+    return "back";
+  }
+
+  private putRule(ctx: ZoneContext, rule: Rule, change: Pick<Rule, "enabled" | "actions">) {
+    return ctx.api.call(`/zones/${ctx.zone.id}/email/routing/rules/${rule.id ?? rule.tag}`, {
+      method: "PUT", what: msg("change routing rules (Email Routing Rules: Edit)"),
+      body: { name: rule.name || `Fabric Inbox: ${address(rule) ?? ""}`, priority: rule.priority ?? 0, matchers: rule.matchers, ...change },
+    });
+  }
+
   async bringAddress(domain: string, email: string): Promise<ConnectResult> {
     if (domainOf(email) !== domain) throw new BringRefused(400, msg("{address} is not on {domain}", { address: email, domain }));
     // Review 2026-10-21: bringing it here turns its rule on, which a paused address must not have, and an

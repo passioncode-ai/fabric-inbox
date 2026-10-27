@@ -29,6 +29,7 @@ const bundle = await build({
             }
           }
         }
+        async trySend() { return this.sendMail({ mailboxId: 'support@shop.invalid', request: { to: 'x@outside.invalid', from: 'support@shop.invalid', subject: 'Hi', html: '<p>Hi</p>' }, kind: 'send' }); }
         async table(name) { return this.ctx.storage.sql.exec('SELECT * FROM ' + name + ' ORDER BY rowid').toArray(); }
       }
       const app = new Hono();
@@ -37,6 +38,7 @@ const bundle = await build({
       app.post('/test/table', async (c) => { const b = await c.req.json(); return c.json(await c.env.MAILBOX.get(c.env.MAILBOX.idFromName(b.address)).table(b.name)); });
       app.post('/test/r2', async (c) => { const b = await c.req.json(); const o = await c.env.BUCKET.get(b.key); return c.json(o ? await o.text() : null); });
       app.post('/test/settings', async (c) => { const b = await c.req.json(); const o = await c.env.BUCKET.get('mailboxes/' + b.address + '.json'); return c.json(o ? await o.json() : null); });
+      app.post('/test/send', async (c) => { const b = await c.req.json(); return c.json(await c.env.MAILBOX.get(c.env.MAILBOX.idFromName(b.address)).trySend()); });
       app.route('/', transferRouter);
       export default app;
     `,
@@ -149,4 +151,21 @@ test("B-158: a member never reaches a transfer; rows survive JSON with bytes; th
   assert.deepEqual(blobKeysOf("emails", [{ body_key: "bodies/m1.html" }, { body_key: null }, { body_key: "config/x" }]), ["bodies/m1.html"]);
   assert.deepEqual(blobKeysOf("attachments", [{ email_id: "m1", id: "a1", filename: "f.pdf" }]), ["attachments/m1/a1/f.pdf"]);
   assert.deepEqual(missingIds({ emails: ["a", "b"], attachments: [] }, { emails: ["b", "c"], attachments: [] }), { emails: ["a"], attachments: [] });
+});
+
+test("B-158 step 3c: a hold on the sending server stops new sends and its agent, and release puts both back", async () => {
+  const a = server();
+  try {
+    await a.call("POST", "/test/seed", { address: ADDRESS, settings, n: 1 });
+    const held = await a.call("POST", `${base}/hold`, {});
+    assert.deepEqual([held.body.held, held.body.changed], [true, true]);
+    assert.equal((await a.call("POST", "/test/settings", { address: ADDRESS })).body.agent, "off");
+    const refused = (await a.call("POST", "/test/send", { address: ADDRESS })).body;
+    assert.equal(refused.code, "MOVED", JSON.stringify(refused));
+    assert.equal((await a.call("POST", `${base}/hold`, {})).body.changed, false, "again changes nothing");
+    const released = await a.call("POST", `${base}/hold`, { release: true });
+    assert.deepEqual([released.body.held, released.body.changed], [false, true]);
+    assert.equal((await a.call("POST", "/test/settings", { address: ADDRESS })).body.agent, "support", "the agent it had answers again");
+    assert.notEqual((await a.call("POST", "/test/send", { address: ADDRESS })).body.code, "MOVED");
+  } finally { await a.mf.dispose(); }
 });

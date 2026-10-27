@@ -327,7 +327,7 @@ app.post("/api/v1/mailboxes/:mailboxId/drafts/:id/send", async (c: AppContext) =
 	const result = await c.var.mailboxStub.sendDraft({ mailboxId, draftId: c.req.param("id")!, idempotencyKey: parsed.data.idempotencyKey, from,
 		expectedRevision: parsed.data.expected_revision });
 	if ("error" in result) {
-		const status = result.code === "IDEMPOTENCY_CONFLICT" || result.code === "DRAFT_CONFLICT" ? 409 : result.code === "NOT_FOUND" ? 404 : 400;
+		const status = result.code === "IDEMPOTENCY_CONFLICT" || result.code === "DRAFT_CONFLICT" || result.code === "MOVED" ? 409 : result.code === "NOT_FOUND" ? 404 : 400;
 		return c.json(result, status);
 	}
 	if (result.status === "unknown") return c.json({ ...result, error: "Send outcome is unknown; do not resend automatically" }, 409);

@@ -1,7 +1,10 @@
 import { Hono, type Context } from "hono";
 import type { Env } from "../types";
 import { msg } from "../../shared/i18n";
-import { createMailbox, readSettings, settingsKey } from "../lib/mailbox-store";
+import { createMailbox, readSettings, settingsKey, updateSettings } from "../lib/mailbox-store";
+import { CloudflareAccounts } from "../routing/accounts";
+import { BringRefused, DomainManager, type Rule } from "../routing/domains";
+import { CloudflareApiError } from "../routing/cloudflare-api";
 import { blobKeysOf, BLOB_KEY, decodeRows, encodeRows, fromBase64, isTable, MAX_BLOB_BYTES, MAX_PAGE, missingIds, toBase64 } from "../lib/mailbox-transfer";
 import { RENAME_TABLES } from "../durableObject/rename-tables";
 import { readAssignment } from "../agents/definition";
@@ -270,4 +273,98 @@ transferRouter.post("/api/transfer/:email/labels", async (c) => {
   });
   return c.json({ table: body.table, received: body.rows.length,
     ...(await categories(c.env).importLabels(labelsAccount(email), body.table, body.rows as Record<string, string | number | null>[], sources)) });
+});
+
+// Step 3c: the address's mail moves. On the sending server a hold stops new sends from the copy there and turns its
+// agent off; on the receiving server its Cloudflare rule is pointed at this server's Worker, with the rule as it was
+// kept for the way back. Delivery is then checked with send_test_message and check_test_message here.
+
+const routeKey = (email: string) => `transfer-routes/${email}.json`;
+interface RouteJournal { address: string; previous: Rule; worker: string; routedAt: string; backAt?: string }
+
+function domains(env: Env): DomainManager | null {
+  const accounts = new CloudflareAccounts(env);
+  return accounts.connected ? new DomainManager(accounts, env) : null;
+}
+function routeFailure(c: C, error: unknown) {
+  if (error instanceof BringRefused) return c.json({ error: error.message }, error.status);
+  if (error instanceof CloudflareApiError) return c.json({ error: error.message }, 502);
+  console.error(JSON.stringify({ event: "transfer_route_error", error: String((error as Error)?.message).slice(0, 300) }));
+  return c.json({ error: msg("Unexpected error: {error}", { error: (error as Error)?.message ?? "" }) }, 500);
+}
+
+/** The sending side: hold the copy here while its mail moves (no new sends, no agent), or release the hold. */
+transferRouter.post("/api/transfer/:email/hold", async (c) => {
+  const email = addressOf(c);
+  if (!valid(email) || !(await exists(c.env, email))) return nothing(c, email);
+  const body = await c.req.json<{ release?: unknown }>().catch(() => ({}) as { release?: unknown });
+  const stub = box(c.env, email);
+  const held = await stub.movedState();
+  if (body.release === true) {
+    if (!held) return c.json({ address: email, held: false, changed: false });
+    // The agent as it was, kept as JSON text (an RPC value must have a known shape); null: the settings named none.
+    if (held.agent !== null) await updateSettings(c.env.BUCKET, email, (s) => ({ ...s, agent: JSON.parse(held.agent as string) }));
+    await stub.setMoved(null);
+    return c.json({ address: email, held: false, changed: true });
+  }
+  if (held) return c.json({ address: email, held: true, changed: false, since: held.at });
+  const at = new Date().toISOString();
+  const agent = (await readSettings(c.env.BUCKET, email))?.agent;
+  await stub.setMoved({ at, agent: agent === undefined ? null : JSON.stringify(agent) });
+  await updateSettings(c.env.BUCKET, email, (s) => ({ ...s, agent: "off" }));
+  return c.json({ address: email, held: true, changed: true, since: at });
+});
+
+/** The receiving side: where the move of the address's mail stands. */
+transferRouter.get("/api/transfer/:email/route", async (c) => {
+  const email = addressOf(c);
+  if (!valid(email) || !(await exists(c.env, email))) return nothing(c, email);
+  const journal = await (await c.env.BUCKET.get(routeKey(email)))?.json<RouteJournal>() ?? null;
+  const manager = domains(c.env);
+  let here: boolean | null = null;
+  if (manager) try { here = (await manager.addressRule(email)).here; } catch { here = null; }
+  return c.json({ address: email, routed: !!journal && !journal.backAt, here, journal: journal && { worker: journal.worker, routedAt: journal.routedAt, backAt: journal.backAt ?? null,
+    previous: { enabled: journal.previous.enabled !== false, actions: journal.previous.actions } } });
+});
+
+/**
+ * The receiving side: point the address's rule here once the copy has every message and attachment the sending
+ * server counted (`expect`, from export_mailbox manifest's counts). The rule as it was is written down first.
+ */
+transferRouter.post("/api/transfer/:email/route", async (c) => {
+  const email = addressOf(c);
+  if (!valid(email) || !(await exists(c.env, email))) return nothing(c, email);
+  const body = await c.req.json<{ expect?: { emails?: unknown; attachments?: unknown } }>().catch(() => ({}) as { expect?: { emails?: unknown; attachments?: unknown } });
+  const want = { emails: Number(body.expect?.emails), attachments: Number(body.expect?.attachments) };
+  if (!Number.isInteger(want.emails) || !Number.isInteger(want.attachments)) return c.json({ error: msg("Give expect: the manifest's counts of messages and attachments") }, 400);
+  const ids = await box(c.env, email).renameIds();
+  if (ids.emails.length < want.emails || ids.attachments.length < want.attachments)
+    return c.json({ error: msg("The copy is not complete yet: {emails} of {wantEmails} messages, {attachments} of {wantAttachments} attachments", {
+      emails: String(ids.emails.length), wantEmails: String(want.emails), attachments: String(ids.attachments.length), wantAttachments: String(want.attachments) }) }, 409);
+  const manager = domains(c.env);
+  if (!manager) return c.json({ error: msg("This server has no Cloudflare token yet. Create one with the permissions listed, then save it on the server as CLOUDFLARE_API_TOKEN.") }, 503);
+  try {
+    const before = await manager.addressRule(email);
+    const old = await (await c.env.BUCKET.get(routeKey(email)))?.json<RouteJournal>();
+    if (before.here && old && !old.backAt) return c.json({ address: email, routed: true, changed: false });
+    if (!before.here) await c.env.BUCKET.put(routeKey(email), JSON.stringify({ address: email, previous: before.rule, worker: before.ctx.worker, routedAt: new Date().toISOString() } satisfies RouteJournal));
+    const done = await manager.pointAddressHere(email);
+    return c.json({ address: email, routed: true, changed: !done.here, from: before.action.value ?? null });
+  } catch (error) { return routeFailure(c, error); }
+});
+
+/** The receiving side: the way back, the rule as it was before `route`, while it still points here. */
+transferRouter.post("/api/transfer/:email/unroute", async (c) => {
+  const email = addressOf(c);
+  if (!valid(email) || !(await exists(c.env, email))) return nothing(c, email);
+  const journal = await (await c.env.BUCKET.get(routeKey(email)))?.json<RouteJournal>();
+  if (!journal) return c.json({ error: msg("{email} was not routed here by a move", { email }) }, 404);
+  const manager = domains(c.env);
+  if (!manager) return c.json({ error: msg("This server has no Cloudflare token yet. Create one with the permissions listed, then save it on the server as CLOUDFLARE_API_TOKEN.") }, 503);
+  try {
+    const outcome = await manager.pointAddressBack(email, journal.previous);
+    if (outcome === "changed") return c.json({ error: msg("The rule for {email} was changed since the move; it is left as it is", { email }) }, 409);
+    if (!journal.backAt) await c.env.BUCKET.put(routeKey(email), JSON.stringify({ ...journal, backAt: new Date().toISOString() }));
+    return c.json({ address: email, routed: false, changed: outcome === "back" });
+  } catch (error) { return routeFailure(c, error); }
 });

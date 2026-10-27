@@ -17,6 +17,7 @@ const bundle = await build({
       import { MailboxDO } from './workers/durableObject/index';
       import { domainsRouter } from './workers/routes/domains';
       import { agentsRouter } from './workers/routes/agents';
+      import { transferRouter } from './workers/routes/transfer';
       import { app as mailApp } from './workers/index';
       const forbidden = () => { throw new Error('External mail and AI are forbidden in this test'); };
       export class TestMailbox extends MailboxDO {
@@ -26,6 +27,7 @@ const bundle = await build({
       app.get('/r2', async (c) => { const o = await c.env.BUCKET.get(c.req.query('key')); return new Response(o ? await o.text() : 'null'); });
       app.put('/r2', async (c) => { await c.env.BUCKET.put(c.req.query('key'), await c.req.text()); return c.json({ ok: true }); });
       app.route('/', domainsRouter);
+      app.route('/', transferRouter);
       app.route('/', agentsRouter);
       app.route('/', mailApp);
       export default { fetch: (r, env, ctx) => app.fetch(r, env, ctx) };
@@ -590,5 +592,50 @@ test("bringing one address is refused where it cannot hold: another domain, a do
     }
     assert.equal((await call("/api/domains/product.invalid/bring", "POST", {})).status, 400);
     assert.equal(cf.writes.length, writes, "a refusal writes nothing");
+  } finally { await mf.dispose(); }
+});
+
+test("B-158 step 3c: an address another server's Worker receives is routed here once the copy is complete, and back the way it was", async () => {
+  const { mf, cf, call, putR2, r2 } = await fixture({ bindings: { DOMAINS: "base.invalid,product.invalid" } });
+  try {
+    const z = cf.zone("product.invalid");
+    z.rules.push({ id: "w1", name: "bot@product.invalid", enabled: true, priority: 3, matchers: [{ type: "literal", field: "to", value: "bot@product.invalid" }], actions: [{ type: "worker", value: ["old-server"] }] });
+    const base = "/api/transfer/bot%40product.invalid";
+    assert.equal((await call(`${base}/route`, "POST", { expect: { emails: 0, attachments: 0 } })).status, 404, "no copy here yet");
+    await putR2(mailboxKey("bot@product.invalid"), { fromName: "Bot", agent: "off" });
+    const writes = cf.writes.length;
+    assert.equal((await call(`${base}/route`, "POST", {})).status, 400);
+    const short = await call(`${base}/route`, "POST", { expect: { emails: 3, attachments: 0 } });
+    assert.equal(short.status, 409, "a copy short of the manifest's counts is not routed");
+    assert.match(short.body.error, /0 of 3 messages/);
+    assert.equal(cf.writes.length, writes, "a refusal writes nothing");
+
+    const routed = await call(`${base}/route`, "POST", { expect: { emails: 0, attachments: 0 } });
+    assert.equal(routed.status, 200, JSON.stringify(routed.body));
+    assert.deepEqual([routed.body.changed, routed.body.from], [true, "old-server"]);
+    // The fake API replaces a rule's object on PUT: read it again each time.
+    const rule = () => z.rules.find((r) => r.id === "w1")!;
+    assert.deepEqual(rule().actions, [{ type: "worker", value: ["fabric-inbox"] }]);
+    assert.equal(rule().priority, 3, "the rest of the rule is kept");
+    assert.deepEqual((await r2("transfer-routes/bot@product.invalid.json")).previous.actions, [{ type: "worker", value: ["old-server"] }], "the rule as it was is written down");
+    assert.equal((await call(`${base}/route`, "POST", { expect: { emails: 0, attachments: 0 } })).body.changed, false, "again changes nothing");
+    const status = (await call(`${base}/route`)).body;
+    assert.deepEqual([status.routed, status.here], [true, true]);
+
+    const back = await call(`${base}/unroute`, "POST", {});
+    assert.equal(back.status, 200, JSON.stringify(back.body));
+    assert.deepEqual(rule().actions, [{ type: "worker", value: ["old-server"] }]);
+    assert.equal((await call(`${base}/unroute`, "POST", {})).body.changed, false, "again changes nothing");
+    assert.deepEqual([(await call(`${base}/route`)).body.routed, (await call(`${base}/route`)).body.here], [false, false]);
+
+    // A rule someone changed after the move is not overwritten on the way back.
+    await call(`${base}/route`, "POST", { expect: { emails: 0, attachments: 0 } });
+    rule().actions = [{ type: "forward", value: ["owner@gmail.invalid"] }];
+    assert.equal((await call(`${base}/unroute`, "POST", {})).status, 409);
+    assert.deepEqual(rule().actions, [{ type: "forward", value: ["owner@gmail.invalid"] }]);
+
+    // A forward is not another server: bring_address_here is for it.
+    await putR2(mailboxKey("support@product.invalid"), { fromName: "Support", agent: "off" });
+    assert.equal((await call("/api/transfer/support%40product.invalid/route", "POST", { expect: { emails: 0, attachments: 0 } })).status, 409);
   } finally { await mf.dispose(); }
 });

@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.68.0 (2026-10-27)
+
+- **An address's mail can move to the server its mailbox was copied to.** Once the copy is complete, an agent points the
+  address's mail at the new server in Cloudflare, checks with a test message that it arrives there, and can point it
+  back the way it was. While the move is under way, the old server's copy sends nothing new and its agent stays quiet.
+  Both servers must be in the same Cloudflare account.
+
 ## 0.67.0 (2026-10-27)
 
 - **A mailbox's category labels and spam checks go with it to another server.** When an agent copies a mailbox, it can

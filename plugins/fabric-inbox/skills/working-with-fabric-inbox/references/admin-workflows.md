@@ -244,6 +244,12 @@ mailbox from one to the other with an `admin` key on each:
    the receiving server has a category with the same id, description and conditions (it is filed under that
    server's version); the rest come back as `skipped`. Make such a category there first (`save_category`) to keep
    its labels.
+7. Its mail (both servers in the same Cloudflare account): `move_address` action `hold` on the sending server (its
+   copy there sends nothing new and its agent is off); `move_address` action `route` on the receiving server with
+   `expect`, the manifest's `counts` (refused while the copy has fewer); then `send_test_message` and
+   `check_test_message` there until it reads `arrived`; then `update_address` to choose its agent there. If the test
+   never arrives, `move_address` action `unroute` puts the rule back as it was and `move_address` action `release` on
+   the sending server lifts the hold. `move_address` action `status` says where it stands.
 
 Mail is still delivered to the sending server, and nothing there is deleted: routing the address to the new
 server is a separate step, not built yet. Repeating any step is safe (rows are brought up to date, a file of the

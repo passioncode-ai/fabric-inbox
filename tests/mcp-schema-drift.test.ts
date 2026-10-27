@@ -104,6 +104,9 @@ const BODIES: Record<string, string[]> = {
   "POST /api/transfer/:email/documents": ["collection", "documents"],
   "POST /api/transfer/:email/agent": ["agent", "collections"],
   "POST /api/transfer/:email/labels": ["table", "rows", "categories"],
+  "POST /api/transfer/:email/route": ["expect"], // step 3c
+  "POST /api/transfer/:email/unroute": [],
+  "POST /api/transfer/:email/hold": ["release"],
   "POST /api/accounts/:accountId/messages/:messageId/trashed": ["trashed"],
   "POST /api/automation/:account/dry-run": ["emailId", "rule"], // workers/automation/index.ts
   "POST /api/campaigns": ["campaign"], // workers/routes/campaigns.ts (B-181)
@@ -184,6 +187,7 @@ const MAP: Record<string, Record<string, Record<string, string> & { via?: string
   save_rule: { "PUT /api/automation/:account/rules": { via: "rule", version: "set by the server, one more on each save" } },
   dry_run_rule: { "POST /api/automation/:account/dry-run": { emailId: "messageId" } },
   refresh_inbox: { "POST /api/inbox/refresh": { accounts: "accountIds" } },
+  move_address: { "POST /api/transfer/:email/hold": { release: "set by the tool from action: release is true for release, false for hold" } },
 };
 
 const inputKeys = (shape: Record<string, Any>, via?: string): string[] => {
