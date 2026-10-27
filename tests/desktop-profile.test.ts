@@ -248,6 +248,8 @@ test("B-158: changing the server keeps the old one, signed in, until it is forgo
   h.mailWindows().pop().webContents.emit("did-finish-load");
   await h.settle();
   assert.ok(!h.log.some((l) => l.startsWith("clear-")), "the old server is remembered: its sign-in stays for a switch back");
+  // The saved list and the menu built from it land after more awaits than settle() waits on a slow runner (v0.69.0's gate).
+  for (let i = 0; i < 500 && radios().map((r: any) => r.checked).join() !== "false,true"; i++) await new Promise((resolve) => setImmediate(resolve));
   const account = h.menu().find((m: any) => m.label === "Account").submenu;
   assert.deepEqual(account.filter((i: any) => i.type === "radio").map((i: any) => i.checked), [false, true], "both listed, the new one shown");
   account.find((i: any) => i.label === "Forget Server").submenu[0].click();
