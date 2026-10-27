@@ -11,6 +11,7 @@ import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runInNewContext } from "node:vm";
+import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { posixRequire } from "./posix-require.ts";
 
@@ -150,7 +151,8 @@ async function boot({ config, packaged = true, switches = [] as string[], files 
     destroy() { this.destroyed = true; log.push(`destroy ${this.webContents.session.partition}`); this.emit("closed"); }
     hide() {} show() {} focus() {} setTitle() {} reload() {} isMinimized() { return false; }
     loadURL(url: string) { this.webContents.mainFrame.url = url; return Promise.resolve(); }
-    loadFile(file: string) { this.webContents.mainFrame.url = "file://" + file; return Promise.resolve(); }
+    // As Electron does, and as main.cjs names its own pages (pathToFileURL: a drive letter on Windows).
+    loadFile(file: string) { this.webContents.mainFrame.url = pathToFileURL(file).href; return Promise.resolve(); }
     close() { this.destroy(); }
   }
   const paths: Record<string, string> = { userData: "/fixture/Fabric Inbox", appData: "/fixture" };
