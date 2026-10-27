@@ -28,6 +28,10 @@ export interface SpamInput {
   text: string;
   /** The domain the receiving server verified for this message (DMARC, or a DKIM signature aligned with From); null: none. */
   verified?: string | null;
+  /** B-180: where replies go when that is not the sender (its Reply-To); null: the sender. */
+  replyTo?: string | null;
+  /** B-180: its attached files, as "name (type)". */
+  attachments?: string[];
 }
 export interface SpamJudgement { spam: boolean; kind: MessageKind; reason: string }
 
@@ -56,6 +60,8 @@ export const SPAM_SYSTEM = [
   "A stranger reporting a vulnerability, a \"security observation\" or a bug bounty finding nobody asked for, and following it up, is scam, however polite.",
   "A stranger asking to reach the owner or a decision maker without saying why is cold_outreach.",
   "Support, contact and sales addresses receive mail from strangers by design: a stranger asking about the product or their purchase is customer, not spam.",
+  "replyTo is where answers go when that is not the sender. Answers sent to a free-mail or unrelated domain while the sender claims to be a company, a bank or a service are a mark of phishing or scam; a reply-to on the sender's own organisation is normal.",
+  "attachments are the files it carries. An invoice, payment notice or document that only exists as an archive, a script, a program or an HTML file is phishing.",
   "When unsure, choose a kind that is not spam.",
   "reason: one short factual sentence in English saying what in the email decided the kind.",
 ].join("\n");
@@ -75,6 +81,8 @@ export async function judgeSpam(model: LanguageModel, input: SpamInput): Promise
         from: input.senderName ? `${input.senderName} <${input.sender}>` : input.sender,
         to: input.to,
         verified: input.verified ?? null,
+        replyTo: input.replyTo ?? null,
+        attachments: (input.attachments ?? []).slice(0, 10).map((a) => a.slice(0, 120)),
         subject: input.subject.slice(0, 500),
         text: input.text.slice(0, TEXT_CHARS),
       },

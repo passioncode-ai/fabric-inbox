@@ -420,3 +420,18 @@ test("M-9: mail to a plus address lands in the mailbox it extends", async () => 
     assert.ok(ids.some((r) => r.id === out.body.emailId), JSON.stringify(out.body));
   } finally { await mf.dispose(); }
 });
+
+test("B-180: the spam check sees where answers go when that is not the sender, and the files a message carries", async () => {
+  const { mf, call, receive } = await fixture();
+  try {
+    await receive("Invoice 7", { from: "billing@acme.invalid", headers: "Reply-To: Billing Desk <pay.desk@freemail.invalid>\r\n", body: "Please pay the attached invoice today.", attachment: true });
+    await receive("A question", { from: "bea@customer.invalid", headers: "Reply-To: bea@customer.invalid\r\n", body: "How do I change the email on my account?" });
+    await call("/pump", "POST");
+    const prompts = ((await call("/prompts")).body as string[]).map((p) => p.replace(/\\"/g, '"'));
+    const of = (needle: string) => prompts.find((p) => p.includes(needle)) ?? "";
+    assert.match(of("pay the attached"), /"replyTo":"pay\.desk@freemail\.invalid"/);
+    assert.match(of("pay the attached"), /"attachments":\["invoice\.pdf \(application\/pdf\)"\]/);
+    assert.match(of("change the email"), /"replyTo":null/, "a Reply-To that is the sender is no signal");
+    assert.match(of("change the email"), /"attachments":\[\]/);
+  } finally { await mf.dispose(); }
+});

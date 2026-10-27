@@ -14,6 +14,8 @@ export interface IncomingMailEvent {
   /** With screen: the sender's shown name and the domain Cloudflare's MX verified for it, for the model's spam check (B-172). */
   senderName?: string | null;
   verified?: string | null;
+  /** With screen: where replies go when that is not the sender (its Reply-To), for the spam check (B-180). */
+  replyTo?: string | null;
   /** Stored in Discarded on arrival by a discard rule: no consumer acts on it, as if deleted. */
   discarded?: boolean;
   /** B-179: its files (a Cloudflare message's, stored in R2 under `attachments/<id>/<file id>/<name>`), for the safety check. */

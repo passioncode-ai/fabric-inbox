@@ -177,3 +177,14 @@ export function tooLittleToJudge(text: string): boolean {
   if (LINK.test(text)) return false;
   return text.replace(SENT_FROM, "").replace(/\s+/g, " ").trim().length < 20;
 }
+
+/**
+ * Where replies to a message go when that is not its sender (its Reply-To), bare and lower-cased; null when it
+ * has none or it is the sender. For the spam check (B-180): answers sent somewhere other than the sender are a
+ * common shape of a scam.
+ */
+export function replyToOf(headers: { key: string; value: string }[], sender: string): string | null {
+  const value = headers.find((h) => h.key?.toLowerCase() === "reply-to")?.value ?? "";
+  const address = (value.match(/<([^<>\s]+@[^<>\s]+)>/)?.[1] ?? value.match(/[^\s<>,;"]+@[^\s<>,;"]+/)?.[0] ?? "").trim().toLowerCase();
+  return address && address !== sender.trim().toLowerCase() ? address.slice(0, 254) : null;
+}

@@ -38,3 +38,19 @@ test("the instructions name the cases that went wrong live: codes and account no
   assert.match(SPAM_SYSTEM, /a stranger asking about the product or their purchase is customer, not spam/);
   assert.match(SPAM_SYSTEM, /does not belong to the brand it names is phishing/);
 });
+
+test("B-180: the model sees where answers go when that is not the sender, and the files it carries", async () => {
+  const { replyToOf } = await import("../shared/mail/spam");
+  assert.equal(replyToOf([{ key: "Reply-To", value: "Billing Team <Pay.Desk@Freemail.invalid>" }], "billing@acme.invalid"), "pay.desk@freemail.invalid");
+  assert.equal(replyToOf([{ key: "reply-to", value: "billing@acme.invalid" }], "Billing@acme.invalid"), null, "the sender itself");
+  assert.equal(replyToOf([{ key: "Subject", value: "x" }], "billing@acme.invalid"), null);
+  const seen: string[] = [];
+  await judgeSpam(answering({ kind: "phishing", reason: "Answers go to free mail and the invoice is a script." }, seen),
+    { sender: "billing@acme.invalid", to: "contact@shop.invalid", subject: "Invoice", text: "See the attached invoice.",
+      replyTo: "pay.desk@freemail.invalid", attachments: ["invoice.html (text/html)"] });
+  const prompt = seen[0]!.replace(/\\"/g, '"');
+  assert.ok(prompt.includes('"replyTo":"pay.desk@freemail.invalid"'));
+  assert.ok(prompt.includes('"attachments":["invoice.html (text/html)"]'));
+  assert.match(SPAM_SYSTEM, /replyTo is where answers go/);
+  assert.match(SPAM_SYSTEM, /only exists as an archive, a script, a program or an HTML file is phishing/);
+});
