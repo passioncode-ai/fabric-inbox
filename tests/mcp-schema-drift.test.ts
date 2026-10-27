@@ -86,6 +86,7 @@ const BODIES: Record<string, string[]> = {
   "PUT /api/agent-status": ["enabled", "domains", "addresses"], // workers/routes/inbox.ts (B-138)
   "POST /api/event-hooks": ["url", "kinds"], // workers/routes/agents.ts (B-137)
   "POST /api/agent-bench": ["address", "days", "runs", "models", "reference", "restart", "offset"], // workers/routes/agents.ts (B-152)
+  "PUT /api/agent-runs/:id/grade": ["checks", "helped", "note", "source"], // workers/agents/calibration.ts parseGrade (B-189)
   "POST /api/v1/mailboxes/:mailboxId/folders": ["name"], // workers/index.ts
   "PUT /api/v1/mailboxes/:mailboxId/folders/:id": ["name"],
   "POST /api/v1/mailboxes/:mailboxId/emails/:id/move": ["folderId"],

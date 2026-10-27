@@ -14,6 +14,7 @@ import { DomainManager } from "../routing/domains";
 import { knownCollections } from "./knowledge";
 import { mailVolume } from "../agents/volume";
 import { runSpent } from "../agents/usage";
+import { parseGrade } from "../agents/calibration";
 import { actorOf } from "../lib/audit";
 import type { Standing } from "../lib/members";
 import type { AgentVersion } from "../agents/definition";
@@ -260,6 +261,39 @@ agentsRouter.post("/api/agent-bench", async (c) => {
   if (!body.success) return c.json({ error: msg("Give the address, and optionally days, runs, models, reference, restart and offset") }, 400);
   try {
     return c.json(await registry(c).judgeBench(body.data.address, body.data));
+  } catch (error) { return registryFailure(c, error); }
+});
+
+/** B-189: sent answers a person has not graded yet, blind: no judge verdict (an administrator's). */
+agentsRouter.get("/api/agent-grades", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  c.header("Cache-Control", "no-store");
+  const days = Number(c.req.query("days") || 30);
+  const limit = Number(c.req.query("limit") || 20);
+  try {
+    return c.json(await registry(c).answersToGrade({ days: Number.isFinite(days) ? days : 30, limit: Number.isFinite(limit) ? limit : 20,
+      mailboxId: c.req.query("address") || undefined }));
+  } catch (error) { return registryFailure(c, error); }
+});
+
+/** B-189: a person's grade of a sent answer on the judge's rubric; an agent key records one a person gave, naming where. */
+agentsRouter.put("/api/agent-runs/:id/grade", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  const parsed = parseGrade(await c.req.json().catch(() => null), actorOf(c.req.raw, c.get("standing")?.email));
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+  try {
+    const result = await registry(c).gradeRun(c.req.param("id"), parsed.grade);
+    return result.ok ? c.json(result.run) : c.json({ error: result.reason }, result.status);
+  } catch (error) { return registryFailure(c, error); }
+});
+
+/** B-189: how often the daily quality judge agrees with a person's grades, per check. */
+agentsRouter.get("/api/agent-calibration", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  c.header("Cache-Control", "no-store");
+  const days = Number(c.req.query("days") || 90);
+  try {
+    return c.json(await registry(c).judgeCalibration({ days: Number.isFinite(days) ? days : 90, mailboxId: c.req.query("address") || undefined }));
   } catch (error) { return registryFailure(c, error); }
 });
 

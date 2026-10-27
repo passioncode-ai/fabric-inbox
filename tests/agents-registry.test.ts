@@ -160,6 +160,9 @@ const bundle = await build({
               case 'seedFacts': await reg.seedFacts(c.rows); return Response.json(true);
               case 'seedThread': await box(c.mailbox).seedThread(c.rows); return Response.json(true);
               case 'byIds': return Response.json(await reg.runsByIds(c.ids));
+              case 'grade': return Response.json(await reg.gradeRun(c.id, c.grade));
+              case 'toGrade': return Response.json(await reg.answersToGrade(c.options ?? {}, c.now));
+              case 'calibration': return Response.json(await reg.judgeCalibration(c.options ?? {}, c.now));
               case 'again': return Response.json(await reg.answerAgain(c.id));
               case 'sentAfter': return Response.json(await reg.sentInThreadAfter(c.mailbox, c.thread, c.since));
               case 'save': await reg.saveRun(c.run); return Response.json(true);
@@ -1192,6 +1195,40 @@ test("B-153: a held message on an auto agent that holds gets one second look 30 
   }
   const many = await look({ holdUnsure: true }, Array.from({ length: 22 }, (_, i) => [`m${i.toString(16)}`, 40 + i] as [string, number]));
   try { assert.equal((await many.command("retry-held", { now: many.now })).queue, 20, "at most 20 a day"); } finally { await many.mf.dispose(); }
+});
+
+test("B-189: a person grades a sent answer blind; the calibration compares it with the judge per check", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const now = Date.now();
+    const at = (h: number) => new Date(now - h * 3_600_000).toISOString();
+    const pass = { language: "PASS", addressed: "PASS", policySafe: "PASS", routing: "PASS", actionable: "PASS", continuity: "PASS" };
+    const judgement = { rubric: "v1", model: "deepseek/deepseek-v4.1-flash", checks: pass, question: true, helped: "yes", note: "fine" };
+    const sent = { to: "x@y.invalid", subject: "Re: s", body: "Open Settings, then Privacy.", outboxId: "o" };
+    await command("begin", { run: { ...b141, id: rid("a1"), emailId: "a1", status: "sent", sent, judgement, createdAt: at(5), updatedAt: at(5) } });
+    await command("begin", { run: { ...b141, id: rid("a2"), emailId: "a2", status: "sent", sent, createdAt: at(1), updatedAt: at(1) } });
+    await command("begin", { run: { ...b141, id: rid("a3"), emailId: "a3", status: "sent", sent, judgement, redacted: true, createdAt: at(3), updatedAt: at(3) } });
+    await command("begin", { run: { ...b141, id: rid("a4"), emailId: "a4", status: "held", createdAt: at(2), updatedAt: at(2) } });
+    let list = await command("toGrade", { now }) as Record<string, unknown>[];
+    assert.deepEqual(list.map((r) => r.runId), [rid("a1"), rid("a2")], "judged first, then the newest; not a redacted or unsent run");
+    assert.equal(list[0].answer, sent.body);
+    assert.ok(!JSON.stringify(list).includes("deepseek"), "no judge verdict in the list");
+    const grade = { rubric: "v1", checks: { ...pass, actionable: "FAIL" }, helped: "partly", by: "owner@owner.example", kind: "person", at: at(0) };
+    assert.equal((await command("grade", { id: rid("a4"), grade })).status, 409, "a held run has no answer to grade");
+    assert.equal((await command("grade", { id: rid("zz"), grade })).status, 404);
+    assert.equal((await command("grade", { id: rid("a1"), grade })).ok, true);
+    await command("grade", { id: rid("a2"), grade: { ...grade, kind: "relayed", by: "key:ops", source: "chat 2026-10-27" } });
+    list = await command("toGrade", { now }) as Record<string, unknown>[];
+    assert.deepEqual(list, [], "graded runs leave the list");
+    const cal = await command("calibration", { now });
+    assert.equal(cal.graded, 1, "one pair: the other graded run was never judged");
+    assert.equal(cal.notJudged, 1);
+    assert.equal(cal.byPerson, 1);
+    assert.deepEqual({ ...cal.checks.actionable, kappa: undefined }, { pairs: 1, agree: 0, judgeHigher: 1, judgeLower: 0, naDiffers: 0, rate: 0, kappa: undefined, small: true });
+    assert.equal(cal.checks.language.agree, 1);
+    assert.equal(cal.helped.judgeHigher, 1);
+    assert.deepEqual(cal.judgeModels, ["deepseek/deepseek-v4.1-flash"]);
+  } finally { await mf.dispose(); }
 });
 
 test("B-141: day 30: a held message gets one closing reply naming another route and a second agent.waiting; a drafting address sends nothing", async () => {

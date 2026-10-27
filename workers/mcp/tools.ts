@@ -632,6 +632,44 @@ const judgeBench = defineTool({
   call: (a, ctx) => post(ctx, "/api/agent-bench", { address: a.address.toLowerCase(), days: a.days, runs: a.runs, models: a.models, reference: a.reference, restart: a.restart, offset: a.offset }),
 });
 
+const MARK = z.enum(["PASS", "FAIL", "NA"]);
+const listAnswersToGrade = defineTool({
+  name: "list_answers_to_grade", title: "Answers for a person to grade", level: "read", readOnly: true,
+  description: "Sent answers of reply agents a person has not graded yet (B-189), for measuring the daily quality judge against a person: those the judge already graded first (only they can be compared), newest first, each with runId, address, emailId (read the customer's message with read_message, accountId cloudflare:<address>, messageId the emailId), agentId, subject and the answer as sent. Never the judge's verdict, so the person's grade is blind. Answers whose texts were removed after 30 days are left out. Show the message and the answer to the person and record what they say with grade_agent_answer.",
+  input: {
+    days: z.number().int().min(1).max(90).default(30).describe("How many days back"),
+    address: z.string().email().max(254).optional().describe("Only this address's answers"),
+    limit: z.number().int().min(1).max(100).default(20),
+  },
+  routes: ["GET /api/agent-grades"],
+  call: (a, ctx) => get(ctx, "/api/agent-grades", { days: a.days, address: a.address?.toLowerCase(), limit: a.limit }),
+});
+
+const gradeAgentAnswer = defineTool({
+  name: "grade_agent_answer", title: "Record a person's grade of an answer", level: "admin", target: (a) => a.runId,
+  description: "Records a PERSON's grade of one sent answer on the daily quality judge's rubric v1 (B-189): language (in the customer's language), addressed (answers what was asked), policySafe (never asks for codes or passwords, never promises refunds, unbans or recovery), routing (hands to a person only what a person must handle), actionable (gives a step to take), continuity (does not repeat the earlier reply or ignore what was said), each PASS, FAIL or NA, and helped (yes, partly, no, na). Only grades a person gave: name where they gave them in source (the chat, the thread, the date); never your own opinion of the answer, which is not a person's grade. A later grade of the same run replaces it. Refused for a run that did not send an answer.",
+  input: {
+    runId: z.string().max(80).describe("The run id from list_answers_to_grade"),
+    checks: z.object({ language: MARK, addressed: MARK, policySafe: MARK, routing: MARK, actionable: MARK, continuity: MARK }).describe("The person's mark for each check"),
+    helped: z.enum(["yes", "partly", "no", "na"]).describe("Whether the answer helped; na when the message asked nothing"),
+    note: z.string().max(200).optional().describe("The person's own words on the main problem, at most 200 characters"),
+    source: z.string().min(1).max(300).describe("Where the person gave this grade, for example the chat and the date"),
+  },
+  routes: ["PUT /api/agent-runs/:id/grade"],
+  call: (a, ctx) => put(ctx, `/api/agent-runs/${enc(a.runId)}/grade`, { checks: a.checks, helped: a.helped, note: a.note, source: a.source }),
+});
+
+const getJudgeCalibration = defineTool({
+  name: "get_judge_calibration", title: "How well the quality judge agrees with a person", level: "read", readOnly: true,
+  description: "How often the daily quality judge agrees with a person's grades (B-189), over the runs of the last days that have both: graded (pairs), byPerson and relayed, notJudged (graded runs the judge has not judged), and per check and for helped: pairs (neither side NA), agree, judgeHigher (the judge passed what the person failed, or said it helped more), judgeLower, naDiffers, rate, kappa (Cohen's, null when undefined) and small (fewer than 20 pairs: a number, not yet a verdict). judgeModels names the judge models in the pairs.",
+  input: {
+    days: z.number().int().min(1).max(365).default(90).describe("How many days back"),
+    address: z.string().email().max(254).optional().describe("Only this address's answers"),
+  },
+  routes: ["GET /api/agent-calibration"],
+  call: (a, ctx) => get(ctx, "/api/agent-calibration", { days: a.days, address: a.address?.toLowerCase() }),
+});
+
 const agentMailVolume = defineTool({
   name: "agent_mail_volume", title: "Mail volume of agent addresses", level: "read", readOnly: true,
   description: "How much mail came to each address a reply agent answers, per UTC day over the last days (1–30, today included): messages received (spam apart), messages a reply agent ran on, and messages with no agent run, and spent: what that day's runs used on models (calls, tokens, costUsd; costUsd null when a call reported no charge, spent null when none was recorded). Counts only, never a sender, subject or text. Use it with list_agent_events to see what share of the mail the agents saw. runsKeptFrom names the day before which agent runs were pruned (null: none were). A message deleted for good is no longer counted.",
@@ -2119,7 +2157,7 @@ const revokeAgentKey = defineTool({
 
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, decideHeldMessage, listFolders, getSendStatus,
-  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
+  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,

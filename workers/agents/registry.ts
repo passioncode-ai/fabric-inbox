@@ -1,4 +1,5 @@
 import { answerCitedEvent, causeOf, citedOf, supportDiagnosedEvent } from "./learning-events";
+import { calibrationOf, type Calibration, type PersonGrade } from "./calibration";
 import { abandonedEvent, EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, runEvent, waitingEvent, type AgentEvent } from "./events";
 import { agentAccounts, statesOf } from "../lib/agent-status";
 import type { ThreadFacts } from "../../shared/mail/agent-state";
@@ -1117,6 +1118,46 @@ export class AgentRegistryDO extends DurableObject<Env> {
     this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?", again.status, JSON.stringify(again), again.updatedAt, id);
     await this.enqueue(run.mailboxId, run.emailId);
     return { ok: true, run: this.present(again) };
+  }
+
+  /** B-189: a person's grade of a sent answer; a later grade replaces it. */
+  async gradeRun(id: string, grade: PersonGrade): Promise<{ ok: true; run: AgentRun } | { ok: false; status: 404 | 409; reason: string }> {
+    const [row] = this.rows("SELECT body FROM agent_runs WHERE id = ?", id);
+    if (!row) return { ok: false, status: 404, reason: msg("This agent run is not kept any more") };
+    const run = JSON.parse(String(row.body)) as AgentRun;
+    if (run.status !== "sent" || !run.sent) return { ok: false, status: 409, reason: msg("Only an answer the agent sent can be graded") };
+    this.ctx.storage.sql.exec("UPDATE agent_runs SET body = json_set(body, '$.personGrade', json(?)) WHERE id = ?", JSON.stringify(grade), id);
+    return { ok: true, run: this.present({ ...run, personGrade: grade }) };
+  }
+
+  /**
+   * B-189: sent answers of the last `days` a person has not graded, judged ones first (only they compare),
+   * newest first; never the judge's verdict, so the grade is blind. Runs whose texts were removed are left out.
+   */
+  async answersToGrade(options: { days?: number; mailboxId?: string; limit?: number } = {}, now = Date.now()) {
+    const since = new Date(now - Math.max(1, Math.min(90, options.days ?? 30)) * 86_400_000).toISOString();
+    const args: (string | number)[] = [since];
+    let where = "status = 'sent' AND created_at >= ? AND json_extract(body, '$.personGrade') IS NULL AND json_extract(body, '$.redacted') IS NOT 1";
+    if (options.mailboxId) { where += " AND mailbox_id = ?"; args.push(options.mailboxId.toLowerCase()); }
+    const rows = this.rows(`SELECT body FROM agent_runs WHERE ${where}
+      ORDER BY json_extract(body, '$.judgement') IS NULL, created_at DESC, id DESC LIMIT ?`, ...args, Math.max(1, Math.min(100, options.limit ?? 20)));
+    return rows.map((row) => {
+      const run = JSON.parse(String(row.body)) as AgentRun;
+      return { runId: run.id, address: run.mailboxId, emailId: run.emailId, agentId: run.agentId, subject: run.subject,
+        answer: run.sent?.body ?? "", judged: !!run.judgement, createdAt: run.createdAt };
+    });
+  }
+
+  /** B-189: the judge's agreement with a person's grades over the runs of the last `days`. */
+  async judgeCalibration(options: { days?: number; mailboxId?: string } = {}, now = Date.now()): Promise<Calibration & { days: number; since: string }> {
+    const days = Math.max(1, Math.min(365, options.days ?? 90));
+    const since = new Date(now - days * 86_400_000).toISOString();
+    const args: string[] = [since];
+    let where = "created_at >= ? AND json_extract(body, '$.personGrade') IS NOT NULL";
+    if (options.mailboxId) { where += " AND mailbox_id = ?"; args.push(options.mailboxId.toLowerCase()); }
+    const runs = this.rows(`SELECT json_extract(body, '$.judgement') AS j, json_extract(body, '$.personGrade') AS g FROM agent_runs WHERE ${where}`, ...args)
+      .map((r) => ({ judgement: r.j ? JSON.parse(String(r.j)) : undefined, personGrade: JSON.parse(String(r.g)) }));
+    return { ...calibrationOf(runs), days, since };
   }
 
   /** The runs with these ids (B-115: the inbox page's messages), as the history presents them; unknown ids are left out. */

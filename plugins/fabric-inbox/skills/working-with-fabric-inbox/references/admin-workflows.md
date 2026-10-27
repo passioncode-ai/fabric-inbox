@@ -165,6 +165,11 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   To choose a judge on your own mail, `judge_bench { address, days?, runs?, models?, reference? }` (B-152) has
   each model grade the same sent answers with that rubric beside a reference with reasoning on; call it
   again until `done`, then page `lines` (hashes, marks, cost, ms; no words of the mail). It spends OpenRouter.
+  To measure the judge against a person (B-189): `list_answers_to_grade` lists sent answers not graded yet,
+  blind (no judge verdict); show the person each message (`read_message`, `cloudflare:<address>` and the `emailId`) and answer, record exactly what they
+  said with `grade_agent_answer { runId, checks, helped, note?, source }` (never your own opinion), and read
+  `get_judge_calibration { days?, address? }`: agreement, the two disagreements and kappa per check, `small`
+  under 20 pairs.
   `agent_mail_volume { days }` gives per-address, per-day counts (received, agent runs, no run, spam).
   Where each conversation stands: `list_agent_threads { states?, abandoned?, address? }` (unanswered,
   new_after_agent, error, needs_data, agent_draft, working, agent_replied, person_replied, no_reply_needed;
