@@ -191,6 +191,20 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-10-27 (0.54.0 to 0.57.0: B-176, B-184 mostly, the data agent's answer flag).**
+- **0.54.0** (PR #314, B-176): Settings → Addresses → Reply status lists the Gmail, IMAP and Outlook accounts with a reply agent; `GET /api/agent-status` returns `accounts` (`tests/reply-status-accounts.test.ts`).
+- **0.55.0** (PR #315, B-184): C-7b, Not spam on an account hands mail of the last three days to its rules, categories and agent once (a Message-ID marker keeps an IMAP move from handing it on twice; mail from before the account was connected only comes back); O-5, Domains with Cloudflare connected and no domain says why and links Add a domain; O-11, an update of an existing server no longer asks for an email it ignores.
+- **0.56.0** (PR #316, B-184): M-7, after Gmail's history expires the import hands on inbox mail that arrived in the gap (at most three days, `gapSince`); A-9b, a forward never runs on a subject that already starts with three forwards.
+- **0.57.0** (PR #317, B-191): reply agents read the data agent's `answer` flag (0.1.50) instead of their own 0.6 bar, which stays only for tools without the flag; a release's date is its `storeReleasedAt` (board announcement `8aeafcf8`).
+
+Full suite on each: 1728, 1735, 1738 and 1739 tests, 0 failed. Both servers deployed on each from its merge (`a3e50b2`, `08e6d00`, `c1b890e`, `8280d2b`), receipts `linked`, no problems; one organization upload retried once after `ERR_SSL_SSL/TLS_ALERT_BAD_RECORD_MAC` (B-185's retry). Tags `v0.54.0` to `v0.57.0`; v0.54.0 and v0.55.0 published (runs 40439979135, 40442853969). v0.53.0 stays unpublished: its Windows arm64 signing step failed (run 40438423779), filed as B-190.
+
+**Owed on the board:** a reply to the VoC announcement `8aeafcf8` (thread `953825e6`): moved to the `answer` flag in 0.57.0; held answers are asked again every 12 h for a week, then daily to 30 days (`HELD_RETRY_MS`), so pending Premium, connection and ban questions pick up the new ranking by themselves. The board's reply tools were not offered to this session after a reconnect, so it is not sent yet. The same thread's finding `143db3e4` asks for the count of "we are checking" promises and how many closed: not measured yet.
+
+**Exact next task:** send that board reply; then B-184's rest (N-10, O-8, O-10, O-12, P-5); then B-186 once the abstention rate after 0.53.0 (and now 0.57.0) is measured on live mail.
+
+**Waits:** the release runs of v0.56.0 (40445089916) and v0.57.0; the operator's sign-in and key (B-168, and the organization server's `FABRIC_INBOX_ORG_CLIENT_ID`/`SECRET`); B-174's live failure rate on 2026-11-02; the first quality days judged without templates (from 2026-10-28 00:05 UTC); the contract pin once CT-124 and CT-125 land.
+
 **State 2026-10-27 (0.51.0 to 0.53.0: B-154 done; the reply agents' audit).**
 - **0.51.0** (PR #310, B-154 step 3): `save_member`, `remove_member`, `create_agent_key`, `revoke_agent_key`, each always through the owner's approval. Live: the owner's server lists 136 tools with all four.
 - **0.52.0** (PR #311, B-154 step 4): the well-known document declares every action with its tool and gate (81 actions; `relayed`, `human`, `none`), checked against the contract's schema and FAC-SEM-142. B-154 is done for this server; the contract's owner was told on the board that answering approvals stays off the agent surface.
