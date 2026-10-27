@@ -21,6 +21,8 @@ export interface SafetyFindings {
   modelError?: string;
   /** B-180: links to sites the Okolos phishing feed lists, by host. */
   phishing?: { host: string; entry: string }[];
+  /** B-180: links whose host imitates a well-known or the server's own name (Okolos's lookalike check). */
+  lookalikes?: { host: string; resembles: string; kind: string }[];
   /** B-180: the server had no copy of the feed (`missing`), or one not updated for a day (`stale`). */
   feed?: "missing" | "stale";
   /** B-179: signals in the text of its attached documents (any signal, as for hidden text). */
@@ -62,5 +64,5 @@ export async function inspectMessage(input: SafetyInput, scan: SafetyScan): Prom
 /** Suspect: held until reviewed. */
 export function suspect(f: SafetyFindings): boolean {
   return f.visibleStrong.length > 0 || f.hiddenSignals.length > 0 || f.model || !!f.modelError || !!f.phishing?.length
-    || !!f.riskyFiles?.length || !!f.fileSignals?.length;
+    || !!f.lookalikes?.length || !!f.riskyFiles?.length || !!f.fileSignals?.length;
 }

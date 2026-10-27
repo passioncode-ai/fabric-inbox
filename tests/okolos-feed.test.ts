@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import { serialiseUpdate, type FeedUpdate } from "../vendor/okolos/core-feeds/apply";
-import { linksOf, phishingLinks, refreshFeed, type KeptFeed } from "../workers/safety/feed";
+import { linksOf, lookalikeLinks, phishingLinks, refreshFeed, type KeptFeed } from "../workers/safety/feed";
 
 // B-180: the server's copy of the Okolos phishing feed, checked with Okolos's own rules. Signed here with a key made
 // for the test; the live feed was checked against Okolos's real key by hand on 2026-10-26 (version 65, 220 hosts).
@@ -52,4 +52,21 @@ test("B-180: in the reader, a link to a listed host or one under it does not ope
   assert.equal(isBlockedLink("https://login-bank.invalid/", hosts), false, "its parent is not named by the verdict");
   assert.equal(isBlockedLink("mailto:x@y.invalid", hosts), false);
   assert.equal(isBlockedLink("not a url", hosts), false);
+});
+
+test("B-180: a link whose host imitates a known or the server's own name is named with what it imitates; the real site never is", () => {
+  const found = lookalikeLinks([
+    "https://paypa1.com/login", // a typo of a watched name
+    "https://xn--pypal-4ve.com/", // a Cyrillic а inside "paypal"
+    "https://paypal.com.secure-check.example/verify", // the brand standing in the wrong place
+    "https://www.paypal.com/", "https://accounts.google.com/x", // the real sites and what is under them
+    "https://acme-inbox.example/", "https://acme-inb0x.example/", // the server's own domain, and one imitating it
+    "https://news.unrelated.example/",
+  ], ["acme-inbox.example"]);
+  const by = Object.fromEntries(found.map((l) => [l.host, l.resembles]));
+  assert.equal(by["paypa1.com"], "paypal.com");
+  assert.equal(by["xn--pypal-4ve.com"], "paypal.com");
+  assert.equal(by["paypal.com.secure-check.example"], "paypal.com");
+  assert.equal(by["acme-inb0x.example"], "acme-inbox.example");
+  for (const real of ["www.paypal.com", "accounts.google.com", "acme-inbox.example", "news.unrelated.example"]) assert.equal(by[real], undefined, real);
 });

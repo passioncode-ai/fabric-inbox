@@ -79,7 +79,7 @@ export const DEFAULT_SPAM_DAILY_CALLS = 300;
 export const DEFAULT_SAFETY_DAILY_CALLS = 2000;
 const HTML_CHARS = 100_000;
 import { safetyOn } from "../safety/on";
-import { FEED_REFRESH_MS, FEED_STALE_MS, linksOf, phishingLinks, refreshFeed, type FeedEnv, type KeptFeed } from "../safety/feed";
+import { FEED_REFRESH_MS, FEED_STALE_MS, linksOf, lookalikeLinks, phishingLinks, refreshFeed, type FeedEnv, type KeptFeed } from "../safety/feed";
 import { readFiles, type MailFile, type ToText } from "../safety/files";
 export { safetyOn };
 type Row = Record<string, string | number | null>;
@@ -573,12 +573,15 @@ export class CategoriesDO extends DurableObject<Env> {
       this.spendSafety() ? this.safetyScan(text) : Promise.resolve({ flagged: false, error: msg("The day's safety budget was spent") }));
     if (files?.risky.length) findings.riskyFiles = files.risky;
     if (files?.unread.length) findings.unreadFiles = files.unread;
-    // B-180: its links against the server's copy of the Okolos phishing feed.
+    // B-180: its links against the server's copy of the Okolos phishing feed, and for hosts imitating a known name.
+    const links = linksOf(item.html ?? "");
+    const lookalikes = lookalikeLinks(links, (this.env.DOMAINS ?? "").split(",").map((d) => d.trim()).filter(Boolean));
+    if (lookalikes.length) findings.lookalikes = lookalikes;
     const feed = await this.phishingFeed(now).catch(() => null);
     if (!feed) findings.feed = "missing";
     else {
       if (now - feed.fetchedAt > FEED_STALE_MS) findings.feed = "stale";
-      const phishing = phishingLinks(linksOf(item.html ?? ""), feed.snapshot);
+      const phishing = phishingLinks(links, feed.snapshot);
       if (phishing.length) findings.phishing = phishing;
     }
     let state: SafetyState = "clear";
@@ -588,6 +591,8 @@ export class CategoriesDO extends DurableObject<Env> {
       state = "held";
       reason = findings.phishing?.length ? msg("Links to a known phishing site: {hosts}", { hosts: findings.phishing.map((p) => p.host).join(", ") })
         : findings.riskyFiles?.length ? msg("Carries a file that runs code: {files}", { files: findings.riskyFiles.join(", ") })
+        : findings.lookalikes?.length ? msg("Links to a site imitating {names}: {hosts}", {
+          names: [...new Set(findings.lookalikes.map((l) => l.resembles))].join(", "), hosts: findings.lookalikes.map((l) => l.host).join(", ") })
         : findings.fileSignals?.length ? msg("An attached file gives orders to an AI")
         : findings.modelError ? msg("Not checked: {error}", { error: findings.modelError })
         : findings.hiddenSignals.length ? msg("Hidden text addresses an AI")

@@ -60,6 +60,15 @@ its own licence and notices inside the combined work.
 - **Licence:** MIT, copyright (c) 2026 ssheleg; the text is
   [LICENSES/MIT-super-ux.txt](LICENSES/MIT-super-ux.txt).
 
+## Public Suffix List, a subset (MPL-2.0)
+
+- **Upstream:** the [Public Suffix List](https://publicsuffix.org/), as curated in Okolos
+  (`passioncode-ai/okolos` `packages/core-lookalike/src/suffixes.json` at `5d664c5`).
+- **Files:** `vendor/okolos/core-lookalike/suffixes.json`, unmodified (its hash is pinned in
+  `vendor/okolos/manifest.json`); it is a subset of the list, not the whole list.
+- **Licence:** Mozilla Public License 2.0, <https://mozilla.org/MPL/2.0/>. The rest of the vendored
+  Okolos code is PassionCode's own and carries this repository's licence (`vendor/okolos/README.md`).
+
 ## Dependencies
 
 npm packages are installed from `package-lock.json` and keep the licences their packages

@@ -1803,6 +1803,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   1. A message arrives -> with the check of SCN-087, its links are looked up in the server's copy of the Okolos phishing feed (a listed site, or a page under it), and the text of a PDF or document it carries is read and checked like its body.
   2. Nothing found -> it goes on as before.
   3. A link to a listed phishing site, instructions to an AI inside an attached document, or a file that runs code (a program, a script, an Office file with macros) -> the message is held and marked, with which link or file and why.
+  3a. A link whose site imitates a well-known name or the server's own domain (a letter swapped for a look-alike, a typo, the name standing in front of another domain) -> the message is held, named with what the site imitates, and reviewed; a review that finds it safe lets it through.
   4. Open the message -> the reader names the dangerous link or file; such a link does not open from the message (it keeps its text, struck through, and says why).
   5. Release it, or keep it -> as in SCN-087.
 - **Expected result:** No agent with tools reads or forwards a message that points to a known phishing site or carries a file that steers or runs code, and the person sees why before opening anything.
@@ -1811,9 +1812,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** As in SCN-087; a feed that is too old (no update for a day) is named in the verdict.
 - **Status:** draft
-- **Coverage:** workers/safety/feed.ts (`refreshFeed`, `linksOf`, `phishingLinks`), vendor/okolos/core-feeds (`applyUpdate`, `matchUrl`), workers/safety/files.ts (`readFiles`, `runsCode`), workers/safety/check.ts (`fileSignals`, `riskyFiles`), workers/categories/store.ts (`phishingFeed`, `toText`, `checkSafety`), workers/durableObject/index.ts (the event's `files`), app/components/EmailIframe.tsx (`blockedHosts`), shared/mail/blocked-links.ts, tests/okolos-feed.test.ts, tests/safety-files.test.ts, tests/safety-workerd.test.ts (B-179, B-180), tests/okolos-vendor.test.ts
+- **Coverage:** workers/safety/feed.ts (`refreshFeed`, `linksOf`, `phishingLinks`, `lookalikeLinks`), vendor/okolos/core-feeds (`applyUpdate`, `matchUrl`), vendor/okolos/core-lookalike (`checkLookalike`), workers/safety/files.ts (`readFiles`, `runsCode`), workers/safety/check.ts (`fileSignals`, `riskyFiles`), workers/categories/store.ts (`phishingFeed`, `toText`, `checkSafety`), workers/durableObject/index.ts (the event's `files`), app/components/EmailIframe.tsx (`blockedHosts`), shared/mail/blocked-links.ts, tests/okolos-feed.test.ts, tests/safety-files.test.ts, tests/safety-workerd.test.ts (B-179, B-180), tests/okolos-vendor.test.ts
 - **Product:** unobserved
-- **Today:** Built 2026-10-26 (B-179, B-180) for Cloudflare mail; a Gmail, IMAP or Outlook account's files are not read on arrival yet (its links are). A link to a listed site is shown without its address rather than asking first: the message frame is sandboxed without dialogs.
+- **Today:** Built 2026-10-26 (B-179, B-180) for Cloudflare mail; lookalike links 2026-10-27 (0.48.0, Okolos's `core-lookalike`, its watchlist and the server's own domains); a Gmail, IMAP or Outlook account's files are not read on arrival yet (its links are). A link to a listed site is shown without its address rather than asking first: the message frame is sandboxed without dialogs.
 
 ### SCN-089: Prepare an outreach campaign with my agent
 - **Persona:** P-01
