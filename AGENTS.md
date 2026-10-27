@@ -154,12 +154,12 @@ signed release must create it without a prompt (`docs/release.md`, upgrade check
   `EnableNodeCliInspectArguments` off; `EnableEmbeddedAsarIntegrityValidation`, `OnlyLoadAppFromAsar`
   and `EnableCookieEncryption` on; no `NS*UsageDescription` key outside `DECLARED_USAGE_DESCRIPTIONS`
   (empty). The receipt records both.
-- **Profile (LC-12).** Changing the server clears the old server's storage and cache once its window
-  is gone **and the new server (or its sign-in page) has answered**, so a mistyped address costs the
-  old server nothing; its `Partitions/` directory stays under the live session until the next launch.
-  Each launch removes other servers' partitions and `server.json.*` / `pending-setup.json.*`
-  leftovers, **except when no server is known at all**: then every partition is kept, since it may be
-  the server about to be entered again. The log is `~/Library/Logs/Fabric Inbox/fabric-inbox.log`, JSON lines with codes only, capped near
+- **Profile (LC-12).** The app holds several servers (B-158: a person's own and each organization's), listed
+  in `servers.json` and in the Account menu; changing the server keeps the old one, signed in, for a switch back.
+  **Forget Server** clears that server's storage and cache; its `Partitions/` directory stays under the live
+  session until the next launch. Each launch removes the partitions of servers no longer listed and
+  `server.json.*` / `servers.json.*` / `pending-setup.json.*` leftovers, **except when no server is known at
+  all**: then every partition is kept, since it may be the server about to be entered again. The log is `~/Library/Logs/Fabric Inbox/fabric-inbox.log`, JSON lines with codes only, capped near
   2 MB (`desktop/log.cjs`); `analytics-state.json`, `auto-update` and `update-install.json` are the
   only profile files usage counts and updates add, and a verified update waits in
   `~/Library/Caches/Fabric Inbox/updates/` until Squirrel.Mac copies it.

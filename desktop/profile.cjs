@@ -22,7 +22,7 @@ const path = require('node:path');
 
 const PARTITION = /^persist:(fabric-[0-9a-f]{24})$/;
 const PARTITION_DIR = /^fabric-[0-9a-f]{24}$/;
-const LEFTOVER = /^(?:server|pending-setup)\.json\..+$/;
+const LEFTOVER = /^(?:server|servers|pending-setup)\.json\..+$/;
 // Chromium writes DevToolsActivePort (the debugging port, mode 0644) when a run had
 // --remote-debugging-port; a leftover in the real profile names a port anyone on the Mac could try
 // (LC-14). It is kept only while this run itself is being debugged.
@@ -42,15 +42,16 @@ async function entries(fs, dir) {
 }
 
 /**
- * Removes every server partition except `keepPartition` (null keeps none; `keepPartitions` keeps
- * all, for a start with no server known) and the leftovers of the app's settings files. Returns what it removed; a failure is logged and returns what was done.
+ * Removes every server partition except `keepPartition` and `keepAlso` (the other servers the app remembers, B-158;
+ * null keeps none; `keepPartitions` keeps all, for a start with no server known) and the leftovers of the app's
+ * settings files. Returns what it removed; a failure is logged and returns what was done.
  */
-async function sweepProfile({ fs, userData, keepPartition, keepPartitions = false, debugging = false, log = defaultLog }) {
-  const keep = keepPartition ? partitionDirName(keepPartition) : null;
+async function sweepProfile({ fs, userData, keepPartition, keepAlso = [], keepPartitions = false, debugging = false, log = defaultLog }) {
+  const kept = new Set([keepPartition, ...keepAlso].map((p) => (p ? partitionDirName(p) : null)).filter(Boolean));
   const removed = { partitions: [], files: [] };
   try {
     for (const entry of keepPartitions ? [] : await entries(fs, path.join(userData, 'Partitions'))) {
-      if (!entry.isDirectory() || !PARTITION_DIR.test(entry.name) || entry.name === keep) continue;
+      if (!entry.isDirectory() || !PARTITION_DIR.test(entry.name) || kept.has(entry.name)) continue;
       await fs.rm(path.join(userData, 'Partitions', entry.name), { recursive: true, force: true });
       removed.partitions.push(entry.name);
     }

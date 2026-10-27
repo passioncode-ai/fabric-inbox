@@ -9,6 +9,7 @@
  *        usage: { checked, enabled, click, about }, login: { checked, enabled, click }, newMail: { checked, enabled, click },
  *        serverUpdate: { label, enabled, click } or null (B-44),
  *        openSettings, showServer, showCloudflare,
+ *        servers: { items: [{ label, checked, click }], add, forget: [{ label, click }] } or null (B-158: the servers the app holds),
  *        connectGmail, retry, console (opens the agent console, or null) }
  */
 function menuTemplate(platform, ctx) {
@@ -38,7 +39,12 @@ function menuTemplate(platform, ctx) {
     ...(mac ? [{ role: 'pasteAndMatchStyle', label: t('Paste and Match Style') }] : []),
     { role: 'delete', label: t('Delete') }, { role: 'selectAll', label: t('Select All') },
     ...(mac ? [{ type: 'separator' }, { label: t('Speech'), submenu: [{ role: 'startSpeaking', label: t('Start Speaking') }, { role: 'stopSpeaking', label: t('Stop Speaking') }] }] : [])];
-  const account = { label: t('Account'), submenu: [{ label: t('Connect Gmail in browser…'), click: ctx.connectGmail }] };
+  // B-158: the servers the app holds, the one shown ticked; another is a click away, with its sign-in kept.
+  const held = ctx.servers ? [...ctx.servers.items.map((s) => ({ label: s.label, type: 'radio', checked: s.checked, click: s.click })),
+    { label: t('Add Another Server…'), click: ctx.servers.add },
+    ...(ctx.servers.forget.length ? [{ label: t('Forget Server'), submenu: ctx.servers.forget.map((s) => ({ label: s.label, click: s.click })) }] : []),
+    { type: 'separator' }] : [];
+  const account = { label: t('Account'), submenu: [...held, { label: t('Connect Gmail in browser…'), click: ctx.connectGmail }] };
   // B-70: the agent console; not in the Mac App Store package (ctx.console is null there).
   const agentConsole = ctx.console ? [{ label: t('Agent Console'), accelerator: mac ? 'Ctrl+Cmd+T' : 'Ctrl+Shift+T', click: ctx.console }, { type: 'separator' }] : [];
   const view = { label: t('[menu] View'), submenu: [...agentConsole, { label: t('Retry connection'), accelerator: 'CmdOrCtrl+R', click: ctx.retry },

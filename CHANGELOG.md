@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.64.0 (2026-10-27)
+
+- **The app holds your own server and your organizations' servers.** The Account menu lists every server you added,
+  with the one shown ticked; choosing another shows it at once, still signed in. Add Another Server… adds one, and
+  Forget Server takes one off the list and clears what this Mac kept of it. An organization's server is marked as one.
+
 ## 0.63.0 (2026-10-27)
 
 - **A server knows which organization it belongs to.** Setting up a server from the command line now takes the

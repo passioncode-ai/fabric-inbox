@@ -227,7 +227,7 @@ test("an unreadable server setting is not a reason to delete the session the per
   assert.ok(!h.log.some((l) => l.startsWith("rm ")), h.log.join("\n"));
 });
 
-test("changing the server retires the old server's storage once the new one answers, and keeps its directory for the next start", async () => {
+test("B-158: changing the server keeps the old one, signed in, until it is forgotten; forgetting clears its storage and keeps its directory for the next start", async () => {
   const h = await boot({ config: { origin: A, accessOrigin: "" }, files: { [P]: [dirOf(A)] } });
   await h.settle();
   h.menu()[3].submenu.find((i: any) => i.label === "Retry connection").click();
@@ -240,12 +240,17 @@ test("changing the server retires the old server's storage once the new one answ
   await h.settle();
   const oldPartition = policy.partitionFor({ origin: A });
   assert.ok(h.log.includes(`destroy ${oldPartition}`));
-  assert.ok(!h.log.some((l) => l.startsWith("clear-")), "nothing is cleared before the new server answers");
   h.mailWindows().pop().webContents.emit("did-finish-load");
+  await h.settle();
+  assert.ok(!h.log.some((l) => l.startsWith("clear-")), "the old server is remembered: its sign-in stays for a switch back");
+  const account = h.menu().find((m: any) => m.label === "Account").submenu;
+  assert.deepEqual(account.filter((i: any) => i.type === "radio").map((i: any) => i.checked), [false, true], "both listed, the new one shown");
+  account.find((i: any) => i.label === "Forget Server").submenu[0].click();
   await h.settle();
   assert.ok(h.log.includes(`clear-storage ${oldPartition}`) && h.log.includes(`clear-cache ${oldPartition}`), h.log.join("\n"));
   assert.ok(!h.log.includes(`rm ${P}/${dirOf(A)}`), "the directory stays under its live session until the next start's sweep");
-  assert.ok(!h.log.some((l) => l.includes(`clear-storage ${policy.partitionFor({ origin: B })}`)), "the new server keeps its session");
+  assert.ok(!h.log.some((l) => l.includes(`clear-storage ${policy.partitionFor({ origin: B })}`)), "the server shown keeps its session");
+  assert.ok(!h.menu().find((m: any) => m.label === "Account").submenu.some((i: any) => i.label === "Forget Server"), "nothing left to forget");
 });
 
 test("a mistyped server address costs the old server nothing: its drafts and sign-in survive the failed load", async () => {
