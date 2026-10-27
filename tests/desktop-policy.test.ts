@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
+import { posixRequire } from './posix-require.ts';
 const require = createRequire(import.meta.url);
 const policy = require('../desktop/policy.cjs');
 const { serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, partitionFor, isSetupSender } = require('../desktop/policy.cjs');
@@ -134,8 +135,9 @@ test('a failed remote load cannot close recovery when Chromium finishes its erro
     Menu: { buildFromTemplate: (x: any) => x, setApplicationMenu() {} },
     ipcMain: { handle() {}, on() {} }, shell: {}, dialog: {}, session: { fromPartition: () => fakeSession }, powerMonitor };
   const code = await readFile(new URL('../desktop/main.cjs', import.meta.url), 'utf8');
+  const desktop = posixRequire(import.meta.url);
   runInNewContext(code, {
-    require: (name: string) => name === 'electron' ? fakeElectron : name === 'node:fs/promises' ? { readFile: async () => JSON.stringify(config), readdir: async () => [] } : name === './policy.cjs' ? require('../desktop/policy.cjs') : name === './cloudflare-deploy.cjs' ? require('../desktop/cloudflare-deploy.cjs') : name === './profile.cjs' ? require('../desktop/profile.cjs') : name === './connect.cjs' ? require('../desktop/connect.cjs') : name.startsWith('./') ? require('../desktop/' + name.slice(2)) : require(name),
+    require: (name: string) => name === 'electron' ? fakeElectron : name === 'node:fs/promises' ? { readFile: async () => JSON.stringify(config), readdir: async () => [] } : name.startsWith('./') ? desktop('../desktop/' + name.slice(2)) : desktop(name),
     __dirname: '/fixture/desktop', process: { platform: 'darwin' }, URL,
     setTimeout: () => 1, clearTimeout() {},
   });

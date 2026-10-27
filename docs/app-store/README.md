@@ -191,6 +191,14 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-10-27 (B-195 done; stability and Windows audit).**
+
+- **B-195** (PR #351, merge `6836437`): electron-builder signs the Windows installer through `desktop/win-sign.cjs`, which calls the ArtifactSigning module the shared action already installed, instead of downloading TrustedSigning on every build. Rehearsal run 40503695618 (tag `v0.70.0-rc.1`, `publish=false`): both Windows jobs signed every installer with no module download, verify and both `windows-smoke` jobs passed; cancelled at the publish job. CI only, no server deploy.
+- **Audit of open stability, operability and Windows debts** (operator's request, 2026-10-27). CI on `main` failed only twice in the last 200 runs, both the `desktop-profile` race fixed in #345; the nightly `platforms` run is green. PR #352 closes that race family: `settle()` in `tests/desktop-profile.test.ts` waits until the fixture is quiet, since `main.cjs` also does real disk work; and `desktop-profile` and `desktop-policy` now run on the Windows runner (`tests/posix-require.ts`), so every desktop test runs there. B-78 (AUD-B9-02) was not reproduced in 12 parallel runs under a full suite; its error comes from undici inside Miniflare's `dispatchFetch`, so it stays open as a watch row.
+- **Open but not ours to finish now:** B-194's retry inside the shared action (passioncode-ai/.github #44; our release retries once meanwhile); B-108 waits for acceptance; B-48 and B-49 (Mac App Store package); B-58 (push for Outlook and IMAP) is a feature; B-55, B-56, B-57, B-19, B-39 need a person's provider accounts.
+
+**Exact next task:** merge PR #352 once its `ci` and `platforms` checks are green, then the operator's approval of SCN-094; M2 waits on SOT-B5 (so B-160 waits too), meanwhile B-161 or B-163. On 2026-11-03 read a week of the log lines and decide B-186, B-187, B-188, B-192. Waits: the operator's Allow for an agent key; B-168; B-174 on 2026-11-02; SOT-B5 for M2; .github #44.
+
 **State 2026-10-27 (0.70.0: B-184 closed, B-194 mitigated, B-193).**
 
 - **B-184 P-5** (PR #343, `f4bb7f1`): `tests/mcp-calls.test.ts` runs every MCP tool's call and confirmation with arguments made from its input schema against a recording API. It found 9 routes called but not listed (now listed) and 4 listed but never called (now in `NOT_TOOLS` with the tool that does the same). No behaviour change. B-184 is done.

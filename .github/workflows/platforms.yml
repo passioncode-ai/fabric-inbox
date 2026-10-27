@@ -121,11 +121,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      # The desktop app's tests. The rest of the suite (the Worker, the web app, and the two desktop
-      # tests that drive main.cjs with POSIX fixture paths) runs on Linux above.
+      # The desktop app's tests, all of them (the two that drive main.cjs against "/fixture/…" paths load
+      # it through tests/posix-require.ts). The rest of the suite (the Worker, the web app) runs on Linux above.
       - name: Desktop tests
         if: matrix.arch == 'x64'
-        run: node --import tsx --test $(ls tests/desktop-*.test.ts | grep -v -e desktop-profile -e desktop-policy)
+        run: node --import tsx --test tests/desktop-*.test.ts
       - name: Build the NSIS installer (unsigned)
         run: node desktop/dist-platform.mjs --platform win32 --arch ${{ matrix.arch }} --out release
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
