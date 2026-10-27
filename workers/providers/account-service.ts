@@ -149,6 +149,8 @@ interface PendingEvent {
   attempts?: number;
   nextAt?: number;
   lastError?: string;
+  /** C-7b: queued by Not spam; the person chose it, so no discard rule takes it on the way. */
+  notSpam?: boolean;
 }
 const MAX_EVENT_ATTEMPTS = 10;
 /**
@@ -231,6 +233,18 @@ function hiddenByFirstLayout(account: AccountRecord, row: StoredMessage) {
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{1,128}$/;
 /** B-34: how long the marker of an event handed on is kept to recognise a replay of it. */
 export const EVENT_KEEP_MS = 90 * 86_400_000;
+/** C-7b: mail taken out of an account's Spam within this long of arriving reaches its rules, categories and agent. */
+export const NOT_SPAM_REDELIVER_MS = 3 * 86_400_000;
+/**
+ * C-7b: the marker of a message handed on, by its Message-ID, under the account's event markers (so the prune and a
+ * disconnect take it too). Null for mail with no Message-ID.
+ */
+async function handedKey(accountId: string, rfcMessageId: string | undefined): Promise<string | null> {
+  const id = String(rfcMessageId ?? "").trim().toLowerCase();
+  if (!id) return null;
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(id)));
+  return "event:" + accountId + ":rfc-" + [...digest.slice(0, 16)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 const EVENT_PRUNE_CURSOR = "events-prune:cursor";
 /**
  * B-06: one account's sending budget (shared/mail/send-limits.ts). A send past it is refused before
@@ -1061,10 +1075,34 @@ export class AccountService {
   async moveToInbox(accountId: string, messageId: string) {
     return this.changeMessage(accountId, messageId, { inbox: true });
   }
-  /** Report spam or Not spam through the provider's own spam folder, which also trains its filter (SP-3). */
-  async setSpam(accountId: string, messageId: string, spam: boolean) {
+  /**
+   * Report spam or Not spam through the provider's own spam folder, which also trains its filter (SP-3).
+   * C-7b: recent mail taken out of Spam is new mail again, as on a Cloudflare mailbox (C-7): its rules, categories,
+   * safety check and reply agent take it once (the event key is stable, so mail already handed on is not handed on
+   * twice). Older mail only comes back to the inbox; `redeliver` says whether it was queued.
+   */
+  async setSpam(accountId: string, messageId: string, spam: boolean, now = Date.now()) {
     if (typeof spam !== "boolean") throw new ProviderError("invalid_spam_state", 400);
-    return this.changeMessage(accountId, messageId, { spam });
+    const message = await this.changeMessage(accountId, messageId, { spam });
+    if (spam || !inFolder(message.labels, "inbox") || !(now - (message.timestamp || 0) <= NOT_SPAM_REDELIVER_MS)) return message;
+    const account = await this.account(accountId);
+    // Mail that was there before the account was connected was never new mail here: it only comes back.
+    const connected = (account as { connectedAt?: number }).connectedAt ?? account.createdAt ?? 0;
+    if ((message.timestamp || 0) < connected) return message;
+    // The key every sync queues an arrival under (Gmail, IMAP and Outlook alike): the provider's id in this account.
+    const eventId = message.providerMessageId;
+    const eventKey = "event:" + account.id + ":" + eventId;
+    // An IMAP move gives the message a new id, so mail handed on before it went to Spam is known by its Message-ID.
+    const handed = await handedKey(account.id, message.rfcMessageId);
+    const queued = await this.store.transaction(async (tx) => {
+      const old = await tx.get<PendingEvent>(eventKey);
+      if (old?.delivered || (handed && (await tx.get<PendingEvent>(handed))?.delivered)) return false;
+      const event: PendingEvent = { accountId: account.id, messageId: eventId, delivered: false, notSpam: true };
+      await tx.put(eventKey, event);
+      await tx.put("pending:" + eventKey, event);
+      return true;
+    });
+    return { ...message, redeliver: queued };
   }
   /** The account's labels, where it has labels (Gmail, B-35); an account with folders answers not_supported. */
   async listLabels(accountId: string): Promise<{ labels: AccountLabel[] }> {
@@ -1456,7 +1494,7 @@ export class AccountService {
         }
         // A discard rule takes new inbox mail before any rule, agent or category sees it: Discarded
         // counts as deleted. A filter that fails leaves the message where it is and delivers it.
-        const verdict = filter && inFolder(message.labels, "inbox")
+        const verdict = filter && !event.notSpam && inFolder(message.labels, "inbox")
           ? await filter({ accountId: event.accountId, provider: provider as RemoteProvider }, message).catch((error: unknown) => {
             console.warn(JSON.stringify({ event: "discard_check_failed", provider, error: (error as Error)?.message?.slice(0, 120) }));
             return null;
@@ -1491,8 +1529,11 @@ export class AccountService {
           date: message.date || new Date(message.timestamp || Date.now()).toISOString(),
           ...(attachedFiles(message).length ? { files: attachedFiles(message) } : {}),
         });
+        const handed = await handedKey(event.accountId, message.rfcMessageId);
         await this.store.transaction(async (tx) => {
           await tx.put(key.slice("pending:".length), { ...event, delivered: true, deliveredAt: now });
+          // C-7b: kept and forgotten with the event markers (EVENT_KEEP_MS), so a Not spam never hands it on again.
+          if (handed) await tx.put(handed, { accountId: event.accountId, messageId: event.messageId, delivered: true, deliveredAt: now });
           await tx.delete(key);
         });
         result.delivered++;

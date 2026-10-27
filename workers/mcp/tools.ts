@@ -493,7 +493,7 @@ const cloudflareAccount = z.string().regex(/^[0-9a-f]{32}$/).describe("A Cloudfl
 
 const listDomains = defineTool({
   name: "list_domains", title: "List domains", level: "read", readOnly: true,
-  description: "The domains of the shown Cloudflare accounts, each with its account and whether it is served here, the accounts themselves, what a token needs, and — with destinations — `destinations: { account, destinations }`, the forwarding destinations of one account (the server's unless account is given; a copy must be confirmed in its domain's own account). Give domain for one domain's full routing detail.",
+  description: "The domains of the shown Cloudflare accounts, each with its account and whether it is served here, the accounts themselves, what a token needs, and — with destinations — `destinations: { account, destinations }`, the forwarding destinations of one account (the server's unless account is given; a copy must be confirmed in its domain's own account). Give domain for one domain's full routing detail. Connected with no domain listed: an account may be hidden (`accounts[].shown`), a token may see only some zones (`problems`), or the account has none yet; adding a domain to Cloudflare is the person's step, at https://dash.cloudflare.com/?to=/:account/add-site.",
   input: { domain: domain.optional(), destinations: z.boolean().default(false).describe("Also list the forwarding destinations"), account: cloudflareAccount.optional().describe("With destinations: whose forwarding destinations to list (default: this server's account). It does not filter the domains") },
   routes: ["GET /api/domains", "GET /api/domains/:domain", "GET /api/domains/destinations"],
   async call(a, ctx) {
@@ -1086,7 +1086,7 @@ const checkSpam = defineTool({
 
 const markSpam = defineTool({
   name: "mark_spam", title: "Report spam or not spam", level: "mail", target: (a) => `${a.messages.length} message(s) spam=${a.spam}`,
-  description: "Moves messages to Spam (spam: true) or back to the Inbox (spam: false), and by default puts the sender on the Always spam or Never spam list so their next mail is judged the same way. For Gmail, IMAP and Outlook accounts it uses the account's own spam folder, which also teaches the provider's filter.",
+  description: "Moves messages to Spam (spam: true) or back to the Inbox (spam: false), and by default puts the sender on the Always spam or Never spam list so their next mail is judged the same way. For Gmail, IMAP and Outlook accounts it uses the account's own spam folder, which also teaches the provider's filter. spam: false on mail that arrived in the last three days also hands it, once, to its rules, categories, safety check and reply agent (any mailbox or account); older mail only returns to the inbox.",
   input: { messages: messageRefs, spam: z.boolean(),
     list: z.enum(["sender", "domain", "none"]).default("sender").describe("What to remember: each message's sender, their whole domain, or nothing") },
   routes: ["POST /api/spam/report", "POST /api/spam/release"],

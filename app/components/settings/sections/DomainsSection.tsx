@@ -27,7 +27,10 @@ const CLOUDFLARE_UI = {
   createToken: "Create Token",
   customToken: "Create Custom Token",
   allZones: "All zones",
+  addSite: "Add a domain",
 };
+/** Cloudflare's own page for adding a domain to the signed-in person's account. */
+export const ADD_SITE_URL = "https://dash.cloudflare.com/?to=/:account/add-site";
 /** A command, typed as it is in every language. */
 const SAVE_TOKEN_COMMAND = "npx wrangler secret put CLOUDFLARE_API_TOKEN";
 
@@ -64,13 +67,17 @@ export default function DomainsSection({ id }: { id: string | null }) {
         <span className="fi-row-main"><span className="fi-row-title">{t("Connect Cloudflare")}</span><span className="fi-row-meta">{t("Needed to list and change your domains")}</span></span>
       ) }] : []}
       renderRow={(e) => <DomainRowContent entry={e} several={several} connected={!!list?.connected} />}
-      empty={<div className="fi-list-empty"><p>{query ? t("No domain matches “{query}”.", { query }) : t("No domain is listed yet.")}</p></div>} />
+      empty={query ? <div className="fi-list-empty"><p>{t("No domain matches “{query}”.", { query })}</p></div>
+        : list?.connected ? <NoDomainYet list={list} onRefresh={() => void domains.refetch()} refreshing={domains.isFetching} />
+        : <div className="fi-list-empty"><p>{t("No domain is listed yet.")}</p></div>} />
   );
 
   const panel = !id ? (
     <PanelPlaceholder>
       <h2>{t("Choose a domain")}</h2>
-      <p>{list && !list.connected ? t("Connect Cloudflare first: then every domain of your account is listed here.") : t("Its state in Cloudflare, its addresses and what can change open here.")}</p>
+      <p>{list && !list.connected ? t("Connect Cloudflare first: then every domain of your account is listed here.")
+        : list && list.domains.length === 0 ? t("A domain you add to Cloudflare is listed here; then its mail can be received here.")
+        : t("Its state in Cloudflare, its addresses and what can change open here.")}</p>
     </PanelPlaceholder>
   ) : domains.isPending ? <SkeletonPanel label={t("Loading this domain…")} /> : id === CONNECT_KEY && list ? (
     <ConnectCloudflarePanel list={list} />
@@ -91,6 +98,30 @@ export default function DomainsSection({ id }: { id: string | null }) {
         one: "{n} domain, {served} receiving here.",
         other: "{n} domains, {served} receiving here.",
       }, { served: list.domains.filter((d) => d.served).length })}</p> : undefined} />
+  );
+}
+
+/**
+ * O-5 (B-184): Cloudflare is connected but lists no domain. Say why that can be (a hidden account, a token that
+ * sees no zone, or no domain yet), where a domain is added, and let the person look again once it is there.
+ */
+export function NoDomainYet({ list, onRefresh, refreshing }: { list: DomainList; onRefresh: () => void; refreshing: boolean }) {
+  const t = useT();
+  const hidden = list.accounts.filter((a) => !a.shown).length;
+  return (
+    <div className="fi-list-empty">
+      <p>{t("Your Cloudflare account has no domain yet. Add your domain in Cloudflare, then check again: it is listed here, and you can receive its mail here.")}</p>
+      {hidden > 0 && <p>{t.plural(hidden, {
+        one: "{n} Cloudflare account is hidden, so its domains are not listed.",
+        other: "{n} Cloudflare accounts are hidden, so their domains are not listed.",
+      })} <Link to={settingsPath("accounts")}>{t("Open Accounts")}</Link></p>}
+      {list.problems?.map((p) => <p key={p} className="fi-load-failure" role="alert">{t.text(p)}</p>)}
+      <p className="fi-hint">{t("A token limited to some domains lists only those.")}</p>
+      <p>
+        <a className="fi-primary" href={ADD_SITE_URL} target="_blank" rel="noreferrer">{t("Open {page} in Cloudflare ↗", { page: CLOUDFLARE_UI.addSite })}</a>{" "}
+        <button type="button" className="fi-secondary" onClick={onRefresh} disabled={refreshing}>{refreshing ? t("Checking…") : t("Check again")}</button>
+      </p>
+    </div>
   );
 }
 

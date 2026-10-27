@@ -287,8 +287,12 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
   setTrashed(accountId: string, messageId: string, trashed: boolean) {
     return this.serial(() => this.service.setTrashed(accountId, messageId, trashed));
   }
-  setSpam(accountId: string, messageId: string, spam: boolean) {
-    return this.serial(() => this.service.setSpam(accountId, messageId, spam));
+  async setSpam(accountId: string, messageId: string, spam: boolean) {
+    const message = await this.serial(() => this.service.setSpam(accountId, messageId, spam));
+    // C-7b: mail brought back from Spam is handed on now; a failed hand-on waits for the next drain.
+    if ((message as { redeliver?: boolean }).redeliver) await this.drain().catch((error: unknown) =>
+      console.warn(JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
+    return message;
   }
   archive(accountId: string, messageId: string) {
     return this.serial(() => this.service.archive(accountId, messageId));

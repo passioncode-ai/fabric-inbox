@@ -71,9 +71,11 @@
         <select id="cf-account"></select>
       </div>
       <p id="cf-existing" class="notice" hidden data-i18n>This account already has a Fabric Inbox server. It will be updated; its mail and settings are kept.</p>
-      <label for="cf-email" data-i18n>Your email</label>
-      <input id="cf-email" type="email" autocomplete="email" aria-describedby="cf-email-help">
-      <p id="cf-email-help" class="help" data-i18n>Only this address can open your server. Each time you sign in, Cloudflare emails a code to it.</p>
+      <div id="cf-email-field">
+        <label for="cf-email" data-i18n>Your email</label>
+        <input id="cf-email" type="email" autocomplete="email" aria-describedby="cf-email-help">
+        <p id="cf-email-help" class="help" data-i18n>Only this address can open your server. Each time you sign in, Cloudflare emails a code to it.</p>
+      </div>
       <div id="cf-subdomain-field" hidden>
         <label for="cf-subdomain" data-i18n>Name for your web address</label>
         <input id="cf-subdomain" autocomplete="off" spellcheck="false" aria-describedby="cf-subdomain-help">

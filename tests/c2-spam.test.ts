@@ -50,7 +50,7 @@ class MemoryStore implements Store {
   async transaction<T>(fn: (s: Store) => Promise<T>) { return fn(this); }
 }
 const gmailEnv = { GOOGLE_CLIENT_ID: "synthetic", GOOGLE_CLIENT_SECRET: "synthetic", PUBLIC_APP_URL: "https://mail.example.invalid", GMAIL_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 9).toString("base64url") };
-async function gmail() {
+async function gmail(internalDate?: number) {
   const store = new MemoryStore();
   let labels = ["INBOX", "UNREAD"], failure = "";
   const calls: { path: string; method?: string; body?: any }[] = [];
@@ -64,7 +64,7 @@ async function gmail() {
     calls.push({ path, method: init?.method, body });
     if (failure === "write" && init?.method === "POST") throw new Error("timeout");
     if (path.endsWith("/modify")) labels = [...new Set([...labels.filter((l) => !body.removeLabelIds.includes(l)), ...body.addLabelIds])];
-    return new Response(JSON.stringify({ id: "m1", threadId: "t1", labelIds: labels, payload: { headers: [{ name: "Subject", value: "Synthetic" }, { name: "From", value: "deals@spam.invalid" }] } }));
+    return new Response(JSON.stringify({ id: "m1", threadId: "t1", labelIds: labels, ...(internalDate ? { internalDate: String(internalDate) } : {}), payload: { headers: [{ name: "Subject", value: "Synthetic" }, { name: "From", value: "deals@spam.invalid" }, { name: "Message-ID", value: "<m1@spam.invalid>" }] } }));
   });
   return { service, calls, labels: () => labels, fail: (v: string) => { failure = v; } };
 }
@@ -94,6 +94,56 @@ test("SCN-040 / B8 Gmail setSpam: a non-boolean is refused before Gmail is asked
   fail("write");
   await assert.rejects(service.setSpam("a", "m1", true), /provider_unavailable/);
   assert.deepEqual((await service.getMessage("a", "m1")).labels, before.labels, "the previous state stays: no optimistic SPAM");
+});
+
+test("C-7b (B-184): Not spam on recent account mail queues it once for rules, categories and the agent, past any discard rule", async () => {
+  const now = Date.now();
+  const { service } = await gmail(now - 3600_000);
+  await service.setSpam("a", "m1", true);
+  const store = (service as unknown as { store: MemoryStore }).store;
+  assert.equal(await store.get("pending:event:a:m1"), undefined, "Report spam queues nothing");
+  const released = await service.setSpam("a", "m1", false, now) as { redeliver?: boolean };
+  assert.equal(released.redeliver, true);
+  assert.deepEqual(await store.get("pending:event:a:m1"), { accountId: "a", messageId: "m1", delivered: false, notSpam: true });
+  assert.equal((await service.setSpam("a", "m1", false, now) as { redeliver?: boolean }).redeliver, true, "a second Not spam keeps the one pending event");
+  assert.equal([...(await store.list({ prefix: "pending:event:" })).keys()].length, 1);
+
+  const delivered: string[] = [];
+  let asked = 0;
+  const result = await service.drainEvents(async (event) => { delivered.push(event.emailId); }, now,
+    async () => { asked++; return { ruleId: "r1", reason: "learned" }; });
+  assert.deepEqual(delivered, ["m1"], "handed on");
+  assert.equal(asked, 0, "the person chose it: no discard rule is consulted");
+  assert.equal(result.discarded, 0);
+  await service.setSpam("a", "m1", true);
+  assert.equal((await service.setSpam("a", "m1", false, now) as { redeliver?: boolean }).redeliver, false, "mail already handed on is not handed on twice");
+  assert.equal(await store.get("pending:event:a:m1"), undefined);
+});
+
+test("C-7b (B-184): mail handed on before (an IMAP move gives it a new id) is known by its Message-ID and not handed on twice", async () => {
+  const now = Date.now();
+  const { service } = await gmail(now - 3600_000);
+  const store = (service as unknown as { store: MemoryStore }).store;
+  await service.moveToInbox("a", "m1"); // read and cached, as a sync would
+  // As if the message had arrived in the inbox under another id and been handed on.
+  await store.put("pending:event:a:old-id", { accountId: "a", messageId: "m1", delivered: false });
+  const delivered: string[] = [];
+  const drained = await service.drainEvents(async (event) => { delivered.push(event.emailId); }, now);
+  assert.equal(delivered.length, 1, JSON.stringify(drained));
+  assert.equal((await store.list({ prefix: "event:a:rfc-" })).size, 1, "the Message-ID marker, kept with the event markers");
+  await service.setSpam("a", "m1", true);
+  assert.equal((await service.setSpam("a", "m1", false, now) as { redeliver?: boolean }).redeliver, false);
+  assert.equal(await store.get("pending:event:a:m1"), undefined);
+});
+
+test("C-7b (B-184): Not spam on mail older than three days only brings it back to the inbox", async () => {
+  const now = Date.now();
+  const { service } = await gmail(now - 4 * 86_400_000);
+  await service.setSpam("a", "m1", true);
+  const released = await service.setSpam("a", "m1", false, now) as { redeliver?: boolean; labels: string[] };
+  assert.ok(released.labels.includes("INBOX"));
+  assert.equal(released.redeliver, undefined);
+  assert.equal((await (service as unknown as { store: MemoryStore }).store.list({ prefix: "pending:event:" })).size, 0);
 });
 
 // ── SCN-041: the model's count cannot be read ──────────────────────────────────────────────────
