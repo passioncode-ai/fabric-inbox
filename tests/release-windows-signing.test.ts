@@ -29,3 +29,15 @@ test("B-105: the post-publish platform update check runs in the release environm
   const body = wf.slice(start, start + 900);
   assert.match(body, /\n    environment: release\n/);
 });
+
+test("B-190: the PowerShell Gallery is registered when a Windows runner lacks it, before either signing pass", () => {
+  const workflow = readFileSync(".github/workflows/release.yml", "utf8");
+  const gallery = workflow.indexOf("- name: The PowerShell Gallery the signing module installs from");
+  assert.ok(gallery > 0, "the step exists");
+  assert.ok(gallery < workflow.indexOf("- name: Sign the app's executables and DLLs"), "before pass 1");
+  assert.ok(gallery < workflow.indexOf("- name: Azure sign-in for electron-builder"), "before pass 2");
+  const step = workflow.slice(gallery, workflow.indexOf("# Pass 1", gallery));
+  assert.match(step, /if: env\.SIGNING == 'true'/);
+  assert.match(step, /Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue\) \{ Write-Host 'PSGallery: present'; exit 0 \}/, "a runner that has it is left alone");
+  assert.match(step, /Register-PSRepository -Default/);
+});
