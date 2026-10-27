@@ -435,3 +435,37 @@ test("Windows: a hub listening on [::1] only (Node's 'localhost') is found: nets
   assert.deepEqual(await listenerWith(exec, "win32")(47125), { pid: 5151, name: "Hub", path: "C:\\Hub\\Hub.exe" });
   assert.ok(!seenArgs[0].includes("-p"), "netstat is not limited to IPv4");
 });
+
+test("N-10 (B-184): two processes on the callback's port are refused before anything is asked, made or sent", async () => {
+  const two = { ...HUB, pids: [HUB.pid, 5151] };
+  const { seen, deps } = world({ identify: async () => two });
+  const out = await connect({ request: request(), config, ...deps });
+  assert.deepEqual([out.outcome, out.reason], ["failed", "listener_ambiguous"]);
+  assert.equal(out.port, 47123);
+  assert.equal(seen.prompts.length, 0);
+  assert.deepEqual(seen.minted, []);
+  assert.deepEqual(seen.delivered, [], "neither of them hears anything: either could read it");
+  assert.ok(seen.logs.some((l) => l.includes("listener_ambiguous")));
+  // A second listener appearing after the Allow takes the key back unsent.
+  let calls = 0;
+  const later = world({ identify: async () => (++calls === 1 ? HUB : two) });
+  const after = await connect({ request: request(), config, ...later.deps });
+  assert.deepEqual([after.outcome, after.reason], ["failed", "listener_changed"]);
+  assert.deepEqual(later.seen.revoked, ["tok-9"]);
+  assert.deepEqual(later.seen.delivered, []);
+  const main = readFileSync(new URL("../desktop/main.cjs", import.meta.url), "utf8");
+  assert.match(main, /out\.reason === 'listener_ambiguous' \? t\('More than one app listens on port \{port\}/);
+});
+
+test("N-10: every platform's lookup lists the processes when more than one listens, and only then", async () => {
+  const mac = listenerWith(async (file: string) => (file.endsWith("lsof") ? { stdout: "p4242\ncFabric\np5151\ncnode\n" } : { stdout: "/Applications/Fabric.app/Contents/MacOS/Fabric\n" }), "darwin");
+  assert.deepEqual((await mac(47123))?.pids, [4242, 5151]);
+  const one = listenerWith(async (file: string) => (file.endsWith("lsof") ? { stdout: "p4242\ncFabric\nf21\nf22\n" } : { stdout: "x\n" }), "darwin");
+  assert.equal((await one(47123))?.pids, undefined, "one process on two addresses is one listener");
+  const win = listenerWith(async (file: string) => (file.endsWith("netstat.exe")
+    ? { stdout: "  TCP    127.0.0.1:47123   0.0.0.0:0   LISTENING   4242\r\n  TCP    [::1]:47123   [::]:0   LISTENING   5151\r\n" } : { stdout: "" }), "win32");
+  assert.deepEqual((await win(47123))?.pids, [4242, 5151]);
+  const linux = listenerWith(async () => ({ stdout: 'LISTEN 0 511 127.0.0.1:47123 0.0.0.0:* users:(("fabric",pid=4242,fd=21),("node",pid=5151,fd=3))\n' }), "linux",
+    { readlink: async () => "/opt/Fabric/fabric", readFile: async () => { throw new Error("ENOENT"); }, readdir: async () => [] } as never);
+  assert.deepEqual((await linux(47123))?.pids, [4242, 5151]);
+});

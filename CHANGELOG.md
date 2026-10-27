@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.59.0 (2026-10-27)
+
+- **A new server opens when its address is ready.** A web address or sign-in page Cloudflare made a moment ago can
+  take a few minutes to appear on the internet. After Create my server, the app now waits for it (up to three
+  minutes) and says so, instead of reporting that it could not reach a server that was fine.
+- **Connecting a hub refuses an ambiguous port.** When more than one app listens on the port a hub named, Fabric
+  Inbox no longer asks or sends anything, since either app could read the key, and tells you to quit the other one.
+
 ## 0.58.0 (2026-10-27)
 
 - **Creating a Cloudflare token takes fewer steps.** Open Cloudflare API Tokens now opens the token form already

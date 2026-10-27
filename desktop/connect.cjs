@@ -72,8 +72,9 @@ function promptFor(request, config, listener) {
 }
 
 /**
- * Who listens on a loopback port: { pid, name, path } — the app's name (the .app bundle on macOS,
- * the executable on Windows and Linux) — or null when nothing does. One way per platform, each
+ * Who listens on a loopback port: { pid, name, path, pids } — the app's name (the .app bundle on macOS,
+ * the executable on Windows and Linux) — or null when nothing does. `pids`, present only when several
+ * processes listen there, lists them (N-10, B-184): more than one means the prompt could name one and the key reach another. One way per platform, each
  * with tools the system ships: lsof and ps (macOS); netstat, tasklist and PowerShell (Windows);
  * ss, or /proc when ss is missing (Linux). `exec(file, args)` and `fs` are injected for tests.
  */
@@ -83,13 +84,14 @@ function listenerWith(exec, platform = process.platform, fs = require('node:fs/p
   return async (port) => {
     let found;
     try { found = String((await exec('/usr/sbin/lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-Fpc'])).stdout); } catch { return null; }
-    const pid = Number((/^p(\d+)$/m.exec(found) || [])[1]);
+    const pids = [...new Set([...found.matchAll(/^p(\d+)$/gm)].map((m) => Number(m[1])))];
+    const pid = pids[0];
     if (!pid) return null;
     const command = (/^c(.+)$/m.exec(found) || [])[1] || '';
     let path = '';
     try { path = String((await exec('/bin/ps', ['-o', 'comm=', '-p', String(pid)])).stdout).trim(); } catch { path = ''; }
     const bundle = /\/([^/]+)\.app\/Contents\/MacOS\//.exec(path);
-    return { pid, name: bundle ? bundle[1] : command || path.split('/').pop() || `pid ${pid}`, path };
+    return { pid, name: bundle ? bundle[1] : command || path.split('/').pop() || `pid ${pid}`, path, ...(pids.length > 1 ? { pids } : {}) };
   };
 }
 
@@ -105,11 +107,12 @@ function windowsListener(exec) {
     let rows;
     // No `-p TCP`: that lists IPv4 only, and a hub listening on [::1] (Node's 'localhost') was never found (bug hunt 2026-10-12).
     try { rows = String((await exec(system32('netstat.exe'), ['-ano'])).stdout); } catch { return null; }
-    let pid = 0;
+    const pids = [];
     for (const line of rows.split(/\r?\n/)) {
       const m = /^\s*TCP\s+(\S+):(\d+)\s+(?:0\.0\.0\.0|\[::\]):0\s+\S+\s+(\d+)\s*$/i.exec(line);
-      if (m && Number(m[2]) === port && /^(127\.0\.0\.1|0\.0\.0\.0|\[::1?\])$/.test(m[1])) { pid = Number(m[3]); break; }
+      if (m && Number(m[2]) === port && /^(127\.0\.0\.1|0\.0\.0\.0|\[::1?\])$/.test(m[1]) && !pids.includes(Number(m[3]))) pids.push(Number(m[3]));
     }
+    const pid = pids[0];
     if (!pid) return null;
     let image = '';
     try {
@@ -122,7 +125,7 @@ function windowsListener(exec) {
         ['-NoProfile', '-NonInteractive', '-Command', `(Get-Process -Id ${pid}).Path`])).stdout).trim();
     } catch { path = ''; }
     const file = (path.split('\\').pop() || image).replace(/\.exe$/i, '');
-    return { pid, name: file || `pid ${pid}`, path };
+    return { pid, name: file || `pid ${pid}`, path, ...(pids.length > 1 ? { pids } : {}) };
   };
 }
 
@@ -144,6 +147,8 @@ function linuxListener(exec, fs) {
     if (!inodes.size) return null;
     let pids = [];
     try { pids = (await fs.readdir('/proc')).filter((d) => /^\d+$/.test(d)); } catch { return null; }
+    let hit = null;
+    const holders = [];
     for (const pid of pids) {
       let fds = [];
       try { fds = await fs.readdir(`/proc/${pid}/fd`); } catch { continue; }
@@ -152,26 +157,30 @@ function linuxListener(exec, fs) {
         try { target = await fs.readlink(`/proc/${pid}/fd/${fd}`); } catch { continue; }
         const m = /^socket:\[(\d+)\]$/.exec(target);
         if (m && inodes.has(m[1])) {
-          let comm = '';
-          try { comm = (await fs.readFile(`/proc/${pid}/comm`, 'utf8')).trim(); } catch { comm = ''; }
-          return { pid: Number(pid), comm };
+          if (!hit) {
+            let comm = '';
+            try { comm = (await fs.readFile(`/proc/${pid}/comm`, 'utf8')).trim(); } catch { comm = ''; }
+            hit = { pid: Number(pid), comm };
+          }
+          holders.push(Number(pid));
+          break;
         }
       }
     }
-    return null;
+    return hit ? { ...hit, pids: holders } : null;
   };
   return async (port) => {
     let hit = null;
     try {
       const out = String((await exec('ss', ['-Hltnp', `sport = :${port}`])).stdout);
       const m = /users:\(\("([^"]+)",pid=(\d+)/.exec(out);
-      if (m) hit = { pid: Number(m[2]), comm: m[1] };
+      if (m) hit = { pid: Number(m[2]), comm: m[1], pids: [...new Set([...out.matchAll(/pid=(\d+)/g)].map((p) => Number(p[1])))] };
       else if (!out.trim()) return null; // ss answered: nothing listens
     } catch { hit = null; }
     if (!hit) hit = await viaProc(port);
     if (!hit) return null;
     const path = await exeOf(hit.pid);
-    return { pid: hit.pid, name: path.split('/').pop() || hit.comm || `pid ${hit.pid}`, path };
+    return { pid: hit.pid, name: path.split('/').pop() || hit.comm || `pid ${hit.pid}`, path, ...(hit.pids?.length > 1 ? { pids: hit.pids } : {}) };
   };
 }
 
@@ -233,7 +242,7 @@ async function askWhileListening({ prompt, confirm, identify, port, listener, pa
       let now = null;
       try { now = await identify(port); } catch { now = null; }
       if (signal.aborted) return;
-      if (now && now.pid !== listener.pid) { gone = 'no_listener'; break; }
+      if (now && (now.pid !== listener.pid || ambiguous(now))) { gone = 'no_listener'; break; }
       misses = now ? 0 : misses + 1;
       if (misses >= PROMPT_MISSES) { gone = 'no_listener'; break; }
       if (waited >= PROMPT_DEADLINE_MS) { gone = 'not_answered'; break; }
@@ -299,6 +308,9 @@ function deliverTo(callback, { fetch: doFetch = fetch, timeoutMs = 10000 } = {})
   };
 }
 
+/** More than one process listens on the port (a lookup that cannot tell says nothing: one). */
+const ambiguous = (listener) => Array.isArray(listener?.pids) && listener.pids.length > 1;
+
 /**
  * The whole exchange. Returns { outcome: 'connected' | 'denied' | 'failed', reason? }.
  * The hub hears the outcome whenever it still listens; a secret is never logged.
@@ -316,6 +328,12 @@ async function connect({ request, config, confirm, mint, revoke, deliver, signIn
   let listener = await identify(port);
   for (let tries = 0; !listener && tries < LISTENER_WAITS; tries++) { await sleep(1000); listener = await identify(port); }
   if (!listener) { say('refused', { reason: 'no_listener' }); return { outcome: 'failed', reason: 'no_listener' }; }
+  // N-10 (B-184): two processes on one port; the prompt would name one and the key could reach the other.
+  // Nothing is sent: either of them could read it.
+  if (ambiguous(listener)) {
+    say('refused', { reason: 'listener_ambiguous', listeners: listener.pids.length });
+    return { outcome: 'failed', reason: 'listener_ambiguous', port };
+  }
   if (listener.pid === self) {
     await deliver({ state: request.state, outcome: 'failed', error: 'listener_is_self' });
     say('refused', { reason: 'listener_is_self' });
@@ -361,7 +379,7 @@ async function connect({ request, config, confirm, mint, revoke, deliver, signIn
   const { key, clientSecret, mcpUrl } = minted.data;
   // The same process still holds the port, or the key is taken back unsent.
   const still = await identify(port);
-  if (!still || still.pid !== listener.pid) {
+  if (!still || still.pid !== listener.pid || ambiguous(still)) {
     const revoked = await revoke(key.id).catch(() => false);
     say('failed', { reason: 'listener_changed', keyId: key.id, revoked });
     return { outcome: 'failed', reason: 'listener_changed', revoked };

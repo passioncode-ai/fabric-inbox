@@ -191,6 +191,18 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-10-27 (0.58.0 and 0.59.0: B-184 down to P-5, B-190, the board replies).**
+- **0.58.0** (PR #319, B-184): O-12, the token form opens pre-filled (`tokenTemplateUrl`); O-8, a lapsed sign-in is found before Allow is asked (`signedInWith`).
+- **B-190** (PR #320): the release workflow registers PSGallery when a Windows runner lacks it, before both signing passes. On v0.58.0's run (40449089469) the Windows arm64 signing steps passed, where v0.47.0, v0.50.0, v0.53.0 and v0.57.0 had failed.
+- **0.59.0** (B-184): O-10, after Create my server the app waits up to three minutes for a new workers.dev name and sign-in page to resolve (`desktop/address-wait.cjs`, a step "Reachable on the internet"); N-10, a callback port held by more than one process is refused before anything is asked, made or sent (`pids` from every platform's lookup). Text-check reports `43d72877`, `c5373cb4`, `898a0e64`, `16bd496f`.
+- **Board:** the VoC announcement `8aeafcf8` answered (`cd07ba84`: on the `answer` flag since 0.57.0, held answers retried every 12 h for a week then daily to 30 days); the finding `143db3e4` answered with numbers (`ab0eed42`): 4 "we are checking" replies in 7 days on the owner's server, 1 closed by an answer, 3 still held, 0 on the organization's (Workers logs, `agent_waiting_reply_sent` against `agent_answer_sent`). Its other half, a code check for false states, is B-192.
+
+Full suite on 0.59.0: 1750 tests, 0 failed. Both servers on 0.58.0 from `ec1d39b`, receipts `linked`; tag `v0.58.0`. The owner's agent key is gone from this machine's key store (`onboard.mjs` answers `no_key`), so live MCP reads need `node scripts/onboard.mjs connect` and the owner's Allow; Workers logs (`CLOUDFLARE_LOGS_TOKEN`) still answer counts.
+
+**Exact next task:** deploy 0.59.0 to both servers and tag it; then B-192 (find false-state sentences in live sent answers first); B-184's P-5 (run each tool's `call` against a recording fetch); B-186 once the abstention rate is measured.
+
+**Waits:** the release runs of v0.58.0 (40449089469) and v0.59.0; the operator's sign-in and key (B-168, and the organization server's `FABRIC_INBOX_ORG_CLIENT_ID`/`SECRET`); B-174's live failure rate on 2026-11-02; the first quality days judged without templates (from 2026-10-28 00:05 UTC); the contract pin once CT-124 and CT-125 land.
+
 **State 2026-10-27 (0.54.0 to 0.57.0: B-176, B-184 mostly, the data agent's answer flag).**
 - **0.54.0** (PR #314, B-176): Settings → Addresses → Reply status lists the Gmail, IMAP and Outlook accounts with a reply agent; `GET /api/agent-status` returns `accounts` (`tests/reply-status-accounts.test.ts`).
 - **0.55.0** (PR #315, B-184): C-7b, Not spam on an account hands mail of the last three days to its rules, categories and agent once (a Message-ID marker keeps an IMAP move from handing it on twice; mail from before the account was connected only comes back); O-5, Domains with Cloudflare connected and no domain says why and links Add a domain; O-11, an update of an existing server no longer asks for an email it ignores.
