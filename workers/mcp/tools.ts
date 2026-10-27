@@ -1401,6 +1401,23 @@ const importMailbox = defineTool({
   },
 });
 
+// B-158 M1 step 3c: the address's mail moves to the server its mailbox was copied into (same Cloudflare account).
+const moveAddress = defineTool({
+  name: "move_address", title: "Move an address's mail to this server", level: "admin", target: (a) => a.address,
+  description: "Moves where an address's mail arrives, after its mailbox was copied with export_mailbox and import_mailbox, between two servers in the same Cloudflare account. On the sending server: hold stops new sends from its copy there and turns its agent off (release undoes both). On the receiving server: route points the address's Cloudflare rule at this server, once the copy has the counts export_mailbox manifest gave (expect), writing the rule as it was down first; then send_test_message and check_test_message here prove mail arrives, and update_address chooses its agent here. unroute is the way back: the rule as it was, while it still points here. status: where the move stands. Nothing is deleted on either server.",
+  input: { address, action: z.enum(["status", "hold", "release", "route", "unroute"]),
+    expect: z.object({ emails: z.number().int().min(0), attachments: z.number().int().min(0) }).optional().describe("route: the manifest's counts") },
+  routes: ["GET /api/transfer/:email/route", "POST /api/transfer/:email/route", "POST /api/transfer/:email/unroute", "POST /api/transfer/:email/hold"],
+  async call(a, ctx) {
+    const base = `/api/transfer/${enc(a.address.toLowerCase())}`;
+    if (a.action === "status") return get(ctx, `${base}/route`);
+    if (a.action === "hold" || a.action === "release") return post(ctx, `${base}/hold`, { release: a.action === "release" });
+    if (a.action === "unroute") return post(ctx, `${base}/unroute`, {});
+    if (!a.expect) throw new ApiError(400, "Give expect: the counts export_mailbox manifest gave", null);
+    return post(ctx, `${base}/route`, { expect: a.expect });
+  },
+});
+
 const renameStatusTool = defineTool({
   name: "rename_status", title: "Read a rename", level: "read", readOnly: true, target: (a) => a.address,
   description: "Where a rename of this address stands: running with its step, messages copied and whether it can still be cancelled (cancel_rename), or done with the new address (while the old one still delivers to it).",
@@ -2108,7 +2125,7 @@ export const TOOLS: readonly ToolDef[] = [
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,
-  getServer, listMembers, listAudit, checkAddress, createAddress, createAddresses, updateAddress, setAccountAgent, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, exportMailbox, importMailbox, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination, removeDestination,
+  getServer, listMembers, listAudit, checkAddress, createAddress, createAddresses, updateAddress, setAccountAgent, removeAddress, pauseAddress, resumeAddress, renameAddressTool, renameStatusTool, cancelRenameTool, exportMailbox, importMailbox, moveAddress, routeAddress, bringAddress, sendTest, checkTest, setCatchAll, connectDomain, releaseDomain, enableSending, addDestination, removeDestination,
   listCloudflareAccounts, showCloudflareAccount, removeCloudflareAccount,
   updateSpamList, emptySpam, clearIncomingFailures, removeDiscardRule, updateDiscardAllowList, setHidden, saveAgent, deleteAgent, saveCategory, deleteCategory, saveProject, deleteProject,
   saveCollection, deleteCollection, putDocuments, deleteDocument, saveRule, dryRunRule, retryIncoming, exportSetup, applySetup,

@@ -229,6 +229,9 @@ export class MailboxDO extends DurableObject<Env> {
       if (!['send', 'reply', 'forward'].includes(kind)) return { error: msg('Invalid send operation'), code: 'INVALID_REQUEST' };
       const identity = { mailboxId, request: structuredClone(request), kind, originalEmailId: command.originalEmailId, verifyContent: !!command.verifyContent };
       const existing = this.outbox.find(mailboxId, key, await payloadHash(identity));
+      // B-158 step 3c: while its mail moves to another server, the copy here sends nothing new (a send already
+      // accepted still finishes).
+      if (!existing && await this.ctx.storage.get('moved')) return { error: msg('This address is moving to another server; send from there, or release the hold here'), code: 'MOVED' };
       // Arm before creating durable pending state. A crash after this point leaves
       // an alarm that can drive pending work or repair an accepted projection.
       await this.armRecovery();
@@ -1168,6 +1171,14 @@ export class MailboxDO extends DurableObject<Env> {
 			"SELECT COUNT(*) AS n FROM incoming_receipts WHERE automation_status = 'pending' OR (forward_status IN ('owed', 'sending') AND received_at > ?)",
 			Date.now() - COPY_BLOCKS_RENAME_MS).one().n);
 		return { sends, incoming };
+	}
+
+	/** B-158 step 3c: the hold while the address's mail moves to another server: what it was answered by, to restore. */
+	async setMoved(hold: { at: string; agent: string | null } | null): Promise<void> {
+		if (hold) await this.ctx.storage.put("moved", hold); else await this.ctx.storage.delete("moved");
+	}
+	async movedState(): Promise<{ at: string; agent: string | null } | null> {
+		return (await this.ctx.storage.get<{ at: string; agent: string | null }>("moved")) ?? null;
 	}
 
 	/** While a rename copies this mailbox its Spam and Discarded are not purged (the copy names their files). */

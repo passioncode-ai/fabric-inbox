@@ -18,7 +18,7 @@ export async function handleSendEmail(c: Context<MailboxContext>, kind: 'send' |
     request: raw as SendMailCommand['request'],
   });
   if ('error' in result) {
-    const status = result.code === 'IDEMPOTENCY_CONFLICT' ? 409 : result.code === 'NOT_FOUND' ? 404 : 400;
+    const status = result.code === 'IDEMPOTENCY_CONFLICT' || result.code === 'MOVED' ? 409 : result.code === 'NOT_FOUND' ? 404 : 400;
     return c.json(result, status);
   }
   if (result.status === 'unknown') return c.json({ ...result, error: msg('Send outcome is unknown; do not resend automatically') }, 409);

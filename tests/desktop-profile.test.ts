@@ -230,6 +230,11 @@ test("an unreadable server setting is not a reason to delete the session the per
 test("B-158: changing the server keeps the old one, signed in, until it is forgotten; forgetting clears its storage and keeps its directory for the next start", async () => {
   const h = await boot({ config: { origin: A, accessOrigin: "" }, files: { [P]: [dirOf(A)] } });
   await h.settle();
+  // Start-up reads the remembered servers after several awaits; on a slow runner five ticks are not enough
+  // (v0.66.0's release gate saw only the new server listed). Wait for A in the Account menu instead.
+  const radios = () => (h.menu().find((m: any) => m.label === "Account")?.submenu ?? []).filter((i: any) => i.type === "radio");
+  for (let i = 0; i < 500 && !radios().length; i++) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(radios().length, 1, "the server it started with is remembered");
   h.menu()[3].submenu.find((i: any) => i.label === "Retry connection").click();
   await h.settle();
   assert.ok(!h.log.some((l) => l.startsWith("clear-") || l.startsWith(`rm ${P}`)), "same server: nothing is cleared");
