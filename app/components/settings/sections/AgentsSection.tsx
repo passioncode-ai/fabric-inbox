@@ -345,6 +345,9 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
               onChange={(e) => set("replyPolicy", { ...policy, holdUnsure: e.target.checked })} />
               <span>{t("No drafts: when it is not sure, it does not answer, reports the question to the knowledge and answers once it is there")}</span></label>
             {policy.holdUnsure && <>
+              <label className="fi-check"><input type="checkbox" checked={policy.secondLook !== false}
+                onChange={(e) => set("replyPolicy", { ...policy, secondLook: e.target.checked })} />
+                <span>{t("Take a second look before waiting: 30 minutes later it thinks harder and searches wider, and sends the answer only if the checker approves it")}</span></label>
               <label className="fi-field">{t("Reply while the answer is not there")}
                 <span className="fi-hint">{t("Sent once, a day after the message came, if it is still not answered. Empty: a short default saying the answer follows in the same thread.")}</span>
                 <textarea className="fi-input" rows={3} value={policy.waitingReply?.en ?? ""}

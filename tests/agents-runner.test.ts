@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runAgent, gapRequestId, withoutDashes, type RunnerDeps, type RunnerEmail, type ModelRequest, type ModelResponse } from "../workers/agents/runner";
 import { AgentInputSchema, type AgentVersion } from "../workers/agents/definition";
-import type { AgentRun } from "../workers/agents/run";
+import { runIdFor, type AgentRun } from "../workers/agents/run";
 import type { ModelDecision } from "../workers/agents/policy";
 import type { MessageClaim } from "../workers/agents/dedupe";
 import { accountMailbox, type AccountsPort } from "../workers/agents/account-deps";
@@ -486,6 +486,34 @@ test("B-85 REQ-4: a prefetch grant is called before the model with the message; 
   assert.equal(run.toolCalls[0].name, "acme_kb");
   assert.equal(run.toolCalls[0].ok, true);
   assert.equal(run.status, "sent");
+});
+
+test("B-153: a second look reasons, asks the knowledge about the topic too, skips the unchanged shortcut, and keeps what it found", async () => {
+  const asked: string[] = [];
+  let reasoning: unknown = "unset";
+  const confident = JSON.stringify({ abstained: false, revision: "r1", items: [{ id: "fact:translate", coverage: 0.9, answer: true, class: "public", title: "Translator" }] });
+  const h = harness({
+    agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })], replyPolicy: { mode: "auto", allowedIntents: ["pricing"], dailySendLimit: 2, holdUnsure: true, requireEvidence: true } }),
+    email: { subject: "Translator broken", body: "<p>How do I restore translating a chat?</p>" },
+    callTool: async (_g, args) => { asked.push(String(args.query)); return String(args.query) === "chat translation" ? confident : JSON.stringify({ abstained: true }); },
+    model: async (r) => { reasoning = r.reasoning; return { decision: answer(), text: "" }; },
+  });
+  const id = await runIdFor(MAILBOX, "incoming-1");
+  const prior: AgentRun = { id, mailboxId: MAILBOX, emailId: "incoming-1", sender: "ann@customer.invalid", subject: "Translator broken", status: "running", reason: "",
+    toolCalls: [], topic: "chat translation", heldFacts: { agent: "support@3", revisions: { "https://kb.project.invalid/mcp": "r1" } },
+    secondLook: { at: "2026-10-27T10:30:00.000Z", state: "running", firstCited: [] }, createdAt: "2026-10-27T10:00:00.000Z", updatedAt: "2026-10-27T10:00:00.000Z" };
+  h.deps.registry.beginRun = async () => ({ claimed: true, run: prior });
+  const run = (await h.run()) as AgentRun;
+  assert.equal(reasoning, "medium", "the writer reasons on a second look");
+  assert.equal(asked.length, 2, "the message, then the topic alone");
+  assert.equal(asked[1], "chat translation");
+  assert.equal(run.status, "sent");
+  assert.deepEqual(run.secondLook, { at: "2026-10-27T10:30:00.000Z", state: "done", firstCited: [], cause: "retrieval", rescued: true });
+  // A first turn asks once and does not reason.
+  const first = harness({ agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })] }), callTool: async () => confident,
+    model: async (r) => { reasoning = r.reasoning; return { decision: answer(), text: "" }; } });
+  await first.run();
+  assert.equal(reasoning, undefined);
 });
 
 test("no em dash leaves in a reply: the model's dashes and the fixed texts' become commas (operator rule 2026-10-18)", async () => {

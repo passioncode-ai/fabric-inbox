@@ -2,23 +2,75 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/agents/support-diagnosed.schema.json",
   "title": "support.diagnosed, as Fabric Inbox emits it",
-  "description": "B-162: why a reply agent did not answer a message, as the turn reads it, on the server's events feed (/fabric/v1/events, list_agent_events) as data.value. Once per run and cause: a held message retried later says it again only when the cause changes. A message whose knowledge lookup failed names no cause (an outage is not a gap), and a run that failed is retried rather than diagnosed. No sender, subject or text of the message; question is the model's English restatement with personal data removed. workers/agents/learning-events.ts.",
+  "description": "B-162: why a reply agent did not answer a message, as the turn reads it, on the server's events feed (/fabric/v1/events, list_agent_events) as data.value. Once per run and cause at the turn, and once more for the run's second look (B-153): a held message retried later says it again only when the cause changes. A message whose knowledge lookup failed names no cause (an outage is not a gap), and a run that failed is retried rather than diagnosed. No sender, subject or text of the message; question is the model's English restatement with personal data removed. workers/agents/learning-events.ts.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["at", "channel", "address", "runId", "category", "question", "cause", "rescued"],
+  "required": [
+    "at",
+    "channel",
+    "address",
+    "runId",
+    "category",
+    "question",
+    "cause",
+    "rescued",
+    "look"
+  ],
   "properties": {
-    "at": { "type": "string", "format": "date-time" },
-    "channel": { "const": "email" },
-    "address": { "type": "string", "description": "The Cloudflare address the message came to." },
-    "runId": { "type": "string" },
-    "agentId": { "type": "string" },
-    "agentVersion": { "type": "integer", "minimum": 1 },
-    "category": { "type": ["string", "null"], "maxLength": 60 },
-    "question": { "type": ["string", "null"], "maxLength": 300 },
-    "cause": {
-      "enum": ["retrieval", "draft-or-check", "data", "person"],
-      "description": "data: the knowledge has no answer (the message was held and its question reported as a gap); draft-or-check: the material was there but the answer was not sure or the checker did not approve it; person: the reply policy hands the message to a person; retrieval: the knowledge answers it but the turn's search missed it, named only by a second look."
+    "at": {
+      "type": "string",
+      "format": "date-time"
     },
-    "rescued": { "type": "boolean", "description": "Always false at the turn: a checked answer sent by a second look is a later event." }
+    "channel": {
+      "const": "email"
+    },
+    "address": {
+      "type": "string",
+      "description": "The Cloudflare address the message came to."
+    },
+    "runId": {
+      "type": "string"
+    },
+    "agentId": {
+      "type": "string"
+    },
+    "agentVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "category": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 60
+    },
+    "question": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 300
+    },
+    "cause": {
+      "enum": [
+        "retrieval",
+        "draft-or-check",
+        "data",
+        "person"
+      ],
+      "description": "data: the knowledge has no answer (the message was held and its question reported as a gap); draft-or-check: the material was there but the answer was not sure or the checker did not approve it; person: the reply policy hands the message to a person; retrieval: a second look found and sent an answer citing an item the turn had not cited."
+    },
+    "rescued": {
+      "type": "boolean",
+      "description": "Whether a checked answer was sent: always false at the turn; true when a second look sent one (B-153)."
+    },
+    "look": {
+      "enum": [
+        "turn",
+        "second"
+      ],
+      "description": "B-153: turn for the turn's own reading, second for the one second look a held message gets 30 minutes later (once per run)."
+    }
   }
 }

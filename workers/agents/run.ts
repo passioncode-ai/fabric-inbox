@@ -114,6 +114,12 @@ export interface AgentRun {
    * a revision seen to change answers it again at once. Kept across retries; answer_again by a person drops it.
    */
   heldFacts?: { agent: string; revisions: Record<string, string>; question?: string };
+  /**
+   * B-153: the one second look at a held message: `running` while its attempt is queued or going, `done` after;
+   * `firstCited` the items the first turn cited, `cause` and `rescued` what the look found (cause null: a knowledge
+   * lookup failed, or a person answered meanwhile).
+   */
+  secondLook?: { at: string; state: "running" | "done"; firstCited: string[]; cause?: import("./learning-events").Cause | null; rescued?: boolean };
   /** B-141: gap kinds already reported for this message; a retry does not report them again. */
   gapsReported?: string[];
   /** B-141: when the retries ended (HELD_FOR_MS) and the closing reply was handled; set once per message. */

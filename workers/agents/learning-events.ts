@@ -51,8 +51,10 @@ export interface SupportDiagnosed {
   category: string | null;
   question: string | null;
   cause: Cause;
-  /** Always false at the turn: a rescued answer comes from a second look. */
+  /** Whether a checked answer was sent; always false at the turn. */
   rescued: boolean;
+  /** B-153: `turn` for the turn's own reading, `second` for the second look's. */
+  look: "turn" | "second";
 }
 
 const cut = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
@@ -116,13 +118,27 @@ export function causeOf(run: AgentRun): Cause | null {
   return run.unanswered ? "data" : "draft-or-check";
 }
 
-export function supportDiagnosedEvent(run: AgentRun, cause: Cause): AgentEvent {
+/**
+ * B-153: the cause a second look found. Sent: `retrieval` when it cites an item the first turn did not, else
+ * `draft-or-check`. Otherwise as at the turn (`causeOf`), null when a lookup failed or nothing was diagnosed.
+ */
+export function secondLookCause(run: AgentRun, firstCited: string[]): { cause: Cause | null; rescued: boolean } {
+  if (run.status === "sent" && !run.handoff && !run.fallback) {
+    const now = citedOf(run).cited;
+    return { cause: now.some((id) => !firstCited.includes(id)) ? "retrieval" : "draft-or-check", rescued: true };
+  }
+  return { cause: causeOf(run), rescued: false };
+}
+
+export function supportDiagnosedEvent(run: AgentRun, cause: Cause, look: "turn" | "second" = "turn", rescued = false): AgentEvent {
   const at = run.updatedAt;
-  const value: SupportDiagnosed = { ...common(run, at), cause, rescued: false };
+  const value: SupportDiagnosed = { ...common(run, at), cause, rescued, look };
   const who = run.agentId ? `Agent ${run.agentId}` : "An agent";
   const why = cause === "person" ? "only a person can act" : cause === "data" ? "the knowledge has no answer"
-    : cause === "retrieval" ? "the knowledge has an answer the search missed" : "the answer was not sure or not approved";
-  return { at, kind: "support.diagnosed", level: "notice", link: messageLink(`cloudflare:${run.mailboxId}`, run.emailId, run.id),
-    text: `${who} did not answer a message to ${run.mailboxId}: ${why}.`,
-    data: { schema: SUPPORT_DIAGNOSED_SCHEMA, value } };
+    : cause === "retrieval" ? "the knowledge has an answer the first search missed" : "the answer was not sure or not approved";
+  const text = rescued ? `${who} answered a message to ${run.mailboxId} on a second look: ${why}.`
+    : look === "second" ? `${who} looked again at a message to ${run.mailboxId} and still did not answer: ${why}.`
+    : `${who} did not answer a message to ${run.mailboxId}: ${why}.`;
+  return { at, kind: "support.diagnosed", level: rescued ? "info" : "notice", link: messageLink(`cloudflare:${run.mailboxId}`, run.emailId, run.id),
+    text, data: { schema: SUPPORT_DIAGNOSED_SCHEMA, value } };
 }

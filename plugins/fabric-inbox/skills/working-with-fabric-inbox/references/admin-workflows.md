@@ -147,7 +147,10 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   a held one) or that the safety check held back. When the retries end (30 days), the message gets
   `closingReply: { en, ru? }` once (unset: a short apology and the `handoff.reply`; nothing without either)
   and a second `agent.waiting` with `closed: true`. A held retry is skipped while the knowledge's revision
-  is the same, and runs at once when it changes; one gap report per message.
+  is the same, and runs at once when it changes; one gap report per message. Before the retries, 30 minutes
+  after the hold, the agent takes one second look (B-153, `secondLook: false` turns it off): it reasons,
+  searches wider and sends only what the checker approves; `support.diagnosed` with `look: "second"` says
+  whether it was rescued and why it held (`retrieval`, `draft-or-check`, `data`, `person`).
   After each UTC day, `list_agent_events` carries one `support.quality_daily` per agent address (B-130): replies
   and first-reply p50/p90, repeats, errors and model calls, answered vs handed to a person, the person queue;
   a field not measured is null and listed in `notMeasured`. Sender, subject and texts leave runs after 30 days.
