@@ -3,6 +3,7 @@ import { migrateSchema } from "../lib/do-schema";
 import { CAMPAIGNS_STEPS } from "./schema";
 import type { Env } from "../types";
 import { msg } from "../../shared/i18n";
+import { oneClickUrl, readUnsubscribeAccess, type UnsubscribeAccess } from "./unsubscribe";
 import {
   BOUNCE_PAUSE, CampaignInputSchema, campaignProblem, companyOf, composeStep, inboundKind, inWindow, MAX_RECIPIENTS, nextInWindow,
   normaliseRecipient, plan, RAMP, rampedCap, render, suppressed, suppressionEntry, type CampaignInput, type RecipientInput,
@@ -17,7 +18,7 @@ async function sendKey(campaignId: string, email: string, step: number): Promise
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${campaignId}\n${email}\n${step}`)));
   return "campaign:" + [...digest.slice(0, 16)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-type Accounts = { send(accountId: string, request: Record<string, unknown>, options?: { listUnsubscribe?: string }): Promise<{ status: string; threadId?: string; providerMessageId?: string; error?: string }>;
+type Accounts = { send(accountId: string, request: Record<string, unknown>, options?: { listUnsubscribe?: string[] }): Promise<{ status: string; threadId?: string; providerMessageId?: string; error?: string }>;
   listAccounts(): Promise<{ accounts: { id: string; provider?: string; email: string }[] }> };
 
 /**
@@ -228,6 +229,7 @@ export class CampaignsDO extends DurableObject<Env> {
       const accounts = this.env.GMAIL_ACCOUNTS ? (this.env.GMAIL_ACCOUNTS.getByName("workspace") as unknown as Accounts) : null;
       if (running.length && !accounts) { console.error(JSON.stringify({ event: "campaigns_no_accounts" })); return { sent }; }
       let emails: Map<string, string> | undefined;
+      let access: UnsubscribeAccess | null | undefined;
       for (const sender of [...new Set(running.map((c) => c.sender))]) {
         const s = this.senderRow(sender);
         if (s.next_at > now) continue;
@@ -242,7 +244,8 @@ export class CampaignsDO extends DurableObject<Env> {
           emails ??= new Map((await accounts!.listAccounts()).accounts.map((a) => [`${a.provider ?? "gmail"}:${a.id}`, a.email] as [string, string]));
           const from = emails.get(sender);
           if (!from) { await this.pause(c.id, "sender_not_connected"); continue; }
-          const outcome = await this.sendOne(accounts!, c, r, from, now);
+          if (access === undefined) access = await readUnsubscribeAccess(this.env.BUCKET).catch(() => null);
+          const outcome = await this.sendOne(accounts!, c, r, from, now, access);
           if (outcome === "sent") {
             sent++;
             const [lo, hi] = c.gapMinutes;
@@ -275,14 +278,17 @@ export class CampaignsDO extends DurableObject<Env> {
   }
 
   /** One message through the account's own send; the same campaign, person and step never leave twice. */
-  private async sendOne(accounts: Accounts, c: Campaign, r: Row, from: string, now: number): Promise<"sent" | "failed" | "rate_limited"> {
+  private async sendOne(accounts: Accounts, c: Campaign, r: Row, from: string, now: number, access: UnsubscribeAccess | null): Promise<"sent" | "failed" | "rate_limited"> {
     const email = String(r.email), index = Number(r.step);
     const { subject, text } = composeStep(c, index, JSON.parse(String(r.fields)), String(r.subject));
     const followUp = index > 0 && String(r.thread_id) && c.sender.startsWith("gmail:") ? { threadId: String(r.thread_id) } : {};
     const request = { to: [email], subject, text, idempotencyKey: await sendKey(c.id, email, index), ...followUp };
     let receipt: Awaited<ReturnType<Accounts["send"]>>;
     try {
-      receipt = await accounts.send(c.sender.slice(c.sender.indexOf(":") + 1), request, { listUnsubscribe: `mailto:${from}?subject=unsubscribe` });
+      // One click (RFC 8058) when the server has its unsubscribe page; a reply to the sender always works.
+      const oneClick = await oneClickUrl(this.env, email, access);
+      receipt = await accounts.send(c.sender.slice(c.sender.indexOf(":") + 1), request,
+        { listUnsubscribe: [...(oneClick ? [oneClick] : []), `mailto:${from}?subject=unsubscribe`] });
     } catch (error) {
       const text = String((error as Error)?.message ?? error);
       if (/rate_limit|rate limit|ratelimit|429|quota/i.test(text)) return "rate_limited";
@@ -363,11 +369,7 @@ export class CampaignsDO extends DurableObject<Env> {
         if (c.state === "running" && contacted >= RAMP.start && bounced / contacted >= BOUNCE_PAUSE) await this.pause(c.id, "bounces");
         continue;
       }
-      if (kind === "unsubscribe") {
-        await this.addSuppression([email], "replied_unsubscribe");
-        this.sql.exec("UPDATE recipients SET status = 'unsubscribed' WHERE email = ? AND status IN ('queued', 'active', 'done', 'suppressed')", email);
-        continue;
-      }
+      if (kind === "unsubscribe") { await this.unsubscribe(email, "replied_unsubscribe"); continue; }
       // A reply: with stopOnReply (the default) nothing more goes to them; without it the reply is only noted.
       if (c.stopOnReply) this.sql.exec("UPDATE recipients SET status = 'replied', detail = '' WHERE campaign_id = ? AND email = ? AND status IN ('queued', 'active', 'done')", c.id, email);
       else this.sql.exec("UPDATE recipients SET detail = 'replied' WHERE campaign_id = ? AND email = ?", c.id, email);
@@ -378,6 +380,13 @@ export class CampaignsDO extends DurableObject<Env> {
     }
     console.log(JSON.stringify({ event: "campaign_inbound", kind, matched: rows.length }));
     return { kind, matched: rows.length };
+  }
+
+  /** Someone asked to stop (a reply, or the one-click page): on the do-not-write list, and stopped in every campaign. */
+  async unsubscribe(email: string, reason: string): Promise<void> {
+    const address = email.trim().toLowerCase();
+    await this.addSuppression([address], reason);
+    this.sql.exec("UPDATE recipients SET status = 'unsubscribed' WHERE email = ? AND status IN ('queued', 'active', 'done', 'suppressed')", address);
   }
 
   /** Rows a statement changed; `rowsWritten` would also count the index rows it wrote. */

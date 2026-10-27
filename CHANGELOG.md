@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.47.0 (2026-10-27)
+
+- **People can unsubscribe from a campaign with one click.** Once a campaign starts, your server makes its own
+  unsubscribe page, and every message links to it, so mail apps can show their own Unsubscribe button. The page
+  asks before it does anything; a mail app's one click unsubscribes at once. Replying "unsubscribe" still works.
+
 ## 0.46.1 (2026-10-27)
 
 - **Creating or updating your server tries once more when the connection drops.** Uploading the server to

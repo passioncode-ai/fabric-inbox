@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
 import type { Env } from "../types";
 import { msg } from "../../shared/i18n";
+import { provisionUnsubscribe } from "../campaigns/unsubscribe";
 
 /**
  * B-181 (SCN-089, SCN-090): outreach campaigns (docs/app-store/tasks/2026-10-27-outreach.md): prepare, add recipients,
@@ -106,7 +107,11 @@ campaignsRouter.post("/api/campaigns/:id/launch", async (c) => {
     if (!campaign) return c.json({ error: msg("No such campaign.") }, 404);
     const problem = await senderProblem(c, campaign.sender);
     if (problem) return c.json({ error: problem }, 400);
-    return c.json(await store(c).launch(c.req.param("id")));
+    const launched = await store(c).launch(c.req.param("id"));
+    // The one-click unsubscribe page for this server's address, made once; until then the stop is a reply.
+    const work = provisionUnsubscribe(c.env as never, new URL(c.req.url).host);
+    try { c.executionCtx.waitUntil(work); } catch { void work; }
+    return c.json(launched);
   } catch (error) { return failure(c, error); }
 });
 campaignsRouter.post("/api/campaigns/:id/pause", async (c) => {

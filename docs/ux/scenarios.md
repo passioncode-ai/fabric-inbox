@@ -1844,7 +1844,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** A prepared campaign (SCN-089) with recipients, previewed and dry-run; the person approved it.
 - **Steps:**
   1. Ask the agent to start it -> it confirms the account, the number of people and the daily cap with you, then starts it.
-  2. The server sends it on its own, from your account: one message at a time inside the window, 5 to 10 minutes apart, 10 on the account's first day and 5 more each day up to the cap; every message ends with how to stop them (and your postal address, when given) and carries List-Unsubscribe.
+  2. The server sends it on its own, from your account: one message at a time inside the window, 5 to 10 minutes apart, 10 on the account's first day and 5 more each day up to the cap; every message ends with how to stop them (and your postal address, when given) and carries List-Unsubscribe: a one-click link to your server's unsubscribe page, and a reply to you.
   3. Someone replies -> nothing more goes to them, nor, by default, to the rest of their company; "unsubscribe" in a reply puts them on the do-not-write list; an automatic reply moves their next message three days on.
   4. The follow-ups go after their days, in the same conversation.
   5. Ask for the report -> people by status, messages per step, reply and bounce rates, the next send, and what failed.
@@ -1854,9 +1854,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, error, success
 - **Errors & recovery:** A provider's rate limit holds the account an hour and tries again; a send that failed is listed in the report with why.
 - **Status:** draft
-- **Coverage:** `tests/campaign.test.ts` (the ramp, the window, each step as sent, what an arriving message is), `tests/campaigns-sending-workerd.test.ts` (the loop over a fake account: one send per wake and the gap, the stop line and List-Unsubscribe, a reply stopping the company, unsubscribe, an auto-reply, the follow-up in the thread, the report; bounces pausing, stop).
+- **Coverage:** `tests/campaign.test.ts` (the ramp, the window, each step as sent, what an arriving message is), `tests/campaigns-sending-workerd.test.ts` (the loop over a fake account: one send per wake and the gap, the stop line and List-Unsubscribe, a reply stopping the company, unsubscribe, an auto-reply, the follow-up in the thread, the report; bounces pausing, stop; the one-click link once the page exists), `tests/campaign-unsubscribe.test.ts` (the token, the page asking before it acts, the Bypass application, the headers).
 - **Product:** unobserved
-- **Today:** Built 2026-10-27 (B-181 step 2, 0.45.0). One-click unsubscribe over HTTPS is not offered yet: the stop is a reply or the `mailto:` List-Unsubscribe (the server is behind Access; a public path for it is a later row).
+- **Today:** Built 2026-10-27 (B-181 step 2, 0.45.0). One-click unsubscribe (0.47.0): once a campaign has started, the server makes its own unsubscribe page outside Access, and every message carries its link first in List-Unsubscribe; the page asks before it unsubscribes, and a mail client's one-click POST unsubscribes at once.
 
 ### SCN-091: Watch, start and stop my campaigns in the app
 - **Persona:** P-01
