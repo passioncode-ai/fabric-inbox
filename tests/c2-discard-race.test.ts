@@ -93,12 +93,16 @@ test("AUD-B9-02: in workerd, Always-allow changes sent at once through the real 
     r2Buckets: ["BUCKET"], outboundService: () => new Response("External network disabled for tests", { status: 503 }),
   });
   try {
+    // B-78: each answer's body is drained as soon as it comes, and only its status is asserted: under a full
+    // suite's load undici once reported that body as already read (Miniflare's dispatchFetch), which says
+    // nothing about the route. What landed is read back from the store below.
+    const post = (value: string) => mf.dispatchFetch("http://localhost/api/discard/allowed", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ value, action: "add" }) })
+      .then(async (r) => { await r.text().catch(() => ""); return r.status; });
     const values = Array.from({ length: 8 }, (_, i) => `sender${i}@example.org`);
-    const answers = await Promise.all(values.map((value) => mf.dispatchFetch("http://localhost/api/discard/allowed", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ value, action: "add" }) })));
     // Each write retries up to five times; eight at once may exhaust a retry budget, and then the
-    // person is told to try again (409) — never a silent loss. Every 200 must be in the store.
-    const statuses = await Promise.all(answers.map(async (r) => { await r.text(); return r.status; }));
+    // person is told to try again (409), never a silent loss. Every 200 must be in the store.
+    const statuses = await Promise.all(values.map(post));
     assert.ok(statuses.every((s) => s === 200 || s === 409), `statuses ${statuses}`);
     const landed = values.filter((_, i) => statuses[i] === 200);
     assert.ok(landed.length >= 2, "at least two concurrent writes land");
@@ -107,9 +111,7 @@ test("AUD-B9-02: in workerd, Always-allow changes sent at once through the real 
     assert.deepEqual(store.allowed.filter((v) => !landed.includes(v)), [], "a refused change wrote nothing");
 
     // Two at once, the case the scenario names: both land.
-    const pair = await Promise.all(["a@pair.example.org", "b@pair.example.org"].map((value) => mf.dispatchFetch("http://localhost/api/discard/allowed", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ value, action: "add" }) })));
-    assert.deepEqual(await Promise.all(pair.map(async (r) => { await r.text(); return r.status; })), [200, 200]);
+    assert.deepEqual(await Promise.all(["a@pair.example.org", "b@pair.example.org"].map(post)), [200, 200]);
     const after = await (await mf.dispatchFetch("http://localhost/api/discard/rules")).json() as { allowed: string[] };
     assert.ok(after.allowed.includes("a@pair.example.org") && after.allowed.includes("b@pair.example.org"));
   } finally {

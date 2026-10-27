@@ -208,7 +208,8 @@ transferRouter.post("/api/transfer/:email/documents", async (c) => {
   if (!valid(email) || !(await exists(c.env, email))) return nothing(c, email);
   const body = await c.req.json<{ collection?: unknown; documents?: unknown }>().catch(() => ({}) as { collection?: unknown; documents?: unknown });
   if (typeof body.collection !== "string" || !Array.isArray(body.documents)) return c.json({ error: msg("Send a collection and its documents") }, 400);
-  try { return c.json(await knowledge(c.env).upsertDocuments(body.collection, body.documents)); }
+  // A copy for a move, not a change of the knowledge: no events, and the copied text is not sent back.
+  try { const { changed: _changed, pruned: _pruned, ...result } = await knowledge(c.env).upsertDocuments(body.collection, body.documents); return c.json(result); }
   catch (error) { return knowledgeFailure(c, error); }
 });
 

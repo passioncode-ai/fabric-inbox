@@ -38,7 +38,12 @@ export interface KnowledgeDocument {
   updatedAt: string;
 }
 export interface DocumentInput { sourceUri: string; title: string; text: string; revision?: string }
-export interface UpsertResult { added: number; updated: number; unchanged: number; removed: number; refused: { sourceUri: string; reason: string }[] }
+export interface UpsertResult {
+  added: number; updated: number; unchanged: number; removed: number; refused: { sourceUri: string; reason: string }[];
+  /** B-161: what the batch added or changed and what `prune` removed, for the events feed; never sent to the caller. */
+  changed?: { id: string; title: string; revision: string; text: string }[];
+  pruned?: { id: string; title: string; revision: string }[];
+}
 export interface KnowledgeHit {
   /** Stable within a revision: `<collection>/<document>#<chunk>`. */
   ref: string;
@@ -157,7 +162,7 @@ export class KnowledgeDO extends DurableObject<Env> {
   async upsertDocuments(collectionId: string, docs: DocumentInput[], options: { prune?: boolean } = {}): Promise<UpsertResult> {
     if (!(await this.getCollection(collectionId))) throw new KnowledgeError(msg("No such collection"), "not_found");
     if (docs.length > LIMITS.batchDocuments) throw new KnowledgeError(msg("At most {max} documents per call", { max: LIMITS.batchDocuments }), "limit");
-    const result: UpsertResult = { added: 0, updated: 0, unchanged: 0, removed: 0, refused: [] };
+    const result: UpsertResult = { added: 0, updated: 0, unchanged: 0, removed: 0, refused: [], changed: [], pruned: [] };
     const seen = new Set<string>();
     const prepared: { d: DocumentInput & { revision: string }; hash: string; chunks: ReturnType<typeof chunkText> }[] = [];
     for (const raw of docs) {
@@ -194,19 +199,21 @@ export class KnowledgeDO extends DurableObject<Env> {
           result.added++;
           count++;
         }
+        result.changed!.push({ id, title: d.title, revision: d.revision, text: d.text });
         for (const c of chunks) {
           const chunkId = Number((this.sql.exec("INSERT INTO chunks (document_id, collection_id, ord, text) VALUES (?, ?, ?, ?) RETURNING id", id, collectionId, c.ord, c.text).one() as Row).id);
           this.sql.exec("INSERT INTO chunks_fts (rowid, text, title) VALUES (?, ?, ?)", chunkId, c.text, d.title);
         }
       }
       if (options.prune) {
-        const stale = (this.sql.exec("SELECT id, source_uri FROM documents WHERE collection_id = ?", collectionId).toArray() as Row[])
+        const stale = (this.sql.exec("SELECT id, source_uri, title, revision FROM documents WHERE collection_id = ?", collectionId).toArray() as Row[])
           .filter((r) => !seen.has(String(r.source_uri)));
         for (const r of stale) {
           this.sql.exec("DELETE FROM chunks_fts WHERE rowid IN (SELECT id FROM chunks WHERE document_id = ?)", r.id);
           this.sql.exec("DELETE FROM chunks WHERE document_id = ?", r.id);
           this.sql.exec("DELETE FROM documents WHERE id = ?", r.id);
           result.removed++;
+          result.pruned!.push({ id: String(r.id), title: String(r.title), revision: String(r.revision) });
         }
       }
       this.sql.exec("UPDATE collections SET updated_at = ? WHERE id = ?", now, collectionId);

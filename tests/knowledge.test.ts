@@ -70,6 +70,7 @@ const bundle = await build({
       });
       app.post('/pump', async (c) => { await c.env.AGENT_REGISTRY.getByName('workspace').pump(); return c.json({ ok: true }); });
       app.get('/runs', async (c) => c.json(await c.env.AGENT_REGISTRY.getByName('workspace').listRuns({})));
+      app.get('/events', async (c) => c.json(await c.env.AGENT_REGISTRY.getByName('workspace').listEvents(null, 200)));
       app.get('/r2', async (c) => { const o = await c.env.BUCKET.get(c.req.query('key')); return new Response(o ? await o.text() : 'null'); });
       app.post('/mailbox', async (c) => { const b = await c.req.json(); await c.env.BUCKET.put('mailboxes/' + b.email + '.json', JSON.stringify(b.settings)); return c.json({ ok: true }); });
       app.route('/', knowledgeRouter);
@@ -175,6 +176,44 @@ test("an agent is granted only collections that exist, and a collection in use c
     const del = await call(`/api/knowledge/collections/${faq}`, "DELETE");
     assert.equal(del.status, 409);
     assert.match(del.body.error, /Used by Support/);
+  } finally { await mf.dispose(); }
+});
+
+test("B-161: knowledge changes go on the events feed with the addresses that read them; unchanged text, and the reply, carry nothing", async () => {
+  const { mf, call } = await fixture();
+  try {
+    const id = (await call("/api/knowledge/collections", "POST", { name: "FAQ" })).body.id;
+    const agent = (await call("/api/agents", "POST", { agent: { name: "Support", instructions: "Answer.", collections: [id] } })).body;
+    await call("/mailbox", "POST", { email: "support@project.invalid", settings: { agent: { id: agent.id } } });
+    const events = async () => (await call("/events")).body.events.filter((e: any) => e.kind.startsWith("knowledge.")).map((e: any) => ({ kind: e.kind, ...e.data.value }));
+    assert.deepEqual(await events(), [], "an agent without knowledge text leaves no event");
+    const path = `/api/knowledge/collections/${id}/documents`;
+    const added = (await call(path, "POST", { documents: FAQ })).body;
+    assert.equal(added.changed, undefined, "the reply does not carry the texts back");
+    let seen = await events();
+    assert.deepEqual(seen.map((e: any) => [e.kind, e.questions[0], e.addresses]), FAQ.map((d) => ["knowledge.learned", d.title, ["support@project.invalid"]]));
+    assert.equal(seen[0].answer, FAQ[0].text);
+    assert.match(seen[0].ref, new RegExp(`^doc:${id}/[0-9a-f-]+@[0-9a-f]{12}$`));
+    assert.equal(seen[0].validatedBy, "unknown", "no person or key behind a local request");
+    await call(path, "POST", { documents: FAQ });
+    assert.equal((await events()).length, 3, "unchanged documents are not learned again");
+    await call(path, "POST", { documents: [{ ...FAQ[0], text: "Fabric Inbox costs 5 EUR a month.", revision: "r2" }] });
+    seen = await events();
+    assert.equal(seen.length, 4);
+    assert.match(seen[3].ref, /@r2$/, "a new revision is a new ref");
+    await call(path, "POST", { documents: [FAQ[1]], prune: true });
+    seen = await events();
+    assert.deepEqual(seen.slice(4).map((e: any) => [e.kind, e.addresses]), [["knowledge.retracted", ["support@project.invalid"]], ["knowledge.retracted", ["support@project.invalid"]]]);
+    const doc = (await call(`/api/knowledge/collections/${id}`)).body.documents[0];
+    await call(`/api/knowledge/collections/${id}/documents/${doc.id}`, "DELETE");
+    seen = await events();
+    assert.deepEqual([seen.length, seen[6].kind, seen[6].documentId], [7, "knowledge.retracted", doc.id]);
+    // An agent's own knowledge text: a new version that changes it is learned; one that keeps it is not.
+    const v2 = (await call(`/api/agents/${agent.id}`, "PUT", { agent: { name: "Support", instructions: "Answer.", collections: [id], knowledge: "Refunds take 5 days." }, expectedVersion: 1 })).body;
+    await call(`/api/agents/${agent.id}`, "PUT", { agent: { name: "Support", instructions: "Answer briefly.", collections: [id], knowledge: "Refunds take 5 days." }, expectedVersion: v2.version });
+    seen = await events();
+    assert.deepEqual(seen.slice(7).map((e: any) => [e.ref, e.source, e.answer, e.questions, e.addresses]),
+      [[`agent:${agent.id}@2`, "agent", "Refunds take 5 days.", [], ["support@project.invalid"]]]);
   } finally { await mf.dispose(); }
 });
 

@@ -3,14 +3,17 @@ import { z } from "zod";
 import type { Env } from "../types";
 import { COLLECTION_ID, LIMITS } from "../knowledge/text";
 import { msg } from "../../shared/i18n";
+import { actorOf } from "../lib/audit";
+import type { Standing } from "../lib/members";
+import { addressesByAgent, documentLearned, documentRetracted, publishKnowledge, readersOf, validatorOf } from "../agents/knowledge-events";
 
 /**
  * Knowledge collections (KN-2, SCR-12), behind the same Access and same-origin
  * boundary as every /api route. The batch endpoint is the one a Fabric memory
  * sync will call (KN-6): upsert by source URI + revision, optional prune.
  */
-export const knowledgeRouter = new Hono<{ Bindings: Env }>();
-type C = Context<{ Bindings: Env }>;
+export const knowledgeRouter = new Hono<{ Bindings: Env; Variables: { standing?: Standing } }>();
+type C = Context<{ Bindings: Env; Variables: { standing?: Standing } }>;
 
 const store = (c: C) => c.env.KNOWLEDGE.getByName("workspace");
 const registry = (c: C) => c.env.AGENT_REGISTRY.getByName("workspace");
@@ -28,6 +31,14 @@ knowledgeRouter.use("/api/knowledge/*", async (c, next) => {
   if (!c.env.KNOWLEDGE) return c.json({ error: msg("Knowledge is not configured on this server; update the server from the app") }, 503);
   await next();
 });
+
+/** B-161: the addresses whose agents read a collection, for the events a change of it leaves. */
+async function readerAddresses(c: C, collectionId: string): Promise<string[]> {
+  if (!c.env.AGENT_REGISTRY) return [];
+  const [agents, byAgent] = await Promise.all([registry(c).listAgents(), addressesByAgent(c.env)]);
+  return readersOf(collectionId, agents, byAgent);
+}
+const changedBy = (c: C) => validatorOf(actorOf(c.req.raw, c.get("standing")?.email));
 
 /** Agents that read a collection, so the screen can say who is affected. */
 async function readers(c: C): Promise<Map<string, string[]>> {
@@ -89,7 +100,12 @@ knowledgeRouter.delete("/api/knowledge/collections/:id", async (c) => {
   try {
     const using = (await readers(c)).get(id) ?? [];
     if (using.length) return c.json({ error: msg("Used by {agents}. Remove it from those agents first.", { agents: using.join(", ") }), agents: using }, 409);
-    return (await store(c).deleteCollection(id)) ? c.body(null, 204) : c.json({ error: msg("No such collection") }, 404);
+    const documents = await store(c).listDocuments(id).catch(() => []);
+    if (!(await store(c).deleteCollection(id))) return c.json({ error: msg("No such collection") }, 404);
+    // No agent reads it (a used collection is refused above); its documents are still withdrawn on the feed.
+    const at = new Date().toISOString(), by = changedBy(c);
+    await publishKnowledge(c.env, documents.map((d) => documentRetracted({ collectionId: id, id: d.id, revision: d.revision, title: d.title }, [], at, by)));
+    return c.body(null, 204);
   } catch (error) { return failure(c, error); }
 });
 
@@ -109,9 +125,17 @@ knowledgeRouter.post("/api/knowledge/collections/:id/documents", async (c) => {
   try {
     const collection = await store(c).getCollection(c.req.param("id"));
     if (!collection) return c.json({ error: msg("No such collection") }, 404);
-    const result = await store(c).upsertDocuments(collection.id, parsed.data.documents, { prune: parsed.data.prune });
+    const { changed = [], pruned = [], ...result } = await store(c).upsertDocuments(collection.id, parsed.data.documents, { prune: parsed.data.prune });
     console.log(JSON.stringify({ event: "knowledge_documents", collection: collection.id, source: collection.source.kind,
       added: result.added, updated: result.updated, unchanged: result.unchanged, removed: result.removed, refused: result.refused.length }));
+    if (changed.length || pruned.length) {
+      // B-161: each change on the events feed for the agents that share one knowledge base.
+      const addresses = await readerAddresses(c, collection.id).catch(() => []);
+      const at = new Date().toISOString(), by = changedBy(c);
+      await publishKnowledge(c.env, [
+        ...changed.map((d) => documentLearned({ ...d, collectionId: collection.id }, addresses, at, by)),
+        ...pruned.map((d) => documentRetracted({ ...d, collectionId: collection.id }, addresses, at, by))]);
+    }
     return c.json(result);
   } catch (error) { return failure(c, error); }
 });
@@ -126,7 +150,12 @@ knowledgeRouter.get("/api/knowledge/collections/:id/documents/:doc", async (c) =
 
 knowledgeRouter.delete("/api/knowledge/collections/:id/documents/:doc", async (c) => {
   try {
-    return (await store(c).deleteDocument(c.req.param("id"), c.req.param("doc"))) ? c.body(null, 204) : c.json({ error: msg("No such document") }, 404);
+    const found = await store(c).readDocument(c.req.param("id"), c.req.param("doc"));
+    if (!found || !(await store(c).deleteDocument(c.req.param("id"), c.req.param("doc")))) return c.json({ error: msg("No such document") }, 404);
+    const addresses = await readerAddresses(c, found.document.collectionId).catch(() => []);
+    await publishKnowledge(c.env, [documentRetracted({ collectionId: found.document.collectionId, id: found.document.id, revision: found.document.revision, title: found.document.title },
+      addresses, new Date().toISOString(), changedBy(c))]);
+    return c.body(null, 204);
   } catch (error) { return failure(c, error); }
 });
 

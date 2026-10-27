@@ -616,6 +616,14 @@ export class AgentRegistryDO extends DurableObject<Env> {
     });
   }
 
+  /** B-161: knowledge changes on the same feed as the runs (workers/agents/knowledge-events.ts). */
+  async appendKnowledgeEvents(events: AgentEvent[]): Promise<void> {
+    for (const event of events.slice(0, 500)) {
+      const ref = (event.data.value as { ref?: unknown }).ref;
+      this.appendEvent(`knowledge-${typeof ref === "string" ? ref.slice(0, 200) : event.at}`, event);
+    }
+  }
+
   private appendEvent(runId: string, event: AgentEvent) {
     this.ctx.storage.sql.exec("INSERT INTO agent_events (run_id, at, body) VALUES (?, ?, ?)", runId, event.at, JSON.stringify(event));
     this.ctx.storage.sql.exec(
