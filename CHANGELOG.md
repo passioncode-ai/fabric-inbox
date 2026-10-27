@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.71.0 (2026-10-27)
+
+- **What each agent answer cost.** Every reply agent run in `list_agent_runs` now carries `spent`: the calls, tokens
+  and dollar cost of its model calls, the writer and the checker apart, and `agent_mail_volume` gives the same per day
+  and address. A cost the provider did not report is shown as unknown, never as zero (B-163).
+
 ## 0.70.0 (2026-10-27)
 
 - **Choose where a new server keeps your mail.** When the Mac app creates your server, you can now keep its storage in

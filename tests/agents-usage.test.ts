@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { receiptOf, unmeasured } from "../workers/agents/usage";
+import { asRole, receiptOf, runSpent, sumReceipts, unmeasured } from "../workers/agents/usage";
 import { usageReport } from "../workers/routes/fabric-service";
 
 /** B-147: one receipt per model call from the provider's own numbers; unknown is null, never 0. */
@@ -39,4 +39,20 @@ test("B-147: the report carries tokens and USD where receipts priced them, a low
   const day = r.days[0]!;
   assert.deepEqual(day.byModel.map((m) => [m.model, m.costBasis, m.costUsd]), [["x/a", "provider", 0.003], ["y/b", "mixed", 0.002], ["z/c", "unknown", null]]);
   assert.deepEqual([day.calls, day.unpricedCalls, day.unmeasuredCalls, day.inputTokens, day.outputTokens, day.costUsd], [6, 2, 2, 2900, 140, 0.005]);
+});
+
+test("B-163: a run's spend, the writer and the checker apart; an older receipt is the checker's when its model checked the run", () => {
+  const r = (model: string, cost: number | null, measured = true) => ({ model, inputTokens: 100, outputTokens: 10, costUsd: cost, measured });
+  assert.equal(runSpent({}), null, "no receipts kept: unknown, not zero");
+  assert.equal(sumReceipts([]), null);
+  const tagged = runSpent({ usage: [...asRole([r("x/w", 0.001), r("x/f", 0.002)], "writer"), ...asRole([r("y/c", 0.0002)], "checker")] })!;
+  assert.deepEqual(tagged.writer, { calls: 2, inputTokens: 200, outputTokens: 20, costUsd: 0.003, measured: true });
+  assert.deepEqual(tagged.checker, { calls: 1, inputTokens: 100, outputTokens: 10, costUsd: 0.0002, measured: true });
+  assert.equal(tagged.total.costUsd, 0.0032);
+  // Receipts from before 0.71.0 carry no role: the checkedBy model's is the checker's.
+  const legacy = runSpent({ usage: [r("x/w", 0.001), r("y/c", null, false)], checkedBy: "y/c" })!;
+  assert.deepEqual([legacy.writer?.calls, legacy.checker?.calls, legacy.checker?.costUsd, legacy.checker?.measured], [1, 1, null, false]);
+  assert.equal(legacy.total.costUsd, null, "one call without a charge makes the total unknown");
+  // A run nobody checked: no checker part.
+  assert.equal(runSpent({ usage: [r("x/w", 0.001)] })!.checker, null);
 });

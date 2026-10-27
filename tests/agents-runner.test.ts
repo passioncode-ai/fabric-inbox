@@ -1298,6 +1298,7 @@ test("B-147: the run keeps the writer's and the checker's receipts, and a failed
   h.deps.check = async () => ({ approved: true, reason: "ok", model: "y/checker", usage: [receipt("y/checker", 0.0002)] });
   const r = (await h.run())!;
   assert.deepEqual(r.usage?.map((u) => [u.model, u.costUsd]), [["x/writer", 0.001], ["y/checker", 0.0002]]);
+  assert.deepEqual(r.usage?.map((u) => u.role), ["writer", "checker"], "B-163: each receipt names the part of the run that made it");
   const failed = harness({ agent: autoAgent(), model: async () => { throw Object.assign(new Error("down"), { calls: { calls: 2, failed: 2, recovered: 0 }, usage: [receipt("x/a", null), receipt("x/b", null)] }); } });
   assert.deepEqual((await failed.run())!.usage?.map((u) => u.measured), [false, false]);
 });

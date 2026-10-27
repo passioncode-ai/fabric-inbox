@@ -373,11 +373,31 @@ test("B-126: mail volume per agent address and UTC day — received, agent runs,
     assert.equal(volume.runsKeptFrom, null);
     assert.deepEqual(volume.addresses.map((a: any) => a.address), ["support@project.invalid"], "an address with no agent is left out");
     assert.deepEqual(volume.addresses[0].days, [
-      { day: "2026-10-15", received: 0, agentRuns: 0, noRun: 0, spam: 0 },
-      { day: "2026-10-16", received: 2, agentRuns: 1, noRun: 1, spam: 1 },
-      { day: "2026-10-17", received: 1, agentRuns: 0, noRun: 1, spam: 0 },
+      { day: "2026-10-15", received: 0, agentRuns: 0, noRun: 0, spam: 0, spent: null },
+      { day: "2026-10-16", received: 2, agentRuns: 1, noRun: 1, spam: 1, spent: null },
+      { day: "2026-10-17", received: 1, agentRuns: 0, noRun: 1, spam: 0, spent: null },
     ]);
     assert.doesNotMatch(JSON.stringify(volume), /x@y\.invalid|"s"/, "no sender, no subject");
+  } finally { await mf.dispose(); }
+});
+
+test("B-163: each day's model spend from its runs' receipts; a run that called a model and kept none makes the cost unknown", async () => {
+  const { mf, command } = await fixture();
+  try {
+    await command("setup", { mailbox: "support@project.invalid", settings: { agent: { id: "support" } } });
+    const receipt = (model: string, cost: number | null, role?: string) => ({ model, inputTokens: 100, outputTokens: 10, costUsd: cost, measured: true, ...(role ? { role } : {}) });
+    const base = { mailboxId: "support@project.invalid", sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1, status: "sent" };
+    const at = (day: string) => ({ createdAt: `${day}T09:00:01.000Z`, updatedAt: `${day}T09:00:05.000Z` });
+    await command("begin", { run: { ...base, ...at("2026-10-16"), id: "run-a", emailId: "a", modelCalls: { calls: 2, failed: 0, recovered: 0 },
+      usage: [receipt("x/writer", 0.001, "writer"), receipt("y/checker", 0.0002, "checker")] } });
+    await command("begin", { run: { ...base, ...at("2026-10-16"), id: "run-b", emailId: "b", usage: [receipt("x/writer", 0.003)] } });
+    await command("begin", { run: { ...base, ...at("2026-10-17"), id: "run-c", emailId: "c", usage: [receipt("x/writer", 0.001)] } });
+    await command("begin", { run: { ...base, ...at("2026-10-17"), id: "run-d", emailId: "d", modelCalls: { calls: 1, failed: 0, recovered: 0 } } });
+    const volume = await command("volume", { days: 2, now: Date.parse("2026-10-17T12:00:00.000Z") });
+    assert.deepEqual(volume.addresses[0].days.map((d: any) => d.spent), [
+      { calls: 3, inputTokens: 300, outputTokens: 30, costUsd: 0.0042, measured: true },
+      { calls: 2, inputTokens: 100, outputTokens: 10, costUsd: null, measured: false },
+    ]);
   } finally { await mf.dispose(); }
 });
 

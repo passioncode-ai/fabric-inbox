@@ -23,6 +23,7 @@ import {
   type ToolGrant,
 } from "./definition";
 import { RUN_OUTCOMES, runIdFor, type AgentRun, type RunOutcome } from "./run";
+import { sumReceipts, type Spent, type UsageReceipt } from "./usage";
 import { closeRun, runAgent, type ModelRequest, type RunnerDeps } from "./runner";
 import { productionDeps, toolTokens } from "./deps";
 import { accountAddress, accountDeps, isAccountMailbox, type AccountsPort } from "./account-deps";
@@ -1073,10 +1074,26 @@ export class AgentRegistryDO extends DurableObject<Env> {
    * Runs per address and UTC day since `since` (B-126), and the oldest run still kept: older runs are
    * pruned (MAX_RUNS_KEPT), so days before it are not counted here.
    */
-  async runsPerDay(since: string): Promise<{ counts: { mailboxId: string; day: string; runs: number }[]; keptFrom: string | null }> {
-    const counts = this.rows(
-      "SELECT mailbox_id, substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM agent_runs WHERE created_at >= ? GROUP BY mailbox_id, day", since)
-      .map((r) => ({ mailboxId: String(r.mailbox_id), day: String(r.day), runs: Number(r.n) }));
+  async runsPerDay(since: string): Promise<{ counts: { mailboxId: string; day: string; runs: number; spent: Spent | null }[]; keptFrom: string | null }> {
+    // B-163: each day's model spend from the runs' receipts; a run that called a model but kept no receipts
+    // (before 0.29.0) makes that day's cost unknown (null) and its tokens a lower bound.
+    const days = new Map<string, { mailboxId: string; day: string; runs: number; receipts: UsageReceipt[]; unmetered: number }>();
+    for (const r of this.rows(`SELECT mailbox_id, substr(created_at, 1, 10) AS day, json_extract(body, '$.usage') AS usage,
+        json_extract(body, '$.modelCalls.calls') AS calls FROM agent_runs WHERE created_at >= ?`, since)) {
+      const key = `${r.mailbox_id}\u0000${r.day}`;
+      const entry = days.get(key) ?? { mailboxId: String(r.mailbox_id), day: String(r.day), runs: 0, receipts: [], unmetered: 0 };
+      entry.runs++;
+      let receipts: UsageReceipt[] = [];
+      try { receipts = typeof r.usage === "string" ? JSON.parse(r.usage) as UsageReceipt[] : []; } catch { receipts = []; }
+      if (receipts.length) entry.receipts.push(...receipts);
+      else if (Number(r.calls ?? 0) > 0) entry.unmetered++;
+      days.set(key, entry);
+    }
+    const counts = [...days.values()].map(({ mailboxId, day, runs, receipts, unmetered }) => {
+      const sum = sumReceipts(receipts);
+      const spent = unmetered === 0 ? sum : { calls: (sum?.calls ?? 0) + unmetered, inputTokens: sum?.inputTokens ?? 0, outputTokens: sum?.outputTokens ?? 0, costUsd: null, measured: false };
+      return { mailboxId, day, runs, spent };
+    });
     const oldest = this.rows("SELECT MIN(created_at) AS t FROM agent_runs")[0]?.t;
     const full = Number(this.rows("SELECT COUNT(*) AS n FROM agent_runs")[0]?.n ?? 0) >= MAX_RUNS_KEPT;
     return { counts, keptFrom: full && typeof oldest === "string" ? oldest : null };

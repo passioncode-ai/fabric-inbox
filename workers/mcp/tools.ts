@@ -532,7 +532,7 @@ const listAgents = defineTool({
 
 const listAgentRuns = defineTool({
   name: "list_agent_runs", title: "Reply agents' recent answers", level: "read", readOnly: true,
-  description: "What the reply agents did with incoming mail, newest first: sent, drafted, needs a look, or left alone, with the reason and exactly what was sent. Page with before. runId (a message's agentRun.id in list_messages) reads that one run.",
+  description: "What the reply agents did with incoming mail, newest first: sent, drafted, needs a look, or left alone, with the reason and exactly what was sent. Each run carries spent: what its model calls used, the writer and the checker apart (calls, inputTokens, outputTokens, costUsd as the provider charged it, null when a call reported no charge), or null when no receipts were kept; usage holds the per-call receipts. Page with before. runId (a message's agentRun.id in list_messages) reads that one run.",
   input: { address: address.optional(), agentId: z.string().max(100).optional(), outcome: z.enum(["answered", "attention", "skipped", "unanswered"]).optional().describe("unanswered: questions the agent found no answer for, each with its question"),
     before: z.string().max(200).optional().describe("The last run's createdAt|id, for the next page"), limit: z.number().int().min(1).max(200).default(50),
     runId: z.string().regex(/^agent-[0-9a-f]{32}$/).optional().describe("One run, by its id") },
@@ -634,7 +634,7 @@ const judgeBench = defineTool({
 
 const agentMailVolume = defineTool({
   name: "agent_mail_volume", title: "Mail volume of agent addresses", level: "read", readOnly: true,
-  description: "How much mail came to each address a reply agent answers, per UTC day over the last days (1–30, today included): messages received (spam apart), messages a reply agent ran on, and messages with no agent run — counts only, never a sender, subject or text. Use it with list_agent_events to see what share of the mail the agents saw. runsKeptFrom names the day before which agent runs were pruned (null: none were). A message deleted for good is no longer counted.",
+  description: "How much mail came to each address a reply agent answers, per UTC day over the last days (1–30, today included): messages received (spam apart), messages a reply agent ran on, and messages with no agent run, and spent: what that day's runs used on models (calls, tokens, costUsd; costUsd null when a call reported no charge, spent null when none was recorded). Counts only, never a sender, subject or text. Use it with list_agent_events to see what share of the mail the agents saw. runsKeptFrom names the day before which agent runs were pruned (null: none were). A message deleted for good is no longer counted.",
   input: { days: z.number().int().min(1).max(30).default(14).describe("How many UTC days back, today included") },
   routes: ["GET /api/agent-volume"],
   call: (a, ctx) => get(ctx, "/api/agent-volume", { days: a.days }),

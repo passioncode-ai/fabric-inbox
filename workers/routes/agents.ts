@@ -13,6 +13,7 @@ import { cloudflareApi, cloudflareToken } from "../routing/cloudflare-api";
 import { DomainManager } from "../routing/domains";
 import { knownCollections } from "./knowledge";
 import { mailVolume } from "../agents/volume";
+import { runSpent } from "../agents/usage";
 import { clearIncomingFailures, listIncomingFailures } from "../incoming-log";
 import {
   checkAddresses, createAddress, createAddresses, removeAddress, pauseAddress, resumeAddress, pausedAddresses, routingTestStatus, sendRoutingTest, setForwardCopy, effectiveCatchAll,
@@ -149,7 +150,7 @@ agentsRouter.get("/api/agent-runs/:id", async (c) => {
   if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
   try {
     const [run] = await registry(c).runsByIds([c.req.param("id")]);
-    return run ? c.json(run) : c.json({ error: msg("This agent run is not kept any more") }, 404);
+    return run ? c.json({ ...run, spent: runSpent(run) }) : c.json({ error: msg("This agent run is not kept any more") }, 404);
   } catch (error) { return registryFailure(c, error); }
 });
 
@@ -252,13 +253,15 @@ agentsRouter.get("/api/agent-runs", async (c) => {
   try {
     const outcome = c.req.query("outcome");
     if (outcome && !(outcome in RUN_OUTCOMES)) return c.json({ error: `outcome is one of ${Object.keys(RUN_OUTCOMES).join(", ")}` }, 400);
-    return c.json(await registry(c).listRuns({
+    const runs = await registry(c).listRuns({
       mailboxId: c.req.query("mailbox") || undefined,
       agentId: c.req.query("agent") || undefined,
       outcome: (outcome || undefined) as RunOutcome | undefined,
       before: c.req.query("before") || undefined,
       limit: Number.isFinite(limit) ? limit : 50,
-    }));
+    });
+    // B-163: what each run's model calls used, the writer and the checker apart (null: no receipts kept).
+    return c.json(runs.map((run) => ({ ...run, spent: runSpent(run) })));
   } catch (error) { return registryFailure(c, error); }
 });
 
