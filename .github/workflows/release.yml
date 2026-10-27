@@ -351,8 +351,8 @@ jobs:
         with:
           files: ${{ steps.allpe.outputs.files }}
           out: ${{ runner.temp }}/app-all-signatures.json
-      # Pass 2: electron-builder signs the uninstaller and the installer (azureSignOptions) with
-      # this job's Azure CLI sign-in.
+      # Pass 2: electron-builder signs the uninstaller and the installer through desktop/win-sign.cjs (B-195), with the
+      # ArtifactSigning module the signing step above installed and this job's Azure CLI sign-in.
       - name: Azure sign-in for electron-builder
         if: env.SIGNING == 'true'
         uses: passioncode-ai/.github/actions/windows-signing/login@v1
@@ -360,9 +360,9 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      # B-194: electron-builder installs the TrustedSigning module from the PowerShell Gallery on every build, and a
-      # download that fails leaves Invoke-TrustedSigning missing (v0.70.0, arm64). One more try after a pause; the
-      # installer check below still fails the run unless every installer is Valid.
+      # B-194: until B-195 electron-builder downloaded TrustedSigning on every build, and a failed download left
+      # Invoke-TrustedSigning missing (v0.70.0, arm64). Kept for a signing service hiccup: one more try after a pause;
+      # the installer check below still fails the run unless every installer is Valid.
       - name: Build the installer
         id: installer1
         continue-on-error: true

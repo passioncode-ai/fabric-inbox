@@ -96,7 +96,10 @@ export function builderConfig({ platform, version, arch, signing }) {
   if (platform === 'win32') return {
     ...common,
     artifactName: `Fabric-Inbox-${version}-win-${arch}-setup.\${ext}`,
-    win: { icon: path.join(desktop, 'icon.ico'), executableName: 'Fabric Inbox', ...(signing ? { azureSignOptions: signing } : {}) },
+    win: { icon: path.join(desktop, 'icon.ico'), executableName: 'Fabric Inbox',
+      // B-195: the uninstaller and the installer are signed by desktop/win-sign.cjs with the module the shared signing
+      // action installed in this job, not by electron-builder's azureSignOptions (which downloads TrustedSigning each time).
+      ...(signing ? { signtoolOptions: { sign: path.join(desktop, 'win-sign.cjs'), signingHashAlgorithms: ['sha256'], publisherName: signing.publisherName } } : {}) },
     nsis: {
       oneClick: true, perMachine: false, allowElevation: false, runAfterFinish: true,
       createDesktopShortcut: true, createStartMenuShortcut: true, shortcutName: 'Fabric Inbox',
