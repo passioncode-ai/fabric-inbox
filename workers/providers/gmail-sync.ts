@@ -35,6 +35,16 @@ export interface SyncState {
   /** Messages the backfill has gone through, and the mailbox's size when the import started. */
   imported?: number;
   total?: number;
+  /**
+   * M-7: set when history expired; the last sync that worked. The import's recent inbox hands on mail that arrived
+   * after it (within GAP_DELIVER_MS), which no history page could report. Cleared when the import ends.
+   */
+  gapSince?: number;
+}
+
+/** Mail Gmail filed in Spam or Trash, and your own, reaches no rule, agent or category (M-2, SP-1). */
+function arrivedHere(labels: string[]) {
+  return !["SENT", "DRAFT", "SPAM", "TRASH"].some((l) => labels.includes(l));
 }
 
 /** Failures of one message before it is set aside. */
@@ -42,6 +52,8 @@ export const MAX_MESSAGE_ATTEMPTS = 5;
 /** Gmail requests in flight for one page. Gmail allows 250 quota units a second; a get costs 5. */
 const CONCURRENCY = 6;
 const RECENT_QUERY = "newer_than:30d";
+/** M-7: how far back mail found in an expired-history gap is still new mail (as Not spam's three days, C-7). */
+export const GAP_DELIVER_MS = 3 * 86_400_000;
 
 /** The state an account saved before 0.11, in the shape this loop reads. */
 export function normalizeSync(sync: SyncState): SyncState {
@@ -159,17 +171,7 @@ export class GmailSync {
       await this.cache.save(accountId, message, sync.generation);
       // A stable event key survives history replay and is kept after acknowledgement. Mail Gmail filed in Spam or
       // Trash reaches no rule, agent or category, as on IMAP, Outlook and Cloudflare (M-2, SP-1).
-      if (added.has(id) && !["SENT", "DRAFT", "SPAM", "TRASH"].some((l) => message.labels.includes(l))) {
-        const eventKey = "event:" + accountId + ":" + id;
-        await this.store.transaction(async (tx) => {
-          const old = await tx.get<{ delivered: boolean }>(eventKey);
-          if (!old || !old.delivered) {
-            const event = { accountId, messageId: id, delivered: false };
-            await tx.put(eventKey, event);
-            await tx.put("pending:" + eventKey, event);
-          }
-        });
-      }
+      if (added.has(id) && arrivedHere(message.labels)) await this.queueEvent(accountId, id);
     });
     if (page.nextPageToken) {
       sync.historyPageToken = page.nextPageToken;
@@ -178,6 +180,19 @@ export class GmailSync {
     sync.historyId = page.historyId;
     delete sync.historyPageToken;
     return { more: false, skipped };
+  }
+
+  /** New mail for rules, agents and categories, once: the event key is stable and kept after delivery. */
+  private async queueEvent(accountId: string, id: string) {
+    const eventKey = "event:" + accountId + ":" + id;
+    await this.store.transaction(async (tx) => {
+      const old = await tx.get<{ delivered: boolean }>(eventKey);
+      if (!old || !old.delivered) {
+        const event = { accountId, messageId: id, delivered: false };
+        await tx.put(eventKey, event);
+        await tx.put("pending:" + eventKey, event);
+      }
+    });
   }
 
   /** One unit of the import: its start, a page of a phase, or a stretch of the sweep. */
@@ -201,17 +216,20 @@ export class GmailSync {
         return { more: true, skipped: 0 };
       }
       sync.mode = "history";
-      for (const k of ["phase", "pageToken", "sweepAfter", "baseline"] as const) delete sync[k];
+      for (const k of ["phase", "pageToken", "sweepAfter", "baseline", "gapSince"] as const) delete sync[k];
       return { more: false, skipped: 0 };
     }
     const recent = sync.phase === "recent";
+    // M-7: after expired history, inbox mail this server never saw that arrived since the last good sync is new mail.
+    const gapFrom = recent && sync.gapSince ? Math.max(sync.gapSince, Date.now() - GAP_DELIVER_MS) : null;
     const page = await client.list(recent
       ? { pageToken: sync.pageToken, labelIds: ["INBOX"], q: RECENT_QUERY, maxResults: 50 }
       : { pageToken: sync.pageToken, includeSpamTrash: true, maxResults: 100 });
     const skipped = await this.messages(accountId, (page.messages || []).map((m) => m.id), async (id) => {
       keyPart(id);
       // Already read by this import (the recent inbox, or history): not fetched twice.
-      if ((await this.cache.row(accountId, id))?.generation === sync.generation && sync.generation) return;
+      const known = await this.cache.row(accountId, id);
+      if (known?.generation === sync.generation && sync.generation) return;
       let raw: GmailMessage;
       try {
         raw = await client.message(id, recent ? "full" : "metadata");
@@ -219,7 +237,9 @@ export class GmailSync {
         if (error instanceof ProviderError && error.code === "not_found") return; // deleted since it was listed
         throw error;
       }
-      await this.cache.save(accountId, normalizeMessage(accountId, raw), sync.generation, { bodyless: !recent });
+      const message = normalizeMessage(accountId, raw);
+      await this.cache.save(accountId, message, sync.generation, { bodyless: !recent });
+      if (gapFrom !== null && !known && message.timestamp >= gapFrom && arrivedHere(message.labels)) await this.queueEvent(accountId, id);
     });
     if (!recent) sync.imported = (sync.imported ?? 0) + (page.messages?.length ?? 0);
     if (page.nextPageToken) {
