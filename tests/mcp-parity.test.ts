@@ -250,7 +250,9 @@ test("the exclusions say where a person does what no tool does (parity gaps 9–
   const { NOT_TOOLS } = await import("../workers/mcp/tools");
   assert.match(NOT_TOOLS["POST /api/cloudflare/accounts"]!, /Settings → Accounts/);
   assert.equal(NOT_TOOLS["GET /api/agent-keys"], undefined, "reading keys is a tool now");
-  assert.ok(NOT_TOOLS["POST /api/agent-keys"] && NOT_TOOLS["DELETE /api/agent-keys/:id"], "making and revoking keys stays a person's");
+  // B-154 (DEC-0121): making and revoking keys are tools now, each through the owner's approval (tests/mcp-relayed.test.ts).
+  assert.equal(NOT_TOOLS["POST /api/agent-keys"], undefined);
+  assert.ok(NOT_TOOLS["PATCH /api/agent-keys/:id"] && NOT_TOOLS["POST /api/agent-keys/approvals/:code"], "an agent never switches off or answers the owner's approval");
   assert.ok(NOT_TOOLS["GET /api/accounts/gmail/connect"] && NOT_TOOLS["POST /api/accounts/gmail/connect"]);
 });
 

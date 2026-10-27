@@ -69,7 +69,18 @@ Status: steps 1 and 2 in 0.38.0 (2026-10-26). Row: [B-154](../../evidence/backlo
   `set_provider_setup` (secret). The secret routes stay in `NOT_TOOLS`, whose reasons now name these tools.
 - `tests/mcp-human-steps.test.ts` checks every refusal against `delegation-refusal.schema.json`.
 
+## Step 3 receipt (0.51.0)
+
+- Tools `save_member`, `remove_member` (`PUT`, `DELETE /api/members/:email`) and `create_agent_key`, `revoke_agent_key`
+  (`POST /api/agent-keys`, `DELETE /api/agent-keys/:id`), each `ownerApproval: true`: every agent call waits for the
+  owner's approval in Agent access whatever the key's setting, with a summary naming what changes, and changes
+  nothing before it (`tests/mcp-relayed.test.ts`). Their routes left `NOT_TOOLS`.
+- Kept out, as decided: `PATCH /api/agent-keys/:id` (switching the owner's approval off), the approvals routes, and
+  `POST /api/server/self-update` (it takes the server bundle the app carries; an agent never uploads server code).
+
 ## Exact next step
 
-Step 3: the `relayed` tools for members, agent keys and the server's update, each through the owner's approval on
-every call; then step 4, the actions declaration.
+Step 4: the actions declaration in the well-known document (`https://fabric.passioncode.ai/agent-contract/extensions/actions/0.1`),
+generated from the tool list with each action's gate (`relayed` for the four tools above and `decide_held_message`,
+`human` for the human-step tools, `none` otherwise), checked against `service-actions-extension.schema.json` and
+FAC-SEM-142 in a test.
