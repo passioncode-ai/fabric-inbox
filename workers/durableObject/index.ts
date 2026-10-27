@@ -1435,7 +1435,7 @@ export class MailboxDO extends DurableObject<Env> {
    * spam later (SP-2).
    */
   async receiveEmailOnce(email: EmailData, attachments: AttachmentData[], mailboxId: string,
-    verdict: { spam?: string | null; discard?: string | null; screen?: boolean; copyOwed?: boolean; verified?: string | null } = {}) {
+    verdict: { spam?: string | null; discard?: string | null; screen?: boolean; copyOwed?: boolean; verified?: string | null; replyTo?: string | null } = {}) {
     // B-29: a delivery resolved before this address was deleted is refused; its retry resolves the address again.
     if (await this.closedFor(mailboxId)) throw new Error(MAILBOX_CLOSED);
     // The alarm is durable before the event; inbox insertion and automation intent
@@ -1456,7 +1456,8 @@ export class MailboxDO extends DurableObject<Env> {
         body: email.body, date: email.date, thread_id: email.thread_id,
         ...(attachments.length ? { files: attachments.slice(0, 20).map((a) => ({ id: a.id, filename: a.filename, mimetype: a.mimetype, size: a.size })) } : {}),
         ...(spam ? { spam: true } : discard ? { discarded: true }
-          : verdict.screen ? { screen: true, senderName: email.sender_name ?? null, verified: verdict.verified ?? null } : {}) });
+          : verdict.screen ? { screen: true, senderName: email.sender_name ?? null, verified: verdict.verified ?? null,
+            ...(verdict.replyTo ? { replyTo: verdict.replyTo } : {}) } : {}) });
       if (verdict.copyOwed && !spam && !discard) this.ctx.storage.sql.exec("UPDATE incoming_receipts SET forward_status = 'owed' WHERE delivery_id = ?", email.id);
       return true;
     });

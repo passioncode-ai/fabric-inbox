@@ -17,7 +17,7 @@ import { runIdFor } from "./agents/run";
 import { routingClient } from "./routing/email-routing";
 import { handleSendEmail, handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
 import { Folders, isBuiltInFolder } from "../shared/folders";
-import { authResults, spamCheck, tooLittleToJudge, verifiedDomain, type SpamVerdict } from "../shared/mail/spam";
+import { authResults, replyToOf, spamCheck, tooLittleToJudge, verifiedDomain, type SpamVerdict } from "../shared/mail/spam";
 import { readSpamLists } from "./spam/lists";
 import { autoReason, discardFacts, discardSafety, matchDiscard, recordApplied } from "../shared/mail/discard";
 import { readDiscardStore, updateDiscardStore } from "./discard/store";
@@ -373,7 +373,7 @@ app.post("/api/v1/mailboxes/:mailboxId/emails/:id/move", async (c: AppContext) =
  */
 app.post("/api/v1/mailboxes/:mailboxId/emails/:id/spam-check", async (c: AppContext) => {
 	const email = await c.var.mailboxStub.getEmail(c.req.param("id")!) as { sender?: string; sender_name?: string | null; subject?: string;
-		body?: string; raw_headers?: string | null; folder_id?: string } | null;
+		body?: string; raw_headers?: string | null; folder_id?: string; attachments?: { filename: string; mimetype: string }[] } | null;
 	if (!email) return c.json({ error: msg("Email not found") }, 404);
 	if (!c.env.CATEGORIES) return c.json({ error: msg("The spam check is not set up on this server") }, 503);
 	let headers: { key: string; value: string }[] = [];
@@ -385,7 +385,8 @@ app.post("/api/v1/mailboxes/:mailboxId/emails/:id/spam-check", async (c: AppCont
 	if (tooLittleToJudge(text)) return c.json({ folder: email.folder_id, rules, verified, model: null, modelSkipped: msg("Too little text to judge") });
 	try {
 		const model = await c.env.CATEGORIES.getByName("workspace").recheckSpam({ sender, senderName: email.sender_name ?? undefined,
-			to: c.req.param("mailboxId")!.toLowerCase(), subject: email.subject ?? "", text, verified });
+			to: c.req.param("mailboxId")!.toLowerCase(), subject: email.subject ?? "", text, verified, replyTo: replyToOf(headers, sender),
+			attachments: (email.attachments ?? []).map((a) => `${a.filename} (${a.mimetype})`) });
 		if (!model) return c.json({ folder: email.folder_id, rules, verified, model: null, modelSkipped: msg("The day's spam budget was spent") });
 		return c.json({ folder: email.folder_id, rules, verified, model });
 	} catch (error) {
@@ -694,7 +695,8 @@ async function receiveEmail(event: IncomingEmailEvent, env: Env, ctx: ExecutionC
 	}, attachmentData, mailboxId, verdict.verdict === "spam" ? { spam: verdict.reason }
 		: discard ? { discard: discard.reason }
 		: { screen: verdict.verdict === "screen", copyOwed: await wantsCopy(env, mailboxId),
-			...(verdict.verdict === "screen" ? { verified: verifiedDomain(authResults(parsedEmail.headers ?? []), sender) } : {}) });
+			...(verdict.verdict === "screen" ? { verified: verifiedDomain(authResults(parsedEmail.headers ?? []), sender),
+				replyTo: replyToOf(parsedEmail.headers ?? [], sender) } : {}) });
 
   // The mailbox's incoming-event journal hands the message to automation rules
   // and to the address's agent (AgentRegistryDO.enqueue) durably; nothing here

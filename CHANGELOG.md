@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.49.0 (2026-10-27)
+
+- **The spam check sees where replies would go, and what is attached.** A message that asks for replies at another
+  address than its sender's, such as a company writing from its own domain while answers go to free mail, is a
+  common sign of a scam. So is an invoice that is really a script or a web page. The check now sees both.
+
 ## 0.48.1 (2026-10-27)
 
 - **Updating your server waits out a dropped connection.** When Cloudflare drops the connection during the upload,

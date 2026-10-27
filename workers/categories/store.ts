@@ -38,6 +38,8 @@ export interface QueueItem { accountId: string; accountEmail: string; messageId:
   screen?: boolean;
   /** For the spam check (B-172): the sender's shown name and the domain Cloudflare's MX verified. */
   senderName?: string | null; verified?: string | null;
+  /** B-180: where replies go when that is not the sender, and the names and types of its files, for the spam check. */
+  replyTo?: string | null; attachments?: string[];
   /** C-5: the HTML has a link or an image, so it is judged even with little text; its first links are in `text`. */
   linked?: boolean;
   /** B-179: its files, for the safety check (a Cloudflare message's; an account's files are not read here yet). */
@@ -337,7 +339,7 @@ export class CategoriesDO extends DurableObject<Env> {
    * no enabled screened category exists, so an idle workspace costs nothing.
    */
   async ingest(account: AccountRef, event: { id: string; sender: string; subject: string; body: string; html?: string; date: string; screen?: boolean; spam?: boolean;
-    senderName?: string | null; verified?: string | null; files?: { id: string; filename: string; mimetype: string; size: number }[] }): Promise<void> {
+    senderName?: string | null; verified?: string | null; replyTo?: string | null; files?: { id: string; filename: string; mimetype: string; size: number }[] }): Promise<void> {
     if (event.spam) return;
     const screened = (await this.categories()).filter((c) => c.enabled && c.kind === "screened");
     const projects = await this.listProjects();
@@ -350,6 +352,8 @@ export class CategoriesDO extends DurableObject<Env> {
       text: (stripHtmlToText(event.body ?? "") + linkLines(event.body ?? "")).slice(0, TEXT_CHARS), timestamp: Date.parse(event.date) || Date.now(),
       // C-5: a link or an image is something to judge, though stripping the HTML leaves no text of it.
       ...(screen ? { screen: true, senderName: event.senderName ?? null, verified: event.verified ?? null,
+        ...(event.replyTo ? { replyTo: event.replyTo } : {}),
+        ...(event.files?.length ? { attachments: event.files.slice(0, 10).map((f) => `${f.filename} (${f.mimetype})`) } : {}),
         ...(/\bhref\s*=|<img\b/i.test(event.body ?? "") ? { linked: true } : {}) } : {}),
       // A Cloudflare body is HTML already; an account's is its text, with its HTML beside it.
       ...(safety ? { safety: true, html: (event.html || (account.id.startsWith("cloudflare:") ? event.body : textToHtml(event.body ?? "")) || "").slice(0, HTML_CHARS),
@@ -456,7 +460,7 @@ export class CategoriesDO extends DurableObject<Env> {
       } else {
         try {
           const j = await judgeSpam(this.spamModel(), { sender: item.sender, senderName: item.senderName ?? undefined, to: item.accountEmail,
-            subject: item.subject, text: item.text, verified: item.verified ?? null });
+            subject: item.subject, text: item.text, verified: item.verified ?? null, replyTo: item.replyTo ?? null, attachments: item.attachments ?? [] });
           console.log(JSON.stringify({ event: "spam_judged", account: item.accountId, kind: j.kind, spam: j.spam, verified: !!item.verified }));
           if (j.spam) spam = { reason: j.reason || msg("The model judged it spam") };
           else { this.recordSpamCheck(item, "clean", j.reason, now); spamOwed = false; }
