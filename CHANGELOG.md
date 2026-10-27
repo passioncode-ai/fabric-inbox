@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.53.0 (2026-10-27)
+
+- **Reply agents check and grade answers more fairly.** The answer check now reads the facts an answer rests on
+  before the long instructions, so a right answer is no longer rejected as made up. The daily quality grade leaves out
+  hand-off messages and safe replies, which are fixed texts rather than answers.
+- **Questions to the knowledge are the sender's own words.** The question an agent asks the knowledge leaves out the
+  quoted history of the conversation, so it asks what the sender wrote now.
+
 ## 0.52.0 (2026-10-27)
 
 - **The server tells Fabric which actions an agent can take for you, and who decides each one.** Every action you

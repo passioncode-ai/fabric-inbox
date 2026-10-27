@@ -711,7 +711,9 @@ export class AgentRegistryDO extends DurableObject<Env> {
    * every verdict of the day; null when nothing was judged (no judge, no answer, every call failed).
    */
   protected async judgeDay(address: string, day: string, runs: AgentRun[]): Promise<ReturnType<typeof qualityOf>> {
-    const ofDay = runs.filter((r) => r.createdAt.startsWith(day) && r.status === "sent" && r.sent?.body && !r.redacted);
+    // VoC audit 2026-10-27 (1): a hand-off template or a safe reply is a fixed text, not an answer; judging it as one
+    // scored every hand-off "helped: no" and pulled addressed and routing down.
+    const ofDay = runs.filter((r) => r.createdAt.startsWith(day) && r.status === "sent" && r.sent?.body && !r.redacted && !r.handoff && !r.fallback);
     const todo = ofDay.filter((r) => !r.judgement).slice(0, Math.max(0, JUDGE_SAMPLE - ofDay.filter((r) => r.judgement).length));
     const deps = this.deps(address);
     let calls = 0, failed = 0;

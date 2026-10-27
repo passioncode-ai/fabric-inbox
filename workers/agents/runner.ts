@@ -1,6 +1,6 @@
 import { scrubPersonal } from "./events";
 import { queryLanguage } from "./language";
-import { htmlToText as linesOf, newText } from "../../shared/mail/text";
+import { newText } from "../../shared/mail/text";
 import type { SendMailCommand, SendMailResult } from "../../shared/mail/send";
 import { LEGACY_INSTRUCTIONS, callArguments, legacyAgentId, modelSchema, publicOnlyProblem, readAssignment, type AgentVersion, type ToolGrant } from "./definition";
 import { decide, isFollowUpSubject, matchedTopic, type ModelDecision } from "./policy";
@@ -585,7 +585,9 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // At once, so the wait is the slowest call's (each is bounded by its 20 s deadline), not their sum.
   // Line breaks kept and entities decoded: the data agent reads a mail by sentence — the subject, then
   // the body's first sentence — and skips a quoted reply by its header at a line start.
-  const opening = `${email.subject}\n${linesOf(email.body).slice(0, 600)}`;
+  // What the sender wrote now, without the quoted history and its greetings (VoC audit 2026-10-27, 3): the data
+  // agent was asked the earlier answer's text back and abstained.
+  const opening = `${email.subject}\n${newText(email.body).slice(0, 600)}`;
   const localized = (text: { en: string; ru?: string }) => (queryLanguage(opening) === "ru" && text.ru ? text.ru : text.en);
   /**
    * Not sure, so not answered yet: the run is held and tried again (retryHeld). B-131: nobody waits without
@@ -839,9 +841,11 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
         toolCalls.push(record);
         try {
           // The operator's instructions are facts too (contacts, routing, what the team offers); measured
-          // 2026-10-17: a support contact named only in the instructions was rejected as invented.
-          const facts = [`[operator instructions]\n${agent.instructions.trim()}`, agent.knowledge.trim() && `[knowledge]\n${agent.knowledge.trim()}`,
-            passagesBlock(passages), factTexts.length ? `[tool results]\n${RANK_NOTE}` : "", ...factTexts].filter(Boolean).join("\n\n");
+          // 2026-10-17: a support contact named only in the instructions was rejected as invented. They go last:
+          // the checker reads the first 16,000 characters, and long instructions first cut off the tool results
+          // a right answer rested on, so it was rejected as invented (VoC audit 2026-10-27, 2).
+          const facts = [factTexts.length ? `[tool results]\n${RANK_NOTE}` : "", ...factTexts, passagesBlock(passages),
+            agent.knowledge.trim() && `[knowledge]\n${agent.knowledge.trim()}`, `[operator instructions]\n${agent.instructions.trim()}`].filter(Boolean).join("\n\n");
           const verdict = await deps.check(response.model ?? "", { message: `${email.subject}\n${deps.htmlToText(email.body)}`, facts, answer: body });
           record.ok = verdict.approved;
           record.result = `${verdict.model}: ${verdict.approved ? "approved" : "rejected"} — ${verdict.reason}`.slice(0, RESULT_PREVIEW_CHARS);
@@ -972,7 +976,7 @@ export async function closeRun(run: AgentRun, deps: RunnerDeps): Promise<Closing
   if (thread.some((m) => m.folder_id === "sent" && Date.parse(m.date) > received && !waiting.some((w) => deps.htmlToText(m.body).trim().startsWith(w))))
     return { status: "not_sent", reason: "answered" };
   const settings = await deps.mailbox.settings();
-  const opening = `${email.subject}\n${linesOf(email.body).slice(0, 600)}`;
+  const opening = `${email.subject}\n${newText(email.body).slice(0, 600)}`;
   const chosen = queryLanguage(opening) === "ru" && text.ru ? text.ru : text.en;
   const signature = settings?.signature as { enabled?: boolean; text?: string } | undefined;
   const signed = withoutDashes(signature?.enabled && signature.text?.trim() ? `${chosen}\n\n${signature.text.trim()}` : chosen);
