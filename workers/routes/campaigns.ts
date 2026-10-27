@@ -3,8 +3,9 @@ import type { Env } from "../types";
 import { msg } from "../../shared/i18n";
 
 /**
- * B-181 (SCN-089): outreach campaigns, step 1 of the plan (docs/app-store/tasks/2026-10-27-outreach.md): prepare,
- * add recipients, preview, dry-run, and the suppression list. Nothing here sends. Behind the same Access and
+ * B-181 (SCN-089, SCN-090): outreach campaigns (docs/app-store/tasks/2026-10-27-outreach.md): prepare, add recipients,
+ * preview, dry-run, the suppression list, and from step 2 launch, pause, stop and the report; the sending itself is
+ * CampaignsDO's alarm, through the account's own send. Behind the same Access and
  * same-origin boundary as every /api route; a member reaches none of it (workers/lib/member-gate.ts).
  */
 export const campaignsRouter = new Hono<{ Bindings: Env }>();
@@ -98,4 +99,22 @@ campaignsRouter.post("/api/suppression", async (c) => {
     if (!added && !Array.isArray(body?.remove)) return c.json({ error: msg("Say what to add to or remove from the list.") }, 400);
     return c.json({ ...(added ?? { added: [], invalid: [], removedRecipients: 0 }), removed });
   } catch (error) { return failure(c, error); }
+});
+campaignsRouter.post("/api/campaigns/:id/launch", async (c) => {
+  try {
+    const campaign = await store(c).getCampaign(c.req.param("id"));
+    if (!campaign) return c.json({ error: msg("No such campaign.") }, 404);
+    const problem = await senderProblem(c, campaign.sender);
+    if (problem) return c.json({ error: problem }, 400);
+    return c.json(await store(c).launch(c.req.param("id")));
+  } catch (error) { return failure(c, error); }
+});
+campaignsRouter.post("/api/campaigns/:id/pause", async (c) => {
+  try { return c.json(await store(c).pause(c.req.param("id"))); } catch (error) { return failure(c, error); }
+});
+campaignsRouter.post("/api/campaigns/:id/stop", async (c) => {
+  try { return c.json(await store(c).stop(c.req.param("id"))); } catch (error) { return failure(c, error); }
+});
+campaignsRouter.get("/api/campaigns/:id/report", async (c) => {
+  try { return c.json(await store(c).report(c.req.param("id"))); } catch (error) { return failure(c, error); }
 });

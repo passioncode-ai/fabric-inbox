@@ -109,6 +109,8 @@ export interface SendRequest extends SendInput {
 }
 export interface SubmitOptions {
   autoSubmitted?: boolean;
+  /** B-181: a campaign message's `List-Unsubscribe` target (a `mailto:` or `https:` URI); the server's own, never a request's. */
+  listUnsubscribe?: string;
 }
 export interface SendReceipt {
   status: "sending" | "accepted" | "unknown" | "failed";
@@ -948,8 +950,9 @@ export class AccountService {
     options: SubmitOptions = {},
   ): Promise<SendReceipt> {
     const account = await this.account(accountId);
-    const { idempotencyKey, autoSubmitted: _fromBody, ...rest } = request as SendRequest & { autoSubmitted?: unknown };
-    const input: OutgoingMessage = options.autoSubmitted ? { ...rest, autoSubmitted: true } : rest;
+    const { idempotencyKey, autoSubmitted: _fromBody, listUnsubscribe: _unsubscribeFromBody, ...rest } = request as SendRequest & { autoSubmitted?: unknown; listUnsubscribe?: unknown };
+    const input: OutgoingMessage = { ...rest, ...(options.autoSubmitted ? { autoSubmitted: true } : {}),
+      ...(options.listUnsubscribe ? { listUnsubscribe: options.listUnsubscribe } : {}) };
     if (
       typeof idempotencyKey !== "string" ||
       !IDEMPOTENCY_KEY.test(idempotencyKey)

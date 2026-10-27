@@ -838,4 +838,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"{sender} is not a connected account of this server.": "{sender} не подключён к этому серверу.",
 	"Give the recipients as a list, each with an email and its fields.": "Передайте получателей списком: у каждого адрес и его поля.",
 	"Say what to add to or remove from the list.": "Укажите, что добавить в список или убрать из него.",
+	"Only a draft or a paused campaign can be started.": "Запустить можно только черновик или кампанию на паузе.",
+	"The campaign has nobody left to write to.": "В кампании не осталось никого, кому можно написать.",
+	"Only a running campaign can be paused.": "Поставить на паузу можно только идущую кампанию.",
 };

@@ -147,13 +147,17 @@ the rules that would discard it again; `list_messages` with `folder: "discarded"
 `delete_message` is permanent and two-step — prefer trash. An IMAP account offers only what its
 server has: `list_accounts` gives each account's `capabilities` (no Archive folder → no archive).
 
-**Outreach (being built: nothing sends yet).** `save_campaign` prepares a campaign from a connected
-Gmail, Outlook or IMAP account (never a Cloudflare address), human-paced by default (30 a day,
-weekdays 09:00 to 17:00, 5 to 10 minutes apart, stop on reply and for the whole company);
+**Outreach.** `save_campaign` prepares a campaign from a connected Gmail, Outlook or IMAP account
+(never a Cloudflare address), human-paced by default (30 a day, the account's first day 10, weekdays
+09:00 to 17:00, 5 to 10 minutes apart, stop on reply and for the whole company);
 `add_campaign_recipients` takes the people with their fields (`{{first_name|there}}` in the steps)
 and leaves out repeats, invalid addresses and anyone on the do-not-write list (`list_suppression`,
-`change_suppression`). Before the person approves: `preview_campaign` (and fix the fields it says
-are missing) and `dry_run_campaign` (when each would go). Write only to people the person chose.
+`change_suppression`). Before the person approves: `preview_campaign` (fix the fields it says are
+missing) and `dry_run_campaign` (when each would go). Write only to people the person chose.
+`launch_campaign` (two calls, real mail) starts it: the server sends it on its own, follow-ups in the
+same conversation, and stops for whoever replies; "unsubscribe" in a reply puts them on the list.
+`campaign_report` says how it went; `pause_campaign` holds it (it also pauses itself on 5% bounces or
+an account that needs signing in again, with `reason`), `launch_campaign` resumes, `stop_campaign` ends it.
 
 ## 5. Administration workflows (`admin` keys)
 

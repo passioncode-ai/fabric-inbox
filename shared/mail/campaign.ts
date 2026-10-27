@@ -11,6 +11,13 @@ export const MAX_STEPS = 4;
 export const MAX_RECIPIENTS = 5000;
 export const MAX_FIELDS = 30;
 
+/** The default line under every campaign message (the recipient reads it, in the campaign's language: change it with the steps). */
+export const UNSUBSCRIBE_TEXT = "If you would rather not hear from me again, reply \"unsubscribe\" and I will not write again.";
+/** The ramp-up (decision 2): an account's first sending day is held to RAMP.start, each later day RAMP.perDay more, up to the cap. */
+export const RAMP = { start: 10, perDay: 5 };
+/** A campaign pauses when this share of its sends bounced, once at least RAMP.start were sent. */
+export const BOUNCE_PAUSE = 0.05;
+
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const ADDRESS = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
 
@@ -39,6 +46,8 @@ export const CampaignInputSchema = z.object({
   companyStop: z.boolean().default(true),
   /** The sender's postal address, which CAN-SPAM asks every commercial message to carry. */
   postalAddress: z.string().max(300).optional(),
+  /** The line under every message that says how to stop them; a reply with "unsubscribe" in it stops them. */
+  unsubscribeText: z.string().min(1).max(300).default(UNSUBSCRIBE_TEXT),
 }).strict();
 export type CampaignInput = z.infer<typeof CampaignInputSchema>;
 
@@ -118,16 +127,58 @@ export function inWindow(c: Pick<CampaignInput, "timezone" | "window">, at: numb
  * A dry run of the first step: when each of the first `count` recipients would get it, from `from`, within the
  * window, the daily cap (a rolling day) and the gaps (`random` picks inside the gap range; a test passes a fixed one).
  */
-export function plan(c: CampaignInput, count: number, from: number, random: () => number = Math.random): number[] {
+export function plan(c: CampaignInput, count: number, from: number, random: () => number = Math.random, firstSentAt = 0): number[] {
   const out: number[] = [];
   let at = from;
   const step = 60_000;
   for (let guard = 0; out.length < count && guard < 60 * 24 * 60; guard++) {
     const dayAgo = at - 86_400_000;
-    if (!inWindow(c, at) || out.filter((t) => t > dayAgo).length >= c.dailyCap) { at += 15 * step; continue; }
+    if (!inWindow(c, at) || out.filter((t) => t > dayAgo).length >= rampedCap(c.dailyCap, firstSentAt || out[0] || 0, at)) { at += 15 * step; continue; }
     out.push(at);
     const [lo, hi] = c.gapMinutes;
     at += Math.round((lo + random() * (hi - lo)) * step);
   }
   return out;
+}
+
+/** An account's cap for the rolling day that ends at `at`: the ramp from its first send, never above the campaign's. */
+export function rampedCap(cap: number, firstSentAt: number, at: number): number {
+  if (!firstSentAt) return Math.min(cap, RAMP.start);
+  const days = Math.max(0, Math.floor((at - firstSentAt) / 86_400_000));
+  return Math.min(cap, RAMP.start + RAMP.perDay * days);
+}
+
+/** The first moment at or after `at` inside the window (15-minute steps, at most 8 days ahead), or null. */
+export function nextInWindow(c: Pick<CampaignInput, "timezone" | "window">, at: number): number | null {
+  for (let t = at, guard = 0; guard < 8 * 24 * 4; guard++, t += 15 * 60_000) if (inWindow(c, t)) return t;
+  return null;
+}
+
+/** One step as a recipient gets it: the subject (a follow-up without one answers the first), the text with the stop line. */
+export function composeStep(c: CampaignInput, index: number, fields: Record<string, string>, firstSubject: string): { subject: string; text: string } {
+  const step = c.steps[index]!;
+  const own = render(step.subject, fields).text.trim();
+  const subject = own || (index === 0 ? "" : /^re:/i.test(firstSubject) ? firstSubject : firstSubject ? `Re: ${firstSubject}` : "");
+  const footer = [c.unsubscribeText, c.postalAddress].filter((v) => v && v.trim()).join("\n");
+  return { subject, text: render(step.body, fields).text.trimEnd() + (footer ? `\n\n${footer}` : "") };
+}
+
+/** Free-mail domains: a reply from one stops that person only, never the "company". */
+export const FREE_MAIL = new Set(["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "msn.com", "yahoo.com", "icloud.com",
+  "me.com", "mac.com", "aol.com", "proton.me", "protonmail.com", "gmx.com", "gmx.de", "web.de", "mail.ru", "yandex.ru", "ya.ru", "bk.ru",
+  "list.ru", "inbox.ru", "rambler.ru", "zoho.com", "qq.com", "163.com", "fastmail.com", "hey.com", "tutanota.com"]);
+/** The company a recipient belongs to, by domain, or null for free mail. */
+export const companyOf = (email: string): string | null => { const d = domainOf(email); return FREE_MAIL.has(d) ? null : d; };
+
+export type InboundKind = "bounce" | "auto" | "unsubscribe" | "reply";
+/** What a message that arrives in the sending account says about a campaign: a bounce, an automatic reply, a request to stop, or a reply. */
+export function inboundKind(m: { sender: string; subject: string; body: string }): InboundKind {
+  const from = m.sender.toLowerCase();
+  if (/(mailer-daemon|postmaster)@/.test(from) || /^(undeliverable|undelivered|delivery status notification|mail delivery (failed|subsystem)|failure notice|returned mail|не доставлено|недоставлен)/i.test(m.subject.trim()))
+    return "bounce";
+  if (/^(auto(matic)?[ -]?(reply|response)|out of (the )?office|ooo\b|away|abwesend|автоответ|автоматический ответ|отсутству)/i.test(m.subject.replace(/^(re|aw|ответ):\s*/i, "").trim()))
+    return "auto";
+  const own = m.body.split(/\r?\n/).filter((l) => !l.trim().startsWith(">")).join("\n").split(/\n(on .{1,200} wrote:|-{2,} ?original message|от: |from: )/i)[0]!.slice(0, 400);
+  if (/\b(unsubscribe|remove me|do not (contact|email|write)|don't (contact|email|write))\b|отпис|отпиш|не пишите|больше не пиш/i.test(`${m.subject}\n${own}`)) return "unsubscribe";
+  return "reply";
 }

@@ -5,6 +5,16 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.45.0 (2026-10-27)
+
+- **Your agent can start the campaign, and the server sends it.** From your own account, one message at a time,
+  inside your hours, 5 to 10 minutes apart: 10 on the account's first day, then 5 more each day up to the cap.
+  Follow-ups go after their days in the same conversation.
+- **It stops for whoever answers.** A reply stops that person and, by default, the rest of their company. A reply
+  with "unsubscribe" puts them on the do-not-write list. An automatic reply moves their next message three days on.
+- **Every message says how to stop them** and carries the List-Unsubscribe header. A campaign pauses by itself
+  when 5% of its messages bounce or the account needs signing in again, and the report says how it went.
+
 ## 0.44.0 (2026-10-27)
 
 - **Your agent can prepare an outreach campaign.** It picks the connected Gmail, Outlook or IMAP account to send

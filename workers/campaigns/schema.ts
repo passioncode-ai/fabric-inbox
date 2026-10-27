@@ -14,4 +14,20 @@ export const CAMPAIGNS_STEPS: readonly SchemaStep[] = [
     // The workspace's do-not-write list: an address, or a domain (and every domain under it).
     `CREATE TABLE IF NOT EXISTS suppression (value TEXT PRIMARY KEY, reason TEXT NOT NULL, added_at INTEGER NOT NULL)`,
   ]),
+  // B-181 step 2: sending. Each recipient keeps the conversation its first message started (thread and Message-ID,
+  // so follow-ups answer in it); every send is a row (the rolling daily cap per account, the report); each account
+  // keeps when it may send next and when it first sent (the ramp-up).
+  statements("2_sending", [
+    `ALTER TABLE recipients ADD COLUMN thread_id TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE recipients ADD COLUMN rfc_id TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE recipients ADD COLUMN subject TEXT NOT NULL DEFAULT ''`,
+    `CREATE INDEX IF NOT EXISTS recipients_due ON recipients(status, next_at)`,
+    `ALTER TABLE campaigns ADD COLUMN reason TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE campaigns ADD COLUMN launched_at INTEGER NOT NULL DEFAULT 0`,
+    `CREATE TABLE IF NOT EXISTS sends (id INTEGER PRIMARY KEY AUTOINCREMENT, campaign_id TEXT NOT NULL, email TEXT NOT NULL, step INTEGER NOT NULL,
+       sender TEXT NOT NULL, at INTEGER NOT NULL, status TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '')`,
+    `CREATE INDEX IF NOT EXISTS sends_sender ON sends(sender, at)`,
+    `CREATE INDEX IF NOT EXISTS sends_campaign ON sends(campaign_id, at)`,
+    `CREATE TABLE IF NOT EXISTS senders (sender TEXT PRIMARY KEY, next_at INTEGER NOT NULL DEFAULT 0, first_at INTEGER NOT NULL DEFAULT 0)`,
+  ]),
 ];
