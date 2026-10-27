@@ -307,6 +307,30 @@ test("B-118: a run that ends appends one event; the feed pages forward by cursor
   } finally { await mf.dispose(); }
 });
 
+test("B-162: a held message is diagnosed once per cause across retries; its answer, once sent, is cited once", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const run = { id: "run-h", mailboxId: "a@project.invalid", emailId: "h1", sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1,
+      status: "running", createdAt: "2026-10-27T08:00:00.000Z", updatedAt: "2026-10-27T08:00:00.000Z" };
+    const of = async (kind: string) => ((await command("events", { after: "0", limit: 50 })).events as { kind: string; data: { value: Record<string, any> } }[]).filter((e) => e.kind === kind);
+    await command("begin", { run });
+    await command("save", { run: { ...run, status: "held", unanswered: true, question: "How do refunds work?" } });
+    await command("save", { run: { ...run, status: "running" } });
+    await command("save", { run: { ...run, status: "held", unanswered: true, question: "How do refunds work?" } }); // retried, the same cause
+    assert.deepEqual((await of("support.diagnosed")).map((e) => e.data.value.cause), ["data"]);
+    await command("save", { run: { ...run, status: "running" } });
+    await command("save", { run: { ...run, status: "held" } }); // the knowledge now has it, the checker did not approve
+    assert.deepEqual((await of("support.diagnosed")).map((e) => e.data.value.cause), ["data", "draft-or-check"]);
+    await command("save", { run: { ...run, status: "running" } });
+    const sent = { ...run, status: "sent", evidence: [{ tool: "facts", items: ["fact:refunds"], coverage: [0.9], revision: "r2" }] };
+    await command("save", { run: sent });
+    await command("save", { run: sent });
+    const cited = await of("answer.cited");
+    assert.equal(cited.length, 1);
+    assert.deepEqual([cited[0]!.data.value.cited, cited[0]!.data.value.coverage, cited[0]!.data.value.status], [["fact:refunds"], [0.9], "answered"]);
+  } finally { await mf.dispose(); }
+});
+
 test("B-170: a conversation on an agent address still open two days later is reported once as agent.abandoned", async () => {
   const { mf, command } = await fixture();
   try {

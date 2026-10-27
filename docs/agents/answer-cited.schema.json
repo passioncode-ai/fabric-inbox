@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/agents/answer-cited.schema.json",
+  "title": "answer.cited, as Fabric Inbox emits it",
+  "description": "B-162: one answer a reply agent sent from its knowledge, on the server's events feed (/fabric/v1/events, list_agent_events) as data.value, once per run. A hand-off reply or the safe reply is not an answer and has none. cited and coverage are flat lists at the same index (a Fabric event's data.value nests two levels at most), the shape the shared learning loop agreed. No sender, subject or text of the message or the reply; question is the model's English restatement with personal data removed. workers/agents/learning-events.ts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["at", "channel", "address", "runId", "category", "status", "question", "cited", "coverage", "revision"],
+  "properties": {
+    "at": { "type": "string", "format": "date-time" },
+    "channel": { "const": "email" },
+    "address": { "type": "string", "description": "The Cloudflare address that sent the answer." },
+    "runId": { "type": "string" },
+    "agentId": { "type": "string" },
+    "agentVersion": { "type": "integer", "minimum": 1 },
+    "category": { "type": ["string", "null"], "maxLength": 60, "description": "The category the agent's reply policy chose, or null." },
+    "status": { "enum": ["answered", "general"], "description": "answered: it cited knowledge items; general: it rested on the agent's own knowledge text and instructions." },
+    "question": { "type": ["string", "null"], "maxLength": 300 },
+    "cited": { "type": "array", "maxItems": 12, "items": { "type": "string", "maxLength": 200 }, "description": "The ids of the knowledge items the answer rested on, each once, in the order the tools gave them." },
+    "coverage": { "type": "array", "maxItems": 12, "items": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }, "description": "Each cited item's share of the question at the same index as cited; null when the tool gave none." },
+    "revision": { "type": ["string", "null"], "maxLength": 200, "description": "The revision the first knowledge tool that gave one answered with." }
+  }
+}

@@ -68,7 +68,7 @@ export interface AgentRun {
   /** A reply saying an earlier answer did not help (reported to the knowledge as outdated). */
   dissatisfied?: boolean;
   /** The confident tool answers this run rested on (request id, cited items, revision): a sent answer is traceable. */
-  evidence?: { tool: string; requestId?: string; items?: string[]; revision?: string }[];
+  evidence?: { tool: string; requestId?: string; items?: string[]; coverage?: (number | null)[]; revision?: string }[];
   /** What the message is about (a few English words) and what the sender wants (one sentence); no personal data. */
   topic?: string;
   summary?: string;

@@ -358,6 +358,8 @@ test("B-164: a key limited to its mailboxes reads its agent's runs, events and c
       { kind: "knowledge.learned", data: { value: { addresses: ["me@gmail.example"] } } },
       { kind: "knowledge.learned", data: { value: { addresses: ["contact@owner.example"] } } },
       { kind: "support.quality_daily", data: { value: { channel: "mail:owner.example:research" } } },
+      { kind: "answer.cited", data: { value: { address: "research@owner.example" } } },
+      { kind: "support.diagnosed", data: { value: { address: "contact@owner.example" } } },
     ] },
   });
   const s = scopedApi(api, [RESEARCH, "gmail:g1"]);
@@ -368,7 +370,7 @@ test("B-164: a key limited to its mailboxes reads its agent's runs, events and c
   assert.equal(((await s.request("GET", "/api/agent-runs/agent-b")).data as { id: string }).id, "agent-b");
   await assert.rejects(s.request("GET", "/api/agent-runs/agent-c"), /limited to/, "another mailbox's run reads as refused");
   const feed = (await s.request("GET", "/api/agent-events")).data as { cursor: string; events: { kind: string }[] };
-  assert.deepEqual(feed.events.map((e) => e.kind), ["agent.sent", "agent.sent", "knowledge.learned"]);
+  assert.deepEqual(feed.events.map((e) => e.kind), ["agent.sent", "agent.sent", "knowledge.learned", "answer.cited"], "B-162: by the run's address too");
   assert.equal(feed.cursor, "9", "the cursor moves past events that are not its own");
   await assert.rejects(s.request("GET", "/api/agent-threads"), /name one address/, "two mailboxes: one at a time");
   await s.request("GET", "/api/agent-threads", { query: { address: "me@gmail.example" } });

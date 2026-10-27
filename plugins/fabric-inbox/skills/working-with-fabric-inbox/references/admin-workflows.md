@@ -154,6 +154,9 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   A knowledge change is on the same feed (B-161): `knowledge.learned` when a document is added or changed or an
   agent's own knowledge text changes, `knowledge.retracted` when a document is removed, each with its `ref`
   (a new version is a new ref), the addresses whose agents read it and `validatedBy` (operator, agent).
+  For a learning loop across channels (B-162): `answer.cited` for every answer sent from the knowledge (the
+  cited item ids and their coverage as two lists at the same index, the revision) and `support.diagnosed` for a
+  message held or handed to a person (`cause`: data, draft-or-check, person; retrieval only from a second look).
   Its `quality` comes from a daily judge (B-132): up to 30 sent answers per address, rubric v1, a model of
   another vendor than the writer and checker; the verdict and its note are on the run (`list_agent_runs`).
   To choose a judge on your own mail, `judge_bench { address, days?, runs?, models?, reference? }` (B-152) has

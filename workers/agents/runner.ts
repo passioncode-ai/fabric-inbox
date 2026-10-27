@@ -154,8 +154,12 @@ export async function gapRequestId(runId: string, kind: string): Promise<string>
   return `${runId}-${Array.from(digest.slice(0, 6), (b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
 
-/** What a confident tool answer is traced by: its request id, the ids of the items it cites, its revision. */
-export interface EvidenceTrace { tool: string; requestId?: string; items?: string[]; revision?: string }
+/**
+ * What a confident tool answer is traced by: its request id, the ids of the items it cites, its revision. B-162:
+ * `coverage` is each cited item's own share of the question at the same index as `items` (null when it gave none),
+ * present only when at least one item carried one.
+ */
+export interface EvidenceTrace { tool: string; requestId?: string; items?: string[]; coverage?: (number | null)[]; revision?: string }
 
 /**
  * The trace of a tool output that counts as a confident answer, or null. When its items carry the data agent's
@@ -175,6 +179,7 @@ export function evidenceOf(tool: string, text: string): EvidenceTrace | null {
   if (!flagged && typeof v.coverage === "number" && v.coverage < 0.6) return null;
   const id = [v.requestId, v.request_id, v.trace, v.traceId].find((x) => typeof x === "string") as string | undefined;
   const items: string[] = [];
+  const coverages: (number | null)[] = [];
   let scored = 0;
   for (const item of all) {
     const { id: itemId, coverage, answer } = item;
@@ -187,11 +192,15 @@ export function evidenceOf(tool: string, text: string): EvidenceTrace | null {
       scored++;
       if (coverage < 0.6) continue;
     }
-    if (typeof itemId === "string" || typeof itemId === "number") items.push(String(itemId));
+    if (typeof itemId === "string" || typeof itemId === "number") {
+      items.push(String(itemId));
+      coverages.push(typeof coverage === "number" && coverage >= 0 && coverage <= 1 ? coverage : null);
+    }
   }
   if (scored > 0 && items.length === 0) return null;
   const revision = v.revision === undefined ? undefined : (typeof v.revision === "string" ? v.revision : JSON.stringify(v.revision)).slice(0, 200);
-  return { tool, ...(id ? { requestId: id.slice(0, 100) } : {}), ...(items.length ? { items: items.slice(0, 20) } : {}), ...(revision ? { revision } : {}) };
+  return { tool, ...(id ? { requestId: id.slice(0, 100) } : {}), ...(items.length ? { items: items.slice(0, 20) } : {}),
+    ...(coverages.some((c) => c !== null) ? { coverage: coverages.slice(0, 20) } : {}), ...(revision ? { revision } : {}) };
 }
 
 export interface ModelRequest {
