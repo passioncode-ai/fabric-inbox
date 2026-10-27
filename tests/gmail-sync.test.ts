@@ -181,6 +181,44 @@ test("a re-import after expired history keeps the cache visible, then removes wh
   assert.equal((await service.countInbox("a")).total, total - 1);
 });
 
+test("M-7 (B-184): after expired history, inbox mail that arrived in the gap reaches rules and agents once; older and known mail does not", async () => {
+  const gmail = new FakeGmail(40);
+  const { service, store } = await fixture(gmail.fetch, { mode: "initial" });
+  await service.sync("a", { deadline: Date.now() + 60_000 });
+  assert.equal((await store.list({ prefix: "pending:event:" })).size, 0, "a first import queues nothing");
+  const lastSync = (await store.get<AccountRecord>("account:a"))!.lastSyncAt!;
+  // While history is unreadable: one message arrives in the inbox, one in Spam, one is only archived.
+  const now = Date.now();
+  gmail.messages.set("gap1", { id: "gap1", labels: ["INBOX", "UNREAD"], date: now - 60_000, subject: "Gap", body: "body gap1" });
+  gmail.messages.set("gapspam", { id: "gapspam", labels: ["SPAM"], date: now - 60_000, subject: "Spam", body: "x" });
+  gmail.messages.set("week", { id: "week", labels: ["INBOX"], date: now - 5 * 86_400_000, subject: "Week", body: "x" });
+  const account = (await store.get<AccountRecord>("account:a"))!;
+  account.sync = { mode: "initial", gapSince: Math.min(lastSync, now - 120_000) }; // what history_expired leaves
+  await store.put("account:a", account);
+  await service.sync("a", { deadline: Date.now() + 60_000 });
+  const after = (await store.get<AccountRecord>("account:a"))!;
+  assert.equal(after.sync.mode, "history");
+  assert.equal((after.sync as { gapSince?: number }).gapSince, undefined, "cleared when the import ends");
+  assert.deepEqual([...(await store.list({ prefix: "pending:event:" })).keys()], ["pending:event:a:gap1"],
+    "only the gap's inbox mail: not Spam, not mail older than three days, not what the cache already had");
+  // The import running again (another expiry) does not queue it twice.
+  const again = (await store.get<AccountRecord>("account:a"))!;
+  again.sync = { mode: "initial", gapSince: now - 120_000 };
+  await store.put("account:a", again);
+  await service.sync("a", { deadline: Date.now() + 60_000 });
+  assert.equal((await store.list({ prefix: "pending:event:" })).size, 1);
+});
+
+test("history_expired keeps where the gap began for the import (M-7)", async () => {
+  const { GmailProvider } = await import("../workers/providers/gmail-provider");
+  const account = { lastSyncAt: 1234, sync: { mode: "history", historyId: "9" } } as never as { sync: { mode: string; gapSince?: number } };
+  GmailProvider.prototype.restartSync.call(null as never, account as never);
+  assert.deepEqual(account.sync, { mode: "initial", gapSince: 1234 });
+  const fresh = { sync: { mode: "history" } } as never as { sync: unknown };
+  GmailProvider.prototype.restartSync.call(null as never, fresh as never);
+  assert.deepEqual(fresh.sync, { mode: "initial" }, "no last sync: nothing to hand on");
+});
+
 test("an account saved mid-import by 0.10 continues: history from its baseline, the listing where it stopped (P0-1)", async () => {
   const gmail = new FakeGmail(20);
   const { service, store } = await fixture(gmail.fetch, { mode: "initial", baseline: "100", pageToken: "10", generation: "g-old" });

@@ -5,6 +5,15 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.56.0 (2026-10-27)
+
+- **Gmail mail is not lost when the server was away too long.** If Gmail no longer keeps the changes since the
+  server's last look, the server reads the account again. Mail that arrived in your inbox meanwhile, within three
+  days, now still reaches its rules, categories and agent, once.
+- **Two addresses that forward to each other stop quickly.** A forward rule no longer runs on a message whose
+  subject already starts with three forwards, so two rules sending mail back and forth stop there, not at their
+  daily limit.
+
 ## 0.55.0 (2026-10-27)
 
 - **Not spam on a Gmail, Outlook or IMAP account works like on your own domain.** A message you take out of Spam

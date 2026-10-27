@@ -307,3 +307,16 @@ test("A-9: a forward that would bring its own message back to the address never 
   assert.equal(forwardLoops(rule("b@owner.example"), "a@owner.example", { sender: "ann@x.invalid" }), false);
   assert.equal(forwardLoops({ ...rule("x@y.invalid"), action: { type: "archive" } } as never, "a@owner.example", { sender: "a@owner.example" }), false);
 });
+
+test("A-9b (B-184): two addresses forwarding to each other stop after three forwards, not at the daily limit", async () => {
+  const { forwardLoops, FORWARD_HOPS } = await import("../workers/automation/policy");
+  const rule = { id: "r", version: 1, name: "Fwd", enabled: true, mode: "automatic", conditions: {}, action: { type: "forward", to: "b@owner.example" }, dailyLimit: 20 } as never;
+  const at = (subject: string) => forwardLoops(rule, "a@owner.example", { sender: "b@owner.example", subject });
+  assert.equal(FORWARD_HOPS, 3);
+  assert.equal(at("Invoice"), false);
+  assert.equal(at("Fwd: Invoice"), false);
+  assert.equal(at("Fwd: Fwd: Invoice"), false);
+  assert.equal(at("Fwd: Fwd: Fwd: Invoice"), true, "a fourth forward is a loop");
+  assert.equal(at("FW: fwd:Fwd: Invoice"), true, "Outlook's FW: and any case count too");
+  assert.equal(at("Re: Fwd: Fwd: Fwd: Invoice"), false, "only the forwards the subject starts with");
+});

@@ -196,10 +196,17 @@ export async function emailDigest(email: RuleEmail): Promise<string> {
   ).join("");
 }
 
-/** A-9: a forward rule whose run would come back to this same address. */
-export function forwardLoops(rule: Rule, account: string, email: Pick<RuleEmail, "sender">): boolean {
+/** A-9b: forwards already in a subject past which another is a loop (two addresses forwarding to each other). */
+export const FORWARD_HOPS = 3;
+/**
+ * A-9: a forward rule whose run would come back to this same address. A-9b: or a message that has already been
+ * forwarded FORWARD_HOPS times ("Fwd: " is added on each forward), which two rules sending mail back and forth
+ * produce long before their daily limit.
+ */
+export function forwardLoops(rule: Rule, account: string, email: Pick<RuleEmail, "sender"> & { subject?: string }): boolean {
   if (rule.action.type !== "forward") return false;
   const bare = (v: string) => (v.match(/<([^<>]+)>/)?.[1] ?? v).trim().toLowerCase();
   const self = account.trim().toLowerCase();
-  return bare(rule.action.to) === self || bare(email.sender ?? "") === self;
+  const hops = String(email.subject ?? "").match(/^(\s*fwd?:)*/i)?.[0].match(/fwd?:/gi)?.length ?? 0;
+  return bare(rule.action.to) === self || bare(email.sender ?? "") === self || hops >= FORWARD_HOPS;
 }

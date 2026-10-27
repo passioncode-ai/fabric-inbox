@@ -63,7 +63,8 @@ export class GmailProvider implements MailProvider<GmailAccount> {
     return importPercent(account.sync);
   }
   restartSync(account: GmailAccount) {
-    account.sync = { mode: "initial" };
+    // M-7: the import that follows hands on the inbox mail that arrived while history was unreadable.
+    account.sync = { mode: "initial", ...(account.lastSyncAt ? { gapSince: account.lastSyncAt } : {}) };
   }
   async revoke(_account: GmailAccount, credentials?: unknown) {
     const token = (credentials as Partial<Credentials> | undefined)?.refreshToken;
