@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.67.0 (2026-10-27)
+
+- **A mailbox's category labels and spam checks go with it to another server.** When an agent copies a mailbox, it can
+  now also copy which categories each message is in, and its spam and safety checks, so the other server does not ask
+  the model about them again. A label is kept only when the other server has the same category with the same wording;
+  otherwise that server sorts the mail itself.
+
 ## 0.66.0 (2026-10-27)
 
 - **A mailbox's rules, agent and knowledge go with it to another server.** When an agent copies a mailbox to another

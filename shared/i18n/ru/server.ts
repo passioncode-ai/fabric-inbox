@@ -699,6 +699,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Send the rules as a list of at most 50": "Передайте правила списком, не больше 50",
 	"Send a collection and its documents": "Передайте коллекцию и её документы",
 	"Send the agent as export_mailbox gave it": "Передайте агента в том виде, в каком его отдал export_mailbox",
+	"Send the rows as export_mailbox gave them": "Передайте строки в том виде, в каком их отдал export_mailbox",
 	"No rename of {email} is in progress or recent": "Для {email} нет идущего или недавнего переименования",
 	"{from} is already being renamed to {to}; finish that first": "{from} уже переименовывается в {to}; сначала завершите это",
 	"{reason}. The rename stops here; call it again to go on, or cancel it.": "{reason}. Переименование остановилось; запустите его снова, чтобы продолжить, или отмените.",

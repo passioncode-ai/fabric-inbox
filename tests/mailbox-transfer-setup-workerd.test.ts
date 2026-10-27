@@ -16,6 +16,11 @@ const bundle = await build({
       import { AgentRegistryDO } from './workers/agents/registry';
       import { KnowledgeDO } from './workers/knowledge/store';
       import { transferRouter } from './workers/routes/transfer';
+      import { CategoriesDO } from './workers/categories/store';
+      export class TestCategories extends CategoriesDO {
+        async seedRows(table, rows) { for (const r of rows) { const k = Object.keys(r); this.ctx.storage.sql.exec('INSERT INTO ' + table + ' (' + k.join(',') + ') VALUES (' + k.map(() => '?').join(',') + ')', ...Object.values(r)); } }
+        async rowsOf(table, account) { return this.ctx.storage.sql.exec('SELECT * FROM ' + table + ' WHERE account_id = ? ORDER BY rowid', account).toArray(); }
+      }
       const forbidden = () => { throw new Error('External mail and AI are forbidden in this test'); };
       export class TestMailbox extends MailboxDO { constructor(ctx, env) { super(ctx, {...env, AI:{run:forbidden}, EMAIL:{send:forbidden}}); } }
       export { AutomationDO, AgentRegistryDO, KnowledgeDO };
@@ -44,6 +49,10 @@ const bundle = await build({
         return c.json({ rules: await c.env.AUTOMATIONS.get(c.env.AUTOMATIONS.idFromName(b.address)).rules(), agents: await ws('AGENT_REGISTRY', c.env).listAgents(),
           collections: collections.map((x) => ({ id: x.id, name: x.name })), documents, settings: settings ? await settings.json() : null });
       });
+      app.post('/test/category', async (c) => { const b = await c.req.json(); const cat = ws('CATEGORIES', c.env);
+        let x = await cat.createCategory(b.create); if (b.update) x = await cat.updateCategory(x.id, b.update); return c.json(x); });
+      app.post('/test/labels', async (c) => { const b = await c.req.json(); const cat = ws('CATEGORIES', c.env);
+        if (b.seed) await cat.seedRows(b.table, b.seed); return c.json(await cat.rowsOf(b.table, b.account)); });
       app.route('/', transferRouter);
       export default app;
     `,
@@ -60,6 +69,7 @@ function server(hosts: string) {
     durableObjects: {
       MAILBOX: { className: "TestMailbox", useSQLite: true }, AUTOMATIONS: { className: "AutomationDO", useSQLite: true },
       AGENT_REGISTRY: { className: "AgentRegistryDO", useSQLite: true }, KNOWLEDGE: { className: "KnowledgeDO", useSQLite: true },
+      CATEGORIES: { className: "TestCategories", useSQLite: true },
     },
     r2Buckets: ["BUCKET"],
     outboundService: () => new Response("External network disabled for tests", { status: 503 }),
@@ -148,6 +158,54 @@ test("B-158 step 3b: a document of a collection the mailbox's agent does not rea
     assert.equal((await a.call("GET", `/api/transfer/${encodeURIComponent("other@shop.invalid")}/setup`)).status, 404);
     assert.equal((await a.call("POST", `${base}/agent`, { agent: { id: "x", name: "X", instructions: "Y", collections: ["nowhere"] } })).status, 400);
   } finally { await a.mf.dispose(); }
+});
+
+test("B-158 step 3b part 2: category labels move when the other server's category selects the same mail, and spam and safety checks with them", async () => {
+  const a = server(""), b = server("");
+  const account = `cloudflare:${ADDRESS}`;
+  const scope = { accounts: [account] };
+  try {
+    await a.call("POST", "/test/seed", { address: ADDRESS, documents, rules: [] });
+    // Version 2 on the sending server, version 1 on the receiving one: the same selection, so its labels count there.
+    const invoices = (await a.call("POST", "/test/category", { create: { name: "Invoices", description: "Old wording", scope, enabled: false },
+      update: { name: "Invoices", description: "Bills and invoices", scope, enabled: false } })).body;
+    assert.equal(invoices.version, 2);
+    await a.call("POST", "/test/category", { create: { name: "Leads", description: "Sales leads", scope, enabled: false } });
+    const verdict = (category: string, version: number, message: string) => ({ category_id: category, version, account_id: account, message_id: message, matched: 1,
+      reason: "r", source: "model", timestamp: 1, subject: "s", sender: "x@outside.invalid", classified_at: 1 });
+    await a.call("POST", "/test/labels", { table: "verdicts", account, seed: [verdict("invoices", 2, "m1"), verdict("invoices", 2, "m2"), verdict("leads", 1, "m1"),
+      { ...verdict("invoices", 2, "m3"), account_id: "cloudflare:other@shop.invalid" }] });
+    await a.call("POST", "/test/labels", { table: "spam_checks", account, seed: [{ account_id: account, message_id: "m1", verdict: "ham", reason: "r", checked_at: 1 }] });
+
+    await b.call("POST", `${base}/open`, { settings: {} });
+    const here = (await b.call("POST", "/test/category", { create: { name: "Invoices", description: "Bills and invoices", scope, enabled: false } })).body;
+    assert.deepEqual([here.id, here.version], ["invoices", 1]);
+    await b.call("POST", "/test/category", { create: { name: "Leads", description: "Something else", scope, enabled: false } });
+
+    const cats = (await a.call("GET", `${base}/labels`)).body;
+    assert.deepEqual(cats.categories.map((x: any) => [x.id, x.version]).sort(), [["invoices", 2], ["leads", 1]]);
+    const page = (await a.call("GET", `${base}/labels?table=verdicts&limit=2`)).body;
+    assert.equal(page.rows.length, 2);
+    assert.ok(page.next, "a second page");
+    const rest = (await a.call("GET", `${base}/labels?table=verdicts&after=${page.next}`)).body;
+    assert.equal(rest.next, null);
+    assert.equal(page.rows.length + rest.rows.length, 3, "another mailbox's labels never leave");
+
+    let written = 0, skipped = 0;
+    for (const p of [page, rest]) {
+      const r = (await b.call("POST", `${base}/labels`, { table: "verdicts", rows: p.rows, categories: cats.categories })).body;
+      written += r.written; skipped += r.skipped;
+    }
+    assert.deepEqual([written, skipped], [2, 1], "Leads selects other mail here, so its label is skipped");
+    const spam = (await a.call("GET", `${base}/labels?table=spam_checks`)).body;
+    assert.equal((await b.call("POST", `${base}/labels`, { table: "spam_checks", rows: spam.rows, categories: [] })).body.written, 1);
+    assert.equal((await b.call("POST", `${base}/labels`, { table: "spam_checks", rows: spam.rows, categories: [] })).body.written, 0, "a repeat changes nothing");
+
+    const rows = (await b.call("POST", "/test/labels", { table: "verdicts", account })).body;
+    assert.deepEqual(rows.map((r: any) => [r.category_id, r.version, r.message_id]), [["invoices", 1, "m1"], ["invoices", 1, "m2"]], "filed under this server's version");
+    assert.equal((await b.call("POST", `${base}/labels`, { table: "queue", rows: [], categories: [] })).status, 400, "queued work is not carried");
+    assert.equal((await b.call("POST", `${base}/labels`, { table: "verdicts", rows: [{ message_id: ["x"] }], categories: [] })).status, 400);
+  } finally { await a.mf.dispose(); await b.mf.dispose(); }
 });
 
 test("an agent definition crosses without its id, version or the schema the registry reads itself", () => {
