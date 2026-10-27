@@ -55,7 +55,12 @@ and Policies — Edit** to make keys (`TOKEN_PERMISSIONS` in `workers/routing/cl
   to its mailboxes in the request and in the answer (issues and cursors that name another mailbox are
   dropped); categories belong to the workspace, so a limited key cannot filter by one. With more
   than one mailbox, `list_messages` without `accountId` returns each one's first page merged, newest
-  first, and pages one mailbox at a time. An Admin key manages the whole workspace and cannot be
+  first, and pages one mailbox at a time. It also reads what the reply agents did on its own mailboxes
+  (B-164): `list_agent_runs` returns only their runs (several mailboxes merged, newest first), a run
+  of another mailbox reads as refused, `list_agent_events` keeps only the agent and knowledge events
+  of its addresses (the cursor still moves past the rest), and `list_agent_threads` reads one of its
+  addresses at a time. The agents' definitions, the reply-status settings and the quality days stay
+  the workspace's. An Admin key manages the whole workspace and cannot be
   limited; a limit that names nothing valid reaches nothing and lists no tools.
 - **A hub narrows its own key per call** with the header `X-Fabric-Accounts: <account>[,<account>…]`
   (`narrowPrincipal`, `workers/mcp/scope.ts`). The call then behaves exactly like a key limited to

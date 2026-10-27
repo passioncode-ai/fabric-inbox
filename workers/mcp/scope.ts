@@ -85,13 +85,28 @@ const ADMIN_MAILBOX_ACTIONS = [
 ];
 export const adminMailboxAction = (method: string, pathname: string) => ADMIN_MAILBOX_ACTIONS.some((a) => a.methods.includes(method) && a.path.test(pathname));
 
+/**
+ * B-164: a reply agent's activity on the key's own mailboxes: their runs, one run, the events feed and the
+ * conversations by reply status. Narrowed by scopedApi on the way in and filtered on the way out; the
+ * agents' definitions, the reply-status settings and the quality days stay the workspace's.
+ */
+export const AGENT_READ_ROUTES = new Set(["GET /api/agent-runs", "GET /api/agent-runs/:id", "GET /api/agent-events", "GET /api/agent-threads"]);
+
 export function toolFitsScope(tool: Pick<ToolDef, "routes">): boolean {
   return tool.routes.length > 0 && tool.routes.every((r) => {
     const [method, path] = r.split(" ") as [string, string];
     if (adminMailboxAction(method, path)) return false;
-    return FEED_ROUTES.has(r) || SAFETY_ROUTES.has(r) || MAILBOX_ROUTE.test(r) || GMAIL_ROUTE.test(r);
+    return FEED_ROUTES.has(r) || SAFETY_ROUTES.has(r) || AGENT_READ_ROUTES.has(r) || MAILBOX_ROUTE.test(r) || GMAIL_ROUTE.test(r);
   });
 }
+
+/** A run's mailbox (a Cloudflare address, or `gmail:<id>` for an account, B-171) as a key names it. */
+const accountOfRun = (mailboxId: unknown) => {
+  const m = String(mailboxId ?? "").toLowerCase();
+  return /^(gmail|imap|outlook):/.test(m) ? m : `cloudflare:${m}`;
+};
+/** The run-mailbox form of a key's account: what `/api/agent-runs?mailbox=` takes. */
+const runMailboxOf = (account: string) => (account.startsWith("cloudflare:") ? account.slice("cloudflare:".length) : account);
 
 /**
  * The mailbox a concrete path is about, or null when it is not about exactly one. An
@@ -153,12 +168,75 @@ export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubje
         const data = response.data as { held?: { accountId?: unknown }[] } | null;
         return data && Array.isArray(data.held) ? { ...response, data: { ...data, held: data.held.filter((h) => allowedLower.has(String(h.accountId).toLowerCase())) } } : response;
       }
+      if (method === "GET" && /^\/api\/agent-(runs|events|threads)(\/[^/]+)?$/.test(pathname)) return agentRead(pathname, init);
       if (adminMailboxAction(method, pathname)) throw refuse(accounts, who);
       const account = accountOfPath(pathname, allowed);
       if (!account || !allowed.has(account)) throw refuse(accounts, who);
       return api.request(method, path, init);
     },
   };
+
+  /** The emails of the key's mailboxes: its Cloudflare addresses and its accounts' addresses (read once per call). */
+  async function emailsOfScope(): Promise<Set<string>> {
+    const emails = new Set(accounts.filter((a) => a.startsWith("cloudflare:")).map((a) => a.slice("cloudflare:".length)));
+    if (accounts.some((a) => !a.startsWith("cloudflare:"))) {
+      const listed = await api.request("GET", "/api/accounts").catch(() => null);
+      for (const a of ((listed?.data as { accounts?: { id?: unknown; provider?: unknown; email?: unknown }[] } | null)?.accounts ?? []))
+        if (mine(`${a.provider ?? "gmail"}:${a.id}`) && typeof a.email === "string") emails.add(a.email.toLowerCase());
+    }
+    return emails;
+  }
+
+  /** B-164: an agent's runs, events and conversations, only for the key's mailboxes. */
+  async function agentRead(pathname: string, init: { query?: Record<string, unknown> }): Promise<ApiResponse> {
+    const ok = (r: ApiResponse) => r.status >= 200 && r.status < 300 && r.data !== null && typeof r.data === "object";
+    if (pathname.startsWith("/api/agent-runs/")) {
+      const response = await api.request("GET", pathname, init);
+      // Another mailbox's run reads as refused, whether or not it exists.
+      if (ok(response) && !allowedLower.has(accountOfRun((response.data as { mailboxId?: unknown }).mailboxId))) throw refuse(accounts, who);
+      return response;
+    }
+    if (pathname === "/api/agent-runs") {
+      const asked = init.query?.mailbox;
+      const named = asked !== undefined && asked !== null && asked !== "";
+      const mailboxes = named ? [String(asked)] : accounts.map(runMailboxOf);
+      if (named && !allowedLower.has(accountOfRun(asked))) throw refuse(accounts, who);
+      const limit = Number(init.query?.limit) || 50;
+      const runs: { mailboxId?: unknown; createdAt?: unknown; id?: unknown }[] = [];
+      for (const mailbox of mailboxes) {
+        const page = await api.request("GET", pathname, { ...init, query: { ...init.query, mailbox } });
+        if (!ok(page)) return page;
+        // Only that mailbox's runs from its page, so none is counted twice and none of another mailbox leaves.
+        runs.push(...(page.data as typeof runs).filter((r) => accountOfRun(r.mailboxId) === accountOfRun(mailbox) && allowedLower.has(accountOfRun(r.mailboxId))));
+      }
+      // Several mailboxes: each one's page, merged newest first, so `before` pages them together.
+      runs.sort((a, b) => `${b.createdAt}|${b.id}`.localeCompare(`${a.createdAt}|${a.id}`));
+      return { status: 200, contentType: "application/json", data: runs.slice(0, limit) };
+    }
+    if (pathname === "/api/agent-events") {
+      const response = await api.request("GET", pathname, init);
+      if (!ok(response)) return response;
+      const emails = await emailsOfScope();
+      const data = response.data as { events?: { kind?: unknown; data?: { value?: { address?: unknown; addresses?: unknown } } }[] };
+      // The cursor stays the page's own, so a reader moves on past the events that are not its own.
+      const events = (data.events ?? []).filter((e) => {
+        const value = e.data?.value ?? {};
+        if (String(e.kind).startsWith("agent.")) return allowedLower.has(accountOfRun(value.address));
+        if (String(e.kind).startsWith("knowledge.")) return Array.isArray(value.addresses) && value.addresses.some((a) => emails.has(String(a).toLowerCase()));
+        return false;
+      });
+      return { ...response, data: { ...data, events } };
+    }
+    // /api/agent-threads: one of the key's addresses at a time.
+    const emails = await emailsOfScope();
+    const asked = init.query?.address;
+    const named = asked !== undefined && asked !== null && asked !== "";
+    if (named && !emails.has(String(asked).toLowerCase())) throw refuse(accounts, who);
+    if (!named && emails.size !== 1)
+      throw new ApiError(400, `This key reaches ${accounts.length} mailboxes; name one address to read its conversations.`, null);
+    const address = named ? String(asked).toLowerCase() : [...emails][0]!;
+    return api.request("GET", pathname, { ...init, query: { ...init.query, address } });
+  }
 
   /** One feed answer with every trace of another mailbox removed. */
   function clean(data: Feed): Feed {

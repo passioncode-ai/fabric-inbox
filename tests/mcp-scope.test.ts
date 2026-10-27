@@ -335,3 +335,45 @@ test("P-3: the account routes and the agent protocol expect the same origin: Gma
   assert.equal(expectedAccountOrigin(outlookOnly, "https://inbox.owner.example/mcp"), "https://mail.owner.example");
   assert.equal(expectedAccountOrigin({} as never, "https://inbox.owner.example/mcp"), "https://inbox.owner.example");
 });
+
+test("B-164: a key limited to its mailboxes reads its agent's runs, events and conversations, and nothing of another mailbox", async () => {
+  // The agent tools a Read key sees now; the agents' definitions and the reply-status settings stay hidden.
+  const visible = toolsFor(scoped([RESEARCH]), TOOLS).map((t) => t.name);
+  for (const t of ["list_agent_runs", "list_agent_events", "list_agent_threads"]) assert.ok(visible.includes(t), t);
+  for (const t of ["list_agents", "get_agent_status", "answer_again"]) assert.ok(!visible.includes(t), t);
+  const runs = [
+    { id: "agent-b", mailboxId: "research@owner.example", createdAt: "2026-10-27T10:00:00.000Z" },
+    { id: "agent-c", mailboxId: "contact@owner.example", createdAt: "2026-10-27T11:00:00.000Z" },
+    { id: "agent-g", mailboxId: "gmail:g1", createdAt: "2026-10-27T12:00:00.000Z" },
+  ];
+  const { api, calls } = fakeApi({
+    "/api/agent-runs": runs,
+    "/api/agent-runs/agent-c": runs[1],
+    "/api/agent-runs/agent-b": runs[0],
+    "/api/accounts": { accounts: [{ id: "g1", provider: "gmail", email: "me@gmail.example" }, { id: "g2", provider: "gmail", email: "other@gmail.example" }] },
+    "/api/agent-events": { cursor: "9", events: [
+      { kind: "agent.sent", data: { value: { address: "research@owner.example" } } },
+      { kind: "agent.handoff", data: { value: { address: "contact@owner.example" } } },
+      { kind: "agent.sent", data: { value: { address: "gmail:g1" } } },
+      { kind: "knowledge.learned", data: { value: { addresses: ["me@gmail.example"] } } },
+      { kind: "knowledge.learned", data: { value: { addresses: ["contact@owner.example"] } } },
+      { kind: "support.quality_daily", data: { value: { channel: "mail:owner.example:research" } } },
+    ] },
+  });
+  const s = scopedApi(api, [RESEARCH, "gmail:g1"]);
+  const listed = (await s.request("GET", "/api/agent-runs", { query: { limit: 50 } })).data as { id: string }[];
+  assert.deepEqual(listed.map((r) => r.id), ["agent-g", "agent-b"], "newest first, only its own mailboxes");
+  assert.deepEqual(calls.filter((c) => c.path === "/api/agent-runs").map((c) => c.query?.mailbox), ["research@owner.example", "gmail:g1"], "asked one mailbox at a time");
+  await assert.rejects(s.request("GET", "/api/agent-runs", { query: { mailbox: "contact@owner.example" } }), /limited to/);
+  assert.equal(((await s.request("GET", "/api/agent-runs/agent-b")).data as { id: string }).id, "agent-b");
+  await assert.rejects(s.request("GET", "/api/agent-runs/agent-c"), /limited to/, "another mailbox's run reads as refused");
+  const feed = (await s.request("GET", "/api/agent-events")).data as { cursor: string; events: { kind: string }[] };
+  assert.deepEqual(feed.events.map((e) => e.kind), ["agent.sent", "agent.sent", "knowledge.learned"]);
+  assert.equal(feed.cursor, "9", "the cursor moves past events that are not its own");
+  await assert.rejects(s.request("GET", "/api/agent-threads"), /name one address/, "two mailboxes: one at a time");
+  await s.request("GET", "/api/agent-threads", { query: { address: "me@gmail.example" } });
+  await assert.rejects(s.request("GET", "/api/agent-threads", { query: { address: "other@gmail.example" } }), /limited to/);
+  const one = fakeApi();
+  await scopedApi(one.api, [RESEARCH]).request("GET", "/api/agent-threads", { query: { limit: 10 } });
+  assert.equal(one.calls[0]!.query?.address, "research@owner.example", "one mailbox is chosen for the key");
+});
