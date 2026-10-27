@@ -1274,7 +1274,8 @@ test("B-153: a held message is answered again once the knowledge owner closes it
     // The same revision 15 minutes later: one call asks it, nothing is read again.
     await command("r2put", { key: "test/gap-calls.json", text: "[]" });
     r = await command("gaps", { now: now + 15 * 60_000 });
-    assert.deepEqual(await command("r2get", { key: "test/gap-calls.json" }), [{ limit: 1 }]);
+    const day = new Date(now + 15 * 60_000 - 30 * 86_400_000).toISOString().slice(0, 10);
+    assert.deepEqual(await command("r2get", { key: "test/gap-calls.json" }), [{ limit: 1, since: day }], "the held window's first day, every time");
     // Before it is due nothing is asked.
     await command("r2put", { key: "test/gap-calls.json", text: "[]" });
     await command("gaps", { now: now + 16 * 60_000 });
