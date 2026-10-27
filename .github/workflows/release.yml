@@ -264,6 +264,18 @@ jobs:
           FABRIC_INBOX_ANALYTICS_APP_KEY: ${{ secrets.FABRIC_INBOX_ANALYTICS_APP_KEY }}
           FABRIC_INBOX_ANALYTICS_HOST: ${{ vars.FABRIC_INBOX_ANALYTICS_HOST }}
         run: node desktop/dist-platform.mjs --platform win32 --arch ${{ matrix.arch }} --out release --stage app
+      # B-190: some Windows runners (seen on arm64 builds: v0.47.0, v0.50.0, v0.53.0, v0.57.0) come without the
+      # PSGallery repository, so the signing action's Install-Module fails ("Unable to find repository 'PSGallery'")
+      # and the release stops. Register it when it is missing; a runner that has it is left as it is.
+      - name: The PowerShell Gallery the signing module installs from
+        if: env.SIGNING == 'true'
+        shell: pwsh
+        run: |
+          if (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue) { Write-Host 'PSGallery: present'; exit 0 }
+          Write-Host 'PSGallery: missing, registering it'
+          Register-PSRepository -Default
+          Get-PSRepository -Name PSGallery -ErrorAction Stop | Out-Null
+          Write-Host 'PSGallery: registered'
       # Pass 1: the app's own executables, DLLs and Node modules, before the installer packs them,
       # nested ones included: node-pty's pty.node, conpty.node, winpty.dll and winpty-agent.exe live in
       # resources\app.asar.unpacked (B-100: a top-level listing left them unsigned). Electron ships
