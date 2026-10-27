@@ -5,6 +5,11 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.46.1 (2026-10-27)
+
+- **Creating or updating your server tries once more when the connection drops.** Uploading the server to
+  Cloudflare now tries again by itself after a network error, instead of stopping and asking you to continue.
+
 ## 0.46.0 (2026-10-27)
 
 - **Campaigns in Settings.** See what each of your agent's campaigns did: messages per step, who replied, who asked
