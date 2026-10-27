@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.77.2 (2026-10-28)
+
+- **Messages held before the gap list was set up are answered too.** A reply agent's knowledge can name its list
+  of open questions after messages are already held. Those messages are now answered as soon as their question is,
+  like the ones held after the change (B-153).
+
 ## 0.77.1 (2026-10-27)
 
 - **Every held message's gap is checked again.** When the knowledge owner's gap list changes, the server now reads

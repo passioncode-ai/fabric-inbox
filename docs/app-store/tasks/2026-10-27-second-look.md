@@ -72,9 +72,14 @@ events feed as `support.diagnosed`; this packet adds the second look.
 9. **The key:** the knowledge agent lists only the reports of a consumer allowed to read its own
    (`gaps-reader`, scope `own`); until it allows ours, the list refuses and the held retry on a revision
    change (B-141) goes on as before.
+10. **Which grant reads the list:** the run's own agent version, when its gap grant names a list; otherwise the
+    agent's current version, when its gap grant names a list on the same endpoint with the same key. A message held
+    before the list was granted is then still answered when its gap closes; a list on another endpoint does not hold
+    its report and is not used (0.77.2).
 
 | REQ | What | Verified by |
 |---|---|---|
 | REQ-6 | A held run whose gap is closed or answered is answered again once; one still open is not; another consumer's report moves nothing | `tests/agents-registry.test.ts` B-153 |
 | REQ-7 | The list is read again only on a new ledger revision, at most every 15 minutes; a refusing list waits 6 hours | `tests/agents-registry.test.ts` B-153 |
 | REQ-8 | A report's run is its request id without the kind's hash, as the runner builds it | `tests/gap-closures.test.ts` B-153 |
+| REQ-9 | A message held before the list was granted is answered when its gap closes; a later list on another endpoint is not used | `tests/agents-registry.test.ts` B-153 |
