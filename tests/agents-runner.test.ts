@@ -506,7 +506,7 @@ test("tool results are read in rank order: the first is the answer, later ones a
   assert.match(asked, /Tap the globe to translate\./, "the output still follows the note");
 });
 
-test("the prefetch keeps the message's line breaks and decodes <addresses> (data agent reads by sentence)", async () => {
+test("the prefetch keeps the message's line breaks and asks only what the sender wrote now (data agent reads by sentence)", async () => {
   const calls: Record<string, unknown>[] = [];
   const h = harness({
     agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })] }),
@@ -517,8 +517,8 @@ test("the prefetch keeps the message's line breaks and decodes <addresses> (data
   });
   await h.run();
   const query = String(calls[0]!.query);
-  assert.match(query, /^Код не приходит\nКод для входа не приходит по смс\nВ вайбере коды приходят\n/, "each line stays a line");
-  assert.match(query, /<support@acme\.example> wrote:/, "&lt;/&gt; decoded");
+  assert.match(query, /^Код не приходит\nКод для входа не приходит по смс\nВ вайбере коды приходят$/, "each line stays a line");
+  assert.doesNotMatch(query, /wrote:|old/, "the quoted history is not asked again (VoC audit 2026-10-27)");
   assert.ok(query.length <= "Код не приходит\n".length + 600);
 });
 
@@ -1018,6 +1018,8 @@ test("an auto answer is checked by another vendor before it leaves; a rejection 
   assert.equal(asked[0]!.writer, "xiaomi/mimo-v2.6-pro");
   assert.match(asked[0]!.facts, /Settings → Appearance/, "the checker sees what the tools answered");
   assert.match(asked[0]!.facts, /\[operator instructions\]/, "and the operator's instructions, which name contacts and routing");
+  assert.ok(asked[0]!.facts.indexOf("Settings → Appearance") < asked[0]!.facts.indexOf("[operator instructions]"),
+    "the tool results come first: the checker reads only the first 16,000 characters (VoC audit 2026-10-27)");
   const rejected = make(false);
   const r = (await rejected.run())!;
   assert.equal(r.status, "held");

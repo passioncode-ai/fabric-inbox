@@ -927,6 +927,10 @@ test("B-132: the day's answers are judged once by another vendor, the verdict st
     await command("begin", { run: { ...base, id, emailId: "a", status: "sent", createdAt: "2026-10-18T09:00:10.000Z", updatedAt: "2026-10-18T09:01:00.000Z",
       model: "xiaomi/mimo-v2.6-pro", checkedBy: "qwen/qwen3.8-flash", repliedAt: "2026-10-18T09:01:00.000Z",
       sent: { to: "x@y.invalid", subject: "Re: s", body: "Open Settings, then Account.", outboxId: "o" } } });
+    // A hand-off template and a safe reply are fixed texts, never judged as answers (VoC audit 2026-10-27).
+    for (const [n, mark] of [["d2", { handoff: true }], ["d3", { fallback: true }]] as const)
+      await command("begin", { run: { ...base, id: "agent-" + n.repeat(16), emailId: n, status: "sent", createdAt: "2026-10-18T09:00:20.000Z", updatedAt: "2026-10-18T09:01:00.000Z",
+        ...mark, sent: { to: "x@y.invalid", subject: "Re: s", body: "A person from our team will answer you.", outboxId: "o" + n } } });
     const checks = { language: "PASS", addressed: "PASS", policySafe: "PASS", routing: "PASS", actionable: "FAIL", continuity: "PASS" };
     await command("judgeScript", { script: { verdict: { rubric: "v1", checks, question: true, helped: "partly", note: "no clear step" } } });
     await command("quality", { now: Date.parse("2026-10-20T00:10:00.000Z") });
