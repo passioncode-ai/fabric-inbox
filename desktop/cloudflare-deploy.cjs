@@ -32,6 +32,8 @@ const DEFAULT_SCRIPT = 'fabric-inbox';
 const DEFAULT_BUCKET = 'fabric-inbox';
 /** B-157: where R2 keeps a bucket's objects (Cloudflare's jurisdictions). Set when a bucket is made, never changed after. */
 const JURISDICTIONS = ['eu', 'fedramp', 'us'];
+/** B-193: the setup form offers only the EU or Cloudflare's choice; anything else it sends means Cloudflare's choice. */
+const formJurisdiction = (value) => (value === 'eu' ? 'eu' : null);
 /** B-158: the context a server belongs to (contract DEC-0082; workers/lib/context.ts holds the same pattern). */
 const CONTEXT = /^(?:personal|org:[A-Za-z0-9][A-Za-z0-9_-]{0,127})$/;
 const TOKEN_PAGE = 'https://dash.cloudflare.com/profile/api-tokens';
@@ -473,4 +475,4 @@ async function deploy(options) {
   return { origin: keptSignIn ? keptOrigin : `https://${host}`, accessOrigin: `https://${authDomain}`, jurisdiction, context: context || null, steps };
 }
 
-module.exports = { JURISDICTIONS, CONTEXT, accounts, inspect, deploy, uploadServer, client, uploadTimeout, readBundle, compareVersions, DeployError, PERMISSIONS, TOKEN_PAGE, TEMPLATE_KEYS, tokenTemplateUrl, SERVICE_TOKEN_HEADER, SCRIPT: DEFAULT_SCRIPT, validName: (v) => NAME.test(v), validEmail: (v) => EMAIL.test(v) };
+module.exports = { JURISDICTIONS, formJurisdiction, CONTEXT, accounts, inspect, deploy, uploadServer, client, uploadTimeout, readBundle, compareVersions, DeployError, PERMISSIONS, TOKEN_PAGE, TEMPLATE_KEYS, tokenTemplateUrl, SERVICE_TOKEN_HEADER, SCRIPT: DEFAULT_SCRIPT, validName: (v) => NAME.test(v), validEmail: (v) => EMAIL.test(v) };

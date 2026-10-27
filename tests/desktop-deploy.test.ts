@@ -495,3 +495,12 @@ test("B-158: a new server is made for the context asked for; an existing one kee
   assert.match((await run(personal, out, { context: "org:org_ABC23" })).error.message, /belongs to personal/);
   assert.match((await run(fakeCloudflare(), out, { context: "Org:x" })).error.message, /A context is personal/);
 });
+
+test("B-193: the setup form's storage choice reaches the deployer only as the EU or Cloudflare's choice", () => {
+  assert.equal(deployer.formJurisdiction("eu"), "eu");
+  for (const other of ["", undefined, null, "fedramp", "us", "EU ", "anything"]) assert.equal(deployer.formJurisdiction(other), null, String(other));
+  const html = readFileSync(new URL("../desktop/setup.html", import.meta.url), "utf8");
+  assert.deepEqual([...html.matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]).filter((v) => v === "" || v === "eu"), ["", "eu"], "the form offers both");
+  const setup = readFileSync(new URL("../desktop/setup.js", import.meta.url), "utf8");
+  assert.match(setup, /cfField\('#cf-storage-field', !details\?\.existing\)/, "an existing server keeps its storage: the choice is not shown");
+});

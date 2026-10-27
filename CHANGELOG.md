@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.70.0 (2026-10-27)
+
+- **Choose where a new server keeps your mail.** When the Mac app creates your server, you can now keep its storage in
+  the European Union instead of wherever Cloudflare chooses. The choice is made once: an existing server keeps its
+  storage where it is.
+
 ## 0.69.0 (2026-10-27)
 
 - **The Mac app moves an address to another server you hold.** With two or more servers in the app, the Account menu
