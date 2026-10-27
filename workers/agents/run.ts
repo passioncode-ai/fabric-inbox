@@ -116,6 +116,8 @@ export interface AgentRun {
    * a revision seen to change answers it again at once. Kept across retries; answer_again by a person drops it.
    */
   heldFacts?: { agent: string; revisions: Record<string, string>; question?: string };
+  /** B-153: the gap this run reported was closed by the knowledge owner and the run answered again (once). */
+  gapClosed?: { at: string; item: string | null; revision: string | null };
   /**
    * B-153: the one second look at a held message: `running` while its attempt is queued or going, `done` after;
    * `firstCited` the items the first turn cited, `cause` and `rescued` what the look found (cause null: a knowledge

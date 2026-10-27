@@ -151,6 +151,9 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   after the hold, the agent takes one second look (B-153, `secondLook: false` turns it off): it reasons,
   searches wider and sends only what the checker approves; `support.diagnosed` with `look: "second"` says
   whether it was rescued and why it held (`retrieval`, `draft-or-check`, `data`, `person`).
+  A gap grant may also name its endpoint's list of reports, `gaps: { tool, list }`: a held message whose
+  gap the knowledge owner closes there is answered again at once (B-153; the key must be allowed to read
+  its own reports, else the list is retried every 6 hours and nothing else changes).
   After each UTC day, `list_agent_events` carries one `support.quality_daily` per agent address (B-130): replies
   and first-reply p50/p90, repeats, errors and model calls, answered vs handed to a person, the person queue;
   a field not measured is null and listed in `notMeasured`. Sender, subject and texts leave runs after 30 days.

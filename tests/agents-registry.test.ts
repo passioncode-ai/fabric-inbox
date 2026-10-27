@@ -48,7 +48,16 @@ const bundle = await build({
           const env = this.env;
           return {...real,
             injection: async () => ({ flagged: false }),
-            callTool: forbidden,
+            // B-153: a gap list scripted in test/gap-list.json ({ tool, revision, gaps, throw }); every call is logged.
+            callTool: async (grant, args) => {
+              const script = JSON.parse(await (await env.BUCKET.get('test/gap-list.json'))?.text() || 'null');
+              if (!script || grant.tool !== script.tool) return forbidden();
+              const calls = JSON.parse(await (await env.BUCKET.get('test/gap-calls.json'))?.text() || '[]');
+              await env.BUCKET.put('test/gap-calls.json', JSON.stringify([...calls, args]));
+              if (script.throw) throw new Error(script.throw);
+              const gaps = args.after === undefined ? script.gaps.slice(0, args.limit) : script.gaps.filter((g) => g.id > args.after).slice(0, args.limit);
+              return JSON.stringify({ class: 'internal', ledgerRevision: script.revision, gaps });
+            },
             model: async (request) => {
               // How many runs of one mailbox are with the model at once (audit A4).
               this.inflight ??= {}; this.maxInflight ??= {};
@@ -64,6 +73,7 @@ const bundle = await build({
         }
         async pump() { return this.alarm(); }
         async retryHeldNow(now) { return this.retryHeld(now); }
+        async answerClosedGapsNow(now) { return this.answerClosedGaps(now); }
         async superviseNow(now) { return this.superviseWaiting(now); }
         async abandonNow(now) { return this.superviseAbandoned(now); }
         async closeNow(now) { return this.closeExpired(now); }
@@ -160,6 +170,7 @@ const bundle = await build({
               case 'seedFacts': await reg.seedFacts(c.rows); return Response.json(true);
               case 'seedThread': await box(c.mailbox).seedThread(c.rows); return Response.json(true);
               case 'byIds': return Response.json(await reg.runsByIds(c.ids));
+              case 'gaps': return Response.json({ next: await reg.answerClosedGapsNow(c.now) });
               case 'grade': return Response.json(await reg.gradeRun(c.id, c.grade));
               case 'toGrade': return Response.json(await reg.answersToGrade(c.options ?? {}, c.now));
               case 'calibration': return Response.json(await reg.judgeCalibration(c.options ?? {}, c.now));
@@ -1228,6 +1239,72 @@ test("B-189: a person grades a sent answer blind; the calibration compares it wi
     assert.equal(cal.checks.language.agree, 1);
     assert.equal(cal.helped.judgeHigher, 1);
     assert.deepEqual(cal.judgeModels, ["deepseek/deepseek-v4.1-flash"]);
+  } finally { await mf.dispose(); }
+});
+
+test("B-153: a held message is answered again once the knowledge owner closes its gap; the list is read again only on a new ledger revision", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const kb = { name: "acme_kb", description: "Search the knowledge base", endpoint: "https://tools.project.invalid/mcp", tool: "kb.query",
+      gaps: { tool: "kb.gaps.submit", list: "kb.gaps.list" } };
+    const saved = await command("create", { id: "support", input: { ...support, tools: [kb] } });
+    assert.deepEqual(saved.tools[0].gaps, kb.gaps);
+    const now = Date.now();
+    const at = (h: number) => new Date(now - h * 3_600_000).toISOString();
+    const held = (name: string, extra: Record<string, unknown> = {}) => ({ ...b141, id: rid(name), emailId: name, status: "held",
+      gapsReported: ["unanswered"], createdAt: at(3), updatedAt: at(2), ...extra });
+    await command("begin", { run: held("closed") });
+    await command("begin", { run: held("open") });
+    await command("begin", { run: held("other", { agentId: "elsewhere" }) });
+    const reqOf = (name: string) => `${rid(name)}-0123456789ab`;
+    const gaps = [
+      { id: 7, requestId: reqOf("closed"), state: "closed", closedBy: { item: "fact:hidden-chats" } },
+      { id: 8, requestId: reqOf("open"), state: "reported", closedBy: null },
+      { id: 9, requestId: "someone-else-0123456789ab", state: "closed", closedBy: { item: "fact:x" } },
+    ];
+    await command("r2put", { key: "test/gap-list.json", text: JSON.stringify({ tool: "kb.gaps.list", revision: "r1", gaps }) });
+    let r = await command("gaps", { now });
+    assert.equal(r.next, now + 15 * 60_000);
+    const byId = async (...names: string[]) => { const runs = await command("byIds", { ids: names.map(rid) }) as { id: string; gapClosed?: { item: string }; attempt?: number }[];
+      return names.map((n) => runs.find((x) => x.id === rid(n))!); };
+    const [closed, open] = await byId("closed", "open");
+    assert.equal(closed.attempt, 2, "answered again (the fixture's queue runs it at once)");
+    assert.deepEqual(closed.gapClosed, { at: new Date(now).toISOString(), item: "fact:hidden-chats", revision: "r1" });
+    assert.equal(open.attempt, undefined, "its gap is still open");
+    // The same revision 15 minutes later: one call asks it, nothing is read again.
+    await command("r2put", { key: "test/gap-calls.json", text: "[]" });
+    r = await command("gaps", { now: now + 15 * 60_000 });
+    assert.deepEqual(await command("r2get", { key: "test/gap-calls.json" }), [{ limit: 1 }]);
+    // Before it is due nothing is asked.
+    await command("r2put", { key: "test/gap-calls.json", text: "[]" });
+    await command("gaps", { now: now + 16 * 60_000 });
+    assert.deepEqual(await command("r2get", { key: "test/gap-calls.json" }), []);
+    // A new revision closes the other one.
+    await command("r2put", { key: "test/gap-list.json", text: JSON.stringify({ tool: "kb.gaps.list", revision: "r2", gaps: [gaps[0], { ...gaps[1], state: "answered", closedBy: { item: "wiki:faq.md#2" } }] }) });
+    await command("gaps", { now: now + 31 * 60_000 });
+    const [openNow, closedNow] = await byId("open", "closed");
+    assert.equal(openNow.attempt, 2);
+    assert.equal(closedNow.attempt, 2, "a closed gap answers a message again once");
+    assert.equal(openNow.gapClosed?.item, "wiki:faq.md#2");
+  } finally { await mf.dispose(); }
+});
+
+test("B-153: a gap list the key may not read is left alone for six hours, and no held run moves", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const kb = { name: "acme_kb", description: "Search", endpoint: "https://tools.project.invalid/mcp", tool: "kb.query", gaps: { tool: "kb.gaps.submit", list: "kb.gaps.list" } };
+    await command("create", { id: "support", input: { ...support, tools: [kb] } });
+    const now = Date.now();
+    await command("begin", { run: { ...b141, id: rid("h"), emailId: "h", status: "held", gapsReported: ["unanswered"], createdAt: new Date(now - 3_600_000).toISOString(), updatedAt: new Date(now - 3_600_000).toISOString() } });
+    await command("r2put", { key: "test/gap-list.json", text: JSON.stringify({ tool: "kb.gaps.list", throw: "not-found: kb.gaps.list" }) });
+    await command("gaps", { now });
+    await command("r2put", { key: "test/gap-calls.json", text: "[]" });
+    await command("gaps", { now: now + 3 * 3_600_000 });
+    assert.deepEqual(await command("r2get", { key: "test/gap-calls.json" }), [], "not asked again within six hours");
+    await command("gaps", { now: now + 7 * 3_600_000 });
+    assert.equal((await command("r2get", { key: "test/gap-calls.json" })).length, 1, "asked again after");
+    const [run] = await command("byIds", { ids: [rid("h")] }) as { status: string }[];
+    assert.equal(run.status, "held");
   } finally { await mf.dispose(); }
 });
 
