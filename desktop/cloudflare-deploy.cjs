@@ -32,6 +32,8 @@ const DEFAULT_SCRIPT = 'fabric-inbox';
 const DEFAULT_BUCKET = 'fabric-inbox';
 /** B-157: where R2 keeps a bucket's objects (Cloudflare's jurisdictions). Set when a bucket is made, never changed after. */
 const JURISDICTIONS = ['eu', 'fedramp', 'us'];
+/** B-158: the context a server belongs to (contract DEC-0082; workers/lib/context.ts holds the same pattern). */
+const CONTEXT = /^(?:personal|org:[A-Za-z0-9][A-Za-z0-9_-]{0,127})$/;
 const TOKEN_PAGE = 'https://dash.cloudflare.com/profile/api-tokens';
 /**
  * O-12 (B-184): Cloudflare's token template keys for the permissions below that have one (its "API token template
@@ -184,7 +186,7 @@ async function readBundle(dir, readFile = fs.readFile) {
 const UPLOAD_RETRY_MS = [5_000, 30_000];
 const pauseFor = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, jurisdiction, manifest, bundleDir, readFile = fs.readFile, attempt, report, vars, allowDowngrade = false, pause = pauseFor }) {
+async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, jurisdiction, context, manifest, bundleDir, readFile = fs.readFile, attempt, report, vars, allowDowngrade = false, pause = pauseFor }) {
   const a = `/accounts/${accountId}`;
   const assetsJwt = await attempt('files', 'Upload the app', async () => {
     const files = manifest.assets.files;
@@ -225,6 +227,10 @@ async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, juri
       domains = found.find((b) => b.type === 'plain_text' && b.name === 'DOMAINS')?.text || '';
       running = found.find((b) => b.type === 'plain_text' && b.name === 'FABRIC_SERVER_VERSION')?.text || '';
       hasCredentialKey = found.some((b) => b.type === 'secret_text' && (b.name === 'MAIL_CREDENTIAL_KEY' || b.name === 'GMAIL_TOKEN_ENCRYPTION_KEY'));
+      // B-158: a server's mail belongs to its context, so a context is set once and never moved to another.
+      const belongs = found.find((b) => b.type === 'plain_text' && b.name === 'FABRIC_CONTEXT')?.text || 'personal';
+      if (context && context !== belongs)
+        throw new DeployError(t('This server belongs to {current}, and a server stays in the context it was made for. Give {context} a server of its own.', { current: belongs, context }));
     }
     // The key the server seals mail-account passwords and tokens with (workers/providers/credentials.ts).
     // Made once, here, and never sent again: a new key would leave every connected account unreadable.
@@ -252,7 +258,7 @@ async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, juri
       ...manifest.r2Buckets.map((r) => ({ type: 'r2_bucket', name: r.binding, bucket_name: BUCKET, ...(jurisdiction ? { jurisdiction } : {}) })),
       ...manifest.sendEmail.map((e) => ({ type: 'send_email', name: e.name })),
       ...(manifest.ai ? [{ type: 'ai', name: manifest.ai.binding }] : []),
-      ...Object.entries(vars).map(([name, text]) => ({ type: 'plain_text', name, text })),
+      ...Object.entries({ ...vars, ...(context ? { FABRIC_CONTEXT: context } : {}) }).map(([name, text]) => ({ type: 'plain_text', name, text })),
       { type: 'plain_text', name: 'DOMAINS', text: domains },
       { type: 'plain_text', name: 'CLOUDFLARE_ACCOUNT_ID', text: accountId },
       { type: 'plain_text', name: 'FABRIC_SERVER_VERSION', text: manifest.version },
@@ -310,6 +316,8 @@ async function deploy(options) {
   const BUCKET = options.bucketName || DEFAULT_BUCKET;
   const wanted = options.jurisdiction ? String(options.jurisdiction).trim().toLowerCase() : null;
   if (wanted && !JURISDICTIONS.includes(wanted)) throw new DeployError(t('Choose a storage jurisdiction Cloudflare offers: {list}.', { list: JURISDICTIONS.join(', ') }));
+  const context = options.context ? String(options.context).trim() : null;
+  if (context && !CONTEXT.test(context)) throw new DeployError(t('A context is personal, or org: followed by the organization\'s id (letters, digits, dashes and underscores).'));
   let jurisdiction = null;
   const c = client(token, fetchImpl);
   const a = `/accounts/${accountId}`;
@@ -449,7 +457,7 @@ async function deploy(options) {
   });
 
   // 6–7. Static files, then the Worker with its settings and the token
-  await uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, jurisdiction, manifest, bundleDir, readFile, attempt, report, ...(options.pause ? { pause: options.pause } : {}),
+  await uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, jurisdiction, context, manifest, bundleDir, readFile, attempt, report, ...(options.pause ? { pause: options.pause } : {}),
     // B-169: a server under another name routes its addresses and updates itself under that name, never the first server's.
     vars: { POLICY_AUD: aud, TEAM_DOMAIN: `https://${authDomain}`, ...(SCRIPT !== DEFAULT_SCRIPT ? { EMAIL_ROUTING_WORKER: SCRIPT } : {}) },
     allowDowngrade: options.allowDowngrade === true });
@@ -462,7 +470,7 @@ async function deploy(options) {
   });
 
   // A kept sign-in whose address could not be read leaves the origin unknown: the person names it.
-  return { origin: keptSignIn ? keptOrigin : `https://${host}`, accessOrigin: `https://${authDomain}`, jurisdiction, steps };
+  return { origin: keptSignIn ? keptOrigin : `https://${host}`, accessOrigin: `https://${authDomain}`, jurisdiction, context: context || null, steps };
 }
 
-module.exports = { JURISDICTIONS, accounts, inspect, deploy, uploadServer, client, uploadTimeout, readBundle, compareVersions, DeployError, PERMISSIONS, TOKEN_PAGE, TEMPLATE_KEYS, tokenTemplateUrl, SERVICE_TOKEN_HEADER, SCRIPT: DEFAULT_SCRIPT, validName: (v) => NAME.test(v), validEmail: (v) => EMAIL.test(v) };
+module.exports = { JURISDICTIONS, CONTEXT, accounts, inspect, deploy, uploadServer, client, uploadTimeout, readBundle, compareVersions, DeployError, PERMISSIONS, TOKEN_PAGE, TEMPLATE_KEYS, tokenTemplateUrl, SERVICE_TOKEN_HEADER, SCRIPT: DEFAULT_SCRIPT, validName: (v) => NAME.test(v), validEmail: (v) => EMAIL.test(v) };

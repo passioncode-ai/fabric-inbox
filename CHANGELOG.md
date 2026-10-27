@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.63.0 (2026-10-27)
+
+- **A server knows which organization it belongs to.** Setting up a server from the command line now takes the
+  organization's context, and the server shows it to the app and to agents. A server stays in the context it was made
+  for: an update that names another is refused. Servers set up before this are your own, as before.
+
 ## 0.62.0 (2026-10-27)
 
 - **An organization's server can keep its mail in the EU.** Setting up a server from the command line now takes the

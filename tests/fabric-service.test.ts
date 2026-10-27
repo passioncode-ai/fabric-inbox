@@ -215,3 +215,19 @@ test("B-154 step 4: the actions declaration covers every tool that changes somet
   assert.deepEqual(by["send_email"], ["none", null]);
   assert.equal(by["list_messages"], undefined, "a read is not an action");
 });
+
+test("B-158: the document names the server's context; a server without one is personal, a wrong value is degraded, never guessed", async () => {
+  const ext = "https://passioncode.ai/fabric-inbox/context";
+  for (const [vars, context, degraded] of [
+    [{}, "personal", false], [{ FABRIC_CONTEXT: "org:org_ABC23" }, "org:org_ABC23", false], [{ FABRIC_CONTEXT: "Org:x" }, null, true],
+  ] as const) {
+    const { mf, get } = await fixture({ CLOUDFLARE_API_TOKEN: "t", OPENROUTER_API_KEY: "k", ...vars });
+    try {
+      const doc = JSON.parse((await get("/.well-known/fabric-service", { common_name: "known.access" })).text);
+      validate("service-well-known", doc);
+      assert.deepEqual(doc.extensions[ext], { context }, JSON.stringify(vars));
+      assert.equal(doc.degraded.some((d: any) => d.source === "context" && d.setup === true), degraded);
+    } finally { await mf.dispose(); }
+  }
+});
+

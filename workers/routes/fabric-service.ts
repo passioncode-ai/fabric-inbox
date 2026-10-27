@@ -9,6 +9,7 @@ import { principalFor, readAgentKeys, type AccessClaims } from "../mcp/keys";
 import { ensureServiceApp, forgetServiceAudience, readServiceAccess, SERVICE_ACCESS_KEY } from "../mcp/service-access";
 import type { ModelUsageRow } from "../agents/registry";
 import { NARROW_HEADER } from "../mcp/scope";
+import { contextOf } from "../lib/context";
 
 /**
  * Fabric Inbox as a Fabric service in the remote placement (fabric-service/0.1, contract DEC-0015,
@@ -104,11 +105,17 @@ function degradedOf(env: Env): { source: string; reason: string; setup?: true }[
   if (!cloudflareApi(env)) out.push({ source: "cloudflare", reason: "No Cloudflare token on the server: domains, addresses and self-update are off.", setup: true });
   if (!env.AGENT_REGISTRY) out.push({ source: "agents", reason: "Reply agents are not configured on this server." });
   if (!env.OPENROUTER_API_KEY) out.push({ source: "models", reason: "No OpenRouter key: reply agents write on the server's own Workers AI and no checker approves an answer before it is sent.", setup: true });
+  if (!contextOf(env).valid) out.push({ source: "context", reason: "FABRIC_CONTEXT is not a context (personal, or org:<id>): the server names none until it is corrected.", setup: true });
   return out;
 }
 
 /** Where the server says how its model calls are signed in, for the descriptor's `runner` (DEC-0061). */
 export const RUNNER_EXTENSION = "https://passioncode.ai/fabric-inbox/runner";
+/**
+ * B-158 (D2, question O-4): the context the server belongs to. A service document has no context field and
+ * events never carry one (contract `contexts.md`), so the document names it here.
+ */
+export const CONTEXT_EXTENSION = "https://passioncode.ai/fabric-inbox/context";
 
 /**
  * The kind of credential the reply agents' model calls use, never the credential (DEC-0061): an issued
@@ -134,7 +141,7 @@ export async function wellKnownDocument(env: Env): Promise<Record<string, unknow
       mcp: { path: "/mcp", transport: "streamable-http", auth: "own" },
     },
     update: { available: null },
-    extensions: { [RUNNER_EXTENSION]: runnerOf(env), [ACTIONS_EXTENSION]: { actions: serviceActions(TOOLS) } },
+    extensions: { [RUNNER_EXTENSION]: runnerOf(env), [CONTEXT_EXTENSION]: { context: contextOf(env).context }, [ACTIONS_EXTENSION]: { actions: serviceActions(TOOLS) } },
   };
 }
 

@@ -471,3 +471,27 @@ test("B-157: a bucket in another place is refused with its name, before anything
   assert.match(bad.error.message, /eu, fedramp, us/);
   assert.deepEqual(deployer.JURISDICTIONS, ["eu", "fedramp", "us"]);
 });
+
+test("B-158: a new server is made for the context asked for; an existing one keeps its own and refuses another", async () => {
+  const { out, manifest } = fixtureBundle();
+  const fake = fakeCloudflare();
+  const r = await run(fake, out, { context: "org:org_ABC23" });
+  assert.ifError(r.error);
+  assert.equal(r.context, "org:org_ABC23");
+  assert.deepEqual(fake.state.put!.metadata.bindings.find((b: any) => b.name === "FABRIC_CONTEXT"), { type: "plain_text", name: "FABRIC_CONTEXT", text: "org:org_ABC23" });
+  // Without one nothing is sent: an update keeps what the server has (keep_bindings), a new server is personal.
+  const plain = fakeCloudflare();
+  assert.ifError((await run(plain, out)).error);
+  assert.equal(plain.state.put!.metadata.bindings.some((b: any) => b.name === "FABRIC_CONTEXT"), false);
+  // A server already in a context: the same one passes, another is refused before its code is sent.
+  const tag = manifest.migrations.at(-1).tag;
+  const same = fakeCloudflare({ subdomain: "someone", org: "someone-team.cloudflareaccess.com", script: { migration_tag: tag, vars: { FABRIC_CONTEXT: "org:org_ABC23" } } });
+  assert.ifError((await run(same, out, { context: "org:org_ABC23" })).error);
+  const other = fakeCloudflare({ subdomain: "someone", org: "someone-team.cloudflareaccess.com", script: { migration_tag: tag, vars: { FABRIC_CONTEXT: "org:org_ABC23" } } });
+  const refused = await run(other, out, { context: "org:org_OTHER" });
+  assert.match(refused.error.message, /belongs to org:org_ABC23/);
+  assert.equal(other.state.put, null);
+  const personal = fakeCloudflare({ subdomain: "someone", org: "someone-team.cloudflareaccess.com", script: { migration_tag: tag } });
+  assert.match((await run(personal, out, { context: "org:org_ABC23" })).error.message, /belongs to personal/);
+  assert.match((await run(fakeCloudflare(), out, { context: "Org:x" })).error.message, /A context is personal/);
+});

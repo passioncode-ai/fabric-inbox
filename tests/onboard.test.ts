@@ -110,6 +110,18 @@ test("B-157: --jurisdiction reaches the deploy in lower case; one Cloudflare doe
   assert.equal(seen.length, 2);
 });
 
+test("B-158: --context reaches the deploy as written; what is no context is refused before it", async () => {
+  const { validName, JURISDICTIONS, CONTEXT } = (await import("node:module")).createRequire(import.meta.url)("../desktop/cloudflare-deploy.cjs");
+  const seen: any[] = [];
+  const deployer = { validName, JURISDICTIONS, CONTEXT, accounts: async () => [{ id: "acc1", name: "Mine" }],
+    deploy: async (o: any) => { seen.push(o); return { origin: "https://org-inbox.me.workers.dev", accessOrigin: "https://me.cloudflareaccess.com", steps: [] }; } };
+  const opts = m.parseArgs(["server", "--script", "org-inbox", "--bucket", "org-inbox", "--keep-record", "--context", "org:org_ABC23"]).opts;
+  await m.stepServer(opts, { say, deployer, token: "t", bundle: async () => "/b" });
+  assert.equal(seen[0].context, "org:org_ABC23");
+  await assert.rejects(m.stepServer({ ...opts, context: "org:" }, { say, deployer, token: "t", bundle: async () => "/b" }), (e: any) => e.code === "invalid_context");
+  assert.equal(seen.length, 1);
+});
+
 test("connect: the app's answer reaches only the one-shot listener with the right state, and the key goes to the store", async () => {
   const store = fakeStore();
   const open = (link: string) => {
