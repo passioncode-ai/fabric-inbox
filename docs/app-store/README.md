@@ -191,6 +191,15 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-10-27 (0.75.0: B-153's second look; B-162 live; MD-18 sweep).**
+
+- **0.75.0** (PR #359, `c3c3e40`, B-153): a message an auto agent that holds was not sure of gets one second look 30 minutes later, at most 20 a day per server (`replyPolicy.secondLook`, default on; `AgentRegistryDO.retryHeld`): the same writer with reasoning `medium`, twice the knowledge passages, every prefetched tool also asked about the topic, sent only if the checker approves. The run keeps `secondLook`; `support.diagnosed` carries it once with `look: "second"`, `rescued` and the cause. Packet [2026-10-27-second-look.md](tasks/2026-10-27-second-look.md). CHANGELOG copy check `d83be0d2`.
+- **B-162 live:** the owner server's feed carries `support.diagnosed` for real held turns (3 on 2026-10-27, 18:14 to 18:19 UTC, causes `draft-or-check` and `data`); no `answer.cited` yet. Answered on board thread `e68f363c` (message `fc332bb3`).
+- **MD-18 sweep** (fabric-workspace `knowledge/integration.md`): no open stability or Windows debt in this repository without evidence and a target; B-143, B-108 and B-194 got both (target 2026-11-05). B-143: since the 0.25.1 fix both later installs on the owner's Mac were logged `installed`.
+- Both servers on 0.75.0 from `c3c3e40` (receipts `linked`); a watcher tags v0.75.0 after `ci` on `c3c3e40`.
+
+**Exact next task:** B-153's rest: answer a held message again when the data agent's `gaps.list` closes its gap (needs the data agent's gap contract, ask on thread `e68f363c`); meanwhile B-189 (calibrate the quality judge on a small person-graded set). Read the first live `support.diagnosed` with `look: "second"` after a held message is 30 minutes old. Waits: SCN-094's approval; SOT-B5 for M2 (B-160); B-168; B-174 on 2026-11-02; B-186, B-187, B-188, B-192 on 2026-11-03; B-143, B-108, B-194 on 2026-11-05; .github #44; B-72's AI panel turn by a person; B-106 a person's decision.
+
 **State 2026-10-27 (0.73.0 and 0.74.0: B-164, B-162, B-171 done both ways; B-190 hardened; B-72 spam judged).**
 
 - **0.73.0** (PR #356, `574a3c2`, B-164): a key limited to some mailboxes reads its own mailboxes' agent runs, events and conversations (`workers/mcp/scope.ts`, `AGENT_READ_ROUTES`); agent definitions, reply-status settings and quality days stay workspace-only. Answered on board thread `b8342c09`. The same PR made `tests/campaigns-workerd.test.ts` (SCN-089) pass late in the day, when the dry run's second send waits for the next window.
