@@ -26,7 +26,7 @@ const bundle = await build({
 const ACCOUNT = "acc-test";
 const next = (v: string) => { const [a, b] = v.split("-")[0]!.split(".").map(Number); return `${a}.${(b ?? 0) + 1}.0`; };
 
-function fakeCloudflare(options: { deny?: RegExp; buckets?: string[][]; tag?: string | null } = {}) {
+function fakeCloudflare(options: { deny?: RegExp; buckets?: string[][]; tag?: string | null; jurisdiction?: string } = {}) {
   const writes: string[] = [];
   let put: { metadata: any; modules: Record<string, string> } | null = null;
   const uploaded: Record<string, string> = {};
@@ -54,7 +54,7 @@ function fakeCloudflare(options: { deny?: RegExp; buckets?: string[][]; tag?: st
     if (path === `${a}/access/apps/app-1` && request.method === "PUT") { accessPut = await request.json(); Object.assign(accessApp, accessPut); return ok(accessApp); }
     if (path === "/accounts") return ok(url.searchParams.get("page") === "1" ? [{ id: ACCOUNT, name: "Owner" }] : []);
     if (path === `${a}/workers/scripts`) return ok(url.searchParams.get("page") === "1" ? [{ id: "fabric-inbox", ...(options.tag === null ? {} : { migration_tag: options.tag ?? "v1" }) }] : []);
-    if (path === `${a}/workers/scripts/fabric-inbox/settings`) return ok({ bindings: [{ type: "r2_bucket", name: "BUCKET", bucket_name: "owner-mail" }, { type: "secret_text", name: "CLOUDFLARE_API_TOKEN" }] });
+    if (path === `${a}/workers/scripts/fabric-inbox/settings`) return ok({ bindings: [{ type: "r2_bucket", name: "BUCKET", bucket_name: "owner-mail", ...(options.jurisdiction ? { jurisdiction: options.jurisdiction } : {}) }, { type: "secret_text", name: "CLOUDFLARE_API_TOKEN" }] });
     if (path === `${a}/workers/scripts/fabric-inbox/assets-upload-session`) return ok({ jwt: "session-jwt", buckets: options.buckets ?? [["hash-a"]] });
     if (path === `${a}/workers/scripts/fabric-inbox` && request.method === "PUT") {
       const form = await request.formData();
@@ -199,5 +199,14 @@ test("B-148: an update lets agent keys in one header on the server's own Access 
     assert.equal(await ensureAccessHeader({ list: async () => [{ id: "x", aud: "aud-1", read_service_tokens_from_header: "Authorization" }] } as never, ACCOUNT, "aud-1"), "already");
     assert.match(await ensureAccessHeader({ list: async () => { throw new Error("refused"); } } as never, ACCOUNT, "aud-1"), /^failed: refused/);
     assert.equal(await ensureAccessHeader({ list: async () => [{ id: "x", aud: "other" }] } as never, ACCOUNT, "aud-1"), "no_app");
+  } finally { await mf.dispose(); }
+});
+
+test("B-157: an update keeps the jurisdiction the server's storage is bound in, so it still reaches its mail", async () => {
+  const { mf, cf, send } = await fixture({ jurisdiction: "eu" });
+  try {
+    const r = await send(manifest());
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(cf.put!.metadata.bindings.find((b: any) => b.type === "r2_bucket"), { type: "r2_bucket", name: "BUCKET", bucket_name: "owner-mail", jurisdiction: "eu" });
   } finally { await mf.dispose(); }
 });

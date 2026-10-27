@@ -96,8 +96,10 @@ export async function selfUpdate(input: { api: CloudflareApi; accountId: string;
   const scripts = await api.list<{ id: string; migration_tag?: string }>(`${a}/workers/scripts`, msg("read Workers (Workers Scripts: Edit)"), 100);
   const current = scripts.find((s) => s.id === script);
   if (!current) throw new SelfUpdateRefused(409, msg("The server's script {script} is not in its Cloudflare account; update it from the app with a token instead.", { script }));
-  const settings = await api.call<{ bindings?: { type: string; name: string; bucket_name?: string }[] }>(`${a}/workers/scripts/${script}/settings`, { what: msg("read the server settings (Workers Scripts: Edit)") });
+  const settings = await api.call<{ bindings?: { type: string; name: string; bucket_name?: string; jurisdiction?: string }[] }>(`${a}/workers/scripts/${script}/settings`, { what: msg("read the server settings (Workers Scripts: Edit)") });
   const buckets = new Map((settings.bindings ?? []).filter((b) => b.type === "r2_bucket").map((b) => [b.name, b.bucket_name ?? ""]));
+  // B-157: a bucket made in a jurisdiction is reached only with it; the update keeps the binding's.
+  const places = new Map((settings.bindings ?? []).filter((b) => b.type === "r2_bucket" && b.jurisdiction).map((b) => [b.name, b.jurisdiction!]));
   const migrations = pendingMigrations(manifest, current.migration_tag);
 
   // Every module before anything is uploaded: a half bundle must not reach Cloudflare.
@@ -133,7 +135,7 @@ export async function selfUpdate(input: { api: CloudflareApi; accountId: string;
   const bindings = [
     ...manifest.durableObjects.map((d) => ({ type: "durable_object_namespace", name: d.name, class_name: d.class_name })),
     // The bucket the running server already keeps its mail in, whatever the bundle names.
-    ...manifest.r2Buckets.map((r) => ({ type: "r2_bucket", name: r.binding, bucket_name: buckets.get(r.binding) || r.bucket_name })),
+    ...manifest.r2Buckets.map((r) => ({ type: "r2_bucket", name: r.binding, bucket_name: buckets.get(r.binding) || r.bucket_name, ...(places.get(r.binding) ? { jurisdiction: places.get(r.binding) } : {}) })),
     ...manifest.sendEmail.map((e) => ({ type: "send_email", name: e.name })),
     ...(manifest.ai ? [{ type: "ai", name: manifest.ai.binding }] : []),
     { type: "plain_text", name: "FABRIC_SERVER_VERSION", text: manifest.version },

@@ -5,7 +5,7 @@
 // connect, register, prove, status, forget), which it runs for every other command.
 //
 //   node scripts/onboard.mjs server [--token-env NAME] [--account ID] [--subdomain NAME] [--team NAME] [--email ADDRESS | --access-group ID]
-//                                  [--script NAME --bucket NAME --keep-record] [--json]
+//                                  [--script NAME --bucket NAME --keep-record] [--jurisdiction eu|fedramp|us] [--json]
 //   A second server in an account that already runs one (B-169) takes its own Worker and storage names
 //   (--script, --bucket), and --keep-record leaves this computer's record and welcome setup on the first.
 //   node scripts/onboard.mjs connect | register | prove | status | forget   (see the plugin's onboard.mjs)
@@ -105,8 +105,13 @@ export async function stepServer(opts, { say, deployer = require('../desktop/clo
     if (value !== undefined && !deployer.validName(value)) throw new OnboardError('invalid_name', `${flag} takes letters, digits and dashes.`);
   // Both or neither: a second Worker on the first one's storage would read and write the first server's mail.
   if ((script === undefined) !== (bucket === undefined)) throw new OnboardError('invalid_name', 'Give --script and --bucket together, so a second server never shares the first one\'s storage.');
+  // B-157: where the storage is kept (an R2 jurisdiction), only when the storage is made; an existing one keeps its own.
+  const jurisdiction = opts.jurisdiction === undefined ? undefined : String(opts.jurisdiction).trim().toLowerCase();
+  if (jurisdiction !== undefined && !deployer.JURISDICTIONS.includes(jurisdiction))
+    throw new OnboardError('invalid_jurisdiction', `--jurisdiction takes one of: ${deployer.JURISDICTIONS.join(', ')}.`);
   const bundleDir = await bundle(say);
   const result = await deployer.deploy({ token, accountId: account.id, bundleDir, subdomain: opts.subdomain, team: opts.team, email: opts.email, accessGroup: opts['access-group'],
+    ...(jurisdiction ? { jurisdiction } : {}),
     ...(script ? { scriptName: script, bucketName: bucket } : {}), fetchImpl,
     onStep: (s) => say({ step: `server.${s.id}`, outcome: s.outcome, detail: s.detail }) }).catch((error) => { throw deployFailure(error); });
   // O-1: a server signed in on its own domain whose address could not be read.
