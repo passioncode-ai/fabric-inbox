@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.73.0 (2026-10-27)
+
+- **A key for one mailbox also sees what its reply agent did.** An agent key limited to some mailboxes can now read
+  its own mailboxes' agent runs, agent events and conversations by reply status, and nothing of any other mailbox.
+  The agents' settings stay readable only to keys for the whole server (B-164).
+
 ## 0.72.0 (2026-10-27)
 
 - **Knowledge changes reach the agents that share one knowledge base.** When a knowledge document is added, changed

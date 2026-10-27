@@ -80,7 +80,9 @@ test("SCN-089: prepare, add, preview, dry-run and the do-not-write list, nothing
     assert.equal(run.json.sends.length, 2);
     const [a, b] = run.json.sends.map((s: { at: string }) => new Date(s.at));
     const gap = (b.getTime() - a.getTime()) / 60_000;
-    assert.ok(gap >= 5 && gap <= 10, `gap ${gap}`);
+    // Late in the day the second send no longer fits the window and waits for the next one, which opens at 09:00 UTC.
+    const nextWindow = b.getUTCHours() === 9 && b.getUTCMinutes() < 30;
+    assert.ok(gap >= 5 && (gap <= 10 || nextWindow), `gap ${gap}`);
     for (const t of [a, b]) { assert.ok(t.getUTCDay() >= 1 && t.getUTCDay() <= 5); assert.ok(t.getUTCHours() >= 9 && t.getUTCHours() < 17); }
     assert.equal(run.json.queued, 2);
 
