@@ -360,7 +360,23 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      # B-194: electron-builder installs the TrustedSigning module from the PowerShell Gallery on every build, and a
+      # download that fails leaves Invoke-TrustedSigning missing (v0.70.0, arm64). One more try after a pause; the
+      # installer check below still fails the run unless every installer is Valid.
       - name: Build the installer
+        id: installer1
+        continue-on-error: true
+        env:
+          AZURE_SIGNING_ENDPOINT: ${{ env.SIGNING == 'true' && vars.AZURE_SIGNING_ENDPOINT || '' }}
+          AZURE_SIGNING_ACCOUNT: ${{ env.SIGNING == 'true' && vars.AZURE_SIGNING_ACCOUNT || '' }}
+          AZURE_SIGNING_PROFILE: ${{ env.SIGNING == 'true' && vars.AZURE_CERTIFICATE_PROFILE || '' }}
+        run: node desktop/dist-platform.mjs --platform win32 --arch ${{ matrix.arch }} --out release --stage package
+      - name: Wait before building the installer again (B-194)
+        if: steps.installer1.outcome == 'failure'
+        shell: pwsh
+        run: Start-Sleep -Seconds 60
+      - name: Build the installer, second try (B-194)
+        if: steps.installer1.outcome == 'failure'
         env:
           AZURE_SIGNING_ENDPOINT: ${{ env.SIGNING == 'true' && vars.AZURE_SIGNING_ENDPOINT || '' }}
           AZURE_SIGNING_ACCOUNT: ${{ env.SIGNING == 'true' && vars.AZURE_SIGNING_ACCOUNT || '' }}
