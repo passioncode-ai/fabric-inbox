@@ -421,6 +421,13 @@ server is the same one; what differs is the account, who signs in, and that it i
    a group id that is not in the account is refused before anything is made. A server that already
    has an Access application keeps its rules: change its policy in Zero Trust.
 
+   **Where its mail is kept** (B-157): add `--jurisdiction eu` (or `fedramp`, `us`, as Cloudflare offers)
+   and the storage is made in that R2 jurisdiction, its binding names it, and every later update, from a
+   Mac or by the server itself, keeps it. A bucket keeps the place it was made in: a deploy finds an
+   existing one in any jurisdiction and keeps it, and refuses before uploading when it sits elsewhere than
+   asked. To move a server's mail, give a new server its own names (below). The residency step 5 states is
+   this jurisdiction. The Mac app's setup form does not offer the choice yet (B-193).
+
    **A second server in an account that already runs one** (B-169: an organization without an account
    of its own, beside a person's server) takes its own Worker and storage names, and leaves this
    computer's record on the first server: add `--script <name> --bucket <name> --keep-record`. Both

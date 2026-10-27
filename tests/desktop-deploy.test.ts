@@ -35,11 +35,13 @@ function fixtureBundle() {
   return { out, manifest };
 }
 
-interface FakeOptions { subdomain?: string | null; org?: string | null; script?: { migration_tag: string; domains?: string; vars?: Record<string, string>; secrets?: string[] } | null; deny?: RegExp; r2Disabled?: boolean }
+interface FakeOptions { subdomain?: string | null; org?: string | null; script?: { migration_tag: string; domains?: string; vars?: Record<string, string>; secrets?: string[] } | null; deny?: RegExp; r2Disabled?: boolean; bucketIn?: string; noFedramp?: boolean }
 
 function fakeCloudflare(o: FakeOptions = {}) {
   const state = {
-    subdomain: o.subdomain ?? null as string | null, org: o.org ?? null as string | null, bucket: false,
+    subdomain: o.subdomain ?? null as string | null, org: o.org ?? null as string | null, bucket: o.bucketIn !== undefined,
+    // B-157: "" is a bucket made without a jurisdiction; the probes and the creation record the header they sent.
+    bucketIn: o.bucketIn ?? "", probes: [] as string[], createdIn: null as string | null,
     idps: [] as { type: string }[], apps: [] as Record<string, unknown>[], accessPut: null as any,
     script: o.script ?? null as FakeOptions["script"], uploads: [] as Record<string, string>[], put: null as null | { metadata: any; parts: Record<string, { type: string; text: string }> },
     workersDev: false, names: { script: null as string | null, bucket: null as string | null },
@@ -71,8 +73,13 @@ function fakeCloudflare(o: FakeOptions = {}) {
       case "GET /accounts": return paged([{ id: "acc", name: "Someone's account" }]);
       case "GET /accounts/acc/workers/subdomain": return state.subdomain ? ok({ subdomain: state.subdomain }) : fail(404, 10007, "no subdomain");
       case "PUT /accounts/acc/workers/subdomain": state.subdomain = body.subdomain; return ok({ subdomain: body.subdomain });
-      case "GET /accounts/acc/r2/buckets/fabric-inbox": return state.bucket ? ok({ name: "fabric-inbox" }) : fail(404, 10006, "The specified bucket does not exist.");
-      case "POST /accounts/acc/r2/buckets": if (o.r2Disabled) return fail(403, 10042, "Please enable R2 through the Cloudflare Dashboard."); state.bucket = true; return ok({ name: body.name });
+      case "GET /accounts/acc/r2/buckets/fabric-inbox": {
+        const j = init.headers["cf-r2-jurisdiction"] ?? "";
+        state.probes.push(j || "default");
+        if (j === "fedramp" && o.noFedramp) return fail(403, 10003, "Access Denied");
+        return state.bucket && state.bucketIn === j ? ok({ name: "fabric-inbox", jurisdiction: j || "default" }) : fail(404, 10006, "The specified bucket does not exist.");
+      }
+      case "POST /accounts/acc/r2/buckets": if (o.r2Disabled) return fail(403, 10042, "Please enable R2 through the Cloudflare Dashboard."); state.bucket = true; state.bucketIn = state.createdIn = init.headers["cf-r2-jurisdiction"] ?? ""; return ok({ name: body.name });
       case "GET /accounts/acc/access/organizations": return state.org ? ok({ auth_domain: state.org }) : fail(404, 12130, "access.api.error.not_found");
       case "POST /accounts/acc/access/organizations": state.org = body.auth_domain; return ok({ auth_domain: body.auth_domain });
       case "GET /accounts/acc/access/identity_providers": return paged(state.idps);
@@ -418,4 +425,49 @@ test("O-12 (B-184): the token page opens with its name and every permission Clou
   for (const name of Object.keys(deployer.TEMPLATE_KEYS)) assert.ok(deployer.PERMISSIONS.some((p: { name: string }) => p.name === name), name);
   assert.match(readFileSync("desktop/main.cjs", "utf8"), /shell\.openExternal\(deployer\.tokenTemplateUrl\(\)\)/);
   assert.match(readFileSync("desktop/setup.html", "utf8"), /add the missing ones/);
+});
+
+test("B-157: a new server's storage is made in the jurisdiction asked for, and its binding names it", async () => {
+  const { out } = fixtureBundle();
+  const fake = fakeCloudflare({ noFedramp: true });
+  const r = await run(fake, out, { jurisdiction: "EU" });
+  assert.ifError(r.error);
+  assert.deepEqual(fake.state.probes, ["default", "eu", "fedramp", "us"], "looked everywhere first; fedramp's Access Denied is no bucket");
+  assert.equal(fake.state.createdIn, "eu");
+  assert.equal(r.jurisdiction, "eu");
+  assert.match(r.steps.find((s: any) => s.id === "storage").detail, /kept in the eu jurisdiction/);
+  assert.deepEqual(fake.state.put!.metadata.bindings.find((b: any) => b.name === "BUCKET"), { type: "r2_bucket", name: "BUCKET", bucket_name: "fabric-inbox", jurisdiction: "eu" });
+});
+
+test("B-157: without a jurisdiction nothing changes: no header, no binding field", async () => {
+  const { out } = fixtureBundle();
+  const fake = fakeCloudflare();
+  const r = await run(fake, out);
+  assert.ifError(r.error);
+  assert.equal(fake.state.createdIn, "");
+  assert.equal(r.jurisdiction, null);
+  assert.equal("jurisdiction" in fake.state.put!.metadata.bindings.find((b: any) => b.name === "BUCKET"), false);
+});
+
+test("B-157: an update finds the bucket in its jurisdiction and keeps it, even when none is asked for", async () => {
+  const { out } = fixtureBundle();
+  const fake = fakeCloudflare({ bucketIn: "eu", subdomain: "someone", org: "someone-team.cloudflareaccess.com" });
+  const r = await run(fake, out);
+  assert.ifError(r.error);
+  assert.equal(fake.state.createdIn, null, "no second, empty bucket");
+  assert.deepEqual(fake.state.probes, ["default", "eu"]);
+  assert.equal(r.steps.find((s: any) => s.id === "storage").outcome, "already");
+  assert.equal(fake.state.put!.metadata.bindings.find((b: any) => b.name === "BUCKET").jurisdiction, "eu");
+});
+
+test("B-157: a bucket in another place is refused with its name, before anything is uploaded; an unknown jurisdiction too", async () => {
+  const { out } = fixtureBundle();
+  const fake = fakeCloudflare({ bucketIn: "" });
+  const r = await run(fake, out, { jurisdiction: "eu" });
+  assert.ok(r.error);
+  assert.match(r.error.message, /already exists, kept without a jurisdiction/);
+  assert.equal(fake.state.put, null);
+  const bad = await run(fakeCloudflare(), out, { jurisdiction: "mars" });
+  assert.match(bad.error.message, /eu, fedramp, us/);
+  assert.deepEqual(deployer.JURISDICTIONS, ["eu", "fedramp", "us"]);
 });

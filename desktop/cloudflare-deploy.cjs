@@ -30,6 +30,8 @@ const { t, msg } = require('./i18n.cjs');
 const API = 'https://api.cloudflare.com/client/v4';
 const DEFAULT_SCRIPT = 'fabric-inbox';
 const DEFAULT_BUCKET = 'fabric-inbox';
+/** B-157: where R2 keeps a bucket's objects (Cloudflare's jurisdictions). Set when a bucket is made, never changed after. */
+const JURISDICTIONS = ['eu', 'fedramp', 'us'];
 const TOKEN_PAGE = 'https://dash.cloudflare.com/profile/api-tokens';
 /**
  * O-12 (B-184): Cloudflare's token template keys for the permissions below that have one (its "API token template
@@ -110,12 +112,12 @@ function uploadTimeout(form) {
 function client(token, fetchImpl = (input, init) => fetch(input, init)) {
   if (typeof token !== 'string' || !TOKEN.test(token.trim())) throw new DeployError(t('This does not look like a Cloudflare API token. Copy it again from the page Cloudflare showed after creating it.'));
   const bearer = token.trim();
-  async function call(route, { method = 'GET', body, form, what = t('do this'), auth, raw = false } = {}) {
+  async function call(route, { method = 'GET', body, form, what = t('do this'), auth, raw = false, headers = {} } = {}) {
     let response;
     try {
       response = await fetchImpl(route.startsWith('http') ? route : API + route, {
         method,
-        headers: { Authorization: `Bearer ${auth || bearer}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+        headers: { Authorization: `Bearer ${auth || bearer}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...headers },
         body: form ?? (body !== undefined ? JSON.stringify(body) : undefined),
         // O-2: an upload has time for its size (about 25 KB/s at the least), so a slow connection finishes it.
         signal: AbortSignal.timeout(form ? uploadTimeout(form) : 60_000),
@@ -182,7 +184,7 @@ async function readBundle(dir, readFile = fs.readFile) {
 const UPLOAD_RETRY_MS = [5_000, 30_000];
 const pauseFor = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, manifest, bundleDir, readFile = fs.readFile, attempt, report, vars, allowDowngrade = false, pause = pauseFor }) {
+async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, jurisdiction, manifest, bundleDir, readFile = fs.readFile, attempt, report, vars, allowDowngrade = false, pause = pauseFor }) {
   const a = `/accounts/${accountId}`;
   const assetsJwt = await attempt('files', 'Upload the app', async () => {
     const files = manifest.assets.files;
@@ -247,7 +249,7 @@ async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, mani
     }
     const bindings = [
       ...manifest.durableObjects.map((d) => ({ type: 'durable_object_namespace', name: d.name, class_name: d.class_name })),
-      ...manifest.r2Buckets.map((r) => ({ type: 'r2_bucket', name: r.binding, bucket_name: BUCKET })),
+      ...manifest.r2Buckets.map((r) => ({ type: 'r2_bucket', name: r.binding, bucket_name: BUCKET, ...(jurisdiction ? { jurisdiction } : {}) })),
       ...manifest.sendEmail.map((e) => ({ type: 'send_email', name: e.name })),
       ...(manifest.ai ? [{ type: 'ai', name: manifest.ai.binding }] : []),
       ...Object.entries(vars).map(([name, text]) => ({ type: 'plain_text', name, text })),
@@ -306,6 +308,9 @@ async function deploy(options) {
   const { token, accountId, bundleDir, fetchImpl, readFile = fs.readFile, onStep = () => {} } = options;
   const SCRIPT = options.scriptName || DEFAULT_SCRIPT;
   const BUCKET = options.bucketName || DEFAULT_BUCKET;
+  const wanted = options.jurisdiction ? String(options.jurisdiction).trim().toLowerCase() : null;
+  if (wanted && !JURISDICTIONS.includes(wanted)) throw new DeployError(t('Choose a storage jurisdiction Cloudflare offers: {list}.', { list: JURISDICTIONS.join(', ') }));
+  let jurisdiction = null;
   const c = client(token, fetchImpl);
   const a = `/accounts/${accountId}`;
   const steps = [];
@@ -333,13 +338,31 @@ async function deploy(options) {
 
   // 2. Storage for mail
   await attempt('storage', 'Storage for your mail', async () => {
-    const found = await c.call(`${a}/r2/buckets/${BUCKET}`, { what: t('read storage (Workers R2 Storage: Edit)') }).then(() => true).catch((e) => { if (e.isPermission) throw e; if (e.status === 404 || e.code === 10006) return false; throw e; });
-    if (found) { report('storage', 'Storage for your mail', 'already', t('The storage exists; your mail in it is kept.')); return; }
-    await c.call(`${a}/r2/buckets`, { method: 'POST', body: { name: BUCKET }, what: t('create storage (Workers R2 Storage: Edit)') })
+    // B-157: a bucket is found in whichever jurisdiction it was made in. An update that looked only outside one
+    // would make a second, empty bucket of the same name and leave the mail behind.
+    // A jurisdiction the account may not use answers 403 Access Denied (code 10003, fedramp on 2026-10-27): no
+    // bucket there. The probe without one runs first, so a token that lacks the permission is still told so.
+    const probe = (j) => c.call(`${a}/r2/buckets/${BUCKET}`, { headers: j ? { 'cf-r2-jurisdiction': j } : {}, what: t('read storage (Workers R2 Storage: Edit)') })
+      .then(() => true).catch((e) => {
+        if (j && (e.status === 403 || e.code === 10003)) return false;
+        if (e.isPermission) throw e; if (e.status === 404 || e.code === 10006) return false; throw e; });
+    let foundIn;
+    for (const j of [null, ...JURISDICTIONS]) if (await probe(j)) { foundIn = j; break; }
+    if (foundIn !== undefined) {
+      if (wanted && foundIn !== wanted)
+        throw new DeployError(t('The storage {name} already exists, kept {where}, and a bucket keeps the place it was made in. Give this server its own Worker and storage names to keep its mail in {jurisdiction}.',
+          { name: BUCKET, where: foundIn ? t('in the {jurisdiction} jurisdiction', { jurisdiction: foundIn }) : t('without a jurisdiction'), jurisdiction: wanted }));
+      jurisdiction = foundIn;
+      report('storage', 'Storage for your mail', 'already', foundIn ? t('The storage exists in the {jurisdiction} jurisdiction; your mail in it is kept.', { jurisdiction: foundIn }) : t('The storage exists; your mail in it is kept.'));
+      return;
+    }
+    jurisdiction = wanted;
+    await c.call(`${a}/r2/buckets`, { method: 'POST', body: { name: BUCKET }, headers: wanted ? { 'cf-r2-jurisdiction': wanted } : {}, what: t('create storage (Workers R2 Storage: Edit)') })
       .catch((e) => { throw e.isPermission ? e : new DeployError(/R2|enable|subscription|billing/i.test(e.message)
         ? t('R2 storage is not turned on for this account yet. Open R2 in the Cloudflare dashboard once and turn it on (the free tier is enough), then continue.')
         : t('The storage could not be created: {reason}', { reason: e.message })); });
-    report('storage', 'Storage for your mail', 'done', BUCKET === DEFAULT_BUCKET ? t('Created the storage for your mail (R2 bucket fabric-inbox).') : t('Created the storage for your mail (R2 bucket {name}).', { name: BUCKET }));
+    report('storage', 'Storage for your mail', 'done', wanted ? t('Created the storage for your mail (R2 bucket {name}, kept in the {jurisdiction} jurisdiction).', { name: BUCKET, jurisdiction: wanted })
+      : BUCKET === DEFAULT_BUCKET ? t('Created the storage for your mail (R2 bucket fabric-inbox).') : t('Created the storage for your mail (R2 bucket {name}).', { name: BUCKET }));
   });
 
   // 3. Zero Trust team: the sign-in page
@@ -426,7 +449,7 @@ async function deploy(options) {
   });
 
   // 6–7. Static files, then the Worker with its settings and the token
-  await uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, manifest, bundleDir, readFile, attempt, report, ...(options.pause ? { pause: options.pause } : {}),
+  await uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, jurisdiction, manifest, bundleDir, readFile, attempt, report, ...(options.pause ? { pause: options.pause } : {}),
     // B-169: a server under another name routes its addresses and updates itself under that name, never the first server's.
     vars: { POLICY_AUD: aud, TEAM_DOMAIN: `https://${authDomain}`, ...(SCRIPT !== DEFAULT_SCRIPT ? { EMAIL_ROUTING_WORKER: SCRIPT } : {}) },
     allowDowngrade: options.allowDowngrade === true });
@@ -439,7 +462,7 @@ async function deploy(options) {
   });
 
   // A kept sign-in whose address could not be read leaves the origin unknown: the person names it.
-  return { origin: keptSignIn ? keptOrigin : `https://${host}`, accessOrigin: `https://${authDomain}`, steps };
+  return { origin: keptSignIn ? keptOrigin : `https://${host}`, accessOrigin: `https://${authDomain}`, jurisdiction, steps };
 }
 
-module.exports = { accounts, inspect, deploy, uploadServer, client, uploadTimeout, readBundle, compareVersions, DeployError, PERMISSIONS, TOKEN_PAGE, TEMPLATE_KEYS, tokenTemplateUrl, SERVICE_TOKEN_HEADER, SCRIPT: DEFAULT_SCRIPT, validName: (v) => NAME.test(v), validEmail: (v) => EMAIL.test(v) };
+module.exports = { JURISDICTIONS, accounts, inspect, deploy, uploadServer, client, uploadTimeout, readBundle, compareVersions, DeployError, PERMISSIONS, TOKEN_PAGE, TEMPLATE_KEYS, tokenTemplateUrl, SERVICE_TOKEN_HEADER, SCRIPT: DEFAULT_SCRIPT, validName: (v) => NAME.test(v), validEmail: (v) => EMAIL.test(v) };

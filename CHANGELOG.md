@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.62.0 (2026-10-27)
+
+- **An organization's server can keep its mail in the EU.** Setting up a server from the command line now takes the
+  storage jurisdiction Cloudflare offers (EU, FedRAMP or US). The storage is made there, and every later update, from
+  a Mac or by the server itself, keeps it there. Existing storage is found wherever it is kept and is never replaced.
+
 ## 0.61.0 (2026-10-27)
 
 - **A shared server keeps a record of who changed what.** Settings → People now lists recent changes: who added,
