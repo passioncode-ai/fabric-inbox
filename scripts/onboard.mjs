@@ -85,8 +85,10 @@ export function deployFailure(error) {
   if (error instanceof OnboardError || !(error && typeof error === 'object' && 'isPermission' in error)) return error;
   const text = String(error.message || '');
   const code = error.isPermission ? 'permission' : /R2/.test(text) ? 'r2_off' : /Zero Trust/.test(text) ? 'zero_trust_off'
-    : /newer than this app/.test(text) ? 'server_newer' : 'cloudflare';
-  return new OnboardError(code, text, text);
+    : /newer than this app/.test(text) ? 'server_newer' : error.network ? 'network' : 'cloudflare';
+  // B-185: the connection's own word (ECONNRESET, a TLS error) goes with it, so a launcher's log says why.
+  const said = error.network && error.cause ? `${text} (${error.cause})` : text;
+  return new OnboardError(code, said, said);
 }
 
 export async function stepServer(opts, { say, deployer = require('../desktop/cloudflare-deploy.cjs'), token: given, bundle = serverBundle,

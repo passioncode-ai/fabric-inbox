@@ -367,24 +367,37 @@ test("O-2: an upload has time for its size; other calls keep a minute", () => {
   assert.equal(deployer.uploadTimeout(new FormData()), 60_000);
 });
 
-test("B-185: a network error on the server's upload is tried once more inside the step; a second one stops the run with the reason", async () => {
+test("B-185: a network error on the server's upload is tried again after 5 s and 30 s; the third stops the run with the connection's own word", async () => {
   const { out } = fixtureBundle();
-  for (const failures of [1, 2]) {
+  for (const failures of [1, 2, 3]) {
     const fake = fakeCloudflare();
     let puts = 0;
+    const waits: number[] = [];
     const flaky = async (url: string, init: any) => {
-      if ((init.method ?? "GET") === "PUT" && new URL(url).pathname.endsWith("/workers/scripts/fabric-inbox") && puts++ < failures) throw new TypeError("fetch failed");
+      if ((init.method ?? "GET") === "PUT" && new URL(url).pathname.endsWith("/workers/scripts/fabric-inbox") && puts++ < failures)
+        throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } });
       return fake.fetchImpl(url, init);
     };
-    const r = await run({ ...fake, fetchImpl: flaky }, out);
-    if (failures === 1) {
+    const r = await run({ ...fake, fetchImpl: flaky }, out, { pause: async (ms: number) => { waits.push(ms); } });
+    if (failures < 3) {
       assert.ifError(r.error);
-      assert.equal(puts, 2, "the upload was sent again once");
-      assert.ok(fake.state.put, "the second try put the server");
-      assert.deepEqual(r.steps.filter((s: any) => s.id === "server").map((s: any) => s.outcome), ["done"]);
+      assert.equal(puts, failures + 1);
+      assert.deepEqual(waits, [5000, 30000].slice(0, failures));
+      assert.ok(fake.state.put, "a later try put the server");
     } else {
       assert.match(String(r.error?.message), /network error/);
-      assert.equal(puts, 2, "never more than one retry");
+      assert.equal(r.error?.cause, "ECONNRESET");
+      assert.equal(puts, 3, "never more than two retries");
+      assert.deepEqual(waits, [5000, 30000]);
     }
   }
+});
+
+test("O-4, B-185: a failed step keeps the error's status and code, so a missing permission still reads as one after the run stops", async () => {
+  const { out } = fixtureBundle();
+  const fake = fakeCloudflare({ deny: /^POST \/accounts\/acc\/r2\/buckets$/ });
+  const r = await run(fake, out);
+  assert.equal(r.error?.isPermission, true);
+  const { deployFailure } = await import("../scripts/onboard.mjs");
+  assert.equal(deployFailure(r.error).code, "permission");
 });

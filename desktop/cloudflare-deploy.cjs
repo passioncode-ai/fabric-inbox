@@ -75,7 +75,7 @@ function compareVersions(a, b) {
 }
 
 class DeployError extends Error {
-  constructor(message, { status = 0, code, network = false } = {}) { super(message); this.status = status; this.code = code; this.network = network; }
+  constructor(message, { status = 0, code, network = false, cause } = {}) { super(message); this.status = status; this.code = code; this.network = network; if (cause) this.cause = cause; }
   // A 403 with its own code (10042: R2 not turned on) is not about the token.
   get isPermission() { return this.status === 401 || this.code === 10000 || this.code === 9109 || (this.status === 403 && !this.code); }
 }
@@ -106,7 +106,9 @@ function client(token, fetchImpl = (input, init) => fetch(input, init)) {
         signal: AbortSignal.timeout(form ? uploadTimeout(form) : 60_000),
       });
     } catch (error) {
-      throw new DeployError(error.name === 'TimeoutError' ? t('Cloudflare did not answer (timed out). Check the connection and continue.') : t('Cloudflare did not answer (network error). Check the connection and continue.'), { network: true });
+      // B-185: what the connection said (ECONNRESET, EPIPE, a TLS error), kept for the log: "network error" alone told nobody why.
+      const cause = String(error.code || error.cause?.code || error.name || 'unknown').slice(0, 60);
+      throw new DeployError(error.name === 'TimeoutError' ? t('Cloudflare did not answer (timed out). Check the connection and continue.') : t('Cloudflare did not answer (network error). Check the connection and continue.'), { network: true, cause });
     }
     if (raw) return response;
     const data = await response.json().catch(() => null);
@@ -161,7 +163,11 @@ async function readBundle(dir, readFile = fs.readFile) {
  * Worker gets the bundle's bindings, `vars`, the account id and the token as a
  * secret; an update keeps the server's DOMAINS and its other secrets.
  */
-async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, manifest, bundleDir, readFile = fs.readFile, attempt, report, vars, allowDowngrade = false }) {
+/** B-185: network errors on the server's upload come in runs; the waits before each try after the first. */
+const UPLOAD_RETRY_MS = [5_000, 30_000];
+const pauseFor = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, manifest, bundleDir, readFile = fs.readFile, attempt, report, vars, allowDowngrade = false, pause = pauseFor }) {
   const a = `/accounts/${accountId}`;
   const assetsJwt = await attempt('files', 'Upload the app', async () => {
     const files = manifest.assets.files;
@@ -259,10 +265,15 @@ async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, mani
       form.set(m.name, new File([bytes], m.name, { type: 'application/javascript+module' }));
     }
     // B-185: the upload is the same form each time (one credential key, one version), so a network error is
-    // tried once more after a pause; a second one stops the run with its reason, as before.
+    // tried again after 5 s and then 30 s (they come in runs: two tries 3 s apart both failed on 0.48.0, a run a
+    // minute later passed); the last one stops the run with its reason, as before.
     for (let tries = 0; ; tries++) {
       try { await c.call(`${a}/workers/scripts/${SCRIPT}`, { method: 'PUT', form, what: t('upload the server (Workers Scripts: Edit)') }); break; }
-      catch (e) { if (tries >= 1 || !e.network) throw e; await new Promise((r) => setTimeout(r, 3000)); }
+      catch (e) {
+        if (tries >= UPLOAD_RETRY_MS.length || !e.network) throw e;
+        console.warn(JSON.stringify({ event: 'server_upload_retry', try: tries + 1, cause: e.cause ?? null }));
+        await pause(UPLOAD_RETRY_MS[tries]);
+      }
     }
     const keyNote = credentialKey ? ' ' + t('It made its key for keeping app passwords; the key stays on your server.') : '';
     report('server', 'Start the server', current ? 'done' : 'done', (current ? t('Updated your server to {version}; your mail and settings are kept.', { version: manifest.version }) : t('Your server {version} is running.', { version: manifest.version })) + keyNote);
@@ -286,7 +297,9 @@ async function deploy(options) {
   const report = (id, label, outcome, detail) => { const s = { id, label, outcome, detail }; steps.push(s); onStep(s); return s; };
   const attempt = async (id, label, fn) => {
     try { return await fn(); }
-    catch (error) { report(id, label, 'failed', error instanceof DeployError ? error.message : t('Unexpected problem: {reason}', { reason: error.message })); throw Object.assign(new DeployError(error.message), { steps }); }
+    catch (error) { report(id, label, 'failed', error instanceof DeployError ? error.message : t('Unexpected problem: {reason}', { reason: error.message })); throw Object.assign(new DeployError(error.message,
+      // Its status, code and cause travel with it: a launcher tells a missing permission or a dropped connection by them (O-4, B-185).
+      error instanceof DeployError ? { status: error.status, code: error.code, network: error.network, cause: error.cause } : {}), { steps }); }
   };
   const manifest = await readBundle(bundleDir, readFile);
 
@@ -398,7 +411,7 @@ async function deploy(options) {
   });
 
   // 6–7. Static files, then the Worker with its settings and the token
-  await uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, manifest, bundleDir, readFile, attempt, report,
+  await uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, manifest, bundleDir, readFile, attempt, report, ...(options.pause ? { pause: options.pause } : {}),
     // B-169: a server under another name routes its addresses and updates itself under that name, never the first server's.
     vars: { POLICY_AUD: aud, TEAM_DOMAIN: `https://${authDomain}`, ...(SCRIPT !== DEFAULT_SCRIPT ? { EMAIL_ROUTING_WORKER: SCRIPT } : {}) },
     allowDowngrade: options.allowDowngrade === true });
