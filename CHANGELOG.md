@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.76.0 (2026-10-27)
+
+- **Check the quality judge against a person.** A daily judge grades the answers reply agents send, but nothing
+  showed how often a person would agree with it. Now a person can grade sent answers on the judge's own checks,
+  without seeing the judge's verdict first, and the server shows how often the two agree on each check. Under 20
+  graded answers a check reads as too few to decide. An agent can record a grade a person gave in a chat, but only
+  with a note of where they gave it (B-189).
+
 ## 0.75.0 (2026-10-27)
 
 - **A second look before a message waits.** When a reply agent was not sure enough to answer and holds a message, it

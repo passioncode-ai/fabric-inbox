@@ -96,6 +96,8 @@ export interface AgentRun {
   limited?: boolean;
   /** B-132: the daily judge's verdict on the answer this run sent (rubric v1); counts leave, the note stays here. */
   judgement?: import("./judge").JudgeVerdict;
+  /** B-189: a person's grade of the answer on the judge's rubric, what the judge is measured against. */
+  personGrade?: import("./calibration").PersonGrade;
   /** B-130: the sender, subject and texts were removed 30 days after the run began; counts stay. */
   redacted?: boolean;
   /**
