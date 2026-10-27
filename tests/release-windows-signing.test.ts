@@ -39,5 +39,9 @@ test("B-190: the PowerShell Gallery is registered when a Windows runner lacks it
   const step = workflow.slice(gallery, workflow.indexOf("# Pass 1", gallery));
   assert.match(step, /if: env\.SIGNING == 'true'/);
   assert.match(step, /Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue\) \{ Write-Host 'PSGallery: present'; exit 0 \}/, "a runner that has it is left alone");
-  assert.match(step, /Register-PSRepository -Default/);
+  assert.match(step, /Register-PSRepository -Default -ErrorAction Stop \} catch/, "a failed registration is caught");
+  // v0.73.0: Register-PSRepository -Default failed inside NuGet; the repository file is set aside and a new process asks again.
+  assert.match(step, /PSRepositories\.xml/);
+  assert.match(step, /pwsh -NoProfile -Command "Import-Module PowerShellGet;/);
+  assert.match(step, /if \(\$LASTEXITCODE -ne 0\) \{ Write-Host 'PSGallery: still missing'; exit 1 \}/, "still missing fails the job");
 });
