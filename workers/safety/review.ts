@@ -48,6 +48,7 @@ export async function reviewHeld(model: LanguageModel, modelName: string, input:
       check: {
         signalsInVisibleText: input.findings.visibleStrong, signalsInHiddenText: input.findings.hiddenSignals,
         lightModelFlagged: input.findings.model,
+        ...(input.findings.lookalikes?.length ? { linksImitating: input.findings.lookalikes.map((l) => ({ host: l.host, resembles: l.resembles, how: l.kind })) } : {}),
       },
     }),
     maxOutputTokens: 400,

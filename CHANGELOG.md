@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.48.0 (2026-10-27)
+
+- **Links to look-alike sites hold a message.** A link to a site that imitates a well-known name, or your own
+  domain, holds the message from your agents: a letter swapped for one that looks the same, a typo, or the name put
+  in front of another domain. The message says which site it imitates, and its links do not open. A review that
+  finds the message safe lets it through.
+
 ## 0.47.0 (2026-10-27)
 
 - **People can unsubscribe from a campaign with one click.** Once a campaign starts, your server makes its own

@@ -17,6 +17,30 @@
     "core-feeds/lookup.ts": {
       "from": "packages/core-feeds/src/lookup.ts",
       "sha256": "6933c9a57ad441d348954fb1b0363930f8f166fba1ab414c62959b1657f32154"
+    },
+    "core-lookalike/check.ts": {
+      "from": "packages/core-lookalike/src/check.ts",
+      "sha256": "4f401948cbb8da771eed1333cd1c855870b71c123ca431f44898cac95c5b0cb9"
+    },
+    "core-lookalike/confusables.ts": {
+      "from": "packages/core-lookalike/src/confusables.ts",
+      "sha256": "509962ce0bdce810f54c195fbfe683f73a92da1f315552cdc32e26f0d63f6701"
+    },
+    "core-lookalike/punycode.ts": {
+      "from": "packages/core-lookalike/src/punycode.ts",
+      "sha256": "1399d5953f77832de4d01b1601129d896eefcd7dd0fb2f9e299f3d353dd82947"
+    },
+    "core-lookalike/suffix.ts": {
+      "from": "packages/core-lookalike/src/suffix.ts",
+      "sha256": "592efa739072cb7b03b708076c0eadaa318d31dc7e0a83bd8f118f3e0fd35983"
+    },
+    "core-lookalike/suffixes.json": {
+      "from": "packages/core-lookalike/src/suffixes.json",
+      "sha256": "e5cc14c27c9a5ebfcdc6e3985dfd0b9812fda473ef06416148ee6e2e2bad2e81"
+    },
+    "core-lookalike/watchlist.ts": {
+      "from": "packages/core-lookalike/src/watchlist.ts",
+      "sha256": "4323c6697780c7dc5fad02cee11ba289261dd4ffe3edf11de7bf00d68f3a62f8"
     }
   }
 }

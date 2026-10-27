@@ -225,3 +225,25 @@ test("B-179: a document's text is checked like hidden text, a file that runs cod
     assert.deepEqual(await call("released"), ["inv"]);
   } finally { await mf.dispose(); }
 });
+
+test("B-180: a link imitating a known or the server's own name holds the message, the review sees what it imitates, and may release it", async () => {
+  const { mf, call } = await fixture({ AI: {}, DOMAINS: "shop.invalid" });
+  try {
+    await call("set", { key: "test:review", value: "phishing" });
+    await call("ingest", { account: CF, event: event("look1", "Check your account.", { html: '<p>Your account is limited. <a href="https://paypa1.com/login">Sign in</a></p>' }) });
+    const held = (await call("of", { keys: [{ accountId: CF.id, messageId: "look1" }] }))[`${CF.id}|look1`];
+    assert.deepEqual([held.state, held.reason], ["held", "Links to a site imitating paypal.com: paypa1.com"]);
+    assert.deepEqual(held.findings.lookalikes, [{ host: "paypa1.com", resembles: "paypal.com", kind: "homograph" }]);
+    assert.match(String(await call("get", { key: "test:reviewed" })), /linksImitating[^}]*paypa1\.com[^}]*paypal\.com/, "the review is told what the link imitates");
+    // The server's own name is watched too; a review that finds it safe lets it through.
+    await call("set", { key: "test:review", value: "safe" });
+    await call("ingest", { account: CF, event: event("look2", "Your order.", { html: '<p><a href="https://shop.invalid.order-status.example/">Track it</a></p>' }) });
+    const own = (await call("of", { keys: [{ accountId: CF.id, messageId: "look2" }] }))[`${CF.id}|look2`];
+    assert.equal(own.state, "released");
+    assert.equal(own.findings.lookalikes?.[0]?.resembles, "shop.invalid");
+    // The real site, and a page under it, is not a lookalike.
+    await call("ingest", { account: CF, event: event("look3", "Receipt.", { html: '<p><a href="https://www.paypal.com/activity">Receipt</a> <a href="https://shop.invalid/orders">Orders</a></p>' }) });
+    const real = (await call("of", { keys: [{ accountId: CF.id, messageId: "look3" }] }))[`${CF.id}|look3`];
+    assert.deepEqual([real.state, real.findings.lookalikes], ["clear", undefined]);
+  } finally { await mf.dispose(); }
+});

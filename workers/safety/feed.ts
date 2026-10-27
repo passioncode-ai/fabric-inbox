@@ -1,4 +1,6 @@
 import { applyUpdate, type FeedSnapshot, type SignedUpdate, type Verifier } from "../../vendor/okolos/core-feeds/apply";
+import { checkLookalike } from "../../vendor/okolos/core-lookalike/check";
+import { DEFAULT_WATCHLIST } from "../../vendor/okolos/core-lookalike/watchlist";
 import { matchUrl } from "../../vendor/okolos/core-feeds/lookup";
 
 /**
@@ -73,6 +75,26 @@ export function phishingLinks(links: string[], feed: FeedSnapshot): PhishingLink
     let host = "";
     try { host = new URL(link).hostname; } catch { continue; }
     if (!out.some((o) => o.host === host)) out.push({ host, entry: hit.entry });
+  }
+  return out;
+}
+
+export interface LookalikeLink { host: string; resembles: string; kind: string }
+
+/**
+ * B-180: the links whose host imitates a name worth impersonating (Okolos's `checkLookalike`: mixed scripts, a
+ * homograph, a typo, a swapped top-level domain, the brand standing in the wrong place), by host. The names are
+ * Okolos's watchlist and the server's own domains; the real site and anything under it never counts.
+ */
+export function lookalikeLinks(links: string[], ownDomains: readonly string[] = []): LookalikeLink[] {
+  const watchlist = [...DEFAULT_WATCHLIST, ...ownDomains.map((d) => d.trim().toLowerCase()).filter(Boolean)];
+  const out: LookalikeLink[] = [];
+  for (const link of links) {
+    let host = "";
+    try { host = new URL(link).hostname.toLowerCase(); } catch { continue; }
+    if (!host || out.some((o) => o.host === host)) continue;
+    const verdict = checkLookalike(host, watchlist);
+    if (verdict) out.push({ host, resembles: verdict.resembles, kind: verdict.kind });
   }
   return out;
 }
