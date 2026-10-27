@@ -366,3 +366,25 @@ test("O-2: an upload has time for its size; other calls keep a minute", () => {
   assert.ok(ms >= 6 * 60_000 && ms <= 8 * 60_000, String(ms));
   assert.equal(deployer.uploadTimeout(new FormData()), 60_000);
 });
+
+test("B-185: a network error on the server's upload is tried once more inside the step; a second one stops the run with the reason", async () => {
+  const { out } = fixtureBundle();
+  for (const failures of [1, 2]) {
+    const fake = fakeCloudflare();
+    let puts = 0;
+    const flaky = async (url: string, init: any) => {
+      if ((init.method ?? "GET") === "PUT" && new URL(url).pathname.endsWith("/workers/scripts/fabric-inbox") && puts++ < failures) throw new TypeError("fetch failed");
+      return fake.fetchImpl(url, init);
+    };
+    const r = await run({ ...fake, fetchImpl: flaky }, out);
+    if (failures === 1) {
+      assert.ifError(r.error);
+      assert.equal(puts, 2, "the upload was sent again once");
+      assert.ok(fake.state.put, "the second try put the server");
+      assert.deepEqual(r.steps.filter((s: any) => s.id === "server").map((s: any) => s.outcome), ["done"]);
+    } else {
+      assert.match(String(r.error?.message), /network error/);
+      assert.equal(puts, 2, "never more than one retry");
+    }
+  }
+});

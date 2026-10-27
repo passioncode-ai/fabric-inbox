@@ -75,7 +75,7 @@ function compareVersions(a, b) {
 }
 
 class DeployError extends Error {
-  constructor(message, { status = 0, code } = {}) { super(message); this.status = status; this.code = code; }
+  constructor(message, { status = 0, code, network = false } = {}) { super(message); this.status = status; this.code = code; this.network = network; }
   // A 403 with its own code (10042: R2 not turned on) is not about the token.
   get isPermission() { return this.status === 401 || this.code === 10000 || this.code === 9109 || (this.status === 403 && !this.code); }
 }
@@ -106,7 +106,7 @@ function client(token, fetchImpl = (input, init) => fetch(input, init)) {
         signal: AbortSignal.timeout(form ? uploadTimeout(form) : 60_000),
       });
     } catch (error) {
-      throw new DeployError(error.name === 'TimeoutError' ? t('Cloudflare did not answer (timed out). Check the connection and continue.') : t('Cloudflare did not answer (network error). Check the connection and continue.'));
+      throw new DeployError(error.name === 'TimeoutError' ? t('Cloudflare did not answer (timed out). Check the connection and continue.') : t('Cloudflare did not answer (network error). Check the connection and continue.'), { network: true });
     }
     if (raw) return response;
     const data = await response.json().catch(() => null);
@@ -258,7 +258,12 @@ async function uploadServer({ c, accountId, script: SCRIPT, bucket: BUCKET, mani
       const bytes = await readFile(path.join(bundleDir, m.file));
       form.set(m.name, new File([bytes], m.name, { type: 'application/javascript+module' }));
     }
-    await c.call(`${a}/workers/scripts/${SCRIPT}`, { method: 'PUT', form, what: t('upload the server (Workers Scripts: Edit)') });
+    // B-185: the upload is the same form each time (one credential key, one version), so a network error is
+    // tried once more after a pause; a second one stops the run with its reason, as before.
+    for (let tries = 0; ; tries++) {
+      try { await c.call(`${a}/workers/scripts/${SCRIPT}`, { method: 'PUT', form, what: t('upload the server (Workers Scripts: Edit)') }); break; }
+      catch (e) { if (tries >= 1 || !e.network) throw e; await new Promise((r) => setTimeout(r, 3000)); }
+    }
     const keyNote = credentialKey ? ' ' + t('It made its key for keeping app passwords; the key stays on your server.') : '';
     report('server', 'Start the server', current ? 'done' : 'done', (current ? t('Updated your server to {version}; your mail and settings are kept.', { version: manifest.version }) : t('Your server {version} is running.', { version: manifest.version })) + keyNote);
   });
