@@ -1,4 +1,5 @@
 import type { Env } from "../types";
+import type { Spent } from "./usage";
 import { readAssignment } from "./definition";
 import { readAllSettings } from "../lib/mailbox-store";
 
@@ -13,6 +14,8 @@ export interface VolumeDay {
   noRun: number;
   /** Messages that went to Spam that day. */
   spam: number;
+  /** B-163: what the agent runs of that day spent on models (null: no model call recorded). */
+  spent: Spent | null;
 }
 
 export interface MailVolume {
@@ -38,7 +41,7 @@ export async function mailVolume(env: Env, days: number, now = Date.now()): Prom
     .map(({ email, settings }) => ({ address: email.toLowerCase(), assignment: readAssignment(settings) }))
     .filter((x): x is { address: string; assignment: { id: string } } => !!x.assignment && x.assignment !== "off");
   const runs = await env.AGENT_REGISTRY.getByName("workspace").runsPerDay(since);
-  const runsOf = new Map(runs.counts.map((r) => [`${r.mailboxId.toLowerCase()} ${r.day}`, r.runs]));
+  const runsOf = new Map(runs.counts.map((r) => [`${r.mailboxId.toLowerCase()} ${r.day}`, r]));
   const dayList = Array.from({ length: span }, (_, i) => new Date(Date.parse(first) + i * DAY).toISOString().slice(0, 10));
   const addresses = await Promise.all(served.map(async ({ address, assignment }) => {
     const received = new Map((await env.MAILBOX.get(env.MAILBOX.idFromName(address)).receivedPerDay(since)).map((r) => [r.day, r]));
@@ -46,9 +49,10 @@ export async function mailVolume(env: Env, days: number, now = Date.now()): Prom
       address, agentId: assignment.id,
       days: dayList.map((day) => {
         const got = received.get(day);
-        const agentRuns = runsOf.get(`${address} ${day}`) ?? 0;
+        const ran = runsOf.get(`${address} ${day}`);
+        const agentRuns = ran?.runs ?? 0;
         const count = got?.received ?? 0;
-        return { day, received: count, agentRuns, noRun: Math.max(count - agentRuns, 0), spam: got?.spam ?? 0 };
+        return { day, received: count, agentRuns, noRun: Math.max(count - agentRuns, 0), spam: got?.spam ?? 0, spent: ran?.spent ?? null };
       }),
     };
   }));

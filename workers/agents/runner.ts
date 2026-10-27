@@ -4,7 +4,7 @@ import { newText } from "../../shared/mail/text";
 import type { SendMailCommand, SendMailResult } from "../../shared/mail/send";
 import { LEGACY_INSTRUCTIONS, callArguments, legacyAgentId, modelSchema, publicOnlyProblem, readAssignment, type AgentVersion, type ToolGrant } from "./definition";
 import { decide, isFollowUpSubject, matchedTopic, type ModelDecision } from "./policy";
-import { MAX_RECEIPTS, type UsageReceipt } from "./usage";
+import { MAX_RECEIPTS, asRole, type UsageReceipt } from "./usage";
 import { bareAddress, parseStoredHeaders, prefilter, replyToAddress, SKIP_TEXT } from "./prefilter";
 import { RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type AwaitingAnswer, type ToolCallRecord } from "./run";
 import { answeringOrder, duplicateReason, electAnswerer, messageKey, type MessageClaim } from "./dedupe";
@@ -746,12 +746,12 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     const senderName = typeof settings?.fromName === "string" && settings.fromName.trim() && settings.fromName.trim().toLowerCase() !== address ? settings.fromName.trim() : "";
     response = await deps.model({ agent, system: systemPrompt(agent, address, tools, passages, senderName, prefetched, !!deps.check), prompt, tools, trace: run.id });
     run.modelCalls = response.calls ? { ...response.calls } : { calls: 1, failed: 0, recovered: 0 };
-    if (response.usage?.length) run.usage = response.usage.slice(0, MAX_RECEIPTS);
+    if (response.usage?.length) run.usage = asRole(response.usage, "writer").slice(0, MAX_RECEIPTS);
   } catch (error) {
     const counted = (error as { calls?: { calls: number; failed: number; recovered: number } }).calls;
     run.modelCalls = counted ? { ...counted } : { calls: 1, failed: 1, recovered: 0 };
     const spent = (error as { usage?: UsageReceipt[] }).usage;
-    if (spent?.length) run.usage = spent.slice(0, MAX_RECEIPTS);
+    if (spent?.length) run.usage = asRole(spent, "writer").slice(0, MAX_RECEIPTS);
     return finish("failed", msg("The model could not answer ({error}); the message is left for the operator", { error: (error as Error).message }), "model");
   }
   // No structured answer and no text: nothing was decided, so the message waits for a person
@@ -890,14 +890,14 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
           record.ok = verdict.approved;
           record.result = `${verdict.model}: ${verdict.approved ? "approved" : "rejected"} — ${verdict.reason}`.slice(0, RESULT_PREVIEW_CHARS);
           run.checkedBy = verdict.model;
-          if (verdict.usage?.length) run.usage = [...(run.usage ?? []), ...verdict.usage].slice(0, MAX_RECEIPTS);
+          if (verdict.usage?.length) run.usage = [...(run.usage ?? []), ...asRole(verdict.usage, "checker")].slice(0, MAX_RECEIPTS);
           if (run.modelCalls) run.modelCalls.calls++;
           if (!verdict.approved) outcome = { action: "draft", reason: msg("The checker did not approve the answer ({reason})", { reason: verdict.reason }) };
         } catch (error) {
           record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
           if (run.modelCalls) { run.modelCalls.calls++; run.modelCalls.failed++; }
           const spent = (error as { usage?: UsageReceipt[] }).usage;
-          if (spent?.length) run.usage = [...(run.usage ?? []), ...spent].slice(0, MAX_RECEIPTS);
+          if (spent?.length) run.usage = [...(run.usage ?? []), ...asRole(spent, "checker")].slice(0, MAX_RECEIPTS);
           outcome = { action: "draft", reason: msg("The answer could not be checked ({error})", { error: (error as Error).message.slice(0, 120) }) };
         } finally {
           record.ms = Date.now() - started;

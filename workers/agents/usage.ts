@@ -12,6 +12,54 @@ export interface UsageReceipt {
   costUsd: number | null;
   /** False when the provider gave no token count (a failed or aborted call). */
   measured: boolean;
+  /** B-163: which part of the run made the call; absent on receipts written before 0.71.0. */
+  role?: "writer" | "checker";
+}
+
+/** B-163: what a set of calls used: tokens summed, cost summed only when every call reported one (else null). */
+export interface Spent {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** USD the provider charged for every call here, or null when one or more reported no charge. */
+  costUsd: number | null;
+  /** False when one or more calls reported no token count, so the tokens are a lower bound. */
+  measured: boolean;
+}
+
+/** B-163: a run's spend, the writer and the checker apart; null parts made no call. */
+export interface RunSpent { writer: Spent | null; checker: Spent | null; total: Spent }
+
+/** Tags each receipt with the part of the run that made it. */
+export const asRole = (receipts: UsageReceipt[], role: "writer" | "checker"): UsageReceipt[] => receipts.map((r) => ({ ...r, role }));
+
+/** Sums receipts; an empty list is null. */
+export function sumReceipts(receipts: UsageReceipt[]): Spent | null {
+  if (!receipts.length) return null;
+  const priced = receipts.every((r) => r.costUsd !== null);
+  return {
+    calls: receipts.length,
+    inputTokens: receipts.reduce((a, r) => a + r.inputTokens, 0),
+    outputTokens: receipts.reduce((a, r) => a + r.outputTokens, 0),
+    costUsd: priced ? Number(receipts.reduce((a, r) => a + (r.costUsd ?? 0), 0).toFixed(8)) : null,
+    measured: receipts.every((r) => r.measured),
+  };
+}
+
+/**
+ * B-163: a run's spend from its receipts. A receipt written before roles were recorded is the checker's
+ * when its model is the run's checker, else the writer's (the checker is always of another vendor).
+ * A run that made model calls but holds no receipts (before 0.29.0) spent an unknown amount: null.
+ */
+export function runSpent(run: { usage?: UsageReceipt[]; checkedBy?: string; modelCalls?: { calls: number } }): RunSpent | null {
+  const receipts = run.usage ?? [];
+  if (!receipts.length) return null;
+  const roleOf = (r: UsageReceipt) => r.role ?? (run.checkedBy && r.model === run.checkedBy ? "checker" : "writer");
+  return {
+    writer: sumReceipts(receipts.filter((r) => roleOf(r) === "writer")),
+    checker: sumReceipts(receipts.filter((r) => roleOf(r) === "checker")),
+    total: sumReceipts(receipts)!,
+  };
 }
 
 /** At most this many receipts on one run (writer, fallback, final turn, checkers). */
