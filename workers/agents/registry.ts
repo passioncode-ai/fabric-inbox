@@ -1,3 +1,4 @@
+import { answerCitedEvent, causeOf, supportDiagnosedEvent } from "./learning-events";
 import { abandonedEvent, EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, runEvent, waitingEvent, type AgentEvent } from "./events";
 import { agentAccounts, statesOf } from "../lib/agent-status";
 import type { ThreadFacts } from "../../shared/mail/agent-state";
@@ -613,6 +614,15 @@ export class AgentRegistryDO extends DurableObject<Env> {
       // B-118: a run that just ended (its status changed to a final one) appends one event.
       const event = before !== run.status ? runEvent(run) : null;
       if (event) this.appendEvent(run.id, event);
+      // B-162: what a sent answer cited, once per run, and why a message was not answered, once per run and cause
+      // (a held message retried every 12 hours says it again only when the cause changes).
+      if (before !== run.status) {
+        const cited = answerCitedEvent(run);
+        if (cited && !this.rows("SELECT 1 FROM agent_events WHERE run_id = ? LIMIT 1", `cited-${run.id}`).length) this.appendEvent(`cited-${run.id}`, cited);
+        const cause = causeOf(run);
+        const key = `diagnosed-${run.id}-${cause}`;
+        if (cause && !this.rows("SELECT 1 FROM agent_events WHERE run_id = ? LIMIT 1", key).length) this.appendEvent(key, supportDiagnosedEvent(run, cause));
+      }
     });
   }
 

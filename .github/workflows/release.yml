@@ -267,14 +267,22 @@ jobs:
       # B-190: some Windows runners (seen on arm64 builds: v0.47.0, v0.50.0, v0.53.0, v0.57.0) come without the
       # PSGallery repository, so the signing action's Install-Module fails ("Unable to find repository 'PSGallery'")
       # and the release stops. Register it when it is missing; a runner that has it is left as it is.
+      # v0.73.0 (windows x64, 2026-10-27): on one runner `Register-PSRepository -Default` itself failed inside NuGet
+      # ("Missing option value for: '-source'"). PowerShellGet registers PSGallery on its own when its repository file is
+      # absent, so that file is set aside and a fresh process asked again.
       - name: The PowerShell Gallery the signing module installs from
         if: env.SIGNING == 'true'
         shell: pwsh
         run: |
           if (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue) { Write-Host 'PSGallery: present'; exit 0 }
           Write-Host 'PSGallery: missing, registering it'
-          Register-PSRepository -Default
-          Get-PSRepository -Name PSGallery -ErrorAction Stop | Out-Null
+          try { Register-PSRepository -Default -ErrorAction Stop } catch { Write-Host "PSGallery: Register-PSRepository -Default failed: $($_.Exception.Message)" }
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+            $file = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\PowerShell\PowerShellGet\PSRepositories.xml'
+            if (Test-Path $file) { Move-Item $file "$file.bak" -Force; Write-Host 'PSGallery: repository file set aside' }
+            pwsh -NoProfile -Command "Import-Module PowerShellGet; if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) { Register-PSRepository -Default }; Get-PSRepository -Name PSGallery -ErrorAction Stop | Out-Null"
+            if ($LASTEXITCODE -ne 0) { Write-Host 'PSGallery: still missing'; exit 1 }
+          }
           Write-Host 'PSGallery: registered'
       # Pass 1: the app's own executables, DLLs and Node modules, before the installer packs them,
       # nested ones included: node-pty's pty.node, conpty.node, winpty.dll and winpty-agent.exe live in

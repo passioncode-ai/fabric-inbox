@@ -55,14 +55,14 @@ test("evidence: an abstained answer or coverage below 0.6 rests on nothing; a co
   assert.equal(evidenceOf("facts", JSON.stringify({ abstained: false, results: [{ id: "fact:a", coverage: 0.4 }, { id: "fact:b", coverage: 0.5 }] })), null);
   assert.deepEqual(evidenceOf("facts", JSON.stringify({ abstained: false, trace: "t-9", revision: { data: "x" },
     results: [{ id: "fact:a", coverage: 0.4 }, { id: "fact:b", coverage: 0.8 }] })),
-    { tool: "facts", requestId: "t-9", items: ["fact:b"], revision: '{"data":"x"}' });
+    { tool: "facts", requestId: "t-9", items: ["fact:b"], coverage: [0.8], revision: '{"data":"x"}' });
 });
 
 test("evidence: the data agent's answer flag decides, and no threshold of this server's own applies (VoC 2026-10-27)", () => {
   // A low coverage marked answer: true is the data agent's answer; a high one marked false is a weak candidate.
   assert.deepEqual(evidenceOf("facts", JSON.stringify({ abstained: false, coverage: 0.4, requestId: "r",
     items: [{ id: "fact:a", coverage: 0.45, answer: true }, { id: "fact:b", coverage: 0.9, answer: false }] })),
-    { tool: "facts", requestId: "r", items: ["fact:a"] });
+    { tool: "facts", requestId: "r", items: ["fact:a"], coverage: [0.45] });
   assert.equal(evidenceOf("facts", JSON.stringify({ abstained: false, items: [{ id: "fact:b", coverage: 0.9, answer: false }] })), null);
   // In a flagged answer an item without the flag is not vouched for.
   assert.equal(evidenceOf("facts", JSON.stringify({ items: [{ id: "x", coverage: 0.9 }, { id: "y", answer: false }] })), null);

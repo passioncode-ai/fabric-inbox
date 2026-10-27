@@ -5,6 +5,17 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.74.0 (2026-10-27)
+
+- **The shared learning loop hears from email too.** Each answer a reply agent sends from its knowledge now goes on
+  the server's events feed as `answer.cited`. It names the knowledge items the answer used and how much of the
+  question each one covered. A message an agent did not answer goes there as `support.diagnosed`, with the reason:
+  the knowledge has no answer, the answer was not sure or not approved, or only a person can act. Neither event
+  carries the message or the reply, and a key limited to some mailboxes sees only its own (B-162).
+- **One answer per message, even across a connected account.** Say a message goes to a Gmail account with a reply
+  agent and is copied to one of your Cloudflare addresses. It is answered once: the address now waits for the account
+  listed before it, as the account already waited for the address (B-171).
+
 ## 0.73.0 (2026-10-27)
 
 - **A key for one mailbox also sees what its reply agent did.** An agent key limited to some mailboxes can now read

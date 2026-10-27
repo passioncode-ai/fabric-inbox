@@ -221,7 +221,8 @@ export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubje
       // The cursor stays the page's own, so a reader moves on past the events that are not its own.
       const events = (data.events ?? []).filter((e) => {
         const value = e.data?.value ?? {};
-        if (String(e.kind).startsWith("agent.")) return allowedLower.has(accountOfRun(value.address));
+        // B-162: what an answer cited and why a message went unanswered belong to the run's address, like agent.*.
+        if (String(e.kind).startsWith("agent.") || e.kind === "answer.cited" || e.kind === "support.diagnosed") return allowedLower.has(accountOfRun(value.address));
         if (String(e.kind).startsWith("knowledge.")) return Array.isArray(value.addresses) && value.addresses.some((a) => emails.has(String(a).toLowerCase()));
         return false;
       });
