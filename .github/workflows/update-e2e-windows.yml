@@ -1,0 +1,76 @@
+# B-108 (PL-06, LC-16): an earlier published release, installed per user as a person installs it, finds,
+# downloads and verifies a later one, and the verified installer waits under %LOCALAPPDATA%\Fabric Inbox\
+# pending-update, never in the roaming profile (scripts/update-e2e.mjs --until ready). The run stops there:
+# on a runner nothing quits the app the way a person does (it stays in the tray), so the installer that runs
+# at quit is not exercised here. Called by release.yml after a release is published; run by hand to check
+# two published releases.
+name: update-e2e-windows
+
+on:
+  workflow_call:
+    inputs:
+      to:
+        description: "The release tag to update to (vX.Y.Z)"
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      to:
+        description: "The release tag to update to (vX.Y.Z); none: the latest published"
+        type: string
+        default: ""
+      from:
+        description: "The release tag installed first; none: the published release before `to`"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, arch: x64 }
+          - { runner: windows-11-arm, arch: arm64 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: The two releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TO: ${{ inputs.to }}
+          FROM: ${{ inputs.from }}
+        run: |
+          tags="$(gh release list -R "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 20 --json tagName --jq '.[].tagName')"
+          to="${TO:-$(echo "$tags" | head -1)}"
+          from="${FROM:-$(echo "$tags" | grep -vx "$to" | head -1)}"
+          test -n "$to" && test -n "$from" && test "$to" != "$from"
+          echo "updating from $from to $to"
+          echo "VERSION=${to#v}" >> "$GITHUB_ENV"
+          gh release download "$from" -R "$GITHUB_REPOSITORY" -D old -p "Fabric-Inbox-*-win-${{ matrix.arch }}-setup.exe"
+      - name: Install the earlier release per user, silently
+        run: |
+          set +e; timeout 600 "$(ls old/*-setup.exe)" //S; code=$?; set -e
+          echo "installer exit $code"
+          for i in $(seq 1 30); do exe="$(find "$LOCALAPPDATA/Programs" -name 'Fabric Inbox.exe' 2>/dev/null | head -1)"; [ -n "$exe" ] && break; sleep 2; done
+          test -n "$exe" && echo "EXE=$exe" >> "$GITHUB_ENV"
+      - name: It readies the later release under %LOCALAPPDATA%
+        run: |
+          node scripts/update-e2e.mjs --exe "$EXE" --to "$VERSION" --until ready --timeout 600 \
+            --staged "$LOCALAPPDATA/Fabric Inbox/pending-update" --not-staged "$APPDATA/Fabric Inbox/pending-update"
+      - name: Uninstall
+        if: always() && env.EXE != ''
+        run: |
+          "$(dirname "$EXE")/Uninstall Fabric Inbox.exe" //S || true

@@ -656,6 +656,17 @@ jobs:
           dbus-run-session -- bash -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null && \
             xvfb-run -a node scripts/update-e2e.mjs --exe "$(ls old/*.AppImage)" --to "$VERSION" --timeout 600'
 
+  # B-108: the previous published release, installed per user on Windows x64 and arm64, readies this one and keeps
+  # the verified installer under %LOCALAPPDATA% (.github/workflows/update-e2e-windows.yml).
+  update-e2e-windows:
+    needs: [gate, publish]
+    if: ${{ github.event_name == 'push' || inputs.publish }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/update-e2e-windows.yml
+    with:
+      to: v${{ needs.gate.outputs.version }}
+
   update-check-platforms:
     needs: [gate, publish]
     runs-on: ${{ matrix.runner }}
