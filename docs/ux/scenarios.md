@@ -95,7 +95,7 @@
 | SCN-091 | Watch, start and stop my campaigns in the app | Put an agent on a project address | P-01 | ST-008, FLW-08, SCR-18 | draft | tests/campaigns-section.test.ts |
 | SCN-092 | Add an organization to the app | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
 | SCN-093 | Switch between my space and an organization | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
-| SCN-094 | Attach an account to an organization | Connect an account | P-01 | ST-001, FLW-01 | draft | — |
+| SCN-094 | Move an address to another server I hold | Connect an account | P-01 | ST-001, FLW-01 | draft | — |
 | SCN-095 | Sign in to an organization's server with my work address | Resume and manage preferences | P-02 | ST-007, FLW-07 | draft | — |
 | SCN-096 | Give a person a level on a mailbox | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-17 | draft | — |
 
@@ -1926,25 +1926,35 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Product:** unobserved
 - **Today:** Built in 0.64.0 (B-158 M1 step 2). New-mail notifications still read only the server shown.
 
-### SCN-094: Attach an account to an organization
+### SCN-094: Move an address to another server I hold
 - **Persona:** P-01
 - **Feature:** Connect an account
-- **Traces:** ST-001, FLW-01; B-158 (report, target flow: one or several accounts per organization); [the plan](../app-store/tasks/2026-10-27-organizations.md) D3, D7
-- **Entry point:** SCR-11 (Settings → Setup) in the organization's context
-- **Preconditions:** I administer the organization. The account (a Cloudflare account, or Gmail, Outlook, IMAP) is mine to connect; for one already in my own space, its mailboxes have mail and agents.
+- **Traces:** ST-001, FLW-01; B-158 (report, target flow: one or several accounts per organization); [the plan](../app-store/tasks/2026-10-27-organizations.md) D3, D7, steps 3a to 3d
+- **Entry point:** the Account menu, Move an Address to Another Server… (shown while the app holds two or more servers)
+- **Preconditions:** I administer both servers (my own and an organization's, or two organizations'), and both are in one Cloudflare account. The address is a Cloudflare mailbox on the server shown. A Gmail, Outlook or IMAP account is not moved: I connect it again on the other server (SCN-002, SCN-051).
 - **Steps:**
-  1. Connect a new account in the organization -> as in SCN-002 and SCN-051, on the organization's server.
-  2. Or move one from my space: choose it -> the app says what moves (mailboxes, mail, agents, rules) and that my space keeps nothing of it.
-  3. Confirm -> the mail is exported, imported on the organization's server and counted; the account is listed there.
-- **Expected result:** The account's mail and agents are on the organization's server, the counts match, and my space no longer shows it.
-- **Alt paths:** Counts that do not match stop the move with both numbers; my space keeps the account until I try again or cancel.
-- **UI elements:** none yet (M1).
-- **States covered:** loading, error, success
-- **Errors & recovery:** A move cut midway is resumed or undone from where it stopped; mail is never in neither place.
+  1. Choose Move an Address to Another Server… -> the app lists the Cloudflare addresses of the server shown and the other servers it holds; a server in another Cloudflare account is listed as not available, with that reason.
+  2. Choose an address and the server it goes to -> the app reads the address and says what moves: its messages and attachments by count, its folders, rules, agent with its knowledge, and its category labels; that its mail will arrive at the other server from then on; and that this server keeps its copy, sending nothing, until I remove it here myself.
+  3. Confirm -> Copying: messages and attachments counted up against the totals, then rules, the agent, its knowledge and labels; each refused rule or skipped label is listed with its reason and does not stop the move.
+  4. The copy matches the counts -> Holding: this server's copy stops sending and its agent stops; the app waits while a send or new mail is still being handled here.
+  5. Nothing is in flight -> Routing: the address's mail is pointed at the other server, then Testing: a test message is sent and the app waits for it to arrive there.
+  6. It arrives -> Done: the address is listed on the other server with its mail, and the app offers to choose its agent there (the copied one is preselected) and to show that server.
+- **Expected result:** The address's mail arrives at the other server, which has every message and attachment this server counted, its rules, agent, knowledge and the labels its categories share; this server keeps a held copy and sends nothing from it.
+- **Alt paths:**
+  - Counts that do not match after the copy: the move stops before Holding with both numbers; Try again copies what is missing (nothing is copied twice), Cancel leaves both servers as they were apart from the copy.
+  - Sends or new mail still being handled after 10 minutes of Holding: the app says what it waits for; Keep waiting or Cancel (the hold is lifted).
+  - The test message does not arrive within 3 minutes: Put It Back points the mail at this server again and lifts the hold; Wait Longer keeps testing.
+  - The app quits or the Mac sleeps midway: next time the window says where the move stopped and continues from that step; nothing already copied or routed is done again.
+- **UI elements:** none yet (step 3d): the move window (address and server pickers, the summary, the progress with counts per stage, Cancel, Try Again, Put It Back, Wait Longer, Choose Its Agent).
+- **States covered:** idle, loading, empty, error, success
+- **Errors & recovery:**
+  - The address is paused or being renamed, or its mail does not go to this server's Worker: refused before anything is copied, with the reason.
+  - The other server lacks an administrator's sign-in, or answers with an error: the step that failed is named, and Try Again continues from it.
+  - Put It Back is refused when someone changed the address's Cloudflare rule since the move: the rule is left as it is and the app says so; mail is never in neither place, because this server's copy stays until the mail is confirmed at the other.
 - **Status:** draft
-- **Coverage:** none
+- **Coverage:** server side only: `workers/routes/transfer.ts`, `workers/routing/domains.ts` (`pointAddressHere`, `pointAddressBack`), `workers/durableObject/index.ts` (`sendMail` hold), tools `export_mailbox`, `import_mailbox`, `move_address`; `tests/mailbox-transfer-workerd.test.ts`, `tests/mailbox-transfer-setup-workerd.test.ts`, `tests/domains.test.ts`
 - **Product:** unobserved
-- **Today:** Step 3a built in 0.65.0: an agent with an administrator's key on both servers moves a Cloudflare mailbox's mail, files and settings (`export_mailbox`, `import_mailbox`) and checks the copy; since 0.66.0 also its rules, its agent and that agent's knowledge, and since 0.67.0 its category labels and spam checks (step 3b), and since 0.68.0 its mail (`move_address`, step 3c); the app's own screen is not built (B-158 M1 step 3d). A Gmail, Outlook or IMAP account is connected again on the other server.
+- **Today:** An agent with an administrator's key on both servers can do every step (0.65.0 to 0.68.0); the app's move window is not built (B-158 M1 step 3d). A Gmail, Outlook or IMAP account is connected again on the other server.
 
 ### SCN-095: Sign in to an organization's server with my work address
 - **Persona:** P-02
