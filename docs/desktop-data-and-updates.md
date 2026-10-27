@@ -39,8 +39,9 @@ existing server, keeps its storage and its sign-in rules, and only updates the c
 in. Every connection above is on the server.
 
 What the app itself never deletes on its own: a start with no server known keeps every server
-partition (it may be the one about to be entered again); a changed server address clears the old
-server's storage only after the new server answers ([AGENTS.md → Lifecycle](../AGENTS.md#lifecycle)).
+partition (it may be the one about to be entered again); a changed server address keeps the old
+server listed and signed in (B-158), and only **Forget Server** in the Account menu clears its storage
+([AGENTS.md → Lifecycle](../AGENTS.md#lifecycle)).
 
 ## Updates
 

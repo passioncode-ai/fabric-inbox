@@ -12,6 +12,7 @@ const { menuTemplate } = require('./menu.cjs');
 const { contextMenuTemplate } = require('./context-menu.cjs');
 const newMail = require('./new-mail.cjs');
 const addressWait = require('./address-wait.cjs');
+const serverList = require('./servers.cjs');
 const serverUpdates = require('./server-update.cjs');
 const usage = require('./analytics.cjs');
 const backup = require('./backup.cjs');
@@ -75,6 +76,9 @@ let mailPartition = null;
 let retireAfterLoad = null;
 const configPath = () => path.join(app.getPath('userData'), 'server.json');
 const pendingSetupPath = () => path.join(app.getPath('userData'), 'pending-setup.json');
+// B-158 M1: every server the app holds (desktop/servers.cjs); `config` is the one the window shows.
+const serversPath = () => path.join(app.getPath('userData'), 'servers.json');
+let servers = [];
 // Setups shipped with the app (desktop/setups/*.json) and one opened from a file.
 let bundledSetups = [];
 let openedSetup = null;
@@ -190,9 +194,54 @@ async function retirePartition(partition) {
   if (!partition || partition === mailPartition) return;
   await profile.retirePartition({ fs, userData: app.getPath('userData'), partition, session: session.fromPartition(partition), removeDirectory: false });
 }
+/** Reads servers.json (a missing or broken one is an empty list) and makes sure the server shown is in it. */
+async function readServers() {
+  try { servers = serverList.readList(JSON.parse(await fs.readFile(serversPath(), 'utf8')), policy.validateConfig); }
+  catch { servers = []; }
+  if (config && !servers.some((s) => s.origin === config.origin)) await saveServers(serverList.remember(servers, config));
+}
+async function saveServers(next) {
+  servers = next;
+  try { await writePrivate(serversPath(), { servers }); } catch { logEvent({ event: 'servers_saved', outcome: 'failed' }); }
+}
+const partitionsOf = (list) => list.map((s) => policy.partitionFor(s));
+/** After the person signed in to `snapshot`: its context, from GET /api/server, kept with it (B-158, D2). */
+async function learnContext(snapshot) {
+  try {
+    const response = await session.fromPartition(policy.partitionFor(snapshot)).fetch(new URL('/api/server', snapshot.origin).href,
+      { redirect: 'manual', credentials: 'include', headers: { Accept: 'application/json' } });
+    if (response.status !== 200) return;
+    const context = (await response.json())?.context;
+    const known = servers.find((s) => s.origin === snapshot.origin);
+    if (typeof context !== 'string' || (known && known.context === context)) return;
+    await saveServers(serverList.remember(servers, snapshot, context));
+    installMenu();
+  } catch { /* the menu keeps the host alone; the next sign-in tries again */ }
+}
+/** Shows another remembered server: its own sign-in is kept, so nothing is entered again. */
+async function switchServer(origin) {
+  const target = servers.find((s) => s.origin === origin);
+  if (!target || (config && config.origin === origin)) { if (mailWindow && !mailWindow.isDestroyed()) mailWindow.focus(); return; }
+  // A console works for one server with that server's key: it stops before the window shows another.
+  if (agentConsole && agentConsole.running() && consoleFor !== origin) await agentConsole.stop({ wait: true, timeoutMs: 5000 });
+  await saveConfig({ origin: target.origin, accessOrigin: target.accessOrigin });
+  logEvent({ event: 'server_switched', context: target.context || 'unknown' });
+  loadMail();
+}
+/** Forgets a server that is not shown now, and clears what this Mac kept of it (its sign-in, cache and storage). */
+async function forgetServer(origin) {
+  if (!servers.some((s) => s.origin === origin) || (config && config.origin === origin)) return;
+  const partition = policy.partitionFor({ origin });
+  await saveServers(serverList.forget(servers, origin));
+  installMenu();
+  if (consoleFor === origin && agentConsole && agentConsole.running()) await agentConsole.stop({ wait: true, timeoutMs: 5000 });
+  await retirePartition(partition);
+  logEvent({ event: 'server_forgotten' });
+}
 async function saveConfig(next) {
   await writePrivate(configPath(), next);
   config = next;
+  await saveServers(serverList.remember(servers, next));
   if (mailNotifier) mailNotifier.reset();
   await backup.saveBackup({ fs, appData: app.getPath('appData'), config: next, log: logEvent });
 }
@@ -282,7 +331,8 @@ function loadMail() {
   mailPartition = partition;
   // The old server's window is destroyed above; its storage goes once this server has answered
   // (F3: never left behind). Coming back to it before then cancels that.
-  if (previousPartition && previousPartition !== partition) retireAfterLoad = previousPartition;
+  // A server the app still remembers keeps its storage: switching back finds it signed in (B-158).
+  if (previousPartition && previousPartition !== partition && !partitionsOf(servers).includes(previousPartition)) retireAfterLoad = previousPartition;
   if (retireAfterLoad === partition) retireAfterLoad = null;
   const ses = session.fromPartition(partition);
   rejectPermissions(ses, snapshot.origin);
@@ -376,6 +426,7 @@ function loadMail() {
     }
     if (current.origin === snapshot.origin) void countActive();
     if (current.origin === snapshot.origin && serverUpdater) void serverUpdater.onSignedIn(snapshot.origin);
+    if (current.origin === snapshot.origin) void learnContext(snapshot);
     if (!setupOpened && current.origin === snapshot.origin && current.pathname !== SETUP_PAGE && await readPendingSetup()) {
       setupOpened = true;
       void win.loadURL(new URL(`${SETUP_PAGE}?source=desktop`, snapshot.origin).href).catch(failure);
@@ -1075,6 +1126,11 @@ function installMenu() {
     serverUpdate: serverUpdater ? serverUpdater.menuItem(() => void serverUpdater.update({ manual: true })) : null,
     newMail: { checked: !!(mailNotifier && mailNotifier.enabled()), enabled: !!mailNotifier, click: (item) => { if (mailNotifier) void mailNotifier.setEnabled(item.checked).then(installMenu); } },
     openSettings, showServer: () => showSetup(), showCloudflare: () => showSetup('', 'cloudflare'),
+    servers: {
+      items: servers.map((s) => ({ label: serverList.labelFor(s, t), checked: !!config && s.origin === config.origin, click: () => void switchServer(s.origin) })),
+      add: () => showSetup(),
+      forget: servers.filter((s) => !config || s.origin !== config.origin).map((s) => ({ label: serverList.labelFor(s, t), click: () => void forgetServer(s.origin) })),
+    },
     connectGmail: () => { if (config) void openExternal(policy.gmailConnectURL(config), true); else showSetup(t('Set the server address before connecting Gmail.')); },
     retry: retryMail,
     console: consoleAvailable() ? openConsole : null,
@@ -1181,7 +1237,10 @@ if (ownsInstance) app.whenReady().then(async () => {
   // server.json is kept and nothing is swept: the person is about to enter that server again.
   // With no server known at all, no partition is an orphan yet: it may be the server the person is
   // about to enter again, with their drafts in it.
-  if (await readConfig()) await profile.sweepProfile({ fs, userData: app.getPath('userData'), keepPartition: config ? policy.partitionFor(config) : null, keepPartitions: !config,
+  const configRead = await readConfig();
+  await readServers();
+  // The other servers the app remembers keep their sign-in (B-158).
+  if (configRead) await profile.sweepProfile({ fs, userData: app.getPath('userData'), keepPartition: config ? policy.partitionFor(config) : null, keepAlso: partitionsOf(servers), keepPartitions: !config,
     debugging: app.commandLine.hasSwitch('remote-debugging-port'), log: logEvent });
   startServerUpdates();
   config ? loadMail() : showSetup(notice);

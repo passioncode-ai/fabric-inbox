@@ -1891,41 +1891,40 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Persona:** P-01
 - **Feature:** Resume and manage preferences
 - **Traces:** ST-007, FLW-07; B-158 (operator 2026-10-25, Q1: many organizations, separated from the start); [the plan](../app-store/tasks/2026-10-27-organizations.md) D1, D2
-- **Entry point:** the app menu (Account → Add an Organization…)
+- **Entry point:** the Account menu (Add Another Server…)
 - **Preconditions:** My own server is set up. I belong to an organization whose server exists (its administrator set it up, or I did with the runbook).
 - **Steps:**
-  1. Choose Add an Organization… -> the app asks for the organization's server address.
-  2. Enter it -> the app reads the server's context (`org:<id>`) and name; a server that is `personal`, or one already in the app, is refused with why.
-  3. Sign in to it -> it is listed beside my own server under its name.
-- **Expected result:** The app holds my space and the organization, each on its own server, and nothing of one shows in the other.
-- **Alt paths:** The address does not answer: the ordinary Retry; the server answers but is older than contexts: it is added as `personal` only if I own it, otherwise refused with "update the server first".
-- **UI elements:** none yet (a dialog and the server list come with M1).
+  1. Choose Add Another Server… -> the server address form.
+  2. Enter the organization's server address and continue -> the window shows it and asks me to sign in; my own server stays in the list, signed in.
+  3. Sign in -> the app reads the server's context; an organization's server is listed as "<host> (organization)".
+- **Expected result:** The Account menu lists my own server and the organization's, each with its own sign-in, and nothing of one shows in the other.
+- **Alt paths:** An address already listed: the window shows that server. An address that does not answer: the ordinary Retry; it stays listed until I forget it.
+- **UI elements:** Account menu (the servers, Add Another Server…, Forget Server); the server address form.
 - **States covered:** loading, error, success
-- **Errors & recovery:** A failed sign-in leaves the organization listed and signed out; Remove takes it off the list and clears its storage on this Mac.
+- **Errors & recovery:** A server added by mistake: Forget Server takes it off the list and clears what this Mac kept of it.
 - **Status:** draft
-- **Coverage:** none
+- **Coverage:** `desktop/servers.cjs`, `desktop/main.cjs` (`readServers`, `learnContext`, `forgetServer`), `desktop/menu.cjs`, `tests/desktop-servers.test.ts`, `tests/desktop-profile.test.ts`
 - **Product:** unobserved
-- **Today:** Not built (B-158 M1). The app holds one server.
+- **Today:** Built in 0.64.0 (B-158 M1 step 2): the list, the context learned after sign-in, Forget Server. The organization's name (not only its host) comes with sign-in through the organization service (M2).
 
 ### SCN-093: Switch between my space and an organization
 - **Persona:** P-01
 - **Feature:** Resume and manage preferences
 - **Traces:** ST-007, FLW-07; B-158; [the plan](../app-store/tasks/2026-10-27-organizations.md) D1
-- **Entry point:** the window's title bar (the context's name) and the app menu
+- **Entry point:** the Account menu
 - **Preconditions:** The app holds my own server and at least one organization (SCN-092).
 - **Steps:**
-  1. Choose the organization -> the window shows its mail, people and agents; the title names it.
-  2. Choose My mail -> my own server again, where I left it.
-  3. A new-mail notification names which one it came from; clicking it opens that one.
-- **Expected result:** One window at a time shows one context; switching never mixes mail, search, agents or keys of two contexts.
-- **Alt paths:** A context I am signed out of opens at its sign-in page.
-- **UI elements:** none yet (M1).
+  1. Choose the organization's server in the Account menu -> the window shows its mail, people and agents, still signed in; the menu ticks it.
+  2. Choose my own server -> my own mail again, still signed in.
+- **Expected result:** One window at a time shows one server; switching never mixes mail, search, agents or keys of two servers, and never asks me to sign in again.
+- **Alt paths:** A server whose sign-in lapsed opens at its sign-in page. A running agent console stops before the window shows another server (its key is that server's).
+- **UI elements:** Account menu (the servers).
 - **States covered:** loading, success
-- **Errors & recovery:** A context whose server does not answer shows the ordinary Retry for that one; the others keep working.
+- **Errors & recovery:** A server that does not answer shows the ordinary Retry; the others stay listed and signed in.
 - **Status:** draft
-- **Coverage:** none
+- **Coverage:** `desktop/main.cjs` (`switchServer`, `loadMail`), `desktop/menu.cjs`, `tests/desktop-servers.test.ts`, `tests/desktop-profile.test.ts`
 - **Product:** unobserved
-- **Today:** Not built (B-158 M1).
+- **Today:** Built in 0.64.0 (B-158 M1 step 2). New-mail notifications still read only the server shown.
 
 ### SCN-094: Attach an account to an organization
 - **Persona:** P-01
