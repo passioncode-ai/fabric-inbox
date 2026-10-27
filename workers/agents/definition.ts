@@ -134,7 +134,7 @@ export const ReplyPolicySchema = z.object({
    * words separated by "|" (any of them); groups joined by " + " must all match. Case does not matter.
    */
   draftTopics: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
-  /** Send only when a granted tool gave a confident answer in this run (not abstained, coverage 0.6 or more). */
+  /** Send only when a granted tool gave a confident answer in this run (not abstained; an item the data agent marks `answer: true`, or for a tool without that flag, coverage 0.6 or more). */
   requireEvidence: z.boolean().default(false),
   /**
    * Auto mode, every message answered: an answer that would wait for a person for what it says (no

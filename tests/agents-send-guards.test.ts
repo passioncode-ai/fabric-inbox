@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { decide, isFollowUpSubject, matchedTopic, type ModelDecision } from "../workers/agents/policy";
-import { evidenceOf } from "../workers/agents/runner";
+import { abstainedOutput, evidenceOf } from "../workers/agents/runner";
 import { ReplyPolicySchema } from "../workers/agents/definition";
 
 const send: ModelDecision = { decision: "send", intent: "how-to", grounded: true, body: "Do this.", reason: "" };
@@ -56,6 +56,21 @@ test("evidence: an abstained answer or coverage below 0.6 rests on nothing; a co
   assert.deepEqual(evidenceOf("facts", JSON.stringify({ abstained: false, trace: "t-9", revision: { data: "x" },
     results: [{ id: "fact:a", coverage: 0.4 }, { id: "fact:b", coverage: 0.8 }] })),
     { tool: "facts", requestId: "t-9", items: ["fact:b"], revision: '{"data":"x"}' });
+});
+
+test("evidence: the data agent's answer flag decides, and no threshold of this server's own applies (VoC 2026-10-27)", () => {
+  // A low coverage marked answer: true is the data agent's answer; a high one marked false is a weak candidate.
+  assert.deepEqual(evidenceOf("facts", JSON.stringify({ abstained: false, coverage: 0.4, requestId: "r",
+    items: [{ id: "fact:a", coverage: 0.45, answer: true }, { id: "fact:b", coverage: 0.9, answer: false }] })),
+    { tool: "facts", requestId: "r", items: ["fact:a"] });
+  assert.equal(evidenceOf("facts", JSON.stringify({ abstained: false, items: [{ id: "fact:b", coverage: 0.9, answer: false }] })), null);
+  // In a flagged answer an item without the flag is not vouched for.
+  assert.equal(evidenceOf("facts", JSON.stringify({ items: [{ id: "x", coverage: 0.9 }, { id: "y", answer: false }] })), null);
+  // Not abstained, but nothing marked answer: shown as candidates, never as facts.
+  assert.equal(abstainedOutput(JSON.stringify({ abstained: false, items: [{ id: "a", answer: false }] })), true);
+  assert.equal(abstainedOutput(JSON.stringify({ items: [{ id: "a", answer: true }, { id: "b", answer: false }] })), false);
+  assert.equal(abstainedOutput(JSON.stringify({ items: [{ id: "a", coverage: 0.2 }] })), false, "no flag: left to the coverage bar, as before");
+  assert.equal(abstainedOutput("plain"), false);
 });
 
 test("older agents keep working: the new policy fields default off", () => {
