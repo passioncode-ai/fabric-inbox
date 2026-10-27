@@ -191,6 +191,25 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-10-27 (0.51.0 to 0.53.0: B-154 done; the reply agents' audit).**
+- **0.51.0** (PR #310, B-154 step 3): `save_member`, `remove_member`, `create_agent_key`, `revoke_agent_key`, each always through the owner's approval. Live: the owner's server lists 136 tools with all four.
+- **0.52.0** (PR #311, B-154 step 4): the well-known document declares every action with its tool and gate (81 actions; `relayed`, `human`, `none`), checked against the contract's schema and FAC-SEM-142. B-154 is done for this server; the contract's owner was told on the board that answering approvals stays off the agent surface.
+- **0.53.0** (PR #312): three findings of a peer's audit of the reply agents, each checked against the code.
+  - The judge leaves out hand-off templates and safe replies.
+  - The checker reads the tool results before the operator's instructions (the 16,000-character cut had dropped them).
+  - The knowledge is asked only what the sender wrote now (`newText`).
+  - The audit's other findings are B-186 to B-189.
+
+Full suite on each: 1725, 1726 and 1726 tests, 0 failed. Both servers on 0.53.0 from `8633765`, receipts `linked`. Tags `v0.51.0` to `v0.53.0`.
+
+**Releases.**
+- v0.51.0 was published.
+- v0.47.0 and v0.50.0 stay unpublished. Their first runs failed at Windows signing because the runner had no `PSGallery` repository (a runner fault). Their reruns were refused by design: v0.47.0 is older than the latest release, and v0.50.0's update test was offered 0.51.0. Newer releases replace them.
+
+**Exact next task:** B-176 (Reply status lists the accounts with an agent), then B-184 (the bug hunt's low leftovers), then B-186 once the abstention rate after 0.53.0 is measured on live mail.
+
+**Waits:** the operator's sign-in and key (B-168); B-174's live failure rate on 2026-11-02; the first quality days judged without templates (2026-10-28 00:05 UTC onwards, day D in D+2); the release runs of v0.52.0 and v0.53.0.
+
 **State 2026-10-27 (0.48.0 to 0.50.0: what B-179 and B-180 left).**
 - **0.48.0** (PR #305): links to look-alike sites hold a message for review (Okolos `core-lookalike` vendored at `5d664c5`; its watchlist and the server's `DOMAINS`; its Public Suffix List subset is MPL-2.0 in THIRD_PARTY_NOTICES.md; `tsconfig.cloudflare.json` on ESNext modules for the JSON import attribute).
 - **0.48.1** (PR #306, B-185): the server's upload is retried after 5 s and 30 s, and the error keeps the connection's own code. It also fixes an O-4 regression found on the way: a failed step dropped the error's status, so a missing permission read as `cloudflare`. On 0.49.0's organization deploy the first try failed with `ERR_SSL_SSL/TLS_ALERT_BAD_RECORD_MAC` and the 5 s retry passed. Corrupted TLS on a 13 MB body, as in B-175, points at the path from this machine, not at the code.
