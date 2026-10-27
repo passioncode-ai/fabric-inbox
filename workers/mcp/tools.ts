@@ -1973,7 +1973,7 @@ const changeSuppression = defineTool({
 
 const launchCampaign = defineTool({
   name: "launch_campaign", title: "Start or resume a campaign", level: "mail", sends: true, target: (a) => a.campaignId,
-  description: "Starts a draft campaign, or resumes a paused one: the server then sends it from the chosen account inside its window, daily cap and gaps, follow-ups in the same conversation, until each person replies, unsubscribes, bounces or has had every step. Real mail to real people: confirm the list, the preview and the dry run with the person you work for first. Two calls.",
+  description: "Starts a draft campaign, or resumes a paused one: the server then sends it from the chosen account inside its window, daily cap and gaps, follow-ups in the same conversation, until each person replies, unsubscribes, bounces or has had every step. Every message carries List-Unsubscribe: a one-click link to the server's own unsubscribe page (made at the first launch) and a reply to the sender. Real mail to real people: confirm the list, the preview and the dry run with the person you work for first. Two calls.",
   input: { campaignId },
   confirm: async (a, ctx) => {
     const c = (await get(ctx, `/api/campaigns/${enc(a.campaignId)}`)) as { name: string; sender: string; dailyCap: number; steps: unknown[]; counts: Record<string, number> };

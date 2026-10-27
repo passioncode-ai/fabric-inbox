@@ -393,6 +393,7 @@ export const SETTINGS: Readonly<Record<string, string>> = {
 	"Paused from the app or by an agent.": "Поставлена на паузу в приложении или агентом.",
 	"Real mail leaves {account} for {n} people, at most {cap} a day, inside the sending hours.": "Из {account} уйдут настоящие письма {n} человеку, не больше {cap} в день и только в часы отправки.|Из {account} уйдут настоящие письма {n} людям, не больше {cap} в день и только в часы отправки.|Из {account} уйдут настоящие письма {n} людям, не больше {cap} в день и только в часы отправки.",
 	"Replied asking to stop.": "Ответил просьбой больше не писать.",
+	"Unsubscribed with the link in the message.": "Отписался по ссылке из письма.",
 	"Replied": "Ответил",
 	"Replies: {rate}": "Ответы: {rate}",
 	"Reply in the same conversation": "Ответ в той же переписке",

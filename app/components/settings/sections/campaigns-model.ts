@@ -31,6 +31,7 @@ const REASON: Record<string, string> = {
   company_replied: msg("Someone at the same company replied."),
   campaign_stopped: msg("The campaign was stopped."),
   replied_unsubscribe: msg("Replied asking to stop."),
+  one_click_unsubscribe: msg("Unsubscribed with the link in the message."),
 };
 export const reasonText = (code: string) => REASON[code] ?? code;
 

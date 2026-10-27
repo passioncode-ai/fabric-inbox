@@ -841,4 +841,12 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Only a draft or a paused campaign can be started.": "Запустить можно только черновик или кампанию на паузе.",
 	"The campaign has nobody left to write to.": "В кампании не осталось никого, кому можно написать.",
 	"Only a running campaign can be paused.": "Поставить на паузу можно только идущую кампанию.",
+
+	// One-click unsubscribe page (workers/campaigns/unsubscribe.ts; B-181)
+	"Unsubscribe": "Отписаться",
+	"Stop emails to {email}?": "Больше не писать на {email}?",
+	"You will not get any more messages from this sender's campaigns.": "Вы больше не получите писем из рассылок этого отправителя.",
+	"Done. {email} will not get any more messages from this sender's campaigns.": "Готово. На {email} больше не придут письма из рассылок этого отправителя.",
+	"This unsubscribe link is not valid. Reply to the message with \"unsubscribe\" instead.": "Эта ссылка для отписки недействительна. Вместо этого ответьте на письмо словом «unsubscribe».",
+	"Unsubscribing is not available right now. Reply to the message with \"unsubscribe\" instead.": "Отписка сейчас недоступна. Вместо этого ответьте на письмо словом «unsubscribe».",
 };

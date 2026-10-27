@@ -13,6 +13,7 @@ import { handleMcp } from "./mcp/handler";
 import { fabricServiceRouter } from "./routes/fabric-service";
 import { handleRelayForwarded, handleRelayIncoming, RELAY_FORWARDED, RELAY_INCOMING } from "./relay/ingress";
 import { identityMayUse, MCP_PATH, type AccessClaims } from "./mcp/keys";
+import { handleUnsubscribe, UNSUBSCRIBE_PATH } from "./campaigns/unsubscribe";
 import { audienceFor, serviceAudience } from "./mcp/service-access";
 import { membersCached, MembersError, standingOf, type Standing } from "./lib/members";
 import { memberBody, memberGate } from "./lib/member-gate";
@@ -74,6 +75,13 @@ const app = new Hono<{ Bindings: Env; Variables: { access?: AccessClaims; standi
 app.use("*", async (c, next) => {
 	await next();
 	c.res = withSecurityHeaders(c.res);
+});
+
+// B-181: a campaign recipient's one-click unsubscribe (RFC 8058), the one page outside Access (its own Bypass
+// application on /u). It reads nothing but its signed token (workers/campaigns/unsubscribe.ts).
+app.use("/u/*", async (c, next) => {
+	const match = UNSUBSCRIBE_PATH.exec(c.req.path);
+	return match ? handleUnsubscribe(c.req.raw, c.env, match[1]!) : next();
 });
 
 // Cloudflare Access JWT validation middleware (production only)

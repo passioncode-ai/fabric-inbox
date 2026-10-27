@@ -78,7 +78,7 @@ test("SCN-090: the loop sends one at a time, follow-ups answer in the thread, re
     assert.equal(sent[0].accountId, "g1");
     assert.equal(sent[0].request.subject, "About Acme");
     assert.match(sent[0].request.text, /^Hi Ann\n\nIf you would rather not hear from me again, reply "unsubscribe"/);
-    assert.equal(sent[0].options.listUnsubscribe, "mailto:me@owner.example?subject=unsubscribe");
+    assert.deepEqual(sent[0].options.listUnsubscribe, ["mailto:me@owner.example?subject=unsubscribe"], "no one-click page yet: a reply only");
     assert.match(sent[0].request.idempotencyKey, /^campaign:[0-9a-f]{32}$/);
 
     // Bob replies: he is stopped, and so is Ann at the same company.
@@ -135,6 +135,32 @@ test("SCN-090: bounces past 5% pause the campaign; stop ends it for whoever was 
     assert.equal(stopped.state, "stopped");
     assert.equal(stopped.counts.stopped, 2, "the two still waiting");
     assert.equal((await call("POST", `/api/campaigns/${id}/launch`)).status, 409);
+  } finally {
+    await mf.dispose();
+  }
+});
+
+test("SCN-090: once the server has its unsubscribe page, every message carries the one-click link first", async () => {
+  const mf = new Miniflare({
+    modules: true, script: bundle.outputFiles[0].text, compatibilityDate: "2026-09-01", compatibilityFlags: ["nodejs_compat"],
+    durableObjects: { CAMPAIGNS: { className: "CampaignsDO", useSQLite: true }, GMAIL_ACCOUNTS: { className: "FakeAccounts", useSQLite: true } },
+    r2Buckets: ["BUCKET"], bindings: { MAIL_CREDENTIAL_KEY: "k".repeat(43) },
+    outboundService: () => new Response("External network disabled for tests", { status: 503 }),
+  });
+  const call = async (method: string, path: string, body?: unknown) => {
+    const r = await mf.dispatchFetch(`http://x${path}`, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+    return { status: r.status, json: await r.json() as any };
+  };
+  try {
+    const bucket = await mf.getR2Bucket("BUCKET");
+    await bucket.put("config/unsubscribe-access.json", JSON.stringify({ host: "inbox.owner.example", appId: "app2", createdAt: "2026-10-27T00:00:00Z" }));
+    const id = (await call("POST", "/api/campaigns", { campaign: { name: "One click", sender: "gmail:g1", timezone: "UTC", steps: [{ body: "Hi" }] } })).json.id;
+    await call("POST", `/api/campaigns/${id}/recipients`, { recipients: [{ email: "ann@acme.example" }] });
+    await call("POST", `/api/campaigns/${id}/launch`);
+    assert.equal((await call("POST", `/t/tick?now=${MON}`)).json.sent, 1);
+    const [first] = (await call("GET", "/t/sent")).json;
+    assert.match(first.options.listUnsubscribe[0], /^https:\/\/inbox\.owner\.example\/u\/1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{22}$/);
+    assert.equal(first.options.listUnsubscribe[1], "mailto:me@owner.example?subject=unsubscribe");
   } finally {
     await mf.dispose();
   }

@@ -595,7 +595,7 @@ read with a default where it is missing, never assumed present.
 | `workers/discard/`, `shared/mail/discard.ts`, `workers/routes/discard.ts` | Discarded: rules in R2, why, matching and safety on arrival, the routes |
 | `workers/knowledge/` | knowledge store (`KnowledgeDO`) and pure text work (chunking, FTS query quoting) |
 | `workers/automation/` | rules engine, policy, MCP client |
-| `workers/campaigns/`, `shared/mail/campaign.ts`, `workers/routes/campaigns.ts` | outreach campaigns (B-181, SCN-089): `CampaignsDO`, the pure rules (fields and fallbacks, the window, spacing, the ramp, what an arriving message is, the do-not-write list) and the routes. The loop is `CampaignsDO`'s alarm: one send per account per wake through `GmailAccountsDO.send` with a deterministic idempotency key and `List-Unsubscribe: <mailto:…>`; `GmailAccountsDO`'s drain hands every new inbox message of an account to `CampaignsDO.inbound` (reply, unsubscribe, auto-reply, bounce) |
+| `workers/campaigns/`, `shared/mail/campaign.ts`, `workers/routes/campaigns.ts` | outreach campaigns (B-181, SCN-089): `CampaignsDO`, the pure rules (fields and fallbacks, the window, spacing, the ramp, what an arriving message is, the do-not-write list) and the routes. The loop is `CampaignsDO`'s alarm: one send per account per wake through `GmailAccountsDO.send` with a deterministic idempotency key and `List-Unsubscribe` (the one-click page first once it exists, then `mailto:`); `GmailAccountsDO`'s drain hands every new inbox message of an account to `CampaignsDO.inbound` (reply, unsubscribe, auto-reply, bounce) |
 | `workers/providers/` | the provider interface, credentials, account service, `GmailAccountsDO`, scheduler, cache; Gmail OAuth, client, sync loop and provider |
 | `workers/providers/imap/` | IMAP/SMTP: the imapflow connection, the SMTP client and its sockets, MIME and labels, the sync, the provider and session, connect input |
 | `workers/providers/outlook/` | Outlook through Microsoft Graph: sign-in and tokens, the Graph client (immutable ids, throttling), ids and labels, the delta sync, the provider and session |
@@ -624,6 +624,11 @@ read with a default where it is missing, never assumed present.
 
 ## Boundaries worth knowing
 
+- One page answers outside Access: `/u/<token>`, a campaign recipient's one-click unsubscribe (B-181,
+  `workers/campaigns/unsubscribe.ts`, handled in `workers/app.ts` before the Access check). The server makes its own
+  Bypass application on `<host>/u` at a campaign's launch (Access: Apps and Policies: Edit; R2
+  `config/unsubscribe-access.json`). The token is the address and an HMAC of it under a key derived from the
+  credential key; GET only asks, POST puts the address on the do-not-write list; nothing else is read or served there.
 - Access admits a person; the server's members list (B-149, R2 `config/members.json`,
   `workers/lib/member-gate.ts`) then limits a member to the mailboxes granted to them (no settings,
   keys, `/mcp` or agents), and a person on the list as an administrator, or any person while the
