@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.58.0 (2026-10-27)
+
+- **Creating a Cloudflare token takes fewer steps.** Open Cloudflare API Tokens now opens the token form already
+  named "Fabric Inbox", with some of the permissions it needs filled in. Check the list in the app and add the
+  missing ones.
+
 ## 0.57.0 (2026-10-27)
 
 - **Reply agents trust the knowledge base's own verdict.** When the knowledge base marks which of its results can be
