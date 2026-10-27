@@ -147,7 +147,6 @@ const MAP: Record<string, Record<string, Record<string, string> & { via?: string
   save_draft: {
     "PUT /api/v1/mailboxes/:mailboxId/drafts/:id": { body: "text", in_reply_to: "replyToMessageId", thread_id: `${BY_TOOL}: the conversation of the message it answers`,
       keep_attachments: "keepAttachments", expected_revision: "expectedRevision" },
-    "POST /api/v1/mailboxes/:mailboxId/drafts": { "*": "declared for coverage of the older screen's route; the tool saves through PUT /drafts/:id" },
     "POST /api/accounts/:accountId/drafts": { threadId: `${BY_TOOL}: from replyToMessageId`, inReplyTo: `${BY_TOOL}: from replyToMessageId`,
       references: `${BY_TOOL}: from replyToMessageId`, from: `${BY_TOOL}: Gmail sends as the account itself` },
     "PUT /api/accounts/:accountId/drafts/:draftId": { threadId: `${BY_TOOL}: the draft's own or replyToMessageId's`, inReplyTo: `${BY_TOOL}: the draft's own or replyToMessageId's`,
@@ -181,7 +180,6 @@ const MAP: Record<string, Record<string, Record<string, string> & { via?: string
     "POST /api/spam/report": { messages: `${BY_TOOL}: from messages, each with its own sender read by the tool` },
     "POST /api/spam/release": { messages: `${BY_TOOL}: from messages, each with its own sender read by the tool` },
   },
-  create_address: { "POST /api/v1/mailboxes": { "*": "declared for coverage of the Mailboxes screen's route; the tool creates through POST /api/project-addresses" } },
   update_address: { "PUT /api/v1/mailboxes/:mailboxId": { "settings.fromName": "fromName", "settings.signature": "signature", "settings.agentSystemPrompt": "assistantPrompt" } },
   save_category: { "POST /api/categories": { via: "category" }, "PUT /api/categories/:id": { via: "category" } },
   save_rule: { "PUT /api/automation/:account/rules": { via: "rule", version: "set by the server, one more on each save" } },

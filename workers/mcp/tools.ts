@@ -404,9 +404,7 @@ const getAttachment = defineTool({
   name: "get_attachment", title: "Get an attachment", level: "read", readOnly: true,
   description: "The bytes of one attachment, base64-encoded (standard alphabet, padded). Only attachments up to 5 MB come back; a larger one is refused with 413 and is opened in the app. The attachmentId comes from read_message.",
   input: { accountId, messageId, attachmentId: z.string().min(1).max(2048) },
-  // The reader's inline route (B-89) answers the same file's bytes for an embedded picture.
-  routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId", "GET /api/accounts/:accountId/messages/:messageId/attachments/:attachmentId", "POST /api/safety/lookup",
-    "GET /api/accounts/:accountId/messages/:messageId/attachments/:attachmentId/inline"],
+  routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId", "GET /api/accounts/:accountId/messages/:messageId/attachments/:attachmentId", "POST /api/safety/lookup"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
     const held = (await heldOf(ctx, account, [a.messageId])).get(a.messageId);
@@ -804,8 +802,7 @@ const saveDraft = defineTool({
     signature: z.boolean().default(true).describe("Add the address's signature (Cloudflare)"),
     idempotencyKey: idempotencyKey.optional().describe("Your stable id for a new draft: saving again with it changes that draft, never makes a second. Required for a new Gmail, IMAP or Outlook draft") },
   routes: ["PUT /api/v1/mailboxes/:mailboxId/drafts/:id", "GET /api/v1/mailboxes/:mailboxId/drafts/:id", "GET /api/v1/mailboxes/:mailboxId",
-    "GET /api/v1/mailboxes/:mailboxId/emails/:id", "POST /api/v1/mailboxes/:mailboxId/drafts",
-    "POST /api/accounts/:accountId/drafts", "PUT /api/accounts/:accountId/drafts/:draftId", "GET /api/accounts/:accountId/drafts/:draftId/content",
+    "GET /api/v1/mailboxes/:mailboxId/emails/:id", "POST /api/accounts/:accountId/drafts", "PUT /api/accounts/:accountId/drafts/:draftId", "GET /api/accounts/:accountId/drafts/:draftId/content",
     "GET /api/accounts/:accountId/messages/:messageId"],
   async call(a, ctx) {
     const account = parseAccount(a.accountId);
@@ -905,7 +902,7 @@ const sendEmail = defineTool({
   description: "Sends a new message from one of your addresses or Gmail, IMAP or Outlook accounts, with files if you give them. It really leaves: confirm the recipients and text with the person you work for unless they asked you to send. The idempotencyKey makes a retry safe. Counts against this key's daily sends.",
   input: { accountId, to: recipients, cc: recipients.optional(), bcc: recipients.optional(), subject: z.string().min(1).max(998), ...body, attachments, idempotencyKey,
     signature: z.boolean().default(true).describe("Add the address's signature (Cloudflare)") },
-  routes: ["POST /api/v1/mailboxes/:mailboxId/emails", "POST /api/accounts/:accountId/send"],
+  routes: ["POST /api/v1/mailboxes/:mailboxId/emails", "POST /api/accounts/:accountId/send", "GET /api/v1/mailboxes/:mailboxId"],
   call: (a, ctx) => sendNew(ctx, parseAccount(a.accountId), { ...a, attachments: checkFiles(toMail(a.attachments)) }),
 });
 
@@ -1097,7 +1094,7 @@ const markSpam = defineTool({
   description: "Moves messages to Spam (spam: true) or back to the Inbox (spam: false), and by default puts the sender on the Always spam or Never spam list so their next mail is judged the same way. For Gmail, IMAP and Outlook accounts it uses the account's own spam folder, which also teaches the provider's filter. spam: false on mail that arrived in the last three days also hands it, once, to its rules, categories, safety check and reply agent (any mailbox or account); older mail only returns to the inbox.",
   input: { messages: messageRefs, spam: z.boolean(),
     list: z.enum(["sender", "domain", "none"]).default("sender").describe("What to remember: each message's sender, their whole domain, or nothing") },
-  routes: ["POST /api/spam/report", "POST /api/spam/release"],
+  routes: ["POST /api/spam/report", "POST /api/spam/release", "GET /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/accounts/:accountId/messages/:messageId"],
   async call(a, ctx) {
     // The sender remembered is the message's own, read here; the caller cannot name one, or a mail
     // key could put any domain on a list (only admin keys edit the lists, update_spam_list).
@@ -1172,7 +1169,7 @@ const deleteMessage = defineTool({
   description: "Deletes a Cloudflare message, its body and attachments permanently — it cannot be restored. Prefer move_messages to trash. Takes two calls: the first says what will be deleted and gives a code.",
   input: { accountId, messageId },
   confirm: async (a, ctx) => { const m = await readMessage(ctx, cloudflareOnly(parseAccount(a.accountId), "Deleting for good"), a.messageId, 1); return `Delete for good the message ${quoted(m.subject)} from ${quoted(m.from)} (${quoted(m.date)}) in ${a.accountId}, with ${m.attachments.length} attachment(s). It cannot be restored.`; },
-  routes: ["DELETE /api/v1/mailboxes/:mailboxId/emails/:id"],
+  routes: ["DELETE /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/v1/mailboxes/:mailboxId/emails/:id"],
   async call(a, ctx) { await del(ctx, `${box(cloudflareOnly(parseAccount(a.accountId), "Deleting for good").mailbox)}/emails/${enc(a.messageId)}`); return { deleted: true }; },
 });
 
@@ -1268,7 +1265,7 @@ const createAddress = defineTool({
   // P-4: checked by the route, as create_addresses' names are, so "Support" is taken (lowered) and a bad name is explained in words.
   input: { localPart: z.string().min(1).max(320).describe("The part before @ (letters, digits, . _ + -, a letter or digit at each end, no two dots together); upper case is lowered"), domain,
     ...newAddressSettings },
-  routes: ["POST /api/project-addresses", "POST /api/v1/mailboxes"],
+  routes: ["POST /api/project-addresses"],
   call: (a, ctx) => post(ctx, "/api/project-addresses", { localPart: a.localPart, domain: a.domain.toLowerCase(), name: a.name, agent: toAgent(a.agent),
     signature: a.signature, createRoute: a.createRoute, forwardTo: a.forwardTo }),
 });
@@ -1323,7 +1320,7 @@ const removeAddress = defineTool({
     const total = feed.accounts.find((x) => x.id === `cloudflare:${email}`)?.total ?? 0;
     return `Remove ${email}: its Cloudflare rule is deleted and its mail (${total} message(s) in the Inbox, and every other folder) is deleted permanently. Mail sent to it afterwards is refused or goes to the domain's catch-all.`;
   },
-  routes: ["DELETE /api/project-addresses/:email", "DELETE /api/v1/mailboxes/:mailboxId"],
+  routes: ["DELETE /api/project-addresses/:email", "GET /api/inbox"],
   call: (a, ctx) => del(ctx, `/api/project-addresses/${enc(a.address.toLowerCase())}`),
 });
 
@@ -1524,7 +1521,7 @@ const showCloudflareAccount = defineTool({
 const removeCloudflareAccount = defineTool({
   name: "remove_cloudflare_account", title: "Remove a Cloudflare account", level: "admin", target: (a) => a.account,
   description: "Removes an account that was connected with its own token: its relay Worker there, the relay's sign-in here, then the token itself. Refused while one of its domains receives here, and for the server's own account.",
-  input: { account: cloudflareAccount }, routes: ["DELETE /api/cloudflare/accounts/:id"],
+  input: { account: cloudflareAccount }, routes: ["DELETE /api/cloudflare/accounts/:id", "GET /api/cloudflare/accounts"],
   confirm: async (a, ctx) => {
     const list = (await get(ctx, "/api/cloudflare/accounts")) as { accounts?: { id: string; name: string; relay: unknown }[] };
     const account = list.accounts?.find((x) => x.id === a.account);
@@ -1549,7 +1546,7 @@ const emptySpam = defineTool({
     const feed = (await get(ctx, "/api/inbox", { folder: "spam", provider: "cloudflare", limit: 100 })) as { messages: unknown[]; hasMore: boolean };
     return `Delete permanently ${feed.hasMore ? "more than 100" : feed.messages.length} message(s) in Spam across every Cloudflare mailbox. They cannot be restored.`;
   },
-  routes: ["POST /api/spam/empty"],
+  routes: ["POST /api/spam/empty", "GET /api/inbox"],
   call: (_a, ctx) => post(ctx, "/api/spam/empty"),
 });
 
@@ -1617,7 +1614,7 @@ const deleteAgent = defineTool({
   description: "Deletes a reply agent; the addresses it answered stop being answered. Two calls.",
   input: { agentId: z.string().min(1).max(100) },
   confirm: async (a, ctx) => { const d = (await get(ctx, `/api/agents/${enc(a.agentId)}`)) as { agent?: { name?: string }; addresses?: string[] }; return `Delete the agent ${quoted(d.agent?.name ?? a.agentId)}; ${d.addresses?.length ?? 0} address(es) stop being answered: ${(d.addresses ?? []).join(", ") || "none"}.`; },
-  routes: ["DELETE /api/agents/:id"],
+  routes: ["DELETE /api/agents/:id", "GET /api/agents/:id"],
   async call(a, ctx) { await del(ctx, `/api/agents/${enc(a.agentId)}`); return { deleted: a.agentId }; },
 });
 
@@ -1694,7 +1691,7 @@ const deleteCollection = defineTool({
   description: "Deletes a collection and its documents. Refused while an agent uses it. Two calls.",
   input: { collectionId: z.string().min(1).max(100) },
   confirm: async (a, ctx) => { const d = (await get(ctx, `/api/knowledge/collections/${enc(a.collectionId)}`)) as { collection?: { name?: string }; documents?: unknown[] }; return `Delete the collection ${quoted(d.collection?.name ?? a.collectionId)} and its ${d.documents?.length ?? 0} document(s).`; },
-  routes: ["DELETE /api/knowledge/collections/:id"],
+  routes: ["DELETE /api/knowledge/collections/:id", "GET /api/knowledge/collections/:id"],
   async call(a, ctx) { await del(ctx, `/api/knowledge/collections/${enc(a.collectionId)}`); return { deleted: a.collectionId }; },
 });
 const putDocuments = defineTool({
@@ -2140,6 +2137,11 @@ export const TOOLS: readonly ToolDef[] = [
  * Routes no tool calls, each with why (AP-5). Anything else the Worker serves must be behind a tool.
  */
 export const NOT_TOOLS: Readonly<Record<string, string>> = {
+  // P-5 (bug hunt 2026-10-26): routes a tool listed but never called. Each has a tool that does the same through another route.
+  "POST /api/v1/mailboxes": "create_address makes an address through /api/project-addresses, which also points its mail at this server; this route makes the mailbox alone",
+  "DELETE /api/v1/mailboxes/:mailboxId": "remove_address removes an address through /api/project-addresses/:email, which also takes its routing rule away; this route deletes the mailbox alone",
+  "GET /api/accounts/:accountId/messages/:messageId/attachments/:attachmentId/inline": "The reader's inline route answers the same bytes as the attachment route get_attachment reads",
+  "POST /api/v1/mailboxes/:mailboxId/drafts": "save_draft saves a Cloudflare draft by PUT under its own id, so a repeated call never makes a second draft",
   // B-38: approving an agent's irreversible action is the owner's; an agent able to approve it, or to turn approval off, would make it no approval.
   "GET /api/agent-keys/approvals": "What waits for the owner's approval is answered by the owner in Agent access; the waiting agent is told by its own call (B-38)",
   "POST /api/agent-keys/approvals/:code": "Only the owner approves or refuses an agent's irreversible action; an agent approving it would defeat the approval (B-38)",
