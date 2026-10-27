@@ -123,8 +123,16 @@ have no registry test of their own yet.
 - `superviseAbandoned` reads the accounts too and reports `agent.abandoned` under the account's email
   (`tests/agents-registry.test.ts` "B-170").
 
+## Decision 5 both ways (2026-10-27, 0.74.0)
+
+- `RunnerDeps.accountServes` (`workers/agents/runner.ts`), filled in `sharedDeps` (`workers/agents/deps.ts`)
+  from `agentAccounts`, read once per run and only when an election reaches an address outside the served
+  domains: the election asks it before the domain filter, so a Cloudflare copy waits for a connected account
+  with an agent listed before it; a failed read counts as served (waiting, never a second answer).
+- `tests/agents-runner.test.ts` "B-171: a Cloudflare copy waits for a connected account": waits, does not wait
+  for an account without an agent, waits when the accounts cannot be read.
+
 ## Exact next step
 
-Decision 5 the other way: a Cloudflare copy waits for an account listed before it in the recipients.
 A per-account line in Settings → Addresses → Reply status (today an account follows the workspace and
 its email's domain, and its own line is set with `set_agent_status`) is a board row.

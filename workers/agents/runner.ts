@@ -240,6 +240,12 @@ export interface RunnerDeps {
   };
   /** Whether another address of this workspace has an agent (a mailbox here, not Off). */
   agentServes(address: string): Promise<boolean>;
+  /**
+   * B-171: whether a connected account (Gmail, Outlook, IMAP) with this email has a reply agent. Its email is outside
+   * the served domains, so without this a Cloudflare copy never waited for an account listed before it and both
+   * answered. Absent: no accounts here.
+   */
+  accountServes?(address: string): Promise<boolean>;
   mailbox: {
     /**
      * B-171: the address the agent writes from and about (the From of its replies, its prompts, its
@@ -1054,13 +1060,16 @@ export async function closeRun(run: AgentRun, deps: RunnerDeps): Promise<Closing
 /**
  * Claims this copy's message for the workspace (B-22). No key (no Message-ID and no Date) means
  * the copy cannot be matched with others and answers on its own. Addresses outside the served
- * domains are never looked up: no mailbox of this workspace can live there.
+ * domains are never looked up as mailboxes: no mailbox of this workspace can live there; a connected
+ * account with an agent can, and counts like an agent address (B-171, decision 5 both ways).
  */
 async function claimMessage(address: string, email: RunnerEmail, deps: RunnerDeps): Promise<MessageClaim | null> {
   const key = await messageKey(email);
   if (!key) return null;
   let domains: string[] | undefined;
   const serves = async (address: string) => {
+    // An account's agent answers from an address outside the served domains: asked before the domain filter.
+    if (deps.accountServes && await deps.accountServes(address)) return true;
     domains ??= deps.servedDomains ? await deps.servedDomains().catch(() => [] as string[]) : [];
     const domain = address.slice(address.lastIndexOf("@") + 1);
     if (domains.length && !domains.some((d) => domain === d || domain.endsWith("." + d))) return false;

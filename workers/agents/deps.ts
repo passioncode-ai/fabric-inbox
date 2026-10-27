@@ -2,6 +2,7 @@ import type { Env } from "../types";
 import { isHeld, safetyKey } from "../safety/state";
 import { scanPromptInjection } from "../lib/ai";
 import { allServedDomains } from "../lib/mailbox-store";
+import { agentAccounts } from "../lib/agent-status";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
 import { callMcpTool, toolResultText, type ToolTokens } from "../automation/mcp";
 import { openRouterAgentModel, openRouterCheck, openRouterParaphrase, replyReasoning, workersAiModel, workersAiParaphrase } from "./model";
@@ -87,8 +88,15 @@ export function productionDeps(env: Env, mailboxId: string, registry: Registry):
 
 /** Everything a run needs but its mailbox: the same for a Cloudflare address and an account (B-171). */
 export function sharedDeps(env: Env, registry: Registry): Omit<RunnerDeps, "mailbox"> {
+  // B-171: the accounts with an agent, read once per run and only when an election needs them.
+  let accounts: Promise<Set<string>> | undefined;
   return {
     registry,
+    async accountServes(address) {
+      // A read that fails throws, and the election then counts the address as served (it waits rather than answer twice).
+      accounts ??= agentAccounts(env).then((list) => new Set(list.map((a) => a.email)));
+      return (await accounts).has(address.toLowerCase());
+    },
     async agentServes(address) {
       const object = await env.BUCKET.get(`mailboxes/${address.toLowerCase()}.json`);
       if (!object) return false;

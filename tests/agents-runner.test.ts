@@ -37,6 +37,8 @@ function harness(options: {
   injectionFor?: (text: string) => boolean;
   /** Other addresses of the workspace that have an agent (B-22). */
   served?: string[];
+  /** B-171: connected accounts' emails with an agent; an Error is a read that failed. */
+  accounts?: string[] | Error;
   claim?: (key: string, mailboxId: string, elected: string) => MessageClaim;
   /** B-178: the arrival check's answer for the message (a reason when held). */
   held?: string | null | Error;
@@ -69,6 +71,10 @@ function harness(options: {
       },
     },
     async agentServes(address) { return (options.served ?? []).includes(address); },
+    ...(options.accounts !== undefined ? { async accountServes(address: string) {
+      if (options.accounts instanceof Error) throw options.accounts;
+      return (options.accounts as string[]).includes(address);
+    } } : {}),
     mailbox: {
       async settings() { return options.settings === undefined ? { agent: { id: "support" } } : options.settings; },
       async saveAssignment(id) { effects.assignments.push(id); },
@@ -430,6 +436,19 @@ test("an address in Cc answers when the To address has no agent; Off never claim
   const off = harness({ email: copied, settings: { agent: "off" } });
   assert.equal(await off.run(), null);
   assert.equal(off.effects.claims.length, 0, "an address with no agent takes no part");
+});
+
+test("B-171: a Cloudflare copy waits for a connected account with an agent listed before it, outside the served domains", async () => {
+  const email = { message_id: "q2@customer.invalid", recipient: "me@gmail.example", cc: MAILBOX };
+  const wait = (_k: string, _m: string, elected: string): MessageClaim => ({ outcome: "wait", owner: elected, until: 123 });
+  const h = harness({ email, servedDomains: ["project.invalid"], accounts: ["me@gmail.example"], claim: wait });
+  assert.deepEqual(await h.run(), { status: "waiting", owner: "me@gmail.example", until: 123 });
+  assert.equal(h.effects.sends.length, 0);
+  const none = harness({ email, servedDomains: ["project.invalid"], accounts: [] });
+  assert.equal(((await none.run()) as AgentRun).status, "sent", "an account without an agent is not waited for");
+  assert.equal(none.effects.claims[0]!.elected, MAILBOX);
+  const unread = harness({ email, servedDomains: ["project.invalid"], accounts: new Error("R2 down"), claim: wait });
+  assert.equal((await unread.run() as { status: string }).status, "waiting", "accounts that cannot be read: wait rather than answer twice");
 });
 
 // ── B-85: a shared knowledge base as a granted tool (fixed arguments, a call before the model, public only) ──
