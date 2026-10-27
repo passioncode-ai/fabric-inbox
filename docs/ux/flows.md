@@ -268,6 +268,8 @@ flowchart TD
   F --> G{"Policy allows the answer?"}
   G -->|yes| H["SCR-10 Recent answers: reply sent (SCR-08 run history remains the designed surface)"]
   G -->|no| I["SCR-10 Recent answers: draft waits for approval with reason (SCR-08 designed)"]
+  P["An agent prepares an outreach campaign (SCN-089)"] --> Q["SCR-18 Campaigns: report, steps, people"]
+  Q -->|Start, Pause, Stop| Q
 ```
 
 - **Screens traversed:**
@@ -279,5 +281,6 @@ flowchart TD
 | SCR-08 | loading, empty, error, success |
 | SCR-11 | loading, empty, error, success |
 | SCR-12 | loading, empty, error, success |
+| SCR-18 | loading, empty, error, success |
 
-- **Scenario coverage:** SCN-021, SCN-022, SCN-023, SCN-024, SCN-025, SCN-029, SCN-031, SCN-032, SCN-033, SCN-034, SCN-035, SCN-045, SCN-046, SCN-061, SCN-062, SCN-063, SCN-064, SCN-065, SCN-066.
+- **Scenario coverage:** SCN-021, SCN-022, SCN-023, SCN-024, SCN-025, SCN-029, SCN-031, SCN-032, SCN-033, SCN-034, SCN-035, SCN-045, SCN-046, SCN-061, SCN-062, SCN-063, SCN-064, SCN-065, SCN-066, SCN-091.

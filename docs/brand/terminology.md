@@ -12,7 +12,7 @@ Contract: brand-contract v1
 | Project address | Alias, forwarding address | An address on a served project domain, received by the Worker |
 | Reply policy | Auto-reply settings | What an agent may send without the operator: mode, allowed intents, daily limit |
 | Answer | AI response (in run history) | One agent run for one incoming message |
-| Settings | Manage accounts, Mailboxes screen, Accounts and rules, Server settings, Domains & addresses (screen names before 0.11) | The one screen for everything set up rather than read, with its sections: Addresses, Domains, Accounts, Forwarding destinations, Categories, Spam rules, Discard rules, Agents, Knowledge, Agent access, App; a section is named "Settings → Domains" |
+| Settings | Manage accounts, Mailboxes screen, Accounts and rules, Server settings, Domains & addresses (screen names before 0.11) | The one screen for everything set up rather than read, with its sections: Addresses, Domains, Accounts, Forwarding destinations, Categories, Spam rules, Discard rules, Agents, Knowledge, Campaigns, Agent access, App; a section is named "Settings → Domains" |
 | Server address | Server settings (the Mac app's menu item) | The address of the server the Mac app opens, chosen in its own window (Fabric Inbox → Server address…) |
 | Receive mail here | Connect domain, Import domain | Moving a domain's mail to the server, keeping each old destination as a copy |
 | Forwarding destination | Forward target, verified email | An outside address a copy may go to, confirmed through Cloudflare's link |
@@ -30,6 +30,8 @@ Contract: brand-contract v1
 | Spam rules | Spam settings, filters | The screen with what goes to Spam and the Always spam / Never spam lists |
 | Discarded | Bin, Rubbish, Thrown away (for this folder) | The folder of mail thrown away on purpose (⌘⌫), apart from Trash and Spam; counts as deleted, kept 30 days so a mistake can come back; Russian UI: «Выброшенные» |
 | Discard (a message) | Throw away, Bin (for ⌘⌫) | Sending a message to Discarded and teaching a rule from it; "Discard" on a draft is another action (throwing the draft away) |
+| Campaign | Sequence, blast, mass mailing (for one) | Outreach an agent prepares and the server sends from the person's own Gmail, Outlook or IMAP account, at a person's pace, stopping for whoever replies (B-181); Russian UI: «Кампания» |
+| Do-not-write list | Suppression list, blocklist (in the interface) | The addresses and domains no campaign writes to; `suppression` stays the API and tool name; Russian UI: «Стоп-лист» |
 | Not discarded | Undiscard, Undelete | Bringing a message back from Discarded to the inbox |
 | Discard rule | Block rule, auto-delete rule | What a discard teaches: a mailing list (List-Id) or a sender whose new mail goes straight to Discarded |
 | Discard rules | Discard settings | The Settings section with every discard rule, why it was learned, and Always allow |

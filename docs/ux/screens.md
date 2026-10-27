@@ -23,6 +23,7 @@
 | SCR-15 | Settings → Agent access | FLW-07 | deferred | built | app/components/settings/sections/AgentAccessSection.tsx, workers/routes/agent-keys.ts |
 | SCR-16 | Settings → Discard rules | FLW-02 | deferred | built | app/components/settings/sections/DiscardSection.tsx, workers/routes/discard.ts |
 | SCR-17 | Settings → People | FLW-07 | deferred | built | app/components/settings/sections/PeopleSection.tsx, workers/routes/members.ts |
+| SCR-18 | Settings → Campaigns | FLW-08 | deferred | built | app/components/settings/sections/CampaignsSection.tsx, workers/routes/campaigns.ts |
 
 ## Design system
 - **Style pack:** canonical Fabric tokens (Kumo and Tailwind retained); see [brand provenance](../desktop-mail/brand-source.json).
@@ -339,3 +340,23 @@ Records retain designed status because their complete target state sets have not
 - **Scenarios:** SCN-081, SCN-082
 - **Resources:** [Flow specification](flows.md), [shared interaction requirements](scenarios.md).
 - **Status:** built
+
+### SCR-18: Settings → Campaigns
+- **Part of:** SCR-02 Settings (Campaigns section, under Agents); the list, panel, ⋯ menu and confirmation follow SCR-02.
+- **Used by:** FLW-08
+- **Purpose:** Watch what an agent's outreach campaigns did, and decide whether each runs, waits or ends; keep the do-not-write list.
+- **Elements:** The do-not-write list (pinned row); campaign rows (name, account, state, written to of all); a campaign's panel: Report (messages per step, people by status, reply and bounce rates, last and next send, why paused), Steps (subject, the text's first lines, days after the one before), People (status filter, address, status, why it failed); Start or Resume (primary), Pause; ⋯ Stop this campaign… and Delete this campaign…; the do-not-write panel: Addresses or domains, Reason, Add; entries with their reason, date and Remove.
+- **States:**
+
+| State | Trigger | Figma frame | Behavior |
+|---|---|---|---|
+| success | Available result | deferred | Campaigns listed; an open one shows its report, steps and people; an action says what was done. |
+| empty | No relevant data | deferred | No campaign: my agent prepares one (the tools named). The do-not-write list empty: says so. |
+| loading | Pending operation | deferred | Loading the list, a report or people; Starting…, Pausing…, Stopping… with the buttons disabled. |
+| error | Operation cannot complete | deferred | A failed load offers Retry; a refused action says the server's reason. |
+
+- **Coverage:** app/components/settings/sections/CampaignsSection.tsx (CampaignsSection, CampaignPanel, DoNotWritePanel); workers/routes/campaigns.ts; workers/campaigns/store.ts (CampaignsDO)
+- **Scenarios:** SCN-091
+- **Resources:** [Flow specification](flows.md), [shared interaction requirements](scenarios.md).
+- **Status:** built
+- **Today:** Built 2026-10-27 (B-181 step 3).

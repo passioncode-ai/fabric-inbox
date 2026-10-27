@@ -3,7 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import {
-	ArrowBendUpRightIcon, AtIcon, BooksIcon, CaretLeftIcon, FunnelSimpleIcon, GearSixIcon, GlobeIcon, PlugIcon, ProhibitIcon, XCircleIcon,
+	ArrowBendUpRightIcon, AtIcon, BooksIcon, CaretLeftIcon, PaperPlaneTiltIcon, FunnelSimpleIcon, GearSixIcon, GlobeIcon, PlugIcon, ProhibitIcon, XCircleIcon,
 	RobotIcon, UserCircleIcon, UsersThreeIcon, type Icon,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -18,6 +18,7 @@ import AccountsSection from "~/components/settings/sections/AccountsSection";
 import DestinationsSection from "~/components/settings/sections/DestinationsSection";
 import AgentsSection from "~/components/settings/sections/AgentsSection";
 import KnowledgeSection from "~/components/settings/sections/KnowledgeSection";
+import CampaignsSection from "~/components/settings/sections/CampaignsSection";
 import CategoriesSection from "~/components/settings/sections/CategoriesSection";
 import SpamSection from "~/components/settings/sections/SpamSection";
 import DiscardSection from "~/components/settings/sections/DiscardSection";
@@ -35,7 +36,7 @@ export function meta({ matches }: MetaArgs) {
 
 const ICONS: Record<SectionId, Icon> = {
 	addresses: AtIcon, domains: GlobeIcon, accounts: UserCircleIcon, destinations: ArrowBendUpRightIcon,
-	categories: FunnelSimpleIcon, spam: ProhibitIcon, discard: XCircleIcon, agents: RobotIcon, knowledge: BooksIcon, "agent-access": PlugIcon, people: UsersThreeIcon, app: GearSixIcon,
+	categories: FunnelSimpleIcon, spam: ProhibitIcon, discard: XCircleIcon, agents: RobotIcon, knowledge: BooksIcon, campaigns: PaperPlaneTiltIcon, "agent-access": PlugIcon, people: UsersThreeIcon, app: GearSixIcon,
 };
 
 const GROUP_LABEL = { mail: msg("Mail"), agents: msg("Agents"), app: msg("This app") } as const;
@@ -111,6 +112,7 @@ export default function Settings() {
 							{section === "destinations" && <DestinationsSection id={item} />}
 							{section === "agents" && <AgentsSection id={item} tab={sub} />}
 							{section === "knowledge" && <KnowledgeSection id={item} />}
+							{section === "campaigns" && <CampaignsSection id={item} />}
 							{section === "categories" && <CategoriesSection id={item} />}
 							{section === "spam" && <SpamSection id={item} />}
 							{section === "discard" && <DiscardSection id={item} />}
