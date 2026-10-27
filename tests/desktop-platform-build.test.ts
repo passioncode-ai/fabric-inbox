@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 const load = () => import("../desktop/dist-platform.mjs");
 
@@ -21,6 +23,7 @@ test("Windows: a per-user NSIS installer that registers fabric-inbox:// in HKCU 
   assert.deepEqual([c.nsis.oneClick, c.nsis.perMachine, c.nsis.allowElevation], [true, false, false]);
   assert.match(c.nsis.include, /desktop[\\/]windows[\\/]installer\.nsh$/);
   assert.equal(c.win.azureSignOptions, undefined, "no signing configured: built NOT_SIGNED");
+  assert.equal(c.win.signtoolOptions, undefined, "no signing configured: no signing hook");
   assert.equal(c.artifactName, "Fabric-Inbox-0.14.0-win-arm64-setup.${ext}", "our arch names, as the feed and the workflow expect");
   const { installerFilter } = await load();
   assert.equal(installerFilter("arm64"), "BCJ", "nsis7z cannot decode 7-Zip's ARM64 filter: the .exe and .dll files were skipped");
@@ -78,4 +81,32 @@ test("builder files and installer scripts never ship inside the app", async () =
   const ignored = (p: string) => PACKAGE_IGNORE.some((r: RegExp) => r.test(p));
   for (const p of ["/dist-platform.mjs", "/dist-mac.mjs", "/hardening.mjs", "/icon.icns", "/icon.ico", "/linux/after-install.sh", "/windows/installer.nsh"]) assert.ok(ignored(p), p);
   for (const p of ["/main.cjs", "/icon.png", "/connect.cjs", "/menu.cjs", "/server-bundle/manifest.json"]) assert.ok(!ignored(p), p);
+});
+
+test("B-195: a signed Windows build signs its installer through desktop/win-sign.cjs, once per file, never through azureSignOptions", async () => {
+  const { builderConfig, windowsSigning } = await load();
+  const signing = windowsSigning({ AZURE_SIGNING_ENDPOINT: "https://weu.codesigning.azure.net", AZURE_SIGNING_ACCOUNT: "acct", AZURE_SIGNING_PROFILE: "public" });
+  const c = builderConfig({ platform: "win32", version: "0.70.0", arch: "x64", signing }) as any;
+  assert.equal(c.win.azureSignOptions, undefined, "electron-builder would download TrustedSigning on every build (B-194)");
+  assert.match(c.win.signtoolOptions.sign, /desktop[\\/]win-sign\.cjs$/);
+  assert.deepEqual(c.win.signtoolOptions.signingHashAlgorithms, ["sha256"]);
+  assert.equal(c.win.signtoolOptions.publisherName, signing.publisherName);
+
+  const sign = require("../desktop/win-sign.cjs");
+  const env = { AZURE_SIGNING_ENDPOINT: "https://weu.codesigning.azure.net", AZURE_SIGNING_ACCOUNT: "acct", AZURE_SIGNING_PROFILE: "public", PATH: "x" };
+  const calls: any[] = [];
+  const run = (cmd: string, args: string[], options: any) => { calls.push({ cmd, args, file: options.env.FABRIC_SIGN_FILE }); };
+  sign({ path: "C:\\a b\\uninstaller.exe", hash: "sha1" }, null, run, env);
+  assert.equal(calls.length, 0, "SHA-1 is not asked for");
+  sign({ path: "C:\\a b\\uninstaller.exe", hash: "sha256" }, null, run, env);
+  assert.deepEqual(calls.map((c) => [c.cmd, c.file]), [["pwsh", "C:\\a b\\uninstaller.exe"]]);
+  assert.ok(!calls[0].args.join(" ").includes("uninstaller.exe"), "the path travels in the environment, not the command line");
+  assert.match(sign.SCRIPT, /Import-Module ArtifactSigning/);
+  assert.match(sign.SCRIPT, /ExcludeAzureCliCredential = \$false/);
+  assert.doesNotMatch(sign.SCRIPT, /TrustedSigning/);
+  let tries = 0;
+  sign({ path: "f.exe", hash: "sha256" }, null, () => { if (++tries === 1) throw new Error("service hiccup"); }, env);
+  assert.equal(tries, 2, "one more try after a failure");
+  assert.throws(() => sign({ path: "f.exe", hash: "sha256" }, null, () => { throw new Error("down"); }, env), /down/);
+  assert.throws(() => sign({ path: "f.exe", hash: "sha256" }, null, run, { PATH: "x" }), /AZURE_SIGNING_ENDPOINT/);
 });
