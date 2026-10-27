@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.54.0 (2026-10-27)
+
+- **Reply status settings list your accounts with an agent.** In Settings → Addresses, a Gmail, Outlook or IMAP
+  account that has a reply agent now has its own line under its domain. You choose there whether the inbox shows
+  where its conversations stand, as for an address.
+
 ## 0.53.0 (2026-10-27)
 
 - **Reply agents check and grade answers more fairly.** The answer check now reads the facts an answer rests on
