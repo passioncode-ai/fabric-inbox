@@ -47,7 +47,8 @@ export interface GmailBindings extends AccountsEnvironment {
   AGENT_REGISTRY?: { getByName(name: string): { enqueue(mailboxId: string, emailId: string, options?: { holdMs?: number }): Promise<void> } };
   /** B-181: outreach campaigns, told of the new mail of an account they send from (replies, stops, bounces). */
   CAMPAIGNS?: { getByName(name: string): { inbound(account: string, message: { sender: string; subject: string; body: string; threadId?: string }): Promise<unknown> } };
-  CATEGORIES?: { getByName(name: string): { ingest(account: { id: string; email: string }, event: { id: string; sender: string; subject: string; body: string; html?: string; date: string }): Promise<void> } };
+  CATEGORIES?: { getByName(name: string): { ingest(account: { id: string; email: string }, event: { id: string; sender: string; subject: string; body: string; html?: string; date: string;
+    files?: { id: string; filename: string; mimetype: string; size: number }[] }): Promise<void> } };
 }
 /** B-178: how long an account's reply agent waits for the message's safety check, as a Cloudflare address waits for its spam check. */
 const SAFETY_HOLD_MS = 15 * 60_000;
@@ -91,7 +92,7 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     const answered = new Map<string, Promise<boolean>>();
     await this.service.drainEvents(async (event: IncomingEvent) => {
       const payload = { id: event.emailId, sender: event.sender, subject: event.subject, body: event.body, date: event.date, thread_id: event.threadId,
-        ...(event.html ? { html: event.html } : {}) };
+        ...(event.html ? { html: event.html } : {}), ...(event.files?.length ? { files: event.files } : {}) };
       // B-171: an account with a reply agent hands its new mail to the agent first; a failure retries the
       // whole event, and enqueuing the same message again changes nothing.
       const registry = this.env.AGENT_REGISTRY, bucket = this.env.BUCKET;

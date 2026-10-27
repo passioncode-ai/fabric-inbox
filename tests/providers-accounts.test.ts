@@ -308,6 +308,24 @@ test("durable event delivery retries failure and records acknowledgement; sent m
   }, Date.now() + 120_000);
   assert.equal(calls, 2);
 });
+test("B-179: an account's event carries its attached files for the safety check, never the pictures shown in its text", async () => {
+  const { service, store } = await fixture(async (input) => {
+    const u = new URL(String(input));
+    if (u.pathname.endsWith("/history")) return json({ historyId: "20", history: [{ messagesAdded: [{ message: { id: "inv" } }] }] });
+    return json({ id: "inv", threadId: "t", labelIds: ["INBOX"], payload: { mimeType: "multipart/mixed", parts: [
+      { mimeType: "text/plain", body: { data: Buffer.from("Your invoice").toString("base64url") } },
+      { mimeType: "application/pdf", filename: "invoice.pdf", headers: [{ name: "Content-Disposition", value: "attachment; filename=invoice.pdf" }], body: { attachmentId: "ATT1", size: 2048 } },
+      { mimeType: "image/png", filename: "logo.png", headers: [{ name: "Content-Disposition", value: "inline" }, { name: "Content-ID", value: "<logo>" }], body: { attachmentId: "ATT2", size: 100 } },
+    ] } });
+  });
+  const a = (await store.get<AccountRecord>("account:a"))!;
+  a.sync = { mode: "history", historyId: "10" };
+  await store.put("account:a", a);
+  await service.sync("a");
+  const seen: unknown[] = [];
+  await service.drainEvents(async (event) => { seen.push(event.files); });
+  assert.deepEqual(seen, [[{ id: "ATT1", filename: "invoice.pdf", mimetype: "application/pdf", size: 2048 }]]);
+});
 test("an event that always fails is set aside after 10 attempts with its error, and the others still arrive (reliability audit M3)", async () => {
   const { service, store } = await fixture(async (input) => {
     const u = new URL(String(input));

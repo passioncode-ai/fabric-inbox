@@ -13,6 +13,16 @@ const bundle = await build({
     contents: `
       import { CategoriesDO } from './workers/categories/store';
       import { MockLanguageModelV3 } from 'ai/test';
+      import { DurableObject } from 'cloudflare:workers';
+      // B-179: an account's files come from its provider through the accounts object; this one answers from a fixed set.
+      export class FakeAccounts extends DurableObject {
+        async getAttachment(accountId, messageId, attachmentId) {
+          await this.ctx.storage.put('asked:' + accountId + '/' + messageId + '/' + attachmentId, true);
+          if (attachmentId === 'gone') throw new Error('attachment_not_found');
+          return { data: btoa('%PDF-1.7').replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '') };
+        }
+        async asked() { return [...(await this.ctx.storage.list({ prefix: 'asked:' })).keys()].map((k) => k.slice(6)).sort(); }
+      }
       export class TestCategories extends CategoriesDO {
         async safetyScan(text) {
           const s = JSON.parse((await this.ctx.storage.get('test:scan')) || '{}');
@@ -59,6 +69,7 @@ const bundle = await build({
         if (c.op === 'held') return Response.json(await s.heldMessages());
         if (c.op === 'released') return Response.json(await s.released());
         if (c.op === 'decide') return Response.json(await s.decideHeld(c.key, c.action, c.by));
+        if (c.op === 'asked') return Response.json(await env.GMAIL_ACCOUNTS.getByName('workspace').asked());
         return new Response('unknown', { status: 400 });
       } };
     `,
@@ -71,7 +82,7 @@ const bundle = await build({
 async function fixture(bindings: Record<string, unknown> = { AI: {} }) {
   const mf = new Miniflare({
     modules: true, script: bundle.outputFiles[0]!.text, compatibilityDate: "2026-09-01", compatibilityFlags: ["nodejs_compat"],
-    durableObjects: { CATEGORIES: { className: "TestCategories", useSQLite: true } }, r2Buckets: ["BUCKET"], bindings,
+    durableObjects: { CATEGORIES: { className: "TestCategories", useSQLite: true }, GMAIL_ACCOUNTS: { className: "FakeAccounts", useSQLite: true } }, r2Buckets: ["BUCKET"], bindings,
     outboundService: () => new Response("External network disabled for tests", { status: 503 }),
   });
   const call = async (op: string, fields: Record<string, unknown> = {}): Promise<any> => {
@@ -245,5 +256,24 @@ test("B-180: a link imitating a known or the server's own name holds the message
     await call("ingest", { account: CF, event: event("look3", "Receipt.", { html: '<p><a href="https://www.paypal.com/activity">Receipt</a> <a href="https://shop.invalid/orders">Orders</a></p>' }) });
     const real = (await call("of", { keys: [{ accountId: CF.id, messageId: "look3" }] }))[`${CF.id}|look3`];
     assert.deepEqual([real.state, real.findings.lookalikes], ["clear", undefined]);
+  } finally { await mf.dispose(); }
+});
+
+test("B-179: an account's files are read from its provider on arrival: a planted document holds it, a file that runs code holds it, one that cannot be fetched is named unread", async () => {
+  const { mf, call } = await fixture();
+  try {
+    const files = (list: [string, string, string][]) => ({ files: list.map(([id, filename, mimetype]) => ({ id, filename, mimetype, size: 2000 })) });
+    await call("ingest", { account: GMAIL, event: event("ga1", "Your invoice.", files([["att-1", "invoice.pdf", "application/pdf"]])) });
+    await call("ingest", { account: GMAIL, event: event("ga2", "Your invoice.", files([["att-2", "planted.pdf", "application/pdf"]])) });
+    await call("ingest", { account: GMAIL, event: event("ga3", "Open it.", files([["att-3", "invoice.js", "text/javascript"]])) });
+    await call("ingest", { account: GMAIL, event: event("ga4", "Your invoice.", files([["gone", "report.pdf", "application/pdf"]])) });
+    const of = await call("of", { keys: ["ga1", "ga2", "ga3", "ga4"].map((m) => ({ accountId: GMAIL.id, messageId: m })) });
+    assert.equal(of[`${GMAIL.id}|ga1`].state, "clear");
+    assert.equal(of[`${GMAIL.id}|ga2`].state, "held");
+    assert.ok(of[`${GMAIL.id}|ga2`].findings.fileSignals.length > 0, "the planted document's text was read and checked");
+    assert.deepEqual([of[`${GMAIL.id}|ga3`].state, of[`${GMAIL.id}|ga3`].findings.riskyFiles], ["held", ["invoice.js"]]);
+    assert.deepEqual(of[`${GMAIL.id}|ga4`].findings.unreadFiles, ["report.pdf"], "never passed as read");
+    // Asked of the accounts object by the account's own id, the provider's message id and the attachment's id; the script is never fetched.
+    assert.deepEqual(await call("asked"), ["a1/ga1/att-1", "a1/ga2/att-2", "a1/ga4/gone"]);
   } finally { await mf.dispose(); }
 });
