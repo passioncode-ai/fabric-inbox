@@ -64,7 +64,7 @@ async function gmail(internalDate?: number) {
     calls.push({ path, method: init?.method, body });
     if (failure === "write" && init?.method === "POST") throw new Error("timeout");
     if (path.endsWith("/modify")) labels = [...new Set([...labels.filter((l) => !body.removeLabelIds.includes(l)), ...body.addLabelIds])];
-    return new Response(JSON.stringify({ id: "m1", threadId: "t1", labelIds: labels, ...(internalDate ? { internalDate: String(internalDate) } : {}), payload: { headers: [{ name: "Subject", value: "Synthetic" }, { name: "From", value: "deals@spam.invalid" }] } }));
+    return new Response(JSON.stringify({ id: "m1", threadId: "t1", labelIds: labels, ...(internalDate ? { internalDate: String(internalDate) } : {}), payload: { headers: [{ name: "Subject", value: "Synthetic" }, { name: "From", value: "deals@spam.invalid" }, { name: "Message-ID", value: "<m1@spam.invalid>" }] } }));
   });
   return { service, calls, labels: () => labels, fail: (v: string) => { failure = v; } };
 }
@@ -117,6 +117,22 @@ test("C-7b (B-184): Not spam on recent account mail queues it once for rules, ca
   assert.equal(result.discarded, 0);
   await service.setSpam("a", "m1", true);
   assert.equal((await service.setSpam("a", "m1", false, now) as { redeliver?: boolean }).redeliver, false, "mail already handed on is not handed on twice");
+  assert.equal(await store.get("pending:event:a:m1"), undefined);
+});
+
+test("C-7b (B-184): mail handed on before (an IMAP move gives it a new id) is known by its Message-ID and not handed on twice", async () => {
+  const now = Date.now();
+  const { service } = await gmail(now - 3600_000);
+  const store = (service as unknown as { store: MemoryStore }).store;
+  await service.moveToInbox("a", "m1"); // read and cached, as a sync would
+  // As if the message had arrived in the inbox under another id and been handed on.
+  await store.put("pending:event:a:old-id", { accountId: "a", messageId: "m1", delivered: false });
+  const delivered: string[] = [];
+  const drained = await service.drainEvents(async (event) => { delivered.push(event.emailId); }, now);
+  assert.equal(delivered.length, 1, JSON.stringify(drained));
+  assert.equal((await store.list({ prefix: "event:a:rfc-" })).size, 1, "the Message-ID marker, kept with the event markers");
+  await service.setSpam("a", "m1", true);
+  assert.equal((await service.setSpam("a", "m1", false, now) as { redeliver?: boolean }).redeliver, false);
   assert.equal(await store.get("pending:event:a:m1"), undefined);
 });
 

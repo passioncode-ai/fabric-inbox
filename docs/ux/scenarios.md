@@ -900,7 +900,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   1. Report spam in the reader -> the message moves to Spam and the next one opens; the notice says new mail from that sender goes to Spam too.
   2. In Spam, Not spam -> it moves back to the inbox; mail from that sender is never treated as spam again.
 - **Expected result:** One action fixes the message and teaches the filter.
-- **Alt paths:** A Gmail message uses Gmail's own spam label, which trains Gmail. Not spam on mail that arrived in the last three days hands it to its rules, categories, safety check and reply agent, once, on a Cloudflare mailbox (C-7) and, since 0.55.0, on a Gmail, IMAP or Outlook account too (C-7b, B-184); no discard rule takes it on the way. Older mail only comes back to the inbox.
+- **Alt paths:** A Gmail message uses Gmail's own spam label, which trains Gmail. Not spam on mail that arrived in the last three days hands it to its rules, categories, safety check and reply agent, once, on a Cloudflare mailbox (C-7) and, since 0.55.0, on a Gmail, IMAP or Outlook account too (C-7b, B-184); no discard rule takes it on the way, and mail already handed on (known by its Message-ID, since an IMAP move changes its id) is not handed on again. Older mail, and mail that was in the account before it was connected, only comes back to the inbox.
 - **UI elements:** SCR-04 (Report spam, Not spam), SCR-03 notice.
 - **States covered:** loading, error, success
 - **Errors & recovery:** A message that is no longer there says so; if the lists cannot be changed the message still moves and the notice says the rule was not saved.

@@ -235,6 +235,16 @@ const IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{1,128}$/;
 export const EVENT_KEEP_MS = 90 * 86_400_000;
 /** C-7b: mail taken out of an account's Spam within this long of arriving reaches its rules, categories and agent. */
 export const NOT_SPAM_REDELIVER_MS = 3 * 86_400_000;
+/**
+ * C-7b: the marker of a message handed on, by its Message-ID, under the account's event markers (so the prune and a
+ * disconnect take it too). Null for mail with no Message-ID.
+ */
+async function handedKey(accountId: string, rfcMessageId: string | undefined): Promise<string | null> {
+  const id = String(rfcMessageId ?? "").trim().toLowerCase();
+  if (!id) return null;
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(id)));
+  return "event:" + accountId + ":rfc-" + [...digest.slice(0, 16)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 const EVENT_PRUNE_CURSOR = "events-prune:cursor";
 /**
  * B-06: one account's sending budget (shared/mail/send-limits.ts). A send past it is refused before
@@ -1076,12 +1086,17 @@ export class AccountService {
     const message = await this.changeMessage(accountId, messageId, { spam });
     if (spam || !inFolder(message.labels, "inbox") || !(now - (message.timestamp || 0) <= NOT_SPAM_REDELIVER_MS)) return message;
     const account = await this.account(accountId);
+    // Mail that was there before the account was connected was never new mail here: it only comes back.
+    const connected = (account as { connectedAt?: number }).connectedAt ?? account.createdAt ?? 0;
+    if ((message.timestamp || 0) < connected) return message;
     // The key every sync queues an arrival under (Gmail, IMAP and Outlook alike): the provider's id in this account.
     const eventId = message.providerMessageId;
     const eventKey = "event:" + account.id + ":" + eventId;
+    // An IMAP move gives the message a new id, so mail handed on before it went to Spam is known by its Message-ID.
+    const handed = await handedKey(account.id, message.rfcMessageId);
     const queued = await this.store.transaction(async (tx) => {
       const old = await tx.get<PendingEvent>(eventKey);
-      if (old?.delivered) return false;
+      if (old?.delivered || (handed && (await tx.get<PendingEvent>(handed))?.delivered)) return false;
       const event: PendingEvent = { accountId: account.id, messageId: eventId, delivered: false, notSpam: true };
       await tx.put(eventKey, event);
       await tx.put("pending:" + eventKey, event);
@@ -1514,8 +1529,11 @@ export class AccountService {
           date: message.date || new Date(message.timestamp || Date.now()).toISOString(),
           ...(attachedFiles(message).length ? { files: attachedFiles(message) } : {}),
         });
+        const handed = await handedKey(event.accountId, message.rfcMessageId);
         await this.store.transaction(async (tx) => {
           await tx.put(key.slice("pending:".length), { ...event, delivered: true, deliveredAt: now });
+          // C-7b: kept and forgotten with the event markers (EVENT_KEEP_MS), so a Not spam never hands it on again.
+          if (handed) await tx.put(handed, { accountId: event.accountId, messageId: event.messageId, delivered: true, deliveredAt: now });
           await tx.delete(key);
         });
         result.delivered++;
