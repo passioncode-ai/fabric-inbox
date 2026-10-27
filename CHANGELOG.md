@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.48.1 (2026-10-27)
+
+- **Updating your server waits out a dropped connection.** When Cloudflare drops the connection during the upload,
+  the app tries again after 5 seconds and then after 30, and if it still fails, it says what the connection
+  reported.
+- **A missing permission is named again after a failed step.** A failed step no longer loses which permission the
+  token lacks.
+
 ## 0.48.0 (2026-10-27)
 
 - **Links to look-alike sites hold a message.** A link to a site that imitates a well-known name, or your own
