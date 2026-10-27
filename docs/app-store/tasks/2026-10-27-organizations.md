@@ -42,7 +42,7 @@ planned; if one is ever needed, it is a new decision with its own packet.
 **D2. A server knows its context and refuses any other.** The server holds its context as a setting
 (`FABRIC_CONTEXT`, `personal` when absent, so today's servers keep working). An attestation whose `org` is not that
 context is refused; so is a key, a share or an event naming another context. The context appears in
-`/api/server`, the well-known document and every event the server emits for Fabric.
+`/api/server` only: the contract keeps it out of the service document and its events (O-4, answered 2026-10-27).
 
 **D3. The organization service owns organizations, people, roles and its account list; Inbox keeps mail.** Inbox does
 not create organizations or people of its own; an organization appears in Inbox when a server is bound to it, and a
@@ -81,7 +81,7 @@ Asked on the board with this packet's path; each has the default Inbox proceeds 
 | O-1 | the organization service | Is "workplace" (a member's primary work address and the mailboxes they reach) a shared entity, or Inbox's own? | Inbox's own record until the shared model names it |
 | O-2 | the organization service | The app client `inbox` (SOT-B5): its audience is each server's origin, so a person has one pairwise subject per server; confirm | one audience per server origin |
 | O-3 | the organization service | The directory grant (section 4): members' work addresses, roles, state, and the organization's Cloudflare account ids; Inbox also needs a change feed, or a revision to poll, to remove a leaver at once | poll the revision every 5 minutes; a removed member's sessions and keys are revoked on the next read |
-| O-4 | the contract | Context on Inbox's events for Fabric: carried by the server's descriptor, not by each event (`contexts.md`: events never carry the session's context) | the descriptor names the context |
+| O-4 | the contract | Context on Inbox's events for Fabric: carried by the server's descriptor, not by each event (`contexts.md`: events never carry the session's context) | answered by the contract 2026-10-27 (thread `37b6a28d`, message `c3e1a884`): events carry no context, and neither do the descriptor and the well-known document; an instance's context is its placement's `context` in the estate record (`FAC-SEM-074`, absent means `personal`). `FABRIC_CONTEXT` stays Inbox's own setting, shown in `/api/server` |
 
 ## Milestones, as Inbox rows
 
@@ -95,6 +95,23 @@ Asked on the board with this packet's path; each has the default Inbox proceeds 
 | M5 | delegated calls | B-83 | Fabric's delegation issuer (2026-11-21) |
 | M6 | residency (B-157, done in 0.62.0), the organization's server in Fabric Dashboards, update policy (Q10) | B-157, B-193 | M1 |
 | M7 | the first organization walked end to end with receipts | B-158 | M1 to M6 |
+
+## Moving a mailbox between servers (M1 step 3)
+
+From the map of where a mailbox lives (read 2026-10-27): its mail is a `MailboxDO` named by its address (tables
+`folders`, `emails`, `attachments`, the ones a rename copies, `workers/durableObject/rename-tables.ts`); its files in
+R2 are keyed by message id (`bodies/<id>…`, `attachments/<emailId>/<attId>/<filename>`); its settings are
+`mailboxes/<address>.json`; its rules an `AutomationDO` per mailbox; its categories rows of `CategoriesDO` keyed
+`cloudflare:<address>`; its agent a definition in `AgentRegistryDO` that the settings name, with knowledge collections
+in `KnowledgeDO`. A Gmail, Outlook or IMAP account's credentials are sealed with the server's own key and its OAuth
+client, so such an account is connected again on the other server, not moved.
+
+| Step | What | State |
+|---|---|---|
+| 3a | Read a mailbox out and write it in, page by page with ids kept, and count the copy against the source: routes `/api/transfer/:email` (`workers/routes/transfer.ts`, `workers/lib/mailbox-transfer.ts`), tools `export_mailbox` and `import_mailbox`; a file is read only when a row of that mailbox names it, and written only after its row; settings arrive with no agent answering | built in 0.65.0 (`tests/mailbox-transfer-workerd.test.ts`) |
+| 3b | Carry what is not mail: rules, category labels, the agent and its knowledge (a new agent on the receiving server, its collections copied) | next |
+| 3c | Route the address to the receiving server once the copy is complete (Email Routing rule to its Worker; same Cloudflare account only, MD-11), a delivery check, the sending server's copy kept read-only until confirmed, and a way back (the rule back) | after 3b |
+| 3d | The Mac app moves an address between two servers it holds (SCN-094) | after 3c |
 
 ## What is not part of this
 

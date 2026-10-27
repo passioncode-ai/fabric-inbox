@@ -24,6 +24,7 @@ import { gmailSetupRouter } from "./routes/gmail-setup";
 import { credentialKeyRouter } from "./routes/credential-key";
 import { microsoftSetupRouter } from "./routes/microsoft-setup";
 import { membersRouter } from "./routes/members";
+import { transferRouter } from "./routes/transfer";
 import type { Env } from "./types";
 import { BUILD_HEADER, BUILD_ID } from "../shared/build";
 
@@ -40,6 +41,7 @@ api.route("/", agentsRouter);
 api.route("/", setupRouter);
 api.route("/", domainsRouter);
 api.route("/", serverUpdateRouter);
+api.route("/", transferRouter);
 api.route("/", cloudflareAccountsRouter);
 api.route("/", knowledgeRouter);
 api.route("/", campaignsRouter);

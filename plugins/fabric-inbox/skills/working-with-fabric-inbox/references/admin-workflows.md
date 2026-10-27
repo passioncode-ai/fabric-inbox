@@ -216,6 +216,25 @@ only then repeat it by hand), or leaves it unknown with what it found. A tool ca
 `export_setup` gives the setup (no secrets); with `fromCloudflare: true` it proposes one from the
 account's Email Routing rules. `apply_setup` applies one — two-step, never deletes.
 
+## Moving a mailbox to another server
+
+A person's own server and an organization's server are separate (each its own key). To carry a Cloudflare
+mailbox from one to the other with an `admin` key on each:
+
+1. On the sending server, `export_mailbox` action `manifest`: its settings, counts, and `blockers`. Wait while
+   `blockers.sends` or `blockers.incoming` is above 0.
+2. On the receiving server, `import_mailbox` action `open` with the manifest's `settings` (no agent answers it there
+   until one is chosen).
+3. For each table in order `folders`, `emails`, `attachments`: `export_mailbox` action `rows` (pass `next` back as
+   `after` until it is null), then `import_mailbox` action `rows` with the page's `rows`; for every key in the page's
+   `files`, `export_mailbox` action `file`, then `import_mailbox` action `file` with its `key`, `data` and `contentType`.
+4. `export_mailbox` action `ids` on the sending server, then `import_mailbox` action `check` with them on the
+   receiving one: `complete: true` means every message and attachment arrived.
+
+Mail is still delivered to the sending server, and nothing there is deleted: routing the address to the new
+server is a separate step, not built yet. Repeating any step is safe (rows are brought up to date, a file of the
+same size is kept).
+
 ## What a person does
 
 Connecting a Gmail or Outlook account, connecting an IMAP account (its app password), setting Gmail
