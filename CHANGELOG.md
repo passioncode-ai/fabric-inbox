@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.69.0 (2026-10-27)
+
+- **The Mac app moves an address to another server you hold.** With two or more servers in the app, the Account menu
+  has Move an Address to Another Server…: choose the address and the server, see what goes, and the app copies the
+  mail, rules, agent, knowledge and labels, checks the counts, sends the mail to the other server and confirms with a
+  test message that it arrives. If the test message does not arrive, Put It Back sends the mail here again. A move
+  that stops midway continues from the same step the next time you open the window.
+
 ## 0.68.0 (2026-10-27)
 
 - **An address's mail can move to the server its mailbox was copied to.** Once the copy is complete, an agent points the

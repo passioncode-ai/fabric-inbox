@@ -245,6 +245,96 @@ async function saveConfig(next) {
   if (mailNotifier) mailNotifier.reset();
   await backup.saveBackup({ fs, appData: app.getPath('appData'), config: next, log: logEvent });
 }
+// ── B-158 M1 step 3d (SCN-094): moving an address between two servers the app holds ─────────────
+// One move at a time; its state is written after every step (`move.json` in the profile), so a quit resumes it.
+const moveCore = require('./move.cjs');
+let moveWindow = null;
+let moveRun = null;
+const movePath = () => path.join(app.getPath('userData'), 'move.json');
+const moveJournal = {
+  read: async () => { try { return JSON.parse(await fs.readFile(movePath(), 'utf8')); } catch { return null; } },
+  write: async (state) => { await writePrivate(movePath(), state); },
+  clear: async () => { await fs.rm(movePath(), { force: true }); },
+};
+/** Calls to one server through its own session (the person's sign-in there), never through another's. */
+function serverApi(origin) {
+  const ses = () => session.fromPartition(policy.partitionFor({ origin }));
+  const go = async (method, pathname, body) => {
+    const response = await ses().fetch(new URL(pathname, origin).href, { method, redirect: 'manual', credentials: 'include',
+      headers: { Accept: 'application/json', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    const json = (response.headers.get('content-type') || '').toLowerCase().includes('json');
+    return { status: response.status >= 300 && response.status < 400 ? 401 : response.status, body: json ? await response.json().catch(() => null) : null };
+  };
+  return { get: (pathname) => go('GET', pathname), send: (method, pathname, body) => go(method, pathname, body) };
+}
+function moverFor(state) {
+  return moveCore.createMover({ address: state.address, from: serverApi(state.from), to: serverApi(state.to), fromOrigin: state.from, toOrigin: state.to,
+    journal: moveJournal, onProgress: (s) => { if (moveWindow && !moveWindow.isDestroyed()) moveWindow.webContents.send('fabric:move-progress', moveCore.describe(s)); } });
+}
+async function runMove(action) {
+  const state = await moveJournal.read();
+  if (!state || moveRun) return moveCore.describe(state);
+  const mover = moverFor(state);
+  moveRun = mover;
+  try { return moveCore.describe(await mover[action]()); }
+  catch (error) { logEvent({ event: 'move_failed', reason: String(error && error.message).slice(0, 200) }); return moveCore.describe(await moveJournal.read()); }
+  finally { moveRun = null; logEvent({ event: 'move_step', stage: (await moveJournal.read())?.stage ?? null }); }
+}
+function showMove() {
+  if (moveWindow && !moveWindow.isDestroyed()) { moveWindow.show(); moveWindow.focus(); return; }
+  moveWindow = new BrowserWindow({ title: t('Move an Address'), width: 560, height: 600, minWidth: 460, minHeight: 520,
+    backgroundColor: '#f7f7f8', webPreferences: securePreferences({ preload: path.join(__dirname, 'move-preload.cjs'), partition: 'fabric-move' }) });
+  moveWindow.setMenuBarVisibility(false);
+  rejectPermissions(moveWindow.webContents.session);
+  moveWindow.webContents.on('will-navigate', event => event.preventDefault());
+  moveWindow.webContents.on('will-redirect', event => event.preventDefault());
+  moveWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  moveWindow.on('closed', () => { moveWindow = null; });
+  moveWindow.loadFile(path.join(__dirname, 'move.html'));
+}
+function installMoveIPC() {
+  const own = (event) => !!(moveWindow && !moveWindow.isDestroyed() && event.sender === moveWindow.webContents);
+  const handle = (channel, fn) => ipcMain.handle(channel, async (event, arg) => (own(event) ? fn(arg) : null));
+  handle('fabric:move-locale', () => i18n.forWindow());
+  // What can move: the shown server's Cloudflare addresses, the other servers it holds, and a move to continue.
+  handle('fabric:move-state', async () => {
+    const pending = moveCore.describe(await moveJournal.read());
+    const list = config ? await serverApi(config.origin).get('/api/project-addresses').catch(() => null) : null;
+    const addresses = list && list.status === 200 && list.body ? (list.body.addresses || []).filter((a) => !a.paused && !a.renaming).map((a) => a.email) : null;
+    return { pending, from: config ? { origin: config.origin, label: serverList.labelFor(servers.find((s) => s.origin === config.origin) || config, t) } : null,
+      addresses, targets: servers.filter((s) => config && s.origin !== config.origin).map((s) => ({ origin: s.origin, label: serverList.labelFor(s, t) })) };
+  });
+  handle('fabric:move-start', async (arg) => {
+    const address = String(arg && arg.address || '').toLowerCase();
+    const target = servers.find((s) => s.origin === (arg && arg.to));
+    if (!config || !target || !address || moveRun) return null;
+    const pending = await moveJournal.read();
+    if (pending && pending.stage !== 'done' && pending.stage !== 'back') return moveCore.describe(pending);
+    await moveJournal.clear();
+    const mover = moveCore.createMover({ address, from: serverApi(config.origin), to: serverApi(target.origin), fromOrigin: config.origin, toOrigin: target.origin, journal: moveJournal,
+      onProgress: (s) => { if (moveWindow && !moveWindow.isDestroyed()) moveWindow.webContents.send('fabric:move-progress', moveCore.describe(s)); } });
+    moveRun = mover;
+    try { return moveCore.describe(await mover.run()); }
+    finally { moveRun = null; }
+  });
+  // What would move (SCN-094 step 2): the address's counts and anything still in flight, read from the server shown.
+  handle('fabric:move-preview', async (arg) => {
+    if (!config) return null;
+    const answer = await serverApi(config.origin).get(`/api/transfer/${encodeURIComponent(String(arg || '').toLowerCase())}`).catch(() => null);
+    return answer && answer.status === 200 && answer.body ? { counts: answer.body.counts, blockers: answer.body.blockers } : { error: (answer && answer.body && answer.body.error) || null };
+  });
+  handle('fabric:move-continue', () => runMove('run'));
+  handle('fabric:move-wait', () => runMove('waitLonger'));
+  handle('fabric:move-back', () => runMove('putBack'));
+  handle('fabric:move-agent', async () => { const state = await moveJournal.read(); return state ? moverFor(state).chooseAgent(state.agentId).then(() => true, () => false) : false; });
+  handle('fabric:move-show-target', async () => { const state = await moveJournal.read(); if (state && state.to) await switchServer(state.to); return true; });
+  // A move ends here when it is done or put back, or (Cancel) when it stopped before this server changed: nothing held or routed.
+  handle('fabric:move-dismiss', async () => {
+    const state = await moveJournal.read();
+    if (state && !moveRun && (state.stage === 'done' || state.stage === 'back' || (!state.held && !state.routed))) await moveJournal.clear();
+    return true;
+  });
+}
 function showSetup(message = '', start = '') {
   notice = message;
   setupStart = start;
@@ -921,6 +1011,7 @@ async function handleConnectLink(url) {
   }
 }
 function installIPC() {
+  installMoveIPC();
   const fromConsole = (event) => {
     const docked = consoleView && !consoleView.webContents.isDestroyed() && event.sender === consoleView.webContents
       && event.senderFrame === consoleView.webContents.mainFrame && event.senderFrame.url === consoleURL;
@@ -1129,6 +1220,7 @@ function installMenu() {
     servers: {
       items: servers.map((s) => ({ label: serverList.labelFor(s, t), checked: !!config && s.origin === config.origin, click: () => void switchServer(s.origin) })),
       add: () => showSetup(),
+      move: servers.length > 1 && config ? () => showMove() : null,
       forget: servers.filter((s) => !config || s.origin !== config.origin).map((s) => ({ label: serverList.labelFor(s, t), click: () => void forgetServer(s.origin) })),
     },
     connectGmail: () => { if (config) void openExternal(policy.gmailConnectURL(config), true); else showSetup(t('Set the server address before connecting Gmail.')); },
