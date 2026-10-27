@@ -93,6 +93,11 @@
 | SCN-089 | Prepare an outreach campaign with my agent | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | tests/campaigns-workerd.test.ts |
 | SCN-090 | My agent sends the campaign and stops for whoever answers | Put an agent on a project address | P-01 | ST-008, FLW-08 | draft | tests/campaigns-sending-workerd.test.ts |
 | SCN-091 | Watch, start and stop my campaigns in the app | Put an agent on a project address | P-01 | ST-008, FLW-08, SCR-18 | draft | tests/campaigns-section.test.ts |
+| SCN-092 | Add an organization to the app | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
+| SCN-093 | Switch between my space and an organization | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | — |
+| SCN-094 | Attach an account to an organization | Connect an account | P-01 | ST-001, FLW-01 | draft | — |
+| SCN-095 | Sign in to an organization's server with my work address | Resume and manage preferences | P-02 | ST-007, FLW-07 | draft | — |
+| SCN-096 | Give a person a level on a mailbox | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-17 | draft | — |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1882,3 +1887,102 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Product:** unobserved
 - **Today:** Built 2026-10-27 (B-181 step 3, 0.46.0).
 
+### SCN-092: Add an organization to the app
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07; B-158 (operator 2026-10-25, Q1: many organizations, separated from the start); [the plan](../app-store/tasks/2026-10-27-organizations.md) D1, D2
+- **Entry point:** the app menu (Account → Add an Organization…)
+- **Preconditions:** My own server is set up. I belong to an organization whose server exists (its administrator set it up, or I did with the runbook).
+- **Steps:**
+  1. Choose Add an Organization… -> the app asks for the organization's server address.
+  2. Enter it -> the app reads the server's context (`org:<id>`) and name; a server that is `personal`, or one already in the app, is refused with why.
+  3. Sign in to it -> it is listed beside my own server under its name.
+- **Expected result:** The app holds my space and the organization, each on its own server, and nothing of one shows in the other.
+- **Alt paths:** The address does not answer: the ordinary Retry; the server answers but is older than contexts: it is added as `personal` only if I own it, otherwise refused with "update the server first".
+- **UI elements:** none yet (a dialog and the server list come with M1).
+- **States covered:** loading, error, success
+- **Errors & recovery:** A failed sign-in leaves the organization listed and signed out; Remove takes it off the list and clears its storage on this Mac.
+- **Status:** draft
+- **Coverage:** none
+- **Product:** unobserved
+- **Today:** Not built (B-158 M1). The app holds one server.
+
+### SCN-093: Switch between my space and an organization
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07; B-158; [the plan](../app-store/tasks/2026-10-27-organizations.md) D1
+- **Entry point:** the window's title bar (the context's name) and the app menu
+- **Preconditions:** The app holds my own server and at least one organization (SCN-092).
+- **Steps:**
+  1. Choose the organization -> the window shows its mail, people and agents; the title names it.
+  2. Choose My mail -> my own server again, where I left it.
+  3. A new-mail notification names which one it came from; clicking it opens that one.
+- **Expected result:** One window at a time shows one context; switching never mixes mail, search, agents or keys of two contexts.
+- **Alt paths:** A context I am signed out of opens at its sign-in page.
+- **UI elements:** none yet (M1).
+- **States covered:** loading, success
+- **Errors & recovery:** A context whose server does not answer shows the ordinary Retry for that one; the others keep working.
+- **Status:** draft
+- **Coverage:** none
+- **Product:** unobserved
+- **Today:** Not built (B-158 M1).
+
+### SCN-094: Attach an account to an organization
+- **Persona:** P-01
+- **Feature:** Connect an account
+- **Traces:** ST-001, FLW-01; B-158 (report, target flow: one or several accounts per organization); [the plan](../app-store/tasks/2026-10-27-organizations.md) D3, D7
+- **Entry point:** SCR-11 (Settings → Setup) in the organization's context
+- **Preconditions:** I administer the organization. The account (a Cloudflare account, or Gmail, Outlook, IMAP) is mine to connect; for one already in my own space, its mailboxes have mail and agents.
+- **Steps:**
+  1. Connect a new account in the organization -> as in SCN-002 and SCN-051, on the organization's server.
+  2. Or move one from my space: choose it -> the app says what moves (mailboxes, mail, agents, rules) and that my space keeps nothing of it.
+  3. Confirm -> the mail is exported, imported on the organization's server and counted; the account is listed there.
+- **Expected result:** The account's mail and agents are on the organization's server, the counts match, and my space no longer shows it.
+- **Alt paths:** Counts that do not match stop the move with both numbers; my space keeps the account until I try again or cancel.
+- **UI elements:** none yet (M1).
+- **States covered:** loading, error, success
+- **Errors & recovery:** A move cut midway is resumed or undone from where it stopped; mail is never in neither place.
+- **Status:** draft
+- **Coverage:** none
+- **Product:** unobserved
+- **Today:** Not built (B-158 M1). Other accounts are connected to one server only.
+
+### SCN-095: Sign in to an organization's server with my work address
+- **Persona:** P-02
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07; B-159 (operator 2026-10-25, Q6 and Q7); [the plan](../app-store/tasks/2026-10-27-organizations.md) D4, D5
+- **Entry point:** the organization's sign-in page
+- **Preconditions:** The organization lists me (its directory) with a work address; it signs people in by invitation and passkey, or by its identity provider.
+- **Steps:**
+  1. Open the organization in the app -> its sign-in page.
+  2. Sign in with my passkey (or the identity provider) -> the server receives who I am in the organization and my role.
+  3. The window shows the mailboxes my level reaches; my work address is my primary one.
+- **Expected result:** I am in, as myself, with exactly the mailboxes an administrator gave me; my role is shown, and gives nothing by itself.
+- **Alt paths:** Listed with no level yet: I am in, with no mailbox and a sentence naming who gives access. Removed from the organization: refused, and my sessions and keys on its server are revoked.
+- **UI elements:** none yet (M2).
+- **States covered:** loading, empty, error, success
+- **Errors & recovery:** A membership statement that has expired is renewed by signing in again.
+- **Status:** draft
+- **Coverage:** none
+- **Product:** unobserved
+- **Today:** Not built. Blocked on the organization service's sign-in without an identity provider (B-159).
+
+### SCN-096: Give a person a level on a mailbox
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07; B-160 (operator 2026-10-25, Q11); [the plan](../app-store/tasks/2026-10-27-organizations.md) D4, D6
+- **Entry point:** SCR-17 (Settings → People)
+- **Preconditions:** I administer the organization's server; the person signed in or is in the organization's directory.
+- **Steps:**
+  1. Open a person -> their role (from the organization) and their level on each mailbox.
+  2. Choose a level for a mailbox: read; read and send; configure agents; administer -> Save.
+  3. Recent changes records who gave which level on which mailbox (B-156).
+- **Expected result:** The person can do exactly what the level allows on that mailbox, in the app and through their agents' keys.
+- **Alt paths:** The last administrator cannot be lowered. An owner or admin of the organization starts with administer, which I can lower.
+- **UI elements:** SCR-17 (Level per mailbox), M4.
+- **States covered:** loading, error, success
+- **Errors & recovery:** The list changed at the same time: try again.
+- **Status:** draft
+- **Coverage:** none
+- **Product:** unobserved
+- **Today:** Not built (B-160). Today a person is an administrator or a member with mailboxes (SCN-081).

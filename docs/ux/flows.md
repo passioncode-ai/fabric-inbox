@@ -47,7 +47,7 @@ flowchart TD
 | SCR-02 | loading, empty, error, success |
 | SCR-03 | loading, empty, error, success |
 
-- **Scenario coverage:** SCN-002, SCN-003, SCN-051, SCN-052, SCN-053, SCN-054, SCN-055, SCN-056.
+- **Scenario coverage:** SCN-002, SCN-003, SCN-051, SCN-052, SCN-053, SCN-054, SCN-055, SCN-056, SCN-094.
 
 ### FLW-02: Find and handle a conversation
 - **Traces:** ST-002; RE-001, RE-003
@@ -232,7 +232,7 @@ flowchart TD
 | SCR-15 | loading, empty, error, success |
 | SCR-17 | loading, empty, error, success |
 
-- **Scenario coverage:** SCN-001, SCN-012, SCN-019, SCN-028, SCN-030, SCN-043, SCN-044, SCN-047, SCN-048, SCN-049, SCN-050, SCN-081, SCN-082, SCN-083, SCN-084.
+- **Scenario coverage:** SCN-001, SCN-012, SCN-019, SCN-028, SCN-030, SCN-043, SCN-044, SCN-047, SCN-048, SCN-049, SCN-050, SCN-081, SCN-082, SCN-083, SCN-084, SCN-092, SCN-093, SCN-095, SCN-096.
 
 ### FLW-08: Put an agent on a project address
 - **Traces:** ST-008; RE-001
