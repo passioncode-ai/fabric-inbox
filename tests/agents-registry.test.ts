@@ -1290,6 +1290,32 @@ test("B-153: a held message is answered again once the knowledge owner closes it
   } finally { await mf.dispose(); }
 });
 
+test("B-153: a message held before the list was granted is answered when its gap closes; a list on another endpoint is not used", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const kb = { name: "acme_kb", description: "Search", endpoint: "https://tools.project.invalid/mcp", tool: "kb.query", gaps: { tool: "kb.gaps.submit" } };
+    await command("create", { id: "support", input: { ...support, tools: [kb] } });
+    await command("create", { id: "other", input: { ...support, tools: [kb] } });
+    const now = Date.now();
+    const at = new Date(now - 3_600_000).toISOString();
+    const held = (name: string, agentId: string) => ({ ...b141, agentId, id: rid(name), emailId: name, status: "held", gapsReported: ["unanswered"], createdAt: at, updatedAt: at });
+    await command("begin", { run: held("before", "support") });
+    await command("begin", { run: held("moved", "other") });
+    await command("update", { id: "support", input: { ...support, tools: [{ ...kb, gaps: { tool: "kb.gaps.submit", list: "kb.gaps.list" } }] }, expected: 1 });
+    await command("update", { id: "other", input: { ...support, tools: [{ ...kb, endpoint: "https://elsewhere.project.invalid/mcp", gaps: { tool: "kb.gaps.submit", list: "kb.gaps.list" } }] }, expected: 1 });
+    await command("r2put", { key: "test/gap-list.json", text: JSON.stringify({ tool: "kb.gaps.list", revision: "r1", gaps: [
+      { id: 1, requestId: `${rid("before")}-0123456789ab`, state: "closed", closedBy: { item: "fact:a" } },
+      { id: 2, requestId: `${rid("moved")}-0123456789ab`, state: "closed", closedBy: { item: "fact:b" } },
+    ] }) });
+    await command("gaps", { now });
+    const runs = await command("byIds", { ids: [rid("before"), rid("moved")] }) as { id: string; gapClosed?: { item: string }; attempt?: number }[];
+    const by = (n: string) => runs.find((r) => r.id === rid(n))!;
+    assert.equal(by("before").gapClosed?.item, "fact:a", "the current version's list reads the same endpoint's reports");
+    assert.equal(by("before").attempt, 2);
+    assert.equal(by("moved").gapClosed, undefined, "a list on another endpoint does not hold this run's report");
+  } finally { await mf.dispose(); }
+});
+
 test("B-153: a gap list the key may not read is left alone for six hours, and no held run moves", async () => {
   const { mf, command } = await fixture();
   try {

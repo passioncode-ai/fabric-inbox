@@ -286,11 +286,19 @@ export class AgentRegistryDO extends DurableObject<Env> {
     await this.ctx.storage.put("gaps_check_at", now + GAPS_CHECK_MS);
     const agents = new Map<string, AgentVersion | null>();
     const lists = new Map<string, { grant: ToolGrant; list: string; mailboxId: string; runs: Set<string> }>();
+    const agentOf = async (id: string, version?: number) => {
+      const key = `${id}@${version ?? ""}`;
+      if (!agents.has(key)) agents.set(key, await this.getAgent(id, version).catch(() => null));
+      return agents.get(key) ?? null;
+    };
     for (const run of held) {
       if (!run.agentId) continue;
-      const key = `${run.agentId}@${run.agentVersion ?? ""}`;
-      if (!agents.has(key)) agents.set(key, await this.getAgent(run.agentId, run.agentVersion).catch(() => null));
-      const grant = agents.get(key)?.tools.find((g) => g.gaps?.list);
+      // The run's own version reported the gap; a list granted in a later version reads the same endpoint's reports,
+      // so a message held before the list was granted is still answered when its gap closes.
+      const reported = (await agentOf(run.agentId, run.agentVersion))?.tools.find((g) => g.gaps);
+      const current = (await agentOf(run.agentId))?.tools.find((g) => g.gaps?.list);
+      const grant = reported?.gaps?.list ? reported
+        : current && (!reported || (current.endpoint === reported.endpoint && (current.tokenRef ?? "") === (reported.tokenRef ?? ""))) ? current : null;
       if (!grant) continue;
       const listKey = `${grant.endpoint}|${grant.gaps!.list}|${grant.tokenRef ?? ""}`;
       const entry = lists.get(listKey) ?? { grant, list: grant.gaps!.list!, mailboxId: run.mailboxId, runs: new Set<string>() };
