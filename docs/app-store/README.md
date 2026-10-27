@@ -191,6 +191,15 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-10-27 (0.71.0 and 0.72.0: B-163, B-161; B-78 closed).**
+
+- **0.71.0** (PR #353, `c353105`, B-163): each run in `list_agent_runs` carries `spent` {writer, checker, total}: calls, tokens, `costUsd` (null when a call reported no charge), `measured`; receipts name their `role`, older ones are attributed by `checkedBy`; `agent_mail_volume` days carry `spent`. Read live on the owner server after the deploy: the latest runs show the writer's cost in USD. Released (v0.71.0, run 40539293570, 20 assets). Board thread `c9a3cf06` answered.
+- **0.72.0** (PR #354, `aa170c5`, B-161): knowledge changes go on the events feed as `knowledge.learned` / `knowledge.retracted` (`workers/agents/knowledge-events.ts`, schema `docs/agents/knowledge-event.schema.json`). The data agent's grant was read on the owner server: two of the three addresses named on board thread `90b33987` hold it; the third is a separate product's agent answering from its own collection by design, so it was left unchanged and the question is on that thread. Both servers on 0.72.0 (receipts `linked`); a watcher tags v0.72.0 once `ci` on `aa170c5` is green.
+- **B-78 closed:** AUD-B9-02 reproduced once locally in a full run (undici's "Body is unusable" on the test's own body read); the test now drains each answer as it comes and asserts its status.
+- **Stability and Windows** (PR #352, `f00109d`): every desktop test runs on the Windows runner, and the `settle()` race family is closed.
+
+**Exact next task:** the operator's approval of SCN-094; an answer on board thread `90b33987` about the third address (add the grant, or leave its own collection as its source). M2 waits on SOT-B5, so B-160 waits too. Next allowed rows: B-162 (the `answer.cited` and `support.diagnosed` events, under neutral names in this public repository) or B-164. On 2026-11-03 read a week of the log lines and decide B-186, B-187, B-188, B-192. Waits: the operator's Allow for an agent key; B-168; B-174 on 2026-11-02; SOT-B5; .github #44.
+
 **State 2026-10-27 (B-195 done; stability and Windows audit).**
 
 - **B-195** (PR #351, merge `6836437`): electron-builder signs the Windows installer through `desktop/win-sign.cjs`, which calls the ArtifactSigning module the shared action already installed, instead of downloading TrustedSigning on every build. Rehearsal run 40503695618 (tag `v0.70.0-rc.1`, `publish=false`): both Windows jobs signed every installer with no module download, verify and both `windows-smoke` jobs passed; cancelled at the publish job. CI only, no server deploy.
