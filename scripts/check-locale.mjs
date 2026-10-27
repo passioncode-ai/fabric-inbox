@@ -111,7 +111,7 @@ const sources = [
   ...walk(join(ROOT, 'workers'), ['.ts']),
 ];
 for (const path of sources) collect(path);
-const desktopSources = readdirSync(join(ROOT, 'desktop')).filter((f) => f.endsWith('.cjs') || f === 'setup.js' || f === 'console-view.js').map((f) => join(ROOT, 'desktop', f));
+const desktopSources = readdirSync(join(ROOT, 'desktop')).filter((f) => f.endsWith('.cjs') || f === 'setup.js' || f === 'console-view.js' || f === 'move.js').map((f) => join(ROOT, 'desktop', f));
 for (const path of desktopSources) collect(path, { desktop: true });
 
 // desktop/setup.html and console.html: [data-i18n] inner HTML and [data-i18n-attrs] attribute values.

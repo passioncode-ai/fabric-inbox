@@ -22,6 +22,7 @@ reinstalling the app, and every downloaded copy must update itself by default). 
 | The sign-in (Cloudflare Access cookie) | the server's partition in the profile, encrypted under the Keychain item "Fabric Inbox Safe Storage" | yes | no: sign in again with the code sent by email (30 days at most anyway, B-43) |
 | Unsent drafts and their attachments | the server's partition (local storage and IndexedDB) | yes | no: drafts are kept on the Mac only (REL-03; server draft sync is not built) |
 | Usage counts state, update switch, the last install | `analytics-state.json`, `auto-update` (only when updates were turned off), `update-install.json` (between an install and the next start) in the profile | yes | no; both start fresh (counting resumes, updates are on) |
+| A move of an address between two servers, where it stands (no mail, no secret) | `move.json` in the profile, removed when the move is done, put back or cancelled | yes | no; open the move window again and start over: a message copied again replaces itself, nothing doubles |
 | The agent console's session folders and the ids of keys still to revoke (no secret) | `consoles/` in the profile (0700); a session's folder is removed when it ends | yes | no; a key it listed is then revoked only in Settings → Agent access |
 | The app's log | `~/Library/Logs/Fabric Inbox/fabric-inbox.log` (and `.1.log`, about 2 MB at most) | yes | no |
 | A verified update waiting for Squirrel.Mac | `~/Library/Caches/Fabric Inbox/updates/` (removed once Squirrel.Mac has its copy, or after a failure) | yes | no |

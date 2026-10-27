@@ -1933,28 +1933,29 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** the Account menu, Move an Address to Another Server… (shown while the app holds two or more servers)
 - **Preconditions:** I administer both servers (my own and an organization's, or two organizations'), and both are in one Cloudflare account. The address is a Cloudflare mailbox on the server shown. A Gmail, Outlook or IMAP account is not moved: I connect it again on the other server (SCN-002, SCN-051).
 - **Steps:**
-  1. Choose Move an Address to Another Server… -> the app lists the Cloudflare addresses of the server shown and the other servers it holds; a server in another Cloudflare account is listed as not available, with that reason.
+  1. Choose Move an Address to Another Server… -> the app lists the Cloudflare addresses of the server shown (a paused or renaming one is left out) and the other servers it holds.
   2. Choose an address and the server it goes to -> the app reads the address and says what moves: its messages and attachments by count, its folders, rules, agent with its knowledge, and its category labels; that its mail will arrive at the other server from then on; and that this server keeps its copy, sending nothing, until I remove it here myself.
   3. Confirm -> Copying: messages and attachments counted up against the totals, then rules, the agent, its knowledge and labels; each refused rule or skipped label is listed with its reason and does not stop the move.
-  4. The copy matches the counts -> Holding: this server's copy stops sending and its agent stops; the app waits while a send or new mail is still being handled here.
+  4. The copy matches the counts and the other server can point the address's Cloudflare rule at itself -> Holding: this server's copy stops sending and its agent stops; the app waits while a send or new mail is still being handled here.
   5. Nothing is in flight -> Routing: the address's mail is pointed at the other server, then Testing: a test message is sent and the app waits for it to arrive there.
   6. It arrives -> Done: the address is listed on the other server with its mail, and the app offers to choose its agent there (the copied one is preselected) and to show that server.
 - **Expected result:** The address's mail arrives at the other server, which has every message and attachment this server counted, its rules, agent, knowledge and the labels its categories share; this server keeps a held copy and sends nothing from it.
 - **Alt paths:**
-  - Counts that do not match after the copy: the move stops before Holding with both numbers; Try again copies what is missing (nothing is copied twice), Cancel leaves both servers as they were apart from the copy.
-  - Sends or new mail still being handled after 10 minutes of Holding: the app says what it waits for; Keep waiting or Cancel (the hold is lifted).
+  - Counts that do not match after the copy: the move stops before Holding; Try Again copies what is missing (nothing is copied twice), Cancel leaves both servers as they were apart from the copy.
+  - The other server is in another Cloudflare account, or has no Cloudflare connection: the move stops before Holding and says so; Cancel, as above.
+  - Sends or new mail still being handled after 10 minutes of Holding: the app says so; Wait Longer, or Put It Back (the hold is lifted).
   - The test message does not arrive within 3 minutes: Put It Back points the mail at this server again and lifts the hold; Wait Longer keeps testing.
   - The app quits or the Mac sleeps midway: next time the window says where the move stopped and continues from that step; nothing already copied or routed is done again.
-- **UI elements:** none yet (step 3d): the move window (address and server pickers, the summary, the progress with counts per stage, Cancel, Try Again, Put It Back, Wait Longer, Choose Its Agent).
+- **UI elements:** the Account menu's Move an Address to Another Server… (two or more servers held); the move window: Address and Move to pickers, Next, the summary with Back and Move, the four steps with the count of messages copied, Try Again, Cancel (before Holding), Wait Longer, Put It Back (after Holding), and on Done: Answer With Its Agent There, Show That Server, Done.
 - **States covered:** idle, loading, empty, error, success
 - **Errors & recovery:**
   - The address is paused or being renamed, or its mail does not go to this server's Worker: refused before anything is copied, with the reason.
   - The other server lacks an administrator's sign-in, or answers with an error: the step that failed is named, and Try Again continues from it.
   - Put It Back is refused when someone changed the address's Cloudflare rule since the move: the rule is left as it is and the app says so; mail is never in neither place, because this server's copy stays until the mail is confirmed at the other.
 - **Status:** draft
-- **Coverage:** server side only: `workers/routes/transfer.ts`, `workers/routing/domains.ts` (`pointAddressHere`, `pointAddressBack`), `workers/durableObject/index.ts` (`sendMail` hold), tools `export_mailbox`, `import_mailbox`, `move_address`; `tests/mailbox-transfer-workerd.test.ts`, `tests/mailbox-transfer-setup-workerd.test.ts`, `tests/domains.test.ts`
+- **Coverage:** `desktop/move.cjs` (the stages, the journal `move.json`, the way back), `desktop/move.js` and `desktop/move.html` (the window), `desktop/main.cjs` (`installMoveIPC`, `showMove`), `desktop/menu.cjs` (the Account item); server: `workers/routes/transfer.ts`, `workers/routing/domains.ts` (`pointAddressHere`, `pointAddressBack`), `workers/durableObject/index.ts` (`sendMail` hold), tools `export_mailbox`, `import_mailbox`, `move_address`; `tests/desktop-move.test.ts`, `tests/desktop-servers.test.ts`, `tests/mailbox-transfer-workerd.test.ts`, `tests/mailbox-transfer-setup-workerd.test.ts`, `tests/domains.test.ts`
 - **Product:** unobserved
-- **Today:** An agent with an administrator's key on both servers can do every step (0.65.0 to 0.68.0); the app's move window is not built (B-158 M1 step 3d). A Gmail, Outlook or IMAP account is connected again on the other server.
+- **Today:** The Mac app moves an address from the server shown to another server it holds (0.69.0), built on this draft before its approval (decision 2026-10-27, the plan step 3d); the move runs while the app is open and continues from its last step after a quit. An agent with an administrator's key on both servers can do the same steps with the tools. A Gmail, Outlook or IMAP account is connected again on the other server.
 
 ### SCN-095: Sign in to an organization's server with my work address
 - **Persona:** P-02

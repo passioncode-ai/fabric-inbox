@@ -58,6 +58,13 @@ test("the Account menu lists the servers, the one shown ticked, with Add Another
   assert.ok(!one.some((i: any) => i.label === "Forget Server"));
   const none = menuTemplate("darwin", { ...ctx, servers: null }).find((m: any) => m.label === "Account").submenu;
   assert.deepEqual(none.map((i: any) => i.label), ["Connect Gmail in browser…"]);
+  // SCN-094: with two servers held, an address can move from the one shown to another; with one, no such item.
+  const withMove = menuTemplate("darwin", { ...ctx, servers: { ...ctx.servers, move: () => clicked.push("move") } }).find((m: any) => m.label === "Account").submenu;
+  const move = withMove.find((i: any) => i.label === "Move an Address to Another Server…");
+  assert.ok(move && withMove.indexOf(move) === 3, "after Add Another Server, before Forget Server");
+  move.click();
+  assert.equal(clicked.at(-1), "move");
+  assert.ok(!one.some((i: any) => i.label === "Move an Address to Another Server…"));
 });
 
 test("the start-up sweep keeps every remembered server's sign-in and removes the rest", async () => {

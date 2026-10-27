@@ -42,6 +42,8 @@ function menuTemplate(platform, ctx) {
   // B-158: the servers the app holds, the one shown ticked; another is a click away, with its sign-in kept.
   const held = ctx.servers ? [...ctx.servers.items.map((s) => ({ label: s.label, type: 'radio', checked: s.checked, click: s.click })),
     { label: t('Add Another Server…'), click: ctx.servers.add },
+    // B-158 M1 step 3d (SCN-094): with two or more servers, an address can move from the one shown to another.
+    ...(ctx.servers.move ? [{ label: t('Move an Address to Another Server…'), click: ctx.servers.move }] : []),
     ...(ctx.servers.forget.length ? [{ label: t('Forget Server'), submenu: ctx.servers.forget.map((s) => ({ label: s.label, click: s.click })) }] : []),
     { type: 'separator' }] : [];
   const account = { label: t('Account'), submenu: [...held, { label: t('Connect Gmail in browser…'), click: ctx.connectGmail }] };
