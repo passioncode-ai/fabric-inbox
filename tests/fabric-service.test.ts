@@ -74,6 +74,8 @@ test("B-87: a registered agent key or a person reads the well-known document; an
     assert.deepEqual(doc.surfaces.usage, { path: "/fabric/v1/usage" });
     // DEC-0061: with an OpenRouter key the reply agents' calls are signed in with an issued key.
     assert.deepEqual(doc.extensions["https://passioncode.ai/fabric-inbox/runner"], { credentialKind: "key" });
+    // B-154 step 4 (DEC-0121): the actions a person can take, each with its tool and who decides it.
+    validate("service-actions-extension", doc.extensions["https://fabric.passioncode.ai/agent-contract/extensions/actions/0.1"]);
     assert.ok(doc.service.build.commit || doc.service.build.digest);
     assert.equal((await get("/.well-known/fabric-service", { email: "owner@owner.example" })).status, 200);
     assert.equal((await get("/fabric/v1/usage", { common_name: "other-app.access" })).status, 401);
@@ -190,4 +192,26 @@ test("N-2: a key limited to some mailboxes, by its list or by the narrowing head
     assert.equal((await get("/fabric/v1/events", { common_name: "known.access" })).status, 200, "a whole-workspace key still does");
     assert.equal((await get("/fabric/v1/events", { email: "owner@owner.example" })).status, 200, "and the owner");
   } finally { await mf.dispose(); }
+});
+
+test("B-154 step 4: the actions declaration covers every tool that changes something, once, with the gate its tool has (FAC-SEM-142)", async () => {
+  const { TOOLS } = await import("../workers/mcp/tools");
+  const { serviceActions } = await import("../workers/mcp/actions");
+  const actions = serviceActions(TOOLS);
+  validate("service-actions-extension", { actions });
+  assert.equal(new Set(actions.map((a) => a.id)).size, actions.length, "every id once");
+  for (const a of actions) {
+    const tool = TOOLS.find((t) => t.name === a.tool)!;
+    assert.ok(tool, `${a.id}: its tool exists`);
+    assert.equal(a.gate === "human", a.humanStep !== undefined, `${a.id}: humanStep exactly when human`);
+    assert.equal(a.gate === "relayed", !!tool.ownerApproval, `${a.id}: relayed exactly when the owner always approves`);
+  }
+  for (const t of TOOLS.filter((t) => !t.readOnly)) assert.ok(actions.some((a) => a.tool === t.name), `${t.name} is declared`);
+  const by = Object.fromEntries(actions.map((a) => [a.id, [a.gate, a.humanStep ?? null]]));
+  assert.deepEqual(by["create_agent_key"], ["relayed", null]);
+  assert.deepEqual(by["decide_held_message"], ["relayed", null]);
+  assert.deepEqual(by["connect_account"], ["human", "consent"]);
+  assert.deepEqual(by["connect_account.secret"], ["human", "secret"]);
+  assert.deepEqual(by["send_email"], ["none", null]);
+  assert.equal(by["list_messages"], undefined, "a read is not an action");
 });
