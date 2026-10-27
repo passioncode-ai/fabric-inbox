@@ -230,6 +230,14 @@ mailbox from one to the other with an `admin` key on each:
    `files`, `export_mailbox` action `file`, then `import_mailbox` action `file` with its `key`, `data` and `contentType`.
 4. `export_mailbox` action `ids` on the sending server, then `import_mailbox` action `check` with them on the
    receiving one: `complete: true` means every message and attachment arrived.
+5. What it carries besides mail: `export_mailbox` action `setup` gives its `rules`, its `agent` and that agent's
+   `collections` with their documents listed. On the receiving server, `import_mailbox` action `rules` with them (each
+   refused rule comes back with its reason, such as a tool host that server does not allow); for each collection,
+   `import_mailbox` action `collection` with its `name` and `description` (its `id` there may differ), then its
+   documents: `export_mailbox` action `document` for each, and `import_mailbox` action `documents` with up to 100 at a
+   time into that id; last, `import_mailbox` action `agent` with setup's `agent` and `collections` mapping the sending
+   server's collection ids to the receiving one's. The agent is not assigned to the address there: that waits until
+   the address's mail moves. Category labels are not carried yet.
 
 Mail is still delivered to the sending server, and nothing there is deleted: routing the address to the new
 server is a separate step, not built yet. Repeating any step is safe (rows are brought up to date, a file of the

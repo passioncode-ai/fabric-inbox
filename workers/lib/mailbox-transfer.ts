@@ -49,4 +49,25 @@ export function missingIds(source: { emails: string[]; attachments: string[] }, 
   return { emails: source.emails.filter((id) => !have.emails.has(id)), attachments: source.attachments.filter((id) => !have.attachments.has(id)) };
 }
 
+/**
+ * Step 3b: an agent's definition as another server takes it: what it says and grants, never its id, version or the
+ * schema and read-only mark the registry reads from the tool's endpoint itself. Collections are renamed through
+ * `map` (the sending server's id to the receiving one's); an id the map does not name is kept.
+ */
+export function agentInputOf(agent: Record<string, unknown>, map: Record<string, unknown>) {
+  const list = (v: unknown) => (Array.isArray(v) ? v : []);
+  return {
+    name: agent.name, instructions: agent.instructions, knowledge: agent.knowledge ?? "",
+    collections: list(agent.collections).map((id) => (typeof map[String(id)] === "string" ? String(map[String(id)]) : String(id))),
+    tools: list(agent.tools).map((t) => { const { inputSchema: _s, readOnly: _r, ...grant } = (t ?? {}) as Record<string, unknown>; return grant; }),
+    replyPolicy: agent.replyPolicy ?? {},
+  } as { name: unknown; instructions: unknown; knowledge: unknown; collections: string[]; tools: Record<string, unknown>[]; replyPolicy: unknown };
+}
+
+/** Whether an agent here already says and grants what `input` does (so a repeat reuses it). */
+export function sameAgent(existing: Record<string, unknown>, input: ReturnType<typeof agentInputOf>): boolean {
+  const key = (a: ReturnType<typeof agentInputOf>) => JSON.stringify([a.name, a.instructions, a.knowledge, a.collections, a.tools, a.replyPolicy]);
+  return key(agentInputOf(existing, {})) === key(input);
+}
+
 export { toBase64, fromBase64 };

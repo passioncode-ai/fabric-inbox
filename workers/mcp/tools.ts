@@ -1354,14 +1354,17 @@ const renameAddressTool = defineTool({
 const transferTable = z.enum(["folders", "emails", "attachments"]);
 const exportMailbox = defineTool({
   name: "export_mailbox", title: "Read a mailbox out to move it", level: "admin", readOnly: true, target: (a) => a.address,
-  description: "Reads a Cloudflare mailbox of this server to copy it into another server (with import_mailbox there), keeping every id. action manifest: its settings, how many messages and attachments it has, and what still holds it (sends not settled, new mail being handled). rows: one page of a table (folders, then emails, then attachments; pass next back as after until it is null), with the files its rows name. file: one of those files as base64 (25 MB at most). ids: every message and attachment id, to check the copy with import_mailbox check. Changes nothing.",
-  input: { address, action: z.enum(["manifest", "rows", "file", "ids"]), table: transferTable.optional().describe("rows"), after: z.number().int().min(0).optional().describe("rows: the previous page's next"),
+  description: "Reads a Cloudflare mailbox of this server to copy it into another server (with import_mailbox there), keeping every id. action manifest: its settings, how many messages and attachments it has, and what still holds it (sends not settled, new mail being handled). rows: one page of a table (folders, then emails, then attachments; pass next back as after until it is null), with the files its rows name. file: one of those files as base64 (25 MB at most). ids: every message and attachment id, to check the copy with import_mailbox check. setup: what it carries besides mail: its rules, the agent that answers it and that agent's knowledge collections with their documents listed. document: one of those documents' text (collection and document from setup). Changes nothing.",
+  input: { address, action: z.enum(["manifest", "rows", "file", "ids", "setup", "document"]),
+    collection: z.string().max(100).optional().describe("document: a collection id from setup"), document: z.string().max(200).optional().describe("document: a document id from setup"), table: transferTable.optional().describe("rows"), after: z.number().int().min(0).optional().describe("rows: the previous page's next"),
     limit: z.number().int().min(1).max(100).optional().describe("rows"), key: z.string().max(600).optional().describe("file: a key from a rows page's files") },
-  routes: ["GET /api/transfer/:email", "GET /api/transfer/:email/rows", "GET /api/transfer/:email/file", "GET /api/transfer/:email/ids"],
+  routes: ["GET /api/transfer/:email", "GET /api/transfer/:email/rows", "GET /api/transfer/:email/file", "GET /api/transfer/:email/ids", "GET /api/transfer/:email/setup", "GET /api/transfer/:email/document"],
   async call(a, ctx) {
     const base = `/api/transfer/${enc(a.address.toLowerCase())}`;
     if (a.action === "manifest") return get(ctx, base);
     if (a.action === "ids") return get(ctx, `${base}/ids`);
+    if (a.action === "setup") return get(ctx, `${base}/setup`);
+    if (a.action === "document") { if (!a.collection || !a.document) throw new ApiError(400, "Give collection and document (from setup)", null); return get(ctx, `${base}/document?collection=${enc(a.collection)}&document=${enc(a.document)}`); }
     if (a.action === "file") { if (!a.key) throw new ApiError(400, "Give key (from a rows page's files)", null); return get(ctx, `${base}/file?key=${enc(a.key)}`); }
     if (!a.table) throw new ApiError(400, "Give table: folders, emails or attachments", null);
     return get(ctx, `${base}/rows?table=${a.table}&after=${a.after ?? 0}&limit=${a.limit ?? 100}`);
@@ -1369,16 +1372,25 @@ const exportMailbox = defineTool({
 });
 const importMailbox = defineTool({
   name: "import_mailbox", title: "Write a mailbox in from another server", level: "admin", target: (a) => a.address,
-  description: "Writes into this server a mailbox read with export_mailbox from another server, keeping every id. action open: makes the mailbox here with the settings the manifest gave (no agent answers it until one is chosen here; an existing one is kept). rows: one page of rows exactly as export_mailbox gave them (folders, emails, attachments, in that order); a row already here is brought up to date. file: one file as export_mailbox gave it, after its row (one of the same size already here is kept). check: which of the other server's ids (export_mailbox ids) are still missing here; complete true means every message and attachment arrived. Nothing is deleted, here or there, and mail is still delivered to the other server: routing the address is a separate step.",
-  input: { address, action: z.enum(["open", "rows", "file", "check"]), settings: z.record(z.string(), z.unknown()).optional().describe("open: the manifest's settings"),
+  description: "Writes into this server a mailbox read with export_mailbox from another server, keeping every id. action open: makes the mailbox here with the settings the manifest gave (no agent answers it until one is chosen here; an existing one is kept). rows: one page of rows exactly as export_mailbox gave them (folders, emails, attachments, in that order); a row already here is brought up to date. file: one file as export_mailbox gave it, after its row (one of the same size already here is kept). check: which of the other server's ids (export_mailbox ids) are still missing here; complete true means every message and attachment arrived. rules: the rules from export_mailbox setup, as they were (enabled ones stay enabled); each refused one comes back with its reason. collection: a knowledge collection for one of setup's collections (one here with the same name is used again); its id here goes in agent's collections map. documents: up to 100 of its documents (export_mailbox document) into that collection, by source. agent: the agent from setup, with collections mapping the other server's collection ids to the ones here; an agent here with the same definition is used again. The agent is not assigned to the address: that waits until its mail comes here. Nothing is deleted, here or there, and mail is still delivered to the other server: routing the address is a separate step.",
+  input: { address, action: z.enum(["open", "rows", "file", "check", "rules", "collection", "documents", "agent"]),
+    rules: z.array(z.record(z.string(), z.unknown())).max(50).optional().describe("rules: setup's rules"),
+    name: z.string().max(80).optional().describe("collection: its name"), description: z.string().max(500).optional().describe("collection"),
+    collection: z.string().max(100).optional().describe("documents: the collection's id here"),
+    documents: z.array(z.object({ sourceUri: z.string(), title: z.string().optional(), revision: z.string().optional(), text: z.string() })).max(100).optional().describe("documents"),
+    agent: z.record(z.string(), z.unknown()).optional().describe("agent: setup's agent"), collections: z.record(z.string(), z.string()).optional().describe("agent: other server's collection id to the id here"), settings: z.record(z.string(), z.unknown()).optional().describe("open: the manifest's settings"),
     table: transferTable.optional().describe("rows"), rows: z.array(z.record(z.string(), z.unknown())).max(500).optional().describe("rows: a rows page's rows"),
     key: z.string().max(600).optional().describe("file"), data: z.string().optional().describe("file: its data as base64"), contentType: z.string().max(200).optional().describe("file"),
     emails: z.array(z.string()).optional().describe("check: the other server's message ids"), attachments: z.array(z.string()).optional().describe("check: its attachment ids") },
-  routes: ["POST /api/transfer/:email/open", "POST /api/transfer/:email/rows", "PUT /api/transfer/:email/file", "POST /api/transfer/:email/check"],
+  routes: ["POST /api/transfer/:email/open", "POST /api/transfer/:email/rows", "PUT /api/transfer/:email/file", "POST /api/transfer/:email/check", "POST /api/transfer/:email/rules", "POST /api/transfer/:email/collection", "POST /api/transfer/:email/documents", "POST /api/transfer/:email/agent"],
   async call(a, ctx) {
     const base = `/api/transfer/${enc(a.address.toLowerCase())}`;
     if (a.action === "open") return post(ctx, `${base}/open`, { settings: a.settings ?? {} });
     if (a.action === "check") return post(ctx, `${base}/check`, { emails: a.emails ?? [], attachments: a.attachments ?? [] });
+    if (a.action === "rules") return post(ctx, `${base}/rules`, { rules: a.rules ?? [] });
+    if (a.action === "collection") { if (!a.name) throw new ApiError(400, "Give name (from export_mailbox setup)", null); return post(ctx, `${base}/collection`, { name: a.name, description: a.description ?? "" }); }
+    if (a.action === "documents") { if (!a.collection || !a.documents) throw new ApiError(400, "Give collection (its id here) and documents", null); return post(ctx, `${base}/documents`, { collection: a.collection, documents: a.documents }); }
+    if (a.action === "agent") { if (!a.agent) throw new ApiError(400, "Give agent (from export_mailbox setup)", null); return post(ctx, `${base}/agent`, { agent: a.agent, collections: a.collections ?? {} }); }
     if (a.action === "file") { if (!a.key || a.data === undefined) throw new ApiError(400, "Give key and data (from export_mailbox file)", null); return put(ctx, `${base}/file`, { key: a.key, data: a.data, contentType: a.contentType }); }
     if (!a.table || !a.rows) throw new ApiError(400, "Give table and rows (from export_mailbox rows)", null);
     return post(ctx, `${base}/rows`, { table: a.table, rows: a.rows });

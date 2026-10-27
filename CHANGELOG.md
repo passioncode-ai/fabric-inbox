@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.66.0 (2026-10-27)
+
+- **A mailbox's rules, agent and knowledge go with it to another server.** When an agent copies a mailbox to another
+  server, it can now also copy the mailbox's rules (an enabled rule stays enabled), the agent that answers it and the
+  knowledge that agent reads. Copying again adds nothing new, and a collection already on the other server is left
+  alone. The agent starts answering there only when the address's mail moves, which comes next.
+
 ## 0.65.0 (2026-10-27)
 
 - **Agents can copy a mailbox to another server.** An agent with administrator access to two servers, such as your own

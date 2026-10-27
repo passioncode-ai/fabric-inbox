@@ -1944,7 +1944,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** draft
 - **Coverage:** none
 - **Product:** unobserved
-- **Today:** Step 3a built in 0.65.0: an agent with an administrator's key on both servers moves a Cloudflare mailbox's mail, files and settings (`export_mailbox`, `import_mailbox`) and checks the copy; routing the address, rules, the agent and the app's own screen are not built (B-158 M1 steps 3b to 3d). A Gmail, Outlook or IMAP account is connected again on the other server.
+- **Today:** Step 3a built in 0.65.0: an agent with an administrator's key on both servers moves a Cloudflare mailbox's mail, files and settings (`export_mailbox`, `import_mailbox`) and checks the copy; since 0.66.0 also its rules, its agent and that agent's knowledge (step 3b part 1); category labels, routing the address and the app's own screen are not built (B-158 M1 steps 3b part 2 to 3d). A Gmail, Outlook or IMAP account is connected again on the other server.
 
 ### SCN-095: Sign in to an organization's server with my work address
 - **Persona:** P-02
