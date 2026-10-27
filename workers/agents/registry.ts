@@ -307,12 +307,15 @@ export class AgentRegistryDO extends DurableObject<Env> {
         return page;
       };
       try {
-        const head = await read({ limit: 1 });
+        // The owner's states change old reports in place: read every report of the held window again (since its first
+        // UTC day), oldest first by the `after` cursor, not only the new ones.
+        const sinceDay = since.slice(0, 10);
+        const head = await read({ limit: 1, since: sinceDay });
         if (state && state.revision === head.ledgerRevision) continue;
         const closed = new Map<string, string | null>();
         let after = 0;
         for (let p = 0; p < GAPS_PAGES; p++) {
-          const page = await read({ after, limit: GAPS_PAGE });
+          const page = await read({ after, limit: GAPS_PAGE, since: sinceDay });
           for (const g of page.gaps) {
             after = Math.max(after, g.id);
             const runId = CLOSED_STATES.has(g.state) ? runOfRequest(g.requestId) : null;

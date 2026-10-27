@@ -62,7 +62,10 @@ events feed as `support.diagnosed`; this packet adds the second look.
    owner's gap ledger). Our request id is the run id and a hash of the kind (`gapRequestId`), so a closed
    report maps back to its held run (`runOfRequest`, `workers/agents/gap-closures.ts`).
 8. **When:** every 15 minutes while a held run has a reported gap, the list is asked for its
-   `ledgerRevision` (one call); only when it moved are the reports read (at most 10 pages of 200). A held
+   `ledgerRevision` (one call); only when it moved are the reports read again, every report since the held
+   window's first UTC day (`since`), oldest first by the `after` cursor, at most 10 pages of 200: a closure
+   changes an old report's state in place, so a cursor of new reports alone would not show it (the knowledge
+   agent's answer on thread `9d3d979c`, 2026-10-27; 0.77.1). A held
    run whose report is `closed` or `answered` is answered again at once (`answerAgain`, the knowledge
    comparison dropped), once per run (`gapClosed` {at, item, revision}). A list that refuses (the key may not
    read it, the endpoint fails) is left alone for 6 hours, logged as `agent_gaps_unavailable`.
