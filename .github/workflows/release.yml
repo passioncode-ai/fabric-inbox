@@ -297,8 +297,30 @@ jobs:
           "files<<$delim" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
           $files | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
           $delim | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+      # B-194: the signing action downloads its PowerShell module on every tag (its cache is per ref) and the gallery
+      # sometimes does not answer ("Install-Package: Package 'ArtifactSigning' failed to download"). One more try after
+      # a pause; the verify step below still fails the run unless every file is Valid.
       - name: Sign the app's executables and DLLs
+        id: sign1
         if: env.SIGNING == 'true'
+        continue-on-error: true
+        uses: passioncode-ai/.github/actions/windows-signing@v1
+        with:
+          files: ${{ steps.unsigned.outputs.files }}
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          account: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+          expected-subject: ${{ env.SIGNER }}
+          report: ${{ runner.temp }}/app-signatures.json
+      - name: Wait before signing again (B-194)
+        if: env.SIGNING == 'true' && steps.sign1.outcome == 'failure'
+        shell: pwsh
+        run: Start-Sleep -Seconds 60
+      - name: Sign the app's executables and DLLs, second try (B-194)
+        if: env.SIGNING == 'true' && steps.sign1.outcome == 'failure'
         uses: passioncode-ai/.github/actions/windows-signing@v1
         with:
           files: ${{ steps.unsigned.outputs.files }}
