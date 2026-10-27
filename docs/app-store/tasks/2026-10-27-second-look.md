@@ -1,6 +1,6 @@
 # B-153: a second look at messages an agent was not sure of (task packet)
 
-Status: decided 2026-10-27, built in 0.75.0. Board row: B-153 in [the board](../../evidence/backlog.md).
+Status: decided 2026-10-27, built in 0.75.0 (the second look) and 0.77.0 (answering again when a gap is closed). Board row: B-153 in [the board](../../evidence/backlog.md).
 
 ## Why
 
@@ -55,8 +55,23 @@ events feed as `support.diagnosed`; this packet adds the second look.
 | REQ-4 | `support.diagnosed` once with `look: "second"`; the schema names the field | `tests/learning-events.test.ts` B-153 |
 | REQ-5 | Off when `secondLook: false`, for draft agents, without `holdUnsure`, past the daily cap | `tests/agents-registry.test.ts` B-153 |
 
-## Not in this packet
+## Answering again when a gap is closed (0.77.0)
 
-Answering again when the data agent's `gaps.list` closes a gap (the rest of B-153): the held retry already
-answers at once when a knowledge revision changes (B-141); a closed-gap signal needs the data agent's
-contract and is its own row.
+7. **The signal:** a gap grant may name its endpoint's list of reports (`gaps.list`, for example the
+   knowledge agent's `kb.gaps.list`, which carries each report's `requestId` and its state from the
+   owner's gap ledger). Our request id is the run id and a hash of the kind (`gapRequestId`), so a closed
+   report maps back to its held run (`runOfRequest`, `workers/agents/gap-closures.ts`).
+8. **When:** every 15 minutes while a held run has a reported gap, the list is asked for its
+   `ledgerRevision` (one call); only when it moved are the reports read (at most 10 pages of 200). A held
+   run whose report is `closed` or `answered` is answered again at once (`answerAgain`, the knowledge
+   comparison dropped), once per run (`gapClosed` {at, item, revision}). A list that refuses (the key may not
+   read it, the endpoint fails) is left alone for 6 hours, logged as `agent_gaps_unavailable`.
+9. **The key:** the knowledge agent lists only the reports of a consumer allowed to read its own
+   (`gaps-reader`, scope `own`); until it allows ours, the list refuses and the held retry on a revision
+   change (B-141) goes on as before.
+
+| REQ | What | Verified by |
+|---|---|---|
+| REQ-6 | A held run whose gap is closed or answered is answered again once; one still open is not; another consumer's report moves nothing | `tests/agents-registry.test.ts` B-153 |
+| REQ-7 | The list is read again only on a new ledger revision, at most every 15 minutes; a refusing list waits 6 hours | `tests/agents-registry.test.ts` B-153 |
+| REQ-8 | A report's run is its request id without the kind's hash, as the runner builds it | `tests/gap-closures.test.ts` B-153 |

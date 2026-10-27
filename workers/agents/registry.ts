@@ -1,5 +1,6 @@
 import { answerCitedEvent, causeOf, citedOf, supportDiagnosedEvent } from "./learning-events";
 import { calibrationOf, type Calibration, type PersonGrade } from "./calibration";
+import { CLOSED_STATES, GAPS_CHECK_MS, GAPS_PAGE, GAPS_PAGES, GAPS_UNAVAILABLE_MS, parseGapList, runOfRequest } from "./gap-closures";
 import { abandonedEvent, EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, runEvent, waitingEvent, type AgentEvent } from "./events";
 import { agentAccounts, statesOf } from "../lib/agent-status";
 import type { ThreadFacts } from "../../shared/mail/agent-state";
@@ -268,6 +269,71 @@ export class AgentRegistryDO extends DurableObject<Env> {
    * once when a later run saw its knowledge at another revision, and is not tried (its next try moves on)
    * when a later run saw the same revision; otherwise the runner itself compares the revision.
    */
+  /**
+   * B-153: a held message whose reported gap the knowledge owner closed is answered again at once. Each agent's gap
+   * tool with a `list` is asked every GAPS_CHECK_MS whether its ledger revision moved; only then are its reports read
+   * (ours, by request id) and the held runs whose report is closed or answered requeued, once per run. A list that
+   * refuses is left alone for GAPS_UNAVAILABLE_MS. Answers when the next check is due (null: nothing to watch).
+   */
+  protected async answerClosedGaps(now = Date.now()): Promise<number | null> {
+    const since = new Date(now - HELD_FOR_MS).toISOString();
+    const held = this.rows(`SELECT body FROM agent_runs WHERE status = 'held' AND created_at >= ?
+      AND json_extract(body, '$.gapsReported') IS NOT NULL AND json_extract(body, '$.gapClosed') IS NULL LIMIT 500`, since)
+      .map((r) => JSON.parse(String(r.body)) as AgentRun);
+    if (!held.length) return null;
+    const due = (await this.ctx.storage.get<number>("gaps_check_at")) ?? 0;
+    if (due > now) return due;
+    await this.ctx.storage.put("gaps_check_at", now + GAPS_CHECK_MS);
+    const agents = new Map<string, AgentVersion | null>();
+    const lists = new Map<string, { grant: ToolGrant; list: string; mailboxId: string; runs: Set<string> }>();
+    for (const run of held) {
+      if (!run.agentId) continue;
+      const key = `${run.agentId}@${run.agentVersion ?? ""}`;
+      if (!agents.has(key)) agents.set(key, await this.getAgent(run.agentId, run.agentVersion).catch(() => null));
+      const grant = agents.get(key)?.tools.find((g) => g.gaps?.list);
+      if (!grant) continue;
+      const listKey = `${grant.endpoint}|${grant.gaps!.list}|${grant.tokenRef ?? ""}`;
+      const entry = lists.get(listKey) ?? { grant, list: grant.gaps!.list!, mailboxId: run.mailboxId, runs: new Set<string>() };
+      entry.runs.add(run.id);
+      lists.set(listKey, entry);
+    }
+    for (const [listKey, entry] of lists) {
+      const stateKey = `gaps_list:${listKey}`;
+      const state = await this.ctx.storage.get<{ revision: string | null; until?: number }>(stateKey);
+      if (state?.until && state.until > now) continue;
+      const read = async (args: Record<string, unknown>) => {
+        const page = parseGapList(await this.deps(entry.mailboxId).callTool({ ...entry.grant, tool: entry.list }, args));
+        if (!page) throw new Error("the answer is not a gap list");
+        return page;
+      };
+      try {
+        const head = await read({ limit: 1 });
+        if (state && state.revision === head.ledgerRevision) continue;
+        const closed = new Map<string, string | null>();
+        let after = 0;
+        for (let p = 0; p < GAPS_PAGES; p++) {
+          const page = await read({ after, limit: GAPS_PAGE });
+          for (const g of page.gaps) {
+            after = Math.max(after, g.id);
+            const runId = CLOSED_STATES.has(g.state) ? runOfRequest(g.requestId) : null;
+            if (runId) closed.set(runId, g.item);
+          }
+          if (page.gaps.length < GAPS_PAGE) break;
+        }
+        for (const id of entry.runs) {
+          if (!closed.has(id)) continue;
+          const result = await this.answerAgain(id, { gapClosed: { at: new Date(now).toISOString(), item: closed.get(id) ?? null, revision: head.ledgerRevision } });
+          console.log(JSON.stringify({ event: "agent_gap_closed", run: id, ok: result.ok }));
+        }
+        await this.ctx.storage.put(stateKey, { revision: head.ledgerRevision });
+      } catch (error) {
+        await this.ctx.storage.put(stateKey, { revision: state?.revision ?? null, until: now + GAPS_UNAVAILABLE_MS });
+        console.warn(JSON.stringify({ event: "agent_gaps_unavailable", host: (() => { try { return new URL(entry.grant.endpoint).host; } catch { return ""; } })(), error: String((error as Error)?.message ?? error).slice(0, 200) }));
+      }
+    }
+    return now + GAPS_CHECK_MS;
+  }
+
   protected async retryHeld(now = Date.now()): Promise<number | null> {
     const since = new Date(now - HELD_FOR_MS).toISOString();
     const rows = this.rows(`SELECT id, status, body, created_at, updated_at FROM agent_runs WHERE created_at >= ?
@@ -374,6 +440,10 @@ export class AgentRegistryDO extends DurableObject<Env> {
   }
 
   private async drain() {
+    const gapsDue = await this.answerClosedGaps().catch((error) => {
+      console.warn(JSON.stringify({ event: "gap_closures_failed", error: (error as Error).message?.slice(0, 200) }));
+      return Date.now() + GAPS_CHECK_MS;
+    });
     const retryDue = await this.retryHeld().catch((error) => {
       console.warn(JSON.stringify({ event: "held_retry_failed", error: (error as Error).message?.slice(0, 200) }));
       return null;
@@ -397,7 +467,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
       console.warn(JSON.stringify({ event: "abandoned_supervision_failed", error: (error as Error).message?.slice(0, 200) }));
       return Date.now() + ABANDON_CHECK_MS;
     });
-    let heldDue: number | null = [retryDue, waitDue, closeDue, qualityDue, abandonDue].filter((t): t is number => t !== null).reduce((a, b) => Math.min(a, b));
+    let heldDue: number | null = [gapsDue, retryDue, waitDue, closeDue, qualityDue, abandonDue].filter((t): t is number => t !== null).reduce((a, b) => Math.min(a, b));
     // One message per mailbox at a time: two messages of one thread read the thread
     // before either answer exists, and would both be answered.
     const batch = this.nextBatch();
@@ -1101,7 +1171,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
     this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?", ended.status, JSON.stringify(ended), ended.updatedAt, id);
   }
 
-  async answerAgain(id: string, options: { keepFacts?: boolean; secondLook?: boolean } = {}): Promise<{ ok: true; run: AgentRun } | { ok: false; reason: string }> {
+  async answerAgain(id: string, options: { keepFacts?: boolean; secondLook?: boolean; gapClosed?: AgentRun["gapClosed"] } = {}): Promise<{ ok: true; run: AgentRun } | { ok: false; reason: string }> {
     const prior = this.rows("SELECT body FROM agent_runs WHERE id = ?", id)[0];
     if (!prior) return { ok: false, reason: msg("This agent run is not kept any more") };
     const run = JSON.parse(String(prior.body)) as AgentRun;
@@ -1115,6 +1185,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
     if (!options.keepFacts) delete again.heldFacts;
     // B-153: the second look is this attempt; what the first turn cited tells a retrieval miss from a drafting one.
     if (options.secondLook) again.secondLook = { at: new Date().toISOString(), state: "running", firstCited: citedOf(run).cited };
+    if (options.gapClosed) again.gapClosed = options.gapClosed;
     this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?", again.status, JSON.stringify(again), again.updatedAt, id);
     await this.enqueue(run.mailboxId, run.emailId);
     return { ok: true, run: this.present(again) };

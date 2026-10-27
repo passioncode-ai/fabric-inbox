@@ -42,7 +42,11 @@ export const ToolGrantSchema = z.object({
    * the call before the model answers `abstained: true`, it is called once per message with the run's
    * id, kind "unanswered", the fixed `channel` (or "email") and the model's paraphrase of the question.
    */
-  gaps: z.object({ tool: z.string().min(1).max(100) }).strict().optional(),
+  /**
+   * The tool on the same endpoint that records a question the knowledge could not answer; B-153: `list`, its
+   * list of those reports with the owner's states, so a held message is answered again once its gap is closed.
+   */
+  gaps: z.object({ tool: z.string().min(1).max(100), list: z.string().min(1).max(100).optional() }).strict().optional(),
   /**
    * B-94: whether the endpoint marks the tool read-only (MCP `readOnlyHint`), read at save time like
    * `inputSchema`; a value sent by the editor is replaced. A run re-run after it was interrupted calls

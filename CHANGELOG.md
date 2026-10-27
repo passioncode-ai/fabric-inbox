@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.77.0 (2026-10-27)
+
+- **A held message is answered once its answer is known.** When a reply agent holds a message because its knowledge
+  had no answer, the question goes to the knowledge's owner as a gap. Now the server also reads the owner's list of
+  those gaps, and as soon as the owner answers the question, the held message is answered again, instead of at its
+  next retry up to 12 hours later. The server asks the list every 15 minutes and reads it only when it changed. It
+  needs a key allowed to read its own reports; without one nothing else changes (B-153).
+
 ## 0.76.0 (2026-10-27)
 
 - **Check the quality judge against a person.** A daily judge grades the answers reply agents send, but nothing
