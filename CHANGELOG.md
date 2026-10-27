@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.50.0 (2026-10-27)
+
+- **Files in your Gmail, Outlook and IMAP mail are checked on arrival too.** As for mail to your own addresses, a
+  file that runs code holds the message, and the text of an attached PDF or document is checked for orders to an AI.
+  Pictures shown in the message are left alone.
+
 ## 0.49.0 (2026-10-27)
 
 - **The spam check sees where replies would go, and what is attached.** A message that asks for replies at another

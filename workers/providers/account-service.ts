@@ -123,6 +123,9 @@ export interface SendReceipt {
 interface StoredSend extends SendReceipt {
   digest: string;
 }
+/** B-179: a message's attached files as the safety check takes them: not its inline pictures, at most 20. */
+const attachedFiles = (message: Message) => (message.attachments ?? []).filter((a) => !a.inline && a.providerAttachmentId)
+  .slice(0, 20).map((a) => ({ id: a.providerAttachmentId, filename: a.filename || "attachment", mimetype: a.mimeType || "application/octet-stream", size: a.size || 0 }));
 export interface IncomingEvent {
   account: string;
   emailId: string;
@@ -133,6 +136,8 @@ export interface IncomingEvent {
   /** B-178: the HTML part, for the safety check's hidden text (at most 200,000 characters). */
   html?: string;
   date: string;
+  /** B-179: its attached files (not the pictures shown in its text), for the safety check; the bytes stay with the provider. */
+  files?: { id: string; filename: string; mimetype: string; size: number }[];
 }
 interface PendingEvent {
   accountId: string;
@@ -1484,6 +1489,7 @@ export class AccountService {
           body: message.text || message.html || "",
           ...(message.html ? { html: message.html.slice(0, 200_000) } : {}),
           date: message.date || new Date(message.timestamp || Date.now()).toISOString(),
+          ...(attachedFiles(message).length ? { files: attachedFiles(message) } : {}),
         });
         await this.store.transaction(async (tx) => {
           await tx.put(key.slice("pending:".length), { ...event, delivered: true, deliveredAt: now });

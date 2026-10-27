@@ -82,6 +82,17 @@ export const DEFAULT_SAFETY_DAILY_CALLS = 2000;
 const HTML_CHARS = 100_000;
 import { safetyOn } from "../safety/on";
 import { FEED_REFRESH_MS, FEED_STALE_MS, linksOf, lookalikeLinks, phishingLinks, refreshFeed, type FeedEnv, type KeptFeed } from "../safety/feed";
+
+/** B-179: where a file of an arriving message is read from: R2 for a Cloudflare message, the provider for an account's. */
+export function fileKey(accountId: string, messageId: string, f: { id: string; filename: string }): string {
+  return accountId.startsWith("cloudflare:") ? `attachments/${messageId}/${f.id}/${f.filename}`
+    : `account:${[accountId, messageId, f.id].map(encodeURIComponent).join("/")}`;
+}
+export function parseAccountFileKey(key: string): { accountId: string; messageId: string; attachmentId: string } | null {
+  if (!key.startsWith("account:")) return null;
+  const parts = key.slice("account:".length).split("/").map(decodeURIComponent);
+  return parts.length === 3 && parts.every(Boolean) ? { accountId: parts[0]!, messageId: parts[1]!, attachmentId: parts[2]! } : null;
+}
 import { readFiles, type MailFile, type ToText } from "../safety/files";
 export { safetyOn };
 type Row = Record<string, string | number | null>;
@@ -357,7 +368,7 @@ export class CategoriesDO extends DurableObject<Env> {
         ...(/\bhref\s*=|<img\b/i.test(event.body ?? "") ? { linked: true } : {}) } : {}),
       // A Cloudflare body is HTML already; an account's is its text, with its HTML beside it.
       ...(safety ? { safety: true, html: (event.html || (account.id.startsWith("cloudflare:") ? event.body : textToHtml(event.body ?? "")) || "").slice(0, HTML_CHARS),
-        ...(event.files?.length ? { files: event.files.map((f) => ({ key: `attachments/${event.id}/${f.id}/${f.filename}`, filename: f.filename, mimetype: f.mimetype, size: f.size })) } : {}) } : {}),
+        ...(event.files?.length ? { files: event.files.map((f) => ({ key: fileKey(account.id, event.id, f), filename: f.filename, mimetype: f.mimetype, size: f.size })) } : {}) } : {}),
     };
     this.enqueue(item, "*");
     await this.arm(500);
@@ -566,13 +577,27 @@ export class CategoriesDO extends DurableObject<Env> {
     return true;
   }
 
+  /**
+   * B-179: a file's bytes: a Cloudflare message's from R2, an account's from its provider through the accounts object
+   * (the key names the account, the message and the attachment). Null when it cannot be read: the file is then named
+   * as unread, never passed as read.
+   */
+  protected async fileBytes(key: string): Promise<Blob | null> {
+    const remote = parseAccountFileKey(key);
+    if (!remote) return (await this.env.BUCKET?.get(key))?.blob() ?? null;
+    const accounts = this.env.GMAIL_ACCOUNTS?.getByName("workspace") as unknown as
+      { getAttachment(accountId: string, messageId: string, attachmentId: string): Promise<{ data: string }> } | undefined;
+    if (!accounts) return null;
+    const { data } = await accounts.getAttachment(remote.accountId.slice(remote.accountId.indexOf(":") + 1), remote.messageId, remote.attachmentId);
+    const binary = atob(data.replace(/-/g, "+").replace(/_/g, "/"));
+    return new Blob([Uint8Array.from(binary, (c) => c.charCodeAt(0))]);
+  }
+
   /** Checks one arriving message, reviews it when suspect, and records where it stands. */
   private async checkSafety(item: QueueItem): Promise<void> {
     const now = Date.now();
     // B-179: what its files say, read before the check so their text is checked with the body.
-    const files = item.files?.length && this.env.BUCKET
-      ? await readFiles(item.files, async (key) => (await this.env.BUCKET!.get(key))?.blob() ?? null, this.toText()).catch(() => null)
-      : null;
+    const files = item.files?.length ? await readFiles(item.files, (key) => this.fileBytes(key), this.toText()).catch(() => null) : null;
     const findings = await inspectMessage({ subject: item.subject, html: item.html ?? "", files: files?.text ?? "" }, (text) =>
       this.spendSafety() ? this.safetyScan(text) : Promise.resolve({ flagged: false, error: msg("The day's safety budget was spent") }));
     if (files?.risky.length) findings.riskyFiles = files.risky;
