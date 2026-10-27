@@ -476,7 +476,7 @@ const getServer = defineTool({
 
 const listMembers = defineTool({
   name: "list_members", title: "List the people on this server", level: "admin", readOnly: true,
-  description: "Who signs in to this shared server and what they reach (B-149): each person's email, role (admin: everything; member: only their mailboxes) and a member's mailboxes. open: true means nobody is listed, so everyone Cloudflare Access lets in is an administrator. Adding or removing a person is the administrator's act in the app, not an agent's.",
+  description: "Who signs in to this shared server and what they reach (B-149): each person's email, role (admin: everything; member: only their mailboxes) and a member's mailboxes. open: true means nobody is listed, so everyone Cloudflare Access lets in is an administrator. Change the list with save_member and remove_member, each after the owner's approval.",
   input: {}, routes: ["GET /api/members"],
   call: (_a, ctx) => get(ctx, "/api/members"),
 });
@@ -1999,6 +1999,49 @@ const campaignReport = defineTool({
   input: { campaignId }, routes: ["GET /api/campaigns/:id/report"], call: (a, ctx) => get(ctx, `/api/campaigns/${enc(a.campaignId)}/report`),
 });
 
+// ── B-154 step 3 (DEC-0121): the acts that change people and agent keys, as tools, each always through the owner's approval ──
+const memberEmail = z.string().trim().toLowerCase().pipe(z.string().email().max(254)).describe("The person's sign-in email");
+const saveMember = defineTool({
+  name: "save_member", title: "Add or change a person on this server", level: "admin", ownerApproval: true, target: (a) => `${a.email} ${a.role}`,
+  description: "Adds a person to this shared server's list, or changes one already on it: admin reaches everything; member reaches only the mailboxes named. Always waits for the owner's approval in Settings → Agent access, whatever the key's setting: who reads whose mail is the owner's to decide (B-149, DEC-0121). Making someone a member revokes the agent keys they made. Two calls.",
+  input: { email: memberEmail, role: z.enum(["admin", "member"]), accounts: z.array(accountId).min(1).max(50).optional().describe("A member's mailboxes (list_accounts); required for a member") },
+  confirm: (a) => a.role === "admin" ? `Make ${a.email} an administrator of this server: they will reach every mailbox, setting and key.`
+    : `Let ${a.email} sign in as a member reaching only ${(a.accounts ?? []).join(", ")}; any agent keys they made are revoked.`,
+  routes: ["PUT /api/members/:email"],
+  call: (a, ctx) => put(ctx, `/api/members/${enc(a.email)}`, { role: a.role, ...(a.accounts ? { accounts: a.accounts.map((x) => parseAccount(x).id) } : {}) }),
+});
+const removeMember = defineTool({
+  name: "remove_member", title: "Remove a person from this server", level: "admin", ownerApproval: true, target: (a) => a.email,
+  description: "Takes a person off this shared server's list: they no longer reach anything here, and the agent keys they made are revoked. The last administrator cannot be removed. Always waits for the owner's approval in Settings → Agent access. Two calls.",
+  input: { email: memberEmail },
+  confirm: (a) => `Remove ${a.email} from this server: they lose access, and the agent keys they made are revoked.`,
+  routes: ["DELETE /api/members/:email"], call: (a, ctx) => del(ctx, `/api/members/${enc(a.email)}`),
+});
+const createAgentKey = defineTool({
+  name: "create_agent_key", title: "Issue an agent key", level: "admin", ownerApproval: true, target: (a) => `${a.name} ${a.level}`,
+  description: "Issues a key for another agent to use this server over MCP, at a level (read, mail, admin), sending mode, daily send limit, lifetime and, for read and mail keys, the mailboxes it may reach. Its secret comes back once, in this answer, with client configurations: hand it to that agent and nowhere else. Always waits for the owner's approval in Settings → Agent access: a key is a new way into the mail. Two calls.",
+  input: {
+    name: z.string().trim().min(1).max(80).describe("The agent this key is for"),
+    level: z.enum(["read", "mail", "admin"]),
+    send: z.enum(["drafts", "send"]).optional().describe("A mail key: drafts only (default) or send"),
+    dailySendLimit: z.number().int().min(1).max(1000).optional(),
+    duration: z.enum(["30d", "90d", "1y"]).optional().describe("How long the key lasts (default 1y)"),
+    accounts: z.array(z.string().max(400)).min(1).max(50).optional().describe("Read and mail keys: the mailboxes it may reach (list_accounts), or domain:<domain>; left out, the whole workspace"),
+    approval: z.enum(["agent", "owner"]).optional().describe("owner: the owner approves each irreversible action of the new key"),
+  },
+  confirm: (a) => `Issue a ${a.level} key named ${quoted(a.name)}${a.accounts ? ` limited to ${a.accounts.join(", ")}` : " for the whole workspace"}, lasting ${a.duration ?? "1y"}; its secret is shown once.`,
+  routes: ["POST /api/agent-keys"],
+  call: (a, ctx) => post(ctx, "/api/agent-keys", { name: a.name, level: a.level, ...(a.send ? { send: a.send } : {}), ...(a.dailySendLimit ? { dailySendLimit: a.dailySendLimit } : {}),
+    ...(a.duration ? { duration: a.duration } : {}), ...(a.accounts ? { accounts: a.accounts } : {}), ...(a.approval ? { approval: a.approval } : {}) }),
+});
+const revokeAgentKey = defineTool({
+  name: "revoke_agent_key", title: "Revoke an agent key", level: "admin", ownerApproval: true, target: (a) => a.keyId,
+  description: "Revokes an agent key (list_agent_keys): it stops working on this server at once and its Cloudflare service token is deleted. Always waits for the owner's approval in Settings → Agent access. Two calls.",
+  input: { keyId: z.string().min(1).max(100).describe("The key's id (list_agent_keys)") },
+  confirm: (a) => `Revoke the agent key ${a.keyId}: the agent using it loses access at once.`,
+  routes: ["DELETE /api/agent-keys/:id"], call: (a, ctx) => del(ctx, `/api/agent-keys/${enc(a.keyId)}`),
+});
+
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, decideHeldMessage, listFolders, getSendStatus,
   listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
@@ -2013,6 +2056,7 @@ export const TOOLS: readonly ToolDef[] = [
   outlookConnectLink, connectAccount, setAccountPassword, setProviderSetup, microsoftSetupStatus, checkMicrosoftSetup, listAgentKeys, agentActivity,
   listCampaigns, getCampaign, saveCampaign, deleteCampaign, addCampaignRecipients, listCampaignRecipients, previewCampaign, dryRunCampaign, listSuppression, changeSuppression,
   launchCampaign, pauseCampaign, stopCampaign, campaignReport,
+  saveMember, removeMember, createAgentKey, revokeAgentKey,
 ];
 
 /**
@@ -2032,11 +2076,7 @@ export const NOT_TOOLS: Readonly<Record<string, string>> = {
   "POST /api/accounts/imap": "Connecting an IMAP account takes the person's app password: an agent must never receive a person's password, so the person enters it in Settings → Accounts; connect_account { provider: imap } answers that step with its link (B-154)",
   "PUT /api/accounts/:accountId/password": "A new app password is the person's secret, entered in Settings → Accounts: an agent must never receive a person's password; list_mail_providers says which accounts need one (status reconnect_required) and set_account_password answers that step with its link (B-154)",
   "GET /api/me": "The signed-in person's own role on the server, for the app's screens; an agent's level is its key's (list_members shows everyone's)",
-  "PUT /api/members/:email": "Who may read whose mail on a shared server is a person's act (B-149), like issuing agent keys; list_members reads the list",
-  "DELETE /api/members/:email": "Removing a person from a shared server is an administrator's act in the app (B-149); list_members reads the list",
   "POST /api/server/self-update": "Replacing the server's code is the person's app's act (B-44): it sends the bundle it carries, signed with the app; an agent never uploads server code",
-  "POST /api/agent-keys": "Agent keys are issued by a person in the app (its answer carries the key's secret); an agent cannot mint keys. list_agent_keys reads them",
-  "DELETE /api/agent-keys/:id": "Agent keys are revoked by a person in the app (Settings → Agent access); list_agent_keys reads them",
   "POST /api/cloudflare/accounts": "A Cloudflare token is a secret: a person pastes it in Settings → Accounts, so it never passes through an agent's transcript; connect_account { provider: cloudflare } answers that step with its link (B-154)",
   "PUT /api/gmail-setup": "A Google OAuth client secret is a secret: the owner pastes it in Settings → Accounts → Gmail, so it never passes through an agent's transcript; gmail_setup_status and check_gmail_setup read and check the setup; set_provider_setup answers that step with its link (B-154)",
   "PUT /api/microsoft-setup": "A Microsoft client secret is a secret: the owner pastes it in Settings → Accounts → Outlook, so it never passes through an agent's transcript; microsoft_setup_status and check_microsoft_setup read and check the setup; set_provider_setup answers that step with its link (B-154)",

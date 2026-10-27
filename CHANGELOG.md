@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.51.0 (2026-10-27)
+
+- **Your agent can manage people and agent keys, with your approval.** It can add, change or remove a person on a
+  shared server, and issue or revoke a key for another agent. Each one waits for your approval in Settings → Agent
+  access, whatever that key's own setting, and nothing changes before you approve it.
+
 ## 0.50.0 (2026-10-27)
 
 - **Files in your Gmail, Outlook and IMAP mail are checked on arrival too.** As for mail to your own addresses, a

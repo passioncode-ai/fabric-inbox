@@ -167,6 +167,12 @@ setup files. It has the order of calls for each and the traps (a forward needs a
 destination; an agent change needs `expectedVersion`; connecting a domain over another provider's
 MX is two-step).
 
+**People and keys.** `save_member` and `remove_member` change who signs in and what they reach;
+`create_agent_key` issues a key for another agent (its secret comes back once: hand it to that agent
+only) and `revoke_agent_key` revokes one. Each always waits for the owner's approval in Settings →
+Agent access, whatever your key's setting: tell the person what you asked for, then call again with
+the same arguments and the code once they approved. Nothing changes before that.
+
 ## 6. When something is off
 
 | Symptom | Do |

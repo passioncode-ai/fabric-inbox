@@ -103,6 +103,8 @@ const BODIES: Record<string, string[]> = {
   "POST /api/campaigns/:id/preview": ["email"],
   "POST /api/campaigns/:id/dry-run": ["count"],
   "POST /api/suppression": ["add", "remove", "reason"],
+  "PUT /api/members/:email": ["role", "accounts"], // workers/routes/members.ts SaveMember (B-154)
+  "POST /api/agent-keys": ["name", "level", "send", "dailySendLimit", "duration", "accounts", "approval"], // workers/routes/agent-keys.ts NewKey
 };
 /** Written routes whose body carries nothing (or that take a whole document as it is). */
 const NO_BODY = new Set([

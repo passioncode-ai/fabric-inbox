@@ -1741,14 +1741,14 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   2. Agent access shows Waiting for your approval with how many actions wait -> open it -> each lists the key, the action, what it does, when it was asked and until when it waits.
   3. Approve -> the agent's next call with its code does it, once; or Refuse -> the code is deleted and the agent is told it is not valid.
 - **Expected result:** An agent whose key asks the owner never does anything irreversible until the owner approved that exact action in the app; a key without it confirms with its one-time code as before.
-- **Alt paths:** An approved action stays listed (Approved: the agent has not used it yet) until the agent uses it or it expires after a day. More actions → Stop asking me to approve returns the key to its own code.
+- **Alt paths:** An approved action stays listed (Approved: the agent has not used it yet) until the agent uses it or it expires after a day. More actions → Stop asking me to approve returns the key to its own code. Some acts always wait for the owner, whatever the key's setting (B-154, DEC-0121): releasing a held message, adding, changing or removing a person (`save_member`, `remove_member`), and issuing or revoking an agent key (`create_agent_key`, `revoke_agent_key`).
 - **UI elements:** SCR-15 (Waiting for your approval, Approve, Refuse; the key's What cannot be undone fact and its menu item).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** An answer to an action that expired or was answered already says so (404); a list that cannot load offers Retry. Agents cannot approve: the approval routes have no tool (`NOT_TOOLS`).
 - **Status:** draft
-- **Coverage:** app/components/settings/sections/AgentAccessSection.tsx (`Approvals`, `approvalText`), workers/routes/agent-keys.ts (`/api/agent-keys/approvals`, PATCH `/api/agent-keys/:id`), workers/mcp/ledger.ts (`decideApproval`, `pendingApprovals`), workers/mcp/protocol.ts (`needsApproval`, `waitingForApproval`), tests/mcp-workerd.test.ts (B-38), tests/mcp-protocol.test.ts (B-38)
+- **Coverage:** app/components/settings/sections/AgentAccessSection.tsx (`Approvals`, `approvalText`), workers/routes/agent-keys.ts (`/api/agent-keys/approvals`, PATCH `/api/agent-keys/:id`), workers/mcp/ledger.ts (`decideApproval`, `pendingApprovals`), workers/mcp/protocol.ts (`needsApproval`, `waitingForApproval`), tests/mcp-workerd.test.ts (B-38), tests/mcp-protocol.test.ts (B-38), tests/mcp-relayed.test.ts (B-154)
 - **Product:** unobserved
-- **Today:** Built in 0.32.0; the list is read again every 30 s while Agent access is open.
+- **Today:** Built in 0.32.0; the list is read again every 30 s while Agent access is open. People and keys as tools through the owner's approval since 0.51.0 (B-154 step 3).
 
 ### SCN-086: Put a reply agent on a Gmail, IMAP or Outlook account
 - **Persona:** P-01
