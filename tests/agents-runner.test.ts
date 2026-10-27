@@ -1442,3 +1442,22 @@ test("A-5: a second message of a conversation the agent already answered is not 
   assert.equal(h.effects.sends.length, 0);
   assert.deepEqual(asked, [[MAILBOX, "t-1", "number"]]);
 });
+
+test("B-192, B-186: a sent answer's log names its state claims, and every run ends with one finished line, no words", async () => {
+  const lines: string[] = [];
+  const log = console.log;
+  console.log = (line: unknown) => { lines.push(String(line)); };
+  let run;
+  try {
+    const h = harness({ agent: autoAgent(), model: async () => ({ decision: answer({ body: "Hi Ann, your Premium is now active." }), text: "" }) });
+    run = (await h.run())!;
+  } finally { console.log = log; }
+  assert.equal(run.status, "sent", run.reason);
+  const sent = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  assert.deepEqual(sent.find((e) => e.event === "agent_answer_sent")?.stateClaims, ["account_state"]);
+  const finished = sent.filter((e) => e.event === "agent_run_finished");
+  assert.equal(finished.length, 1);
+  assert.deepEqual({ ...finished[0], run: undefined, agent: undefined },
+    { event: "agent_run_finished", run: undefined, agent: undefined, status: "sent", category: null, abstained: false, withheld: 0, injection: false });
+  assert.ok(!lines.some((l) => /Premium is now active|ann@customer/.test(l)), "no words of the answer or the sender in the logs");
+});

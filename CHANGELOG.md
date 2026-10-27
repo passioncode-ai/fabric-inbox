@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.60.0 (2026-10-27)
+
+- **Reply agents' logs count what needs a look.** The server's logs now say, for every reply agent run, how it ended,
+  its category, whether the knowledge base had a confident answer and whether a tool's result was withheld by the
+  safety check, and for every answer sent which kinds of state it tells the person (an account's state, a refund
+  done, a hand-off to the team, a fix). Never the words of the mail or the person's address.
+
 ## 0.59.0 (2026-10-27)
 
 - **A new server opens when its address is ready.** A web address or sign-in page Cloudflare made a moment ago can

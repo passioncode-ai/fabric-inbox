@@ -10,6 +10,7 @@ import { RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type Aw
 import { answeringOrder, duplicateReason, electAnswerer, messageKey, type MessageClaim } from "./dedupe";
 import type { KnowledgeHit } from "../knowledge/store";
 import { msg } from "../../shared/i18n";
+import { stateClaims } from "./state-claims";
 
 export interface RunnerEmail {
   id: string;
@@ -461,6 +462,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   const claim = await deps.registry.beginRun(draftRun);
   if (!claim.claimed) return claim.run;
   const run = claim.run;
+  // B-186, B-187, B-188: counts the logs can answer while the runs themselves cannot be read (no text, no sender).
+  const measured = { abstained: false, withheld: 0 };
   const finish = async (status: AgentRun["status"], reason: string, failure?: AgentRun["failure"]) => {
     run.status = status;
     run.reason = reason;
@@ -470,6 +473,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     if (status !== "held") delete run.heldFacts;
     if (run.factsRevisions && !Object.keys(run.factsRevisions).length) delete run.factsRevisions;
     await deps.registry.saveRun(run);
+    console.log(JSON.stringify({ event: "agent_run_finished", run: run.id, agent: run.agentId ?? null, status,
+      category: run.category ?? null, abstained: measured.abstained, withheld: measured.withheld, injection: !!run.injection }));
     return run;
   };
   if (resolveError || !agent) return finish("failed", msg("Could not read the agent for this address: {error}", { error: String(resolveError) }), "agent");
@@ -573,6 +578,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       // A tool's output reaches the model like the email does: it is checked the same way.
       const scan = await deps.injection(text.slice(0, 8000));
       if (scan.flagged || scan.error) {
+        measured.withheld++;
+        console.log(JSON.stringify({ event: "agent_tool_withheld", run: run.id, tool: grant.name, cause: scan.error ? "error" : "flagged" }));
         record.result = scan.error ? msg("Withheld: the safety check could not run ({error})", { error: scan.error }) : msg("Withheld: the output looked like instructions");
         return { ok: false, text: "The tool's output was withheld by the safety check. Do not guess its result; draft the answer instead." };
       }
@@ -609,6 +616,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       if (!result.ok) return result.text;
       if (!abstainedOutput(result.text)) return `${RANK_NOTE}\n${result.text}`;
       abstainedAny = true;
+      measured.abstained = true;
       return `No confident answer. These are unverified candidates: never state them as facts; decide draft, say the team will check, and fill question.\n${result.text}`;
     },
   }));
@@ -690,7 +698,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     const result = await callGrant(grant, { [grant.prefetch!.argument]: asking });
     return { name: grant.name, ok: result.ok, text: result.ok ? result.text : "", abstained: result.ok && abstainedOutput(result.text) };
   }));
-  if (prefetched.some((r) => r.abstained)) abstainedAny = true;
+  if (prefetched.some((r) => r.abstained)) abstainedAny = measured.abstained = true;
   // B-141: a message held for missing knowledge is not given to the model again while the knowledge is the
   // same: every endpoint answered with the revision of the last attempt, for the same agent version. Only
   // the tools' own answers count; an agent that also searches collections is always answered again.
@@ -969,7 +977,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   run.sent = { to: reply.to, subject: reply.subject, body: reply.text.slice(0, SENT_BODY_CHARS), outboxId: result.id };
   if (result.status === "accepted") {
     // Every answer sent without a person is traceable to what it rested on.
-    console.log(JSON.stringify({ event: "agent_answer_sent", run: run.id, agent: agent.id, version: agent.version, evidence: run.evidence ?? [] }));
+    // B-192: the kinds of state the answer tells the person (never its words), counted before anything is held on them.
+    console.log(JSON.stringify({ event: "agent_answer_sent", run: run.id, agent: agent.id, version: agent.version, evidence: run.evidence ?? [], stateClaims: stateClaims(reply.text) }));
     run.repliedAt = new Date().toISOString();
     return finish("sent", outcome.reason);
   }
