@@ -157,7 +157,7 @@ $('#retry').addEventListener('click', async () => {
 const cf = window.fabricSetup.cloudflare;
 const CF_STEPS = [
   ['subdomain', () => t('Web address')], ['storage', () => t('Storage for your mail')], ['team', () => t('Sign-in page')], ['otp', () => t('Sign in with a code by email')],
-  ['access', () => t('Only you can open it')], ['files', () => t('Upload the app')], ['server', () => t('Start the server')], ['address', () => t('Open it at its address')],
+  ['access', () => t('Only you can open it')], ['files', () => t('Upload the app')], ['server', () => t('Start the server')], ['address', () => t('Open it at its address')], ['online', () => t('Reachable on the internet')],
 ];
 const MARK = { done: () => t('Done'), already: () => t('Already so'), skipped: () => t('Nothing to do'), failed: () => t('Not done'), running: () => t('Working…'), waiting: () => t('Waiting') };
 let cfAccounts = [];

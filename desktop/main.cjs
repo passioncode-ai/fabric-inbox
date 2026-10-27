@@ -11,6 +11,7 @@ const connector = require('./connect.cjs');
 const { menuTemplate } = require('./menu.cjs');
 const { contextMenuTemplate } = require('./context-menu.cjs');
 const newMail = require('./new-mail.cjs');
+const addressWait = require('./address-wait.cjs');
 const serverUpdates = require('./server-update.cjs');
 const usage = require('./analytics.cjs');
 const backup = require('./backup.cjs');
@@ -861,6 +862,7 @@ async function handleConnectLink(url) {
     const detail = out.reason === 'no_server' ? t('Set up your Fabric Inbox server first, then connect again.')
       : out.reason === 'sign_in_required' ? t('Sign in to Fabric Inbox in the window that opened, then connect again from {client}.', { client: request.client })
       : out.reason === 'callback_unreachable' ? (out.revoked ? t('{client} did not receive the key, so it was revoked again.', { client: request.client }) : t('{client} did not receive the key, so it was made but could not be revoked: revoke it in Settings → Agent access.', { client: request.client }))
+      : out.reason === 'listener_ambiguous' ? t('More than one app listens on port {port}, the one {client} gave, so Fabric Inbox cannot tell which of them would receive the key. Nothing was sent. Quit the other app, then connect again from {client}.', { port: out.port, client: request.client })
       : out.reason === 'listener_changed' ? (out.revoked ? t('The key was made but could not reach {client}, and was revoked again.', { client: request.client }) : t('The key was made but could not reach {client}, and it could not be revoked: revoke it in Settings → Agent access.', { client: request.client }))
       : t('The key could not be made: {error}', { error: out.error ? t.text(out.error) : t('unknown error') });
     if (out.reason === 'no_server') showSetup(t('Set up your server, then connect again.'));
@@ -1019,6 +1021,15 @@ function installIPC() {
       if (!origin) return { ok: false, error: t('The server was updated, but its address could not be read. Enter it in Server address.') };
       await saveConfig(policy.validateConfig({ origin, accessOrigin: result.accessOrigin }));
       track('server_connected', { method: 'created' });
+      // O-10 (B-184): a new workers.dev name or sign-in page can take minutes to appear in DNS.
+      const step = (outcome, detail) => { if (!event.sender.isDestroyed()) event.sender.send('fabric:cf-step', { id: 'online', label: t('Reachable on the internet'), outcome, detail }); };
+      const ses = session.fromPartition(policy.partitionFor({ origin }));
+      const online = await addressWait.waitForHosts(addressWait.hostsOf(origin, result.accessOrigin), {
+        resolve: (host) => ses.resolveHost(host, { cacheUsage: 'disallowed' }),
+        onWaiting: () => step('running', t('A new address takes a few minutes to appear on the internet. The app opens your server as soon as it does.')),
+      });
+      logEvent({ event: 'server_online', outcome: online.ok ? 'ok' : 'timeout', ms: online.waitedMs });
+      step(online.ok ? 'done' : 'failed', online.ok ? '' : t('The address does not open yet. The app opens it now; if it does not load, retry in a few minutes.'));
       openAfterSignIn = policy.afterDeployPage(input);
       loadMail();
       return { ok: true, origin };
