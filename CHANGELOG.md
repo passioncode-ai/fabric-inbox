@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.57.0 (2026-10-27)
+
+- **Reply agents trust the knowledge base's own verdict.** When the knowledge base marks which of its results can be
+  given as an answer, the agent now uses that mark and no threshold of its own: a result marked as an answer counts,
+  a weak candidate never does. A release's date is the day it reached the store.
+
 ## 0.56.0 (2026-10-27)
 
 - **Gmail mail is not lost when the server was away too long.** If Gmail no longer keeps the changes since the

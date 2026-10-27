@@ -98,9 +98,34 @@ export interface AgentTool {
 /** A granted tool called before the model (B-85): what it returned, or that it failed, and whether it abstained. */
 export interface PrefetchedResult { name: string; ok: boolean; text: string; abstained?: boolean }
 
-/** A knowledge tool's own verdict that nothing answers confidently (`abstained: true` in its JSON). */
+/** The item lists a knowledge tool's JSON answer may carry its results in. */
+const ITEM_KEYS = ["items", "facts", "results", "citations"] as const;
+/** Every result item of a knowledge tool's JSON answer. */
+function resultItems(v: Record<string, unknown>): Record<string, unknown>[] {
+  return ITEM_KEYS.flatMap((key) => Array.isArray(v[key]) ? (v[key] as unknown[]).filter((i): i is Record<string, unknown> => !!i && typeof i === "object") : []);
+}
+/**
+ * The data agent's own verdict on each item (0.1.50, VoC audit 2026-10-27): `answer: true` when the item may be
+ * given as an answer, false for a weak candidate. When the answer carries it, the bar lives there and this server
+ * keeps none of its own; null when no item carries it (another tool, or an older data agent).
+ */
+function answerFlags(items: Record<string, unknown>[]): boolean[] | null {
+  const flags = items.filter((i) => typeof i.answer === "boolean").map((i) => i.answer as boolean);
+  return flags.length ? flags : null;
+}
+
+/**
+ * A knowledge tool's own verdict that nothing answers confidently: `abstained: true` in its JSON, or items that
+ * carry the data agent's `answer` flag with none of them true.
+ */
 export function abstainedOutput(text: string): boolean {
-  try { const v = JSON.parse(text) as { abstained?: unknown }; return !!v && typeof v === "object" && v.abstained === true; } catch { return false; }
+  try {
+    const v = JSON.parse(text) as Record<string, unknown>;
+    if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+    if (v.abstained === true) return true;
+    const flags = answerFlags(resultItems(v));
+    return !!flags && !flags.includes(true);
+  } catch { return false; }
 }
 
 /**
@@ -108,7 +133,7 @@ export function abstainedOutput(text: string): boolean {
  * 0.1.16): the first result is the answer, and an item's `coverage` is its own share of the question, not
  * its rank, so a lower result may carry a higher one. The model and the checker read results that way.
  */
-export const RANK_NOTE = "Results are in rank order: the first result is the answer. Later results are only related topics, whatever their coverage: never state one in place of the first, and use it only for a separate question the message itself asks.";
+export const RANK_NOTE = "Results are in rank order: the first result is the answer. Later results are only related topics, whatever their coverage: never state one in place of the first, and use it only for a separate question the message itself asks. An item marked \"answer\": false is a weak candidate, never a fact. A release's date is its storeReleasedAt (when it reached the store), never another date it carries.";
 
 /**
  * The operator's rule of 2026-10-18: no em dash in text for people, and no spaced hyphen or "--" standing
@@ -132,9 +157,11 @@ export async function gapRequestId(runId: string, kind: string): Promise<string>
 export interface EvidenceTrace { tool: string; requestId?: string; items?: string[]; revision?: string }
 
 /**
- * The trace of a tool output that counts as a confident answer, or null: an abstained answer, one whose
- * top-level coverage is below 0.6, or one whose cited items all carry a coverage below 0.6 rests on
- * nothing. Items with a coverage below 0.6 are not cited. Output that is not JSON counts, untraced.
+ * The trace of a tool output that counts as a confident answer, or null. When its items carry the data agent's
+ * `answer` flag, that flag alone decides: only items with `answer: true` are cited, and none of them means it rests
+ * on nothing. Otherwise (another tool, an older data agent) the old bar: an abstained answer, one whose top-level
+ * coverage is below 0.6, or one whose cited items all carry a coverage below 0.6 rests on nothing, and items with a
+ * coverage below 0.6 are not cited. Output that is not JSON counts, untraced.
  */
 export function evidenceOf(tool: string, text: string): EvidenceTrace | null {
   let value: unknown;
@@ -142,19 +169,24 @@ export function evidenceOf(tool: string, text: string): EvidenceTrace | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { tool };
   const v = value as Record<string, unknown>;
   if (v.abstained === true) return null;
-  if (typeof v.coverage === "number" && v.coverage < 0.6) return null;
+  const all = resultItems(v);
+  const flagged = answerFlags(all) !== null;
+  if (!flagged && typeof v.coverage === "number" && v.coverage < 0.6) return null;
   const id = [v.requestId, v.request_id, v.trace, v.traceId].find((x) => typeof x === "string") as string | undefined;
   const items: string[] = [];
   let scored = 0;
-  for (const key of ["items", "facts", "results", "citations"]) {
-    const list = v[key];
-    if (Array.isArray(list)) for (const item of list) {
-      if (!item || typeof item !== "object") continue;
-      const { id: itemId, coverage } = item as Record<string, unknown>;
+  for (const item of all) {
+    const { id: itemId, coverage, answer } = item;
+    if (flagged) {
+      // The data agent's verdict; an item without the flag in a flagged answer is not one it vouches for.
+      scored++;
+      if (answer !== true) continue;
+    } else if (typeof coverage === "number") {
       // A cited item with its own coverage counts only at 0.6 or more (the knowledge base's own bar).
-      if (typeof coverage === "number") { scored++; if (coverage < 0.6) continue; }
-      if (typeof itemId === "string" || typeof itemId === "number") items.push(String(itemId));
+      scored++;
+      if (coverage < 0.6) continue;
     }
+    if (typeof itemId === "string" || typeof itemId === "number") items.push(String(itemId));
   }
   if (scored > 0 && items.length === 0) return null;
   const revision = v.revision === undefined ? undefined : (typeof v.revision === "string" ? v.revision : JSON.stringify(v.revision)).slice(0, 200);
@@ -313,7 +345,7 @@ export function systemPrompt(agent: AgentVersion, mailboxId: string, tools: Agen
     // B-85: a tool that abstained returns weak candidates. They are never facts (canvas §6).
     ...(prefetched.some((r) => r.abstained) ? [
       "",
-      "Unverified candidates from a knowledge tool that found no confident answer (each with its coverage, below 0.6). None of them is a fact: never state them; decide draft, say the team will check, and fill question.",
+      "Unverified candidates from a knowledge tool that found no confident answer. None of them is a fact: never state them; decide draft, say the team will check, and fill question.",
       "<candidates>",
       ...prefetched.filter((r) => r.abstained).map((r) => `[${r.name}]\n${r.text}`),
       "</candidates>",
@@ -577,7 +609,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       if (!result.ok) return result.text;
       if (!abstainedOutput(result.text)) return `${RANK_NOTE}\n${result.text}`;
       abstainedAny = true;
-      return `No confident answer. These are unverified candidates (coverage below 0.6): never state them as facts; decide draft, say the team will check, and fill question.\n${result.text}`;
+      return `No confident answer. These are unverified candidates: never state them as facts; decide draft, say the team will check, and fill question.\n${result.text}`;
     },
   }));
   // A grant marked prefetch is asked about this message before the model runs, as the
