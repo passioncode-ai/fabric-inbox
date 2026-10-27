@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { runInNewContext } from "node:vm";
 import { createRequire } from "node:module";
+import { posixRequire } from "./posix-require.ts";
 
 const require = createRequire(import.meta.url);
 const profile = require("../desktop/profile.cjs");
@@ -186,15 +187,29 @@ async function boot({ config, packaged = true, switches = [] as string[], files 
     session: { fromPartition: sessionFor },
   };
   const code = await readFile(new URL("../desktop/main.cjs", import.meta.url), "utf8");
+  const desktop = posixRequire(import.meta.url);
   runInNewContext(code, {
     require: (name: string) => name === "electron" ? fakeElectron : name === "node:fs/promises" ? fakeFs
-      : name.startsWith("./") ? require("../desktop/" + name.slice(2)) : require(name),
+      : name.startsWith("./") ? desktop("../desktop/" + name.slice(2)) : desktop(name),
     __dirname: "/fixture/desktop", process: { platform: "darwin" }, URL, console: { log() {}, error() {} },
     setTimeout: () => 1, clearTimeout() {},
   });
   await new Promise((resolve) => setImmediate(resolve));
   await new Promise((resolve) => setImmediate(resolve));
-  const settle = async () => { for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve)); };
+  // Until main.cjs is quiet: the fixture answers in microtasks, but main.cjs also reads and writes the real
+  // disk (its log, the backup), which a fixed count of ticks does not outwait on a loaded runner (the
+  // v0.69.0 gate failed that way). Quiet: the log, the windows and the menu unchanged three rounds running.
+  const snapshot = () => `${log.length} ${windows.length} ${JSON.stringify(menu, (_key, value) => (typeof value === "function" ? undefined : value))}`;
+  const settle = async () => {
+    let last = "";
+    for (let round = 0, quiet = 0; round < 200 && quiet < 3; round++) {
+      for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      const now = snapshot();
+      quiet = now === last ? quiet + 1 : 0;
+      last = now;
+    }
+  };
   const openSettings = () => menu[0].submenu.find((item: any) => item.label === "Server address…").click();
   const setupSender = () => {
     const setup = windows.filter((w) => w.options.webPreferences.partition === "fabric-setup").pop();
