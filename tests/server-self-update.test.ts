@@ -117,7 +117,7 @@ test("B-44: GET /api/server names the version and whether it can update itself",
   const without = await fixture({ bindings: {} });
   try {
     const r = await (await mf.dispatchFetch("http://localhost/api/server")).json() as any;
-    assert.deepEqual(r, { version, selfUpdate: { available: true } });
+    assert.deepEqual(r, { version, context: "personal", selfUpdate: { available: true } });
     const w = await (await without.mf.dispatchFetch("http://localhost/api/server")).json() as any;
     assert.equal(w.selfUpdate.available, false);
     assert.match(w.selfUpdate.reason, /no Cloudflare token/);
@@ -210,3 +210,12 @@ test("B-157: an update keeps the jurisdiction the server's storage is bound in, 
     assert.deepEqual(cf.put!.metadata.bindings.find((b: any) => b.type === "r2_bucket"), { type: "r2_bucket", name: "BUCKET", bucket_name: "owner-mail", jurisdiction: "eu" });
   } finally { await mf.dispose(); }
 });
+
+test("B-158: GET /api/server names the server's context, as FABRIC_CONTEXT sets it", async () => {
+  const { mf } = await fixture({ bindings: { CLOUDFLARE_API_TOKEN: "server-token", CLOUDFLARE_ACCOUNT_ID: ACCOUNT, FABRIC_CONTEXT: "org:org_ABC23" } });
+  try {
+    const r = await (await mf.dispatchFetch("http://localhost/api/server")).json() as any;
+    assert.equal(r.context, "org:org_ABC23");
+  } finally { await mf.dispose(); }
+});
+

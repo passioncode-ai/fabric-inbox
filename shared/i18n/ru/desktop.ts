@@ -190,6 +190,8 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"{name}.workers.dev could not be taken ({reason}). Try another name.": "Не удалось занять {name}.workers.dev ({reason}). Попробуйте другое имя.",
 	"Your account's address is now {name}.workers.dev.": "Теперь адрес вашего аккаунта — {name}.workers.dev.",
 	"The storage exists; your mail in it is kept.": "Хранилище уже есть; почта в нём сохранится.",
+	"A context is personal, or org: followed by the organization's id (letters, digits, dashes and underscores).": "Контекст указывается как personal или как org: и идентификатор организации (латинские буквы, цифры, дефисы и подчёркивания).",
+	"This server belongs to {current}, and a server stays in the context it was made for. Give {context} a server of its own.": "Этот сервер относится к {current}, а сервер остаётся в том контексте, для которого его создали. Создайте для {context} отдельный сервер.",
 	"Choose a storage jurisdiction Cloudflare offers: {list}.": "Выберите юрисдикцию хранилища, которую предлагает Cloudflare: {list}.",
 	"The storage {name} already exists, kept {where}, and a bucket keeps the place it was made in. Give this server its own Worker and storage names to keep its mail in {jurisdiction}.": "Хранилище {name} уже есть и хранится {where}, а бакет остаётся там, где его создали. Чтобы почта этого сервера хранилась в {jurisdiction}, дайте ему свои имена Worker и хранилища.",
 	"in the {jurisdiction} jurisdiction": "в юрисдикции {jurisdiction}",

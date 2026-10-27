@@ -127,6 +127,7 @@ Every name the Worker reads (`workers/types.ts`). None is in `wrangler.jsonc` (C
 | `CLOUDFLARE_API_TOKEN_<account id>` | secret, one per extra account | domains in another Cloudflare account | none | written by the server when a token is connected in Settings → Accounts (or by the door); removed with the account |
 | `CLOUDFLARE_ACCOUNT_ID` | var | optional | the only account the server's token sees, else the one whose Workers hold `EMAIL_ROUTING_WORKER` | the account the server runs in (its Access app, agent keys and relays' sign-ins live there) |
 | `EMAIL_ROUTING_WORKER` | var | routing | `fabric-inbox` | the Worker routing rules point at |
+| `FABRIC_CONTEXT` | var | optional | `personal` | the context the server belongs to (B-158): `personal`, or `org:<id>` for an organization's server, as the organization service names it; set once by `onboard.mjs server --context`, shown in `/api/server` and the well-known document, never moved to another (`workers/lib/context.ts`) |
 | `AGENT_MODEL` | var | optional | `@cf/moonshotai/kimi-k2.5` | Workers AI model for address agents and the chat (reply agents use it only without `OPENROUTER_API_KEY`) |
 | `OPENROUTER_API_KEY` | secret | optional | — | Reply agents write on OpenRouter (`REPLY_MODEL`, fallback `REPLY_FALLBACK_MODEL`) and every answer sent without a person is approved by a model of another vendor first; without it, Workers AI writes and nothing checks |
 | `REPLY_MODEL` / `REPLY_FALLBACK_MODEL` | var | optional | `xiaomi/mimo-v2.6-pro` / `deepseek/deepseek-v4.1-flash` | The reply-lane writer and its fallback (open vendors only) |
@@ -427,6 +428,10 @@ server is the same one; what differs is the account, who signs in, and that it i
    existing one in any jurisdiction and keeps it, and refuses before uploading when it sits elsewhere than
    asked. To move a server's mail, give a new server its own names (below). The residency step 5 states is
    this jurisdiction. The Mac app's setup form does not offer the choice yet (B-193).
+
+   **Which organization it belongs to** (B-158): add `--context org:<id>` with the organization's id as the
+   organization service names it. The server shows it in `/api/server` and its well-known document, and a
+   later deploy that names another context is refused: a server's mail stays in the context it was made for.
 
    **A second server in an account that already runs one** (B-169: an organization without an account
    of its own, beside a person's server) takes its own Worker and storage names, and leaves this

@@ -4,6 +4,7 @@ import type { Env } from "../types";
 import { accountIdFor, cloudflareApi, CloudflareApiError } from "../routing/cloudflare-api";
 import { checkManifest, ensureAccessHeader, selfUpdate, SelfUpdateRefused } from "../lib/self-update";
 import { msg } from "../../shared/i18n";
+import { contextOf } from "../lib/context";
 
 /**
  * The server's own version, and the update the person's app sends it (B-44). Behind Access like
@@ -19,13 +20,15 @@ const scriptOf = (env: Env) => env.EMAIL_ROUTING_WORKER || "fabric-inbox";
 
 serverUpdateRouter.get("/api/server", async (c) => {
   c.header("Cache-Control", "no-store");
+  // B-158: the context the server belongs to (null when FABRIC_CONTEXT is set to something that is no context).
+  const { context } = contextOf(c.env);
   const api = cloudflareApi(c.env);
-  if (!api) return c.json({ version, selfUpdate: { available: false, reason: msg("This server has no Cloudflare token.") } });
+  if (!api) return c.json({ version, context, selfUpdate: { available: false, reason: msg("This server has no Cloudflare token.") } });
   // CLOUDFLARE_ACCOUNT_ID when set (Create my server sets it); otherwise the account the token
   // shows runs this server's script (a server deployed with wrangler has no such var).
   try { await accountIdFor(api, c.env); }
-  catch (error) { return c.json({ version, selfUpdate: { available: false, reason: (error as Error).message } }); }
-  return c.json({ version, selfUpdate: { available: true } });
+  catch (error) { return c.json({ version, context, selfUpdate: { available: false, reason: (error as Error).message } }); }
+  return c.json({ version, context, selfUpdate: { available: true } });
 });
 
 serverUpdateRouter.post("/api/server/self-update", async (c) => {

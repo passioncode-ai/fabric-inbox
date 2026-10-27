@@ -5,7 +5,7 @@
 // connect, register, prove, status, forget), which it runs for every other command.
 //
 //   node scripts/onboard.mjs server [--token-env NAME] [--account ID] [--subdomain NAME] [--team NAME] [--email ADDRESS | --access-group ID]
-//                                  [--script NAME --bucket NAME --keep-record] [--jurisdiction eu|fedramp|us] [--json]
+//                                  [--script NAME --bucket NAME --keep-record] [--jurisdiction eu|fedramp|us] [--context personal|org:ID] [--json]
 //   A second server in an account that already runs one (B-169) takes its own Worker and storage names
 //   (--script, --bucket), and --keep-record leaves this computer's record and welcome setup on the first.
 //   node scripts/onboard.mjs connect | register | prove | status | forget   (see the plugin's onboard.mjs)
@@ -109,9 +109,13 @@ export async function stepServer(opts, { say, deployer = require('../desktop/clo
   const jurisdiction = opts.jurisdiction === undefined ? undefined : String(opts.jurisdiction).trim().toLowerCase();
   if (jurisdiction !== undefined && !deployer.JURISDICTIONS.includes(jurisdiction))
     throw new OnboardError('invalid_jurisdiction', `--jurisdiction takes one of: ${deployer.JURISDICTIONS.join(', ')}.`);
+  // B-158: the context the server belongs to, set once (`personal` or `org:<id>`); an existing server keeps its own.
+  const context = opts.context === undefined ? undefined : String(opts.context).trim();
+  if (context !== undefined && !deployer.CONTEXT.test(context))
+    throw new OnboardError('invalid_context', '--context takes personal, or org: followed by the organization id.');
   const bundleDir = await bundle(say);
   const result = await deployer.deploy({ token, accountId: account.id, bundleDir, subdomain: opts.subdomain, team: opts.team, email: opts.email, accessGroup: opts['access-group'],
-    ...(jurisdiction ? { jurisdiction } : {}),
+    ...(jurisdiction ? { jurisdiction } : {}), ...(context ? { context } : {}),
     ...(script ? { scriptName: script, bucketName: bucket } : {}), fetchImpl,
     onStep: (s) => say({ step: `server.${s.id}`, outcome: s.outcome, detail: s.detail }) }).catch((error) => { throw deployFailure(error); });
   // O-1: a server signed in on its own domain whose address could not be read.

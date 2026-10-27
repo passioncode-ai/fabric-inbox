@@ -469,7 +469,7 @@ const listAddresses = defineTool({
 
 const getServer = defineTool({
   name: "get_server", title: "Show the server's version", level: "read", readOnly: true,
-  description: "The version this server runs, and whether it can take an update from the person's app without a new Cloudflare token (selfUpdate.available, with the reason when it cannot). Updating it is the app's act, not an agent's.",
+  description: "The version this server runs, the context it belongs to (`personal`, or `org:<id>` for an organization's server; null when its setting is no context), and whether it can take an update from the person's app without a new Cloudflare token (selfUpdate.available, with the reason when it cannot). Updating it is the app's act, not an agent's.",
   input: {}, routes: ["GET /api/server"],
   call: (_a, ctx) => get(ctx, "/api/server"),
 });

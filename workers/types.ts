@@ -44,6 +44,8 @@ export interface Env extends Cloudflare.Env {
 	CLOUDFLARE_ACCOUNT_ID?: string;
 	/** The Worker that Email Routing rules point at; defaults to "fabric-inbox". */
 	EMAIL_ROUTING_WORKER?: string;
+	/** B-158: the context this server belongs to, `personal` (also when absent) or `org:<orgId>` (workers/lib/context.ts). */
+	FABRIC_CONTEXT?: string;
 	GOOGLE_CLIENT_ID?: string;
 	GOOGLE_CLIENT_SECRET?: string;
 	GMAIL_TOKEN_ENCRYPTION_KEY?: string;
