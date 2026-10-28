@@ -1316,6 +1316,25 @@ test("B-153: a message held before the list was granted is answered when its gap
   } finally { await mf.dispose(); }
 });
 
+test("B-153: a run queued again keeps its second look and its closed gap when the runner claims the next attempt", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const at = "2026-10-27T08:00:00.000Z";
+    const look = { at, state: "running", firstCited: ["fact:a"] };
+    const closed = { at, item: "fact:b", revision: "r1" };
+    await command("begin", { run: { ...b141, id: rid("again"), emailId: "again", status: "held", attempt: 2, gapsReported: ["unanswered"],
+      secondLook: look, gapClosed: closed, createdAt: at, updatedAt: at } });
+    assert.equal((await command("again", { id: rid("again") })).ok, true);
+    // The runner claims the next attempt with a fresh draft that knows nothing of the message's history.
+    const draft = { ...b141, id: rid("again"), emailId: "again", status: "running", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    const claim = await command("begin", { run: draft });
+    assert.equal(claim.claimed, true);
+    assert.deepEqual(claim.run.secondLook, look, "the second look runs on this attempt and is counted");
+    assert.deepEqual(claim.run.gapClosed, closed, "a closed gap answers the message again once");
+    assert.equal(claim.run.attempt, 3);
+  } finally { await mf.dispose(); }
+});
+
 test("B-153: a gap list the key may not read is left alone for six hours, and no held run moves", async () => {
   const { mf, command } = await fixture();
   try {

@@ -699,6 +699,9 @@ export class AgentRegistryDO extends DurableObject<Env> {
           ...(prior.escalatedAt ? { escalatedAt: prior.escalatedAt } : {}), ...(prior.acknowledged ? { acknowledged: prior.acknowledged } : {}),
           // B-141: what the last attempt held for, the gaps already reported and the closing are the message's, not the attempt's.
           ...(prior.heldFacts ? { heldFacts: prior.heldFacts } : {}), ...(prior.gapsReported ? { gapsReported: prior.gapsReported } : {}),
+          // B-153: the second look and a closed gap happen once per message; lost here, the run would take another look
+          // at every retry pass (uncounted, so past the daily limit) and be requeued again on every new gap ledger.
+          ...(prior.secondLook ? { secondLook: prior.secondLook } : {}), ...(prior.gapClosed ? { gapClosed: prior.gapClosed } : {}),
           ...(prior.closedAt ? { closedAt: prior.closedAt, ...(prior.closing ? { closing: prior.closing } : {}) } : {}) };
         this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?",
           again.status, JSON.stringify(again), again.updatedAt, again.id);
