@@ -22,6 +22,19 @@ const bundle = await build({
         async seed(now) {
           await this.ctx.storage.put('account:ab1', { id: 'ab1', provider: 'gmail', email: 'Help@Acme.example', runtime: 'cloud', status: 'connected', createdAt: 1,
             credentials: { v: 1 }, sync: { mode: 'history', historyId: '1', generation: 'g' } });
+          await this.ctx.storage.put('test:now', now);
+          // The agent answered in1 and sent a waiting reply on in3; mine4 was a person's.
+          for (const [inbound, suffix, sent] of [['in1', '', 'out1'], ['in3', ':waiting', 'ack3']])
+            await this.ctx.storage.put('send:ab1:' + (await runIdFor('gmail:ab1', inbound)) + suffix, { providerMessageId: sent, status: 'sent' });
+          await this.ctx.storage.put('send:ab1:' + (await runIdFor('gmail:ab1', 'in4')), { providerMessageId: 'mine4', status: 'failed' });
+          await this.stub();
+        }
+        // B-196: the cache stubs live in this instance's memory, so they are put back before every request: under load
+        // workerd may drop an idle object between two requests, and a new instance would read the stored account with an
+        // empty cache (counts {} while the account is listed).
+        async stub() {
+          const now = await this.ctx.storage.get('test:now');
+          const index = (await this.ctx.storage.get('test:noIndex')) !== true;
           const rows = {
             t1: [['in1', now - 2 * HOUR, ['INBOX']], ['out1', now - HOUR, ['SENT']]],
             t2: [['in2', now - 72 * HOUR, ['INBOX', 'UNREAD']]],
@@ -31,16 +44,12 @@ const bundle = await build({
           const at = new Map(Object.values(rows).flat().map(([id, t]) => [id, t]));
           const cache = this.service.cache;
           cache.inboxPage = async () => Object.entries(rows).map(([threadId, list]) => ({ threadId, id: list[0][0] }));
-          cache.threadMembers = async (_a, threadId) => this.index === false ? undefined : (rows[threadId] || []).map(([id, , labels]) => ({ id, labels }));
+          cache.threadMembers = async (_a, threadId) => !index ? undefined : (rows[threadId] || []).map(([id, , labels]) => ({ id, labels }));
           cache.row = async (_a, id) => ({ message: { timestamp: at.get(id) } });
           this.service.inboxMessagesByIds = async (accountId, ids) => ids.map((id) => ({ id: 'gmail:' + accountId + ':' + id, accountId: 'gmail:' + accountId,
             providerMessageId: id, threadId: Object.keys(rows).find((t) => rows[t].some((r) => r[0] === id)), subject: 's', from: 'x', date: new Date(at.get(id)).toISOString(), timestamp: at.get(id) }));
-          // The agent answered in1 and sent a waiting reply on in3; mine4 was a person's.
-          for (const [inbound, suffix, sent] of [['in1', '', 'out1'], ['in3', ':waiting', 'ack3']])
-            await this.ctx.storage.put('send:ab1:' + (await runIdFor('gmail:ab1', inbound)) + suffix, { providerMessageId: sent, status: 'sent' });
-          await this.ctx.storage.put('send:ab1:' + (await runIdFor('gmail:ab1', 'in4')), { providerMessageId: 'mine4', status: 'failed' });
         }
-        noIndex() { this.index = false; }
+        async noIndex() { await this.ctx.storage.put('test:noIndex', true); await this.stub(); }
       }
       export class FakeRegistry extends DurableObject {
         async runsByIds(ids) {
@@ -61,6 +70,7 @@ const bundle = await build({
           await changeAgentStatus(env.BUCKET, { addresses: { 'help@acme.example': true } });
           return Response.json(true);
         }
+        if (c.op !== 'noIndex') await accounts.stub();
         if (c.op === 'facts') return Response.json(await accounts.agentThreads('ab1', 'gmail:ab1', c.options || {}));
         if (c.op === 'noIndex') { await accounts.noIndex(); return Response.json(true); }
         if (c.op === 'list') return Response.json(await listAgentThreads(env, c.options || {}));
@@ -109,6 +119,7 @@ test("list_agent_threads and the feed show the account under its email, with the
   const { mf, call } = await fixture();
   try {
     const all = await call("list");
+    assert.deepEqual(all.issues, [], "an unreadable account names its error before its counts are compared");
     assert.deepEqual(all.addresses, ["help@acme.example"]);
     assert.deepEqual(all.counts, { agent_replied: 1, unanswered: 1, needs_data: 1, person_replied: 1 });
     assert.equal(all.abandoned, 1, "the 72-hour-old unanswered conversation");
