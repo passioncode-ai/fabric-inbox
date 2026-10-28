@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.77.3 (2026-10-28)
+
+- **A held message gets one second look, not one at every retry.** Since 0.75.0 the next attempt forgot that the
+  second look had started, so a held message was looked at again on every pass, past the limit of 20 a day, and the
+  wider search never ran. A message answered again because its gap closed was also requeued on every change of the
+  gap list. Both marks now stay with the message across its attempts (B-153).
+
 ## 0.77.2 (2026-10-28)
 
 - **Messages held before the gap list was set up are answered too.** A reply agent's knowledge can name its list
