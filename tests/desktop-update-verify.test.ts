@@ -202,11 +202,13 @@ test("before signing, the release gate checks the built feed and zip, and publis
   await assert.rejects(checkRelease({ dir: built, version: "0.12.0", exec, beforeSigning: true }), (e: any) => e.reason === "zip_sha256");
   const workflow = readFileSync(".github/workflows/release.yml", "utf8");
   assert.match(workflow, /publish:\n    needs: \[gate, macos, update-precheck, windows, windows-smoke, linux\]/, "publish waits for the arm64 installer launched on windows-11-arm");
-  // Windows signing through the organization's shared actions (passioncode-ai/.github v1, PL-10):
+  // Windows signing through the organization's shared actions (passioncode-ai/.github, PL-10):
   // the app's files before packing, the sign-in for electron-builder, and the verification after.
-  for (const action of ["windows-signing@v1", "windows-signing/login@v1", "windows-signing/verify@v1"]) {
-    assert.ok(workflow.includes(`uses: passioncode-ai/.github/actions/${action}`), action);
+  // B-194: v1.4.0 retries a failed module download inside the action (its #44), so the app's files are signed by one step.
+  for (const action of ["windows-signing@v1.4.0", "windows-signing/login@v1.4.0", "windows-signing/verify@v1.4.0"]) {
+    assert.ok(workflow.includes(`uses: passioncode-ai/.github/actions/${action}\n`), action);
   }
+  assert.equal(workflow.match(/uses: passioncode-ai\/\.github\/actions\/windows-signing@/g)?.length, 1, "one signing step: the retry lives in the shared action");
   assert.ok(!/uses: azure\/login@/.test(workflow), "no inline azure/login: the shared login action owns it");
   assert.match(workflow, /--stage app[\s\S]*windows-signing@v1[\s\S]*--stage package[\s\S]*windows-signing\/verify@v1/, "sign the app, then pack, then verify");
   for (const platform of ["win32", "linux"]) {
