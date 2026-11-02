@@ -41,9 +41,16 @@ export const SUBMIT_NOW = "Submit your answer now by calling submit_answer, usin
  */
 export async function runModel(model: LanguageModel, request: ModelRequest): Promise<ModelResponse> {
   let decision: ModelDecision | null = null;
+  // B-187: the policy's categories are offered as a closed list (an enum in the schema). A name outside it is dropped,
+  // not refused, so a model that strays loses only the label, never the answer; the runner then keeps "other" (runner.ts).
+  const categories = [...new Set((request.agent.replyPolicy.categories ?? []).map((c) => c.trim()).filter(Boolean))];
   const submit = {
     description: "Submit the final answer and decision. Call exactly once, last.",
-    inputSchema: DecisionSchema,
+    inputSchema: categories.length
+      ? DecisionSchema.extend({ category: z.preprocess(
+          (v) => (typeof v === "string" ? categories.find((c) => c.toLowerCase() === v.trim().toLowerCase()) : undefined),
+          z.enum(categories as [string, ...string[]]).optional()).describe("Exactly one of the categories listed in the rules") })
+      : DecisionSchema,
     execute: async (input: ModelDecision) => {
       decision = DecisionSchema.parse(input);
       return "Recorded.";

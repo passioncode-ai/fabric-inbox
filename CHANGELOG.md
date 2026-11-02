@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.80.0 (2026-11-02)
+
+- **Reply agents pick a category by its meaning.** An agent's categories can now carry a short note each, and the
+  model sees every category with its note and chooses from that closed list. A category outside the list no longer
+  costs the answer, only the label. Set the notes with `save_agent` (`categoryNotes`) (B-187).
+
 ## 0.79.0 (2026-11-02)
 
 - **A read-only mailbox no longer offers to answer.** For a member, a message in a mailbox they may only read shows

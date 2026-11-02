@@ -204,6 +204,15 @@ export function evidenceOf(tool: string, text: string): EvidenceTrace | null {
     ...(coverages.some((c) => c !== null) ? { coverage: coverages.slice(0, 20) } : {}), ...(revision ? { revision } : {}) };
 }
 
+/**
+ * B-187: the policy's categories for the prompt, each with what it means when the policy says so:
+ * `"login/code" (cannot get or enter a login code)`.
+ */
+export function categoryList(policy: { categories?: string[]; categoryNotes?: Record<string, string> }): string {
+  const notes = new Map(Object.entries(policy.categoryNotes ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
+  return (policy.categories ?? []).map((c) => { const note = notes.get(c.toLowerCase()); return note ? `${JSON.stringify(c)} (${note})` : JSON.stringify(c); }).join(", ");
+}
+
 export interface ModelRequest {
   agent: AgentVersion;
   system: string;
@@ -378,7 +387,7 @@ export function systemPrompt(agent: AgentVersion, mailboxId: string, tools: Agen
       ? `- Tools you may use: ${tools.map((t) => t.name).join(", ")}. Use a tool only when the answer needs it.`
       : "- You have no tools in this run.",
     "- Finish by calling submit_answer exactly once.",
-    ...(agent.replyPolicy.categories?.length ? [`- Set category to exactly one of: ${agent.replyPolicy.categories.map((c) => JSON.stringify(c)).join(", ")}.`] : []),
+    ...(agent.replyPolicy.categories?.length ? [`- Set category to exactly one of: ${categoryList(agent.replyPolicy)}.`] : []),
     "- Set dissatisfied to true only when the message replies to an earlier answer from this address and says it did not help or was wrong.",
     ...(searching ? ["- If the passages do not answer the question, call search_knowledge with other words before deciding; never state what no passage, knowledge or tool result says."] : []),
     "- grounded = true only if every fact in the answer comes from the knowledge above, a passage, or a tool result in this run.",

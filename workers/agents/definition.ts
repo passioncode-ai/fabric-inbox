@@ -172,6 +172,11 @@ export const ReplyPolicySchema = z.object({
   /** Labels the agent puts on every message (the model picks one), shown on the run and in its events. */
   categories: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
   /**
+   * B-187: what each category means, by its name, so the model picks by meaning rather than by name alone. A note
+   * for a name not in `categories` is ignored.
+   */
+  categoryNotes: z.record(z.string().trim().min(1).max(60), z.string().trim().min(1).max(200)).optional(),
+  /**
    * Auto mode with a checker: the agent's own knowledge and instructions count as evidence, so a knowledge
    * tool that abstains does not by itself hold or draft the answer; the checker still approves it before
    * it is sent. Without a checker on the server, the abstain rule (B-85) applies as before.

@@ -108,3 +108,25 @@ test("B-85 review: arguments that do not fit the tool's schema never reach the e
   await runModel(model, req);
   assert.deepEqual(got, [], "a call without the required query is refused before the endpoint");
 });
+
+test("B-187: the categories are offered as a closed list, each with its note; a name outside it loses only the label", async () => {
+  const { categoryList } = await import("../workers/agents/runner");
+  const policy = { categories: ["login/code", "refund", "other"], categoryNotes: { "LOGIN/CODE": "cannot get or enter a login code", "unknown": "ignored" } };
+  assert.equal(categoryList(policy), '"login/code" (cannot get or enter a login code), "refund", "other"');
+  assert.equal(categoryList({}), "");
+  const parsed = AgentInputSchema.parse({ name: "Support", instructions: "Answer.", replyPolicy: { mode: "draft", categories: policy.categories, categoryNotes: policy.categoryNotes } });
+  assert.deepEqual(parsed.replyPolicy.categoryNotes, policy.categoryNotes);
+  const agent = { ...parsed, id: "support", version: 1, createdAt: "x" };
+  for (const [given, kept] of [["LOGIN/CODE", "login/code"], ["misc", undefined]] as const) {
+    let offered: { name: string; inputSchema?: unknown }[] = [];
+    const model = new MockLanguageModelV3({
+      doGenerate: async (options) => { offered = (options.tools ?? []) as never; return call("submit_answer", { ...ANSWER, category: given }, 1) as never; },
+    });
+    const res = await runModel(model, { agent, system: "s", prompt: "{}", tools: [] });
+    const submit = offered.find((t) => t.name === "submit_answer")!;
+    const category = (submit.inputSchema as { properties: Record<string, { enum?: string[]; anyOf?: { enum?: string[] }[] }> }).properties.category!;
+    assert.deepEqual(category.enum ?? category.anyOf?.find((x) => x.enum)?.enum, ["login/code", "refund", "other"], "the closed list is in the schema");
+    assert.ok(res.decision, `${given}: the answer is kept`);
+    assert.equal(res.decision!.category, kept);
+  }
+});
