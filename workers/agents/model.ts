@@ -205,7 +205,7 @@ export function replyReasoning(value: string | undefined): ReasoningEffort | nul
 export async function openRouterAgentModel(apiKey: string, request: ModelRequest, models: { primary?: string; fallback?: string; reasoning?: ReasoningEffort | null } = {},
   run: (model: LanguageModel, request: ModelRequest) => Promise<ModelResponse> = runModel): Promise<ModelResponse> {
   const provider = openRouter(apiKey);
-  const primary = models.primary || REPLY_MODEL;
+  const primary = request.writer || models.primary || REPLY_MODEL;
   const fallback = models.fallback || REPLY_FALLBACK_MODEL;
   let first: ModelResponse | null = null;
   const trace = request.trace;

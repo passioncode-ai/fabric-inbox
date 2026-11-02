@@ -397,6 +397,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Safe reply sent ({reason})": "Отправлен безопасный ответ ({reason})",
 	"A preview needs the address, a sender and the message text": "Для предпросмотра нужны адрес, отправитель и текст письма",
 	"reasoning is one of none, minimal, low, medium, high or default": "reasoning принимает одно из значений: none, minimal, low, medium, high или default",
+	"model is an OpenRouter model id, such as vendor/model": "model должен быть идентификатором модели OpenRouter, например vendor/model",
 	"Not sure, so not answered yet: {reason}": "Нет уверенности — пока без ответа: {reason}",
 	"Not sure, so not answered yet: the knowledge has not changed since the last attempt": "Нет уверенности, пока без ответа: знания не изменились с прошлой попытки",
 	"Already reported for this message": "Уже передано для этого письма",

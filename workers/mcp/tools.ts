@@ -1632,9 +1632,10 @@ const previewAgentAnswer = defineTool({
   input: { agentId: z.string().min(1).max(100), address, from: z.string().email().describe("The sender, from outside this server's domains"),
     subject: z.string().max(500).default(""), text: z.string().min(1).max(20_000).describe("The message, as plain text"),
     reasoning: z.enum(["none", "minimal", "low", "medium", "high", "default"]).optional()
-      .describe("Try the writer at this reasoning effort for this preview only (OpenRouter; default: the provider's own); the server's setting is REPLY_REASONING") },
+      .describe("Try the writer at this reasoning effort for this preview only (OpenRouter; default: the provider's own); the server's setting is REPLY_REASONING"),
+    model: z.string().max(164).optional().describe("Try another writer for this preview only: an OpenRouter model id (vendor/model); the server's setting is REPLY_MODEL, and its fallback and checker stay as they are. The run's `model` says which one wrote") },
   routes: ["POST /api/agents/:id/preview"],
-  call: (a, ctx) => post(ctx, `/api/agents/${enc(a.agentId)}/preview`, { address: a.address, from: a.from, subject: a.subject, text: a.text, reasoning: a.reasoning }),
+  call: (a, ctx) => post(ctx, `/api/agents/${enc(a.agentId)}/preview`, { address: a.address, from: a.from, subject: a.subject, text: a.text, reasoning: a.reasoning, model: a.model }),
 });
 
 const saveAgent = defineTool({

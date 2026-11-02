@@ -222,6 +222,8 @@ export interface ModelRequest {
   trace?: string;
   /** B-174: the writer's reasoning effort for this call only (a preview's), over `REPLY_REASONING`; null: the provider's default. */
   reasoning?: "none" | "minimal" | "low" | "medium" | "high" | null;
+  /** B-174: the writer for this call only (a preview's OpenRouter model id), over `REPLY_MODEL`; the fallback stays the server's. */
+  writer?: string;
 }
 /** `decision` is null when the model finished without calling submit_answer. */
 export type ModelResponse = { decision: ModelDecision | null; text: string; /** The model that wrote it, when known. */ model?: string;

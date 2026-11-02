@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.83.0 (2026-11-02)
+
+- **Try another writer in a preview.** `preview_agent_answer` takes `model`, an OpenRouter model id that writes
+  that one preview in place of the server's writer. The fallback and the checker stay the server's, and nothing is
+  sent (B-174).
+
 ## 0.82.1 (2026-11-02)
 
 - **Held messages get the new look too.** A message held while the knowledge stays the same was held again

@@ -201,7 +201,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
    * drafted, stored or reported to a knowledge tool as a gap; read-only tools are called as in a real
    * run, and the model is (it spends). Answers the run and the reply it would send.
    */
-  async previewAnswer(agentId: string, input: { address: string; from: string; subject: string; text: string; reasoning?: ModelRequest["reasoning"] }) {
+  async previewAnswer(agentId: string, input: { address: string; from: string; subject: string; text: string; reasoning?: ModelRequest["reasoning"]; writer?: string }) {
     const agent = await this.getAgent(agentId);
     if (!agent) throw new AgentNotFound(agentId);
     const address = input.address.toLowerCase();
@@ -215,7 +215,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
     const trace = `preview-${crypto.randomUUID().slice(0, 8)}`;
     const deps: RunnerDeps = {
       ...real,
-      model: (request) => real.model({ ...request, trace, ...(input.reasoning !== undefined ? { reasoning: input.reasoning } : {}) }),
+      model: (request) => real.model({ ...request, trace, ...(input.reasoning !== undefined ? { reasoning: input.reasoning } : {}), ...(input.writer ? { writer: input.writer } : {}) }),
       registry: {
         beginRun: async (run) => ({ claimed: true, run }),
         saveRun: async () => {},
