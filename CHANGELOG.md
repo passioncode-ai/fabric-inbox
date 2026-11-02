@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.82.1 (2026-11-02)
+
+- **Held messages get the new look too.** A message held while the knowledge stays the same was held again
+  without asking the model, even when asking again in the agent's own words had just found the answer. Such a
+  message now reaches the model (B-186).
+
 ## 0.82.0 (2026-11-02)
 
 - **Reply agents look again in their own words.** When the knowledge finds nothing for an English or Russian

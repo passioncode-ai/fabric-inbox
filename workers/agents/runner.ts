@@ -774,7 +774,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // same: every endpoint answered with the revision of the last attempt, for the same agent version. Only
   // the tools' own answers count; an agent that also searches collections is always answered again.
   const last = run.heldFacts;
-  const unchanged = !secondLook && !!last && last.agent === `${agent.id}@${agent.version}` && !collections.length && prefetchGrants.length > 0
+  // A restatement that found an answer (B-186) is new to the run even on the same knowledge: never a reason to hold.
+  const unchanged = !secondLook && !rescuedBy && !!last && last.agent === `${agent.id}@${agent.version}` && !collections.length && prefetchGrants.length > 0
     && prefetched.every((r) => r.ok) && Object.keys(last.revisions).length > 0
     && Object.entries(last.revisions).every(([endpoint, revision]) => factsRevisions[endpoint] === revision);
   if (unchanged) {
