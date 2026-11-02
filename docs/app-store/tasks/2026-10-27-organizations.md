@@ -126,7 +126,7 @@ fills the list from the directory the levels stay the administrator's per mailbo
 | L-3 | Only `read` is stored (`levels` on the member in `config/members.json`); an unknown value reads as `read`, the narrower one; a level for a mailbox the member is not given is refused, not dropped | as an unknown role reads as a member; a caller who named another mailbox meant something else |
 | L-4 | Reads are GET and HEAD and the safety check's lookup; every other request on a `read` mailbox is refused with a sentence that names the level to ask for. Emptying Spam, bringing mail back and the safety check's decision are narrowed to the `send` mailboxes | one rule the gate applies to every route, so a new write route is covered without a list to keep |
 | L-5 | `configure agents` is a later step: the mailbox's own settings carry its agent together with its forwarding and signature in one route, and forwarding must stay an administrator's (it can send a mailbox's mail away). That route is split first | no level that cannot be held |
-| L-6 | The app still shows the buttons that change mail in a `read` mailbox and the server refuses them; `/api/me` returns the member's `levels` so the app can hide them next | the refusal is the guarantee, hiding is comfort |
+| L-6 | The server's refusal is the guarantee; the app hides what it can: since 0.79.0 a `read` mailbox's message shows a sentence in place of Reply, Reply all and Forward, and Compose offers only `send` mailboxes (`/api/me` returns `levels`). Moving and marking are still offered and refused | the refusal is the guarantee, hiding is comfort |
 
 | REQ | What | Verified by |
 |---|---|---|

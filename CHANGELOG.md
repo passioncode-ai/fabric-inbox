@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.79.0 (2026-11-02)
+
+- **A read-only mailbox no longer offers to answer.** For a member, a message in a mailbox they may only read shows
+  a sentence in place of Reply, Reply all and Forward, and Compose offers only the mailboxes they may send from
+  (B-160).
+
 ## 0.78.0 (2026-11-02)
 
 - **Give a member a mailbox to read only.** On a shared server, each mailbox you give a member is now Read and

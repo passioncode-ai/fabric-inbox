@@ -227,3 +227,18 @@ test("B-160: the routes save a level per mailbox, refuse one for a mailbox the m
   standing = { role: "member", email: "ann@owner.example", accounts: ["gmail:g1"], levels: { "gmail:g1": "read" } };
   assert.deepEqual((await call("GET", "/api/me")).data, { role: "member", email: "ann@owner.example", accounts: ["gmail:g1"], levels: { "gmail:g1": "read" }, listed: true });
 });
+
+test("B-160: the app leaves a Read only mailbox out of Compose and replaces its reply bar with a sentence", async () => {
+  const { readOnlyIn } = await import("../app/lib/me");
+  const me = (levels: Record<string, "read" | "send"> | null | undefined, role: "admin" | "member" = "member") => ({ data: { role, email: "a@owner.example", accounts: ["gmail:g1"], levels, listed: true } });
+  assert.equal(readOnlyIn(me({ "gmail:g1": "read" }), "gmail:g1"), true);
+  assert.equal(readOnlyIn(me({ "gmail:g1": "read" }), "gmail:g2"), false);
+  assert.equal(readOnlyIn(me(undefined), "gmail:g1"), false, "a server older than 0.78.0 sends no levels");
+  assert.equal(readOnlyIn(me({ "gmail:g1": "read" }, "admin"), "gmail:g1"), false, "an administrator has no levels");
+  assert.equal(readOnlyIn({}, "gmail:g1"), false, "before /api/me answers");
+  const source = (await import("node:fs")).readFileSync(new URL("../app/routes/unified-inbox.tsx", import.meta.url), "utf8");
+  assert.match(source, /const sendable = accounts\.filter\(\(a\) => !readOnlyIn\(me, a\.id\)\)/);
+  assert.match(source, /disabled=\{!sendable\.length \|\| !saved\.loaded\}/, "Compose needs a mailbox I may send from");
+  assert.match(source, /onReopen=\{saved\.reopen\}\n\s*accounts=\{sendable\}/, "the composer offers only those as senders");
+  assert.match(source, /readOnlyIn\(me, selected\.accountId\) \? \(\n\s*<p className="fi-muted">\{t\("You can only read this mailbox/);
+});
