@@ -1295,6 +1295,17 @@ test("B-141: a message held for missing knowledge is not given to the model agai
   const moved = again(JSON.stringify({ wiki: "w2", ledger: "d1" }));
   await moved.run();
   assert.equal(moved.effects.modelCalls, 1, "a new revision is answered by the model");
+  // B-186: on the same knowledge, a restatement that finds the answer is given to the model, not held as unchanged.
+  const rescued = harness({ agent: holding(), email: { subject: "Login", body: "<p>I cannot log in.</p>" },
+    callTool: async (grant, args) => (grant.tool === "gaps.submit" ? "{}" : String(args.query).startsWith("The sender")
+      ? JSON.stringify({ abstained: false, revision: { wiki: "w1", ledger: "d1" }, items: [{ id: "fact:login", coverage: 0.9, answer: true }] })
+      : JSON.stringify({ abstained: true, revision: { wiki: "w1", ledger: "d1" }, results: [] })),
+    model: async () => ({ decision: answer({ intent: "login" }), text: "" }) });
+  rescued.deps.paraphrase = async () => "The sender cannot log in.";
+  const beginRescued = rescued.deps.registry.beginRun;
+  rescued.deps.registry.beginRun = async (run) => beginRescued({ ...run, attempt: 2, heldFacts: held.heldFacts, gapsReported: held.gapsReported });
+  await rescued.run();
+  assert.equal(rescued.effects.modelCalls, 1, "the restatement's answer reaches the model");
   const newVersion = again(JSON.stringify({ wiki: "w1", ledger: "d1" }), { heldFacts: { ...held.heldFacts!, agent: "support@2" } });
   await newVersion.run();
   assert.equal(newVersion.effects.modelCalls, 1, "an edited agent is answered by the model");
