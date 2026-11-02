@@ -191,6 +191,13 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-02 (0.82.1: B-186).**
+
+- **0.82.0** (PR #377, `3688d09`, B-186): an English or Russian message a prefetched knowledge tool abstained on is asked once more as the model's restatement (one model call, only after an abstention; a failed restatement changes nothing). **0.82.1** (PR #378, `0e5ac6c`): a held message's retry on the same knowledge revision reaches the model when the restatement found the answer, instead of B-141's unchanged hold. Both servers on 0.82.1 (receipts `linked`). Copy checks `bcac9e47`, `1efc7e8e`. Posted on the voice-of-customer thread `a8a46b34` (message `eb77300d`): what held the queue and when to read it again (2026-11-09: `agent_prefetch_reasked` `answered`, the abstained share against 83%).
+- Watchers in this session tag v0.81.0, v0.82.0 and v0.82.1 after `ci` on their commits; a later session confirms 20 assets each with `gh release view`.
+
+**Exact next task:** B-174's writers' table: give `preview_agent_answer` a `model` (one writer for this preview only, as `reasoning` does), replay the support address's messages of 2026-10-27 to 2026-11-02 on the current writer, `xiaomi/mimo-v2.6-pro` and `anthropic/claude-haiku-5.5` with nothing sent, grade them blind with the quality judge, and post "model: helped / partly / no, cost" on thread `a8a46b34` (the voice-of-customer agent asked for it 2026-10-26, message `4b547703`). Waits: as below, plus B-186 read again 2026-11-09.
+
 **State 2026-11-02 (0.81.0: B-160 step 3).**
 
 - **0.81.0** (B-160 step 3): a third level per mailbox, Read, send and choose its agent (`agents`): the member chooses which of the server's agents answers that mailbox, or Off, on the address's and the account's own agent routes; forwarding, the address's settings, the agents, knowledge and rules stay refused; the agents are listed to such a member by name only; each choice is in Recent changes (`member_agent_set`). The member reaches it from Who answers in the sidebar (`app/components/settings/MemberAgents.tsx`). L-5 needed no split: the agent already had routes of its own (packet L-7, L-REQ-5, L-REQ-6). `save_member` takes `chooseAgent`. SCN-081, SCN-082, SCN-096 updated. Copy checks `2c081085` (CHANGELOG), `5bb106fe` (en), `6acc8cbc` (ru). Checks run: `npm test` (1835 pass), `npm run typecheck`, `npm run build`, UX and brand lints, `check_private.py` 0. Not walked in a browser (`npm run dev` still fails here with workerd "Network connection lost").
