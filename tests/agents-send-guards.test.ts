@@ -103,6 +103,25 @@ test("the reply lane asks the fallback model when the first one ends without a s
   assert.deepEqual(both?.calls, { calls: 2, failed: 2, recovered: 0 });
 });
 
+test("B-174: a preview's writer replaces the server's first model only; the fallback stays; the route takes only a model id", async () => {
+  const { openRouterAgentModel } = await import("../workers/agents/model");
+  const decision = { decision: "send" as const, intent: "q", grounded: true, body: "Hi.", reason: "" };
+  const calls: string[] = [];
+  const run = (fail: boolean) => async (model: unknown) => {
+    calls.push((model as { modelId: string }).modelId);
+    if (fail && calls.length === 1) throw new Error("down");
+    return { decision, text: "" } as never;
+  };
+  const r = await openRouterAgentModel("k", { writer: "anthropic/claude-haiku-5.5" } as never, { primary: "xiaomi/mimo-v2.6-pro" }, run(false));
+  assert.deepEqual([r.model, calls], ["anthropic/claude-haiku-5.5", ["anthropic/claude-haiku-5.5"]]);
+  calls.length = 0;
+  await openRouterAgentModel("k", { writer: "anthropic/claude-haiku-5.5" } as never, {}, run(true));
+  assert.deepEqual(calls, ["anthropic/claude-haiku-5.5", "deepseek/deepseek-v4.1-flash"], "the server's fallback still answers a failed writer");
+  const { WRITER_ID } = await import("../workers/routes/agents");
+  for (const ok of ["xiaomi/mimo-v2.6-pro", "anthropic/claude-haiku-5.5", "qwen/qwen3.8-flash:free"]) assert.ok(WRITER_ID.test(ok), ok);
+  for (const bad of ["mimo", "a/b/c", "https://x.invalid/m", "/m", "vendor/ model"]) assert.ok(!WRITER_ID.test(bad), bad);
+});
+
 test("B-174: the writer's reasoning effort goes to the first model only; a preview's overrides the server's; the variable is read strictly", async () => {
   const { openRouterAgentModel, replyReasoning } = await import("../workers/agents/model");
   const decision = { decision: "send" as const, intent: "q", grounded: true, body: "Hi.", reason: "" };

@@ -172,10 +172,12 @@ agentsRouter.get("/api/agent-runs/:id", async (c) => {
 });
 
 /** Answer again: the run's message goes back to its agent as the next attempt. */
+/** An OpenRouter model id: vendor/model, with an optional :variant. */
+export const WRITER_ID = /^[a-z0-9][a-z0-9._-]{0,63}\/[a-z0-9][a-z0-9._:-]{0,99}$/i;
 /** What an agent would answer to a message, sent nowhere (preview_agent_answer). */
 agentsRouter.post("/api/agents/:id/preview", async (c) => {
   if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
-  const body = await c.req.json().catch(() => null) as { address?: unknown; from?: unknown; subject?: unknown; text?: unknown; reasoning?: unknown } | null;
+  const body = await c.req.json().catch(() => null) as { address?: unknown; from?: unknown; subject?: unknown; text?: unknown; reasoning?: unknown; model?: unknown } | null;
   const address = typeof body?.address === "string" ? body.address.trim() : "";
   const from = typeof body?.from === "string" ? body.from.trim() : "";
   const text = typeof body?.text === "string" ? body.text : "";
@@ -185,9 +187,12 @@ agentsRouter.post("/api/agents/:id/preview", async (c) => {
   const reasoning = body?.reasoning === undefined ? undefined : body.reasoning === "default" ? null
     : (REASONING_EFFORTS as readonly unknown[]).includes(body.reasoning) ? body.reasoning as ReasoningEffort : false;
   if (reasoning === false) return c.json({ error: msg("reasoning is one of none, minimal, low, medium, high or default") }, 400);
+  // B-174: a preview may try another writer (an OpenRouter model id); the server's fallback and checker stay as they are.
+  const writer = body?.model === undefined ? undefined : typeof body.model === "string" && WRITER_ID.test(body.model) ? body.model : false;
+  if (writer === false) return c.json({ error: msg("model is an OpenRouter model id, such as vendor/model") }, 400);
   try {
     return c.json(await registry(c).previewAnswer(c.req.param("id"), { address, from, subject: typeof body?.subject === "string" ? body.subject.slice(0, 500) : "", text,
-      ...(reasoning !== undefined ? { reasoning } : {}) }));
+      ...(reasoning !== undefined ? { reasoning } : {}), ...(writer ? { writer } : {}) }));
   } catch (error) { return registryFailure(c, error); }
 });
 
