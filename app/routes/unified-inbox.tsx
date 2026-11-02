@@ -33,7 +33,7 @@ import {
   WarningOctagonIcon,
 } from "@phosphor-icons/react";
 import { fabric } from "~/services/fabric";
-import { useMe } from "~/lib/me";
+import { readOnlyIn, useMe } from "~/lib/me";
 import type { Mail } from "~/services/fabric";
 import type { Email } from "~/types";
 import EmailIframe from "~/components/EmailIframe";
@@ -387,6 +387,8 @@ export default function UnifiedInbox() {
   }
   const accounts = catalog.current,
     active = accounts.find((a) => a.id === accountId);
+  // B-160: the mailboxes I may send from; a member's Read only mailboxes are left out of Compose and the reply bar.
+  const sendable = accounts.filter((a) => !readOnlyIn(me, a.id));
   // Addresses the operator hid: listed apart, left out of the All inboxes total.
   const hiddenQuery = useQuery({ queryKey: ["hidden-accounts"], queryFn: () => fabric<{ hidden: string[] }>("/api/inbox/hidden"), staleTime: 60_000 });
   const hidden = new Set((hiddenQuery.data?.hidden ?? accounts.filter((a) => a.hidden).map((a) => a.id)).map((x) => x.toLowerCase()));
@@ -790,7 +792,9 @@ export default function UnifiedInbox() {
   }
   async function composeOnce(mode: Draft["mode"], all = false) {
     const m = detail.data;
-    const from = mode === "new" ? accountId : (selected?.accountId ?? "");
+    const from = mode === "new"
+      ? (sendable.some((a) => a.id === accountId) ? accountId : sendable.length === 1 ? sendable[0]!.id : "")
+      : (selected?.accountId ?? "");
     // A Cloudflare address's signature goes into the text once, where the person sees and edits it;
     // the draft is then sent as it is (B-52), so nothing adds it a second time.
     let signature = "";
@@ -951,7 +955,7 @@ export default function UnifiedInbox() {
         <button
           className="fi-primary fi-compose-button"
           onClick={() => void compose("new")}
-          disabled={!accounts.length || !saved.loaded}
+          disabled={!sendable.length || !saved.loaded}
         >
           <PencilSimpleIcon size={18} />
           {t("Compose")}
@@ -1580,6 +1584,9 @@ export default function UnifiedInbox() {
                         ) : openContent}
                       </div>
                       <footer className="fi-reply-bar">
+                        {readOnlyIn(me, selected.accountId) ? (
+                          <p className="fi-muted">{t("You can only read this mailbox. Ask an administrator for Read and send.")}</p>
+                        ) : (<>
                         <button
                           className="fi-primary"
                           onClick={() => void compose("reply")}
@@ -1600,6 +1607,7 @@ export default function UnifiedInbox() {
                         >
                           <ArrowBendUpRightIcon size={17} /> {t("Forward")}
                         </button>
+                        </>)}
                         {owner && (
                           <Link to={rulesPath(owner)} className="fi-rule-link">
                             <SparkleIcon size={17} /> {t("Rules for this account")}
@@ -1665,7 +1673,7 @@ export default function UnifiedInbox() {
           onSettle={saved.settle}
           onDiscard={saved.discard}
           onReopen={saved.reopen}
-          accounts={accounts}
+          accounts={sendable}
           onChange={(d) => void saved.save(d)}
           onAddAttachments={saved.addAttachments}
           onCompleteAttachments={saved.completeAttachments}

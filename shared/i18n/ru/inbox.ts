@@ -367,4 +367,5 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Release": "Отпустить",
 	"Keep held": "Оставить задержанным",
 	"Held for review: {reason}": "Задержано для проверки: {reason}",
+	"You can only read this mailbox. Ask an administrator for Read and send.": "Этот ящик вам доступен только для чтения. Попросите администратора дать уровень «Чтение и отправка».",
 };

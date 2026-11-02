@@ -1,8 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { fabric } from "~/services/fabric";
+import { fabric } from "../services/fabric";
 
 /** The signed-in person on this server (B-149, GET /api/me). */
-export interface Me { role: "admin" | "member" | "none"; email: string | null; accounts: string[] | null; listed: boolean }
+export interface Me {
+  role: "admin" | "member" | "none"; email: string | null; accounts: string[] | null;
+  /** B-160: a member's mailboxes they may only read; a server older than 0.78.0 sends none. */
+  levels?: Record<string, "read" | "send"> | null;
+  listed: boolean;
+}
 
 /**
  * Who I am here. A server older than 0.30.0 has no /api/me: its answer fails, and the person is
@@ -14,3 +19,7 @@ export function useMe() {
 
 /** Whether the screens offer what only an administrator may do: true until /api/me says otherwise. */
 export const managesServer = (me: { data?: Me; isError?: boolean }) => me.data?.role !== "member";
+
+/** B-160: whether I may only read this mailbox (a member's level); the server refuses a change there either way. */
+export const readOnlyIn = (me: { data?: Me }, accountId: string | undefined) =>
+  me.data?.role === "member" && !!accountId && me.data.levels?.[accountId] === "read";
