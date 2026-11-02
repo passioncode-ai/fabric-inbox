@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hono } from "hono";
-import { levelsFor, normaliseMembers, readMembers, standingOf, updateMembers, writableOf, MembersError, MEMBERS_KEY, type Member } from "../workers/lib/members";
-import { memberBody, memberGate, readsOnly } from "../workers/lib/member-gate";
+import { agentableOf, levelsFor, normaliseMembers, readMembers, standingOf, updateMembers, writableOf, MembersError, MEMBERS_KEY, type Member } from "../workers/lib/members";
+import { agentChoiceOf, memberBody, memberGate, readsOnly } from "../workers/lib/member-gate";
 import { membersRouter } from "../workers/routes/members";
 import { scopedApi } from "../workers/mcp/scope";
 
@@ -67,7 +67,7 @@ test("B-149: a member reaches their mailboxes' mail and the feed, never settings
 });
 
 test("B-149: the routes list, save and remove people, and a member's mailboxes are required", async () => {
-  const { bucket } = fakeBucket();
+  const { bucket, store } = fakeBucket();
   const app = new Hono<{ Bindings: { BUCKET: R2Bucket }; Variables: { standing?: unknown } }>();
   app.use("*", async (c, next) => { c.set("standing", { role: "admin", email: "owner@owner.example", listed: false }); await next(); });
   app.route("/", membersRouter as unknown as Hono);
@@ -127,7 +127,7 @@ test("N-1: a member is gated on the path the router matches, so an encoded path 
   assert.equal(await (await app.request("/inbox")).text(), "page");
   // The server's own middleware judges that same path, never the raw one.
   const source = await import("node:fs").then((fs) => fs.readFileSync(new URL("../workers/app.ts", import.meta.url), "utf8"));
-  assert.match(source, /memberGate\(c\.req\.method, path, standing\.accounts, writable\)/);
+  assert.match(source, /memberGate\(c\.req\.method, path, standing\.accounts, writable, agentable\)/);
   assert.match(source, /const path = c\.req\.path;/);
 });
 
@@ -241,4 +241,88 @@ test("B-160: the app leaves a Read only mailbox out of Compose and replaces its 
   assert.match(source, /disabled=\{!sendable\.length \|\| !saved\.loaded\}/, "Compose needs a mailbox I may send from");
   assert.match(source, /onReopen=\{saved\.reopen\}\n\s*accounts=\{sendable\}/, "the composer offers only those as senders");
   assert.match(source, /readOnlyIn\(me, selected\.accountId\) \? \(\n\s*<p className="fi-muted">\{t\("You can only read this mailbox/);
+});
+
+test("B-160 step 3: agents is kept as a level, sends like send, and names the mailboxes whose agent the member chooses", () => {
+  const mine = ["cloudflare:sales@owner.example", "gmail:g1", "imap:i1"];
+  assert.deepEqual(levelsFor(mine, { "cloudflare:sales@owner.example": "agents", "gmail:g1": "read", "imap:i1": "send" }),
+    { "cloudflare:sales@owner.example": "agents", "gmail:g1": "read" });
+  const [m] = normaliseMembers({ members: [{ email: "ann@owner.example", role: "member", accounts: mine, levels: { "cloudflare:sales@owner.example": "agents", "gmail:g1": "read" } }] });
+  const ann = standingOf([member("o@owner.example", "admin"), m!], "ann@owner.example");
+  assert.ok(ann.role === "member");
+  assert.deepEqual(writableOf(ann), ["cloudflare:sales@owner.example", "imap:i1"], "agents includes reading and sending");
+  assert.deepEqual(agentableOf(ann), ["cloudflare:sales@owner.example"]);
+});
+
+test("B-160 step 3: a member chooses the agent of an agents mailbox only; forwarding, its settings and the agents stay an administrator's", () => {
+  const mine = ["cloudflare:sales@owner.example", "gmail:g1", "cloudflare:help@owner.example"];
+  const writable = mine;
+  const agentable = ["cloudflare:sales@owner.example", "gmail:g1"];
+  const gate = (method: string, path: string, a: readonly string[] = agentable) => memberGate(method, path, mine, writable, a);
+  assert.equal(gate("PUT", "/api/project-addresses/sales%40owner.example/agent"), "pass");
+  assert.equal(gate("PUT", "/api/project-addresses/SALES@owner.example/agent"), "pass", "the address is compared as it is stored");
+  assert.equal(gate("PUT", "/api/accounts/g1/agent"), "pass", "an account's agent, by the account's own id");
+  assert.equal(gate("PUT", "/api/project-addresses/help%40owner.example/agent"), "refuse", "a mailbox at Read and send");
+  assert.equal(gate("PUT", "/api/project-addresses/other%40owner.example/agent"), "refuse", "someone else's address");
+  assert.equal(gate("PUT", "/api/project-addresses/sales%40owner.example/copy"), "refuse", "forwarding can send the mail away");
+  assert.equal(gate("PUT", "/api/v1/mailboxes/sales@owner.example"), "refuse", "the address's own settings");
+  assert.equal(gate("DELETE", "/api/accounts/g1/agent"), "refuse");
+  assert.equal(gate("POST", "/api/accounts/g1/disconnect"), "refuse");
+  for (const [method, path] of [["PUT", "/api/agents/a1"], ["POST", "/api/agents"], ["DELETE", "/api/agents/a1"], ["GET", "/api/knowledge/collections"], ["GET", "/api/agent-runs"]] as const)
+    assert.equal(gate(method, path), "refuse", `${method} ${path}`);
+  assert.equal(gate("GET", "/api/agents"), "agents", "the list of agents, narrowed");
+  assert.equal(gate("GET", "/api/agents", []), "refuse", "without an agents mailbox the list is an administrator's");
+  assert.equal(gate("PUT", "/api/project-addresses/sales%40owner.example/agent", []), "refuse");
+  assert.equal(agentChoiceOf("PUT", "/api/project-addresses/%E0%A4%A/agent", agentable), null, "an address that does not decode names nothing");
+  assert.equal(agentChoiceOf("GET", "/api/accounts/g1/agent", agentable), null);
+});
+
+test("B-160 step 3: the server lists the agents by name for those mailboxes and keeps who chose which agent", async () => {
+  const source = (await import("node:fs")).readFileSync(new URL("../workers/app.ts", import.meta.url), "utf8");
+  assert.match(source, /memberGate\(c\.req\.method, path, standing\.accounts, writable, agentable\)/);
+  assert.match(source, /id: a\.id, name: a\.name, replyPolicy: \{ mode: a\.replyPolicy\?\.mode \},/, "names only: no instructions, tools or knowledge");
+  assert.match(source, /kind: "member_agent_set", mailbox: chosen, agent, name:/);
+});
+
+test("B-160 step 3: the routes save agents per mailbox, and the record and the list say so", async () => {
+  const { bucket, store } = fakeBucket();
+  const app = new Hono<{ Bindings: { BUCKET: R2Bucket }; Variables: { standing?: unknown } }>();
+  app.use("*", async (c, next) => { c.set("standing", { role: "admin", email: "owner@owner.example", listed: false }); await next(); });
+  app.route("/", membersRouter as unknown as Hono);
+  const r = await app.request("/api/members/ann%40owner.example", { method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role: "member", accounts: ["sales@owner.example", "gmail:g1"], levels: { "sales@owner.example": "agents", "gmail:g1": "read" } }) }, { BUCKET: bucket });
+  assert.equal(r.status, 200);
+  const data = await r.json() as any;
+  assert.deepEqual(data.members[1].levels, { "cloudflare:sales@owner.example": "agents", "gmail:g1": "read" });
+  const entries = [...store].filter(([k]) => k.startsWith("audit/")).map(([, o]) => JSON.parse(o.text));
+  const saved = entries.find((e: any) => e.kind === "member_saved");
+  assert.deepEqual([saved.readOnly, saved.agents], [["gmail:g1"], ["cloudflare:sales@owner.example"]]);
+  const { reachText, auditText, agentsOf } = await import("../app/components/settings/sections/PeopleSection");
+  const t = ((s: string, v?: Record<string, string>) => s.replace(/\{(\w+)\}/g, (_, k) => v?.[k] ?? "")) as any;
+  t.list = (xs: string[]) => xs.join(", ");
+  t.plural = () => "";
+  const person = { role: "member" as const, accounts: ["cloudflare:sales@owner.example", "gmail:g1"], levels: { "cloudflare:sales@owner.example": "agents" as const, "gmail:g1": "read" as const } };
+  assert.deepEqual(agentsOf(person), ["cloudflare:sales@owner.example"]);
+  assert.equal(reachText(person, t), "Only sales@owner.example, gmail:g1; read only: gmail:g1; choosing the agent: sales@owner.example");
+  const at = { id: "1", at: "2026-11-02T00:00:00Z", actor: "ann@owner.example" };
+  assert.equal(auditText({ ...at, kind: "member_agent_set", mailbox: "cloudflare:sales@owner.example", agent: "a1", name: "Support" }, t), "ann@owner.example chose Support to answer sales@owner.example");
+  assert.equal(auditText({ ...at, kind: "member_agent_set", mailbox: "gmail:g1", agent: "off", name: null }, t), "ann@owner.example turned off the agent of gmail:g1");
+});
+
+test("B-160 step 3: the app offers the agent choice only for agents mailboxes, and saves it on the mailbox's own route", async () => {
+  const { agentChoicesOf } = await import("../app/lib/me");
+  const me = (role: "admin" | "member", levels?: Record<string, "read" | "send" | "agents">) =>
+    ({ data: { role, email: "a@owner.example", accounts: ["cloudflare:sales@owner.example", "gmail:g1"], levels, listed: true } });
+  assert.deepEqual(agentChoicesOf(me("member", { "gmail:g1": "agents" })), ["gmail:g1"]);
+  assert.deepEqual(agentChoicesOf(me("member")), [], "a server older than 0.81.0 gives none");
+  assert.deepEqual(agentChoicesOf(me("admin", { "gmail:g1": "agents" })), [], "an administrator chooses in Settings");
+  const { agentPathOf, currentAgent } = await import("../app/components/settings/MemberAgents");
+  assert.equal(agentPathOf("cloudflare:sales@owner.example"), "/api/project-addresses/sales%40owner.example/agent");
+  assert.equal(agentPathOf("gmail:g1"), "/api/accounts/g1/agent");
+  const agents = [{ id: "a1", name: "Support", addresses: ["sales@owner.example"], accounts: [] }, { id: "a2", name: "Sales", addresses: [], accounts: ["gmail:g1"] }];
+  assert.equal(currentAgent(agents, "cloudflare:sales@owner.example"), "a1");
+  assert.equal(currentAgent(agents, "gmail:g1"), "a2");
+  assert.equal(currentAgent(agents, "imap:i1"), "off");
+  const sidebar = (await import("node:fs")).readFileSync(new URL("../app/routes/unified-inbox.tsx", import.meta.url), "utf8");
+  assert.match(sidebar, /isMember && agentChoicesOf\(me\)\.length > 0 && \(/, "the member reaches the choice from the sidebar");
 });

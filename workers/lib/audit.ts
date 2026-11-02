@@ -1,6 +1,6 @@
 /**
  * B-156 (consolidation report B3, Q12: the audit lives in Inbox): a durable record of who changed the list of
- * people and what members sent. One R2 object per entry under `audit/`, its key starting with an inverted
+ * people, what members sent and which agent a member chose for a mailbox. One R2 object per entry under `audit/`, its key starting with an inverted
  * time so a listing reads newest first. Entries are only added; nothing here edits or deletes one. A send
  * entry names the mailbox, the recipients and the subject, never the message's text.
  */
@@ -8,11 +8,13 @@ export const AUDIT_PREFIX = "audit/";
 const MAX_TIME = 9_999_999_999_999;
 
 export type AuditEntry =
-  | { kind: "member_saved"; person: string; role: "admin" | "member"; mailboxes: string[] | null; readOnly?: string[];
-      previous: { role: string; mailboxes: string[] | null; readOnly?: string[] } | null }
+  | { kind: "member_saved"; person: string; role: "admin" | "member"; mailboxes: string[] | null; readOnly?: string[]; agents?: string[];
+      previous: { role: string; mailboxes: string[] | null; readOnly?: string[]; agents?: string[] } | null }
   | { kind: "member_removed"; person: string; previous: { role: string; mailboxes: string[] | null } }
   | { kind: "keys_revoked"; person: string; keys: string[] }
-  | { kind: "member_sent"; mailbox: string; route: string; to: string[]; subject: string | null; message: string | null };
+  | { kind: "member_sent"; mailbox: string; route: string; to: string[]; subject: string | null; message: string | null }
+  // B-160 step 3: a member chose which agent answers one of their mailboxes, or none ("off").
+  | { kind: "member_agent_set"; mailbox: string; agent: string; name: string | null };
 
 export type AuditRecord = AuditEntry & { id: string; at: string; actor: string | null };
 

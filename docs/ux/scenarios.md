@@ -1664,18 +1664,18 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** Signed in as the server's administrator (or nobody is listed yet). Cloudflare Access lets the people in, for an organization through its Access group.
 - **Steps:**
   1. Open Settings → People -> what the list does; nobody listed means everyone who can sign in is an administrator.
-  2. Add a person: their sign-in email, Member or Administrator, and for a member the mailboxes they may reach, each Read and send (the default) or Read only (B-160); Add -> they are listed with what they reach ("Only a, b; read only: b"); the first person added also lists me as an administrator.
+  2. Add a person: their sign-in email, Member or Administrator, and for a member the mailboxes they may reach, each Read and send (the default), Read, send and choose its agent, or Read only (B-160); Add -> they are listed with what they reach ("Only a, b; read only: b; choosing the agent: a"); the first person added also lists me as an administrator.
   3. Open a person -> Change… their role, mailboxes or a mailbox's level, or Remove… them (Remove, Keep).
-  4. With nobody open, read Recent changes -> who added, changed or removed whom (the role and mailboxes it gave), agent keys revoked with a person, and each message a member sent (mailbox, recipients, subject; never the text), newest first; Show older reads further back (B-156, since 0.61.0).
-- **Expected result:** A member reaches only their mailboxes, and in one marked Read only can open and search but never change or send; a person Access lets in who is not listed is refused with a sentence naming who to ask; an administrator has every right.
+  4. With nobody open, read Recent changes -> who added, changed or removed whom (the role and mailboxes it gave), agent keys revoked with a person, each message a member sent (mailbox, recipients, subject; never the text), and each agent a member chose for a mailbox, newest first; Show older reads further back (B-156, since 0.61.0).
+- **Expected result:** A member reaches only their mailboxes, and in one marked Read only can open and search but never change or send; in one at Read, send and choose its agent they also choose which of the server's agents answers it, or Off, and nothing else about agents; a person Access lets in who is not listed is refused with a sentence naming who to ask; an administrator has every right.
 - **Alt paths:** A member with no mailbox ticked: Add stays off. Removing the last administrator, or the last person: refused with the reason. Removing myself: I am asked first and can no longer open the server.
-- **UI elements:** SCR-17 (Add a person, Role, Mailboxes with a level beside each ticked one: Read and send, Read only; Change…, Remove…, Recent changes, Show older).
+- **UI elements:** SCR-17 (Add a person, Role, Mailboxes with a level beside each ticked one: Read and send, Read, send and choose its agent, Read only; Change…, Remove…, Recent changes, Show older).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** The list changed at the same time: try again. A list in R2 that cannot be read lets nobody in and says to delete it to start over.
 - **Status:** draft
 - **Coverage:** app/components/settings/sections/PeopleSection.tsx, workers/routes/members.ts, workers/lib/members.ts, workers/lib/audit.ts, workers/app.ts, tests/members.test.ts, tests/audit.test.ts
 - **Product:** unobserved
-- **Today:** Built 2026-10-23 (B-149); levels per mailbox built 2026-10-30 (B-160 step 1, provisional on this draft: Read only and Read and send; configuring agents comes with its own step).
+- **Today:** Built 2026-10-23 (B-149); levels per mailbox built 2026-10-30 (B-160 step 1, provisional on this draft: Read only and Read and send); Read, send and choose its agent built 2026-11-02 (B-160 step 3, 0.81.0, provisional on this draft).
 
 ### SCN-082: Work as a member of a shared server
 - **Persona:** P-02
@@ -1687,15 +1687,16 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   1. Sign in -> All inboxes shows the mail of my mailboxes only, and the sidebar lists only them.
   2. Open, read, answer, forward, move and mark messages, and keep drafts, in those mailboxes; in a mailbox given to me Read only, open, read and search.
   3. Refresh -> the list is read again.
-- **Expected result:** I handle my mailboxes' mail and see nothing of the rest of the server: no settings, categories, rules, agents' runs or other mailboxes.
+  4. Where the administrator gave me Read, send and choose its agent: Who answers in the sidebar -> the members' page lists those mailboxes, each with the agent answering it; choose another of the server's agents, or Off -> "sales@… is answered by Support." (or "… is Off. New mail stays for you.").
+- **Expected result:** I handle my mailboxes' mail and see nothing of the rest of the server: no settings, categories, rules, agents' runs or other mailboxes; of the agents I see only their names, and only where I may choose one.
 - **Alt paths:** No mailbox given yet: the sidebar says to ask the administrator. Settings opened from a link: a page says settings are the administrators'. A mailbox the administrator took away: its routes answer that I reach only my own. Answer, send, move or mark in a Read only mailbox: refused with "You can read this mailbox but not change it or send from it. Ask an administrator for Read and send." (B-160). In a Read only mailbox the message shows "You can only read this mailbox. Ask an administrator for Read and send." in place of Reply, Reply all and Forward, and Compose offers only the mailboxes I may send from (off when there is none); moving and marking are refused by the server with the sentence above.
-- **UI elements:** SCR-01 (the sidebar without Settings, Rules & history, Agents' answers, categories, Add address and Hide), SCR-02 (the administrators-only page).
+- **UI elements:** SCR-01 (the sidebar without Settings, Rules & history, Agents' answers, categories, Add address and Hide; Who answers when I may choose an agent), SCR-02 (the administrators-only page, with Who answers your mailboxes when I may choose an agent).
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** Delete all now in Spam empties my Cloudflare mailboxes only; Not discarded brings back my own mailboxes' mail and takes back no shared discard rule. An action only an administrator may take (a mailbox's own settings and signature, discard rules) is refused with a sentence that says so.
+- **Errors & recovery:** Delete all now in Spam empties my Cloudflare mailboxes only; Not discarded brings back my own mailboxes' mail and takes back no shared discard rule. An action only an administrator may take (a mailbox's own settings and signature, its forwarding, editing an agent, discard rules) is refused with a sentence that says so. Choosing an agent that leaves drafts for an account that keeps none is refused with the reason; the agents that cannot load show the error with Retry.
 - **Status:** draft
-- **Coverage:** workers/lib/member-gate.ts, workers/lib/members.ts (`writableOf`), workers/app.ts, workers/mcp/scope.ts, app/lib/me.ts, app/routes/unified-inbox.tsx, app/components/inbox/AccountSidebar.tsx, app/routes/settings.tsx, tests/members.test.ts
+- **Coverage:** workers/lib/member-gate.ts, workers/lib/members.ts (`writableOf`, `agentableOf`), workers/app.ts, workers/mcp/scope.ts, app/lib/me.ts, app/routes/unified-inbox.tsx, app/components/inbox/AccountSidebar.tsx, app/routes/settings.tsx, app/components/settings/MemberAgents.tsx, tests/members.test.ts
 - **Product:** unobserved
-- **Today:** Built 2026-10-23 (B-149).
+- **Today:** Built 2026-10-23 (B-149); choosing a mailbox's agent built 2026-11-02 (B-160 step 3, 0.81.0).
 
 ### SCN-083: Start the Linux AppImage where the sandbox is off
 - **Persona:** P-01
@@ -1995,4 +1996,4 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** draft
 - **Coverage:** none
 - **Product:** unobserved
-- **Today:** Not built (B-160). Today a person is an administrator or a member with mailboxes (SCN-081).
+- **Today:** Partly built on the list of people (SCN-081, B-160): read; read and send; read, send and choose its agent (0.81.0). Not yet from the organization's directory (M3), and administer stays the administrator role.

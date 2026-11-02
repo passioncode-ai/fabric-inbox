@@ -4,8 +4,8 @@ import { fabric } from "../services/fabric";
 /** The signed-in person on this server (B-149, GET /api/me). */
 export interface Me {
   role: "admin" | "member" | "none"; email: string | null; accounts: string[] | null;
-  /** B-160: a member's mailboxes they may only read; a server older than 0.78.0 sends none. */
-  levels?: Record<string, "read" | "send"> | null;
+  /** B-160: a member's mailboxes they may only read, or whose agent they may choose (0.81.0); a server older than 0.78.0 sends none. */
+  levels?: Record<string, "read" | "send" | "agents"> | null;
   listed: boolean;
 }
 
@@ -23,3 +23,7 @@ export const managesServer = (me: { data?: Me; isError?: boolean }) => me.data?.
 /** B-160: whether I may only read this mailbox (a member's level); the server refuses a change there either way. */
 export const readOnlyIn = (me: { data?: Me }, accountId: string | undefined) =>
   me.data?.role === "member" && !!accountId && me.data.levels?.[accountId] === "read";
+
+/** B-160 step 3: the mailboxes whose agent I may choose (a member's `agents` level); none for an administrator, who has Settings. */
+export const agentChoicesOf = (me: { data?: Me }) =>
+  me.data?.role === "member" ? (me.data.accounts ?? []).filter((a) => me.data!.levels?.[a] === "agents") : [];

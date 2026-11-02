@@ -91,7 +91,7 @@ Asked on the board with this packet's path; each has the default Inbox proceeds 
 | M1 | the app holds several servers, each with its context; `FABRIC_CONTEXT` on the server and in `/api/server`; attach an account to an organization (D7) | B-158 | M0 |
 | M2 | sign-in with an attestation (D5) | B-159 | SOT-B5 |
 | M3 | people from the attestation and the directory grant; issue addresses; a leaver loses access at once | B-158 | M1, M2, O-3 |
-| M4 | levels per person and mailbox (D6); step 1 (read, send) built 2026-10-30 on the list of people, below | B-160 | M3 for the directory's people; none for step 1 |
+| M4 | levels per person and mailbox (D6); step 1 (read, send) built 2026-10-30 on the list of people, below; step 3 (choose the agent) built 2026-11-02 | B-160 | M3 for the directory's people; none for step 1 |
 | M5 | delegated calls | B-83 | Fabric's delegation issuer (2026-11-21) |
 | M6 | residency (B-157, done in 0.62.0), the organization's server in Fabric Dashboards, update policy (Q10) | B-157, B-193 | M1 |
 | M7 | the first organization walked end to end with receipts | B-158 | M1 to M6 |
@@ -125,7 +125,8 @@ fills the list from the directory the levels stay the administrator's per mailbo
 | L-2 | `send` is the default: a mailbox with no level, and every list saved before levels, reads as before | nothing that works today changes |
 | L-3 | Only `read` is stored (`levels` on the member in `config/members.json`); an unknown value reads as `read`, the narrower one; a level for a mailbox the member is not given is refused, not dropped | as an unknown role reads as a member; a caller who named another mailbox meant something else |
 | L-4 | Reads are GET and HEAD and the safety check's lookup; every other request on a `read` mailbox is refused with a sentence that names the level to ask for. Emptying Spam, bringing mail back and the safety check's decision are narrowed to the `send` mailboxes | one rule the gate applies to every route, so a new write route is covered without a list to keep |
-| L-5 | `configure agents` is a later step: the mailbox's own settings carry its agent together with its forwarding and signature in one route, and forwarding must stay an administrator's (it can send a mailbox's mail away). That route is split first | no level that cannot be held |
+| L-5 | `configure agents` is a later step: the mailbox's own settings carry its agent together with its forwarding and signature in one route, and forwarding must stay an administrator's (it can send a mailbox's mail away). That route is split first. Read again 2026-11-02 for step 3: the agent is already chosen on routes of its own (`PUT /api/project-addresses/:email/agent`, `PUT /api/accounts/:id/agent`), forwarding is `PUT /api/project-addresses/:email/copy`, and the address's own route (`PUT /api/v1/mailboxes/:id`) carries its name, signature and assistant instructions; so no split was needed | no level that cannot be held |
+| L-7 | Step 3, built 2026-11-02 (0.81.0): the third level is `agents`, Read, send and choose its agent: `send`'s reach plus choosing which of the server's agents answers that mailbox, or Off, on the agent routes above. The agents are listed to such a member by id, name and reply mode only, with which of their own mailboxes each answers; editing an agent, knowledge, rules, forwarding and the address's settings stay an administrator's, since agents and knowledge are shared by every mailbox and one edit changes them all. Each choice is in Recent changes (`member_agent_set`, with the agent's name). The member reaches it from Who answers in the sidebar, on the members' Settings page | a level that changes only its own mailboxes |
 | L-6 | The server's refusal is the guarantee; the app hides what it can: since 0.79.0 a `read` mailbox's message shows a sentence in place of Reply, Reply all and Forward, and Compose offers only `send` mailboxes (`/api/me` returns `levels`). Moving and marking are still offered and refused | the refusal is the guarantee, hiding is comfort |
 
 | REQ | What | Verified by |
@@ -134,6 +135,8 @@ fills the list from the directory the levels stay the administrator's per mailbo
 | L-REQ-2 | In a `read` mailbox reads pass and every change or send is refused; another person's mailbox is still refused as before | `tests/members.test.ts` B-160 |
 | L-REQ-3 | The routes save levels, refuse one for a mailbox not given, and `/api/me` returns them; `save_member` takes `readOnly` | `tests/members.test.ts` B-160, `tests/mcp-schema-drift.test.ts` |
 | L-REQ-4 | People shows a level beside each ticked mailbox, and the list and Recent changes say which are read only | SCN-081, `app/components/settings/sections/PeopleSection.tsx` |
+| L-REQ-5 | At `agents` a member sets the agent of that mailbox only; forwarding, the address's settings, the agents, knowledge and rules stay refused; the agents are listed by name only; each choice is recorded | `tests/members.test.ts` B-160 step 3 |
+| L-REQ-6 | The member reaches the choice from Who answers in the sidebar and chooses an agent or Off per mailbox; `save_member` takes `chooseAgent` | SCN-082, `app/components/settings/MemberAgents.tsx`, `tests/members.test.ts` B-160 step 3, `tests/mcp-schema-drift.test.ts` |
 
 ## What is not part of this
 

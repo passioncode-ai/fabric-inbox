@@ -145,7 +145,7 @@ const MAP: Record<string, Record<string, Record<string, string> & { via?: string
   get_attachment: { "POST /api/safety/lookup": { keys: `${BY_TOOL}: the attachment's message` } },
   list_held_messages: { "POST /api/safety/lookup": { keys: "accountId" } },
   decide_held_message: { "POST /api/safety/decide": { by: `${BY_TOOL}: the key's label` } },
-  // B-160: the route takes a level per mailbox; the tool names the read-only mailboxes and sends read for each.
+  // B-160: the route takes a level per mailbox; the tool names the read-only mailboxes (read) and those whose agent the member chooses (agents).
   save_member: { "PUT /api/members/:email": { levels: "readOnly" } },
   save_draft: {
     "PUT /api/v1/mailboxes/:mailboxId/drafts/:id": { body: "text", in_reply_to: "replyToMessageId", thread_id: `${BY_TOOL}: the conversation of the message it answers`,
