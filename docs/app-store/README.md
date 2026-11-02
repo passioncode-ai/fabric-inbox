@@ -191,6 +191,16 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-02 (0.78.0: B-160 step 1; B-143, B-194, B-196, B-197 closed).**
+
+- **0.78.0** (PR #371, `d2e1bb4`, B-160 step 1): each mailbox a member is given is Read and send (the default, the reach before levels) or Read only; in a read-only mailbox reads pass and every change or send is refused with a sentence naming the level to ask for (`workers/lib/members.ts` `levels`, `writableOf`; `workers/lib/member-gate.ts` `readonly`, `readsOnly`; Settings → People; `save_member` `readOnly`; `/api/me` returns `levels`). Decisions L-1 to L-6 in [the organizations packet](tasks/2026-10-27-organizations.md) "Levels per mailbox"; SCN-081, SCN-082. The scale is posted on the board (thread `3d8417e2`). Copy checks `ff280d8b` (en), `1a05e487` (ru), `8fa9edb1` (CHANGELOG). Not walked in a browser: `npm run dev` fails on this machine with workerd "Network connection lost" while loading modules.
+- **B-197** (same PR): `tests/campaigns-sending-workerd.test.ts` used the fixed Monday 2026-11-02 and failed on `main` that day; its Monday is now always ahead of the clock.
+- **B-194 done** (PR #370, `66510f9`): the signing retry moved into the shared action, passioncode-ai/.github PR #45 (`b5b97e1`, issue #44 closed), released as the immutable `v1.4.0`; Inbox pins `windows-signing`, `/login`, `/verify` at `@v1.4.0`. The floating `v1` still points at `84cee62`; moving it is a forced tag update left to that repository's owner. v0.78.0 is the first release signed through it.
+- **B-143 done** (PR #368): the person quit the Mac app and 0.54.0 was logged `update_install installed` (2026-10-28T03:23:42Z), then 0.77.3 at the next quit. **B-196** (PR #369): the account-threads fixture puts its cache stubs back before every request; closes 2026-11-14 if no full run fails it.
+- Both servers on 0.78.0 from `d2e1bb4` (receipts `linked`); a watcher tags v0.78.0 after `ci` on `d2e1bb4`.
+
+**Exact next task:** B-160 step 2: hide the buttons that change mail in a Read only mailbox (the app reads `levels` from `/api/me`), then split the mailbox settings route so `agents` (configure agents) can be a level without forwarding (packet L-5, L-6). Waits: B-83 (Fabric's delegation issuer, 2026-11-21); B-158 M2 and B-159 (SOT-B5, and the operator's approval of SCN-094); B-189 (a person grades 20 answers); B-174 (due 2026-11-02); B-186, B-187, B-188, B-192 (due 2026-11-03); B-196 (2026-11-14); B-72's AI panel turn by a person; B-106 a person's decision.
+
 **State 2026-10-28 (0.77.0 to 0.77.3: B-153 answers a held message when its gap closes; B-108 done).**
 
 - **0.77.0** (PR #362, `dfc2a59`, B-153): a gap grant may name its endpoint's list of reports (`gaps.list`); every 15 minutes the server asks it for `ledgerRevision` and reads it only when it moved; a held run whose report is `closed` or `answered` is answered again at once, once per run (`gapClosed`; `answerClosedGaps` in `workers/agents/registry.ts`, `workers/agents/gap-closures.ts`). CHANGELOG copy check `59cee668`.
