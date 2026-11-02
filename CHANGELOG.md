@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.82.0 (2026-11-02)
+
+- **Reply agents look again in their own words.** When the knowledge finds nothing for an English or Russian
+  message as written, the agent restates what the sender asks, without greetings, quotes or personal details, and
+  asks once more. A restatement that cannot be made changes nothing. Counted by `agent_prefetch_reasked` (B-186).
+
 ## 0.81.0 (2026-11-02)
 
 - **A member can choose who answers a mailbox.** In Settings → People, an administrator can give a member a third

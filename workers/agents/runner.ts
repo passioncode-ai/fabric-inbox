@@ -724,6 +724,24 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       console.log(JSON.stringify({ event: "agent_prefetch_restated", ok: record.ok, ms: record.ms, chars: asking?.length ?? 0, run: run.id }));
     }
   }
+  // B-186: an English or Russian message the knowledge abstained on is asked once more as its restatement
+  // (what the sender asks, without greetings, quotes or personal details): at most one more model call per
+  // message, and only where the words as written found nothing. A restatement that fails changes nothing.
+  let restated: Promise<string | null> | null = null;
+  const restate = () => restated ??= (async () => {
+    // Only a restatement that was made is a call of the run: a failed one leaves the run as the words as
+    // written left it (a failed call would turn a held answer into a draft), and is counted in the log.
+    const started = Date.now();
+    let text: string | null = null;
+    try {
+      text = deps.paraphrase ? scrubPersonal((await deps.paraphrase(opening)).trim()).slice(0, 600) || null : null;
+    } catch { text = null; }
+    const ms = Date.now() - started;
+    if (text) toolCalls.push({ name: "paraphrase", host: "model", ok: true, ms, result: text.slice(0, RESULT_PREVIEW_CHARS) });
+    console.log(JSON.stringify({ event: "agent_prefetch_restated", ok: !!text, ms, chars: text?.length ?? 0, run: run.id, after: "abstained" }));
+    return text;
+  })();
+  let rescuedBy: string | null = null;
   const prefetched: PrefetchedResult[] = await Promise.all(prefetchGrants.map(async (grant) => {
     if (asking === null) {
       toolCalls.push({ name: grant.name, host: hostOf(grant.endpoint), ok: false, ms: 0,
@@ -737,6 +755,17 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     if (topic && topic.toLowerCase() !== asking.trim().toLowerCase()) {
       const wider = await callGrant(grant, { [grant.prefetch!.argument]: topic });
       if (wider.ok && !abstainedOutput(wider.text)) return { name: grant.name, ok: true, text: `${result.ok ? `${result.text}\n\n` : ""}[asked about "${topic}"]\n${wider.text}`, abstained: false };
+    }
+    if (result.ok && abstainedOutput(result.text) && asking === opening) {
+      const again = await restate();
+      if (again && again.toLowerCase() !== asking.trim().toLowerCase()) {
+        const second = await callGrant(grant, { [grant.prefetch!.argument]: again });
+        console.log(JSON.stringify({ event: "agent_prefetch_reasked", ok: second.ok, answered: second.ok && !abstainedOutput(second.text), run: run.id }));
+        if (second.ok && !abstainedOutput(second.text)) {
+          rescuedBy = again;
+          return { name: grant.name, ok: true, text: `[asked as "${again}"]\n${second.text}`, abstained: false };
+        }
+      }
     }
     return { name: grant.name, ok: result.ok, text: result.ok ? result.text : "", abstained: result.ok && abstainedOutput(result.text) };
   }));
@@ -898,7 +927,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     // The original words, and the English the run produced from them (the restatement a knowledge tool
     // was asked, the model's topic and summary), so a topic in another language is caught too.
     topic: matchedTopic(policy.draftTopics ?? [], [email.subject, deps.htmlToText(email.body),
-      asking !== opening ? asking ?? "" : "", proposal.topic ?? "", proposal.summary ?? ""].filter(Boolean).join("\n")),
+      asking !== opening ? asking ?? "" : "", rescuedBy ?? "", proposal.topic ?? "", proposal.summary ?? ""].filter(Boolean).join("\n")),
     evidence: evidence.length > 0,
   });
   if (evidence.length) run.evidence = evidence.slice(0, 10);
