@@ -8,7 +8,8 @@ export const AUDIT_PREFIX = "audit/";
 const MAX_TIME = 9_999_999_999_999;
 
 export type AuditEntry =
-  | { kind: "member_saved"; person: string; role: "admin" | "member"; mailboxes: string[] | null; previous: { role: string; mailboxes: string[] | null } | null }
+  | { kind: "member_saved"; person: string; role: "admin" | "member"; mailboxes: string[] | null; readOnly?: string[];
+      previous: { role: string; mailboxes: string[] | null; readOnly?: string[] } | null }
   | { kind: "member_removed"; person: string; previous: { role: string; mailboxes: string[] | null } }
   | { kind: "keys_revoked"; person: string; keys: string[] }
   | { kind: "member_sent"; mailbox: string; route: string; to: string[]; subject: string | null; message: string | null };

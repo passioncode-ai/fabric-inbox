@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.78.0 (2026-11-02)
+
+- **Give a member a mailbox to read only.** On a shared server, each mailbox you give a member is now Read and
+  send, as before, or Read only. In a Read only mailbox the member opens, reads and searches mail, and is told why
+  when they try to answer, send, move or mark. Choose it beside each mailbox in Settings → People; the list and
+  Recent changes show which mailboxes are read only. Agents set it with `save_member` and `readOnly`. Lists saved
+  before keep every mailbox as Read and send (B-160).
+
 ## 0.77.3 (2026-10-28)
 
 - **A held message gets one second look, not one at every retry.** Since 0.75.0 the next attempt forgot that the

@@ -15,9 +15,9 @@ import { handleRelayForwarded, handleRelayIncoming, RELAY_FORWARDED, RELAY_INCOM
 import { identityMayUse, MCP_PATH, type AccessClaims } from "./mcp/keys";
 import { handleUnsubscribe, UNSUBSCRIBE_PATH } from "./campaigns/unsubscribe";
 import { audienceFor, serviceAudience } from "./mcp/service-access";
-import { membersCached, MembersError, standingOf, type Standing } from "./lib/members";
+import { membersCached, MembersError, standingOf, writableOf, type Standing } from "./lib/members";
 import { memberSent, recordAudit, sendRouteOf } from "./lib/audit";
-import { memberBody, memberGate } from "./lib/member-gate";
+import { memberBody, memberGate, readsOnly } from "./lib/member-gate";
 import { inProcessApi } from "./mcp/handler";
 import { scopedApi } from "./mcp/scope";
 import { ApiError } from "./mcp/protocol";
@@ -155,7 +155,9 @@ app.use("*", async (c, next) => {
 	const refuse = (text: string) => (isApi ? c.json({ error: text }, 403) : c.text(text, 403));
 	if (standing.role === "none")
 		return refuse(msg("{email} is not on this server's list of people. Ask its administrator to add you.", { email: standing.email }));
-	const gate = memberGate(c.req.method, path, standing.accounts);
+	// B-160: the mailboxes the member may change and send from; the others they may only read.
+	const writable = writableOf(standing);
+	const gate = memberGate(c.req.method, path, standing.accounts, writable);
 	if (gate === "pass") {
 		// B-156: what a member sends is kept (recipients and subject, never the text), once the send was accepted.
 		const send = sendRouteOf(c.req.method, path);
@@ -166,20 +168,22 @@ app.use("*", async (c, next) => {
 		return;
 	}
 	if (gate === "refuse") return refuse(msg("Only an administrator of this server can do that. You reach your own mailboxes."));
+	if (gate === "readonly") return refuse(msg("You can read this mailbox but not change it or send from it. Ask an administrator for Read and send."));
 	const inProcess = inProcessApi(url.origin, c.env, c.executionCtx as ExecutionContext, standing.email);
 	if (gate === "body") {
 		// Answered here, before the same-origin boundary below, so it is held to that rule here too.
 		const origin = c.req.header("origin");
 		if (origin && origin !== url.origin) return c.json({ error: "Cross-origin request refused" }, 403);
-		const narrowed = memberBody(`${c.req.method} ${path}`, await c.req.json().catch(() => null), standing.accounts);
+		const narrowed = memberBody(`${c.req.method} ${path}`, await c.req.json().catch(() => null), writable);
 		if ("refuse" in narrowed) return refuse(msg("Only an administrator of this server can do that. You reach your own mailboxes."));
 		const answer = await inProcess.request(c.req.method as "POST", path, { body: narrowed.body });
 		return c.json(answer.data as object, answer.status as 200);
 	}
 	// The feed and the safety check's routes: answered for the member's mailboxes only, as for an agent key limited to them.
 	try {
-		const scoped = scopedApi(inProcess, standing.accounts, "person");
 		const reads = c.req.method === "GET" || c.req.method === "HEAD";
+		// B-160: a change (the safety check's decision) is answered for the mailboxes the member may change.
+		const scoped = scopedApi(inProcess, readsOnly(c.req.method, path) ? standing.accounts : writable, "person");
 		if (!reads) {
 			const origin = c.req.header("origin");
 			if (origin && origin !== url.origin) return c.json({ error: "Cross-origin request refused" }, 403);

@@ -869,4 +869,6 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Done. {email} will not get any more messages from this sender's campaigns.": "Готово. На {email} больше не придут письма из рассылок этого отправителя.",
 	"This unsubscribe link is not valid. Reply to the message with \"unsubscribe\" instead.": "Эта ссылка для отписки недействительна. Вместо этого ответьте на письмо словом «unsubscribe».",
 	"Unsubscribing is not available right now. Reply to the message with \"unsubscribe\" instead.": "Отписка сейчас недоступна. Вместо этого ответьте на письмо словом «unsubscribe».",
+	"You can read this mailbox but not change it or send from it. Ask an administrator for Read and send.": "Этот ящик вам доступен только для чтения: менять его и отправлять из него нельзя. Попросите администратора дать уровень «Чтение и отправка».",
+	"A level is for one of the member's own mailboxes.": "Уровень задаётся только для ящиков самого участника.",
 };

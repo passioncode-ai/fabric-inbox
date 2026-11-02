@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { Env } from "../types";
-import { MAX_MEMBERS, MembersError, normaliseEmail, readMembers, ROLES, updateMembers, forgetMembers, type Member, type Standing } from "../lib/members";
+import { LEVELS, levelsFor, MAX_MEMBERS, MembersError, normaliseEmail, readMembers, ROLES, updateMembers, forgetMembers, type Member, type Standing } from "../lib/members";
 import { normaliseAccountId } from "../mcp/scope";
 import { msg } from "../../shared/i18n";
 import { revokeKeysOf } from "./agent-keys";
@@ -18,6 +18,8 @@ type C = Context<{ Bindings: Env; Variables: { standing?: Standing } }>;
 const SaveMember = z.object({
   role: z.enum(ROLES),
   accounts: z.array(z.string().max(400)).max(50).optional(),
+  /** B-160: a level per mailbox of `accounts`; a mailbox not named is send. */
+  levels: z.record(z.string().max(400), z.enum(LEVELS)).optional(),
 }).strict();
 
 const failure = (c: C, error: unknown) => {
@@ -31,7 +33,8 @@ membersRouter.get("/api/me", (c) => {
   c.header("Cache-Control", "no-store");
   const s = c.get("standing");
   if (!s) return c.json({ role: "admin", email: null, accounts: null, listed: false });
-  return c.json({ role: s.role, email: s.email, accounts: s.role === "member" ? s.accounts : null, listed: s.role === "admin" ? s.listed : true });
+  return c.json({ role: s.role, email: s.email, accounts: s.role === "member" ? s.accounts : null, levels: s.role === "member" ? s.levels : null,
+    listed: s.role === "admin" ? s.listed : true });
 });
 
 membersRouter.get("/api/members", async (c) => {
@@ -53,20 +56,26 @@ membersRouter.put("/api/members/:email", async (c) => {
     accounts = [...new Set((parsed.data.accounts ?? []).map(normaliseAccountId).filter((a): a is string => !!a && !a.startsWith("domain:")))];
     if (!accounts.length) return c.json({ error: msg("Choose at least one mailbox for a member.") }, 400);
   }
+  // B-160: a level for a mailbox the member is not given is refused, not dropped: the caller meant something else.
+  const named = Object.keys(parsed.data.levels ?? {}).map((k) => (k.includes(":") ? k : `cloudflare:${k}`).toLowerCase());
+  if (named.some((k) => !accounts?.some((a) => a.toLowerCase() === k)))
+    return c.json({ error: msg("A level is for one of the member's own mailboxes.") }, 400);
+  const levels = accounts ? levelsFor(accounts, Object.fromEntries(Object.entries(parsed.data.levels ?? {}).map(([k, v]) => [k.includes(":") ? k : `cloudflare:${k}`, v]))) : {};
   try {
     let previous: Member | undefined;
     const members = await updateMembers(c.env.BUCKET, (list) => {
       const old = list.find((m) => m.email === email);
       previous = old;
-      const entry: Member = { email, role: parsed.data.role, accounts, addedAt: old?.addedAt ?? new Date().toISOString() };
+      const entry: Member = { email, role: parsed.data.role, accounts, ...(Object.keys(levels).length ? { levels } : {}), addedAt: old?.addedAt ?? new Date().toISOString() };
       return old ? list.map((m) => (m.email === email ? entry : m)) : [...list, entry];
     }, c.get("standing")?.email ?? null);
     forgetMembers();
-    console.log(JSON.stringify({ event: "member_saved", role: parsed.data.role, mailboxes: accounts?.length ?? null }));
+    console.log(JSON.stringify({ event: "member_saved", role: parsed.data.role, mailboxes: accounts?.length ?? null, readOnly: Object.keys(levels).length }));
     // B-156: who changed whom, kept. The first person added also lists the editor (updateMembers): that is part of this act.
     const actor = actorOf(c.req.raw, c.get("standing")?.email);
     await recordAudit(c.env.BUCKET, actor, { kind: "member_saved", person: email, role: parsed.data.role, mailboxes: accounts,
-      previous: previous ? { role: previous.role, mailboxes: previous.accounts } : null });
+      ...(Object.keys(levels).length ? { readOnly: Object.keys(levels) } : {}),
+      previous: previous ? { role: previous.role, mailboxes: previous.accounts, ...(previous.levels ? { readOnly: Object.keys(previous.levels) } : {}) } : null });
     // N-4: a member makes no keys; the keys they made as an administrator go when they become one.
     if (parsed.data.role === "member") {
       const keys = await revokeKeysOf(c.env, email).catch((error: unknown) => ({ revoked: [] as string[], warning: (error as Error).message }));

@@ -1664,18 +1664,18 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** Signed in as the server's administrator (or nobody is listed yet). Cloudflare Access lets the people in, for an organization through its Access group.
 - **Steps:**
   1. Open Settings → People -> what the list does; nobody listed means everyone who can sign in is an administrator.
-  2. Add a person: their sign-in email, Member or Administrator, and for a member the mailboxes they may read; Add -> they are listed; the first person added also lists me as an administrator.
-  3. Open a person -> Change… their role or mailboxes, or Remove… them (Remove, Keep).
+  2. Add a person: their sign-in email, Member or Administrator, and for a member the mailboxes they may reach, each Read and send (the default) or Read only (B-160); Add -> they are listed with what they reach ("Only a, b; read only: b"); the first person added also lists me as an administrator.
+  3. Open a person -> Change… their role, mailboxes or a mailbox's level, or Remove… them (Remove, Keep).
   4. With nobody open, read Recent changes -> who added, changed or removed whom (the role and mailboxes it gave), agent keys revoked with a person, and each message a member sent (mailbox, recipients, subject; never the text), newest first; Show older reads further back (B-156, since 0.61.0).
-- **Expected result:** A member reaches only their mailboxes; a person Access lets in who is not listed is refused with a sentence naming who to ask; an administrator has every right.
+- **Expected result:** A member reaches only their mailboxes, and in one marked Read only can open and search but never change or send; a person Access lets in who is not listed is refused with a sentence naming who to ask; an administrator has every right.
 - **Alt paths:** A member with no mailbox ticked: Add stays off. Removing the last administrator, or the last person: refused with the reason. Removing myself: I am asked first and can no longer open the server.
-- **UI elements:** SCR-17 (Add a person, Role, Mailboxes, Change…, Remove…, Recent changes, Show older).
+- **UI elements:** SCR-17 (Add a person, Role, Mailboxes with a level beside each ticked one: Read and send, Read only; Change…, Remove…, Recent changes, Show older).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** The list changed at the same time: try again. A list in R2 that cannot be read lets nobody in and says to delete it to start over.
 - **Status:** draft
 - **Coverage:** app/components/settings/sections/PeopleSection.tsx, workers/routes/members.ts, workers/lib/members.ts, workers/lib/audit.ts, workers/app.ts, tests/members.test.ts, tests/audit.test.ts
 - **Product:** unobserved
-- **Today:** Built 2026-10-23 (B-149).
+- **Today:** Built 2026-10-23 (B-149); levels per mailbox built 2026-10-30 (B-160 step 1, provisional on this draft: Read only and Read and send; configuring agents comes with its own step).
 
 ### SCN-082: Work as a member of a shared server
 - **Persona:** P-02
@@ -1685,15 +1685,15 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** An administrator listed me as a member with one or more mailboxes; Cloudflare Access lets me sign in.
 - **Steps:**
   1. Sign in -> All inboxes shows the mail of my mailboxes only, and the sidebar lists only them.
-  2. Open, read, answer, forward, move and mark messages, and keep drafts, in those mailboxes.
+  2. Open, read, answer, forward, move and mark messages, and keep drafts, in those mailboxes; in a mailbox given to me Read only, open, read and search.
   3. Refresh -> the list is read again.
 - **Expected result:** I handle my mailboxes' mail and see nothing of the rest of the server: no settings, categories, rules, agents' runs or other mailboxes.
-- **Alt paths:** No mailbox given yet: the sidebar says to ask the administrator. Settings opened from a link: a page says settings are the administrators'. A mailbox the administrator took away: its routes answer that I reach only my own.
+- **Alt paths:** No mailbox given yet: the sidebar says to ask the administrator. Settings opened from a link: a page says settings are the administrators'. A mailbox the administrator took away: its routes answer that I reach only my own. Answer, send, move or mark in a Read only mailbox: refused with "You can read this mailbox but not change it or send from it. Ask an administrator for Read and send." (B-160; the buttons still show until the follow-up hides them).
 - **UI elements:** SCR-01 (the sidebar without Settings, Rules & history, Agents' answers, categories, Add address and Hide), SCR-02 (the administrators-only page).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Delete all now in Spam empties my Cloudflare mailboxes only; Not discarded brings back my own mailboxes' mail and takes back no shared discard rule. An action only an administrator may take (a mailbox's own settings and signature, discard rules) is refused with a sentence that says so.
 - **Status:** draft
-- **Coverage:** workers/lib/member-gate.ts, workers/app.ts, workers/mcp/scope.ts, app/lib/me.ts, app/routes/unified-inbox.tsx, app/components/inbox/AccountSidebar.tsx, app/routes/settings.tsx, tests/members.test.ts
+- **Coverage:** workers/lib/member-gate.ts, workers/lib/members.ts (`writableOf`), workers/app.ts, workers/mcp/scope.ts, app/lib/me.ts, app/routes/unified-inbox.tsx, app/components/inbox/AccountSidebar.tsx, app/routes/settings.tsx, tests/members.test.ts
 - **Product:** unobserved
 - **Today:** Built 2026-10-23 (B-149).
 
