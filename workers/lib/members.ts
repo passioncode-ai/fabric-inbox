@@ -15,19 +15,28 @@ export const MEMBERS_KEY = "config/members.json";
 export const ROLES = ["admin", "member"] as const;
 export type Role = (typeof ROLES)[number];
 export const MAX_MEMBERS = 500;
+/**
+ * B-160: what a member may do in one of their mailboxes. read: open and search it, nothing that changes it or
+ * sends from it; send: read, answer, send, move, mark and keep drafts (a member's whole reach before levels).
+ * An administrator has everything; a level for configuring agents comes with its own step.
+ */
+export const LEVELS = ["read", "send"] as const;
+export type MemberLevel = (typeof LEVELS)[number];
 
 export interface Member {
   email: string;
   role: Role;
   /** A member's mailboxes ("cloudflare:<address>", "gmail:<id>", …); null for an administrator. */
   accounts: string[] | null;
+  /** B-160: a member's mailboxes they may only read. Absent, or a mailbox not named: send. */
+  levels?: Record<string, MemberLevel>;
   addedAt: string;
 }
 
 /** What a signed-in person is on this server. */
 export type Standing =
   | { role: "admin"; email: string; listed: boolean }
-  | { role: "member"; email: string; accounts: readonly string[] }
+  | { role: "member"; email: string; accounts: readonly string[]; levels: Readonly<Record<string, MemberLevel>> }
   | { role: "none"; email: string };
 
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,253}\.[^\s@]{2,63}$/;
@@ -44,9 +53,31 @@ function normaliseMember(raw: unknown): Member | null {
   if (!email) return null;
   // An unknown role is the safest one; a member with a damaged list reaches nothing.
   const role: Role = m.role === "admin" ? "admin" : "member";
-  return { email, role, accounts: role === "admin" ? null : (normaliseAccounts(m.accounts) ?? []).filter((a) => !a.startsWith("domain:")),
+  const accounts = role === "admin" ? null : (normaliseAccounts(m.accounts) ?? []).filter((a) => !a.startsWith("domain:"));
+  const levels = accounts ? levelsFor(accounts, m.levels) : {};
+  return { email, role, accounts, ...(Object.keys(levels).length ? { levels } : {}),
     addedAt: typeof m.addedAt === "string" ? m.addedAt : new Date(0).toISOString() };
 }
+
+/**
+ * B-160: the levels kept for a member's mailboxes: only the named ones of their own mailboxes, and only
+ * read (send is the default, so a list saved before levels reads as before). An unknown level is read,
+ * the narrower one, as an unknown role is a member.
+ */
+export function levelsFor(accounts: readonly string[], raw: unknown): Record<string, MemberLevel> {
+  const out: Record<string, MemberLevel> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const mine = new Map(accounts.map((a) => [a.toLowerCase(), a]));
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const account = mine.get(key.toLowerCase());
+    if (account && value !== "send") out[account] = "read";
+  }
+  return out;
+}
+
+/** B-160: the member's mailboxes they may change and send from. */
+export const writableOf = (standing: { accounts: readonly string[]; levels: Readonly<Record<string, MemberLevel>> }) =>
+  standing.accounts.filter((a) => standing.levels[a] !== "read");
 
 /** A damaged file reads as an empty list only when nothing in it is readable; duplicates keep the first. */
 export function normaliseMembers(raw: unknown): Member[] {
@@ -74,7 +105,7 @@ export function standingOf(members: readonly Member[], email: string): Standing 
   if (!members.length) return { role: "admin", email: who, listed: false };
   const m = members.find((x) => x.email === who);
   if (!m) return { role: "none", email: who };
-  return m.role === "admin" ? { role: "admin", email: who, listed: true } : { role: "member", email: who, accounts: m.accounts ?? [] };
+  return m.role === "admin" ? { role: "admin", email: who, listed: true } : { role: "member", email: who, accounts: m.accounts ?? [], levels: m.levels ?? {} };
 }
 
 /**

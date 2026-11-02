@@ -41,7 +41,14 @@ const bundle = await build({
   banner: { js: "import { createRequire } from 'node:module'; const require = createRequire('/');" },
 });
 
-const MON = Date.UTC(2026, 10, 2, 9); // Monday 09:00 UTC
+// Monday 09:00 UTC, always ahead of the clock: a campaign starts from the real now, so a fixed Monday stopped
+// sending once that day had passed (2026-11-02, B-197).
+const MON = (() => {
+  const d = new Date(Date.now() + 86_400_000);
+  d.setUTCHours(9, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() + ((8 - d.getUTCDay()) % 7));
+  return d.getTime();
+})();
 const MIN = 60_000, DAY = 86_400_000;
 
 test("SCN-090: the loop sends one at a time, follow-ups answer in the thread, replies, stops and auto-replies are heard", async () => {

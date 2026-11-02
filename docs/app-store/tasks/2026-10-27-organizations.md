@@ -91,7 +91,7 @@ Asked on the board with this packet's path; each has the default Inbox proceeds 
 | M1 | the app holds several servers, each with its context; `FABRIC_CONTEXT` on the server and in `/api/server`; attach an account to an organization (D7) | B-158 | M0 |
 | M2 | sign-in with an attestation (D5) | B-159 | SOT-B5 |
 | M3 | people from the attestation and the directory grant; issue addresses; a leaver loses access at once | B-158 | M1, M2, O-3 |
-| M4 | levels per person and mailbox (D6) | B-160 | M3 |
+| M4 | levels per person and mailbox (D6); step 1 (read, send) built 2026-10-30 on the list of people, below | B-160 | M3 for the directory's people; none for step 1 |
 | M5 | delegated calls | B-83 | Fabric's delegation issuer (2026-11-21) |
 | M6 | residency (B-157, done in 0.62.0), the organization's server in Fabric Dashboards, update policy (Q10) | B-157, B-193 | M1 |
 | M7 | the first organization walked end to end with receipts | B-158 | M1 to M6 |
@@ -112,6 +112,28 @@ client, so such an account is connected again on the other server, not moved.
 | 3b | Carry what is not mail. Part 1, rules, the agent and its knowledge: routes `setup`, `document`, `rules`, `collection`, `documents`, `agent` under `/api/transfer/:email`, the same two tools; an enabled rule stays enabled (it was reviewed on the sending server), a rule whose tool host the receiving server does not allow is refused with its reason, a collection is matched by name and an agent by its definition so a repeat adds nothing, and the agent is not assigned until the mail moves (3c). Part 2, category labels: the verdicts of a category carry only when the receiving server has a category with the same id and selection, since a verdict counts only for its category's version; spam and safety checks go with them, queued work does not (the receiving server classifies what arrives there) | part 1 built in 0.66.0, part 2 in 0.67.0 (`tests/mailbox-transfer-setup-workerd.test.ts`) |
 | 3c | Route the address to the receiving server once the copy is complete (Email Routing rule to its Worker; same Cloudflare account only, MD-11), a delivery check, the sending server's copy kept read-only until confirmed, and a way back (the rule back). Built as the tool `move_address`: `hold` and `release` on the sending server (no new sends, agent off, restored on release), `route` on the receiving server (refused while the copy has fewer messages or attachments than the manifest counted; the rule as it was written down first; only a rule sending to another Worker of the account), `unroute` (the rule back, refused when it was changed since), `status`; the delivery check is `send_test_message` and `check_test_message` on the receiving server | built in 0.68.0 (`tests/domains.test.ts`, `tests/mailbox-transfer-workerd.test.ts`) |
 | 3d | The Mac app moves an address between two servers it holds (SCN-094, rewritten 2026-10-27 with the stages Copying, Holding, Routing, Testing, Done and the way back). Decision 2026-10-27: the window is built provisional on the draft scenario (the operator asked for the work to continue; approving SCN-094 stays the operator's, and a change it asks for is applied to the window). Built in 0.69.0: `desktop/move.cjs` (stages copy, setup, labels, precheck with a check that the other server can take the address's mail, hold, settle, catch-up, check, route, test; the journal `move.json`), `desktop/move.js` (the window), the Account menu item; `tests/desktop-move.test.ts` | built |
+
+## Levels per mailbox (M4, B-160)
+
+Step 1, built 2026-10-30 ahead of M3 on the list of people B-149 already keeps (decision: the levels sit on the
+member's mailboxes whoever lists the member, so they need neither the attestation nor the directory grant; when M3
+fills the list from the directory the levels stay the administrator's per mailbox, D4).
+
+| # | Decision | Why |
+|---|---|---|
+| L-1 | Two levels now: `read` (open, read and search the mailbox; nothing that changes it or sends from it) and `send` (what a member reached before levels: also answer, send, forward, move, mark and keep drafts). `administer` stays the administrator role | the operator's scale (Q11); `read` and `send` are the levels the member gate can hold with the routes as they are |
+| L-2 | `send` is the default: a mailbox with no level, and every list saved before levels, reads as before | nothing that works today changes |
+| L-3 | Only `read` is stored (`levels` on the member in `config/members.json`); an unknown value reads as `read`, the narrower one; a level for a mailbox the member is not given is refused, not dropped | as an unknown role reads as a member; a caller who named another mailbox meant something else |
+| L-4 | Reads are GET and HEAD and the safety check's lookup; every other request on a `read` mailbox is refused with a sentence that names the level to ask for. Emptying Spam, bringing mail back and the safety check's decision are narrowed to the `send` mailboxes | one rule the gate applies to every route, so a new write route is covered without a list to keep |
+| L-5 | `configure agents` is a later step: the mailbox's own settings carry its agent together with its forwarding and signature in one route, and forwarding must stay an administrator's (it can send a mailbox's mail away). That route is split first | no level that cannot be held |
+| L-6 | The app still shows the buttons that change mail in a `read` mailbox and the server refuses them; `/api/me` returns the member's `levels` so the app can hide them next | the refusal is the guarantee, hiding is comfort |
+
+| REQ | What | Verified by |
+|---|---|---|
+| L-REQ-1 | Levels kept only for the member's own mailboxes, only `read`, unknown as `read`; a list without levels is `send` everywhere | `tests/members.test.ts` B-160 |
+| L-REQ-2 | In a `read` mailbox reads pass and every change or send is refused; another person's mailbox is still refused as before | `tests/members.test.ts` B-160 |
+| L-REQ-3 | The routes save levels, refuse one for a mailbox not given, and `/api/me` returns them; `save_member` takes `readOnly` | `tests/members.test.ts` B-160, `tests/mcp-schema-drift.test.ts` |
+| L-REQ-4 | People shows a level beside each ticked mailbox, and the list and Recent changes say which are read only | SCN-081, `app/components/settings/sections/PeopleSection.tsx` |
 
 ## What is not part of this
 

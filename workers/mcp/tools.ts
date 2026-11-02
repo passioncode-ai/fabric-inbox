@@ -2116,12 +2116,14 @@ const campaignReport = defineTool({
 const memberEmail = z.string().trim().toLowerCase().pipe(z.string().email().max(254)).describe("The person's sign-in email");
 const saveMember = defineTool({
   name: "save_member", title: "Add or change a person on this server", level: "admin", ownerApproval: true, target: (a) => `${a.email} ${a.role}`,
-  description: "Adds a person to this shared server's list, or changes one already on it: admin reaches everything; member reaches only the mailboxes named. Always waits for the owner's approval in Settings → Agent access, whatever the key's setting: who reads whose mail is the owner's to decide (B-149, DEC-0121). Making someone a member revokes the agent keys they made. Two calls.",
-  input: { email: memberEmail, role: z.enum(["admin", "member"]), accounts: z.array(accountId).min(1).max(50).optional().describe("A member's mailboxes (list_accounts); required for a member") },
+  description: "Adds a person to this shared server's list, or changes one already on it: admin reaches everything; member reaches only the mailboxes named, at the level given per mailbox (read: open and search only; send, the default: also answer, send, move and mark). Always waits for the owner's approval in Settings → Agent access, whatever the key's setting: who reads whose mail is the owner's to decide (B-149, DEC-0121). Making someone a member revokes the agent keys they made. Two calls.",
+  input: { email: memberEmail, role: z.enum(["admin", "member"]), accounts: z.array(accountId).min(1).max(50).optional().describe("A member's mailboxes (list_accounts); required for a member"),
+    readOnly: z.array(accountId).max(50).optional().describe("B-160: those of the member's mailboxes they may only read (open and search, never change or send from); the others are read and send") },
   confirm: (a) => a.role === "admin" ? `Make ${a.email} an administrator of this server: they will reach every mailbox, setting and key.`
-    : `Let ${a.email} sign in as a member reaching only ${(a.accounts ?? []).join(", ")}; any agent keys they made are revoked.`,
+    : `Let ${a.email} sign in as a member reaching only ${(a.accounts ?? []).join(", ")}${a.readOnly?.length ? ` (read only: ${a.readOnly.join(", ")})` : ""}; any agent keys they made are revoked.`,
   routes: ["PUT /api/members/:email"],
-  call: (a, ctx) => put(ctx, `/api/members/${enc(a.email)}`, { role: a.role, ...(a.accounts ? { accounts: a.accounts.map((x) => parseAccount(x).id) } : {}) }),
+  call: (a, ctx) => put(ctx, `/api/members/${enc(a.email)}`, { role: a.role, ...(a.accounts ? { accounts: a.accounts.map((x) => parseAccount(x).id) } : {}),
+    ...(a.readOnly?.length ? { levels: Object.fromEntries(a.readOnly.map((x) => [parseAccount(x).id, "read"])) } : {}) }),
 });
 const removeMember = defineTool({
   name: "remove_member", title: "Remove a person from this server", level: "admin", ownerApproval: true, target: (a) => a.email,

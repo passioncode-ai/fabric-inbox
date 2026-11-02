@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hono } from "hono";
-import { readMembers, standingOf, updateMembers, MembersError, MEMBERS_KEY, type Member } from "../workers/lib/members";
-import { memberBody, memberGate } from "../workers/lib/member-gate";
+import { levelsFor, normaliseMembers, readMembers, standingOf, updateMembers, writableOf, MembersError, MEMBERS_KEY, type Member } from "../workers/lib/members";
+import { memberBody, memberGate, readsOnly } from "../workers/lib/member-gate";
 import { membersRouter } from "../workers/routes/members";
 import { scopedApi } from "../workers/mcp/scope";
 
@@ -32,7 +32,7 @@ test("B-149: with nobody listed everyone is an administrator; once listed, a mem
   assert.deepEqual(standingOf([], "Owner@Owner.example"), { role: "admin", email: "owner@owner.example", listed: false });
   const list = [member("owner@owner.example", "admin"), member("ann@owner.example", "member", ["cloudflare:sales@owner.example"])];
   assert.equal(standingOf(list, "owner@owner.example").role, "admin");
-  assert.deepEqual(standingOf(list, "ANN@owner.example"), { role: "member", email: "ann@owner.example", accounts: ["cloudflare:sales@owner.example"] });
+  assert.deepEqual(standingOf(list, "ANN@owner.example"), { role: "member", email: "ann@owner.example", accounts: ["cloudflare:sales@owner.example"], levels: {} });
   assert.deepEqual(standingOf(list, "bob@owner.example"), { role: "none", email: "bob@owner.example" });
 });
 
@@ -84,7 +84,7 @@ test("B-149: the routes list, save and remove people, and a member's mailboxes a
   assert.equal((await call("DELETE", "/api/members/bob%40owner.example")).status, 404);
   assert.equal((await call("DELETE", "/api/members/owner%40owner.example")).status, 409, "the only administrator stays");
   assert.equal((await call("DELETE", "/api/members/ann%40owner.example")).status, 200);
-  assert.deepEqual((await call("GET", "/api/me")).data, { role: "admin", email: "owner@owner.example", accounts: null, listed: false });
+  assert.deepEqual((await call("GET", "/api/me")).data, { role: "admin", email: "owner@owner.example", accounts: null, levels: null, listed: false });
 });
 
 test("B-149: a member's refusals from the scoped feed speak to the person, not to a key", async () => {
@@ -127,7 +127,7 @@ test("N-1: a member is gated on the path the router matches, so an encoded path 
   assert.equal(await (await app.request("/inbox")).text(), "page");
   // The server's own middleware judges that same path, never the raw one.
   const source = await import("node:fs").then((fs) => fs.readFileSync(new URL("../workers/app.ts", import.meta.url), "utf8"));
-  assert.match(source, /memberGate\(c\.req\.method, path, standing\.accounts\)/);
+  assert.match(source, /memberGate\(c\.req\.method, path, standing\.accounts, writable\)/);
   assert.match(source, /const path = c\.req\.path;/);
 });
 
@@ -163,4 +163,67 @@ test("N-4: the keys a person made go when they leave the server or become a memb
   assert.deepEqual(removed.data.revokedKeys, ["k-ann"]);
   const left = JSON.parse(await (await bucket.get(AGENT_KEYS_KEY))!.text()).keys.map((k: any) => k.id);
   assert.deepEqual(left, ["k-old"], "a key from before the record stays; the operator sees it in Agent access");
+});
+
+test("B-160: a member's mailbox is read or send; a list saved before levels reads as send everywhere", () => {
+  const mine = ["cloudflare:sales@owner.example", "gmail:g1"];
+  assert.deepEqual(levelsFor(mine, { "CLOUDFLARE:sales@owner.example": "read", "gmail:g1": "send", "gmail:other": "read" }), { "cloudflare:sales@owner.example": "read" },
+    "only the member's own mailboxes, and only read is kept");
+  assert.deepEqual(levelsFor(mine, { "gmail:g1": "admin" }), { "gmail:g1": "read" }, "an unknown level is the narrower one");
+  assert.deepEqual(levelsFor(mine, ["read"]), {});
+  const [before] = normaliseMembers({ members: [{ email: "ann@owner.example", role: "member", accounts: mine }] });
+  assert.equal(before!.levels, undefined);
+  const ann = standingOf([member("o@owner.example", "admin"), before!], "ann@owner.example");
+  assert.deepEqual(ann.role === "member" && writableOf(ann), mine, "no levels: every mailbox is read and send, as before");
+  const [after] = normaliseMembers({ members: [{ email: "ann@owner.example", role: "member", accounts: mine, levels: { "gmail:g1": "read" } }] });
+  const reader = standingOf([member("o@owner.example", "admin"), after!], "ann@owner.example");
+  assert.deepEqual(reader.role === "member" && reader.levels, { "gmail:g1": "read" });
+  assert.deepEqual(reader.role === "member" && writableOf(reader), ["cloudflare:sales@owner.example"]);
+  const admin = normaliseMembers({ members: [{ email: "o@owner.example", role: "admin", levels: { "gmail:g1": "read" } }] })[0]!;
+  assert.equal(admin.levels, undefined, "an administrator has no levels");
+});
+
+test("B-160: in a mailbox they may only read, a member opens and searches, and is refused any change or send", () => {
+  const mine = ["cloudflare:sales@owner.example", "gmail:g1"];
+  const writable = ["cloudflare:sales@owner.example"];
+  for (const [method, path] of [["GET", "/api/accounts/g1/messages"], ["HEAD", "/api/accounts/g1/messages"], ["GET", "/api/accounts/g1/messages/m1"]] as const)
+    assert.equal(memberGate(method, path, mine, writable), "pass", `${method} ${path}`);
+  for (const [method, path] of [["POST", "/api/accounts/g1/send"], ["POST", "/api/accounts/g1/messages/m1/reply"], ["PUT", "/api/accounts/g1/messages/m1"], ["DELETE", "/api/accounts/g1/messages/m1"]] as const)
+    assert.equal(memberGate(method, path, mine, writable), "readonly", `${method} ${path}`);
+  assert.equal(memberGate("POST", "/api/v1/mailboxes/sales@owner.example/emails/m1/reply", mine, writable), "pass", "the read-and-send mailbox as before");
+  assert.equal(memberGate("POST", "/api/accounts/other/send", mine, writable), "refuse", "someone else's mailbox is still refused, not read only");
+  assert.equal(memberGate("POST", "/api/v1/mailboxes/sales@owner.example/emails/m1/reply", mine), "pass", "without levels every mailbox is writable");
+  assert.equal(readsOnly("POST", "/api/safety/lookup"), true);
+  assert.equal(readsOnly("POST", "/api/safety/decide"), false);
+  // Emptying Spam and bringing mail back change mail: they are narrowed to the writable mailboxes.
+  assert.deepEqual(memberBody("POST /api/spam/empty", {}, writable), { body: { addresses: ["sales@owner.example"] } });
+  assert.deepEqual(memberBody("POST /api/discard/restore", { messages: [{ accountId: "gmail:g1", providerMessageId: "m1" }] }, writable), { refuse: true });
+});
+
+test("B-160: the server narrows changes to the writable mailboxes and tells the person why", async () => {
+  const source = (await import("node:fs")).readFileSync(new URL("../workers/app.ts", import.meta.url), "utf8");
+  assert.match(source, /memberBody\(`\$\{c\.req\.method\} \$\{path\}`, await c\.req\.json\(\)\.catch\(\(\) => null\), writable\)/);
+  assert.match(source, /scopedApi\(inProcess, readsOnly\(c\.req\.method, path\) \? standing\.accounts : writable, "person"\)/);
+  assert.match(source, /gate === "readonly"\) return refuse\(msg\("You can read this mailbox but not change it or send from it/);
+});
+
+test("B-160: the routes save a level per mailbox, refuse one for a mailbox the member is not given, and tell the member theirs", async () => {
+  const { bucket } = fakeBucket();
+  const app = new Hono<{ Bindings: { BUCKET: R2Bucket }; Variables: { standing?: unknown } }>();
+  let standing: unknown = { role: "admin", email: "owner@owner.example", listed: false };
+  app.use("*", async (c, next) => { c.set("standing", standing); await next(); });
+  app.route("/", membersRouter as unknown as Hono);
+  const call = async (method: string, path: string, body?: unknown) => {
+    const r = await app.request(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { "Content-Type": "application/json" } }, { BUCKET: bucket });
+    return { status: r.status, data: await r.json() as any };
+  };
+  const saved = await call("PUT", "/api/members/ann%40owner.example", { role: "member", accounts: ["sales@owner.example", "gmail:g1"], levels: { "sales@owner.example": "read", "gmail:g1": "send" } });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.data.members[1].levels, { "cloudflare:sales@owner.example": "read" });
+  assert.equal((await call("PUT", "/api/members/ann%40owner.example", { role: "member", accounts: ["gmail:g1"], levels: { "sales@owner.example": "read" } })).status, 400);
+  assert.equal((await call("PUT", "/api/members/ann%40owner.example", { role: "member", accounts: ["gmail:g1"], levels: { "gmail:g1": "admin" } })).status, 400, "only read or send");
+  const again = await call("PUT", "/api/members/ann%40owner.example", { role: "member", accounts: ["sales@owner.example"] });
+  assert.equal(again.data.members[1].levels, undefined, "saved without levels: read and send again");
+  standing = { role: "member", email: "ann@owner.example", accounts: ["gmail:g1"], levels: { "gmail:g1": "read" } };
+  assert.deepEqual((await call("GET", "/api/me")).data, { role: "member", email: "ann@owner.example", accounts: ["gmail:g1"], levels: { "gmail:g1": "read" }, listed: true });
 });

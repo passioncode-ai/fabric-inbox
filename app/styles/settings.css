@@ -205,6 +205,9 @@ select.fi-input { padding-right: 28px; }
 .fi-field-row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .fi-check { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; font-size: 13px; }
 .fi-check input { margin-top: 3px; }
+/* B-160: a ticked mailbox and its level side by side; the level wraps under it on a narrow panel. */
+.fi-check-row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; justify-content: space-between; }
+.fi-check-row .fi-input { width: auto; margin-top: 8px; }
 .fi-settings fieldset { border: 0; margin: 12px 0 0; padding: 0; min-width: 0; }
 .fi-settings legend { font-size: 13px; font-weight: 600; padding: 0; }
 .fi-table { width: 100%; border-collapse: collapse; font-size: 13px; }

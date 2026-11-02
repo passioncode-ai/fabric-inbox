@@ -9,7 +9,12 @@ import { MCP_PATH } from "../mcp/keys";
 /** Routes any signed-in person may call: who they are on this server. */
 export const SELF_ROUTES = new Set(["GET /api/me"]);
 
-export type Gate = "pass" | "feed" | "body" | "refuse";
+/** `readonly`: a mailbox of theirs they may only read (B-160), asked to change something or send. */
+export type Gate = "pass" | "feed" | "body" | "refuse" | "readonly";
+
+/** Reads change nothing: GET and HEAD, and the safety check's lookup, which reads verdicts with a POST. */
+export const readsOnly = (method: string, pathname: string) =>
+  method === "GET" || method === "HEAD" || `${method} ${pathname}` === "POST /api/safety/lookup";
 
 /**
  * Routes a member may call with a body narrowed to their mailboxes (`memberBody`): emptying Spam
@@ -23,7 +28,7 @@ export const BODY_ROUTES = new Set(["POST /api/spam/empty", "POST /api/discard/r
  * Pages and their assets pass (they hold no data; the data comes from /api). The agent protocol,
  * the operator's chat assistant and the relays are an administrator's.
  */
-export function memberGate(method: string, pathname: string, accounts: readonly string[]): Gate {
+export function memberGate(method: string, pathname: string, accounts: readonly string[], writable: readonly string[] = accounts): Gate {
   if (pathname === MCP_PATH || pathname.startsWith("/agents/") || pathname.startsWith("/relay/") || pathname.startsWith("/fabric/")
     || pathname === "/.well-known/fabric-service") return "refuse";
   if (!pathname.startsWith("/api/")) return "pass";
@@ -35,13 +40,15 @@ export function memberGate(method: string, pathname: string, accounts: readonly 
   if (adminMailboxAction(method, pathname)) return "refuse";
   const allowed = new Set(accounts);
   const account = accountOfPath(pathname, allowed);
-  return account && allowed.has(account) ? "pass" : "refuse";
+  if (!account || !allowed.has(account)) return "refuse";
+  return readsOnly(method, pathname) || writable.includes(account) ? "pass" : "readonly";
 }
 
 /**
  * A member's body for a `body` route, or why it is refused. Emptying Spam empties their Cloudflare
  * mailboxes only; a restore must name their own mailboxes' messages, and never takes back a discard
- * rule, since the rules are the whole workspace's.
+ * rule, since the rules are the whole workspace's. Both change mail, so `accounts` here are the ones the
+ * member may change (B-160).
  */
 export function memberBody(route: string, body: unknown, accounts: readonly string[]): { body: unknown } | { refuse: true } {
   if (route === "POST /api/spam/empty")

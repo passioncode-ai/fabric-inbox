@@ -116,7 +116,7 @@ const BODIES: Record<string, string[]> = {
   "POST /api/campaigns/:id/preview": ["email"],
   "POST /api/campaigns/:id/dry-run": ["count"],
   "POST /api/suppression": ["add", "remove", "reason"],
-  "PUT /api/members/:email": ["role", "accounts"], // workers/routes/members.ts SaveMember (B-154)
+  "PUT /api/members/:email": ["role", "accounts", "levels"], // workers/routes/members.ts SaveMember (B-154, B-160)
   "POST /api/agent-keys": ["name", "level", "send", "dailySendLimit", "duration", "accounts", "approval"], // workers/routes/agent-keys.ts NewKey
 };
 /** Written routes whose body carries nothing (or that take a whole document as it is). */
@@ -145,6 +145,8 @@ const MAP: Record<string, Record<string, Record<string, string> & { via?: string
   get_attachment: { "POST /api/safety/lookup": { keys: `${BY_TOOL}: the attachment's message` } },
   list_held_messages: { "POST /api/safety/lookup": { keys: "accountId" } },
   decide_held_message: { "POST /api/safety/decide": { by: `${BY_TOOL}: the key's label` } },
+  // B-160: the route takes a level per mailbox; the tool names the read-only mailboxes and sends read for each.
+  save_member: { "PUT /api/members/:email": { levels: "readOnly" } },
   save_draft: {
     "PUT /api/v1/mailboxes/:mailboxId/drafts/:id": { body: "text", in_reply_to: "replyToMessageId", thread_id: `${BY_TOOL}: the conversation of the message it answers`,
       keep_attachments: "keepAttachments", expected_revision: "expectedRevision" },

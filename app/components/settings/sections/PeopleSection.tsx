@@ -14,14 +14,22 @@ import {
 } from "../ui";
 
 type Role = "admin" | "member";
-export interface Person { email: string; role: Role; accounts: string[] | null; addedAt: string }
+type Level = "read" | "send";
+export interface Person { email: string; role: Role; accounts: string[] | null; levels?: Record<string, Level>; addedAt: string }
 interface PeopleState { members: Person[]; open: boolean; you: string | null }
 interface Mailbox { id: string; email?: string }
 export const PEOPLE_KEY = ["members"];
 
 export const roleTitle = (role: Role, t: T) => (role === "admin" ? t("Administrator") : t("Member"));
-export const reachText = (p: Pick<Person, "role" | "accounts">, t: T) =>
-  p.role === "admin" ? t("Everything on this server") : t("Only {mailboxes}", { mailboxes: t.list((p.accounts ?? []).map((a) => a.replace(/^cloudflare:/, ""))) });
+const shown = (account: string) => account.replace(/^cloudflare:/, "");
+/** B-160: a member's mailboxes, and those of them they may only read. */
+export const readOnlyOf = (p: Pick<Person, "accounts" | "levels">) => (p.accounts ?? []).filter((a) => p.levels?.[a] === "read");
+export const reachText = (p: Pick<Person, "role" | "accounts" | "levels">, t: T) => {
+  if (p.role === "admin") return t("Everything on this server");
+  const mailboxes = t.list((p.accounts ?? []).map(shown));
+  const readOnly = readOnlyOf(p);
+  return readOnly.length ? t("Only {mailboxes}; read only: {readOnly}", { mailboxes, readOnly: t.list(readOnly.map(shown)) }) : t("Only {mailboxes}", { mailboxes });
+};
 
 /**
  * Settings → People (SCR-16, SCN-081, B-149): who signs in to a shared server and what they reach.
@@ -121,7 +129,7 @@ function PersonPanel({ person: p, you, onRemoved }: { person: Person; you: strin
           <li><strong>{t("Reaches")}</strong> {reachText(p, t)}</li>
           <li><strong>{t("Added")}</strong> {t.date(p.addedAt, { year: "numeric", month: "short", day: "numeric" })}</li>
         </ul>
-        {p.role === "member" && <p className="fi-hint">{t("A member reads, answers and sorts the mail of these mailboxes. Settings, other mailboxes, agents and categories stay with the administrators.")}</p>}
+        {p.role === "member" && <p className="fi-hint">{t("A member reads, answers and sorts the mail of these mailboxes, and only reads a mailbox marked Read only. Settings, other mailboxes, agents and categories stay with the administrators.")}</p>}
         <ActionResult result={work.result} />
       </PanelBlock>
       <PersonDialog open={editing} person={p} onClose={() => setEditing(false)} onDone={() => setEditing(false)} />
@@ -133,7 +141,7 @@ function PersonPanel({ person: p, you, onRemoved }: { person: Person; you: strin
 function PersonDialog({ open, person, onClose, onDone }: { open: boolean; person?: Person; onClose: () => void; onDone: (email: string) => void }) {
   const t = useT();
   const client = useQueryClient();
-  const blank = () => ({ email: person?.email ?? "", role: (person?.role ?? "member") as Role, accounts: person?.accounts ?? [] });
+  const blank = () => ({ email: person?.email ?? "", role: (person?.role ?? "member") as Role, accounts: person?.accounts ?? [], readOnly: person ? readOnlyOf(person) : [] });
   const [form, setForm] = useState(blank);
   const [working, setWorking] = useState(false);
   const [problem, setProblem] = useState("");
@@ -144,7 +152,9 @@ function PersonDialog({ open, person, onClose, onDone }: { open: boolean; person
     setWorking(true); setProblem("");
     try {
       const email = form.email.trim().toLowerCase();
-      await fabric(`/api/members/${encodeURIComponent(email)}`, { role: form.role, ...(form.role === "member" ? { accounts: form.accounts } : {}) }, "PUT");
+      // B-160: a level for each ticked mailbox; one marked read only and then unticked is not sent.
+      const levels = Object.fromEntries(form.accounts.map((a) => [a, form.readOnly.includes(a) ? "read" : "send"]));
+      await fabric(`/api/members/${encodeURIComponent(email)}`, { role: form.role, ...(form.role === "member" ? { accounts: form.accounts, levels } : {}) }, "PUT");
       await client.invalidateQueries({ queryKey: PEOPLE_KEY });
       onDone(email);
     } catch (error) { setProblem(t.text(errorText(error))); } finally { setWorking(false); }
@@ -161,7 +171,7 @@ function PersonDialog({ open, person, onClose, onDone }: { open: boolean; person
         <fieldset>
           <legend>{t("Role")}</legend>
           <label className="fi-check"><input type="radio" name="role" checked={form.role === "member"} onChange={() => setForm({ ...form, role: "member" })} />
-            <span><strong>{t("Member")}</strong>: {t("reads and answers only the mailboxes below.")}</span></label>
+            <span><strong>{t("Member")}</strong>: {t("reads and answers only the mailboxes below, or only reads the ones you mark.")}</span></label>
           <label className="fi-check"><input type="radio" name="role" checked={form.role === "admin"} onChange={() => setForm({ ...form, role: "admin" })} />
             <span><strong>{t("Administrator")}</strong>: {t("everything on this server, including this list.")}</span></label>
         </fieldset>
@@ -170,13 +180,26 @@ function PersonDialog({ open, person, onClose, onDone }: { open: boolean; person
             <legend>{t("Mailboxes")}</legend>
             {mailboxes.isPending && <p role="status" className="fi-hint">{t("Loading mailboxes…")}</p>}
             {mailboxes.isError && <LoadFailure what={t("Mailboxes")} error={mailboxes.error} onRetry={() => void mailboxes.refetch()} retrying={mailboxes.isFetching} />}
-            {mailboxes.data?.accounts.map((m) => (
-              <label key={m.id} className="fi-check">
-                <input type="checkbox" checked={form.accounts.includes(m.id)}
-                  onChange={(e) => setForm({ ...form, accounts: e.target.checked ? [...form.accounts, m.id] : form.accounts.filter((a) => a !== m.id) })} />
-                <span>{m.email ?? m.id}</span>
-              </label>
-            ))}
+            {mailboxes.data?.accounts.map((m) => {
+              const ticked = form.accounts.includes(m.id);
+              return (
+                <div key={m.id} className="fi-check-row">
+                  <label className="fi-check">
+                    <input type="checkbox" checked={ticked}
+                      onChange={(e) => setForm({ ...form, accounts: e.target.checked ? [...form.accounts, m.id] : form.accounts.filter((a) => a !== m.id) })} />
+                    <span>{m.email ?? m.id}</span>
+                  </label>
+                  {ticked && (
+                    <select className="fi-input" aria-label={t("What they may do in {mailbox}", { mailbox: m.email ?? m.id })}
+                      value={form.readOnly.includes(m.id) ? "read" : "send"}
+                      onChange={(e) => setForm({ ...form, readOnly: e.target.value === "read" ? [...form.readOnly, m.id] : form.readOnly.filter((a) => a !== m.id) })}>
+                      <option value="send">{t("Read and send")}</option>
+                      <option value="read">{t("Read only")}</option>
+                    </select>
+                  )}
+                </div>
+              );
+            })}
           </fieldset>
         )}
         <p className="fi-hint">{t("Cloudflare Access must let this email sign in, too: on an organization's server, through its Access group.")}</p>
@@ -193,7 +216,7 @@ function PersonDialog({ open, person, onClose, onDone }: { open: boolean; person
 }
 
 type AuditRecord = { id: string; at: string; actor: string | null } & (
-  | { kind: "member_saved"; person: string; role: Role; mailboxes: string[] | null; previous: { role: Role; mailboxes: string[] | null } | null }
+  | { kind: "member_saved"; person: string; role: Role; mailboxes: string[] | null; readOnly?: string[]; previous: { role: Role; mailboxes: string[] | null } | null }
   | { kind: "member_removed"; person: string }
   | { kind: "keys_revoked"; person: string; keys: string[] }
   | { kind: "member_sent"; mailbox: string; to: string[]; subject: string | null });
@@ -207,8 +230,8 @@ const actorText = (actor: string | null, t: T) =>
 export function auditText(e: AuditRecord, t: T): string {
   const who = actorText(e.actor, t);
   if (e.kind === "member_saved") return e.previous
-    ? t("{who} changed {person}. {role}: {reach}.", { who, person: e.person, role: roleTitle(e.role, t), reach: reachText({ role: e.role, accounts: e.mailboxes }, t) })
-    : t("{who} added {person}. {role}: {reach}.", { who, person: e.person, role: roleTitle(e.role, t), reach: reachText({ role: e.role, accounts: e.mailboxes }, t) });
+    ? t("{who} changed {person}. {role}: {reach}.", { who, person: e.person, role: roleTitle(e.role, t), reach: reachText({ role: e.role, accounts: e.mailboxes, levels: Object.fromEntries((e.readOnly ?? []).map((a) => [a, "read" as const])) }, t) })
+    : t("{who} added {person}. {role}: {reach}.", { who, person: e.person, role: roleTitle(e.role, t), reach: reachText({ role: e.role, accounts: e.mailboxes, levels: Object.fromEntries((e.readOnly ?? []).map((a) => [a, "read" as const])) }, t) });
   if (e.kind === "member_removed") return t("{who} removed {person}.", { who, person: e.person });
   if (e.kind === "keys_revoked") return t.plural(e.keys.length, { one: "{person}: {n} agent key revoked", other: "{person}: {n} agent keys revoked" }, { person: e.person });
   const mailbox = e.mailbox.replace(/^cloudflare:/, "");
