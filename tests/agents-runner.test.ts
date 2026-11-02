@@ -862,6 +862,47 @@ test("an English or Russian message is asked as written, with no restatement", a
   }
 });
 
+test("B-186: an English or Russian message the knowledge abstained on is asked once more as its restatement", async () => {
+  const confident = JSON.stringify({ abstained: false, revision: "r1", items: [{ id: "fact:code", coverage: 0.9, answer: true, class: "public", title: "Login code" }] });
+  for (const body of ["<p>hi guys, its been 2 days, no code comes when i log in?? pls help</p>", "<p>Привет, второй день не приходит код при входе, помогите</p>"]) {
+    const asked: string[] = [];
+    const restated: string[] = [];
+    const h = harness({ agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })] }), email: { subject: "code", body },
+      callTool: async (_g, args) => { asked.push(String(args.query)); return asked.length === 1 ? JSON.stringify({ abstained: true }) : confident; } });
+    h.deps.paraphrase = async (text) => { restated.push(text); return "The sender does not receive the login code. Write to ann@customer.invalid."; };
+    const run = (await h.run())!;
+    assert.equal(restated.length, 1, "one restatement");
+    assert.equal(asked.length, 2, "as written, then the restatement");
+    assert.match(asked[1]!, /^The sender does not receive the login code\./);
+    assert.doesNotMatch(asked[1]!, /ann@customer\.invalid/, "personal details are scrubbed");
+    assert.equal(run.toolCalls.find((c) => c.name === "paraphrase")?.ok, true);
+    assert.equal(run.status, "sent", "the restatement's answer is the evidence");
+  }
+});
+
+test("B-186: no restatement when the words as written found an answer, and a failed one changes nothing", async () => {
+  const confident = JSON.stringify({ abstained: false, items: [{ id: "f", coverage: 0.9, answer: true }] });
+  const found = harness({ agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })] }), email: { subject: "Premium", body: "<p>Hi, I bought Premium but it is not active.</p>" },
+    callTool: async () => confident });
+  found.deps.paraphrase = async () => { throw new Error("must not be called"); };
+  assert.equal((await found.run())!.toolCalls.some((c) => c.name === "paraphrase"), false);
+  let asked = 0;
+  const failed = harness({ agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })] }), email: { subject: "Premium", body: "<p>Hi, I bought Premium but it is not active.</p>" },
+    callTool: async () => { asked++; return JSON.stringify({ abstained: true }); } });
+  failed.deps.paraphrase = async () => { throw new Error("model unavailable"); };
+  const run = (await failed.run())!;
+  assert.equal(asked, 1, "the tool is not asked again without a restatement");
+  assert.equal(run.toolCalls.some((c) => c.name === "paraphrase"), false, "a failed restatement is no call of the run: it changes nothing");
+  assert.match(run.toolCalls.find((c) => c.name === "acme_kb")?.result ?? "", /abstained/, "the first answer stands");
+  // A message in another language is restated once, before the first ask, and never twice.
+  let restatements = 0;
+  const other = harness({ agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })] }), email: { subject: "Premium", body: "<p>Hola, compré Premium pero no está activo.</p>" },
+    callTool: async () => JSON.stringify({ abstained: true }) });
+  other.deps.paraphrase = async () => { restatements++; return "The sender bought Premium but it is not active."; };
+  await other.run();
+  assert.equal(restatements, 1);
+});
+
 test("when the restatement fails the tool is not asked and the answer stays a draft", async () => {
   let asked = 0;
   const h = harness({ agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })] }),
