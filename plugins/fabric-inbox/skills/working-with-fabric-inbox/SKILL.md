@@ -168,7 +168,8 @@ destination; an agent change needs `expectedVersion`; connecting a domain over a
 MX is two-step).
 
 **People and keys.** `save_member` and `remove_member` change who signs in and what they reach (a member's
-mailboxes, with `readOnly` naming those they may only open and search);
+mailboxes, with `readOnly` naming those they may only open and search and `chooseAgent` those whose reply
+agent they may also choose);
 `create_agent_key` issues a key for another agent (its secret comes back once: hand it to that agent
 only) and `revoke_agent_key` revokes one. Each always waits for the owner's approval in Settings →
 Agent access, whatever your key's setting: tell the person what you asked for, then call again with

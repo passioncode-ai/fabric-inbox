@@ -8,6 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useParams, type MetaArgs } from "react-router";
+import { MemberAgents } from "../components/settings/MemberAgents";
 import { DEFAULT_SECTION, SECTIONS, isSection, settingsPath, type SectionId } from "~/components/settings/paths";
 import { ConfirmProvider, WorkProvider } from "~/components/settings/ui";
 import { StepMemory } from "~/components/settings/sections/data";
@@ -73,6 +74,7 @@ export default function Settings() {
 				<div className="fi-panel-placeholder">
 					<h2>{t("Settings are for this server's administrators")}</h2>
 					<p>{t("You read and answer the mail of the mailboxes shared with you. To get another mailbox, or a change in how this server works, ask its administrator.")}</p>
+					<MemberAgents />
 					<Link to="/" className="fi-secondary">{t("Back to mail")}</Link>
 				</div>
 			</main>

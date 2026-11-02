@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.81.0 (2026-11-02)
+
+- **A member can choose who answers a mailbox.** In Settings → People, an administrator can give a member a third
+  level on a mailbox: Read, send and choose its agent. That member then picks which of the server's agents answers
+  the mailbox, or Off, from Who answers in the sidebar. The agents themselves, their knowledge, rules and forwarding
+  stay with the administrators, and Recent changes records every choice. Agents set it with `save_member`
+  (`chooseAgent`) (B-160).
+
 ## 0.80.0 (2026-11-02)
 
 - **Reply agents pick a category by its meaning.** An agent's categories can now carry a short note each, and the

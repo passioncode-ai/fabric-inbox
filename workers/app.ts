@@ -15,9 +15,9 @@ import { handleRelayForwarded, handleRelayIncoming, RELAY_FORWARDED, RELAY_INCOM
 import { identityMayUse, MCP_PATH, type AccessClaims } from "./mcp/keys";
 import { handleUnsubscribe, UNSUBSCRIBE_PATH } from "./campaigns/unsubscribe";
 import { audienceFor, serviceAudience } from "./mcp/service-access";
-import { membersCached, MembersError, standingOf, writableOf, type Standing } from "./lib/members";
+import { agentableOf, membersCached, MembersError, standingOf, writableOf, type Standing } from "./lib/members";
 import { memberSent, recordAudit, sendRouteOf } from "./lib/audit";
-import { memberBody, memberGate, readsOnly } from "./lib/member-gate";
+import { agentChoiceOf, memberBody, memberGate, readsOnly } from "./lib/member-gate";
 import { inProcessApi } from "./mcp/handler";
 import { scopedApi } from "./mcp/scope";
 import { ApiError } from "./mcp/protocol";
@@ -157,8 +157,22 @@ app.use("*", async (c, next) => {
 		return refuse(msg("{email} is not on this server's list of people. Ask its administrator to add you.", { email: standing.email }));
 	// B-160: the mailboxes the member may change and send from; the others they may only read.
 	const writable = writableOf(standing);
-	const gate = memberGate(c.req.method, path, standing.accounts, writable);
+	const agentable = agentableOf(standing);
+	const gate = memberGate(c.req.method, path, standing.accounts, writable, agentable);
 	if (gate === "pass") {
+		// B-160 step 3: a member choosing a mailbox's agent is kept with the agent's name.
+		const chosen = agentChoiceOf(c.req.method, path, agentable);
+		if (chosen) {
+			const body = (await c.req.raw.clone().json().catch(() => null)) as { agent?: unknown } | null;
+			await next();
+			if (!c.res.ok) return;
+			const agent = body?.agent === "off" ? "off" : String((body?.agent as { id?: unknown } | undefined)?.id ?? "");
+			const listed = agent === "off" ? null : await inProcessApi(url.origin, c.env, c.executionCtx as ExecutionContext, standing.email)
+				.request("GET", "/api/agents").catch(() => null);
+			const name = (listed?.data as { agents?: { id?: unknown; name?: unknown }[] } | null)?.agents?.find((a) => a.id === agent)?.name;
+			await recordAudit(c.env.BUCKET, standing.email, { kind: "member_agent_set", mailbox: chosen, agent, name: typeof name === "string" ? name : null });
+			return;
+		}
 		// B-156: what a member sends is kept (recipients and subject, never the text), once the send was accepted.
 		const send = sendRouteOf(c.req.method, path);
 		if (!send) return next();
@@ -170,6 +184,20 @@ app.use("*", async (c, next) => {
 	if (gate === "refuse") return refuse(msg("Only an administrator of this server can do that. You reach your own mailboxes."));
 	if (gate === "readonly") return refuse(msg("You can read this mailbox but not change it or send from it. Ask an administrator for Read and send."));
 	const inProcess = inProcessApi(url.origin, c.env, c.executionCtx as ExecutionContext, standing.email);
+	if (gate === "agents") {
+		// B-160 step 3: the agents a member may choose from, by name, and which of their own mailboxes each answers;
+		// an agent's instructions, tools and knowledge stay an administrator's.
+		const answer = await inProcess.request("GET", "/api/agents");
+		if (answer.status !== 200) return c.json(answer.data as object, answer.status as 503);
+		const mine = new Set(agentable);
+		type Listed = { id?: unknown; name?: unknown; replyPolicy?: { mode?: unknown }; addresses?: unknown[]; accounts?: unknown[] };
+		const agents = ((answer.data as { agents?: Listed[] }).agents ?? []).map((a) => ({
+			id: a.id, name: a.name, replyPolicy: { mode: a.replyPolicy?.mode },
+			addresses: (a.addresses ?? []).filter((e) => mine.has(`cloudflare:${String(e).toLowerCase()}`)),
+			accounts: (a.accounts ?? []).filter((x) => mine.has(String(x))),
+		}));
+		return c.json({ agents });
+	}
 	if (gate === "body") {
 		// Answered here, before the same-origin boundary below, so it is held to that rule here too.
 		const origin = c.req.header("origin");

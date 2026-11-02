@@ -70,12 +70,14 @@ membersRouter.put("/api/members/:email", async (c) => {
       return old ? list.map((m) => (m.email === email ? entry : m)) : [...list, entry];
     }, c.get("standing")?.email ?? null);
     forgetMembers();
-    console.log(JSON.stringify({ event: "member_saved", role: parsed.data.role, mailboxes: accounts?.length ?? null, readOnly: Object.keys(levels).length }));
+    const at = (l: Record<string, string> | undefined, level: string) => Object.keys(l ?? {}).filter((a) => l![a] === level);
+    console.log(JSON.stringify({ event: "member_saved", role: parsed.data.role, mailboxes: accounts?.length ?? null, readOnly: at(levels, "read").length, agents: at(levels, "agents").length }));
     // B-156: who changed whom, kept. The first person added also lists the editor (updateMembers): that is part of this act.
     const actor = actorOf(c.req.raw, c.get("standing")?.email);
     await recordAudit(c.env.BUCKET, actor, { kind: "member_saved", person: email, role: parsed.data.role, mailboxes: accounts,
-      ...(Object.keys(levels).length ? { readOnly: Object.keys(levels) } : {}),
-      previous: previous ? { role: previous.role, mailboxes: previous.accounts, ...(previous.levels ? { readOnly: Object.keys(previous.levels) } : {}) } : null });
+      ...(at(levels, "read").length ? { readOnly: at(levels, "read") } : {}), ...(at(levels, "agents").length ? { agents: at(levels, "agents") } : {}),
+      previous: previous ? { role: previous.role, mailboxes: previous.accounts, ...(at(previous.levels, "read").length ? { readOnly: at(previous.levels, "read") } : {}),
+        ...(at(previous.levels, "agents").length ? { agents: at(previous.levels, "agents") } : {}) } : null });
     // N-4: a member makes no keys; the keys they made as an administrator go when they become one.
     if (parsed.data.role === "member") {
       const keys = await revokeKeysOf(c.env, email).catch((error: unknown) => ({ revoked: [] as string[], warning: (error as Error).message }));

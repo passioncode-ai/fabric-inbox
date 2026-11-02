@@ -17,10 +17,11 @@ export type Role = (typeof ROLES)[number];
 export const MAX_MEMBERS = 500;
 /**
  * B-160: what a member may do in one of their mailboxes. read: open and search it, nothing that changes it or
- * sends from it; send: read, answer, send, move, mark and keep drafts (a member's whole reach before levels).
- * An administrator has everything; a level for configuring agents comes with its own step.
+ * sends from it; send: read, answer, send, move, mark and keep drafts (a member's whole reach before levels);
+ * agents: send, and choosing which of the server's agents answers that mailbox, or none (step 3). Editing the
+ * agents themselves, knowledge, rules and forwarding stay an administrator's: they are shared by every mailbox.
  */
-export const LEVELS = ["read", "send"] as const;
+export const LEVELS = ["read", "send", "agents"] as const;
 export type MemberLevel = (typeof LEVELS)[number];
 
 export interface Member {
@@ -28,7 +29,7 @@ export interface Member {
   role: Role;
   /** A member's mailboxes ("cloudflare:<address>", "gmail:<id>", …); null for an administrator. */
   accounts: string[] | null;
-  /** B-160: a member's mailboxes they may only read. Absent, or a mailbox not named: send. */
+  /** B-160: a member's mailboxes they may only read, or whose agent they may choose. Absent, or a mailbox not named: send. */
   levels?: Record<string, MemberLevel>;
   addedAt: string;
 }
@@ -61,8 +62,8 @@ function normaliseMember(raw: unknown): Member | null {
 
 /**
  * B-160: the levels kept for a member's mailboxes: only the named ones of their own mailboxes, and only
- * read (send is the default, so a list saved before levels reads as before). An unknown level is read,
- * the narrower one, as an unknown role is a member.
+ * read and agents (send is the default, so a list saved before levels reads as before). An unknown level is
+ * read, the narrowest one, as an unknown role is a member.
  */
 export function levelsFor(accounts: readonly string[], raw: unknown): Record<string, MemberLevel> {
   const out: Record<string, MemberLevel> = {};
@@ -70,7 +71,7 @@ export function levelsFor(accounts: readonly string[], raw: unknown): Record<str
   const mine = new Map(accounts.map((a) => [a.toLowerCase(), a]));
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     const account = mine.get(key.toLowerCase());
-    if (account && value !== "send") out[account] = "read";
+    if (account && value !== "send") out[account] = value === "agents" ? "agents" : "read";
   }
   return out;
 }
@@ -78,6 +79,10 @@ export function levelsFor(accounts: readonly string[], raw: unknown): Record<str
 /** B-160: the member's mailboxes they may change and send from. */
 export const writableOf = (standing: { accounts: readonly string[]; levels: Readonly<Record<string, MemberLevel>> }) =>
   standing.accounts.filter((a) => standing.levels[a] !== "read");
+
+/** B-160 step 3: the member's mailboxes whose agent they may choose. */
+export const agentableOf = (standing: { accounts: readonly string[]; levels: Readonly<Record<string, MemberLevel>> }) =>
+  standing.accounts.filter((a) => standing.levels[a] === "agents");
 
 /** A damaged file reads as an empty list only when nothing in it is readable; duplicates keep the first. */
 export function normaliseMembers(raw: unknown): Member[] {

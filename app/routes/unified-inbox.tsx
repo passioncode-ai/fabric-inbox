@@ -33,7 +33,7 @@ import {
   WarningOctagonIcon,
 } from "@phosphor-icons/react";
 import { fabric } from "~/services/fabric";
-import { readOnlyIn, useMe } from "~/lib/me";
+import { agentChoicesOf, readOnlyIn, useMe } from "~/lib/me";
 import type { Mail } from "~/services/fabric";
 import type { Email } from "~/types";
 import EmailIframe from "~/components/EmailIframe";
@@ -1052,6 +1052,13 @@ export default function UnifiedInbox() {
                 <span>{t("Settings")}</span>
               </Link>
             </>
+          )}
+          {/* B-160 step 3: a member who may choose a mailbox's agent reaches it from here (SCN-082). */}
+          {isMember && agentChoicesOf(me).length > 0 && (
+            <Link className="fi-nav-item" to="/settings">
+              <SparkleIcon size={19} />
+              <span>{t("Who answers")}</span>
+            </Link>
           )}
           <button className="fi-nav-item" onClick={() => setShortcutsOpen(true)} aria-keyshortcuts="?">
             <KeyboardIcon size={19} />

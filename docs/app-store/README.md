@@ -191,6 +191,14 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-02 (0.81.0: B-160 step 3).**
+
+- **0.81.0** (B-160 step 3): a third level per mailbox, Read, send and choose its agent (`agents`): the member chooses which of the server's agents answers that mailbox, or Off, on the address's and the account's own agent routes; forwarding, the address's settings, the agents, knowledge and rules stay refused; the agents are listed to such a member by name only; each choice is in Recent changes (`member_agent_set`). The member reaches it from Who answers in the sidebar (`app/components/settings/MemberAgents.tsx`). L-5 needed no split: the agent already had routes of its own (packet L-7, L-REQ-5, L-REQ-6). `save_member` takes `chooseAgent`. SCN-081, SCN-082, SCN-096 updated. Copy checks `2c081085` (CHANGELOG), `5bb106fe` (en), `6acc8cbc` (ru). Checks run: `npm test` (1835 pass), `npm run typecheck`, `npm run build`, UX and brand lints, `check_private.py` 0. Not walked in a browser (`npm run dev` still fails here with workerd "Network connection lost").
+- 0.79.0 and 0.80.0 (B-160 step 2, B-187) and 0.77.1 to 0.77.3 (B-153, B-188) are released and on both servers; see CHANGELOG.
+- Waiting on the operator: category notes for the live support agent (`save_agent` `categoryNotes`, drafted in this session's chat 2026-11-02); the session's permission check refused the write, so it needs the operator's yes.
+
+**Exact next task:** B-186: restate the English and Russian queries per the week's measure (docs/evidence/backlog.md B-186). Then B-174's writers' table on its thread. Waits: B-83 (Fabric's delegation issuer, 2026-11-21); B-158 M2 and B-159 (SOT-B5, SCN-094's approval); B-189 (a person grades 20 answers); B-192 (read again 2026-11-10); B-196 (2026-11-14); B-72's AI panel turn by a person; B-106 a person's decision.
+
 **State 2026-11-02 (0.78.0: B-160 step 1; B-143, B-194, B-196, B-197 closed).**
 
 - **0.78.0** (PR #371, `d2e1bb4`, B-160 step 1): each mailbox a member is given is Read and send (the default, the reach before levels) or Read only; in a read-only mailbox reads pass and every change or send is refused with a sentence naming the level to ask for (`workers/lib/members.ts` `levels`, `writableOf`; `workers/lib/member-gate.ts` `readonly`, `readsOnly`; Settings → People; `save_member` `readOnly`; `/api/me` returns `levels`). Decisions L-1 to L-6 in [the organizations packet](tasks/2026-10-27-organizations.md) "Levels per mailbox"; SCN-081, SCN-082. The scale is posted on the board (thread `3d8417e2`). Copy checks `ff280d8b` (en), `1a05e487` (ru), `8fa9edb1` (CHANGELOG). Not walked in a browser: `npm run dev` fails on this machine with workerd "Network connection lost" while loading modules.
