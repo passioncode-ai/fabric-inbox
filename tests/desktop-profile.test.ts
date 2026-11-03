@@ -308,7 +308,7 @@ test("usage counts: a build without an App Key shows the switch unavailable and 
   const h = await boot({ config: { origin: A, accessOrigin: "" }, files: { [P]: [dirOf(A)] } });
   await h.settle();
   const items = h.menu()[0].submenu;
-  const share = items.find((i: any) => i.label === "Share Anonymous Usage Counts");
+  const share = items.find((i: any) => i.label === "Share Usage Details");
   assert.equal(share.type, "checkbox");
   assert.equal(share.enabled, false);
   assert.equal(share.checked, false);

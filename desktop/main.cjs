@@ -91,7 +91,7 @@ let cloudflareToken = null;
 let deploying = false;
 // Opened once after the first sign-in on a server the app just created.
 let openAfterSignIn = '';
-// Anonymous usage counts (docs/ANALYTICS.md): off unless this build carries an App Key.
+// Usage counts (docs/ANALYTICS.md): off unless this build carries an App Key; two tiers since B-198.
 let analytics = null;
 let launchedByLink = false;
 // Automatic updates (docs/desktop-data-and-updates.md): off unless this build carries a feed.
@@ -530,11 +530,14 @@ function loadMail() {
   loadTimer = setTimeout(failure, 30000);
   void win.loadURL(snapshot.origin).catch(failure);
 }
-/** Once a UTC day: the active event, with the server's counts when its window is signed in. */
+/**
+ * Once a UTC day: the active event. The server's counts are read only when the person said yes
+ * (B-198); without it the event says only whether a server window is open.
+ */
 async function countActive() {
   if (!analytics || !analytics.activeDue()) return;
   const signedIn = config && mailWindow && !mailWindow.isDestroyed();
-  const counts = signedIn ? await usage.countsWith(session.fromPartition(policy.partitionFor(config)), config.origin)() : null;
+  const counts = !signedIn ? null : analytics.countsWanted() ? await usage.countsWith(session.fromPartition(policy.partitionFor(config)), config.origin)() : {};
   await analytics.active(counts);
 }
 function track(name, props) { if (analytics) void analytics.event(name, props); }
@@ -797,20 +800,21 @@ async function toggleAnalytics(item) {
   if (!analytics) return;
   const ok = await analytics.setEnabled(!!item.checked);
   if (!ok && item.checked) {
-    await dialog.showMessageBox({ type: 'warning', title: t('Usage counts'), message: t('Usage counts could not be turned on.'),
-      detail: t('The shared PassionCode settings file on this Mac could not be read, so nothing is sent.'), buttons: [t('OK')] });
+    await dialog.showMessageBox({ type: 'warning', title: t('Usage counts'), message: t('Usage details could not be turned on.'),
+      detail: t('The shared PassionCode settings file on this Mac could not be read, so usage details are not sent.'), buttons: [t('OK')] });
   }
   installMenu();
   if (analytics.status().enabled) void countActive();
 }
-const usageCountsText = () => t('When this is on, Fabric Inbox tells PassionCode.ai that it was installed and opened, once a day that it was used, and how many Gmail accounts, Cloudflare mailboxes, agents and agent keys your server has. It never sends names, email addresses, domains, messages, keys or anything from your mail. The setting is shared by every PassionCode app on this Mac.');
+const usageCountsText = () => t('Fabric Inbox tells PassionCode.ai when it is opened, once a day that it was used, and when a server or a hub is connected. These counts carry no id and nothing is saved on your Mac for them. When usage details are on, Fabric Inbox also sends an id shared by the PassionCode apps on this Mac, that it was installed or updated, and how many Gmail accounts, Cloudflare mailboxes, agents and agent keys your server has. It never sends names, email addresses, domains, messages, keys or anything from your mail. The setting is shared by every PassionCode app on this Mac.');
 function aboutUsageCounts() {
-  void dialog.showMessageBox({ type: 'info', title: t('Usage counts'), message: t('Anonymous usage counts'), detail: usageCountsText(), buttons: [t('OK')] });
+  void dialog.showMessageBox({ type: 'info', title: t('Usage counts'), message: t('Usage counts'), detail: usageCountsText(), buttons: [t('OK')] });
 }
 /**
- * A7-012 (issue #45): until the person has answered once, nothing is counted or sent. The first time a
- * window comes forward this asks, with the switch on and Continue; Not now asks again at the next launch,
- * and the menu's Share Usage Counts is the other way to answer. Asked at most once a launch.
+ * A7-012 (issue #45): until the person has answered once, no id and nothing about the install is sent;
+ * the baseline counts without an id go anyway (B-198). The first time a window comes forward this asks,
+ * with the switch on and Continue; Not now asks again at the next launch, and the menu's Share Usage
+ * Details is the other way to answer. Asked at most once a launch.
  */
 let usageAsked = false;
 async function askUsageCounts(win) {
@@ -820,15 +824,15 @@ async function askUsageCounts(win) {
   usageAsked = true;
   const before = analytics.status().sentBefore;
   const { response, checkboxChecked } = await dialog.showMessageBox(win, { type: 'question', title: t('Usage counts'),
-    message: t('Share anonymous usage counts?'),
-    detail: `${usageCountsText()}\n\n${before ? t('This copy sent counts before it asked you; from now on it sends nothing until you answer.') : t('Nothing has been sent yet.')}`,
-    checkboxLabel: t('Share usage counts'), checkboxChecked: true, buttons: [t('Continue'), t('Not now')], defaultId: 0, cancelId: 1 });
+    message: t('Share usage details?'),
+    detail: `${usageCountsText()}\n\n${before ? t('This copy sent usage details before it asked you; from now on it sends them only after you answer.') : t('No usage details have been sent yet.')}`,
+    checkboxLabel: t('Share usage details'), checkboxChecked: true, buttons: [t('Continue'), t('Not now')], defaultId: 0, cancelId: 1 });
   if (response !== 0) { logEvent({ event: 'analytics_question', answer: 'later' }); return; }
   logEvent({ event: 'analytics_question', answer: checkboxChecked ? 'on' : 'off' });
   const ok = await analytics.setEnabled(!!checkboxChecked);
   if (!ok && checkboxChecked) {
-    await dialog.showMessageBox(win, { type: 'warning', title: t('Usage counts'), message: t('Usage counts could not be turned on.'),
-      detail: t('The shared PassionCode settings file on this Mac could not be read, so nothing is sent.'), buttons: [t('OK')] });
+    await dialog.showMessageBox(win, { type: 'warning', title: t('Usage counts'), message: t('Usage details could not be turned on.'),
+      detail: t('The shared PassionCode settings file on this Mac could not be read, so usage details are not sent.'), buttons: [t('OK')] });
   }
   installMenu();
   if (analytics.status().enabled) void countActive();

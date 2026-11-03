@@ -22,7 +22,7 @@ function menuTemplate(platform, ctx) {
     ...(ctx.serverUpdate ? [{ label: ctx.serverUpdate.label, enabled: ctx.serverUpdate.enabled, click: ctx.serverUpdate.click }] : []),
   ];
   const usage = [
-    { label: t('Share Anonymous Usage Counts'), type: 'checkbox', checked: ctx.usage.checked, enabled: ctx.usage.enabled, click: ctx.usage.click },
+    { label: t('Share Usage Details'), type: 'checkbox', checked: ctx.usage.checked, enabled: ctx.usage.enabled, click: ctx.usage.click },
     { label: t('About Usage Counts…'), click: ctx.usage.about },
   ];
   // Open at Login: on by default for an installed copy (the organization's lifecycle rule, 2026-10-16).
