@@ -136,7 +136,7 @@ function DesktopPanel() {
         <ul className="fi-facts">
           <li>{t.rich("{item} looks for a newer version now.", { item: <strong key="i">{t("Check for Updates…")}</strong> })}</li>
           <li>{t.rich("{item} downloads a new version in the background and installs it when the app quits.", { item: <strong key="i">{t("Install Updates Automatically")}</strong> })}</li>
-          <li>{t.rich("{share} and {about} say what is counted and turn it off or on.", { share: <strong key="s">{t("Share Anonymous Usage Counts")}</strong>, about: <strong key="a">{t("About Usage Counts…")}</strong> })}</li>
+          <li>{t.rich("{share} and {about} say what is counted and turn it off or on.", { share: <strong key="s">{t("Share Usage Details")}</strong>, about: <strong key="a">{t("About Usage Counts…")}</strong> })}</li>
           <li>{t.rich("{item} chooses the server this app opens.", { item: <strong key="i">{t("Server address…")}</strong> })}</li>
           <li>{t.rich("{item} saves your Cloudflare API token on your server.", { item: <strong key="i">{t("Connect Cloudflare account…")}</strong> })}</li>
           <li>{t.rich("{item} (⌘,) opens this screen.", { item: <strong key="i">{t("Settings…")}</strong> })}</li>

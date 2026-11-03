@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.84.0 (2026-11-03)
+
+- **Usage counts in two tiers.** The Mac app now counts starts, days of use and connected servers from the first
+  launch, with no id and nothing saved on your Mac for them. Usage details (an id shared by PassionCode apps, installs,
+  updates and how many accounts, mailboxes, agents and keys your server has) are sent only after you say yes. The menu
+  item is now Share Usage Details (B-198).
+
 ## 0.83.0 (2026-11-02)
 
 - **Try another writer in a preview.** `preview_agent_answer` takes `model`, an OpenRouter model id that writes

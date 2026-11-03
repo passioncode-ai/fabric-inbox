@@ -28,7 +28,7 @@ for (const platform of ["win32", "linux"]) test(`${platform}: File, Edit, Accoun
   const file = menu[0].submenu.map((i: any) => i.label ?? i.type);
   assert.deepEqual(file, ["Settings…", "Server address…", "Connect Cloudflare account…", "separator", "Quit Fabric Inbox"]);
   const help = menu[5].submenu.map((i: any) => i.label ?? i.type);
-  assert.deepEqual(help, ["Check for Updates…", "Install Updates Automatically", "separator", "Share Anonymous Usage Counts", "About Usage Counts…", "separator", "About Fabric Inbox"]);
+  assert.deepEqual(help, ["Check for Updates…", "Install Updates Automatically", "separator", "Share Usage Details", "About Usage Counts…", "separator", "About Fabric Inbox"]);
   assert.ok(menu[0].submenu.find((i: any) => i.role === "quit").accelerator === "Ctrl+Q");
 });
 

@@ -1,7 +1,10 @@
 'use strict';
 // Anonymous usage counts (passioncode-ai/fabric-inbox#27, docs/ANALYTICS.md): installs, days of
 // use and how many accounts, mailboxes, agents and agent keys a server has — never a name, an
-// address, a domain, a path, a message or a token. Events go to the organization's self-hosted
+// address, a domain, a path, a message or a token. Two tiers (B-198; the analytics server's client
+// contract, "Two tiers", operator decision 2026-11-03): the baseline (starts, days of use, connects)
+// needs no consent, carries no id and writes nothing on the Mac; the person's yes adds the shared
+// installation id, the install and update events and the server's counts. Events go to the organization's self-hosted
 // Aptabase in batches of at most 25 (the ingestion contract of the analytics server); its
 // address comes with the App Key, so the source names no host.
 //
@@ -23,6 +26,8 @@ const MAX_AGE_MS = 23 * 3600 * 1000;      // the server refuses events older tha
 const SESSION_IDLE_MS = 3600 * 1000;      // a new session after an hour without an event
 const RETRY_MS = [60 * 1000, 600 * 1000];
 const SEND_TIMEOUT_MS = 10 * 1000;
+/** Events of the baseline tier: no id, no state on the Mac, sent with or without the person's yes. */
+const BASELINE = new Set(['app_started', 'app_active', 'server_connected', 'hub_connected']);
 /** What a server's counts may hold; anything else is dropped before it is sent. */
 const COUNT_KEYS = ['gmail', 'cloudflare', 'agents', 'agent_keys'];
 
@@ -127,15 +132,19 @@ function createAnalytics(deps) {
   let retryAt = 0;
   let failures = 0;
   let flushing = null;
-  let state = { installed: false, activeDay: '', counts: null, version: '', disclosedAt: '' };
+  let state = { installed: false, activeDay: '', counts: null, version: '', disclosedAt: '', declined: false };
   // A7-012 (issue #45, Fabric ADR-0127): a start before the person answered the switch waits here.
   let deferred = null;
+  // B-198: the baseline tier runs whenever this build can send; its day of use is kept in memory only.
+  let baseline = false;
+  let baselineDay = '';
+  let baselineStarted = false;
 
   async function loadState() {
     try {
       const value = JSON.parse(await fs.readFile(stateFile(userData), 'utf8'));
       if (value && typeof value === 'object') state = { installed: value.installed === true, activeDay: typeof value.activeDay === 'string' ? value.activeDay : '', counts: value.counts && typeof value.counts === 'object' ? cleanCounts(value.counts) : null, version: typeof value.version === 'string' ? value.version.slice(0, 50) : '',
-        disclosedAt: typeof value.disclosedAt === 'string' ? value.disclosedAt.slice(0, 40) : '' };
+        disclosedAt: typeof value.disclosedAt === 'string' ? value.disclosedAt.slice(0, 40) : '', declined: value.declined === true };
     } catch { /* first run, or an unreadable state: start fresh */ }
   }
   async function saveState() {
@@ -154,8 +163,9 @@ function createAnalytics(deps) {
     session.at = at;
     return session.id;
   }
+  /** An identity event needs the person's yes; a baseline event goes without an id when there is none. */
   function track(eventName, props = {}) {
-    if (!installId) return false;
+    if (!installId && !(baseline && BASELINE.has(eventName))) return false;
     const at = now();
     queue.push({
       at,
@@ -163,7 +173,7 @@ function createAnalytics(deps) {
         timestamp: new Date(at).toISOString(), sessionId: sessionId(at), eventName,
         systemProps: { isDebug: environment !== 'production', locale: String(locale).slice(0, 10), osName, osVersion: String(osVersion).slice(0, 100),
           appVersion: String(appVersion).slice(0, 50), appBuildNumber: '', sdkVersion: SDK, engineName: 'Electron', engineVersion: String(engineVersion).slice(0, 30) },
-        props: { ...props, install_id: installId, iid: installId, environment },
+        props: installId ? { ...props, install_id: installId, iid: installId, environment } : { ...props, environment },
       },
     });
     if (queue.length > MAX_QUEUE) queue = queue.slice(queue.length - MAX_QUEUE);
@@ -181,7 +191,7 @@ function createAnalytics(deps) {
     finally { clearTimeout(timer); }
   }
   async function flushNow() {
-    while (installId && queue.length) {
+    while ((installId || baseline) && queue.length) {
       if (retryAt && now() < retryAt) return;
       const cutoff = now() - MAX_AGE_MS;
       queue = queue.filter(e => e.at >= cutoff);
@@ -205,7 +215,7 @@ function createAnalytics(deps) {
     return flushing;
   }
 
-  /** The start itself, once the switch is on and answered: the install once per app, then the start. */
+  /** The identity tier's start, once the switch is on and answered: the install once per app, then the start. */
   async function begin(installation, { launch = 'ordinary', serverConfigured = false, created } = {}) {
       installId = installation.value.id;
       // A start that waited for the answer keeps whether this app made the shared file at launch (review 2026-10-21).
@@ -217,14 +227,26 @@ function createAnalytics(deps) {
       // An update shows as the version this app last started as (automatic updates, docs/desktop-data-and-updates.md).
       if (state.version && state.version !== appVersion) track('app_updated', { from: state.version });
       if (state.version !== appVersion) { state.version = String(appVersion).slice(0, 50); await saveState(); }
-      track('app_started', { launch: launch === 'link' ? 'link' : 'ordinary' });
+      // A launch whose start already went out without an id is not counted twice (B-198).
+      if (!baselineStarted) track('app_started', { launch: launch === 'link' ? 'link' : 'ordinary' });
+      baselineStarted = true;
       await flush();
   }
+  /** The baseline tier's start: no id, nothing read or written beyond the shared switch's answer. */
+  async function beginBaseline({ launch = 'ordinary' } = {}) {
+    baseline = true;
+    if (!baselineStarted && track('app_started', { launch: launch === 'link' ? 'link' : 'ordinary' })) baselineStarted = true;
+    await flush();
+  }
 
-  /** The person's answer, from the first-run question or the menu switch: kept once per app (A7-012). */
-  async function disclose() {
-    if (state.disclosedAt) return;
-    state.disclosedAt = new Date(now()).toISOString();
+  /**
+   * The person's answer, from the first-run question or the menu switch: kept once per app (A7-012),
+   * with whether it was a no, since a no may leave no shared file to say so (B-198).
+   */
+  async function disclose(declined) {
+    if (state.disclosedAt && state.declined === declined) return;
+    if (!state.disclosedAt) state.disclosedAt = new Date(now()).toISOString();
+    state.declined = declined;
     await saveState();
   }
 
@@ -233,37 +255,53 @@ function createAnalytics(deps) {
      * Whether this build can send at all, whether it does now, whether it still waits for the person's
      * first answer (nothing is sent until then), and whether this install sent counts before it asked.
      */
-    status: () => ({ available: !!bundle, enabled: !!installId, pending: !!deferred, sentBefore: state.installed === true }),
+    status: () => ({ available: !!bundle, enabled: !!installId, pending: !!deferred, sentBefore: state.installed === true, baseline }),
 
     /**
-     * At launch. Until the person has answered the switch once (the first-run question or the menu),
-     * nothing is queued or sent, `app_installed` included: the start waits for the answer (A7-012).
+     * At launch. The baseline tier starts at once, with no id and nothing written (B-198). The identity
+     * tier waits until the person has answered the switch once (the first-run question or the menu):
+     * no id, no `app_installed` and no shared file is made before that answer (A7-012).
      */
     async start(options = {}) {
       if (!bundle || typeof send !== 'function') return;
-      let installation;
-      try { installation = await ensureInstallation({ fs, file: shared, uuid, now }); }
-      catch (error) { log({ event: 'analytics_off', reason: 'installation_not_written', code: error && error.code || 'error' }); return; }
-      if (installation.state !== 'ok') { log({ event: 'analytics_off', reason: 'installation_unreadable' }); return; }
       await loadState();
-      if (installation.value.analytics === false) return;
-      if (!state.disclosedAt) {
-        deferred = { ...options, created: installation.created };
+      const installation = await readInstallation(fs, shared);
+      if (installation.state === 'unreadable') log({ event: 'analytics_off', reason: 'installation_unreadable' });
+      const off = installation.state === 'ok' && installation.value.analytics === false;
+      if (!state.disclosedAt && installation.state !== 'unreadable' && !off) {
+        deferred = { ...options };
         log({ event: 'analytics_pending', reason: 'not_answered' });
+      }
+      if (installation.state === 'ok' && !off && state.disclosedAt) {
+        await begin({ ...installation, created: false }, options);
         return;
       }
-      await begin(installation, options);
+      if (state.disclosedAt && !state.declined && installation.state === 'missing') {
+        // Answered yes here, but the shared file is gone (another app's reset): made again, as before B-198.
+        let made;
+        try { made = await ensureInstallation({ fs, file: shared, uuid, now }); }
+        catch (error) { log({ event: 'analytics_off', reason: 'installation_not_written', code: error && error.code || 'error' }); made = null; }
+        if (made && made.state === 'ok') { await begin(made, options); return; }
+      }
+      await beginBaseline(options);
     },
 
     /** Whether today's active event is still due; a caller fetches counts only then. */
-    activeDue: () => !!installId && state.activeDay !== utcDay(now()),
+    activeDue: () => installId ? state.activeDay !== utcDay(now()) : baseline && baselineDay !== utcDay(now()),
+    /** Whether the server's counts are wanted: the identity tier only (B-198). */
+    countsWanted: () => !!installId,
 
     /**
      * Once a UTC day: `app_active` with the server's counts (when they could be read), and the
      * accounts added or removed since the last counts. The first counts are a baseline.
      */
     async active(counts) {
-      if (!installId) return;
+      if (!installId) {
+        // B-198: the baseline's day of use, kept in memory only and without the server's counts.
+        const day = utcDay(now());
+        if (baseline && baselineDay !== day && track('app_active', { server: !!counts })) { baselineDay = day; await flush(); }
+        return;
+      }
       const clean = counts ? cleanCounts(counts) : null;
       const day = utcDay(now());
       if (state.activeDay !== day) {
@@ -307,7 +345,7 @@ function createAnalytics(deps) {
         if (!installation || installation.state !== 'ok') { deferred = waiting; return false; }
         if (installation.value.analytics === false && !(await writeSwitch({ fs, file: shared, enabled: true }))) { deferred = waiting; return false; }
         await loadState();
-        await disclose();
+        await disclose(false);
         // The start that waited for this answer happens now, so the install is counted after it, not before.
         if (waiting) { await begin(installation, waiting); return true; }
         state.counts = null;
@@ -315,9 +353,13 @@ function createAnalytics(deps) {
         await saveState();
         return true;
       }
-      queue = [];
+      // Off drops what waits with the id; the baseline goes on without one (B-198).
+      queue = queue.filter(e => !e.body.props.iid);
       installId = null;
-      await disclose();
+      baseline = true;
+      await disclose(true);
+      // A no before any PassionCode app made the shared id: there is nothing to switch off, and none is made (B-198).
+      if ((await readInstallation(fs, shared)).state === 'missing') return true;
       return writeSwitch({ fs, file: shared, enabled: false }).catch(() => false);
     },
   };
