@@ -191,6 +191,15 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-03 (0.84.0: B-198; 0.83.0: B-174).**
+
+- **0.83.0** (PR #380, `e7ce955`): `preview_agent_answer` takes `model`; the writers' table over the support address's week is [the report](../reports/2026-11-02-writers-bench/README.md) (PR #381): no writer change, posted on thread `a8a46b34`.
+- **COMMERCIAL-LICENSE.md** matches the organization template again (board finding `8f945695`, PR #382, `8da9a1a`).
+- **0.84.0** (PR #383, `35fa0bf`, B-198): usage counts in two tiers on the operator's decision of 2026-11-03 (board thread `b2e5df1f`): the Mac app sends `app_started`, `app_active` and the connect events with no id and nothing written before the answer and after a no; a yes adds the shared id, installs, updates and the server's counts ([docs/ANALYTICS.md](../ANALYTICS.md) "Two tiers", SCN-048). Copy checks `0391870e`, `f18c6cbb`, `b506fb0a`. Both servers on `35fa0bf` (receipts `linked`). [v0.84.0](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v0.84.0) is published with 20 assets (run 41726592513); its `mas` job got no macOS runner and was cancelled, rerun as job 126235587507. Answered on the thread (message `429d88dd`).
+- The project board is watched every 15 minutes by this session until Fabric's CO-409 (2026-11-21, coordinator's rule, thread `44c43a06`); a new session sets its own watcher.
+
+**Exact next task:** the operator's approval of the support agent's category notes («добавь описания категорий агенту поддержки»), then `save_agent` with only that field changed. Then, on 2026-11-09, B-186 (`agent_prefetch_reasked` `answered`, the abstained share against 83%) and B-174 (after that week and B-189). Then the first counts with no id from 0.84.0 in the analytics server (`scripts/stats.sh 7 "Fabric Inbox"`) once installed copies update. Waits: B-83 (2026-11-21); B-158 M2 and B-159 (SOT-B5, SCN-094's approval); B-189 (a person grades 20 answers); B-192 (2026-11-10); B-196 (2026-11-14).
+
 **State 2026-11-02 (0.82.1: B-186).**
 
 - **0.82.0** (PR #377, `3688d09`, B-186): an English or Russian message a prefetched knowledge tool abstained on is asked once more as the model's restatement (one model call, only after an abstention; a failed restatement changes nothing). **0.82.1** (PR #378, `0e5ac6c`): a held message's retry on the same knowledge revision reaches the model when the restatement found the answer, instead of B-141's unchanged hold. Both servers on 0.82.1 (receipts `linked`). Copy checks `bcac9e47`, `1efc7e8e`. Posted on the voice-of-customer thread `a8a46b34` (message `eb77300d`): what held the queue and when to read it again (2026-11-09: `agent_prefetch_reasked` `answered`, the abstained share against 83%).
