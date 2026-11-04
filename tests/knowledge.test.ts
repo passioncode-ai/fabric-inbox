@@ -59,6 +59,7 @@ const bundle = await build({
             }};
         }
         async pump() { return this.alarm(); }
+        async staleNow(now) { await this.ctx.storage.delete('abandoned_check_at'); return this.superviseAbandoned(now); }
       }
       export { KnowledgeDO };
       const app = new Hono();
@@ -69,6 +70,7 @@ const bundle = await build({
         return c.json({ ok: true });
       });
       app.post('/pump', async (c) => { await c.env.AGENT_REGISTRY.getByName('workspace').pump(); return c.json({ ok: true }); });
+      app.post('/stale', async (c) => { await c.env.AGENT_REGISTRY.getByName('workspace').staleNow((await c.req.json()).now); return c.json({ ok: true }); });
       app.get('/runs', async (c) => c.json(await c.env.AGENT_REGISTRY.getByName('workspace').listRuns({})));
       app.get('/events', async (c) => c.json(await c.env.AGENT_REGISTRY.getByName('workspace').listEvents(null, 200)));
       app.get('/r2', async (c) => { const o = await c.env.BUCKET.get(c.req.query('key')); return new Response(o ? await o.text() : 'null'); });
@@ -157,6 +159,37 @@ test("documents are upserted by source: unchanged is a no-op, a new revision rep
     assert.ok(one.text.length > 0);
     assert.equal((await call(`/api/knowledge/collections/${id}/documents/${docs[0].id}`, "DELETE")).status, 204);
     assert.equal((await call(`/api/knowledge/collections/${id}`)).body.collection.source.project, "project:acme");
+  } finally { await mf.dispose(); }
+});
+
+test("B-199: a collection's age since its last batch, its declared limit, and one knowledge.stale event per episode", async () => {
+  const { mf, call } = await fixture();
+  try {
+    const made = (await call("/api/knowledge/collections", "POST", { name: "Docs", maxAgeHours: 2 })).body;
+    assert.deepEqual([made.maxAgeHours, made.stale], [2, false]);
+    assert.ok(made.ageHours < 0.1 && made.syncedAt);
+    for (const bad of [0, 9000, 1.5, "2"]) assert.equal((await call(`/api/knowledge/collections/${made.id}`, "PUT", { maxAgeHours: bad })).status, 400, String(bad));
+    const path = `/api/knowledge/collections/${made.id}/documents`;
+    await call(path, "POST", { documents: FAQ });
+    const [first] = (await call(`/api/knowledge/collections/${made.id}`)).body.documents;
+    assert.ok(first.checkedAt);
+    await new Promise((r) => setTimeout(r, 15));
+    await call(path, "POST", { documents: FAQ });
+    const [again] = (await call(`/api/knowledge/collections/${made.id}`)).body.documents;
+    assert.ok(again.checkedAt > first.checkedAt, "an unchanged document read again is confirmed, not left old");
+    assert.equal(again.updatedAt, first.updatedAt, "its change time stays");
+    const now = Date.now();
+    await call("/stale", "POST", { now: now + 3_600_000 });
+    const kinds = () => call("/events").then((r) => (r.body.events as any[]).filter((e) => e.kind === "knowledge.stale"));
+    assert.equal((await kinds()).length, 0, "within its limit");
+    await call("/stale", "POST", { now: now + 3 * 3_600_000 });
+    await call("/stale", "POST", { now: now + 4 * 3_600_000 });
+    const events = await kinds();
+    assert.equal(events.length, 1, "once per episode");
+    assert.deepEqual([events[0].level, events[0].data.value.collectionId, events[0].data.value.maxAgeHours], ["warning", made.id, 2]);
+    assert.equal((await call(`/api/knowledge/collections/${made.id}`, "PUT", { maxAgeHours: null })).body.maxAgeHours, null, "null clears the limit");
+    const named = (await call("/api/knowledge/collections")).body.collections.find((c: any) => c.id === made.id);
+    assert.equal(named.stale, false);
   } finally { await mf.dispose(); }
 });
 

@@ -86,6 +86,25 @@ export function documentRetracted(doc: { collectionId: string; id: string; revis
     data: { schema: KNOWLEDGE_EVENT_SCHEMA, value } };
 }
 
+/** B-199: a collection past its declared maximum age (standard 7.1); one per episode, which a new batch ends. */
+export interface KnowledgeStale {
+  ref: string;
+  source: "collection";
+  collectionId: string;
+  addresses: string[];
+  syncedAt: string;
+  maxAgeHours: number;
+  ageHours: number;
+  staleSince: string;
+}
+export function collectionStale(c: { id: string; name: string; syncedAt: string; maxAgeHours: number; ageHours: number }, addresses: string[], at: string): AgentEvent {
+  const staleSince = new Date(Date.parse(c.syncedAt) + c.maxAgeHours * 3_600_000).toISOString();
+  const value: KnowledgeStale = { ref: `collection:${c.id}@${c.syncedAt}`, source: "collection", collectionId: c.id, addresses,
+    syncedAt: c.syncedAt, maxAgeHours: c.maxAgeHours, ageHours: c.ageHours, staleSince };
+  return { at, kind: "knowledge.stale", level: "warning", text: `Knowledge collection "${c.name}" is ${Math.floor(c.ageHours)} hours old, past its limit of ${c.maxAgeHours}`,
+    link: `/settings/knowledge/${encodeURIComponent(c.id)}`, data: { schema: KNOWLEDGE_EVENT_SCHEMA, value } };
+}
+
 /** Appends the events; a failure is logged and never undoes the change it reports. */
 export async function publishKnowledge(env: Env, events: AgentEvent[]): Promise<void> {
   if (!events.length || !env.AGENT_REGISTRY) return;

@@ -19,6 +19,17 @@ const INITIAL = [
   `CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(text, title, tokenize = 'porter unicode61 remove_diacritics 2')`,
 ];
 
+/**
+ * B-199 (the channel-agent standard, 7.1): a collection's maximum age and when a batch last confirmed it, and when a
+ * batch last confirmed each document, changed or not. A row from before reads its age from `updated_at`.
+ */
+const FRESHNESS = [
+  `ALTER TABLE collections ADD COLUMN max_age_hours INTEGER`,
+  `ALTER TABLE collections ADD COLUMN synced_at TEXT`,
+  `ALTER TABLE documents ADD COLUMN checked_at TEXT`,
+];
+
 export const KNOWLEDGE_STEPS: readonly SchemaStep[] = [
   statements("1_initial", INITIAL),
+  statements("2_freshness", FRESHNESS),
 ];

@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { Env } from "../types";
-import { COLLECTION_ID, LIMITS } from "../knowledge/text";
+import { COLLECTION_ID, LIMITS, MAX_AGE_HOURS } from "../knowledge/text";
 import { msg } from "../../shared/i18n";
 import { actorOf } from "../lib/audit";
 import type { Standing } from "../lib/members";
@@ -64,6 +64,7 @@ export const CollectionInput = z.object({
     z.object({ kind: z.literal("manual") }).strict(),
     z.object({ kind: z.literal("fabric"), project: z.string().trim().min(1).max(120), scope: z.string().trim().max(200).optional() }).strict(),
   ]).optional(),
+  maxAgeHours: z.number().int().min(1).max(MAX_AGE_HOURS).nullable().optional(),
 }).strict();
 
 knowledgeRouter.post("/api/knowledge/collections", async (c) => {
@@ -86,11 +87,12 @@ knowledgeRouter.get("/api/knowledge/collections/:id", async (c) => {
   } catch (error) { return failure(c, error); }
 });
 
-export const CollectionChange = z.object({ name: z.string().trim().min(1).max(80).optional(), description: z.string().trim().max(500).optional() }).strict();
+export const CollectionChange = z.object({ name: z.string().trim().min(1).max(80).optional(), description: z.string().trim().max(500).optional(),
+  maxAgeHours: z.number().int().min(1).max(MAX_AGE_HOURS).nullable().optional() }).strict();
 knowledgeRouter.put("/api/knowledge/collections/:id", async (c) => {
   const parsed = CollectionChange
     .safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: msg("Name up to 80 characters, description up to 500") }, 400);
+  if (!parsed.success) return c.json({ error: msg("Name up to 80 characters, description up to 500, a maximum age of 1 to {max} hours", { max: MAX_AGE_HOURS }) }, 400);
   try { return c.json(await store(c).updateCollection(c.req.param("id"), parsed.data)); }
   catch (error) { return failure(c, error); }
 });

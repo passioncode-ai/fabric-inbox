@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.86.0 (2026-11-04)
+
+- **Knowledge that goes stale says so.** A knowledge collection can declare how old it may get since its last update.
+  `list_knowledge` shows each collection's age, and an event reports a collection past its limit once (B-199).
+- **Questions the knowledge has not answered.** `list_open_questions` lists them, oldest first, with their age and where
+  each gap was reported. A question open for 7 days is reported once (B-199).
+
 ## 0.85.0 (2026-11-04)
 
 - **How each message ended.** Every message a reply agent took now reads as one outcome: answered, answered after a
