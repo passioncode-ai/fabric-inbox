@@ -2,7 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { countError } from "../lib/error-counts";
+import { countError, countOk } from "../lib/error-counts";
 import { AttachmentValidationError, storedAttachmentName, validateAttachments, type MailAttachment } from '../../shared/mail/attachments';
 import { RENAME_TABLES, type RenameRow, type RenameTable } from "./rename-tables";
 import { DurableObject } from "cloudflare:workers";
@@ -188,6 +188,7 @@ export class MailboxDO extends DurableObject<Env> {
     this.sender = new OutboxCoordinator(this.outbox, {
       beforeEffect: () => this.ctx.storage.sync(),
       ended: (code) => { void countError(this.env, "send", code); },
+      accepted: () => { void countOk(this.env, "send", "accepted"); },
       transport: (payload: PreparedMail) => sendFromAccount(this.env, transportParams(payload)),
       project: async (payload: PreparedMail, row) => {
         const attachments: AttachmentData[] = [];

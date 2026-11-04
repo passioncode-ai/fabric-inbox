@@ -1663,6 +1663,15 @@ const getServerErrors = defineTool({
   call: (a, ctx) => get(ctx, "/api/server-errors", { day: a.day }),
 });
 
+const getOpsDigest = defineTool({
+  name: "get_ops_digest", title: "This server's hourly or daily digest", level: "admin", readOnly: true,
+  description: "This server's operations summed up for one closed UTC hour (hour, YYYY-MM-DDTHH) as ops.digest.hourly@1 or one closed UTC day (day, YYYY-MM-DD, default yesterday) as ops.digest.daily@1 (Fabric's ADR-0188, the contract's DEC-0153): per operation (class.code) how many ended ok, failed or unknown, the totals, and the operations whose failures rose (10 or more and at least twice the hour before). Failures of every class are counted; successes only of messages received, reply agents' runs and accepted sends (a request is counted only when it fails). The last 14 days are kept. Counts only.",
+  input: { hour: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}$/).optional().describe("A closed UTC hour, YYYY-MM-DDTHH"),
+    day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("A closed UTC day, YYYY-MM-DD; default yesterday") },
+  routes: ["GET /api/ops-digest"],
+  call: (a, ctx) => get(ctx, "/api/ops-digest", { hour: a.hour, day: a.day }),
+});
+
 const listAgentEvals = defineTool({
   name: "list_agent_evals", title: "A reply agent's eval tickets", level: "read", readOnly: true, target: (a) => a.agentId,
   description: "The agent's eval tickets (B-199): invented messages kept from what it got wrong (an answer judged unhelpful, a message left unanswered or expired, or one handed to a person while its knowledge had the answer), each the model's paraphrase without personal details, plus those a person wrote. Each runs through the preview after every new version of the agent; its last result says pass, fail or error against which version, what the preview did and the first characters of its reply. A ticket that starts failing raises agent.eval_failed once. The summary counts them against the current version.",
@@ -2224,7 +2233,7 @@ const revokeAgentKey = defineTool({
 
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, decideHeldMessage, listFolders, getSendStatus,
-  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, getServerErrors, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
+  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, getServerErrors, getOpsDigest, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,

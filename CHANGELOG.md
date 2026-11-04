@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.93.0 (2026-11-04)
+
+- **The server sums up its own work too.** Every hour your server counts the messages it received, the replies its
+  agents finished, the sends that went out and every error, and sums up an hour or a day when asked: from an agent
+  with Get Ops Digest. Only counts are kept, for 14 days, never what the mail was about (B-205).
+
 ## 0.92.0 (2026-11-04)
 
 - **The app sums up its own log.** Every hour and every day, Fabric Inbox counts what its log recorded, by event and

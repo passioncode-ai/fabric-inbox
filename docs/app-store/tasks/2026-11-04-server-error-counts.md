@@ -83,3 +83,12 @@ DEC-0153). The Mac app writes them since 0.92.0 (`desktop/ops-digest.cjs`). The 
 4. **Checks.** The answers pass the contract's closed schemas and, once DEC-0153 is merged, `pnpm validate`
    (FAC-SEM-166, 167). Sending the daily digest anywhere waits for Observatory's intake (OBS-330, its proposal due
    2026-11-10) and is not part of this step.
+
+**Built in 0.93.0.** As designed, with three differences. An alarm step's success is not counted: the alarm runs every
+few minutes per mailbox, and its successes would outnumber everything else while saying nothing new. The fold lives in
+`workers/lib/ops-digest.ts`, a typed copy of the app's rule (the app's is CommonJS in the Electron main process, which
+the Worker's build does not read); both follow e1eecec0, and each has its own rise tests. An error
+counted with a code such as `transport_outcome_unknown` is counted as `failed`, not `unknown`: the server has no third
+outcome of its own yet. Code: `workers/mcp/ledger.ts` (step `5_ops_hourly`, `countOp`, `opsHours`),
+`workers/lib/error-counts.ts (countOk)`, `workers/routes/server-errors.ts` (`GET /api/ops-digest`), tool
+`get_ops_digest`; tests `tests/server-ops-digest.test.ts`.
