@@ -5,6 +5,11 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.93.1 (2026-11-04)
+
+- **A day with nothing counted says so.** Asking your server for the summary of a day on which it counted nothing now
+  answers that nothing was counted, instead of an empty summary that Fabric's form does not accept (B-205).
+
 ## 0.93.0 (2026-11-04)
 
 - **The server sums up its own work too.** Every hour your server counts the messages it received, the replies its

@@ -886,5 +886,6 @@ export const SERVER: Readonly<Record<string, string>> = {
 	// The server's own error counts (workers/routes/server-errors.ts; B-203)
 	"The day is a UTC date of the last {days} days, as YYYY-MM-DD": "День задаётся датой UTC за последние {days} дней в формате ГГГГ-ММ-ДД",
 	"The error counts could not be read right now": "Не удалось прочитать счётчики ошибок, попробуйте позже",
+	"Nothing was counted on {day}": "За {day} ничего не посчитано",
 	"Ask for a closed UTC hour as YYYY-MM-DDTHH or a closed UTC day as YYYY-MM-DD, of the last {days} days": "Укажите завершившийся час UTC в формате ГГГГ-ММ-ДДTЧЧ или завершившийся день UTC в формате ГГГГ-ММ-ДД за последние {days} дней",
 };

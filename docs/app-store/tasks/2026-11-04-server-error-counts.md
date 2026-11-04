@@ -92,3 +92,7 @@ counted with a code such as `transport_outcome_unknown` is counted as `failed`, 
 outcome of its own yet. Code: `workers/mcp/ledger.ts` (step `5_ops_hourly`, `countOp`, `opsHours`),
 `workers/lib/error-counts.ts (countOk)`, `workers/routes/server-errors.ts` (`GET /api/ops-digest`), tool
 `get_ops_digest`; tests `tests/server-ops-digest.test.ts`.
+
+**0.93.1.** A day with nothing counted answers 404 ("Nothing was counted on {day}") instead of a daily digest with
+`hours: 0`: DEC-0153's closed schema takes 1 to 24 hours, and a check of the server's answers against it (ajv 2020,
+schemas at a0e7b53d) found the empty day the only one refused.

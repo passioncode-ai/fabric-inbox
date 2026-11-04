@@ -1665,7 +1665,7 @@ const getServerErrors = defineTool({
 
 const getOpsDigest = defineTool({
   name: "get_ops_digest", title: "This server's hourly or daily digest", level: "admin", readOnly: true,
-  description: "This server's operations summed up for one closed UTC hour (hour, YYYY-MM-DDTHH) as ops.digest.hourly@1 or one closed UTC day (day, YYYY-MM-DD, default yesterday) as ops.digest.daily@1 (Fabric's ADR-0188, the contract's DEC-0153): per operation (class.code) how many ended ok, failed or unknown, the totals, and the operations whose failures rose (10 or more and at least twice the hour before). Failures of every class are counted; successes only of messages received, reply agents' runs and accepted sends (a request is counted only when it fails). The last 14 days are kept. Counts only.",
+  description: "This server's operations summed up for one closed UTC hour (hour, YYYY-MM-DDTHH) as ops.digest.hourly@1 or one closed UTC day (day, YYYY-MM-DD, default yesterday) as ops.digest.daily@1 (Fabric's ADR-0188, the contract's DEC-0153): per operation (class.code) how many ended ok, failed or unknown, the totals, and the operations whose failures rose (10 or more and at least twice the hour before). Failures of every class are counted; successes only of messages received, reply agents' runs and accepted sends (a request is counted only when it fails). The last 14 days are kept; a day with nothing counted answers 404 (the contract's daily digest folds 1 to 24 hours). Counts only.",
   input: { hour: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}$/).optional().describe("A closed UTC hour, YYYY-MM-DDTHH"),
     day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("A closed UTC day, YYYY-MM-DD; default yesterday") },
   routes: ["GET /api/ops-digest"],
