@@ -136,7 +136,7 @@ test("an installation made by another PassionCode app is read, never overwritten
   assert.equal(srv.events()[0].props.install_id, id);
   assert.equal(await a.setEnabled(false), true);
   const off = JSON.parse(readFileSync(m.shared, "utf8"));
-  assert.deepEqual(off, { version: 1, id, analytics: false, created_at: 1, switchboard: { note: "kept" } });
+  assert.deepEqual(off, { version: 1, id, analytics: true, created_at: 1, switchboard: { note: "kept" } }, "B-200: this product's switch is its own; the shared file is not rewritten");
 });
 
 test("two apps creating the file at the same moment end with one id: the loser reads the winner's", async () => {
@@ -171,28 +171,36 @@ test("a broken installation file is never repaired: the id stays off, the baseli
   }
 });
 
-test("analytics: false in the shared file is the one switch: no id is sent until it is turned on again", async () => {
+test("B-200: another app's shared switch no longer turns this product off; an answer kept before B-198 with it off stays a no, and off sends nothing", async () => {
+  // A fresh install of this app (never shown the notice): another app's off does not stop it.
+  const fresh = machine({ answered: false });
+  mkdirSync(path.dirname(fresh.shared), { recursive: true });
+  const id = randomUUID();
+  writeFileSync(fresh.shared, JSON.stringify({ version: 1, id, analytics: false, created_at: 1, fabric: true }));
+  const f = client(fresh);
+  await f.a.start({});
+  assert.deepEqual(f.srv.events().map((e) => [e.eventName, e.props.iid]), [["app_installed", id], ["app_started", id]]);
+  assert.deepEqual(JSON.parse(readFileSync(fresh.shared, "utf8")).analytics, false, "the other app's switch is left as it is");
+  // This app answered no before B-198 (disclosedAt kept, the shared switch it wrote is off): still a no.
   const m = machine();
   mkdirSync(path.dirname(m.shared), { recursive: true });
-  const id = randomUUID();
   writeFileSync(m.shared, JSON.stringify({ version: 1, id, analytics: false, created_at: 1, fabric: true }));
   const { a, srv } = client(m);
   await a.start({});
   await a.active({ gmail: 1 });
   await a.event("server_connected", { method: "entered" });
-  // B-198: the baseline goes out with no id and no counts.
-  assert.deepEqual(srv.events().map((e) => e.eventName), ["app_started", "app_active", "server_connected"]);
-  assert.ok(srv.events().every((e) => !("iid" in e.props) && !("install_id" in e.props) && !("gmail" in e.props)));
-  assert.deepEqual(a.status(), { available: true, enabled: false, pending: false, sentBefore: false, baseline: true });
+  assert.equal(srv.batches.length, 0, "off is off: not even the baseline with no id");
+  assert.deepEqual(a.status(), { available: true, enabled: false, pending: false, sentBefore: false, baseline: false });
+  assert.equal(JSON.parse(readFileSync(path.join(m.userData, "analytics-state.json"), "utf8")).declined, true, "the old no is kept as this product's own");
   assert.equal(await a.setEnabled(true), true);
-  assert.deepEqual(JSON.parse(readFileSync(m.shared, "utf8")), { version: 1, id, analytics: true, created_at: 1, fabric: true });
+  assert.deepEqual(JSON.parse(readFileSync(m.shared, "utf8")).analytics, false, "turning it on here writes nothing shared");
   await a.active({ gmail: 3 });
-  // Turned on: today's active event with the id, and the counts are a fresh baseline (nothing "added" while off).
-  const after = srv.events().slice(3);
-  assert.deepEqual(after.map((e) => [e.eventName, e.props.iid, e.props.gmail]), [["app_active", id, 3]]);
+  const after = srv.events();
+  assert.deepEqual(after.map((e) => e.eventName), ["app_installed", "app_started", "app_active"], "turned on: the install and this launch are counted then");
+  assert.ok(after.every((e) => e.props.iid === id));
 });
 
-test("turning it off drops what is waiting with the id; the baseline goes on without one (B-198)", async () => {
+test("turning it off drops everything waiting and sends nothing more (B-200)", async () => {
   const m = machine();
   const srv = server([503]);
   const { a, advance } = client(m, { server: srv });
@@ -200,11 +208,9 @@ test("turning it off drops what is waiting with the id; the baseline goes on wit
   assert.equal(srv.batches.length, 1, "the first send was refused and kept");
   await a.setEnabled(false);
   await a.event("server_connected", { method: "created" });
-  await a.wake();
-  assert.equal(srv.batches.length, 1, "nothing leaves before the wait is over");
   advance(61 * 1000);
   await a.wake();
-  assert.deepEqual(srv.batches[1].map((e: any) => [e.eventName, e.props.iid]), [["server_connected", undefined]], "only the event without an id");
+  assert.equal(srv.batches.length, 1, "nothing more leaves");
 });
 
 test("events carry counts and the installation id, never a planted address, domain, name or key", async () => {
@@ -339,72 +345,66 @@ test("a development run has its own app name, so its cookie key lives in its own
   assert.match(main, /app\.setName\(app\.isPackaged \? 'Fabric Inbox' : 'Fabric Inbox Development'\);/);
 });
 
-test("A7-012 and B-198: before the person answers only the baseline goes, with no id and nothing written; a yes adds the id, a no keeps the baseline", async () => {
+test("B-200: on by default from the first launch, with the notice still to show; Turn Off sends nothing more, and the choice is this product's", async () => {
   const m = machine({ answered: false });
-  const { a, srv, lines, advance } = client(m);
+  const { a, srv, lines } = client(m);
   await a.start({ serverConfigured: true });
-  assert.equal(a.activeDue(), true);
-  assert.equal(a.countsWanted(), false, "the server's counts are not read without a yes");
-  await a.active({ gmail: 1 });
-  assert.equal(a.activeDue(), false, "once a UTC day, kept in memory");
-  await a.active({ gmail: 1 });
-  await a.event("server_connected", { method: "entered" });
-  await a.event("account_added", { provider: "gmail" });
-  a.wake();
-  const before = srv.events();
-  assert.deepEqual(before.map((e: any) => e.eventName), ["app_started", "app_active", "server_connected"], "no app_installed, no account events");
-  for (const e of before) {
-    assert.deepEqual(Object.keys(e.props).sort(), e.eventName === "app_started" ? ["environment", "launch"] : e.eventName === "app_active" ? ["environment", "server"] : ["environment", "method"]);
-    assert.equal(e.props.environment, "production");
-  }
-  assert.equal(existsSync(m.shared), false, "no shared id is made before the answer");
-  assert.equal(existsSync(path.join(m.userData, "analytics-state.json")), false, "nothing is written on the Mac before the answer");
-  assert.deepEqual(a.status(), { available: true, enabled: false, pending: true, sentBefore: false, baseline: true });
-  assert.ok(lines.some((l) => l.event === "analytics_pending"));
-  // Yes: the install is counted now, with the id; this launch's start already went out, so it is not counted twice.
-  assert.equal(await a.setEnabled(true), true);
-  const after = srv.events().slice(before.length);
-  assert.deepEqual(after.map((e: any) => e.eventName), ["app_installed"]);
-  assert.equal(after[0].props.first_passioncode_app, true, "this app made the shared file, at the answer");
-  assert.equal(after[0].props.iid, JSON.parse(readFileSync(m.shared, "utf8")).id);
+  const file = JSON.parse(readFileSync(m.shared, "utf8"));
+  assert.deepEqual(srv.events().map((e: any) => [e.eventName, e.props.iid]), [["app_installed", file.id], ["app_started", file.id]], "the details start at launch");
+  assert.equal(srv.events()[0].props.first_passioncode_app, true);
+  assert.deepEqual(a.status(), { available: true, enabled: true, pending: true, sentBefore: true, baseline: false }, "the notice is still to show");
+  assert.ok(lines.some((l) => l.event === "analytics_notice"));
   assert.equal(a.countsWanted(), true);
-  advance(DAY);
-  await a.active({ gmail: 2 });
-  assert.deepEqual(srv.events().pop().props.gmail, 2, "the counts go with the id");
+  await a.noticeShown();
   assert.equal(a.status().pending, false);
-  const again = client(m, { server: server() });
-  await again.a.start({});
-  assert.equal(again.a.status().pending, false);
-  assert.deepEqual(again.srv.events().map((e: any) => [e.eventName, !!e.props.iid]), [["app_started", true]], "installed once per app");
-
-  // No: no id is ever sent, the baseline goes on, and the answer is kept too.
-  const n = machine({ answered: false });
-  const no = client(n);
-  await no.a.start({});
-  assert.equal(await no.a.setEnabled(false), true);
-  await no.a.active({ gmail: 1 });
-  assert.deepEqual(no.srv.events().map((e: any) => [e.eventName, e.props.iid, e.props.gmail]), [["app_started", undefined, undefined], ["app_active", undefined, undefined]]);
-  const later = client(n);
+  assert.ok(JSON.parse(readFileSync(path.join(m.userData, "analytics-state.json"), "utf8")).disclosedAt, "shown once, kept");
+  // Turn Off: what waits is dropped and nothing more leaves, the baseline included.
+  assert.equal(await a.setEnabled(false), true);
+  await a.event("server_connected", { method: "entered" });
+  await a.error("main", "TypeError");
+  await a.active(null);
+  assert.equal(srv.events().length, 2, "nothing after Turn Off");
+  assert.equal(JSON.parse(readFileSync(m.shared, "utf8")).analytics, true, "the shared file is not switched off");
+  const later = client(m);
   await later.a.start({});
-  assert.deepEqual(later.a.status(), { available: true, enabled: false, pending: false, sentBefore: false, baseline: true }, "answered, and off");
-  assert.deepEqual(later.srv.events().map((e: any) => [e.eventName, e.props.iid]), [["app_started", undefined]]);
+  assert.deepEqual(later.a.status(), { available: true, enabled: false, pending: false, sentBefore: true, baseline: false }, "off, and not shown the notice again");
+  assert.equal(later.srv.batches.length, 0);
 });
 
-test("A7-012: an install that sent counts before this rule is asked once and is not counted as a new install; an unreadable state asks again", async () => {
+test("B-200: an install from before is on by default and shown the notice once; an unreadable state starts on and shows it again", async () => {
   const m = machine({ answered: false });
   writeFileSync(path.join(m.userData, "analytics-state.json"), JSON.stringify({ installed: true, version: "0.10.0" }));
   const { a, srv } = client(m);
   await a.start({});
-  assert.deepEqual(a.status(), { available: true, enabled: false, pending: true, sentBefore: true, baseline: true });
-  assert.deepEqual(srv.events().map((e: any) => [e.eventName, e.props.iid]), [["app_started", undefined]], "the baseline only");
-  await a.setEnabled(true);
-  assert.deepEqual(srv.events().map((e: any) => e.eventName), ["app_started"], "no second app_installed, no second start");
+  assert.deepEqual(srv.events().map((e: any) => e.eventName), ["app_started"], "no second app_installed");
+  assert.ok(srv.events()[0].props.iid);
+  assert.equal(a.status().pending, true);
   const broken = machine({ answered: false });
   writeFileSync(path.join(broken.userData, "analytics-state.json"), "{not json");
   const b = client(broken);
   await b.a.start({});
   assert.equal(b.a.status().pending, true);
-  assert.deepEqual(b.srv.events().map((e: any) => [e.eventName, e.props.iid]), [["app_started", undefined]]);
+  assert.equal(b.a.status().enabled, true);
+});
+
+test("B-200: an error is counted once per launch by where and code, as a code only, with the details on", async () => {
+  const { a, srv } = client(machine());
+  await a.start({});
+  await a.error("main", "ERR_SOMETHING /srv/data/secret.txt");
+  await a.error("main", "ERR_SOMETHING /srv/data/secret.txt");
+  await a.error("renderer", "crashed");
+  const errors = srv.events().filter((e: any) => e.eventName === "app_error");
+  assert.deepEqual(errors.map((e: any) => [e.props.where, e.props.code]), [["main", "ERR_SOMETHING__srv_data_secret.txt"], ["renderer", "crashed"]]);
+  assert.ok(errors.every((e: any) => e.props.iid));
+});
+
+test("B-200: the Mac app watches crashes without changing how they are handled, and shows a notice with OK and Turn Off", () => {
+  const main = readFileSync("desktop/main.cjs", "utf8");
+  assert.match(main, /process\.on\('uncaughtExceptionMonitor'/);
+  assert.doesNotMatch(main, /process\.on\('uncaughtException'/);
+  assert.match(main, /app\.on\('render-process-gone'/);
+  assert.match(main, /app\.on\('child-process-gone'/);
+  assert.match(main, /buttons: \[t\('OK'\), t\('Turn Off'\)\]/);
 });
 
 test("review 2026-10-21: the operating system is named for the platform the app runs on", async () => {

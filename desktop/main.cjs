@@ -541,8 +541,18 @@ async function countActive() {
   await analytics.active(counts);
 }
 function track(name, props) { if (analytics) void analytics.event(name, props); }
+/**
+ * B-200: crashes the app notices, counted with the usage data when it is on: the main process's uncaught exceptions
+ * (observed only, the default handling stays), and a renderer or helper process that went away. Codes only.
+ */
+function watchErrors() {
+  process.on('uncaughtExceptionMonitor', (error) => { if (analytics) void analytics.error('main', (error && (error.code || error.name)) || 'error'); });
+  app.on('render-process-gone', (_event, _contents, details) => { if (analytics && details.reason !== 'clean-exit') void analytics.error('renderer', details.reason); });
+  app.on('child-process-gone', (_event, details) => { if (analytics && details.reason !== 'clean-exit') void analytics.error(String(details.type || 'helper').toLowerCase(), details.reason); });
+}
 async function startAnalytics() {
   if (!app.isPackaged) return;
+  watchErrors();
   let bundle = null;
   try { bundle = usage.readBundledKey(await fs.readFile(path.join(__dirname, 'analytics.json'), 'utf8')); } catch { bundle = null; }
   if (!bundle) return;
@@ -806,36 +816,28 @@ async function toggleAnalytics(item) {
   installMenu();
   if (analytics.status().enabled) void countActive();
 }
-const usageCountsText = () => t('Fabric Inbox tells PassionCode.ai when it is opened, once a day that it was used, and when a server or a hub is connected. These counts carry no id and nothing is saved on your Mac for them. When usage details are on, Fabric Inbox also sends an id shared by the PassionCode apps on this Mac, that it was installed or updated, and how many Gmail accounts, Cloudflare mailboxes, agents and agent keys your server has. It never sends names, email addresses, domains, messages, keys or anything from your mail. The setting is shared by every PassionCode app on this Mac.');
+const usageCountsText = () => t('Fabric Inbox sends PassionCode.ai anonymous usage and error data, so we can improve it: when it is opened and used, when a server or a hub is connected, that it was installed or updated, how many Gmail accounts, Cloudflare mailboxes, agents and agent keys your server has, and when part of the app stopped with an error. An id shared by the PassionCode apps on this computer counts one person once. It never sends names, email addresses, domains, messages, keys or anything from your mail. You can turn it off any time with Share Usage Details in the menu; that turns it off for Fabric Inbox only, and then nothing is sent.');
 function aboutUsageCounts() {
   void dialog.showMessageBox({ type: 'info', title: t('Usage counts'), message: t('Usage counts'), detail: usageCountsText(), buttons: [t('OK')] });
 }
 /**
- * A7-012 (issue #45): until the person has answered once, no id and nothing about the install is sent;
- * the baseline counts without an id go anyway (B-198). The first time a window comes forward this asks,
- * with the switch on and Continue; Not now asks again at the next launch, and the menu's Share Usage
- * Details is the other way to answer. Asked at most once a launch.
+ * B-200 (operator 2026-11-04): usage and error data are on by default, for installs already out too. The first time
+ * a window comes forward a notice says what is sent, with OK and Turn Off; the menu's Share Usage Details turns it off
+ * or on for Fabric Inbox only. Shown once; it waits while a hub's connect dialog is open.
  */
 let usageAsked = false;
 async function askUsageCounts(win) {
   if (usageAsked || !analytics || !analytics.status().pending || !win || win.isDestroyed()) return;
-  // Review 2026-10-21: a hub's Allow/Deny comes first; the question waits until it is answered.
+  // Review 2026-10-21: a hub's Allow/Deny comes first; the notice waits until it is answered.
   if (connecting || pendingLinks.length) return;
   usageAsked = true;
-  const before = analytics.status().sentBefore;
-  const { response, checkboxChecked } = await dialog.showMessageBox(win, { type: 'question', title: t('Usage counts'),
-    message: t('Share usage details?'),
-    detail: `${usageCountsText()}\n\n${before ? t('This copy sent usage details before it asked you; from now on it sends them only after you answer.') : t('No usage details have been sent yet.')}`,
-    checkboxLabel: t('Share usage details'), checkboxChecked: true, buttons: [t('Continue'), t('Not now')], defaultId: 0, cancelId: 1 });
-  if (response !== 0) { logEvent({ event: 'analytics_question', answer: 'later' }); return; }
-  logEvent({ event: 'analytics_question', answer: checkboxChecked ? 'on' : 'off' });
-  const ok = await analytics.setEnabled(!!checkboxChecked);
-  if (!ok && checkboxChecked) {
-    await dialog.showMessageBox(win, { type: 'warning', title: t('Usage counts'), message: t('Usage details could not be turned on.'),
-      detail: t('The shared PassionCode settings file on this Mac could not be read, so usage details are not sent.'), buttons: [t('OK')] });
-  }
+  const { response } = await dialog.showMessageBox(win, { type: 'info', title: t('Usage counts'),
+    message: t('Fabric Inbox shares anonymous usage and error data'),
+    detail: usageCountsText(), buttons: [t('OK'), t('Turn Off')], defaultId: 0, cancelId: 0 });
+  await analytics.noticeShown();
+  logEvent({ event: 'analytics_notice', answer: response === 1 ? 'off' : 'ok' });
+  if (response === 1) await analytics.setEnabled(false);
   installMenu();
-  if (analytics.status().enabled) void countActive();
 }
 function queueLink(url) {
   if (typeof url !== 'string' || !url.startsWith(`${connector.SCHEME}:`)) return;

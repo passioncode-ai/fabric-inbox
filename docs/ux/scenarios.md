@@ -1055,23 +1055,23 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 ### SCN-048: Turn the usage details off or on
 - **Persona:** P-01
 - **Feature:** Resume and manage preferences
-- **Traces:** ST-007, FLW-07, JTBD-03; passioncode-ai/fabric-inbox#27, #45 (A7-012); B-198 (operator decision 2026-11-03: counts without consent by default, consent adds the details)
+- **Traces:** ST-007, FLW-07, JTBD-03; passioncode-ai/fabric-inbox#27, #45 (A7-012); B-198 (operator decision 2026-11-03: counts without consent by default, consent adds the details); B-200 (operator decision 2026-11-04: on by default with a notice, off per product)
 - **Entry point:** The app menu, Fabric Inbox → Share Usage Details (a checkmark) and About Usage Counts…
 - **Preconditions:** A released disk image (it carries the App Key); no PassionCode app has turned the shared switch off.
 - **Steps:**
-  0. The person opens the app -> counts with no id go at once (opened, a day of use, a server or hub connected; nothing saved on the Mac for them). The first time a window comes forward -> a native question, Share usage details?, says what is always counted, what the details add, and that no details have been sent yet, with the switch on and Continue or Not now -> Continue keeps the answer (on or off) and only then is the shared id used and the install counted; Not now asks again at the next launch (#45).
-  1. The person opens About Usage Counts… -> a native notice says what is always sent without an id (opened, a day of use, a server or hub connected), what the details add (the id shared by the PassionCode apps on this Mac, installed or updated, how many Gmail accounts, Cloudflare mailboxes, agents and agent keys) and what never is (names, addresses, domains, messages, keys), and that the setting is shared by every PassionCode app on this Mac.
-  2. They clear the checkmark -> the shared file says `analytics: false`, events waiting with the id are dropped, and no id or count of the server is sent by this app or by any other PassionCode app on the Mac; the counts with no id go on.
+  0. The person opens the app -> usage and error data go at once, on by default (B-200, operator 2026-11-04). The first time a window comes forward -> a native notice, Fabric Inbox shares anonymous usage and error data, says what is sent and how to turn it off, with OK and Turn Off -> OK keeps it on; Turn Off turns the details off for Fabric Inbox only; either way it is not shown again. A person who turned it off before keeps it off.
+  1. The person opens About Usage Counts… -> a native notice says what is sent (when it is opened and used, a server or hub connected, installed or updated, how many Gmail accounts, Cloudflare mailboxes, agents and agent keys, and errors, with an id shared by the PassionCode apps on this computer), what never is (names, addresses, domains, messages, keys), that the switch turns it off for Fabric Inbox only, and that with it off nothing is sent.
+  2. They clear the checkmark -> the details are off for Fabric Inbox only (other PassionCode apps keep their own switch), every event still waiting is dropped, and nothing more is sent.
   3. They set it again -> the details resume from that moment; nothing done while it was off is reported.
-- **Expected result:** The person knows what leaves the Mac, nothing that identifies the Mac leaves without their yes, and one switch for the details is honoured by every PassionCode app.
+- **Expected result:** The person knows what leaves the computer, is told once at the first launch, and can turn the details off for Fabric Inbox alone at any time.
 - **Alt paths:** A build from source or the Mac App Store package: the checkmark is shown unavailable and nothing is sent. The shared file cannot be read (damaged): the checkmark cannot be set, a notice says usage details are not sent, the counts with no id go on, and the file is left as it is.
-- **UI elements:** First-run question (native, with a checkbox, Continue and Not now), app menu checkbox item, About Usage Counts… item, native notice.
+- **UI elements:** First-run notice (native, OK and Turn Off), app menu checkbox item, About Usage Counts… item, native notice.
 - **States covered:** empty, error, success
 - **Errors & recovery:** The shared file is damaged: the details stay off and the notice says so; the person can remove the file to start fresh. The server is unreachable: events wait in memory (at most 23 hours) and are sent when it answers; nothing blocks the window.
 - **Status:** draft
 - **Coverage:** desktop/analytics.cjs, desktop/main.cjs, tests/desktop-analytics.test.ts, tests/desktop-profile.test.ts
 - **Product:** unobserved
-- **Today:** Built 2026-10-05 for 0.10.0 (docs/ANALYTICS.md); the switch is the one Fabric Switchboard shipped first. Two tiers since 0.84.0 (B-198).
+- **Today:** Built 2026-10-05 for 0.10.0 (docs/ANALYTICS.md). Two tiers since 0.84.0 (B-198); on by default with a notice, per product, errors counted, since 0.87.0 (B-200).
 
 ### SCN-049: The app keeps itself up to date
 - **Persona:** P-01

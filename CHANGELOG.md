@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.87.0 (2026-11-04)
+
+- **Usage and error data are on by default.** Fabric Inbox now sends anonymous usage and error data from the first
+  launch, and says so once in a notice with OK and Turn Off. Share Usage Details turns it off for Fabric Inbox only.
+  If you turned it off before, it stays off (B-200).
+
 ## 0.86.0 (2026-11-04)
 
 - **Knowledge that goes stale says so.** A knowledge collection can declare how old it may get since its last update.

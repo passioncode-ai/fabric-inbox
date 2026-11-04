@@ -13,35 +13,34 @@ organization's self-hosted Aptabase at `https://analytics.owner.example` (`the a
 its `docs/client-contract.md`). The approach is the one Switchboard shipped first (its
 `docs/ANALYTICS.md`); the organization's shared answer is roadmap track RM-13.
 
-## Two tiers: counts with no id, and details after a yes
+## On by default, off per product (B-200)
 
-Since 0.84.0 (B-198; operator decision 2026-11-03, relayed on the board: counts without consent by
-default, consent adds the details, so funnels always have data) the app follows the analytics server's
-client contract, "Two tiers" (decision D-1):
+Since 0.87.0 (B-200; operator decision 2026-11-04, relayed by Fabric's session: anonymous usage and error data
+on by default, for installs already out too, a notice at the first launch, off in the product's settings, per
+product) the details go out from the first launch:
 
-- **Baseline, no consent needed.** `app_started`, `app_active` and the connect events go out from the
-  first launch, before the question is answered and after a no. They carry `environment` and their
-  own props, no `iid` or `install_id`, no counts of the server, and nothing is written on the Mac for
-  them: the session number and the day already counted live in memory only, so a restart on the same
-  day counts that day again. The analytics server counts them without an id (growth's `anonymous`,
-  the daily visitor hash).
-- **Details, after a yes.** The shared installation id (`install_id`, `iid`) on every event,
-  `app_installed`, `app_updated`, the server's counts on `app_active`, `account_added` and
-  `account_removed`. The shared file is made, and `analytics-state.json` written, only after the yes.
+- **Details, on by default.** The shared installation id (`install_id`, `iid`) on every event, `app_installed`,
+  `app_updated`, the server's counts on `app_active`, `account_added`, `account_removed` and `app_error` (a crash
+  the app noticed: the main process's uncaught exception, watched with `uncaughtExceptionMonitor` so its default
+  handling stays, or a renderer or helper process gone with a reason other than a clean exit; `where` and a
+  `code` only, once per launch for each).
+- **The notice.** The first time a window comes forward the app shows *Fabric Inbox shares anonymous usage and
+  error data*, with what is sent and how to turn it off, and OK or Turn Off. It is shown once
+  (`disclosedAt` in `<userData>/analytics-state.json`), after any hub connect dialog.
+- **Off, per product.** The menu's **Share Usage Details** (the app menu on a Mac, Help on Windows and Linux)
+  turns the details off or on for Fabric Inbox only, kept as `declined` in `analytics-state.json`; the shared
+  `installation.json` keeps only the shared id, and another app's `analytics: false` no longer turns this one
+  off. Off drops every event still waiting, and nothing more is sent, the baseline with no id included.
+- **An earlier no stays a no.** A person who turned the details off before 0.87.0 keeps them off: `declined`
+  from 0.84.0 on, or, from an answer before 0.84.0, the shared switch that answer wrote (read once and kept as
+  `declined`). Reading the operator's "on for installs already out" as the default, not as overriding an
+  explicit choice; the coordinator recorded this reading in the wave plan (2026-11-04).
+- **Off is off.** With the switch off nothing is sent at all, the B-198 baseline included: the reading growth wrote
+  into the consent contract on 2026-11-04 (board thread `b2e5df1f`, message `cbea0b76`). The baseline with no id
+  (`app_started`, `app_active`, the connect events; nothing written on the Mac for them) remains only for a
+  shared file that cannot be read, while the switch is on.
 
-The first time a window comes forward the app asks: *Share usage details?* with what is always counted,
-what the details add, *No usage details have been sent yet.*, the switch (on) and Continue, or Not now
-(asked again at the next launch). The menu's Share Usage Details is the other way to answer. The answer
-is kept per app as `disclosedAt` in `<userData>/analytics-state.json` with `declined` for a no (another
-PassionCode app's answer does not answer for this one; the shared switch in `installation.json` stays
-the one on/off for the details, and a no before any app made that file makes none). A start that waited
-counts the install after the yes, without counting the start twice; an install that sent its id before
-A7-012 is asked once, told so, and is not counted as a new install; an unreadable state file asks again
-rather than sending an id. The question waits while a hub's connect dialog (Allow or Deny) is open and
-is asked after it. The box comes ticked because the shared switch is on by default (ADR-0127 keeps that
-default; the person sees it and answers before any id is sent). Every event carries the system it runs
-on (`osName`: macOS, Windows or Linux). Tests: `A7-012 and B-198: …`, `A7-012: …` and `review
-2026-10-21: …` in `tests/desktop-analytics.test.ts`.
+Tests: `B-200: …`, `B-198`'s in `tests/desktop-analytics.test.ts`.
 
 ## What is sent
 
@@ -64,6 +63,7 @@ retired event stays listed with its date.
 | `app_installed` | details | the first start of this app on this Mac with the details on (once; kept in `<userData>/analytics-state.json`) | `first_passioncode_app` (no PassionCode app had run here before: this app made the shared file, at launch or at the yes), `server_configured` |
 | `app_updated` | details | the first start of a new version (an automatic update or a manual one) | `from`: the version this app last started as |
 | `account_added` / `account_removed` | details | the day's counts differ from the last ones | `provider` (`gmail`, `cloudflare`), `added` or `removed`, `accounts` (total after) |
+| `app_error` | details | a crash the app noticed, once per launch for each `where` and `code` (B-200) | `where`: `main`, `renderer` or the helper's type; `code`: the error's code or name, or the process's reason, letters, digits, `_.-` only |
 
 The counts come from four reads with the mail window's own session, once a day, only with the details
 on and only while the person is signed in: `/api/accounts`, `/api/v1/mailboxes`, `/api/agents`, `/api/agent-keys`. Only
@@ -95,10 +95,9 @@ All PassionCode apps share one file:
 - **Never repaired.** A file that does not parse, or whose `id` is not a UUID, is left as it is and
   analytics stays off (*a broken installation file is never repaired*).
 - **Unknown fields are kept** when this app rewrites it.
-- **`analytics: false` turns the details off for every PassionCode app on the Mac.** The app menu's
-  **Fabric Inbox → Share Usage Details** writes it; turning it off also drops events still waiting
-  with the id, and the counts with no id go on. **About Usage Counts…** in the same menu says what is
-  sent in each tier.
+- **`analytics: false` no longer turns Fabric Inbox off** (B-200: the switch is per product). Fabric Inbox
+  writes nothing to it since 0.87.0, and reads it only once to keep an answer from before 0.84.0.
+  **About Usage Counts…** in the menu says what is sent.
 
 ## Delivery
 
