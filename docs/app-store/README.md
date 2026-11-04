@@ -191,6 +191,24 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-04 (0.90.0: B-203).**
+
+- **0.90.0** (PR #397, `1df3923`, B-203; design PR #396): the server counts its own errors per UTC day, class and code
+  for 14 days (`workers/lib/error-counts.ts`, `get_server_errors`), and the Mac app sends yesterday's as one
+  `server_error` per class and code with usage details on (growth's answer on thread `b2e5df1f`, message `891c4748`).
+  Both servers on `1df3923` from 15:27 UTC (receipts `linked`); `get_server_errors` answers on the owner server. The tag's
+  release run is 41858566440.
+- The PR's `macos-arm64` job got no runner (waited 14:55 to 15:24 UTC, cancelled, no step ran) and the merge chain
+  read a cancel as no failure. Dispatching `platforms` by hand was refused by this session's permissions, so the
+  nightly run (23:15 Europe/Warsaw) checks macOS on `main`. Lesson: a chain must treat `cancel` and `skipping` as not
+  passed.
+- The coordinator paused heavy runs at 2.7 GB free and lifted the pause at 14:58 UTC: one heavy run at a time while
+  swap is high, temporary builds removed at once, paused again below 8 GB free.
+
+**Exact next task:** read the nightly `platforms` run on `main` (its `macos-arm64` job) on 2026-11-05 and close or fix
+B-202's macOS line; then the operator's approval of the support agent's category notes; on 2026-11-09 B-186 and B-174.
+Waits as below.
+
 **State 2026-11-04 (0.89.0: B-202; the operator's request to every product).**
 
 - The operator's words relayed by the coordinator's session (2026-11-04 about 12:25 UTC): every product sorts out its
@@ -205,10 +223,7 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - The report on board thread `30c45b9c` is sent (message `dc3368b0`): on the owner server 7 eval tickets for 3 agents,
   all failing on the current versions (3 hand-offs, 3 held, 1 safe reply).
 
-**Exact next task:** B-203's design note and scenario by 2026-11-07 (the server counts its own error classes per UTC
-day as codes; the Mac app adds yesterday's counts to `app_active` under the same switch), then the release by
-2026-11-11. The broker's `backgroundLaunch: true` for `inbox.desktop` is its owner's. Then the operator's approval of
-the support agent's category notes; on 2026-11-09 B-186 and B-174. Waits as below.
+**Next task then:** B-203 (done in 0.90.0). The broker's `backgroundLaunch: true` for `inbox.desktop` is its owner's.
 
 **State 2026-11-04 (0.87.0, 0.87.1 and 0.88.0: B-200, B-201, B-199 step 4).**
 
