@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.91.0 (2026-11-04)
+
+- **Told about new versions with automatic updates off.** With Install Updates Automatically off, Fabric Inbox still
+  checks for a new version and tells you once, with Update to {version}… in the menu. Nothing downloads until you
+  click. An older server is offered the same way (B-204).
+
 ## 0.90.0 (2026-11-04)
 
 - **Server errors reach us as counts.** Your server now counts its own errors each day by kind, as codes and never as

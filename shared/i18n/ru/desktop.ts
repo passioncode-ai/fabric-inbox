@@ -391,6 +391,12 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"{reason} It keeps running {version}.": "{reason} Он продолжает работать на {version}.",
 	"This computer could not send the update ({error}).": "Этот компьютер не смог отправить обновление ({error}).",
 	"Update Server to {version}": "Обновить сервер до {version}",
+	// B-204: automatic updates off still tell the person (desktop/main.cjs notifyAvailable, desktop/server-update.cjs)
+	"Update to {version}…": "Обновить до {version}…",
+	"Fabric Inbox {version} is available": "Доступен Fabric Inbox {version}",
+	"Automatic updates are off, so nothing was downloaded. Click to download and install it now.": "Автоматические обновления выключены, поэтому ничего не загружено. Нажмите, чтобы загрузить и установить его сейчас.",
+	"Your server can be updated": "Сервер можно обновить",
+	"Your server runs {server}; Fabric Inbox carries {version}. Automatic updates are off. Click to update the server now.": "На вашем сервере версия {server}, в Fabric Inbox есть {version}. Автоматические обновления выключены. Нажмите, чтобы обновить сервер сейчас.",
 	"Updating Server…": "Сервер обновляется…",
 	"Agent keys can now also reach it in one header, for Fabric Dashboards.": "Теперь ключи агентов проходят и в одном заголовке, для Fabric Dashboards.",
 	"Agent keys could not be let in one header ({error}); Fabric Dashboards needs that.": "Не удалось пустить ключи агентов в одном заголовке ({error}); это нужно Fabric Dashboards.",

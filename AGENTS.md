@@ -172,7 +172,8 @@ signed release must create it without a prompt (`docs/release.md`, upgrade check
   only profile files usage counts and updates add (a move between servers adds `move.json` while it runs, removed when it ends), and a verified update waits in
   `~/Library/Caches/Fabric Inbox/updates/` until Squirrel.Mac copies it.
 - **LC-16 exception: an update already downloaded installs at quit even after the switch goes off.**
-  `off` stops every check and download, and a check running at that moment hands nothing over; but
+  `off` stops every download and install (the feed is still read to tell the person of a newer version, B-204),
+  and a check running at that moment hands nothing over; but
   Squirrel.Mac offers no way to withdraw an update it has already staged, so that one still
   installs when the app quits (`docs/desktop-data-and-updates.md`, Updates §6). The server's address is also kept
   in `<appData>/PassionCode/backups/fabric-inbox.json` and restored from there when `server.json` is

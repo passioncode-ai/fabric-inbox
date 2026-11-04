@@ -55,7 +55,7 @@ test("B-86: the update verifier and the installer get original-fs, not Electron'
 
 test("B-86: stuck updates are told to the person: the menu item changes and opens a notice with the download", () => {
   const main = readFileSync("desktop/main.cjs", "utf8");
-  assert.match(main, /: state && state\.stuck \? t\('Updates Are Not Installing…'\) : t\('Check for Updates…'\)/);
+  assert.match(main, /: state && state\.stuck \? t\('Updates Are Not Installing…'\)\s*: state && state\.available && state\.state === 'idle' \? t\('Update to \{version\}…', \{ version: state\.available \}\) : t\('Check for Updates…'\)/);
   assert.match(main, /else if \(now && now\.stuck\) void showUpdatesStuck\(now\);/);
   const notice = main.slice(main.indexOf("async function showUpdatesStuck"), main.indexOf("async function checkForUpdates"));
   assert.match(notice, /buttons: \[t\('Download Latest Version'\), t\('Try Again'\), t\('Later'\)\]/);

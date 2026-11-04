@@ -107,6 +107,8 @@ let loginItem = null;
 let tray = null;
 /** The ready version the "Restart to finish updating" notification was shown for, once per version. */
 let notifiedReady = '';
+/** B-204: the version the "new version is available" notice was shown for (automatic updates off), once per version. */
+let notifiedAvailable = '';
 // The app's log, ~/Library/Logs/<app name>/ (LC-12): codes and versions only.
 let appLog = null;
 function logEvent(line) {
@@ -627,7 +629,7 @@ async function startUpdates() {
     ? () => new Promise((resolve) => execFile('/bin/launchctl', ['remove', 'ai.passioncode.fabric-inbox.ShipIt'], { timeout: 10000 }, () => resolve()))
     : async () => {};
   updater = updates.createUpdater({ autoUpdater, fs, userData: app.getPath('userData'), feed, appVersion: app.getVersion(), fetchFeed, verifier, replaceable, staged, forgetStaged,
-    setTimer, clearTimer: clearTimeout, log: logEvent, onChange: () => { installMenu(); notifyReady(); } });
+    setTimer, clearTimer: clearTimeout, log: logEvent, onChange: () => { installMenu(); notifyReady(); notifyAvailable(); } });
   await updater.start({ packaged: app.isPackaged, mas: !!process.mas, inApplications: target.installed, packageManager: target.packageManager });
   installMenu();
 }
@@ -654,6 +656,19 @@ function notifyReady() {
   logEvent({ event: 'update_ready_notice', version: now.readyVersion });
   notify(t('Restart to finish updating'), t('Fabric Inbox {version} is ready. Click to restart now, or it is installed when you quit.', { version: now.readyVersion }),
     () => void restartToUpdate());
+}
+/**
+ * B-204: automatic updates are off and the feed offers a newer version: say so once per version (the operator's rule
+ * of 2026-11-04: off still notifies). Clicking it downloads and installs it as Check for Updates… does; the menu item
+ * reads Update to {version}… meanwhile.
+ */
+function notifyAvailable() {
+  const now = updater ? updater.status() : null;
+  if (!now || now.automatic || !now.available || now.available === notifiedAvailable) return;
+  notifiedAvailable = now.available;
+  logEvent({ event: 'update_available_notice', version: now.available });
+  notify(t('Fabric Inbox {version} is available', { version: now.available }),
+    t('Automatic updates are off, so nothing was downloaded. Click to download and install it now.'), () => void checkForUpdates());
 }
 /**
  * B-41: new-mail notifications, off until the person turns them on in the app menu. The inbox is read
@@ -711,7 +726,7 @@ function startServerUpdates() {
   };
   serverUpdater = serverUpdates.createServerUpdater({ appVersion: () => app.getVersion(), bundleDir: serverBundleDir, readBundle: deployer.readBundle,
     readFile: (file) => fs.readFile(file), read, post, t, log: logEvent, automatic: async () => { await updatesStarted; return !!(updater && updater.status().automatic); },
-    notify: (title, body) => notify(title, body), onChange: () => installMenu() });
+    notify: (title, body, onClick) => notify(title, body, onClick), onChange: () => installMenu() });
 }
 /**
  * Every launch: Open at Login is turned on once for an installed copy and read again; a login item the
@@ -1208,7 +1223,8 @@ function installMenu() {
     t,
     update: {
       label: state && state.state === 'ready' ? t('Restart to Install Update') : state && state.state === 'downloading' ? t('Downloading Update…')
-        : state && state.stuck ? t('Updates Are Not Installing…') : t('Check for Updates…'),
+        : state && state.stuck ? t('Updates Are Not Installing…')
+        : state && state.available && state.state === 'idle' ? t('Update to {version}…', { version: state.available }) : t('Check for Updates…'),
       enabled: !(state && state.state === 'downloading'),
       click: () => {
         const now = updater ? updater.status() : null;

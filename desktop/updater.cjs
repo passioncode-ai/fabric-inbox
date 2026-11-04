@@ -107,9 +107,10 @@ function createUpdater(deps) {
   let wired = false;
   let installing = false;  // Restart to Install Update was chosen: the quit is Squirrel.Mac's
   let losses = { version: '', n: 0 };  // a staged version macOS purged, and how often (B-51)
+  let available = '';      // B-204: with the switch off, the newer version the feed offers (read, never downloaded)
 
   const set = (next) => { state = next; onChange(status()); };
-  function status() { return { state, reason, automatic, readyVersion, heldVersion, runbook, error: lastError, lastCheck, installing, failures, stuck: failures >= STUCK_AFTER }; }
+  function status() { return { state, reason, automatic, readyVersion, heldVersion, runbook, error: lastError, lastCheck, installing, failures, stuck: failures >= STUCK_AFTER, available }; }
   function settle(outcome) { const waiting = manual; manual = []; for (const done of waiting) done(outcome); }
   const cleanUp = () => { void Promise.resolve().then(() => verifier.clean()).catch(() => {}); };
 
@@ -165,8 +166,29 @@ function createUpdater(deps) {
     timer = null;
     // A ready update is looked at on the same cadence: the files it waits in can vanish (B-51).
     if (state === 'ready') { timer = setTimer(() => { timer = null; void keepStaged(); }, CHECK_EVERY_MS); return; }
-    if (!automatic || ['off', 'unavailable'].includes(state)) return;
-    timer = setTimer(() => { timer = null; if (automatic) void check({ manual: false }); }, ms);
+    if (['off', 'unavailable'].includes(state)) return;
+    // B-204: with the switch off the feed is still read on the same cadence, to tell the person; nothing downloads.
+    timer = setTimer(() => { timer = null; void (automatic ? check({ manual: false }) : peek()); }, ms);
+  }
+
+  /**
+   * B-204: the switch is off, so only read the feed: a newer version is named in `available` (the app shows one notice
+   * per version and the menu offers it); nothing is downloaded, verified or installed until the person asks.
+   */
+  async function peek() {
+    if (automatic || state !== 'idle') return;
+    lastCheck = now();
+    try {
+      const out = await verifier.verify(await fetchFeed(feed), { shouldDownload: () => false });
+      const next = out.outcome === 'skipped' && out.version ? out.version : '';
+      if (next && next !== available) log({ event: 'update_available', version: next, automatic: false });
+      if (next !== available) { available = next; onChange(status()); }
+    } catch (error) {
+      const key = `peek|${error && (error.code || error.message)}`;
+      if (key !== lastLogged) log({ event: 'update_check', outcome: 'check_failed', reason: 'peek', error: String(error && error.message || error).slice(0, 200) });
+      lastLogged = key;
+    }
+    if (!automatic && state === 'idle') schedule(CHECK_EVERY_MS);
   }
 
   /**
@@ -264,6 +286,7 @@ function createUpdater(deps) {
   async function check({ manual: byPerson }) {
     if (!['idle', 'error', 'held'].includes(state)) return;
     lastCheck = now();
+    available = '';
     const wasHeld = state === 'held';
     set('checking');
     let feedBytes;
@@ -321,6 +344,7 @@ function createUpdater(deps) {
       staging = '';
       cleanUp();
       set('idle');
+      schedule(CHECK_EVERY_MS);
       return;
     }
     try {

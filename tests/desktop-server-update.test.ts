@@ -11,7 +11,7 @@ const manifest = (version: string) => ({ format: "fabric-inbox-server/1", versio
 const t = (s: string, v: Record<string, string> = {}) => s.replace(/\{(\w+)\}/g, (_m, k) => v[k] ?? "");
 
 function harness(o: { app?: string; bundle?: string | null; server?: unknown; automatic?: boolean; post?: (form: FormData) => { status: number; body: unknown } } = {}) {
-  const posts: FormData[] = []; const logs: any[] = []; const notes: string[] = []; const reads: string[] = [];
+  const posts: FormData[] = []; const logs: any[] = []; const notes: string[] = []; const reads: string[] = []; const clicks: (() => void)[] = [];
   const u = createServerUpdater({
     appVersion: o.app ?? "0.27.0", bundleDir: "/b", t,
     readBundle: async () => (o.bundle === null ? null : manifest(o.bundle ?? o.app ?? "0.27.0")),
@@ -19,9 +19,9 @@ function harness(o: { app?: string; bundle?: string | null; server?: unknown; au
     readFile: async (p: string) => new TextEncoder().encode(`bytes of ${p.replace(/\\/g, "/")}`),
     read: async (p: string) => { reads.push(p); return o.server === undefined ? { version: "0.26.0", selfUpdate: { available: true } } : o.server; },
     post: async (_p: string, form: FormData) => { posts.push(form); return o.post ? o.post(form) : { status: 200, body: { updated: true, from: "0.26.0", to: "0.27.0" } }; },
-    automatic: async () => o.automatic ?? true, log: (e: unknown) => logs.push(e), notify: (title: string) => notes.push(title),
+    automatic: async () => o.automatic ?? true, log: (e: unknown) => logs.push(e), notify: (title: string, _body: string, onClick?: () => void) => { notes.push(title); if (onClick) clicks.push(onClick); },
   });
-  return { u, posts, logs, notes, reads };
+  return { u, posts, logs, notes, reads, clicks };
 }
 
 test("B-44: versions order like the deploy's", () => {
@@ -79,4 +79,23 @@ test("B-44: a server that cannot update itself, or refuses, keeps running and sa
   assert.equal((await flaky.u.onSignedIn("o")).phase, "failed");
   assert.equal(flaky.u.menuItem(() => {})?.label, "Update Server to 0.27.0", "the menu offers it again");
   assert.equal((await flaky.u.update({ manual: true })).phase, "current");
+});
+
+test("B-204: with automatic updates off an older server is told once per server and version, and the notice updates it", async () => {
+  const off = harness({ automatic: false });
+  await off.u.onSignedIn("https://mail.example");
+  assert.deepEqual(off.notes, ["Your server can be updated"]);
+  assert.equal(off.posts.length, 0, "nothing sent until the person clicks");
+  assert.deepEqual(off.logs.filter((e) => e.event === "server_update_available").map((e) => [e.server, e.bundle]), [["0.26.0", "0.27.0"]]);
+  off.clicks[0]();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(off.posts.length, 1, "clicking the notice updates the server");
+  // The same server and version are not told again; on, nothing is told (it updates by itself).
+  const again = harness({ automatic: false });
+  await again.u.onSignedIn("https://mail.example");
+  await again.u.onSignedIn("https://mail.example");
+  assert.equal(again.notes.length, 1);
+  const on = harness({ automatic: true });
+  await on.u.onSignedIn("https://mail.example");
+  assert.ok(!on.notes.includes("Your server can be updated"));
 });

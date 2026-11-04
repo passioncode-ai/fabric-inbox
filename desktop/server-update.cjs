@@ -32,6 +32,7 @@ function createServerUpdater(opts) {
   let state = { phase: 'unknown', server: null, bundle: null, reason: null };
   let running = null;
   let triedFor = null;
+  let noticeFor = null;  // B-204: the server and version the "can be updated" notice was shown for
   const set = (next) => { state = { ...state, ...next }; onChange(state); };
   // A function, read when needed: the main process passes app.getVersion.
   const appVersion = () => (typeof opts.appVersion === 'function' ? opts.appVersion() : opts.appVersion);
@@ -102,7 +103,16 @@ function createServerUpdater(opts) {
     if (triedFor === key) return state;
     triedFor = key;
     await check();
-    if (state.phase === 'older' && await opts.automatic()) await update({ manual: false });
+    if (state.phase === 'older') {
+      if (await opts.automatic()) await update({ manual: false });
+      // B-204: updates are off, so the person is told once per server and version; clicking it updates the server now.
+      else if (noticeFor !== `${origin}@${state.bundle}`) {
+        noticeFor = `${origin}@${state.bundle}`;
+        log({ event: 'server_update_available', server: state.server, bundle: state.bundle });
+        notify(t('Your server can be updated'), t('Your server runs {server}; Fabric Inbox carries {version}. Automatic updates are off. Click to update the server now.',
+          { server: state.server, version: state.bundle }), () => void update({ manual: true }));
+      }
+    }
     return state;
   }
 
