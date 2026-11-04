@@ -36,7 +36,8 @@ serverErrorsRouter.get("/api/ops-digest", async (c) => {
       return c.json(foldHour(hour, await ledger.opsHours(hour), await ledger.opsHours(previous)));
     }
     const before = new Date(Date.parse(`${day}T00:00:00Z`) - 3_600_000).toISOString().slice(0, 13);
-    return c.json(foldDay(day!, await ledger.opsHours(day!), await ledger.opsHours(before)));
+    const digest = foldDay(day!, await ledger.opsHours(day!), await ledger.opsHours(before));
+    return digest ? c.json(digest) : c.json({ error: msg("Nothing was counted on {day}", { day: day! }) }, 404);
   } catch (error) {
     console.error(JSON.stringify({ event: "ops_digest_unreadable", error: (error as Error).message?.slice(0, 200) }));
     return c.json({ error: msg("The error counts could not be read right now") }, 503);

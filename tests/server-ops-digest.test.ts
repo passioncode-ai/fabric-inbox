@@ -20,9 +20,10 @@ test("B-205: an hour folds with Fabric's rise rule, against the hour before only
 test("B-205: a day folds its hours, each against the one just before, the first against the day before's last", () => {
   const rows = [row("2026-11-04T00", "http.agents", 0, 11), row("2026-11-04T01", "http.agents", 0, 30), row("2026-11-04T05", "http.agents", 0, 10), row("2026-11-05T00", "http.agents", 0, 99)];
   const d = foldDay("2026-11-04", rows, [{ op: "http.agents", ok: 0, failed: 20, unknown: 0 }]);
-  assert.deepEqual([d.schema, d.day, d.hours, d.total.failed], ["ops.digest.daily@1", "2026-11-04", 3, 51], "only the day's own hours");
+  assert.deepEqual([d!.schema, d!.day, d!.hours, d!.total.failed], ["ops.digest.daily@1", "2026-11-04", 3, 51], "only the day's own hours");
   // 00: 11 vs 20 the day before: no; 01: 30 vs 11: rise; 05: 10 after a gap: rise.
-  assert.deepEqual(d.risen, [{ op: "http.agents", hours: 2, failed: 40 }]);
+  assert.deepEqual(d!.risen, [{ op: "http.agents", hours: 2, failed: 40 }]);
+  assert.equal(foldDay("2026-11-03", rows), null, "a day with nothing counted has no digest: the contract's hours is 1 to 24");
 });
 
 test("B-205: only a closed hour or day of the last 14 days is read", () => {
@@ -68,4 +69,5 @@ test("B-205: successes are counted only for received messages, ended runs and ac
   assert.match(readFileSync("workers/agents/registry.ts", "utf8"), /void countOk\(this\.env, "agent", run\.status\)/);
   assert.match(readFileSync("workers/durableObject/index.ts", "utf8"), /accepted: \(\) => \{ void countOk\(this\.env, "send", "accepted"\); \}/);
   assert.doesNotMatch(readFileSync("workers/app.ts", "utf8"), /countOk/, "a request is counted only when it fails");
+  assert.match(readFileSync("workers/routes/server-errors.ts", "utf8"), /digest \? c\.json\(digest\) : c\.json\(\{ error: msg\("Nothing was counted on \{day\}"/, "an empty day answers 404");
 });
