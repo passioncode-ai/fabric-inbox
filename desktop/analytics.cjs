@@ -132,9 +132,14 @@ function createAnalytics(deps) {
   let retryAt = 0;
   let failures = 0;
   let flushing = null;
-  let state = { installed: false, activeDay: '', counts: null, version: '', disclosedAt: '', declined: false };
-  // A7-012 (issue #45, Fabric ADR-0127): a start before the person answered the switch waits here.
-  let deferred = null;
+  // `disclosedAt`: when the person was shown what is sent (the first-run notice, or an answer before B-200);
+  // `declined`: true once they turned the details off, false once on, null for an answer kept before B-198.
+  let state = { installed: false, activeDay: '', counts: null, version: '', disclosedAt: '', declined: null };
+  // B-200: the first-run notice is still to be shown; the launch's options, for an install counted when turned on.
+  let noticeDue = false;
+  let launchOptions = {};
+  /** B-200: each error is counted once per launch (by where and code). */
+  const errorsSeen = new Set();
   // B-198: the baseline tier runs whenever this build can send; its day of use is kept in memory only.
   let baseline = false;
   let baselineDay = '';
@@ -144,7 +149,7 @@ function createAnalytics(deps) {
     try {
       const value = JSON.parse(await fs.readFile(stateFile(userData), 'utf8'));
       if (value && typeof value === 'object') state = { installed: value.installed === true, activeDay: typeof value.activeDay === 'string' ? value.activeDay : '', counts: value.counts && typeof value.counts === 'object' ? cleanCounts(value.counts) : null, version: typeof value.version === 'string' ? value.version.slice(0, 50) : '',
-        disclosedAt: typeof value.disclosedAt === 'string' ? value.disclosedAt.slice(0, 40) : '', declined: value.declined === true };
+        disclosedAt: typeof value.disclosedAt === 'string' ? value.disclosedAt.slice(0, 40) : '', declined: typeof value.declined === 'boolean' ? value.declined : null };
     } catch { /* first run, or an unreadable state: start fresh */ }
   }
   async function saveState() {
@@ -239,12 +244,8 @@ function createAnalytics(deps) {
     await flush();
   }
 
-  /**
-   * The person's answer, from the first-run question or the menu switch: kept once per app (A7-012),
-   * with whether it was a no, since a no may leave no shared file to say so (B-198).
-   */
-  async function disclose(declined) {
-    if (state.disclosedAt && state.declined === declined) return;
+  /** The person's choice of this product's switch (B-200: per product), kept with when they were first shown it. */
+  async function choose(declined) {
     if (!state.disclosedAt) state.disclosedAt = new Date(now()).toISOString();
     state.declined = declined;
     await saveState();
@@ -252,38 +253,59 @@ function createAnalytics(deps) {
 
   return {
     /**
-     * Whether this build can send at all, whether it does now, whether it still waits for the person's
-     * first answer (nothing is sent until then), and whether this install sent counts before it asked.
+     * Whether this build can send at all, whether it sends the details now, whether the first-run notice is still
+     * to be shown, and whether the baseline runs.
      */
-    status: () => ({ available: !!bundle, enabled: !!installId, pending: !!deferred, sentBefore: state.installed === true, baseline }),
+    status: () => ({ available: !!bundle, enabled: !!installId, pending: noticeDue, sentBefore: state.installed === true, baseline }),
 
     /**
-     * At launch. The baseline tier starts at once, with no id and nothing written (B-198). The identity
-     * tier waits until the person has answered the switch once (the first-run question or the menu):
-     * no id, no `app_installed` and no shared file is made before that answer (A7-012).
+     * At launch (B-200, operator 2026-11-04: usage and error data on by default, for installs already out too, off per
+     * product in its settings). The details start at once with the shared id unless this product's switch is off; the
+     * person is shown a notice the first time a window comes forward. An explicit no kept from before stays a no: an
+     * answer before B-198 is read from the shared switch it wrote; with the switch off nothing is sent, the baseline
+     * included. The shared switch no longer turns this product off. Without a readable shared file the baseline
+     * with no id still runs (B-198).
      */
     async start(options = {}) {
       if (!bundle || typeof send !== 'function') return;
+      launchOptions = { ...options };
       await loadState();
-      const installation = await readInstallation(fs, shared);
-      if (installation.state === 'unreadable') log({ event: 'analytics_off', reason: 'installation_unreadable' });
-      const off = installation.state === 'ok' && installation.value.analytics === false;
-      if (!state.disclosedAt && installation.state !== 'unreadable' && !off) {
-        deferred = { ...options };
-        log({ event: 'analytics_pending', reason: 'not_answered' });
+      let installation = await readInstallation(fs, shared);
+      if (state.declined === null && state.disclosedAt && installation.state === 'ok' && installation.value.analytics === false) {
+        state.declined = true;
+        await saveState();
       }
-      if (installation.state === 'ok' && !off && state.disclosedAt) {
-        await begin({ ...installation, created: false }, options);
+      noticeDue = !state.disclosedAt;
+      if (noticeDue) log({ event: 'analytics_notice', reason: 'not_shown' });
+      // Off is off (B-200, the analytics contract's reading of 2026-11-04): nothing at all, the baseline included.
+      if (state.declined === true) return;
+      if (installation.state === 'missing') {
+        try { installation = await ensureInstallation({ fs, file: shared, uuid, now }); }
+        catch (error) { log({ event: 'analytics_off', reason: 'installation_not_written', code: error && error.code || 'error' }); }
+      }
+      if (installation.state !== 'ok') {
+        log({ event: 'analytics_off', reason: 'installation_unreadable' });
+        await beginBaseline(options);
         return;
       }
-      if (state.disclosedAt && !state.declined && installation.state === 'missing') {
-        // Answered yes here, but the shared file is gone (another app's reset): made again, as before B-198.
-        let made;
-        try { made = await ensureInstallation({ fs, file: shared, uuid, now }); }
-        catch (error) { log({ event: 'analytics_off', reason: 'installation_not_written', code: error && error.code || 'error' }); made = null; }
-        if (made && made.state === 'ok') { await begin(made, options); return; }
-      }
-      await beginBaseline(options);
+      await begin({ ...installation, created: installation.created === true }, options);
+    },
+
+    /** B-200: the first-run notice was shown; the switch stays as it is. */
+    async noticeShown() {
+      noticeDue = false;
+      if (!state.disclosedAt) { state.disclosedAt = new Date(now()).toISOString(); await saveState(); }
+    },
+
+    /**
+     * B-200: an error the app noticed (a crash of the main process, a renderer or a helper): where and a code only,
+     * never a message or a path; once per launch for each, and only with the details on.
+     */
+    async error(where, code) {
+      const key = `${String(where).slice(0, 20)}:${String(code).slice(0, 60)}`;
+      if (errorsSeen.has(key)) return;
+      errorsSeen.add(key);
+      if (track('app_error', { where: String(where).slice(0, 20), code: String(code).replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 60) })) await flush();
     },
 
     /** Whether today's active event is still due; a caller fetches counts only then. */
@@ -333,34 +355,28 @@ function createAnalytics(deps) {
     wake: () => flush(),
 
     /**
-     * The shared switch, for every PassionCode app on this Mac. Off drops what is waiting; on
-     * starts from the counts seen next, so nothing done while off is reported later.
+     * This product's switch (B-200: per product; the shared file keeps only the shared id). On counts the install
+     * once and starts from the counts seen next, so nothing done while off is reported later; off drops everything
+     * still waiting and sends nothing more, the baseline included.
      */
     async setEnabled(enabled) {
       if (!bundle) return false;
-      const waiting = deferred;
-      deferred = null;
+      noticeDue = false;
       if (enabled) {
         const installation = await ensureInstallation({ fs, file: shared, uuid, now }).catch(() => null);
-        if (!installation || installation.state !== 'ok') { deferred = waiting; return false; }
-        if (installation.value.analytics === false && !(await writeSwitch({ fs, file: shared, enabled: true }))) { deferred = waiting; return false; }
+        if (!installation || installation.state !== 'ok') return false;
         await loadState();
-        await disclose(false);
-        // The start that waited for this answer happens now, so the install is counted after it, not before.
-        if (waiting) { await begin(installation, waiting); return true; }
+        await choose(false);
+        if (installId) return true;
         state.counts = null;
-        installId = installation.value.id;
-        await saveState();
+        await begin(installation, launchOptions);
         return true;
       }
-      // Off drops what waits with the id; the baseline goes on without one (B-198).
-      queue = queue.filter(e => !e.body.props.iid);
+      queue = [];
       installId = null;
-      baseline = true;
-      await disclose(true);
-      // A no before any PassionCode app made the shared id: there is nothing to switch off, and none is made (B-198).
-      if ((await readInstallation(fs, shared)).state === 'missing') return true;
-      return writeSwitch({ fs, file: shared, enabled: false }).catch(() => false);
+      baseline = false;
+      await choose(true);
+      return true;
     },
   };
 }
