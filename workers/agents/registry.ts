@@ -1,4 +1,5 @@
 import { answerCitedEvent, causeOf, citedOf, supportDiagnosedEvent } from "./learning-events";
+import { NOT_MEASURED, summarizeOutcomes, type OutcomeSummary } from "./ticket-outcome";
 import { calibrationOf, type Calibration, type PersonGrade } from "./calibration";
 import { CLOSED_STATES, GAPS_CHECK_MS, GAPS_PAGE, GAPS_PAGES, GAPS_UNAVAILABLE_MS, parseGapList, runOfRequest } from "./gap-closures";
 import { abandonedEvent, EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, runEvent, waitingEvent, type AgentEvent } from "./events";
@@ -1346,6 +1347,24 @@ export class AgentRegistryDO extends DurableObject<Env> {
     const rows = this.rows(
       `SELECT body FROM agent_runs ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY created_at DESC, id DESC LIMIT ?`, ...args, limit);
     return rows.map((row) => this.present(JSON.parse(String(row.body)) as AgentRun));
+  }
+
+  /**
+   * B-199: how the messages that came between `from` and `to` (UTC days, inclusive) stand now, per address, in the
+   * channel-agent standard's outcomes, with the four numbers. One run per message; the runs kept (MAX_RUNS_KEPT) bound it.
+   */
+  async ticketOutcomes(options: { from: string; to: string; mailboxId?: string }): Promise<{ from: string; to: string; addresses: Record<string, OutcomeSummary>; notMeasured: string[] }> {
+    const where = ["created_at >= ?", "created_at < ?"];
+    const end = new Date(Date.parse(`${options.to}T00:00:00Z`) + 24 * 3600 * 1000).toISOString();
+    const args: string[] = [`${options.from}T00:00:00.000Z`, end];
+    if (options.mailboxId) { where.push("mailbox_id = ?"); args.push(options.mailboxId.toLowerCase()); }
+    const runs = this.rows(`SELECT body FROM agent_runs WHERE ${where.join(" AND ")}`, ...args)
+      .map((row) => this.present(JSON.parse(String(row.body)) as AgentRun));
+    const byAddress = new Map<string, AgentRun[]>();
+    for (const run of runs) byAddress.set(run.mailboxId, [...(byAddress.get(run.mailboxId) ?? []), run]);
+    const now = Date.now();
+    const addresses = Object.fromEntries([...byAddress.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([id, list]) => [id, summarizeOutcomes(list, now)]));
+    return { from: options.from, to: options.to, addresses, notMeasured: [...NOT_MEASURED] };
   }
 
   /** A run whose worker vanished while sending is reported, not resumed: its send may have happened. */

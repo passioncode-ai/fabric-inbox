@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.85.0 (2026-11-04)
+
+- **How each message ended.** Every message a reply agent took now reads as one outcome: answered, answered after a
+  question, closed by a person, answered elsewhere, referred, expired or unanswered, or still open. `get_agent_outcomes`
+  counts a period per address with four shares: answered, to a person, fallback and unanswered (B-199).
+
 ## 0.84.0 (2026-11-03)
 
 - **Usage counts in two tiers.** The Mac app now counts starts, days of use and connected servers from the first
