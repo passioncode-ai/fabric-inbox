@@ -29,6 +29,7 @@ import { incomingFailure, recordIncomingFailure } from "./incoming-log";
 import { cleanSenderName } from "../shared/mail/sender";
 import { recordUnknownRecipient } from "./lib/unknown-recipients";
 import { storeInboundAttachments } from "./lib/inbound-attachments";
+import { countError } from "./lib/error-counts";
 
 type AppContext = Context<MailboxContext>;
 
@@ -920,6 +921,8 @@ async function handleIncomingEmail(event: IncomingEmailEvent, env: Env, ctx: Exe
 		const failure = incomingFailure(event, e);
 		console.error(JSON.stringify(failure));
 		await recordIncomingFailure(env.BUCKET, failure);
+		// B-203: counted by the error's kind (its name), never its message.
+		await countError(env, "incoming", (e as Error)?.name ?? "unknown");
 		throw e;
 	}
 }

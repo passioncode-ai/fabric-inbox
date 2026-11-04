@@ -3,6 +3,7 @@
  * `workers/app.ts` mounts it behind Access and the same-origin boundary; the agent protocol
  * (`workers/mcp/`) calls it in-process, after its own check of the caller's level.
  */
+import { serverErrorsRouter } from "./routes/server-errors";
 import { Hono } from "hono";
 import { app as mailboxApi } from "./index";
 import { automationRouter } from "./automation";
@@ -54,4 +55,5 @@ api.route("/", gmailSetupRouter);
 api.route("/", credentialKeyRouter);
 api.route("/", microsoftSetupRouter);
 api.route("/", membersRouter);
+api.route("/", serverErrorsRouter);
 api.route("/", mailboxApi);

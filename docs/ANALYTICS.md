@@ -64,13 +64,17 @@ retired event stays listed with its date.
 | `app_updated` | details | the first start of a new version (an automatic update or a manual one) | `from`: the version this app last started as |
 | `account_added` / `account_removed` | details | the day's counts differ from the last ones | `provider` (`gmail`, `cloudflare`), `added` or `removed`, `accounts` (total after) |
 | `app_error` | details | a crash the app noticed, once per launch for each `where` and `code` (B-200) | `where`: `main`, `renderer` or the helper's type; `code`: the error's code or name, or the process's reason, letters, digits, `_.-` only |
+| `server_error` | details | once per UTC day with `app_active`, one event per class and code of the signed-in server's errors the day before, the largest first, at most 30 (B-203; one event per pair, growth's answer of 2026-11-04) | `class`: `http`, `alarm`, `incoming`, `agent`, `send` or `sync`; `code`: lower case letters, digits and `_`, at most 48 (the server's fixed code, never a message); `count`; `day` (`YYYY-MM-DD`, UTC) |
 
-The counts come from four reads with the mail window's own session, once a day, only with the details
-on and only while the person is signed in: `/api/accounts`, `/api/v1/mailboxes`, `/api/agents`, `/api/agent-keys`. Only
-the lengths of those lists leave the function that reads them (`countsWith`).
+The counts come from five reads with the mail window's own session, once a day, only with the details
+on and only while the person is signed in: `/api/accounts`, `/api/v1/mailboxes`, `/api/agents`, `/api/agent-keys` and,
+since 0.90.0, `/api/server-errors` (B-203: yesterday's counts of the server's own errors, by class and code; an older
+server answers 404 and nothing is sent). Only the lengths of the first four lists leave the function that reads them
+(`countsWith`), and of the fifth only classes, codes and numbers that `cleanErrors` checks again. The server counts
+its errors in its workspace ledger for 14 days (`workers/lib/error-counts.ts`, `get_server_errors`).
 
 **Never sent:** email addresses, names, domains, the server's address, account or key ids, agent
-names, message content or metadata, file paths, tokens, errors from the server. The test
+names, message content or metadata, file paths, tokens, the server's error messages. The test
 *events carry counts and the installation id, never a planted address, domain, name or key*
 answers those reads with planted strings and fails if any of them reaches the synthetic server.
 

@@ -816,7 +816,7 @@ async function toggleAnalytics(item) {
   installMenu();
   if (analytics.status().enabled) void countActive();
 }
-const usageCountsText = () => t('Fabric Inbox sends PassionCode.ai anonymous usage and error data, so we can improve it: when it is opened and used, when a server or a hub is connected, that it was installed or updated, how many Gmail accounts, Cloudflare mailboxes, agents and agent keys your server has, and when part of the app stopped with an error. An id shared by the PassionCode apps on this computer counts one person once. It never sends names, email addresses, domains, messages, keys or anything from your mail. You can turn it off any time with Share Usage Details in the menu; that turns it off for Fabric Inbox only, and then nothing is sent.');
+const usageCountsText = () => t('Fabric Inbox sends PassionCode.ai anonymous usage and error data, so we can improve it: when it is opened and used, when a server or a hub is connected, that it was installed or updated, how many Gmail accounts, Cloudflare mailboxes, agents and agent keys your server has, when part of the app stopped with an error, and how many errors of each kind your server had the day before, as codes. An id shared by the PassionCode apps on this computer counts one person once. It never sends names, email addresses, domains, messages, keys or anything from your mail. You can turn it off any time with Share Usage Details in the menu; that turns it off for Fabric Inbox only, and then nothing is sent.');
 function aboutUsageCounts() {
   void dialog.showMessageBox({ type: 'info', title: t('Usage counts'), message: t('Usage counts'), detail: usageCountsText(), buttons: [t('OK')] });
 }

@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { countLog } from "../lib/error-counts";
 import { migrateSchema } from "../lib/do-schema";
 import { CATEGORIES_STEPS } from "./schema";
 import { createWorkersAI } from "workers-ai-provider";
@@ -406,14 +407,14 @@ export class CategoriesDO extends DurableObject<Env> {
       for (let i = 0; i < due.length; i += CONCURRENCY)
         await Promise.all(due.slice(i, i + CONCURRENCY).map((row) => this.process(row).catch((error: unknown) => {
           // A failure outside the item's own handling: the item waits a minute, the queue goes on (reliability audit L1).
-          console.error(JSON.stringify({ event: "category_item_failed", error: (error as Error)?.message?.slice(0, 200) }));
+          countLog(this.env, "alarm", JSON.stringify({ event: "category_item_failed", error: (error as Error)?.message?.slice(0, 200) }), "error");
           this.sql.exec("UPDATE queue SET attempts = attempts + 1, next_at = ?, last_error = ? WHERE account_id = ? AND message_id = ? AND target = ?",
             Date.now() + 60_000, ((error as Error)?.message ?? "failed").slice(0, 200), row.account_id, row.message_id, row.target);
         })));
       await this.advanceBackfills().catch((error: unknown) =>
-        console.error(JSON.stringify({ event: "category_backfill_failed", error: (error as Error)?.message?.slice(0, 200) })));
+        countLog(this.env, "alarm", JSON.stringify({ event: "category_backfill_failed", error: (error as Error)?.message?.slice(0, 200) }), "error"));
       try { this.prune(); }
-      catch (error) { console.error(JSON.stringify({ event: "category_prune_failed", error: (error as Error)?.message?.slice(0, 200) })); }
+      catch (error) { countLog(this.env, "alarm", JSON.stringify({ event: "category_prune_failed", error: (error as Error)?.message?.slice(0, 200) }), "error"); }
     } finally {
       // Whatever happened above, the queue wakes again for what is left.
       const next = this.sql.exec("SELECT MIN(next_at) AS t FROM queue").one() as Row;

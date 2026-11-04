@@ -1655,6 +1655,14 @@ const previewAgentAnswer = defineTool({
   call: (a, ctx) => post(ctx, `/api/agents/${enc(a.agentId)}/preview`, { address: a.address, from: a.from, subject: a.subject, text: a.text, reasoning: a.reasoning, model: a.model }),
 });
 
+const getServerErrors = defineTool({
+  name: "get_server_errors", title: "This server's own errors", level: "admin", readOnly: true,
+  description: "How many errors this server had on one UTC day (default yesterday, the last 14 days kept), by class and code: http (a request answered 5xx, by route group), alarm (a background step failed, by its log event), incoming (a message could not be received), agent (a reply agent's run failed before sending: model, safety, agent, read, answer, save), send (a send ended failed or unknown, by its error code) and sync (an account's mail could not be read). Codes only, never a message. The Mac app sends the same counts as usage data when usage details are on.",
+  input: { day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("A UTC day as YYYY-MM-DD; default yesterday") },
+  routes: ["GET /api/server-errors"],
+  call: (a, ctx) => get(ctx, "/api/server-errors", { day: a.day }),
+});
+
 const listAgentEvals = defineTool({
   name: "list_agent_evals", title: "A reply agent's eval tickets", level: "read", readOnly: true, target: (a) => a.agentId,
   description: "The agent's eval tickets (B-199): invented messages kept from what it got wrong (an answer judged unhelpful, a message left unanswered or expired, or one handed to a person while its knowledge had the answer), each the model's paraphrase without personal details, plus those a person wrote. Each runs through the preview after every new version of the agent; its last result says pass, fail or error against which version, what the preview did and the first characters of its reply. A ticket that starts failing raises agent.eval_failed once. The summary counts them against the current version.",
@@ -2216,7 +2224,7 @@ const revokeAgentKey = defineTool({
 
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, decideHeldMessage, listFolders, getSendStatus,
-  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
+  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, getServerErrors, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,

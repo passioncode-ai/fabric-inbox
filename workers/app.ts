@@ -29,6 +29,8 @@ export { KnowledgeDO } from "./knowledge/store";
 export { CategoriesDO } from "./categories/store";
 export { CampaignsDO } from "./campaigns/store";
 import type { Env } from "./types";
+import { countError, routeGroup } from "./lib/error-counts";
+import { HTTPException } from "hono/http-exception";
 
 export { MailboxDO } from "./durableObject";
 export { EmailAgent } from "./agent";
@@ -70,6 +72,19 @@ function getAccessUrls(teamDomain: string) {
 
 // Main app that wraps the API and adds React Router fallback
 const app = new Hono<{ Bindings: Env; Variables: { access?: AccessClaims; standing?: Standing } }>();
+
+// B-203: every answer 5xx is counted by its route group (a route's own 503 and a throw no route caught), so a
+// server failing in its owner's account shows in the usage data; the count never delays the answer.
+app.use("*", async (c, next) => {
+	await next();
+	if (c.res.status >= 500) void countError(c.env, "http", routeGroup(new URL(c.req.url).pathname), (p) => c.executionCtx.waitUntil(p));
+});
+// A throw no route caught: the plain 500 Hono answered before, with a log line that names the route group.
+app.onError((error, c) => {
+	if (error instanceof HTTPException) return error.getResponse();
+	console.error(JSON.stringify({ event: "request_failed", route: routeGroup(new URL(c.req.url).pathname), error: (error as Error)?.message?.slice(0, 200) }));
+	return c.text("Internal Server Error", 500);
+});
 
 // No page of this app may be framed by another site (clickjacking on Approve,
 // Send or Disconnect), and served files are never content-sniffed.

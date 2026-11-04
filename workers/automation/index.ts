@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { countLog } from "../lib/error-counts";
 import { isHeld, safetyKey } from "../safety/state";
 import { safetyChecks } from "../safety/on";
 import { Hono } from "hono";
@@ -592,7 +593,7 @@ export class AutomationDO extends DurableObject<Env> {
     const today = new Date().toISOString().slice(0, 10);
     if ((await this.ctx.storage.get<string>("pruned:day")) !== today) {
       await this.prune(Date.now()).catch((error: unknown) =>
-        console.warn(JSON.stringify({ event: "automation_prune_failed", error: (error as Error)?.message?.slice(0, 200) })));
+        countLog(this.env, "alarm", JSON.stringify({ event: "automation_prune_failed", error: (error as Error)?.message?.slice(0, 200) })));
       await this.ctx.storage.put("pruned:day", today);
     }
   }

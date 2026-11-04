@@ -425,3 +425,44 @@ test("B-198: the Mac app reads the server's counts only with the details on", ()
   const main = readFileSync("desktop/main.cjs", "utf8");
   assert.match(main, /analytics\.countsWanted\(\) \? await usage\.countsWith\(/);
 });
+
+test("B-203: yesterday's server errors go once a day, one server_error per class and code, codes only, with the details on", async () => {
+  const m = machine();
+  const { a, srv, advance } = client(m);
+  await a.start({});
+  const answers: Record<string, unknown> = {
+    "/api/accounts": { accounts: [] }, "/api/v1/mailboxes": [], "/api/agents": { agents: [] }, "/api/agent-keys": { keys: [] },
+    "/api/server-errors": { day: "2026-10-04", counts: { "alarm.held_retry_failed": 3, "send.transport_outcome_unknown": 7,
+      "http.agents": 1, "send.owner@private-domain.example": 2, "nope.code": 4, "agent.model": 0, "sync.gmail drain": 5, "http.page": 1.5 } },
+  };
+  const ses = { fetch: async (url: string) => ({ status: 200, headers: { get: () => "application/json" }, json: async () => answers[new URL(url).pathname] }) };
+  const counts = await usage.countsWith(ses, "https://inbox.example.com")();
+  await a.active(counts);
+  const errors = srv.events().filter((e) => e.eventName === "server_error").map((e) => e.props);
+  assert.deepEqual(errors.map((p) => [p.class, p.code, p.count, p.day]),
+    [["send", "transport_outcome_unknown", 7, "2026-10-04"], ["alarm", "held_retry_failed", 3, "2026-10-04"], ["http", "agents", 1, "2026-10-04"]],
+    "the largest first; an address, an unknown class, a zero, a space and a fraction are dropped");
+  assert.ok(!JSON.stringify(srv.batches).includes("private-domain"));
+  const active = srv.events().find((e) => e.eventName === "app_active");
+  assert.equal("errors" in active.props, false, "the counts never ride on app_active");
+  // Once a day: the same answer later that day sends nothing more.
+  await a.active(counts);
+  assert.equal(srv.events().filter((e) => e.eventName === "server_error").length, 3);
+  // A server without the route (404) or a day without errors sends none; at most 30 a day.
+  advance(DAY);
+  answers["/api/server-errors"] = { day: "2026-10-05", counts: Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`alarm.step_${i}`, i + 1])) };
+  await a.active(await usage.countsWith(ses, "https://inbox.example.com")());
+  assert.equal(srv.events().filter((e) => e.eventName === "server_error" && e.props.day === "2026-10-05").length, 30);
+  assert.deepEqual(usage.cleanErrors(null), []);
+  assert.deepEqual(usage.cleanErrors({ day: "yesterday", counts: { "http.x": 1 } }), []);
+});
+
+test("B-203: with the details off nothing of the server's errors is read or sent", async () => {
+  const m = machine();
+  const { a, srv } = client(m);
+  await a.start({});
+  await a.setEnabled(false);
+  await a.active({ errors: { day: "2026-10-04", counts: { "http.agents": 2 } } } as any);
+  assert.equal(srv.events().filter((e) => e.eventName === "server_error").length, 0);
+  assert.equal(a.countsWanted(), false, "the server's counts, errors included, are not read at all");
+});
