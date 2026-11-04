@@ -191,6 +191,26 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-04 (0.91.0 and 0.92.0: B-204, B-205 for the Mac app).**
+
+- Fabric's ADR-0188 (the operator's words of 2026-11-04 relayed on board thread `f7758225`, message `516761e1`): every
+  product updates by default and still notifies when updates are off, and its logs are summed up hourly and daily.
+- **0.91.0** (PR #400, `833c1e9`, B-204): with Install Updates Automatically off the app still reads the feed, names a
+  newer version once (a notice and Update to {version}…) and downloads nothing until the person clicks; an older server
+  is offered the same way. Published after four attempts of the release run 41889139811 (three found no macOS runner).
+- **0.92.0** (PR #401, `151229c`, B-205 for the Mac app): every log event with an outcome is folded into
+  `ops.digest.hourly@1` and `ops.digest.daily@1` under `<userData>/digests` with Fabric's fold (e1eecec0). The lines pass
+  the closed schemas of the contract's draft DEC-0153 (a0e7b53d, checked with ajv 2020); FAC-SEM-166/167 wait for its
+  merge. Published at the first attempt (release run 41905558658), 20 assets.
+- The server was not changed in either release; the app offers to update an older server (B-44, and B-204's notice).
+- docs/ANALYTICS.md records the break in `first_passioncode_app` from the launcher 0.2.76 (PR #402, `fd017c9`); its
+  date is filled in when the launcher is published (not before 2026-11-21).
+
+**Exact next task:** B-205's server part: the server's own hourly and daily digest in the same form, from its request
+and error counts (B-203's ledger), readable with a tool; then `pnpm validate` of both against DEC-0153 once it is
+merged. Read the nightly `platforms` run's macOS job on 2026-11-05. Waits: the operator's approval of the support
+agent's category notes, the SSH key on GitHub, a private data repository for Inbox's insights.
+
 **State 2026-11-04 (0.90.0: B-203).**
 
 - **0.90.0** (PR #397, `1df3923`, B-203; design PR #396): the server counts its own errors per UTC day, class and code
@@ -205,9 +225,7 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - The coordinator paused heavy runs at 2.7 GB free and lifted the pause at 14:58 UTC: one heavy run at a time while
   swap is high, temporary builds removed at once, paused again below 8 GB free.
 
-**Exact next task:** read the nightly `platforms` run on `main` (its `macos-arm64` job) on 2026-11-05 and close or fix
-B-202's macOS line; then the operator's approval of the support agent's category notes; on 2026-11-09 B-186 and B-174.
-Waits as below.
+**Next task then:** the nightly `platforms` run on `main` (still to read on 2026-11-05), then B-204 and B-205.
 
 **State 2026-11-04 (0.89.0: B-202; the operator's request to every product).**
 
