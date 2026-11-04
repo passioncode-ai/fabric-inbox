@@ -1,6 +1,6 @@
 # B-199: the channel-agent standard in Fabric Inbox
 
-**State:** step 1 in 0.85.0; steps 2 to 4 planned. **Source:** board thread `30c45b9c` (the operator's words relayed
+**State:** step 1 in 0.85.0, step 2 in 0.86.0; steps 3 and 4 planned. **Source:** board thread `30c45b9c` (the operator's words relayed
 2026-11-04: agents finish the work, an improvement loop, no question left unanswered, fresh sources; then «давай делай
 и не тормозите»), request `553bdd5f`; the standard's neutral copy (v1, a release candidate) is the channel side's
 `docs/template/copies/channel-agent-standard.neutral.md`. Row: [B-199](../../evidence/backlog.md).
@@ -36,9 +36,13 @@ its own policy, knowledge and texts.
    `list_agent_runs` carries its `ticketOutcome`. `customer_silent`, `awaiting_customer`, `expired_by_decision` and
    promotions are named in `notMeasured`. Tests: `tests/ticket-outcome.test.ts`, `B-199` in
    `tests/agents-registry.test.ts`.
-2. **Source age (by 2026-11-06).** A collection declares its maximum age; `list_knowledge` shows each document's and
-   collection's age; a knowledge endpoint's age is when its revision last changed (`agent_facts`); one event per
-   episode past the limit (`knowledge.stale`), a second failure in a row notifies once.
+2. **Source age (0.86.0, collections).** A collection declares `maxAgeHours` (`save_knowledge_collection`);
+   `list_knowledge` shows its `syncedAt` (the last batch, unchanged documents included: their source was read),
+   `ageHours` and `stale`, and each document's `checkedAt`; the registry's hourly look writes one `knowledge.stale`
+   event per collection and episode (a new batch ends it; schema `docs/agents/knowledge-event.schema.json`). Tests:
+   `B-199` in `tests/knowledge.test.ts` and `tests/knowledge-events.test.ts`. Left for a later step: a knowledge
+   endpoint's own age (the data agent's revision; Inbox records only the newest revision it saw, `agent_facts`), and
+   the age on the Settings screen.
 3. **Open gaps (by 2026-11-07).** A list of open questions per agent with their age, kind and the owner's endpoint
    (`list_open_questions`), and one alarm event for a question past 7 days.
 4. **Eval tickets (by 2026-11-10).** Every run judged unhelpful, unanswered, expired or handed off with knowledge that

@@ -1,4 +1,5 @@
 import { answerCitedEvent, causeOf, citedOf, supportDiagnosedEvent } from "./learning-events";
+import { addressesByAgent, collectionStale, readersOf } from "./knowledge-events";
 import { NOT_MEASURED, summarizeOutcomes, type OutcomeSummary } from "./ticket-outcome";
 import { calibrationOf, type Calibration, type PersonGrade } from "./calibration";
 import { CLOSED_STATES, GAPS_CHECK_MS, GAPS_PAGE, GAPS_PAGES, GAPS_UNAVAILABLE_MS, parseGapList, runOfRequest } from "./gap-closures";
@@ -1045,6 +1046,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
   protected async superviseAbandoned(now = Date.now()): Promise<number> {
     const due = (await this.ctx.storage.get<number>("abandoned_check_at")) ?? 0;
     if (due > now) return due;
+    await this.reportStaleKnowledge(new Date(now).toISOString());
     const served: { address: string; mailboxId: string; agentId: string; facts: () => Promise<ThreadFacts[]> }[] = (await readAllSettings(this.env.BUCKET)).flatMap(({ email, settings }) => {
       const assignment = readAssignment(settings);
       const address = email.toLowerCase();
@@ -1085,6 +1087,28 @@ export class AgentRegistryDO extends DurableObject<Env> {
     const next = more ? now + 1000 : now + ABANDON_CHECK_MS;
     await this.ctx.storage.put("abandoned_check_at", next);
     return next;
+  }
+
+  /**
+   * B-199 (standard 7.1): once an hour, with the abandoned look, every knowledge collection past the maximum age its
+   * owner declared is reported once per episode (`knowledge.stale`, keyed by the collection and its last batch, so a
+   * new batch ends the episode and a later lapse is a new one). A store that cannot be read waits for the next look.
+   */
+  private async reportStaleKnowledge(at: string): Promise<void> {
+    if (!this.env.KNOWLEDGE) return;
+    let stale;
+    try { stale = (await this.env.KNOWLEDGE.getByName("workspace").listCollections(Date.parse(at))).filter((c) => c.stale && c.maxAgeHours !== null); }
+    catch (error) { console.warn(JSON.stringify({ event: "knowledge_age_unreadable", error: (error as Error).message?.slice(0, 200) })); return; }
+    if (!stale.length) return;
+    const [agents, byAgent] = await Promise.all([this.listAgents(), addressesByAgent(this.env).catch(() => new Map<string, string[]>())]);
+    let written = 0;
+    for (const c of stale) {
+      const key = `stale-${c.id}-${c.syncedAt}`;
+      if (this.rows("SELECT 1 FROM agent_events WHERE run_id = ? LIMIT 1", key).length) continue;
+      this.appendEvent(key, collectionStale({ ...c, maxAgeHours: c.maxAgeHours! }, readersOf(c.id, agents, byAgent), at));
+      written++;
+    }
+    if (written) console.log(JSON.stringify({ event: "knowledge_stale_reported", collections: written }));
   }
 
   /** Test seam: how a hook is called; production uses the Worker's fetch. */

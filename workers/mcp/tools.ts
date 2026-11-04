@@ -560,7 +560,7 @@ const answerAgain = defineTool({
 
 const listAgentEvents = defineTool({
   name: "list_agent_events", title: "Reply agents' events", level: "read", readOnly: true,
-  description: "What reply agents did, as a feed another agent reads by cursor: one event per run that ended (sent, drafted, left alone, a question without an answer, handed to a person, a reply saying an earlier answer did not help, or needs a look), with the address, agent, intent, category, whether the answer was grounded, the question it could not answer (a paraphrase) and the passages it used, never the sender, subject or message text; each event's link opens the message and its run in the inbox. Three more kinds: agent.waiting (a message held or drafted 4 hours without a reply, once per message), agent.abandoned (a conversation on an agent address still waiting for someone 48 hours after its last message came in, with its state and hours, once per message; status none when no run exists) and support.quality_daily (one per agent address and closed UTC day: the support quality standard's coverage, quality, stability and autonomy counts; a field not measured is null and named in notMeasured; schema docs/agents/support-quality-daily.schema.json). Two more report what agents answer from: knowledge.learned (a knowledge document added or changed, or an agent's own knowledge text changed: its ref, the addresses whose agents read it, the title as questions, the text as answer, who saved it as validatedBy) and knowledge.retracted (a document removed); schema docs/agents/knowledge-event.schema.json. Two more feed a shared learning loop: answer.cited (an answer sent from the knowledge, once per run: the ids of the items it cited and each one's coverage as two lists at the same index, the revision, the restated question; schema docs/agents/answer-cited.schema.json) and support.diagnosed (a message held or handed to a person, once per run and cause: retrieval, draft-or-check, data or person; a failed knowledge lookup names none; schema docs/agents/support-diagnosed.schema.json). Without after: the newest events; pass the returned cursor as after to read only what is new.",
+  description: "What reply agents did, as a feed another agent reads by cursor: one event per run that ended (sent, drafted, left alone, a question without an answer, handed to a person, a reply saying an earlier answer did not help, or needs a look), with the address, agent, intent, category, whether the answer was grounded, the question it could not answer (a paraphrase) and the passages it used, never the sender, subject or message text; each event's link opens the message and its run in the inbox. Three more kinds: agent.waiting (a message held or drafted 4 hours without a reply, once per message), agent.abandoned (a conversation on an agent address still waiting for someone 48 hours after its last message came in, with its state and hours, once per message; status none when no run exists) and support.quality_daily (one per agent address and closed UTC day: the support quality standard's coverage, quality, stability and autonomy counts; a field not measured is null and named in notMeasured; schema docs/agents/support-quality-daily.schema.json). Three more report what agents answer from: knowledge.learned (a knowledge document added or changed, or an agent's own knowledge text changed: its ref, the addresses whose agents read it, the title as questions, the text as answer, who saved it as validatedBy), knowledge.retracted (a document removed) and knowledge.stale (a collection past the maximum age its owner declared since its last batch, once per episode); schema docs/agents/knowledge-event.schema.json. Two more feed a shared learning loop: answer.cited (an answer sent from the knowledge, once per run: the ids of the items it cited and each one's coverage as two lists at the same index, the revision, the restated question; schema docs/agents/answer-cited.schema.json) and support.diagnosed (a message held or handed to a person, once per run and cause: retrieval, draft-or-check, data or person; a failed knowledge lookup names none; schema docs/agents/support-diagnosed.schema.json). Without after: the newest events; pass the returned cursor as after to read only what is new.",
   input: { after: z.string().max(128).optional().describe("The cursor from the previous page"), limit: z.number().int().min(1).max(200).default(50) },
   routes: ["GET /api/agent-events"],
   call: (a, ctx) => get(ctx, "/api/agent-events", { after: a.after, limit: a.limit }),
@@ -700,7 +700,7 @@ const listCategories = defineTool({
 
 const listKnowledge = defineTool({
   name: "list_knowledge", title: "List knowledge", level: "read", readOnly: true,
-  description: "Knowledge collections the reply agents answer from, with which agents use each. Give collectionId for its documents, and documentId for one document's text.",
+  description: "Knowledge collections the reply agents answer from, with which agents use each, and how old each is: syncedAt (when a batch last reached it), ageHours, maxAgeHours (its declared limit, null: none) and stale (past it). Give collectionId for its documents, each with checkedAt (when a batch last confirmed it), and documentId for one document's text.",
   input: { collectionId: z.string().max(100).optional(), documentId: z.string().max(300).optional() },
   routes: ["GET /api/knowledge/collections", "GET /api/knowledge/collections/:id", "GET /api/knowledge/collections/:id/documents/:doc"],
   async call(a, ctx) {
@@ -1721,19 +1721,20 @@ const deleteProject = defineTool({
 
 const saveCollection = defineTool({
   name: "save_knowledge_collection", title: "Create or rename a knowledge collection", level: "admin", target: (a) => a.collectionId ?? a.name ?? "",
-  description: "Creates a knowledge collection, or renames or redescribes one (give collectionId). A new collection is filled by hand (put_knowledge_documents) unless source names a Fabric project, whose knowledge Fabric keeps it in step with. Grant it to an agent with save_agent.",
+  description: "Creates a knowledge collection, or renames or redescribes one (give collectionId). A new collection is filled by hand (put_knowledge_documents) unless source names a Fabric project, whose knowledge Fabric keeps it in step with. maxAgeHours declares how old it may get since a batch last reached it (null clears it); past that, list_knowledge marks it stale and the events feed says so once (knowledge.stale). Grant it to an agent with save_agent.",
   input: { collectionId: z.string().max(100).optional(), name: z.string().min(1).max(80).optional(), description: z.string().max(500).optional(),
     source: z.union([z.object({ kind: z.literal("manual") }).strict(),
       z.object({ kind: z.literal("fabric"), project: z.string().min(1).max(120), scope: z.string().max(200).optional() }).strict()]).optional()
-      .describe('New collections only: {kind:"manual"} (the default) or {kind:"fabric", project, scope?}') },
+      .describe('New collections only: {kind:"manual"} (the default) or {kind:"fabric", project, scope?}'),
+    maxAgeHours: z.number().int().min(1).max(8760).nullable().optional().describe("How many hours old it may get since its last batch; null: no limit") },
   routes: ["POST /api/knowledge/collections", "PUT /api/knowledge/collections/:id"],
   call: (a, ctx) => {
     if (a.collectionId) {
       if (a.source) throw new ApiError(400, "A collection's source is chosen when it is made; make a new collection for another source", null);
-      return put(ctx, `/api/knowledge/collections/${enc(a.collectionId)}`, { name: a.name, description: a.description });
+      return put(ctx, `/api/knowledge/collections/${enc(a.collectionId)}`, { name: a.name, description: a.description, maxAgeHours: a.maxAgeHours });
     }
     if (!a.name) throw new ApiError(400, "A new collection needs a name", null);
-    return post(ctx, "/api/knowledge/collections", { name: a.name, description: a.description, ...(a.source ? { source: a.source } : {}) });
+    return post(ctx, "/api/knowledge/collections", { name: a.name, description: a.description, ...(a.source ? { source: a.source } : {}), ...(a.maxAgeHours !== undefined ? { maxAgeHours: a.maxAgeHours } : {}) });
   },
 });
 const deleteCollection = defineTool({

@@ -2,9 +2,9 @@ import { DurableObject } from "cloudflare:workers";
 import { migrateSchema } from "../lib/do-schema";
 import { KNOWLEDGE_STEPS } from "./schema";
 import type { Env } from "../types";
-import { chunkText, COLLECTION_ID, ftsQuery, LIMITS, sha256Hex } from "./text";
+import { chunkText, COLLECTION_ID, ftsQuery, LIMITS, MAX_AGE_HOURS, sha256Hex } from "./text";
 import { msg } from "../../shared/i18n";
-export { COLLECTION_ID, LIMITS } from "./text";
+export { COLLECTION_ID, LIMITS, MAX_AGE_HOURS } from "./text";
 
 /**
  * Knowledge collections (KN-1, KN-6): one store per workspace
@@ -26,6 +26,15 @@ export interface Collection {
   chars: number;
   createdAt: string;
   updatedAt: string;
+  /**
+   * B-199 (standard 7.1): when a batch of documents last reached the collection (a document that did not change
+   * counts: its source was read), the maximum age its owner declared (null: none), the age in hours and whether it
+   * is past the limit. A collection filled by hand is as old as its last batch.
+   */
+  syncedAt: string;
+  maxAgeHours: number | null;
+  ageHours: number;
+  stale: boolean;
 }
 export interface KnowledgeDocument {
   id: string;
@@ -36,6 +45,8 @@ export interface KnowledgeDocument {
   chars: number;
   chunks: number;
   updatedAt: string;
+  /** B-199: when a batch last confirmed this document, changed or not. */
+  checkedAt: string;
 }
 export interface DocumentInput { sourceUri: string; title: string; text: string; revision?: string }
 export interface UpsertResult {
@@ -64,7 +75,16 @@ export class KnowledgeError extends Error {
 
 
 type Row = Record<string, string | number | null>;
+const hoursSince = (iso: string, now: number) => Math.max(0, Math.round(((now - (Date.parse(iso) || now)) / 3_600_000) * 10) / 10);
 const slug = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+
+/** A declared maximum age in whole hours, 1 to MAX_AGE_HOURS; null clears it. */
+function maxAgeOf(value: number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const hours = Math.round(Number(value));
+  if (!Number.isFinite(hours) || hours < 1 || hours > MAX_AGE_HOURS) throw new KnowledgeError(msg("A maximum age is 1 to {max} hours", { max: MAX_AGE_HOURS }), "invalid");
+  return hours;
+}
 
 function readSource(raw: string): CollectionSource {
   try {
@@ -81,16 +101,21 @@ export class KnowledgeDO extends DurableObject<Env> {
     migrateSchema(ctx.storage, KNOWLEDGE_STEPS, "KnowledgeDO");
   }
 
-  private collectionRow(r: Row): Collection {
+  private collectionRow(r: Row, now = Date.now()): Collection {
     const stats = this.sql.exec("SELECT COUNT(*) AS n, COALESCE(SUM(chars), 0) AS c FROM documents WHERE collection_id = ?", r.id).one() as Row;
+    const syncedAt = String(r.synced_at ?? r.updated_at);
+    const maxAgeHours = r.max_age_hours === null || r.max_age_hours === undefined ? null : Number(r.max_age_hours);
+    const ageHours = hoursSince(syncedAt, now);
     return {
       id: String(r.id), name: String(r.name), description: String(r.description), source: readSource(String(r.source)),
       documents: Number(stats.n), chars: Number(stats.c), createdAt: String(r.created_at), updatedAt: String(r.updated_at),
+      syncedAt, maxAgeHours, ageHours, stale: maxAgeHours !== null && ageHours > maxAgeHours,
     };
   }
 
-  async listCollections(): Promise<Collection[]> {
-    return (this.sql.exec("SELECT * FROM collections ORDER BY name COLLATE NOCASE").toArray() as Row[]).map((r) => this.collectionRow(r));
+  /** `now` places the ages (B-199: the hourly look passes its own clock). */
+  async listCollections(now = Date.now()): Promise<Collection[]> {
+    return (this.sql.exec("SELECT * FROM collections ORDER BY name COLLATE NOCASE").toArray() as Row[]).map((r) => this.collectionRow(r, now));
   }
 
   async getCollection(id: string): Promise<Collection | null> {
@@ -98,7 +123,7 @@ export class KnowledgeDO extends DurableObject<Env> {
     return r ? this.collectionRow(r) : null;
   }
 
-  async createCollection(input: { name: string; description?: string; source?: CollectionSource }): Promise<Collection> {
+  async createCollection(input: { name: string; description?: string; source?: CollectionSource; maxAgeHours?: number | null }): Promise<Collection> {
     const name = String(input.name ?? "").trim().slice(0, 80);
     if (!name) throw new KnowledgeError(msg("A collection needs a name"), "invalid");
     const count = Number((this.sql.exec("SELECT COUNT(*) AS n FROM collections").one() as Row).n);
@@ -110,18 +135,19 @@ export class KnowledgeDO extends DurableObject<Env> {
     const source: CollectionSource = input.source?.kind === "fabric"
       ? { kind: "fabric", project: String(input.source.project).slice(0, 120), ...(input.source.scope ? { scope: String(input.source.scope).slice(0, 200) } : {}) }
       : { kind: "manual" };
-    this.sql.exec("INSERT INTO collections (id, name, description, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-      id, name, String(input.description ?? "").trim().slice(0, 500), JSON.stringify(source), now, now);
+    this.sql.exec("INSERT INTO collections (id, name, description, source, created_at, updated_at, synced_at, max_age_hours) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      id, name, String(input.description ?? "").trim().slice(0, 500), JSON.stringify(source), now, now, now, maxAgeOf(input.maxAgeHours));
     return (await this.getCollection(id))!;
   }
 
-  async updateCollection(id: string, patch: { name?: string; description?: string }): Promise<Collection> {
+  async updateCollection(id: string, patch: { name?: string; description?: string; maxAgeHours?: number | null }): Promise<Collection> {
     const current = await this.getCollection(id);
     if (!current) throw new KnowledgeError(msg("No such collection"), "not_found");
     const name = patch.name === undefined ? current.name : String(patch.name).trim().slice(0, 80);
     if (!name) throw new KnowledgeError(msg("A collection needs a name"), "invalid");
     const description = patch.description === undefined ? current.description : String(patch.description).trim().slice(0, 500);
-    this.sql.exec("UPDATE collections SET name = ?, description = ?, updated_at = ? WHERE id = ?", name, description, new Date().toISOString(), id);
+    const maxAge = patch.maxAgeHours === undefined ? current.maxAgeHours : maxAgeOf(patch.maxAgeHours);
+    this.sql.exec("UPDATE collections SET name = ?, description = ?, max_age_hours = ?, updated_at = ? WHERE id = ?", name, description, maxAge, new Date().toISOString(), id);
     return (await this.getCollection(id))!;
   }
 
@@ -141,7 +167,7 @@ export class KnowledgeDO extends DurableObject<Env> {
     if (!(await this.getCollection(collectionId))) throw new KnowledgeError(msg("No such collection"), "not_found");
     return (this.sql.exec("SELECT * FROM documents WHERE collection_id = ? ORDER BY title COLLATE NOCASE LIMIT ?", collectionId, LIMITS.documentsPerCollection).toArray() as Row[])
       .map((r) => ({ id: String(r.id), collectionId, sourceUri: String(r.source_uri), title: String(r.title), revision: String(r.revision),
-        chars: Number(r.chars), chunks: Number(r.chunks), updatedAt: String(r.updated_at) }));
+        chars: Number(r.chars), chunks: Number(r.chunks), updatedAt: String(r.updated_at), checkedAt: String(r.checked_at ?? r.updated_at) }));
   }
 
   /** One document's text, reassembled from its chunks (for the screen and for a read tool). */
@@ -184,18 +210,22 @@ export class KnowledgeDO extends DurableObject<Env> {
       let count = existingCount;
       for (const { d, hash, chunks } of prepared) {
         const row = this.sql.exec("SELECT id, content_hash, revision FROM documents WHERE collection_id = ? AND source_uri = ?", collectionId, d.sourceUri).toArray()[0] as Row | undefined;
-        if (row && row.content_hash === hash && row.revision === d.revision) { result.unchanged++; continue; }
+        if (row && row.content_hash === hash && row.revision === d.revision) {
+          this.sql.exec("UPDATE documents SET checked_at = ? WHERE id = ?", now, row.id);
+          result.unchanged++;
+          continue;
+        }
         if (!row && count >= LIMITS.documentsPerCollection) { result.refused.push({ sourceUri: d.sourceUri, reason: msg("The collection holds its limit of {max} documents", { max: LIMITS.documentsPerCollection }) }); continue; }
         const id = row ? String(row.id) : crypto.randomUUID();
         if (row) {
           this.sql.exec("DELETE FROM chunks_fts WHERE rowid IN (SELECT id FROM chunks WHERE document_id = ?)", id);
           this.sql.exec("DELETE FROM chunks WHERE document_id = ?", id);
-          this.sql.exec("UPDATE documents SET title = ?, revision = ?, content_hash = ?, chars = ?, chunks = ?, updated_at = ? WHERE id = ?",
-            d.title, d.revision, hash, d.text.length, chunks.length, now, id);
+          this.sql.exec("UPDATE documents SET title = ?, revision = ?, content_hash = ?, chars = ?, chunks = ?, updated_at = ?, checked_at = ? WHERE id = ?",
+            d.title, d.revision, hash, d.text.length, chunks.length, now, now, id);
           result.updated++;
         } else {
-          this.sql.exec("INSERT INTO documents (id, collection_id, source_uri, title, revision, content_hash, chars, chunks, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            id, collectionId, d.sourceUri, d.title, d.revision, hash, d.text.length, chunks.length, now, now);
+          this.sql.exec("INSERT INTO documents (id, collection_id, source_uri, title, revision, content_hash, chars, chunks, created_at, updated_at, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            id, collectionId, d.sourceUri, d.title, d.revision, hash, d.text.length, chunks.length, now, now, now);
           result.added++;
           count++;
         }
@@ -216,7 +246,7 @@ export class KnowledgeDO extends DurableObject<Env> {
           result.pruned!.push({ id: String(r.id), title: String(r.title), revision: String(r.revision) });
         }
       }
-      this.sql.exec("UPDATE collections SET updated_at = ? WHERE id = ?", now, collectionId);
+      this.sql.exec("UPDATE collections SET updated_at = ?, synced_at = ? WHERE id = ?", now, now, collectionId);
     });
     return result;
   }
