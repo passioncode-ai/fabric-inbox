@@ -191,6 +191,24 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-04 (0.87.0, 0.87.1 and 0.88.0: B-200, B-201, B-199 step 4).**
+
+- **0.87.0** (PR #389, `86c7e86`, B-200): usage and error data on by default from the first launch, a notice once
+  (OK, Turn Off), off per product, nothing sent when off ([docs/ANALYTICS.md](../ANALYTICS.md), SCN-048).
+- **0.87.1** (PR #391, `6354d30`, B-201): a knowledge answer whose `revision` names a source with a null value is a
+  failed lookup: no answer from it, no gap, retried. Both servers on it from 11:27 UTC; the data agent checked its gap
+  list on board thread `e68f363c` (message `1265c4a4`): no false gap from Inbox in the outage window.
+  [v0.87.1](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v0.87.1) is published with 20 assets.
+- **0.88.0** (PR #392, `91f47cf`, B-199 step 4): eval tickets from what a reply agent got wrong, run through the preview
+  after every new version, one `agent.eval_failed` per failing episode ([the packet](tasks/2026-11-04-channel-agent-standard.md)
+  step 4). Both servers on `91f47cf` from 12:15 UTC (receipts `linked`); `list_agent_evals` answers on the owner
+  server. The tag's release run is 41823998027.
+
+**Exact next task:** the report on board thread `30c45b9c` by 2026-11-06 (what shipped in 0.85.0 to 0.88.0, what is
+left with dates, what in the standard's copy does not fit mail: the packet's last section); before it, read
+`list_agent_evals` for each agent on the owner server once the hourly look has collected tickets, and give the numbers.
+Then the operator's approval of the support agent's category notes; on 2026-11-09 B-186 and B-174. Waits as below.
+
 **State 2026-11-04 (0.85.0 and 0.86.0: B-199 steps 1 to 3).**
 
 - The operator's words relayed on the board (thread `30c45b9c`, request `553bdd5f`: «давай делай и не тормозите»): the channel-agent standard in Inbox now, report on the thread by 2026-11-06. Plan and mapping: [the packet](tasks/2026-11-04-channel-agent-standard.md); the self-report with 30 days of numbers is on the thread (message `9bd63b1f`).
