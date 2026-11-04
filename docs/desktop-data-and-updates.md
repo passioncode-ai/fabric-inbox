@@ -22,6 +22,7 @@ reinstalling the app, and every downloaded copy must update itself by default). 
 | The sign-in (Cloudflare Access cookie) | the server's partition in the profile, encrypted under the Keychain item "Fabric Inbox Safe Storage" | yes | no: sign in again with the code sent by email (30 days at most anyway, B-43) |
 | Unsent drafts and their attachments | the server's partition (local storage and IndexedDB) | yes | no: drafts are kept on the Mac only (REL-03; server draft sync is not built) |
 | Usage counts state, update switch, the last install | `analytics-state.json`, `auto-update` (only when updates were turned off), `update-install.json` (between an install and the next start) in the profile | yes | no; both start fresh (counting resumes, updates are on) |
+| The log's digests (B-205, Fabric's ADR-0188) | `digests/hourly-YYYY-MM.jsonl` and `digests/daily-YYYY-MM.jsonl` in the profile: per closed hour and UTC day, the log's events counted by name and outcome (ok, failed, unknown), the rises of failures; counts only | yes | no; counting starts again |
 | A move of an address between two servers, where it stands (no mail, no secret) | `move.json` in the profile, removed when the move is done, put back or cancelled | yes | no; open the move window again and start over: a message copied again replaces itself, nothing doubles |
 | The agent console's session folders and the ids of keys still to revoke (no secret) | `consoles/` in the profile (0700); a session's folder is removed when it ends | yes | no; a key it listed is then revoked only in Settings → Agent access |
 | The app's log | `~/Library/Logs/Fabric Inbox/fabric-inbox.log` (and `.1.log`, about 2 MB at most) | yes | no |
@@ -193,7 +194,7 @@ own folders are used (`app.getPath` in `desktop/main.cjs`):
 | What | Windows | Linux |
 |---|---|---|
 | The app | `%LOCALAPPDATA%\Programs\fabric-inbox-desktop\` (per-user NSIS install, no administrator rights, PL-01) | the AppImage wherever you keep it; or `/opt/fabric-inbox/` with `/usr/bin/fabric-inbox` from the `.deb` |
-| Profile (`server.json`, partitions, `auto-update`, `update-install.json`, `analytics-state.json`) | `%APPDATA%\Fabric Inbox\` | `~/.config/Fabric Inbox/` (or under `XDG_CONFIG_HOME`) |
+| Profile (`server.json`, partitions, `auto-update`, `update-install.json`, `analytics-state.json`, `digests/`) | `%APPDATA%\Fabric Inbox\` | `~/.config/Fabric Inbox/` (or under `XDG_CONFIG_HOME`) |
 | The server address's copy | `%APPDATA%\PassionCode\backups\fabric-inbox.json` | `~/.config/PassionCode/backups/fabric-inbox.json` |
 | The app's log | `logs\fabric-inbox.log` inside the profile | `logs/fabric-inbox.log` inside the profile |
 | The sign-in cookie's key (PL-05) | DPAPI, bound to the Windows account | the Secret Service (GNOME Keyring, KWallet); without one the app **refuses to start** rather than keep the sign-in in plain text (`key_store_refused` in the log). On a desktop Chromium does not recognize (Sway, i3) the app asks for the Secret Service itself (`--password-store=gnome-libsecret`, from 0.33.5, B-111) when one is running on the session bus, so start gnome-keyring with your session; without one it still refuses. A `--password-store` you pass wins |

@@ -168,7 +168,9 @@ signed release must create it without a prompt (`docs/release.md`, upgrade check
   session until the next launch. Each launch removes the partitions of servers no longer listed and
   `server.json.*` / `servers.json.*` / `pending-setup.json.*` leftovers, **except when no server is known at
   all**: then every partition is kept, since it may be the server about to be entered again. The log is `~/Library/Logs/Fabric Inbox/fabric-inbox.log`, JSON lines with codes only, capped near
-  2 MB (`desktop/log.cjs`); `analytics-state.json`, `auto-update` and `update-install.json` are the
+  2 MB (`desktop/log.cjs`), folded by the hour and the UTC day into `digests/` in the profile, counts by event and
+  outcome only, written when the next hour's first event comes, never by a timer (B-205, `desktop/ops-digest.cjs`);
+  `analytics-state.json`, `auto-update` and `update-install.json` are the
   only profile files usage counts and updates add (a move between servers adds `move.json` while it runs, removed when it ends), and a verified update waits in
   `~/Library/Caches/Fabric Inbox/updates/` until Squirrel.Mac copies it.
 - **LC-16 exception: an update already downloaded installs at quit even after the switch goes off.**
