@@ -191,6 +191,25 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-04 (0.89.0: B-202; the operator's request to every product).**
+
+- The operator's words relayed by the coordinator's session (2026-11-04 about 12:25 UTC): every product sorts out its
+  GitHub issues, is checked on Windows, Linux and macOS, and logs errors so customers' problems are visible to us.
+  Issues: none open. Checks: **0.89.0** (PR #394, `9753dfa`, B-202) adds the `macos-arm64` job to
+  `.github/workflows/platforms.yml` (tests, the hardened unsigned build, a launch with the console check and one with
+  `--background`); its first run found that `npm run desktop:package` left out the agent console's node-pty, fixed in
+  the same PR. `--background` is supported (AGENTS.md, Lifecycle). Errors: the Mac app sends `app_error` since 0.87.0;
+  a customer's server is invisible to us, which is B-203.
+  [v0.89.0](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v0.89.0) is published with 20 assets (run
+  41836995020); both servers on `9753dfa` from 13:26 UTC (receipts `linked`).
+- The report on board thread `30c45b9c` is sent (message `dc3368b0`): on the owner server 7 eval tickets for 3 agents,
+  all failing on the current versions (3 hand-offs, 3 held, 1 safe reply).
+
+**Exact next task:** B-203's design note and scenario by 2026-11-07 (the server counts its own error classes per UTC
+day as codes; the Mac app adds yesterday's counts to `app_active` under the same switch), then the release by
+2026-11-11. The broker's `backgroundLaunch: true` for `inbox.desktop` is its owner's. Then the operator's approval of
+the support agent's category notes; on 2026-11-09 B-186 and B-174. Waits as below.
+
 **State 2026-11-04 (0.87.0, 0.87.1 and 0.88.0: B-200, B-201, B-199 step 4).**
 
 - **0.87.0** (PR #389, `86c7e86`, B-200): usage and error data on by default from the first launch, a notice once
@@ -204,10 +223,7 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
   step 4). Both servers on `91f47cf` from 12:15 UTC (receipts `linked`); `list_agent_evals` answers on the owner
   server. The tag's release run is 41823998027.
 
-**Exact next task:** the report on board thread `30c45b9c` by 2026-11-06 (what shipped in 0.85.0 to 0.88.0, what is
-left with dates, what in the standard's copy does not fit mail: the packet's last section); before it, read
-`list_agent_evals` for each agent on the owner server once the hourly look has collected tickets, and give the numbers.
-Then the operator's approval of the support agent's category notes; on 2026-11-09 B-186 and B-174. Waits as below.
+**Next task then:** the report on board thread `30c45b9c` (sent 2026-11-04, message `dc3368b0`).
 
 **State 2026-11-04 (0.85.0 and 0.86.0: B-199 steps 1 to 3).**
 
