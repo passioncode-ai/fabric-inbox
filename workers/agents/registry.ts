@@ -1,5 +1,5 @@
 import { answerCitedEvent, causeOf, citedOf, supportDiagnosedEvent } from "./learning-events";
-import { countError, countLog } from "../lib/error-counts";
+import { countError, countLog, countOk } from "../lib/error-counts";
 import { addressesByAgent, collectionStale, readersOf } from "./knowledge-events";
 import { NOT_MEASURED, summarizeOutcomes, ticketOutcomeOf, type OutcomeSummary } from "./ticket-outcome";
 import { calibrationOf, type Calibration, type PersonGrade } from "./calibration";
@@ -753,6 +753,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
       if (event) this.appendEvent(run.id, event);
       // B-203: a run that just failed before sending is counted by its failure (model, safety, agent, read, answer, save).
       if (before !== run.status && run.status === "failed") void countError(this.env, "agent", run.failure ?? "unknown");
+      // B-205: a run that just ended otherwise (sent, drafted, held, skipped, off), by its status.
+      else if (before !== run.status && ["sent", "drafted", "held", "skipped", "off"].includes(run.status)) void countOk(this.env, "agent", run.status);
       // B-162: what a sent answer cited, once per run, and why a message was not answered, once per run and cause
       // (a held message retried every 12 hours says it again only when the cause changes).
       if (before !== run.status) {

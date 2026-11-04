@@ -40,6 +40,11 @@ export const LEDGER_STEPS = [
   statements("4_error_counts", [
     `CREATE TABLE IF NOT EXISTS error_counts (day TEXT NOT NULL, class TEXT NOT NULL, code TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (day, class, code))`,
   ]),
+  // B-205: the server's operations per UTC hour and outcome, folded on read into ops.digest (workers/lib/ops-digest.ts).
+  statements("5_ops_hourly", [
+    `CREATE TABLE IF NOT EXISTS ops_hourly (hour TEXT NOT NULL, op TEXT NOT NULL, ok INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0,
+       unknown INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (hour, op))`,
+  ]),
 ];
 
 
@@ -50,6 +55,8 @@ export type JournalOutcome = "done" | "failed" | "refused" | "confirmation_asked
 export interface JournalEntry { id: number; at: number; caller: string; callerLabel: string; tool: string; target: string; outcome: JournalOutcome; detail: string }
 
 const day = (t: number) => new Date(t).toISOString().slice(0, 10);
+/** B-205: the UTC hour a time falls in, as `YYYY-MM-DDTHH`. */
+const hourOf = (t: number) => new Date(t).toISOString().slice(0, 13);
 
 function newCode(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(10));
@@ -143,6 +150,20 @@ export class EmailMCP extends DurableObject<Env> {
   countError(cls: string, code: string, now = Date.now()): void {
     this.sql.exec("INSERT INTO error_counts (day, class, code, n) VALUES (?, ?, ?, 1) ON CONFLICT(day, class, code) DO UPDATE SET n = n + 1", day(now), cls, code);
     this.sql.exec("DELETE FROM error_counts WHERE day < ?", day(now - ERROR_DAYS_KEPT * 86_400_000));
+    this.countOp(`${cls}.${code}`, "failed", now);
+  }
+
+  /** B-205: one operation of this hour with its outcome; hours past ERROR_DAYS_KEPT days go. The op comes checked. */
+  countOp(op: string, outcome: "ok" | "failed" | "unknown", now = Date.now()): void {
+    const column = outcome === "ok" ? "ok" : outcome === "failed" ? "failed" : "unknown";
+    this.sql.exec(`INSERT INTO ops_hourly (hour, op, ${column}) VALUES (?, ?, 1) ON CONFLICT(hour, op) DO UPDATE SET ${column} = ${column} + 1`, hourOf(now), op);
+    this.sql.exec("DELETE FROM ops_hourly WHERE hour < ?", hourOf(now - ERROR_DAYS_KEPT * 86_400_000));
+  }
+
+  /** B-205: the counts of the hours whose key starts with `prefix` (one hour `YYYY-MM-DDTHH`, or a day `YYYY-MM-DD`). */
+  opsHours(prefix: string): { hour: string; op: string; ok: number; failed: number; unknown: number }[] {
+    return [...this.sql.exec("SELECT hour, op, ok, failed, unknown FROM ops_hourly WHERE hour >= ? AND hour < ? ORDER BY hour, op", prefix, prefix + "~")]
+      .map((r) => ({ hour: String(r.hour), op: String(r.op), ok: Number(r.ok), failed: Number(r.failed), unknown: Number(r.unknown) }));
   }
 
   /** B-203: one day's counts as `class.code`, the largest first, at most `limit`. */

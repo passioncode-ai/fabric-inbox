@@ -30,6 +30,8 @@ interface Effects {
   beforeEffect(): Promise<void>;
   /** B-203: a send ended failed or unknown, with its code; counting it never fails the send's record. */
   ended?(code: string): void;
+  /** B-205: a send the provider accepted; counting it never fails the send's record. */
+  accepted?(): void;
 }
 export class OutboxCoordinator {
   private active = new Map<string, Promise<OutboxEntry>>();
@@ -70,7 +72,7 @@ export class OutboxCoordinator {
       }
       // Commit acceptance before projection. If this write fails the persisted
       // sending row is recovered as unknown, never sent a second time.
-      try { this.store.finish(id, 'accepted', receipt.messageId, null); }
+      try { this.store.finish(id, 'accepted', receipt.messageId, null); try { this.effects.accepted?.(); } catch { /* a count never changes a send */ } }
       catch {
         // The provider has accepted, but its receipt could not be committed.
         // Never reinterpret this as rejection or permit a fresh transport attempt.

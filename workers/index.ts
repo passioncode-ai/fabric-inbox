@@ -29,7 +29,7 @@ import { incomingFailure, recordIncomingFailure } from "./incoming-log";
 import { cleanSenderName } from "../shared/mail/sender";
 import { recordUnknownRecipient } from "./lib/unknown-recipients";
 import { storeInboundAttachments } from "./lib/inbound-attachments";
-import { countError } from "./lib/error-counts";
+import { countError, countOk } from "./lib/error-counts";
 
 type AppContext = Context<MailboxContext>;
 
@@ -915,7 +915,10 @@ async function receiveEmailResilient(event: IncomingEmailEvent, env: Env, ctx: E
 
 async function handleIncomingEmail(event: IncomingEmailEvent, env: Env, ctx: ExecutionContext) {
 	try {
-		return await receiveEmailResilient(event, env, ctx);
+		const received = await receiveEmailResilient(event, env, ctx);
+		// B-205: a message received, for the hourly digest's ok beside its failures.
+		void countOk(env, "incoming", "received", (p) => ctx.waitUntil(p));
+		return received;
 	} catch (e) {
 		// The last trace of a message nothing could take: whom it was for and when, never its content (SCN-025).
 		const failure = incomingFailure(event, e);

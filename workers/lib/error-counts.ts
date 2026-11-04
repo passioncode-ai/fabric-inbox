@@ -12,7 +12,7 @@ export const ERROR_CLASSES = ["http", "alarm", "incoming", "agent", "send", "syn
 export type ErrorClass = (typeof ERROR_CLASSES)[number];
 const CODE = /^[a-z][a-z0-9_]{0,47}$/;
 /** Any object's bindings: the Worker gives every Durable Object the same ones, typed narrower in some. */
-type Counted = { EMAIL_MCP?: { getByName(name: string): { countError(cls: string, code: string): unknown } } };
+type Counted = { EMAIL_MCP?: { getByName(name: string): { countError(cls: string, code: string): unknown; countOp?(op: string, outcome: "ok"): unknown } } };
 
 /** The code as counted: lower case, `-` and `.` read as `_`, anything else that does not fit is `other`. */
 export function errorCode(raw: unknown): string {
@@ -35,6 +35,23 @@ export function countError(env: Counted, cls: ErrorClass, code: unknown, waitUnt
       await env.EMAIL_MCP.getByName("workspace").countError(cls, errorCode(code));
     } catch (error) {
       console.warn(JSON.stringify({ event: "error_count_failed", class: cls, error: (error as Error).message?.slice(0, 120) }));
+    }
+  })();
+  waitUntil?.(done);
+  return done;
+}
+
+/**
+ * B-205: one success of a low-volume operation (a message received, a reply agent's run that ended, a send accepted),
+ * so the hourly digest has its `ok` beside the failures. Never on a request's path: a request is counted only when it fails.
+ */
+export function countOk(env: Counted, cls: ErrorClass, code: unknown, waitUntil?: (p: Promise<unknown>) => void): Promise<void> {
+  const done = (async () => {
+    try {
+      const ledger = env.EMAIL_MCP?.getByName("workspace");
+      if (ledger?.countOp) await ledger.countOp(`${cls}.${errorCode(code)}`, "ok");
+    } catch (error) {
+      console.warn(JSON.stringify({ event: "ok_count_failed", class: cls, error: (error as Error).message?.slice(0, 120) }));
     }
   })();
   waitUntil?.(done);
