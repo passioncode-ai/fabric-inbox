@@ -66,6 +66,14 @@ retired event stays listed with its date.
 | `app_error` | details | a crash the app noticed, once per launch for each `where` and `code` (B-200) | `where`: `main`, `renderer` or the helper's type; `code`: the error's code or name, or the process's reason, letters, digits, `_.-` only |
 | `server_error` | details | once per UTC day with `app_active`, one event per class and code of the signed-in server's errors the day before, the largest first, at most 30 (B-203; one event per pair, growth's answer of 2026-11-04) | `class`: `http`, `alarm`, `incoming`, `agent`, `send` or `sync`; `code`: lower case letters, digits and `_`, at most 48 (the server's fixed code, never a message); `count`; `day` (`YYYY-MM-DD`, UTC) |
 
+**A break in `first_passioncode_app`.** From the release of the PassionCode launcher 0.2.76 (its PC-123, announced on
+the board on 2026-11-04, thread `1d110ad5`; the date is filled in when it is published), the launcher makes the shared
+`PassionCode/installation.json` at its own first counted start, often before this app's first start. On a Mac the
+launcher set up, `app_installed` then carries `first_passioncode_app: false`, so the share of `true` falls from that
+date. It is a break in the series, a change in what is measured, not in what people do: compare the share only within
+one side of the date. This app never writes the shared `analytics` value (since 0.87.0, B-200: its own switch is
+`declined` in `analytics-state.json`), so no `false` from it reaches the launcher.
+
 The counts come from five reads with the mail window's own session, once a day, only with the details
 on and only while the person is signed in: `/api/accounts`, `/api/v1/mailboxes`, `/api/agents`, `/api/agent-keys` and,
 since 0.90.0, `/api/server-errors` (B-203: yesterday's counts of the server's own errors, by class and code; an older
