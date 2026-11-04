@@ -191,6 +191,28 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-05 (0.93.0 and 0.93.1: B-205 for the server).**
+
+- **0.93.0** (PR #405, `9f1ae83`, design in PR #404): the server counts its operations per UTC hour in the ledger
+  (table `ops_hourly`): every counted error is also a failed `<class>.<code>`, and successes are counted for a message
+  received, a reply agent's run that ended and a send accepted (a request only when it fails). On read,
+  `GET /api/ops-digest` and the tool `get_ops_digest` fold one closed hour or day of the last 14 into
+  `ops.digest.hourly@1` or `ops.digest.daily@1` with Fabric's rise rule. Published at the first attempt (run
+  41920986171), 20 assets.
+- **0.93.1** (PR #406, `99d71f3`): a check of the answers against DEC-0153's closed schemas (a0e7b53d, ajv 2020) refused
+  only a day with nothing counted (`hours: 0`; the schema takes 1 to 24), so such a day answers 404 "Nothing was
+  counted on {day}". The contract took the same rule as OD-5 (21bb0246). Published at the first attempt (run
+  41927983743), 20 assets. Both servers on `99d71f3` (receipts `linked`); on the owner server a closed hour answers a
+  digest and 2026-11-03 answers 404 (counting began at 0.93.0's deployment, 2026-11-04 21:53 UTC).
+- Packet: [tasks/2026-11-04-server-error-counts.md](tasks/2026-11-04-server-error-counts.md), Step 2, with the three
+  differences from the design (no alarm successes, a typed copy of the fold, an unknown-outcome code counted as failed).
+- Lesson recorded: a fold must be checked against its schema on an empty window too.
+
+**Exact next task:** read the nightly `platforms` run's `macos-arm64` job on `main` (2026-11-05) and record it under
+B-202. Then, when DEC-0153 merges, `pnpm validate` (FAC-SEM-166/167) of the app's and the server's digests; when
+OBS-330 names its intake, send the server's daily digest there. Waits: the operator's approval of the support agent's
+category notes, the SSH key on GitHub, a private data repository for Inbox's insights; B-186 and B-174 on 2026-11-09.
+
 **State 2026-11-04 (0.91.0 and 0.92.0: B-204, B-205 for the Mac app).**
 
 - Fabric's ADR-0188 (the operator's words of 2026-11-04 relayed on board thread `f7758225`, message `516761e1`): every
