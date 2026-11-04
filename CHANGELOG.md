@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.89.0 (2026-11-04)
+
+- **Starts in the background when asked.** Opened with `--background`, Fabric Inbox starts without a window and
+  without taking focus. The window appears when you click its Dock icon or open it again (B-202).
+- **Checked on macOS too.** Every check that ran on Windows and Linux now also runs on a Mac with Apple silicon: the
+  tests, a build of the app, and a launch of it (B-202).
+
 ## 0.88.0 (2026-11-04)
 
 - **Agents are checked on what they got wrong.** A message a reply agent answered badly, left unanswered or handed to a

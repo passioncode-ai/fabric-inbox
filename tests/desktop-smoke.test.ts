@@ -14,7 +14,7 @@ test("the smoke verdict: a window drawn (B-105), refused for no key store, or no
   const refused = verdictOf(['{"event":"key_store_refused","backend":"basic_text"}']);
   assert.equal(refused.ok, false);
   assert.match(refused.reason, /no system key store \(basic_text\)/);
-  assert.deepEqual(parseSmokeArgs(["--exe", "/x/fabric-inbox", "--timeout", "30", "--", "--no-sandbox"]), { exe: "/x/fabric-inbox", timeout: 30, extra: ["--no-sandbox"], consoleCheck: false });
+  assert.deepEqual(parseSmokeArgs(["--exe", "/x/fabric-inbox", "--timeout", "30", "--", "--no-sandbox"]), { exe: "/x/fabric-inbox", timeout: 30, extra: ["--no-sandbox"], consoleCheck: false, background: false });
   assert.throws(() => parseSmokeArgs([]), /--exe is required/);
 });
 
@@ -34,4 +34,17 @@ test("with --console-check the smoke also waits for the PTY check, and fails on 
   const failed = verdictOf([...shown, '{"event":"console_check","outcome":"failed","reason":"load: no module"}'], { consoleCheck: true });
   assert.equal(failed.ok, false);
   assert.match(failed.reason, /PTY did not run \(load: no module\)/);
+});
+
+test("with --background the smoke passes on a quiet launch and fails when a window opens (knowledge/lifecycle.md Background launch)", async () => {
+  const { verdictOf, parseSmokeArgs, BACKGROUND_QUIET_MS } = await import("../scripts/smoke-desktop.mjs");
+  assert.equal(parseSmokeArgs(["--exe", "/x", "--background"]).background, true);
+  assert.throws(() => parseSmokeArgs(["--exe", "/x", "--background", "--console-check"]), /separate runs/);
+  const quiet = ['{"event":"profile_sweep","outcome":"ok"}', '{"event":"background_launch"}'];
+  assert.equal(verdictOf(quiet.slice(0, 1), { background: true, quietFor: BACKGROUND_QUIET_MS }), null, "not yet launched in the background");
+  assert.equal(verdictOf(quiet, { background: true, quietFor: BACKGROUND_QUIET_MS - 1 }), null, "not quiet long enough yet");
+  assert.deepEqual(verdictOf(quiet, { background: true, quietFor: BACKGROUND_QUIET_MS }), { ok: true, events: ["profile_sweep", "background_launch"] });
+  const opened = verdictOf([...quiet, '{"event":"window_shown","window":"mail"}'], { background: true, quietFor: BACKGROUND_QUIET_MS });
+  assert.equal(opened.ok, false);
+  assert.match(opened.reason, /mail window opened at a background launch/);
 });

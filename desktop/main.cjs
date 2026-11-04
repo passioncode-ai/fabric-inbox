@@ -1288,6 +1288,7 @@ app.on('window-all-closed', () => { /* keep running */ });
 app.on('activate', () => {
   if (mailWindow && !mailWindow.isDestroyed()) { mailWindow.show(); mailWindow.focus(); }
   else if (setupWindow && !setupWindow.isDestroyed()) { setupWindow.show(); setupWindow.focus(); }
+  // A background launch opened none yet (knowledge/lifecycle.md "Background launch"): the first activate does.
   else loadMail();
 });
 app.on('second-instance', (_event, argv) => {
@@ -1341,7 +1342,12 @@ if (ownsInstance) app.whenReady().then(async () => {
   if (configRead) await profile.sweepProfile({ fs, userData: app.getPath('userData'), keepPartition: config ? policy.partitionFor(config) : null, keepAlso: partitionsOf(servers), keepPartitions: !config,
     debugging: app.commandLine.hasSwitch('remote-debugging-port'), log: logEvent });
   startServerUpdates();
-  config ? loadMail() : showSetup(notice);
+  // --background (knowledge/lifecycle.md "Background launch", LC-07): the lifecycle broker starts the app for an
+  // agent with no window and no focus; the first activate (a Dock click, Cmd+Tab) or opening it again shows one.
+  // A first run with no server still shows setup: nothing else could happen in the background.
+  const background = app.commandLine.hasSwitch('background') && !!config;
+  if (background) logEvent({ event: 'background_launch' });
+  else config ? loadMail() : showSetup(notice);
   // B-105: a launch check asks the built app to prove the agent console's PTY works (a fixed echo).
   if (app.commandLine.hasSwitch('fabric-check-console'))
     void consoleCore.checkPty({ loadPty }).then((result) => logEvent({ event: 'console_check', ...result }));
