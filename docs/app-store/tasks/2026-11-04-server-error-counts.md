@@ -62,3 +62,24 @@ What the server knows today, by class (file:line as of `9753dfa`):
 
 - One event per class and code, not one event with 30 keys: growth's answer of 2026-11-04 (thread `b2e5df1f`,
   message `891c4748`). Growth reads the organization's analytics server after its access lands (PLAT-133, by 2026-11-06).
+
+## Step 2: the server's hourly and daily digest (B-205)
+
+Fabric's ADR-0188 asks every product for `ops.digest.hourly@1` and `ops.digest.daily@1` (the contract's draft
+DEC-0153). The Mac app writes them since 0.92.0 (`desktop/ops-digest.cjs`). The server's design, decided 2026-11-04:
+
+1. **What is counted.** The same six classes as above become operations named `<class>.<code>` for failures, plus an
+   `ok` count for the operations whose volume is small and already passes through one object per event: a message
+   received (`incoming`), a reply agent's run that ended (`agent`), a send that ended (`send`), an alarm step (`alarm`).
+   A request answered below 500 is not counted: one ledger write per request would put the singleton ledger on every
+   request's path. So `http.*` carries failures only, which the digest's form allows (an op with `ok` 0).
+2. **Where.** The ledger's `error_counts` gains an hour and the two other outcomes: a new table
+   `ops_hourly (hour, op, ok, failed, unknown)`, kept 14 days like the error counts; `countError` writes there too, and
+   a new `countOk(env, class, code)` counts the successes named in 1. `error_counts` stays as it is, read by
+   `get_server_errors` and the Mac app's `server_error` events (B-203), so nothing a release already sends changes.
+3. **Folding.** On read, never by a timer: `GET /api/ops-digest?hour=` answers one closed hour as
+   `ops.digest.hourly@1`, `?day=` one closed UTC day as `ops.digest.daily@1`, with Fabric's fold and rise rule (the
+   same code as the app's, moved to `shared/`). The tool `get_ops_digest` reads the same.
+4. **Checks.** The answers pass the contract's closed schemas and, once DEC-0153 is merged, `pnpm validate`
+   (FAC-SEM-166, 167). Sending the daily digest anywhere waits for Observatory's intake (OBS-330, its proposal due
+   2026-11-10) and is not part of this step.
