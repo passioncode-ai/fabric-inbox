@@ -76,6 +76,7 @@ const bundle = await build({
         async answerClosedGapsNow(now) { return this.answerClosedGaps(now); }
         async superviseNow(now) { return this.superviseWaiting(now); }
         async abandonNow(now) { return this.superviseAbandoned(now); }
+        async evalsNow(now) { return this.runEvals(now); }
         async closeNow(now) { return this.closeExpired(now); }
         async seedFacts(rows) { for (const r of rows) this.ctx.storage.sql.exec("INSERT OR REPLACE INTO agent_facts (endpoint, revision, seen_at) VALUES (?, ?, ?)", r.endpoint, r.revision, r.at); }
         async qualityNow(now) { return this.emitQualityDays(now); }
@@ -166,6 +167,11 @@ const bundle = await build({
               case 'redact': await reg.redactNow(c.now); return Response.json(true);
               case 'supervise': return Response.json({ next: await reg.superviseNow(c.now) });
               case 'abandon': return Response.json({ next: await reg.abandonNow(c.now) });
+              case 'evals': return Response.json({ next: await reg.evalsNow(c.now) });
+              case 'listEvals': return Response.json(await reg.listEvals(c.id));
+              case 'saveEval': return Response.json(await reg.saveEval(c.id, c.input));
+              case 'removeEval': return Response.json(await reg.removeEval(c.id, c.evalId));
+              case 'rerunEvals': return Response.json(await reg.rerunEvals(c.id));
               case 'close': return Response.json({ next: await reg.closeNow(c.now) });
               case 'seedFacts': await reg.seedFacts(c.rows); return Response.json(true);
               case 'seedThread': await box(c.mailbox).seedThread(c.rows); return Response.json(true);
@@ -1289,6 +1295,71 @@ test("B-199: open questions oldest first with age and owner; one agent.question_
     const events = ((await command("events", { limit: 200 })).events as { kind: string; data: { value: { runId: string; openDays: number; reportedTo: string[] } } }[]).filter((e) => e.kind === "agent.question_overdue");
     assert.equal(events.length, 1, "once per question");
     assert.deepEqual([events[0].data.value.runId, events[0].data.value.openDays, events[0].data.value.reportedTo], [rid("q1"), 9, ["tools.project.invalid"]]);
+  } finally { await mf.dispose(); }
+});
+
+test("B-199 step 4: what an agent got wrong becomes eval tickets, run after every new version, a failure reported once per episode", async () => {
+  const { mf, command } = await fixture();
+  try {
+    await command("create", { id: "support", input: support });
+    const answers = { decision: { decision: "send", intent: "pricing", grounded: true, body: "It costs 10 EUR.", reason: "" } };
+    const unsure = { decision: { decision: "send", intent: "pricing", grounded: false, body: "Maybe 10 EUR.", reason: "" } };
+    await command("setup", { mailbox: "support@acme.example", settings: { agent: "off" }, model: answers });
+    const now = Date.now();
+    const at = new Date(now - 86_400_000).toISOString();
+    const base = { mailboxId: "support@acme.example", sender: "ann@customer.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1,
+      createdAt: at, updatedAt: at, receivedAt: at };
+    const verdict = { rubric: "v1", model: "m", checks: {}, question: true, note: "" };
+    await command("begin", { run: { ...base, id: rid("e1"), emailId: "e1", status: "sent", summary: "Asks the price for a team of five, ann@customer.invalid", judgement: { ...verdict, helped: "no" } } });
+    await command("begin", { run: { ...base, id: rid("e2"), emailId: "e2", status: "sent", fallback: true, question: "Does it work offline?" } });
+    await command("begin", { run: { ...base, id: rid("e3"), emailId: "e3", status: "sent", summary: "Thanks for the answer", judgement: { ...verdict, helped: "yes" } } });
+    await command("begin", { run: { ...base, id: rid("e4"), emailId: "e4", status: "sent", fallback: true, question: "Does it work offline?" } });
+    assert.equal((await command("listEvals", { id: "support" })).tickets.length, 0);
+    await command("abandon", { now });
+    const listed = await command("listEvals", { id: "support" }) as { version: number; tickets: { id: string; text: string; reason: string; sourceRun: string; last: unknown }[]; summary: Record<string, number> };
+    assert.deepEqual(listed.tickets.map((t) => [t.reason, t.sourceRun]), [["unhelpful", rid("e1")], ["expired", rid("e2")]], "one per text; an answer that helped is none");
+    assert.equal(listed.tickets[0].text, "Asks the price for a team of five, […]", "no personal details");
+    assert.deepEqual(listed.summary, { total: 2, passing: 0, failing: 0, errors: 0, notRun: 2 });
+    // The pass runs within a second of being scheduled; nothing is stored as a run, nothing sent.
+    assert.equal((await command("evals", { now })).next > now, true, "not yet due");
+    assert.equal((await command("evals", { now: now + 2000 })).next, null);
+    let after = await command("listEvals", { id: "support" }) as typeof listed & { tickets: { last: { verdict: string; version: number } | null; failingSince: string | null }[] };
+    assert.deepEqual(after.tickets.map((t) => [t.last?.verdict, t.last?.version]), [["pass", 1], ["pass", 1]]);
+    assert.deepEqual(after.summary, { total: 2, passing: 2, failing: 0, errors: 0, notRun: 0 });
+    assert.equal(await command("runs", { mailbox: "support@acme.example" }).then((r: { runs?: unknown[] }) => (r.runs ?? r as unknown as unknown[]).length), 4, "the previews stored no run");
+    assert.deepEqual(await command("sent", { mailbox: "support@acme.example" }), []);
+    const failed = async () => ((await command("events", { limit: 200 })).events as { kind: string; data: { value: { evalId: string; agentVersion: number } } }[])
+      .filter((e) => e.kind === "agent.eval_failed");
+    // A new version that answers worse: each ticket fails, reported once; running again while it still fails reports nothing more.
+    await command("setup", { mailbox: "support@acme.example", settings: { agent: "off" }, model: unsure });
+    await command("update", { id: "support", input: { ...support, instructions: "Answer briefly." }, expected: 1 });
+    await command("evals", { now: Date.now() + 2000 });
+    after = await command("listEvals", { id: "support" }) as typeof after;
+    assert.deepEqual(after.tickets.map((t) => [t.last?.verdict, t.last?.version, !!t.failingSince]), [["fail", 2, true], ["fail", 2, true]]);
+    assert.deepEqual((await failed()).map((e) => [e.data.value.evalId, e.data.value.agentVersion]), after.tickets.map((t) => [t.id, 2]));
+    assert.deepEqual(await command("rerunEvals", { id: "support" }), { agentId: "support", due: 2 });
+    await command("evals", { now: Date.now() + 2000 });
+    assert.equal((await failed()).length, 2, "still failing: no second event");
+    // Passing ends the episode; failing again is a new one.
+    await command("setup", { mailbox: "support@acme.example", settings: { agent: "off" }, model: answers });
+    await command("rerunEvals", { id: "support" });
+    await command("evals", { now: Date.now() + 2000 });
+    after = await command("listEvals", { id: "support" }) as typeof after;
+    assert.deepEqual(after.tickets.map((t) => [t.last?.verdict, t.failingSince]), [["pass", null], ["pass", null]]);
+    await command("setup", { mailbox: "support@acme.example", settings: { agent: "off" }, model: unsure });
+    await command("rerunEvals", { id: "support" });
+    await command("evals", { now: Date.now() + 2000 });
+    assert.equal((await failed()).length, 4);
+    // A person's ticket, a change to one, a removal; a removed ticket's run never makes one again.
+    const written = await command("saveEval", { id: "support", input: { text: "Can I pay by invoice?", address: "Support@acme.example", expect: "handoff" } }) as { id: string; reason: string; address: string; sourceRun: null };
+    assert.deepEqual([written.reason, written.address, written.sourceRun], ["person", "support@acme.example", null]);
+    const changed = await command("saveEval", { id: "support", input: { id: written.id, expect: "answer" } }) as { expect: string; last: null };
+    assert.deepEqual([changed.expect, changed.last], ["answer", null]);
+    assert.match((await command("saveEval", { id: "support", input: { text: "No address" } })).message, /needs its text and the address/);
+    assert.equal(await command("removeEval", { id: "support", evalId: after.tickets[0].id }), true);
+    assert.equal(await command("removeEval", { id: "support", evalId: after.tickets[0].id }), false);
+    await command("abandon", { now: now + 2 * 3_600_000 });
+    assert.deepEqual((await command("listEvals", { id: "support" })).tickets.map((t: { id: string }) => t.id), [after.tickets[1].id, written.id]);
   } finally { await mf.dispose(); }
 });
 

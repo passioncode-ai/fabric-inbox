@@ -2,8 +2,9 @@ import { answerCitedEvent, causeOf, citedOf, supportDiagnosedEvent } from "./lea
 import { addressesByAgent, collectionStale, readersOf } from "./knowledge-events";
 import { NOT_MEASURED, summarizeOutcomes, ticketOutcomeOf, type OutcomeSummary } from "./ticket-outcome";
 import { calibrationOf, type Calibration, type PersonGrade } from "./calibration";
+import { EVAL_MAX, EVAL_PER_PASS, EVAL_SENDER, EVAL_WINDOW_MS, evalError, evalReasonOf, evalTextOf, evalVerdict, type EvalExpect, type EvalTicket } from "./evals";
 import { CLOSED_STATES, GAPS_CHECK_MS, GAPS_PAGE, GAPS_PAGES, GAPS_UNAVAILABLE_MS, parseGapList, runOfRequest } from "./gap-closures";
-import { abandonedEvent, EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, questionOverdueEvent, runEvent, scrubPersonal, waitingEvent, type AgentEvent } from "./events";
+import { abandonedEvent, evalFailedEvent, EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, questionOverdueEvent, runEvent, scrubPersonal, waitingEvent, type AgentEvent } from "./events";
 import { agentAccounts, statesOf } from "../lib/agent-status";
 import type { ThreadFacts } from "../../shared/mail/agent-state";
 import { MAX_ATTEMPTS as HOOK_MAX_ATTEMPTS, RETRY_MS as HOOK_RETRY_MS, readHooks, sendHook, type HookCursor } from "./event-hooks";
@@ -488,7 +489,11 @@ export class AgentRegistryDO extends DurableObject<Env> {
       console.warn(JSON.stringify({ event: "abandoned_supervision_failed", error: (error as Error).message?.slice(0, 200) }));
       return Date.now() + ABANDON_CHECK_MS;
     });
-    let heldDue: number | null = [gapsDue, retryDue, waitDue, closeDue, qualityDue, abandonDue].filter((t): t is number => t !== null).reduce((a, b) => Math.min(a, b));
+    const evalDue = await this.runEvals().catch((error) => {
+      console.warn(JSON.stringify({ event: "agent_evals_failed", error: (error as Error).message?.slice(0, 200) }));
+      return null;
+    });
+    let heldDue: number | null = [gapsDue, retryDue, waitDue, closeDue, qualityDue, abandonDue, evalDue].filter((t): t is number => t !== null).reduce((a, b) => Math.min(a, b));
     // One message per mailbox at a time: two messages of one thread read the thread
     // before either answer exists, and would both be answered.
     const batch = this.nextBatch();
@@ -662,13 +667,16 @@ export class AgentRegistryDO extends DurableObject<Env> {
   /** Every save is a new immutable version; a stale editor cannot overwrite a newer one. */
   async updateAgent(id: string, input: unknown, expectedVersion: number): Promise<AgentVersion> {
     const data = await this.validate(input);
-    return this.ctx.storage.transactionSync(() => {
+    const saved = this.ctx.storage.transactionSync(() => {
       const head = this.rows("SELECT current_version, deleted_at FROM agents WHERE id = ?", id)[0];
       if (!head || head.deleted_at) throw new AgentNotFound(id);
       if (Number(head.current_version) !== expectedVersion)
         throw new AgentConflict(msg("Agent changed: version {current} is newer than {expected}", { current: String(head.current_version), expected: expectedVersion }));
       return this.insertVersion(id, expectedVersion + 1, data, false);
     });
+    // B-199 step 4: the agent's eval tickets run against the new version.
+    if (this.rows("SELECT 1 FROM agent_evals WHERE agent_id = ? AND removed_at IS NULL LIMIT 1", id).length) await this.scheduleEvals();
+    return saved;
   }
 
   async deleteAgent(id: string): Promise<boolean> {
@@ -1056,6 +1064,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
     if (due > now) return due;
     await this.reportStaleKnowledge(new Date(now).toISOString());
     this.reportOverdueQuestions(now);
+    if (this.collectEvalTickets(now)) await this.scheduleEvals();
     const served: { address: string; mailboxId: string; agentId: string; facts: () => Promise<ThreadFacts[]> }[] = (await readAllSettings(this.env.BUCKET)).flatMap(({ email, settings }) => {
       const assignment = readAssignment(settings);
       const address = email.toLowerCase();
@@ -1162,6 +1171,151 @@ export class AgentRegistryDO extends DurableObject<Env> {
       written++;
     }
     if (written) console.log(JSON.stringify({ event: "agent_question_overdue_reported", events: written }));
+  }
+
+  // ── Eval tickets (B-199 step 4) ─────────────────────────────────
+
+  private tickets(where: string, ...args: (string | number)[]): EvalTicket[] {
+    return this.rows(`SELECT body FROM agent_evals WHERE removed_at IS NULL AND ${where} ORDER BY created_at ASC, rowid ASC`, ...args)
+      .map((r) => JSON.parse(String(r.body)) as EvalTicket);
+  }
+
+  private putTicket(ticket: EvalTicket): void {
+    this.ctx.storage.sql.exec("UPDATE agent_evals SET body = ? WHERE id = ?", JSON.stringify(ticket), ticket.id);
+  }
+
+  /** The eval pass runs within a second (a new agent version, new tickets, a person's request). */
+  private async scheduleEvals(): Promise<void> {
+    const at = Date.now() + 1000;
+    await this.ctx.storage.put("eval_check_at", at);
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > at) await this.ctx.storage.setAlarm(at);
+  }
+
+  /**
+   * B-199 step 4: once an hour, every run of the last EVAL_WINDOW_MS an agent got wrong (evalReasonOf) becomes a
+   * ticket of its agent, at most EVAL_MAX live ones each, one per source run (a removed ticket is never made again)
+   * and one per text. Mail of an account (Gmail, Outlook, IMAP) is not used yet: its preview needs the account.
+   * Answers how many tickets were added.
+   */
+  private collectEvalTickets(now: number): number {
+    const runs = this.rows("SELECT body FROM agent_runs WHERE created_at >= ? AND json_extract(body, '$.agentId') IS NOT NULL ORDER BY created_at ASC, id ASC LIMIT 2000",
+      new Date(now - EVAL_WINDOW_MS).toISOString()).map((r) => JSON.parse(String(r.body)) as AgentRun);
+    const at = new Date(now).toISOString();
+    let added = 0;
+    for (const run of runs) {
+      if (isAccountMailbox(run.mailboxId)) continue;
+      const reason = evalReasonOf(run, now);
+      if (!reason) continue;
+      if (this.rows("SELECT 1 FROM agent_evals WHERE source_run = ?", run.id).length) continue;
+      const live = this.tickets("agent_id = ?", run.agentId!);
+      const text = evalTextOf(run)!;
+      if (live.length >= EVAL_MAX || live.some((t) => t.text === text)) continue;
+      const ticket: EvalTicket = { id: `eval-${crypto.randomUUID().replace(/-/g, "")}`, agentId: run.agentId!, address: run.mailboxId,
+        subject: scrubPersonal(run.topic ?? "").slice(0, 200), text, expect: "answer", reason, sourceRun: run.id, createdAt: at, last: null, failingSince: null };
+      this.ctx.storage.sql.exec("INSERT INTO agent_evals (id, agent_id, source_run, body, created_at) VALUES (?, ?, ?, ?, ?)", ticket.id, ticket.agentId, run.id, JSON.stringify(ticket), at);
+      added++;
+    }
+    if (added) console.log(JSON.stringify({ event: "agent_evals_collected", tickets: added }));
+    return added;
+  }
+
+  /**
+   * B-199 step 4: previews up to EVAL_PER_PASS tickets not yet run against their agent's current version, judges
+   * each by what it expects, and reports a ticket once when it starts failing (agent.eval_failed, keyed by the
+   * ticket and the episode's start). A ticket of a deleted agent waits. Answers when the next pass is due, or null.
+   */
+  protected async runEvals(now = Date.now()): Promise<number | null> {
+    const due = await this.ctx.storage.get<number>("eval_check_at");
+    if (due === undefined) return null;
+    if (due > now) return due;
+    const versions = new Map<string, number | null>();
+    const versionOf = async (agentId: string) => {
+      if (!versions.has(agentId)) versions.set(agentId, (await this.getAgent(agentId))?.version ?? null);
+      return versions.get(agentId)!;
+    };
+    const todo: { ticket: EvalTicket; version: number }[] = [];
+    let more = false;
+    for (const ticket of this.tickets("1 = 1")) {
+      const version = await versionOf(ticket.agentId);
+      if (version === null || ticket.last?.version === version) continue;
+      if (todo.length >= EVAL_PER_PASS) { more = true; break; }
+      todo.push({ ticket, version });
+    }
+    for (const { ticket, version } of todo) {
+      const at = new Date().toISOString();
+      let result;
+      try {
+        const preview = await this.previewAnswer(ticket.agentId, { address: ticket.address, from: EVAL_SENDER, subject: ticket.subject, text: ticket.text });
+        result = evalVerdict(ticket.expect, preview, version, at);
+      } catch (error) {
+        result = evalError(error, version, at);
+      }
+      // Read again: a person may have changed or removed the ticket while its preview ran.
+      const fresh = this.tickets("id = ?", ticket.id)[0];
+      if (!fresh) continue;
+      const startsFailing = result.verdict === "fail" && !fresh.failingSince;
+      const next: EvalTicket = { ...fresh, last: result,
+        failingSince: result.verdict === "fail" ? fresh.failingSince ?? at : result.verdict === "pass" ? null : fresh.failingSince };
+      this.ctx.storage.transactionSync(() => {
+        this.putTicket(next);
+        if (startsFailing) this.appendEvent(`eval-${next.id}-${at}`, evalFailedEvent(next, result, at));
+      });
+      console.log(JSON.stringify({ event: "agent_eval_run", ticket: next.id, agent: next.agentId, version, verdict: result.verdict }));
+    }
+    if (more) { await this.ctx.storage.put("eval_check_at", now + 1000); return now + 1000; }
+    await this.ctx.storage.delete("eval_check_at");
+    return null;
+  }
+
+  /** B-199 step 4: an agent's eval tickets, oldest first, with the summary of their last results against its current version. */
+  async listEvals(agentId: string): Promise<{ agentId: string; version: number | null; max: number; tickets: EvalTicket[];
+    summary: { total: number; passing: number; failing: number; errors: number; notRun: number } }> {
+    const version = (await this.getAgent(agentId))?.version ?? null;
+    const tickets = this.tickets("agent_id = ?", agentId);
+    const now = tickets.filter((t) => t.last && t.last.version === version);
+    return { agentId, version, max: EVAL_MAX, tickets, summary: { total: tickets.length,
+      passing: now.filter((t) => t.last!.verdict === "pass").length, failing: now.filter((t) => t.last!.verdict === "fail").length,
+      errors: now.filter((t) => t.last!.verdict === "error").length, notRun: tickets.length - now.length } };
+  }
+
+  /**
+   * B-199 step 4: a person's ticket (written, never a customer's words), or a change to one: its text, subject,
+   * address or what it expects. A change runs it again at the next pass.
+   */
+  async saveEval(agentId: string, input: { id?: string; text?: string; subject?: string; address?: string; expect?: EvalExpect }): Promise<EvalTicket> {
+    if (!(await this.getAgent(agentId))) throw new AgentNotFound(agentId);
+    const at = new Date().toISOString();
+    let ticket: EvalTicket;
+    if (input.id) {
+      const found = this.tickets("id = ? AND agent_id = ?", input.id, agentId)[0];
+      if (!found) throw new AgentInvalid(msg("No eval ticket {id} for this agent", { id: input.id }));
+      ticket = { ...found, ...(input.text !== undefined ? { text: scrubPersonal(input.text).slice(0, 2000) } : {}),
+        ...(input.subject !== undefined ? { subject: input.subject.slice(0, 200) } : {}), ...(input.address ? { address: input.address.toLowerCase() } : {}),
+        ...(input.expect ? { expect: input.expect } : {}), last: null, failingSince: null };
+      this.putTicket(ticket);
+    } else {
+      if (!input.text?.trim() || !input.address) throw new AgentInvalid(msg("A new eval ticket needs its text and the address it is asked on"));
+      if (this.tickets("agent_id = ?", agentId).length >= EVAL_MAX) throw new AgentInvalid(msg("At most {max} eval tickets per agent", { max: EVAL_MAX }));
+      ticket = { id: `eval-${crypto.randomUUID().replace(/-/g, "")}`, agentId, address: input.address.toLowerCase(), subject: (input.subject ?? "").slice(0, 200),
+        text: scrubPersonal(input.text).slice(0, 2000), expect: input.expect ?? "answer", reason: "person", sourceRun: null, createdAt: at, last: null, failingSince: null };
+      this.ctx.storage.sql.exec("INSERT INTO agent_evals (id, agent_id, source_run, body, created_at) VALUES (?, ?, NULL, ?, ?)", ticket.id, agentId, JSON.stringify(ticket), at);
+    }
+    await this.scheduleEvals();
+    return ticket;
+  }
+
+  /** B-199 step 4: removes a ticket; its source run never makes one again. */
+  async removeEval(agentId: string, id: string): Promise<boolean> {
+    return this.ctx.storage.sql.exec("UPDATE agent_evals SET removed_at = ? WHERE id = ? AND agent_id = ? AND removed_at IS NULL", new Date().toISOString(), id, agentId).rowsWritten > 0;
+  }
+
+  /** B-199 step 4: runs every ticket of the agent again at the next pass (a knowledge change, a person's check). */
+  async rerunEvals(agentId: string): Promise<{ agentId: string; due: number }> {
+    const tickets = this.tickets("agent_id = ?", agentId);
+    for (const t of tickets) this.putTicket({ ...t, last: t.last ? { ...t.last, version: 0 } : null });
+    if (tickets.length) await this.scheduleEvals();
+    return { agentId, due: tickets.length };
   }
 
   /** Test seam: how a hook is called; production uses the Worker's fetch. */

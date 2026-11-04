@@ -175,6 +175,7 @@ A new term joins this table before its first use in `shared/i18n/ru/`.
 | Outlook account / App registration / Client secret | аккаунт Outlook / регистрация приложения / секрет клиента | |
 | Administrator's approval | одобрение администратора | admin consent |
 | Test message | тестовое письмо | пинг |
+| Eval ticket (an invented message an agent is checked on after each change) | контрольное письмо | тест, эвал |
 | Fix it | Исправить | Починить |
 | Arriving here / Not receiving yet / Routing unknown | Приходит сюда / Пока не получает / Маршрут неизвестен | |
 | Receive mail here / Bring them here | Получать почту здесь / Перенести сюда | |

@@ -81,6 +81,7 @@ const BODIES: Record<string, string[]> = {
   "POST /api/agents": ["agent"], // workers/routes/agents.ts
   "PUT /api/agents/:id": ["agent", "expectedVersion"], // workers/routes/agents.ts
   "POST /api/agents/:id/preview": ["address", "from", "subject", "text", "reasoning", "model"], // workers/routes/agents.ts
+  "POST /api/agents/:id/evals": ["id", "text", "subject", "address", "expect"], // workers/routes/agents.ts (B-199)
   "POST /api/domains/:domain/release": ["force"], // workers/routes/domains.ts
   "PUT /api/inbox/hidden": ["hide", "show"], // workers/routes/inbox.ts
   "PUT /api/agent-status": ["enabled", "domains", "addresses"], // workers/routes/inbox.ts (B-138)
@@ -121,6 +122,7 @@ const BODIES: Record<string, string[]> = {
 };
 /** Written routes whose body carries nothing (or that take a whole document as it is). */
 const NO_BODY = new Set([
+  "POST /api/agents/:id/evals/run", // B-199: runs every ticket again
   "POST /api/v1/mailboxes/:mailboxId/threads/:threadId/read", "POST /api/v1/mailboxes/:mailboxId/incoming/retry",
   "POST /api/accounts/:accountId/messages/:messageId/archive", "POST /api/accounts/:accountId/messages/:messageId/inbox",
   "POST /api/accounts/:accountId/sync", "POST /api/accounts/:accountId/disconnect", "POST /api/accounts/:accountId/incoming/retry", "POST /api/categories/:id/seen", "POST /api/agent-runs/:id/again",

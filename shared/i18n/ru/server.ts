@@ -874,4 +874,12 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Unsubscribing is not available right now. Reply to the message with \"unsubscribe\" instead.": "Отписка сейчас недоступна. Вместо этого ответьте на письмо словом «unsubscribe».",
 	"You can read this mailbox but not change it or send from it. Ask an administrator for Read and send.": "Этот ящик вам доступен только для чтения: менять его и отправлять из него нельзя. Попросите администратора дать уровень «Чтение и отправка».",
 	"A level is for one of the member's own mailboxes.": "Уровень задаётся только для ящиков самого участника.",
+
+	// Eval tickets of a reply agent (workers/agents/registry.ts, workers/routes/agents.ts; B-199 step 4)
+	"No eval ticket {id} for this agent": "У этого агента нет контрольного письма {id}",
+	"A new eval ticket needs its text and the address it is asked on": "Для нового контрольного письма нужны его текст и адрес, на который оно приходит",
+	"At most {max} eval tickets per agent": "Не больше {max} контрольных писем на агента",
+	"The address is an email address": "Адрес должен быть адресом электронной почты",
+	"expect is answer or handoff": "expect принимает значения answer или handoff",
+	"No such eval ticket": "Такого контрольного письма нет",
 };
