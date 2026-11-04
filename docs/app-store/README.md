@@ -191,6 +191,14 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-04 (0.85.0 and 0.86.0: B-199 steps 1 to 3).**
+
+- The operator's words relayed on the board (thread `30c45b9c`, request `553bdd5f`: «давай делай и не тормозите»): the channel-agent standard in Inbox now, report on the thread by 2026-11-06. Plan and mapping: [the packet](tasks/2026-11-04-channel-agent-standard.md); the self-report with 30 days of numbers is on the thread (message `9bd63b1f`).
+- **0.85.0** (PR #386, `d1287c6`): each message's outcome in the standard's words and the four numbers (`get_agent_outcomes`, `ticketOutcome` on `list_agent_runs`). **0.86.0** (PR #387, `a3762ec`): a knowledge collection's age, `maxAgeHours` and `knowledge.stale`; `list_open_questions` and `agent.question_overdue` at 7 days. Both servers on `a3762ec` (receipts `linked`). Live on the owner server for 2026-10-09 to 11-03: support address 109 messages, answered 11.5%, to a person 29.2% (28 referred), 12 open; 22 open questions, 17 overdue; no collection declares a maximum age yet.
+- Board cleanup by the operator's relayed words (2026-11-04): 12 merged local branches removed, no worktree left.
+
+**Exact next task:** B-199 step 4, eval tickets from real wrong answers run after every agent change (by 2026-11-10), then the report on thread `30c45b9c` by 2026-11-06 (what shipped, what is left with dates, what in the standard's copy does not fit mail: the packet's last section). Then the operator's approval of the support agent's category notes; on 2026-11-09 B-186 and B-174. Waits as below.
+
 **State 2026-11-03 (0.84.0: B-198; 0.83.0: B-174).**
 
 - **0.83.0** (PR #380, `e7ce955`): `preview_agent_answer` takes `model`; the writers' table over the support address's week is [the report](../reports/2026-11-02-writers-bench/README.md) (PR #381): no writer change, posted on thread `a8a46b34`.
