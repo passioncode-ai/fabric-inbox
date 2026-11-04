@@ -1,4 +1,5 @@
 import { answerCitedEvent, causeOf, citedOf, supportDiagnosedEvent } from "./learning-events";
+import { countError, countLog } from "../lib/error-counts";
 import { addressesByAgent, collectionStale, readersOf } from "./knowledge-events";
 import { NOT_MEASURED, summarizeOutcomes, ticketOutcomeOf, type OutcomeSummary } from "./ticket-outcome";
 import { calibrationOf, type Calibration, type PersonGrade } from "./calibration";
@@ -463,34 +464,34 @@ export class AgentRegistryDO extends DurableObject<Env> {
 
   private async drain() {
     const gapsDue = await this.answerClosedGaps().catch((error) => {
-      console.warn(JSON.stringify({ event: "gap_closures_failed", error: (error as Error).message?.slice(0, 200) }));
+      countLog(this.env, "alarm", JSON.stringify({ event: "gap_closures_failed", error: (error as Error).message?.slice(0, 200) }));
       return Date.now() + GAPS_CHECK_MS;
     });
     const retryDue = await this.retryHeld().catch((error) => {
-      console.warn(JSON.stringify({ event: "held_retry_failed", error: (error as Error).message?.slice(0, 200) }));
+      countLog(this.env, "alarm", JSON.stringify({ event: "held_retry_failed", error: (error as Error).message?.slice(0, 200) }));
       return null;
     });
     const waitDue = await this.superviseWaiting().catch((error) => {
-      console.warn(JSON.stringify({ event: "waiting_supervision_failed", error: (error as Error).message?.slice(0, 200) }));
+      countLog(this.env, "alarm", JSON.stringify({ event: "waiting_supervision_failed", error: (error as Error).message?.slice(0, 200) }));
       return null;
     });
     const closeDue = await this.closeExpired().catch((error) => {
-      console.warn(JSON.stringify({ event: "agent_closing_failed", error: (error as Error).message?.slice(0, 200) }));
+      countLog(this.env, "alarm", JSON.stringify({ event: "agent_closing_failed", error: (error as Error).message?.slice(0, 200) }));
       return Date.now() + PERSON_CHECK_MS;
     });
     try { this.redactOldRuns(); } catch (error) {
-      console.warn(JSON.stringify({ event: "run_redact_failed", error: (error as Error).message?.slice(0, 200) }));
+      countLog(this.env, "alarm", JSON.stringify({ event: "run_redact_failed", error: (error as Error).message?.slice(0, 200) }));
     }
     const qualityDue = await this.emitQualityDays().catch((error) => {
-      console.warn(JSON.stringify({ event: "quality_daily_failed", error: (error as Error).message?.slice(0, 200) }));
+      countLog(this.env, "alarm", JSON.stringify({ event: "quality_daily_failed", error: (error as Error).message?.slice(0, 200) }));
       return Date.now() + 3_600_000;
     });
     const abandonDue = await this.superviseAbandoned().catch((error) => {
-      console.warn(JSON.stringify({ event: "abandoned_supervision_failed", error: (error as Error).message?.slice(0, 200) }));
+      countLog(this.env, "alarm", JSON.stringify({ event: "abandoned_supervision_failed", error: (error as Error).message?.slice(0, 200) }));
       return Date.now() + ABANDON_CHECK_MS;
     });
     const evalDue = await this.runEvals().catch((error) => {
-      console.warn(JSON.stringify({ event: "agent_evals_failed", error: (error as Error).message?.slice(0, 200) }));
+      countLog(this.env, "alarm", JSON.stringify({ event: "agent_evals_failed", error: (error as Error).message?.slice(0, 200) }));
       return null;
     });
     let heldDue: number | null = [gapsDue, retryDue, waitDue, closeDue, qualityDue, abandonDue, evalDue].filter((t): t is number => t !== null).reduce((a, b) => Math.min(a, b));
@@ -529,6 +530,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
         const attempts = Number(item.attempts) + 1;
         if (attempts >= MAX_ATTEMPTS) {
           console.error(JSON.stringify({ event: "agent_run_dropped", mailboxId, emailId, attempts, error: (error as Error).message }));
+          void countError(this.env, "agent", "read");
           // Given up: said in the history, not only in the logs (reliability audit L3).
           const at = new Date().toISOString();
           await this.beginRun({ id: await runIdFor(mailboxId, emailId), mailboxId, emailId, sender: "", subject: "",
@@ -545,7 +547,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
     if (this.factsMoved) { this.factsMoved = false; heldDue = Math.min(heldDue ?? Infinity, Date.now() + 1000); }
     // B-137: the events of this pass (and any a hook still owes) go to the webhooks.
     const hookDue = await this.deliverHooks().catch((error) => {
-      console.warn(JSON.stringify({ event: "event_hooks_failed", error: (error as Error).message?.slice(0, 200) }));
+      countLog(this.env, "alarm", JSON.stringify({ event: "event_hooks_failed", error: (error as Error).message?.slice(0, 200) }));
       return Date.now() + 60_000;
     });
     const otherDue = [heldDue, hookDue].filter((t): t is number => t !== null).reduce<number | null>((a, b) => (a === null ? b : Math.min(a, b)), null);
@@ -749,6 +751,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
       // B-118: a run that just ended (its status changed to a final one) appends one event.
       const event = before !== run.status ? runEvent(run) : null;
       if (event) this.appendEvent(run.id, event);
+      // B-203: a run that just failed before sending is counted by its failure (model, safety, agent, read, answer, save).
+      if (before !== run.status && run.status === "failed") void countError(this.env, "agent", run.failure ?? "unknown");
       // B-162: what a sent answer cited, once per run, and why a message was not answered, once per run and cause
       // (a held message retried every 12 hours says it again only when the cause changes).
       if (before !== run.status) {

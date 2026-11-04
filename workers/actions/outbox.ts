@@ -28,10 +28,13 @@ interface Effects {
   transport(payload: any, row: OutboxRow): Promise<{ messageId: string }>;
   project(payload: any, row: OutboxRow): Promise<void>;
   beforeEffect(): Promise<void>;
+  /** B-203: a send ended failed or unknown, with its code; counting it never fails the send's record. */
+  ended?(code: string): void;
 }
 export class OutboxCoordinator {
   private active = new Map<string, Promise<OutboxEntry>>();
   constructor(private store: SqlOutboxStore, private effects: Effects) {}
+  private ended(code: string) { try { this.effects.ended?.(code); } catch { /* a count never changes a send */ } }
   async submit(mailbox: string, key: string, payload: unknown, identity: unknown = payload): Promise<OutboxEntry> {
     if (typeof key !== 'string' || !key || key.length > 200 || /[\r\n]/.test(key)) throw new Error('Invalid idempotency key');
     const row = this.store.reserve(mailbox, key, await payloadHash(identity), payload);
@@ -52,7 +55,7 @@ export class OutboxCoordinator {
       // A storage failure before the external effect is known safe. No attempt is
       // automatically retried; caller sees a failed durable action.
       try { await this.effects.beforeEffect(); }
-      catch { this.store.finish(id, 'failed', null, 'PERSISTENCE_FAILED'); return journal(this.store.get(id)!); }
+      catch { this.store.finish(id, 'failed', null, 'PERSISTENCE_FAILED'); this.ended('PERSISTENCE_FAILED'); return journal(this.store.get(id)!); }
       let receipt: { messageId: string };
       try {
         receipt = await this.effects.transport(this.store.payload(id), row);
@@ -62,6 +65,7 @@ export class OutboxCoordinator {
         const rejected = typeof code === 'string' && REJECTIONS.has(code);
         this.store.finish(id, rejected ? 'failed' : 'unknown', null, rejected ? code : 'TRANSPORT_OUTCOME_UNKNOWN',
           rejected ? refusalDetail((error as Error)?.message) : null);
+        this.ended(rejected ? code : 'TRANSPORT_OUTCOME_UNKNOWN');
         return journal(this.store.get(id)!);
       }
       // Commit acceptance before projection. If this write fails the persisted
@@ -71,6 +75,7 @@ export class OutboxCoordinator {
         // The provider has accepted, but its receipt could not be committed.
         // Never reinterpret this as rejection or permit a fresh transport attempt.
         this.store.finish(id, 'unknown', null, 'RECEIPT_PERSISTENCE_FAILED');
+        this.ended('RECEIPT_PERSISTENCE_FAILED');
         return journal(this.store.get(id)!);
       }
     }

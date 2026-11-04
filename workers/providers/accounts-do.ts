@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { countLog } from "../lib/error-counts";
 import type { InboxReadOptions } from "../../shared/mail/inbox";
 import {
   AccountService,
@@ -43,6 +44,8 @@ export interface GmailBindings extends AccountsEnvironment {
   /** The Cloudflare mailboxes, asked whether one of them wrote to a sender a discard rule matches. */
   MAILBOX?: MailboxNamespace;
   AUTOMATIONS?: { getByName(name: string): AutomationStub };
+  /** B-203: the workspace ledger, which counts this object's alarm and sync failures. */
+  EMAIL_MCP?: { getByName(name: string): { countError(cls: string, code: string): unknown } };
   /** B-171: the reply agents' registry, handed the new mail of an account that has an agent. */
   AGENT_REGISTRY?: { getByName(name: string): { enqueue(mailboxId: string, emailId: string, options?: { holdMs?: number }): Promise<void> } };
   /** B-181: outreach campaigns, told of the new mail of an account they send from (replies, stops, bounces). */
@@ -170,7 +173,7 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
   async refresh(accountIds?: string[]) {
     const outcomes = await this.scheduler.refresh(accountIds);
     await this.drain().catch((error: unknown) =>
-      console.warn(JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
+      countLog(this.env, "sync", JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
     return outcomes;
   }
   /** The providers and IMAP presets this server offers (no account, no secret). */
@@ -228,14 +231,14 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
   async retryIncoming(accountId: string): Promise<{ revived: number }> {
     const revived = await this.serial(() => this.service.reviveEvents(accountId));
     if (revived) await this.drain().catch((error: unknown) =>
-      console.warn(JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
+      countLog(this.env, "sync", JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
     return { revived };
   }
   async sync(accountId: string) {
     const result = await this.scheduler.syncNow(accountId);
     // A sync that worked is reported as working even if handing its events on did not.
     await this.drain().catch((error: unknown) =>
-      console.warn(JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
+      countLog(this.env, "sync", JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
     return result;
   }
   listMessages(accountId: string, options?: MessageFilters) {
@@ -291,7 +294,7 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     const message = await this.serial(() => this.service.setSpam(accountId, messageId, spam));
     // C-7b: mail brought back from Spam is handed on now; a failed hand-on waits for the next drain.
     if ((message as { redeliver?: boolean }).redeliver) await this.drain().catch((error: unknown) =>
-      console.warn(JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
+      countLog(this.env, "sync", JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) })));
     return message;
   }
   archive(accountId: string, messageId: string) {
@@ -355,20 +358,20 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     // A cache of the first layout moves over in the background, a few seconds per account per tick.
     for (const account of (await this.service.listAccounts()).accounts) {
       await this.serial(() => this.service.migrateCache(account.id)).catch((error: unknown) =>
-        console.warn(JSON.stringify({ event: "gmail_cache_migration_failed", error: (error as Error)?.message?.slice(0, 200) })));
+        countLog(this.env, "alarm", JSON.stringify({ event: "gmail_cache_migration_failed", error: (error as Error)?.message?.slice(0, 200) })));
     }
     // Each sync page takes the lock on its own; mail actions and reads go on between pages.
     await this.scheduler.tick();
     // Discarded mail past its 30 days goes to its account's Trash, a few messages a tick.
     await this.serial(() => this.service.purgeDiscarded()).catch((error: unknown) =>
-      console.warn(JSON.stringify({ event: "discarded_purge_failed", error: (error as Error)?.message?.slice(0, 200) })));
+      countLog(this.env, "alarm", JSON.stringify({ event: "discarded_purge_failed", error: (error as Error)?.message?.slice(0, 200) })));
     // B-34: once a day the markers of long-delivered events are forgotten, a page per tick until the pass ends.
     const today = new Date().toISOString().slice(0, 10);
     if ((await this.ctx.storage.get<string>("events-prune:day")) !== today) {
       await this.serial(() => this.service.pruneDeliveredEvents()).then(async (r) => {
         if (r.removed || r.stamped) console.log(JSON.stringify({ event: "delivered_events_pruned", removed: r.removed, stamped: r.stamped }));
         if (r.done) await this.ctx.storage.put("events-prune:day", today);
-      }, (error: unknown) => console.warn(JSON.stringify({ event: "delivered_events_prune_failed", error: (error as Error)?.message?.slice(0, 200) })));
+      }, (error: unknown) => countLog(this.env, "alarm", JSON.stringify({ event: "delivered_events_prune_failed", error: (error as Error)?.message?.slice(0, 200) })));
     }
     // Release the account lock before invoking automations: a rule may RPC back
     // into this object to read or send mail. Holding it would deadlock the rule.
@@ -376,7 +379,7 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
       await this.drain();
     } catch (error) {
       // Each event keeps its own retry; this is only what escaped them, said in the logs.
-      console.warn(JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) }));
+      countLog(this.env, "sync", JSON.stringify({ event: "gmail_drain_failed", error: (error as Error)?.message?.slice(0, 200) }));
     }
   }
 }

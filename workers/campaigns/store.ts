@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { countLog } from "../lib/error-counts";
 import { migrateSchema } from "../lib/do-schema";
 import { CAMPAIGNS_STEPS } from "./schema";
 import type { Env } from "../types";
@@ -263,7 +264,7 @@ export class CampaignsDO extends DurableObject<Env> {
           this.sql.exec("UPDATE campaigns SET state = 'finished', updated_at = ? WHERE id = ? AND state = 'running'", new Date(now).toISOString(), c.id);
     } finally {
       this.ticking = false;
-      await this.schedule(now).catch((error) => console.error(JSON.stringify({ event: "campaigns_schedule_failed", error: String(error).slice(0, 200) })));
+      await this.schedule(now).catch((error) => countLog(this.env, "alarm", JSON.stringify({ event: "campaigns_schedule_failed", error: String(error).slice(0, 200) }), "error"));
     }
     if (sent) console.log(JSON.stringify({ event: "campaigns_sent", sent }));
     return { sent };

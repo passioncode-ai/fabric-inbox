@@ -39,7 +39,7 @@ test("an event without an envelope or a thrown non-error still makes an honest r
 test("the Email Routing entry point logs a failure with it, keeps it for the owner, then rethrows", () => {
   const worker = readFileSync("workers/index.ts", "utf8");
   const handler = worker.slice(worker.indexOf("async function handleIncomingEmail"));
-  assert.match(handler, /catch \(e\) \{[\s\S]*?const failure = incomingFailure\(event, e\);\s*console\.error\(JSON\.stringify\(failure\)\);\s*await recordIncomingFailure\(env\.BUCKET, failure\);\s*throw e;/, "logged, kept for the owner (B-40), then rethrown");
+  assert.match(handler, /catch \(e\) \{[\s\S]*?const failure = incomingFailure\(event, e\);\s*console\.error\(JSON\.stringify\(failure\)\);\s*await recordIncomingFailure\(env\.BUCKET, failure\);\s*(?:\/\/[^\n]*\n\s*)?await countError\(env, "incoming", \(e as Error\)\?\.name \?\? "unknown"\);\s*throw e;/, "logged, kept for the owner (B-40), counted by kind (B-203), then rethrown");
   assert.doesNotMatch(worker, /Failed to process incoming email/, "the unstructured line is gone");
 });
 

@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.90.0 (2026-11-04)
+
+- **Server errors reach us as counts.** Your server now counts its own errors each day by kind, as codes and never as
+  messages, and keeps them for 14 days. `get_server_errors` shows them. With usage details on, Fabric Inbox sends
+  yesterday's counts with its daily usage data, so we see when a server has trouble (B-203).
+
 ## 0.89.0 (2026-11-04)
 
 - **Starts in the background when asked.** Opened with `--background`, Fabric Inbox starts without a window and

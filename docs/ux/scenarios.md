@@ -1060,7 +1060,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** A released disk image (it carries the App Key); no PassionCode app has turned the shared switch off.
 - **Steps:**
   0. The person opens the app -> usage and error data go at once, on by default (B-200, operator 2026-11-04). The first time a window comes forward -> a native notice, Fabric Inbox shares anonymous usage and error data, says what is sent and how to turn it off, with OK and Turn Off -> OK keeps it on; Turn Off turns the details off for Fabric Inbox only; either way it is not shown again. A person who turned it off before keeps it off.
-  1. The person opens About Usage Counts… -> a native notice says what is sent (when it is opened and used, a server or hub connected, installed or updated, how many Gmail accounts, Cloudflare mailboxes, agents and agent keys, and errors, with an id shared by the PassionCode apps on this computer), what never is (names, addresses, domains, messages, keys), that the switch turns it off for Fabric Inbox only, and that with it off nothing is sent.
+  1. The person opens About Usage Counts… -> a native notice says what is sent (when it is opened and used, a server or hub connected, installed or updated, how many Gmail accounts, Cloudflare mailboxes, agents and agent keys, errors of the app, and how many errors of each kind the server had the day before as codes, with an id shared by the PassionCode apps on this computer), what never is (names, addresses, domains, messages, keys), that the switch turns it off for Fabric Inbox only, and that with it off nothing is sent.
   2. They clear the checkmark -> the details are off for Fabric Inbox only (other PassionCode apps keep their own switch), every event still waiting is dropped, and nothing more is sent.
   3. They set it again -> the details resume from that moment; nothing done while it was off is reported.
 - **Expected result:** The person knows what leaves the computer, is told once at the first launch, and can turn the details off for Fabric Inbox alone at any time.
@@ -1071,7 +1071,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** draft
 - **Coverage:** desktop/analytics.cjs, desktop/main.cjs, tests/desktop-analytics.test.ts, tests/desktop-profile.test.ts
 - **Product:** unobserved
-- **Today:** Built 2026-10-05 for 0.10.0 (docs/ANALYTICS.md). Two tiers since 0.84.0 (B-198); on by default with a notice, per product, errors counted, since 0.87.0 (B-200).
+- **Today:** Built 2026-10-05 for 0.10.0 (docs/ANALYTICS.md). Two tiers since 0.84.0 (B-198); on by default with a notice, per product, errors counted, since 0.87.0 (B-200). Since 0.90.0 the details also carry how many errors of each kind the signed-in server had the day before, as codes (B-203); the notice says so.
 
 ### SCN-049: The app keeps itself up to date
 - **Persona:** P-01

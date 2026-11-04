@@ -882,4 +882,8 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"The address is an email address": "Адрес должен быть адресом электронной почты",
 	"expect is answer or handoff": "expect принимает значения answer или handoff",
 	"No such eval ticket": "Такого контрольного письма нет",
+
+	// The server's own error counts (workers/routes/server-errors.ts; B-203)
+	"The day is a UTC date of the last {days} days, as YYYY-MM-DD": "День задаётся датой UTC за последние {days} дней в формате ГГГГ-ММ-ДД",
+	"The error counts could not be read right now": "Не удалось прочитать счётчики ошибок, попробуйте позже",
 };

@@ -9,6 +9,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../types";
 import { migrateSchema, statements } from "../lib/do-schema";
+import { ERROR_DAYS_KEPT } from "../lib/error-counts";
 
 export const CONFIRM_TTL_MS = 5 * 60_000;
 /** B-38: an action waiting for the owner's approval waits a day, not five minutes: a person answers it. */
@@ -35,7 +36,12 @@ export const LEDGER_STEPS = [
     `ALTER TABLE mcp_confirmations ADD COLUMN caller_label TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE mcp_confirmations ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0`,
   ]),
+  // B-203: the server's own errors per UTC day, class and code (workers/lib/error-counts.ts); 14 days kept.
+  statements("4_error_counts", [
+    `CREATE TABLE IF NOT EXISTS error_counts (day TEXT NOT NULL, class TEXT NOT NULL, code TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (day, class, code))`,
+  ]),
 ];
+
 
 /** B-38: one action an agent asked for that waits for the owner, as Agent access lists it. */
 export interface PendingApproval { code: string; caller: string; callerLabel: string; tool: string; summary: string; createdAt: number; expiresAt: number; approved: boolean }
@@ -131,6 +137,18 @@ export class EmailMCP extends DurableObject<Env> {
     this.sql.exec("INSERT INTO mcp_send_counts (day, caller, count) VALUES (?, ?, 1) ON CONFLICT(day, caller) DO UPDATE SET count = count + 1", today, caller);
     this.sql.exec("DELETE FROM mcp_send_counts WHERE day < ?", day(now - 3 * 86_400_000));
     return { ok: true, used: used + 1, limit };
+  }
+
+  /** B-203: one more error of this class and code today; days past ERROR_DAYS_KEPT go. Class and code come checked. */
+  countError(cls: string, code: string, now = Date.now()): void {
+    this.sql.exec("INSERT INTO error_counts (day, class, code, n) VALUES (?, ?, ?, 1) ON CONFLICT(day, class, code) DO UPDATE SET n = n + 1", day(now), cls, code);
+    this.sql.exec("DELETE FROM error_counts WHERE day < ?", day(now - ERROR_DAYS_KEPT * 86_400_000));
+  }
+
+  /** B-203: one day's counts as `class.code`, the largest first, at most `limit`. */
+  errorCounts(onDay: string, limit = 50): Record<string, number> {
+    return Object.fromEntries([...this.sql.exec("SELECT class, code, n FROM error_counts WHERE day = ? ORDER BY n DESC, class, code LIMIT ?", onDay, limit)]
+      .map((r) => [`${r.class}.${r.code}`, Number(r.n)]));
   }
 
   /** Gives back a send that never left (the route refused it). */

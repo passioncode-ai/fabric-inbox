@@ -30,6 +30,10 @@ const SEND_TIMEOUT_MS = 10 * 1000;
 const BASELINE = new Set(['app_started', 'app_active', 'server_connected', 'hub_connected']);
 /** What a server's counts may hold; anything else is dropped before it is sent. */
 const COUNT_KEYS = ['gmail', 'cloudflare', 'agents', 'agent_keys'];
+/** B-203: the server's error classes (workers/lib/error-counts.ts) and the shape of a code; at most this many events a day. */
+const ERROR_CLASSES = new Set(['http', 'alarm', 'incoming', 'agent', 'send', 'sync']);
+const ERROR_CODE = /^[a-z][a-z0-9_]{0,47}$/;
+const ERROR_EVENTS_MAX = 30;
 
 const installationFile = (appData) => path.join(appData, 'PassionCode', 'installation.json');
 const stateFile = (userData) => path.join(userData, 'analytics-state.json');
@@ -106,6 +110,23 @@ function cleanCounts(counts) {
     if (Number.isInteger(n) && n >= 0 && n < 1e6) out[key] = n;
   }
   return out;
+}
+
+/**
+ * B-203: yesterday's error counts as the server answered them (`/api/server-errors`), as one `server_error` event's
+ * properties each: a known class, a code of the fixed shape, a whole count, the day; the largest first, at most
+ * ERROR_EVENTS_MAX. Anything else is dropped.
+ */
+function cleanErrors(raw) {
+  if (!raw || typeof raw !== 'object' || typeof raw.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw.day) || !raw.counts || typeof raw.counts !== 'object') return [];
+  const out = [];
+  for (const [key, count] of Object.entries(raw.counts)) {
+    const dot = key.indexOf('.');
+    const cls = key.slice(0, dot), code = key.slice(dot + 1);
+    if (dot < 1 || !ERROR_CLASSES.has(cls) || !ERROR_CODE.test(code) || !Number.isInteger(count) || count < 1 || count >= 1e6) continue;
+    out.push({ class: cls, code, count, day: raw.day });
+  }
+  return out.sort((a, b) => b.count - a.count).slice(0, ERROR_EVENTS_MAX);
 }
 
 /**
@@ -328,6 +349,8 @@ function createAnalytics(deps) {
       const day = utcDay(now());
       if (state.activeDay !== day) {
         track('app_active', { server: !!counts, ...(clean || {}) });
+        // B-203: the server's errors of yesterday, one event per class and code (growth reads string properties).
+        for (const props of cleanErrors(counts && counts.errors)) track('server_error', props);
         state.activeDay = day;
       }
       if (clean) {
@@ -383,8 +406,9 @@ function createAnalytics(deps) {
 
 /**
  * Reads how many Gmail accounts, Cloudflare mailboxes, agents and agent keys the signed-in server
- * has, with the mail window's own session, once a day. Only lengths leave this function. Null
- * when the person is not signed in or the server answers nothing usable.
+ * has, with the mail window's own session, once a day, and yesterday's error counts (B-203: classes, codes and
+ * numbers, which cleanErrors checks again). Only lengths and those counts leave this function. Null when the person
+ * is not signed in or the server answers nothing usable.
  */
 function countsWith(ses, origin) {
   const read = async (pathname) => {
@@ -395,14 +419,16 @@ function countsWith(ses, origin) {
     } catch { return null; }
   };
   return async () => {
-    const [accounts, mailboxes, agents, keys] = await Promise.all(['/api/accounts', '/api/v1/mailboxes', '/api/agents', '/api/agent-keys'].map(read));
+    const [accounts, mailboxes, agents, keys, errors] = await Promise.all(['/api/accounts', '/api/v1/mailboxes', '/api/agents', '/api/agent-keys', '/api/server-errors'].map(read));
     const counts = {};
     if (accounts && Array.isArray(accounts.accounts)) counts.gmail = accounts.accounts.length;
     if (Array.isArray(mailboxes)) counts.cloudflare = mailboxes.length;
     if (agents && Array.isArray(agents.agents)) counts.agents = agents.agents.length;
     if (keys && Array.isArray(keys.keys)) counts.agent_keys = keys.keys.length;
+    // B-203: the server's own error counts of yesterday (a server older than 0.90.0 answers 404: none).
+    if (errors && typeof errors === 'object' && typeof errors.day === 'string' && errors.counts && typeof errors.counts === 'object') counts.errors = { day: errors.day, counts: errors.counts };
     return Object.keys(counts).length ? counts : null;
   };
 }
 
-module.exports = { createAnalytics, countsWith, readBundledKey, analyticsOrigin, readInstallation, ensureInstallation, writeSwitch, installationFile, stateFile, SDK, BATCH, KEY };
+module.exports = { createAnalytics, countsWith, cleanErrors, readBundledKey, analyticsOrigin, readInstallation, ensureInstallation, writeSwitch, installationFile, stateFile, SDK, BATCH, KEY };

@@ -1,6 +1,6 @@
 # B-203: a server's errors, visible to us as counts
 
-**State:** design (2026-11-04); release by 2026-11-11. **Source:** the operator's request of 2026-11-04 about 12:25
+**State:** design 2026-11-04 (PR #396); built in 0.90.0 (2026-11-04). **Source:** the operator's request of 2026-11-04 about 12:25
 UTC, relayed by the coordinator's session (every product logs its errors so customers' problems are visible to us),
 Fabric's wave plan item C. Row: [B-203](../../evidence/backlog.md).
 
@@ -40,10 +40,12 @@ What the server knows today, by class (file:line as of `9753dfa`):
    days): `{ day, counts: { "<class>.<code>": n } }`, at most 50 keys. Its tool `get_server_errors` lets an agent read
    the same (the rule that every route is a tool).
 4. **Sending.** The Mac app's daily read (`countsWith`, `desktop/analytics.cjs:389`) adds a fifth read, of yesterday's
-   counts, and sends them once per UTC day as one event `server_errors` with each `<class>.<code>` as a number (at most
-   30 keys, the largest first). Only with usage details on (the default since 0.87.0); with the switch off nothing is
-   sent, as today. A server older than this release answers 404 and nothing is sent. The event carries no address,
-   name, domain or id beyond the shared install id the details already carry.
+   counts, and sends one event `server_error` per class and code (growth's answer of 2026-11-04 on thread `b2e5df1f`,
+   message `891c4748`: its conditions read string properties only, so each pair is its own event): string properties
+   `class`, `code` and `day` (`YYYY-MM-DD`, UTC), a number `count`, at most 30 events a day in the usual batches of 25;
+   a day without errors sends nothing. Only with usage details on (the default since 0.87.0); with the switch off
+   nothing is sent, as today. A server older than this release answers 404 and nothing is sent. No address, name,
+   domain or id beyond the shared install id the details already carry.
 5. **What a person sees.** The usage notice and Share Usage Details already say anonymous usage and error data; the
    detail line gains "and error counts from your server". docs/ANALYTICS.md: the `server_errors` row, and "errors from
    the server" leaves the "Never sent" list as "the server's error messages". SCN-048 is updated in the same change.
@@ -56,7 +58,7 @@ What the server knows today, by class (file:line as of `9753dfa`):
   route answers yesterday's counts and refuses a day older than 14; the prune.
 - The Mac app: a 404 sends nothing; the switch off sends nothing.
 
-## Open
+## Decided
 
-- Whether the Fabric analytics owner wants the counts as one event or one event per class (asked on the analytics
-  thread with this note; the design takes one event, the cheaper read).
+- One event per class and code, not one event with 30 keys: growth's answer of 2026-11-04 (thread `b2e5df1f`,
+  message `891c4748`). Growth reads the organization's analytics server after its access lands (PLAT-133, by 2026-11-06).
