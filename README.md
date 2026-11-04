@@ -281,7 +281,9 @@ it with a throwaway profile ([`scripts/smoke-desktop.mjs`](scripts/smoke-desktop
 has drawn its first page (the `window_shown` log event) and the agent console's PTY has run a fixed echo and then
 stopped a waiting shell with no process forked (`--console-check`: the app's `--fabric-check-console` switch, the
 `console_check` event; B-102); the release run launches each
-installed package the same way.
+installed package the same way. Since 0.89.0 the same workflow also runs the tests on a Mac with Apple silicon, builds
+the hardened unsigned app (`npm run desktop:package`) and launches it the same way, and once more with `--background`,
+which passes only when no window draws (the lifecycle broker's background launch).
 
 ## Deploy
 

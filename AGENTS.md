@@ -150,6 +150,13 @@ the Worker, not the Mac. Cookie encryption (an Electron fuse, `desktop/hardening
 Keychain item, "Fabric Inbox Safe Storage", on first launch; Chromium reads it in-process, and a
 signed release must create it without a prompt (`docs/release.md`, upgrade check).
 
+- **The lifecycle broker (LC-09).** On the operator's Mac the broker manages the app as `inbox.desktop`, `on_demand`,
+  stopped after 15 minutes idle. Since 0.89.0 the app supports **`--background`** (fabric-workspace
+  knowledge/lifecycle.md "Background launch", fabric-workspace#27): with a server set up it starts with no window
+  and logs `background_launch`; the first activate (a Dock click, Cmd+Tab) or opening it again shows the mail
+  window. A first run with no server still shows setup. The broker passes the flag only to a target enrolled with
+  `backgroundLaunch: true`, which its owner sets. Checks: `tests/desktop-background.test.ts`, and the macOS job of
+  `.github/workflows/platforms.yml` launches the built app with it (`scripts/smoke-desktop.mjs --background`).
 - **Builds are hardened (LC-13, LC-07).** Every Mac builder applies `hardenTemplateHook` and gates on
   `verifyHardening`: `RunAsNode`, `EnableNodeOptionsEnvironmentVariable` and
   `EnableNodeCliInspectArguments` off; `EnableEmbeddedAsarIntegrityValidation`, `OnlyLoadAppFromAsar`

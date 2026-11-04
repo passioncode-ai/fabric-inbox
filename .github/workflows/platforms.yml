@@ -1,4 +1,4 @@
-# Windows and Linux builds of the desktop app, unsigned (fabric-workspace knowledge/platforms.md
+# macOS, Windows and Linux builds of the desktop app, unsigned (fabric-workspace knowledge/platforms.md
 # PL-08: the release jobs' mirror, without the release environment). Each runner: the test suite,
 # the build (desktop/dist-platform.mjs), an install where the OS has one, and a smoke launch with a
 # throwaway profile (scripts/smoke-desktop.mjs). Nightly, by hand, and on a pull request that touches
@@ -99,6 +99,29 @@ jobs:
           name: fabric-inbox-linux-${{ matrix.arch }}
           path: release/Fabric-Inbox-*
           retention-days: 7
+
+  # macOS on Apple silicon: the release job builds, signs and notarizes the app but never runs the tests or
+  # launches it there (operator, 2026-11-04: check every OS). The build is the hardened unsigned one
+  # (desktop/package.mjs, re-signed ad hoc to launch); an Intel Mac is covered by the release build only.
+  macos:
+    name: macos-arm64
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Tests
+        run: npm test
+      - name: Build the app (hardened, unsigned)
+        run: npm run desktop:package -- arm64
+      - name: "Smoke: the built app, with a throwaway profile and the agent console's PTY"
+        run: node scripts/smoke-desktop.mjs --exe "release/Fabric Inbox-darwin-arm64/Fabric Inbox.app/Contents/MacOS/Fabric Inbox" --timeout 120 --console-check
+      - name: "Smoke: a background launch draws no window (knowledge/lifecycle.md Background launch)"
+        run: node scripts/smoke-desktop.mjs --exe "release/Fabric Inbox-darwin-arm64/Fabric Inbox.app/Contents/MacOS/Fabric Inbox" --timeout 60 --background
 
   # Both Windows builds are made on x64: workerd (the Worker tests' runtime) has no Windows ARM64
   # binary, and electron-builder cross-builds the arm64 installer. Each is then installed and
