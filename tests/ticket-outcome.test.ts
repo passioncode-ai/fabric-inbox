@@ -70,3 +70,14 @@ test("B-199: the route and the tool are wired, and list_agent_runs carries each 
   assert.match(route, /ticketOutcome: ticketOutcomeOf\(run, now\)/);
   assert.match(readFileSync("workers/mcp/tools.ts", "utf8"), /name: "get_agent_outcomes"[\s\S]*routes: \["GET \/api\/agent-outcomes"\]/);
 });
+
+test("B-199: agent.question_overdue carries openDays and reportedTo and fits the published agent event schema", async () => {
+  const { default: Ajv2020 } = await import("ajv/dist/2020.js");
+  const { questionOverdueEvent } = await import("../workers/agents/events");
+  const schema = JSON.parse(readFileSync("docs/agents/agent-event.schema.json", "utf8"));
+  const validate = new (Ajv2020 as unknown as typeof Ajv2020.default)({ strict: false }).compile(schema);
+  const e = questionOverdueEvent(run({ status: "held", unanswered: true, question: "How do I export contacts?" }, 9 * DAY), 9, ["tools.project.invalid"], new Date(NOW).toISOString());
+  assert.equal(e.kind, "agent.question_overdue");
+  assert.equal(e.level, "warning");
+  assert.ok(validate(e.data.value), JSON.stringify(validate.errors));
+});

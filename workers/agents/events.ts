@@ -14,7 +14,7 @@ export const AGENT_EVENT_SCHEMA = "https://github.com/passioncode-ai/fabric-inbo
 
 export interface AgentEvent {
   at: string;
-  kind: "agent.sent" | "agent.drafted" | "agent.skipped" | "agent.unanswered" | "agent.needs_look" | "agent.not_helped" | "agent.handoff" | "agent.waiting" | "agent.abandoned" | "support.quality_daily"
+  kind: "agent.sent" | "agent.drafted" | "agent.skipped" | "agent.unanswered" | "agent.needs_look" | "agent.not_helped" | "agent.handoff" | "agent.waiting" | "agent.abandoned" | "agent.question_overdue" | "support.quality_daily"
     | "knowledge.learned" | "knowledge.retracted" | "knowledge.stale" | "answer.cited" | "support.diagnosed";
   level: "info" | "notice" | "warning";
   text: string;
@@ -38,6 +38,8 @@ export interface AgentEventValue {
   closed?: boolean; closingSent?: boolean;
   /** B-170 (agent.abandoned): where the conversation stands and how many whole hours its last message has waited. */
   state?: string; abandonedHours?: number;
+  /** B-199, agent.question_overdue: whole days the question has been open, and the hosts its gap was reported to. */
+  openDays?: number; reportedTo?: string[];
 }
 
 /**
@@ -141,6 +143,24 @@ export function abandonedEvent(input: { address: string; emailId: string; runId:
   return { at, link: messageLink(`cloudflare:${input.address}`, input.emailId, run?.id), kind: "agent.abandoned", level: "warning",
     text: cut(`A conversation on ${input.address} has had no reply for ${Math.floor(hours / 24)} days (${input.state.replace(/_/g, " ")}).`),
     data: { schema: AGENT_EVENT_SCHEMA, value } };
+}
+
+/**
+ * B-199 (standard 6): a question the knowledge had no answer for is still open after OVERDUE_DAYS days; written
+ * once per message by the registry's hourly look, so the knowledge owner and the operator see it age.
+ */
+export function questionOverdueEvent(run: AgentRun, openDays: number, reportedTo: string[], at: string): AgentEvent {
+  const value: AgentEventValue = {
+    runId: run.id, address: run.mailboxId,
+    ...(run.agentId ? { agentId: run.agentId } : {}), ...(run.agentVersion ? { agentVersion: run.agentVersion } : {}),
+    status: run.status, unanswered: run.unanswered === true,
+    ...(run.question ? { question: cut(scrubPersonal(run.question)) } : {}),
+    sources: (run.sources ?? []).slice(0, 32).map((s) => cut(s.title)),
+    ...(run.category ? { category: cut(run.category, 60) } : {}),
+    openDays, reportedTo: reportedTo.slice(0, 8).map((h) => cut(h, 200)),
+  };
+  return { at, link: messageLink(`cloudflare:${run.mailboxId}`, run.emailId, run.id), kind: "agent.question_overdue", level: "warning",
+    text: cut(`A question to ${run.mailboxId} has had no answer from the knowledge for ${openDays} days.`), data: { schema: AGENT_EVENT_SCHEMA, value } };
 }
 
 /** B-130: the day's quality of one agent address (support.quality_daily); counts only. */

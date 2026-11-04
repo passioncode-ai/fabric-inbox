@@ -127,6 +127,19 @@
       "type": "integer",
       "minimum": 48,
       "description": "B-170, agent.abandoned only: whole hours since the conversation's last message came in, with no reply (the agent's waiting reply is none); sent once per message, at 48 hours or later."
+    },
+    "openDays": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "B-199, agent.question_overdue only: whole days the question has been open (the knowledge had no answer and its owner has not closed the gap)."
+    },
+    "reportedTo": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "description": "B-199, agent.question_overdue only: the hosts the knowledge gap was reported to."
     }
   }
 }

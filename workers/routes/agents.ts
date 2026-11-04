@@ -323,6 +323,15 @@ agentsRouter.get("/api/agent-runs", async (c) => {
   } catch (error) { return registryFailure(c, error); }
 });
 
+/** B-199 (standard 6): the questions the knowledge has not answered yet, oldest first, with their age and owner. */
+agentsRouter.get("/api/agent-questions", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  c.header("Cache-Control", "no-store");
+  try {
+    return c.json(await registry(c).openQuestions({ mailboxId: c.req.query("address") || undefined, agentId: c.req.query("agent") || undefined }));
+  } catch (error) { return registryFailure(c, error); }
+});
+
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 /** B-199: the outcomes of the messages that came in a period (UTC days, at most 92), per address, with the four numbers. */
 agentsRouter.get("/api/agent-outcomes", async (c) => {

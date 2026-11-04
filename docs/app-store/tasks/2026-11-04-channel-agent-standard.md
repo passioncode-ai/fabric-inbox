@@ -1,6 +1,6 @@
 # B-199: the channel-agent standard in Fabric Inbox
 
-**State:** step 1 in 0.85.0, step 2 in 0.86.0; steps 3 and 4 planned. **Source:** board thread `30c45b9c` (the operator's words relayed
+**State:** step 1 in 0.85.0, steps 2 and 3 in 0.86.0; step 4 planned. **Source:** board thread `30c45b9c` (the operator's words relayed
 2026-11-04: agents finish the work, an improvement loop, no question left unanswered, fresh sources; then «давай делай
 и не тормозите»), request `553bdd5f`; the standard's neutral copy (v1, a release candidate) is the channel side's
 `docs/template/copies/channel-agent-standard.neutral.md`. Row: [B-199](../../evidence/backlog.md).
@@ -43,8 +43,10 @@ its own policy, knowledge and texts.
    `B-199` in `tests/knowledge.test.ts` and `tests/knowledge-events.test.ts`. Left for a later step: a knowledge
    endpoint's own age (the data agent's revision; Inbox records only the newest revision it saw, `agent_facts`), and
    the age on the Settings screen.
-3. **Open gaps (by 2026-11-07).** A list of open questions per agent with their age, kind and the owner's endpoint
-   (`list_open_questions`), and one alarm event for a question past 7 days.
+3. **Open questions (0.86.0).** `GET /api/agent-questions` and `list_open_questions` list the questions still open
+   (no answer in the knowledge and the gap not closed, or held), oldest first, with age, gap kinds and `reportedTo`
+   (the hosts the gap went to); the hourly look writes one `agent.question_overdue` per question open 7 days. Tests:
+   `B-199` in `tests/agents-registry.test.ts`, `tests/ticket-outcome.test.ts`.
 4. **Eval tickets (by 2026-11-10).** Every run judged unhelpful, unanswered, expired or handed off with knowledge that
    could answer becomes an invented eval ticket (no customer words), kept per agent; they run through
    `preview_agent_answer` after every agent change, and a failure notifies once per episode.

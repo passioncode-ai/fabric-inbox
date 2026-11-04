@@ -1,9 +1,9 @@
 import { answerCitedEvent, causeOf, citedOf, supportDiagnosedEvent } from "./learning-events";
 import { addressesByAgent, collectionStale, readersOf } from "./knowledge-events";
-import { NOT_MEASURED, summarizeOutcomes, type OutcomeSummary } from "./ticket-outcome";
+import { NOT_MEASURED, summarizeOutcomes, ticketOutcomeOf, type OutcomeSummary } from "./ticket-outcome";
 import { calibrationOf, type Calibration, type PersonGrade } from "./calibration";
 import { CLOSED_STATES, GAPS_CHECK_MS, GAPS_PAGE, GAPS_PAGES, GAPS_UNAVAILABLE_MS, parseGapList, runOfRequest } from "./gap-closures";
-import { abandonedEvent, EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, runEvent, waitingEvent, type AgentEvent } from "./events";
+import { abandonedEvent, EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, questionOverdueEvent, runEvent, scrubPersonal, waitingEvent, type AgentEvent } from "./events";
 import { agentAccounts, statesOf } from "../lib/agent-status";
 import type { ThreadFacts } from "../../shared/mail/agent-state";
 import { MAX_ATTEMPTS as HOOK_MAX_ATTEMPTS, RETRY_MS as HOOK_RETRY_MS, readHooks, sendHook, type HookCursor } from "./event-hooks";
@@ -94,6 +94,14 @@ export const PERSON_CHECK_MS = 3_600_000;
 export const MAX_SPAM_HOLD_MS = 15 * 60_000;
 const MAX_AGENTS = 100;
 const MAX_RUNS_KEPT = 2000;
+/** B-199 (standard 6): a question open this many days is overdue and reported once. */
+export const OVERDUE_DAYS = 7;
+export interface OpenQuestion {
+  runId: string; address: string; agentId: string | null; question: string | null; kinds: string[]; reportedTo: string[];
+  status: AgentRun["status"]; ticketOutcome: string; receivedAt: string; openDays: number; overdue: boolean;
+}
+/** The hosts a run reported its knowledge gap to (B-141's `<grant>:gap` tool call). */
+const reportedTo = (run: AgentRun) => [...new Set(run.toolCalls.filter((c) => c.name.endsWith(":gap") && c.ok).map((c) => c.host))];
 /** Messages answered concurrently per alarm; each may wait on the model for a minute. */
 const BATCH = 3;
 /** A message whose run could not even start this many times is dropped with a log line. */
@@ -1047,6 +1055,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
     const due = (await this.ctx.storage.get<number>("abandoned_check_at")) ?? 0;
     if (due > now) return due;
     await this.reportStaleKnowledge(new Date(now).toISOString());
+    this.reportOverdueQuestions(now);
     const served: { address: string; mailboxId: string; agentId: string; facts: () => Promise<ThreadFacts[]> }[] = (await readAllSettings(this.env.BUCKET)).flatMap(({ email, settings }) => {
       const assignment = readAssignment(settings);
       const address = email.toLowerCase();
@@ -1109,6 +1118,50 @@ export class AgentRegistryDO extends DurableObject<Env> {
       written++;
     }
     if (written) console.log(JSON.stringify({ event: "knowledge_stale_reported", collections: written }));
+  }
+
+  /**
+   * B-199 (standard 6): the questions still open, oldest first: a run whose knowledge had no answer and whose gap its
+   * owner has not closed, and a message held without an answer. Each with its age, the hosts its gap was reported to
+   * (the `<grant>:gap` call) and its outcome; `overdue` at OVERDUE_DAYS days.
+   */
+  async openQuestions(options: { mailboxId?: string; agentId?: string; now?: number } = {}): Promise<{ questions: OpenQuestion[]; overdue: number; overdueDays: number }> {
+    const now = options.now ?? Date.now();
+    const where = ["(json_extract(body, '$.unanswered') = 1 OR status = 'held')", "json_extract(body, '$.gapClosed') IS NULL"];
+    const args: string[] = [];
+    if (options.mailboxId) { where.push("mailbox_id = ?"); args.push(options.mailboxId.toLowerCase()); }
+    if (options.agentId) { where.push("json_extract(body, '$.agentId') = ?"); args.push(options.agentId); }
+    const runs = this.rows(`SELECT body FROM agent_runs WHERE ${where.join(" AND ")} ORDER BY created_at ASC LIMIT 500`, ...args)
+      .map((row) => this.present(JSON.parse(String(row.body)) as AgentRun));
+    const questions = runs
+      .map((run) => ({ run, outcome: ticketOutcomeOf(run, now) }))
+      // A question a person or a later turn answered is not open, even when the knowledge still lacks the fact.
+      .filter(({ outcome }) => !["answered", "answered_after_question", "closed_by_person", "answered_elsewhere", "not_a_ticket", "no_reply_owed"].includes(outcome))
+      .map(({ run, outcome }) => {
+        const openDays = Math.floor((now - (Date.parse(run.receivedAt ?? run.createdAt) || now)) / 86_400_000);
+        return { runId: run.id, address: run.mailboxId, agentId: run.agentId ?? null, question: run.question ? scrubPersonal(run.question).slice(0, 500) : null,
+          kinds: run.gapsReported ?? [], reportedTo: reportedTo(run), status: run.status, ticketOutcome: outcome, receivedAt: run.receivedAt ?? run.createdAt,
+          openDays, overdue: openDays >= OVERDUE_DAYS };
+      });
+    return { questions, overdue: questions.filter((q) => q.overdue).length, overdueDays: OVERDUE_DAYS };
+  }
+
+  /** B-199: once an hour, one `agent.question_overdue` per question open OVERDUE_DAYS days or more (keyed by its run). */
+  private reportOverdueQuestions(now: number): void {
+    const at = new Date(now).toISOString();
+    let written = 0;
+    for (const q of this.rows(`SELECT body FROM agent_runs WHERE (json_extract(body, '$.unanswered') = 1 OR status = 'held') AND json_extract(body, '$.gapClosed') IS NULL AND created_at < ? ORDER BY created_at ASC LIMIT 200`,
+      new Date(now - OVERDUE_DAYS * 86_400_000).toISOString())) {
+      const run = this.present(JSON.parse(String(q.body)) as AgentRun);
+      if (["answered", "answered_after_question", "closed_by_person", "answered_elsewhere", "not_a_ticket", "no_reply_owed"].includes(ticketOutcomeOf(run, now))) continue;
+      const key = `overdue-${run.id}`;
+      if (this.rows("SELECT 1 FROM agent_events WHERE run_id = ? LIMIT 1", key).length) continue;
+      if (written >= ABANDON_EVENTS_PER_PASS) break;
+      const openDays = Math.floor((now - (Date.parse(run.receivedAt ?? run.createdAt) || now)) / 86_400_000);
+      this.appendEvent(key, questionOverdueEvent(run, openDays, reportedTo(run), at));
+      written++;
+    }
+    if (written) console.log(JSON.stringify({ event: "agent_question_overdue_reported", events: written }));
   }
 
   /** Test seam: how a hook is called; production uses the Worker's fetch. */

@@ -175,6 +175,7 @@ const bundle = await build({
               case 'toGrade': return Response.json(await reg.answersToGrade(c.options ?? {}, c.now));
               case 'calibration': return Response.json(await reg.judgeCalibration(c.options ?? {}, c.now));
               case 'outcomes': return Response.json(await reg.ticketOutcomes(c.options));
+              case 'questions': return Response.json(await reg.openQuestions(c.options ?? {}));
               case 'again': return Response.json(await reg.answerAgain(c.id));
               case 'sentAfter': return Response.json(await reg.sentInThreadAfter(c.mailbox, c.thread, c.since));
               case 'save': await reg.saveRun(c.run); return Response.json(true);
@@ -1262,6 +1263,32 @@ test("B-199: the outcomes of a period's messages per address, with the four numb
     assert.deepEqual(s.four, { answered: 0.5, toPerson: 0.5, fallback: 0, unanswered: 0 });
     const one = await command("outcomes", { options: { from: "2026-01-01", to: "2026-01-01", mailboxId: "SALES@acme.example" } }) as { addresses: Record<string, unknown> };
     assert.deepEqual(Object.keys(one.addresses), ["sales@acme.example"], "one address, matched without case");
+  } finally { await mf.dispose(); }
+});
+
+test("B-199: open questions oldest first with age and owner; one agent.question_overdue per question at 7 days", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const now = Date.now();
+    const at = (days: number) => new Date(now - days * 86_400_000).toISOString();
+    const gap = { name: "acme_kb:gap", host: "tools.project.invalid", ok: true, ms: 5, result: "ok" };
+    const base = { mailboxId: "support@acme.example", sender: "ann@customer.invalid", subject: "s", reason: "", agentId: "support" };
+    const run = (id: string, days: number, over: Record<string, unknown>) =>
+      command("begin", { run: { ...base, id: rid(id), emailId: id, toolCalls: [], createdAt: at(days), updatedAt: at(days), receivedAt: at(days), ...over } });
+    await run("q1", 9, { status: "held", unanswered: true, question: "How do I export contacts?", gapsReported: ["unanswered"], toolCalls: [gap] });
+    await run("q2", 2, { status: "sent", handoff: true, unanswered: true, question: "Can I pay by invoice?" });
+    await run("q3", 8, { status: "sent", unanswered: true, question: "Old one", gapClosed: { at: at(1), item: null, revision: "r2" } });
+    await run("q4", 8, { status: "sent", question: "Answered" });
+    const out = await command("questions", {}) as { questions: { runId: string; openDays: number; overdue: boolean; reportedTo: string[]; ticketOutcome: string; kinds: string[] }[]; overdue: number; overdueDays: number };
+    assert.deepEqual(out.questions.map((q) => q.runId), [rid("q1"), rid("q2")], "a closed gap and an answered message are not open; oldest first");
+    assert.deepEqual([out.questions[0].openDays, out.questions[0].overdue, out.questions[0].reportedTo, out.questions[0].kinds], [9, true, ["tools.project.invalid"], ["unanswered"]]);
+    assert.deepEqual([out.questions[1].overdue, out.questions[1].ticketOutcome], [false, "referred"]);
+    assert.deepEqual([out.overdue, out.overdueDays], [1, 7]);
+    await command("abandon", { now });
+    await command("abandon", { now: now + 2 * 3_600_000 });
+    const events = ((await command("events", { limit: 200 })).events as { kind: string; data: { value: { runId: string; openDays: number; reportedTo: string[] } } }[]).filter((e) => e.kind === "agent.question_overdue");
+    assert.equal(events.length, 1, "once per question");
+    assert.deepEqual([events[0].data.value.runId, events[0].data.value.openDays, events[0].data.value.reportedTo], [rid("q1"), 9, ["tools.project.invalid"]]);
   } finally { await mf.dispose(); }
 });
 
