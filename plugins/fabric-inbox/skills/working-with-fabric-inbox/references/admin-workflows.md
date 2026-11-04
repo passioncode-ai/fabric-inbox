@@ -189,6 +189,9 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   as the idempotency key. `list_event_hooks` shows delivery and the last error; `remove_event_hook` stops one.
   Test an agent with `preview_agent_answer` (an outside sender, the text): it returns what the agent would do and
   the reply, sending and storing nothing.
+  After changing an agent, read `list_agent_evals`: its eval tickets (kept from what it got wrong, plus those
+  written with `save_agent_eval`, never a customer's own words) run against every new version; a ticket that
+  starts failing raises `agent.eval_failed` once. `run_agent_evals` runs them again after the knowledge changed.
 - **A shared knowledge base or other remote tool:** grant it in `tools` (its host must be in
   `list_agents`' allowed hosts; the endpoint's input schema is read and stored on save). `fixed` pins
   arguments on every call (e.g. `{ "domain": "acme", "allow_web": false }`); `prefetch:

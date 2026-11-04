@@ -15,8 +15,8 @@
   "properties": {
     "runId": {
       "type": "string",
-      "pattern": "^agent-[0-9a-f]{32}$",
-      "description": "The run; list_agent_runs runId reads it"
+      "pattern": "^(agent|eval)-[0-9a-f]{32}$",
+      "description": "The run; list_agent_runs runId reads it. agent.eval_failed (B-199): the run the ticket came from, or the ticket's own id (eval-…) for a ticket a person wrote"
     },
     "address": {
       "type": "string",
@@ -140,6 +140,47 @@
         "maxLength": 200
       },
       "description": "B-199, agent.question_overdue only: the hosts the knowledge gap was reported to."
+    },
+    "evalId": {
+      "type": "string",
+      "pattern": "^eval-[0-9a-f]{32}$",
+      "description": "B-199, agent.eval_failed only: the eval ticket (list_agent_evals)."
+    },
+    "expect": {
+      "enum": [
+        "answer",
+        "handoff"
+      ],
+      "description": "B-199, agent.eval_failed only: what the ticket expects, the agent's own answer or a person's."
+    },
+    "got": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "handoff",
+        "fallback",
+        "grounded"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "handoff": {
+          "type": "boolean"
+        },
+        "fallback": {
+          "type": "boolean"
+        },
+        "grounded": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "description": "B-199, agent.eval_failed only: what the preview of the new version did with the ticket."
     }
   }
 }

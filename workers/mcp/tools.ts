@@ -568,7 +568,7 @@ const answerAgain = defineTool({
 
 const listAgentEvents = defineTool({
   name: "list_agent_events", title: "Reply agents' events", level: "read", readOnly: true,
-  description: "What reply agents did, as a feed another agent reads by cursor: one event per run that ended (sent, drafted, left alone, a question without an answer, handed to a person, a reply saying an earlier answer did not help, or needs a look), with the address, agent, intent, category, whether the answer was grounded, the question it could not answer (a paraphrase) and the passages it used, never the sender, subject or message text; each event's link opens the message and its run in the inbox. Three more kinds: agent.waiting (a message held or drafted 4 hours without a reply, once per message), agent.abandoned (a conversation on an agent address still waiting for someone 48 hours after its last message came in, with its state and hours, once per message; status none when no run exists) and support.quality_daily (one per agent address and closed UTC day: the support quality standard's coverage, quality, stability and autonomy counts; a field not measured is null and named in notMeasured; schema docs/agents/support-quality-daily.schema.json). One more, agent.question_overdue (B-199): a question the knowledge has had no answer for 7 days, once per message, with openDays and reportedTo (list_open_questions lists them all). Three more report what agents answer from: knowledge.learned (a knowledge document added or changed, or an agent's own knowledge text changed: its ref, the addresses whose agents read it, the title as questions, the text as answer, who saved it as validatedBy), knowledge.retracted (a document removed) and knowledge.stale (a collection past the maximum age its owner declared since its last batch, once per episode); schema docs/agents/knowledge-event.schema.json. Two more feed a shared learning loop: answer.cited (an answer sent from the knowledge, once per run: the ids of the items it cited and each one's coverage as two lists at the same index, the revision, the restated question; schema docs/agents/answer-cited.schema.json) and support.diagnosed (a message held or handed to a person, once per run and cause: retrieval, draft-or-check, data or person; a failed knowledge lookup names none; schema docs/agents/support-diagnosed.schema.json). Without after: the newest events; pass the returned cursor as after to read only what is new.",
+  description: "What reply agents did, as a feed another agent reads by cursor: one event per run that ended (sent, drafted, left alone, a question without an answer, handed to a person, a reply saying an earlier answer did not help, or needs a look), with the address, agent, intent, category, whether the answer was grounded, the question it could not answer (a paraphrase) and the passages it used, never the sender, subject or message text; each event's link opens the message and its run in the inbox. Three more kinds: agent.waiting (a message held or drafted 4 hours without a reply, once per message), agent.abandoned (a conversation on an agent address still waiting for someone 48 hours after its last message came in, with its state and hours, once per message; status none when no run exists) and support.quality_daily (one per agent address and closed UTC day: the support quality standard's coverage, quality, stability and autonomy counts; a field not measured is null and named in notMeasured; schema docs/agents/support-quality-daily.schema.json). One more, agent.question_overdue (B-199): a question the knowledge has had no answer for 7 days, once per message, with openDays and reportedTo (list_open_questions lists them all). And agent.eval_failed (B-199): an eval ticket fails against the agent's new version, once per episode, with evalId, expect and got (list_agent_evals). Three more report what agents answer from: knowledge.learned (a knowledge document added or changed, or an agent's own knowledge text changed: its ref, the addresses whose agents read it, the title as questions, the text as answer, who saved it as validatedBy), knowledge.retracted (a document removed) and knowledge.stale (a collection past the maximum age its owner declared since its last batch, once per episode); schema docs/agents/knowledge-event.schema.json. Two more feed a shared learning loop: answer.cited (an answer sent from the knowledge, once per run: the ids of the items it cited and each one's coverage as two lists at the same index, the revision, the restated question; schema docs/agents/answer-cited.schema.json) and support.diagnosed (a message held or handed to a person, once per run and cause: retrieval, draft-or-check, data or person; a failed knowledge lookup names none; schema docs/agents/support-diagnosed.schema.json). Without after: the newest events; pass the returned cursor as after to read only what is new.",
   input: { after: z.string().max(128).optional().describe("The cursor from the previous page"), limit: z.number().int().min(1).max(200).default(50) },
   routes: ["GET /api/agent-events"],
   call: (a, ctx) => get(ctx, "/api/agent-events", { after: a.after, limit: a.limit }),
@@ -1655,6 +1655,41 @@ const previewAgentAnswer = defineTool({
   call: (a, ctx) => post(ctx, `/api/agents/${enc(a.agentId)}/preview`, { address: a.address, from: a.from, subject: a.subject, text: a.text, reasoning: a.reasoning, model: a.model }),
 });
 
+const listAgentEvals = defineTool({
+  name: "list_agent_evals", title: "A reply agent's eval tickets", level: "read", readOnly: true, target: (a) => a.agentId,
+  description: "The agent's eval tickets (B-199): invented messages kept from what it got wrong (an answer judged unhelpful, a message left unanswered or expired, or one handed to a person while its knowledge had the answer), each the model's paraphrase without personal details, plus those a person wrote. Each runs through the preview after every new version of the agent; its last result says pass, fail or error against which version, what the preview did and the first characters of its reply. A ticket that starts failing raises agent.eval_failed once. The summary counts them against the current version.",
+  input: { agentId: z.string().min(1).max(100) },
+  routes: ["GET /api/agents/:id/evals"],
+  call: (a, ctx) => get(ctx, `/api/agents/${enc(a.agentId)}/evals`),
+});
+
+const saveAgentEval = defineTool({
+  name: "save_agent_eval", title: "Write or change an eval ticket", level: "admin", target: (a) => `${a.agentId} ${a.id ?? "new"}`,
+  description: "Writes an eval ticket for a reply agent (text and the address it is asked on; never a customer's own words), or changes one (give id): its text, subject, address, or what it expects (answer: the agent answers it itself; handoff: a person should). It runs through the preview within a minute and after every new version; each run spends the model.",
+  input: { agentId: z.string().min(1).max(100), id: z.string().max(100).optional().describe("A ticket from list_agent_evals, to change it"),
+    text: z.string().min(1).max(2000).optional().describe("The message, as a customer might write it"), subject: z.string().max(200).optional(),
+    address: z.string().email().optional().describe("The agent address it is asked on; needed for a new ticket"),
+    expect: z.enum(["answer", "handoff"]).optional().describe("Default answer") },
+  routes: ["POST /api/agents/:id/evals"],
+  call: (a, ctx) => post(ctx, `/api/agents/${enc(a.agentId)}/evals`, { id: a.id, text: a.text, subject: a.subject, address: a.address, expect: a.expect }),
+});
+
+const removeAgentEval = defineTool({
+  name: "remove_agent_eval", title: "Remove an eval ticket", level: "admin", target: (a) => `${a.agentId} ${a.id}`,
+  description: "Removes an eval ticket of a reply agent (one that no longer says what the agent should do). A ticket made from a message is never made again from it.",
+  input: { agentId: z.string().min(1).max(100), id: z.string().min(1).max(100) },
+  routes: ["DELETE /api/agents/:id/evals/:evalId"],
+  call: (a, ctx) => del(ctx, `/api/agents/${enc(a.agentId)}/evals/${enc(a.id)}`),
+});
+
+const runAgentEvals = defineTool({
+  name: "run_agent_evals", title: "Run an agent's eval tickets again", level: "admin", target: (a) => a.agentId,
+  description: "Runs every eval ticket of the reply agent again within a minute, as after a new version: use it after its knowledge changed. Each ticket's preview spends the model; read the results with list_agent_evals.",
+  input: { agentId: z.string().min(1).max(100) },
+  routes: ["POST /api/agents/:id/evals/run"],
+  call: (a, ctx) => post(ctx, `/api/agents/${enc(a.agentId)}/evals/run`),
+});
+
 const saveAgent = defineTool({
   name: "save_agent", title: "Create or change a reply agent", level: "admin", target: (a) => a.agentId ?? a.agent.name,
   description: "Creates a reply agent, or saves a new version of one (give agentId and expectedVersion, the version you read with list_agents). A new agent drafts every answer until its replyPolicy says auto. Assign it to addresses with update_address.",
@@ -2181,7 +2216,7 @@ const revokeAgentKey = defineTool({
 
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, decideHeldMessage, listFolders, getSendStatus,
-  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
+  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,

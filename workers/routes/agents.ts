@@ -197,6 +197,44 @@ agentsRouter.post("/api/agents/:id/preview", async (c) => {
   } catch (error) { return registryFailure(c, error); }
 });
 
+/** B-199 step 4: an agent's eval tickets with their last results (list_agent_evals). */
+agentsRouter.get("/api/agents/:id/evals", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  try {
+    return c.json(await registry(c).listEvals(c.req.param("id")));
+  } catch (error) { return registryFailure(c, error); }
+});
+
+/** B-199 step 4: a person's eval ticket, or a change to one (save_agent_eval). */
+agentsRouter.post("/api/agents/:id/evals", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  const body = await c.req.json().catch(() => null) as { id?: unknown; text?: unknown; subject?: unknown; address?: unknown; expect?: unknown } | null;
+  const str = (v: unknown, max: number) => (typeof v === "string" && v.length <= max ? v : undefined);
+  const address = str(body?.address, 320)?.trim();
+  if (address !== undefined && !/^[^\s@]+@[^\s@]+$/.test(address)) return c.json({ error: msg("The address is an email address") }, 400);
+  if (body?.expect !== undefined && body.expect !== "answer" && body.expect !== "handoff") return c.json({ error: msg("expect is answer or handoff") }, 400);
+  try {
+    return c.json(await registry(c).saveEval(c.req.param("id"), { id: str(body?.id, 100), text: str(body?.text, 2000), subject: str(body?.subject, 200),
+      address, expect: body?.expect as "answer" | "handoff" | undefined }));
+  } catch (error) { return registryFailure(c, error); }
+});
+
+/** B-199 step 4: removes an eval ticket (remove_agent_eval). */
+agentsRouter.delete("/api/agents/:id/evals/:evalId", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  try {
+    return (await registry(c).removeEval(c.req.param("id"), c.req.param("evalId"))) ? c.json({ ok: true }) : c.json({ error: msg("No such eval ticket") }, 404);
+  } catch (error) { return registryFailure(c, error); }
+});
+
+/** B-199 step 4: runs every ticket of the agent again within a minute (run_agent_evals). */
+agentsRouter.post("/api/agents/:id/evals/run", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  try {
+    return c.json(await registry(c).rerunEvals(c.req.param("id")));
+  } catch (error) { return registryFailure(c, error); }
+});
+
 agentsRouter.post("/api/agent-runs/:id/again", async (c) => {
   if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
   try {

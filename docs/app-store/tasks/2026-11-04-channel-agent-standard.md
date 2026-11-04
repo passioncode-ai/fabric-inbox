@@ -1,6 +1,6 @@
 # B-199: the channel-agent standard in Fabric Inbox
 
-**State:** step 1 in 0.85.0, steps 2 and 3 in 0.86.0; step 4 planned. **Source:** board thread `30c45b9c` (the operator's words relayed
+**State:** step 1 in 0.85.0, steps 2 and 3 in 0.86.0, step 4 in 0.88.0. **Source:** board thread `30c45b9c` (the operator's words relayed
 2026-11-04: agents finish the work, an improvement loop, no question left unanswered, fresh sources; then «давай делай
 и не тормозите»), request `553bdd5f`; the standard's neutral copy (v1, a release candidate) is the channel side's
 `docs/template/copies/channel-agent-standard.neutral.md`. Row: [B-199](../../evidence/backlog.md).
@@ -20,7 +20,7 @@ its own policy, knowledge and texts.
 | the outcome of every ticket (3), the four numbers (5.1) | no | step 1 |
 | each source's age and limit (7.1) | no: documents keep `updatedAt` only | step 2 |
 | a weekly list of open gaps with age, an alarm past 7 days (6) | no: gaps live on runs only | step 3 |
-| invented eval tickets from every wrong answer, run after each change (5.3) | no | step 4 |
+| invented eval tickets from every wrong answer, run after each change (5.3) | no | step 4 (0.88.0) |
 
 ## Steps
 
@@ -47,9 +47,19 @@ its own policy, knowledge and texts.
    (no answer in the knowledge and the gap not closed, or held), oldest first, with age, gap kinds and `reportedTo`
    (the hosts the gap went to); the hourly look writes one `agent.question_overdue` per question open 7 days. Tests:
    `B-199` in `tests/agents-registry.test.ts`, `tests/ticket-outcome.test.ts`.
-4. **Eval tickets (by 2026-11-10).** Every run judged unhelpful, unanswered, expired or handed off with knowledge that
-   could answer becomes an invented eval ticket (no customer words), kept per agent; they run through
-   `preview_agent_answer` after every agent change, and a failure notifies once per episode.
+4. **Eval tickets (0.88.0).** `workers/agents/evals.ts`: once an hour every run of the last 30 days whose answer was
+   judged unhelpful (the daily judge or a person's grade), whose outcome is `unanswered` or `expired`, or that a person
+   got while the knowledge had the answer the first search missed (B-153's second look, cause `retrieval`) becomes an
+   eval ticket of its agent. Its text is the run's `question`, else its `summary` (the model's paraphrase), with
+   personal details removed: never the customer's words. At most 25 live tickets per agent, one per source run (a
+   removed ticket is never made again) and one per text; mail of a Gmail, Outlook or IMAP account is not used yet,
+   since its preview needs the account. After every new version of the agent (and on `run_agent_evals`) each ticket
+   runs through the preview, 4 per pass a second apart, and is judged by what it expects: `answer` (sent, not the
+   hand-off or the safe reply, not ungrounded) or `handoff` (the hand-off reply, a draft or held). A ticket that starts
+   failing writes one `agent.eval_failed` (keyed by the ticket and the episode's start); passing ends the episode.
+   A person writes, changes or removes tickets (`save_agent_eval`, `remove_agent_eval`); `list_agent_evals` gives
+   the last result per ticket and a summary against the current version. Each preview spends the model, like
+   `preview_agent_answer`. Tests: `tests/agent-evals.test.ts`, `B-199 step 4` in `tests/agents-registry.test.ts`.
 
 ## What in the standard's copy does not fit mail as it stands
 

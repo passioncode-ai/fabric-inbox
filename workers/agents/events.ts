@@ -14,7 +14,7 @@ export const AGENT_EVENT_SCHEMA = "https://github.com/passioncode-ai/fabric-inbo
 
 export interface AgentEvent {
   at: string;
-  kind: "agent.sent" | "agent.drafted" | "agent.skipped" | "agent.unanswered" | "agent.needs_look" | "agent.not_helped" | "agent.handoff" | "agent.waiting" | "agent.abandoned" | "agent.question_overdue" | "support.quality_daily"
+  kind: "agent.sent" | "agent.drafted" | "agent.skipped" | "agent.unanswered" | "agent.needs_look" | "agent.not_helped" | "agent.handoff" | "agent.waiting" | "agent.abandoned" | "agent.question_overdue" | "agent.eval_failed" | "support.quality_daily"
     | "knowledge.learned" | "knowledge.retracted" | "knowledge.stale" | "answer.cited" | "support.diagnosed";
   level: "info" | "notice" | "warning";
   text: string;
@@ -40,6 +40,8 @@ export interface AgentEventValue {
   state?: string; abandonedHours?: number;
   /** B-199, agent.question_overdue: whole days the question has been open, and the hosts its gap was reported to. */
   openDays?: number; reportedTo?: string[];
+  /** B-199 step 4, agent.eval_failed: the ticket, what it expects, and what the preview of the new version did. */
+  evalId?: string; expect?: string; got?: { status: string; handoff: boolean; fallback: boolean; grounded: boolean | null };
 }
 
 /**
@@ -161,6 +163,24 @@ export function questionOverdueEvent(run: AgentRun, openDays: number, reportedTo
   };
   return { at, link: messageLink(`cloudflare:${run.mailboxId}`, run.emailId, run.id), kind: "agent.question_overdue", level: "warning",
     text: cut(`A question to ${run.mailboxId} has had no answer from the knowledge for ${openDays} days.`), data: { schema: AGENT_EVENT_SCHEMA, value } };
+}
+
+/**
+ * B-199 step 4: an eval ticket that passed (or had not run) fails against the agent's new version; once per
+ * episode. `runId` is the run the ticket came from, or the ticket's own id for one a person wrote.
+ */
+export function evalFailedEvent(ticket: import("./evals").EvalTicket, result: import("./evals").EvalResult, at: string): AgentEvent {
+  const value: AgentEventValue = {
+    runId: ticket.sourceRun ?? ticket.id, address: ticket.address, agentId: ticket.agentId, agentVersion: result.version,
+    // The schema's run statuses: a preview that could not run reads failed, one that took no turn skipped.
+    status: result.got.status === "error" ? "failed" : ENDED.has(result.got.status) ? result.got.status : "skipped",
+    unanswered: false, question: cut(ticket.text), sources: [],
+    ...(result.got.handoff ? { handoff: true } : {}), ...(result.got.fallback ? { fallback: true } : {}),
+    evalId: ticket.id, expect: ticket.expect, got: result.got,
+  };
+  return { at, link: "/settings/agents", kind: "agent.eval_failed", level: "warning",
+    text: cut(`Agent ${ticket.agentId} version ${result.version} fails an eval ticket it should ${ticket.expect === "answer" ? "answer" : "hand to a person"}.`),
+    data: { schema: AGENT_EVENT_SCHEMA, value } };
 }
 
 /** B-130: the day's quality of one agent address (support.quality_daily); counts only. */

@@ -78,4 +78,15 @@ export const AGENT_REGISTRY_STEPS: readonly SchemaStep[] = [
       line TEXT,
       PRIMARY KEY (address, run_id, model))`,
   ]),
+  // B-199 step 4: eval tickets per agent, one per source run at most (a removed one is kept, so it is not made again).
+  statements("7_agent_evals", [
+    `CREATE TABLE IF NOT EXISTS agent_evals (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      source_run TEXT UNIQUE,
+      body TEXT NOT NULL,
+      removed_at TEXT,
+      created_at TEXT NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS agent_evals_by_agent ON agent_evals(agent_id, created_at)`,
+  ]),
 ];
