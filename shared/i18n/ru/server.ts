@@ -389,6 +389,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"The message may be trying to steer the agent; left for the operator": "Похоже, письмо пытается управлять агентом; оно ждёт вас",
 	"Withheld: the safety check could not run ({error})": "Скрыто: не удалось выполнить проверку безопасности ({error})",
 	"Withheld: the output looked like instructions": "Скрыто: результат был похож на инструкции",
+	"Not used: the knowledge answered without its source {source}": "Не использовано: база знаний ответила без своего источника {source}",
 	"Not called again: the run was interrupted and this tool may act": "Не вызван повторно: прогон прервался, а этот инструмент может что-то изменить",
 	"Not asked: the message could not be put in English for it": "Не спрошен: письмо не удалось пересказать по-английски",
 	"A reply, a forward or a follow-up to an earlier answer: a person answers it": "Ответ, пересылка или продолжение после прошлого ответа: на него отвечает человек",

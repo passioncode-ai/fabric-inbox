@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runAgent, gapRequestId, withoutDashes, type RunnerDeps, type RunnerEmail, type ModelRequest, type ModelResponse } from "../workers/agents/runner";
+import { runAgent, gapRequestId, partialOutput, withoutDashes, type RunnerDeps, type RunnerEmail, type ModelRequest, type ModelResponse } from "../workers/agents/runner";
 import { AgentInputSchema, type AgentVersion } from "../workers/agents/definition";
 import { runIdFor, type AgentRun } from "../workers/agents/run";
 import type { ModelDecision } from "../workers/agents/policy";
@@ -1216,6 +1216,28 @@ test("B-141: a failure before anything was sent is marked with its cause; an inj
   assert.deepEqual([u.status, u.failure], ["send_unknown", undefined], "a send that may have happened is never retried");
   const ok = (await harness().run())!;
   assert.deepEqual([ok.failure, ok.injection], [undefined, undefined]);
+});
+
+test("B-201: a knowledge answer served without one of its sources is a failed lookup: held, no gap, its revision not kept", async () => {
+  const gaps: Record<string, unknown>[] = [];
+  // As a data agent answers during an outage: no degraded field, the unloaded source's revision null.
+  const partial = JSON.stringify({ abstained: true, results: [], revision: { ledger: null, docs: "d7" },
+    knowledge: { stale: [{ source: "agent-load", note: "The ledger has not loaded." }] } });
+  const h = harness({ agent: holding(), email: { subject: "Login", body: "<p>I cannot log in.</p>" },
+    callTool: async (grant, args) => { if (grant.tool === "gaps.submit") { gaps.push(args); return "{}"; } return partial; },
+    model: async () => ({ decision: answer({ intent: "login", grounded: false, question: "Why can the user not log in?" }), text: "" }) });
+  const r = (await h.run())!;
+  assert.equal(r.status, "held", r.reason);
+  assert.equal(gaps.length, 0, "an outage of a source is not a gap");
+  assert.equal(r.unanswered, undefined);
+  assert.deepEqual(Object.keys(r.factsRevisions ?? {}), [], "its revision is not kept, so the retry asks again");
+  assert.ok(r.toolCalls.some((c) => !c.ok && /without its source ledger/.test(c.result)));
+  // From a saved or last good copy the source keeps a revision: whole. An absent key is unknown, not null.
+  assert.equal(partialOutput(JSON.stringify({ revision: { ledger: "l5", docs: "d7" } })), null);
+  assert.equal(partialOutput(JSON.stringify({ revision: { docs: "d7" } })), null, "an absent key is not a null revision");
+  assert.equal(partialOutput(JSON.stringify({ revision: "r1" })), null, "a single revision names no source");
+  assert.equal(partialOutput("not json"), null);
+  assert.equal(partialOutput(partial), "ledger");
 });
 
 test("B-141: a gap is reported only when the knowledge abstained or the answer was not grounded, never for a failed tool or a checker's rejection", async () => {
