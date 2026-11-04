@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono";
+import { ticketOutcomeOf } from "../agents/ticket-outcome";
 import { cancelRename, renameAddress, renameStatus } from "../lib/address-rename";
 import { renamesInProgress } from "../lib/rename-journal";
 import { z } from "zod";
@@ -316,7 +317,25 @@ agentsRouter.get("/api/agent-runs", async (c) => {
       limit: Number.isFinite(limit) ? limit : 50,
     });
     // B-163: what each run's model calls used, the writer and the checker apart (null: no receipts kept).
-    return c.json(runs.map((run) => ({ ...run, spent: runSpent(run) })));
+    // B-199: and how its message stands in the channel-agent standard's outcomes.
+    const now = Date.now();
+    return c.json(runs.map((run) => ({ ...run, spent: runSpent(run), ticketOutcome: ticketOutcomeOf(run, now) })));
+  } catch (error) { return registryFailure(c, error); }
+});
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** B-199: the outcomes of the messages that came in a period (UTC days, at most 92), per address, with the four numbers. */
+agentsRouter.get("/api/agent-outcomes", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  c.header("Cache-Control", "no-store");
+  const today = new Date().toISOString().slice(0, 10);
+  const to = c.req.query("to") || today;
+  const from = c.req.query("from") || new Date(Date.parse(`${to}T00:00:00Z`) - 29 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const span = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / (24 * 3600 * 1000);
+  if (!DAY.test(from) || !DAY.test(to) || !Number.isFinite(span) || span < 0 || span > 91)
+    return c.json({ error: "from and to are UTC days (YYYY-MM-DD), from not after to, at most 92 days" }, 400);
+  try {
+    return c.json(await registry(c).ticketOutcomes({ from, to, mailboxId: c.req.query("address") || undefined }));
   } catch (error) { return registryFailure(c, error); }
 });
 

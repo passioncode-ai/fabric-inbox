@@ -174,6 +174,7 @@ const bundle = await build({
               case 'grade': return Response.json(await reg.gradeRun(c.id, c.grade));
               case 'toGrade': return Response.json(await reg.answersToGrade(c.options ?? {}, c.now));
               case 'calibration': return Response.json(await reg.judgeCalibration(c.options ?? {}, c.now));
+              case 'outcomes': return Response.json(await reg.ticketOutcomes(c.options));
               case 'again': return Response.json(await reg.answerAgain(c.id));
               case 'sentAfter': return Response.json(await reg.sentInThreadAfter(c.mailbox, c.thread, c.since));
               case 'save': await reg.saveRun(c.run); return Response.json(true);
@@ -1239,6 +1240,28 @@ test("B-189: a person grades a sent answer blind; the calibration compares it wi
     assert.equal(cal.checks.language.agree, 1);
     assert.equal(cal.helped.judgeHigher, 1);
     assert.deepEqual(cal.judgeModels, ["deepseek/deepseek-v4.1-flash"]);
+  } finally { await mf.dispose(); }
+});
+
+test("B-199: the outcomes of a period's messages per address, with the four numbers, from the runs kept", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const at = `${day}T00:00:01.000Z`;
+    const base = { mailboxId: "support@acme.example", sender: "ann@customer.invalid", subject: "s", reason: "", toolCalls: [], createdAt: at, updatedAt: at };
+    await command("begin", { run: { ...base, id: rid("o1"), emailId: "o1", status: "sent" } });
+    await command("begin", { run: { ...base, id: rid("o2"), emailId: "o2", status: "sent", handoff: true } });
+    await command("begin", { run: { ...base, id: rid("o3"), emailId: "o3", status: "held" } });
+    await command("begin", { run: { ...base, id: rid("o4"), emailId: "o4", status: "skipped", reason: "Bulk or list precedence" } });
+    await command("begin", { run: { ...base, mailboxId: "sales@acme.example", id: rid("o5"), emailId: "o5", status: "sent", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" } });
+    const out = await command("outcomes", { options: { from: day, to: day } }) as { addresses: Record<string, { arrived: number; ended: number; open: number; notATicket: number; outcomes: Record<string, number>; four: Record<string, number | null> }> };
+    assert.deepEqual(Object.keys(out.addresses), ["support@acme.example"], "only the period's messages");
+    const s = out.addresses["support@acme.example"];
+    assert.deepEqual([s.arrived, s.ended, s.open, s.notATicket], [3, 2, 1, 1]);
+    assert.deepEqual([s.outcomes.answered, s.outcomes.referred, s.outcomes.question_open], [1, 1, 1]);
+    assert.deepEqual(s.four, { answered: 0.5, toPerson: 0.5, fallback: 0, unanswered: 0 });
+    const one = await command("outcomes", { options: { from: "2026-01-01", to: "2026-01-01", mailboxId: "SALES@acme.example" } }) as { addresses: Record<string, unknown> };
+    assert.deepEqual(Object.keys(one.addresses), ["sales@acme.example"], "one address, matched without case");
   } finally { await mf.dispose(); }
 });
 

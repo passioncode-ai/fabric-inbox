@@ -541,6 +541,15 @@ const listAgentRuns = defineTool({
     : get(ctx, "/api/agent-runs", { mailbox: a.address?.toLowerCase(), agent: a.agentId, outcome: a.outcome, before: a.before, limit: a.limit }),
 });
 
+const getAgentOutcomes = defineTool({
+  name: "get_agent_outcomes", title: "How the reply agents' messages ended", level: "read", readOnly: true,
+  description: "How the messages that came to each agent address in a period stand now, in the channel-agent standard's outcomes: answered, answered_after_question, closed_by_person, answered_elsewhere, referred (the reply told the customer where to write), expired (a safe or closing reply, never the answer), unanswered, no_reply_owed, and open as received, handed_open, question_open, awaiting_approval; not_a_ticket counts mail no one wrote to be answered. With the four numbers as shares of the ended ones (answered, toPerson, fallback, unanswered; they overlap) and what the server cannot see in notMeasured. Days are UTC, from and to inclusive, at most 92 days; without them the last 30 days. Each run in list_agent_runs carries its own ticketOutcome.",
+  input: { from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("First UTC day, YYYY-MM-DD"), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Last UTC day, YYYY-MM-DD; default today"),
+    address: address.optional() },
+  routes: ["GET /api/agent-outcomes"],
+  call: (a, ctx) => get(ctx, "/api/agent-outcomes", { from: a.from, to: a.to, address: a.address?.toLowerCase() }),
+});
+
 const answerAgain = defineTool({
   name: "answer_again", title: "Answer a message again", level: "mail", readOnly: false, additive: true,
   description: "Gives a message back to its reply agent: the agent answers it once more, by its own policy (in draft mode a new draft beside any earlier one). For a run that was drafted, left alone, failed or interrupted; a message already answered, or whose answer may have been sent, is refused.",
@@ -2163,7 +2172,7 @@ const revokeAgentKey = defineTool({
 
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, decideHeldMessage, listFolders, getSendStatus,
-  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
+  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,
