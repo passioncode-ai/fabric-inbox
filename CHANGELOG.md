@@ -5,6 +5,11 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.87.1 (2026-11-04)
+
+- **No false knowledge gaps during an outage.** When a knowledge source answers without one of its own sources, a reply
+  agent now treats the lookup as failed: it waits for a retry and reports no gap (B-201).
+
 ## 0.87.0 (2026-11-04)
 
 - **Usage and error data are on by default.** Fabric Inbox now sends anonymous usage and error data from the first

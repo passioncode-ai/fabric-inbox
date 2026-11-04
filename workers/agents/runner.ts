@@ -66,6 +66,22 @@ export function revisionOf(text: string): string | null {
   return JSON.stringify(sorted(revision)).slice(0, 400);
 }
 
+/**
+ * B-201: a knowledge answer served without one of its sources: its `revision` object names a source with a null
+ * value (the source has not loaded in that process, so the answer lacks what it holds; the data agent's contract,
+ * board thread `e68f363c`, message `dda6bbdc`). A source served from a saved or last good copy keeps a revision and is
+ * whole; a key that is absent is unknown, not null. The source's name, or null when the answer is whole.
+ */
+export function partialOutput(text: string): string | null {
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { return null; }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const revision = (value as Record<string, unknown>).revision;
+  if (!revision || typeof revision !== "object" || Array.isArray(revision)) return null;
+  for (const [source, rev] of Object.entries(revision as Record<string, unknown>)) if (rev === null) return source.slice(0, 60);
+  return null;
+}
+
 /** B-141: where a knowledge tool's revision is kept: its endpoint without query or fragment. */
 export function factsKey(endpoint: string): string {
   try { const url = new URL(endpoint); return `${url.origin}${url.pathname}`; } catch { return endpoint; }
@@ -619,6 +635,14 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
         console.log(JSON.stringify({ event: "agent_tool_withheld", run: run.id, tool: grant.name, cause: scan.error ? "error" : "flagged" }));
         record.result = scan.error ? msg("Withheld: the safety check could not run ({error})", { error: scan.error }) : msg("Withheld: the output looked like instructions");
         return { ok: false, text: "The tool's output was withheld by the safety check. Do not guess its result; draft the answer instead." };
+      }
+      // B-201: a knowledge answer without one of its sources is a failed lookup: no gap is reported for what it lacks,
+      // and the message waits for a retry (its revision is not kept, so the retry asks again).
+      const partial = partialOutput(text);
+      if (partial) {
+        console.log(JSON.stringify({ event: "agent_tool_partial", run: run.id, tool: grant.name, source: partial }));
+        record.result = msg("Not used: the knowledge answered without its source {source}", { source: partial }).slice(0, RESULT_PREVIEW_CHARS);
+        return { ok: false, text: "The knowledge could not be read whole just now. Do not guess its result; draft the answer instead." };
       }
       record.ok = true;
       record.result = text.slice(0, RESULT_PREVIEW_CHARS);
