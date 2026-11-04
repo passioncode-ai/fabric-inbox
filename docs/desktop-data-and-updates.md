@@ -123,7 +123,11 @@ as Fabric Switchboard, Fabric and Fabric Dashboards.
    account cannot replace (installed by another account, a read-only folder) never downloads and
    says why (`not_replaceable`).
 6. **The switch** is the file `auto-update` in the profile: absent means on, only the word `off`
-   turns checks and downloads off, and a check already running hands nothing to Squirrel.Mac.
+   turns downloads and installs off, and a check already running hands nothing to Squirrel.Mac.
+   Off still reads the feed on the same cadence (B-204, the operator's rule of 2026-11-04: off still
+   tells): a newer version shows one system notice per version, "Fabric Inbox {version} is available",
+   and the menu item reads **Update to {version}…**; clicking either downloads and installs it as
+   **Check for Updates…** does. Nothing is downloaded until then (`desktop/updater.cjs` `peek`).
    **Fabric Inbox → Install Updates Automatically** writes `off` or removes the file; an update or
    a reinstall never touches it. The `updates.json` of 0.11.0 is carried over once and removed.
    One exception, recorded in `AGENTS.md` → Lifecycle as LC-16 asks: an update Squirrel.Mac
@@ -164,7 +168,7 @@ Create my server gave it with Workers Scripts: Edit. The same checks as the app'
 never an older or equal version, never a storage step that deletes or moves data, every setting and
 secret of the running server kept (`keep_bindings`), its mail bucket kept. It happens at once when
 **Install Updates Automatically** is on; otherwise the app menu offers **Update Server to
-<version>**. It is checked once per launch and server. The server's account is `CLOUDFLARE_ACCOUNT_ID` when set, otherwise the one account its token
+<version>**, and a system notice says so once per server and version (B-204); clicking it updates the server. It is checked once per launch and server. The server's account is `CLOUDFLARE_ACCOUNT_ID` when set, otherwise the one account its token
 shows running this server's script (a server deployed with wrangler has no such var). A server
 without a token, or whose account cannot be told that way, says so (`selfUpdate.available: false`), and a token without Workers Scripts:
 Edit is named in the refusal; then **Create my server** with a token updates it as before. Only a

@@ -299,23 +299,26 @@ test("a release held for a migration is verified but not installed, and says whe
   assert.deepEqual(h.pending(), [5 * MINUTE], "a later release may not need the step");
 });
 
-test("the switch is the file auto-update: absent is on, only off is off, and off stops checks, downloads and installs", async () => {
+test("the switch is the file auto-update: absent is on, only off is off, and off stops downloads and installs but still tells (B-204)", async () => {
   const h = updater();
   const up = h.make();
   await up.start(RELEASED);
   await up.setAutomatic(false);
   assert.equal(readFileSync(path.join(h.userData, "auto-update"), "utf8"), "off\n");
-  assert.deepEqual(h.pending(), [], "off: no timer");
+  // B-204 (operator 2026-11-04: off still notifies): the feed is read on the same cadence, nothing is downloaded.
   await h.advance(7 * HOUR);
-  assert.deepEqual(h.calls, []);
-  assert.deepEqual(events(h.lines), ["auto_update:off"]);
+  assert.ok(h.calls.length > 0 && h.calls.every((c) => c === "feed-read" || c === "verify"), JSON.stringify(h.calls));
+  assert.equal(up.status().available, "0.12.0", "the newer version is named");
+  assert.equal(up.status().state, "idle");
+  assert.deepEqual(events(h.lines), ["auto_update:off", "update_available:undefined"], "said once per version");
+  assert.deepEqual(h.pending(), [5 * MINUTE]);
   // Reinstalled or updated: the file is the person's, and the app reads it again.
   const next = updater();
   writeFileSync(path.join(next.userData, "auto-update"), "off");
   const again = next.make();
   await again.start(RELEASED);
   assert.equal(again.status().automatic, false);
-  assert.deepEqual(next.pending(), []);
+  assert.deepEqual(next.pending(), [90 * 1000], "off still reads the feed at the first check (B-204)");
   // A manual check still works when off.
   next.verdicts.push({ outcome: "current", version: "0.11.0" });
   assert.deepEqual(await again.checkNow(), { outcome: "current" });
@@ -389,7 +392,7 @@ test("switching off while a check runs hands nothing to Squirrel.Mac", async () 
   unblock(); await tick; await settle();
   assert.ok(!h.calls.some((c) => c.startsWith("squirrel")), "nothing handed over after off");
   assert.equal(up.status().state, "idle");
-  assert.deepEqual(h.pending(), []);
+  assert.deepEqual(h.pending(), [5 * MINUTE], "only the read that tells the person comes next (B-204)");
 });
 
 test("a failed Restart to Install Update can be tried again", async () => {
@@ -596,4 +599,33 @@ test("review 2026-10-21: Check for Updates answers when the staged files are gon
   h.verdicts.push({ outcome: "current", version: "0.11.0" });
   const answer = await Promise.race([up.checkNow(), new Promise((r) => setTimeout(() => r("hung"), 2000))]);
   assert.notEqual(answer, "hung");
+});
+
+test("B-204: with updates off the newer version is named without a download; a person's check then installs it, and the same version is named once", async () => {
+  const h = updater();
+  writeFileSync(path.join(h.userData, "auto-update"), "off");
+  const up = h.make();
+  await up.start(RELEASED);
+  h.verdicts.push({ outcome: "current", version: "0.11.0" });
+  await h.advance(2 * MINUTE);
+  assert.equal(up.status().available, "", "nothing newer yet");
+  await h.advance(10 * MINUTE);
+  assert.equal(up.status().available, "0.12.0");
+  assert.ok(!h.calls.includes("download") && !h.calls.includes("squirrel-check"), "nothing downloaded or handed over");
+  assert.equal(h.lines.filter((l) => l.event === "update_available").length, 1);
+  // A failing read is logged once and changes nothing.
+  h.feedState.fail = true;
+  await h.advance(15 * MINUTE);
+  assert.equal(h.lines.filter((l) => l.event === "update_check" && l.reason === "peek").length, 1);
+  assert.equal(up.status().available, "0.12.0");
+  h.feedState.fail = false;
+  // The person clicks the notice (Check for Updates…): the release downloads and is handed to Squirrel.Mac.
+  const out = up.checkNow();
+  await settle();
+  assert.ok(h.calls.includes("download") && h.calls.includes("squirrel-check"));
+  assert.equal(up.status().available, "", "a real check clears it");
+  assert.equal((await out).outcome, "downloading", "the person's check answers as it starts the download");
+  h.u.emit("update-downloaded", {}, "", "0.12.0");
+  await settle();
+  assert.equal(up.status().state, "ready");
 });
