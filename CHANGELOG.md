@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.88.0 (2026-11-04)
+
+- **Agents are checked on what they got wrong.** A message a reply agent answered badly, left unanswered or handed to a
+  person while its knowledge had the answer becomes an eval ticket for that agent, written without the customer's words.
+  Every new version of the agent runs through its tickets, and a ticket that starts failing is reported once.
+  `list_agent_evals` shows the results, and `save_agent_eval` adds your own (B-199).
+
 ## 0.87.1 (2026-11-04)
 
 - **No false knowledge gaps during an outage.** When a knowledge source answers without one of its own sources, a reply
