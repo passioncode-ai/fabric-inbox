@@ -8,8 +8,8 @@ const path = require('node:path');
 
 const MAX_BYTES = 1024 * 1024;
 
-/** deps: { fs (node:fs/promises), dir, name ('fabric-inbox'), now, echo } → log(event) */
-function createLog({ fs, dir, name = 'fabric-inbox', now = Date.now, echo = (line) => process.stderr.write(line) }) {
+/** deps: { fs (node:fs/promises), dir, name ('fabric-inbox'), now, echo, onEvent (B-205: each event, for the digests) } → log(event) */
+function createLog({ fs, dir, name = 'fabric-inbox', now = Date.now, echo = (line) => process.stderr.write(line), onEvent = () => {} }) {
   const file = path.join(dir, `${name}.log`);
   const previous = path.join(dir, `${name}.1.log`);
   let queue = Promise.resolve();
@@ -24,8 +24,10 @@ function createLog({ fs, dir, name = 'fabric-inbox', now = Date.now, echo = (lin
   }
 
   function log(event) {
-    const line = JSON.stringify({ ts: new Date(now()).toISOString(), ...event }) + '\n';
+    const at = now();
+    const line = JSON.stringify({ ts: new Date(at).toISOString(), ...event }) + '\n';
     try { echo(line); } catch { /* no terminal */ }
+    try { onEvent(event, at); } catch { /* a digest never stops the log */ }
     // Lines are written in order; a write that fails (disk full, folder removed) is dropped, never thrown.
     queue = queue.then(() => write(line)).catch(() => { ready = false; });
     return queue;

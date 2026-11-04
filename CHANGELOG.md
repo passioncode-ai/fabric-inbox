@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.92.0 (2026-11-04)
+
+- **The app sums up its own log.** Every hour and every day, Fabric Inbox counts what its log recorded, by event and
+  outcome, and keeps the counts next to its settings. A sudden rise in failures is written to the log. Only counts are
+  kept, never what the events were about (B-205).
+
 ## 0.91.0 (2026-11-04)
 
 - **Told about new versions with automatic updates off.** With Install Updates Automatically off, Fabric Inbox still

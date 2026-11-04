@@ -24,6 +24,7 @@ const updateVerify = require('./update-verify.cjs');
 const platformInstaller = require('./platform-installer.cjs');
 const consoleCore = require('./console.cjs');
 const { createLog } = require('./log.cjs');
+const { createDigest } = require('./ops-digest.cjs');
 const { randomUUID } = require('node:crypto');
 const { execFile, spawn } = require('node:child_process');
 const execFileAsync = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10000, maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout) => (error ? reject(error) : resolve({ stdout }))));
@@ -113,7 +114,11 @@ let notifiedAvailable = '';
 let appLog = null;
 function logEvent(line) {
   if (!appLog && typeof app.isReady === 'function' && app.isReady()) {
-    try { appLog = createLog({ fs, dir: app.getPath('logs') }); } catch { appLog = null; }
+    // B-205: every event with an outcome is counted into hourly and daily digests under <userData>/digests (ADR-0188).
+    try {
+      const digest = createDigest({ fs, dir: path.join(app.getPath('userData'), 'digests'), log: (e) => { if (appLog) void appLog(e); } });
+      appLog = createLog({ fs, dir: app.getPath('logs'), onEvent: (e, at) => digest.count(e, at) });
+    } catch { appLog = null; }
   }
   if (appLog) void appLog(line); else console.error(JSON.stringify(line));
 }
