@@ -65,7 +65,7 @@ test("B-210: the contract's start rule: write when none, another version, a move
   assert.equal(descriptorAction(null, "Fabric Inbox 0.98.0", APP), "write");
   assert.equal(descriptorAction(mine, "Fabric Inbox 0.98.0", APP), "keep");
   assert.equal(descriptorAction(mine, "Fabric Inbox 0.97.0", APP), "write");
-  assert.equal(descriptorAction(mine, "Fabric Inbox 0.98.0", "/Users/x/Applications/Fabric Inbox.app"), "write");
+  assert.equal(descriptorAction(mine, "Fabric Inbox 0.98.0", "/Volumes/Apps/Fabric Inbox.app"), "write");
   assert.equal(descriptorAction({ installedBy: "installer 1" }, "Fabric Inbox 0.98.0", APP), "write");
   assert.equal(descriptorAction(null, "Fabric Inbox 0.98.0", "/private/var/folders/x/AppTranslocation/1/d/Fabric Inbox.app"), "keep");
 });
