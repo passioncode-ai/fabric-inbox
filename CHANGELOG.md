@@ -5,6 +5,18 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.99.0 (2026-11-05)
+
+- **People you add can sign in at once.** Adding someone in Settings → People now also lets them through your
+  server's sign-in, and removing them takes it away, with nothing to set up in Cloudflare. Your organization's own
+  sign-in keeps working as it was. Each person shows whether they can sign in, and Try again when Cloudflare refused
+  (B-215).
+- **Let a trusted agent give people mailboxes and issue keys.** In Agent access, an Admin key can be allowed to give
+  members their mailboxes, or to issue and revoke keys, without waiting for your approval each time. Making someone
+  an administrator still waits for you, and every change is in Recent changes with the key that made it (B-215).
+- **Scripts for people and keys.** A script now gives people their mailboxes and issues keys; a new key goes straight
+  into your secrets store (B-215).
+
 ## 0.98.0 (2026-11-05)
 
 - **The app's hourly summary keeps the hour you quit in.** The counts of the hour Fabric Inbox was quit in are now

@@ -462,7 +462,34 @@ server is the same one; what differs is the account, who signs in, and that it i
    only those mailboxes' mail (emptying Spam and bringing back discarded mail in them too): no settings, categories, rules, agents' runs or other mailboxes, and no
    agent protocol (`workers/lib/member-gate.ts`). A person the group lets in who is not listed is refused
    with a sentence naming who to ask. The list always keeps an administrator; `list_members` reads it for
-   an agent, and only a person changes it (B-149).
+   an agent (B-149).
+
+   **Sign-in follows the list** (B-215). Every save and removal rewrites the server's own Access policy,
+   `Fabric Inbox people <audience>`, so each listed email can sign in and a removed one no longer can by it; the
+   organization's own group policy stays as it is (`workers/lib/people-access.ts`). The person's row says Can sign in,
+   or Cannot sign in yet with Cloudflare's reason and Try again (`sync_member_sign_in`). Nothing is done in Zero
+   Trust by hand.
+
+   **People and keys with no person clicking** (B-215). `save_member`, `remove_member`, `create_agent_key` and
+   `revoke_agent_key` wait for the owner's approval in Agent access, unless the owner trusted the Admin key that
+   calls them: More actions → Let it give people mailboxes, or Let it issue and revoke keys (SCN-098). Whoever holds
+   the server account's Cloudflare token can make the same choice without the app:
+
+   ```sh
+   OBSERVATORY_VAULT_ONLY=1 python3 "$(project-observatory full-path)/tools/use_secret.py" run --vault-only --env prod <project> CLOUDFLARE_API_TOKEN -- \
+     env CLOUDFLARE_ACCOUNT_ID=<account id> node scripts/agent-standing.mjs --bucket <bucket> --key <key id> --set people,keys
+   ```
+
+   A trusted key still confirms each act with its own code and is named in Recent changes; making or removing an
+   administrator, and revoking a trusted key, still wait for the owner. With such a key, `scripts/members.mjs` gives
+   and takes mailboxes and issues keys from a script (its secret straight into the vault, never printed):
+
+   ```sh
+   OBSERVATORY_VAULT_ONLY=1 python3 "$(project-observatory full-path)/tools/use_secret.py" run --vault-only --env prod <project> \
+     FABRIC_INBOX_MCP_URL FABRIC_INBOX_CLIENT_ID FABRIC_INBOX_CLIENT_SECRET -- \
+     node scripts/members.mjs grant ann@acme.example --mailbox support@acme.example --read support@acme.example
+   # also: list, remove <email>, sign-in, key <name> --level read --mailbox … --duration 1y --vault <project>/<env>
+   ```
 
 People sign in with whatever the Access group allows. From 0.30.3 the Mac, Windows and Linux app signs
 in through an identity provider too (Google Workspace, Okta, Microsoft Entra and others, set up in Zero

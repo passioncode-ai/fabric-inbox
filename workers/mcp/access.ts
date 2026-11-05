@@ -12,12 +12,12 @@ import { accountIdFor, CloudflareApi, CloudflareApiError, type TokenEnv } from "
 export const TOKEN_DURATIONS = { "30d": "720h", "90d": "2160h", "1y": "8760h" } as const;
 export type TokenDuration = keyof typeof TOKEN_DURATIONS;
 
-interface AccessApp { id: string; aud: string; name?: string; policies?: { id: string; precedence?: number }[]; [field: string]: unknown }
+export interface AccessApp { id: string; aud: string; name?: string; policies?: { id: string; precedence?: number }[]; [field: string]: unknown }
 interface AccessPolicy { id: string; name: string; decision: string; include: Record<string, unknown>[] }
 interface ServiceToken { id: string; client_id: string; client_secret: string; expires_at?: string; name: string }
 
 const WHAT_TOKENS = "manage agent keys (Access: Service Tokens: Edit)";
-const WHAT_APPS = "let agent keys through the server's sign-in (Access: Apps and Policies: Edit)";
+export const WHAT_APPS = "let agent keys through the server's sign-in (Access: Apps and Policies: Edit)";
 /** Fields Cloudflare fills in on an application; an update sends the rest back unchanged. */
 const READ_ONLY = new Set(["id", "uid", "aud", "created_at", "updated_at", "policies"]);
 
@@ -26,6 +26,29 @@ export const policyName = (aud: string) => `Fabric Inbox agents ${aud.slice(0, 1
 export const serviceAppName = (aud: string) => `Fabric Inbox service ${aud.slice(0, 12)}`;
 const tokenRule = (tokenId: string) => ({ service_token: { token_id: tokenId } });
 const ruleToken = (rule: Record<string, unknown>) => (rule.service_token as { token_id?: string } | undefined)?.token_id;
+
+/**
+ * Puts the policy on the application, or takes it off, keeping every other policy and setting.
+ * The application is read whole just before the change; one that has no sign-in of its own besides
+ * the agents' is refused, since changing it could leave the owner locked out. Afterwards the owner's
+ * policies are checked, and put back if Cloudflare dropped any.
+ */
+export async function attachPolicy(api: CloudflareApi, account: string, appId: string, policyId: string, on: boolean) {
+  const app = await api.call<AccessApp>(`/accounts/${account}/access/apps/${appId}`, { what: WHAT_APPS });
+  const current = (app.policies ?? []).map((p, i) => ({ id: p.id, precedence: p.precedence ?? i + 1 }));
+  const own = current.filter((p) => p.id !== policyId);
+  const has = current.some((p) => p.id === policyId);
+  if (has === on) return;
+  if (!own.length) throw new CloudflareApiError("The server's Access application shows no sign-in policy of its own, so it was left unchanged. Check it in Zero Trust → Access → Applications.", 409);
+  const policies = on ? [...current, { id: policyId, precedence: Math.max(0, ...current.map((p) => p.precedence)) + 1 }] : own;
+  const body = Object.fromEntries(Object.entries(app).filter(([k]) => !READ_ONLY.has(k)));
+  const saved = await api.call<AccessApp>(`/accounts/${account}/access/apps/${app.id}`, { method: "PUT", body: { ...body, policies }, what: WHAT_APPS });
+  const kept = new Set((saved?.policies ?? []).map((p) => p.id));
+  if (own.some((p) => !kept.has(p.id))) {
+    await api.call(`/accounts/${account}/access/apps/${app.id}`, { method: "PUT", body: { ...body, policies: current }, what: WHAT_APPS }).catch(() => {});
+    throw new CloudflareApiError("Cloudflare did not keep the server's own sign-in policies when Fabric Inbox's policy was added; they were put back. Check Zero Trust → Access → Applications.", 502);
+  }
+}
 
 export class AgentAccess {
   /** `accountId`, when the caller already knows the server's account, saves finding it again. */
@@ -54,27 +77,8 @@ export class AgentAccess {
       : this.api.call<AccessPolicy>(`/accounts/${account}/access/policies`, { method: "POST", body, what: WHAT_APPS });
   }
 
-  /**
-   * Puts the policy on the application, or takes it off, keeping every other policy and setting.
-   * The application is read whole just before the change; one that has no sign-in of its own besides
-   * the agents' is refused, since changing it could leave the owner locked out. Afterwards the owner's
-   * policies are checked, and put back if Cloudflare dropped any.
-   */
   private async attach(account: string, appId: string, policyId: string, on: boolean) {
-    const app = await this.api.call<AccessApp>(`/accounts/${account}/access/apps/${appId}`, { what: WHAT_APPS });
-    const current = (app.policies ?? []).map((p, i) => ({ id: p.id, precedence: p.precedence ?? i + 1 }));
-    const own = current.filter((p) => p.id !== policyId);
-    const has = current.some((p) => p.id === policyId);
-    if (has === on) return;
-    if (!own.length) throw new CloudflareApiError("The server's Access application shows no sign-in policy of its own, so it was left unchanged. Check it in Zero Trust → Access → Applications.", 409);
-    const policies = on ? [...current, { id: policyId, precedence: Math.max(0, ...current.map((p) => p.precedence)) + 1 }] : own;
-    const body = Object.fromEntries(Object.entries(app).filter(([k]) => !READ_ONLY.has(k)));
-    const saved = await this.api.call<AccessApp>(`/accounts/${account}/access/apps/${app.id}`, { method: "PUT", body: { ...body, policies }, what: WHAT_APPS });
-    const kept = new Set((saved?.policies ?? []).map((p) => p.id));
-    if (own.some((p) => !kept.has(p.id))) {
-      await this.api.call(`/accounts/${account}/access/apps/${app.id}`, { method: "PUT", body: { ...body, policies: current }, what: WHAT_APPS }).catch(() => {});
-      throw new CloudflareApiError("Cloudflare did not keep the server's own sign-in policies when the agents' policy was added; they were put back. Check Zero Trust → Access → Applications.", 502);
-    }
+    return attachPolicy(this.api, account, appId, policyId, on);
   }
 
   /**

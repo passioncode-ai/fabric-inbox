@@ -171,9 +171,13 @@ MX is two-step).
 mailboxes, with `readOnly` naming those they may only open and search and `chooseAgent` those whose reply
 agent they may also choose);
 `create_agent_key` issues a key for another agent (its secret comes back once: hand it to that agent
-only) and `revoke_agent_key` revokes one. Each always waits for the owner's approval in Settings →
-Agent access, whatever your key's setting: tell the person what you asked for, then call again with
-the same arguments and the code once they approved. Nothing changes before that.
+only) and `revoke_agent_key` revokes one. Each waits for the owner's approval in Settings →
+Agent access: tell the person what you asked for, then call again with the same arguments and the
+code once they approved. Nothing changes before that. B-215: when the owner trusted your Admin key
+(Let it give people mailboxes; Let it issue and revoke keys), a member's change and a key confirm with
+your own code instead, the listed person can sign in at once (`signIn` in the answer,
+`sync_member_sign_in` to try again), and making or removing an administrator still waits.
+`list_agent_keys` shows each key's `standing`; you can never set it yourself.
 
 ## 6. When something is off
 

@@ -123,6 +123,7 @@ const BODIES: Record<string, string[]> = {
 /** Written routes whose body carries nothing (or that take a whole document as it is). */
 const NO_BODY = new Set([
   "POST /api/agents/:id/evals/run", // B-199: runs every ticket again
+  "POST /api/members/sign-in", // B-215: rewrites the sign-in from the list as it is
   "POST /api/v1/mailboxes/:mailboxId/threads/:threadId/read", "POST /api/v1/mailboxes/:mailboxId/incoming/retry",
   "POST /api/accounts/:accountId/messages/:messageId/archive", "POST /api/accounts/:accountId/messages/:messageId/inbox",
   "POST /api/accounts/:accountId/sync", "POST /api/accounts/:accountId/disconnect", "POST /api/accounts/:accountId/incoming/retry", "POST /api/categories/:id/seen", "POST /api/agent-runs/:id/again",

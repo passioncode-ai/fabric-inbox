@@ -50,3 +50,36 @@ test("an agent's call waits for the owner's approval and changes nothing; the ow
   const put = api.calls.find((c) => c.method === "PUT")!;
   assert.deepEqual([put.path, put.body], ["/api/members/ann%40acme.example", { role: "member", accounts: ["cloudflare:support@shop.invalid"] }]);
 });
+
+test("B-215: a key the owner let manage people or keys confirms those with its own code; administrators and trusted keys still wait", async () => {
+  const people: Principal = { ...agent, standing: ["people"] };
+  const keys: Principal = { ...agent, standing: ["keys"] };
+  const routes = {
+    "GET /api/members": ok({ members: [{ email: "boss@acme.example", role: "admin" }, { email: "ann@acme.example", role: "member" }] }),
+    "GET /api/agent-keys": ok({ keys: [{ id: "k9", standing: [] }, { id: "k7", standing: ["people"] }] }),
+    "PUT /api/members/ann%40acme.example": ok({ members: [] }), "PUT /api/members/bob%40acme.example": ok({ members: [] }),
+    "DELETE /api/members/ann%40acme.example": ok({ members: [] }), "POST /api/agent-keys": ok({ key: { id: "k10" }, clientSecret: "s" }),
+    "DELETE /api/agent-keys/k9": ok({ revoked: true }), "DELETE /api/agent-keys/k7": ok({ revoked: true }),
+  };
+  const asks: [Principal, string, Record<string, unknown>, "confirm" | "approval", string][] = [
+    [people, "save_member", { email: "bob@acme.example", role: "member", accounts: ["cloudflare:support@shop.invalid"] }, "confirm", "a new member"],
+    [people, "save_member", { email: "ann@acme.example", role: "member", accounts: ["cloudflare:support@shop.invalid"], readOnly: ["cloudflare:support@shop.invalid"] }, "confirm", "a member's level"],
+    [people, "remove_member", { email: "ann@acme.example" }, "confirm", "removing a member"],
+    [people, "save_member", { email: "bob@acme.example", role: "admin" }, "approval", "making an administrator"],
+    [people, "save_member", { email: "boss@acme.example", role: "member", accounts: ["cloudflare:support@shop.invalid"] }, "approval", "unmaking an administrator"],
+    [people, "remove_member", { email: "boss@acme.example" }, "approval", "removing an administrator"],
+    [people, "create_agent_key", { name: "Research", level: "read" }, "approval", "keys are another permission"],
+    [keys, "create_agent_key", { name: "Research", level: "read", accounts: ["cloudflare:support@shop.invalid"] }, "confirm", "issuing a key"],
+    [keys, "revoke_agent_key", { keyId: "k9" }, "confirm", "revoking a plain key"],
+    [keys, "revoke_agent_key", { keyId: "k7" }, "approval", "revoking a key the owner trusts"],
+    [keys, "save_member", { email: "bob@acme.example", role: "member", accounts: ["cloudflare:support@shop.invalid"] }, "approval", "people are another permission"],
+    [{ ...people, approval: "owner" }, "save_member", { email: "bob@acme.example", role: "member", accounts: ["cloudflare:support@shop.invalid"] }, "approval", "a key set to ask the owner always waits"],
+  ];
+  for (const [who, tool, args, expect, why] of asks) {
+    const api = fakeApi(routes);
+    const asked = await call(api.api, tool, args, who);
+    if (expect === "confirm") assert.ok(asked.data.needsConfirmation && asked.data.confirm && !asked.data.needsApproval, `${why}: its own code`);
+    else assert.equal(asked.data.needsApproval, true, `${why}: waits for the owner`);
+    assert.deepEqual(api.calls.filter((c) => c.method !== "GET").map((c) => `${c.method} ${c.path}`), [], `${why}: nothing changed on the first call`);
+  }
+});

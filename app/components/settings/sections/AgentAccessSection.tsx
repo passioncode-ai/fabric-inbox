@@ -16,7 +16,7 @@ import {
 
 type Level = "read" | "mail" | "admin";
 type Send = "drafts" | "send";
-export interface AgentKey { id: string; clientId: string; name: string; level: Level; send: Send; dailySendLimit: number; createdAt: string; expiresAt: string | null; accounts?: string[] | null; approval?: "agent" | "owner" }
+export interface AgentKey { id: string; clientId: string; name: string; level: Level; send: Send; dailySendLimit: number; createdAt: string; expiresAt: string | null; accounts?: string[] | null; approval?: "agent" | "owner"; standing?: Standing[] }
 /** B-38: an irreversible action an agent asked for that waits for the owner. */
 interface Approval { code: string; callerLabel: string; tool: string; summary: string; createdAt: number; expiresAt: number; approved: boolean }
 interface Mailbox { id: string; email?: string; name?: string }
@@ -43,6 +43,15 @@ export const JOURNAL = "journal";
 export const APPROVALS = "approvals";
 export const APPROVALS_KEY = ["agent-approvals"];
 /** B-38: who answers a key's irreversible actions. */
+/** B-215: what an Admin key may do without the owner's approval, which people and keys otherwise wait for. */
+export type Standing = "people" | "keys";
+export const standingText = (k: Pick<AgentKey, "standing">, t: T = englishT) => {
+  const s = k.standing ?? [];
+  if (s.includes("people") && s.includes("keys")) return t("It gives members mailboxes and issues keys without asking you");
+  if (s.includes("people")) return t("It gives members mailboxes without asking you; keys wait for you");
+  if (s.includes("keys")) return t("It issues and revokes keys without asking you; people wait for you");
+  return t("Giving people mailboxes and issuing keys wait for you");
+};
 export const approvalText = (k: Pick<AgentKey, "approval">, t: T = englishT) =>
   k.approval === "owner" ? t("You approve each one in Agent access") : t("The agent confirms them itself, with a one-time code");
 
@@ -187,10 +196,26 @@ function KeyPanel({ agentKey: k, mcpUrl, onRevoked }: { agentKey: AgentKey; mcpU
       return approval === "owner" ? t("{name} now waits for your approval before anything it cannot undo.", { name: k.name }) : t("{name} confirms what it cannot undo itself again.", { name: k.name });
     } finally { await client.invalidateQueries({ queryKey: KEYS_KEY }); }
   });
+  // B-215: the owner lets an Admin key give members mailboxes, or issue and revoke keys, without waiting for them.
+  const has = (x: Standing) => (k.standing ?? []).includes(x);
+  const setStanding = (x: Standing, on: boolean) => void work.run(t("Saving…"), async () => {
+    const standing = (["people", "keys"] as Standing[]).filter((s) => (s === x ? on : has(s)));
+    try {
+      await fabric(`/api/agent-keys/${encodeURIComponent(k.id)}`, { standing }, "PATCH");
+      return x === "people"
+        ? (on ? t("{name} now gives members mailboxes without asking you.", { name: k.name }) : t("{name} asks you again before giving anyone a mailbox.", { name: k.name }))
+        : (on ? t("{name} now issues and revokes keys without asking you.", { name: k.name }) : t("{name} asks you again before issuing or revoking a key.", { name: k.name }));
+    } finally { await client.invalidateQueries({ queryKey: KEYS_KEY }); }
+  });
+  const standingActions = k.level !== "admin" ? [] : [
+    has("people") ? { label: t("Stop letting it give people mailboxes"), onSelect: () => setStanding("people", false) } : { label: t("Let it give people mailboxes"), onSelect: () => setStanding("people", true) },
+    has("keys") ? { label: t("Stop letting it issue keys"), onSelect: () => setStanding("keys", false) } : { label: t("Let it issue and revoke keys"), onSelect: () => setStanding("keys", true) },
+  ];
   return (
     <Panel title={k.name} subtitle={`${levelTitle(k.level, t)} · ${sendingText(k, t)}`} closeTo={settingsPath("agent-access")}
       menu={<ActionMenu label={t("More actions for {name}", { name: k.name })} actions={[
         k.approval === "owner" ? { label: t("Stop asking me to approve"), onSelect: () => setApproval("agent") } : { label: t("Ask me to approve what it cannot undo"), onSelect: () => setApproval("owner") },
+        ...standingActions,
         { label: t("Revoke…"), danger: true, onSelect: () => void revoke() }]} />}>
       <PanelBlock>
         <ul className="fi-facts">
@@ -198,6 +223,7 @@ function KeyPanel({ agentKey: k, mcpUrl, onRevoked }: { agentKey: AgentKey; mcpU
           <li><strong>{t("Sending")}</strong> {sendingText(k, t)}</li>
           <li><strong>{t("Mailboxes")}</strong> {scopeText(k, t)}</li>
           <li><strong>{t("What cannot be undone")}</strong> {approvalText(k, t)}</li>
+          {k.level === "admin" ? <li><strong>{t("People and keys")}</strong> {standingText(k, t)}</li> : null}
           <li><strong>{t("Made")}</strong> {day(k.createdAt, t)}</li>
           <li><strong>{t("Expires")}</strong> {day(k.expiresAt, t)}</li>
           <li><strong>Client ID</strong> <code>{k.clientId}</code> <Copy text={k.clientId} label={t("Copy")} /></li>

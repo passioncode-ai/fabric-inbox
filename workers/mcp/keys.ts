@@ -16,6 +16,12 @@ export type SendMode = (typeof SEND_MODES)[number];
 export const DEFAULT_DAILY_SENDS = 50;
 export const MAX_DAILY_SENDS = 1000;
 export const MAX_KEYS = 50;
+/** B-215: the standing permissions a key may hold. */
+export const STANDINGS = ["people", "keys"] as const;
+export type Standing = (typeof STANDINGS)[number];
+/** The standing permissions in a stored value, known ones only, each once, in a fixed order. */
+export const normaliseStanding = (raw: unknown): Standing[] =>
+  Array.isArray(raw) ? STANDINGS.filter((s) => raw.includes(s)) : [];
 
 export interface AgentKey {
   /** The Cloudflare service token's id. */
@@ -38,6 +44,13 @@ export interface AgentKey {
    * access before its confirmation code works; absent, the agent confirms with the code alone (AP-4).
    */
   approval?: "owner";
+  /**
+   * B-215: what the owner lets this key do without the owner's approval that `save_member`, `remove_member`,
+   * `create_agent_key` and `revoke_agent_key` otherwise always wait for: "people" (a member's mailboxes and
+   * sign-in) and "keys" (issuing and revoking keys). Only the owner sets it (PATCH, or the account's token through
+   * scripts/agent-standing.mjs); a key never passes it on.
+   */
+  standing?: Standing[];
   /** N-4: the person who made it (their sign-in email); their keys go when they leave or stop being an administrator. */
   createdBy?: string;
 }
@@ -45,7 +58,7 @@ export interface AgentKey {
 /** Who is calling the protocol, after Access and the key registry. */
 export type Principal =
   | { kind: "owner"; label: string; level: "admin"; send: "send"; dailySendLimit: null; keyId: null; accounts: null }
-  | { kind: "agent"; label: string; level: Level; send: SendMode; dailySendLimit: number; keyId: string; accounts: readonly string[] | null; approval?: "owner" };
+  | { kind: "agent"; label: string; level: Level; send: SendMode; dailySendLimit: number; keyId: string; accounts: readonly string[] | null; approval?: "owner"; standing?: readonly Standing[] };
 
 const rank: Record<Level, number> = { read: 0, mail: 1, admin: 2 };
 export const levelAllows = (have: Level, need: Level) => rank[have] >= rank[need];
@@ -68,6 +81,8 @@ function normaliseKey(raw: unknown): AgentKey | null {
     // A limit on an Admin key cannot hold (admin tools act on the whole workspace): it reaches nothing.
     accounts: accounts && level === "admin" ? [] : accounts,
     ...(k.approval === "owner" ? { approval: "owner" as const } : {}),
+    // Standing permissions act on the whole server (people, keys): only an Admin key holds them.
+    ...(level === "admin" && normaliseStanding(k.standing).length ? { standing: normaliseStanding(k.standing) } : {}),
     ...(typeof k.createdBy === "string" && k.createdBy ? { createdBy: k.createdBy.toLowerCase() } : {}),
   };
 }
@@ -117,7 +132,7 @@ export function principalFor(claims: AccessClaims, keys: AgentKey[], now = Date.
   if (key.expiresAt && Date.parse(key.expiresAt) <= now) return null;
   // An admin key can make rules and reply agents that send; it is never Drafts only (agent-keys.ts sendFor).
   return { kind: "agent", label: key.name, level: key.level, send: key.level === "admin" ? "send" : key.send, dailySendLimit: key.dailySendLimit, keyId: key.id, accounts: key.accounts,
-    ...(key.approval === "owner" ? { approval: "owner" as const } : {}) };
+    ...(key.approval === "owner" ? { approval: "owner" as const } : {}), ...(key.standing?.length ? { standing: key.standing } : {}) };
 }
 
 /** A service token: no person behind it. */
