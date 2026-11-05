@@ -1,10 +1,12 @@
 'use strict';
 // B-205 (Fabric's ADR-0188, the operator's words of 2026-11-04 relayed on board thread f7758225): the app reads its own
 // log. Every log event that carries an `outcome` is counted by its `event` and outcome in the hour it happened; when an
-// event of a later hour arrives, each closed hour folds into one `ops.digest.hourly@1` line and each closed UTC day into
-// one `ops.digest.daily@1` line, under `<userData>/digests/`. The fold is Fabric's (apps/desktop/src/shared/opsDigest.ts,
-// e1eecec0). No timer: an idle app writes nothing, and the hour still open when it quits is not written. Counts only:
-// no detail, path or identifier of the event leaves it.
+// event of a later hour arrives, each closed hour folds into one `ops.digest.hourly@1` line, under `<userData>/digests/`.
+// Each closed UTC day is folded from that hourly file into one `ops.digest.daily@1` line, the first line of an hour once,
+// when a day closes and at every start (DEC-0153 OD-5, B-212): a day the app was not running at midnight gets its line
+// at the next run, a day with no hour gets none, and no day gets two. The fold is Fabric's
+// (apps/desktop/src/shared/opsDigest.ts, e1eecec0). No timer: an idle app writes nothing, and the hour still open when
+// it quits is not written. Counts only: no detail, path or identifier of the event leaves it.
 const path = require('node:path');
 
 const HOUR_MS = 60 * 60_000;
@@ -13,11 +15,21 @@ const RISE_MIN_FAILED = 10;
 const RISE_FACTOR = 2;
 const OP = /^[a-z][a-z0-9_]{0,63}$/;
 
-/** How an event's outcome is counted: a failure, unknown, or ok. */
+/**
+ * How the log's own outcomes are counted (DEC-0153 OD-3, a product's published map, B-212; docs/ANALYTICS.md, "Log
+ * digests"): `ok` when the operation did what it was asked, `failed` when it tried and could not, `unknown` for a
+ * skip, a person's choice, a setup or policy answer, and any outcome not named here, so an unfinished setup never
+ * makes a rise. An outcome ending in `_failed` is a failure.
+ */
+const OUTCOME_OK = new Set(['ok', 'done', 'ready', 'started', 'running', 'connected', 'current', 'newer', 'older', 'installed',
+  'verified', 'downloading', 'requested', 'handed_over', 'ended', 'on', 'off', 'left', 'stayed']);
+const OUTCOME_FAILED = new Set(['failed', 'lost', 'unparsed', 'timeout', 'not_saved', 'not_written', 'storage_not_cleared',
+  'directory_not_removed', 'leftovers']);
 function outcomeOf(outcome) {
   const o = String(outcome);
-  if (o === 'unknown') return 'unknown';
-  return /fail|^not_|_not_|lost|unparsed|refused/.test(o) ? 'failed' : 'ok';
+  if (OUTCOME_OK.has(o)) return 'ok';
+  if (OUTCOME_FAILED.has(o) || o.endsWith('_failed')) return 'failed';
+  return 'unknown';
 }
 
 const hourStart = (at) => Math.floor(at / HOUR_MS) * HOUR_MS;
@@ -33,9 +45,12 @@ function foldHour(counts, from, previous) {
   return { schema: 'ops.digest.hourly@1', from: new Date(from).toISOString(), to: new Date(from + HOUR_MS).toISOString(), ops, total: sum(ops), risen };
 }
 
-/** The day's hourly digests folded into one. */
+/** The day's hourly digests folded into one, the first line of an hour once; null for a day with no hour (OD-5). */
 function foldDay(day, hourly) {
-  const mine = hourly.filter((h) => h.from.slice(0, 10) === day);
+  const seen = new Set();
+  const mine = hourly.filter((h) => h.from.slice(0, 10) === day && !seen.has(h.from) && seen.add(h.from))
+    .sort((a, b) => (a.from < b.from ? -1 : 1));
+  if (!mine.length) return null;
   const all = new Map(), rose = new Map();
   for (const h of mine) {
     for (const c of h.ops) { const s = all.get(c.op) ?? { op: c.op, ok: 0, failed: 0, unknown: 0 }; s.ok += c.ok; s.failed += c.failed; s.unknown += c.unknown; all.set(c.op, s); }
@@ -54,7 +69,6 @@ function createDigest({ fs, dir, log = () => {} }) {
   let hour = null;            // the open hour's start
   let counts = new Map();     // op → { ok, failed, unknown }
   let last = null;            // the last hourly digest written
-  let dayHours = [];          // the hourly digests of the open day
   let queue = Promise.resolve();
 
   const append = (file, value) => {
@@ -70,16 +84,43 @@ function createDigest({ fs, dir, log = () => {} }) {
     if (counts.size) {
       const h = foldHour(counts, hour, last);
       last = h;
-      dayHours.push(h);
       append(`hourly-${h.from.slice(0, 7)}.jsonl`, h);
       for (const r of h.risen) log({ event: 'failures_rose', op: r.op, failed: r.failed, previous: r.previous });
     }
-    const day = new Date(hour).toISOString().slice(0, 10);
-    if (new Date(nextHour).toISOString().slice(0, 10) !== day && dayHours.length) {
-      append(`daily-${day.slice(0, 7)}.jsonl`, foldDay(day, dayHours));
-      dayHours = [];
-    }
+    if (new Date(nextHour).toISOString().slice(0, 10) !== new Date(hour).toISOString().slice(0, 10)) catchUp(nextHour);
     counts = new Map();
+  }
+
+  const lines = async (file) => {
+    try {
+      return (await fs.readFile(path.join(dir, file), 'utf8')).split('\n').flatMap((line) => {
+        try { return line ? [JSON.parse(line)] : []; } catch { return []; }
+      });
+    } catch { return []; }
+  };
+
+  /**
+   * OD-5's catch-up: every closed UTC day of this month and the last that has hourly lines and no daily line gets its
+   * daily line now, folded from the hourly file. Queued behind the writes, so a day closing now is read with its last hour.
+   */
+  function catchUp(now = Date.now()) {
+    queue = queue.then(async () => {
+      const today = new Date(now).toISOString().slice(0, 10);
+      const first = new Date(`${today.slice(0, 7)}-01T00:00:00Z`);
+      const months = [new Date(first.getTime() - 86_400_000).toISOString().slice(0, 7), today.slice(0, 7)];
+      for (const month of months) {
+        const done = new Set((await lines(`daily-${month}.jsonl`)).map((d) => d && d.day));
+        const hourly = (await lines(`hourly-${month}.jsonl`)).filter((h) => h && h.schema === 'ops.digest.hourly@1' && typeof h.from === 'string');
+        const days = [...new Set(hourly.map((h) => h.from.slice(0, 10)))].filter((d) => d < today && !done.has(d)).sort();
+        for (const day of days) {
+          const digest = foldDay(day, hourly);
+          if (!digest) continue;
+          await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+          await fs.appendFile(path.join(dir, `daily-${month}.jsonl`), JSON.stringify(digest) + '\n', { mode: 0o600 });
+        }
+      }
+    }).catch(() => {});
+    return queue;
   }
 
   function count(event, at = Date.now()) {
@@ -92,7 +133,7 @@ function createDigest({ fs, dir, log = () => {} }) {
     counts.set(event.event, c);
   }
 
-  return { count, flush: () => queue };
+  return { count, catchUp, flush: () => queue };
 }
 
 module.exports = { createDigest, foldHour, foldDay, outcomeOf, RISE_MIN_FAILED, RISE_FACTOR };

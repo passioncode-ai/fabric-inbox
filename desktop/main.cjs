@@ -117,6 +117,8 @@ function logEvent(line) {
     // B-205: every event with an outcome is counted into hourly and daily digests under <userData>/digests (ADR-0188).
     try {
       const digest = createDigest({ fs, dir: path.join(app.getPath('userData'), 'digests'), log: (e) => { if (appLog) void appLog(e); } });
+      // B-212 (DEC-0153 OD-5): a day that closed while the app was not running gets its daily line now.
+      void digest.catchUp();
       appLog = createLog({ fs, dir: app.getPath('logs'), onEvent: (e, at) => digest.count(e, at) });
     } catch { appLog = null; }
   }
