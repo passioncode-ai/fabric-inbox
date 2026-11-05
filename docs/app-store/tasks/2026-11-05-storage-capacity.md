@@ -26,6 +26,11 @@ unknown when unreadable), a mailbox's messages per folder, and the files' count 
 Code: `workers/lib/storage-usage.ts`, `workers/routes/server-errors.ts`, `storageUsage` and `storageBytes` on the
 objects. Tests: `tests/storage-usage.test.ts`.
 
+**Measured on the owner's server, 2026-11-05 01:35 UTC** (0.94.0, `fba42c2`, `get_storage`): level ok, nothing
+unreadable. 162 objects held 34.1 MB together; the largest mailbox 2.65 MB (122 messages in Inbox, 68 in Sent, 72 in
+Spam), the largest store the agents' 3.59 MB, the accounts store of Gmail, Outlook and IMAP under 0.01 MB; every
+object under 0.1% of 10 GB. Files: 190 objects, 21.6 MB. The phishing mail's 98.6% had no basis.
+
 ## Step 2: a warning (designed, not built)
 
 - The server checks once a day (the ledger's alarm) and writes `storage.warn` or `storage.full` as an event and as a
@@ -51,5 +56,5 @@ A scenario in `docs/ux/scenarios.md` comes before code, since this deletes mail.
 
 ## Exact next task
 
-Step 1 on both servers, then read `get_storage` on the owner server and record the fullest objects here. Then the
-scenario for step 3, and step 2's server half.
+The scenario for step 3 (what is archived, when, how it is restored, what the person sees), then step 2's server half
+(the daily check, the event and the digest's operation). Telegram waits for the operator's gateway grant.

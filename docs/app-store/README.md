@@ -191,6 +191,25 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-05 (0.94.0: B-206 step 1; B-177 verdicts).**
+
+- The operator forwarded a mail saying a support address's "storage space is 98.6% full". It was phishing (the
+  product's name on an unrelated domain, a "Clear Cache" link to a third-party site), and the server had put it in
+  Spam on 2026-11-04. Nothing measured storage, so **0.94.0** (PR #409, `fba42c2`, B-206 step 1) adds `get_storage`
+  and `GET /api/storage`: each mailbox, automation object and shared store against Cloudflare's 10 GB per object, and
+  the files in R2. Both servers on `fba42c2` (receipts `linked`); the owner's server holds 34.1 MB in 162 objects,
+  the largest mailbox 2.65 MB. Packet: [tasks/2026-11-05-storage-capacity.md](tasks/2026-11-05-storage-capacity.md),
+  with steps 2 (warning) and 3 (cleanup into an R2 archive) designed.
+- B-177: the government-request category's verdicts read by hand (precision 7 of 11); version 3 of its description
+  waits for the operator's word to be saved (PR #408).
+- The deployment waited for the coordinator's disk rule (8 GB free); it resumed at 9.6 GB.
+
+**Exact next task:** B-206 step 3's scenario in `docs/ux/scenarios.md` (archive, restore, what the person sees), then
+step 2's server half. Read the nightly `platforms` run's `macos-arm64` job on 2026-11-05 and record it under B-202.
+Waits: the operator's Telegram gateway grant for this project; saving B-177's description; the support agent's
+category notes; the SSH key on GitHub; a private data repository for Inbox's insights; DEC-0153's merge for
+`pnpm validate`; B-186 and B-174 on 2026-11-09.
+
 **State 2026-11-05 (0.93.0 and 0.93.1: B-205 for the server).**
 
 - **0.93.0** (PR #405, `9f1ae83`, design in PR #404): the server counts its operations per UTC hour in the ledger
