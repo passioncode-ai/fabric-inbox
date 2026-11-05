@@ -388,6 +388,14 @@ export class MailboxDO extends DurableObject<Env> {
   }
 
   /** Unread messages in Inbox, for the sidebar counts. */
+  /** B-206: this mailbox's SQLite size in bytes and its messages per folder (get_storage). */
+  async storageUsage(): Promise<{ bytes: number; folders: Record<string, number> }> {
+    const folders: Record<string, number> = {};
+    for (const row of this.ctx.storage.sql.exec<{ folder_id: string; n: number }>("SELECT folder_id, COUNT(*) AS n FROM emails GROUP BY folder_id"))
+      folders[String(row.folder_id)] = Number(row.n);
+    return { bytes: this.ctx.storage.sql.databaseSize, folders };
+  }
+
   async countUnreadInbox(): Promise<number> {
     return Number(this.ctx.storage.sql.exec("SELECT COUNT(*) AS n FROM emails WHERE folder_id = 'inbox' AND read = 0").one().n);
   }
