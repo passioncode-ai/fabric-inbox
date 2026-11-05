@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.98.0 (2026-11-05)
+
+- **The app's hourly summary keeps the hour you quit in.** The counts of the hour Fabric Inbox was quit in are now
+  saved and written when the app opens again, so a day's summary no longer misses its last hour, and a restart no
+  longer looks like a sudden rise in failures. A day with a very large number of different operations still gets its
+  summary: past 4095 names, the rest are counted under one name (B-213).
+
 ## 0.97.0 (2026-11-05)
 
 - **Daily ticket counts in the form other support channels use.** After each day, every address with a reply agent
