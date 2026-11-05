@@ -39,8 +39,12 @@ test("B-210: an installed app writes its own descriptor once, naming only its di
   assert.equal(d.origin, undefined, "an app's descriptor claims no port");
   assert.deepEqual(d.paths, { data: s.userData, logs: [path.join(s.root, "logs")] });
   assert.deepEqual(d.extensions[OPS_DIGEST_EXTENSION], [{ dir: "digests", source: "mac-app" }], "its own folder only, relative to paths.data");
-  assert.equal(statSync(s.file).mode & 0o777, 0o600);
-  assert.equal(statSync(d.auth.tokenFile).mode & 0o777, 0o600, "the token file the protocol requires, 0600");
+  // POSIX modes only: Windows answers 0666 for any file (the folder's ACL guards it).
+  if (process.platform !== "win32") {
+    assert.equal(statSync(s.file).mode & 0o777, 0o600);
+    assert.equal(statSync(d.auth.tokenFile).mode & 0o777, 0o600, "the token file the protocol requires, 0600");
+  }
+  assert.ok(existsSync(d.auth.tokenFile), "the token file the protocol requires");
   const token = readFileSync(d.auth.tokenFile, "utf8");
   // A second start of the same version and path rewrites nothing; an update writes again, the token kept.
   assert.deepEqual(await ensureDescriptor({ ...s.deps, now: s.deps.now + 1000 }), { outcome: "current" });
