@@ -64,7 +64,11 @@ function buildDescriptor({ tool, appPath, userData, logs, now }) {
  * → { outcome: 'ok' | 'current' | 'skipped' | 'failed', reason? }. Never throws.
  */
 async function ensureDescriptor(deps) {
-  const { fs, platform, env, home, execPath, userData, logs, version, now = Date.now() } = deps;
+  try { return await ensure(deps); } catch (error) { return { outcome: 'failed', reason: String((error && error.code) || 'unexpected') }; }
+}
+
+async function ensure(deps) {
+  const { fs, platform, env = {}, home = '', execPath = '', userData, logs, version, now = Date.now() } = deps;
   // A development run, a check on a throwaway profile or the App Store's sandbox never writes Fabric's directory.
   if (!deps.packaged) return { outcome: 'skipped', reason: 'not_packaged' };
   if (!deps.ownProfile) return { outcome: 'skipped', reason: 'other_profile' };

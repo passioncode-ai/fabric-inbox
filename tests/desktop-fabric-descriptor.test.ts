@@ -88,4 +88,6 @@ test("B-210: an unreadable descriptor is written again; a write that fails says 
   const broken = setup();
   const fs = { ...fsPromises, writeFile: async () => { throw Object.assign(new Error("no"), { code: "EACCES" }); } };
   assert.deepEqual(await ensureDescriptor({ ...broken.deps, fs }), { outcome: "failed", reason: "EACCES" });
+  assert.deepEqual(await ensureDescriptor({ ...broken.deps, env: undefined, home: undefined, fs: undefined }), { outcome: "skipped", reason: "no_services_dir" }, "missing deps never throw");
+  assert.deepEqual(await ensureDescriptor(undefined), { outcome: "failed", reason: "unexpected" });
 });
