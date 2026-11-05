@@ -474,14 +474,14 @@ const getServer = defineTool({
 
 const listMembers = defineTool({
   name: "list_members", title: "List the people on this server", level: "admin", readOnly: true,
-  description: "Who signs in to this shared server and what they reach (B-149): each person's email, role (admin: everything; member: only their mailboxes) and a member's mailboxes. open: true means nobody is listed, so everyone Cloudflare Access lets in is an administrator. Change the list with save_member and remove_member, each after the owner's approval.",
+  description: "Who signs in to this shared server and what they reach (B-149): each person's email, role (admin: everything; member: only their mailboxes), a member's mailboxes with their levels, and signIn (B-215: canSignIn true when the server's own sign-in lets them in, false with the reason, null before the first sync or on a server without Access). open: true means nobody is listed, so everyone Cloudflare Access lets in is an administrator. Change the list with save_member and remove_member: each waits for the owner's approval, unless the owner let this key manage people (B-215) and the person is a member.",
   input: {}, routes: ["GET /api/members"],
   call: (_a, ctx) => get(ctx, "/api/members"),
 });
 
 const listAudit = defineTool({
   name: "list_audit", title: "Read the record of people changes and member sends", level: "admin", readOnly: true,
-  description: "The server's audit record (B-156), newest first: each change to the list of people (member_saved with the role and mailboxes before and after, member_removed, keys_revoked) and each message a member sent (member_sent: the mailbox, recipients, subject and message id, never the text), with when and who did it (a person's email, or key:<id> for an agent through this protocol). Pass the returned cursor to read older entries.",
+  description: "The server's audit record (B-156), newest first: each change to the list of people (member_saved with the role and mailboxes before and after, member_removed, keys_revoked), each change to what an agent key may do without the owner (key_standing_set, B-215) and each message a member sent (member_sent: the mailbox, recipients, subject and message id, never the text), with when and who did it (a person's email, or key:<id> for an agent through this protocol). Pass the returned cursor to read older entries.",
   input: { limit: z.number().int().min(1).max(200).default(50).describe("Entries per page"), cursor: z.string().max(1000).optional().describe("The cursor from the previous page") },
   routes: ["GET /api/audit"],
   call: (a, ctx) => get(ctx, "/api/audit", { limit: a.limit, cursor: a.cursor }),
@@ -2202,9 +2202,17 @@ const campaignReport = defineTool({
 
 // ── B-154 step 3 (DEC-0121): the acts that change people and agent keys, as tools, each always through the owner's approval ──
 const memberEmail = z.string().trim().toLowerCase().pipe(z.string().email().max(254)).describe("The person's sign-in email");
+/** B-215: the role a person has on the list now, or null when not listed. */
+async function roleOf(ctx: ToolContext, email: string): Promise<string | null> {
+  const data = (await get(ctx, "/api/members")) as { members?: { email?: string; role?: string }[] };
+  return (data.members ?? []).find((m) => m.email === email.toLowerCase())?.role ?? null;
+}
+/** A standing "people" permission covers members only: making, unmaking or removing an administrator still waits for the owner. */
+const membersOnly = { standing: "people" as const, when: async (a: { email: string; role?: string }, ctx: ToolContext) =>
+  (a.role === undefined || a.role === "member") && (await roleOf(ctx, a.email)) !== "admin" };
 const saveMember = defineTool({
-  name: "save_member", title: "Add or change a person on this server", level: "admin", ownerApproval: true, target: (a) => `${a.email} ${a.role}`,
-  description: "Adds a person to this shared server's list, or changes one already on it: admin reaches everything; member reaches only the mailboxes named, at the level given per mailbox (read: open and search only; send, the default: also answer, send, move and mark; agents: also choose which of this server's agents answers that mailbox, or none). Always waits for the owner's approval in Settings → Agent access, whatever the key's setting: who reads whose mail is the owner's to decide (B-149, DEC-0121). Making someone a member revokes the agent keys they made. Two calls.",
+  name: "save_member", title: "Add or change a person on this server", level: "admin", ownerApproval: true, standingWaives: membersOnly as never, target: (a) => `${a.email} ${a.role}`,
+  description: "Adds a person to this shared server's list, or changes one already on it: admin reaches everything; member reaches only the mailboxes named, at the level given per mailbox (read: open and search only; send, the default: also answer, send, move and mark; agents: also choose which of this server's agents answers that mailbox, or none). Waits for the owner's approval in Settings → Agent access: who reads whose mail is the owner's to decide (B-149, DEC-0121); a key the owner let manage people (B-215) confirms a member's change with its own code, while making or changing an administrator still waits. The person can then sign in: the server lets every listed email through its own sign-in (signIn in the answer; sync_member_sign_in tries again). Making someone a member revokes the agent keys they made. Two calls.",
   input: { email: memberEmail, role: z.enum(["admin", "member"]), accounts: z.array(accountId).min(1).max(50).optional().describe("A member's mailboxes (list_accounts); required for a member"),
     readOnly: z.array(accountId).max(50).optional().describe("B-160: those of the member's mailboxes they may only read (open and search, never change or send from); the others are read and send"),
     chooseAgent: z.array(accountId).max(50).optional().describe("B-160 step 3: those of the member's mailboxes whose reply agent they may also choose (one of this server's agents, or Off). Editing agents, knowledge, rules and forwarding stays an administrator's. A mailbox also in readOnly is read only") },
@@ -2216,15 +2224,20 @@ const saveMember = defineTool({
       ...(a.readOnly ?? []).map((x) => [parseAccount(x).id, "read"])]) } : {}) }),
 });
 const removeMember = defineTool({
-  name: "remove_member", title: "Remove a person from this server", level: "admin", ownerApproval: true, target: (a) => a.email,
-  description: "Takes a person off this shared server's list: they no longer reach anything here, and the agent keys they made are revoked. The last administrator cannot be removed. Always waits for the owner's approval in Settings → Agent access. Two calls.",
+  name: "remove_member", title: "Remove a person from this server", level: "admin", ownerApproval: true, standingWaives: membersOnly as never, target: (a) => a.email,
+  description: "Takes a person off this shared server's list: they no longer reach anything here, their sign-in is taken away (B-215), and the agent keys they made are revoked. The last administrator cannot be removed. Waits for the owner's approval in Settings → Agent access, unless the owner let this key manage people and the person is a member. Two calls.",
   input: { email: memberEmail },
   confirm: (a) => `Remove ${a.email} from this server: they lose access, and the agent keys they made are revoked.`,
   routes: ["DELETE /api/members/:email"], call: (a, ctx) => del(ctx, `/api/members/${enc(a.email)}`),
 });
+const syncMemberSignIn = defineTool({
+  name: "sync_member_sign_in", title: "Let the listed people through the sign-in again", level: "admin",
+  description: "B-215: rewrites the server's own Access policy from the list of people, so every listed email can sign in and nobody else is let in by it; the organization's own sign-in policies are left as they are. save_member and remove_member do this already; call it when their answer or list_members says a person cannot sign in yet. Answers state (ok, failed with Cloudflare's reason, not_set_up on a server without Access) and how many people it lets in.",
+  input: {}, routes: ["POST /api/members/sign-in"], call: (_a, ctx) => post(ctx, "/api/members/sign-in", {}),
+});
 const createAgentKey = defineTool({
-  name: "create_agent_key", title: "Issue an agent key", level: "admin", ownerApproval: true, target: (a) => `${a.name} ${a.level}`,
-  description: "Issues a key for another agent to use this server over MCP, at a level (read, mail, admin), sending mode, daily send limit, lifetime and, for read and mail keys, the mailboxes it may reach. Its secret comes back once, in this answer, with client configurations: hand it to that agent and nowhere else. Always waits for the owner's approval in Settings → Agent access: a key is a new way into the mail. Two calls.",
+  name: "create_agent_key", title: "Issue an agent key", level: "admin", ownerApproval: true, standingWaives: { standing: "keys" }, target: (a) => `${a.name} ${a.level}`,
+  description: "Issues a key for another agent to use this server over MCP, at a level (read, mail, admin), sending mode, daily send limit, lifetime and, for read and mail keys, the mailboxes it may reach. Its secret comes back once, in this answer, with client configurations: hand it to that agent and nowhere else. Waits for the owner's approval in Settings → Agent access: a key is a new way into the mail; a key the owner let issue keys (B-215) confirms with its own code. A new key never gets that permission. Two calls.",
   input: {
     name: z.string().trim().min(1).max(80).describe("The agent this key is for"),
     level: z.enum(["read", "mail", "admin"]),
@@ -2241,7 +2254,13 @@ const createAgentKey = defineTool({
 });
 const revokeAgentKey = defineTool({
   name: "revoke_agent_key", title: "Revoke an agent key", level: "admin", ownerApproval: true, target: (a) => a.keyId,
-  description: "Revokes an agent key (list_agent_keys): it stops working on this server at once and its Cloudflare service token is deleted. Always waits for the owner's approval in Settings → Agent access. Two calls.",
+  standingWaives: { standing: "keys", when: async (a: { keyId: string }, ctx: ToolContext) => {
+    // A key the owner trusts is the owner's to revoke: a standing permission never revokes one.
+    const data = (await get(ctx, "/api/agent-keys")) as { keys?: { id?: string; standing?: string[] }[] };
+    const key = (data.keys ?? []).find((k) => k.id === a.keyId);
+    return !!key && !(key.standing ?? []).length;
+  } } as never,
+  description: "Revokes an agent key (list_agent_keys): it stops working on this server at once and its Cloudflare service token is deleted. Waits for the owner's approval in Settings → Agent access, unless the owner let this key issue and revoke keys (B-215) and the key revoked holds no such permission itself. Two calls.",
   input: { keyId: z.string().min(1).max(100).describe("The key's id (list_agent_keys)") },
   confirm: (a) => `Revoke the agent key ${a.keyId}: the agent using it loses access at once.`,
   routes: ["DELETE /api/agent-keys/:id"], call: (a, ctx) => del(ctx, `/api/agent-keys/${enc(a.keyId)}`),
@@ -2261,7 +2280,7 @@ export const TOOLS: readonly ToolDef[] = [
   outlookConnectLink, connectAccount, setAccountPassword, setProviderSetup, microsoftSetupStatus, checkMicrosoftSetup, listAgentKeys, agentActivity,
   listCampaigns, getCampaign, saveCampaign, deleteCampaign, addCampaignRecipients, listCampaignRecipients, previewCampaign, dryRunCampaign, listSuppression, changeSuppression,
   launchCampaign, pauseCampaign, stopCampaign, campaignReport,
-  saveMember, removeMember, createAgentKey, revokeAgentKey,
+  saveMember, removeMember, syncMemberSignIn, createAgentKey, revokeAgentKey,
 ];
 
 /**
@@ -2276,7 +2295,7 @@ export const NOT_TOOLS: Readonly<Record<string, string>> = {
   // B-38: approving an agent's irreversible action is the owner's; an agent able to approve it, or to turn approval off, would make it no approval.
   "GET /api/agent-keys/approvals": "What waits for the owner's approval is answered by the owner in Agent access; the waiting agent is told by its own call (B-38)",
   "POST /api/agent-keys/approvals/:code": "Only the owner approves or refuses an agent's irreversible action; an agent approving it would defeat the approval (B-38)",
-  "PATCH /api/agent-keys/:id": "Whether the owner approves a key's irreversible actions is the owner's setting; an agent switching it off would defeat it (B-38)",
+  "PATCH /api/agent-keys/:id": "Whether the owner approves a key's irreversible actions, and what a key may do without the owner (B-215), are the owner's settings; an agent changing them would defeat them (B-38)",
   "GET /api/accounts/gmail/connect": "Connecting Gmail is a person's consent in a browser (Google's OAuth page and a cookie); gmail_connect_link gives the person this address",
   "POST /api/accounts/gmail/connect": "Connecting Gmail is a person's consent in a browser (Google's OAuth page and a cookie)",
   "GET /api/accounts/gmail/callback": "Google's OAuth redirect back to the browser",

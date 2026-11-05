@@ -326,3 +326,54 @@ test("B-160 step 3: the app offers the agent choice only for agents mailboxes, a
   const sidebar = (await import("node:fs")).readFileSync(new URL("../app/routes/unified-inbox.tsx", import.meta.url), "utf8");
   assert.match(sidebar, /isMember && agentChoicesOf\(me\)\.length > 0 && \(/, "the member reaches the choice from the sidebar");
 });
+
+test("B-215: a save says whether the person can sign in; the list says it for everyone, null before any sync", async () => {
+  const { bucket } = fakeBucket();
+  const app = new Hono<{ Bindings: { BUCKET: R2Bucket }; Variables: { standing?: unknown } }>();
+  app.use("*", async (c, next) => { c.set("standing", { role: "admin", email: "owner@owner.example", listed: false }); await next(); });
+  app.route("/", membersRouter as unknown as Hono);
+  const call = async (method: string, path: string, body?: unknown) => {
+    const r = await app.request(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { "Content-Type": "application/json" } }, { BUCKET: bucket });
+    return { status: r.status, data: await r.json() as any };
+  };
+  const listed = await call("GET", "/api/members");
+  assert.equal(listed.data.signIn, null, "no sync yet");
+  const saved = await call("PUT", "/api/members/ann%40owner.example", { role: "member", accounts: ["sales@owner.example"] });
+  assert.deepEqual([saved.data.signIn.state, saved.data.signIn.canSignIn], ["not_set_up", null], "a server without Access says so, never a false yes");
+  const again = await call("POST", "/api/members/sign-in");
+  assert.deepEqual([again.status, again.data.state], [200, "not_set_up"]);
+  const list = await call("GET", "/api/members");
+  assert.deepEqual(list.data.members.map((m: any) => [m.email, m.signIn.canSignIn]), [["owner@owner.example", null], ["ann@owner.example", null]]);
+  assert.equal(list.data.signIn.state, "not_set_up");
+});
+
+test("B-215: only the owner lets an Admin key manage people or keys; taking it back drops its codes, and the record says so", async () => {
+  const { bucket, store } = fakeBucket();
+  const { agentKeysRouter } = await import("../workers/routes/agent-keys");
+  const { AGENT_KEYS_KEY } = await import("../workers/mcp/keys");
+  const key = (id: string, level: string) => ({ id, clientId: id + ".access", name: id, level, send: "send", dailySendLimit: 50, createdAt: "2026-11-05T00:00:00Z", expiresAt: null, accounts: null });
+  await bucket.put(AGENT_KEYS_KEY, JSON.stringify({ keys: [key("k-admin", "admin"), key("k-read", "read")] }));
+  const dropped: string[] = [];
+  const ledger = { acquireLock: async () => true, releaseLock: async () => {}, dropSelfConfirmations: async (caller: string) => { dropped.push(caller); } };
+  const app = new Hono<{ Bindings: Record<string, unknown>; Variables: { access?: unknown } }>();
+  app.use("*", async (c, next) => { c.set("access", { email: "owner@owner.example" }); await next(); });
+  app.route("/", agentKeysRouter as unknown as Hono);
+  const env = { BUCKET: bucket, EMAIL_MCP: { getByName: () => ledger } };
+  const patch = async (id: string, body: unknown) => {
+    const r = await app.request(`/api/agent-keys/${id}`, { method: "PATCH", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } }, env);
+    return { status: r.status, data: await r.json() as any };
+  };
+  const set = await patch("k-admin", { standing: ["keys", "people", "keys"] });
+  assert.deepEqual([set.status, set.data.key.standing, set.data.key.approval], [200, ["people", "keys"], "agent"]);
+  assert.equal((await patch("k-read", { standing: ["people"] })).status, 400, "a Read or Mail key never holds one");
+  assert.equal((await patch("k-none", { standing: ["people"] })).status, 404);
+  assert.equal((await patch("k-admin", { standing: ["everything"] })).status, 400);
+  assert.deepEqual(dropped, []);
+  const back = await patch("k-admin", { standing: ["people"] });
+  assert.deepEqual([back.data.key.standing, dropped], [["people"], ["key:k-admin"]], "a code it got for keys no longer works on its own");
+  const stored = JSON.parse(store.get(AGENT_KEYS_KEY)!.text).keys.find((k: any) => k.id === "k-admin");
+  assert.deepEqual(stored.standing, ["people"]);
+  const records = [...store.keys()].filter((k) => k.startsWith("audit/")).map((k) => JSON.parse(store.get(k)!.text));
+  assert.deepEqual(records.map((r: any) => [r.kind, r.actor, r.standing, r.previous]).sort(),
+    [["key_standing_set", "owner@owner.example", ["people", "keys"], []], ["key_standing_set", "owner@owner.example", ["people"], ["people", "keys"]]].sort());
+});

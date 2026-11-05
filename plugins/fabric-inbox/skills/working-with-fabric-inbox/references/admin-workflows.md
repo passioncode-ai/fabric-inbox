@@ -302,8 +302,11 @@ disconnects a Gmail, IMAP or Outlook account;
 `list_agent_keys` lists the keys (no secrets); keys are made in Settings → Agent access and tokens
 pasted in Settings → Accounts. On a shared server, `list_members` lists the people: each email, its
 role (`admin`: everything; `member`: only its mailboxes) and a member's mailboxes; `open: true` means
-nobody is listed and everyone who can sign in is an administrator. Adding or removing a person is
-the administrator's act in Settings → People, never an agent's.
+nobody is listed and everyone who can sign in is an administrator. Each person also carries `signIn`
+(B-215): `canSignIn` true when the server's own sign-in lets them in. `save_member` and `remove_member`
+change the list and the sign-in together; they wait for the owner unless the owner trusted your key for
+people, and an administrator's change always waits. From a script: `scripts/members.mjs` (list, grant,
+remove, sign-in, key … --vault <project>/<env>), run through `use_secret.py` with the key's three slots.
 
 ## Checking your own work
 

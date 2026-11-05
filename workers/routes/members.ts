@@ -6,10 +6,11 @@ import { normaliseAccountId } from "../mcp/scope";
 import { msg } from "../../shared/i18n";
 import { revokeKeysOf } from "./agent-keys";
 import { actorOf, readAudit, recordAudit } from "../lib/audit";
+import { emailsOf, readSignIn, signInOf, syncSignIn } from "../lib/people-access";
 
 /**
  * People on a shared server (B-149): who signs in as an administrator and who as a member with their
- * own mailboxes. Only an administrator reaches these routes (workers/app.ts, workers/lib/member-gate.ts);
+ * own mailboxes. Each change also lets the listed people through the server's sign-in (B-215, lib/people-access.ts). Only an administrator reaches these routes (workers/app.ts, workers/lib/member-gate.ts);
  * agent keys never do: who may read whose mail is a person's act, like agent keys.
  */
 export const membersRouter = new Hono<{ Bindings: Env; Variables: { standing?: Standing } }>();
@@ -41,7 +42,10 @@ membersRouter.get("/api/members", async (c) => {
   c.header("Cache-Control", "no-store");
   try {
     const members = await readMembers(c.env.BUCKET);
-    return c.json({ members, open: members.length === 0, you: c.get("standing")?.email ?? null, max: MAX_MEMBERS });
+    // B-215: whether each listed person can sign in, by the last sync of the server's people policy.
+    const signIn = await readSignIn(c.env.BUCKET).catch(() => null);
+    return c.json({ members: members.map((m) => ({ ...m, signIn: signInOf(signIn, m.email) })), open: members.length === 0, you: c.get("standing")?.email ?? null, max: MAX_MEMBERS,
+      signIn: signIn ? { state: signIn.state, at: signIn.at, ...(signIn.reason ? { reason: signIn.reason } : {}) } : null });
   } catch (error) { return failure(c, error); }
 });
 
@@ -78,13 +82,15 @@ membersRouter.put("/api/members/:email", async (c) => {
       ...(at(levels, "read").length ? { readOnly: at(levels, "read") } : {}), ...(at(levels, "agents").length ? { agents: at(levels, "agents") } : {}),
       previous: previous ? { role: previous.role, mailboxes: previous.accounts, ...(at(previous.levels, "read").length ? { readOnly: at(previous.levels, "read") } : {}),
         ...(at(previous.levels, "agents").length ? { agents: at(previous.levels, "agents") } : {}) } : null });
+    // B-215: the listed people can sign in, with nothing done in Cloudflare by hand.
+    const signIn = signInAnswer(await syncSignIn(c.env, emailsOf(members)), email);
     // N-4: a member makes no keys; the keys they made as an administrator go when they become one.
     if (parsed.data.role === "member") {
       const keys = await revokeKeysOf(c.env, email).catch((error: unknown) => ({ revoked: [] as string[], warning: (error as Error).message }));
       if (keys.revoked.length) await recordAudit(c.env.BUCKET, actor, { kind: "keys_revoked", person: email, keys: keys.revoked });
-      return c.json({ members, revokedKeys: keys.revoked, ...(keys.warning ? { warning: keys.warning } : {}) });
+      return c.json({ members, signIn, revokedKeys: keys.revoked, ...(keys.warning ? { warning: keys.warning } : {}) });
     }
-    return c.json({ members });
+    return c.json({ members, signIn });
   } catch (error) { return failure(c, error); }
 });
 
@@ -102,9 +108,25 @@ membersRouter.delete("/api/members/:email", async (c) => {
     // N-4: the keys they made leave with them.
     const keys = await revokeKeysOf(c.env, email).catch((error: unknown) => ({ revoked: [] as string[], warning: (error as Error).message }));
     if (keys.revoked.length) await recordAudit(c.env.BUCKET, actor, { kind: "keys_revoked", person: email, keys: keys.revoked });
-    return c.json({ members, revokedKeys: keys.revoked, ...(keys.warning ? { warning: keys.warning } : {}) });
+    // B-215: their sign-in goes with them.
+    const synced = await syncSignIn(c.env, emailsOf(members));
+    return c.json({ members, signIn: { state: synced.state, ...(synced.reason ? { reason: synced.reason } : {}) }, revokedKeys: keys.revoked, ...(keys.warning ? { warning: keys.warning } : {}) });
   } catch (error) { return failure(c, error); }
 });
+
+/** B-215: Try again: the server's people policy rewritten from the list as it is now. */
+membersRouter.post("/api/members/sign-in", async (c) => {
+  try {
+    const members = await readMembers(c.env.BUCKET);
+    const synced = await syncSignIn(c.env, emailsOf(members));
+    return c.json({ state: synced.state, at: synced.at, people: synced.emails.length, ...(synced.reason ? { reason: synced.reason } : {}) }, synced.state === "failed" ? 502 : 200);
+  } catch (error) { return failure(c, error); }
+});
+
+/** What a save answers about the person's sign-in. */
+function signInAnswer(state: Awaited<ReturnType<typeof syncSignIn>>, email: string) {
+  return { state: state.state, ...signInOf(state, email) };
+}
 
 /** B-156: the audit record, newest first: changes to the list of people and what members sent. An administrator's. */
 membersRouter.get("/api/audit", async (c) => {

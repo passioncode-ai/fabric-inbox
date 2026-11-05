@@ -7,7 +7,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z, type ZodRawShape } from "zod";
-import { levelAllows, type Level, type Principal } from "./keys";
+import { levelAllows, type Level, type Principal, type Standing } from "./keys";
 import { NARROWING, NARROWING_CAPABILITY, toolFitsScope } from "./scope";
 
 /** What a route answered: its status and parsed JSON (or text), unchanged. */
@@ -43,6 +43,12 @@ export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   sends?: boolean;
   /** B-178: its confirmation always waits for the owner's approval (B-38), whatever the key's setting. */
   ownerApproval?: boolean;
+  /**
+   * B-215: the owner's approval above is waived for a key holding this standing permission (keys.ts `standing`),
+   * when `when` (if given) agrees for these arguments; the key still confirms with its own code. A key set to
+   * Ask me to approve (`approval: "owner"`) waits whatever it holds.
+   */
+  standingWaives?: { standing: Standing; when?: (args: never, ctx: ToolContext) => Promise<boolean> | boolean };
   /** B-154 (DEC-0121 AP-4): the person's steps this tool stands for (it refuses with human-step-required), for the actions declaration. */
   humanSteps?: readonly HumanStep[];
   /** Changes nothing. Tools that change something are journalled. */
@@ -185,7 +191,10 @@ export async function runTool(tool: ToolDef, rawArgs: Record<string, unknown>, c
     if (summary === null) { /* nothing irreversible in these arguments */ }
     else if (!confirm) {
       // B-38: a key whose irreversible actions the owner approves gets a code that works only once approved.
-      const owner = ctx.principal.kind === "agent" && (ctx.principal.approval === "owner" || !!tool.ownerApproval);
+      const waived = ctx.principal.kind === "agent" && ctx.principal.approval !== "owner" && !!tool.ownerApproval && !!tool.standingWaives
+        && !!ctx.principal.standing?.includes(tool.standingWaives.standing)
+        && (tool.standingWaives.when ? await Promise.resolve(tool.standingWaives.when(args as never, ctx)).catch(() => false) : true);
+      const owner = ctx.principal.kind === "agent" && (ctx.principal.approval === "owner" || (!!tool.ownerApproval && !waived));
       const { code, expiresAt } = await ledger.issueConfirmation({ caller, tool: tool.name, argsHash: hash, summary, ...(owner ? { owner, callerLabel: ctx.principal.label } : {}) });
       await journal("confirmation_asked", summary);
       if (owner)

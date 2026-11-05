@@ -191,6 +191,23 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-05 (0.99.0: B-215 step 1).**
+
+- **B-215** (the operator in this session: people and keys scripted, automated, through MCP and the API, with no
+  hands): a listed person can sign in with nothing done in Zero Trust (the server's own Access policy
+  `Fabric Inbox people <audience>`, `workers/lib/people-access.ts`); an Admin key the owner trusts (`standing`
+  people, keys; Agent access or `scripts/agent-standing.mjs` with the account's token) gives members mailboxes and
+  issues keys without the owner's click; `scripts/members.mjs` runs both and puts a new key into the vault. Packet
+  [2026-11-05-delegation](tasks/2026-11-05-delegation.md); SCN-081 step 2a, SCN-098.
+- Waiting on this release and its deploy: the board's key request (thread `721be382`): trust the owner server's own
+  Admin key once with `scripts/agent-standing.mjs`, then `scripts/members.mjs key … --level read --mailbox … --vault
+  <project>/prod`, and answer with the key id.
+
+**Exact next task:** with the operator's confirmation of the deploy (it waits since 0.97.0), deploy to both servers,
+trust the operator's Admin key for keys and people, issue the requested read key into the vault and answer thread
+`721be382`; check one `support.tickets_daily` the day after and answer thread `23defafd`. Then B-215 step 2 (the
+member's own app finds the organization's server) and the board ask to the organization service for step 3.
+
 **State 2026-11-05 (0.98.0: B-213, B-210).**
 
 - **B-213** (DEC-0153 OD-1, OD-3 after its third reading): the Mac app keeps the hour it quits in (`open-hour.json`)

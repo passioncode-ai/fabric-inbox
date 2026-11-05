@@ -4,8 +4,9 @@ import type { Env } from "../types";
 import { cloudflareApi, CloudflareApiError } from "../routing/cloudflare-api";
 import { AgentAccess, TOKEN_DURATIONS, type TokenDuration } from "../mcp/access";
 import {
-  AgentKeysConflict, DEFAULT_DAILY_SENDS, LEVELS, MAX_DAILY_SENDS, MAX_KEYS, readAgentKeys, SEND_MODES, updateAgentKeys, type AgentKey,
+  AgentKeysConflict, DEFAULT_DAILY_SENDS, LEVELS, MAX_DAILY_SENDS, MAX_KEYS, readAgentKeys, SEND_MODES, STANDINGS, updateAgentKeys, type AgentKey,
 } from "../mcp/keys";
+import { recordAudit } from "../lib/audit";
 import { normaliseAccountId } from "../mcp/scope";
 import { msg } from "../../shared/i18n";
 
@@ -59,7 +60,7 @@ export function validateNewKey(raw: unknown): { ok: true; value: NewKeyInput } |
  */
 export const sendFor = (level: AgentKey["level"], send: AgentKey["send"]): AgentKey["send"] => (level === "read" ? "drafts" : level === "admin" ? "send" : send);
 
-const publicKey = (k: AgentKey) => ({ id: k.id, clientId: k.clientId, name: k.name, level: k.level, send: k.send, dailySendLimit: k.dailySendLimit, createdAt: k.createdAt, expiresAt: k.expiresAt, accounts: k.accounts, approval: k.approval ?? "agent", createdBy: k.createdBy ?? null });
+const publicKey = (k: AgentKey) => ({ id: k.id, clientId: k.clientId, name: k.name, level: k.level, send: k.send, dailySendLimit: k.dailySendLimit, createdAt: k.createdAt, expiresAt: k.expiresAt, accounts: k.accounts, approval: k.approval ?? "agent", standing: k.standing ?? [], createdBy: k.createdBy ?? null });
 
 function access(c: C): AgentAccess | Response {
   const api = cloudflareApi(c.env);
@@ -155,24 +156,50 @@ agentKeysRouter.delete("/api/agent-keys/:id", (c) => alone(c, async () => {
   return c.json({ revoked: id });
 }));
 
-/** B-38: turn the owner's approval of a key's irreversible actions on or off; nothing else of a key changes here. */
+/**
+ * B-38: turn the owner's approval of a key's irreversible actions on or off. B-215: set what the key may do without
+ * the owner's approval that people and keys otherwise always wait for (`standing`, an Admin key's only). Nothing
+ * else of a key changes here, and no tool reaches this route (NOT_TOOLS): only the owner trusts a key.
+ */
 agentKeysRouter.patch("/api/agent-keys/:id", (c) => alone(c, async () => {
-  const body = z.object({ approval: z.enum(["agent", "owner"]) }).safeParse(await c.req.json().catch(() => null));
-  if (!body.success) return c.json({ error: msg("Say whether you approve this key's irreversible actions: approval \"owner\" or \"agent\".") }, 400);
+  const raw = await c.req.json().catch(() => null) as { standing?: unknown } | null;
+  const body = z.object({ approval: z.enum(["agent", "owner"]).optional(), standing: z.array(z.enum(STANDINGS)).max(10).optional() })
+    .refine((b) => b.approval !== undefined || b.standing !== undefined).safeParse(raw);
+  if (!body.success) return c.json({ error: raw && raw.standing !== undefined
+    ? msg("A key can manage people and keys without you, nothing else: standing [\"people\", \"keys\"].")
+    : msg("Say whether you approve this key's irreversible actions: approval \"owner\" or \"agent\".") }, 400);
   const id = c.req.param("id");
+  const standing = body.data.standing ? STANDINGS.filter((x) => body.data.standing!.includes(x)) : undefined;
   let changed: AgentKey | undefined;
+  let before: AgentKey | undefined;
+  let notAdmin = false;
   try {
     await updateAgentKeys(c.env.BUCKET, (keys) => keys.map((k) => {
       if (k.id !== id) return k;
-      const { approval: _old, ...rest } = k;
-      changed = body.data.approval === "owner" ? { ...rest, approval: "owner" } : rest;
-      return changed;
+      before = k;
+      if (standing?.length && k.level !== "admin") { notAdmin = true; return k; }
+      let next: AgentKey = k;
+      if (body.data.approval !== undefined) {
+        const { approval: _old, ...rest } = next;
+        next = body.data.approval === "owner" ? { ...rest, approval: "owner" } : rest;
+      }
+      if (standing !== undefined) {
+        const { standing: _old, ...rest } = next;
+        next = standing.length ? { ...rest, standing } : rest;
+      }
+      changed = next;
+      return next;
     }));
   } catch (error) { return failure(c, error, msg("Saving the key")); }
+  if (notAdmin) return c.json({ error: msg("Only an Admin key can manage people and keys without asking you.") }, 400);
   if (!changed) return c.json({ error: msg("No such agent key") }, 404);
-  // A code this key was given before the switch no longer works on its own (review 2026-10-24).
-  if (body.data.approval === "owner") await c.env.EMAIL_MCP.getByName("workspace").dropSelfConfirmations(`key:${id}`);
-  console.log(JSON.stringify({ event: "agent_key_approval", keyId: id, approval: body.data.approval }));
+  // A code this key was given before the switch no longer works on its own (review 2026-10-24); so too a code it got
+  // by a standing permission now taken away.
+  const lost = (before?.standing ?? []).some((x) => !(changed!.standing ?? []).includes(x));
+  if (body.data.approval === "owner" || lost) await c.env.EMAIL_MCP.getByName("workspace").dropSelfConfirmations(`key:${id}`);
+  if (standing !== undefined && (before?.standing ?? []).join(",") !== standing.join(","))
+    await recordAudit(c.env.BUCKET, signedInEmail(c) ?? null, { kind: "key_standing_set", key: id, name: changed.name, standing, previous: before?.standing ?? [] });
+  console.log(JSON.stringify({ event: "agent_key_approval", keyId: id, approval: changed.approval ?? "agent", standing: changed.standing ?? [] }));
   return c.json({ key: publicKey(changed) });
 }));
 

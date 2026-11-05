@@ -99,6 +99,7 @@
 | SCN-095 | Sign in to an organization's server with my work address | Resume and manage preferences | P-02 | ST-007, FLW-07 | draft | — |
 | SCN-096 | Give a person a level on a mailbox | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-17 | draft | — |
 | SCN-097 | My server warns me before a mailbox fills and keeps old mail restorable | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-11 | draft | not yet |
+| SCN-098 | Let an agent give people mailboxes and issue keys without asking me | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-15 | draft | not yet |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1666,9 +1667,10 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Steps:**
   1. Open Settings → People -> what the list does; nobody listed means everyone who can sign in is an administrator.
   2. Add a person: their sign-in email, Member or Administrator, and for a member the mailboxes they may reach, each Read and send (the default), Read, send and choose its agent, or Read only (B-160); Add -> they are listed with what they reach ("Only a, b; read only: b; choosing the agent: a"); the first person added also lists me as an administrator.
+  2a. The server lets each listed person through its own sign-in (B-215): beside each person, Can sign in, or Cannot sign in yet with the reason and Try again; removing a person takes their sign-in away again. An organization's own sign-in group is never changed.
   3. Open a person -> Change… their role, mailboxes or a mailbox's level, or Remove… them (Remove, Keep).
   4. With nobody open, read Recent changes -> who added, changed or removed whom (the role and mailboxes it gave), agent keys revoked with a person, each message a member sent (mailbox, recipients, subject; never the text), and each agent a member chose for a mailbox, newest first; Show older reads further back (B-156, since 0.61.0).
-- **Expected result:** A member reaches only their mailboxes, and in one marked Read only can open and search but never change or send; in one at Read, send and choose its agent they also choose which of the server's agents answers it, or Off, and nothing else about agents; a person Access lets in who is not listed is refused with a sentence naming who to ask; an administrator has every right.
+- **Expected result:** A person I add can sign in at once, with no step in Cloudflare; a member reaches only their mailboxes, and in one marked Read only can open and search but never change or send; in one at Read, send and choose its agent they also choose which of the server's agents answers it, or Off, and nothing else about agents; a person Access lets in who is not listed is refused with a sentence naming who to ask; an administrator has every right.
 - **Alt paths:** A member with no mailbox ticked: Add stays off. Removing the last administrator, or the last person: refused with the reason. Removing myself: I am asked first and can no longer open the server.
 - **UI elements:** SCR-17 (Add a person, Role, Mailboxes with a level beside each ticked one: Read and send, Read, send and choose its agent, Read only; Change…, Remove…, Recent changes, Show older).
 - **States covered:** loading, empty, error, success
@@ -1676,7 +1678,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** draft
 - **Coverage:** app/components/settings/sections/PeopleSection.tsx, workers/routes/members.ts, workers/lib/members.ts, workers/lib/audit.ts, workers/app.ts, tests/members.test.ts, tests/audit.test.ts
 - **Product:** unobserved
-- **Today:** Built 2026-10-23 (B-149); levels per mailbox built 2026-10-30 (B-160 step 1, provisional on this draft: Read only and Read and send); Read, send and choose its agent built 2026-11-02 (B-160 step 3, 0.81.0, provisional on this draft).
+- **Today:** Built 2026-10-23 (B-149); levels per mailbox built 2026-10-30 (B-160 step 1, provisional on this draft: Read only and Read and send); Read, send and choose its agent built 2026-11-02 (B-160 step 3, 0.81.0, provisional on this draft). The sign-in following the list built 2026-11-05 (B-215, 0.99.0, workers/lib/people-access.ts, tests/people-access.test.ts), provisional on this draft.
 
 ### SCN-082: Work as a member of a shared server
 - **Persona:** P-02
@@ -1749,7 +1751,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   2. Agent access shows Waiting for your approval with how many actions wait -> open it -> each lists the key, the action, what it does, when it was asked and until when it waits.
   3. Approve -> the agent's next call with its code does it, once; or Refuse -> the code is deleted and the agent is told it is not valid.
 - **Expected result:** An agent whose key asks the owner never does anything irreversible until the owner approved that exact action in the app; a key without it confirms with its one-time code as before.
-- **Alt paths:** An approved action stays listed (Approved: the agent has not used it yet) until the agent uses it or it expires after a day. More actions → Stop asking me to approve returns the key to its own code. Some acts always wait for the owner, whatever the key's setting (B-154, DEC-0121): releasing a held message, adding, changing or removing a person (`save_member`, `remove_member`), and issuing or revoking an agent key (`create_agent_key`, `revoke_agent_key`).
+- **Alt paths:** An approved action stays listed (Approved: the agent has not used it yet) until the agent uses it or it expires after a day. More actions → Stop asking me to approve returns the key to its own code. Some acts always wait for the owner, whatever the key's setting (B-154, DEC-0121): releasing a held message, adding, changing or removing a person (`save_member`, `remove_member`), and issuing or revoking an agent key (`create_agent_key`, `revoke_agent_key`). A key I let manage people or keys (SCN-098) does those without waiting.
 - **UI elements:** SCR-15 (Waiting for your approval, Approve, Refuse; the key's What cannot be undone fact and its menu item).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** An answer to an action that expired or was answered already says so (404); a list that cannot load offers Retry. Agents cannot approve: the approval routes have no tool (`NOT_TOOLS`).
@@ -2020,3 +2022,24 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** none
 - **Product:** unobserved
 - **Today:** Step 1 only through agents (`get_storage`, 0.94.0, B-206 step 1); no screen, notice, cleanup or archive yet. The Telegram line waits for the operator's gateway grant.
+
+### SCN-098: Let an agent give people mailboxes and issue keys without asking me
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07, JTBD-03; B-215 (operator 2026-11-05: "чтобы это все уже можно было бы делать без каких-то ручных действий: выдавать имейлы, делегировать их сотрудникам"; and, relayed on the board the same day, "всеми ключами занимайся сам"); SCN-081, SCN-085
+- **Entry point:** SCR-15 (Agent access), or the server's Cloudflare token held by my agent
+- **Preconditions:** I administer the server; an Admin agent key exists (SCN-043).
+- **Steps:**
+  1. Agent access -> a key's More actions -> Let it give people mailboxes (and take them back), or Let it issue and revoke keys -> the key's facts say what it may do without me.
+  2. The agent gives a person mailboxes with a level (`save_member`) or removes a member (`remove_member`) -> it happens with the agent's own confirmation code, without Waiting for your approval; the person can sign in at once (SCN-081 2a).
+  3. The agent issues or revokes a key (`create_agent_key`, `revoke_agent_key`) the same way; a new key's secret goes only to the agent that asked.
+  4. Recent changes (People) and What agents changed (Agent access) name the key that did each change.
+- **Expected result:** A person I trust my agent with gets their mailboxes and their sign-in with nothing for me to click, and every change is written down with the key that made it.
+- **Alt paths:** Making or removing an administrator still waits for my approval, and so does any action of a key set to Ask me to approve what it cannot undo. A key never passes these permissions on: a key it issues has none, and no agent can give one (the owner in Agent access, or the server's Cloudflare token through `scripts/agent-standing.mjs`, which writes the same record and a Recent changes line). Take it back from the same menu.
+- **UI elements:** SCR-15 (the key's menu items and facts), SCR-17 (Can sign in, Cannot sign in yet, Try again).
+- **States covered:** loading, error, success
+- **Errors & recovery:** Cloudflare refuses the sign-in change: the person stays listed, shows Cannot sign in yet with Cloudflare's reason, and Try again (or `sync_member_sign_in`) repeats it; a token without Access: Apps and Policies names the permission.
+- **Status:** draft
+- **Coverage:** app/components/settings/sections/AgentAccessSection.tsx (`standingText`, the key's menu), app/components/settings/sections/PeopleSection.tsx (`signInText`, Try again, `key_standing_set` in Recent changes), workers/mcp/protocol.ts (`standingWaives`), workers/routes/agent-keys.ts (PATCH `standing`), workers/lib/people-access.ts, scripts/agent-standing.mjs, scripts/members.mjs, tests/mcp-relayed.test.ts, tests/members.test.ts, tests/people-access.test.ts, tests/members-script.test.ts
+- **Product:** unobserved
+- **Today:** Built 2026-11-05 (B-215 step 1, 0.99.0), provisional on this draft.

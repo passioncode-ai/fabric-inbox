@@ -15,12 +15,17 @@ import {
 
 type Role = "admin" | "member";
 type Level = "read" | "send" | "agents";
-export interface Person { email: string; role: Role; accounts: string[] | null; levels?: Record<string, Level>; addedAt: string }
+/** B-215: whether the server's own sign-in lets the person in; null before the first sync or on a server without Access. */
+export interface SignIn { canSignIn: boolean | null; reason?: string }
+export interface Person { email: string; role: Role; accounts: string[] | null; levels?: Record<string, Level>; addedAt: string; signIn?: SignIn }
 interface PeopleState { members: Person[]; open: boolean; you: string | null }
 interface Mailbox { id: string; email?: string }
 export const PEOPLE_KEY = ["members"];
 
 export const roleTitle = (role: Role, t: T) => (role === "admin" ? t("Administrator") : t("Member"));
+/** B-215: a person's sign-in in words. */
+export const signInText = (s: SignIn | undefined, t: T) =>
+  s?.canSignIn === true ? t("Can sign in") : s?.canSignIn === false ? t("Cannot sign in yet") : t("As Cloudflare Access allows");
 const shown = (account: string) => account.replace(/^cloudflare:/, "");
 /** B-160: a member's mailboxes at one level: those they may only read, or whose agent they may choose. */
 const atLevel = (p: Pick<Person, "accounts" | "levels">, level: Level) => (p.accounts ?? []).filter((a) => p.levels?.[a] === level);
@@ -67,7 +72,7 @@ export default function PeopleSection({ id }: { id: string | null }) {
             <span className="fi-row-title">{e.person.email}{e.person.email === data?.you ? ` ${t("(you)")}` : ""}</span>
             <span className="fi-row-meta">{reachText(e.person, t)}</span>
           </span>
-          <span className="fi-row-side"><Badge>{roleTitle(e.person.role, t)}</Badge></span>
+          <span className="fi-row-side">{e.person.signIn?.canSignIn === false && <Badge>{t("Cannot sign in yet")}</Badge>}<Badge>{roleTitle(e.person.role, t)}</Badge></span>
         </>
       )}
       empty={<div className="fi-list-empty"><p>{query ? t("Nobody matches “{query}”.", { query }) : t("Nobody is listed: everyone who can sign in is an administrator.")}</p></div>} />
@@ -76,7 +81,7 @@ export default function PeopleSection({ id }: { id: string | null }) {
   const panel = !id ? (
     <PanelPlaceholder>
       <h2>{t("Share this server with other people")}</h2>
-      <p>{t("Cloudflare Access decides who can sign in at all. This list decides what each of them reaches: an administrator manages everything, a member reads and answers only the mailboxes you give them.")}</p>
+      <p>{t("Everyone on this list can sign in: the server lets them in, and your organization's own sign-in keeps working too. The list decides what each of them reaches: an administrator manages everything, a member reads and answers only the mailboxes you give them.")}</p>
       {data?.open && <p>{t("Nobody is listed yet, so everyone who can sign in is an administrator. The first person you add makes you this server's administrator too.")}</p>}
       <button type="button" onClick={() => setAdding(true)}><PlusIcon size={16} /> {t("Add a person")}</button>
       <AuditBlock />
@@ -125,6 +130,13 @@ function PersonPanel({ person: p, you, onRemoved }: { person: Person; you: strin
     });
     if (done) onRemoved();
   };
+  // B-215: the server's sign-in rewritten from the list, when a change could not reach Cloudflare.
+  const retrySignIn = () => void work.run(t("Saving…"), async () => {
+    try {
+      const out = await fabric<{ state: string; reason?: string }>("/api/members/sign-in", {});
+      return out.state === "ok" ? t("{email} can sign in now.", { email: p.email }) : t.text(out.reason ?? "");
+    } finally { await client.invalidateQueries({ queryKey: PEOPLE_KEY }); }
+  });
   return (
     <Panel title={p.email} subtitle={roleTitle(p.role, t)} closeTo={settingsPath("people")}
       menu={<ActionMenu label={t("More actions for {email}", { email: p.email })} actions={[
@@ -136,7 +148,9 @@ function PersonPanel({ person: p, you, onRemoved }: { person: Person; you: strin
           <li><strong>{t("Role")}</strong> {roleTitle(p.role, t)}</li>
           <li><strong>{t("Reaches")}</strong> {reachText(p, t)}</li>
           <li><strong>{t("Added")}</strong> {t.date(p.addedAt, { year: "numeric", month: "short", day: "numeric" })}</li>
+          <li><strong>{t("Sign-in")}</strong> {signInText(p.signIn, t)}{p.signIn?.canSignIn === false && p.signIn.reason ? `: ${t.text(p.signIn.reason)}` : ""}</li>
         </ul>
+        {p.signIn?.canSignIn === false && <button type="button" onClick={() => void retrySignIn()}>{t("Try again")}</button>}
         {p.role === "member" && <p className="fi-hint">{t("A member reads, answers and sorts the mail of these mailboxes, only reads a mailbox marked Read only, and chooses which agent answers a mailbox where you allow it. Settings, other mailboxes, the agents themselves and categories stay with the administrators.")}</p>}
         <ActionResult result={work.result} />
       </PanelBlock>
@@ -229,12 +243,13 @@ type AuditRecord = { id: string; at: string; actor: string | null } & (
   | { kind: "member_removed"; person: string }
   | { kind: "keys_revoked"; person: string; keys: string[] }
   | { kind: "member_sent"; mailbox: string; to: string[]; subject: string | null }
-  | { kind: "member_agent_set"; mailbox: string; agent: string; name: string | null });
+  | { kind: "member_agent_set"; mailbox: string; agent: string; name: string | null }
+  | { kind: "key_standing_set"; key: string; name: string; standing: string[]; previous: string[] });
 export const AUDIT_KEY = ["audit"];
 
 /** Who did it: a person's email, an agent's key, or the server itself (no sign-in in front of it). */
 const actorText = (actor: string | null, t: T) =>
-  !actor ? t("The server") : actor.startsWith("key:") ? t("An agent ({key})", { key: actor.slice(4) }) : actor.replace(/^owner:/, "");
+  !actor ? t("The server") : actor === "account-token" ? t("The server's Cloudflare token") : actor.startsWith("key:") ? t("An agent ({key})", { key: actor.slice(4) }) : actor.replace(/^owner:/, "");
 
 /** One entry of the record as a sentence; a send names its recipients and subject, never its text. */
 export function auditText(e: AuditRecord, t: T): string {
@@ -247,6 +262,13 @@ export function auditText(e: AuditRecord, t: T): string {
   if (e.kind === "member_agent_set") return e.agent === "off"
     ? t("{who} turned off the agent of {mailbox}", { who, mailbox: shown(e.mailbox) })
     : t("{who} chose {agent} to answer {mailbox}", { who, agent: e.name ?? e.agent, mailbox: shown(e.mailbox) });
+  if (e.kind === "key_standing_set") {
+    const people = e.standing.includes("people"), keys = e.standing.includes("keys");
+    return people && keys ? t("{who} let the agent key {name} give members mailboxes and issue keys without asking", { who, name: e.name })
+      : people ? t("{who} let the agent key {name} give members mailboxes without asking", { who, name: e.name })
+      : keys ? t("{who} let the agent key {name} issue and revoke keys without asking", { who, name: e.name })
+      : t("{who} made the agent key {name} ask again before people and keys", { who, name: e.name });
+  }
   const mailbox = e.mailbox.replace(/^cloudflare:/, "");
   if (!e.to.length) return t("{who} sent a message from {mailbox}", { who, mailbox });
   return e.subject
