@@ -98,7 +98,7 @@
 | SCN-094 | Move an address to another server I hold | Connect an account | P-01 | ST-001, FLW-01 | draft | — |
 | SCN-095 | Sign in to an organization's server with my work address | Resume and manage preferences | P-02 | ST-007, FLW-07 | draft | — |
 | SCN-096 | Give a person a level on a mailbox | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-17 | draft | — |
-| SCN-097 | My server warns me before a mailbox fills and keeps old mail restorable | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-11 | draft | — |
+| SCN-097 | My server warns me before a mailbox fills and keeps old mail restorable | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-11 | draft | not yet |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
