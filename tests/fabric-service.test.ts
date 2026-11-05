@@ -76,6 +76,8 @@ test("B-87: a registered agent key or a person reads the well-known document; an
     assert.deepEqual(doc.extensions["https://passioncode.ai/fabric-inbox/runner"], { credentialKind: "key" });
     // B-154 step 4 (DEC-0121): the actions a person can take, each with its tool and who decides it.
     validate("service-actions-extension", doc.extensions["https://fabric.passioncode.ai/agent-contract/extensions/actions/0.1"]);
+    // B-209: what the server uses, in the contract's connections extension (DEC-0096).
+    validate("service-connections-extension", doc.extensions["https://fabric.passioncode.ai/agent-contract/extensions/connections/0.1"]);
     assert.ok(doc.service.build.commit || doc.service.build.digest);
     assert.equal((await get("/.well-known/fabric-service", { email: "owner@owner.example" })).status, 200);
     assert.equal((await get("/fabric/v1/usage", { common_name: "other-app.access" })).status, 401);
