@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.95.0 (2026-11-05)
+
+- **Answers by mail in the same form as other support channels.** For each answer a reply agent sends from its
+  knowledge, your server now also reports what it rested on in the form other support channels use: the address as
+  mail, one of 14 shared topics, and the items it cited. Reports that gather questions from every channel can now
+  count mail too. The earlier report stays as it was (B-207).
+
 ## 0.94.0 (2026-11-05)
 
 - **See how full your server is.** Your server now measures each mailbox and each shared store against Cloudflare's

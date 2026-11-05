@@ -2,7 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { answerCitedEvent, causeOf, CITED_MAX, citedOf, secondLookCause, supportDiagnosedEvent } from "../workers/agents/learning-events";
+import { answerCitedEvent, causeOf, CITED_MAX, citedOf, SHARED_ANSWER_CITED_SCHEMA, SHARED_CATEGORIES, secondLookCause, sharedAnswerCitedEvent, sharedCategory, supportDiagnosedEvent } from "../workers/agents/learning-events";
+import Ajv2020 from "ajv/dist/2020";
 import { evidenceOf } from "../workers/agents/runner";
 import type { AgentRun } from "../workers/agents/run";
 
@@ -78,3 +79,45 @@ test("B-153: a second look that sends is rescued: retrieval with a new cited ite
   assert.deepEqual(schema.properties.look.enum, ["turn", "second"]);
   assert.ok(schema.required.includes("look"));
 });
+
+test("B-207: the shared form names the channel as mail:<domain>:<local part>, one of the 14 categories and no word of the mail", () => {
+  const run = { ...base, mailboxId: "Support@Acme.Example", category: "Login/Code", repliedAt: "2026-10-27T10:00:30.000Z",
+    evidence: [{ tool: "facts", items: ["a", "b"], coverage: [0.9, null], revision: "facts@0a1b2c3d" }] };
+  const event = sharedAnswerCitedEvent(run)!;
+  assert.equal(event.kind, "answer.cited");
+  assert.equal(event.data.schema, SHARED_ANSWER_CITED_SCHEMA);
+  assert.deepEqual(event.data.value, { at: "2026-10-27T10:00:30.000Z", channel: "mail:acme.example:support", category: "login_code",
+    status: "answered", question: "Asks how to get a refund; write to […] or […].", cited: ["a", "b"], coverage: [0.9, null], revision: "facts@0a1b2c3d" });
+  const json = JSON.stringify(event);
+  for (const word of ["person@mail.example", "Refund for order 42", "refunds@acme.example", "555"]) assert.equal(json.includes(word), false, word);
+  assert.equal((sharedAnswerCitedEvent({ ...run, evidence: [{ tool: "kb", items: ["a"], revision: "rev-9" }] })!.data.value as { revision: unknown }).revision, null,
+    "a revision not in <source>@<hex> form is left out");
+  for (const blocked of [{ ...run, handoff: true }, { ...run, fallback: true }, { ...run, status: "held" as const }]) assert.equal(sharedAnswerCitedEvent(blocked), null);
+});
+
+test("B-207: an agent's category of a shared name maps to it, anything else is other", () => {
+  assert.equal(SHARED_CATEGORIES.length, 14);
+  const named: [string, string][] = [["refund", "refunds"], ["bought account", "bought_accounts"], ["unusual", "unusual"], ["login/code", "login_code"],
+    ["account security", "account_security"], ["account access and security", "account_security"], ["notifications", "notifications"],
+    ["features/how-to", "how_to"], ["translation", "translation"], ["ads/advertising", "ads"], ["availability/VPN", "availability_vpn"],
+    ["payments/Premium", "payments_premium"], ["scam/NFT", "scam_nft"], ["ban", "ban"], ["other", "other"]];
+  for (const [name, shared] of named) assert.equal(sharedCategory(name), shared, name);
+  for (const name of ["billing problem", "pricing and plans", "", null, undefined]) assert.equal(sharedCategory(name as string), "other", String(name));
+  assert.deepEqual([...new Set(named.map(([, s]) => s))].sort(), [...SHARED_CATEGORIES].sort(), "every shared category has a name that reaches it");
+});
+
+test("B-207: the shared form passes its published schema", () => {
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  const validate = ajv.compile(JSON.parse(readFileSync("docs/agents/answer-cited-shared.schema.json", "utf8")));
+  const run = { ...base, evidence: [{ tool: "facts", items: ["a"], coverage: [0.8], revision: "facts@0a1b2c" }] };
+  for (const r of [run, { ...run, evidence: undefined }, { ...run, category: null }]) {
+    const value = sharedAnswerCitedEvent(r)!.data.value;
+    assert.ok(validate(value), JSON.stringify(validate.errors));
+  }
+});
+
+test("B-207: the registry appends the shared form once per run beside today's", () => {
+  const src = readFileSync("workers/agents/registry.ts", "utf8");
+  assert.match(src, /const shared = sharedAnswerCitedEvent\(run\);\n\s+if \(shared && !this\.rows\("SELECT 1 FROM agent_events WHERE run_id = \? LIMIT 1", `cited-shared-\$\{run\.id\}`\)\.length\) this\.appendEvent\(`cited-shared-\$\{run\.id\}`, shared\);/);
+});
+

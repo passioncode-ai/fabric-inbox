@@ -7,7 +7,7 @@ import type { AgentRun } from "./run";
 import { messageLink } from "../../shared/mail/open-link";
 import { QUALITY_SCHEMA, type QualityDaily } from "./quality";
 import type { KnowledgeLearned, KnowledgeRetracted, KnowledgeStale } from "./knowledge-events";
-import type { AnswerCited, SupportDiagnosed } from "./learning-events";
+import type { AnswerCited, SharedAnswerCited, SupportDiagnosed } from "./learning-events";
 
 /** The payload schema of `data.value`, published in this repository. */
 export const AGENT_EVENT_SCHEMA = "https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/agents/agent-event.schema.json";
@@ -24,7 +24,7 @@ export interface AgentEvent {
    * `AgentEventValue` for agent.* kinds; the quality standard's day for support.quality_daily (B-130); a knowledge
    * change for knowledge.* (B-161); what a sent answer cited, or why a message was not answered (B-162).
    */
-  data: { schema: string; value: AgentEventValue | QualityDaily | KnowledgeLearned | KnowledgeRetracted | KnowledgeStale | AnswerCited | SupportDiagnosed };
+  data: { schema: string; value: AgentEventValue | QualityDaily | KnowledgeLearned | KnowledgeRetracted | KnowledgeStale | AnswerCited | SharedAnswerCited | SupportDiagnosed };
 }
 export interface AgentEventValue {
   runId: string; address: string; agentId?: string; agentVersion?: number; status: string;
