@@ -6,6 +6,7 @@ import { msg } from "../../shared/i18n";
 import { ERROR_DAYS_KEPT, errorDay } from "../lib/error-counts";
 import { closedDay, closedHour, foldDay, foldHour } from "../lib/ops-digest";
 import { inboxSources } from "../lib/inbox-sources";
+import { foldMonths, type SupportMonth } from "../lib/support-months";
 import { objectLimitBytes, storageReport, usageOf, type ObjectUsage, type StorageReport } from "../lib/storage-usage";
 
 export const serverErrorsRouter = new Hono<{ Bindings: Env }>();
@@ -96,4 +97,32 @@ serverErrorsRouter.get("/api/storage", async (c) => {
     console.warn(JSON.stringify({ event: "storage_files_unreadable", error: failed(error) }));
   }
   return c.json(storageReport(objects, files, limit));
+});
+
+/**
+ * B-208: each Cloudflare mailbox's support work per month (threads received, answered by a reply agent, answered by a
+ * person, the median minutes to the first answer), counts only, as far back as the mailbox keeps mail. `domain` or
+ * `mailbox` narrows it. Gmail, Outlook and IMAP accounts are not counted: their sent mail is not this server's.
+ */
+serverErrorsRouter.get("/api/support-months", async (c) => {
+  const env = c.env;
+  const domain = c.req.query("domain")?.toLowerCase();
+  const only = c.req.query("mailbox")?.toLowerCase();
+  let addresses: string[];
+  try {
+    addresses = (await inboxSources(env).cloudflareAccounts()).map((a) => a.email.toLowerCase())
+      .filter((e) => (!domain || e.endsWith(`@${domain}`)) && (!only || e === only));
+  } catch (error) {
+    console.error(JSON.stringify({ event: "support_months_addresses_unreadable", error: String((error as Error)?.message ?? error).slice(0, 120) }));
+    return c.json({ error: msg("The addresses could not be listed right now") }, 503);
+  }
+  const mailboxes: { mailbox: string; domain: string; months: SupportMonth[]; error?: string }[] = [];
+  for (let i = 0; i < addresses.length; i += 10) {
+    mailboxes.push(...await Promise.all(addresses.slice(i, i + 10).map(async (email) => {
+      const d = email.slice(email.lastIndexOf("@") + 1);
+      try { return { mailbox: email, domain: d, months: foldMonths(await env.MAILBOX.get(env.MAILBOX.idFromName(email)).supportThreads()) }; }
+      catch (error) { return { mailbox: email, domain: d, months: [], error: String((error as Error)?.message ?? error).slice(0, 120) }; }
+    })));
+  }
+  return c.json({ mailboxes });
 });

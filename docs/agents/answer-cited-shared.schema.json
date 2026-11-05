@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/agents/answer-cited-shared.schema.json",
+  "title": "answer.cited, in the shared form of every support channel",
+  "description": "B-207: the same answer as answer-cited.schema.json, sent once more on the server's events feed (/fabric/v1/events, list_agent_events) as a second answer.cited event whose data.schema is this one, in the form a chat support bot and the voice-of-customer board read: the channel as mail:<domain>:<local part>, one of 14 shared categories (an agent's category of the same name, else other), and a revision only in a data agent's <source>@<hex> form. Pick the form by data.schema. No sender, subject or text; question is the model's English restatement with personal data removed. workers/agents/learning-events.ts (sharedAnswerCitedEvent).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["at", "channel", "category", "status", "question", "cited", "coverage", "revision"],
+  "properties": {
+    "at": { "type": "string", "format": "date-time" },
+    "channel": { "type": "string", "pattern": "^mail:[a-z0-9.-]+:[^:\\s]+$", "description": "mail:<domain>:<local part> of the Cloudflare address that sent the answer." },
+    "category": { "enum": ["refunds", "bought_accounts", "unusual", "login_code", "account_security", "notifications", "how_to", "translation", "ads", "availability_vpn", "payments_premium", "scam_nft", "ban", "other"] },
+    "status": { "enum": ["answered", "general", "followup", "rescue"], "description": "Fabric Inbox sends answered (it cited knowledge items) and general (it rested on the agent's own text); a rescue is support.diagnosed with rescued, and followup is not sent." },
+    "question": { "type": ["string", "null"], "maxLength": 300 },
+    "cited": { "type": "array", "maxItems": 12, "items": { "type": "string", "maxLength": 200 } },
+    "coverage": { "type": "array", "maxItems": 12, "items": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }, "description": "Each cited item's share of the question at the same index as cited; null when unknown." },
+    "revision": { "type": ["string", "null"], "pattern": "^[a-z][a-z0-9_-]*@[0-9a-f]{6,40}$" }
+  }
+}

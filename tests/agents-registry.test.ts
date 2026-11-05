@@ -347,7 +347,10 @@ test("B-162: a held message is diagnosed once per cause across retries; its answ
     const sent = { ...run, status: "sent", evidence: [{ tool: "facts", items: ["fact:refunds"], coverage: [0.9], revision: "r2" }] };
     await command("save", { run: sent });
     await command("save", { run: sent });
-    const cited = await of("answer.cited");
+    const both = await of("answer.cited");
+    // B-207: once in today's form and once in the shared form, each once.
+    assert.deepEqual(both.map((e) => e.data.schema.split("/").pop()).sort(), ["answer-cited-shared.schema.json", "answer-cited.schema.json"]);
+    const cited = both.filter((e) => e.data.schema.endsWith("/answer-cited.schema.json"));
     assert.equal(cited.length, 1);
     assert.deepEqual([cited[0]!.data.value.cited, cited[0]!.data.value.coverage, cited[0]!.data.value.status], [["fact:refunds"], [0.9], "answered"]);
   } finally { await mf.dispose(); }

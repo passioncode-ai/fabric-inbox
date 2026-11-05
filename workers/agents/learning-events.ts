@@ -11,6 +11,7 @@ import { messageLink } from "../../shared/mail/open-link";
 
 /** The payload schemas of `data.value`, published in this repository. */
 export const ANSWER_CITED_SCHEMA = "https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/agents/answer-cited.schema.json";
+export const SHARED_ANSWER_CITED_SCHEMA = "https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/agents/answer-cited-shared.schema.json";
 export const SUPPORT_DIAGNOSED_SCHEMA = "https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/agents/support-diagnosed.schema.json";
 /** At most this many cited items an event names; the question is cut to QUESTION_CHARS. */
 export const CITED_MAX = 12;
@@ -102,6 +103,52 @@ export function answerCitedEvent(run: AgentRun): AgentEvent | null {
     text: cited.length ? `${who}'s answer from ${run.mailboxId} cited ${cited.length} knowledge item${cited.length === 1 ? "" : "s"}.`
       : `${who}'s answer from ${run.mailboxId} cited no knowledge item.`,
     data: { schema: ANSWER_CITED_SCHEMA, value } };
+}
+
+/**
+ * B-207: the same answer in the shared form other support channels send (a chat support bot's, the voice-of-customer
+ * board's): `channel` `mail:<domain>:<local part>`, one of 14 shared categories, and a revision only in the
+ * `<source>@<hex>` form a data agent gives. Emitted beside the form above, which stays for those who read it.
+ */
+export const SHARED_CATEGORIES = ["refunds", "bought_accounts", "unusual", "login_code", "account_security", "notifications", "how_to",
+  "translation", "ads", "availability_vpn", "payments_premium", "scam_nft", "ban", "other"] as const;
+export type SharedCategory = (typeof SHARED_CATEGORIES)[number];
+
+/** An agent's category, by its name, that is one of the shared ones; any other is `other`. */
+const SHARED_BY_NAME: Record<string, SharedCategory> = {
+  "refund": "refunds", "refunds": "refunds", "bought account": "bought_accounts", "unusual": "unusual", "login/code": "login_code",
+  "account security": "account_security", "account access and security": "account_security", "notifications": "notifications",
+  "features/how-to": "how_to", "translation": "translation", "ads/advertising": "ads", "availability/vpn": "availability_vpn",
+  "payments/premium": "payments_premium", "scam/nft": "scam_nft", "ban": "ban", "other": "other",
+};
+
+export function sharedCategory(category: string | null | undefined): SharedCategory {
+  return SHARED_BY_NAME[(category ?? "").trim().toLowerCase()] ?? "other";
+}
+
+export interface SharedAnswerCited {
+  at: string;
+  channel: string;
+  category: SharedCategory;
+  status: "answered" | "general";
+  question: string | null;
+  cited: string[];
+  coverage: (number | null)[];
+  revision: string | null;
+}
+
+const SHARED_REVISION = /^[a-z][a-z0-9_-]*@[0-9a-f]{6,40}$/;
+
+/** The answer of answerCitedEvent in the shared form, or null when there is none. */
+export function sharedAnswerCitedEvent(run: AgentRun): AgentEvent | null {
+  const own = answerCitedEvent(run);
+  if (!own) return null;
+  const v = own.data!.value as AnswerCited;
+  const at = v.address.lastIndexOf("@");
+  const channel = `mail:${v.address.slice(at + 1).toLowerCase()}:${v.address.slice(0, at).toLowerCase()}`;
+  const value: SharedAnswerCited = { at: v.at, channel, category: sharedCategory(run.category), status: v.status, question: v.question,
+    cited: v.cited, coverage: v.coverage, revision: v.revision && SHARED_REVISION.test(v.revision) ? v.revision : null };
+  return { ...own, data: { schema: SHARED_ANSWER_CITED_SCHEMA, value } };
 }
 
 /**

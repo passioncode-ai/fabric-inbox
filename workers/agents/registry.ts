@@ -1,4 +1,4 @@
-import { answerCitedEvent, causeOf, citedOf, supportDiagnosedEvent } from "./learning-events";
+import { answerCitedEvent, causeOf, citedOf, sharedAnswerCitedEvent, supportDiagnosedEvent } from "./learning-events";
 import { countError, countLog, countOk } from "../lib/error-counts";
 import { addressesByAgent, collectionStale, readersOf } from "./knowledge-events";
 import { NOT_MEASURED, summarizeOutcomes, ticketOutcomeOf, type OutcomeSummary } from "./ticket-outcome";
@@ -763,6 +763,9 @@ export class AgentRegistryDO extends DurableObject<Env> {
       if (before !== run.status) {
         const cited = answerCitedEvent(run);
         if (cited && !this.rows("SELECT 1 FROM agent_events WHERE run_id = ? LIMIT 1", `cited-${run.id}`).length) this.appendEvent(`cited-${run.id}`, cited);
+        // B-207: the same answer once more in the shared form, keyed apart so each form is sent once.
+        const shared = sharedAnswerCitedEvent(run);
+        if (shared && !this.rows("SELECT 1 FROM agent_events WHERE run_id = ? LIMIT 1", `cited-shared-${run.id}`).length) this.appendEvent(`cited-shared-${run.id}`, shared);
         // B-153: the second look's own reading, once, in place of the turn's for that attempt.
         const second = run.secondLook?.state === "done" ? run.secondLook : null;
         const cause = second ? second.cause ?? null : causeOf(run);

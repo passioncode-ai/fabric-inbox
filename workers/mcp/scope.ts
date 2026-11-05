@@ -105,6 +105,11 @@ const accountOfRun = (mailboxId: unknown) => {
   const m = String(mailboxId ?? "").toLowerCase();
   return /^(gmail|imap|outlook):/.test(m) ? m : `cloudflare:${m}`;
 };
+/** `mail:<domain>:<local part>` (the shared form of answer.cited, B-207) as the address it names, or undefined. */
+const addressOfChannel = (channel: unknown) => {
+  const m = /^mail:([^:]+):([^:]+)$/.exec(String(channel ?? ""));
+  return m ? `${m[2]}@${m[1]}` : undefined;
+};
 /** The run-mailbox form of a key's account: what `/api/agent-runs?mailbox=` takes. */
 const runMailboxOf = (account: string) => (account.startsWith("cloudflare:") ? account.slice("cloudflare:".length) : account);
 
@@ -217,12 +222,13 @@ export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubje
       const response = await api.request("GET", pathname, init);
       if (!ok(response)) return response;
       const emails = await emailsOfScope();
-      const data = response.data as { events?: { kind?: unknown; data?: { value?: { address?: unknown; addresses?: unknown } } }[] };
+      const data = response.data as { events?: { kind?: unknown; data?: { value?: { address?: unknown; addresses?: unknown; channel?: unknown } } }[] };
       // The cursor stays the page's own, so a reader moves on past the events that are not its own.
       const events = (data.events ?? []).filter((e) => {
         const value = e.data?.value ?? {};
         // B-162: what an answer cited and why a message went unanswered belong to the run's address, like agent.*.
-        if (String(e.kind).startsWith("agent.") || e.kind === "answer.cited" || e.kind === "support.diagnosed") return allowedLower.has(accountOfRun(value.address));
+        // B-207: the shared form of answer.cited names its address only as `mail:<domain>:<local part>`.
+        if (String(e.kind).startsWith("agent.") || e.kind === "answer.cited" || e.kind === "support.diagnosed") return allowedLower.has(accountOfRun(value.address ?? addressOfChannel(value.channel)));
         if (String(e.kind).startsWith("knowledge.")) return Array.isArray(value.addresses) && value.addresses.some((a) => emails.has(String(a).toLowerCase()));
         return false;
       });
