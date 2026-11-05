@@ -36,7 +36,11 @@ export function foldHour(hour: string, rows: OpCount[], previous: OpCount[]): Ho
 
 /** One UTC day (`YYYY-MM-DD`) from its hours' rows, each hour folded against the hour just before it (`before`: the
  *  previous day's 23rd hour, when known). A gap compares with nothing. */
-export function foldDay(day: string, rows: HourRow[], before: OpCount[] = []): DailyDigest | null {
+export function foldDay(day: string, given: HourRow[], before: OpCount[] = []): DailyDigest | null {
+  // OD-5: an hour's counts are folded once; a second row of one hour and operation (never in the ledger, whose key is
+  // the pair) is left out, the first kept.
+  const seen = new Set<string>();
+  const rows = given.filter((r) => !seen.has(`${r.hour}|${r.op}`) && !!seen.add(`${r.hour}|${r.op}`));
   const hours = [...new Set(rows.map((r) => r.hour))].filter((h) => h.startsWith(day)).sort();
   // The contract's daily digest folds 1 to 24 hours (DEC-0153 `hours`); a day with nothing counted has none to fold.
   if (hours.length === 0) return null;

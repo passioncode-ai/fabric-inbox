@@ -71,3 +71,9 @@ test("B-205: successes are counted only for received messages, ended runs and ac
   assert.doesNotMatch(readFileSync("workers/app.ts", "utf8"), /countOk/, "a request is counted only when it fails");
   assert.match(readFileSync("workers/routes/server-errors.ts", "utf8"), /digest \? c\.json\(digest\) : c\.json\(\{ error: msg\("Nothing was counted on \{day\}"/, "an empty day answers 404");
 });
+
+test("B-212: a second row of one hour and operation is folded once, the first kept (DEC-0153 OD-5)", () => {
+  const rows = [row("2026-11-04T01", "x", 1, 2), row("2026-11-04T01", "x", 1, 2), row("2026-11-04T02", "x", 0, 3)];
+  assert.deepEqual(foldDay("2026-11-04", rows)!.total, { ok: 1, failed: 5, unknown: 0 });
+});
+
