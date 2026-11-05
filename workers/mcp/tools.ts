@@ -1672,6 +1672,14 @@ const getOpsDigest = defineTool({
   call: (a, ctx) => get(ctx, "/api/ops-digest", { hour: a.hour, day: a.day }),
 });
 
+const getSupportMonths = defineTool({
+  name: "get_support_months", title: "Support work per mailbox and month", level: "admin", readOnly: true,
+  description: "For each Cloudflare mailbox (or one domain, or one mailbox), per month as far back as it keeps mail: threads received (a thread's month is its first incoming message's), answered first by a reply agent, answered first by a person, unanswered, and the median minutes from the first incoming message to the first answer (an agent's holding reply is not an answer). Spam, Discarded and drafts are not threads; Gmail, Outlook and IMAP accounts are not counted. Counts only: no sender, subject or text.",
+  input: { domain: z.string().max(253).optional().describe("Only the mailboxes of this domain"), mailbox: z.string().max(320).optional().describe("Only this mailbox") },
+  routes: ["GET /api/support-months"],
+  call: (a, ctx) => get(ctx, "/api/support-months", { domain: a.domain, mailbox: a.mailbox }),
+});
+
 const getStorage = defineTool({
   name: "get_storage", title: "How full this server's storage is", level: "admin", readOnly: true,
   description: "How full each mailbox, each address's automation object and each shared store (the accounts of Gmail, Outlook and IMAP, agents, knowledge, categories, campaigns, the ledger) is: its SQLite size in bytes and percent of Cloudflare's per-object limit (10 GB on Workers Paid; STORAGE_LIMIT_GB sets 1 for Workers Free), level ok, warn (80% or more), full (95% or more) or unknown, and a mailbox's messages per folder; plus the files' (R2) count and bytes. At the limit Cloudflare refuses new writes (new mail is not stored) while reads and deletes go on. The fullest first. A mail claiming a mailbox is nearly full is checked against this, never against the mail.",
@@ -2241,7 +2249,7 @@ const revokeAgentKey = defineTool({
 
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, decideHeldMessage, listFolders, getSendStatus,
-  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, getServerErrors, getOpsDigest, getStorage, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
+  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, getServerErrors, getOpsDigest, getStorage, getSupportMonths, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,

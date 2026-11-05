@@ -767,6 +767,25 @@ export class MailboxDO extends DurableObject<Env> {
 		});
 	}
 
+	/**
+	 * B-208: each conversation's first incoming message and its first answer (not an agent's holding reply), with the
+	 * answer's outbox key: the rows support-months folds per month. Spam, Discarded and drafts are not conversations.
+	 */
+	async supportThreads(): Promise<{ firstIn: string; firstReply: string | null; replyKey: string | null }[]> {
+		return this.ctx.storage.sql.exec<{ firstIn: string; firstReply: string | null; replyKey: string | null }>(
+			`WITH incoming AS (
+			   SELECT COALESCE(thread_id, id) AS t, MIN(date) AS first_in FROM emails
+			    WHERE folder_id NOT IN ('sent', 'draft', 'spam', 'discarded') AND date IS NOT NULL GROUP BY COALESCE(thread_id, id)),
+			 replies AS (
+			   SELECT COALESCE(e.thread_id, e.id) AS t, e.date AS at, o.idempotency_key AS key FROM emails e LEFT JOIN outbox o ON o.id = e.id
+			    WHERE e.folder_id = 'sent' AND e.date IS NOT NULL AND (o.idempotency_key IS NULL OR o.idempotency_key NOT LIKE '%:waiting'))
+			 SELECT i.first_in AS firstIn,
+			   (SELECT r.at FROM replies r WHERE r.t = i.t AND julianday(r.at) >= julianday(i.first_in) ORDER BY julianday(r.at) LIMIT 1) AS firstReply,
+			   (SELECT r.key FROM replies r WHERE r.t = i.t AND julianday(r.at) >= julianday(i.first_in) ORDER BY julianday(r.at) LIMIT 1) AS replyKey
+			 FROM incoming i`,
+		).toArray().map((r) => ({ firstIn: String(r.firstIn), firstReply: r.firstReply === null ? null : String(r.firstReply), replyKey: r.replyKey === null ? null : String(r.replyKey) }));
+	}
+
 	/** B-138: who sent each message of a conversation (the agent, its waiting reply, or a person), by message id. */
 	async sentByIds(ids: string[]): Promise<Record<string, SentBy>> {
 		const wanted = ids.filter((id) => typeof id === "string" && id).slice(0, 500);
