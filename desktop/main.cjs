@@ -25,6 +25,7 @@ const platformInstaller = require('./platform-installer.cjs');
 const consoleCore = require('./console.cjs');
 const { createLog } = require('./log.cjs');
 const { createDigest } = require('./ops-digest.cjs');
+const { ensureDescriptor } = require('./fabric-descriptor.cjs');
 const { randomUUID } = require('node:crypto');
 const { execFile, spawn } = require('node:child_process');
 const execFileAsync = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10000, maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout) => (error ? reject(error) : resolve({ stdout }))));
@@ -1386,6 +1387,11 @@ if (ownsInstance) app.whenReady().then(async () => {
   startTray();
   startNewMail();
   void startAutostart().catch(() => logEvent({ event: 'login_item', outcome: 'failed', reason: 'not_started' }));
+  // B-210 (DEC-0153 OD-9, DEC-0069): where the app's own daily digests are, for a Fabric collector on this computer.
+  void ensureDescriptor({ fs, platform: process.platform, env: process.env, home: require('node:os').homedir(), execPath: process.execPath,
+    userData: app.getPath('userData'), logs: app.getPath('logs'), version: app.getVersion(), packaged: app.isPackaged,
+    ownProfile: !app.commandLine.hasSwitch('user-data-dir'), mas: !!process.mas })
+    .then((result) => logEvent({ event: 'fabric_descriptor', ...result }));
   for (const arg of process.argv || []) queueLink(arg);
   void drainLinks();
 });
