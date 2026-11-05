@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { msg } from "../../shared/i18n";
 import { ERROR_DAYS_KEPT, errorDay } from "../lib/error-counts";
-import { closedDay, closedHour, foldDay, foldHour } from "../lib/ops-digest";
+import { capNames, closedDay, closedHour, foldDay, foldHour } from "../lib/ops-digest";
 import { inboxSources } from "../lib/inbox-sources";
 import { foldMonths, type SupportMonth } from "../lib/support-months";
 import { objectLimitBytes, storageReport, usageOf, type ObjectUsage, type StorageReport } from "../lib/storage-usage";
@@ -36,7 +36,9 @@ serverErrorsRouter.get("/api/ops-digest", async (c) => {
     const ledger = c.env.EMAIL_MCP.getByName("workspace");
     if (hour) {
       const previous = new Date(Date.parse(`${hour}:00:00Z`) - 3_600_000).toISOString().slice(0, 13);
-      return c.json(foldHour(hour, await ledger.opsHours(hour), await ledger.opsHours(previous)));
+      // B-213 (OD-3): an hour's names are its day's, so its line and the day's agree.
+      const ofDay = async (h: string) => capNames(await ledger.opsHours(h.slice(0, 10))).filter((r) => r.hour === h);
+      return c.json(foldHour(hour, await ofDay(hour), await ofDay(previous)));
     }
     const before = new Date(Date.parse(`${day}T00:00:00Z`) - 3_600_000).toISOString().slice(0, 13);
     const digest = foldDay(day!, await ledger.opsHours(day!), await ledger.opsHours(before));

@@ -19,6 +19,29 @@ export interface HourRow extends OpCount { hour: string }
 export const RISE_MIN_FAILED = 10;
 export const RISE_FACTOR = 2;
 const HOUR_MS = 3_600_000;
+/** DEC-0153 OD-3: a UTC day keeps at most this many operation names; the rest are counted under OVERFLOW_OP (B-213). */
+export const MAX_NAMED_OPS = 4095;
+/** The overflow name, published with the outcome map in docs/architecture.md ("The Mac app's log digests"); the Mac app uses the same. */
+export const OVERFLOW_OP = "ops_overflow";
+
+/**
+ * A day's rows with at most MAX_NAMED_OPS names: the first in code-unit order keep theirs, every other operation is
+ * summed under OVERFLOW_OP in its hour, its counts kept. Rows within the limit come back as they were.
+ */
+export function capNames<T extends OpCount & { hour: string }>(rows: T[]): T[] {
+  const names = [...new Set(rows.map((r) => r.op))].sort();
+  if (names.length <= MAX_NAMED_OPS) return rows;
+  const kept = new Set(names.filter((n) => n !== OVERFLOW_OP).slice(0, MAX_NAMED_OPS));
+  const out: T[] = [];
+  const over = new Map<string, T>();
+  for (const r of rows) {
+    if (kept.has(r.op)) { out.push(r); continue; }
+    const o = over.get(r.hour) ?? ({ ...r, op: OVERFLOW_OP, ok: 0, failed: 0, unknown: 0 } as T);
+    o.ok += r.ok; o.failed += r.failed; o.unknown += r.unknown;
+    over.set(r.hour, o);
+  }
+  return [...out, ...over.values()];
+}
 
 const byName = (a: OpCount, b: OpCount) => (a.op < b.op ? -1 : a.op > b.op ? 1 : 0);
 const sum = (ops: OpCount[]) => ops.reduce((t, c) => ({ ok: t.ok + c.ok, failed: t.failed + c.failed, unknown: t.unknown + c.unknown }), { ok: 0, failed: 0, unknown: 0 });
@@ -40,7 +63,7 @@ export function foldDay(day: string, given: HourRow[], before: OpCount[] = []): 
   // OD-5: an hour's counts are folded once; a second row of one hour and operation (never in the ledger, whose key is
   // the pair) is left out, the first kept.
   const seen = new Set<string>();
-  const rows = given.filter((r) => !seen.has(`${r.hour}|${r.op}`) && !!seen.add(`${r.hour}|${r.op}`));
+  const rows = capNames(given.filter((r) => r.hour.startsWith(day) && !seen.has(`${r.hour}|${r.op}`) && !!seen.add(`${r.hour}|${r.op}`)));
   const hours = [...new Set(rows.map((r) => r.hour))].filter((h) => h.startsWith(day)).sort();
   // The contract's daily digest folds 1 to 24 hours (DEC-0153 `hours`); a day with nothing counted has none to fold.
   if (hours.length === 0) return null;

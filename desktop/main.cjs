@@ -112,13 +112,17 @@ let notifiedReady = '';
 let notifiedAvailable = '';
 // The app's log, ~/Library/Logs/<app name>/ (LC-12): codes and versions only.
 let appLog = null;
+/** B-205: the digests of the app's own log; B-213 keeps its open hour at quit. */
+let opsDigest = null;
 function logEvent(line) {
   if (!appLog && typeof app.isReady === 'function' && app.isReady()) {
     // B-205: every event with an outcome is counted into hourly and daily digests under <userData>/digests (ADR-0188).
     try {
-      const digest = createDigest({ fs, dir: path.join(app.getPath('userData'), 'digests'), log: (e) => { if (appLog) void appLog(e); } });
-      // B-212 (DEC-0153 OD-5): a day that closed while the app was not running gets its daily line now.
-      void digest.catchUp();
+      const digest = createDigest({ fs, fsSync, dir: path.join(app.getPath('userData'), 'digests'), log: (e) => { if (appLog) void appLog(e); } });
+      // B-213, B-212 (DEC-0153 OD-1, OD-5): the hour kept at the last quit is written, then each day that closed while
+      // the app was not running gets its daily line.
+      void digest.start();
+      opsDigest = digest;
       appLog = createLog({ fs, dir: app.getPath('logs'), onEvent: (e, at) => digest.count(e, at) });
     } catch { appLog = null; }
   }
@@ -1295,6 +1299,8 @@ app.on('before-quit', (event) => {
 // Windows; a Linux AppImage is already in place); the next launch logs the result.
 let installNoted = false;
 app.on('will-quit', (event) => {
+  // B-213 (DEC-0153 OD-1): the hour the app stops in is kept with its counts and written at the next start.
+  if (opsDigest) opsDigest.hold();
   if (installNoted || !updater || updater.status().state !== 'ready' || updater.status().installing) return;
   event.preventDefault();
   installNoted = true;

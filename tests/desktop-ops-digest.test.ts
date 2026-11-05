@@ -111,3 +111,89 @@ test("B-212: a day closing while the app runs is folded from the file, with hour
   assert.deepEqual(daily.map((x: any) => [x.day, x.hours, x.total]), [["2026-11-04", 2, { ok: 1, failed: 1, unknown: 0 }]]);
 });
 
+
+const readLines = (dir: string, f: string) => readFileSync(path.join(dir, f), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+const newDir = () => path.join(mkdtempSync(path.join(os.tmpdir(), "fabric-digest-")), "digests");
+
+test("B-213: the hour open at quit is kept and written at the next start, before the day it closed is folded (OD-1, OD-5)", async () => {
+  const dir = newDir();
+  const D = (t: string) => Date.parse(`2026-11-04T${t}:00Z`);
+  const before = createDigest({ fs: fsPromises, fsSync: require("node:fs"), dir });
+  before.start(D("19:59"));
+  before.count({ event: "update_check", outcome: "current" }, D("20:10"));
+  before.count({ event: "update_check", outcome: "failed" }, D("22:10"));
+  before.count({ event: "server_update", outcome: "failed" }, D("23:30"));
+  await before.flush();
+  assert.equal(before.hold(), true, "kept at quit");
+  assert.deepEqual(readLines(dir, "hourly-2026-11.jsonl").map((h: any) => h.from.slice(11, 13)), ["20", "22"], "23 is still open");
+  // The next start is the next day: hour 23 is written first, then day 11-04 folded with it.
+  const after = createDigest({ fs: fsPromises, fsSync: require("node:fs"), dir });
+  await after.start(Date.parse("2026-11-05T01:00:00Z"));
+  const hours = readLines(dir, "hourly-2026-11.jsonl");
+  assert.deepEqual(hours.map((h: any) => h.from.slice(11, 13)), ["20", "22", "23"]);
+  assert.deepEqual(hours[2].ops, [{ op: "server_update", ok: 0, failed: 1, unknown: 0 }]);
+  const daily = readLines(dir, "daily-2026-11.jsonl");
+  assert.deepEqual(daily.map((d: any) => [d.day, d.hours, d.total]), [["2026-11-04", 3, { ok: 1, failed: 2, unknown: 0 }]], "the day includes hour 23");
+  assert.equal(existsSync(path.join(dir, "open-hour.json")), false, "kept once, then removed");
+  await createDigest({ fs: fsPromises, dir }).start(Date.parse("2026-11-05T02:00:00Z"));
+  assert.equal(readLines(dir, "hourly-2026-11.jsonl").length, 3, "a later start writes nothing twice");
+});
+
+test("B-213: a start in the same hour goes on counting it; one line for the hour", async () => {
+  const dir = newDir();
+  const first = createDigest({ fs: fsPromises, fsSync: require("node:fs"), dir });
+  for (let i = 0; i < 6; i++) first.count({ event: "update_check", outcome: "failed" }, T0 + 5 * 60_000);
+  await first.flush();
+  first.hold();
+  const second = createDigest({ fs: fsPromises, fsSync: require("node:fs"), dir });
+  second.start(T0 + 30 * 60_000);
+  for (let i = 0; i < 5; i++) second.count({ event: "update_check", outcome: "failed" }, T0 + 40 * 60_000);
+  second.count({ event: "update_check", outcome: "current" }, T0 + H + 60_000);
+  await second.flush();
+  const hours = readLines(dir, "hourly-2026-11.jsonl");
+  assert.equal(hours.length, 1);
+  assert.deepEqual([hours[0].from, hours[0].ops[0].failed, hours[0].risen], ["2026-11-04T10:00:00.000Z", 11, [{ op: "update_check", failed: 11, previous: 0 }]]);
+});
+
+test("B-213: previous is read back from the last hourly line, so a restart does not make a rise of a steady failure", async () => {
+  const dir = newDir();
+  const first = createDigest({ fs: fsPromises, dir });
+  for (let i = 0; i < 12; i++) first.count({ event: "update_check", outcome: "failed" }, T0 - H + 60_000);
+  first.count({ event: "window_shown" }, T0 + 60_000); // closes hour 09
+  await first.flush();
+  const second = createDigest({ fs: fsPromises, dir });
+  second.start(T0 + 2 * 60_000);
+  for (let i = 0; i < 15; i++) second.count({ event: "update_check", outcome: "failed" }, T0 + 10 * 60_000);
+  second.count({ event: "window_shown" }, T0 + H + 60_000);
+  await second.flush();
+  const hours = readLines(dir, "hourly-2026-11.jsonl");
+  assert.deepEqual(hours.map((h: any) => [h.from.slice(11, 13), h.risen.length]), [["09", 1], ["10", 0]], "15 against 12 read back is no rise");
+});
+
+test("B-213: an hour the app ran in is written even with nothing counted; one with no line is a gap", async () => {
+  const dir = newDir();
+  const d = createDigest({ fs: fsPromises, dir });
+  d.count({ event: "window_shown" }, T0 + 60_000);
+  d.count({ event: "window_shown" }, T0 + 3 * H + 60_000);
+  await d.flush();
+  assert.deepEqual(readLines(dir, "hourly-2026-11.jsonl").map((h: any) => [h.from.slice(11, 13), h.ops.length, h.total]), [["10", 0, { ok: 0, failed: 0, unknown: 0 }]]);
+});
+
+test("B-213: past 4095 operation names in a UTC day the rest are counted under ops_overflow (OD-3)", async () => {
+  const { MAX_NAMED_OPS, OVERFLOW_OP } = require("../desktop/ops-digest.cjs");
+  assert.deepEqual([MAX_NAMED_OPS, OVERFLOW_OP], [4095, "ops_overflow"]);
+  const dir = newDir();
+  const d = createDigest({ fs: fsPromises, dir });
+  for (let i = 0; i < MAX_NAMED_OPS + 2; i++) d.count({ event: `op_${i}`, outcome: "failed" }, T0 + 60_000);
+  d.count({ event: "op_0", outcome: "ok" }, T0 + H + 60_000); // a name already kept stays its own
+  d.count({ event: "op_new", outcome: "ok" }, T0 + H + 60_000);
+  d.count({ event: "op_new", outcome: "ok" }, Date.parse("2026-11-05T00:30:00Z")); // a new day keeps names again
+  await d.flush();
+  const [ten, eleven] = readLines(dir, "hourly-2026-11.jsonl");
+  assert.equal(ten.ops.length, MAX_NAMED_OPS + 1);
+  assert.deepEqual(ten.ops.find((c: any) => c.op === OVERFLOW_OP), { op: OVERFLOW_OP, ok: 0, failed: 2, unknown: 0 });
+  assert.equal(ten.total.failed, MAX_NAMED_OPS + 2, "their counts kept");
+  assert.deepEqual(eleven.ops.map((c: any) => c.op), ["op_0", OVERFLOW_OP]);
+  const daily = readLines(dir, "daily-2026-11.jsonl");
+  assert.equal(daily[0].ops.length, MAX_NAMED_OPS + 1, "the day's line validates: 4096 operations");
+});
