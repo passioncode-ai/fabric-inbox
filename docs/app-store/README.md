@@ -201,8 +201,15 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **B-210** (OD-9, DEC-0069): an installed copy writes its own descriptor `fabric-inbox.desktop.json` in Fabric's
   services directory, naming only its `digests` folder (source `mac-app`); the server's digests stay with
   `get_ops_digest`.
+- Released: 0.97.0 (PR #416, `0d1f44e`; release run 42082715539, two attempts lost the macOS job, the third passed)
+  and 0.98.0 (PR #417, `eb672c8`; release run 42097007338), 20 files each. Neither is on the servers yet: the
+  deploy of `eb672c8` to the owner's and the organization's servers was refused by the agent's autonomous mode
+  ("Production Deploy") and waits for the operator's confirmation in a session. Until it runs, `support.tickets_daily`
+  is not sent, and board thread `23defafd` (message `7b1f9083`) is answered once it does.
 
-**Exact next task:** when the contract's release tag carries DEC-0153, vendor its schemas and vectors
+**Exact next task:** with the operator's confirmation, deploy `eb672c8` to both servers (the order in
+`docs/desktop-mail/setup.md`; receipts under `deployments/<name>/receipts`), check one `support.tickets_daily` the
+day after, and answer board thread `23defafd`. Then, when the contract's release tag carries DEC-0153, vendor its schemas and vectors
 (`ops-digest-hourly`, `ops-digest-daily`, `service-ops-digest-extension`, `fixtures/vectors/ops-digest.json`) into the
 gate and run both folds and the descriptor against them; then the next board row. Waits as below.
 
