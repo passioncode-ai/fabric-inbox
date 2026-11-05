@@ -381,3 +381,18 @@ test("B-164: a key limited to its mailboxes reads its agent's runs, events and c
   await scopedApi(one.api, [RESEARCH]).request("GET", "/api/agent-threads", { query: { limit: 10 } });
   assert.equal(one.calls[0]!.query?.address, "research@owner.example", "one mailbox is chosen for the key");
 });
+
+test("B-214: a Read key limited to its mailboxes reads support counts for its own Cloudflare mailboxes only", async () => {
+  assert.ok(toolsFor(scoped([RESEARCH]), TOOLS).some((t) => t.name === "get_support_months"), "a Read key sees the tool");
+  const month = { month: "2026-10", threads: 1, answeredByAgent: 1, answeredByPerson: 0, unanswered: 0, medianFirstReplyMinutes: 5 };
+  const { api, calls } = fakeApi({ "/api/support-months": { mailboxes: [
+    { mailbox: "research@owner.example", domain: "owner.example", months: [month] },
+    { mailbox: "contact@owner.example", domain: "owner.example", months: [month] },
+  ] } });
+  const s = scopedApi(api, [RESEARCH, "gmail:g1"]);
+  const all = (await s.request("GET", "/api/support-months")).data as { mailboxes: { mailbox: string }[] };
+  assert.deepEqual(all.mailboxes.map((m) => m.mailbox), ["research@owner.example"]);
+  assert.equal(((await s.request("GET", "/api/support-months", { query: { mailbox: "Research@Owner.example" } })).data as { mailboxes: unknown[] }).mailboxes.length, 1);
+  await assert.rejects(s.request("GET", "/api/support-months", { query: { mailbox: "contact@owner.example" } }), /limited to/);
+  assert.equal(calls.filter((c) => c.path === "/api/support-months").length, 2, "a refused mailbox is never asked");
+});

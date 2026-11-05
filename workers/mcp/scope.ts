@@ -91,12 +91,14 @@ export const adminMailboxAction = (method: string, pathname: string) => ADMIN_MA
  * agents' definitions, the reply-status settings and the quality days stay the workspace's.
  */
 export const AGENT_READ_ROUTES = new Set(["GET /api/agent-runs", "GET /api/agent-runs/:id", "GET /api/agent-events", "GET /api/agent-threads"]);
+/** B-214: counts per mailbox that a limited key reads for its own mailboxes (scopedApi filters them). */
+export const COUNT_READ_ROUTES = new Set(["GET /api/support-months"]);
 
 export function toolFitsScope(tool: Pick<ToolDef, "routes">): boolean {
   return tool.routes.length > 0 && tool.routes.every((r) => {
     const [method, path] = r.split(" ") as [string, string];
     if (adminMailboxAction(method, path)) return false;
-    return FEED_ROUTES.has(r) || SAFETY_ROUTES.has(r) || AGENT_READ_ROUTES.has(r) || MAILBOX_ROUTE.test(r) || GMAIL_ROUTE.test(r);
+    return FEED_ROUTES.has(r) || SAFETY_ROUTES.has(r) || AGENT_READ_ROUTES.has(r) || COUNT_READ_ROUTES.has(r) || MAILBOX_ROUTE.test(r) || GMAIL_ROUTE.test(r);
   });
 }
 
@@ -174,6 +176,15 @@ export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubje
         return data && Array.isArray(data.held) ? { ...response, data: { ...data, held: data.held.filter((h) => allowedLower.has(String(h.accountId).toLowerCase())) } } : response;
       }
       if (method === "GET" && /^\/api\/agent-(runs|events|threads)(\/[^/]+)?$/.test(pathname)) return agentRead(pathname, init);
+      // B-214: support counts per month, only for the key's Cloudflare mailboxes; another mailbox reads as refused.
+      if (route === "GET /api/support-months") {
+        const own = new Set(accounts.filter((a) => a.toLowerCase().startsWith("cloudflare:")).map((a) => a.slice("cloudflare:".length).toLowerCase()));
+        const asked = init.query?.mailbox;
+        if (asked !== undefined && !own.has(String(asked).toLowerCase())) throw refuse(accounts, who);
+        const response = await api.request(method, path, init);
+        const data = response.data as { mailboxes?: { mailbox?: unknown }[] } | null;
+        return data && Array.isArray(data.mailboxes) ? { ...response, data: { ...data, mailboxes: data.mailboxes.filter((m) => own.has(String(m.mailbox).toLowerCase())) } } : response;
+      }
       if (adminMailboxAction(method, pathname)) throw refuse(accounts, who);
       const account = accountOfPath(pathname, allowed);
       if (!account || !allowed.has(account)) throw refuse(accounts, who);
