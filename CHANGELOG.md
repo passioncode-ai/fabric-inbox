@@ -5,6 +5,15 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.97.0 (2026-11-05)
+
+- **Daily ticket counts in the form other support channels use.** After each day, every address with a reply agent
+  now also reports that day's tickets the way a chat support channel does: how many messages came in, how many were
+  settled and how (answered, given to a person, the safe reply, no answer), how many were still open at midnight, and
+  how many first replies took over an hour. A report that gathers every channel can now show mail beside chat (B-211).
+- **Daily reports for limited keys.** A key limited to some mailboxes now sees the daily quality and ticket reports of
+  its own mailboxes on the events feed (B-211).
+
 ## 0.96.0 (2026-11-05)
 
 - **Support numbers with a read-only key.** Get Support Months now works with a key that can only read, and a key

@@ -239,7 +239,9 @@ export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubje
         const value = e.data?.value ?? {};
         // B-162: what an answer cited and why a message went unanswered belong to the run's address, like agent.*.
         // B-207: the shared form of answer.cited names its address only as `mail:<domain>:<local part>`.
-        if (String(e.kind).startsWith("agent.") || e.kind === "answer.cited" || e.kind === "support.diagnosed") return allowedLower.has(accountOfRun(value.address ?? addressOfChannel(value.channel)));
+        // B-211: an address's daily counts (quality, tickets) are that address's too, named by their channel.
+        if (String(e.kind).startsWith("agent.") || e.kind === "answer.cited" || e.kind === "support.diagnosed"
+          || e.kind === "support.quality_daily" || e.kind === "support.tickets_daily") return allowedLower.has(accountOfRun(value.address ?? addressOfChannel(value.channel)));
         if (String(e.kind).startsWith("knowledge.")) return Array.isArray(value.addresses) && value.addresses.some((a) => emails.has(String(a).toLowerCase()));
         return false;
       });

@@ -191,6 +191,20 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-05 (0.97.0: B-211).**
+
+- **B-211**: after each closed UTC day every agent address sends `support.tickets_daily`
+  (`docs/agents/support-tickets-daily.schema.json`), the channel-agent standard's ticket counts in the fields a chat
+  support channel sends, next to `support.quality_daily` (`workers/agents/tickets-daily.ts`). A mailbox-limited key now
+  reads both daily reports of its own addresses. Asked on board thread `23defafd` (message `7b1f9083`).
+- 0.96.0 (B-214, PR #415) let a read-only key count support months.
+
+**Exact next task:** B-213 and B-210 (due 2026-11-16): the Mac app's stop hour and `previous`, then its local
+descriptor with the ops-digest extension for its own folder. When the contract's release tag carries DEC-0153, vendor
+its schemas and vectors into the gate. Waits: the operator's approval of SCN-097 (B-206 step 3), the Telegram gateway
+grant for this project, saving B-177's description, the support agent's category notes, the SSH key on GitHub, a
+private data repository for Inbox's insights, a read key for the product's assessment agent.
+
 **State 2026-11-05 (0.95.0: B-207, B-208, B-209, B-212).**
 
 - Four board requests, released together in **0.95.0** (PR #413, `6fed640`) to spend one heavy run under the

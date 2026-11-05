@@ -74,5 +74,5 @@ test("B-203: every answer 5xx is counted by its route group, and every planned c
   assert.match(readFileSync("workers/durableObject/index.ts", "utf8"), /ended: \(code\) => \{ void countError\(this\.env, "send", code\); \}/);
   assert.match(readFileSync("workers/agents/registry.ts", "utf8"), /run\.status === "failed"\) void countError\(this\.env, "agent", run\.failure/);
   const counted = (file: string) => (readFileSync(file, "utf8").match(/countLog\(this\.env, "(alarm|sync)"/g) ?? []).length;
-  assert.deepEqual([counted("workers/agents/registry.ts"), counted("workers/providers/accounts-do.ts"), counted("workers/categories/store.ts"), counted("workers/campaigns/store.ts"), counted("workers/automation/index.ts")], [9, 8, 3, 1, 1]);
+  assert.deepEqual([counted("workers/agents/registry.ts"), counted("workers/providers/accounts-do.ts"), counted("workers/categories/store.ts"), counted("workers/campaigns/store.ts"), counted("workers/automation/index.ts")], [10, 8, 3, 1, 1]);
 });
