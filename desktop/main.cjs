@@ -25,6 +25,7 @@ const platformInstaller = require('./platform-installer.cjs');
 const consoleCore = require('./console.cjs');
 const { createLog } = require('./log.cjs');
 const { createDigest } = require('./ops-digest.cjs');
+const { ensureDescriptor } = require('./fabric-descriptor.cjs');
 const { randomUUID } = require('node:crypto');
 const { execFile, spawn } = require('node:child_process');
 const execFileAsync = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10000, maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout) => (error ? reject(error) : resolve({ stdout }))));
@@ -112,13 +113,17 @@ let notifiedReady = '';
 let notifiedAvailable = '';
 // The app's log, ~/Library/Logs/<app name>/ (LC-12): codes and versions only.
 let appLog = null;
+/** B-205: the digests of the app's own log; B-213 keeps its open hour at quit. */
+let opsDigest = null;
 function logEvent(line) {
   if (!appLog && typeof app.isReady === 'function' && app.isReady()) {
     // B-205: every event with an outcome is counted into hourly and daily digests under <userData>/digests (ADR-0188).
     try {
-      const digest = createDigest({ fs, dir: path.join(app.getPath('userData'), 'digests'), log: (e) => { if (appLog) void appLog(e); } });
-      // B-212 (DEC-0153 OD-5): a day that closed while the app was not running gets its daily line now.
-      void digest.catchUp();
+      const digest = createDigest({ fs, fsSync, dir: path.join(app.getPath('userData'), 'digests'), log: (e) => { if (appLog) void appLog(e); } });
+      // B-213, B-212 (DEC-0153 OD-1, OD-5): the hour kept at the last quit is written, then each day that closed while
+      // the app was not running gets its daily line.
+      void digest.start();
+      opsDigest = digest;
       appLog = createLog({ fs, dir: app.getPath('logs'), onEvent: (e, at) => digest.count(e, at) });
     } catch { appLog = null; }
   }
@@ -1295,6 +1300,8 @@ app.on('before-quit', (event) => {
 // Windows; a Linux AppImage is already in place); the next launch logs the result.
 let installNoted = false;
 app.on('will-quit', (event) => {
+  // B-213 (DEC-0153 OD-1): the hour the app stops in is kept with its counts and written at the next start.
+  if (opsDigest) opsDigest.hold();
   if (installNoted || !updater || updater.status().state !== 'ready' || updater.status().installing) return;
   event.preventDefault();
   installNoted = true;
@@ -1380,6 +1387,11 @@ if (ownsInstance) app.whenReady().then(async () => {
   startTray();
   startNewMail();
   void startAutostart().catch(() => logEvent({ event: 'login_item', outcome: 'failed', reason: 'not_started' }));
+  // B-210 (DEC-0153 OD-9, DEC-0069): where the app's own daily digests are, for a Fabric collector on this computer.
+  void Promise.resolve().then(() => ensureDescriptor({ fs, platform: process.platform, env: process.env, home: require('node:os').homedir(),
+    execPath: process.execPath, userData: app.getPath('userData'), logs: app.getPath('logs'), version: app.getVersion(), packaged: app.isPackaged,
+    ownProfile: !app.commandLine.hasSwitch('user-data-dir'), mas: !!process.mas }))
+    .then((result) => logEvent({ event: 'fabric_descriptor', ...result }), () => {});
   for (const arg of process.argv || []) queueLink(arg);
   void drainLinks();
 });

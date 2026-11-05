@@ -191,6 +191,21 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-05 (0.98.0: B-213, B-210).**
+
+- **B-213** (DEC-0153 OD-1, OD-3 after its third reading): the Mac app keeps the hour it quits in (`open-hour.json`)
+  and writes it at the next start once closed, before any day is folded; a start in the same hour goes on counting it;
+  `previous` and the day's names are read back from the hourly file; an hour is written when a log line was seen in it,
+  even with nothing counted; past 4095 names a day the rest are counted under `ops_overflow`, on the server too.
+
+- **B-210** (OD-9, DEC-0069): an installed copy writes its own descriptor `fabric-inbox.desktop.json` in Fabric's
+  services directory, naming only its `digests` folder (source `mac-app`); the server's digests stay with
+  `get_ops_digest`.
+
+**Exact next task:** when the contract's release tag carries DEC-0153, vendor its schemas and vectors
+(`ops-digest-hourly`, `ops-digest-daily`, `service-ops-digest-extension`, `fixtures/vectors/ops-digest.json`) into the
+gate and run both folds and the descriptor against them; then the next board row. Waits as below.
+
 **State 2026-11-05 (0.97.0: B-211).**
 
 - **B-211**: after each closed UTC day every agent address sends `support.tickets_daily`

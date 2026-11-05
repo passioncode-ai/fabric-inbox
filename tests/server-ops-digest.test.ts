@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";
-import { closedDay, closedHour, foldDay, foldHour } from "../workers/lib/ops-digest";
+import { capNames, closedDay, closedHour, foldDay, foldHour, MAX_NAMED_OPS, OVERFLOW_OP } from "../workers/lib/ops-digest";
 
 const row = (hour: string, op: string, ok: number, failed: number, unknown = 0) => ({ hour, op, ok, failed, unknown });
 
@@ -77,3 +77,15 @@ test("B-212: a second row of one hour and operation is folded once, the first ke
   assert.deepEqual(foldDay("2026-11-04", rows)!.total, { ok: 1, failed: 5, unknown: 0 });
 });
 
+
+test("B-213: past 4095 names in a day the rest are summed under ops_overflow in their hour, counts kept (OD-3)", () => {
+  const rows = Array.from({ length: MAX_NAMED_OPS + 3 }, (_, i) => ({ hour: i % 2 ? "2026-11-03T10" : "2026-11-03T11", op: `op.${String(i).padStart(5, "0")}`, ok: 1, failed: 0, unknown: 0 }));
+  const capped = capNames(rows);
+  assert.equal(new Set(capped.map((r) => r.op)).size, MAX_NAMED_OPS + 1);
+  assert.deepEqual(capped.filter((r) => r.op === OVERFLOW_OP).map((r) => [r.hour, r.ok]).sort(), [["2026-11-03T10", 2], ["2026-11-03T11", 1]]);
+  const day = foldDay("2026-11-03", rows)!;
+  assert.equal(day.ops.length, MAX_NAMED_OPS + 1, "the day's line holds 4096 operations");
+  assert.equal(day.total.ok, MAX_NAMED_OPS + 3);
+  const small = rows.slice(0, 10);
+  assert.equal(capNames(small), small, "within the limit: as they were");
+});
