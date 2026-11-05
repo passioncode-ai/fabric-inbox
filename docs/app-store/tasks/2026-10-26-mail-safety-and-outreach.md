@@ -85,6 +85,26 @@ M1 (now, configuration) → M2 (arrival check and hold) → M3 and M4 (links and
   authority, and mass letters. The spam check called that message `customer`: it does not see the reply address or
   the attachment, evidence for M3.
 
+## M1 verdicts read by hand (2026-11-05)
+
+`list_messages` with `categoryId: government-request` on the owner's server: 343 messages classified, 11 matched.
+Seven are right: six status notices of a telecom provider's regulatory bundles and one payment provider's KYC
+requirement. Four are wrong:
+
+- Three copies of a cloud provider's notice about inactive OAuth clients, matched by version 2 on 2026-11-03: the
+  model read the provider's own "OAuth 2.0 Policies" as a law.
+- The private person's statement of 2026-10-26 above. Version 2 already excludes it; its verdict is dated the day
+  version 1 matched it and may be version 1's, kept because a change does not judge old mail again.
+
+Precision 7 of 11. Recall is not measured: the other 332 were not read by hand. The fix is configuration, a version 3
+of the description that names both mistakes (998 bytes, under the 1000-character limit):
+
+> Mail whose sender is a government body, or a provider acting because a law requires it, writing to us about our service: a regulator, a data-protection or telecom authority, a tax office, police or other law enforcement, a court or a prosecutor (an order, a subpoena, a request for user data, a takedown or blocking demand, an inquiry, a fine); or a payment, telecom or app-store provider asking us for something a regulation requires (KYC or identity verification, an AML or sanctions review, a regulatory or compliance bundle for phone numbers, a licence, a tax form). Not: a private person's own complaint, petition or statement (заявление), even one citing laws, asking for an answer within a legal term or to be forwarded to an authority; a provider's own policies, terms or housekeeping (inactive clients, API or OAuth policies, security notices), which are not a law; mass letters; receipts and billing; marketing; support questions; sign-in codes; phishing posing as an authority.
+
+Saving it with `save_category` was refused in this session (a change to the owner's server needs the operator's
+word), so version 2 stays live. Next after it is saved: read the matches again after a week, then offer the category
+as a suggested one in the app (B-177's last part).
+
 ## M2 receipt (0.39.0)
 
 B-178 as [SCN-087](../../ux/scenarios.md): the arrival safety check, its review, the hold for rules, the reply agent
