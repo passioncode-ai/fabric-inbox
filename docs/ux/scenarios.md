@@ -98,6 +98,7 @@
 | SCN-094 | Move an address to another server I hold | Connect an account | P-01 | ST-001, FLW-01 | draft | — |
 | SCN-095 | Sign in to an organization's server with my work address | Resume and manage preferences | P-02 | ST-007, FLW-07 | draft | — |
 | SCN-096 | Give a person a level on a mailbox | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-17 | draft | — |
+| SCN-097 | My server warns me before a mailbox fills and keeps old mail restorable | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-11 | draft | — |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1997,3 +1998,25 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** none
 - **Product:** unobserved
 - **Today:** Partly built on the list of people (SCN-081, B-160): read; read and send; read, send and choose its agent (0.81.0). Not yet from the organization's directory (M3), and administer stays the administrator role.
+
+### SCN-097: My server warns me before a mailbox fills and keeps old mail restorable
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07; B-206 (operator 2026-11-05); [the packet](../app-store/tasks/2026-11-05-storage-capacity.md) steps 2 and 3
+- **Entry point:** SCR-11 (Settings → Setup, Storage); the Mac app's notice; an agent's `get_storage`
+- **Preconditions:** I administer the server. Each mailbox and shared store stops taking new mail at Cloudflare's per-object limit (10 GB on Workers Paid); reads and deletes still work there.
+- **Steps:**
+  1. Open Storage -> each mailbox and shared store with its size, its percent of the limit and its level (fine, nearly full from 80%, full from 95%), the fullest first, and the size of the files.
+  2. A mailbox passes 80% -> once a day the server records it, the Mac app shows one notice naming the mailbox and its percent, and the operator's watcher sends the same line to Telegram.
+  3. A mailbox passes 95% -> the server moves Trash, Spam and Discarded older than 7 days into an archive in the files, then removes them from the mailbox; if it is still at 95%, Archive and Sent older than a year follow. The notice says how many messages were moved and how much was freed.
+  4. Open the mailbox's archive in Storage -> how many messages it holds, from when to when, and when it will be deleted (90 days after the move).
+  5. Choose Restore -> the archived messages come back into their folders with their ids, read state and files.
+- **Expected result:** No mailbox reaches the limit unnoticed; anything the server removed to make room can be brought back for 90 days; Inbox and starred mail are never moved.
+- **Alt paths:** A mail that claims a mailbox is nearly full is checked against Storage, never against the mail (the claim of 2026-11-05 was phishing). With the cleanup turned off, the server only warns. A shared store (the accounts of Gmail, Outlook and IMAP, agents, knowledge) is only warned about: its data is not mail to archive.
+- **UI elements:** SCR-11 (Storage, Restore), the Mac app's notice.
+- **States covered:** empty, loading, error, success
+- **Errors & recovery:** The files cannot be written: nothing is removed, the notice says the cleanup waits and tries again the next day. A restore that would itself push the mailbox past 95%: it says so and restores nothing. A mailbox that cannot be read shows as unknown, never as fine.
+- **Status:** draft
+- **Coverage:** none
+- **Product:** unobserved
+- **Today:** Step 1 only through agents (`get_storage`, 0.94.0, B-206 step 1); no screen, notice, cleanup or archive yet. The Telegram line waits for the operator's gateway grant.

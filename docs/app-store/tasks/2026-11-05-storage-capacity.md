@@ -47,7 +47,7 @@ At `full` (95%) in one mailbox, and only there:
 3. The archive is kept 90 days, then deleted; restoring it is one tool call per mailbox.
 4. Every step is an event with counts, and the warning of step 2 names what was moved.
 
-A scenario in `docs/ux/scenarios.md` comes before code, since this deletes mail.
+The scenario is [SCN-097](../../ux/scenarios.md) (draft, 2026-11-05): steps 2 and 3, restore, and the errors (files not writable: nothing removed; a restore that would pass 95%: refused). It is approved before code, since this deletes mail.
 
 ## Exact next task
 
