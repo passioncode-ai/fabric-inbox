@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.94.0 (2026-11-05)
+
+- **See how full your server is.** Your server now measures each mailbox and each shared store against Cloudflare's
+  limit of 10 GB per store, and counts the space files take. Ask for it from an agent with Get Storage. A mail that
+  says your mailbox is nearly full can now be checked against the real numbers (B-206).
+
 ## 0.93.1 (2026-11-04)
 
 - **A day with nothing counted says so.** Asking your server for the summary of a day on which it counted nothing now

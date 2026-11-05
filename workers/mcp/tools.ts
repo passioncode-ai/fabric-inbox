@@ -1672,6 +1672,14 @@ const getOpsDigest = defineTool({
   call: (a, ctx) => get(ctx, "/api/ops-digest", { hour: a.hour, day: a.day }),
 });
 
+const getStorage = defineTool({
+  name: "get_storage", title: "How full this server's storage is", level: "admin", readOnly: true,
+  description: "How full each mailbox, each address's automation object and each shared store (the accounts of Gmail, Outlook and IMAP, agents, knowledge, categories, campaigns, the ledger) is: its SQLite size in bytes and percent of Cloudflare's per-object limit (10 GB on Workers Paid; STORAGE_LIMIT_GB sets 1 for Workers Free), level ok, warn (80% or more), full (95% or more) or unknown, and a mailbox's messages per folder; plus the files' (R2) count and bytes. At the limit Cloudflare refuses new writes (new mail is not stored) while reads and deletes go on. The fullest first. A mail claiming a mailbox is nearly full is checked against this, never against the mail.",
+  input: {},
+  routes: ["GET /api/storage"],
+  call: (_a, ctx) => get(ctx, "/api/storage"),
+});
+
 const listAgentEvals = defineTool({
   name: "list_agent_evals", title: "A reply agent's eval tickets", level: "read", readOnly: true, target: (a) => a.agentId,
   description: "The agent's eval tickets (B-199): invented messages kept from what it got wrong (an answer judged unhelpful, a message left unanswered or expired, or one handed to a person while its knowledge had the answer), each the model's paraphrase without personal details, plus those a person wrote. Each runs through the preview after every new version of the agent; its last result says pass, fail or error against which version, what the preview did and the first characters of its reply. A ticket that starts failing raises agent.eval_failed once. The summary counts them against the current version.",
@@ -2233,7 +2241,7 @@ const revokeAgentKey = defineTool({
 
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, decideHeldMessage, listFolders, getSendStatus,
-  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, getServerErrors, getOpsDigest, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
+  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, getServerErrors, getOpsDigest, getStorage, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,

@@ -5,6 +5,8 @@ import type { Env } from "../types";
 import { msg } from "../../shared/i18n";
 import { ERROR_DAYS_KEPT, errorDay } from "../lib/error-counts";
 import { closedDay, closedHour, foldDay, foldHour } from "../lib/ops-digest";
+import { inboxSources } from "../lib/inbox-sources";
+import { objectLimitBytes, storageReport, usageOf, type ObjectUsage, type StorageReport } from "../lib/storage-usage";
 
 export const serverErrorsRouter = new Hono<{ Bindings: Env }>();
 
@@ -42,4 +44,56 @@ serverErrorsRouter.get("/api/ops-digest", async (c) => {
     console.error(JSON.stringify({ event: "ops_digest_unreadable", error: (error as Error).message?.slice(0, 200) }));
     return c.json({ error: msg("The error counts could not be read right now") }, 503);
   }
+});
+
+/** B-206: how full each mailbox, shared store and automation object is against the per-object limit, and the files' size. */
+serverErrorsRouter.get("/api/storage", async (c) => {
+  const env = c.env;
+  const limit = objectLimitBytes((env as unknown as { STORAGE_LIMIT_GB?: string }).STORAGE_LIMIT_GB);
+  const failed = (error: unknown) => String((error as Error)?.message ?? error).slice(0, 120);
+  let addresses: string[];
+  try {
+    addresses = (await inboxSources(env).cloudflareAccounts()).map((a) => a.email);
+  } catch (error) {
+    console.error(JSON.stringify({ event: "storage_addresses_unreadable", error: failed(error) }));
+    return c.json({ error: msg("The addresses could not be listed right now") }, 503);
+  }
+  const jobs: (() => Promise<ObjectUsage>)[] = [];
+  for (const email of addresses) {
+    jobs.push(async () => {
+      try { const u = await env.MAILBOX.get(env.MAILBOX.idFromName(email)).storageUsage(); return usageOf(`mailbox:${email}`, u.bytes, limit, { folders: u.folders }); }
+      catch (error) { return usageOf(`mailbox:${email}`, null, limit, { error: failed(error) }); }
+    });
+    jobs.push(async () => {
+      try { return usageOf(`automation:${email}`, await env.AUTOMATIONS.getByName(email).storageBytes(), limit); }
+      catch (error) { return usageOf(`automation:${email}`, null, limit, { error: failed(error) }); }
+    });
+  }
+  const stores: [string, { getByName(name: string): { storageBytes(): Promise<number> } } | undefined][] = [
+    ["accounts", env.GMAIL_ACCOUNTS], ["agents", env.AGENT_REGISTRY], ["knowledge", env.KNOWLEDGE],
+    ["categories", env.CATEGORIES], ["campaigns", env.CAMPAIGNS], ["ledger", env.EMAIL_MCP],
+  ] as never;
+  for (const [name, ns] of stores) {
+    if (!ns) continue;
+    jobs.push(async () => {
+      try { return usageOf(`store:${name}`, await ns.getByName("workspace").storageBytes(), limit); }
+      catch (error) { return usageOf(`store:${name}`, null, limit, { error: failed(error) }); }
+    });
+  }
+  const objects: ObjectUsage[] = [];
+  for (let i = 0; i < jobs.length; i += 10) objects.push(...await Promise.all(jobs.slice(i, i + 10).map((job) => job())));
+  let files: StorageReport["files"] = null;
+  try {
+    let cursor: string | undefined, count = 0, bytes = 0, partial = true;
+    for (let page = 0; page < 50; page++) {
+      const result = await env.BUCKET.list({ cursor, limit: 1000 });
+      for (const object of result.objects) { count++; bytes += object.size; }
+      if (!result.truncated) { partial = false; break; }
+      cursor = result.cursor;
+    }
+    files = { objects: count, bytes, partial };
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "storage_files_unreadable", error: failed(error) }));
+  }
+  return c.json(storageReport(objects, files, limit));
 });

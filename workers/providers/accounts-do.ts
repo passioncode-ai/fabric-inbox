@@ -64,6 +64,9 @@ async function accountHasAgent(bucket: R2Bucket, account: string): Promise<boole
 }
 /** One object per Access workspace. Access users intentionally share every account. */
 export class GmailAccountsDO extends DurableObject<GmailBindings> {
+  /** B-206: this object's SQLite size in bytes (the 10 GB per-object limit applies to it). */
+  async storageBytes(): Promise<number> { return this.ctx.storage.sql.databaseSize; }
+
   private service: AccountService;
   private scheduler: GmailScheduler;
   private tail: Promise<unknown> = Promise.resolve();

@@ -124,6 +124,9 @@ type Row = Record<string, string | number | null>;
 export interface ModelUsageRow { day: string; model: string; calls: number; unpricedCalls: number; unmeasuredCalls: number; inputTokens: number; outputTokens: number; costUsd: number }
 
 export class AgentRegistryDO extends DurableObject<Env> {
+  /** B-206: this object's SQLite size in bytes (the 10 GB per-object limit applies to it). */
+  async storageBytes(): Promise<number> { return this.ctx.storage.sql.databaseSize; }
+
   private draining: Promise<void> | undefined;
   /** B-141: a run saved a knowledge revision other than the last one seen: held runs are looked at again soon. */
   private factsMoved = false;

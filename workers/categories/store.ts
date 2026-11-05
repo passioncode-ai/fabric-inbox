@@ -115,6 +115,9 @@ const linkLines = (html: string) => {
 const queued = (row: Row): QueueItem => ({ ...(JSON.parse(String(row.payload)) as QueueItem), accountId: String(row.account_id) });
 
 export class CategoriesDO extends DurableObject<Env> {
+  /** B-206: this object's SQLite size in bytes (the 10 GB per-object limit applies to it). */
+  async storageBytes(): Promise<number> { return this.ctx.storage.sql.databaseSize; }
+
   private sql: SqlStorage;
   private draining: Promise<void> | undefined;
   private prunedAt = 0;
