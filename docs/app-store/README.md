@@ -191,6 +191,29 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-05 (0.95.0: B-207, B-208, B-209, B-212).**
+
+- Four board requests, released together in **0.95.0** (PR #413, `6fed640`) to spend one heavy run under the
+  coordinator's disk rule (8 GB free):
+  - **B-207**: each answer from the knowledge is reported a second time as `answer.cited` in the shared form of every
+    support channel (`docs/agents/answer-cited-shared.schema.json`), picked by `data.schema`; a mailbox-limited key
+    sees the shared events of its own addresses (`workers/mcp/scope.ts` reads the channel).
+  - **B-208**: `get_support_months` per Cloudflare mailbox and month. On the owner's server, one support address had
+    95 threads in October, 31 answered first by an agent, none by a person here (people answer elsewhere).
+  - **B-209**: the fabric-service document declares its connections (DEC-0096); 10 on the owner's server, all `ok`.
+  - **B-212**: the Mac app's daily digest folded from the hourly file at every start (OD-5), outcomes by a published
+    map (OD-3, `docs/architecture.md`); both folds pass the contract's 14 vectors at `be737b89`.
+- Full run before the PR: 1896 pass, 0 fail, 1 skipped; the run found that a mailbox-limited key could not see the
+  shared form (fixed in the same PR). Both servers on `6fed640` (receipts `linked`).
+- DEC-0153's third reading (`ddf5b684`) adds B-213 (the Mac app's stop hour and `previous`) and narrows B-210 to the
+  Mac app's own folder.
+
+**Exact next task:** B-211 (`support.tickets_daily` per address, due 2026-11-14), then B-213 and B-210 (due
+2026-11-16). When the contract's release tag carries DEC-0153, vendor its schemas and vectors into the gate. Waits:
+the operator's approval of SCN-097 (B-206 step 3), the Telegram gateway grant for this project, saving B-177's
+description, the support agent's category notes, the SSH key on GitHub, a private data repository for Inbox's
+insights.
+
 **State 2026-11-05 (0.94.0: B-206 step 1; B-177 verdicts).**
 
 - The operator forwarded a mail saying a support address's "storage space is 98.6% full". It was phishing (the
