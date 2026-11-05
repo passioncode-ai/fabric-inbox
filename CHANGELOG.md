@@ -11,6 +11,9 @@ is cut and published: [docs/release.md](docs/release.md).
   saved and written when the app opens again, so a day's summary no longer misses its last hour, and a restart no
   longer looks like a sudden rise in failures. A day with a very large number of different operations still gets its
   summary: past 4095 names, the rest are counted under one name (B-213).
+- **Fabric can read the app's daily summary.** On a computer with Fabric, the installed app now tells Fabric where its
+  daily summary is kept, so Fabric can collect it with the other apps'. The summary stays on your computer and holds
+  counts only (B-210).
 
 ## 0.97.0 (2026-11-05)
 
