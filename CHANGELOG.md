@@ -11,6 +11,14 @@ is cut and published: [docs/release.md](docs/release.md).
   knowledge, your server now also reports what it rested on in the form other support channels use: the address as
   mail, one of 14 shared topics, and the items it cited. Reports that gather questions from every channel can now
   count mail too. The earlier report stays as it was (B-207).
+- **Support work per month.** Ask your server for each mailbox's month: how many conversations came in, how many a
+  reply agent answered first, how many a person did, how many had no answer, and how long the first answer took. From
+  an agent with Get Support Months. Counts only, never what the mail said (B-208).
+- **Your server says what it depends on.** The server now lists the stores, the mail channels and the models it uses,
+  and which of them is not working, so Fabric Dashboards can show it on its map (B-209).
+- **The app's daily summary for every day.** A day that ended while Fabric Inbox was closed now gets its summary the
+  next time the app starts, and a restart during the day keeps the hours before it. An unfinished setup no longer
+  counts as a failure in the summary (B-212).
 
 ## 0.94.0 (2026-11-05)
 
