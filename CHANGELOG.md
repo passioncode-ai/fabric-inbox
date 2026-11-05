@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 0.96.0 (2026-11-05)
+
+- **Support numbers with a read-only key.** Get Support Months now works with a key that can only read, and a key
+  limited to some mailboxes sees the numbers of its own mailboxes only. An agent that just counts no longer needs a key
+  that can send mail (B-214).
+
 ## 0.95.0 (2026-11-05)
 
 - **Answers by mail in the same form as other support channels.** For each answer a reply agent sends from its

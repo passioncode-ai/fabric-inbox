@@ -1673,8 +1673,8 @@ const getOpsDigest = defineTool({
 });
 
 const getSupportMonths = defineTool({
-  name: "get_support_months", title: "Support work per mailbox and month", level: "admin", readOnly: true,
-  description: "For each Cloudflare mailbox (or one domain, or one mailbox), per month as far back as it keeps mail: threads received (a thread's month is its first incoming message's), answered first by a reply agent, answered first by a person, unanswered, and the median minutes from the first incoming message to the first answer (an agent's holding reply is not an answer). Spam, Discarded and drafts are not threads; Gmail, Outlook and IMAP accounts are not counted. Counts only: no sender, subject or text.",
+  name: "get_support_months", title: "Support work per mailbox and month", level: "read", readOnly: true,
+  description: "For each Cloudflare mailbox (or one domain, or one mailbox), per month as far back as it keeps mail: threads received (a thread's month is its first incoming message's), answered first by a reply agent, answered first by a person, unanswered, and the median minutes from the first incoming message to the first answer (an agent's holding reply is not an answer). Spam, Discarded and drafts are not threads; Gmail, Outlook and IMAP accounts are not counted. Counts only: no sender, subject or text. A key limited to some mailboxes reads only its own Cloudflare mailboxes.",
   input: { domain: z.string().max(253).optional().describe("Only the mailboxes of this domain"), mailbox: z.string().max(320).optional().describe("Only this mailbox") },
   routes: ["GET /api/support-months"],
   call: (a, ctx) => get(ctx, "/api/support-months", { domain: a.domain, mailbox: a.mailbox }),
