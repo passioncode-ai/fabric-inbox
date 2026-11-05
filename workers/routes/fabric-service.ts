@@ -10,6 +10,7 @@ import { ensureServiceApp, forgetServiceAudience, readServiceAccess, SERVICE_ACC
 import type { ModelUsageRow } from "../agents/registry";
 import { NARROW_HEADER } from "../mcp/scope";
 import { contextOf } from "../lib/context";
+import { CONNECTIONS_EXTENSION, connectionsOf } from "../lib/connections";
 
 /**
  * Fabric Inbox as a Fabric service in the remote placement (fabric-service/0.1, contract DEC-0015,
@@ -138,7 +139,9 @@ export async function wellKnownDocument(env: Env): Promise<Record<string, unknow
       mcp: { path: "/mcp", transport: "streamable-http", auth: "own" },
     },
     update: { available: null },
-    extensions: { [RUNNER_EXTENSION]: runnerOf(env), [ACTIONS_EXTENSION]: { actions: serviceActions(TOOLS) } },
+    extensions: { [RUNNER_EXTENSION]: runnerOf(env), [ACTIONS_EXTENSION]: { actions: serviceActions(TOOLS) },
+      // B-209: what the server uses, for a host's map (DEC-0096).
+      [CONNECTIONS_EXTENSION]: { connections: connectionsOf(env) } },
   };
 }
 
