@@ -6,6 +6,7 @@
 import type { AgentRun } from "./run";
 import { messageLink } from "../../shared/mail/open-link";
 import { QUALITY_SCHEMA, type QualityDaily } from "./quality";
+import { TICKETS_SCHEMA, type TicketsDaily } from "./tickets-daily";
 import type { KnowledgeLearned, KnowledgeRetracted, KnowledgeStale } from "./knowledge-events";
 import type { AnswerCited, SharedAnswerCited, SupportDiagnosed } from "./learning-events";
 
@@ -14,17 +15,17 @@ export const AGENT_EVENT_SCHEMA = "https://github.com/passioncode-ai/fabric-inbo
 
 export interface AgentEvent {
   at: string;
-  kind: "agent.sent" | "agent.drafted" | "agent.skipped" | "agent.unanswered" | "agent.needs_look" | "agent.not_helped" | "agent.handoff" | "agent.waiting" | "agent.abandoned" | "agent.question_overdue" | "agent.eval_failed" | "support.quality_daily"
+  kind: "agent.sent" | "agent.drafted" | "agent.skipped" | "agent.unanswered" | "agent.needs_look" | "agent.not_helped" | "agent.handoff" | "agent.waiting" | "agent.abandoned" | "agent.question_overdue" | "agent.eval_failed" | "support.quality_daily" | "support.tickets_daily"
     | "knowledge.learned" | "knowledge.retracted" | "knowledge.stale" | "answer.cited" | "support.diagnosed";
   level: "info" | "notice" | "warning";
   text: string;
   /** Opens the message and its run in the inbox (B-119): a path under the server's origin. */
   link: string;
   /**
-   * `AgentEventValue` for agent.* kinds; the quality standard's day for support.quality_daily (B-130); a knowledge
+   * `AgentEventValue` for agent.* kinds; the quality standard's day for support.quality_daily (B-130); the day's ticket counts for support.tickets_daily (B-211); a knowledge
    * change for knowledge.* (B-161); what a sent answer cited, or why a message was not answered (B-162).
    */
-  data: { schema: string; value: AgentEventValue | QualityDaily | KnowledgeLearned | KnowledgeRetracted | KnowledgeStale | AnswerCited | SharedAnswerCited | SupportDiagnosed };
+  data: { schema: string; value: AgentEventValue | QualityDaily | TicketsDaily | KnowledgeLearned | KnowledgeRetracted | KnowledgeStale | AnswerCited | SharedAnswerCited | SupportDiagnosed };
 }
 export interface AgentEventValue {
   runId: string; address: string; agentId?: string; agentVersion?: number; status: string;
@@ -189,4 +190,12 @@ export function qualityEvent(address: string, value: QualityDaily, at: string): 
   return { at, link: "/settings/agents", kind: "support.quality_daily", level: "info",
     text: cut(`Quality of ${address} on ${value.date}: ${value.coverage.turns ?? "unknown"} messages, ${value.autonomy.answered ?? 0} answered by the agent, ${people} for a person, ${value.autonomy.personQueueWaiting ?? 0} waiting.`),
     data: { schema: QUALITY_SCHEMA, value } };
+}
+
+/** B-211: the day's ticket counts of one agent address (support.tickets_daily); counts only. */
+export function ticketsEvent(address: string, value: TicketsDaily, at: string): AgentEvent {
+  const open = value.openHandedOpen + value.openQuestionOpen + value.openAwaitingApproval;
+  return { at, link: "/settings/agents", kind: "support.tickets_daily", level: "info",
+    text: cut(`Tickets of ${address} on ${value.date}: ${value.arrived} arrived, ${value.ended} ended, ${value.answered + value.answeredAfterQuestion} answered by the agent, ${open} open.`),
+    data: { schema: TICKETS_SCHEMA, value } };
 }

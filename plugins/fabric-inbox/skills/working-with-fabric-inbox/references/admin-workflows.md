@@ -157,6 +157,9 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   After each UTC day, `list_agent_events` carries one `support.quality_daily` per agent address (B-130): replies
   and first-reply p50/p90, repeats, errors and model calls, answered vs handed to a person, the person queue;
   a field not measured is null and listed in `notMeasured`. Sender, subject and texts leave runs after 30 days.
+  With it one `support.tickets_daily` (B-211): the channel-agent standard's ticket counts of that day (a ticket is
+  one message the agent took: arrived, ended, open at the day's end, each outcome, late first replies, the four
+  shares), in the same fields a chat support channel sends; what mail has no source for is 0 and in `notMeasured`.
   A knowledge change is on the same feed (B-161): `knowledge.learned` when a document is added or changed or an
   agent's own knowledge text changes, `knowledge.retracted` when a document is removed, each with its `ref`
   (a new version is a new ref), the addresses whose agents read it and `validatedBy` (operator, agent).

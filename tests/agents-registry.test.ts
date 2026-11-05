@@ -961,6 +961,13 @@ test("B-130: each closed UTC day gives one support.quality_daily per agent addre
     assert.equal(v.autonomy.answered, 1);
     await command("quality", { now: now + 3_600_000 });
     assert.equal((await of18()).length, 1, "once per day");
+    // B-211: the day's ticket counts with it, once, for the same address.
+    const tickets = ((await command("events", {})).events as { kind: string; data: { schema: string; value: Record<string, any> } }[])
+      .filter((e) => e.kind === "support.tickets_daily" && e.data.value.date === "2026-10-18");
+    assert.equal(tickets.length, 1, "one ticket day per address, once");
+    assert.match(tickets[0].data.schema, /support-tickets-daily\.schema\.json$/);
+    assert.deepEqual([tickets[0].data.value.channel, tickets[0].data.value.arrived, tickets[0].data.value.ended, tickets[0].data.value.answered],
+      ["mail:project.invalid:support", 1, 1, 1]);
   } finally { await mf.dispose(); }
 });
 

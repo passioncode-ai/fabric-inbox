@@ -5,11 +5,12 @@ import { NOT_MEASURED, summarizeOutcomes, ticketOutcomeOf, type OutcomeSummary }
 import { calibrationOf, type Calibration, type PersonGrade } from "./calibration";
 import { EVAL_MAX, EVAL_PER_PASS, EVAL_SENDER, EVAL_WINDOW_MS, evalError, evalReasonOf, evalTextOf, evalVerdict, type EvalExpect, type EvalTicket } from "./evals";
 import { CLOSED_STATES, GAPS_CHECK_MS, GAPS_PAGE, GAPS_PAGES, GAPS_UNAVAILABLE_MS, parseGapList, runOfRequest } from "./gap-closures";
-import { abandonedEvent, evalFailedEvent, EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, questionOverdueEvent, runEvent, scrubPersonal, waitingEvent, type AgentEvent } from "./events";
+import { abandonedEvent, evalFailedEvent, EVENTS_KEPT, EVENTS_KEPT_MS, qualityEvent, questionOverdueEvent, runEvent, scrubPersonal, ticketsEvent, waitingEvent, type AgentEvent } from "./events";
 import { agentAccounts, statesOf } from "../lib/agent-status";
 import type { ThreadFacts } from "../../shared/mail/agent-state";
 import { MAX_ATTEMPTS as HOOK_MAX_ATTEMPTS, RETRY_MS as HOOK_RETRY_MS, readHooks, sendHook, type HookCursor } from "./event-hooks";
 import { mailChannel, qualityDay } from "./quality";
+import { TICKETS_LOOKBACK_MS, ticketsDay } from "./tickets-daily";
 import { JUDGE_SAMPLE, benchJudge, judgesFor, openRouterJudge, qualityOf, type BenchResult, type JudgeInput, type JudgeVerdict } from "./judge";
 import { BENCH_MODELS, BENCH_REFERENCE, BENCH_RUNS_DEFAULT, BENCH_RUNS_MAX, BENCH_SLICE, benchLine, benchRuns, turnHash, type BenchLine } from "./bench";
 import { readAllSettings } from "../lib/mailbox-store";
@@ -818,7 +819,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
 
   /**
    * B-130 (A5): one support.quality_daily event per agent address for each closed UTC day not yet
-   * reported (the last QUALITY_CATCH_UP_DAYS at most). Answers when the next day closes.
+   * reported (the last QUALITY_CATCH_UP_DAYS at most), and with it one support.tickets_daily (B-211).
+   * Answers when the next day closes.
    */
   protected async emitQualityDays(now = Date.now()): Promise<number> {
     // A day is reported QUALITY_SETTLE_MS after it closes: "today" here is the day that settles next.
@@ -841,26 +843,40 @@ export class AgentRegistryDO extends DurableObject<Env> {
       const since = new Date(Date.parse(`${day}T00:00:00.000Z`) - 7 * 86_400_000).toISOString();
       const at = new Date(now).toISOString();
       for (const address of served) {
-        let received: number | null = null;
-        try {
-          const rows = await this.env.MAILBOX.get(this.env.MAILBOX.idFromName(address)).receivedPerDay(`${day}T00:00:00.000Z`);
-          received = rows.find((r) => r.day === day)?.received ?? 0;
-        } catch (error) {
-          console.warn(JSON.stringify({ event: "quality_received_unreadable", error: (error as Error).message?.slice(0, 200) }));
-        }
         // A day already reported for this address (a pass cut off after it) is not reported twice.
-        if (this.rows("SELECT 1 FROM agent_events WHERE run_id = ? AND json_extract(body, '$.data.value.channel') = ? LIMIT 1",
-          `quality-${day}`, mailChannel(address)).length) continue;
-        // Runs of the week, and every run still waiting for a person however old (its queue counts now).
-        const runs = this.rows("SELECT body FROM agent_runs WHERE mailbox_id = ? AND (created_at >= ? OR status IN ('held', 'drafted'))", address, since)
-          .map((r) => JSON.parse(String(r.body)) as AgentRun);
-        const judged = await this.judgeDay(address, day, runs).catch((error) => {
-          console.warn(JSON.stringify({ event: "judge_day_failed", error: (error as Error).message?.slice(0, 200) }));
-          return null;
-        });
-        const value = qualityDay({ address, day, received, runs, now, judged,
-          modeOf: (r) => (r.agentId && r.agentVersion ? this.version(r.agentId, r.agentVersion)?.replyPolicy.mode : undefined) === "draft" ? "draft" : "auto" });
-        this.appendEvent(`quality-${day}`, qualityEvent(address, value, at));
+        const reported = (key: string) => this.rows("SELECT 1 FROM agent_events WHERE run_id = ? AND json_extract(body, '$.data.value.channel') = ? LIMIT 1",
+          key, mailChannel(address)).length > 0;
+        const modeOf = (r: AgentRun) => (r.agentId && r.agentVersion ? this.version(r.agentId, r.agentVersion)?.replyPolicy.mode : undefined) === "draft" ? "draft" as const : "auto" as const;
+        if (!reported(`quality-${day}`)) {
+          let received: number | null = null;
+          try {
+            const rows = await this.env.MAILBOX.get(this.env.MAILBOX.idFromName(address)).receivedPerDay(`${day}T00:00:00.000Z`);
+            received = rows.find((r) => r.day === day)?.received ?? 0;
+          } catch (error) {
+            console.warn(JSON.stringify({ event: "quality_received_unreadable", error: (error as Error).message?.slice(0, 200) }));
+          }
+          // Runs of the week, and every run still waiting for a person however old (its queue counts now).
+          const runs = this.rows("SELECT body FROM agent_runs WHERE mailbox_id = ? AND (created_at >= ? OR status IN ('held', 'drafted'))", address, since)
+            .map((r) => JSON.parse(String(r.body)) as AgentRun);
+          const judged = await this.judgeDay(address, day, runs).catch((error) => {
+            console.warn(JSON.stringify({ event: "judge_day_failed", error: (error as Error).message?.slice(0, 200) }));
+            return null;
+          });
+          const value = qualityDay({ address, day, received, runs, now, judged, modeOf });
+          this.appendEvent(`quality-${day}`, qualityEvent(address, value, at));
+        }
+        // B-211: the day's ticket counts, from every run that can still end on it (a ticket ends within 30 days).
+        if (!reported(`tickets-${day}`)) {
+          try {
+            const from = new Date(Date.parse(`${day}T00:00:00.000Z`) - TICKETS_LOOKBACK_MS).toISOString();
+            const runs = this.rows("SELECT body FROM agent_runs WHERE mailbox_id = ? AND created_at >= ?", address, from)
+              .map((r) => JSON.parse(String(r.body)) as AgentRun);
+            this.appendEvent(`tickets-${day}`, ticketsEvent(address, ticketsDay({ address, day, runs, now, modeOf }), at));
+          } catch (error) {
+            // One address that cannot be counted must not hold the others, nor the quality days.
+            countLog(this.env, "alarm", JSON.stringify({ event: "tickets_daily_failed", error: (error as Error).message?.slice(0, 200) }));
+          }
+        }
       }
       await this.ctx.storage.put("quality_day", day);
       console.log(JSON.stringify({ event: "quality_daily_emitted", day, addresses: served.length }));
