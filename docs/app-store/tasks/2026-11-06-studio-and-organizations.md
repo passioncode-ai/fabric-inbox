@@ -100,11 +100,14 @@ There is no written list of this.
 in setup.
 
 **Needed.**
-- A link `fabric-inbox://join?server=<https origin>&org=<name>` that an administrator, or the organization service's join playbook (J8,
+- A link `fabric-inbox://join?server=<https origin>&org=<orgId>&name=<display name>` that an administrator, or the organization service's join playbook (J8,
   board thread `3ff3fb1d`), sends to the member. The app adds the server to `servers.json` beside the person's own,
-  opens its sign-in, and names the organization.
+  opens its sign-in, and names the organization by `name` (optional, shown only; `org` is the id, never shown as a name).
 - The link is refused for a non-https origin, a host that is not `*.workers.dev` or a custom domain answering
-  `/api/server`, and a server that does not say `org:<id>` in `/api/server`.
+  `/api/server`, and a server whose `context` in `/api/server` (`workers/routes/server-update.ts:24`) is not exactly
+  `org:<org from the link>`.
+- The format is not final until the release that handles it; the organization service shows the link only after
+  that release (board thread `3ff3fb1d`, message `c4a8e5ce`).
 - The scenario first (SCN-092 and SCN-093 update), then code.
 
 **Depends on.** the organization service's design note for its join step (due 2026-11-08); B-158 M2 sign-in by attestation stays separate.
