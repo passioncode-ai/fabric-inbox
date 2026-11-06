@@ -207,7 +207,7 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 
 **Exact next task:** the Studio and organization specs are written ([packet](tasks/2026-11-06-studio-and-organizations.md),
 B-217 to B-220, posted on thread `1fe66e6e`); wave 1 now (B-219: the moving section and `servers.json` in the backup;
-B-220's test), B-217 after the contract's DEC (2026-11-07), B-218 after the deploy, B-215 step 2 after Vesta's J8 note
+B-220's test), B-217 after the contract's DEC (2026-11-07), B-218 after the deploy, B-215 step 2 after the organization service's join-step note
 (2026-11-08). The deploy waits as below.
 
 **State 2026-11-05 (0.99.0: B-215 step 1).**

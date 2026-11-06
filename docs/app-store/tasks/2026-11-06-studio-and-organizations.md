@@ -87,7 +87,7 @@ There is no written list of this.
    (`onboard.mjs connect` again; the old key revoked by `revoke_agent_key`).
 2. `servers.json` is kept in the same backup as the address, so the list of servers comes back too (it holds no
    secret).
-3. The analytics installation id is new on every installation, never copied (the rule Dashboards and the launcher
+3. The analytics installation id is new on every installation, never copied (the rule the dashboards app and the launcher
    follow).
 
 **Acceptance.**
@@ -101,14 +101,14 @@ There is no written list of this.
 in setup.
 
 **Needed.**
-- A link `fabric-inbox://join?server=<https origin>&org=<name>` that an administrator, or Vesta's join playbook (J8,
+- A link `fabric-inbox://join?server=<https origin>&org=<name>` that an administrator, or the organization service's join playbook (J8,
   board thread `3ff3fb1d`), sends to the member. The app adds the server to `servers.json` beside the person's own,
   opens its sign-in, and names the organization.
 - The link is refused for a non-https origin, a host that is not `*.workers.dev` or a custom domain answering
   `/api/server`, and a server that does not say `org:<id>` in `/api/server`.
 - The scenario first (SCN-092 and SCN-093 update), then code.
 
-**Depends on.** Vesta's design note for J8 (due 2026-11-08); B-158 M2 sign-in by attestation stays separate.
+**Depends on.** the organization service's design note for its join step (due 2026-11-08); B-158 M2 sign-in by attestation stays separate.
 
 ## G5. Two macOS users and a copy in `~/Applications` (B-220, P3)
 
@@ -131,4 +131,4 @@ covers `~/Applications` is not yet checked in this repository.
 1. **Now.** G3 (doc and `servers.json` in the backup), G5 test.
 2. **After the contract's DEC (2026-11-07).** G1.
 3. **After the deploy of 0.99.0.** G2, then B-168 with it.
-4. **After Vesta's J8 note (2026-11-08).** G4.
+4. **After the organization service's join-step note (2026-11-08).** G4.
