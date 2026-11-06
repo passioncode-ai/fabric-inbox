@@ -606,7 +606,8 @@ async function startAnalytics() {
 }
 async function startUpdates() {
   const target = platformInstaller.updateTarget({ platform: process.platform, arch: process.arch, execPath: process.execPath, env: process.env,
-    installedOnMac: typeof app.isInApplicationsFolder === 'function' && app.isInApplicationsFolder(), exists: existsSync });
+    installedOnMac: platformInstaller.installedOnMac({ execPath: process.execPath, homedir: require('node:os').homedir(),
+      electronSays: typeof app.isInApplicationsFolder === 'function' && app.isInApplicationsFolder() }), exists: existsSync });
   // macOS: Squirrel.Mac installs. Windows and Linux: the verified installer or AppImage (PL-03).
   const cacheDirs = platformInstaller.updateCacheDirs({ platform: process.platform, env: process.env, cache: app.getPath('cache'), name: app.getName() });
   // B-108: what earlier versions staged in the roaming %APPDATA% goes once the installer it held has run.

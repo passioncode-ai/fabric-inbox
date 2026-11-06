@@ -54,7 +54,7 @@ needs only the app and a sign-in. What comes along and what is made again:
 | The log, its digests and `open-hour.json` | start fresh: they count this Mac's own runs |
 | The Fabric descriptor | written again at the first start where Fabric is installed |
 | Usage counts' installation id | the shared PassionCode file's, which the launcher owns: a copied `installation.json` keeps it, a fresh one gets a new id |
-| Open at Login, automatic updates | as for a first install: the app turns Open at Login on once and updates from the Applications folder |
+| Open at Login, automatic updates | as for a first install: the app turns Open at Login on once and updates from `/Applications` or this user's `~/Applications` (B-220) |
 
 Two macOS users on one Mac each run their own copy with their own profile, Keychain item, `fabric-inbox://` handler
 and login item; the app has no listening port, so nothing is shared between them.

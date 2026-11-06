@@ -162,4 +162,17 @@ async function canWrite({ platform, fs, paths, constants = require('node:fs').co
   return true;
 }
 
-module.exports = { createPlatformInstaller, updateTarget, updateCacheDirs, canWrite };
+/**
+ * B-220: whether a Mac copy is installed: Electron's answer, or a bundle directly in `/Applications` or in this user's
+ * `~/Applications` (the launcher installs there on a Mac with several users, Workspace runbook 2.7), so updates and
+ * Open at Login work from either. A copy run from a disk image, Downloads or a translocated path is not.
+ */
+function installedOnMac({ execPath, homedir, electronSays = false }) {
+  if (electronSays) return true;
+  const bundle = path.posix.resolve(execPath, '..', '..', '..');
+  if (!bundle.endsWith('.app') || bundle.includes('/AppTranslocation/')) return false;
+  const folder = path.posix.dirname(bundle);
+  return folder === '/Applications' || (!!homedir && folder === path.posix.join(homedir, 'Applications'));
+}
+
+module.exports = { createPlatformInstaller, updateTarget, updateCacheDirs, canWrite, installedOnMac };

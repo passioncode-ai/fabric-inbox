@@ -111,7 +111,9 @@ in setup.
 
 ## G5. Two macOS users and a copy in `~/Applications` (B-220, P3)
 
-**Now.** Automatic updates and Open at Login run only when the app is in the Applications folder
+**Built 2026-11-06:** `installedOnMac` (`desktop/platform-installer.cjs`) accepts `/Applications` and this user's `~/Applications` beside Electron's answer; the launcher installs Inbox at `<home>/Applications/Fabric Inbox.app` (its PC-145).
+
+**Was.** Automatic updates and Open at Login run only when the app is in the Applications folder
 (`desktop/main.cjs:588`, `desktop/autostart.cjs:31`; Electron's `app.isInApplicationsFolder`). Whether that answer
 covers `~/Applications` is not yet checked in this repository.
 
