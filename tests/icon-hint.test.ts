@@ -9,7 +9,8 @@ const el = (attrs: Record<string, string>, text = "") => ({
 	textContent: text,
 });
 
-test("an icon or glyph control shows its aria-label, else its title, with its shortcut", () => {
+test("an icon or glyph control shows its title as written, else its aria-label with its shortcut", () => {
+	assert.equal(hintFor(el({ "aria-label": "Check for new mail", title: "Check for new mail (Ctrl+Shift+N)", "aria-keyshortcuts": "Control+Shift+N" })), "Check for new mail (Ctrl+Shift+N)");
 	assert.equal(hintFor(el({ "aria-label": "Mark as read" })), "Mark as read");
 	assert.equal(hintFor(el({ "aria-label": "Close" }, "×")), "Close");
 	assert.equal(hintFor(el({ title: "Archive" }, "↵")), "Archive");
