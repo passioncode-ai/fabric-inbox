@@ -191,6 +191,24 @@ Status report 2026-10-19 (operator's request, board thread `bd1c9611`, reply `27
 - **When it can ship:** 0.21.0 when B-27/B-28 are merged with green `ci` and a green release run; no other project in the way.
 - **Next action now:** B-27/B-28 through task-pipeline.
 
+**State 2026-11-06 (DEC-0153 at its tag in the gate).**
+
+- The contract's release tag `v0.1.0+2026-11-06.1` (`eac1a594`) carries DEC-0153. Its schemas, the 15 vectors and the
+  credential detector are vendored in `tests/fixtures/fabric-contract/ops-digest/`, and `tests/ops-digest-contract.test.ts`
+  runs the Mac app's and the server's hourly and daily folds, every op name the app counts and the desktop
+  descriptor's extension against them: all pass.
+- 0.99.0 is released (PR #419, `8c431b1`, release run 42124643630, 20 files). The deploy of `8c431b1` (0.97.0 to
+  0.99.0) to both servers still waits for the operator's confirmation in a session.
+- The operator's instruction relayed on board thread `1fe66e6e` (2026-11-05, session 456ad510): each project reads
+  the Workspace plan for the Studio move and organizations, compares it with its code, writes specs and closes them in
+  waves. Inbox's preliminary gaps are on the thread (message `63f47870`); the specs are due there by 2026-11-06 18:00
+  UTC. The contract's norm on loopback ports names Inbox's row: no listening port; a key goes to a loopback callback
+  only when its listener is this macOS user's (B-217, state `foreign-user`).
+
+**Exact next task:** the Studio and organization specs (B-217 loopback owner, the first Admin key by the account
+token, moving the app to another Mac, the organization in a member's app), as backlog rows and one packet, posted to
+thread `1fe66e6e` by 2026-11-06 18:00 UTC; then their waves. The deploy waits as below.
+
 **State 2026-11-05 (0.99.0: B-215 step 1).**
 
 - **B-215** (the operator in this session: people and keys scripted, automated, through MCP and the API, with no
@@ -226,9 +244,7 @@ member's own app finds the organization's server) and the board ask to the organ
 
 **Exact next task:** with the operator's confirmation, deploy `eb672c8` to both servers (the order in
 `docs/desktop-mail/setup.md`; receipts under `deployments/<name>/receipts`), check one `support.tickets_daily` the
-day after, and answer board thread `23defafd`. Then, when the contract's release tag carries DEC-0153, vendor its schemas and vectors
-(`ops-digest-hourly`, `ops-digest-daily`, `service-ops-digest-extension`, `fixtures/vectors/ops-digest.json`) into the
-gate and run both folds and the descriptor against them; then the next board row. Waits as below.
+day after, and answer board thread `23defafd`. Then the next board row (the contract's tag was vendored 2026-11-06). Waits as below.
 
 **State 2026-11-05 (0.97.0: B-211).**
 
