@@ -33,7 +33,7 @@ const OPEN_FILE = 'open-hour.json';
  * makes a rise. An outcome ending in `_failed` is a failure.
  */
 const OUTCOME_OK = new Set(['ok', 'done', 'ready', 'started', 'running', 'connected', 'current', 'newer', 'older', 'installed',
-  'verified', 'downloading', 'requested', 'handed_over', 'ended', 'on', 'off', 'left', 'stayed']);
+  'verified', 'downloading', 'requested', 'handed_over', 'ended', 'on', 'off', 'left', 'stayed', 'superseded']);
 const OUTCOME_FAILED = new Set(['failed', 'lost', 'unparsed', 'timeout', 'not_saved', 'not_written', 'storage_not_cleared',
   'directory_not_removed', 'leftovers']);
 function outcomeOf(outcome) {

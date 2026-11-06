@@ -79,8 +79,11 @@ as Fabric Switchboard, Fabric and Fabric Dashboards.
 1. **Cadence.** The first check runs 90 s after the app starts, then every 5 minutes while it runs,
    with or without a window (one timer, which never holds the app open; `desktop/updater.cjs`; the
    organization's cadence since 2026-10-17). A failed check is retried after 5 minutes too. The same
-   answer, or the same failure, is logged once, not at every check. A ready update is announced once
-   per version with a «Restart to finish updating» notification; clicking it restarts the app. Each
+   answer, or the same failure, is logged once, not at every check. A ready update is announced with a
+   «Restart to finish updating» notification, once per version and again each day it still waits (B-231);
+   clicking it restarts the app. While it waits the feed is still read every 5 minutes, and a newer release
+   replaces it (`update_check superseded`): it is downloaded, verified and handed to Squirrel.Mac like any
+   other, so an app nobody quits for days installs the newest at its quit, not the first it found. Each
    check reads `https://github.com/passioncode-ai/fabric-inbox/releases/latest/download/update-mac.json`,
    the feed the latest published release carries. No environment variable can point a released
    copy at another feed: the address is written into the app by the release workflow.

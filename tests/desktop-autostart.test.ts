@@ -70,11 +70,12 @@ test("Linux: an autostart entry that starts the AppImage file, removed when the 
   await assert.rejects(access(path.join(home, ".config", "autostart", "fabric-inbox.desktop")));
 });
 
-test("the app keeps running when its last window closes, and the ready-update notice is shown once per version", async () => {
+test("the app keeps running when its last window closes, and the ready-update notice is shown once per version and again each day (B-231)", async () => {
   const main = await readFile("desktop/main.cjs", "utf8");
   const closed = main.slice(main.indexOf("app.on('window-all-closed'"), main.indexOf("app.on('activate'"));
   assert.doesNotMatch(closed, /app\.quit\(\)/, "closing the window never quits");
-  assert.match(main, /now\.readyVersion === notifiedReady\) return;\n  notifiedReady = now\.readyVersion;/);
+  assert.match(main, /const again = now\.readyVersion === notifiedReady;\n  if \(again && Date\.now\(\) - notifiedReadyAt < READY_REMINDER_MS\) return;/);
+  assert.match(main, /const READY_REMINDER_MS = 24 \* 3600 \* 1000;/);
   assert.match(main, /t\('Restart to finish updating'\)/);
   assert.match(main, /startTray\(\);\n  startNewMail\(\);\n  void startAutostart\(\)/, "tray, new-mail notifications (off by default, B-41) and Open at Login at every launch");
 });

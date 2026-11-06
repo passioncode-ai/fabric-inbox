@@ -107,8 +107,10 @@ let autostart = null;
 let loginItem = null;
 /** Windows and Linux: closing the window leaves the app running; the tray icon brings it back. */
 let tray = null;
-/** The ready version the "Restart to finish updating" notification was shown for, once per version. */
+/** The ready version the "Restart to finish updating" notification was shown for, and when (B-231: again after a day). */
 let notifiedReady = '';
+let notifiedReadyAt = 0;
+const READY_REMINDER_MS = 24 * 3600 * 1000;
 /** B-204: the version the "new version is available" notice was shown for (automatic updates off), once per version. */
 let notifiedAvailable = '';
 // The app's log, ~/Library/Logs/<app name>/ (LC-12): codes and versions only.
@@ -680,14 +682,18 @@ function notify(title, body, onClick) {
 }
 /**
  * An update is downloaded, verified and ready: say so once per version, with "Restart to finish
- * updating" (LC-16, the organization's rule of 2026-10-16). Clicking it restarts, asking first when the
- * agent console runs; ignoring it installs the update when the app quits, as before.
+ * updating" (LC-16, the organization's rule of 2026-10-16), and again each day it still waits (B-231: an app
+ * nobody quits otherwise keeps the old version for days). Clicking it restarts, asking first when the agent
+ * console runs; ignoring it installs the update when the app quits, as before.
  */
 function notifyReady() {
   const now = updater ? updater.status() : null;
-  if (!now || now.state !== 'ready' || !now.readyVersion || now.readyVersion === notifiedReady) return;
+  if (!now || now.state !== 'ready' || !now.readyVersion) return;
+  const again = now.readyVersion === notifiedReady;
+  if (again && Date.now() - notifiedReadyAt < READY_REMINDER_MS) return;
   notifiedReady = now.readyVersion;
-  logEvent({ event: 'update_ready_notice', version: now.readyVersion });
+  notifiedReadyAt = Date.now();
+  logEvent({ event: 'update_ready_notice', version: now.readyVersion, ...(again ? { reminder: true } : {}) });
   notify(t('Restart to finish updating'), t('Fabric Inbox {version} is ready. Click to restart now, or it is installed when you quit.', { version: now.readyVersion }),
     () => void restartToUpdate());
 }
