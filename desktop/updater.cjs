@@ -92,6 +92,7 @@ function createUpdater(deps) {
   let state = 'off';
   let reason = '';
   let readyVersion = '';
+  let readyAt = 0;         // when the ready update was staged (B-231: the reminder repeats daily)
   let heldVersion = '';
   let runbook = '';
   let lastError = '';
@@ -110,7 +111,7 @@ function createUpdater(deps) {
   let available = '';      // B-204: with the switch off, the newer version the feed offers (read, never downloaded)
 
   const set = (next) => { state = next; onChange(status()); };
-  function status() { return { state, reason, automatic, readyVersion, heldVersion, runbook, error: lastError, lastCheck, installing, failures, stuck: failures >= STUCK_AFTER, available }; }
+  function status() { return { state, reason, automatic, readyVersion, heldVersion, runbook, error: lastError, lastCheck, installing, failures, stuck: failures >= STUCK_AFTER, available, readyAt }; }
   function settle(outcome) { const waiting = manual; manual = []; for (const done of waiting) done(outcome); }
   const cleanUp = () => { void Promise.resolve().then(() => verifier.clean()).catch(() => {}); };
 
@@ -214,10 +215,14 @@ function createUpdater(deps) {
     const version = readyVersion;
     const present = await stagedNow();
     if (state !== 'ready' || readyVersion !== version) return true;  // another look already acted
-    if (present) { schedule(0); return true; }
+    if (present) {
+      if (!(await superseded(version))) { schedule(0); onChange(status()); }
+      return true;
+    }
     losses = losses.version === version ? { version, n: losses.n + 1 } : { version, n: 1 };
     log({ event: 'update_staged', outcome: 'lost', version, times: losses.n });
     readyVersion = '';
+    readyAt = 0;
     declined = null;
     set('idle');
     try { await forgetStaged(); } catch { /* nothing else depends on it */ }
@@ -226,6 +231,34 @@ function createUpdater(deps) {
     else if (automatic) schedule(LOST_BACKOFF_MS);
     else schedule(0);
     return false;
+  }
+  /**
+   * B-231: an app nobody quits waited on its first ready update for days (0.77.3 holding 0.80.0 from 2026-11-02 to
+   * 2026-11-06 while 0.99.0 was out), because a ready update read the feed no more. With updates automatic the feed is
+   * read on the same cadence while one waits (nothing downloads in this look); a newer release drops the ready one
+   * and is fetched, verified and handed to Squirrel.Mac like any other, so the quit installs the newest. A failed read
+   * keeps the ready update.
+   */
+  async function superseded(version) {
+    if (!automatic || installing) return false;
+    let latest = '';
+    try {
+      const out = await verifier.verify(await fetchFeed(feed), { shouldDownload: () => false });
+      latest = out.outcome === 'skipped' && out.version ? out.version : '';
+    } catch (error) {
+      const key = `superseding|${error && (error.code || error.message)}`;
+      if (key !== lastLogged) log({ event: 'update_check', outcome: 'check_failed', reason: 'superseding', version, error: String(error && error.message || error).slice(0, 200) });
+      lastLogged = key;
+      return false;
+    }
+    if (state !== 'ready' || readyVersion !== version || installing) return true;  // another look already acted
+    if (!latest || compareVersions(latest, version) <= 0 || !shouldDownload(latest)) return false;
+    log({ event: 'update_check', outcome: 'superseded', version, latest });
+    readyVersion = '';
+    readyAt = 0;
+    set('idle');
+    await check({ manual: false });
+    return true;
   }
   function stopWatchdog() { if (watchdog) clearTimer(watchdog); watchdog = null; }
 
@@ -254,6 +287,7 @@ function createUpdater(deps) {
       if (state !== 'downloading') return;
       stopWatchdog();
       readyVersion = staging || (typeof name === 'string' ? name : '');
+      readyAt = now();
       staging = '';
       retried = false;
       log({ event: 'update_check', outcome: 'ready', version: readyVersion });

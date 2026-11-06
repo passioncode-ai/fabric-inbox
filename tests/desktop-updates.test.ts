@@ -538,6 +538,54 @@ test("B-51: staged files the system purged are noticed; the release is fetched a
   assert.ok(!h.calls.includes("install"), "never quitAndInstall over missing files");
 });
 
+test("B-231: a ready update keeps reading the feed, and a newer release replaces it before the quit", async () => {
+  const h = updater();
+  const up = h.make();
+  await up.start(RELEASED);
+  await h.advance(90 * 1000);
+  h.u.emit("update-downloaded", {}, "notes", "0.12.0");
+  await settle();
+  assert.equal(up.status().state, "ready");
+  assert.ok(up.status().readyAt > 0);
+  // The same release in the feed: the ready one stays, nothing downloads, and the feed was read.
+  const reads = h.calls.filter((c) => c === "feed-read").length;
+  await h.advance(5 * MINUTE);
+  assert.equal(up.status().state, "ready");
+  assert.equal(up.status().readyVersion, "0.12.0");
+  assert.equal(h.calls.filter((c) => c === "download").length, 1);
+  assert.ok(h.calls.filter((c) => c === "feed-read").length > reads);
+  // The feed cannot be read: still ready, said once.
+  h.feedState.fail = true;
+  await h.advance(5 * MINUTE);
+  await h.advance(5 * MINUTE);
+  assert.equal(up.status().state, "ready");
+  assert.equal(h.lines.filter((l) => l.reason === "superseding").length, 1);
+  h.feedState.fail = false;
+  // A newer release: the ready one is dropped and the newer one fetched, verified and handed over.
+  h.verdicts.push({ outcome: "verified", version: "0.13.0", localFeed: LOCAL, migration: null }, { outcome: "verified", version: "0.13.0", localFeed: LOCAL, migration: null });
+  await h.advance(5 * MINUTE);
+  await until(() => h.calls.filter((c) => c === "download").length === 2);
+  assert.ok(h.lines.some((l) => l.event === "update_check" && l.outcome === "superseded" && l.version === "0.12.0" && l.latest === "0.13.0"));
+  assert.equal(up.status().state, "downloading");
+  h.u.emit("update-downloaded", {}, "notes", "0.13.0");
+  await settle();
+  assert.equal(up.status().readyVersion, "0.13.0");
+});
+
+test("B-231: with automatic updates off a ready update reads no feed for a newer one", async () => {
+  const h = updater();
+  const up = h.make();
+  await up.start(RELEASED);
+  await h.advance(90 * 1000);
+  h.u.emit("update-downloaded", {}, "notes", "0.12.0");
+  await settle();
+  await up.setAutomatic(false);
+  const reads = h.calls.filter((c) => c === "feed-read").length;
+  await h.advance(5 * MINUTE);
+  assert.equal(h.calls.filter((c) => c === "feed-read").length, reads);
+  assert.equal(up.status().state, "ready");
+});
+
 test("B-51: squirrelStaged reads ShipIt's state file and looks for the bundle it names", async () => {
   const home = mkdtempSync(path.join(os.tmpdir(), "fabric-shipit-"));
   const id = "ai.passioncode.fabric-inbox";
