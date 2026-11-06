@@ -11,17 +11,26 @@
 // The server's address is therefore also kept in the folder every PassionCode app shares,
 // `<appData>/PassionCode/backups/fabric-inbox.json`, rewritten whenever it is saved and read back
 // when `server.json` is missing. It holds no secret: the address of a server behind Cloudflare
-// Access, which still asks the person to sign in.
+// Access, which still asks the person to sign in. B-219: the other servers the app holds (`servers.json`, B-158) are
+// kept in the same copy, addresses and contexts only, and come back when `servers.json` is missing.
 const path = require('node:path');
+const serverList = require('./servers.cjs');
 
 const backupFile = (appData) => path.join(appData, 'PassionCode', 'backups', 'fabric-inbox.json');
 
 /** Writes the copy atomically. Never throws; returns whether it was written. */
-async function saveBackup({ fs, appData, config, now = Date.now, log = () => {} }) {
+async function saveBackup({ fs, appData, config, servers, now = Date.now, log = () => {} }) {
   const target = backupFile(appData);
   try {
     await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
-    const value = { version: 1, app: 'Fabric Inbox', server: { origin: config.origin, accessOrigin: config.accessOrigin || '' }, savedAt: new Date(now()).toISOString() };
+    // A save that names no list keeps the one the copy already holds.
+    let list = servers;
+    if (list === undefined) {
+      try { const prior = JSON.parse(await fs.readFile(target, 'utf8')); list = Array.isArray(prior?.servers) ? prior.servers : undefined; } catch { list = undefined; }
+    }
+    const value = { version: 1, app: 'Fabric Inbox', server: { origin: config.origin, accessOrigin: config.accessOrigin || '' },
+      ...(Array.isArray(list) ? { servers: list.map((s) => ({ origin: s.origin, accessOrigin: s.accessOrigin || '', context: s.context ?? null })) } : {}),
+      savedAt: new Date(now()).toISOString() };
     await fs.writeFile(`${target}.tmp`, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
     await fs.rename(`${target}.tmp`, target);
     return true;
@@ -40,4 +49,13 @@ async function readBackup({ fs, appData, validate }) {
   } catch { return null; }
 }
 
-module.exports = { backupFile, saveBackup, readBackup };
+/** B-219: the servers the copy remembers, each checked as `servers.json`'s are (servers.cjs readList); [] when none. */
+async function readBackupServers({ fs, appData, validate }) {
+  try {
+    const value = JSON.parse(await fs.readFile(backupFile(appData), 'utf8'));
+    if (!value || value.version !== 1) return [];
+    return serverList.readList(value, validate);
+  } catch { return []; }
+}
+
+module.exports = { backupFile, saveBackup, readBackup, readBackupServers };

@@ -195,8 +195,7 @@ async function readConfig() {
     logEvent({ event: 'settings_restored', from: 'PassionCode/backups/fabric-inbox.json' });
     return true;
   }
-  const saved = await backup.readBackup({ fs, appData: app.getPath('appData'), validate: policy.validateConfig });
-  if (!saved || saved.origin !== config.origin || saved.accessOrigin !== config.accessOrigin) await backup.saveBackup({ fs, appData: app.getPath('appData'), config, log: logEvent });
+  // The shared copy is brought up to date by readServers (B-219), with the list beside the server.
   return true;
 }
 /**
@@ -210,13 +209,35 @@ async function retirePartition(partition) {
 }
 /** Reads servers.json (a missing or broken one is an empty list) and makes sure the server shown is in it. */
 async function readServers() {
+  let missing = false;
   try { servers = serverList.readList(JSON.parse(await fs.readFile(serversPath(), 'utf8')), policy.validateConfig); }
-  catch { servers = []; }
+  catch (error) { servers = []; missing = !!error && error.code === 'ENOENT'; }
+  // B-219: a profile without servers.json (a new Mac, a profile an uninstaller removed) gets its list back from the copy.
+  if (missing) {
+    const restored = await backup.readBackupServers({ fs, appData: app.getPath('appData'), validate: policy.validateConfig });
+    if (restored.length) { await saveServers(restored); logEvent({ event: 'servers_restored', outcome: 'ok', count: restored.length }); }
+  }
   if (config && !servers.some((s) => s.origin === config.origin)) await saveServers(serverList.remember(servers, config));
+  else await backUp();
+}
+/** What the shared copy holds, as this run last read or wrote it, so an unchanged server and list are written once. */
+let backedUp = null;
+/** B-219: the shared copy brought up to date with the server shown and the list, when either differs from it. */
+async function backUp() {
+  if (!config) return;
+  const appData = app.getPath('appData');
+  if (backedUp === null) {
+    const saved = await backup.readBackup({ fs, appData, validate: policy.validateConfig });
+    const list = await backup.readBackupServers({ fs, appData, validate: policy.validateConfig });
+    backedUp = JSON.stringify({ origin: saved?.origin, accessOrigin: saved?.accessOrigin, servers: list });
+  }
+  const copy = JSON.stringify({ origin: config.origin, accessOrigin: config.accessOrigin || '', servers: servers.map((s) => ({ origin: s.origin, accessOrigin: s.accessOrigin || '', context: s.context ?? null })) });
+  if (copy !== backedUp && await backup.saveBackup({ fs, appData, config, servers, log: logEvent })) backedUp = copy;
 }
 async function saveServers(next) {
   servers = next;
   try { await writePrivate(serversPath(), { servers }); } catch { logEvent({ event: 'servers_saved', outcome: 'failed' }); }
+  await backUp();
 }
 const partitionsOf = (list) => list.map((s) => policy.partitionFor(s));
 /** After the person signed in to `snapshot`: its context, from GET /api/server, kept with it (B-158, D2). */
@@ -255,9 +276,9 @@ async function forgetServer(origin) {
 async function saveConfig(next) {
   await writePrivate(configPath(), next);
   config = next;
+  // The shared copy (B-219) is written by saveServers, with the server shown and the list together.
   await saveServers(serverList.remember(servers, next));
   if (mailNotifier) mailNotifier.reset();
-  await backup.saveBackup({ fs, appData: app.getPath('appData'), config: next, log: logEvent });
 }
 // ── B-158 M1 step 3d (SCN-094): moving an address between two servers the app holds ─────────────
 // One move at a time; its state is written after every step (`move.json` in the profile), so a quit resumes it.

@@ -1,6 +1,6 @@
 # Inbox on a shared Mac, a new Mac and an organization's members (Studio plan gaps)
 
-Status: specs, 2026-11-06. The operator's instruction relayed on the board (thread `1fe66e6e`, message `7a1507fc`, said
+Status: specs, 2026-11-06; G3 (B-219) built the same day: `servers.json` in the backup (`desktop/backup.cjs`, `desktop/main.cjs` `backUp`), the moving section in `docs/desktop-data-and-updates.md`. The operator's instruction relayed on the board (thread `1fe66e6e`, message `7a1507fc`, said
 2026-11-05 in session `456ad510`): each project reads the Workspace plan for the Studio move and for connecting an
 organization, compares it with its code, writes a detailed spec per gap and closes them in waves. Read: fabric-workspace
 `docs/plans/2026-11-04-studio-spaces/` (README, runbook, placement) and `knowledge/plans.md`, `knowledge/integration.md`
@@ -87,12 +87,11 @@ There is no written list of this.
    (`onboard.mjs connect` again; the old key revoked by `revoke_agent_key`).
 2. `servers.json` is kept in the same backup as the address, so the list of servers comes back too (it holds no
    secret).
-3. The analytics installation id is new on every installation, never copied (the rule the dashboards app and the launcher
-   follow).
+3. The usage counts' installation id is the shared PassionCode file's (`desktop/analytics.cjs:38`), which the launcher
+   owns (its PC-153: a new id on every installation): Inbox follows it and copies nothing itself.
 
 **Acceptance.**
 - A test that a restored backup brings back every listed server.
-- A test that a copied `analytics-state.json` with another installation's path starts a new id.
 - The section, checked against the files the app writes (`AGENTS.md`, Profile).
 
 ## G4. A member's own app finds the organization's server (B-215 step 2, P2)

@@ -19,6 +19,7 @@ reinstalling the app, and every downloaded copy must update itself by default). 
 | Cloudflare accounts and their tokens, domains, addresses, routing | your server and Cloudflare itself | yes | yes |
 | Agents, knowledge, rules, agent keys, the audit journal | your server | yes | yes |
 | The server's address | `~/Library/Application Support/Fabric Inbox/server.json`, **and a copy in** `~/Library/Application Support/PassionCode/backups/fabric-inbox.json` | yes | yes: the copy is read back at the next start (`settings_restored` in the log) |
+| The other servers the app holds (B-158), addresses and contexts only | `servers.json` in the profile, **and in the same copy** (B-219) | yes | yes: read back from the copy when `servers.json` is missing (`servers_restored` in the log); each signs in again |
 | The sign-in (Cloudflare Access cookie) | the server's partition in the profile, encrypted under the Keychain item "Fabric Inbox Safe Storage" | yes | no: sign in again with the code sent by email (30 days at most anyway, B-43) |
 | Unsent drafts and their attachments | the server's partition (local storage and IndexedDB) | yes | no: drafts are kept on the Mac only (REL-03; server draft sync is not built) |
 | Usage counts state, update switch, the last install | `analytics-state.json`, `auto-update` (only when updates were turned off), `update-install.json` (between an install and the next start) in the profile | yes | no; both start fresh (counting resumes, updates are on) |
@@ -40,6 +41,23 @@ image means entering the server's address once.
 setup file, or run **Create my server** again with the same Cloudflare account, which finds the
 existing server, keeps its storage and its sign-in rules, and only updates the code), then sign
 in. Every connection above is on the server.
+
+**Moving to another Mac or another macOS user** (B-219). Everything connected lives on the servers, so a new Mac
+needs only the app and a sign-in. What comes along and what is made again:
+
+| What | On the new Mac or user |
+|---|---|
+| The server shown and the other servers the app holds | come back from `~/Library/Application Support/PassionCode/backups/fabric-inbox.json` when that folder is copied over (a restore of the user's Library, or Migration Assistant); otherwise enter the address once |
+| The sign-in | made again: each server asks for its code by email or the organization's sign-in (the cookie is encrypted under this Mac's Keychain item and does not move) |
+| Unsent drafts | stay on the old Mac: send or copy them first (they are never on the server) |
+| An outside agent's key from `onboard.mjs connect` | made again on the new Mac (`onboard.mjs connect`), since it lives in this Mac's key store; revoke the old one in Settings → Agent access or with `revoke_agent_key` |
+| The log, its digests and `open-hour.json` | start fresh: they count this Mac's own runs |
+| The Fabric descriptor | written again at the first start where Fabric is installed |
+| Usage counts' installation id | the shared PassionCode file's, which the launcher owns: a copied `installation.json` keeps it, a fresh one gets a new id |
+| Open at Login, automatic updates | as for a first install: the app turns Open at Login on once and updates from the Applications folder |
+
+Two macOS users on one Mac each run their own copy with their own profile, Keychain item, `fabric-inbox://` handler
+and login item; the app has no listening port, so nothing is shared between them.
 
 What the app itself never deletes on its own: a start with no server known keeps every server
 partition (it may be the one about to be entered again); a changed server address keeps the old
