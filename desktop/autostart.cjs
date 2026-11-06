@@ -16,6 +16,8 @@ const ENTRY = 'fabric-inbox.desktop';
  * deps: { app, fs (promises), path, platform, userData, env, homedir, mas, execPath, log }.
  * Pure of Electron's globals: everything it touches is passed in, so tests drive it.
  */
+const { installedOnMac } = require('./platform-installer.cjs');
+
 function createAutostart({ app, fs, path, platform, userData, env = {}, homedir = '', mas = false, execPath = '', log = () => {} }) {
   const marker = path.join(userData, MARKER);
   const autostartDir = path.join(env.XDG_CONFIG_HOME || path.join(homedir, '.config'), 'autostart');
@@ -28,7 +30,7 @@ function createAutostart({ app, fs, path, platform, userData, env = {}, homedir 
   function unsupported() {
     if (!app.isPackaged) return 'development';
     if (mas) return 'app_store';
-    if (platform === 'darwin' && typeof app.isInApplicationsFolder === 'function' && !app.isInApplicationsFolder()) return 'not_in_applications';
+    if (platform === 'darwin' && !installedOnMac({ execPath, homedir, electronSays: typeof app.isInApplicationsFolder === 'function' && app.isInApplicationsFolder() })) return 'not_in_applications';
     if (platform === 'linux' && !linuxExec) return 'no_executable';
     if (!['darwin', 'win32', 'linux'].includes(platform)) return 'platform';
     return null;

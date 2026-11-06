@@ -629,3 +629,22 @@ test("B-204: with updates off the newer version is named without a download; a p
   await settle();
   assert.equal(up.status().state, "ready");
 });
+
+test("B-219: the copy keeps the servers the app holds, and a profile without servers.json gets them back", async () => {
+  const appData = mkdtempSync(path.join(os.tmpdir(), "fabric-backup-"));
+  const config = { origin: "https://inbox.example.com", accessOrigin: "" };
+  const servers = [{ origin: "https://inbox.example.com", accessOrigin: "", context: "personal" },
+    { origin: "https://org-inbox.example.com", accessOrigin: "https://team.cloudflareaccess.com", context: "org:acme" }];
+  assert.deepEqual(await backup.readBackupServers({ fs: fsPromises, appData, validate: policy.validateConfig }), []);
+  await backup.saveBackup({ fs: fsPromises, appData, config, servers });
+  assert.deepEqual(await backup.readBackupServers({ fs: fsPromises, appData, validate: policy.validateConfig }), servers);
+  // A save of the server alone keeps the list the copy holds.
+  await backup.saveBackup({ fs: fsPromises, appData, config: servers[1] });
+  assert.deepEqual(await backup.readBackupServers({ fs: fsPromises, appData, validate: policy.validateConfig }), servers);
+  assert.deepEqual(await backup.readBackup({ fs: fsPromises, appData, validate: policy.validateConfig }), { origin: servers[1].origin, accessOrigin: servers[1].accessOrigin });
+  // A tampered entry is dropped as servers.json's are; nothing in the copy is a secret.
+  const file = JSON.parse(readFileSync(backup.backupFile(appData), "utf8"));
+  writeFileSync(backup.backupFile(appData), JSON.stringify({ ...file, servers: [...file.servers, { origin: "http://evil.example.com" }] }));
+  assert.deepEqual((await backup.readBackupServers({ fs: fsPromises, appData, validate: policy.validateConfig })).map((s: any) => s.origin), servers.map((s) => s.origin));
+  assert.deepEqual(Object.keys(file.servers[0]).sort(), ["accessOrigin", "context", "origin"]);
+});

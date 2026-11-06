@@ -297,3 +297,17 @@ test("B-108: canWrite really writes and removes its probe in a folder this user 
   assert.equal(await canWrite({ platform: "win32", fs: require("node:fs/promises"), paths: [dir] }), true);
   assert.deepEqual(readdirSync(dir), []);
 });
+
+test("B-220: a Mac copy in /Applications or in this user's ~/Applications is installed; elsewhere it is not", () => {
+  const { installedOnMac } = require("../desktop/platform-installer.cjs");
+  const exe = (bundle: string) => `${bundle}/Contents/MacOS/Fabric Inbox`;
+  const home = "/Volumes/Homes/ann";
+  assert.equal(installedOnMac({ execPath: exe("/Applications/Fabric Inbox.app"), homedir: home }), true);
+  assert.equal(installedOnMac({ execPath: exe("/Volumes/Homes/ann/Applications/Fabric Inbox.app"), homedir: home }), true, "the launcher's per-user copy");
+  assert.equal(installedOnMac({ execPath: exe("/Volumes/Homes/bob/Applications/Fabric Inbox.app"), homedir: home }), false, "another user's folder");
+  assert.equal(installedOnMac({ execPath: exe("/Volumes/Homes/ann/Downloads/Fabric Inbox.app"), homedir: home }), false);
+  assert.equal(installedOnMac({ execPath: exe("/Volumes/Fabric Inbox/Fabric Inbox.app"), homedir: home }), false, "the disk image");
+  assert.equal(installedOnMac({ execPath: exe("/private/var/folders/x/T/AppTranslocation/1/d/Fabric Inbox.app"), homedir: home }), false);
+  assert.equal(installedOnMac({ execPath: exe("/Applications/Tools/Fabric Inbox.app"), homedir: home }), false, "only directly in the folder");
+  assert.equal(installedOnMac({ execPath: exe("/Somewhere/Fabric Inbox.app"), homedir: home, electronSays: true }), true, "Electron's own answer still counts");
+});
