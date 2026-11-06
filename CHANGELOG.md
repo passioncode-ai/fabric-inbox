@@ -5,7 +5,10 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## 0.100.0 (2026-11-06)
+## 1.0.0 (2026-11-06)
+
+The release first tagged `v0.100.0`, renumbered: the Mac App Store build number holds a minor version up to 99
+(`scripts/app-store-connect.mjs`), so the version after 0.99.0 is 1.0.0. The `v0.100.0` tag has no release.
 
 - **The Mac app no longer stays on an old version for days.** When an update was ready and the app was never quit,
   it kept waiting on that one and stopped looking for newer releases; the restart notice came once. Now it keeps
