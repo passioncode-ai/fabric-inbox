@@ -378,6 +378,7 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Squirrel.Mac did not answer.": "Squirrel.Mac не ответил.",
 	"This version was not accepted by macOS before; it is tried again later.": "macOS уже отклонила эту версию; попробуем позже.",
 	"Open Link in Browser": "Открыть ссылку в браузере",
+	"Open in {browser}": "Открыть в {browser}",
 	"Copy Link": "Скопировать ссылку",
 	"Write to This Address": "Написать на этот адрес",
 	"Copy Address": "Скопировать адрес",
