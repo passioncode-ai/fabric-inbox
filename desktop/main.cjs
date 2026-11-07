@@ -10,6 +10,7 @@ const profile = require('./profile.cjs');
 const connector = require('./connect.cjs');
 const { menuTemplate } = require('./menu.cjs');
 const { contextMenuTemplate } = require('./context-menu.cjs');
+const browsersFinder = require('./browsers.cjs');
 const newMail = require('./new-mail.cjs');
 const addressWait = require('./address-wait.cjs');
 const serverList = require('./servers.cjs');
@@ -107,10 +108,28 @@ let autostart = null;
 let loginItem = null;
 /** Windows and Linux: closing the window leaves the app running; the tray icon brings it back. */
 let tray = null;
-/** The ready version the "Restart to finish updating" notification was shown for, once per version. */
+/** The ready version the "Restart to finish updating" notification was shown for, and when (B-231: again after a day). */
 let notifiedReady = '';
+let notifiedReadyAt = 0;
+const READY_REMINDER_MS = 24 * 3600 * 1000;
 /** B-204: the version the "new version is available" notice was shown for (automatic updates off), once per version. */
 let notifiedAvailable = '';
+/** B-227: the installed browsers the right-click menu offers, found once per launch ([] until then or when unreadable). */
+let installedBrowsers = [];
+function findInstalledBrowsers() {
+  const execText = async (file, args) => (await execFileAsync(file, args)).stdout.toString();
+  void browsersFinder.findBrowsers({ platform: process.platform, fs, homedir: require('node:os').homedir(), execFile: execText })
+    .then((list) => { installedBrowsers = list; }).catch(() => {});
+}
+/** Opens a link in one installed browser, detached and without a shell; a failure is logged, never shown. */
+function openInBrowser(browser, url) {
+  const { file, args } = browsersFinder.openArgs(browser, url);
+  try {
+    const child = spawn(file, args, { detached: true, stdio: 'ignore', windowsHide: true });
+    child.on('error', () => logEvent({ event: 'context_menu_open', outcome: 'failed', browser: browser.name }));
+    child.unref();
+  } catch { logEvent({ event: 'context_menu_open', outcome: 'failed', browser: browser.name }); }
+}
 // The app's log, ~/Library/Logs/<app name>/ (LC-12): codes and versions only.
 let appLog = null;
 /** B-205: the digests of the app's own log; B-213 keeps its open hour at quit. */
@@ -370,6 +389,51 @@ function installMoveIPC() {
     return true;
   });
 }
+
+// ── B-233 (SCN-099): the mail of every server the app holds, in one window ─────────────────────────────
+// Each server is read through its own session; a message opens on its own server (switched to, still signed in).
+const allServers = require('./all-servers.cjs');
+let allWindow = null;
+function showAllServers() {
+  if (allWindow && !allWindow.isDestroyed()) { allWindow.show(); allWindow.focus(); return; }
+  allWindow = new BrowserWindow({ title: t('All Servers'), width: 980, height: 720, minWidth: 640, minHeight: 480,
+    backgroundColor: '#f7f7f8', webPreferences: securePreferences({ preload: path.join(__dirname, 'all-servers-preload.cjs'), partition: 'fabric-all-servers' }) });
+  allWindow.setMenuBarVisibility(false);
+  rejectPermissions(allWindow.webContents.session);
+  allWindow.webContents.on('will-navigate', event => event.preventDefault());
+  allWindow.webContents.on('will-redirect', event => event.preventDefault());
+  allWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  allWindow.on('closed', () => { allWindow = null; });
+  allWindow.loadFile(path.join(__dirname, 'all-servers.html'));
+  logEvent({ event: 'all_servers_opened', servers: servers.length });
+}
+/** Opens one message on its own server: the window shows that server (its sign-in kept) and the message. */
+async function openOnServer(origin, link) {
+  if (!servers.some((s) => s.origin === origin) || typeof link !== 'string' || !link.startsWith('/')) return false;
+  if (config && config.origin === origin && mailWindow && !mailWindow.isDestroyed()) {
+    mailWindow.show(); mailWindow.focus();
+    void mailWindow.loadURL(new URL(link, origin).href).catch(() => {});
+    return true;
+  }
+  openAfterSignIn = link;
+  await switchServer(origin);
+  if (mailWindow && !mailWindow.isDestroyed()) { mailWindow.show(); mailWindow.focus(); }
+  return true;
+}
+function installAllServersIPC() {
+  const own = (event) => !!(allWindow && !allWindow.isDestroyed() && event.sender === allWindow.webContents);
+  const handle = (channel, fn) => ipcMain.handle(channel, async (event, arg) => (own(event) ? fn(arg) : null));
+  handle('fabric:all-locale', () => i18n.forWindow());
+  handle('fabric:all-read', async () => {
+    const list = servers.map((s) => ({ origin: s.origin, label: serverList.labelFor(s, t) }));
+    const result = await allServers.readAll({ servers: list, read: (origin, pathname) => serverApi(origin).get(pathname) });
+    logEvent({ event: 'all_servers_read', servers: result.servers.length, ok: result.servers.filter((s) => s.state === 'ok').length });
+    return result;
+  });
+  handle('fabric:all-open', async (arg) => openOnServer(String(arg && arg.origin || ''), arg && arg.link));
+  // A server whose sign-in lapsed: the window shows it, at its sign-in page.
+  handle('fabric:all-sign-in', async (origin) => { if (servers.some((s) => s.origin === origin)) await switchServer(String(origin)); return true; });
+}
 function showSetup(message = '', start = '') {
   notice = message;
   setupStart = start;
@@ -511,7 +575,7 @@ function loadMail() {
   win.webContents.on('context-menu', (_event, params) => {
     const items = contextMenuTemplate(params, { t,
       open: (url) => { shell.openExternal(url).catch(() => logEvent({ event: 'context_menu_open', outcome: 'failed' })); },
-      copy: (text) => clipboard.writeText(text) });
+      copy: (text) => clipboard.writeText(text), browsers: installedBrowsers, openIn: openInBrowser });
     if (items.length && !win.isDestroyed()) Menu.buildFromTemplate(items).popup({ window: win });
   });
   win.webContents.on('page-title-updated', event => event.preventDefault());
@@ -680,14 +744,18 @@ function notify(title, body, onClick) {
 }
 /**
  * An update is downloaded, verified and ready: say so once per version, with "Restart to finish
- * updating" (LC-16, the organization's rule of 2026-10-16). Clicking it restarts, asking first when the
- * agent console runs; ignoring it installs the update when the app quits, as before.
+ * updating" (LC-16, the organization's rule of 2026-10-16), and again each day it still waits (B-231: an app
+ * nobody quits otherwise keeps the old version for days). Clicking it restarts, asking first when the agent
+ * console runs; ignoring it installs the update when the app quits, as before.
  */
 function notifyReady() {
   const now = updater ? updater.status() : null;
-  if (!now || now.state !== 'ready' || !now.readyVersion || now.readyVersion === notifiedReady) return;
+  if (!now || now.state !== 'ready' || !now.readyVersion) return;
+  const again = now.readyVersion === notifiedReady;
+  if (again && Date.now() - notifiedReadyAt < READY_REMINDER_MS) return;
   notifiedReady = now.readyVersion;
-  logEvent({ event: 'update_ready_notice', version: now.readyVersion });
+  notifiedReadyAt = Date.now();
+  logEvent({ event: 'update_ready_notice', version: now.readyVersion, ...(again ? { reminder: true } : {}) });
   notify(t('Restart to finish updating'), t('Fabric Inbox {version} is ready. Click to restart now, or it is installed when you quit.', { version: now.readyVersion }),
     () => void restartToUpdate());
 }
@@ -1067,6 +1135,7 @@ async function handleConnectLink(url) {
 }
 function installIPC() {
   installMoveIPC();
+  installAllServersIPC();
   const fromConsole = (event) => {
     const docked = consoleView && !consoleView.webContents.isDestroyed() && event.sender === consoleView.webContents
       && event.senderFrame === consoleView.webContents.mainFrame && event.senderFrame.url === consoleURL;
@@ -1276,6 +1345,7 @@ function installMenu() {
     servers: {
       items: servers.map((s) => ({ label: serverList.labelFor(s, t), checked: !!config && s.origin === config.origin, click: () => void switchServer(s.origin) })),
       add: () => showSetup(),
+      all: servers.length > 1 ? () => showAllServers() : null,
       move: servers.length > 1 && config ? () => showMove() : null,
       forget: servers.filter((s) => !config || s.origin !== config.origin).map((s) => ({ label: serverList.labelFor(s, t), click: () => void forgetServer(s.origin) })),
     },
@@ -1409,6 +1479,7 @@ if (ownsInstance) app.whenReady().then(async () => {
   startTray();
   startNewMail();
   void startAutostart().catch(() => logEvent({ event: 'login_item', outcome: 'failed', reason: 'not_started' }));
+  findInstalledBrowsers();
   // B-210 (DEC-0153 OD-9, DEC-0069): where the app's own daily digests are, for a Fabric collector on this computer.
   void Promise.resolve().then(() => ensureDescriptor({ fs, platform: process.platform, env: process.env, home: require('node:os').homedir(),
     execPath: process.execPath, userData: app.getPath('userData'), logs: app.getPath('logs'), version: app.getVersion(), packaged: app.isPackaged,

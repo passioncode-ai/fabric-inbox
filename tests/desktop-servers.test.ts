@@ -65,6 +65,13 @@ test("the Account menu lists the servers, the one shown ticked, with Add Another
   move.click();
   assert.equal(clicked.at(-1), "move");
   assert.ok(!one.some((i: any) => i.label === "Move an Address to Another Server…"));
+  // SCN-099 (B-233): with two servers held, All Servers shows the mail of every one in one list, before Add Another Server.
+  const withAll = menuTemplate("darwin", { ...ctx, servers: { ...ctx.servers, all: () => clicked.push("all") } }).find((m: any) => m.label === "Account").submenu;
+  const all = withAll.find((i: any) => i.label === "All Servers");
+  assert.ok(all && withAll.indexOf(all) === 2, "after the servers, before Add Another Server");
+  all.click();
+  assert.equal(clicked.at(-1), "all");
+  assert.ok(!one.some((i: any) => i.label === "All Servers"));
 });
 
 test("the start-up sweep keeps every remembered server's sign-in and removes the rest", async () => {

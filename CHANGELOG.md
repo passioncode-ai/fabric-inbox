@@ -5,6 +5,21 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.0.0 (2026-11-06)
+
+The release first tagged `v0.100.0`, renumbered: the Mac App Store build number holds a minor version up to 99
+(`scripts/app-store-connect.mjs`), so the version after 0.99.0 is 1.0.0. The `v0.100.0` tag has no release.
+
+- **The Mac app no longer stays on an old version for days.** When an update was ready and the app was never quit,
+  it kept waiting on that one and stopped looking for newer releases; the restart notice came once. Now it keeps
+  checking while it waits, takes the newest release in its place, and reminds you once a day until you restart
+  (B-231).
+- **Moving to another Mac keeps your list of servers.** The backup the app keeps beside its settings now holds every
+  server you added, not only the current one, so a new Mac or a new macOS user gets them all back. What moves and
+  what you set up again is written in [Desktop data and updates](docs/desktop-data-and-updates.md) (B-219).
+- **A copy in your own Applications folder updates itself.** Installed under `~/Applications` (one copy per macOS
+  user), the app now updates and opens at login like a copy in `/Applications` (B-220).
+
 ## 0.99.0 (2026-11-05)
 
 - **People you add can sign in at once.** Adding someone in Settings → People now also lets them through your

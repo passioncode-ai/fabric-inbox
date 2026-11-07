@@ -9,7 +9,8 @@
  *        usage: { checked, enabled, click, about }, login: { checked, enabled, click }, newMail: { checked, enabled, click },
  *        serverUpdate: { label, enabled, click } or null (B-44),
  *        openSettings, showServer, showCloudflare,
- *        servers: { items: [{ label, checked, click }], add, forget: [{ label, click }] } or null (B-158: the servers the app holds),
+ *        servers: { items: [{ label, checked, click }], all, add, forget: [{ label, click }] } or null (B-158: the servers the app holds;
+ *          all: B-233, the mail of every server in one list, with two or more),
  *        connectGmail, retry, console (opens the agent console, or null) }
  */
 function menuTemplate(platform, ctx) {
@@ -41,6 +42,8 @@ function menuTemplate(platform, ctx) {
     ...(mac ? [{ type: 'separator' }, { label: t('Speech'), submenu: [{ role: 'startSpeaking', label: t('Start Speaking') }, { role: 'stopSpeaking', label: t('Stop Speaking') }] }] : [])];
   // B-158: the servers the app holds, the one shown ticked; another is a click away, with its sign-in kept.
   const held = ctx.servers ? [...ctx.servers.items.map((s) => ({ label: s.label, type: 'radio', checked: s.checked, click: s.click })),
+    // B-233 (SCN-099): with two or more servers, the mail of all of them in one list.
+    ...(ctx.servers.all ? [{ label: t('All Servers'), click: ctx.servers.all }] : []),
     { label: t('Add Another Server…'), click: ctx.servers.add },
     // B-158 M1 step 3d (SCN-094): with two or more servers, an address can move from the one shown to another.
     ...(ctx.servers.move ? [{ label: t('Move an Address to Another Server…'), click: ctx.servers.move }] : []),

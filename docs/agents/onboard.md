@@ -90,6 +90,11 @@ the same helper's output as its headers; the refusal of `register` prints the en
 it saw. Run it after every setup; a 401/403 or a redirect to the sign-in page means the key was
 refused (revoked, expired, or never allowed) — run `connect` again.
 
+A client of your own (a script, another agent) sends the same two headers and a User-Agent of its own: Cloudflare
+answers some default library agents, Python's `urllib` among them, with error 1010 and a 403 before Access reads the
+key (reported 2026-11-06 by an agent calling with a fresh key). Name your client, for example
+`User-Agent: my-agent/1.0`.
+
 ## Where things are, and starting over
 
 | What | Where |
