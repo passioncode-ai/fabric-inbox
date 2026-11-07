@@ -48,9 +48,9 @@ const bundle = await build({
   bundle: true, write: false, format: "esm", platform: "browser", external: ["cloudflare:workers"], target: "es2022",
 });
 
-function server() {
+function server(bindings: Record<string, string> = {}) {
   const mf = new Miniflare({
-    modules: true, script: bundle.outputFiles[0].text, compatibilityDate: "2026-09-01", compatibilityFlags: ["nodejs_compat"],
+    modules: true, script: bundle.outputFiles[0].text, compatibilityDate: "2026-09-01", compatibilityFlags: ["nodejs_compat"], bindings,
     durableObjects: { MAILBOX: { className: "TestMailbox", useSQLite: true } }, r2Buckets: ["BUCKET"],
     outboundService: () => new Response("External network disabled for tests", { status: 503 }),
   });
@@ -168,4 +168,18 @@ test("B-158 step 3c: a hold on the sending server stops new sends and its agent,
     assert.equal((await a.call("POST", "/test/settings", { address: ADDRESS })).body.agent, "support", "the agent it had answers again");
     assert.notEqual((await a.call("POST", "/test/send", { address: ADDRESS })).body.code, "MOVED");
   } finally { await a.mf.dispose(); }
+});
+
+test("a receiving server that names its domains says whether it takes the address's, and refuses to route one it does not", async () => {
+  const other = server({ DOMAINS: "other.invalid" }), any = server(), own = server({ DOMAINS: "shop.invalid other.invalid" });
+  try {
+    for (const s of [other, any, own]) await s.call("POST", "/test/seed", { address: ADDRESS, settings, n: 1 });
+    assert.equal((await other.call("GET", `${base}/route`)).body.served, false);
+    assert.equal((await any.call("GET", `${base}/route`)).body.served, true, "a server that names no domains takes every domain's mail");
+    assert.equal((await own.call("GET", `${base}/route`)).body.served, true);
+    const refused = await other.call("POST", `${base}/route`, { expect: { emails: 1, attachments: 1 } });
+    assert.equal(refused.status, 409);
+    assert.match(refused.body.error, /does not take mail for shop\.invalid yet/);
+    assert.equal((await own.call("POST", `${base}/route`, { expect: { emails: 1, attachments: 1 } })).status, 503, "a served domain goes on to the Cloudflare step (no token in this test)");
+  } finally { await Promise.all([other.mf.dispose(), any.mf.dispose(), own.mf.dispose()]); }
 });

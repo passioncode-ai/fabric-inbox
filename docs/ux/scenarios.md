@@ -1948,8 +1948,11 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Alt paths:**
   - Counts that do not match after the copy: the move stops before Holding; Try Again copies what is missing (nothing is copied twice), Cancel leaves both servers as they were apart from the copy.
   - The other server is in another Cloudflare account, or has no Cloudflare connection: the move stops before Holding and says so; Cancel, as above.
+  - The other server does not receive mail for the address's domain yet (it names the domains it serves, and this one is not among them): the move stops before Holding, names the domain and says to connect it there first; Try Again once it is connected, or Cancel, as above.
   - Sends or new mail still being handled after 10 minutes of Holding: the app says so; Wait Longer, or Put It Back (the hold is lifted).
+  - The first test message does not arrive (Cloudflare can deliver to this server for a few minutes after the rule changed): halfway through the wait it is sent once more.
   - The test message does not arrive within 3 minutes: Put It Back points the mail at this server again and lifts the hold; Wait Longer keeps testing.
+  - Mail that still reached this server's held copy in those minutes is copied once the test arrives, and the counts are checked again before Done.
   - The app quits or the Mac sleeps midway: next time the window says where the move stopped and continues from that step; nothing already copied or routed is done again.
 - **UI elements:** the Account menu's Move an Address to Another Server… (two or more servers held); the move window: Address and Move to pickers, Next, the summary with Back and Move, the four steps with the count of messages copied, Try Again, Cancel (before Holding), Wait Longer, Put It Back (after Holding), and on Done: Answer With Its Agent There, Show That Server, Done.
 - **States covered:** idle, loading, empty, error, success

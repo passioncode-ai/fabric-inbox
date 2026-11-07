@@ -460,6 +460,7 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Wait Longer": "Подождать ещё",
 	"Put It Back": "Вернуть как было",
 	"The other server cannot take this address's mail: it is in another Cloudflare account, or its Cloudflare connection is missing. Nothing changed on this server.": "Другой сервер не может принять почту этого адреса: он в другом аккаунте Cloudflare или к нему не подключён Cloudflare. На этом сервере ничего не изменилось.",
+	"The other server does not receive mail for {domain} yet. Connect that domain there first, then try again. Nothing changed on this server.": "Другой сервер ещё не принимает почту для {domain}. Сначала подключите этот домен там, затем попробуйте снова. На этом сервере ничего не изменилось.",
 	"You can close this window; the move goes on while the app is open, and continues from here when you open it again.": "Это окно можно закрыть: перенос идёт, пока приложение открыто, и продолжится с этого места, когда вы откроете окно снова.",
 	"All Servers": "Все серверы",
 	"All servers": "Все серверы",
