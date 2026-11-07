@@ -62,7 +62,7 @@ test("an Admin key is a warning that needs the person's own tick", () => {
 });
 
 /** A fake world: what was minted, revoked, delivered and logged. */
-function world(over: Partial<Record<"mint" | "deliver" | "revoke" | "confirm" | "identify" | "sleep" | "pause" | "self", unknown>> = {}) {
+function world(over: Partial<Record<"mint" | "deliver" | "revoke" | "confirm" | "identify" | "sleep" | "pause" | "self" | "probe", unknown>> = {}) {
   const seen = { minted: [] as unknown[], revoked: [] as string[], delivered: [] as Record<string, unknown>[], logs: [] as string[], signIn: 0, slept: 0, prompts: [] as Record<string, unknown>[] };
   const deps = {
     confirm: async (prompt: Record<string, unknown>) => { seen.prompts.push(prompt); return { response: 1, checkboxChecked: true }; },
@@ -468,4 +468,30 @@ test("N-10: every platform's lookup lists the processes when more than one liste
   const linux = listenerWith(async () => ({ stdout: 'LISTEN 0 511 127.0.0.1:47123 0.0.0.0:* users:(("fabric",pid=4242,fd=21),("node",pid=5151,fd=3))\n' }), "linux",
     { readlink: async () => "/opt/Fabric/fabric", readFile: async () => { throw new Error("ENOENT"); }, readdir: async () => [] } as never);
   assert.deepEqual((await linux(47123))?.pids, [4242, 5151]);
+});
+
+test("B-217: a port another account holds is refused before the person is asked; nothing is made or sent", async () => {
+  const other = { state: "foreign-user", detail: "other-account" };
+  const { seen, deps } = world({ probe: async () => other });
+  const out = await connect({ request: request(), config, ...deps });
+  assert.deepEqual(out, { outcome: "failed", reason: "foreign_user", detail: "other-account", port: 47123 });
+  assert.equal(seen.prompts.length, 0, "nobody is asked");
+  assert.equal(seen.minted.length, 0);
+  assert.equal(seen.delivered.length, 0, "not even a refusal goes to another account's listener");
+  assert.match(seen.logs.join("\n"), /"reason":"foreign_user"/);
+  // lsof on macOS lists no listener of another account: the port is probed when the lookup finds none.
+  const hidden = world({ identify: async () => null, probe: async () => ({ state: "foreign-user", detail: "table-restricted: no rows" }) });
+  assert.deepEqual(await connect({ request: request(), config, ...hidden.deps }), { outcome: "failed", reason: "foreign_user", detail: "table-restricted: no rows", port: 47123 });
+  const gone = world({ identify: async () => null, probe: async () => ({ state: "down" }) });
+  assert.equal((await connect({ request: request(), config, ...gone.deps })).reason, "no_listener", "nothing accepting is still nobody");
+  const ours = world({ probe: async () => ({ state: "self" }) });
+  assert.equal((await connect({ request: request(), config, ...ours.deps })).outcome, "connected");
+});
+
+test("B-217: a key whose socket turns out not to be ours at the write is not written and is revoked", async () => {
+  const { seen, deps } = world({ probe: async () => ({ state: "self" }), deliver: async (body: Record<string, unknown>) => (body.clientSecret ? { refused: "foreign_user", detail: "other-account" } : true) });
+  const out = await connect({ request: request(), config, ...deps });
+  assert.deepEqual(out, { outcome: "failed", reason: "foreign_user", detail: "other-account", revoked: true, keyMade: true, port: 47123 });
+  assert.deepEqual(seen.revoked, ["tok-9"]);
+  assert.doesNotMatch(seen.logs.join("\n"), /SECRET-VALUE/);
 });

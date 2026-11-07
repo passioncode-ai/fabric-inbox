@@ -295,9 +295,16 @@ function revokeWith(ses, origin) {
   };
 }
 
-/** Posts to the loopback callback; only a 2xx within the time limit counts as received. */
-function deliverTo(callback, { fetch: doFetch = fetch, timeoutMs = 10000 } = {}) {
+/**
+ * Posts to the loopback callback; only a 2xx within the time limit counts as received. With `check`, a body that
+ * carries a key goes over a socket whose server end is checked right before the body is written (B-217, contract
+ * DEC-0154 HA-2): `check(conn)` answers { owner: 'self' } or { owner: 'foreign-user', reason }, and on anything but
+ * 'self' nothing is written and the answer is { refused: 'foreign_user', detail }. A body without a key (a denial, a
+ * failure) carries only the hub's own request id and goes as before.
+ */
+function deliverTo(callback, { fetch: doFetch = fetch, timeoutMs = 10000, check = null } = {}) {
   return async (body) => {
+    if (check && body && body.clientSecret) return postChecked(callback, JSON.stringify(body), { check, timeoutMs });
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -308,6 +315,66 @@ function deliverTo(callback, { fetch: doFetch = fetch, timeoutMs = 10000 } = {})
   };
 }
 
+/** The address node's sockets take: a bracketed IPv6 host loses its brackets. */
+const hostOf = (url) => url.hostname.replace(/^\[|\]$/g, '');
+
+/**
+ * One POST over node's http: the request's headers and body are held back until the socket's server end is this
+ * account's. Node writes nothing before `end()`, so a refusal sends not a byte of the request.
+ */
+function postChecked(callback, payload, { check, timeoutMs }) {
+  const http = require('node:http');
+  const url = new URL(callback);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => { if (!settled) { settled = true; clearTimeout(timer); resolve(value); } };
+    const req = http.request({ host: hostOf(url), port: Number(url.port), path: `${url.pathname}${url.search}`, method: 'POST', agent: false,
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, (res) => {
+      res.resume();
+      finish(res.statusCode >= 200 && res.statusCode < 300);
+    });
+    const timer = setTimeout(() => { req.destroy(); finish(false); }, timeoutMs);
+    req.on('error', () => finish(false));
+    req.on('socket', (socket) => {
+      const go = async () => {
+        let verdict;
+        try { verdict = await check({ localAddress: socket.localAddress, localPort: socket.localPort, remoteAddress: socket.remoteAddress, remotePort: socket.remotePort }); }
+        catch (error) { verdict = { owner: 'foreign-user', reason: `owner-unknown: ${error instanceof Error ? error.message : String(error)}` }; }
+        if (settled) return;
+        if (!verdict || verdict.owner !== 'self') {
+          req.destroy();
+          finish({ refused: 'foreign_user', detail: String((verdict && verdict.reason) || 'owner-unknown').slice(0, 120) });
+          return;
+        }
+        req.end(payload);
+      };
+      if (socket.connecting) socket.once('connect', go); else go();
+    });
+  });
+}
+
+/**
+ * Before the person is asked: connects to the callback's port without writing, and checks who accepted (B-217).
+ * Answers { state: 'self' }, { state: 'down' } when nothing accepts, or { state: 'foreign-user', detail }.
+ */
+function probeWith(check, { timeoutMs = 3000 } = {}) {
+  const net = require('node:net');
+  return (callback) => new Promise((resolve) => {
+    const url = new URL(callback);
+    const socket = net.connect({ host: hostOf(url), port: Number(url.port) });
+    let settled = false;
+    const finish = (value) => { if (!settled) { settled = true; clearTimeout(timer); socket.destroy(); resolve(value); } };
+    const timer = setTimeout(() => finish({ state: 'down' }), timeoutMs);
+    socket.on('error', () => finish({ state: 'down' }));
+    socket.once('connect', async () => {
+      let verdict;
+      try { verdict = await check({ localAddress: socket.localAddress, localPort: socket.localPort, remoteAddress: socket.remoteAddress, remotePort: socket.remotePort }); }
+      catch (error) { verdict = { owner: 'foreign-user', reason: `owner-unknown: ${error instanceof Error ? error.message : String(error)}` }; }
+      finish(verdict && verdict.owner === 'self' ? { state: 'self' } : { state: 'foreign-user', detail: String((verdict && verdict.reason) || 'owner-unknown').slice(0, 120) });
+    });
+  });
+}
+
 /** More than one process listens on the port (a lookup that cannot tell says nothing: one). */
 const ambiguous = (listener) => Array.isArray(listener?.pids) && listener.pids.length > 1;
 
@@ -315,7 +382,7 @@ const ambiguous = (listener) => Array.isArray(listener?.pids) && listener.pids.l
  * The whole exchange. Returns { outcome: 'connected' | 'denied' | 'failed', reason? }.
  * The hub hears the outcome whenever it still listens; a secret is never logged.
  */
-async function connect({ request, config, confirm, mint, revoke, deliver, signIn, identify, signedIn = async () => null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), pause = pauseFor, self = process.pid, log = () => {} }) {
+async function connect({ request, config, confirm, mint, revoke, deliver, signIn, identify, signedIn = async () => null, probe = null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), pause = pauseFor, self = process.pid, log = () => {} }) {
   const say = (event, extra = {}) => log(JSON.stringify({ event: `connect.${event}`, client: request.clientId, level: request.level, ...extra }));
   if (!config) {
     await deliver({ state: request.state, outcome: 'failed', error: 'no_server' });
@@ -327,7 +394,21 @@ async function connect({ request, config, confirm, mint, revoke, deliver, signIn
   const port = Number(new URL(request.callback).port);
   let listener = await identify(port);
   for (let tries = 0; !listener && tries < LISTENER_WAITS; tries++) { await sleep(1000); listener = await identify(port); }
-  if (!listener) { say('refused', { reason: 'no_listener' }); return { outcome: 'failed', reason: 'no_listener' }; }
+  // B-217 (HA-2): who accepted a connection to the port, asked before the person is. A listener of another OS account
+  // or one whose owner cannot be told is refused here, with nothing sent to it (lsof finds no listener of another
+  // account on macOS, so the port is also probed when the lookup finds none).
+  const foreign = async () => {
+    if (!probe) return null;
+    const seen = await probe(request.callback).catch(() => ({ state: 'down' }));
+    if (seen.state !== 'foreign-user') return null;
+    say('refused', { reason: 'foreign_user', detail: seen.detail });
+    return { outcome: 'failed', reason: 'foreign_user', detail: seen.detail, port };
+  };
+  if (!listener) {
+    const refused = await foreign();
+    if (refused) return refused;
+    say('refused', { reason: 'no_listener' }); return { outcome: 'failed', reason: 'no_listener' };
+  }
   // N-10 (B-184): two processes on one port; the prompt would name one and the key could reach the other.
   // Nothing is sent: either of them could read it.
   if (ambiguous(listener)) {
@@ -339,6 +420,8 @@ async function connect({ request, config, confirm, mint, revoke, deliver, signIn
     say('refused', { reason: 'listener_is_self' });
     return { outcome: 'failed', reason: 'listener_is_self' };
   }
+  const refused = await foreign();
+  if (refused) return refused;
   // O-8: a lapsed sign-in is found before the person is asked, so an Allow is never answered with a failure.
   if ((await signedIn()) === false) {
     await deliver({ state: request.state, outcome: 'failed', error: 'sign_in_required' });
@@ -386,7 +469,13 @@ async function connect({ request, config, confirm, mint, revoke, deliver, signIn
   }
   const received = await deliver({ state: request.state, outcome: 'connected', server: config.origin, mcpUrl,
     key: { id: key.id, clientId: key.clientId, level: key.level, send: key.send, expiresAt: key.expiresAt ?? null }, clientSecret });
-  if (!received) {
+  if (received && received.refused === 'foreign_user') {
+    // The socket's server end, checked right before the key was written, is not this account's: nothing was written.
+    const revoked = await revoke(key.id).catch(() => false);
+    say('failed', { reason: 'foreign_user', detail: received.detail, keyId: key.id, revoked });
+    return { outcome: 'failed', reason: 'foreign_user', detail: received.detail, revoked, keyMade: true, port };
+  }
+  if (received !== true) {
     const revoked = await revoke(key.id).catch(() => false);
     say('failed', { reason: 'callback_unreachable', keyId: key.id, revoked });
     return { outcome: 'failed', reason: 'callback_unreachable', revoked };
@@ -395,5 +484,5 @@ async function connect({ request, config, confirm, mint, revoke, deliver, signIn
   return { outcome: 'connected', keyId: key.id };
 }
 
-module.exports = { parseConnectLink, promptFor, listenerWith, mintWith, signedInWith, revokeWith, deliverTo, attendWith, pauseFor, connect,
+module.exports = { parseConnectLink, promptFor, listenerWith, mintWith, signedInWith, revokeWith, deliverTo, probeWith, attendWith, pauseFor, connect,
   PROMPT_POLL_MS, PROMPT_DEADLINE_MS, SCHEME: 'fabric-inbox' };

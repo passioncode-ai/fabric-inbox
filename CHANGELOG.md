@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+**A hub's key goes only to your own account** (B-217). On a computer several people sign in to, another account could
+listen on the port a hub names. Before the Connect dialog and again on the open connection right before the key is
+written, the app reads the computer's socket table and sends the key only when the process that accepted the
+connection is yours. Another account's port, or one the computer will not say whose it is, is refused with nothing
+sent, and a key already made for it is revoked (fabric-agent-contract DEC-0154 HA-2 and DEC-0155).
+
 ## 1.1.0 (2026-11-07)
 
 **All your servers in one list** (B-233 part 1, SCN-099). With two or more servers held (your own and an

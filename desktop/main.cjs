@@ -8,6 +8,7 @@ const policy = require('./policy.cjs');
 const deployer = require('./cloudflare-deploy.cjs');
 const profile = require('./profile.cjs');
 const connector = require('./connect.cjs');
+const { ownerWith } = require('./loopback-owner.cjs');
 const { menuTemplate } = require('./menu.cjs');
 const { contextMenuTemplate } = require('./context-menu.cjs');
 const browsersFinder = require('./browsers.cjs');
@@ -1097,6 +1098,8 @@ async function handleConnectLink(url) {
   }
   const request = parsed.value;
   const ses = config ? session.fromPartition(policy.partitionFor(config)) : null;
+  // B-217: who accepted the callback's connection, from the computer's socket table (a busy table needs a larger buffer).
+  const owner = ownerWith((file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10000, maxBuffer: 16 * 1024 * 1024, windowsHide: true }, (error, stdout) => (error ? reject(error) : resolve({ stdout })))));
   const out = await connector.connect({
     request, config,
     // The prompt is a sheet on a window brought forward (the Dock bounces until it is answered),
@@ -1112,7 +1115,8 @@ async function handleConnectLink(url) {
     mint: ses ? connector.mintWith(ses, config.origin) : async () => ({ ok: false, error: t('No server') }),
     signedIn: ses ? connector.signedInWith(ses, config.origin) : undefined,
     revoke: ses ? connector.revokeWith(ses, config.origin) : async () => false,
-    deliver: connector.deliverTo(request.callback),
+    deliver: connector.deliverTo(request.callback, { check: owner }),
+    probe: connector.probeWith(owner),
     signIn: async () => { loadMail(); },
     log: (line) => { try { logEvent(JSON.parse(line)); } catch { logEvent({ event: 'connect', outcome: 'unparsed' }); } },
   });
@@ -1127,6 +1131,13 @@ async function handleConnectLink(url) {
       : out.reason === 'sign_in_required' ? t('Sign in to Fabric Inbox in the window that opened, then connect again from {client}.', { client: request.client })
       : out.reason === 'callback_unreachable' ? (out.revoked ? t('{client} did not receive the key, so it was revoked again.', { client: request.client }) : t('{client} did not receive the key, so it was made but could not be revoked: revoke it in Settings → Agent access.', { client: request.client }))
       : out.reason === 'listener_ambiguous' ? t('More than one app listens on port {port}, the one {client} gave, so Fabric Inbox cannot tell which of them would receive the key. Nothing was sent. Quit the other app, then connect again from {client}.', { port: out.port, client: request.client })
+      : out.reason === 'foreign_user' ? [
+        String(out.detail || '').startsWith('other-account')
+          ? t('Another account on this computer is using port {port}, the one {client} gave; nothing was sent to it.', { port: out.port, client: request.client })
+          : t('This computer would not say who is using port {port}, the one {client} gave; nothing was sent to it.', { port: out.port, client: request.client }),
+        out.keyMade ? (out.revoked ? t('The key made for it was revoked again.') : t('The key made for it could not be revoked: revoke it in Settings → Agent access.')) : '',
+        t('Connect again from {client} once it runs in your own account.', { client: request.client }),
+      ].filter(Boolean).join(' ')
       : out.reason === 'listener_changed' ? (out.revoked ? t('The key was made but could not reach {client}, and was revoked again.', { client: request.client }) : t('The key was made but could not reach {client}, and it could not be revoked: revoke it in Settings → Agent access.', { client: request.client }))
       : t('The key could not be made: {error}', { error: out.error ? t.text(out.error) : t('unknown error') });
     if (out.reason === 'no_server') showSetup(t('Set up your server, then connect again.'));
