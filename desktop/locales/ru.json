@@ -296,6 +296,7 @@
  "The link names no valid client id.": "В ссылке нет допустимого идентификатора клиента.",
  "The mail goes to this server as before, and it sends again. The copy on the other server stays there.": "Почта идёт на этот сервер, как раньше, и он снова отправляет. Копия на другом сервере остаётся там.",
  "The other server cannot take this address's mail: it is in another Cloudflare account, or its Cloudflare connection is missing. Nothing changed on this server.": "Другой сервер не может принять почту этого адреса: он в другом аккаунте Cloudflare или к нему не подключён Cloudflare. На этом сервере ничего не изменилось.",
+ "The other server does not receive mail for {domain} yet. Connect that domain there first, then try again. Nothing changed on this server.": "Другой сервер ещё не принимает почту для {domain}. Сначала подключите этот домен там, затем попробуйте снова. На этом сервере ничего не изменилось.",
  "The saved server setting could not be read. Enter it again.": "Не удалось прочитать сохранённый адрес сервера. Введите его снова.",
  "The server answered {status}.": "Сервер ответил {status}.",
  "The server bundle has a storage step ({tag}) that would delete or move stored data; this app does not send it.": "В пакете сервера есть шаг хранилища ({tag}), который удалил бы или переместил сохранённые данные; приложение его не отправляет.",

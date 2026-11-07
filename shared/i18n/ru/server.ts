@@ -706,6 +706,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"This address is moving to another server; send from there, or release the hold here": "Этот адрес переезжает на другой сервер; отправляйте оттуда или снимите удержание здесь",
 	"Give expect: the manifest's counts of messages and attachments": "Укажите expect: число писем и вложений из манифеста",
 	"The copy is not complete yet: {emails} of {wantEmails} messages, {attachments} of {wantAttachments} attachments": "Копия ещё не полная: писем {emails} из {wantEmails}, вложений {attachments} из {wantAttachments}",
+	"This server does not take mail for {domain} yet, so routing {email} here would lose its mail: receive the domain here first (connect_domain), then route the address": "Этот сервер ещё не принимает почту для {domain}, поэтому перенаправление {email} сюда потеряло бы её письма. Сначала примите домен здесь (connect_domain), затем перенаправьте адрес.",
 	"{email} was not routed here by a move": "{email} не переводили сюда переездом",
 	"The rule for {email} was changed since the move; it is left as it is": "Правило для {email} изменили после переезда; оно оставлено как есть",
 	"{address} is not sent to another server's Worker; use bring_address_here for it.": "Почта {address} идёт не в Worker другого сервера; для неё есть bring_address_here.",

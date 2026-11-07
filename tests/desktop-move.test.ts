@@ -11,11 +11,11 @@ const { createMover, describe } = require("../desktop/move.cjs");
 const ADDRESS = "support@shop.invalid";
 const base = `/api/transfer/${encodeURIComponent(ADDRESS)}`;
 
-function fakePair(opts: { emails?: number; testArrives?: boolean; dropFile?: boolean; otherAccount?: boolean } = {}) {
+function fakePair(opts: { emails?: number; testArrives?: boolean; dropFile?: boolean; otherAccount?: boolean; served?: boolean; firstTestLost?: boolean; lateMail?: number } = {}) {
   const calls: string[] = [];
   const src = { emails: Array.from({ length: opts.emails ?? 5 }, (_, i) => ({ id: `m${i}`, body_key: `bodies/m${i}` })), attachments: [] as any[], folders: [{ id: "inbox" }],
     sends: 0, held: false };
-  const dst = { emails: new Map<string, any>(), attachments: new Map<string, any>(), folders: new Map<string, any>(), files: new Set<string>(), routed: false, tested: false, opened: false };
+  const dst = { emails: new Map<string, any>(), attachments: new Map<string, any>(), folders: new Map<string, any>(), files: new Set<string>(), routed: false, tested: false, opened: false, testPosts: 0 };
   const page = (rows: any[], after: number, limit: number) => {
     const slice = rows.slice(after, after + limit);
     return { rows: slice, next: after + limit < rows.length ? after + limit : null };
@@ -47,7 +47,7 @@ function fakePair(opts: { emails?: number; testArrives?: boolean; dropFile?: boo
     async get(path: string) {
       calls.push(`to GET ${path.replace(base, "")}`);
       if (path.endsWith("/test")) return ok({ state: dst.tested && opts.testArrives !== false ? "arrived" : "waiting" });
-      if (path === `${base}/route`) return ok({ routed: dst.routed, here: opts.otherAccount ? null : dst.routed });
+      if (path === `${base}/route`) return ok({ routed: dst.routed, here: opts.otherAccount ? null : dst.routed, ...(opts.served === undefined ? {} : { served: opts.served }) });
       return { status: 404, body: { error: "no route" } };
     },
     async send(method: string, path: string, body: any) {
@@ -60,9 +60,14 @@ function fakePair(opts: { emails?: number; testArrives?: boolean; dropFile?: boo
         const missing = body.emails.filter((id: string) => !dst.emails.has(id));
         return ok({ complete: !missing.length, counts: { emails: missing.length, attachments: 0 } });
       }
-      if (path === `${base}/route`) { dst.routed = true; return ok({ routed: true }); }
+      if (path === `${base}/route`) {
+        dst.routed = true;
+        // Cloudflare still delivering to the sending server for a few minutes after the rule changed.
+        for (let i = 0; i < (opts.lateMail ?? 0); i++) src.emails.push({ id: `late${i}`, body_key: `bodies/late${i}` });
+        return ok({ routed: true });
+      }
       if (path === `${base}/unroute`) { dst.routed = false; return ok({ routed: false }); }
-      if (path.endsWith("/test")) { dst.tested = true; return ok({}); }
+      if (path.endsWith("/test")) { if (!(opts.firstTestLost && dst.testPosts++ === 0)) dst.tested = true; return ok({}); }
       if (path.endsWith("/agent")) return ok({ ok: true });
       return { status: 404, body: { error: "no route" } };
     },
@@ -154,4 +159,26 @@ test("SCN-094: a server that cannot take the address's mail (another Cloudflare 
   assert.deepEqual([state.stage, state.error.code], ["precheck", "cannot_route"]);
   assert.ok(!f.calls.some((c) => c.includes("POST /hold")), "the sending server is not held");
   assert.deepEqual([describe(state).held, describe(state).routed], [false, false]);
+});
+
+test("SCN-094: a receiving server that does not take the address's domain stops the move before the hold", async () => {
+  const f = fakePair({ served: false });
+  const state = await f.mover().run();
+  assert.deepEqual([state.stage, state.error.code, state.error.detail], ["precheck", "domain_not_served", "shop.invalid"]);
+  assert.ok(!f.calls.some((c) => c.includes("/hold")), "nothing on the sending server changed");
+  assert.ok(!f.dst.routed);
+  const older = fakePair();
+  assert.equal((await older.mover().run()).stage, "done", "a server that does not say whether it serves the domain is not stopped");
+  assert.equal((await fakePair({ served: true }).mover().run()).stage, "done");
+});
+
+test("SCN-094: a test lost to the old destination is sent once more, and mail that still reached the old copy is copied", async () => {
+  const f = fakePair({ emails: 3, firstTestLost: true, lateMail: 2 });
+  const state = await f.mover().run();
+  assert.equal(state.stage, "done", JSON.stringify(state.error));
+  assert.equal(f.calls.filter((c) => c.endsWith("POST /api/project-addresses/support%40shop.invalid/test")).length, 2, "sent again halfway through the wait");
+  assert.deepEqual([...f.dst.emails.keys()].sort(), ["late0", "late1", "m0", "m1", "m2"], "the late mail is on the receiving server");
+  assert.deepEqual(state.counts, { emails: 5, attachments: 0 }, "and counted");
+  const at = (needle: string) => f.calls.findLastIndex((c) => c.includes(needle));
+  assert.ok(at("/test") < at("POST /check"), "checked again after the test arrived");
 });

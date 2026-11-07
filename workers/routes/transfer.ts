@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import type { Env } from "../types";
 import { msg } from "../../shared/i18n";
-import { createMailbox, readSettings, settingsKey, updateSettings } from "../lib/mailbox-store";
+import { allServedDomains, createMailbox, readSettings, settingsKey, updateSettings } from "../lib/mailbox-store";
 import { CloudflareAccounts } from "../routing/accounts";
 import { BringRefused, DomainManager, type Rule } from "../routing/domains";
 import { CloudflareApiError } from "../routing/cloudflare-api";
@@ -316,6 +316,16 @@ transferRouter.post("/api/transfer/:email/hold", async (c) => {
   return c.json({ address: email, held: true, changed: true, since: at });
 });
 
+/**
+ * The receiving server takes mail for the address's domain. A server that names the domains it serves rejects mail for
+ * any other domain (workers/index.ts `resolveRecipient`, `domain_not_served`), so an address routed to it before its
+ * domain is connected loses its mail until someone notices (seen 2026-11-07 moving addresses between two servers).
+ */
+async function servesDomain(env: Env, email: string): Promise<boolean> {
+  const served = await allServedDomains(env);
+  return !served.length || served.includes(email.slice(email.lastIndexOf("@") + 1).toLowerCase());
+}
+
 /** The receiving side: where the move of the address's mail stands. */
 transferRouter.get("/api/transfer/:email/route", async (c) => {
   const email = addressOf(c);
@@ -324,7 +334,7 @@ transferRouter.get("/api/transfer/:email/route", async (c) => {
   const manager = domains(c.env);
   let here: boolean | null = null;
   if (manager) try { here = (await manager.addressRule(email)).here; } catch { here = null; }
-  return c.json({ address: email, routed: !!journal && !journal.backAt, here, journal: journal && { worker: journal.worker, routedAt: journal.routedAt, backAt: journal.backAt ?? null,
+  return c.json({ address: email, routed: !!journal && !journal.backAt, here, served: await servesDomain(c.env, email), journal: journal && { worker: journal.worker, routedAt: journal.routedAt, backAt: journal.backAt ?? null,
     previous: { enabled: journal.previous.enabled !== false, actions: journal.previous.actions } } });
 });
 
@@ -342,6 +352,8 @@ transferRouter.post("/api/transfer/:email/route", async (c) => {
   if (ids.emails.length < want.emails || ids.attachments.length < want.attachments)
     return c.json({ error: msg("The copy is not complete yet: {emails} of {wantEmails} messages, {attachments} of {wantAttachments} attachments", {
       emails: String(ids.emails.length), wantEmails: String(want.emails), attachments: String(ids.attachments.length), wantAttachments: String(want.attachments) }) }, 409);
+  if (!(await servesDomain(c.env, email)))
+    return c.json({ error: msg("This server does not take mail for {domain} yet, so routing {email} here would lose its mail: receive the domain here first (connect_domain), then route the address", { domain: email.slice(email.lastIndexOf("@") + 1), email }) }, 409);
   const manager = domains(c.env);
   if (!manager) return c.json({ error: msg("This server has no Cloudflare token yet. Create one with the permissions listed, then save it on the server as CLOUDFLARE_API_TOKEN.") }, 503);
   try {

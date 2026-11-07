@@ -5,7 +5,8 @@
  * copy (folders, emails, attachments with their files), setup (rules, the agent, its knowledge), labels, precheck
  * (the counts, and that the receiving server can take the address's mail, before anything on the sending server changes), hold (the
  * sending copy stops), settle (sends and new mail handled there), catch-up (what arrived meanwhile), check (counts),
- * route (the address's Cloudflare rule to the receiving server), test (a test message arrives there), done.
+ * route (the address's Cloudflare rule to the receiving server), test (a test message arrives there, then what still
+ * reached the sending copy while the rule took effect is copied and counted), done.
  *
  * Every step is safe to repeat on the servers' side, and the state after each one is written to a journal, so a move
  * cut by a quit continues from where it stopped. Pure apart from what is passed in: tests drive it with fake servers.
@@ -129,21 +130,32 @@ function createMover(opts) {
     return { emails: ids.emails.length, attachments: ids.attachments.length };
   }
 
-  /** The receiving server can point the address's Cloudflare rule at itself (same account, Cloudflare connected). */
+  /**
+   * The receiving server can point the address's Cloudflare rule at itself (same account, Cloudflare connected), and
+   * takes mail for the address's domain: a server that names its domains rejects any other, so routing there first
+   * would lose the address's mail (`served`, servers since 1.2.0; an older server does not say, and is not stopped).
+   */
   async function routable() {
     const where = await call(to, 'GET', `${base}/route`);
     if (!where || typeof where.here !== 'boolean') throw new MoveError('precheck', 'cannot_route', 'The receiving server cannot change this address\'s Cloudflare rule');
+    if (where.served === false) throw new MoveError('precheck', 'domain_not_served', address.slice(address.lastIndexOf('@') + 1));
   }
 
+  /**
+   * A test message to the address, checked on the receiving server. Cloudflare can deliver to the old destination for a
+   * few minutes after the rule changed (seen 2026-11-07: the first tests after `route` arrived at the sending server),
+   * so a test still missing halfway through the wait is sent once more before the move says it did not arrive.
+   */
   async function test() {
     const path = `/api/project-addresses/${encodeURIComponent(address)}/test`;
-    if (!state.testSentAt) { await call(to, 'POST', path, {}); await save({ testSentAt: now() }); }
+    if (!state.testSentAt) { await call(to, 'POST', path, {}); await save({ testSentAt: now(), testResent: false }); }
     for (;;) {
       const status = await call(to, 'GET', path);
-      if (status && status.state === 'arrived') return;
+      if (status && status.state === 'arrived') return true;
       if (status && status.state === 'failed') throw new MoveError('test', 'test_failed', status.errorDetail || status.errorCode || 'failed');
+      if (!state.testResent && now() - state.testSentAt >= testMs / 2) { await call(to, 'POST', path, {}); await save({ testResent: true }); }
       if (now() - state.testSentAt >= testMs) throw new MoveError('test', 'not_arrived', 'The test message did not arrive');
-      if (stopping) return;
+      if (stopping) return false;
       await sleep(pollMs);
     }
   }
@@ -171,7 +183,14 @@ function createMover(opts) {
       if (state.stage === 'catchup') { await copyTables(); if (stopping) return state; await save({ stage: 'check' }); }
       if (state.stage === 'check') { const counts = await check(); await save({ stage: 'route', counts }); }
       if (state.stage === 'route') { await call(to, 'POST', `${base}/route`, { expect: state.counts }); await save({ stage: 'test', routed: true }); }
-      if (state.stage === 'test') { await test(); if (stopping) return state; await save({ stage: 'done', error: null }); }
+      if (state.stage === 'test') {
+        if (!(await test())) return state;
+        // Mail Cloudflare still delivered to the held sending copy while the rule took effect: the same cursors copy it,
+        // and the counts are checked again, so nothing that arrived there in those minutes is left behind.
+        await copyTables(); if (stopping) return state;
+        const counts = await check();
+        await save({ stage: 'done', counts, error: null });
+      }
       return state;
     } catch (error) {
       if (!(error instanceof MoveError)) throw error;
@@ -184,7 +203,7 @@ function createMover(opts) {
   async function waitLonger() {
     state = await journal.read();
     if (!state || !state.error) return state;
-    if (state.error.code === 'not_arrived') await save({ testSentAt: now(), error: null });
+    if (state.error.code === 'not_arrived') await save({ testSentAt: now(), testResent: false, error: null });
     else if (state.error.code === 'still_busy') await save({ settleSince: now(), error: null });
     else await save({ error: null });
     return run();

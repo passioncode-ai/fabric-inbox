@@ -7,6 +7,12 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+**Moving an address no longer drops mail on the way** (B-234, SCN-094). The move stops before anything changes when
+the other server does not receive mail for the address's domain yet, and says to connect the domain there first (the
+server's own route refuses it too, for agents using `move_address`). After the mail is pointed at the other server, a
+test message that went to the old destination is sent once more, and mail that still reached the old copy in those
+minutes is copied and counted before the move is done.
+
 **A hub's key goes only to your own account** (B-217). On a computer several people sign in to, another account could
 listen on the port a hub names. Before the Connect dialog and again on the open connection right before the key is
 written, the app reads the computer's socket table and sends the key only when the process that accepted the

@@ -82,6 +82,7 @@ const ERRORS = {
   signed_out: () => t('You are signed out of one of the servers. Sign in there, then try again.'),
   too_large: () => t('One attachment is larger than a move carries. Try again, or put everything back.'),
   cannot_route: () => t('The other server cannot take this address\'s mail: it is in another Cloudflare account, or its Cloudflare connection is missing. Nothing changed on this server.'),
+  domain_not_served: (error) => t('The other server does not receive mail for {domain} yet. Connect that domain there first, then try again. Nothing changed on this server.', { domain: error.detail }),
 };
 
 function render(state) {
@@ -104,7 +105,7 @@ function render(state) {
   }
   const nodes = [head(t('Moving {address}', { address: state.address })), ...progress(state)];
   if (state.error) {
-    const text = (ERRORS[state.error.code] || (() => t('This step stopped: {detail}', { detail: state.error.detail })))();
+    const text = (ERRORS[state.error.code] || (() => t('This step stopped: {detail}', { detail: state.error.detail })))(state.error);
     nodes.push(el('p', { class: 'error', role: 'alert', text }));
     const actions = [];
     if (state.error.code === 'not_arrived' || state.error.code === 'still_busy') actions.push(button(t('Wait Longer'), () => void act(() => window.fabricMove.waitLonger()), 'primary'));
