@@ -372,6 +372,51 @@ function installMoveIPC() {
     return true;
   });
 }
+
+// ── B-233 (SCN-099): the mail of every server the app holds, in one window ─────────────────────────────
+// Each server is read through its own session; a message opens on its own server (switched to, still signed in).
+const allServers = require('./all-servers.cjs');
+let allWindow = null;
+function showAllServers() {
+  if (allWindow && !allWindow.isDestroyed()) { allWindow.show(); allWindow.focus(); return; }
+  allWindow = new BrowserWindow({ title: t('All Servers'), width: 980, height: 720, minWidth: 640, minHeight: 480,
+    backgroundColor: '#f7f7f8', webPreferences: securePreferences({ preload: path.join(__dirname, 'all-servers-preload.cjs'), partition: 'fabric-all-servers' }) });
+  allWindow.setMenuBarVisibility(false);
+  rejectPermissions(allWindow.webContents.session);
+  allWindow.webContents.on('will-navigate', event => event.preventDefault());
+  allWindow.webContents.on('will-redirect', event => event.preventDefault());
+  allWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  allWindow.on('closed', () => { allWindow = null; });
+  allWindow.loadFile(path.join(__dirname, 'all-servers.html'));
+  logEvent({ event: 'all_servers_opened', servers: servers.length });
+}
+/** Opens one message on its own server: the window shows that server (its sign-in kept) and the message. */
+async function openOnServer(origin, link) {
+  if (!servers.some((s) => s.origin === origin) || typeof link !== 'string' || !link.startsWith('/')) return false;
+  if (config && config.origin === origin && mailWindow && !mailWindow.isDestroyed()) {
+    mailWindow.show(); mailWindow.focus();
+    void mailWindow.loadURL(new URL(link, origin).href).catch(() => {});
+    return true;
+  }
+  openAfterSignIn = link;
+  await switchServer(origin);
+  if (mailWindow && !mailWindow.isDestroyed()) { mailWindow.show(); mailWindow.focus(); }
+  return true;
+}
+function installAllServersIPC() {
+  const own = (event) => !!(allWindow && !allWindow.isDestroyed() && event.sender === allWindow.webContents);
+  const handle = (channel, fn) => ipcMain.handle(channel, async (event, arg) => (own(event) ? fn(arg) : null));
+  handle('fabric:all-locale', () => i18n.forWindow());
+  handle('fabric:all-read', async () => {
+    const list = servers.map((s) => ({ origin: s.origin, label: serverList.labelFor(s, t) }));
+    const result = await allServers.readAll({ servers: list, read: (origin, pathname) => serverApi(origin).get(pathname) });
+    logEvent({ event: 'all_servers_read', servers: result.servers.length, ok: result.servers.filter((s) => s.state === 'ok').length });
+    return result;
+  });
+  handle('fabric:all-open', async (arg) => openOnServer(String(arg && arg.origin || ''), arg && arg.link));
+  // A server whose sign-in lapsed: the window shows it, at its sign-in page.
+  handle('fabric:all-sign-in', async (origin) => { if (servers.some((s) => s.origin === origin)) await switchServer(String(origin)); return true; });
+}
 function showSetup(message = '', start = '') {
   notice = message;
   setupStart = start;
@@ -1073,6 +1118,7 @@ async function handleConnectLink(url) {
 }
 function installIPC() {
   installMoveIPC();
+  installAllServersIPC();
   const fromConsole = (event) => {
     const docked = consoleView && !consoleView.webContents.isDestroyed() && event.sender === consoleView.webContents
       && event.senderFrame === consoleView.webContents.mainFrame && event.senderFrame.url === consoleURL;
@@ -1282,6 +1328,7 @@ function installMenu() {
     servers: {
       items: servers.map((s) => ({ label: serverList.labelFor(s, t), checked: !!config && s.origin === config.origin, click: () => void switchServer(s.origin) })),
       add: () => showSetup(),
+      all: servers.length > 1 ? () => showAllServers() : null,
       move: servers.length > 1 && config ? () => showMove() : null,
       forget: servers.filter((s) => !config || s.origin !== config.origin).map((s) => ({ label: serverList.labelFor(s, t), click: () => void forgetServer(s.origin) })),
     },

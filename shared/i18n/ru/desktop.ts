@@ -455,6 +455,17 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Put It Back": "Вернуть как было",
 	"The other server cannot take this address's mail: it is in another Cloudflare account, or its Cloudflare connection is missing. Nothing changed on this server.": "Другой сервер не может принять почту этого адреса: он в другом аккаунте Cloudflare или к нему не подключён Cloudflare. На этом сервере ничего не изменилось.",
 	"You can close this window; the move goes on while the app is open, and continues from here when you open it again.": "Это окно можно закрыть: перенос идёт, пока приложение открыто, и продолжится с этого места, когда вы откроете окно снова.",
+	"All Servers": "Все серверы",
+	"All servers": "Все серверы",
+	"Sign in to {server}": "Войдите в {server}",
+	"Sign In": "Войти",
+	"{server}: not reachable now": "{server}: сейчас недоступен",
+	"{server}: {n} unread": "{server}: непрочитанных {n}",
+	"{server}: nothing unread": "{server}: всё прочитано",
+	"Reading your servers…": "Читаю ваши серверы…",
+	"No mail here": "Писем нет",
+	"{sender}: {subject}, on {server}": "{sender}: {subject}, сервер {server}",
+	"Mail on all your servers": "Почта всех ваших серверов",
 };
 
 /** Every update text is wrapped in desktop/main.cjs now (LC-16); nothing is reserved. */
