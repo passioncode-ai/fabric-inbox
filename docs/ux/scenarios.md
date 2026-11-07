@@ -100,7 +100,7 @@
 | SCN-096 | Give a person a level on a mailbox | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-17 | draft | — |
 | SCN-097 | My server warns me before a mailbox fills and keeps old mail restorable | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-11 | draft | not yet |
 | SCN-098 | Let an agent give people mailboxes and issue keys without asking me | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-15 | draft | not yet |
-| SCN-099 | See the mail of every server I hold in one list | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | not yet |
+| SCN-099 | See the mail of every server I hold in one list | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | partial |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -2061,6 +2061,6 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** empty, loading, error, success
 - **Errors & recovery:** One server failing never hides the others; its line names it and offers Retry or Sign In.
 - **Status:** draft
-- **Coverage:** none yet
+- **Coverage:** `desktop/all-servers.cjs` (`readAll`), `desktop/all-servers.js`, `desktop/all-servers.html`, `desktop/all-servers-preload.cjs`, `desktop/main.cjs` (`showAllServers`, `openOnServer`, `installAllServersIPC`), `desktop/menu.cjs`, `tests/desktop-all-servers.test.ts`, `tests/desktop-servers.test.ts`
 - **Product:** unobserved
-- **Today:** Not built. The Account menu switches between servers (SCN-093), and the window shows one at a time.
+- **Today:** Steps 1 to 3 and the alt paths for a signed-out or unreachable server built (B-233 part 1): Account → All Servers opens a window of its own, read when it opens, comes forward or is refreshed (no timer). New-mail notifications for every server are B-233 part 2.
