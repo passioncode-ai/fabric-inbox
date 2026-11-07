@@ -42,3 +42,27 @@ test("the mail window shows the menu, for every frame of it, with the system cli
   assert.match(main, /copy: \(text\) => clipboard\.writeText\(text\)/);
   assert.match(main, /Menu\.buildFromTemplate\(items\)\.popup\(\{ window: win \}\)/);
 });
+
+// B-227 (operator, 2026-11-06): the installed browsers in the same menu, not a submenu.
+const browsers = [{ name: "Safari", file: "/usr/bin/open", args: ["-a", "/Applications/Safari.app"] },
+  { name: "Chrome", file: "/usr/bin/open", args: ["-a", "/Applications/Google Chrome.app"] }];
+const withBrowsers = (params: Record<string, unknown>, list = browsers) => {
+  const opened: string[] = [];
+  const items = contextMenuTemplate(params, { t: (s: string, v?: Record<string, string>) => (v ? s.replace("{browser}", v.browser) : s),
+    open: () => {}, copy: () => {}, browsers: list, openIn: (b: { name: string }, u: string) => opened.push(`${b.name} ${u}`) });
+  return { items, opened, labels: items.map((i: { label?: string; type?: string }) => i.label ?? i.type) };
+};
+
+test("B-227: a web link lists each installed browser right after Open Link in Browser, in the same menu", () => {
+  const r = withBrowsers({ linkURL: "https://shop.example/a" });
+  assert.deepEqual(r.labels, ["Open Link in Browser", "Open in Safari", "Open in Chrome", "Copy Link"]);
+  assert.ok(r.items.every((i: { submenu?: unknown }) => !i.submenu), "no submenu");
+  r.items[2].click();
+  assert.deepEqual(r.opened, ["Chrome https://shop.example/a"]);
+});
+
+test("B-227: one browser, none found, or a mail address: no browser list", () => {
+  assert.deepEqual(withBrowsers({ linkURL: "https://shop.example/a" }, browsers.slice(0, 1)).labels, ["Open Link in Browser", "Copy Link"]);
+  assert.deepEqual(withBrowsers({ linkURL: "https://shop.example/a" }, []).labels, ["Open Link in Browser", "Copy Link"]);
+  assert.deepEqual(withBrowsers({ linkURL: "mailto:ann@shop.example" }).labels, ["Write to This Address", "Copy Address"]);
+});

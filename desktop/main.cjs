@@ -10,6 +10,7 @@ const profile = require('./profile.cjs');
 const connector = require('./connect.cjs');
 const { menuTemplate } = require('./menu.cjs');
 const { contextMenuTemplate } = require('./context-menu.cjs');
+const browsersFinder = require('./browsers.cjs');
 const newMail = require('./new-mail.cjs');
 const addressWait = require('./address-wait.cjs');
 const serverList = require('./servers.cjs');
@@ -113,6 +114,22 @@ let notifiedReadyAt = 0;
 const READY_REMINDER_MS = 24 * 3600 * 1000;
 /** B-204: the version the "new version is available" notice was shown for (automatic updates off), once per version. */
 let notifiedAvailable = '';
+/** B-227: the installed browsers the right-click menu offers, found once per launch ([] until then or when unreadable). */
+let installedBrowsers = [];
+function findInstalledBrowsers() {
+  const execText = async (file, args) => (await execFileAsync(file, args)).stdout.toString();
+  void browsersFinder.findBrowsers({ platform: process.platform, fs, homedir: require('node:os').homedir(), execFile: execText })
+    .then((list) => { installedBrowsers = list; }).catch(() => {});
+}
+/** Opens a link in one installed browser, detached and without a shell; a failure is logged, never shown. */
+function openInBrowser(browser, url) {
+  const { file, args } = browsersFinder.openArgs(browser, url);
+  try {
+    const child = spawn(file, args, { detached: true, stdio: 'ignore', windowsHide: true });
+    child.on('error', () => logEvent({ event: 'context_menu_open', outcome: 'failed', browser: browser.name }));
+    child.unref();
+  } catch { logEvent({ event: 'context_menu_open', outcome: 'failed', browser: browser.name }); }
+}
 // The app's log, ~/Library/Logs/<app name>/ (LC-12): codes and versions only.
 let appLog = null;
 /** B-205: the digests of the app's own log; B-213 keeps its open hour at quit. */
@@ -558,7 +575,7 @@ function loadMail() {
   win.webContents.on('context-menu', (_event, params) => {
     const items = contextMenuTemplate(params, { t,
       open: (url) => { shell.openExternal(url).catch(() => logEvent({ event: 'context_menu_open', outcome: 'failed' })); },
-      copy: (text) => clipboard.writeText(text) });
+      copy: (text) => clipboard.writeText(text), browsers: installedBrowsers, openIn: openInBrowser });
     if (items.length && !win.isDestroyed()) Menu.buildFromTemplate(items).popup({ window: win });
   });
   win.webContents.on('page-title-updated', event => event.preventDefault());
@@ -1462,6 +1479,7 @@ if (ownsInstance) app.whenReady().then(async () => {
   startTray();
   startNewMail();
   void startAutostart().catch(() => logEvent({ event: 'login_item', outcome: 'failed', reason: 'not_started' }));
+  findInstalledBrowsers();
   // B-210 (DEC-0153 OD-9, DEC-0069): where the app's own daily digests are, for a Fabric collector on this computer.
   void Promise.resolve().then(() => ensureDescriptor({ fs, platform: process.platform, env: process.env, home: require('node:os').homedir(),
     execPath: process.execPath, userData: app.getPath('userData'), logs: app.getPath('logs'), version: app.getVersion(), packaged: app.isPackaged,

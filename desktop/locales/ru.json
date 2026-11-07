@@ -193,6 +193,7 @@
  "Open a setup file…": "Открыть файл конфигурации…",
  "Open at Login": "Открывать при входе в систему",
  "Open in browser": "Открыть в браузере",
+ "Open in {browser}": "Открыть в {browser}",
  "Open it at its address": "Публикация по адресу",
  "Open this website in your browser?": "Открыть этот сайт в браузере?",
  "Opening your saved server address…": "Открываем сохранённый адрес сервера…",
