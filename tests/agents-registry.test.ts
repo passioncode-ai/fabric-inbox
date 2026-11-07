@@ -997,27 +997,30 @@ test("B-132: the day's answers are judged once by another vendor, the verdict st
     await command("create", { id: "support", input: support });
     const box = "support@project.invalid";
     await command("setup", { mailbox: box, settings: { agent: { id: "support" } }, model: {} });
-    await command("seedThread", { mailbox: box, rows: [{ id: "a", folder: "inbox", date: "2026-10-18T09:00:00.000Z", thread: "t1" }] });
+    await command("seedThread", { mailbox: box, rows: [{ id: "a", folder: "inbox", date: "2026-10-18T09:00:00.000Z", thread: "t1" },
+      { id: "d2", folder: "inbox", date: "2026-10-18T09:00:00.000Z", thread: "t2" }, { id: "d3", folder: "inbox", date: "2026-10-18T09:00:00.000Z", thread: "t3" }] });
     const base = { mailboxId: box, sender: "x@y.invalid", subject: "s", reason: "", toolCalls: [], agentId: "support", agentVersion: 1 };
     const id = "agent-" + "d1".repeat(16);
     await command("begin", { run: { ...base, id, emailId: "a", status: "sent", createdAt: "2026-10-18T09:00:10.000Z", updatedAt: "2026-10-18T09:01:00.000Z",
       model: "xiaomi/mimo-v2.6-pro", checkedBy: "qwen/qwen3.8-flash", repliedAt: "2026-10-18T09:01:00.000Z",
       sent: { to: "x@y.invalid", subject: "Re: s", body: "Open Settings, then Account.", outboxId: "o" } } });
-    // A hand-off template and a safe reply are fixed texts, never judged as answers (VoC audit 2026-10-27).
+    // A hand-off template and a safe reply are fixed texts, never judged as answers (VoC audit 2026-10-27); since
+    // request c5d9c0c9 the hand-off is judged as a hand-off (its own instructions, marked), the safe reply still is not.
     for (const [n, mark] of [["d2", { handoff: true }], ["d3", { fallback: true }]] as const)
       await command("begin", { run: { ...base, id: "agent-" + n.repeat(16), emailId: n, status: "sent", createdAt: "2026-10-18T09:00:20.000Z", updatedAt: "2026-10-18T09:01:00.000Z",
         ...mark, sent: { to: "x@y.invalid", subject: "Re: s", body: "A person from our team will answer you.", outboxId: "o" + n } } });
     const checks = { language: "PASS", addressed: "PASS", policySafe: "PASS", routing: "PASS", actionable: "FAIL", continuity: "PASS" };
     await command("judgeScript", { script: { verdict: { rubric: "v1", checks, question: true, helped: "partly", note: "no clear step" } } });
     await command("quality", { now: Date.parse("2026-10-20T00:10:00.000Z") });
-    const last = await command("judgeLast", {});
-    assert.deepEqual(last.models, ["deepseek/deepseek-v4.1-flash"], "neither the writer's vendor nor the checker's");
-    assert.equal(last.input.answer, "Open Settings, then Account.");
     const event = ((await command("events", {})).events as { kind: string; data: { value: Record<string, any> } }[]).find((e) => e.kind === "support.quality_daily")!;
     assert.equal(event.data.value.judgeModel, "deepseek/deepseek-v4.1-flash");
-    assert.equal(event.data.value.quality.judged, 1);
-    assert.equal(event.data.value.quality.helpedPartly, 1);
-    assert.equal(event.data.value.quality.actionableFail, 1);
+    assert.equal(event.data.value.quality.judged, 2, "the answer and the hand-off; never the safe reply");
+    assert.equal(event.data.value.quality.helpedPartly, 2);
+    assert.equal(event.data.value.quality.actionableFail, 2);
+    assert.equal(event.data.value.rubricVersion, "v1+referral", "a day with hand-offs judged as hand-offs is its own series");
+    const [handed, safe] = await command("byIds", { ids: ["agent-" + "d2".repeat(16), "agent-" + "d3".repeat(16)] }) as { id: string; judgement?: { referral?: boolean } }[];
+    assert.equal([handed, safe].find((r) => r.id.endsWith("d2d2"))?.judgement?.referral, true);
+    assert.equal([handed, safe].find((r) => r.id.endsWith("d3d3"))?.judgement, undefined);
     assert.ok(!event.data.value.notMeasured.includes("quality"));
     assert.ok(!JSON.stringify(event.data).includes("no clear step"), "the judge's note stays on the run");
     const [kept] = await command("byIds", { ids: [id] }) as { judgement?: { note: string } }[];

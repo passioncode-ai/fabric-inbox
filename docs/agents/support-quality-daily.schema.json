@@ -29,7 +29,7 @@
     },
     "rubricVersion": {
       "type": "string",
-      "description": "The judge rubric's version (v1: language, addressed, policy_safe, routing, actionable, continuity)."
+      "description": "The judge rubric's version (v1: language, addressed, policy_safe, routing, actionable, continuity). v1+referral: the day's verdicts also include the agent's hand-offs, judged as hand-offs under their own instructions (fabric-inbox workers/agents/judge.ts JUDGE_REFERRAL_SYSTEM, 2026-11-08); a reader treats it as its own series."
     },
     "judgeModel": {
       "type": [

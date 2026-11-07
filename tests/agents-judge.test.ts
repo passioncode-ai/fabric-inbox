@@ -57,3 +57,11 @@ test("B-152: a bench model that cannot answer with reasoning off is asked again 
     assert.deepEqual(bodies.map((b) => b.reasoning), [{ enabled: true }], "the reference reasons from the start, once");
   } finally { globalThis.fetch = real; }
 });
+
+test("request c5d9c0c9: a hand-off is judged under its own instructions, which keep the rubric's JSON answer", async () => {
+  const { JUDGE_SYSTEM, JUDGE_REFERRAL_SYSTEM } = await import("../workers/agents/judge");
+  assert.match(JUDGE_REFERRAL_SYSTEM, /This answer is a hand-off/);
+  assert.match(JUDGE_REFERRAL_SYSTEM, /FAIL when the agent should have answered it itself/);
+  assert.equal(JUDGE_REFERRAL_SYSTEM.split("\n").at(-1), JUDGE_SYSTEM.split("\n").at(-1), "the same JSON shape, so parseVerdict reads it");
+  assert.ok(JUDGE_REFERRAL_SYSTEM.startsWith(JUDGE_SYSTEM.split("\n").slice(0, -1).join("\n")), "every rule of the answers' rubric still holds");
+});

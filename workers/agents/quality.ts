@@ -3,11 +3,16 @@
 // only: never a sender, a subject, a message's words or an id of a person. A family or field this
 // server cannot measure is named in `notMeasured` and is null, never 0.
 import type { AgentRun } from "./run";
+import { ticketOutcomeOf } from "./ticket-outcome";
 
 /** The payload schema of `data.value`, a copy of the shared standard's v2 kept in this repository. */
 export const QUALITY_SCHEMA = "https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/agents/support-quality-daily.schema.json";
 export const RUBRIC_VERSION = "v1";
+/** The day's rubric when its verdicts include hand-offs graded as hand-offs (judge.ts JUDGE_REFERRAL_SYSTEM): a new series. */
+export const RUBRIC_WITH_REFERRALS = "v1+referral";
 const DAY = 86_400_000;
+/** Skips the server made, not the agent's "no reply needed" (registry.ts answerAgain, policy.ts decide). */
+const SERVER_SKIP = /^(Not answered again:|The agent produced no answer)/i;
 
 type Count = number | null;
 export interface QualityDaily {
@@ -59,7 +64,7 @@ export interface QualityInput {
   /** The reply mode of an agent version, "draft" or "auto"; unknown counts as auto. */
   modeOf: (run: AgentRun) => "draft" | "auto";
   /** The judge's results for the day (B-132), or null when nothing was judged. */
-  judged?: { model: string; quality: QualityDaily["quality"] } | null;
+  judged?: { model: string; quality: QualityDaily["quality"]; referrals?: number } | null;
   now: number;
 }
 
@@ -68,7 +73,8 @@ export function qualityDay(input: QualityInput): QualityDaily {
   const start = Date.parse(`${input.day}T00:00:00.000Z`), end = start + DAY;
   const created = (r: AgentRun) => Date.parse(r.createdAt);
   const ofDay = input.runs.filter((r) => created(r) >= start && created(r) < end);
-  const notMeasured = new Set<string>(["smalltalk", "processErrors", "restarts"]);
+  // restarts: the server is a Cloudflare Worker; there is no long-lived process of its own to restart (reply 0b04ed8b).
+  const notMeasured = new Set<string>(["restarts"]);
   const replies = ofDay.flatMap((r) => {
     const at = firstReplyAt(r);
     const from = Date.parse(r.receivedAt ?? r.createdAt);
@@ -96,7 +102,7 @@ export function qualityDay(input: QualityInput): QualityDaily {
   const sum = (f: (r: AgentRun) => number) => ofDay.reduce((n, r) => n + f(r), 0);
   const modelMeasured = !notMeasured.has("modelCalls");
   return {
-    date: input.day, channel: mailChannel(input.address), rubricVersion: RUBRIC_VERSION, judgeModel: judged?.model ?? null,
+    date: input.day, channel: mailChannel(input.address), rubricVersion: judged?.referrals ? RUBRIC_WITH_REFERRALS : RUBRIC_VERSION, judgeModel: judged?.model ?? null,
     coverage: {
       coverageBasis: "inbound", turns: input.received,
       delivered: ofDay.filter((r) => firstReplyAt(r) !== null).length,
@@ -111,14 +117,18 @@ export function qualityDay(input: QualityInput): QualityDaily {
       modelCalls: modelMeasured ? sum((r) => r.modelCalls?.calls ?? 0) : null,
       modelCallsFailed: modelMeasured ? sum((r) => r.modelCalls?.failed ?? 0) : null,
       fallbackTurns: modelMeasured ? ofDay.filter((r) => (r.modelCalls?.recovered ?? 0) > 0).length : null,
-      processErrors: null, restarts: null,
+      // The Worker invocation running a turn ended before the turn did (a deploy, an eviction, a time limit): the run was
+      // left interrupted, or picked up again by the next one (`rerun`). A turn that failed on its own is `errors` only.
+      processErrors: ofDay.filter((r) => r.status === "interrupted" || r.rerun).length, restarts: null,
     },
     autonomy: {
       answered: ofDay.filter((r) => r.status === "sent" && !r.handoff && !r.fallback).length,
       toPersonPolicy: ofDay.filter((r) => r.handoff || (r.status === "drafted" && !r.limited && input.modeOf(r) === "draft")).length,
       toPersonInability: ofDay.filter((r) => !r.handoff && (r.status === "held" || (r.status === "drafted" && !r.limited && input.modeOf(r) === "auto"))).length,
       limitReplies: ofDay.filter((r) => r.limited).length,
-      smalltalk: null,
+      // Messages the agent itself found owe no reply (thanks, an acknowledgement): its model chose "skip". A message the
+      // server skipped (gone before an answer, an empty answer) is not small talk.
+      smalltalk: ofDay.filter((r) => ticketOutcomeOf(r, input.now) === "no_reply_owed" && !SERVER_SKIP.test(r.reason ?? "")).length,
       personQueueWaiting: waiting.length,
       personQueueOldestMs: waiting.length ? Math.max(0, input.now - Math.min(...waiting.map(created))) : null,
       noSafeDefault: ofDay.filter((r) => r.status === "drafted" && r.escalatedAt && !r.answeredByPerson).length,
