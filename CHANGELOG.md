@@ -5,6 +5,21 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.1.0 (2026-11-07)
+
+**All your servers in one list** (B-233 part 1, SCN-099). With two or more servers held (your own and an
+organization's), Account → All Servers shows the inbox of every one of them in one list, newest first, each message
+marked with its server; filter by server or unread. A message opens on its own server, still signed in, with that
+server's actions and agents; nothing is copied between servers. A server whose sign-in lapsed, or that does not
+answer, gets a line of its own with Sign In or Retry and never hides the others. Read when the window opens, comes
+forward or is refreshed; no timer.
+
+**Open a link in any browser** (B-227). Right-click a link in the Mac, Windows or Linux app: with two or more
+browsers installed, the same menu lists Open in Safari, Open in Chrome and so on, right after Open Link in Browser.
+
+**Every icon says what it does** (B-226). A control whose icon says nothing on its own shows its name, and its
+shortcut when it has one, after the pointer rests on it or the keyboard reaches it.
+
 ## 1.0.0 (2026-11-06)
 
 The release first tagged `v0.100.0`, renumbered: the Mac App Store build number holds a minor version up to 99
