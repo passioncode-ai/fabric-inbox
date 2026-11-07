@@ -39,7 +39,7 @@ test("B-130: one address's day: coverage, first reply percentiles, repeats, auto
   assert.equal(v.channel, "mail:acme.example:support");
   assert.deepEqual(v.coverage, { coverageBasis: "inbound", turns: 9, delivered: 3, undelivered: 1, firstReplyP50Ms: 120_000, firstReplyP90Ms: 600_000,
     repeatAsk: 1, agentRepeat: 1, followupsAnswered: 1, followupsPending: 1 });
-  assert.deepEqual(v.stability, { errors: 1, modelCalls: 16, modelCallsFailed: 1, fallbackTurns: 1, processErrors: null, restarts: null });
+  assert.deepEqual(v.stability, { errors: 1, modelCalls: 16, modelCallsFailed: 1, fallbackTurns: 1, processErrors: 0, restarts: null });
   assert.equal(v.autonomy.answered, 2);
   assert.equal(v.autonomy.toPersonPolicy, 2, "the hand-off and the draft of a drafting agent");
   assert.equal(v.autonomy.toPersonInability, 1, "the held one");
@@ -47,8 +47,8 @@ test("B-130: one address's day: coverage, first reply percentiles, repeats, auto
   assert.equal(v.autonomy.noSafeDefault, 1, "the escalated draft nobody answered");
   assert.equal(v.autonomy.personQueueWaiting, 3, "held plus the two drafts");
   assert.equal(v.autonomy.personQueueOldestMs, NOW - Date.parse(`${DAY}T10:00:00.000Z`));
-  assert.equal(v.autonomy.smalltalk, null);
-  assert.deepEqual(v.notMeasured, ["processErrors", "quality", "restarts", "smalltalk"]);
+  assert.equal(v.autonomy.smalltalk, 0);
+  assert.deepEqual(v.notMeasured, ["quality", "restarts"], "restarts: a Worker has no process of its own to restart");
   assert.equal(v.quality.judged, null, "not judged yet: null, never 0");
   assert.ok(validate(v), JSON.stringify(validate.errors));
 });
@@ -87,4 +87,36 @@ test("review 2026-10-21: a run sent before repliedAt existed counts as delivered
   assert.equal(v.coverage.delivered, 1);
   assert.equal(v.coverage.firstReplyP50Ms, 5 * 60_000);
   assert.equal(firstReplyAt(run({ status: "drafted", repliedAt: undefined })), null, "a draft is no reply");
+});
+
+test("request c5d9c0c9: process errors are turns the Worker cut; small talk is what the agent found owes no reply", () => {
+  n = 0;
+  const runs = [
+    run({ status: "interrupted" }),
+    run({ status: "sent", rerun: true, repliedAt: `${DAY}T10:05:00.000Z` }),
+    run({ status: "failed" }),
+    // The agent's own "no reply needed" (thanks), and two skips the server made.
+    run({ status: "skipped", reason: "The customer only says thanks" }),
+    run({ status: "skipped", reason: "Not answered again: the message is no longer there for its agent (moved, deleted, or the address or agent was turned off)" }),
+    run({ status: "skipped", reason: "The agent produced no answer" }),
+    // Mail no one wrote to be answered is not small talk.
+    run({ status: "skipped", reason: "Automatic reply or out-of-office" }),
+  ];
+  const v = qualityDay({ address: "support@acme.example", day: DAY, received: 7, runs, now: NOW, modeOf: () => "auto" });
+  assert.equal(v.stability.processErrors, 2, "the interrupted run and the one picked up again");
+  assert.equal(v.stability.errors, 2, "errors keeps counting failed and interrupted turns, as before");
+  assert.equal(v.autonomy.smalltalk, 1);
+  assert.ok(!v.notMeasured.includes("processErrors") && !v.notMeasured.includes("smalltalk"));
+  assert.ok(validate(v), JSON.stringify(validate.errors));
+});
+
+test("request c5d9c0c9: a day whose verdicts include hand-offs judged as hand-offs names its own rubric", () => {
+  n = 0;
+  const quality = { judged: 2, questions: 2, helpedYes: 1, helpedPartly: 0, helpedNo: 1, languagePass: 2, languageFail: 0, addressedPass: 2, addressedFail: 0,
+    policySafePass: 2, policySafeFail: 0, routingPass: 1, routingFail: 1, actionablePass: 2, actionableFail: 0, continuityPass: 2, continuityFail: 0 };
+  const day = (referrals?: number) => qualityDay({ address: "support@acme.example", day: DAY, received: 2, runs: [run({})], now: NOW, modeOf: () => "auto",
+    judged: { model: "deepseek/deepseek-v4.1-flash", quality, ...(referrals ? { referrals } : {}) } });
+  assert.equal(day(1).rubricVersion, "v1+referral");
+  assert.equal(day().rubricVersion, "v1", "answers alone keep v1, so calibration pairs and the series stay");
+  assert.ok(validate(day(1)), JSON.stringify(validate.errors));
 });

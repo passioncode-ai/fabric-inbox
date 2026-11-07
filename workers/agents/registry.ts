@@ -897,8 +897,9 @@ export class AgentRegistryDO extends DurableObject<Env> {
    */
   protected async judgeDay(address: string, day: string, runs: AgentRun[]): Promise<ReturnType<typeof qualityOf>> {
     // VoC audit 2026-10-27 (1): a hand-off template or a safe reply is a fixed text, not an answer; judging it as one
-    // scored every hand-off "helped: no" and pulled addressed and routing down.
-    const ofDay = runs.filter((r) => r.createdAt.startsWith(day) && r.status === "sent" && r.sent?.body && !r.redacted && !r.handoff && !r.fallback);
+    // scored every hand-off "helped: no" and pulled addressed and routing down. Rubric v2 (2026-11-08, request
+    // c5d9c0c9): a hand-off is judged as a hand-off, under its own instructions; the safe reply still is not judged.
+    const ofDay = runs.filter((r) => r.createdAt.startsWith(day) && r.status === "sent" && r.sent?.body && !r.redacted && !r.fallback);
     const todo = ofDay.filter((r) => !r.judgement).slice(0, Math.max(0, JUDGE_SAMPLE - ofDay.filter((r) => r.judgement).length));
     const deps = this.deps(address);
     let calls = 0, failed = 0;
@@ -914,10 +915,10 @@ export class AgentRegistryDO extends DurableObject<Env> {
           const earlier = thread.filter((m) => m.folder_id === "sent" && Date.parse(m.date) < received).at(-1);
           calls++;
           const verdict = await this.judgeAnswer(models, { message: `${email.subject}\n${deps.htmlToText(email.body)}`,
-            earlier: earlier ? deps.htmlToText(earlier.body) : "", answer: run.sent!.body });
+            earlier: earlier ? deps.htmlToText(earlier.body) : "", answer: run.sent!.body, ...(run.handoff ? { referral: true } : {}) });
           if (!verdict) return;
-          run.judgement = verdict;
-          this.ctx.storage.sql.exec("UPDATE agent_runs SET body = json_set(body, '$.judgement', json(?)) WHERE id = ?", JSON.stringify(verdict), run.id);
+          run.judgement = run.handoff ? { ...verdict, referral: true } : verdict;
+          this.ctx.storage.sql.exec("UPDATE agent_runs SET body = json_set(body, '$.judgement', json(?)) WHERE id = ?", JSON.stringify(run.judgement), run.id);
         } catch (error) {
           failed++;
           console.warn(JSON.stringify({ event: "judge_failed", trace: run.id, error: (error as Error).message?.slice(0, 200) }));

@@ -7,6 +7,11 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+**The daily quality report measures what it skipped** (B-235). The judge now also grades the agent's hand-offs, as
+hand-offs: whether a person was the right one and whether the customer knows where to get the answer; such a day says
+`v1+referral`. The day counts process errors (turns the server's run was cut short in) and small talk (messages the
+agent found owe no reply). Restarts stay not measured, since the server is a Cloudflare Worker with no process of its own.
+
 **Moving an address no longer drops mail on the way** (B-234, SCN-094). The move stops before anything changes when
 the other server does not receive mail for the address's domain yet, and says to connect the domain there first (the
 server's own route refuses it too, for agents using `move_address`). After the mail is pointed at the other server, a

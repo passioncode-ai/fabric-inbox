@@ -22,6 +22,11 @@ export interface JudgeVerdict {
   helped: "yes" | "partly" | "no" | "na";
   /** At most 15 English words, without personal data. */
   note: string;
+  /**
+   * A hand-off graded as one, under JUDGE_REFERRAL_SYSTEM (2026-11-08, request c5d9c0c9); absent on an answer. The
+   * day that counts such verdicts says so in its rubric version (quality.ts `v1+referral`).
+   */
+  referral?: true;
 }
 /** At most this many answers per address and day are judged. */
 export const JUDGE_SAMPLE = 30;
@@ -47,6 +52,21 @@ export const JUDGE_SYSTEM = [
   'Reply with JSON only: {"language":"PASS","addressed":"PASS","policySafe":"PASS","routing":"PASS","actionable":"PASS","continuity":"PASS","question":true,"helped":"yes","note":"..."}',
 ].join("\n");
 
+/**
+ * A hand-off is fixed text telling the customer where a person answers (the policy's referral reply). Graded as an
+ * answer it failed "addressed" and "helped" every time (VoC audit 2026-10-27); graded as what it is, it says whether
+ * handing over was right and whether the customer now knows where to get the answer.
+ */
+export const JUDGE_REFERRAL_SYSTEM = [
+  JUDGE_SYSTEM.split("\n").slice(0, -1).join("\n"),
+  "This answer is a hand-off: a fixed text that tells the customer where a person will answer. Grade it as a hand-off:",
+  "- addressed: it fits what was asked (the right place for this kind of question).",
+  "- routing: a person really is the one to handle this message; FAIL when the agent should have answered it itself.",
+  "- actionable: the customer knows exactly where and how to reach that person.",
+  "- helped: yes when the customer now knows where to get the answer and a person is the right one; partly when the place is right but vague; no when a person was not needed or the place is wrong.",
+  JUDGE_SYSTEM.split("\n").at(-1)!,
+].join("\n");
+
 const MARKS = new Set(["PASS", "FAIL", "NA"]);
 /** The verdict in a model's reply, or null when it is not one. */
 export function parseVerdict(text: string, model: string): JudgeVerdict | null {
@@ -66,7 +86,7 @@ export function parseVerdict(text: string, model: string): JudgeVerdict | null {
   return { rubric: RUBRIC, model, checks, question: raw.question, helped: raw.question ? (helped === "na" ? "no" : helped) as JudgeVerdict["helped"] : "na", note };
 }
 
-export interface JudgeInput { message: string; earlier: string; answer: string }
+export interface JudgeInput { message: string; earlier: string; answer: string; /** The answer is the policy's hand-off. */ referral?: boolean }
 /** What a judge reads: the message, the reply before it, and the answer, each cut to its bound. */
 export const judgePrompt = (input: JudgeInput) =>
   `<message>\n${input.message.slice(0, 4000)}\n</message>\n\n<earlier_reply>\n${input.earlier.slice(0, 2000) || "(none)"}\n</earlier_reply>\n\n<answer>\n${input.answer.slice(0, 4000)}\n</answer>`;
@@ -117,7 +137,7 @@ export async function openRouterJudge(apiKey: string, models: readonly string[],
     const timer = setTimeout(() => controller.abort(), 30_000);
     try {
       const result = await generateText({
-        abortSignal: controller.signal, model: provider.chat(model), system: JUDGE_SYSTEM, temperature: 0, maxOutputTokens: 300,
+        abortSignal: controller.signal, model: provider.chat(model), system: input.referral ? JUDGE_REFERRAL_SYSTEM : JUDGE_SYSTEM, temperature: 0, maxOutputTokens: 300,
         providerOptions: { openrouter: { reasoning: { enabled: false } } },
         prompt: judgePrompt(input),
       });
@@ -132,7 +152,7 @@ export async function openRouterJudge(apiKey: string, models: readonly string[],
 }
 
 /** The day's quality family from its verdicts (A2); null when nothing was judged. */
-export function qualityOf(verdicts: JudgeVerdict[]): { model: string; quality: QualityDaily["quality"] } | null {
+export function qualityOf(verdicts: JudgeVerdict[]): { model: string; quality: QualityDaily["quality"]; referrals?: number } | null {
   if (!verdicts.length) return null;
   const count = (f: (v: JudgeVerdict) => boolean) => verdicts.filter(f).length;
   const questions = verdicts.filter((v) => v.question);
@@ -140,5 +160,6 @@ export function qualityOf(verdicts: JudgeVerdict[]): { model: string; quality: Q
     helpedYes: questions.filter((v) => v.helped === "yes").length, helpedPartly: questions.filter((v) => v.helped === "partly").length,
     helpedNo: questions.filter((v) => v.helped === "no").length } as Record<string, number>;
   for (const c of CHECKS) { quality[`${c}Pass`] = count((v) => v.checks[c] === "PASS"); quality[`${c}Fail`] = count((v) => v.checks[c] === "FAIL"); }
-  return { model: verdicts[0]!.model, quality: quality as QualityDaily["quality"] };
+  const referrals = count((v) => !!v.referral);
+  return { model: verdicts[0]!.model, quality: quality as QualityDaily["quality"], ...(referrals ? { referrals } : {}) };
 }
