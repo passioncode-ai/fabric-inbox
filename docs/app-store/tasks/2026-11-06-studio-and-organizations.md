@@ -67,6 +67,11 @@ A key Cloudflare made but the record could not take is deleted again.
 
 **Depends on.** The deploy of 0.99.0 to both servers (waits for the operator).
 
+**Built 2026-11-08** (`scripts/agent-key-bootstrap.mjs`, tests `tests/agent-key-bootstrap.test.ts`), from the steps that
+made the Admin key of an organization's server on 2026-11-07 while its mailboxes moved there. Its run on the PassionCode
+organization's server is the operator's command: the session's classifier refuses an agent adding its own access
+([handoff](../../handoffs/2026-11-08-studio-move.md)).
+
 ## G3. Moving the app to another Mac or another macOS user (B-219, P2)
 
 **Now.** `desktop/backup.cjs:12` keeps only the server's address (`<appData>/PassionCode/backups/fabric-inbox.json`),
