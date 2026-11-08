@@ -5,6 +5,21 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.3.0 (2026-11-08)
+
+**A greeting gets an answer** (B-237). A message that only says hello, or arrives with no words at all, used to get no
+reply. Now a reply agent asks back what happened and what the person was trying to do, in English or Russian, without
+waiting for a person. When someone vents without detail or asks for something the address is not for, the agent may
+answer with one or two sentences that ask one question or say what it can help with. Such a reply goes out only when it
+holds no link, number or address, and the agent asks back once per conversation.
+
+**What customers write about, month by month** (B-238). Each conversation gets one topic from a fixed list (account
+access, payments, subscription, refund, bug, how-to, feature request, privacy, abuse, business, feedback, other), with
+whether it reads negative and whether money is at stake. The new `get_support_topics` tool shows, per mailbox and month,
+each topic's share and its change from the month before, new and rising topics, and the negative and money shares.
+Topics with fewer than five conversations are folded together, and no text, subject or sender leaves the mailbox. The
+server labels up to 100 conversations a day (`SUPPORT_TOPIC_CALLS`), newest first.
+
 ## 1.2.0 (2026-11-08)
 
 **The daily quality report measures what it skipped** (B-235). The judge now also grades the agent's hand-offs, as
