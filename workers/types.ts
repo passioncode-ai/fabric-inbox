@@ -33,6 +33,9 @@ export interface Env extends Cloudflare.Env {
 	/** OpenRouter key for reply agents (secret): with it, answers are written by REPLY_MODEL (fallback REPLY_FALLBACK_MODEL) and approved by a checker of another vendor. */
 	OPENROUTER_API_KEY?: string;
 	REPLY_MODEL?: string;
+	/** B-238: labels a day for the support topics report (default 100; 0 turns the labelling off), and the Workers AI model that makes them (default the agents' model). */
+	SUPPORT_TOPIC_CALLS?: string;
+	SUPPORT_TOPIC_MODEL?: string;
 	REPLY_FALLBACK_MODEL?: string;
 	/** B-174: the writer's reasoning effort on OpenRouter (none, minimal, low, medium, high; unset: none; "default": the provider's own). */
 	REPLY_REASONING?: string;

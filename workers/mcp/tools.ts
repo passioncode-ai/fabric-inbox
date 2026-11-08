@@ -1680,6 +1680,15 @@ const getSupportMonths = defineTool({
   call: (a, ctx) => get(ctx, "/api/support-months", { domain: a.domain, mailbox: a.mailbox }),
 });
 
+const getSupportTopics = defineTool({
+  name: "get_support_topics", title: "What customers write about, per mailbox and month", level: "read", readOnly: true,
+  description: "For each Cloudflare mailbox (or one domain, or one mailbox), per month: threads (a thread's month is its first incoming message's), how many are labelled so far, the topics with their threads, share of the labelled threads and change of share from the month before (account_access, payments, subscription, refund, bug, how_to, feature_request, privacy_security, abuse_report, business, feedback, other), a topic under 5 threads folded into hidden, new and rising topics, the share that reads negative and the money shares (refund, charge, purchase_failed). Each thread is labelled once from its first incoming message by a daily labelling under a call budget (SUPPORT_TOPIC_CALLS, default 100 a day; reading this wakes it), newest first, up to 400 days back. Aggregates only: no sender, subject or text. A key limited to some mailboxes reads only its own Cloudflare mailboxes.",
+  input: { domain: z.string().max(253).optional().describe("Only the mailboxes of this domain"), mailbox: z.string().max(320).optional().describe("Only this mailbox"),
+    from: z.string().regex(/^\d{4}-\d{2}$/).optional().describe("The first month, YYYY-MM"), to: z.string().regex(/^\d{4}-\d{2}$/).optional().describe("The last month, YYYY-MM") },
+  routes: ["GET /api/support-topics"],
+  call: (a, ctx) => get(ctx, "/api/support-topics", { domain: a.domain, mailbox: a.mailbox, from: a.from, to: a.to }),
+});
+
 const getStorage = defineTool({
   name: "get_storage", title: "How full this server's storage is", level: "admin", readOnly: true,
   description: "How full each mailbox, each address's automation object and each shared store (the accounts of Gmail, Outlook and IMAP, agents, knowledge, categories, campaigns, the ledger) is: its SQLite size in bytes and percent of Cloudflare's per-object limit (10 GB on Workers Paid; STORAGE_LIMIT_GB sets 1 for Workers Free), level ok, warn (80% or more), full (95% or more) or unknown, and a mailbox's messages per folder; plus the files' (R2) count and bytes. At the limit Cloudflare refuses new writes (new mail is not stored) while reads and deletes go on. The fullest first. A mail claiming a mailbox is nearly full is checked against this, never against the mail.",
@@ -2268,7 +2277,7 @@ const revokeAgentKey = defineTool({
 
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, decideHeldMessage, listFolders, getSendStatus,
-  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, getServerErrors, getOpsDigest, getStorage, getSupportMonths, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
+  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, getServerErrors, getOpsDigest, getStorage, getSupportMonths, getSupportTopics, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,

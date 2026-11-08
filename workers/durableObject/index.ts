@@ -786,6 +786,41 @@ export class MailboxDO extends DurableObject<Env> {
 		).toArray().map((r) => ({ firstIn: String(r.firstIn), firstReply: r.firstReply === null ? null : String(r.firstReply), replyKey: r.replyKey === null ? null : String(r.replyKey) }));
 	}
 
+	/**
+	 * B-238: conversations with no topic yet, newest first, within the last 400 days: the first incoming message's subject
+	 * and body, read only to label it (workers/lib/support-topics.ts). Spam, Discarded and drafts are not conversations.
+	 */
+	async topicCandidates(limit: number): Promise<{ key: string; firstIn: string; subject: string; body: string }[]> {
+		const since = new Date(Date.now() - 400 * 86_400_000).toISOString();
+		return this.ctx.storage.sql.exec<{ key: string; firstIn: string; subject: string | null; body: string | null }>(
+			`WITH firsts AS (
+			   SELECT COALESCE(thread_id, id) AS key, id, date, ROW_NUMBER() OVER (PARTITION BY COALESCE(thread_id, id) ORDER BY julianday(date), id) AS n
+			     FROM emails WHERE folder_id NOT IN ('sent', 'draft', 'spam', 'discarded') AND date IS NOT NULL)
+			 SELECT f.key AS key, f.date AS firstIn, e.subject AS subject, e.body AS body FROM firsts f JOIN emails e ON e.id = f.id
+			  WHERE f.n = 1 AND julianday(f.date) >= julianday(?) AND NOT EXISTS (SELECT 1 FROM thread_topics t WHERE t.thread_key = f.key)
+			  ORDER BY julianday(f.date) DESC LIMIT ?`, since, Math.max(0, Math.min(Math.floor(limit), 100)),
+		).toArray().map((r) => ({ key: String(r.key), firstIn: String(r.firstIn), subject: String(r.subject ?? ""), body: String(r.body ?? "") }));
+	}
+
+	/** B-238: keeps the labels the daily labelling made; a conversation labelled again keeps its first label. */
+	async saveTopics(labels: { key: string; topic: string; negative: boolean; money: string | null; model: string }[]): Promise<number> {
+		const at = new Date().toISOString();
+		let written = 0;
+		for (const l of labels.slice(0, 100))
+			written += this.ctx.storage.sql.exec("INSERT OR IGNORE INTO thread_topics (thread_key, topic, negative, money, model, labeled_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING thread_key",
+				String(l.key), String(l.topic).slice(0, 40), l.negative ? 1 : 0, l.money === null ? null : String(l.money).slice(0, 40), String(l.model).slice(0, 120), at).toArray().length;
+		return written;
+	}
+
+	/** B-238: every conversation's first incoming message time with its label (null when not labelled yet): the rows the report folds. */
+	async topicThreads(): Promise<{ firstIn: string; topic: string | null; negative: boolean; money: string | null }[]> {
+		return this.ctx.storage.sql.exec<{ firstIn: string; topic: string | null; negative: number | null; money: string | null }>(
+			`WITH incoming AS (SELECT COALESCE(thread_id, id) AS key, MIN(date) AS first_in FROM emails
+			    WHERE folder_id NOT IN ('sent', 'draft', 'spam', 'discarded') AND date IS NOT NULL GROUP BY COALESCE(thread_id, id))
+			 SELECT i.first_in AS firstIn, t.topic AS topic, t.negative AS negative, t.money AS money FROM incoming i LEFT JOIN thread_topics t ON t.thread_key = i.key`,
+		).toArray().map((r) => ({ firstIn: String(r.firstIn), topic: r.topic === null ? null : String(r.topic), negative: Number(r.negative ?? 0) === 1, money: r.money === null ? null : String(r.money) }));
+	}
+
 	/** B-138: who sent each message of a conversation (the agent, its waiting reply, or a person), by message id. */
 	async sentByIds(ids: string[]): Promise<Record<string, SentBy>> {
 		const wanted = ids.filter((id) => typeof id === "string" && id).slice(0, 500);

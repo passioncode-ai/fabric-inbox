@@ -7,6 +7,7 @@ import { ERROR_DAYS_KEPT, errorDay } from "../lib/error-counts";
 import { capNames, closedDay, closedHour, foldDay, foldHour } from "../lib/ops-digest";
 import { inboxSources } from "../lib/inbox-sources";
 import { foldMonths, type SupportMonth } from "../lib/support-months";
+import { foldTopics, type TopicMonth } from "../lib/support-topics";
 import { objectLimitBytes, storageReport, usageOf, type ObjectUsage, type StorageReport } from "../lib/storage-usage";
 
 export const serverErrorsRouter = new Hono<{ Bindings: Env }>();
@@ -123,6 +124,43 @@ serverErrorsRouter.get("/api/support-months", async (c) => {
     mailboxes.push(...await Promise.all(addresses.slice(i, i + 10).map(async (email) => {
       const d = email.slice(email.lastIndexOf("@") + 1);
       try { return { mailbox: email, domain: d, months: foldMonths(await env.MAILBOX.get(env.MAILBOX.idFromName(email)).supportThreads()) }; }
+      catch (error) { return { mailbox: email, domain: d, months: [], error: String((error as Error)?.message ?? error).slice(0, 120) }; }
+    })));
+  }
+  return c.json({ mailboxes });
+});
+
+/**
+ * B-238: what customers write about, per Cloudflare mailbox and month: topics with threads, share and change from the month
+ * before, new and rising topics, the negative and money shares, a topic under 5 threads folded into `hidden`. Aggregates
+ * only: no text, subject, sender or address. `domain` or `mailbox` narrows it, `from` and `to` (YYYY-MM) bound the months.
+ * Labels come from the daily labelling (the agent registry's alarm); reading the report wakes it.
+ */
+serverErrorsRouter.get("/api/support-topics", async (c) => {
+  const env = c.env;
+  const domain = c.req.query("domain")?.toLowerCase();
+  const only = c.req.query("mailbox")?.toLowerCase();
+  const from = c.req.query("from"), to = c.req.query("to");
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/;
+  if ((from && !month.test(from)) || (to && !month.test(to)) || (from && to && from > to))
+    return c.json({ error: msg("Give from and to as YYYY-MM, from not after to") }, 400);
+  let addresses: string[];
+  try {
+    addresses = (await inboxSources(env).cloudflareAccounts()).map((a) => a.email.toLowerCase())
+      .filter((e) => (!domain || e.endsWith(`@${domain}`)) && (!only || e === only));
+  } catch (error) {
+    console.error(JSON.stringify({ event: "support_topics_addresses_unreadable", error: String((error as Error)?.message ?? error).slice(0, 120) }));
+    return c.json({ error: msg("The addresses could not be listed right now") }, 503);
+  }
+  if (env.AGENT_REGISTRY) {
+    const wake = env.AGENT_REGISTRY.getByName("workspace").wakeTopics().catch(() => undefined);
+    try { c.executionCtx.waitUntil(wake); } catch { await wake; }
+  }
+  const mailboxes: { mailbox: string; domain: string; months: TopicMonth[]; error?: string }[] = [];
+  for (let i = 0; i < addresses.length; i += 10) {
+    mailboxes.push(...await Promise.all(addresses.slice(i, i + 10).map(async (email) => {
+      const d = email.slice(email.lastIndexOf("@") + 1);
+      try { return { mailbox: email, domain: d, months: foldTopics(await env.MAILBOX.get(env.MAILBOX.idFromName(email)).topicThreads(), { from, to }) }; }
       catch (error) { return { mailbox: email, domain: d, months: [], error: String((error as Error)?.message ?? error).slice(0, 120) }; }
     })));
   }

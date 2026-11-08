@@ -92,7 +92,7 @@ export const adminMailboxAction = (method: string, pathname: string) => ADMIN_MA
  */
 export const AGENT_READ_ROUTES = new Set(["GET /api/agent-runs", "GET /api/agent-runs/:id", "GET /api/agent-events", "GET /api/agent-threads"]);
 /** B-214: counts per mailbox that a limited key reads for its own mailboxes (scopedApi filters them). */
-export const COUNT_READ_ROUTES = new Set(["GET /api/support-months"]);
+export const COUNT_READ_ROUTES = new Set(["GET /api/support-months", "GET /api/support-topics"]);
 
 export function toolFitsScope(tool: Pick<ToolDef, "routes">): boolean {
   return tool.routes.length > 0 && tool.routes.every((r) => {
@@ -177,7 +177,7 @@ export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubje
       }
       if (method === "GET" && /^\/api\/agent-(runs|events|threads)(\/[^/]+)?$/.test(pathname)) return agentRead(pathname, init);
       // B-214: support counts per month, only for the key's Cloudflare mailboxes; another mailbox reads as refused.
-      if (route === "GET /api/support-months") {
+      if (route === "GET /api/support-months" || route === "GET /api/support-topics") {
         const own = new Set(accounts.filter((a) => a.toLowerCase().startsWith("cloudflare:")).map((a) => a.slice("cloudflare:".length).toLowerCase()));
         const asked = init.query?.mailbox;
         if (asked !== undefined && !own.has(String(asked).toLowerCase())) throw refuse(accounts, who);
