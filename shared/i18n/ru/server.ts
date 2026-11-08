@@ -890,6 +890,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"The day is a UTC date of the last {days} days, as YYYY-MM-DD": "День задаётся датой UTC за последние {days} дней в формате ГГГГ-ММ-ДД",
 	"The error counts could not be read right now": "Не удалось прочитать счётчики ошибок, попробуйте позже",
 	"The addresses could not be listed right now": "Не удалось получить список адресов, попробуйте позже",
+	"Give from and to as YYYY-MM, from not after to": "Укажите from и to в виде ГГГГ-ММ, from не позже to",
 	"Nothing was counted on {day}": "За {day} ничего не посчитано",
 	"Ask for a closed UTC hour as YYYY-MM-DDTHH or a closed UTC day as YYYY-MM-DD, of the last {days} days": "Укажите завершившийся час UTC в формате ГГГГ-ММ-ДДTЧЧ или завершившийся день UTC в формате ГГГГ-ММ-ДД за последние {days} дней",
 };

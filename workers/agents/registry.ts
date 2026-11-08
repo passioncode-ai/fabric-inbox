@@ -87,6 +87,9 @@ const QUALITY_CATCH_UP_DAYS = 7;
  * message of the day's evening counts as a reply, not as a message nobody answered.
  */
 export const QUALITY_SETTLE_MS = 86_400_000;
+/** B-238: support topic labels per alarm pass, and how long an all-labelled server waits before looking again. */
+const TOPICS_PER_PASS = 20;
+const TOPICS_IDLE_MS = 6 * 3_600_000;
 /** Days reported in one alarm; the rest follow in the next (an alarm is bounded in time). */
 const QUALITY_DAYS_PER_PASS = 2;
 /** A waiting message whose mailbox could not be read is looked at again after this long. */
@@ -112,6 +115,9 @@ const MAX_ATTEMPTS = 5;
 
 import { AgentConflict, AgentInvalid, AgentNotFound } from "./errors";
 import { msg } from "../../shared/i18n";
+import { labelSupportTopics, labelThread, topicBudget, type TopicLabeler } from "../lib/support-topics";
+import { createWorkersAI } from "workers-ai-provider";
+import { DEFAULT_AGENT_MODEL } from "./model";
 export { AgentConflict, AgentInvalid, AgentNotFound, registryError, type RegistryErrorCode } from "./errors";
 
 type Row = Record<string, string | number | null>;
@@ -178,6 +184,44 @@ export class AgentRegistryDO extends DurableObject<Env> {
 
   async queueLength(): Promise<number> {
     return Number(this.rows("SELECT COUNT(*) AS n FROM agent_queue")[0].n);
+  }
+
+  /** B-238: reading the support topics report wakes the daily labelling (a server with no agent traffic has no alarm). */
+  async wakeTopics(): Promise<void> {
+    if (topicBudget(this.env) <= 0) return;
+    const next = Date.now() + 1000;
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > next) await this.ctx.storage.setAlarm(next);
+  }
+
+  /** B-238: the Workers AI model that labels support conversations (test seam). */
+  protected topicLabeler(): { label: TopicLabeler; model: string } {
+    const model = this.env.SUPPORT_TOPIC_MODEL || DEFAULT_AGENT_MODEL;
+    const workersai = createWorkersAI({ binding: this.env.AI });
+    return { model, label: (message) => labelThread(workersai(model as Parameters<typeof workersai>[0]), message) };
+  }
+
+  /**
+   * B-238: one pass of the support topics labelling, at most TOPICS_PER_PASS calls, within the day's budget
+   * (SUPPORT_TOPIC_CALLS). Returns when to pass again: a minute while conversations wait, the next UTC day once the
+   * budget is spent, TOPICS_IDLE_MS when all are labelled; null when the labelling is off.
+   */
+  protected async labelTopics(now = Date.now()): Promise<number | null> {
+    const budget = topicBudget(this.env);
+    if (budget <= 0 || !this.env.AI) return null;
+    const day = new Date(now).toISOString().slice(0, 10);
+    const state = (await this.ctx.storage.get<{ day: string; calls: number; next: number }>("topics_state")) ?? { day, calls: 0, next: 0 };
+    if (state.day !== day) { state.day = day; state.calls = 0; state.next = 0; }
+    if (now < state.next) return state.next;
+    const tomorrow = Date.parse(`${day}T00:00:00.000Z`) + 86_400_000;
+    if (state.calls < budget) {
+      const { label, model } = this.topicLabeler();
+      const pass = await labelSupportTopics(this.env, Math.min(TOPICS_PER_PASS, budget - state.calls), label, model);
+      state.calls += pass.calls;
+      state.next = state.calls >= budget ? tomorrow : pass.more ? now + 60_000 : now + TOPICS_IDLE_MS;
+    } else state.next = tomorrow;
+    await this.ctx.storage.put("topics_state", state);
+    return state.next;
   }
 
   async alarm() {
@@ -498,7 +542,11 @@ export class AgentRegistryDO extends DurableObject<Env> {
       countLog(this.env, "alarm", JSON.stringify({ event: "agent_evals_failed", error: (error as Error).message?.slice(0, 200) }));
       return null;
     });
-    let heldDue: number | null = [gapsDue, retryDue, waitDue, closeDue, qualityDue, abandonDue, evalDue].filter((t): t is number => t !== null).reduce((a, b) => Math.min(a, b));
+    const topicsDue = await this.labelTopics().catch((error) => {
+      countLog(this.env, "alarm", JSON.stringify({ event: "support_topics_failed", error: (error as Error).message?.slice(0, 200) }));
+      return Date.now() + TOPICS_IDLE_MS;
+    });
+    let heldDue: number | null = [gapsDue, retryDue, waitDue, closeDue, qualityDue, abandonDue, evalDue, topicsDue].filter((t): t is number => t !== null).reduce((a, b) => Math.min(a, b));
     // One message per mailbox at a time: two messages of one thread read the thread
     // before either answer exists, and would both be answered.
     const batch = this.nextBatch();

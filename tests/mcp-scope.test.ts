@@ -399,3 +399,16 @@ test("B-214: a Read key limited to its mailboxes reads support counts for its ow
   await assert.rejects(s.request("GET", "/api/support-months", { query: { mailbox: "contact@owner.example" } }), /limited to/);
   assert.equal(calls.filter((c) => c.path === "/api/support-months").length, 2, "a refused mailbox is never asked");
 });
+
+test("B-238: a Read key limited to its mailboxes reads support topics for its own Cloudflare mailboxes only", async () => {
+  assert.ok(toolsFor(scoped([RESEARCH]), TOOLS).some((t) => t.name === "get_support_topics"), "a Read key sees the tool");
+  const { api, calls } = fakeApi({ "/api/support-topics": { mailboxes: [
+    { mailbox: "research@owner.example", domain: "owner.example", months: [] },
+    { mailbox: "contact@owner.example", domain: "owner.example", months: [] },
+  ] } });
+  const s = scopedApi(api, [RESEARCH]);
+  const all = (await s.request("GET", "/api/support-topics")).data as { mailboxes: { mailbox: string }[] };
+  assert.deepEqual(all.mailboxes.map((m) => m.mailbox), ["research@owner.example"]);
+  await assert.rejects(s.request("GET", "/api/support-topics", { query: { mailbox: "contact@owner.example" } }), /limited to/);
+  assert.equal(calls.filter((c) => c.path === "/api/support-topics").length, 1, "a refused mailbox is never asked");
+});

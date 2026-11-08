@@ -247,6 +247,19 @@ export const mailboxMigrations: Migration[] = [
 		name: "21_search_text",
 		sql: txn(`ALTER TABLE emails ADD COLUMN search_text TEXT;`),
 	},
+	{
+		// B-238: one label per conversation from its first incoming message (workers/lib/support-topics.ts): a fixed topic,
+		// whether it reads negative, a money kind, the model that labelled it and when. No text of the mail is kept here.
+		name: "22_thread_topics",
+		sql: txn(`CREATE TABLE IF NOT EXISTS thread_topics (
+			thread_key TEXT PRIMARY KEY,
+			topic TEXT NOT NULL,
+			negative INTEGER NOT NULL DEFAULT 0,
+			money TEXT,
+			model TEXT NOT NULL,
+			labeled_at TEXT NOT NULL
+		);`),
+	},
 ];
 
 /** The id and name a person's own folder gets when it held the id 'discarded' (migration 18). */
