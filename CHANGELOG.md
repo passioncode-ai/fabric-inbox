@@ -5,7 +5,7 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 1.2.0 (2026-11-08)
 
 **The daily quality report measures what it skipped** (B-235). The judge now also grades the agent's hand-offs, as
 hand-offs: whether a person was the right one and whether the customer knows where to get the answer; such a day says
