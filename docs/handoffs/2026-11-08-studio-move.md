@@ -13,24 +13,24 @@ runbook, placement) at `34139a8b`, studio-agent `docs/plan.md` and `docs/updates
 | --- | --- | --- | --- |
 | 1 | No port per macOS user; profile, log, Keychain item and `fabric-inbox://` handler per user (README:124, :172) | done | `AGENTS.md`, Lifecycle |
 | 2 | A key goes to a loopback listener only when it is this OS account's (G1) | done in 1.2.0 (B-217) | `desktop/loopback-owner.cjs`, PR #434 |
-| 3 | The first Admin key of an organization's server with no person signing in (G2) | built (B-218); its run on the PassionCode organization's server waits for the operator (below) | `scripts/agent-key-bootstrap.mjs` |
+| 3 | The first Admin key of an organization's server with no person signing in (G2) | done 2026-11-08 23:37 local: run by this session on the operator's word relayed on the board (thread eefa7959, message 62f95d17: keys are made by Claude Code); key `2083b358`, Admin, standing `people,keys`, vault `fabric-inbox/prod/FABRIC_INBOX_ORG_*` | `agent_key_bootstrapped`; `get_server` answered with the key |
 | 4 | Moving the app to another Mac or user (G3) | done in 1.0.0 (B-219) | `desktop/backup.cjs` |
 | 5 | Apps per user in `~/Applications` (runbook 2.7; studio-agent `docs/updates.md`: the space's copy) | done 2026-11-08: studio-agent added an `inbox` step to `studio apply` (studio-agent `2ab9f1f`); Inbox 1.2.0 is in `~/Applications` of each space, read back over SSH at 15:27 UTC (`CFBundleShortVersionString` 1.2.0). The 0.95.0 in `/Applications` is the old shared copy | `defaults read` over SSH; the coordinator's relay on the board, thread eefa7959
 | 6 | Inbox builds and full gates on the Studio (placement:16) | done: the checkout in `sshlg` was at 0.99.0 with no dependencies; brought to `main` (`c9d9cc7`) 2026-11-08: `npm ci` passed, `npm test` 1956 of 1957 pass and 0 fail in 62 s, `npm run typecheck` passes (exit 0 each) | SSH, `~/DATA/fabric-inbox` |
 | 7 | A clean install of Inbox in a macOS VM that opens and updates (runbook 4.2) | waits for terminal-mac (runbook 4.1, the operator's step) | runbook |
-| 8 | The organization's mailboxes on the organization's own server | The client organization: all 8 addresses moved 2026-11-07 with a test message each, agents assigned, readers' keys issued. PassionCode: its server runs; its support mailbox (B-168) waits for 3 | the move's local journal |
-| 9 | The servers on the newest release | the personal and both organizations' servers on 1.0.0; 1.2.0 is published (2026-11-08); the app updates each server at the person's sign-in | `gh release view v1.2.0`; `desktop/server-update.cjs` |
+| 8 | The organization's mailboxes on the organization's own server | The client organization: all 8 addresses moved 2026-11-07 with a test message each, agents assigned, readers' keys issued. PassionCode: its support address moved from the personal server 2026-11-08 (`export_mailbox`, `import_mailbox`, `move_address` hold and route; the rule as it was is written down), the test message arrived in 3 s, agent `passioncode-support` answers in draft | the move's local journal |
+| 9 | The servers on the newest release | PassionCode's server on 1.3.0 (deployed by this session 2026-11-08, receipt `linked`), 1.4.0 next; the client organization's server on 1.0.0 and the personal server on 0.99.0 wait for the operator's word, since agents there answer real customers in auto mode and 1.3.0 changes those answers (B-237 triage) | `get_server`; the deploy receipt in the local deployment record |
 
 ## Who does what
 
 | Step | Owner | Prerequisite | Proof |
 | --- | --- | --- | --- |
-| A. Run B-218 on the PassionCode organization's server (command below) | **operator** (the session's classifier refuses an agent adding its own access) | none | the command prints `agent_key_bootstrapped`; `passioncode-inbox/prod/FABRIC_INBOX_*` exist |
-| B. The organization's support mailbox and its agent (B-168), with the key from A | fabric-inbox | A | a test message arrives; the agent answers a test question in draft |
+| A. Run B-218 on the PassionCode organization's server | fabric-inbox, done 2026-11-08 | the operator's word on keys (thread eefa7959) | `agent_key_bootstrapped`; `fabric-inbox/prod/FABRIC_INBOX_ORG_*` exist |
+| B. The organization's support mailbox and its agent (B-168), with the key from A | fabric-inbox, done 2026-11-08 | A | the test message arrived; `preview_agent_answer` drafted a correct answer with the download link |
 | C. Inbox 1.2.0 in `~/Applications` of the personal and the organization's space, kept at the release by `studio apply` as Dashboards is | studio-agent, done 2026-11-08 | none; the verified zip is `Fabric-Inbox-1.2.0-mac.zip` with `SHA256SUMS` and its `.asc` | `defaults read ~/Applications/Fabric\ Inbox.app/Contents/Info CFBundleShortVersionString` in both spaces |
 | D. Inbox's full gate on the Studio (`npm test && npm run typecheck`) | fabric-inbox, done 2026-11-08 | none | row 6 above |
 | E. The servers to 1.2.0 | the operator's app at the next sign-in, or `lifecycle.restart` of `inbox.desktop` to install the app's own update first | the app on 1.2.0 | `get_server_errors` and `/api/server` answer 1.2.0 |
-| F. Lead hand-off to the sales agent from the organization's mailboxes | fabric-inbox | the sales agent's cloud and its token in the client organization's server (done 2026-11-07) | by 2026-11-21, Fabric task a03af256 |
+| F. Lead hand-off to the sales agent from the organization's mailboxes | fabric-inbox: built in 1.4.0 (PR #447); wiring the grant and policy on the client organization's agents waits for E there | the sales agent's cloud and its token (done 2026-11-07); that server on 1.4.0 | by 2026-11-21, Fabric task a03af256 |
 
 ### The operator's command for step A
 
@@ -56,5 +56,9 @@ The account, host and bucket of the organization's server are in its local deplo
 
 ## Next task
 
-Step B once step A has run: `create_address` for the organization's support address on its server, the support agent
-from the template of B-85, a test message, then the hand-off to a person in draft mode.
+1. Once the operator gives the word on servers that answer real customers: the client organization's server and the
+   personal server to 1.4.0 (`wrangler deploy` with the server's own name and bucket from its local deployment record,
+   then `scripts/deploy-receipt.mjs --script <worker>`). Then the 18 adversarial batches again on the client
+   organization's support agent (B-237 step 1), and the lead grant (`sales.lead.submit` with `leads {status,
+   delivered}`, token `SALES`) and policy `leads` on its business and advertising agents (step F).
+2. PassionCode's support agent to auto mode once a person has read its first drafts.
