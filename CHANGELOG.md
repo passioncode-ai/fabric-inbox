@@ -5,6 +5,15 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.4.0 (2026-11-08)
+
+**Leads go to your sales agent** (B-237). A reply agent can now hand a business inquiry (advertising, a partnership, a
+bulk purchase) to a sales agent you run, through a tool you grant it. You list which categories or topics are leads.
+The sender gets a short reply saying the team will answer in the same thread. When the sales owner approves an answer,
+it is sent in that thread once, or saved as a draft if the agent only drafts. If the person writes again, the message
+goes to the sales agent too. Nothing about the person leaves the mailbox beyond a short summary with no names,
+addresses or numbers.
+
 ## 1.3.1 (2026-11-08)
 
 **Support topics are labelled** (B-238). In 1.3.0 the server could not read the labels its model wrote, so the topics
