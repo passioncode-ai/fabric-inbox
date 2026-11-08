@@ -65,6 +65,8 @@ export interface AgentRun {
   /** Answered with the policy's hand-off reply (a person handles it), or its safe reply (nothing confident to say). */
   handoff?: boolean;
   fallback?: boolean;
+  /** B-237: answered at triage: a fixed question back (greeting, empty) or the writer's clarify or decline. */
+  triage?: "greeting" | "empty" | "clarify" | "decline";
   /** A reply saying an earlier answer did not help (reported to the knowledge as outdated). */
   dissatisfied?: boolean;
   /** The confident tool answers this run rested on (request id, cited items, revision): a sent answer is traceable. */

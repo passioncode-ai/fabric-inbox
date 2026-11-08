@@ -364,6 +364,8 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Daily send limit of {limit} reached": "Исчерпан дневной лимит отправок: {limit}",
 	"Allowed: {intent}": "Разрешено: {intent}",
 	"Allowed: grounded answer": "Разрешено: ответ с опорой на знания",
+	"Allowed: a question back that states no fact": "Разрешено: встречный вопрос без утверждений",
+	"A message with nothing to answer: a question back": "В письме не на что ответить: встречный вопрос",
 	"The message has no sender address": "У письма нет адреса отправителя",
 	"The message came from this address itself": "Письмо пришло с этого же адреса",
 	"The message came from one of this server's own addresses": "Письмо пришло с одного из адресов этого сервера",
