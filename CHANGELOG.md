@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.3.1 (2026-11-08)
+
+**Support topics are labelled** (B-238). In 1.3.0 the server could not read the labels its model wrote, so the topics
+report counted conversations but labelled none. Labels are now read from the model's text answer. After a failed label
+the server tries again an hour later, or at once when someone opens the report.
+
 ## 1.3.0 (2026-11-08)
 
 **A greeting gets an answer** (B-237). A message that only says hello, or arrives with no words at all, used to get no

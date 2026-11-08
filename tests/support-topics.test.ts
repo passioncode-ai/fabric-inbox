@@ -121,3 +121,13 @@ test("a real mailbox lists unlabelled conversations newest first, keeps labels o
     ]);
   } finally { await mf.dispose(); }
 });
+
+import { parseLabel } from "../workers/lib/support-topics";
+
+test("a label is read from a model's text answer, with the spellings models use (B-238)", () => {
+  assert.deepEqual(parseLabel('{"topic": "refund", "negative": true, "money": "refund"}'), { topic: "refund", negative: true, money: "refund" });
+  assert.deepEqual(parseLabel('Sure.\n```json\n{"topic":"How to","negative":"false","money":"none"}\n```'), { topic: "how_to", negative: false, money: null });
+  assert.deepEqual(parseLabel('{"note": 1} then {"topic":"bug","negative":false,"money":null}'), { topic: "bug", negative: false, money: null });
+  assert.equal(parseLabel("I cannot label this."), null);
+  assert.equal(parseLabel('{"topic":"weather","negative":false,"money":null}'), null);
+});
