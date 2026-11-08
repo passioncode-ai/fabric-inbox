@@ -1642,3 +1642,82 @@ test("a decline that carries a link or a number is an ordinary answer and needs 
   assert.equal(run.triage, undefined);
   assert.equal(h.effects.sends.length, 0);
 });
+
+// B-237 gap 8: leads go to a sales agent through the grant with `leads`.
+const salesGrant = { name: "sales_desk", description: "Hands a lead to the sales desk", endpoint: "https://sales.example/mcp", tool: "sales.lead.submit", tokenRef: "SALES",
+  leads: { status: "sales.lead.status", delivered: "sales.lead.delivered" } };
+const leadAgent = (mode: "auto" | "draft" = "auto") => agent({ tools: [salesGrant], replyPolicy: { mode, allowedIntents: ["pricing"], dailySendLimit: 5, categories: ["sales", "other"],
+  leads: { categories: ["sales"], topics: [], reply: { en: "Thank you, our partnerships team will answer you in this thread.", ru: "Спасибо, команда партнёрств ответит вам в этой переписке." } } } });
+const leadModel = async (request: ModelRequest) => {
+  assert.equal(request.tools.some((t) => t.name === "sales_desk"), false, "the lead grant is never offered to the model");
+  return { decision: answer({ category: "sales", intent: "partnership", summary: "A company wants to advertise in the app.", body: "We would love to talk." }), text: "" };
+};
+
+test("a lead goes to the sales agent and the sender gets the fixed reply (B-237 gap 8)", async () => {
+  const calls: { tool: string; args: Record<string, unknown> }[] = [];
+  const leads: unknown[] = [];
+  const h = harness({ agent: leadAgent(), email: { subject: "Advertising", body: "<p>We want to advertise with you, please send terms.</p>" }, model: leadModel,
+    callTool: async (grant, args) => { calls.push({ tool: grant.tool, args }); return JSON.stringify({ lead_id: "L1", state: "received", stage: "new" }); } });
+  h.deps.registry.recordLead = async (lead) => { leads.push(lead); };
+  const run = (await h.run())!;
+  assert.equal(run.status, "sent");
+  assert.match((h.effects.sends[0] as any).request.text, /partnerships team will answer you/);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].tool, "sales.lead.submit");
+  assert.equal(calls[0].args.source, "fabric-inbox");
+  assert.equal(calls[0].args.summary, "A company wants to advertise in the app.");
+  assert.equal(calls[0].args.consent, true);
+  assert.equal(run.lead?.leadId, "L1");
+  assert.equal(run.handoff, true);
+  assert.equal((leads[0] as any).grant, "sales_desk");
+  assert.equal((leads[0] as any).key, run.lead!.key);
+});
+
+test("a message the sales agent does not take as a lead is answered as any other (B-237 gap 8)", async () => {
+  const h = harness({ agent: leadAgent(), model: leadModel, email: { subject: "Advertising", body: "<p>How do I buy Premium?</p>" },
+    callTool: async () => JSON.stringify({ lead_id: "L2", state: "not_a_lead", stage: "new" }) });
+  const run = (await h.run())!;
+  assert.equal(run.lead, undefined);
+  assert.equal(h.effects.sends.length, 0, "the model's answer is ungrounded for this policy, so it is not sent");
+  const failed = harness({ agent: leadAgent(), model: leadModel, callTool: async () => { throw new Error("sales agent down"); } });
+  const second = (await failed.run())!;
+  assert.equal(second.lead, undefined);
+  assert.match(second.toolCalls.find((c) => c.name === "sales_desk:lead")!.result, /sales agent down/);
+});
+
+test("a draft-mode agent drafts the fixed reply after the hand-off (B-237 gap 8)", async () => {
+  const h = harness({ agent: leadAgent("draft"), model: leadModel, callTool: async () => JSON.stringify({ lead_id: "L3", state: "received" }) });
+  const run = (await h.run())!;
+  assert.equal(run.status, "drafted");
+  assert.match(h.effects.drafts[0].text, /partnerships team/);
+});
+
+test("the person's next message in a conversation the sales agent holds goes to it again, with no model call (B-237 gap 8)", async () => {
+  const calls: Record<string, unknown>[] = [];
+  const h = harness({ agent: leadAgent(), model: leadModel, email: { subject: "Re: Advertising", body: "<p>Our budget is small.</p>" },
+    callTool: async (_g, args) => { calls.push(args); return JSON.stringify({ lead_id: "L1", state: "updated", stage: "qualifying" }); } });
+  h.deps.registry.openLead = async (_m, thread) => (thread === "t1" ? { key: "mail-abc", grant: "sales_desk" } : null);
+  h.deps.paraphrase = async () => "The company says its budget is small.";
+  const run = (await h.run())!;
+  assert.equal(run.status, "skipped");
+  assert.equal(h.effects.modelCalls, 0);
+  assert.equal(calls[0].caller_key, "mail-abc");
+  assert.equal(calls[0].summary, "The company says its budget is small.");
+  assert.equal(run.lead?.state, "updated");
+});
+
+import { deliverLeadReply } from "../workers/agents/runner";
+
+test("the sales owner's reply is sent once in auto mode and drafted otherwise (B-237 gap 8)", async () => {
+  const auto = harness({ agent: leadAgent() });
+  const sent = await deliverLeadReply({ key: "mail-abc", mailboxId: MAILBOX, emailId: "incoming-1", agentId: "support" }, { id: "r1", text: "Here are our terms \u2014 thanks." }, auto.deps);
+  assert.equal(sent.status, "sent");
+  const command = auto.effects.sends[0] as any;
+  assert.equal(command.idempotencyKey, "mail-abc:r1");
+  assert.equal(command.request.to, "ann@customer.invalid");
+  assert.doesNotMatch(command.request.text, /\u2014/, "no dash leaves");
+  const draft = harness({ agent: leadAgent("draft") });
+  assert.equal((await deliverLeadReply({ key: "mail-abc", mailboxId: MAILBOX, emailId: "incoming-1", agentId: "support" }, { id: "r1", text: "Terms." }, draft.deps)).status, "drafted");
+  assert.deepEqual(draft.effects.drafts.map((d) => d.id), ["mail-abc:r1"]);
+  assert.equal((await deliverLeadReply({ key: "k", mailboxId: MAILBOX, emailId: "gone", agentId: "support" }, { id: "r1", text: "x" }, draft.deps)).status, "not_sent");
+});

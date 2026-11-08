@@ -2,6 +2,7 @@ import { scrubPersonal } from "./events";
 import { queryLanguage } from "./language";
 import { newText } from "../../shared/mail/text";
 import { messageTriage, triageShape, TRIAGE_REPLY, type TriageKind } from "./triage";
+import { HELD_STATES, leadKey, parseSubmit, submitArguments } from "./leads";
 import type { SendMailCommand, SendMailResult } from "../../shared/mail/send";
 import { LEGACY_INSTRUCTIONS, callArguments, legacyAgentId, modelSchema, publicOnlyProblem, readAssignment, type AgentVersion, type ToolGrant } from "./definition";
 import { decide, isFollowUpSubject, matchedTopic, type ModelDecision } from "./policy";
@@ -249,6 +250,9 @@ export type ModelResponse = { decision: ModelDecision | null; text: string; /** 
   /** B-147: one receipt per model call made for this answer. */
   usage?: import("./usage").UsageReceipt[] };
 
+/** B-237 gap 8: one conversation handed to a sales agent (registry table agent_leads). */
+export interface LeadRecord { key: string; mailboxId: string; threadId: string; emailId: string; runId: string; agentId: string; grant: string; leadId?: string; state: string }
+
 export interface RunnerDeps {
   registry: {
     beginRun(run: AgentRun): Promise<{ claimed: boolean; run: AgentRun }>;
@@ -266,6 +270,10 @@ export interface RunnerDeps {
      * read from its cache, which shows the sent copy only after the next sync; the run's own record does at once.
      */
     sentInThreadAfter?(mailboxId: string, threadId: string, since: number): Promise<boolean>;
+    /** B-237 gap 8: the open sales hand-off of this conversation (its key and the grant that made it), if any. */
+    openLead?(mailboxId: string, threadId: string): Promise<{ key: string; grant: string } | null>;
+    /** B-237 gap 8: records a hand-off, or its new state, so its status is read and the owner's reply delivered. */
+    recordLead?(lead: LeadRecord): Promise<void>;
   };
   /** Whether another address of this workspace has an agent (a mailbox here, not Off). */
   agentServes(address: string): Promise<boolean>;
@@ -585,6 +593,42 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   if (scan.error) return finish("failed", msg("The safety check could not run ({error}); the message is left for the operator", { error: scan.error }), "safety");
   // B-141: never answered, but escalated at 4 hours like a held message, so a person sees it.
   if (scan.flagged) { run.injection = true; return finish("skipped", msg("The message may be trying to steer the agent; left for the operator")); }
+  // B-237 gap 8: a sales agent's lead grant hands over a lead and is never offered to the model.
+  const submitLead = async (grant: ToolGrant, args: Record<string, unknown>): Promise<{ leadId: string; state: string } | null> => {
+    const started = Date.now();
+    const record: ToolCallRecord = { name: `${grant.name}:lead`, host: hostOf(grant.endpoint), ok: false, ms: 0, result: "" };
+    run.toolCalls.push(record);
+    try {
+      const out = parseSubmit(await deps.callTool(grant, callArguments(grant, args)));
+      record.ok = !!out;
+      record.result = (out ? `${out.state} ${out.leadId}` : msg("The sales agent's answer could not be read")).slice(0, RESULT_PREVIEW_CHARS);
+      return out;
+    } catch (error) {
+      record.result = msg("Error: {error}", { error: (error as Error).message }).slice(0, RESULT_PREVIEW_CHARS);
+      return null;
+    } finally {
+      record.ms = Date.now() - started;
+    }
+  };
+  const leadLanguage = (text: string) => { const l = queryLanguage(text); return l === "other" ? null : l; };
+  const threadKey = (email.thread_id as string | null | undefined) || email.id;
+  // B-237 gap 8: a conversation a sales agent holds: the person's new message goes to it under the same key, and the
+  // owner answers it; the agent does not. When the sales agent cannot take it, the message is answered as any other.
+  const open = deps.registry.openLead ? await deps.registry.openLead(run.mailboxId, threadKey).catch(() => null) : null;
+  const openGrant = open ? agent.tools.find((g) => g.name === open.grant && g.leads) : undefined;
+  if (open && openGrant) {
+    const said = `${email.subject}\n${newText(email.body).slice(0, 600)}`;
+    let summary = "";
+    try { summary = deps.paraphrase ? scrubPersonal((await deps.paraphrase(said)).trim()).slice(0, 500) : ""; } catch { summary = ""; }
+    const held = await submitLead(openGrant, submitArguments(open.key, summary || "The person wrote again in the conversation.", leadLanguage(said)));
+    if (held && (HELD_STATES as readonly string[]).includes(held.state)) {
+      run.lead = { key: open.key, leadId: held.leadId, state: held.state, at: new Date().toISOString() };
+      run.handoff = true;
+      run.threadId = threadKey;
+      await deps.registry.recordLead?.({ key: open.key, mailboxId: run.mailboxId, threadId: threadKey, emailId: email.id, runId: run.id, agentId: agent.id, grant: openGrant.name, leadId: held.leadId, state: held.state }).catch(() => undefined);
+      return finish("skipped", msg("Passed to the sales agent: the person wrote again in a conversation it handles"));
+    }
+  }
   // B-237: a greeting with nothing else, or a message with no words, gets a fixed question back in English or Russian, with no
   // knowledge search and no model call; once per conversation (an earlier answer from this address leaves it to the writer).
   const earlierAnswer = thread.some((m) => m.id !== email.id && m.folder_id === "sent" && Date.parse(m.date) <= received);
@@ -676,7 +720,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   const evidence: EvidenceTrace[] = [];
   /** What the tools answered in this run, for the checker. */
   const factTexts: string[] = [];
-  const tools: AgentTool[] = agent.tools.map((grant) => ({
+  const tools: AgentTool[] = agent.tools.filter((grant) => !grant.leads).map((grant) => ({
     name: grant.name,
     description: grant.description,
     inputSchema: modelSchema(grant),
@@ -733,7 +777,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     }
     return finish("held", reason);
   };
-  const prefetchGrants = fixedTriage ? [] : agent.tools.filter((grant) => grant.prefetch);
+  const prefetchGrants = fixedTriage ? [] : agent.tools.filter((grant) => grant.prefetch && !grant.leads);
   // The knowledge tools read English and Russian; a message in another language is asked as its
   // English restatement, never as it is, or it can match a wrong fact with full confidence.
   // A restatement that cannot be made is a failed call, so the answer stays a draft.
@@ -954,6 +998,28 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   };
   if (outdated || (question && unanswered)) await reportGap(gapKind, gapText);
 
+  // B-237 gap 8: a lead (a category or topic the policy's leads lists) goes to the sales agent; the sender gets the fixed
+  // reply. A message the sales agent does not take as a lead (not_a_lead, closing, empty), or a failed hand-off, is
+  // answered as any other.
+  const leadPolicy = agent.replyPolicy.leads;
+  const leadGrant = leadPolicy ? agent.tools.find((g) => g.leads) : undefined;
+  let leadReply: string | null = null;
+  if (leadPolicy && leadGrant && proposal.decision !== "skip") {
+    const leadText = `${email.subject}\n${newText(email.body)}\n${run.summary ?? ""}`;
+    const isLead = (!!run.category && leadPolicy.categories.some((c) => c.toLowerCase() === run.category!.toLowerCase())) || !!matchedTopic(leadPolicy.topics, leadText);
+    const summary = scrubPersonal((run.summary || proposal.summary || "").trim()).slice(0, 500);
+    if (isLead && summary) {
+      const key = await leadKey(run.mailboxId, threadKey);
+      const held = await submitLead(leadGrant, submitArguments(key, summary, leadLanguage(opening)));
+      if (held && (HELD_STATES as readonly string[]).includes(held.state)) {
+        run.lead = { key, leadId: held.leadId, state: held.state, at: new Date().toISOString() };
+        run.handoff = true;
+        leadReply = localized(leadPolicy.reply);
+        await deps.registry.recordLead?.({ key, mailboxId: run.mailboxId, threadId: threadKey, emailId: email.id, runId: run.id, agentId: agent.id, grant: leadGrant.name, leadId: held.leadId, state: held.state }).catch(() => undefined);
+      }
+    }
+  }
+
   const policy = agent.replyPolicy;
   const needsSendChecks = policy.mode === "auto" && proposal.decision === "send";
   let outcome = decide(policy, proposal, {
@@ -978,7 +1044,12 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // reply, and an answer that would wait for a person for what it says gets the safe reply. Both are
   // fixed texts, so nothing unverified is sent; the daily and rate limits still keep a draft.
   let body = proposal.body.trim();
-  if (policy.mode === "auto" && outcome.action !== "skip") {
+  if (leadReply) {
+    // The fixed reply states no fact: in auto mode it is sent (the daily and rate limits still keep a draft).
+    body = leadReply;
+    if (policy.mode === "auto" && !(outcome.action === "draft" && outcome.capacity)) outcome = { action: "send", reason: msg("Handed to the sales agent: the reply says the team answers here") };
+    else if (policy.mode !== "auto") outcome = { action: "draft", reason: msg("Handed to the sales agent; this agent drafts only") };
+  } else if (policy.mode === "auto" && outcome.action !== "skip") {
     const handoff = policy.handoff;
     // B-141: only what the sender wrote now; a topic in the quoted history of an earlier answer is not this message's.
     const handText = `${email.subject}\n${newText(email.body)}\n${run.summary ?? ""}`;
@@ -1209,4 +1280,43 @@ function hostOf(endpoint: string): string {
 function textHtml(text: string): string {
   const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   return `<div style="white-space:pre-wrap">${escaped.replace(/\n/g, "<br>")}</div>`;
+}
+
+/**
+ * B-237 gap 8: delivers the sales owner's approved reply in the lead's conversation, as a reply to its message. Auto mode
+ * sends it (once: the idempotency key is the hand-off's and the reply's); otherwise it is drafted for a person, under
+ * the same id. `sent` means the provider took it (or may have: never sent twice), so the caller confirms it delivered.
+ */
+export async function deliverLeadReply(lead: { key: string; mailboxId: string; emailId: string; agentId: string }, reply: { id: string; text: string }, deps: RunnerDeps):
+  Promise<{ status: "sent" | "drafted" | "retry" | "not_sent"; reason?: string }> {
+  const agent = await deps.registry.getAgent(lead.agentId);
+  if (!agent) return { status: "not_sent", reason: "no agent" };
+  const email = await deps.mailbox.email(lead.emailId);
+  if (!email) return { status: "not_sent", reason: "message gone" };
+  const settings = await deps.mailbox.settings();
+  const signature = settings?.signature as { enabled?: boolean; text?: string } | undefined;
+  const signed = withoutDashes(signature?.enabled && signature.text?.trim() ? `${reply.text.trim()}\n\n${signature.text.trim()}` : reply.text.trim());
+  const address = (deps.mailbox.address ?? lead.mailboxId).toLowerCase();
+  const to = replyToAddress(parseStoredHeaders(email.raw_headers)) || email.sender;
+  const id = `${lead.key}:${reply.id}`;
+  if (agent.replyPolicy.mode !== "auto") {
+    await deps.mailbox.createDraft({ id, to, subject: replySubject(email.subject), text: signed, inReplyTo: email.id, threadId: email.thread_id || email.id });
+    return { status: "drafted" };
+  }
+  if (!(await deps.registry.reserveSend(lead.mailboxId, agent.replyPolicy.dailySendLimit))) return { status: "retry", reason: "daily send limit" };
+  try {
+    const result = await deps.mailbox.send({
+      mailboxId: lead.mailboxId, idempotencyKey: id, kind: "reply", originalEmailId: email.id,
+      request: {
+        from: typeof settings?.fromName === "string" && settings.fromName.trim() ? { email: address, name: settings.fromName.trim().slice(0, 100) } : address,
+        to, subject: replySubject(email.subject), text: signed, html: textHtml(signed),
+      },
+    });
+    if ("error" in result) return { status: "retry", reason: String(result.error).slice(0, 120) };
+    if (result.status === "failed") return { status: "not_sent", reason: `provider refused (${result.errorCode ?? "failed"})` };
+    return { status: "sent" };
+  } catch {
+    // The send may have happened: never sent twice.
+    return { status: "sent", reason: "outcome unknown" };
+  }
 }

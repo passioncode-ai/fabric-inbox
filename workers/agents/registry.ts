@@ -32,7 +32,8 @@ import {
 } from "./definition";
 import { RUN_OUTCOMES, runIdFor, type AgentRun, type RunOutcome } from "./run";
 import { sumReceipts, type Spent, type UsageReceipt } from "./usage";
-import { closeRun, runAgent, type ModelRequest, type RunnerDeps } from "./runner";
+import { closeRun, deliverLeadReply, runAgent, type LeadRecord, type ModelRequest, type RunnerDeps } from "./runner";
+import { LEAD_OPEN_MS, LEAD_POLL_MS, LEAD_SOURCE, leadAction, parseStatus } from "./leads";
 import { productionDeps, toolTokens } from "./deps";
 import { accountAddress, accountDeps, isAccountMailbox, type AccountsPort } from "./account-deps";
 import { readToolInfo, type ToolInfo } from "./tool-schema";
@@ -250,6 +251,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
       reserveSend: (box, limit) => this.reserveSend(box, limit),
       claimMessage: (key, box, elected) => this.claimMessage(key, box, elected),
       sentInThreadAfter: (box, thread, since) => this.sentInThreadAfter(box, thread, since),
+      openLead: async (box, thread) => this.openLead(box, thread),
+      recordLead: async (lead) => this.recordLead(lead),
     };
     if (isAccountMailbox(mailboxId)) return accountDeps(this.env, mailboxId, address ?? mailboxId, registry);
     return productionDeps(this.env, mailboxId, registry);
@@ -309,8 +312,9 @@ export class AgentRegistryDO extends DurableObject<Env> {
         },
         createDraft: async (d) => { draft = { to: d.to, subject: d.subject, text: d.text }; },
       },
-      // A gap report is a write to someone else's knowledge: never from a preview.
-      callTool: async (grant, args) => (gapTools.has(grant.tool) ? JSON.stringify({ preview: true }) : real.callTool(grant, args)),
+      // A gap report is a write to someone else's knowledge, and a lead a write to a sales agent's queue: never from a preview.
+      callTool: async (grant, args) => (grant.leads ? JSON.stringify({ lead_id: "preview", state: "received", stage: "new" })
+        : gapTools.has(grant.tool) ? JSON.stringify({ preview: true }) : real.callTool(grant, args)),
     };
     const run = await runAgent({ mailboxId: address, emailId: "preview" }, deps);
     if (!run || "owner" in run) return { status: "not_answered", run: null, reply: null, draft: null };
@@ -549,11 +553,15 @@ export class AgentRegistryDO extends DurableObject<Env> {
       countLog(this.env, "alarm", JSON.stringify({ event: "agent_evals_failed", error: (error as Error).message?.slice(0, 200) }));
       return null;
     });
+    const leadsDue = await this.pollLeads().catch((error) => {
+      countLog(this.env, "alarm", JSON.stringify({ event: "agent_leads_failed", error: (error as Error).message?.slice(0, 200) }));
+      return Date.now() + LEAD_POLL_MS;
+    });
     const topicsDue = await this.labelTopics().catch((error) => {
       countLog(this.env, "alarm", JSON.stringify({ event: "support_topics_failed", error: (error as Error).message?.slice(0, 200) }));
       return Date.now() + TOPICS_IDLE_MS;
     });
-    let heldDue: number | null = [gapsDue, retryDue, waitDue, closeDue, qualityDue, abandonDue, evalDue, topicsDue].filter((t): t is number => t !== null).reduce((a, b) => Math.min(a, b));
+    let heldDue: number | null = [gapsDue, retryDue, waitDue, closeDue, qualityDue, abandonDue, evalDue, topicsDue, leadsDue].filter((t): t is number => t !== null).reduce((a, b) => Math.min(a, b));
     // One message per mailbox at a time: two messages of one thread read the thread
     // before either answer exists, and would both be answered.
     const batch = this.nextBatch();
@@ -1484,6 +1492,67 @@ export class AgentRegistryDO extends DurableObject<Env> {
    * attempt and answers by the agent's policy. A sent answer, or one whose send may have happened, is
    * never repeated; a run going on now is left alone.
    */
+  /** B-237 gap 8: the open sales hand-off of a conversation (closed ones and ones past LEAD_OPEN_MS are not). */
+  openLead(mailboxId: string, threadId: string): { key: string; grant: string } | null {
+    const row = this.rows(`SELECT key, grant_name FROM agent_leads WHERE mailbox_id = ? AND thread_id = ? AND closed_at IS NULL AND created_at > ?
+      ORDER BY created_at DESC LIMIT 1`, mailboxId.toLowerCase(), threadId, Date.now() - LEAD_OPEN_MS)[0];
+    return row ? { key: String(row.key), grant: String(row.grant_name) } : null;
+  }
+
+  /** B-237 gap 8: a hand-off is recorded once by key; a later message of it moves its state, and its status is read soon. */
+  async recordLead(lead: LeadRecord): Promise<void> {
+    const now = Date.now();
+    this.ctx.storage.sql.exec(`INSERT INTO agent_leads (key, mailbox_id, thread_id, email_id, run_id, agent_id, grant_name, lead_id, state, next_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET state = excluded.state, lead_id = COALESCE(excluded.lead_id, lead_id), next_at = excluded.next_at, closed_at = NULL`,
+      lead.key, lead.mailboxId.toLowerCase(), lead.threadId, lead.emailId, lead.runId, lead.agentId, lead.grant, lead.leadId ?? null, lead.state, now + LEAD_POLL_MS, now);
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > now + LEAD_POLL_MS) await this.ctx.storage.setAlarm(now + LEAD_POLL_MS);
+  }
+
+  /**
+   * B-237 gap 8: reads each due hand-off's status from its sales agent; delivers the owner's approved reply in the
+   * conversation (sent in auto mode, drafted otherwise) and confirms a sent one delivered; closes one the sales agent
+   * marked won or lost, or one open past LEAD_OPEN_MS. Returns when the next is due.
+   */
+  protected async pollLeads(now = Date.now()): Promise<number | null> {
+    const due = this.rows(`SELECT key, mailbox_id, thread_id, email_id, agent_id, grant_name, delivered, created_at FROM agent_leads
+      WHERE closed_at IS NULL AND next_at <= ? ORDER BY next_at LIMIT 20`, now);
+    for (const row of due) {
+      const key = String(row.key), mailboxId = String(row.mailbox_id);
+      const next = (at: number) => this.ctx.storage.sql.exec("UPDATE agent_leads SET next_at = ? WHERE key = ?", at, key);
+      const close = (state: string) => this.ctx.storage.sql.exec("UPDATE agent_leads SET state = ?, closed_at = ? WHERE key = ?", state, now, key);
+      if (Number(row.created_at) < now - LEAD_OPEN_MS) { close("expired"); continue; }
+      const agent = await this.getAgent(String(row.agent_id));
+      const grant = agent?.tools.find((g) => g.name === String(row.grant_name) && g.leads);
+      if (!agent || !grant?.leads) { close("no_grant"); continue; }
+      const deps = await this.runDeps(mailboxId);
+      if (!deps) { close("no_mailbox"); continue; }
+      try {
+        const status = parseStatus(await deps.callTool({ ...grant, tool: grant.leads.status }, { source: (grant.fixed?.source as string | undefined) ?? LEAD_SOURCE, caller_key: key }));
+        if (!status) { next(now + LEAD_POLL_MS); continue; }
+        const action = leadAction(status);
+        if (action === "close") { close(status.stage); continue; }
+        if (action === "deliver" && status.reply) {
+          const delivered = JSON.parse(String(row.delivered ?? "[]")) as string[];
+          const result = delivered.includes(status.reply.id) ? { status: "sent" as const }
+            : await deliverLeadReply({ key, mailboxId, emailId: String(row.email_id), agentId: agent.id }, status.reply, deps);
+          console.log(JSON.stringify({ event: "agent_lead_reply", status: result.status, reason: result.reason ?? null }));
+          if (result.status === "sent") {
+            if (!delivered.includes(status.reply.id)) this.ctx.storage.sql.exec("UPDATE agent_leads SET delivered = ? WHERE key = ?", JSON.stringify([...delivered, status.reply.id].slice(-20)), key);
+            await deps.callTool({ ...grant, tool: grant.leads.delivered }, { source: (grant.fixed?.source as string | undefined) ?? LEAD_SOURCE, caller_key: key, reply_id: status.reply.id });
+          } else if (result.status === "not_sent") { close(`not_delivered: ${result.reason ?? ""}`.slice(0, 80)); continue; }
+        }
+        next(now + LEAD_POLL_MS);
+      } catch (error) {
+        countLog(this.env, "alarm", JSON.stringify({ event: "agent_lead_poll_failed", error: (error as Error).message?.slice(0, 200) }));
+        next(now + LEAD_POLL_MS);
+      }
+    }
+    const row = this.rows("SELECT MIN(next_at) AS t FROM agent_leads WHERE closed_at IS NULL")[0];
+    return row?.t === null || row?.t === undefined ? null : Math.max(now + 1000, Number(row.t));
+  }
+
   /** A-5: whether this address's agent sent an answer (not a waiting reply) in the conversation after `since`. */
   async sentInThreadAfter(mailboxId: string, threadId: string, since: number): Promise<boolean> {
     return this.rows(`SELECT 1 FROM agent_runs WHERE mailbox_id = ? AND status = 'sent' AND json_extract(body, '$.threadId') = ?

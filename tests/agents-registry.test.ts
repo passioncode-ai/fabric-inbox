@@ -50,6 +50,13 @@ const bundle = await build({
             injection: async () => ({ flagged: false }),
             // B-153: a gap list scripted in test/gap-list.json ({ tool, revision, gaps, throw }); every call is logged.
             callTool: async (grant, args) => {
+              // B-237 gap 8: a sales agent scripted in test/lead.json ({ answers: { tool: answer } }); every call is logged.
+              const lead = JSON.parse(await (await env.BUCKET.get('test/lead.json'))?.text() || 'null');
+              if (lead && grant.leads && lead.answers[grant.tool] !== undefined) {
+                const calls = JSON.parse(await (await env.BUCKET.get('test/lead-calls.json'))?.text() || '[]');
+                await env.BUCKET.put('test/lead-calls.json', JSON.stringify([...calls, { tool: grant.tool, args }]));
+                return JSON.stringify(lead.answers[grant.tool]);
+              }
               const script = JSON.parse(await (await env.BUCKET.get('test/gap-list.json'))?.text() || 'null');
               if (!script || grant.tool !== script.tool) return forbidden();
               const calls = JSON.parse(await (await env.BUCKET.get('test/gap-calls.json'))?.text() || '[]');
@@ -78,6 +85,8 @@ const bundle = await build({
         async abandonNow(now) { return this.superviseAbandoned(now); }
         async evalsNow(now) { return this.runEvals(now); }
         async closeNow(now) { return this.closeExpired(now); }
+        async leadsNow(now) { return this.pollLeads(now); }
+        async leadRows() { return this.ctx.storage.sql.exec('SELECT key, state, delivered, closed_at FROM agent_leads').toArray(); }
         async seedFacts(rows) { for (const r of rows) this.ctx.storage.sql.exec("INSERT OR REPLACE INTO agent_facts (endpoint, revision, seen_at) VALUES (?, ?, ?)", r.endpoint, r.revision, r.at); }
         async qualityNow(now) { return this.emitQualityDays(now); }
         async forgetQualityDay() { await this.ctx.storage.delete('quality_day'); }
@@ -173,6 +182,10 @@ const bundle = await build({
               case 'removeEval': return Response.json(await reg.removeEval(c.id, c.evalId));
               case 'rerunEvals': return Response.json(await reg.rerunEvals(c.id));
               case 'close': return Response.json({ next: await reg.closeNow(c.now) });
+              case 'recordLead': await reg.recordLead(c.lead); return Response.json(true);
+              case 'openLead': return Response.json(await reg.openLead(c.mailbox, c.thread));
+              case 'leads': return Response.json({ next: await reg.leadsNow(c.now) });
+              case 'leadRows': return Response.json(await reg.leadRows());
               case 'seedFacts': await reg.seedFacts(c.rows); return Response.json(true);
               case 'seedThread': await box(c.mailbox).seedThread(c.rows); return Response.json(true);
               case 'byIds': return Response.json(await reg.runsByIds(c.ids));
@@ -1650,5 +1663,44 @@ test("A-5: the registry says whether the address's agent sent an answer in a con
     assert.equal(await command("sentAfter", { mailbox: "gmail:a1", thread: "t-1", since }), true);
     assert.equal(await command("sentAfter", { mailbox: "gmail:a1", thread: "t-2", since }), false);
     assert.equal(await command("sentAfter", { mailbox: "gmail:a1", thread: "t-1", since: Date.now() + 60_000 }), false, "not after a later message");
+  } finally { await mf.dispose(); }
+});
+
+test("B-237 gap 8: an open hand-off's status is read, the owner's reply sent once and confirmed, and a won lead closed", async () => {
+  const { mf, command } = await fixture();
+  try {
+    const box = "support@project.invalid";
+    const grant = { name: "sales_desk", description: "Hands a lead to the sales desk", endpoint: "https://tools.project.invalid/mcp", tool: "sales.lead.submit",
+      leads: { status: "sales.lead.status", delivered: "sales.lead.delivered" } };
+    await command("schema", { script: { schema: { type: "object" } } });
+    const created = await command("create", { input: { ...support, tools: [grant] } });
+    assert.deepEqual(created.tools[0].leads, grant.leads, "the grant keeps its lead tools");
+    await command("setup", { mailbox: box, settings: { agent: { id: created.id } } });
+    const now = Date.now();
+    await command("seedThread", { mailbox: box, rows: [{ id: "in-1", folder: "inbox", date: new Date(now - 3_600_000).toISOString(), thread: "t1" }] });
+    await command("recordLead", { lead: { key: "mail-abc", mailboxId: box, threadId: "t1", emailId: "in-1", runId: "run-1", agentId: created.id, grant: "sales_desk", leadId: "L1", state: "received" } });
+    assert.deepEqual(await command("openLead", { mailbox: box, thread: "t1" }), { key: "mail-abc", grant: "sales_desk" });
+    assert.equal(await command("openLead", { mailbox: box, thread: "t2" }), null);
+
+    const reply = { stage: "qualified", answered: false, reply: { id: "r1", text: "Hello, here are our terms.", language: "en" } };
+    await command("r2put", { key: "test/lead.json", text: JSON.stringify({ answers: { "sales.lead.status": reply, "sales.lead.delivered": { reply_id: "r1", delivered: true } } }) });
+    assert.deepEqual((await command("leads", { now })).next !== null, true);
+    assert.equal((await command("sent", { mailbox: box })).length, 0, "nothing before the hand-off is due");
+    const later = now + 16 * 60_000;
+    await command("leads", { now: later });
+    const sent = await command("sent", { mailbox: box });
+    assert.equal(sent.length, 1);
+    const calls = await command("r2get", { key: "test/lead-calls.json" });
+    assert.deepEqual(calls.map((c: any) => c.tool), ["sales.lead.status", "sales.lead.delivered"]);
+    assert.deepEqual(calls[1].args, { source: "fabric-inbox", caller_key: "mail-abc", reply_id: "r1" });
+    await command("leads", { now: later + 16 * 60_000 });
+    assert.equal((await command("sent", { mailbox: box })).length, 1, "a reply already delivered is never sent again");
+
+    await command("r2put", { key: "test/lead.json", text: JSON.stringify({ answers: { "sales.lead.status": { stage: "won", answered: true, reply: null } } }) });
+    await command("leads", { now: later + 32 * 60_000 });
+    const [row] = await command("leadRows");
+    assert.equal(row.state, "won");
+    assert.ok(row.closed_at);
+    assert.equal(await command("openLead", { mailbox: box, thread: "t1" }), null, "a closed hand-off is not open");
   } finally { await mf.dispose(); }
 });

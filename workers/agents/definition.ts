@@ -48,6 +48,12 @@ export const ToolGrantSchema = z.object({
    */
   gaps: z.object({ tool: z.string().min(1).max(100), list: z.string().min(1).max(100).optional() }).strict().optional(),
   /**
+   * B-237 gap 8: this grant's tool hands a lead to a sales agent (its submit); `status` and `delivered` are the tools on the
+   * same endpoint that answer the hand-off's state with the owner's approved reply, and confirm the reply was delivered
+   * (workers/agents/leads.ts). The policy's `leads` says which messages are leads.
+   */
+  leads: z.object({ status: z.string().min(1).max(100), delivered: z.string().min(1).max(100) }).strict().optional(),
+  /**
    * B-94: whether the endpoint marks the tool read-only (MCP `readOnlyHint`), read at save time like
    * `inputSchema`; a value sent by the editor is replaced. A run re-run after it was interrupted calls
    * only read-only tools again: one that may act could act twice.
@@ -190,6 +196,17 @@ export const ReplyPolicySchema = z.object({
     /** A category's own fixed reply, over `reply` (the routing for that kind of message). */
     replies: z.record(z.string().trim().min(1).max(60), LocalizedText).optional()
       .refine((r) => !r || Object.keys(r).length <= 30, "At most 30 category replies"),
+  }).strict().optional(),
+  /**
+   * B-237 gap 8: messages that are leads (one of these categories, or a topic as in draftTopics) are handed to the agent's
+   * lead grant (a tool with `leads`); the sender gets `reply` (fixed, in auto mode sent, otherwise drafted), and the sales
+   * owner's approved answer comes back to the same conversation. A message the sales agent does not take as a lead is
+   * answered as any other.
+   */
+  leads: z.object({
+    categories: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
+    topics: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
+    reply: LocalizedText,
   }).strict().optional(),
   /**
    * Mail a person answers and the agent never replies to, not even with a fixed text (2026-10-22, for a
