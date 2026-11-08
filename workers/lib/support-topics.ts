@@ -1,7 +1,7 @@
 // B-238: what customers write about, per mailbox and month, aggregates only (docs/evidence/backlog.md B-238). One label per
 // conversation from its first incoming message: a topic from a fixed list, whether it reads negative, and a money kind. The
 // label is kept in the mailbox (table thread_topics, migration 22) with the model and the time; nothing of the mail leaves it.
-import { generateObject, type LanguageModel } from "ai";
+import { generateText, type LanguageModel } from "ai";
 import { z } from "zod";
 import { deadline } from "./deadline";
 import { inboxSources } from "./inbox-sources";
@@ -31,17 +31,41 @@ export const LABEL_SYSTEM = [
   `topic: exactly one of ${SUPPORT_TOPICS.join(", ")}. account_access: signing in, codes, a lost or blocked account. payments: paying, prices, invoices. subscription: plans, renewal, cancelling. refund: asking money back. bug: something does not work. how_to: how to do something. feature_request: asking for something new. privacy_security: data, deletion, safety of the account. abuse_report: spam, scams, other users' behaviour. business: partnership, advertising, sales. feedback: praise or opinion without a request. other: anything else.`,
   "negative: true when the writer is upset, angry or disappointed.",
   "money: refund when they want money back, charge when they question a charge, purchase_failed when a payment did not go through; otherwise null.",
+  'Answer with one JSON object only, no other text: {"topic": "...", "negative": true or false, "money": "..." or null}.',
 ].join("\n");
+
+/**
+ * The label in a model's text answer: the first flat JSON object in it, with the spellings models use for its values
+ * ("true", "none", upper case). The agents' Workers AI model answers a JSON-schema request in a shape the SDK cannot
+ * parse (seen 2026-11-08: "No object generated"), so the label is asked as text and read here; null when there is none.
+ */
+export function parseLabel(text: string): TopicLabel | null {
+  for (const found of text.matchAll(/\{[^{}]*\}/g)) {
+    let raw: Record<string, unknown>;
+    try { raw = JSON.parse(found[0]); } catch { continue; }
+    const money = typeof raw.money === "string" ? raw.money.trim().toLowerCase() : raw.money;
+    const negative = typeof raw.negative === "string" ? raw.negative.trim().toLowerCase() === "true" : raw.negative;
+    const parsed = TopicLabelSchema.safeParse({
+      topic: typeof raw.topic === "string" ? raw.topic.trim().toLowerCase().replace(/[\s-]+/g, "_") : raw.topic,
+      negative,
+      money: money === "null" || money === "none" || money === "" || money === undefined ? null : money,
+    });
+    if (parsed.success) return parsed.data;
+  }
+  return null;
+}
 
 /** One label for one conversation's first incoming message: one short call, 30 seconds at most. */
 export async function labelThread(model: LanguageModel, message: { subject: string; text: string }): Promise<TopicLabel> {
   const limit = deadline(30_000);
   try {
-    const { object } = await generateObject({
-      model, schema: TopicLabelSchema, system: LABEL_SYSTEM, maxOutputTokens: 200, abortSignal: limit.signal,
+    const { text } = await generateText({
+      model, system: LABEL_SYSTEM, maxOutputTokens: 600, abortSignal: limit.signal,
       prompt: JSON.stringify({ subject: message.subject.slice(0, 300), text: message.text.slice(0, 4000) }),
     });
-    return TopicLabelSchema.parse(object);
+    const label = parseLabel(text);
+    if (!label) throw new Error("the model's answer held no label");
+    return label;
   } finally {
     limit.clear();
   }

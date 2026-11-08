@@ -90,6 +90,8 @@ export const QUALITY_SETTLE_MS = 86_400_000;
 /** B-238: support topic labels per alarm pass, and how long an all-labelled server waits before looking again. */
 const TOPICS_PER_PASS = 20;
 const TOPICS_IDLE_MS = 6 * 3_600_000;
+/** After a failed label (the model is likely down) the next pass is an hour later. */
+const TOPICS_RETRY_MS = 3_600_000;
 /** Days reported in one alarm; the rest follow in the next (an alarm is bounded in time). */
 const QUALITY_DAYS_PER_PASS = 2;
 /** A waiting message whose mailbox could not be read is looked at again after this long. */
@@ -189,6 +191,10 @@ export class AgentRegistryDO extends DurableObject<Env> {
   /** B-238: reading the support topics report wakes the daily labelling (a server with no agent traffic has no alarm). */
   async wakeTopics(): Promise<void> {
     if (topicBudget(this.env) <= 0) return;
+    // A pass that failed (the model was down) waits an hour; a reader asking for the report tries again now. A state
+    // from 1.3.0 has no `failed` and is treated as failed once (its pass waited 6 hours after a model it could not read).
+    const state = await this.ctx.storage.get<{ day: string; calls: number; next: number; failed?: boolean }>("topics_state");
+    if (state && state.failed !== false && state.next > Date.now() + 60_000) await this.ctx.storage.put("topics_state", { ...state, next: 0 });
     const next = Date.now() + 1000;
     const current = await this.ctx.storage.getAlarm();
     if (current === null || current > next) await this.ctx.storage.setAlarm(next);
@@ -210,7 +216,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
     const budget = topicBudget(this.env);
     if (budget <= 0 || !this.env.AI) return null;
     const day = new Date(now).toISOString().slice(0, 10);
-    const state = (await this.ctx.storage.get<{ day: string; calls: number; next: number }>("topics_state")) ?? { day, calls: 0, next: 0 };
+    const state = (await this.ctx.storage.get<{ day: string; calls: number; next: number; failed?: boolean }>("topics_state")) ?? { day, calls: 0, next: 0 };
     if (state.day !== day) { state.day = day; state.calls = 0; state.next = 0; }
     if (now < state.next) return state.next;
     const tomorrow = Date.parse(`${day}T00:00:00.000Z`) + 86_400_000;
@@ -218,7 +224,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
       const { label, model } = this.topicLabeler();
       const pass = await labelSupportTopics(this.env, Math.min(TOPICS_PER_PASS, budget - state.calls), label, model);
       state.calls += pass.calls;
-      state.next = state.calls >= budget ? tomorrow : pass.more ? now + 60_000 : now + TOPICS_IDLE_MS;
+      state.next = state.calls >= budget ? tomorrow : pass.more ? now + 60_000 : pass.failed ? now + TOPICS_RETRY_MS : now + TOPICS_IDLE_MS;
+      state.failed = pass.failed > 0;
     } else state.next = tomorrow;
     await this.ctx.storage.put("topics_state", state);
     return state.next;
