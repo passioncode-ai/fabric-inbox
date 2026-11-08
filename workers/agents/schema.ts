@@ -89,4 +89,24 @@ export const AGENT_REGISTRY_STEPS: readonly SchemaStep[] = [
       created_at TEXT NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS agent_evals_by_agent ON agent_evals(agent_id, created_at)`,
   ]),
+  // B-237 gap 8: conversations handed to a sales agent, one row per key (workers/agents/leads.ts): read every
+  // LEAD_POLL_MS until closed, the owner's replies delivered in the conversation.
+  statements("8_agent_leads", [
+    `CREATE TABLE IF NOT EXISTS agent_leads (
+      key TEXT PRIMARY KEY,
+      mailbox_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      email_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      grant_name TEXT NOT NULL,
+      lead_id TEXT,
+      state TEXT NOT NULL,
+      delivered TEXT NOT NULL DEFAULT '[]',
+      next_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      closed_at INTEGER)`,
+    `CREATE INDEX IF NOT EXISTS agent_leads_open ON agent_leads(closed_at, next_at)`,
+    `CREATE INDEX IF NOT EXISTS agent_leads_by_thread ON agent_leads(mailbox_id, thread_id)`,
+  ]),
 ];

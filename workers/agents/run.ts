@@ -65,6 +65,8 @@ export interface AgentRun {
   /** Answered with the policy's hand-off reply (a person handles it), or its safe reply (nothing confident to say). */
   handoff?: boolean;
   fallback?: boolean;
+  /** B-237 gap 8: the conversation was handed to a sales agent under this key; its state as the sales agent answered. */
+  lead?: { key: string; leadId?: string; state: string; at: string };
   /** B-237: answered at triage: a fixed question back (greeting, empty) or the writer's clarify or decline. */
   triage?: "greeting" | "empty" | "clarify" | "decline";
   /** A reply saying an earlier answer did not help (reported to the knowledge as outdated). */
