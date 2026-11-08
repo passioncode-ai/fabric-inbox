@@ -11,6 +11,7 @@ not for what to do next.
 | How does it work? | [Architecture as built](architecture.md); target proposal: [desktop-mail/architecture.md](desktop-mail/architecture.md) |
 | How is it configured and deployed? | [Setup](desktop-mail/setup.md) (configuration reference, project addresses, agents, deployment order) |
 | How does an agent work with it (MCP)? | [The agent protocol](agents/mcp.md) (connect, levels, two steps, every tool); the skill: `plugins/fabric-inbox/` |
+| Which actions of the desktop app can an agent do, and how? | [Desktop actions and their agent doors](agents/desktop-actions.md) (every menu item, its code and its door: server tool, link, launch flag, profile file or none; gaps in B-236) |
 | How does a coding agent set it up — server, key, MCP registration — with the person only signing in and allowing? | [Set up as a coding agent](agents/onboard.md) (`onboard.mjs`: server, connect, register, prove, status; the launcher's JSON contract) |
 | What must the interface do? | [UX scenarios](ux/scenarios.md), [flows](ux/flows.md), [screens](ux/screens.md) |
 | How does it sound? | [Brand pack](brand/README.md); in Russian: [locale](brand/locales/ru.md) and [terminology → Russian](brand/terminology.md#russian-locale-ru); the last review of the Russian copy: [handoff 2026-10-12](handoffs/2026-10-12-russian-copy-pass.md) |
