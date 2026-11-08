@@ -1580,6 +1580,65 @@ test("B-192, B-186: a sent answer's log names its state claims, and every run en
   const finished = sent.filter((e) => e.event === "agent_run_finished");
   assert.equal(finished.length, 1);
   assert.deepEqual({ ...finished[0], run: undefined, agent: undefined },
-    { event: "agent_run_finished", run: undefined, agent: undefined, status: "sent", category: null, abstained: false, withheld: 0, injection: false });
+    { event: "agent_run_finished", run: undefined, agent: undefined, status: "sent", category: null, triage: null, abstained: false, withheld: 0, injection: false });
   assert.ok(!lines.some((l) => /Premium is now active|ann@customer/.test(l)), "no words of the answer or the sender in the logs");
+});
+
+// B-237 gap 1: triage. A message with nothing to answer gets a question back; nothing in it is a fact.
+const evidenceAgent = () => autoAgent({ replyPolicy: { mode: "auto", allowedIntents: ["pricing"], dailySendLimit: 5, requireEvidence: true } });
+
+test("a greeting with nothing else gets the fixed question back, with no model call and no evidence (B-237)", async () => {
+  const h = harness({ agent: evidenceAgent(), email: { subject: "Hello", body: "<p>Hi there</p>" } });
+  const run = (await h.run())!;
+  assert.equal(run.status, "sent");
+  assert.equal(run.triage, "greeting");
+  assert.equal(h.effects.modelCalls, 0);
+  assert.match((h.effects.sends[0] as any).request.text, /How can we help\?/);
+});
+
+test("an empty message in Russian gets the Russian question back (B-237)", async () => {
+  const h = harness({ agent: evidenceAgent(), email: { subject: "Привет", body: "<p>👍</p>" } });
+  const run = (await h.run())!;
+  assert.equal(run.triage, "greeting");
+  assert.match((h.effects.sends[0] as any).request.text, /Чем помочь\?/);
+});
+
+test("a draft-mode agent drafts the question back (B-237)", async () => {
+  const h = harness({ agent: agent(), email: { subject: "", body: "<p>??</p>" } });
+  const run = (await h.run())!;
+  assert.equal(run.status, "drafted");
+  assert.equal(run.triage, "empty");
+  assert.equal(h.effects.sends.length, 0);
+});
+
+test("one question back per conversation: after an earlier answer the writer decides (B-237)", async () => {
+  const thread = [
+    { id: "out-0", sender: MAILBOX, recipient: "ann@customer.invalid", date: "2026-09-28T09:00:00.000Z", folder_id: "sent", body: "Hello! How can we help?" },
+    { id: "incoming-1", sender: "ann@customer.invalid", recipient: MAILBOX, date: "2026-09-28T10:00:00.000Z", folder_id: "inbox", body: "<p>Hi</p>" },
+  ];
+  const h = harness({ agent: evidenceAgent(), email: { subject: "Re: Hello", body: "<p>Hi</p>" }, thread,
+    model: async () => ({ decision: answer({ kind: "clarify", body: "What happened?", intent: "question" }), text: "" }) });
+  const run = (await h.run())!;
+  assert.equal(h.effects.modelCalls, 1);
+  assert.equal(run.triage, undefined);
+  assert.notEqual(run.status, "sent");
+});
+
+test("the writer's clarify or decline is sent without evidence when it states no fact (B-237)", async () => {
+  for (const kind of ["clarify", "decline"] as const) {
+    const body = kind === "clarify" ? "Sorry to hear that. What happened, and what were you trying to do?" : "I can only help with questions about the app. What do you need help with?";
+    const h = harness({ agent: evidenceAgent(), email: { subject: "Terrible", body: "<p>This is the worst app ever!!!</p>" },
+      model: async () => ({ decision: answer({ kind, body, intent: "complaint" }), text: "" }) });
+    const run = (await h.run())!;
+    assert.equal(run.status, "sent", kind);
+    assert.equal(run.triage, kind);
+  }
+});
+
+test("a decline that carries a link or a number is an ordinary answer and needs evidence (B-237)", async () => {
+  const h = harness({ agent: evidenceAgent(), email: { subject: "Poem", body: "<p>Write me a poem</p>" },
+    model: async () => ({ decision: answer({ kind: "decline", body: "I only help with the app, see https://example.invalid/faq.", intent: "other" }), text: "" }) });
+  const run = (await h.run())!;
+  assert.equal(run.triage, undefined);
+  assert.equal(h.effects.sends.length, 0);
 });

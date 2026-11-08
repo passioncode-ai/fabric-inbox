@@ -24,6 +24,7 @@ const DecisionSchema = z.object({
   question: z.string().max(1000).optional().describe("Only when nothing you found answers the person: what they want to know, as one English sentence, with no names, addresses, phone numbers, usernames or quotes"),
   category: z.string().max(60).optional().describe("Exactly one of the categories listed in the rules, when there are any"),
   dissatisfied: z.boolean().optional().describe("true only when this message replies to an earlier answer from this address and says it did not help or was wrong"),
+  kind: z.enum(["answer", "clarify", "decline"]).optional().describe("answer; clarify: one question back about a message with nothing to act on; decline: the ask is outside this address's purpose"),
 });
 
 /** What the model is told when it stopped without submitting its answer. */

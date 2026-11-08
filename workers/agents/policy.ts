@@ -20,6 +20,8 @@ export interface ModelDecision {
   category?: string;
   /** The message says an earlier answer from this address did not help or was wrong. */
   dissatisfied?: boolean;
+  /** B-237: answer, or a reply that states no fact: clarify (one question back) or decline (outside the address's purpose). */
+  kind?: "answer" | "clarify" | "decline";
 }
 
 export interface PolicyContext {
@@ -37,6 +39,9 @@ export interface PolicyContext {
   topic?: string | null;
   /** A granted tool gave a confident answer in this run. */
   evidence?: boolean;
+  /** B-237: a triage reply (a fixed question back, or the writer's clarify or decline that passed triageShape): it states
+   * no fact, so the knowledge, grounding, evidence and intent gates do not apply; the mode, topics and limits do. */
+  triage?: boolean;
 }
 
 /** Re:, Fwd:, AW:, Отв:… at the start of a subject, any number of them, as mail clients write them. */
@@ -81,6 +86,14 @@ export function decide(policy: ReplyPolicy, proposal: ModelDecision, context: Po
     return { action: "skip", reason: proposal.reason.trim() || msg("The agent found nothing to answer") };
   if (!proposal.body.trim()) return { action: "skip", reason: msg("The agent produced no answer") };
   if (policy.mode === "draft") return { action: "draft", reason: msg("This agent drafts only") };
+  if (context.triage) {
+    if (policy.draftFollowUps && context.followUp) return { action: "draft", reason: msg("A reply, a forward or a follow-up to an earlier answer: a person answers it") };
+    if (context.topic) return { action: "draft", reason: msg("It is about a topic a person answers ({topic})", { topic: context.topic.slice(0, 80) }) };
+    if (policy.dailySendLimit !== null && context.sentToday >= policy.dailySendLimit)
+      return { action: "draft", reason: msg("Daily send limit of {limit} reached", { limit: policy.dailySendLimit }), capacity: true };
+    if (context.rateLimited) return { action: "draft", reason: context.rateLimited, capacity: true };
+    return { action: "send", reason: msg("Allowed: a question back that states no fact") };
+  }
   if (context.knowledgeProblem) return { action: "draft", reason: msg("The knowledge could not be searched ({problem})", { problem: context.knowledgeProblem }) };
   if (context.abstained) return { action: "draft", reason: msg("No confident answer in the knowledge; a person checks it") };
   if (policy.draftFollowUps && context.followUp) return { action: "draft", reason: msg("A reply, a forward or a follow-up to an earlier answer: a person answers it") };

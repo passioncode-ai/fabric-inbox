@@ -31,6 +31,6 @@ test("instructions and questions are not claims", () => {
 test("the runner logs the kinds with a sent answer and one finished line per run; no words of the mail", () => {
   const runner = readFileSync(new URL("../workers/agents/runner.ts", import.meta.url), "utf8");
   assert.match(runner, /event: "agent_answer_sent".*stateClaims: stateClaims\(reply\.text\)/);
-  assert.match(runner, /event: "agent_run_finished", run: run\.id, agent: run\.agentId \?\? null, status,\s+category: run\.category \?\? null, abstained: measured\.abstained, withheld: measured\.withheld, injection: !!run\.injection/);
+  assert.match(runner, /event: "agent_run_finished", run: run\.id, agent: run\.agentId \?\? null, status,\s+category: run\.category \?\? null, triage: run\.triage \?\? null, abstained: measured\.abstained, withheld: measured\.withheld, injection: !!run\.injection/);
   assert.match(runner, /event: "agent_tool_withheld", run: run\.id, tool: grant\.name, cause:/);
 });
