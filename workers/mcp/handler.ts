@@ -4,6 +4,7 @@
  * allows, and serves one Streamable HTTP exchange without a session.
  */
 import { recipientCheckFrom } from "./recipient-check";
+import { allServedDomains } from "../lib/mailbox-store";
 import { createMcpHandler } from "agents/mcp";
 import { api } from "../api";
 import type { Env } from "../types";
@@ -125,7 +126,7 @@ export async function handleMcp(request: Request, env: Env, ctx: ExecutionContex
     { name: PROTOCOL_NAME, version, instructions: instructionsFor(principal, origin) },
     TOOLS,
     { api: principal.accounts ? scopedApi(inProcessApi(origin, env, ctx, callerId(principal)), principal.accounts) : inProcessApi(origin, env, ctx, callerId(principal)), principal,
-      recipientCheck: recipientCheckFrom(env) },
+      recipientCheck: recipientCheckFrom(env, () => allServedDomains(env)) },
     ledgerFor(env),
   );
   return createMcpHandler(server, { route: "/mcp" })(request, env, ctx);

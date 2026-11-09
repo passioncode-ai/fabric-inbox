@@ -20,7 +20,7 @@ function sender(sent: string[][]) {
     call: async (a: { to: string[] }) => { sent.push(a.to); return { sent: true }; } } as never);
 }
 const checker = (verdicts: Record<string, string>, asked: string[] = []): RecipientCheck =>
-  ({ domains: ["team.example"], check: async (email) => { asked.push(email); return (verdicts[email] ?? "unknown") as never; } });
+  ({ domains: async () => ["team.example"], check: async (email) => { asked.push(email); return (verdicts[email] ?? "unknown") as never; } });
 
 test("an agent's send to an address of the organization goes only on ok; another verdict refuses it with its code", async () => {
   const sent: string[][] = [];
@@ -39,6 +39,14 @@ test("an agent's send to an address of the organization goes only on ok; another
   assert.equal(reserved, 0, "a refused send takes nothing from the key's daily sends");
 });
 
+test("domains that cannot be read refuse the send, never let it through unchecked", async () => {
+  const sent: string[][] = [];
+  const broken: RecipientCheck = { domains: async () => { throw new Error("R2 down"); }, check: async () => "ok" };
+  const out = JSON.parse((await runTool(sender(sent), { to: ["ann@team.example"] }, { api, principal: agent, recipientCheck: broken }, ledger())).content[0]!.text);
+  assert.equal(out.code, "recipient_unreachable");
+  assert.equal(sent.length, 0);
+});
+
 test("an unreachable check refuses (fail-closed); the person's own sends and a server without the check are not asked", async () => {
   const sent: string[][] = [];
   const down = JSON.parse((await runTool(sender(sent), { to: ["ann@team.example"] }, { api, principal: agent, recipientCheck: checker({ "ann@team.example": "unreachable" }) }, ledger())).content[0]!.text);
@@ -50,8 +58,11 @@ test("an unreachable check refuses (fail-closed); the person's own sends and a s
 });
 
 test("the check is configured per server: https only, a token, the guarded domains; its answer is read strictly", async () => {
-  assert.equal(recipientCheckFrom({}), null, "unset: nothing is checked");
-  assert.deepEqual(recipientCheckFrom({ RECIPIENT_CHECK_URL: "https://door.example/recipient-check", RECIPIENT_CHECK_TOKEN: "t", DOMAINS: "team.example, other.example" })!.domains, ["team.example", "other.example"]);
+  const served = async () => ["team.example", "Other.example"];
+  assert.equal(recipientCheckFrom({}, served), null, "unset: nothing is checked");
+  const base = { RECIPIENT_CHECK_URL: "https://door.example/recipient-check", RECIPIENT_CHECK_TOKEN: "t" };
+  assert.deepEqual(await recipientCheckFrom(base, served)!.domains(), ["team.example", "other.example"], "every served domain by default");
+  assert.deepEqual(await recipientCheckFrom({ ...base, RECIPIENT_CHECK_DOMAINS: "staff.example" }, served)!.domains(), ["staff.example"]);
   assert.equal(guarded("a@mail.team.example", ["team.example"]), true);
   assert.equal(guarded("a@notteam.example", ["team.example"]), false);
   const seen: { url: string; auth: string | null; redirect?: string }[] = [];
@@ -60,17 +71,17 @@ test("the check is configured per server: https only, a token, the guarded domai
     return new Response(JSON.stringify(answer), { status });
   }) as typeof fetch;
   const env = { RECIPIENT_CHECK_URL: "https://door.example/recipient-check", RECIPIENT_CHECK_TOKEN: "t", RECIPIENT_CHECK_DOMAINS: "team.example" };
-  assert.equal(await recipientCheckFrom(env, fetcher({ verdict: "ok" }))!.check("Ann@Team.example"), "ok");
+  assert.equal(await recipientCheckFrom(env, served, fetcher({ verdict: "ok" }))!.check("Ann@Team.example"), "ok");
   assert.equal(seen[0]!.url, "https://door.example/recipient-check?email=ann%40team.example");
   assert.equal(seen[0]!.auth, "Bearer t");
   assert.equal(seen[0]!.redirect, "manual", "a redirect is never followed with the token");
-  assert.equal(await recipientCheckFrom({ ...env, RECIPIENT_CHECK_URL: "https://door.example:8443/recipient-check" }, fetcher({ verdict: "ok" }))!.check("a@team.example"), "ok");
+  assert.equal(await recipientCheckFrom({ ...env, RECIPIENT_CHECK_URL: "https://door.example:8443/recipient-check" }, served, fetcher({ verdict: "ok" }))!.check("a@team.example"), "ok");
   assert.equal(seen.at(-1)!.url, "https://door.example:8443/recipient-check?email=a%40team.example", "the port is kept");
-  assert.equal(await recipientCheckFrom(env, fetcher({ verdict: "ok" }, 302))!.check("a@team.example"), "unreachable");
-  assert.equal(await recipientCheckFrom(env, fetcher({ verdict: "mismatch" }))!.check("a@team.example"), "mismatch");
-  assert.equal(await recipientCheckFrom(env, fetcher({ verdict: "maybe" }))!.check("a@team.example"), "unreachable", "an unknown answer is no ok");
-  assert.equal(await recipientCheckFrom(env, fetcher({ verdict: "ok" }, 401))!.check("a@team.example"), "unreachable");
-  assert.equal(await recipientCheckFrom(env, (async () => { throw new Error("down"); }) as never)!.check("a@team.example"), "unreachable");
-  assert.equal(await recipientCheckFrom({ ...env, RECIPIENT_CHECK_URL: "http://door.example/x" }, fetcher({ verdict: "ok" }))!.check("a@team.example"), "unreachable", "plain http is never trusted");
-  assert.equal(await recipientCheckFrom({ ...env, RECIPIENT_CHECK_TOKEN: "" }, fetcher({ verdict: "ok" }))!.check("a@team.example"), "unreachable", "no token: refused, not sent unchecked");
+  assert.equal(await recipientCheckFrom(env, served, fetcher({ verdict: "ok" }, 302))!.check("a@team.example"), "unreachable");
+  assert.equal(await recipientCheckFrom(env, served, fetcher({ verdict: "mismatch" }))!.check("a@team.example"), "mismatch");
+  assert.equal(await recipientCheckFrom(env, served, fetcher({ verdict: "maybe" }))!.check("a@team.example"), "unreachable", "an unknown answer is no ok");
+  assert.equal(await recipientCheckFrom(env, served, fetcher({ verdict: "ok" }, 401))!.check("a@team.example"), "unreachable");
+  assert.equal(await recipientCheckFrom(env, served, (async () => { throw new Error("down"); }) as never)!.check("a@team.example"), "unreachable");
+  assert.equal(await recipientCheckFrom({ ...env, RECIPIENT_CHECK_URL: "http://door.example/x" }, served, fetcher({ verdict: "ok" }))!.check("a@team.example"), "unreachable", "plain http is never trusted");
+  assert.equal(await recipientCheckFrom({ ...env, RECIPIENT_CHECK_TOKEN: "" }, served, fetcher({ verdict: "ok" }))!.check("a@team.example"), "unreachable", "no token: refused, not sent unchecked");
 });

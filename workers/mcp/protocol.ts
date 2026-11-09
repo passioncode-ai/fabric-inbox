@@ -223,12 +223,13 @@ export async function runTool(tool: ToolDef, rawArgs: Record<string, unknown>, c
   if (tool.sends && tool.recipients && ctx.recipientCheck && ctx.principal.kind === "agent") {
     const guard = ctx.recipientCheck;
     let named: string[];
-    try { named = await tool.recipients(args as never, ctx); }
+    let domains: readonly string[];
+    try { named = await tool.recipients(args as never, ctx); domains = await guard.domains(); }
     catch (error) {
       await journal("refused", "recipients could not be read for the recipient check");
-      return text({ error: `The recipients could not be read for the organization's recipient check (${errorText(error)}). Nothing was sent.`, outcome: "not_sent" }, true);
+      return text({ error: `The recipients or the organization's domains could not be read for its recipient check (${errorText(error)}). Nothing was sent.`, code: "recipient_unreachable", outcome: "not_sent" }, true);
     }
-    for (const address of [...new Set(named.map((a) => a.trim().toLowerCase()))].filter((a) => guarded(a, guard.domains))) {
+    for (const address of [...new Set(named.map((a) => a.trim().toLowerCase()))].filter((a) => guarded(a, domains))) {
       const verdict = await guard.check(address);
       if (verdict === "ok") continue;
       await journal("refused", `recipient check: ${verdict}`);
