@@ -25,6 +25,7 @@ const { t } = i18n;
 const updateVerify = require('./update-verify.cjs');
 const platformInstaller = require('./platform-installer.cjs');
 const consoleCore = require('./console.cjs');
+const profileWatch = require('./profile-watch.cjs');
 const { createLog } = require('./log.cjs');
 const { createDigest } = require('./ops-digest.cjs');
 const { ensureDescriptor } = require('./fabric-descriptor.cjs');
@@ -792,6 +793,31 @@ function startNewMail() {
     focused: () => (config && mailWindow && !mailWindow.isDestroyed() && mailWindow.isFocused() ? config.origin : null) });
   void mailNotifier.start().then(installMenu);
   void consoleCore.readSkip(fs, app.getPath('userData')).then((on) => { consoleSkip = on; installMenu(); });
+  watchSwitches();
+}
+/**
+ * B-236: the profile's switch files take effect while the app runs, so an agent can turn them without a restart
+ * (docs/agents/desktop-actions.md). A file whose value matches the app's state changes nothing; the menu follows.
+ */
+let profileWatcher = null;
+function watchSwitches() {
+  if (profileWatcher) return;
+  const userData = app.getPath('userData');
+  const read = async (name) => { try { return (await fs.readFile(path.join(userData, name), 'utf8')).trim(); } catch { return null; } };
+  profileWatcher = profileWatch.watchProfile({ watch: fsSync.watch, dir: userData, log: logEvent, handlers: {
+    [newMail.SWITCH_FILE]: async () => {
+      const on = (await read(newMail.SWITCH_FILE)) === 'on';
+      if (mailNotifier && on !== mailNotifier.enabled()) await mailNotifier.setEnabled(on);
+      installMenu();
+    },
+    'auto-update': async () => {
+      const on = (await read('auto-update')) !== 'off';
+      const now = updater ? updater.status() : null;
+      if (updater && now && now.automatic !== on) await updater.setAutomatic(on);
+      installMenu();
+    },
+    [consoleCore.SKIP_FILE]: async () => { consoleSkip = await consoleCore.readSkip(fs, userData); installMenu(); },
+  } });
 }
 /**
  * B-44: the server is updated through itself, without a new Cloudflare token: after the person signs
