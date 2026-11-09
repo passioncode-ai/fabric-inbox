@@ -74,6 +74,10 @@ The account, host and bucket of the organization's server are in its local deplo
   address of its domain was refused `recipient_unknown`, nothing sent. Shared mailboxes answer `unknown` until the
   administrator agent lists them (its owner took it, thread `2f9e849f`, message `591d00f5`).
 - The Studio's spaces on 1.5.1 (studio-agent, thread `6d0bb7fd`); later versions by its `studio apply` step.
+- B-241's last part: a rule's forward action goes through the same recipient check (PR #464, `822952b`, release
+  [v1.5.4](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v1.5.4)); all three servers on 1.5.4, receipts
+  `linked`, a live probe still refused `recipient_unknown`. The administrator agent lists the organization's eight
+  shared mailboxes (thread `2f9e849f`, message `8c10a233`).
 
 ## Next task
 
@@ -84,5 +88,4 @@ The account, host and bucket of the organization's server are in its local deplo
 4. B-240 (board request `f397d3ab`, thread `0340abfc`, due 2026-11-23): the state-claims gate is taken (1.5.2); compare
    the rest of the template database's support-answerer 1.4.4 (the promise-of-a-person check, the shared patterns) and
    answer in the thread what we take and what not.
-5. B-241's last part: a rule's forward action to an address of the organization through the same recipient check.
-6. The rest of B-236 (an update check now, Open at Login, Forget Server, a server's address): the link design first.
+5. The rest of B-236 (an update check now, Open at Login, Forget Server, a server's address): the link design first.
