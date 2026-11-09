@@ -69,4 +69,8 @@ export interface Env extends Cloudflare.Env {
 	TEAM_DOMAIN: string;
 	/** Set on the Worker: domains always served, commas and/or spaces; more live in R2 config/domains.json. */
 	DOMAINS?: string;
+	/** B-241: the organization's recipient check (https), its token (a secret) and the domains it guards (else DOMAINS). */
+	RECIPIENT_CHECK_URL?: string;
+	RECIPIENT_CHECK_TOKEN?: string;
+	RECIPIENT_CHECK_DOMAINS?: string;
 }

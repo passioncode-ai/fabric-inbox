@@ -5,6 +5,7 @@
  * It has no Cloudflare imports: the app's API, the ledger and the clock are handed in, so the same
  * code runs in the Worker and in `tests/mcp-server.test.ts`.
  */
+import { guarded, type RecipientCheck } from "./recipient-check";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z, type ZodRawShape } from "zod";
 import { levelAllows, type Level, type Principal, type Standing } from "./keys";
@@ -31,7 +32,7 @@ export class HumanStepRequired extends Error {
   constructor(readonly humanStep: HumanStep, readonly url: string, message: string) { super(message); }
 }
 
-export interface ToolContext { api: Api; principal: Principal }
+export interface ToolContext { api: Api; principal: Principal; recipientCheck?: RecipientCheck | null }
 
 export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   name: string;
@@ -39,6 +40,11 @@ export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   /** For the agent: what it does, when to use it, what comes back. */
   description: string;
   level: Level;
+  /**
+   * B-241: the addresses this send names on purpose (To, Cc, Bcc an agent chose, a draft's recipients); an address a
+   * reply goes back to by itself is not among them. Read before the send for the organization's recipient check.
+   */
+  recipients?(args: any, ctx: ToolContext): string[] | Promise<string[]>;
   /** Sends mail: absent for a *Drafts only* key, and counted against the key's daily allowance. */
   sends?: boolean;
   /** B-178: its confirmation always waits for the owner's approval (B-38), whatever the key's setting. */
@@ -211,6 +217,26 @@ export async function runTool(tool: ToolDef, rawArgs: Record<string, unknown>, c
         await journal("refused", "confirmation code not valid");
         return text({ error: "The confirmation code is not valid: it expired, was used, was refused by the owner, or was issued for other arguments. Call without confirm to get a new one." }, true);
       }
+    }
+  }
+  // B-241: an agent's send to an address of the organization goes only when its recipient check says ok.
+  if (tool.sends && tool.recipients && ctx.recipientCheck && ctx.principal.kind === "agent") {
+    const guard = ctx.recipientCheck;
+    let named: string[];
+    try { named = await tool.recipients(args as never, ctx); }
+    catch (error) {
+      await journal("refused", "recipients could not be read for the recipient check");
+      return text({ error: `The recipients could not be read for the organization's recipient check (${errorText(error)}). Nothing was sent.`, outcome: "not_sent" }, true);
+    }
+    for (const address of [...new Set(named.map((a) => a.trim().toLowerCase()))].filter((a) => guarded(a, guard.domains))) {
+      const verdict = await guard.check(address);
+      if (verdict === "ok") continue;
+      await journal("refused", `recipient check: ${verdict}`);
+      console.warn(JSON.stringify({ event: "recipient_check_refused", tool: tool.name, verdict }));
+      return text({ error: verdict === "unreachable"
+        ? `The organization's recipient check could not be reached for ${address}. Nothing was sent; try again in a minute.`
+        : `The organization's recipient check refused ${address} (${verdict}). Nothing was sent; ask the person you work for who the message is for.`,
+        code: `recipient_${verdict.replace(/-/g, "_")}`, outcome: "not_sent" }, true);
     }
   }
   if (tool.sends) {
