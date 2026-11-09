@@ -65,15 +65,24 @@ The account, host and bucket of the organization's server are in its local deplo
   condition ignores a message's claim of its own importance, advance-fee fraud is scam. PR #457 (`764f1dc`), release
   [v1.5.1](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v1.5.1) (release run 42631620765 green, 20
   assets); all three servers on 1.5.1 at 14:09 UTC, receipts `linked`, `get_server` answers 1.5.1; answered in the thread.
+- B-240, first part (board request `f397d3ab`): an answer asserting a state the agent cannot see is not sent as it is;
+  PR #459, release [v1.5.2](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v1.5.2).
+- B-241 (board request `5d56e41f`, the operator's word relayed: recipients are checked through the organization's
+  administrator agent): PR #461, #462, release [v1.5.3](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v1.5.3)
+  (release run 42649003829 green, 20 assets). All three servers on 1.5.3, receipts `linked`. On the client
+  organization's server `RECIPIENT_CHECK_URL` and `RECIPIENT_CHECK_TOKEN` are set; a live `send_email` to a made-up
+  address of its domain was refused `recipient_unknown`, nothing sent. Shared mailboxes answer `unknown` until the
+  administrator agent lists them (its owner took it, thread `2f9e849f`, message `591d00f5`).
+- The Studio's spaces on 1.5.1 (studio-agent, thread `6d0bb7fd`); later versions by its `studio apply` step.
 
 ## Next task
 
-1. The Studio's spaces to 1.5.1 by `studio apply` (studio-agent), and this Mac's app by its own update.
+1. This Mac's app by its own update (it installs when the person quits it); the Studio's spaces follow by `studio apply`.
 2. B-237's two remaining failures (a vent with no detail, a request for a person the knowledge covers): the writer's
    clarify rule, then the batches again.
 3. PassionCode's support agent to auto mode once a person has read its first drafts.
-4. B-240 (board request `f397d3ab`, thread `0340abfc`, due 2026-11-23): compare the template database's
-   support-answerer 1.4.4 with our reply agent and answer what we take and what not. A first finding: our state claims
-   (`workers/agents/state-claims.ts`) are only logged, the template blocks them unless they sit in a condition or a
-   question (`checks.states_false`); that is B-237's step 2 too.
-5. The rest of B-236 (an update check now, Open at Login, Forget Server, a server's address): the link design first.
+4. B-240 (board request `f397d3ab`, thread `0340abfc`, due 2026-11-23): the state-claims gate is taken (1.5.2); compare
+   the rest of the template database's support-answerer 1.4.4 (the promise-of-a-person check, the shared patterns) and
+   answer in the thread what we take and what not.
+5. B-241's last part: a rule's forward action to an address of the organization through the same recipient check.
+6. The rest of B-236 (an update check now, Open at Login, Forget Server, a server's address): the link design first.
