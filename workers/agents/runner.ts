@@ -13,7 +13,7 @@ import { secondLookCause } from "./learning-events";
 import { answeringOrder, duplicateReason, electAnswerer, messageKey, type MessageClaim } from "./dedupe";
 import type { KnowledgeHit } from "../knowledge/store";
 import { msg } from "../../shared/i18n";
-import { stateClaims } from "./state-claims";
+import { stateClaims, assertedClaims, UNSEEN } from "./state-claims";
 
 export interface RunnerEmail {
   id: string;
@@ -1059,6 +1059,12 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       body = localized(own ?? handoff.reply);
       run.handoff = true;
     } else {
+      // B-240 (the template's `checks.states_false`): an answer asserting a state the agent cannot see in a main clause
+      // (an active plan, a refund done, a case passed on) is never sent as it is, whatever the knowledge says: it goes
+      // the way of an answer the agent is not sure of (the safe reply, a hold or a draft).
+      const unseen = assertedClaims(body).filter((kind) => UNSEEN.includes(kind));
+      if (outcome.action === "send" && unseen.length && !fixedTriage)
+        outcome = { action: "draft", reason: msg("The answer states what nobody confirmed ({claims})", { claims: unseen.join(", ") }) };
       // Before an answer leaves without a person: a model of another vendor approves it, or it is
       // treated like an answer the agent is not sure of (operator rule 2026-10-16).
       // A fixed question back is fixed text: nothing to check (a writer's clarify or decline is checked like any answer).

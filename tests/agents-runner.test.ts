@@ -1029,6 +1029,25 @@ test("a hand-off category with its own reply gets that reply; the others get the
   assert.match(JSON.stringify(refund.effects.sends), /support manager/);
 });
 
+test("B-240: an answer asserting a state nobody can see is not sent as it is; inside a condition it is", async () => {
+  const kb = async () => JSON.stringify({ abstained: false, results: [{ id: "fact:refunds", coverage: 0.9 }] });
+  const make = (body: string) => {
+    const h = harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true }), email: { subject: "Refund", body: "<p>Where is my refund?</p>" },
+      callTool: kb, model: async () => ({ decision: answer({ intent: "refund", body }), text: "" }) });
+    let checked = false;
+    h.deps.check = async () => { checked = true; return { approved: true, reason: "ok", model: "qwen/qwen3.8-flash" }; };
+    return { h, checked: () => checked };
+  };
+  const claimed = make("Your refund has been processed and reaches your card in 5 days.");
+  const r = (await claimed.h.run())!;
+  assert.notEqual(r.status, "sent");
+  assert.equal(claimed.h.effects.sends.length, 0);
+  assert.match(String(r.reason), /The answer states what nobody confirmed \(refund_done\)/);
+  assert.equal(claimed.checked(), false, "no checker call is spent on it");
+  const conditional = make("If your refund was processed, it reaches your card in 5 to 10 days.");
+  assert.equal((await conditional.h.run())!.status, "sent");
+});
+
 test("knowledgeIsEvidence: a tool that abstains does not hold an answer the checker approves; without it, it holds", async () => {
   const weak = async () => JSON.stringify({ abstained: true, results: [] });
   const make = (knowledgeIsEvidence: boolean, approved = true) => {
@@ -1571,17 +1590,18 @@ test("B-192, B-186: a sent answer's log names its state claims, and every run en
   console.log = (line: unknown) => { lines.push(String(line)); };
   let run;
   try {
-    const h = harness({ agent: autoAgent(), model: async () => ({ decision: answer({ body: "Hi Ann, your Premium is now active." }), text: "" }) });
+    const h = harness({ agent: autoAgent(), model: async () => ({ decision: answer({ body: "Hi Ann, the issue is fixed in the latest version." }), text: "" }) });
     run = (await h.run())!;
   } finally { console.log = log; }
   assert.equal(run.status, "sent", run.reason);
   const sent = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-  assert.deepEqual(sent.find((e) => e.event === "agent_answer_sent")?.stateClaims, ["account_state"]);
+  // A state the agent cannot see is not sent at all since B-240; a claim it may make is still counted.
+  assert.deepEqual(sent.find((e) => e.event === "agent_answer_sent")?.stateClaims, ["fixed"]);
   const finished = sent.filter((e) => e.event === "agent_run_finished");
   assert.equal(finished.length, 1);
   assert.deepEqual({ ...finished[0], run: undefined, agent: undefined },
     { event: "agent_run_finished", run: undefined, agent: undefined, status: "sent", category: null, triage: null, abstained: false, withheld: 0, injection: false });
-  assert.ok(!lines.some((l) => /Premium is now active|ann@customer/.test(l)), "no words of the answer or the sender in the logs");
+  assert.ok(!lines.some((l) => /issue is fixed|ann@customer/.test(l)), "no words of the answer or the sender in the logs");
 });
 
 // B-237 gap 1: triage. A message with nothing to answer gets a question back; nothing in it is a fact.

@@ -415,6 +415,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"{reason}. The waiting reply was refused; it is tried again with the next attempt": "{reason}. Ответ об ожидании отклонён; он будет отправлен при следующей попытке",
 	"{reason}. A reply saying the answer follows was sent": "{reason}. Отправлен ответ, что ответ последует",
 	"The checker did not approve the answer ({reason})": "Проверяющая модель не одобрила ответ ({reason})",
+	"The answer states what nobody confirmed ({claims})": "Ответ утверждает то, что никто не подтвердил ({claims})",
 	"The answer could not be checked ({error})": "Ответ не удалось проверить ({error})",
 	"Withheld: {problem}": "Скрыто: {problem}",
 	"No confident answer in the knowledge; a person checks it": "В знаниях нет уверенного ответа; его проверит человек",

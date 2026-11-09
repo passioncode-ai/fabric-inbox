@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { stateClaims } from "../workers/agents/state-claims";
+import { stateClaims, assertedClaims } from "../workers/agents/state-claims";
 
 test("an answer's state claims are named by kind, in English and Russian", () => {
   assert.deepEqual(stateClaims("Your Premium is now active, enjoy."), ["account_state"]);
@@ -33,4 +33,16 @@ test("the runner logs the kinds with a sent answer and one finished line per run
   assert.match(runner, /event: "agent_answer_sent".*stateClaims: stateClaims\(reply\.text\)/);
   assert.match(runner, /event: "agent_run_finished", run: run\.id, agent: run\.agentId \?\? null, status,\s+category: run\.category \?\? null, triage: run\.triage \?\? null, abstained: measured\.abstained, withheld: measured\.withheld, injection: !!run\.injection/);
   assert.match(runner, /event: "agent_tool_withheld", run: run\.id, tool: grant\.name, cause:/);
+});
+
+test("B-240: a state inside a condition or a question asserts nothing; the same words in a main clause do", () => {
+  for (const text of [
+    "If your refund was processed, it reaches your card in 5 to 10 days.",
+    "Please check whether your refund has been processed in the App Store.",
+    "Confirm your subscription is active on this device, then restart the app.",
+    "Если возврат оформлен, деньги придут через неделю.",
+  ]) assert.deepEqual(assertedClaims(text), [], text);
+  assert.deepEqual(assertedClaims("If you paid twice, your refund was processed."), ["refund_done"]);
+  assert.deepEqual(assertedClaims("Your Premium is now active. If not, restart the app."), ["account_state"]);
+  assert.deepEqual(assertedClaims("Мы передали это разработчикам."), ["passed_to_team"]);
 });
