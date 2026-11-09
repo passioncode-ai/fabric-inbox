@@ -834,6 +834,8 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Held for review by the safety check and never released": "Задержала проверка безопасности, и письмо так и не отпустили",
 	"Held for review by the safety check": "Задержала проверка безопасности",
 	"Waiting for the safety check": "Ждёт проверки безопасности",
+	"Waiting for the spam check": "Ждёт проверки на спам",
+	"Moved to Spam by the spam check": "Проверка на спам перенесла его в «Спам»",
 	"The day's safety budget was spent": "Дневной лимит проверок безопасности исчерпан",
 	"Not checked: {error}": "Не проверено: {error}",
 	"Hidden text addresses an AI": "Скрытый текст обращается к ИИ",
