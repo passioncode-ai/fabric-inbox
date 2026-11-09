@@ -299,6 +299,44 @@ test("A-6, A-11: a rule dismissed while it waited for the safety check is not wr
   assert.equal(kept.effects, 0);
 });
 
+test("B-239: a rule on a stranger's message waits for its spam check; spam is skipped, said so; a known sender's never waits", async () => {
+  const at = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
+  const screened = () => { const s = setup(); s.run.screen = true; s.run.createdAt = at(60_000); return s; };
+  // Not judged yet: pending, back in a minute, nothing read or done.
+  const waiting = screened();
+  await processRun(waiting.run, { ...waiting.deps, spam: async () => "pending" as const });
+  assert.deepEqual([waiting.run.status, waiting.run.detail], ["pending", "Waiting for the spam check"]);
+  assert.ok(Date.parse(waiting.run.retryAt!) > Date.now());
+  assert.ok(!waiting.writes.includes("running"), "it never started");
+  assert.equal(waiting.effects, 0);
+  // Judged spam (the advance-fee mail of 2026-11-09 that reached the operator as urgent): skipped, nothing done.
+  const spam = screened();
+  await processRun(spam.run, { ...spam.deps, spam: async () => "spam" as const });
+  assert.deepEqual([spam.run.status, spam.run.detail], ["skipped", "Moved to Spam by the spam check"]);
+  assert.equal(spam.run.retryAt, undefined);
+  assert.equal(spam.effects, 0);
+  // A failed spam call waits too; a dismissal in the meantime stands (A-6).
+  const raced = screened();
+  let stored = "pending";
+  await processRun(raced.run, { ...raced.deps, spam: async () => { stored = "cancelled"; throw new Error("down"); }, saveIfPending: async () => stored === "pending" });
+  assert.equal(stored, "cancelled");
+  assert.equal(raced.effects, 0);
+  // Clean: the rule runs. The check never came in 15 minutes: it acts as before, as the agent does (B-30).
+  const clean = screened();
+  await processRun(clean.run, { ...clean.deps, spam: async () => "clear" as const });
+  assert.equal(clean.run.status, "succeeded");
+  const late = screened();
+  late.run.createdAt = at(16 * 60_000);
+  await processRun(late.run, { ...late.deps, spam: async () => "pending" as const });
+  assert.equal(late.run.status, "succeeded");
+  // A known sender's message (no screen) is never asked about.
+  const known = setup();
+  let asked = false;
+  await processRun(known.run, { ...known.deps, spam: async () => { asked = true; return "pending" as const; } });
+  assert.equal(known.run.status, "succeeded");
+  assert.equal(asked, false);
+});
+
 test("A-9: a forward that would bring its own message back to the address never runs", async () => {
   const { forwardLoops } = await import("../workers/automation/policy");
   const rule = (to: string) => ({ id: "r", version: 1, name: "Fwd", enabled: true, mode: "automatic", conditions: {}, action: { type: "forward", to }, dailyLimit: 20 }) as never;

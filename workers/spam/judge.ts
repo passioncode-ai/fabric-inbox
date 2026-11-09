@@ -49,7 +49,7 @@ export const SPAM_SYSTEM = [
   "- conversation: a person writing to this recipient for a real reason: a reply, a job, a partnership or deal with a concrete reason to talk to them.",
   "- service_update: a newsletter, digest, product update or tip from a service the recipient has an account with or subscribed to.",
   "- phishing: pretends to be a bank, a payment service, a brand, a mail or domain provider, or the recipient's own company, to make them click, sign in, pay, or open a file.",
-  "- scam: fake orders, product inquiries, invoices, prizes, jobs, loans or investments, and unasked security reports that want a bounty.",
+  "- scam: fake orders, product inquiries, invoices, prizes, jobs, loans or investments, unasked security reports that want a bounty, and advance-fee fraud: a stranger with an inheritance, a deposit, a consignment or the funds of an official, a politician or a dead client to move, by bank or diplomatic delivery, for a share.",
   "- cold_outreach: unsolicited sales, SEO, backlinks, guest posts, reviews, listings, marketing, design or lead offers from strangers, and their follow-ups.",
   "- bulk_marketing: mass marketing or a newsletter the recipient did not sign up to.",
   "- other: anything else.",

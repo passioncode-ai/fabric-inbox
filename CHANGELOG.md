@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.5.1 (2026-11-09)
+
+**Rules wait for the spam check** (B-239). A rule on a message from someone you never wrote to now waits for the spam
+check, as a reply agent does, up to 15 minutes. If the check moves the message to Spam, the rule does nothing and its
+run says so. A rule's AI condition no longer takes a message's own claim of being important or urgent as a reason to
+match, and the spam check now recognises advance-fee scams (an inheritance, a deposit or an official's funds to move
+for a share).
+
 ## 1.5.0 (2026-11-09)
 
 **New mail from every server** (B-233). With Notify About New Mail on, the app now watches the inbox of every server

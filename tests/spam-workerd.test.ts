@@ -83,6 +83,7 @@ const bundle = await build({
       app.get('/calls', async (c) => c.json(await c.env.CATEGORIES.getByName('workspace').callCount()));
       app.get('/checks', async (c) => c.json(await c.env.CATEGORIES.getByName('workspace').checks()));
       app.get('/prompts', async (c) => c.json(await c.env.CATEGORIES.getByName('workspace').prompts()));
+      app.post('/spamof', async (c) => c.json(await c.env.CATEGORIES.getByName('workspace').spamOf((await c.req.json()).keys)));
       app.all('/api/v1/*', (c) => mainApp.fetch(c.req.raw, c.env, c.executionCtx));
       app.post('/due', async (c) => { await c.env.CATEGORIES.getByName('workspace').due(); return c.json({ ok: true }); });
       app.post('/fail', async (c) => { await c.env.CATEGORIES.getByName('workspace').failNext((await c.req.json()).n); return c.json({ ok: true }); });
@@ -182,6 +183,19 @@ test("a stranger's message is read by the model once; spam moves with the model'
     await call("/pump", "POST");
     assert.equal((await call("/calls")).body, 2, "nothing is judged twice");
     assert.deepEqual((await feed("spam")).map((m) => m.spamReason), ["Unsolicited SEO outreach from a stranger"]);
+  } finally { await mf.dispose(); }
+});
+
+test("B-239: a rule reads the spam check's verdict of a stranger's message; a message not judged yet has none", async () => {
+  const { mf, call, receive } = await fixture();
+  try {
+    const pitch = await receive("Grow your traffic", { from: "bob@agency.test", headers: PASS("agency.test"), body: "We offer SEO services at a great price." });
+    const question = await receive("Where is my order?", { from: "ann@customer.invalid", headers: PASS("customer.invalid") });
+    const account = "cloudflare:support@shop.invalid";
+    const keys = [pitch, question].map((m) => ({ accountId: account, messageId: m.emailId }));
+    assert.deepEqual((await call("/spamof", "POST", { keys })).body, {}, "not judged yet: the rule waits");
+    await call("/pump", "POST");
+    assert.deepEqual((await call("/spamof", "POST", { keys })).body, { [`${account}|${pitch.emailId}`]: "spam", [`${account}|${question.emailId}`]: "clean" });
   } finally { await mf.dispose(); }
 });
 

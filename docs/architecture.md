@@ -329,6 +329,21 @@ A stranger's message waits in the agent queue for its spam check (`AgentRegistry
 answer, so spam never gets a draft and a model that never answers delays an answer without
 dropping it. Agents skip a message that is in Spam or Trash by the time its run starts.
 
+A rule waits for the same check (B-239): a stranger's message reaches `AutomationDO.ingest` marked `screen`, its run
+stays pending while `CategoriesDO.spamOf` has no verdict (`processRun` `spam`: a minute at a time, up to
+`SPAM_WAIT_MS`, 15 minutes), and a verdict of spam skips it with "Moved to Spam by the spam check"; a known sender's
+message, and a server without the categories binding, never wait. The rule's AI condition (`RULE_ANALYSIS_SYSTEM`,
+`workers/automation/policy.ts`) is told that what a message says about its own importance or urgency decides nothing,
+and `SPAM_SYSTEM` names advance-fee fraud (an inheritance, a deposit or an official's funds to move for a share) as
+`scam`: on 2026-11-09 such a message titled "VERY IMPORTANT" passed a rule's AI condition and reached an operator as an
+urgent signal before the spam check moved it. A second sentence ("a stranger offering money or a share of funds,
+however urgent it says it is, is scam") was tried and left out: it sent a stranger's real partnership question to
+Spam 6 times of 6, against 2 of 6 before (llama-4-scout on OpenRouter, the owner's labelled set). On the whole set
+(439 messages) the kept change catches 138 of 157 spam against 136 before, with good mail to Spam unchanged at 5 of
+265; the advance-fee message is caught 6 times of 6 either way, so on that day the rule acting before the check was
+the cause. `tests/automation-engine.test.ts`, `tests/spam-judge.test.ts`,
+`tests/spam-workerd.test.ts`.
+
 ## Discarded (0.12, WS8)
 
 Mail thrown away on purpose (⌘⌫, `discard_messages`), kept apart from Trash and Spam so a mistake can

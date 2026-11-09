@@ -674,6 +674,19 @@ export class CategoriesDO extends DurableObject<Env> {
     return out;
   }
 
+  /**
+   * B-239: the spam check's verdict per message (`spam`, `spam_not_moved`, `clean`, `skipped`), keyed as `safetyOf` is;
+   * a message not judged yet is absent. A rule on a stranger's message waits for it, as its agent does (B-30).
+   */
+  async spamOf(keys: { accountId: string; messageId: string }[]): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    for (const k of keys.slice(0, 200)) {
+      const row = this.sql.exec("SELECT verdict FROM spam_checks WHERE account_id = ? AND message_id = ?", k.accountId, k.messageId).toArray()[0] as Row | undefined;
+      if (row) out[safetyKey(k.accountId, k.messageId)] = String(row.verdict);
+    }
+    return out;
+  }
+
   /** The held messages, newest first (B-178). */
   async heldMessages(limit = 100): Promise<{ accountId: string; messageId: string; state: SafetyState; reason: string; subject: string; sender: string; timestamp: number }[]> {
     return (this.sql.exec("SELECT account_id, message_id, state, reason, subject, sender, timestamp FROM safety WHERE state IN ('held', 'kept') ORDER BY timestamp DESC LIMIT ?",

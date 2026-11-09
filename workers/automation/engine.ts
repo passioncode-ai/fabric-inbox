@@ -28,6 +28,11 @@ export interface RunDependencies {
    */
   safety?(run: Run): Promise<"pending" | "held" | "kept" | "clear">;
   /**
+   * B-239: where a stranger's message (`run.screen`) stands with its spam check: `pending` until the model judged
+   * it, `spam` once it judged it spam, else `clear`. Absent: no spam check here.
+   */
+  spam?(run: Run): Promise<"pending" | "spam" | "clear">;
+  /**
    * A-6: writes the run only while it is still pending in storage (in one transaction), so a run dismissed while
    * this one awaited another object is never written back as pending. False: it changed meanwhile, leave it.
    */
@@ -36,6 +41,8 @@ export interface RunDependencies {
 
 /** B-178: a rule waits this long for a message's safety check, then acts as before (the check never came). */
 export const SAFETY_WAIT_MS = 15 * 60_000;
+/** B-239: a rule waits this long for a stranger's spam check, as the agent does (B-30), then acts as before. */
+export const SPAM_WAIT_MS = 15 * 60_000;
 /** B-178: a rule waits this long for a held message to be released, then gives it up. */
 export const HELD_WAIT_MS = 7 * 86_400_000;
 export class ActionRejected extends Error {}
@@ -80,17 +87,34 @@ export async function processRun(
     await save();
     return run;
   }
+  const age = Date.now() - (Date.parse(run.createdAt) || Date.now());
+  // The check's call awaited another object: a dismiss in the meantime wins (A-6).
+  const saveWaiting = async () => {
+    run.updatedAt = new Date().toISOString();
+    if (deps.saveIfPending) return deps.saveIfPending(run);
+    await deps.save(run);
+    return true;
+  };
+  // B-239: a stranger's message waits for its spam check, as its agent does (B-30); spam reaches no rule.
+  if (run.screen && deps.spam) {
+    const state = await deps.spam(run).catch(() => "pending" as const);
+    if (state === "spam") {
+      run.status = "skipped";
+      run.detail = msg("Moved to Spam by the spam check");
+      delete run.retryAt;
+      await saveWaiting();
+      return run;
+    }
+    if (state === "pending" && age < SPAM_WAIT_MS) {
+      run.retryAt = new Date(Date.now() + 60_000).toISOString();
+      run.detail = msg("Waiting for the spam check");
+      await saveWaiting();
+      return run;
+    }
+  }
   // B-178: a rule never reads or acts on a message held from agents; it waits for the check, then for a release.
   if (deps.safety) {
     const state = await deps.safety(run).catch(() => "pending" as const);
-    const age = Date.now() - (Date.parse(run.createdAt) || Date.now());
-    // The safety call awaited another object: a dismiss in the meantime wins (A-6).
-    const saveWaiting = async () => {
-      run.updatedAt = new Date().toISOString();
-      if (deps.saveIfPending) return deps.saveIfPending(run);
-      await deps.save(run);
-      return true;
-    };
     // A person kept it held (A-11): the rule gives up now, not after seven days of looking.
     if (state === "kept" || (state === "held" && age >= HELD_WAIT_MS)) {
       run.status = "skipped";
