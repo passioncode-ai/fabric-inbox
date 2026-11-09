@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.5.2 (2026-11-09)
+
+**A reply agent no longer tells a customer a state it cannot see** (B-240). An answer that says a subscription is
+active, a refund went through or a case was passed to the team is not sent as written: it goes the way of an answer
+the agent is not sure of (your safe reply, a hold, or a draft for you). The same words inside a condition, such as "if
+your refund was processed", are sent as before.
+
 ## 1.5.1 (2026-11-09)
 
 **Rules wait for the spam check** (B-239). A rule on a message from someone you never wrote to now waits for the spam
