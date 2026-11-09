@@ -1590,17 +1590,18 @@ test("B-192, B-186: a sent answer's log names its state claims, and every run en
   console.log = (line: unknown) => { lines.push(String(line)); };
   let run;
   try {
-    const h = harness({ agent: autoAgent(), model: async () => ({ decision: answer({ body: "Hi Ann, your Premium is now active." }), text: "" }) });
+    const h = harness({ agent: autoAgent(), model: async () => ({ decision: answer({ body: "Hi Ann, the issue is fixed in the latest version." }), text: "" }) });
     run = (await h.run())!;
   } finally { console.log = log; }
   assert.equal(run.status, "sent", run.reason);
   const sent = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-  assert.deepEqual(sent.find((e) => e.event === "agent_answer_sent")?.stateClaims, ["account_state"]);
+  // A state the agent cannot see is not sent at all since B-240; a claim it may make is still counted.
+  assert.deepEqual(sent.find((e) => e.event === "agent_answer_sent")?.stateClaims, ["fixed"]);
   const finished = sent.filter((e) => e.event === "agent_run_finished");
   assert.equal(finished.length, 1);
   assert.deepEqual({ ...finished[0], run: undefined, agent: undefined },
     { event: "agent_run_finished", run: undefined, agent: undefined, status: "sent", category: null, triage: null, abstained: false, withheld: 0, injection: false });
-  assert.ok(!lines.some((l) => /Premium is now active|ann@customer/.test(l)), "no words of the answer or the sender in the logs");
+  assert.ok(!lines.some((l) => /issue is fixed|ann@customer/.test(l)), "no words of the answer or the sender in the logs");
 });
 
 // B-237 gap 1: triage. A message with nothing to answer gets a question back; nothing in it is a fact.
