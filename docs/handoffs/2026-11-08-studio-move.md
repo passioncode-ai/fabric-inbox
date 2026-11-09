@@ -61,11 +61,19 @@ The account, host and bucket of the organization's server are in its local deplo
 - The 18 batches again on 1.4.0: pass 9, partly 7, fail 2 ([rerun](../reports/2026-11-09-communication-template-rerun/README.md)).
 - The agent console runs without permission prompts (829e673d, 1.4.1); new mail from every server (B-233, 1.5.0); the
   profile switches apply while the app runs (B-236, 1.5.0).
+- B-239 (board request `82d3933f`, thread `76917daf`): rules on a stranger's message wait for its spam check, the AI
+  condition ignores a message's claim of its own importance, advance-fee fraud is scam. PR #457 (`764f1dc`), release
+  [v1.5.1](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v1.5.1) (release run 42631620765 green, 20
+  assets); all three servers on 1.5.1 at 14:09 UTC, receipts `linked`, `get_server` answers 1.5.1; answered in the thread.
 
 ## Next task
 
-1. The Studio's spaces to 1.5.0 by `studio apply` (studio-agent), and this Mac's app by its own update.
+1. The Studio's spaces to 1.5.1 by `studio apply` (studio-agent), and this Mac's app by its own update.
 2. B-237's two remaining failures (a vent with no detail, a request for a person the knowledge covers): the writer's
    clarify rule, then the batches again.
 3. PassionCode's support agent to auto mode once a person has read its first drafts.
-4. The rest of B-236 (an update check now, Open at Login, Forget Server, a server's address): the link design first.
+4. B-240 (board request `f397d3ab`, thread `0340abfc`, due 2026-11-23): compare the template database's
+   support-answerer 1.4.4 with our reply agent and answer what we take and what not. A first finding: our state claims
+   (`workers/agents/state-claims.ts`) are only logged, the template blocks them unless they sit in a condition or a
+   question (`checks.states_false`); that is B-237's step 2 too.
+5. The rest of B-236 (an update check now, Open at Login, Forget Server, a server's address): the link design first.
