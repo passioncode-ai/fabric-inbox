@@ -388,6 +388,7 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Write to This Address": "Написать на этот адрес",
 	"Copy Address": "Скопировать адрес",
 	"Notify About New Mail": "Уведомлять о новой почте",
+	"Agent Console Skips Permission Prompts": "Консоль агента без запросов разрешений",
 	"New mail": "Новое письмо",
 	"New messages: {n}": "Новых писем: {n}",
 	"Your server is updated": "Сервер обновлён",

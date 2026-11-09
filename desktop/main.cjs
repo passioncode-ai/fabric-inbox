@@ -802,6 +802,7 @@ function startNewMail() {
     notify: (title, body, onClick) => notify(title, body, onClick),
     focused: () => !!(mailWindow && !mailWindow.isDestroyed() && mailWindow.isFocused()) });
   void mailNotifier.start().then(installMenu);
+  void consoleCore.readSkip(fs, app.getPath('userData')).then((on) => { consoleSkip = on; installMenu(); });
 }
 /**
  * B-44: the server is updated through itself, without a new Cloudflare token: after the person signs
@@ -989,6 +990,8 @@ let consoleDocked = false;
 let dockReady = false;
 const DOCK_WIDTH = 520;
 let agentConsole = null;
+/** 829e673d: whether the console's agent skips permission prompts (on unless the person turned it off; read at start). */
+let consoleSkip = true;
 let consoleFor = null;
 let loginPathValue;
 let lastRuntime = null;
@@ -1064,7 +1067,7 @@ async function ensureConsole() {
     pty: { spawn: (...args) => loadPty().spawn(...args) }, fs, dir: path.join(app.getPath('userData'), 'consoles'),
     mint: connector.mintWith(ses, config.origin), revoke: connector.revokeWith(ses, config.origin),
     origin: config.origin, mcpUrl: new URL('/mcp', config.origin).href, cwd: app.getPath('home'), loginPath: await loginPath(),
-    log: logEvent,
+    log: logEvent, skipPermissions: () => consoleSkip,
     onData: (data) => consoleSend('fabric:console-data', data),
     onState: (state) => { consoleSend('fabric:console-phase', { ...state, runtimes: consoleRuntimes(loginPathValue) }); installMenu(); },
   });
@@ -1352,6 +1355,7 @@ function installMenu() {
     login: { checked: !!(loginItem && loginItem.enabled), enabled: !!(loginItem && loginItem.supported), click: (item) => void toggleLogin(item) },
     serverUpdate: serverUpdater ? serverUpdater.menuItem(() => void serverUpdater.update({ manual: true })) : null,
     newMail: { checked: !!(mailNotifier && mailNotifier.enabled()), enabled: !!mailNotifier, click: (item) => { if (mailNotifier) void mailNotifier.setEnabled(item.checked).then(installMenu); } },
+    consoleSkip: consoleAvailable() ? { checked: consoleSkip, click: (item) => { void consoleCore.writeSkip(fs, app.getPath('userData'), item.checked).then((on) => { consoleSkip = on; logEvent({ event: 'console_permissions', skip: on }); installMenu(); }); } } : null,
     openSettings, showServer: () => showSetup(), showCloudflare: () => showSetup('', 'cloudflare'),
     servers: {
       items: servers.map((s) => ({ label: serverList.labelFor(s, t), checked: !!config && s.origin === config.origin, click: () => void switchServer(s.origin) })),

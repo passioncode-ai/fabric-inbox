@@ -35,13 +35,15 @@ const RUNTIMES = [
     id: 'claude', name: 'Claude Code', bin: 'claude',
     // --mcp-config=<file> joined, so the next argument is never taken as a second file; strict:
     // only this server, whatever the person's own config holds.
-    args: ({ configPath, brief, resume }) => [...(resume ? ['--continue'] : []), `--mcp-config=${configPath}`, '--strict-mcp-config', '--append-system-prompt', brief],
+    args: ({ configPath, brief, resume, skip }) => [...(resume ? ['--continue'] : []), `--mcp-config=${configPath}`, '--strict-mcp-config', '--append-system-prompt', brief,
+      ...(skip ? ['--dangerously-skip-permissions'] : [])],
   },
   {
     id: 'codex', name: 'Codex', bin: 'codex',
-    args: ({ mcpUrl, env, resume }) => [...(resume ? ['resume', '--last'] : []),
+    args: ({ mcpUrl, env, resume, skip }) => [...(resume ? ['resume', '--last'] : []),
       '-c', `mcp_servers.fabric_inbox.url=${JSON.stringify(mcpUrl)}`,
-      '-c', `mcp_servers.fabric_inbox.env_http_headers={ "CF-Access-Client-Id" = "${env.id}", "CF-Access-Client-Secret" = "${env.secret}" }`],
+      '-c', `mcp_servers.fabric_inbox.env_http_headers={ "CF-Access-Client-Id" = "${env.id}", "CF-Access-Client-Secret" = "${env.secret}" }`,
+      ...(skip ? ['--dangerously-bypass-approvals-and-sandbox'] : [])],
   },
 ];
 
@@ -105,11 +107,13 @@ function ring(limit = RING_BYTES) {
  * One console at a time. deps: { pty: { spawn(file, args, opts) }, fs (node:fs/promises), dir
  * (a 0700 folder the app owns), mint(input) → { ok, data: { key, clientSecret } }, revoke(id) →
  * boolean, origin, mcpUrl, cwd, loginPath, env, platform, kill(pid, signal), now, log, onData(text),
- * onState(state) }.
+ * onState(state), skipPermissions() → boolean (the agent runs without asking for each command; on unless the
+ * person turned it off, `SKIP_FILE`) }.
  */
 function createConsole(deps) {
   const { pty, fs, dir, mint, revoke, origin, mcpUrl, cwd, loginPath, env = process.env, platform = process.platform,
-    kill = (pid, signal) => process.kill(pid, signal), log = () => {}, onData = () => {}, onState = () => {}, setTimer = setTimeout } = deps;
+    kill = (pid, signal) => process.kill(pid, signal), log = () => {}, onData = () => {}, onState = () => {}, setTimer = setTimeout,
+    skipPermissions = () => true } = deps;
   let session = null;
   let starting = false;   // a start between its first await and its session (bug hunt 2026-10-12: two keys, two agents)
   let state = { phase: 'idle' };
@@ -149,6 +153,7 @@ function createConsole(deps) {
     if (!minted.ok) { set({ phase: 'idle', error: minted.signIn ? 'sign_in' : 'key', detail: minted.error || null }); return { ok: false, error: minted.signIn ? 'sign_in' : 'key', detail: minted.error }; }
     const key = { id: minted.data.key.id, clientId: minted.data.key.clientId, clientSecret: minted.data.clientSecret };
     await remember(stored([...(await recorded()), { id: key.id, origin }])).catch(() => {});
+    const skip = skipPermissions() !== false;
     const tag = crypto.randomBytes(6).toString('hex').toUpperCase();
     const names = { id: `FABRIC_INBOX_CONSOLE_ID_${tag}`, secret: `FABRIC_INBOX_CONSOLE_SECRET_${tag}` };
     const folder = path.join(dir, `session-${tag.toLowerCase()}`);
@@ -161,7 +166,7 @@ function createConsole(deps) {
       await fs.mkdir(folder, { recursive: true, mode: 0o700 });
       const configPath = path.join(folder, 'mcp.json');
       await fs.writeFile(configPath, JSON.stringify(mcpConfig(mcpUrl, names), null, 2), { mode: 0o600 });
-      child = pty.spawn(runtime.file, spec.args({ configPath, brief: briefFor(origin), mcpUrl, env: names, resume }), ptyOptions(platform, {
+      child = pty.spawn(runtime.file, spec.args({ configPath, brief: briefFor(origin), mcpUrl, env: names, resume, skip }), ptyOptions(platform, {
         name: 'xterm-256color', cols: Math.max(2, Math.min(1000, cols | 0)), rows: Math.max(1, Math.min(500, rows | 0)), cwd,
         env: sessionEnv(env, { loginPath, names, key, origin }),
       }));
@@ -173,7 +178,7 @@ function createConsole(deps) {
     pending.child = child;
     child.onData((data) => { out.push(data); onData(data); });
     child.onExit(({ exitCode }) => { void end(pending, pending.stopping ? 'stopped' : 'exited', exitCode); });
-    log({ event: 'console', outcome: 'started', runtime: spec.id, level, resume });
+    log({ event: 'console', outcome: 'started', runtime: spec.id, level, resume, skipPermissions: skip });
     set({ phase: 'running', runtime: spec.id, level });
     return { ok: true };
   }
@@ -292,4 +297,21 @@ async function checkPty({ loadPty, platform = process.platform, env = process.en
   return { outcome: 'ok' };
 }
 
-module.exports = { createConsole, findRuntimes, searchPath, sessionEnv, mcpConfig, briefFor, ring, checkPty, ptyCheckCommand, ptyHoldCommand, ptyOptions, PTY_CHECK_TOKEN, RUNTIMES, LEVELS };
+
+/**
+ * 829e673d (the operator, 2026-11-07, and again in this repository's session 2026-11-09: «Да, с обходом»): the console's
+ * agent runs without asking before each command, unless the person turns it off (View → Agent Console Skips
+ * Permission Prompts). The choice is the profile file `console-permissions`: `ask` turns the skip off; anything
+ * else, or no file, keeps it on.
+ */
+const SKIP_FILE = 'console-permissions';
+async function readSkip(fsp, userData) {
+  try { return (await fsp.readFile(path.join(userData, SKIP_FILE), 'utf8')).trim() !== 'ask'; } catch { return true; }
+}
+async function writeSkip(fsp, userData, skip) {
+  await fsp.writeFile(path.join(userData, SKIP_FILE), skip ? 'skip' : 'ask', { mode: 0o600 });
+  return skip;
+}
+
+module.exports = { createConsole, findRuntimes, searchPath, sessionEnv, mcpConfig, briefFor, ring, checkPty, ptyCheckCommand, ptyHoldCommand, ptyOptions, PTY_CHECK_TOKEN, RUNTIMES, LEVELS,
+  SKIP_FILE, readSkip, writeSkip };
