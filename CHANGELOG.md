@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.5.3 (2026-11-09)
+
+**An organization can check who an agent writes to** (B-241). A server can be given the organization's recipient
+check (`RECIPIENT_CHECK_URL` and its token). Then a message an agent sends or forwards to an address of the
+organization's own domains goes only when the check confirms that address is the right person; otherwise nothing is
+sent and the agent is told why. A reply to the person who wrote, and your own messages, are not checked.
+
 ## 1.5.2 (2026-11-09)
 
 **A reply agent no longer tells a customer a state it cannot see** (B-240). An answer that says a subscription is
