@@ -54,11 +54,18 @@ The account, host and bucket of the organization's server are in its local deplo
 - The agent console's flag to run without permission prompts (Fabric task 829e673d) waits for the operator's own word
   in this session; the classifier refused the change as a relay.
 
+## Done on 2026-11-09, on the operator's word in this session
+
+- All three servers (personal, PassionCode, the client organization) on 1.4.1, deploy receipts `linked`; the client
+  organization's agents got the lead grant and policy (step F): advertising and partnership mail goes to the sales agent.
+- The 18 batches again on 1.4.0: pass 9, partly 7, fail 2 ([rerun](../reports/2026-11-09-communication-template-rerun/README.md)).
+- The agent console runs without permission prompts (829e673d, 1.4.1); new mail from every server (B-233, 1.5.0); the
+  profile switches apply while the app runs (B-236, 1.5.0).
+
 ## Next task
 
-1. Once the operator gives the word on servers that answer real customers: the client organization's server and the
-   personal server to 1.4.0 (`wrangler deploy` with the server's own name and bucket from its local deployment record,
-   then `scripts/deploy-receipt.mjs --script <worker>`). Then the 18 adversarial batches again on the client
-   organization's support agent (B-237 step 1), and the lead grant (`sales.lead.submit` with `leads {status,
-   delivered}`, token `SALES`) and policy `leads` on its business and advertising agents (step F).
-2. PassionCode's support agent to auto mode once a person has read its first drafts.
+1. The Studio's spaces to 1.5.0 by `studio apply` (studio-agent), and this Mac's app by its own update.
+2. B-237's two remaining failures (a vent with no detail, a request for a person the knowledge covers): the writer's
+   clarify rule, then the batches again.
+3. PassionCode's support agent to auto mode once a person has read its first drafts.
+4. The rest of B-236 (an update check now, Open at Login, Forget Server, a server's address): the link design first.
