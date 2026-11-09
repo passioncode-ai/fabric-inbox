@@ -903,6 +903,10 @@ const saveDraft = defineTool({
 
 const sendDraft = defineTool({
   name: "send_draft", title: "Send a draft", level: "mail", sends: true, target: (a) => `${a.accountId} ${a.draftId}`,
+  async recipients(a, ctx) {
+    const d = (await readDraft.call({ accountId: a.accountId, draftId: a.draftId, maxChars: 200, includeHtml: false }, ctx)) as Record<string, unknown>;
+    return ["to", "cc", "bcc"].flatMap((k) => typeof d[k] === "string" ? addresses(d[k] as string) : []);
+  },
   description: "Sends a draft as it is (its recipients, text, quote, signature and files; nothing is added), as a reply in its conversation when it answers a message, and removes it from Drafts once the provider accepted it. Give expectedRevision (list_drafts, read_draft) so a draft changed meanwhile is not sent unread. It really leaves: send a person's draft only when they asked. A retry with the same idempotencyKey never sends twice and answers the first send; counts against this key's daily sends.",
   input: { accountId, draftId, idempotencyKey, expectedRevision: revision.optional() },
   routes: ["POST /api/v1/mailboxes/:mailboxId/drafts/:id/send", "POST /api/accounts/:accountId/drafts/:draftId/send"],
@@ -954,6 +958,7 @@ async function sendNew(ctx: ToolContext, account: Account, a: Outgoing, thread?:
 
 const sendEmail = defineTool({
   name: "send_email", title: "Send a new message", level: "mail", additive: true, sends: true, target: (a) => `${a.accountId} → ${[a.to].flat().join(", ")}`,
+  recipients: (a) => [a.to, a.cc, a.bcc].flat().filter((x): x is string => typeof x === "string"),
   description: "Sends a new message from one of your addresses or Gmail, IMAP or Outlook accounts, with files if you give them. It really leaves: confirm the recipients and text with the person you work for unless they asked you to send. The idempotencyKey makes a retry safe. Counts against this key's daily sends.",
   input: { accountId, to: recipients, cc: recipients.optional(), bcc: recipients.optional(), subject: z.string().min(1).max(998), ...body, attachments, idempotencyKey,
     signature: z.boolean().default(true).describe("Add the address's signature (Cloudflare)") },
@@ -963,6 +968,8 @@ const sendEmail = defineTool({
 
 const reply = defineTool({
   name: "reply", title: "Reply to a message", level: "mail", additive: true, sends: true, target: (a) => `${a.accountId} ${a.messageId}`,
+  // An answer to its sender (or Reply-To) is not checked; addresses the agent adds itself are (B-241).
+  recipients: (a) => [a.to, a.cc, a.bcc].flat().filter((x): x is string => typeof x === "string"),
   description: "Answers a message in its conversation: to its Reply-To address when it has one, otherwise its sender (with replyAll also everyone else in To and Cc except you), subject Re:, threaded, with the original quoted and the address's signature. to, cc, bcc and subject replace what would be chosen; attachments adds files. It really leaves; counts against this key's daily sends.",
   input: { accountId, messageId, ...body, idempotencyKey, replyAll: z.boolean().default(false), to: recipients.optional().describe("Answer these addresses instead"),
     cc: recipients.optional().describe("Copy these addresses (instead of those replyAll would copy)"), bcc: recipients.optional(),
@@ -1015,6 +1022,7 @@ async function originalFiles(ctx: ToolContext, account: Account, messageId: stri
 
 const forward = defineTool({
   name: "forward", title: "Forward a message", level: "mail", additive: true, sends: true, target: (a) => `${a.accountId} ${a.messageId} → ${[a.to].flat().join(", ")}`,
+  recipients: (a) => [a.to, a.cc, a.bcc].flat().filter((x): x is string => typeof x === "string"),
   description: "Forwards a message with its text and its attachments (up to 10 files, 5 MB together with any files you add), your note and the address's signature on top. cc, bcc and subject replace what would be chosen. It really leaves; counts against this key's daily sends.",
   input: { accountId, messageId, to: recipients, cc: recipients.optional(), bcc: recipients.optional(),
     subject: z.string().min(1).max(998).optional().describe("Instead of Fwd: and the original's subject"),
