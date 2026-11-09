@@ -5,6 +5,15 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.4.1 (2026-11-09)
+
+**The agent console no longer asks before each command.** Claude Code and Codex in the console now run without
+permission prompts. To have them ask again, turn off View → Agent Console Skips Permission Prompts; the next session
+asks.
+
+**Support topics keep labelling** (B-238). One answer the server could not read used to stop the labelling of a whole
+mailbox for an hour. Now only that conversation is skipped and the rest are labelled.
+
 ## 1.4.0 (2026-11-08)
 
 **Leads go to your sales agent** (B-237). A reply agent can now hand a business inquiry (advertising, a partnership, a
