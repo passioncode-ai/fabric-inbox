@@ -1029,6 +1029,25 @@ test("a hand-off category with its own reply gets that reply; the others get the
   assert.match(JSON.stringify(refund.effects.sends), /support manager/);
 });
 
+test("B-240: an answer asserting a state nobody can see is not sent as it is; inside a condition it is", async () => {
+  const kb = async () => JSON.stringify({ abstained: false, results: [{ id: "fact:refunds", coverage: 0.9 }] });
+  const make = (body: string) => {
+    const h = harness({ agent: autonomous({ fallbackReply: undefined, holdUnsure: true }), email: { subject: "Refund", body: "<p>Where is my refund?</p>" },
+      callTool: kb, model: async () => ({ decision: answer({ intent: "refund", body }), text: "" }) });
+    let checked = false;
+    h.deps.check = async () => { checked = true; return { approved: true, reason: "ok", model: "qwen/qwen3.8-flash" }; };
+    return { h, checked: () => checked };
+  };
+  const claimed = make("Your refund has been processed and reaches your card in 5 days.");
+  const r = (await claimed.h.run())!;
+  assert.notEqual(r.status, "sent");
+  assert.equal(claimed.h.effects.sends.length, 0);
+  assert.match(String(r.reason), /The answer states what nobody confirmed \(refund_done\)/);
+  assert.equal(claimed.checked(), false, "no checker call is spent on it");
+  const conditional = make("If your refund was processed, it reaches your card in 5 to 10 days.");
+  assert.equal((await conditional.h.run())!.status, "sent");
+});
+
 test("knowledgeIsEvidence: a tool that abstains does not hold an answer the checker approves; without it, it holds", async () => {
   const weak = async () => JSON.stringify({ abstained: true, results: [] });
   const make = (knowledgeIsEvidence: boolean, approved = true) => {

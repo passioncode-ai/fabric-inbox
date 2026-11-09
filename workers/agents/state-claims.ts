@@ -35,3 +35,27 @@ const PATTERNS: Record<StateClaim, RegExp[]> = {
 export function stateClaims(text: string): StateClaim[] {
   return (Object.keys(PATTERNS) as StateClaim[]).filter((kind) => PATTERNS[kind].some((re) => re.test(text)));
 }
+
+/**
+ * B-240 (the agent template database's support-answerer 1.4.2, `checks.states_false`): a state inside a condition or
+ * a question states nothing ("If your refund was processed, ...", "Check whether your payment went through"). The
+ * clause before a match is read back to the last , . ; : ! ? or line break; the same words in a main clause are still
+ * a claim ("If you paid twice, your refund was processed").
+ */
+const CONDITION = /(?:^|[^\p{L}])(?:if|whether|unless|in case|check|confirm|если|ли|проверьте|уточните|убедитесь)(?=[^\p{L}]|$)/iu;
+const CLAUSE_END = /[,.;:!?\n]/;
+
+/** States the agent cannot see, which keep an answer from being sent as it is (B-240); `fixed` is only logged. */
+export const UNSEEN: readonly StateClaim[] = ["account_state", "refund_done", "passed_to_team"];
+
+/** The kinds of state an answer asserts in a main clause, in the fixed order; a condition or a question asserts none. */
+export function assertedClaims(text: string): StateClaim[] {
+  return (Object.keys(PATTERNS) as StateClaim[]).filter((kind) => PATTERNS[kind].some((re) => {
+    const all = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
+    for (const m of text.matchAll(all)) {
+      const clause = text.slice(0, m.index).split(CLAUSE_END).pop() ?? "";
+      if (!CONDITION.test(clause)) return true;
+    }
+    return false;
+  }));
+}
