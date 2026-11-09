@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
 import { defineTool, runTool, type Ledger } from "../workers/mcp/protocol";
-import { guarded, recipientCheckFrom, type RecipientCheck } from "../workers/mcp/recipient-check";
+import { forwardRefusal, guarded, recipientCheckFrom, type RecipientCheck } from "../workers/mcp/recipient-check";
 import type { Principal } from "../workers/mcp/keys";
 
 const agent: Principal = { kind: "agent", label: "Agent", level: "mail", send: "send", dailySendLimit: 5, keyId: "k", accounts: null };
@@ -84,4 +84,22 @@ test("the check is configured per server: https only, a token, the guarded domai
   assert.equal(await recipientCheckFrom(env, served, (async () => { throw new Error("down"); }) as never)!.check("a@team.example"), "unreachable");
   assert.equal(await recipientCheckFrom({ ...env, RECIPIENT_CHECK_URL: "http://door.example/x" }, served, fetcher({ verdict: "ok" }))!.check("a@team.example"), "unreachable", "plain http is never trusted");
   assert.equal(await recipientCheckFrom({ ...env, RECIPIENT_CHECK_TOKEN: "" }, served, fetcher({ verdict: "ok" }))!.check("a@team.example"), "unreachable", "no token: refused, not sent unchecked");
+});
+
+test("a rule's forward goes through the same check: off or outside it goes, ok goes, anything else names the verdict", async () => {
+  assert.equal(await forwardRefusal(null, "ann@team.example"), null);
+  const guard = checker({ "ann@team.example": "ok", "bob@team.example": "do-not-contact" });
+  assert.equal(await forwardRefusal(guard, "client@outside.example"), null);
+  assert.equal(await forwardRefusal(guard, "ann@team.example"), null);
+  assert.equal(await forwardRefusal(guard, "bob@team.example"), "do-not-contact");
+  assert.equal(await forwardRefusal(guard, "new@team.example"), "unknown");
+  assert.equal(await forwardRefusal({ domains: async () => { throw new Error("R2 down"); }, check: async () => "ok" }, "ann@team.example"), "unreachable");
+});
+
+test("the rule engine refuses a forward the check refused before anything leaves", async () => {
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("../workers/automation/index.ts", import.meta.url), "utf8");
+  const execute = source.indexOf("private async execute(");
+  const at = source.indexOf("forwardRefusal(recipientCheckFrom(this.env", execute);
+  assert.ok(execute > 0 && at > execute && at < source.indexOf("const remote = parseRemoteAccount(run.account);", execute), "checked before either provider sends");
 });

@@ -1,3 +1,5 @@
+import { forwardRefusal, recipientCheckFrom } from "../mcp/recipient-check";
+import { allServedDomains } from "../lib/mailbox-store";
 import { DurableObject } from "cloudflare:workers";
 import { countLog } from "../lib/error-counts";
 import { isHeld, safetyKey } from "../safety/state";
@@ -458,6 +460,11 @@ export class AutomationDO extends DurableObject<Env> {
       throw new ActionRejected(
         msg("Forward was not attempted: attachments require manual handling"),
       );
+    // B-241: a forward to an address of the organization goes only when its recipient check says ok.
+    if (action.type === "forward") {
+      const refused = await forwardRefusal(recipientCheckFrom(this.env, () => allServedDomains(this.env)), action.to);
+      if (refused) throw new ActionRejected(msg("The organization's recipient check refused {address} ({verdict}); nothing was sent", { address: action.to, verdict: refused }));
+    }
     const remote = parseRemoteAccount(run.account);
     if (remote) {
       // A Gmail or IMAP account: the same actions through the accounts object.
