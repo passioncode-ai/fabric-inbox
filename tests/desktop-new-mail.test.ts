@@ -103,7 +103,8 @@ test("the menu offers the switch on every platform, and the app starts the notif
   }
   const main = readFileSync("desktop/main.cjs", "utf8");
   assert.match(main, /startTray\(\);\n  startNewMail\(\);/);
-  assert.match(main, /if \(mailNotifier\) mailNotifier\.reset\(\);/, "a new server starts from its own baseline");
+  assert.doesNotMatch(main, /mailNotifier\.reset\(\);/, "B-233: each server is kept apart, so switching servers forgets nothing");
+  assert.match(main, /servers: \(\) => servers\.map/, "B-233: every server the app holds is read");
 });
 
 test("N-5: account mail that syncs after a newer message is still announced", async () => {
@@ -147,4 +148,84 @@ test("N-7: a read that was out when the switch went off announces nothing", asyn
   release({ messages: [msg("late", 5000)] });
   assert.deepEqual(await pending, []);
   assert.equal(shown.length, 0);
+});
+
+// B-233 part 2: every server the app holds, each read through its own session; a message opens on its own server.
+function servers2(pages: Record<string, unknown[] | null>, { focused = null as string | null, held = ["https://a.example", "https://b.example"] } = {}) {
+  const userData = mkdtempSync(path.join(os.tmpdir(), "fabric-new-mail-"));
+  writeFileSync(path.join(userData, "new-mail-notifications"), "on\n");
+  const shown: { title: string; body: string; click: () => void }[] = [];
+  const opened: [string, string][] = [];
+  let all = 0;
+  const reads: string[] = [];
+  let list = held;
+  const n = newMail.createNewMailNotifier({
+    fs: fsPromises, userData, t: (s: string, p?: Record<string, unknown>) => s.replace(/\{(\w+)\}/g, (_: string, k: string) => String(p?.[k])),
+    servers: () => list.map((origin) => ({ origin, label: origin === "https://a.example" ? "Personal" : "Acme" })),
+    read: async (origin: string) => { reads.push(origin); const m = pages[origin]; return m === null ? null : { messages: m }; },
+    open: (origin: string, link: string) => opened.push([origin, link]), openAll: () => { all++; },
+    notify: (title: string, body: string, click: () => void) => shown.push({ title, body, click }),
+    focused: () => focused, setTimer: () => ({ live: true }), clearTimer: () => {},
+  });
+  return { n, shown, opened, reads, all: () => all, setList: (l: string[]) => { list = l; } };
+}
+
+test("every server is read on its own; new mail names its server and opens there (B-233)", async () => {
+  const pages: Record<string, unknown[] | null> = { "https://a.example": [msg("a1", 1)], "https://b.example": [msg("b1", 1)] };
+  const h = servers2(pages);
+  await h.n.start();
+  await h.n.check();
+  assert.equal(h.shown.length, 0, "the first read learns what is there");
+  pages["https://b.example"] = [msg("b2", 5), msg("b1", 1)];
+  await h.n.check();
+  assert.deepEqual(h.shown.map((s) => [s.title, s.body]), [["Ann b2", "Subject b2\nAcme"]]);
+  h.shown[0].click();
+  assert.deepEqual(h.opened, [["https://b.example", messageLink("cloudflare:me@x.invalid", "b2")]]);
+  assert.deepEqual([...new Set(h.reads)].sort(), ["https://a.example", "https://b.example"]);
+});
+
+test("looking at one server's inbox hides only that server's new mail; a server that cannot be read hides nothing (B-233)", async () => {
+  const pages: Record<string, unknown[] | null> = { "https://a.example": [], "https://b.example": [] };
+  const h = servers2(pages, { focused: "https://a.example" });
+  await h.n.start();
+  await h.n.check();
+  pages["https://a.example"] = [msg("a2", 5)];
+  pages["https://b.example"] = [msg("b2", 6)];
+  await h.n.check();
+  assert.deepEqual(h.shown.map((s) => s.title), ["Ann b2"]);
+  pages["https://a.example"] = null;
+  pages["https://b.example"] = [msg("b3", 7), msg("b2", 6)];
+  await h.n.check();
+  assert.deepEqual(h.shown.map((s) => s.title), ["Ann b2", "Ann b3"]);
+});
+
+test("many new messages on several servers make one summary that opens All Servers; one server's open its inbox (B-233)", async () => {
+  const pages: Record<string, unknown[] | null> = { "https://a.example": [], "https://b.example": [] };
+  const h = servers2(pages);
+  await h.n.start();
+  await h.n.check();
+  pages["https://a.example"] = [msg("a1", 1), msg("a2", 2)];
+  pages["https://b.example"] = [msg("b1", 3), msg("b2", 4)];
+  await h.n.check();
+  assert.equal(h.shown.length, 1);
+  assert.equal(h.shown[0].title, "New messages: 4");
+  h.shown[0].click();
+  assert.equal(h.all(), 1);
+  pages["https://b.example"] = [msg("b3", 5), msg("b4", 6), msg("b5", 7), msg("b6", 8), msg("b1", 3), msg("b2", 4)];
+  await h.n.check();
+  h.shown[1].click();
+  assert.deepEqual(h.opened, [["https://b.example", "/"]]);
+});
+
+test("a server added later is learned first, never announced for what it already holds (B-233)", async () => {
+  const pages: Record<string, unknown[] | null> = { "https://a.example": [], "https://b.example": [msg("old", 1)] };
+  const h = servers2(pages, { held: ["https://a.example"] });
+  await h.n.start();
+  await h.n.check();
+  h.setList(["https://a.example", "https://b.example"]);
+  await h.n.check();
+  assert.equal(h.shown.length, 0);
+  pages["https://b.example"] = [msg("new", 2), msg("old", 1)];
+  await h.n.check();
+  assert.deepEqual(h.shown.map((s) => s.title), ["Ann new"]);
 });

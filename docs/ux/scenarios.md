@@ -1647,17 +1647,17 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** The desktop app, signed in to its server.
 - **Steps:**
   1. Turn on Notify About New Mail -> mail already waiting is not announced; the system may ask once to allow notifications.
-  2. A new message arrives -> within about five minutes a notification names its sender and subject, also with the window closed (the app keeps running).
-  3. Click it -> the mail window opens on that message.
+  2. A new message arrives on any server the app holds -> within about five minutes a notification names its sender and subject (and its server, when there are several), also with the window closed (the app keeps running).
+  3. Click it -> the mail window opens on that message, on its own server.
 - **Expected result:** I hear about new mail without keeping the inbox in front, and only when I asked for it.
-- **Alt paths:** More than three new at once: one notification with their count and senders, which opens the inbox. The mail window in front: no notification (the inbox shows it). Signed out or the server unreachable: nothing is announced; the check runs again five minutes later. A new server: it starts again from what that server already holds. Turned off: no timer runs.
+- **Alt paths:** More than three new at once: one notification with their count and senders, which opens that server's inbox, or All Servers when they are on several. The mail window in front: no notification for the server it shows (its inbox shows them); the other servers' mail is still announced. One server signed out or unreachable: nothing is announced for it, the others go on; the check runs again five minutes later. A server added to the app: it starts from what it already holds. Turned off: no timer runs.
 - **UI elements:** the menu checkbox; system notifications.
 - **States covered:** empty, success, error
 - **Errors & recovery:** The choice cannot be saved: the switch stays as it was. Notifications blocked in System Settings: the system shows nothing; the menu still says on.
 - **Status:** draft
 - **Coverage:** desktop/new-mail.cjs, desktop/main.cjs (`startNewMail`), desktop/menu.cjs, tests/desktop-new-mail.test.ts
 - **Product:** unobserved
-- **Today:** Built 2026-10-22 (B-41).
+- **Today:** Built 2026-10-22 (B-41). Every server the app holds since 2026-11-09 (B-233 part 2).
 
 ### SCN-081: Share the server with other people
 - **Persona:** P-01

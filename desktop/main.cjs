@@ -298,7 +298,6 @@ async function saveConfig(next) {
   config = next;
   // The shared copy (B-219) is written by saveServers, with the server shown and the list together.
   await saveServers(serverList.remember(servers, next));
-  if (mailNotifier) mailNotifier.reset();
 }
 // ── B-158 M1 step 3d (SCN-094): moving an address between two servers the app holds ─────────────
 // One move at a time; its state is written after every step (`move.json` in the profile), so a quit resumes it.
@@ -779,28 +778,18 @@ function notifyAvailable() {
  * as nothing new; clicking a notification opens that message in the mail window.
  */
 function startNewMail() {
-  const read = async (pathname) => {
-    if (!config) return null;
+  // B-233 part 2: every server the app holds, each through its own session (serverApi); a message opens on its own server.
+  const read = async (origin, pathname) => {
     try {
-      const response = await session.fromPartition(policy.partitionFor(config)).fetch(new URL(pathname, config.origin).href,
-        { redirect: 'manual', credentials: 'include', headers: { Accept: 'application/json' } });
-      if (response.status !== 200 || !(response.headers.get('content-type') || '').toLowerCase().includes('json')) return null;
-      return await response.json();
+      const answer = await serverApi(origin).get(pathname);
+      return answer.status === 200 ? answer.body : null;
     } catch { return null; }
   };
-  const open = (link) => {
-    if (!config) return;
-    if (mailWindow && !mailWindow.isDestroyed()) {
-      mailWindow.show(); mailWindow.focus();
-      void mailWindow.loadURL(new URL(link, config.origin).href).catch(() => {});
-      return;
-    }
-    openAfterSignIn = link;
-    loadMail();
-  };
-  mailNotifier = newMail.createNewMailNotifier({ fs, userData: app.getPath('userData'), read, open, t, log: logEvent,
+  mailNotifier = newMail.createNewMailNotifier({ fs, userData: app.getPath('userData'), t, log: logEvent,
+    servers: () => servers.map((s) => ({ origin: s.origin, label: serverList.labelFor(s, t) })),
+    read, open: (origin, link) => void openOnServer(origin, link), openAll: () => showAllServers(),
     notify: (title, body, onClick) => notify(title, body, onClick),
-    focused: () => !!(mailWindow && !mailWindow.isDestroyed() && mailWindow.isFocused()) });
+    focused: () => (config && mailWindow && !mailWindow.isDestroyed() && mailWindow.isFocused() ? config.origin : null) });
   void mailNotifier.start().then(installMenu);
   void consoleCore.readSkip(fs, app.getPath('userData')).then((on) => { consoleSkip = on; installMenu(); });
 }
