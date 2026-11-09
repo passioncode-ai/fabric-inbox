@@ -54,3 +54,16 @@ export function recipientCheckFrom(env: { RECIPIENT_CHECK_URL?: string; RECIPIEN
     },
   };
 }
+
+/**
+ * B-241: a rule's forward to one address goes through the same check. Null: it may go (the check is off, or the address
+ * is outside the guarded domains, or the check said ok); otherwise the verdict that refuses it, `unreachable` included.
+ */
+export async function forwardRefusal(guard: RecipientCheck | null, to: string): Promise<RecipientVerdict | null> {
+  if (!guard) return null;
+  let domains: readonly string[];
+  try { domains = await guard.domains(); } catch { return "unreachable"; }
+  if (!guarded(to, domains)) return null;
+  const verdict = await guard.check(to);
+  return verdict === "ok" ? null : verdict;
+}

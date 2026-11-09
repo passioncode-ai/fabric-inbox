@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.5.4 (2026-11-09)
+
+**A rule's forward goes through the organization's recipient check too** (B-241). On a server with the check set, a
+rule that forwards mail to an address of the organization's own domains does it only when the check confirms that
+address; otherwise the run fails with the check's answer and nothing is sent.
+
 ## 1.5.3 (2026-11-09)
 
 **An organization can check who an agent writes to** (B-241). A server can be given the organization's recipient
