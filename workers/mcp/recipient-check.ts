@@ -40,8 +40,9 @@ export function recipientCheckFrom(env: { RECIPIENT_CHECK_URL?: string; RECIPIEN
       const target = new URL(url);
       target.searchParams.set("email", email.trim().toLowerCase());
       try {
+        // A redirect is never followed, so the token never reaches another host; it reads as no answer.
         const response = await fetcher(target.toString(), { headers: { Authorization: `Bearer ${env.RECIPIENT_CHECK_TOKEN}`, Accept: "application/json" },
-          signal: AbortSignal.timeout(timeoutMs) });
+          redirect: "manual", signal: AbortSignal.timeout(timeoutMs) });
         if (!response.ok) return "unreachable";
         const verdict = ((await response.json()) as { verdict?: unknown })?.verdict;
         return (VERDICTS as readonly unknown[]).includes(verdict) ? verdict as RecipientVerdict : "unreachable";

@@ -54,15 +54,19 @@ test("the check is configured per server: https only, a token, the guarded domai
   assert.deepEqual(recipientCheckFrom({ RECIPIENT_CHECK_URL: "https://door.example/recipient-check", RECIPIENT_CHECK_TOKEN: "t", DOMAINS: "team.example, other.example" })!.domains, ["team.example", "other.example"]);
   assert.equal(guarded("a@mail.team.example", ["team.example"]), true);
   assert.equal(guarded("a@notteam.example", ["team.example"]), false);
-  const seen: { url: string; auth: string | null }[] = [];
+  const seen: { url: string; auth: string | null; redirect?: string }[] = [];
   const fetcher = (answer: unknown, status = 200) => (async (url: string, init?: RequestInit) => {
-    seen.push({ url, auth: new Headers(init?.headers).get("authorization") });
+    seen.push({ url, auth: new Headers(init?.headers).get("authorization"), redirect: init?.redirect });
     return new Response(JSON.stringify(answer), { status });
   }) as typeof fetch;
   const env = { RECIPIENT_CHECK_URL: "https://door.example/recipient-check", RECIPIENT_CHECK_TOKEN: "t", RECIPIENT_CHECK_DOMAINS: "team.example" };
   assert.equal(await recipientCheckFrom(env, fetcher({ verdict: "ok" }))!.check("Ann@Team.example"), "ok");
   assert.equal(seen[0]!.url, "https://door.example/recipient-check?email=ann%40team.example");
   assert.equal(seen[0]!.auth, "Bearer t");
+  assert.equal(seen[0]!.redirect, "manual", "a redirect is never followed with the token");
+  assert.equal(await recipientCheckFrom({ ...env, RECIPIENT_CHECK_URL: "https://door.example:8443/recipient-check" }, fetcher({ verdict: "ok" }))!.check("a@team.example"), "ok");
+  assert.equal(seen.at(-1)!.url, "https://door.example:8443/recipient-check?email=a%40team.example", "the port is kept");
+  assert.equal(await recipientCheckFrom(env, fetcher({ verdict: "ok" }, 302))!.check("a@team.example"), "unreachable");
   assert.equal(await recipientCheckFrom(env, fetcher({ verdict: "mismatch" }))!.check("a@team.example"), "mismatch");
   assert.equal(await recipientCheckFrom(env, fetcher({ verdict: "maybe" }))!.check("a@team.example"), "unreachable", "an unknown answer is no ok");
   assert.equal(await recipientCheckFrom(env, fetcher({ verdict: "ok" }, 401))!.check("a@team.example"), "unreachable");
