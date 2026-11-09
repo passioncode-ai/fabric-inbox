@@ -238,3 +238,32 @@ test("B-102: on Windows a session runs on node-pty's own conpty.dll, so Stop for
   assert.deepEqual(await mac.c.start({ runtime: { ...runtime, file: "/opt/homebrew/bin/claude" } }), { ok: true });
   assert.equal("useConptyDll" in mac.p.spawned[0].opts, false);
 });
+
+// 829e673d (the operator, 2026-11-09 in this repository's session): the agent runs without asking before each command, by default.
+const { readSkip, writeSkip, SKIP_FILE } = require("../desktop/console.cjs");
+
+test("the console's agent skips permission prompts by default, last in the arguments; turned off, it asks (829e673d)", async () => {
+  const claude = setup();
+  await claude.c.start({ runtime: { id: "claude", name: "Claude Code", file: "/opt/homebrew/bin/claude" } });
+  const cargs = claude.p.spawned[0].args as string[];
+  assert.equal(cargs.at(-1), "--dangerously-skip-permissions");
+  assert.ok(cargs[0].startsWith("--mcp-config="), "the other arguments keep their places");
+  const codex = setup();
+  await codex.c.start({ runtime: { id: "codex", name: "Codex", file: "/usr/local/bin/codex" }, resume: true });
+  const xargs = codex.p.spawned[0].args as string[];
+  assert.deepEqual(xargs.slice(0, 2), ["resume", "--last"]);
+  assert.equal(xargs.at(-1), "--dangerously-bypass-approvals-and-sandbox");
+  const asks = setup({ skipPermissions: () => false });
+  await asks.c.start({ runtime: { id: "claude", name: "Claude Code", file: "/opt/homebrew/bin/claude" } });
+  assert.ok(!(asks.p.spawned[0].args as string[]).some((a) => a.startsWith("--dangerously")));
+});
+
+test("the choice is the profile file console-permissions: ask turns the skip off, anything else keeps it on (829e673d)", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "fabric-skip-"));
+  assert.equal(await readSkip(fsPromises, dir), true, "no file: on");
+  await writeSkip(fsPromises, dir, false);
+  assert.equal(readFileSync(path.join(dir, SKIP_FILE), "utf8"), "ask");
+  assert.equal(await readSkip(fsPromises, dir), false);
+  await writeSkip(fsPromises, dir, true);
+  assert.equal(await readSkip(fsPromises, dir), true);
+});

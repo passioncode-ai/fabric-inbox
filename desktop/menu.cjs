@@ -51,7 +51,9 @@ function menuTemplate(platform, ctx) {
     { type: 'separator' }] : [];
   const account = { label: t('Account'), submenu: [...held, { label: t('Connect Gmail in browser…'), click: ctx.connectGmail }] };
   // B-70: the agent console; not in the Mac App Store package (ctx.console is null there).
-  const agentConsole = ctx.console ? [{ label: t('Agent Console'), accelerator: mac ? 'Ctrl+Cmd+T' : 'Ctrl+Shift+T', click: ctx.console }, { type: 'separator' }] : [];
+  const agentConsole = ctx.console ? [{ label: t('Agent Console'), accelerator: mac ? 'Ctrl+Cmd+T' : 'Ctrl+Shift+T', click: ctx.console },
+    ...(ctx.consoleSkip ? [{ label: t('Agent Console Skips Permission Prompts'), type: 'checkbox', checked: ctx.consoleSkip.checked, click: ctx.consoleSkip.click }] : []),
+    { type: 'separator' }] : [];
   const view = { label: t('[menu] View'), submenu: [...agentConsole, { label: t('Retry connection'), accelerator: 'CmdOrCtrl+R', click: ctx.retry },
     { role: 'resetZoom', label: t('Actual Size') }, { role: 'zoomIn', label: t('Zoom In') }, { role: 'zoomOut', label: t('Zoom Out') }, { role: 'togglefullscreen', label: t('Toggle Full Screen') }] };
   if (mac) return [

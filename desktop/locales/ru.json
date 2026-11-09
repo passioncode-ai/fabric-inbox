@@ -20,6 +20,7 @@
  "After you sign in, the Gmail setup opens: a Google Cloud app of your own, about ten minutes once. Leave it off to start with your domains; Gmail can be set up any time in Settings → Accounts.": "После входа откроется настройка Gmail: нужно один раз создать своё приложение в Google Cloud, это около десяти минут. Можно не включать и начать с доменов — Gmail настраивается в любой момент в «Настройки → Аккаунты».",
  "Agent": "Агент",
  "Agent Console": "Консоль агента",
+ "Agent Console Skips Permission Prompts": "Консоль агента без запросов разрешений",
  "Agent console": "Консоль агента",
  "Agent console — Fabric Inbox": "Консоль агента — Fabric Inbox",
  "Agent keys can now also reach it in one header, for Fabric Dashboards.": "Теперь ключи агентов проходят и в одном заголовке, для Fabric Dashboards.",
