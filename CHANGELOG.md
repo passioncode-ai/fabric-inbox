@@ -5,6 +5,17 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.5.0 (2026-11-09)
+
+**New mail from every server** (B-233). With Notify About New Mail on, the app now watches the inbox of every server
+it holds, your own and each organization's, not only the one in the window. A notification names its server when you
+hold several, and a click opens the message on its own server. Looking at one server's inbox silences only that
+server's notifications.
+
+**Settings an agent changes apply at once** (B-236). Install Updates Automatically, Notify About New Mail and Agent
+Console Skips Permission Prompts are kept as files in the app's folder. When an agent changes one of them, the app now
+applies it right away instead of after a restart.
+
 ## 1.4.1 (2026-11-09)
 
 **The agent console no longer asks before each command.** Claude Code and Codex in the console now run without
