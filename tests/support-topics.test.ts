@@ -67,19 +67,19 @@ test("a labelling pass spends at most its calls, mailbox by mailbox, and says wh
   const seen: string[] = [];
   const pass = await labelMailboxes(["a@x.example", "b@x.example"], (e) => (e.startsWith("a") ? a : b), 6,
     async (m) => { seen.push(m.text); return { topic: "refund", negative: true, money: "refund" }; }, "m");
-  assert.deepEqual(pass, { calls: 6, labelled: 6, failed: 0, more: true });
+  assert.deepEqual(pass, { calls: 6, labelled: 6, failed: 0, unreadable: 0, more: true });
   assert.equal(a.saved.length, 3);
   assert.equal(b.saved.length, 3);
   assert.equal(seen[0], "I want my money back", "the model reads text, not HTML");
   const rest = await labelMailboxes(["a@x.example", "b@x.example"], (e) => (e.startsWith("a") ? a : b), 6, async () => ({ topic: "refund", negative: false, money: null }), "m");
-  assert.deepEqual(rest, { calls: 2, labelled: 2, failed: 0, more: false });
+  assert.deepEqual(rest, { calls: 2, labelled: 2, failed: 0, unreadable: 0, more: false });
 });
 
 test("a failed label ends that mailbox's pass and keeps what was labelled (B-238)", async () => {
   const a = fakeBox(4);
   let n = 0;
   const pass = await labelMailboxes(["a@x.example"], () => a, 10, async () => { if (++n === 2) throw new Error("model down"); return { topic: "bug", negative: false, money: null }; }, "m");
-  assert.deepEqual(pass, { calls: 2, labelled: 1, failed: 1, more: false });
+  assert.deepEqual(pass, { calls: 2, labelled: 1, failed: 1, unreadable: 0, more: false });
   assert.equal(a.saved.length, 1);
 });
 
@@ -130,4 +130,13 @@ test("a label is read from a model's text answer, with the spellings models use 
   assert.deepEqual(parseLabel('{"note": 1} then {"topic":"bug","negative":false,"money":null}'), { topic: "bug", negative: false, money: null });
   assert.equal(parseLabel("I cannot label this."), null);
   assert.equal(parseLabel('{"topic":"weather","negative":false,"money":null}'), null);
+});
+
+import { LabelUnreadable } from "../workers/lib/support-topics";
+
+test("an answer with no label skips only that conversation; the pass goes on (B-238)", async () => {
+  const a = fakeBox(4);
+  let n = 0;
+  const pass = await labelMailboxes(["a@x.example"], () => a, 10, async () => { if (++n === 2) throw new LabelUnreadable(); return { topic: "bug", negative: false, money: null }; }, "m");
+  assert.deepEqual(pass, { calls: 4, labelled: 3, failed: 0, unreadable: 1, more: false });
 });

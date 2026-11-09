@@ -55,6 +55,11 @@ export function parseLabel(text: string): TopicLabel | null {
   return null;
 }
 
+/** The model answered, but with no label in it: that conversation is skipped this pass; the model is not down. */
+export class LabelUnreadable extends Error {
+  constructor() { super("the model's answer held no label"); this.name = "LabelUnreadable"; }
+}
+
 /** One label for one conversation's first incoming message: one short call, 30 seconds at most. */
 export async function labelThread(model: LanguageModel, message: { subject: string; text: string }): Promise<TopicLabel> {
   const limit = deadline(30_000);
@@ -64,7 +69,7 @@ export async function labelThread(model: LanguageModel, message: { subject: stri
       prompt: JSON.stringify({ subject: message.subject.slice(0, 300), text: message.text.slice(0, 4000) }),
     });
     const label = parseLabel(text);
-    if (!label) throw new Error("the model's answer held no label");
+    if (!label) throw new LabelUnreadable();
     return label;
   } finally {
     limit.clear();
@@ -155,19 +160,20 @@ export type TopicLabeler = (message: { subject: string; text: string }) => Promi
  * a later pass; `more` says the pass stopped at `max` with conversations left.
  */
 export async function labelSupportTopics(env: Env, max: number, label: TopicLabeler, model: string): Promise<LabelPass> {
-  if (max <= 0) return { calls: 0, labelled: 0, failed: 0, more: false };
+  if (max <= 0) return { calls: 0, labelled: 0, failed: 0, unreadable: 0, more: false };
   const addresses = (await inboxSources(env).cloudflareAccounts()).map((a) => a.email.toLowerCase());
   return labelMailboxes(addresses, (email) => env.MAILBOX.get(env.MAILBOX.idFromName(email)), max, label, model);
 }
 
-export interface LabelPass { calls: number; labelled: number; failed: number; more: boolean }
+/** `failed`: calls that threw (the model is likely down; the pass ends); `unreadable`: answers with no label (skipped). */
+export interface LabelPass { calls: number; labelled: number; failed: number; unreadable: number; more: boolean }
 interface TopicBox {
   topicCandidates(limit: number): Promise<{ key: string; firstIn: string; subject: string; body: string }[]>;
   saveTopics(labels: { key: string; topic: string; negative: boolean; money: string | null; model: string }[]): Promise<number>;
 }
 
 export async function labelMailboxes(addresses: string[], open: (email: string) => TopicBox, max: number, label: TopicLabeler, model: string): Promise<LabelPass> {
-  const out: LabelPass = { calls: 0, labelled: 0, failed: 0, more: false };
+  const out: LabelPass = { calls: 0, labelled: 0, failed: 0, unreadable: 0, more: false };
   for (const email of addresses) {
     if (out.calls >= max) { out.more = true; break; }
     const box = open(email);
@@ -181,9 +187,11 @@ export async function labelMailboxes(addresses: string[], open: (email: string) 
         const l = await label({ subject: c.subject, text: stripHtmlToText(c.body) });
         labels.push({ key: c.key, topic: l.topic, negative: l.negative, money: l.money, model });
       } catch (error) {
+        console.warn(JSON.stringify({ event: "support_topic_label_failed", unreadable: error instanceof LabelUnreadable, error: String((error as Error)?.message ?? error).slice(0, 120) }));
+        // An answer with no label skips only this conversation (seen live 2026-11-09: one such answer stopped a mailbox for an hour).
+        if (error instanceof LabelUnreadable) { out.unreadable++; continue; }
         out.failed++;
         failed = true;
-        console.warn(JSON.stringify({ event: "support_topic_label_failed", error: String((error as Error)?.message ?? error).slice(0, 120) }));
         break;
       }
     }
