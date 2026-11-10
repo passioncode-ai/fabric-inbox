@@ -1663,6 +1663,57 @@ test("a decline that carries a link or a number is an ordinary answer and needs 
   assert.equal(h.effects.sends.length, 0);
 });
 
+// B-237 rerun 2026-11-09, the two failures left: a vent the knowledge has nothing on, and a request for a person whose
+// reason the knowledge covers when it is asked in the model's own words.
+test("the knowledge finding nothing never stops the writer's question back, and a vent is no knowledge gap (B-237)", async () => {
+  const calls: string[] = [];
+  let system = "";
+  const h = harness({ agent: autoAgent({ tools: [gapGrant()] }), email: { subject: "seriously", body: "<p>This is ridiculous. Nothing works and I am sick of it.</p>" },
+    callTool: async (grant) => { calls.push(grant.tool); return grant.tool === "acme.gaps.submit" ? JSON.stringify({ class: "public", duplicate: false }) : abstained; },
+    model: async (r) => { system = r.system; return { decision: answer({ kind: "clarify", body: "Sorry to hear that. What stopped working, and on which device?", intent: "complaint", question: "The sender says nothing works" }), text: "" }; } });
+  h.deps.paraphrase = undefined;
+  const run = (await h.run())!;
+  assert.match(system, /<candidates>/);
+  assert.match(system, /unless the message gives nothing to act on or asks for something outside this address's purpose/, "the clarify rule outranks the draft the candidates ask for");
+  assert.equal(run.status, "sent");
+  assert.equal(run.triage, "clarify");
+  assert.ok(!calls.includes("acme.gaps.submit"), "a question back is not a gap in the knowledge");
+});
+
+test("the model's own confident ask of a knowledge tool outranks the abstain on the message as written (B-237)", async () => {
+  const asked: string[] = [];
+  const h = harness({ agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } })] }),
+    email: { subject: "real person please", body: "<p>Let me talk to a real person, not a bot. How do I delete my account?</p>" },
+    callTool: async (_g, args) => { asked.push(String(args.query)); return asked.length === 1 ? abstained : confident; },
+    model: async (r) => { await r.tools[0].run({ query: "delete account" }); return { decision: answer(), text: "" }; } });
+  h.deps.paraphrase = undefined;
+  const run = (await h.run())!;
+  assert.equal(asked.length, 2, "as written, then the model's own words");
+  assert.equal(run.status, "sent", "the model's confident answer is the evidence");
+});
+
+test("an abstain stands when the confident answer came from another tool, or the model's own ask abstained (B-237)", async () => {
+  const other = { ...kbGrant(), name: "acme_docs", tool: "docs.search" };
+  const h = harness({ agent: autoAgent({ tools: [kbGrant({ prefetch: { argument: "query" } }), other] }),
+    callTool: async (grant) => grant.tool === "docs.search" ? confident : abstained,
+    model: async (r) => { await r.tools.find((t) => t.name === "acme_docs")!.run({ query: "delete account" }); return { decision: answer(), text: "" }; } });
+  h.deps.paraphrase = undefined;
+  assert.equal((await h.run())!.status, "drafted");
+
+  let n = 0;
+  const own = harness({ agent: autoAgent({ tools: [kbGrant()] }),
+    callTool: async () => (++n === 1 ? abstained : confident),
+    model: async (r) => { await r.tools[0].run({ query: "ghost mode" }); await r.tools[0].run({ query: "stealth mode" }); return { decision: answer(), text: "" }; } });
+  assert.equal((await own.run())!.status, "drafted", "the model's own abstain is never undone");
+});
+
+test("the writer greets only by a name the sender signs with, never one read from the address (B-237)", async () => {
+  let system = "";
+  const h = harness({ agent: autoAgent(), model: async (r) => { system = r.system; return { decision: answer(), text: "" }; } });
+  await h.run();
+  assert.match(system, /never a name taken from the sender's address/);
+});
+
 // B-237 gap 8: leads go to a sales agent through the grant with `leads`.
 const salesGrant = { name: "sales_desk", description: "Hands a lead to the sales desk", endpoint: "https://sales.example/mcp", tool: "sales.lead.submit", tokenRef: "SALES",
   leads: { status: "sales.lead.status", delivered: "sales.lead.delivered" } };
