@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.5.6 (2026-11-11)
+
+**A question back is sent, not replaced by the hand-off reply** (B-237). When a reply agent asks a sender with a vague
+complaint what happened, a category guessed for that message no longer hands it to a person; the policy's own topic
+words (a refund, for example) still do, and the sender's next message is sorted by what it says.
+
 ## 1.5.5 (2026-11-11)
 
 **A reply agent asks back when a message gives it nothing to go on, and answers a request for a person it can answer**

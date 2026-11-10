@@ -1061,7 +1061,10 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     const handoff = policy.handoff;
     // B-141: only what the sender wrote now; a topic in the quoted history of an earlier answer is not this message's.
     const handText = `${email.subject}\n${newText(email.body)}\n${run.summary ?? ""}`;
-    if (handoff && ((run.category && handoff.categories.some((c) => c.toLowerCase() === run.category!.toLowerCase())) || matchedTopic(handoff.topics, handText))) {
+    // B-237: the category of a message with nothing to act on is a guess, so a question back or a decline is handed
+    // over only by the policy's own topic words; the sender's next message is categorized by what it says.
+    const guessed = triage === "clarify" || triage === "decline";
+    if (handoff && ((!guessed && run.category && handoff.categories.some((c) => c.toLowerCase() === run.category!.toLowerCase())) || matchedTopic(handoff.topics, handText))) {
       if (!(outcome.action === "draft" && outcome.capacity)) outcome = { action: "send", reason: msg("Handed to a person: the reply says whom to contact") };
       const own = run.category ? Object.entries(handoff.replies ?? {}).find(([c]) => c.toLowerCase() === run.category!.toLowerCase())?.[1] : undefined;
       body = localized(own ?? handoff.reply);
