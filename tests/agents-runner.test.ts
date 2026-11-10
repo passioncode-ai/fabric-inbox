@@ -973,6 +973,26 @@ const autonomous = (over: Record<string, unknown> = {}) => autoAgent({ tools: [k
     handoff: { categories: ["refund"], topics: ["account shop"], reply: { en: "A person handles this: write to our support manager.", ru: "Этим занимается человек: напишите менеджеру поддержки." } },
     ...over } });
 
+test("a question back is not handed to a person for the category guessed for a message with no detail; a hand-off topic still is (B-237)", async () => {
+  const vent = autonomous({ categories: ["refund", "unusual", "other"], handoff: { categories: ["refund", "unusual"], topics: ["refund|money back"], reply: { en: "A person handles this: write to our support manager." } } });
+  const ask = "Sorry to hear that. What stopped working, and on which device?";
+  const h = harness({ agent: vent, email: { subject: "seriously", body: "<p>This is ridiculous. Nothing works and I am sick of it.</p>" },
+    callTool: async () => JSON.stringify({ abstained: true, results: [] }),
+    model: async () => ({ decision: answer({ kind: "clarify", category: "unusual", intent: "complaint", body: ask }), text: "" }) });
+  const run = (await h.run())!;
+  assert.equal(run.status, "sent", run.reason);
+  assert.equal(run.triage, "clarify");
+  assert.equal(run.handoff, undefined);
+  assert.match((h.effects.sends[0] as any).request.text, /What stopped working/);
+
+  const money = harness({ agent: vent, email: { subject: "money back", body: "<p>I want my money back, this is ridiculous.</p>" },
+    callTool: async () => JSON.stringify({ abstained: true, results: [] }),
+    model: async () => ({ decision: answer({ kind: "clarify", category: "other", intent: "complaint", body: ask }), text: "" }) });
+  const r2 = (await money.run())!;
+  assert.equal(r2.handoff, true, "the policy's own words still hand it over");
+  assert.match((money.effects.sends[0] as any).request.text, /support manager/);
+});
+
 test("an autonomous lane sends the safe reply instead of a draft, in the sender's language, and keeps limits as drafts", async () => {
   const weak = async () => JSON.stringify({ abstained: true, results: [] });
   const en = harness({ agent: autonomous(), email: { subject: "Login", body: "<p>I cannot log in to the app.</p>" }, callTool: weak });
