@@ -78,12 +78,15 @@ The account, host and bucket of the organization's server are in its local deplo
   [v1.5.4](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v1.5.4)); all three servers on 1.5.4, receipts
   `linked`, a live probe still refused `recipient_unknown`. The administrator agent lists the organization's eight
   shared mailboxes (thread `2f9e849f`, message `8c10a233`).
+- B-237's two remaining failures closed (2026-11-11): releases [v1.5.5](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v1.5.5)
+  (PR #466) and [v1.5.6](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v1.5.6) (PR #467); all three servers on
+  1.5.6, receipts `linked`; the 18 batches on the client organization's agent: pass 10, partly 8, fail 0
+  ([rerun](../reports/2026-11-11-communication-template-rerun/README.md)). The run-to-run spread it showed is B-242.
 
 ## Next task
 
 1. This Mac's app by its own update (it installs when the person quits it); the Studio's spaces follow by `studio apply`.
-2. B-237's two remaining failures (a vent with no detail, a request for a person the knowledge covers): the writer's
-   clarify rule, then the batches again.
+2. B-242: measure the reply agent's run-to-run spread on the 18 batches and pin what can be pinned.
 3. PassionCode's support agent to auto mode once a person has read its first drafts.
 4. B-240 (board request `f397d3ab`, thread `0340abfc`, due 2026-11-23): the state-claims gate is taken (1.5.2); compare
    the rest of the template database's support-answerer 1.4.4 (the promise-of-a-person check, the shared patterns) and
