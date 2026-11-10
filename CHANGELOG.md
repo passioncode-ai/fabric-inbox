@@ -5,6 +5,15 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.5.5 (2026-11-11)
+
+**A reply agent asks back when a message gives it nothing to go on, and answers a request for a person it can answer**
+(B-237). A complaint with no detail now gets one question back even when the knowledge has nothing on it; before, the
+knowledge finding nothing held it. A message that asks for a person and a question the knowledge covers gets the
+answer: when the knowledge finds nothing for the message as written but answers the agent's own question, that answer
+is sent. A question back is no longer reported as a gap in the knowledge, and the agent greets a sender only by a name
+they sign with.
+
 ## 1.5.4 (2026-11-09)
 
 **A rule's forward goes through the organization's recipient check too** (B-241). On a server with the check set, a
