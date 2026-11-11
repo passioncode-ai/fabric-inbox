@@ -1,7 +1,8 @@
 // B-236: the profile's switch files take effect while the app runs (desktop/profile-watch.cjs).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, watch } from "node:fs";
+import { EventEmitter } from "node:events";
+import { mkdtempSync, rmSync, writeFileSync, watch } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -32,12 +33,29 @@ test("a folder that cannot be watched is logged, never thrown", () => {
   w.close();
 });
 
-test("a real folder: writing the file reaches its handler", async () => {
+test("B-243: a watcher's error (Windows reports a deleted folder as EPERM) is logged and closes it, never thrown", () => {
+  const watcher = new EventEmitter() as EventEmitter & { closed: number; close(): void };
+  watcher.closed = 0; watcher.close = () => { watcher.closed += 1; };
+  const lines: any[] = [];
+  const w = watchProfile({ dir: "/p", watch: () => watcher, handlers: {}, log: (l: unknown) => lines.push(l) });
+  watcher.emit("error", Object.assign(new Error("EPERM: operation not permitted, watch"), { code: "EPERM" }));
+  assert.deepEqual(lines, [{ event: "profile_switch", outcome: "not_watched", code: "EPERM" }]);
+  assert.equal(watcher.closed, 1);
+  w.close();
+});
+
+test("a real folder: writing the file reaches its handler, and the folder can be removed once closed", async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "fabric-profile-"));
   let resolve: () => void = () => {};
   const seen = new Promise<void>((r) => { resolve = r; });
   const w = watchProfile({ dir, watch, debounceMs: 20, handlers: { "new-mail-notifications": async () => resolve() } });
-  writeFileSync(path.join(dir, "new-mail-notifications"), "on\n");
-  await Promise.race([seen, new Promise((_, no) => setTimeout(() => no(new Error("no event in 3 s")), 3000))]);
-  w.close();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    writeFileSync(path.join(dir, "new-mail-notifications"), "on\n");
+    await Promise.race([seen, new Promise((_, no) => { timer = setTimeout(() => no(new Error("no event in 3 s")), 3000); })]);
+  } finally {
+    clearTimeout(timer);
+    w.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

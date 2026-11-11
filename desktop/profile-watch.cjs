@@ -30,6 +30,15 @@ function watchProfile(deps) {
     });
     // The watcher never keeps the process alive by itself (Electron does; a test that loads main.cjs must end).
     if (watcher && typeof watcher.unref === 'function') watcher.unref();
+    // B-243: an FSWatcher reports a lost folder as an 'error' event (on Windows, EPERM when the watched folder is
+    // deleted), and an 'error' with no listener is thrown in the main process. The switches then stop applying
+    // live, as before B-236 (they still apply at the next launch); the watcher is closed so nothing holds the folder.
+    if (watcher && typeof watcher.on === 'function') {
+      watcher.on('error', (error) => {
+        log({ event: 'profile_switch', outcome: 'not_watched', code: (error && error.code) || 'error' });
+        try { watcher.close(); } catch { /* already closed */ }
+      });
+    }
   } catch (error) {
     log({ event: 'profile_switch', outcome: 'not_watched', code: (error && error.code) || 'error' });
     return { close() {} };
