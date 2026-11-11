@@ -49,6 +49,9 @@ async function boot(userData: string, switches: string[], server = true) {
     require: (name: string) => name === "electron" ? fakeElectron
       : name === "node:fs/promises" ? { readFile: async (p: string) => (server && String(p).endsWith("server.json") ? JSON.stringify(config) : Promise.reject(Object.assign(new Error("none"), { code: "ENOENT" }))), readdir: async () => [], rm: async () => {}, mkdir: async () => {}, writeFile: async () => {}, chmod: async () => {}, rename: async () => {} }
       : name === "./log.cjs" ? { ...require("../desktop/log.cjs"), logEvent: (e: any) => logged.push(e), createLog: () => (e: any) => logged.push(e) }
+      // B-243: the profile watcher (B-236) gets a stand-in, so no real watch holds the temporary profile that the
+      // test then removes (on Windows that removal hung the platforms run).
+      : name === "node:fs" ? { ...require("node:fs"), watch: () => Object.assign(new EventEmitter(), { close() {}, unref() {} }) }
       : name.startsWith("./") ? require("../desktop/" + name.slice(2)) : require(name),
     __dirname: "/fixture/desktop", process: { platform: "darwin", argv: [] }, URL, console: { log() {}, error() {}, warn() {} },
     setTimeout: () => 1, clearTimeout() {}, AbortSignal, globalThis: {},
