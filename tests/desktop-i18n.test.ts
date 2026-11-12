@@ -25,8 +25,16 @@ async function boot(userData: string) {
       super(); this.options = options;
       const mainFrame = { url: config.origin + "/" };
       this.webContents = Object.assign(new EventEmitter(), { session: fakeSession, mainFrame, setWindowOpenHandler() {}, send() {}, getURL: () => mainFrame.url });
+      // B-244 D-1: a mail page is a WebContentsView; its webContents loads, focuses and closes itself.
+      Object.assign(this.webContents, { isDestroyed: () => this.destroyed, loadURL: (u: string) => this.loadURL(u), close: () => this.close(), focus() {}, once: this.webContents.once.bind(this.webContents) });
+      if (!this.webContents.reload) this.webContents.reload = () => {};
+      if (!this.webContents.send) this.webContents.send = () => {};
       windows.push(this);
     }
+    // B-244 D-1: the mail window is a frame holding the pages; a page is shown or hidden and laid out in it.
+    contentView = { addChildView() {}, removeChildView() {} };
+    getContentBounds() { return { x: 0, y: 0, width: 1360, height: 900 }; }
+    setVisible() {} setBounds() {}
     isDestroyed() { return this.destroyed; }
     hide() {} show() {} focus() {} setTitle() {} reload() {}
     loadURL() { return Promise.resolve(); } loadFile() { return Promise.resolve(); }
@@ -39,7 +47,7 @@ async function boot(userData: string) {
     getPreferredSystemLanguages: () => ["en-US"],
   });
   const fakeElectron = {
-    app: fakeApp, BrowserWindow: FakeWindow,
+    app: fakeApp, BrowserWindow: FakeWindow, WebContentsView: FakeWindow,
     Menu: { buildFromTemplate: (x: any) => x, setApplicationMenu: (m: any) => menus.push(m) },
     ipcMain: { handle: (name: string, fn: any) => handlers.set(name, fn), on() {} }, shell: {}, dialog: {},
     session: { fromPartition: () => fakeSession }, powerMonitor: new EventEmitter(),
@@ -64,7 +72,7 @@ test("only the mail window reads and sets the language; the menus follow at once
   const i18n = require("../desktop/i18n.cjs");
   try {
     const { handlers, menus, windows } = await boot(dir);
-    const mail = windows.find((w) => w.options.webPreferences.preload.endsWith("mail-preload.cjs"));
+    const mail = windows.find((w) => w.options.webPreferences.preload?.endsWith("mail-preload.cjs"));
     assert.ok(mail, "the mail window opened");
     const trusted = { sender: mail.webContents, senderFrame: mail.webContents.mainFrame };
     const label = (menu: any) => menu[0].submenu.find((i: any) => i.accelerator === "CmdOrCtrl+,").label;

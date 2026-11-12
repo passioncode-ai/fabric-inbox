@@ -38,7 +38,7 @@ test("selected text offers Copy; a field the editing items; a link that is not t
 
 test("the mail window shows the menu, for every frame of it, with the system clipboard", () => {
   const main = readFileSync("desktop/main.cjs", "utf8");
-  assert.match(main, /win\.webContents\.on\('context-menu', \(_event, params\) => \{/);
+  assert.match(main, /page\.on\('context-menu', \(_event, params\) => \{/);
   assert.match(main, /copy: \(text\) => clipboard\.writeText\(text\)/);
   assert.match(main, /Menu\.buildFromTemplate\(items\)\.popup\(\{ window: win \}\)/);
 });
