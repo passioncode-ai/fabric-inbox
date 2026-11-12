@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.6.5 (2026-11-12)
+
+**A right answer is no longer refused for a passage the agent found itself** (B-249). Before a reply agent's answer
+leaves, another model checks it against the facts. That check now also reads the passages the agent found with its
+own searches during the run, so an answer built on them is no longer refused as invented.
+
 ## 1.6.4 (2026-11-12)
 
 **An agent can add a server, with your yes** (B-236). An agent on your Mac can put a server's address in the app, for
