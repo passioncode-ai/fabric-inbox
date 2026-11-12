@@ -367,6 +367,17 @@ export function selfBlock(agent: AgentVersion, mailboxId: string, checked = fals
   return lines;
 }
 
+/**
+ * What the sender asks now, for the knowledge: the subject and the new text (B-141: never the quoted history). B-248: in a
+ * reply (`Re:`, `Fwd:`) the subject is the conversation's ("Re: Refund for last month"), so the new text alone is asked;
+ * a reply with no new text of its own (a bare forward) is asked as before. At most 600 characters of the body.
+ */
+export function askedNow(email: { subject: string; body: string }, htmlToText: (html: string) => string): string {
+  const said = newText(email.body).slice(0, 600);
+  if (isFollowUpSubject(email.subject) && said.trim()) return said;
+  return `${email.subject}\n${said || htmlToText(email.body).slice(0, 600)}`;
+}
+
 export function systemPrompt(agent: AgentVersion, mailboxId: string, tools: AgentTool[], passages?: KnowledgeHit[], senderName = "", prefetched: PrefetchedResult[] = [], checked = false): string {
   const searching = (agent.collections ?? []).length > 0;
   return [
@@ -647,7 +658,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   };
   if (collections.length && !fixedTriage) {
     try {
-      passages = await deps.knowledge.search(`${email.subject}\n${deps.htmlToText(email.body).slice(0, 600)}`, collections, passageLimit);
+      passages = await deps.knowledge.search(askedNow(email, deps.htmlToText), collections, passageLimit);
       remember(passages);
     } catch (error) {
       knowledgeProblem = (error as Error).message.slice(0, 200);
@@ -744,7 +755,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   // the body's first sentence — and skips a quoted reply by its header at a line start.
   // What the sender wrote now, without the quoted history and its greetings (VoC audit 2026-10-27, 3): the data
   // agent was asked the earlier answer's text back and abstained.
-  const opening = `${email.subject}\n${newText(email.body).slice(0, 600)}`;
+  const opening = askedNow(email, deps.htmlToText);
   const localized = (text: { en: string; ru?: string }) => (queryLanguage(opening) === "ru" && text.ru ? text.ru : text.en);
   /**
    * Not sure, so not answered yet: the run is held and tried again (retryHeld). B-131: nobody waits without
