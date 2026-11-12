@@ -138,8 +138,9 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   For a lane where every message gets a reply: `fallbackReply: { en, ru? }` (a fixed text without facts, sent
   instead of a draft), `categories` (the agent labels each message) and `handoff: { categories, topics, reply }`
   (a fixed reply naming who handles it; `replies: { <category>: { en, ru? } }` gives a category its own).
-  Hand-off `topics` are read in what the sender wrote now and the run's summary: never in the quoted history,
-  nor in a reply's inherited subject (`Re: Refund…`), so a new question in that reply is answered.
+  Hand-off `topics` are read in what the sender wrote now, never in the quoted history: a first message with its
+  subject and the run's summary, a reply (`Re:`, `Fwd:`) with the run's topic instead, since its subject and summary
+  carry the earlier conversation; so a new question in that reply is answered.
   `knowledgeIsEvidence: true` lets an answer built from the agent's own knowledge leave when a knowledge
   tool abstains, if the checker approves it. Events add `agent.handoff` and `agent.not_helped`.
   Nobody waits without a word (B-131): a held message (`holdUnsure`) still unanswered a day after it came
