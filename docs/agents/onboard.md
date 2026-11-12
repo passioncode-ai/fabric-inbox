@@ -48,6 +48,13 @@ a setup beside its record (`setup.json`), so the welcome offers **Use the server
 with its address; they confirm and sign in with the emailed code (SCN-077). Nobody types the address. That sign-in is the only way a key can
 be made for you: the server makes keys for a signed-in person only.
 
+**When the app is already set up** (a person's own server, and now an organization's to add, B-236): open
+`fabric-inbox://server?origin=<the server's https origin>&access=<the Access team's https origin>&from=<your name>`
+on that Mac (`open "<link>"` on macOS). The app asks the person «Add the server <host>?» with Deny first; on Add
+Server it is listed and shown at its sign-in, and the servers they hold stay as they are. A server already held is
+only shown. Nothing is sent back to you: read the result from the person's next step, or from the server (`get_server`)
+once a key exists.
+
 ## 2. Your key, with the person's consent
 
 ```sh

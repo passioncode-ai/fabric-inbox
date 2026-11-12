@@ -32,7 +32,7 @@ typed secret) is a human gate, not a missing door; the row says so.
 | Notify About New Mail | `desktop/main.cjs:1354`, `desktop/new-mail.cjs:12` (`new-mail-notifications` file) | profile | Write `on` (or `off`) in the profile; it applies at once. |
 | Agent Console Skips Permission Prompts | `desktop/menu.cjs` (View), `desktop/console.cjs` (`SKIP_FILE`, `console-permissions` file) | profile | Write `ask` in the profile to turn it off (anything else, or no file, keeps it on); it applies to the next session at once. |
 | Settings… (⌘,) | `desktop/main.cjs:1324` (`openSettings`) | server | Every setting of the Settings screen is a server tool (`tests/mcp-coverage.test.ts`). |
-| Server address… | `desktop/main.cjs:1355` (`showSetup`) | partial | A new server: `node scripts/onboard.mjs server` ([onboard.md](onboard.md)). Putting its address in the app has no door; the person's sign-in after it is a human gate. |
+| Server address… | `desktop/main.cjs` (`showSetup`, `handleServerLink`), `desktop/server-link.cjs` | partial | A new server: `node scripts/onboard.mjs server` ([onboard.md](onboard.md)). Its address goes into the app by `open "fabric-inbox://server?origin=<https origin>&access=<Access team origin>&from=<who asks>"` (B-236): a server already held is shown; a new one waits for the person's Add Server (Deny is the default), then shows its sign-in, a human gate. |
 | Connect Cloudflare account… | `desktop/main.cjs:1355` (`showSetup('', 'cloudflare')`) | server, human gate | `connect_account { provider: cloudflare }` answers with the step; the token itself is pasted by the person (`POST /api/cloudflare/accounts` under "Routes no tool calls"). |
 | Quit, Hide, About | Electron roles | launch | `lifecycle.stop` and `lifecycle.ensure_running` of `inbox.desktop`; About has nothing to do. |
 
@@ -43,7 +43,7 @@ typed secret) is a human gate, not a missing door; the row says so.
 | A server in the list (switch the one shown) | `desktop/main.cjs:1357` (`switchServer`) | not needed | It changes what the window shows, nothing on a server; an agent works on each server with that server's key. |
 | All (the inbox's tab, B-244) | `desktop/main.cjs` (`installServersBridgeIPC`), `desktop/all-servers.cjs` | server | The same read on each server: `list_mailbox_messages` with each server's key. |
 | Rename Server | `desktop/main.cjs` (`showRename`, `installRenameIPC`), `desktop/servers.cjs` (`rename`) | none | A name on this Mac only; an agent names servers in its own configuration. |
-| Add Another Server… | `desktop/main.cjs:1358` | partial | As Server address… above: the server by `onboard.mjs server`, its place in the app's list without a door, the sign-in a human gate. |
+| Add Another Server… | `desktop/main.cjs` (`handleServerLink`) | partial | As Server address… above: the server by `onboard.mjs server`, its place in the app's list by the `fabric-inbox://server` link after the person allows it, the sign-in a human gate. |
 | Move an Address to Another Server… | `desktop/main.cjs:1360` (`showMove`), `desktop/move.cjs` | server | `export_mailbox` and `import_mailbox`, then `move_address` (`hold`, `route`) and `send_test_message` / `check_test_message`, as `desktop/move.cjs` does (SCN-094). |
 | Forget Server | `desktop/main.cjs:1361` (`forgetServer`) | none | It removes a server from the app's list and its sign-in; nothing on the server changes. B-236. |
 | Connect Gmail in browser… | `desktop/main.cjs:1363` | server, human gate | `gmail_connect_link` gives the address the person opens; Google's consent is theirs. |
@@ -67,7 +67,8 @@ typed secret) is a human gate, not a missing door; the row says so.
 ## What is missing
 
 B-236 collects the actions with no door: asking for an update check now, Open at Login, Forget Server,
-putting a server's address in the app, and Share Usage Details (named, kept without a door unless the
+and Share Usage Details (named, kept without a door unless the
 operator asks). The three switch files apply while the app runs (2026-11-09). A door for the rest needs a design first:
 a `fabric-inbox://` link reaches the app from any page a browser opens, so a link that changes a setting
 must ask the person as `connect` does, and a watched profile file is reachable only by this OS account.
+A server's address has its door since 2026-11-12: the `fabric-inbox://server` link above, asked the same way.

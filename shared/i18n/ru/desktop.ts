@@ -467,6 +467,16 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Sign In": "Войти",
 	// B-244 D-4 (desktop/rename-server.js, the Account menu): a server's name on this Mac.
 	"Rename Server": "Переименовать сервер",
+	// B-236 (desktop/server-link.cjs, main.cjs handleServerLink): a server added by a link, after the person allows it.
+	"This is not a Fabric Inbox server link.": "Это не ссылка Fabric Inbox на сервер.",
+	"The name in the link cannot be shown.": "Имя в ссылке нельзя показать.",
+	"The link names no server address this app can use.": "В ссылке нет адреса сервера, который приложение может использовать.",
+	"Add the server {host}?": "Добавить сервер {host}?",
+	"The link calls itself “{from}”.": "Ссылка называет себя «{from}».",
+	"A link on this Mac asks to add it.": "Ссылка на этом Mac просит его добавить.",
+	"You sign in to it as usual; the servers you hold now stay as they are. Add it only if you expect this server.": "Вход в него обычный, ваши серверы остаются как есть. Добавляйте, только если вы ждёте этот сервер.",
+	"Add Server": "Добавить сервер",
+	"This server link cannot be used.": "Этой ссылкой на сервер нельзя воспользоваться.",
 	"Rename {server}": "Переименовать {server}",
 	"Shown in the Account menu and on the inbox tabs on this Mac. Leave it empty to show the address {server}.": "Показывается в меню «Аккаунт» и на вкладках входящих на этом Mac. Оставьте пустым, чтобы показывать адрес {server}.",
 };

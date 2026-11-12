@@ -1907,12 +1907,12 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   2. Enter the organization's server address and continue -> the window shows it and asks me to sign in; my own server stays in the list, signed in.
   3. Sign in -> the app reads the server's context; an organization's server is listed as "<host> (organization)".
 - **Expected result:** The Account menu lists my own server and the organization's, each with its own sign-in, and nothing of one shows in the other.
-- **Alt paths:** An address already listed: the window shows that server. An address that does not answer: the ordinary Retry; it stays listed until I forget it.
+- **Alt paths:** An agent on this Mac puts the address in by a `fabric-inbox://server` link (B-236): the app asks me first, naming the server's host (Deny is the default), and on Add Server shows its sign-in; an address already listed is shown without a question. An address already listed: the window shows that server. An address that does not answer: the ordinary Retry; it stays listed until I forget it.
 - **UI elements:** Account menu (the servers, Add Another Server…, Forget Server); the server address form.
 - **States covered:** loading, error, success
 - **Errors & recovery:** A server added by mistake: Forget Server takes it off the list and clears what this Mac kept of it.
 - **Status:** draft
-- **Coverage:** `desktop/servers.cjs`, `desktop/main.cjs` (`readServers`, `learnContext`, `forgetServer`), `desktop/menu.cjs`, `tests/desktop-servers.test.ts`, `tests/desktop-profile.test.ts`
+- **Coverage:** `desktop/servers.cjs`, `desktop/server-link.cjs`, `tests/desktop-server-link.test.ts`, `desktop/main.cjs` (`readServers`, `learnContext`, `forgetServer`), `desktop/menu.cjs`, `tests/desktop-servers.test.ts`, `tests/desktop-profile.test.ts`
 - **Product:** unobserved
 - **Today:** Built in 0.64.0 (B-158 M1 step 2): the list, the context learned after sign-in, Forget Server. The organization's name (not only its host) comes with sign-in through the organization service (M2).
 
