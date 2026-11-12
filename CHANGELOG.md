@@ -5,6 +5,15 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.6.2 (2026-11-12)
+
+**Agents ask for access to mailboxes, and you decide** (B-246). An agent key can ask for the mailboxes it needs and what
+it may do there: read, write drafts, send, organize, delete, create or remove addresses, set up reply agents or run
+campaigns. The request waits in Settings, Agent access, Access by mailbox, where you approve it, approve only the part
+you tick, or refuse it. There you can also give such access yourself, to an agent key or to a person, and revoke it.
+For now these grants are recorded and checked beside each key's level and each person's role; they start deciding
+access in a later release.
+
 ## 1.6.1 (2026-11-12)
 
 **Groundwork for access per mailbox** (B-246). Nothing changes in what you or your agents can do. The server now keeps
