@@ -167,3 +167,62 @@ test("the service declares a capability only once its tools exist (D-5)", () => 
   assert.deepEqual(mailCapabilities(TOOLS), ["mail.read", "mail.send"]);
   assert.deepEqual(mailCapabilities([...TOOLS, { name: "request_access" }]), ["mail.read", "mail.send", "mail.access"]);
 });
+
+// ---- W2c: the store and the shadow beside today's checks ----
+import { normaliseGrants, readGrants, updateGrants, GRANTS_KEY } from "../workers/mcp/grant-store";
+import { grantsAllowTool, grantsOfPrincipal } from "../workers/mcp/grants";
+import { shadowGrants } from "../workers/mcp/protocol";
+
+const stored = (over: Record<string, unknown> = {}) => GrantSchema.parse({ schema: "grant/1", id: "grant-0001", holder: { kind: "key", id: "k1" }, mailboxes: ["support@acme.example"],
+  can: ["read"], limits: { sendMode: "send", dailySendLimit: 10, ownerApproval: false }, expiresAt: null, grantedBy: "owner@acme.example", grantedAt: "2026-11-12T00:00:00Z", why: "test", ...over });
+
+function fakeBucket() {
+  let body: string | null = null; let etag = 0;
+  return {
+    async get(k: string) { return k === GRANTS_KEY && body !== null ? { etag: String(etag), json: async () => JSON.parse(body!), text: async () => body!, arrayBuffer: async () => new TextEncoder().encode(body!).buffer } : null; },
+    async put(k: string, v: string, o: { onlyIf?: { etagMatches?: string } | Headers }) {
+      const want = o.onlyIf && !(o.onlyIf instanceof Headers) ? o.onlyIf.etagMatches : undefined;
+      if (o.onlyIf instanceof Headers ? body !== null : want !== String(etag)) return null;
+      body = v; etag++; return { etag: String(etag) };
+    },
+  };
+}
+
+test("the store keeps grant/1 records, drops anything else and fails closed on a damaged file", async () => {
+  assert.deepEqual(normaliseGrants({ grants: [stored(), { schema: "grant/1" }, "x"] }).map((g) => g.id), ["grant-0001"]);
+  assert.deepEqual(normaliseGrants("damaged"), []);
+  const bucket = fakeBucket() as unknown as R2Bucket;
+  assert.deepEqual(await readGrants(bucket), []);
+  await updateGrants(bucket, (g) => [...g, stored()]);
+  await updateGrants(bucket, (g) => [...g, stored({ id: "grant-0002", can: ["send"] })]);
+  assert.deepEqual((await readGrants(bucket)).map((g) => g.id), ["grant-0001", "grant-0002"]);
+});
+
+test("a caller's grants: its key's bundle plus the stored grants naming its key, none naming another", () => {
+  const agent = { kind: "agent" as const, label: "bot", level: "read" as const, send: "drafts" as const, dailySendLimit: 5, keyId: "k1", accounts: [A] };
+  const g = grantsOfPrincipal(agent, [stored(), stored({ id: "grant-0003", holder: { kind: "key", id: "other" }, can: ["delete"] })]);
+  assert.equal(allows(g, "cloudflare:support@acme.example", "read"), true, "the stored grant adds a mailbox");
+  assert.equal(allows(g, "cloudflare:support@acme.example", "delete"), false, "another key's grant gives nothing");
+  const owner = { kind: "owner" as const, label: "Boss@acme.example", level: "admin" as const, send: "send" as const, dailySendLimit: null, keyId: null, accounts: null };
+  assert.equal(allows(grantsOfPrincipal(owner), null, "remove"), true);
+});
+
+test("the shadow logs a disagreement with the tool and key only, and nothing when the two agree", async () => {
+  const warned: string[] = [];
+  const original = console.warn;
+  console.warn = (line: string) => { warned.push(line); };
+  try {
+    const agent = { kind: "agent" as const, label: "bot", level: "read" as const, send: "drafts" as const, dailySendLimit: 5, keyId: "k1", accounts: null };
+    const read = TOOLS.find((t) => t.name === "read_message")!;
+    const ctx = { api: {} as never, principal: agent, grants: async () => grantsOfPrincipal(agent) };
+    await shadowGrants(read, ctx, true);
+    assert.deepEqual(warned, [], "they agree");
+    assert.equal(grantsAllowTool(read, agent, grantsOfPrincipal(agent)), true);
+    await shadowGrants(read, ctx, false);
+    assert.equal(warned.length, 1);
+    const line = JSON.parse(warned[0]);
+    assert.deepEqual(line, { event: "grant_shadow_disagreement", tool: "read_message", caller: "agent", key: "k1", today: false, grants: true });
+    await shadowGrants(read, { ...ctx, grants: async () => { throw new Error("R2 down"); } }, true);
+    assert.equal(warned.length, 1, "a failed read is not a disagreement");
+  } finally { console.warn = original; }
+});

@@ -9,6 +9,8 @@ import { createMcpHandler } from "agents/mcp";
 import { api } from "../api";
 import type { Env } from "../types";
 import { principalFor, readAgentKeys, type AccessClaims, type Principal } from "./keys";
+import { grantsOfPrincipal, type Grant } from "./grants";
+import { readGrants } from "./grant-store";
 import { ApiError, buildServer, callerId, type Api, type Ledger } from "./protocol";
 import { inProcessActors } from "../lib/audit";
 import { NARROW_HEADER, expandDomains, namesDomain, narrowPrincipal, scopedApi } from "./scope";
@@ -94,6 +96,12 @@ export function refuseUnsafe(request: Request): Response | null {
   return null;
 }
 
+/** B-246 W2c: the caller's grants, the stored ones read at most once per request (the shadow beside today's checks). */
+function grantsOnce(env: Env, principal: Principal): () => Promise<Grant[]> {
+  let read: Promise<Grant[]> | null = null;
+  return () => (read ??= readGrants(env.BUCKET).then((stored) => grantsOfPrincipal(principal, stored)));
+}
+
 export async function handleMcp(request: Request, env: Env, ctx: ExecutionContext, claims: AccessClaims | null): Promise<Response> {
   const unsafe = refuseUnsafe(request);
   if (unsafe) return unsafe;
@@ -126,7 +134,7 @@ export async function handleMcp(request: Request, env: Env, ctx: ExecutionContex
     { name: PROTOCOL_NAME, version, instructions: instructionsFor(principal, origin) },
     TOOLS,
     { api: principal.accounts ? scopedApi(inProcessApi(origin, env, ctx, callerId(principal)), principal.accounts) : inProcessApi(origin, env, ctx, callerId(principal)), principal,
-      recipientCheck: recipientCheckFrom(env, () => allServedDomains(env)) },
+      recipientCheck: recipientCheckFrom(env, () => allServedDomains(env)), grants: grantsOnce(env, principal) },
     ledgerFor(env),
   );
   return createMcpHandler(server, { route: "/mcp" })(request, env, ctx);

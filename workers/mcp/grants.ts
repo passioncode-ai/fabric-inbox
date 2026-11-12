@@ -5,9 +5,10 @@
  * what it could do before (R-1). Pure: nothing here reads storage or decides a request yet; W2a runs it beside the
  * current checks to log where the two would disagree, and the cut-over (W2c) waits for three days with none.
  */
-import type { AgentKey, Level, SendMode } from "./keys";
+import type { AgentKey, Level, Principal, SendMode } from "./keys";
 import type { Member, MemberLevel } from "../lib/members";
-import { normaliseAccountId } from "./scope";
+import { normaliseAccountId, toolFitsScope } from "./scope";
+import { TOOL_NEEDS } from "./tool-capabilities";
 import { z } from "zod";
 
 /** What a grant lets its holder do on its mailboxes. */
@@ -231,3 +232,26 @@ export const ROLE_PRESETS: Readonly<Record<OrgRole, { mailboxes: "all" | "own+sh
   architect: { mailboxes: "all", can: ["read", "organize", "create", "remove", "agents"], standing: ["grants"] },
   employee: { mailboxes: "own+shared", can: ["read", "draft", "send"], standing: [] },
 });
+
+// ---- W2c: the grants of a caller, and the decision they make for a tool (the shadow beside today's checks) ----
+
+/** A caller's grants from its key or sign-in today, plus the stored grants naming it (W2c). */
+export function grantsOfPrincipal(p: Principal, stored: readonly StoredGrant[] = []): Grant[] {
+  const own: Grant[] = p.kind === "owner"
+    ? [{ holder: { kind: "person", email: p.label.toLowerCase() }, mailboxes: [ALL], can: [...CAPABILITIES], limits: { sendMode: "send", dailySendLimit: null, ownerApproval: false }, expiresAt: null }]
+    : grantsOfKey({ id: p.keyId, level: p.level, send: p.send, dailySendLimit: p.dailySendLimit, accounts: p.accounts ? [...p.accounts] : null, approval: p.approval, expiresAt: null });
+  const holderId = p.kind === "owner" ? null : p.keyId;
+  const extra = stored.filter((g) => g.holder.kind === "key" && g.holder.id === holderId);
+  return [...own, ...extra];
+}
+
+/** Whether the grants let this caller use a tool: its need on its mailboxes, drafts kept, a limited caller kept to one mailbox's tools. */
+export function grantsAllowTool(tool: { name: string; sends?: boolean; routes: readonly string[] }, p: Principal, grants: readonly Grant[], now = new Date()): boolean {
+  const need = TOOL_NEEDS[tool.name];
+  if (!need) return false;
+  if (p.accounts && !p.accounts.length) return false;
+  const mailbox = p.accounts ? p.accounts[0] : null;
+  const reach = need === "server" ? CAPABILITIES.every((c) => allows(grants, null, c, now)) : allows(grants, mailbox, need, now);
+  const drafts = !!tool.sends && p.kind === "agent" && p.send === "drafts" && p.level !== "admin";
+  return reach && !drafts && (!p.accounts || toolFitsScope(tool));
+}
