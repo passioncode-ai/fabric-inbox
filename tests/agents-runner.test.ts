@@ -575,11 +575,11 @@ test("B-252: a run says how much of the checker's window it used and what was cu
   const r1 = (await roomy.run())!;
   assert.ok(r1.checkerRoom && r1.checkerRoom.left > 0 && r1.checkerRoom.factsLimit === 16000, JSON.stringify(r1.checkerRoom));
   assert.deepEqual(r1.checkerRoom!.cut, []);
-  const crowded = harness({ agent: autoAgent({ instructions: "Be kind. ".repeat(2500) }), email: { subject: "Price", body: "<p>How much is it?</p>" }, model: async () => ({ decision: answer(), text: "" }) });
+  const crowded = harness({ agent: autoAgent({ knowledge: "A fact. ".repeat(2300) }), email: { subject: "Price", body: "<p>How much is it?</p>" }, model: async () => ({ decision: answer(), text: "" }) });
   crowded.deps.check = async () => ({ approved: true, reason: "ok", model: "checker" });
   const r2 = (await crowded.run())!;
   assert.ok(r2.checkerRoom!.left < 0);
-  assert.deepEqual(r2.checkerRoom!.cut, ["instructions"], "the instructions go last, so they are what is cut");
+  assert.deepEqual(r2.checkerRoom!.cut, ["knowledge", "instructions"], "what lies past the limit is named, the instructions last");
 });
 
 test("the prefetch keeps the message's line breaks and asks only what the sender wrote now (data agent reads by sentence)", async () => {
