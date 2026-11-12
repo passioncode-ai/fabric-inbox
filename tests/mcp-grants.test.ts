@@ -80,3 +80,37 @@ test("mailbox ids are canonical: lower case, the domain in punycode, nothing els
   assert.equal(canonicalMailbox("*"), "*");
   assert.equal(canonicalMailbox("not an address"), null);
 });
+
+// ---- W2a part 2: every tool's need, and the same decision as today's levels for every key shape ----
+import { TOOLS } from "../workers/mcp/tools";
+import { TOOL_NEEDS } from "../workers/mcp/tool-capabilities";
+import { CAPABILITIES } from "../workers/mcp/grants";
+import { levelAllows } from "../workers/mcp/keys";
+import { toolFitsScope } from "../workers/mcp/scope";
+
+test("every tool is named once in TOOL_NEEDS, and nothing else is", () => {
+  const names = TOOLS.map((t) => t.name);
+  assert.deepEqual(names.filter((n) => !(n in TOOL_NEEDS)), [], "tools with no need: decide what each needs from a grant");
+  assert.deepEqual(Object.keys(TOOL_NEEDS).filter((n) => !names.includes(n)), [], "needs for tools that do not exist");
+});
+
+test("for every tool and every key shape of today, the grants decide exactly as the levels do (R-1)", () => {
+  const shapes = (["read", "mail", "admin"] as const).flatMap((level) => (["drafts", "send"] as const).flatMap((send) =>
+    [null, [A]].map((accounts) => key({ level, send, accounts }))));
+  const differ: string[] = [];
+  for (const tool of TOOLS) {
+    const need = TOOL_NEEDS[tool.name];
+    for (const k of shapes) {
+      const drafts = k.send === "drafts" && k.level !== "admin";
+      // keys.ts normaliseKey: an Admin key with a limit reaches nothing.
+      const old = !(k.level === "admin" && k.accounts !== null) && levelAllows(k.level, tool.level) && !(tool.sends && drafts) && (k.accounts === null || toolFitsScope(tool));
+      const grants = grantsOfKey(k);
+      const mailbox = k.accounts === null ? null : A;
+      const reach = need === "server" ? CAPABILITIES.every((c) => allows(grants, null, c)) : allows(grants, mailbox, need);
+      const sendsKept = !(tool.sends && grants.some((g) => g.limits.sendMode === "drafts"));
+      const now = reach && sendsKept && (k.accounts === null || toolFitsScope(tool));
+      if (old !== now) differ.push(`${tool.name} ${k.level}/${k.send}/${k.accounts ? "limited" : "all"}: old ${old}, grants ${now}`);
+    }
+  }
+  assert.deepEqual(differ, []);
+});
