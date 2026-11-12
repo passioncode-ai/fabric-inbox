@@ -102,7 +102,7 @@
 | SCN-098 | Let an agent give people mailboxes and issue keys without asking me | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-15 | draft | not yet |
 | SCN-099 | See the mail of every organization in the one mail window | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | partial |
 | SCN-100 | An agent asks for access to a mailbox and gets exactly what was granted | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-15 | draft | not yet |
-| SCN-101 | Grant a person or an agent capabilities on one or several mailboxes | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-15 | draft | not yet |
+| SCN-101 | Grant a person or an agent capabilities on one or several mailboxes | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-15 | draft | partial |
 | SCN-102 | Employees and the architect find their mail access ready | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-17 | draft | not yet |
 | SCN-103 | An organization's outreach agent writes from its own mailbox | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-15 | draft | not yet |
 
@@ -2110,9 +2110,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** empty, loading, error, success
 - **Errors & recovery:** A save the server could not store says so and keeps the form as filled.
 - **Status:** draft
-- **Coverage:** none yet (B-246 W2)
+- **Coverage:** `app/components/settings/sections/GrantsPanel.tsx`, `app/components/settings/sections/AgentAccessSection.tsx` (`GRANTS`), `workers/routes/grants.ts`, `workers/mcp/grants.ts`, `tests/grants-routes.test.ts`, `tests/mcp-grants.test.ts`
 - **Product:** unobserved
-- **Today:** Not built. A key has one level for all its mailboxes; creating or removing an address needs Admin, which cannot be limited to mailboxes.
+- **Today:** Steps 1 to 3 built (B-246 W2c, 2026-11-12): Agent access → Access by mailbox lists the grants with Revoke and gives new ones; the agent tools are `list_grants`, `grant_access`, `revoke_grant`. The grants are recorded and checked beside today's key levels and member levels and decide nothing until the cut-over, which the screen says.
 
 ### SCN-102: Employees and the architect find their mail access ready
 - **Persona:** P-01
