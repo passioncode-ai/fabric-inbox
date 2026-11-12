@@ -586,7 +586,9 @@ test("B-248: a reply asks the knowledge what it asks now, not its inherited subj
   await run("Refund for last month", "<p>Where is my refund?</p><p>On Tue, Acme Support wrote:</p><p>&gt; old</p>");
   assert.equal(searched[1], "Refund for last month\nWhere is my refund?", "a first message's subject is its own; the quote is never asked");
   await run("Fwd: Invoice", "<div>---------- Forwarded message ---------<br>From: Ann &lt;ann@acme.example&gt;<br>Where is the invoice?</div>");
-  assert.match(searched[2]!, /^Fwd: Invoice\n/, "a forward with no words of its own is asked as before");
+  assert.match(searched[2]!, /Where is the invoice\?/, "a forward is asked by the message it carries");
+  await run("Re: Invoice", "<p>On Tue, Acme Support wrote:</p><p>&gt; Here is your invoice.</p>");
+  assert.match(searched[3]!, /^Re: Invoice\n/, "a reply with no words of its own is asked as before");
 });
 
 test("B-85 REQ-4: a failed prefetch keeps the answer a draft and the model is told nothing was found", async () => {
