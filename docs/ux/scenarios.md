@@ -100,7 +100,7 @@
 | SCN-096 | Give a person a level on a mailbox | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-17 | draft | — |
 | SCN-097 | My server warns me before a mailbox fills and keeps old mail restorable | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-11 | draft | not yet |
 | SCN-098 | Let an agent give people mailboxes and issue keys without asking me | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-15 | draft | not yet |
-| SCN-099 | See the mail of every server I hold in one list | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | partial |
+| SCN-099 | See the mail of every organization in the one mail window | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | partial |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -1915,21 +1915,21 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 ### SCN-093: Switch between my space and an organization
 - **Persona:** P-01
 - **Feature:** Resume and manage preferences
-- **Traces:** ST-007, FLW-07; B-158; [the plan](../app-store/tasks/2026-10-27-organizations.md) D1
-- **Entry point:** the Account menu
+- **Traces:** ST-007, FLW-07; B-158; B-244 (operator, 2026-11-11: «чтобы они все показывались внутри одного окна, я бы не переключался между ними, не щелкал этими окнами»); [the plan](../app-store/tasks/2026-10-27-organizations.md) D1; [the one window packet](../app-store/tasks/2026-11-11-one-window.md) D-1
+- **Entry point:** the inbox's organization tabs (SCN-099), or the Account menu
 - **Preconditions:** The app holds my own server and at least one organization (SCN-092).
 - **Steps:**
-  1. Choose the organization's server in the Account menu -> the window shows its mail, people and agents, still signed in; the menu ticks it.
-  2. Choose my own server -> my own mail again, still signed in.
-- **Expected result:** One window at a time shows one server; switching never mixes mail, search, agents or keys of two servers, and never asks me to sign in again. Reading the mail of all of them in one list is SCN-099 (operator, 2026-11-07).
-- **Alt paths:** A server whose sign-in lapsed opens at its sign-in page. A running agent console stops before the window shows another server (its key is that server's).
-- **UI elements:** Account menu (the servers).
+  1. Choose the organization's tab, or its server in the Account menu -> the same window shows its mail, people and agents, still signed in; the tab is selected and the menu ticks it.
+  2. Choose my own server -> my own mail again, as I left it, still signed in.
+- **Expected result:** Switching never opens or closes a window and never reloads a page: the window keeps a page for each server I hold and shows the one I chose, scrolled and filtered as I left it. Switching never mixes mail, search, agents or keys of two servers, and never asks me to sign in again. A page not shown pauses its polling. Reading the mail of all of them in one list is SCN-099.
+- **Alt paths:** A server whose sign-in lapsed shows its sign-in page in its place. A running agent console stops before the window shows another server (its key is that server's).
+- **UI elements:** the organization tabs, Account menu (the servers).
 - **States covered:** loading, success
-- **Errors & recovery:** A server that does not answer shows the ordinary Retry; the others stay listed and signed in.
+- **Errors & recovery:** A server that does not answer shows the ordinary Retry in its place; the others stay listed and signed in.
 - **Status:** draft
 - **Coverage:** `desktop/main.cjs` (`switchServer`, `loadMail`), `desktop/menu.cjs`, `tests/desktop-servers.test.ts`, `tests/desktop-profile.test.ts`
 - **Product:** unobserved
-- **Today:** Built in 0.64.0 (B-158 M1 step 2). New-mail notifications still read only the server shown.
+- **Today:** Built in 0.64.0 (B-158 M1 step 2) with one page at a time: a switch destroys the window and opens a new one on the other server, so the page reloads. A page kept per server in one window is B-244 step 2.
 
 ### SCN-094: Move an address to another server I hold
 - **Persona:** P-01
@@ -2048,22 +2048,24 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Product:** unobserved
 - **Today:** Built 2026-11-05 (B-215 step 1, 0.99.0), provisional on this draft.
 
-### SCN-099: See the mail of every server I hold in one list
+### SCN-099: See the mail of every organization in the one mail window
 - **Persona:** P-01
 - **Feature:** Resume and manage preferences
-- **Traces:** ST-007, FLW-07; B-233 (operator, 2026-11-07, after an organization's addresses moved to its own server: "хочу все аккаунты в одном окне как были"); SCN-093, SCN-094; [the plan](../app-store/tasks/2026-10-27-organizations.md) D1
-- **Entry point:** the Account menu, All Servers
+- **Traces:** ST-007, FLW-07; B-233 (operator, 2026-11-07, after an organization's addresses moved to its own server: "хочу все аккаунты в одном окне как были"); B-244 (operator, 2026-11-11: «чтобы они все показывались внутри одного окна, я бы не переключался между ними, не щелкал этими окнами»); SCN-093, SCN-094; [the plan](../app-store/tasks/2026-10-27-organizations.md) D1; [the one window packet](../app-store/tasks/2026-11-11-one-window.md) D-1 to D-5
+- **Entry point:** the inbox of the mail window, its row of organization tabs
 - **Preconditions:** The app holds two or more servers (SCN-092), each signed in at least once.
 - **Steps:**
-  1. Choose All Servers -> one list of the inbox of every server I hold, newest first, each message marked with its server's name (my own space, or the organization's name); the counts say how many unread on each server.
-  2. Open a message from the list -> the window shows that message on its own server, with that server's actions, agents and reply; Back returns to the list of all servers.
-  3. Filter the list by one server, or by unread -> only those messages.
-- **Expected result:** I see all my mail in one place, as before the organizations had servers of their own, and every message stays on its own server: replying, moving, agents, search inside it and keys are still that server's, and nothing is copied between servers.
-- **Alt paths:** A server whose sign-in lapsed shows one line "Sign in to <server>" in the list instead of its mail, and the other servers' mail still shows. A server that does not answer shows "Not reachable now" with Retry for it. New-mail notifications (B-41) read every server, not only the one shown.
-- **UI elements:** Account menu (All Servers), the list's server mark and filter, the line of a server to sign in to.
+  1. Open the inbox -> above the list a row of tabs: All, then each server by its name (my own space, or the organization's name) with its unread count; All lists the inbox of every server I hold, newest first, and marks each message of another server with its organization's name.
+  2. Open a message of another organization from All -> the same window shows it on its own server, with that server's actions, agents and reply; nothing reloads, and Back returns to All where I left it.
+  3. Choose an organization's tab -> the window shows that server's own inbox, still signed in (SCN-093); All brings the merged list back.
+  4. Archive, mark or discard a message of another organization -> the window shows that server first, and the action is that server's.
+  5. Rename a server in the Account menu -> its tab and its mark on the messages show the new name.
+- **Expected result:** I see the mail of every organization in the one window, as before the organizations had servers of their own, and never click between windows. Every message stays on its own server: replying, moving, agents, search inside it and keys are still that server's, nothing is copied between servers, and no server's message is sent to another server.
+- **Alt paths:** A server whose sign-in lapsed shows "Sign in" on its tab instead of a count, and its messages are missing from All until I sign in; the other servers' mail still shows. A server that does not answer shows "Not reachable now" on its tab with Retry. The inbox in a browser, or in an app that holds one server, has no tabs and shows that server's inbox as today. New-mail notifications (B-41) read every server, not only the one shown.
+- **UI elements:** the organization tabs with their counts and states, the organization's mark on a message, Account menu (Rename Server).
 - **States covered:** empty, loading, error, success
-- **Errors & recovery:** One server failing never hides the others; its line names it and offers Retry or Sign In.
+- **Errors & recovery:** One server failing never hides the others; its tab names it and offers Retry or Sign In.
 - **Status:** draft
 - **Coverage:** `desktop/all-servers.cjs` (`readAll`), `desktop/all-servers.js`, `desktop/all-servers.html`, `desktop/all-servers-preload.cjs`, `desktop/main.cjs` (`showAllServers`, `openOnServer`, `installAllServersIPC`), `desktop/menu.cjs`, `tests/desktop-all-servers.test.ts`, `tests/desktop-servers.test.ts`
 - **Product:** unobserved
-- **Today:** Steps 1 to 3 and the alt paths for a signed-out or unreachable server built (B-233 part 1): Account → All Servers opens a window of its own, read when it opens, comes forward or is refreshed (no timer). New-mail notifications for every server are B-233 part 2.
+- **Today:** B-233 part 1 built the merged list in a window of its own (Account → All Servers, read when it opens, comes forward or is refreshed), and a message opened from it replaces the mail window. B-244 moves it into the mail window: a page kept per server (step 2), the bridge (step 3), the tabs and the merged list (step 4), rename and the removal of the All Servers window (step 5). New-mail notifications read every server since B-233 part 2.
