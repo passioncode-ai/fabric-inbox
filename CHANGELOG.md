@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.6.3 (2026-11-12)
+
+**Name your servers** (B-244). In the Mac app, Account, Rename Server gives any server you hold a name of your own,
+such as an organization's name; the Account menu and the inbox tabs show it. The name stays on this Mac. The separate
+All Servers window is gone: the inbox's All tab shows the mail of every server, and a notification about new mail on
+several servers opens it.
+
 ## 1.6.2 (2026-11-12)
 
 **Agents ask for access to mailboxes, and you decide** (B-246). An agent key can ask for the mailboxes it needs and what
