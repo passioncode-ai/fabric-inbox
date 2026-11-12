@@ -1793,6 +1793,15 @@ body {
   font-size: 10px; font-weight: 600; background: var(--pc-accent-soft); color: var(--pc-text); white-space: nowrap;
 }
 .fi-also-in { font-size: 10px; color: var(--pc-text-muted); }
+/* B-244 D-3 (SCN-099): the servers' tabs above the inbox and the mark of another server's message. */
+.fi-server-tabs { padding: 0 21px 8px; flex-wrap: wrap; }
+.fi-server-tabs .fi-chip.is-problem { border-style: dashed; }
+.fi-server-unreachable { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
+.fi-server-unreachable .fi-text-button { font-size: 11px; }
+.fi-server-pill {
+  display: inline-flex; align-items: center; border-radius: var(--pc-radius-pill); padding: 0 6px;
+  font-size: 10px; font-weight: 600; border: 1px solid var(--pc-border-strong); color: var(--pc-text); white-space: nowrap;
+}
 .fi-category-reason { display: block; font-size: 11px; color: var(--pc-text-muted); font-style: italic; margin-top: 2px; }
 .fi-spam-reason { font-style: normal; }
 .fi-spam-banner { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
