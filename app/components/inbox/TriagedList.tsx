@@ -7,6 +7,7 @@ import { triageText } from "./triage-text";
 import { useT, type T } from "../../lib/i18n";
 import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
 import { replyStateLabel, replyStateOpen } from "./reply-state";
+import { interleave, showServer, type OtherRow } from "../../lib/other-servers";
 
 /** The group, or the specific reason an automated message was raised (e.g. "Payment problem"). */
 function tagText(tri: Triage, t: T): string {
@@ -32,6 +33,39 @@ interface ListProps {
   categoryId?: string;
   /** In Spam, triage says nothing: no group tag, nothing marked important. */
   inSpam?: boolean;
+  /** B-244 D-3: the other servers' inbox rows, read through the desktop app; shown among this server's mail. */
+  others?: OtherRow[];
+  /** Every page of this server's mail is loaded: the other servers' older rows show too. */
+  othersComplete?: boolean;
+}
+
+/** A message of another server the app holds: read here, opened on its own server in this window (B-244 D-3). */
+function OtherMessageRow({ row }: { row: OtherRow }) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      className={"fi-message fi-message-other" + (!row.read ? " is-unread" : "")}
+      title={t("Opens on {server}", { server: row.server })}
+      onClick={() => showServer(row.origin, row.link)}
+    >
+      <div className="fi-row-top">
+        <strong>
+          {!row.read && <span className="fi-unread" aria-hidden="true" />}
+          <span className="fi-visually-hidden">{!row.read ? t("Unread.") + " " : ""}</span>
+          {senderName(row.sender)}
+        </strong>
+        <time dateTime={new Date(row.at).toISOString()}>{listDate(new Date(row.at).toISOString(), undefined, t)}</time>
+      </div>
+      <span className="fi-subject">{row.subject || t("(No subject)")}</span>
+      <span className="fi-snippet">{row.snippet.replace(/\s+/g, " ").trim() || t("Open message to read more")}</span>
+      <span className="fi-message-account">
+        <EnvelopeIcon size={12} aria-hidden="true" />
+        {row.to}
+        <span className="fi-server-pill">{row.server}</span>
+      </span>
+    </button>
+  );
 }
 
 function MessageRow({ message, account, selected, marked, onSelect, showGroup, categoryId, inSpam }: {
@@ -104,7 +138,7 @@ function MessageRow({ message, account, selected, marked, onSelect, showGroup, c
  * or Newest-first order; a group filter narrows both. Collapsing is a view
  * choice: nothing is marked read or moved by it.
  */
-export default function TriagedList({ messages, accounts, selectedId, marked, onSelect, view, group, open, onToggleGroup, onClearGroup, categoryId, inSpam }: ListProps) {
+export default function TriagedList({ messages, accounts, selectedId, marked, onSelect, view, group, open, onToggleGroup, onClearGroup, categoryId, inSpam, others = [], othersComplete = false }: ListProps) {
   const t = useT();
   const account = (m: InboxMessage) => accounts.find((a) => a.id === m.accountId);
   const row = (m: InboxMessage, showGroup: boolean) => (
@@ -119,9 +153,17 @@ export default function TriagedList({ messages, accounts, selectedId, marked, on
       })}
     </div>
   );
+  // The other servers' rows carry no triage group: a group filter shows this server's mail only.
+  const otherRows = group ? [] : others;
   if (view === "newest") {
     const shown = group ? messages.filter((m) => triageOf(m).group === group) : messages;
-    return <div className="fi-message-rows">{shown.length ? shown.map((m) => row(m, true)) : noneInGroup}</div>;
+    if (!shown.length && !otherRows.length) return <div className="fi-message-rows">{noneInGroup}</div>;
+    return (
+      <div className="fi-message-rows">
+        {interleave(shown, (m) => Date.parse(m.date) || 0, otherRows, othersComplete).map((x) =>
+          x.kind === "own" ? row(x.item, true) : <OtherMessageRow key={x.row.origin + x.row.link} row={x.row} />)}
+      </div>
+    );
   }
 
   const { important, groups } = focusSections(messages, group);
@@ -136,6 +178,14 @@ export default function TriagedList({ messages, accounts, selectedId, marked, on
           <p className="fi-section-empty">{t(groups.length ? "Nothing needs you in the loaded mail. The groups below hold the rest." : "Nothing needs you in the loaded mail.")}</p>
         )}
       </section>
+      {otherRows.length > 0 && (
+        <section aria-labelledby="fi-other-servers-heading">
+          <h3 id="fi-other-servers-heading" className="fi-section-heading">
+            {t("Other servers")} <span>{otherRows.filter((r) => !r.read).length}</span>
+          </h3>
+          {interleave([], () => 0, otherRows, true).map((x) => x.kind === "other" && <OtherMessageRow key={x.row.origin + x.row.link} row={x.row} />)}
+        </section>
+      )}
       {groups.map((g) => {
         const expanded = !!group || open.has(g.id);
         return (

@@ -82,6 +82,8 @@ import { triageText } from "~/components/inbox/triage-text";
 import { metaT, useT, type T } from "~/lib/i18n";
 import { msg } from "../../shared/i18n";
 import { useWindowActive } from "~/hooks/useWindowActive";
+import ServerTabs from "~/components/inbox/ServerTabs";
+import { useHeldServers, useOtherInbox } from "~/lib/other-servers";
 import { outlookSecretSetupPath, settingsPath } from "~/components/settings/paths";
 import { GMAIL_REASON_TEXT, isGmailReason } from "../../shared/mail/gmail-reasons";
 import type { SecretExpiry } from "../../shared/mail/microsoft-setup";
@@ -271,6 +273,21 @@ export default function UnifiedInbox() {
   }, [rulesOpen]);
   const { archiveKey, discardKey } = triageKeys(mac);
   const windowActive = useWindowActive();
+  // B-244 D-3 (SCN-099): in the desktop app that holds several servers, a tab per server and, under All, the other
+  // servers' inbox among this one's. Only the plain inbox merges: a search, a category, one inbox or a domain is this
+  // server's own.
+  const heldServers = useHeldServers();
+  const [mergeAll, setMergeAll] = useState(() => {
+    try { return window.localStorage.getItem("fi-server-tab") !== "own"; } catch { return true; }
+  });
+  const chooseServerTab = (all: boolean) => {
+    setMergeAll(all);
+    try { window.localStorage.setItem("fi-server-tab", all ? "all" : "own"); } catch { /* kept for this page only */ }
+  };
+  const serverTabs = heldServers.length > 1 && folder === "inbox" && !search;
+  const merging = serverTabs && mergeAll && !accountId && !domainFilter && !categoryParam && !providerFilter && !replyFilter;
+  const otherInbox = useOtherInbox(serverTabs, windowActive);
+  const otherRows = merging ? (otherInbox.data?.messages ?? []).filter((r) => !unreadOnly || !r.read) : [];
   const listKey = ["unified-inbox", accountId, domainFilter, providerFilter, categoryParam, folder, search, unreadOnly, replyFilter];
   // A page answers with every change shown since its read started that the server may not have yet (B-95).
   const readPage = (pageParam: string, startedAt = Date.now()) =>
@@ -1264,6 +1281,10 @@ export default function UnifiedInbox() {
                 {marked.size > 1 ? TT.selected(marked.size) : t(view === "focus" ? "Important first" : "Newest first")}
               </span>
             </div>
+            {serverTabs && (
+              <ServerTabs servers={heldServers} states={otherInbox.data?.servers ?? []} mergeAll={mergeAll}
+                ownUnread={totalUnread(accounts) ?? 0} onChoose={chooseServerTab} onRetry={() => void otherInbox.refetch()} />
+            )}
             <div className="fi-filter-bar" role="toolbar" aria-label={t("List view and filters")}>
               {folder !== "spam" && <div className="fi-segmented" role="group" aria-label={t("Order")}>
                 <button type="button" aria-pressed={view === "focus"} onClick={() => scope({ view: "focus" })}>
@@ -1333,7 +1354,7 @@ export default function UnifiedInbox() {
                   {t("Try again")}
                 </button>
               </div>
-            ) : messages.length === 0 ? (
+            ) : messages.length === 0 && !otherRows.length ? (
               <div className="fi-empty">
                 <TrayArrowDownIcon size={36} />
                 <h2>
@@ -1392,6 +1413,8 @@ export default function UnifiedInbox() {
                 onClearGroup={() => scope({ group: "" })}
                 categoryId={categoryParam || undefined}
                 inSpam={folder === "spam"}
+                others={otherRows}
+                othersComplete={!list.hasNextPage}
               />
             )}
             {list.hasNextPage && (
