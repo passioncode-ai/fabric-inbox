@@ -8,6 +8,9 @@ import type { ModelDecision } from "./policy";
 import type { ModelRequest, ModelResponse } from "./runner";
 import { toolArgumentsValid } from "./definition";
 
+/** B-252: how much of the message, the facts and the answer the checker reads, in characters; the rest is cut. */
+export const CHECK_LIMITS = { message: 6000, facts: 16000, answer: 6000 } as const;
+
 export const DEFAULT_AGENT_MODEL = "@cf/moonshotai/kimi-k2.5";
 const MODEL_TIMEOUT_MS = 90_000;
 const MAX_STEPS = 6;
@@ -275,7 +278,7 @@ export async function openRouterCheck(apiKey: string, writer: string, input: { m
         // (measured 2026-10-17 on real facts: both checkers answered empty at 200 tokens).
         abortSignal: limit.signal, model: provider.chat(model, { usage: { include: true } }), system: CHECK_SYSTEM, maxOutputTokens: 400,
         providerOptions: { openrouter: { reasoning: { enabled: false } } },
-        prompt: `<message>\n${input.message.slice(0, 6000)}\n</message>\n\n<facts>\n${input.facts.slice(0, 16000) || "(none)"}\n</facts>\n\n<answer>\n${input.answer.slice(0, 6000)}\n</answer>`,
+        prompt: `<message>\n${input.message.slice(0, CHECK_LIMITS.message)}\n</message>\n\n<facts>\n${input.facts.slice(0, CHECK_LIMITS.facts) || "(none)"}\n</facts>\n\n<answer>\n${input.answer.slice(0, CHECK_LIMITS.answer)}\n</answer>`,
       });
       usage.push(receiptOf(model, result));
       const json = /\{[\s\S]*\}/.exec(result.text)?.[0];

@@ -6,6 +6,7 @@ import { HELD_STATES, leadKey, parseSubmit, submitArguments } from "./leads";
 import type { SendMailCommand, SendMailResult } from "../../shared/mail/send";
 import { LEGACY_INSTRUCTIONS, callArguments, legacyAgentId, modelSchema, publicOnlyProblem, readAssignment, type AgentVersion, type ToolGrant } from "./definition";
 import { decide, isFollowUpSubject, matchedTopic, type ModelDecision } from "./policy";
+import { CHECK_LIMITS } from "./model";
 import { MAX_RECEIPTS, asRole, type UsageReceipt } from "./usage";
 import { bareAddress, parseStoredHeaders, prefilter, replyToAddress, SKIP_TEXT } from "./prefilter";
 import { RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type AwaitingAnswer, type ToolCallRecord } from "./run";
@@ -1110,9 +1111,20 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
           // B-249: the passages searched before the model and those it searched itself, each once.
           const seen = new Set<string>();
           const read = [...passages, ...found].filter((h) => !seen.has(h.ref) && !!seen.add(h.ref));
-          const facts = [factTexts.length ? `[tool results]\n${RANK_NOTE}` : "", ...factTexts, passagesBlock(read),
-            agent.knowledge.trim() && `[knowledge]\n${agent.knowledge.trim()}`, `[operator instructions]\n${agent.instructions.trim()}`].filter(Boolean).join("\n\n");
-          const verdict = await deps.check(response.model ?? "", { message: `${email.subject}\n${deps.htmlToText(email.body)}`, facts, answer: body });
+          const parts: [string, string][] = [
+            ...(factTexts.length ? [["tool results", [`[tool results]\n${RANK_NOTE}`, ...factTexts].join("\n\n")] as [string, string]] : []),
+            ["passages", passagesBlock(read)],
+            ...(agent.knowledge.trim() ? [["knowledge", `[knowledge]\n${agent.knowledge.trim()}`] as [string, string]] : []),
+            ["instructions", `[operator instructions]\n${agent.instructions.trim()}`]];
+          const facts = parts.map(([, text]) => text).join("\n\n");
+          const message = `${email.subject}\n${deps.htmlToText(email.body)}`;
+          // B-252: what the checker reads of each, so an agent's owner sees the real margin, not a guess.
+          let end = 0;
+          const cut = parts.filter(([, text], i) => (end += text.length + (i ? 2 : 0)) > CHECK_LIMITS.facts).map(([name]) => name);
+          if (message.length > CHECK_LIMITS.message) cut.push("message");
+          if (body.length > CHECK_LIMITS.answer) cut.push("answer");
+          run.checkerRoom = { factsChars: facts.length, factsLimit: CHECK_LIMITS.facts, left: CHECK_LIMITS.facts - facts.length, cut };
+          const verdict = await deps.check(response.model ?? "", { message, facts, answer: body });
           record.ok = verdict.approved;
           record.result = `${verdict.model}: ${verdict.approved ? "approved" : "rejected"} — ${verdict.reason}`.slice(0, RESULT_PREVIEW_CHARS);
           run.checkedBy = verdict.model;

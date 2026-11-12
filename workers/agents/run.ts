@@ -60,6 +60,12 @@ export interface AgentRun {
   /** The model that wrote the answer, and the one that approved it before it was sent. */
   model?: string;
   checkedBy?: string;
+  /**
+   * B-252: how much of the checker's window the run used: the facts' characters against their limit (`left` is negative
+   * when facts were cut), and what the checker did not read whole: `tool results`, `passages`, `knowledge`,
+   * `instructions` (cut from the end, in that order), `message` or `answer`.
+   */
+  checkerRoom?: { factsChars: number; factsLimit: number; left: number; cut: string[] };
   /** The policy category the model chose. */
   category?: string;
   /** Answered with the policy's hand-off reply (a person handles it), or its safe reply (nothing confident to say). */
