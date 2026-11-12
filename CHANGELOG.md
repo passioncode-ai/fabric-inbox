@@ -12,6 +12,10 @@ such as an organization's name; the Account menu and the inbox tabs show it. The
 All Servers window is gone: the inbox's All tab shows the mail of every server, and a notification about new mail on
 several servers opens it.
 
+**A new question in a reply is answered** (B-247). When someone replies to a message that a person is handling
+and asks something new, the subject they inherited ("Re: Refund…") no longer hands the new question to a person
+too; a reply that asks about that subject still goes to the person.
+
 ## 1.6.2 (2026-11-12)
 
 **Agents ask for access to mailboxes, and you decide** (B-246). An agent key can ask for the mailboxes it needs and what
