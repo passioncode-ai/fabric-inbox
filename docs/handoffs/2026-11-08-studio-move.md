@@ -82,6 +82,15 @@ The account, host and bucket of the organization's server are in its local deplo
   (PR #466) and [v1.5.6](https://github.com/passioncode-ai/fabric-inbox/releases/tag/v1.5.6) (PR #467); all three servers on
   1.5.6, receipts `linked`; the 18 batches on the client organization's agent: pass 10, partly 8, fail 0
   ([rerun](../reports/2026-11-11-communication-template-rerun/README.md)). The run-to-run spread it showed is B-242.
+- The Studio's three spaces on 1.5.6 with `server.json` written before the first launch (studio-agent, thread
+  `15bdf1dc`, message `3a2665d1`). Agent keys for the personal and PassionCode spaces (the operator's «да», relayed in
+  the same thread, message `8330e922`): made 2026-11-12 from this Mac with `agent-key-bootstrap.mjs --vault-host`
+  (keys `5ff2100e` "Studio sshlg space agents" and `4e96fe9d` "Studio passioncode space agents", admin, one year), the
+  values straight into each space's own vault `fabric-inbox/prod` over ssh; in each space `fabric-inbox` is registered
+  in Claude Code (user scope) with a headers helper reading that vault, `claude mcp list` answers Connected, and
+  `list_accounts` answers 83 accounts (personal) and 1 (PassionCode), server 1.5.6, 155 tools. The client
+  organization's space waits for its access owner's key (DEC-0009). A person's first sign-in in the app of each space
+  is still a person's (Cloudflare Access); agents do not need it.
 
 ## Next task
 
