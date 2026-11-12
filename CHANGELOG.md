@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.6.1 (2026-11-12)
+
+**Groundwork for access per mailbox** (B-246). Nothing changes in what you or your agents can do. The server now keeps
+a list of access grants beside today's agent keys and members, and checks every agent call against it as well as
+against today's rules. It records only where the two would decide differently, to prove the new rules before they
+take over.
+
 ## 1.6.0 (2026-11-12)
 
 **Every organization in the one mail window** (B-244). When the app holds several servers, your own and each
