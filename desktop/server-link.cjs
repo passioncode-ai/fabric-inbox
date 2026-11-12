@@ -14,7 +14,7 @@ function parseServerLink(value, validate) {
     return { ok: false, error: t('This is not a Fabric Inbox server link.') };
   const q = url.searchParams;
   const from = (q.get('from') || '').trim();
-  if (from.length > 80 || /[\u0000-\u001f\u007f-\u009f  ]/.test(from)) return { ok: false, error: t('The name in the link cannot be shown.') };
+  if (from.length > 80 || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(from)) return { ok: false, error: t('The name in the link cannot be shown.') };
   let server;
   try { server = validate({ origin: q.get('origin') || '', accessOrigin: q.get('access') || '' }); }
   catch { return { ok: false, error: t('The link names no server address this app can use.') }; }
