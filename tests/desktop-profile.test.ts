@@ -411,5 +411,5 @@ test("B-244 D-2: the other servers' inbox is read through each one's own session
   const bridge = main.slice(main.indexOf("function installServersBridgeIPC"), main.indexOf("function showSetup"));
   assert.match(bridge, /servers\.filter\(\(s\) => s\.origin !== self\)/);
   assert.match(bridge, /read: \(origin, pathname\) => serverApi\(origin\)\.get\(pathname\)/);
-  assert.match(main, /installAllServersIPC\(\);\n  installServersBridgeIPC\(\);/);
+  assert.match(main, /installRenameIPC\(\);\n  installServersBridgeIPC\(\);/);
 });

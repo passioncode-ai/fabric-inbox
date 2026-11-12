@@ -41,7 +41,8 @@ typed secret) is a human gate, not a missing door; the row says so.
 | Action | Code | Door | How an agent does it |
 |---|---|---|---|
 | A server in the list (switch the one shown) | `desktop/main.cjs:1357` (`switchServer`) | not needed | It changes what the window shows, nothing on a server; an agent works on each server with that server's key. |
-| All Servers | `desktop/main.cjs:1359` (`showAllServers`), `desktop/all-servers.cjs` | server | The same read on each server: `list_mailbox_messages` with each server's key. |
+| All (the inbox's tab, B-244) | `desktop/main.cjs` (`installServersBridgeIPC`), `desktop/all-servers.cjs` | server | The same read on each server: `list_mailbox_messages` with each server's key. |
+| Rename Server | `desktop/main.cjs` (`showRename`, `installRenameIPC`), `desktop/servers.cjs` (`rename`) | none | A name on this Mac only; an agent names servers in its own configuration. |
 | Add Another Server… | `desktop/main.cjs:1358` | partial | As Server address… above: the server by `onboard.mjs server`, its place in the app's list without a door, the sign-in a human gate. |
 | Move an Address to Another Server… | `desktop/main.cjs:1360` (`showMove`), `desktop/move.cjs` | server | `export_mailbox` and `import_mailbox`, then `move_address` (`hold`, `route`) and `send_test_message` / `check_test_message`, as `desktop/move.cjs` does (SCN-094). |
 | Forget Server | `desktop/main.cjs:1361` (`forgetServer`) | none | It removes a server from the app's list and its sign-in; nothing on the server changes. B-236. |

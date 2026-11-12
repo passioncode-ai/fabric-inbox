@@ -1,7 +1,8 @@
 'use strict';
 /**
  * B-233 (SCN-099; operator, 2026-11-07: "хочу все аккаунты в одном окне как были"): the inbox of every
- * server the app holds, in one list. Each server is read through its own session (its own sign-in), never
+ * server the app holds, in one list. Since B-244 the list is the mail window's (its All tab): this reads the other
+ * servers for the page's bridge (main.cjs `fabric:other-inbox`). Each server is read through its own session (its own sign-in), never
  * through another's; nothing is copied between servers, and a message opens on its own server. One server
  * that is signed out or does not answer never hides the others: it gets a state of its own.
  *

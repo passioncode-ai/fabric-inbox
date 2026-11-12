@@ -42,11 +42,11 @@ function menuTemplate(platform, ctx) {
     ...(mac ? [{ type: 'separator' }, { label: t('Speech'), submenu: [{ role: 'startSpeaking', label: t('Start Speaking') }, { role: 'stopSpeaking', label: t('Stop Speaking') }] }] : [])];
   // B-158: the servers the app holds, the one shown ticked; another is a click away, with its sign-in kept.
   const held = ctx.servers ? [...ctx.servers.items.map((s) => ({ label: s.label, type: 'radio', checked: s.checked, click: s.click })),
-    // B-233 (SCN-099): with two or more servers, the mail of all of them in one list.
-    ...(ctx.servers.all ? [{ label: t('All Servers'), click: ctx.servers.all }] : []),
     { label: t('Add Another Server…'), click: ctx.servers.add },
     // B-158 M1 step 3d (SCN-094): with two or more servers, an address can move from the one shown to another.
     ...(ctx.servers.move ? [{ label: t('Move an Address to Another Server…'), click: ctx.servers.move }] : []),
+    // B-244 D-4 (SCN-099): any server held can be given a name of the person's; the inbox's tabs show it.
+    ...(ctx.servers.rename && ctx.servers.rename.length ? [{ label: t('Rename Server'), submenu: ctx.servers.rename.map((s) => ({ label: `${s.label}…`, click: s.click })) }] : []),
     ...(ctx.servers.forget.length ? [{ label: t('Forget Server'), submenu: ctx.servers.forget.map((s) => ({ label: s.label, click: s.click })) }] : []),
     { type: 'separator' }] : [];
   const account = { label: t('Account'), submenu: [...held, { label: t('Connect Gmail in browser…'), click: ctx.connectGmail }] };

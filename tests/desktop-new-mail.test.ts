@@ -199,7 +199,7 @@ test("looking at one server's inbox hides only that server's new mail; a server 
   assert.deepEqual(h.shown.map((s) => s.title), ["Ann b2", "Ann b3"]);
 });
 
-test("many new messages on several servers make one summary that opens All Servers; one server's open its inbox (B-233)", async () => {
+test("many new messages on several servers make one summary that opens the inbox with All chosen; one server's open its inbox (B-233, B-244)", async () => {
   const pages: Record<string, unknown[] | null> = { "https://a.example": [], "https://b.example": [] };
   const h = servers2(pages);
   await h.n.start();

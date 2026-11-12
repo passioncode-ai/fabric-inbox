@@ -48,7 +48,7 @@ read through its own sign-in.
 | 2 | D-1: views per server in one window, the dock and the console against the visible view | the Mac app | `tests/desktop-servers.test.ts` (switch keeps both views, no reload), a walk |
 | 3 | D-2: the bridge calls and their sender check | the Mac app | a new test of the sender check, `tests/desktop-all-servers.test.ts` |
 | 4 | D-3: the tabs and the merged list; strings through `t()` and the copy check | every server (UI only; agents and their answers unchanged) | `npm test`, a walk with two servers |
-| 5 | D-4 rename, D-5 removal | the Mac app | tests, the menu |
+| 5 | D-4 rename, D-5 removal (done 2026-11-12: Account → Rename Server, `servers.json` `label`; the All Servers window and its item removed, a several-server notification opens `/?servers=all`) | the Mac app (the `?servers=all` read: every server) | `tests/desktop-servers.test.ts` (rename, the menu, the removed files), `tests/desktop-new-mail.test.ts` |
 | 6 | Release; the three servers updated; the Mac app by its own update | release | `/api/server` version on each server |
 
 The page's half (step 4) degrades on its own: a page with no bridge (a browser, an older app) shows the inbox as
