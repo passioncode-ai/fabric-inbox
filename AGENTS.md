@@ -74,6 +74,16 @@ npm run mcp:docs                                       # the agent protocol's to
 
 ### Rules in this repository
 
+- **Only add, only improve (R28)** (operator, 2026-11-11, relayed by the agent template database, board request
+  `b72b3d85`). What the app shipped is never changed or deleted: the agent templates and prompts in
+  `workers/agents/definition.ts` are locked by digest in `workers/agents/shipped.lock.json`
+  (`tests/agents-add-only.test.ts` fails on a changed or missing one); a changed template ships beside the old one under
+  a new name with its own lock line, and one leaves only by a `retired` mark with its date and reason in the lock. On a
+  server, every save of a reply agent is a new immutable version and a deleted agent's versions stay readable
+  (`workers/agents/registry.ts` `insertVersion`, `getAgent`). A change is accepted only with a test, an acceptance or a
+  before/after measurement showing it is no worse (a reply agent's eval tickets run against each new version, B-199);
+  a regression is rolled back first. Every change, by an agent or a person, gets its board row and a line in
+  `CHANGELOG.md` with its reason and basis.
 - **Every function of the app is an agent tool, in the same change** (operator, 2026-09-29). A new
   or changed route gets its tool in `workers/mcp/tools.ts` (or an exclusion with its reason in
   `NOT_TOOLS`), then `npm run mcp:docs` regenerates [docs/agents/mcp.md](docs/agents/mcp.md), and
