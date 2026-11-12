@@ -569,6 +569,19 @@ test("B-249: the checker reads the passages the model found itself, not only tho
   assert.equal(checked.match(/Refunds take five days\./g)?.length, 1, "a passage found twice is given once");
 });
 
+test("B-252: a run says how much of the checker's window it used and what was cut", async () => {
+  const roomy = harness({ agent: autoAgent(), email: { subject: "Price", body: "<p>How much is it?</p>" }, model: async () => ({ decision: answer(), text: "" }) });
+  roomy.deps.check = async () => ({ approved: true, reason: "ok", model: "checker" });
+  const r1 = (await roomy.run())!;
+  assert.ok(r1.checkerRoom && r1.checkerRoom.left > 0 && r1.checkerRoom.factsLimit === 16000, JSON.stringify(r1.checkerRoom));
+  assert.deepEqual(r1.checkerRoom!.cut, []);
+  const crowded = harness({ agent: autoAgent({ instructions: "Be kind. ".repeat(2500) }), email: { subject: "Price", body: "<p>How much is it?</p>" }, model: async () => ({ decision: answer(), text: "" }) });
+  crowded.deps.check = async () => ({ approved: true, reason: "ok", model: "checker" });
+  const r2 = (await crowded.run())!;
+  assert.ok(r2.checkerRoom!.left < 0);
+  assert.deepEqual(r2.checkerRoom!.cut, ["instructions"], "the instructions go last, so they are what is cut");
+});
+
 test("the prefetch keeps the message's line breaks and asks only what the sender wrote now (data agent reads by sentence)", async () => {
   const calls: Record<string, unknown>[] = [];
   const h = harness({
