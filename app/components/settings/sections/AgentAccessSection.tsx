@@ -9,6 +9,7 @@ import { useT } from "../../../lib/i18n";
 import { englishT, msg, type T } from "../../../../shared/i18n";
 import { groupRows, visibleRows, type ListEntry } from "../list-model";
 import { settingsPath } from "../paths";
+import GrantsPanel from "./GrantsPanel";
 import {
   ActionMenu, ActionResult, Badge, Dialog, ListSearch, LoadFailure, Panel, PanelBlock, PanelPlaceholder, SectionLayout,
   SelectableList, SkeletonPanel, SkeletonRows, errorText, useConfirm, useWork,
@@ -41,6 +42,8 @@ export const AGENT_CONNECT_GUIDE = "docs/agents/onboard.md, passioncode-ai/fabri
 export const KEYS_KEY = ["agent-keys"];
 export const JOURNAL = "journal";
 export const APPROVALS = "approvals";
+/** B-246 (SCN-101): access per mailbox, for agent keys and people. */
+export const GRANTS = "grants";
 export const APPROVALS_KEY = ["agent-approvals"];
 /** B-38: who answers a key's irreversible actions. */
 /** B-215: what an Admin key may do without the owner's approval, which people and keys otherwise wait for. */
@@ -112,6 +115,9 @@ export default function AgentAccessSection({ id }: { id: string | null }) {
         ...((approvals.data?.approvals.length ?? 0) > 0 ? [{ key: APPROVALS, href: settingsPath("agent-access", APPROVALS), content: (
           <span className="fi-row-main"><span className="fi-row-title">{t("Waiting for your approval")}</span><span className="fi-row-meta">{t.plural(waiting, { one: "{n} action an agent cannot do without you", other: "{n} actions agents cannot do without you" })}</span></span>
         ) }] : []),
+        { key: GRANTS, href: settingsPath("agent-access", GRANTS), content: (
+          <span className="fi-row-main"><span className="fi-row-title">{t("Access by mailbox")}</span><span className="fi-row-meta">{t("Who may read, send or set up which mailboxes")}</span></span>
+        ) },
         { key: JOURNAL, href: settingsPath("agent-access", JOURNAL), content: (
           <span className="fi-row-main"><span className="fi-row-title">{t("What agents changed")}</span><span className="fi-row-meta">{t("Every change an outside agent made, newest first")}</span></span>
         ) }]}
@@ -142,6 +148,8 @@ export default function AgentAccessSection({ id }: { id: string | null }) {
     </PanelPlaceholder>
   ) : id === JOURNAL ? (
     <Panel title={t("What agents changed")} closeTo={settingsPath("agent-access")}><Journal /></Panel>
+  ) : id === GRANTS ? (
+    <Panel title={t("Access by mailbox")} closeTo={settingsPath("agent-access")}><GrantsPanel /></Panel>
   ) : id === APPROVALS ? (
     <Panel title={t("Waiting for your approval")} closeTo={settingsPath("agent-access")}><Approvals state={approvals} /></Panel>
   ) : keys.isPending ? <SkeletonPanel label={t("Loading this key…")} /> : !selected ? (
