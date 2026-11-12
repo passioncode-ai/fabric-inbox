@@ -5,6 +5,15 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.6.4 (2026-11-12)
+
+**An agent can add a server, with your yes** (B-236). An agent on your Mac can put a server's address in the app, for
+example an organization's server it set up for you. The app asks you first, naming the server, and adds it only when
+you answer Add Server; then you sign in to it as usual. A server you already hold is simply shown.
+
+**Answers to a new question in a reply use the right knowledge** (B-248). When someone replies with a new question,
+the knowledge is searched for that question, not for the subject or the quoted text of the earlier conversation.
+
 ## 1.6.3 (2026-11-12)
 
 **Name your servers** (B-244). In the Mac app, Account, Rename Server gives any server you hold a name of your own,
