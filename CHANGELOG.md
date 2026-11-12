@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.6.0 (2026-11-12)
+
+**Every organization in the one mail window** (B-244). When the app holds several servers, your own and each
+organization's, the inbox shows a tab for each with its unread count, and All lists their mail together, newest first,
+each message marked with its server. A message of another server opens there in the same window. Switching servers no
+longer closes the window or reloads the page: each server's page is kept as you left it, still signed in. A link to
+another site is never loaded into the mail window.
+
 ## 1.5.6 (2026-11-11)
 
 **A question back is sent, not replaced by the hand-off reply** (B-237). When a reply agent asks a sender with a vague
