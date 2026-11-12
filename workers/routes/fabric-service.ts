@@ -112,6 +112,20 @@ function degradedOf(env: Env): { source: string; reason: string; setup?: true }[
   return out;
 }
 
+/**
+ * B-246 D-5: the capabilities the MCP surface serves, so a host shows them without a key: reading mail, sending it, and
+ * (once its tools exist, W3) asking for access. Derived from the tools, so a capability is never declared before its
+ * tools ship.
+ */
+export function mailCapabilities(tools: readonly { name: string }[]): string[] {
+  const has = (name: string) => tools.some((t) => t.name === name);
+  return [
+    ...(has("read_message") ? ["mail.read"] : []),
+    ...(has("send_email") ? ["mail.send"] : []),
+    ...(has("request_access") ? ["mail.access"] : []),
+  ];
+}
+
 /** Where the server says how its model calls are signed in, for the descriptor's `runner` (DEC-0061). */
 export const RUNNER_EXTENSION = "https://passioncode.ai/fabric-inbox/runner";
 
@@ -136,7 +150,7 @@ export async function wellKnownDocument(env: Env): Promise<Record<string, unknow
       events: { path: EVENTS_PATH },
       usage: { path: USAGE_PATH },
       // The MCP surface takes its own agent keys; a host never calls it with the descriptor token.
-      mcp: { path: "/mcp", transport: "streamable-http", auth: "own" },
+      mcp: { path: "/mcp", transport: "streamable-http", auth: "own", capabilities: mailCapabilities(TOOLS) },
     },
     update: { available: null },
     extensions: { [RUNNER_EXTENSION]: runnerOf(env), [ACTIONS_EXTENSION]: { actions: serviceActions(TOOLS) },
