@@ -140,7 +140,8 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   (a fixed reply naming who handles it; `replies: { <category>: { en, ru? } }` gives a category its own).
   Hand-off `topics` are read in what the sender wrote now, never in the quoted history: a first message with its
   subject and the run's summary, a reply (`Re:`, `Fwd:`) with the run's topic instead, since its subject and summary
-  carry the earlier conversation; so a new question in that reply is answered.
+  carry the earlier conversation; so a new question in that reply is answered. The knowledge is asked the same way
+  (B-248): what the sender wrote now, without the quote, and in a reply without its subject.
   `knowledgeIsEvidence: true` lets an answer built from the agent's own knowledge leave when a knowledge
   tool abstains, if the checker approves it. Events add `agent.handoff` and `agent.not_helped`.
   Nobody waits without a word (B-131): a held message (`holdUnsure`) still unanswered a day after it came

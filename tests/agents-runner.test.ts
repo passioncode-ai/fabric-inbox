@@ -569,6 +569,28 @@ test("the prefetch keeps the message's line breaks and asks only what the sender
   assert.ok(query.length <= "Код не приходит\n".length + 600);
 });
 
+test("B-248: a reply asks the knowledge what it asks now, not its inherited subject or the quote; a first message keeps its subject", async () => {
+  const searched: string[] = [];
+  const calls: Record<string, unknown>[] = [];
+  const reply = "<p>One more thing while I wait: how do I connect my agent to Telegram?</p><p>On Tue, 10 Nov 2026 at 09:12, Acme Support wrote:</p><p>&gt; Refunds and charges are handled by a person from our team.</p>";
+  const run = (subject: string, body: string) => harness({
+    agent: autoAgent({ collections: ["faq"], tools: [kbGrant({ prefetch: { argument: "query" } })] }),
+    email: { subject, body },
+    search: async (query: string) => { searched.push(query); return []; },
+    callTool: async (_g, args) => { calls.push(args); return publicHits; },
+    model: async () => ({ decision: answer(), text: "" }),
+  }).run();
+  await run("Re: Refund for last month", reply);
+  assert.equal(searched[0], "One more thing while I wait: how do I connect my agent to Telegram?");
+  assert.equal(String(calls[0]!.query), "One more thing while I wait: how do I connect my agent to Telegram?");
+  await run("Refund for last month", "<p>Where is my refund?</p><p>On Tue, Acme Support wrote:</p><p>&gt; old</p>");
+  assert.equal(searched[1], "Refund for last month\nWhere is my refund?", "a first message's subject is its own; the quote is never asked");
+  await run("Fwd: Invoice", "<div>---------- Forwarded message ---------<br>From: Ann &lt;ann@acme.example&gt;<br>Where is the invoice?</div>");
+  assert.match(searched[2]!, /Where is the invoice\?/, "a forward is asked by the message it carries");
+  await run("Re: Invoice", "<p>On Tue, Acme Support wrote:</p><p>&gt; Here is your invoice.</p>");
+  assert.match(searched[3]!, /^Re: Invoice\n/, "a reply with no words of its own is asked as before");
+});
+
 test("B-85 REQ-4: a failed prefetch keeps the answer a draft and the model is told nothing was found", async () => {
   let system = "";
   const h = harness({
