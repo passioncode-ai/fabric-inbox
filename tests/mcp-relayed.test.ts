@@ -91,5 +91,5 @@ test("B-250: a request-only key needs no level and is posted as a Read key; any 
   await tool.call({ name: "Outreach", requestOnly: true } as never, { api: api.api, principal: owner } as never);
   const posted = api.calls.find((c) => c.method === "POST")!;
   assert.deepEqual([(posted.body as any).level, (posted.body as any).requestOnly], ["read", true]);
-  await assert.rejects(() => tool.call({ name: "Research" } as never, { api: fakeApi({}).api, principal: owner } as never), /Name the level/);
+  await assert.rejects(async () => tool.call({ name: "Research" } as never, { api: fakeApi({}).api, principal: owner } as never), /Name the level/);
 });
