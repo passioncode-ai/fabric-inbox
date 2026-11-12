@@ -101,6 +101,10 @@
 | SCN-097 | My server warns me before a mailbox fills and keeps old mail restorable | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-11 | draft | not yet |
 | SCN-098 | Let an agent give people mailboxes and issue keys without asking me | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-15 | draft | not yet |
 | SCN-099 | See the mail of every organization in the one mail window | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | partial |
+| SCN-100 | An agent asks for access to a mailbox and gets exactly what was granted | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-15 | draft | not yet |
+| SCN-101 | Grant a person or an agent capabilities on one or several mailboxes | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-15 | draft | not yet |
+| SCN-102 | Employees and the architect find their mail access ready | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-17 | draft | not yet |
+| SCN-103 | An organization's outreach agent writes from its own mailbox | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-15 | draft | not yet |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -2069,3 +2073,83 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** `app/components/inbox/ServerTabs.tsx`, `app/lib/other-servers.ts` (`interleave`, `useOtherInbox`), `app/components/inbox/TriagedList.tsx` (`OtherMessageRow`), `tests/other-servers.test.ts`, `desktop/all-servers.cjs` (`readAll`), `desktop/all-servers.js`, `desktop/all-servers.html`, `desktop/all-servers-preload.cjs`, `desktop/main.cjs` (`showAllServers`, `openOnServer`, `installAllServersIPC`), `desktop/menu.cjs`, `tests/desktop-all-servers.test.ts`, `tests/desktop-servers.test.ts`
 - **Product:** unobserved
 - **Today:** B-233 part 1 built the merged list in a window of its own (Account → All Servers, read when it opens, comes forward or is refreshed), and a message opened from it replaces the mail window. B-244 moved it into the mail window: a page kept per server (step 2), the bridge (step 3), the tabs and the merged list (step 4, `app/components/inbox/ServerTabs.tsx`, `app/lib/other-servers.ts`, `TriagedList` `OtherMessageRow`; walk 2026-11-12 on two local servers: the tabs All, this server and the other, a click on the other's tab showed it in the same window). Left: rename and the removal of the All Servers window (step 5). New-mail notifications read every server since B-233 part 2.
+
+### SCN-100: An agent asks for access to a mailbox and gets exactly what was granted
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07; B-246 (operator, 2026-11-12: «инбокс должен быть сам агентом чтобы он был доступен другим агентам по запросу и с уровнем доступа к определенному ящику или нескольким»); [the packet](../app-store/tasks/2026-11-12-inbox-agent-grants.md) D-4, D-5
+- **Entry point:** the tool `request_access` (any agent key, or the Fabric board's capability `mail.access`), SCR-15 (Agent access) for the person who decides
+- **Preconditions:** The agent holds a key with no reach yet, or none at all (it asks on the board); I am the server's owner or an administrator.
+- **Steps:**
+  1. The agent asks for mailboxes, capabilities (read, draft, send, organize, delete, create, remove, agents) and says why -> the request waits in Agent access with the agent's name and its words, and I am told in the app and in Telegram.
+  2. I approve it, narrow it (fewer mailboxes, fewer capabilities, a date it ends) or refuse it -> approving makes the grant and journals who, what and why.
+  3. The agent calls again -> it reaches exactly the granted mailboxes with the granted capabilities; `list_my_access` names them.
+- **Expected result:** An agent never needs a person to make its key beforehand, and never gets more than a person decided.
+- **Alt paths:** My own agent with the `grants` standing decides it for me, within what it holds itself. A refused request says so to the agent with the reason I gave. A request for more than I may grant is refused, not narrowed silently.
+- **UI elements:** Agent access: the waiting requests, Approve, Narrow, Refuse.
+- **States covered:** empty, loading, error, success
+- **Errors & recovery:** A request that cannot be stored answers the agent with an error it can retry with the same key; nothing half-granted is kept.
+- **Status:** draft
+- **Coverage:** none yet (B-246 W3)
+- **Product:** unobserved
+- **Today:** Not built. An agent reaches mail only with a key a person made (SCN-043), and the desktop connect link asks for a level with no mailboxes.
+
+### SCN-101: Grant a person or an agent capabilities on one or several mailboxes
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07; B-246 (operator, 2026-11-12: «инбокс должен быть сам агентом чтобы он был доступен другим агентам по запросу и с уровнем доступа к определенному ящику или нескольким»); [the packet](../app-store/tasks/2026-11-12-inbox-agent-grants.md) D-1, D-2; SCN-096
+- **Entry point:** SCR-15 (Agent access) and SCR-17 (People), by mailbox
+- **Preconditions:** I own or administer the server.
+- **Steps:**
+  1. Choose a person or an agent, then the mailboxes (one, several, a whole domain or all) -> the capabilities to tick: read, draft, send, organize, delete, create and remove addresses, reply agents.
+  2. Save -> the holder reaches those mailboxes with those capabilities, and another grant can add other mailboxes with other capabilities.
+  3. Revoke one grant -> only that reach goes; the holder's other grants stay.
+- **Expected result:** Access is decided per mailbox and per act, the same way for people and agents, and a person's own agents never get more than the person holds.
+- **Alt paths:** Today's levels (Read, Mail, Admin; read, send, agents) stay as named bundles and every key and member keeps what it could do before. A grant above what I may give is refused.
+- **UI elements:** the holder, the mailbox picker, the capability boxes, the list of grants with Revoke.
+- **States covered:** empty, loading, error, success
+- **Errors & recovery:** A save the server could not store says so and keeps the form as filled.
+- **Status:** draft
+- **Coverage:** none yet (B-246 W2)
+- **Product:** unobserved
+- **Today:** Not built. A key has one level for all its mailboxes; creating or removing an address needs Admin, which cannot be limited to mailboxes.
+
+### SCN-102: Employees and the architect find their mail access ready
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07; B-246 (operator, 2026-11-12: «инбокс должен быть сам агентом чтобы он был доступен другим агентам по запросу и с уровнем доступа к определенному ящику или нескольким»); [the packet](../app-store/tasks/2026-11-12-inbox-agent-grants.md) D-3; B-232; B-159
+- **Entry point:** the organization's attestation (a person's role), Settings → People (the role presets)
+- **Preconditions:** The server belongs to an organization whose service names each person's role.
+- **Steps:**
+  1. A person with the employee role signs in -> they reach their own address and the shared addresses the owner listed, to read, draft and send.
+  2. The architect signs in, or uses their agent -> they reach every mailbox to read, organize and set up reply agents and addresses, and may give agent keys within their own reach; each act is journaled under the role.
+  3. The owner edits a role's preset once -> everyone with that role follows it.
+- **Expected result:** Nobody waits for a grant their role already gives; the owner and administrators grant the rest.
+- **Alt paths:** A role the organization's service does not name grants nothing until someone grants it. A user's act that needs approval still waits; the owner's, an administrator's and the architect's do not.
+- **UI elements:** the role presets in People.
+- **States covered:** loading, error, success
+- **Errors & recovery:** An organization service that does not answer leaves grants as they were and says the roles could not be read.
+- **Status:** draft
+- **Coverage:** none yet (B-246 W4)
+- **Product:** unobserved
+- **Today:** Not built. Organization roles are shown only (the organizations plan, D4).
+
+### SCN-103: An organization's outreach agent writes from its own mailbox
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07; B-246 (operator, 2026-11-12: «инбокс должен быть сам агентом чтобы он был доступен другим агентам по запросу и с уровнем доступа к определенному ящику или нескольким»); [the packet](../app-store/tasks/2026-11-12-inbox-agent-grants.md) D-6; B-181 (campaigns); B-237 (lead hand-off)
+- **Entry point:** the organization's outreach agent, assembled from the agents database's sales and leads template
+- **Preconditions:** The organization's server holds an outreach address; the organization's access owner approved the agent's request (SCN-100).
+- **Steps:**
+  1. The agent prepares a campaign on its address: recipients, steps, the daily cap -> drafts, under the campaign limits (at most 50 a day, ramp-up, pause on bounces, unsubscribe in every message).
+  2. The organization's owner says send for that campaign -> the agent sends, step by step, and stops a sequence when someone replies.
+  3. Someone replies with interest -> the reply is handed to the organization's sales agent with its thread; an unsubscribe goes to the do-not-write list.
+- **Expected result:** Outreach runs from the organization's own mailbox through its own agent, inside the caps, and every human answer reaches sales.
+- **Alt paths:** Without the owner's send, the campaign stays drafts. A bounce rate over 5% pauses it and says why.
+- **UI elements:** Campaigns, the agent's grant in Agent access.
+- **States covered:** empty, loading, error, success
+- **Errors & recovery:** A send the server refuses keeps the campaign paused with the reason; nothing is sent twice.
+- **Status:** draft
+- **Coverage:** none yet (B-246 W5)
+- **Product:** unobserved
+- **Today:** Not built. Campaigns exist for a key that already has mail access; campaign replies reach no sales agent.
