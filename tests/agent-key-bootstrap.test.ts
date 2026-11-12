@@ -3,7 +3,7 @@
 // Cloudflare, R2 and the vault are the same ones agent-standing.mjs and the server make.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addKey, appPolicies, findApp, MAX_KEYS, parseArgs, policyBody, policyName } from "../scripts/agent-key-bootstrap.mjs";
+import { addKey, appPolicies, findApp, MAX_KEYS, parseArgs, policyBody, policyName, vaultPutCommand } from "../scripts/agent-key-bootstrap.mjs";
 
 test("B-218: the key is written as the server writes one, Admin, made by the account token", () => {
   const now = new Date("2026-11-08T10:00:00.000Z");
@@ -48,4 +48,14 @@ test("B-218: arguments are checked, and a secret is never one", () => {
   assert.throws(() => parseArgs([...base, "--duration", "5y"]), /--duration/);
   assert.equal(parseArgs([...base, "--slot-prefix", "ORG_INBOX_"]).slotPrefix, "ORG_INBOX_");
   assert.throws(() => parseArgs([...base, "--slot-prefix", "org"]), /upper case/);
+  assert.equal(parseArgs([...base, "--vault-host", "studio-space"]).vaultHost, "studio-space");
+  assert.throws(() => parseArgs([...base, "--vault-host", "-oProxyCommand=x"]), /ssh host/);
+  assert.throws(() => parseArgs([...base, "--vault-host", "h; rm"]), /ssh host/);
+});
+
+test("--vault-host puts each slot through ssh, names in the command and the value on stdin only", () => {
+  const [cmd, args] = vaultPutCommand("fabric-inbox", "prod", "FABRIC_INBOX_CLIENT_SECRET", "studio-space");
+  assert.equal(cmd, "ssh");
+  assert.deepEqual(args.slice(0, 3), ["-o", "BatchMode=yes", "studio-space"]);
+  assert.match(args.at(-1), /vault\.py" put fabric-inbox prod FABRIC_INBOX_CLIENT_SECRET'$/);
 });
