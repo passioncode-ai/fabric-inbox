@@ -553,6 +553,22 @@ test("tool results are read in rank order: the first is the answer, later ones a
   assert.match(asked, /Tap the globe to translate\./, "the output still follows the note");
 });
 
+test("B-249: the checker reads the passages the model found itself, not only those searched before it", async () => {
+  let checked = "";
+  const before = { ref: "faq/a#0", collectionId: "faq", documentId: "a", title: "Refunds", sourceUri: "faq/refunds.md", revision: "r", text: "Refunds take five days.", snippet: "", score: -1 };
+  const later = { ref: "faq/t#0", collectionId: "faq", documentId: "t", title: "Talk to it in Telegram", sourceUri: "faq/telegram.md", revision: "r", text: "Open Telegram Hub and press Start.", snippet: "", score: -1 };
+  const h = harness({
+    agent: autoAgent({ collections: ["faq"] }),
+    email: { subject: "Telegram", body: "<p>How do I talk to my agent in Telegram?</p>" },
+    search: async (query: string) => (/hub/i.test(query) ? [later, before] : [before]),
+    model: async (r) => { await r.tools.find((t) => t.name === "search_knowledge")!.run({ query: "Telegram Hub" }); return { decision: answer({ body: "Open Telegram Hub and press Start." }), text: "" }; },
+  });
+  h.deps.check = async (_writer, input) => { checked = input.facts; return { approved: true, reason: "ok", model: "checker" }; };
+  await h.run();
+  assert.match(checked, /Open Telegram Hub and press Start\./, "a passage the model searched for is a fact");
+  assert.equal(checked.match(/Refunds take five days\./g)?.length, 1, "a passage found twice is given once");
+});
+
 test("the prefetch keeps the message's line breaks and asks only what the sender wrote now (data agent reads by sentence)", async () => {
   const calls: Record<string, unknown>[] = [];
   const h = harness({
