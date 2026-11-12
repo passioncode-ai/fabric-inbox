@@ -2164,7 +2164,7 @@ const addCampaignRecipients = defineTool({
 });
 const listCampaignRecipients = defineTool({
   name: "list_campaign_recipients", title: "List a campaign's recipients", level: "read", readOnly: true,
-  description: "A campaign's recipients with their fields and where each stands, filtered by status, paged.",
+  description: "A campaign's recipients with their fields and where each stands, filtered by status, paged. A recipient already written to carries `threadId`: the conversation in the sending account, where their reply arrives.",
   input: { campaignId, status: z.string().max(40).optional(), limit: z.number().int().min(1).max(500).optional(), offset: z.number().int().min(0).optional() },
   routes: ["GET /api/campaigns/:id/recipients"],
   call: (a, ctx) => get(ctx, `/api/campaigns/${enc(a.campaignId)}/recipients`, { status: a.status, limit: a.limit, offset: a.offset }),

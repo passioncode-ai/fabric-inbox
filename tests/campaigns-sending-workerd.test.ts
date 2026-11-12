@@ -90,6 +90,10 @@ test("SCN-090: the loop sends one at a time, follow-ups answer in the thread, re
 
     // Bob replies: he is stopped, and so is Ann at the same company.
     assert.equal((await inbound(MON + 6 * MIN, "Bob <bob@acme.example>", "Re: About your team", "Interested", "t-bob")).json.kind, "reply");
+    // B-251: a replied recipient names the conversation its reply is in.
+    const replied = (await call("GET", `/api/campaigns/${id}/recipients?status=replied`)).json.recipients;
+    assert.deepEqual(replied.map((r: any) => [r.email, r.threadId]), [["bob@acme.example", "t-bob"]]);
+    assert.equal((await call("GET", `/api/campaigns/${id}/recipients?status=queued`)).json.recipients.every((r: any) => !("threadId" in r)), true, "nobody written to yet: no thread");
     assert.equal(await tick(MON + 10 * MIN), 1);
     assert.equal(await tick(MON + 15 * MIN), 1);
     // Cy asks to stop: on the do-not-write list. Dee is away: her follow-up moves three days from now.
