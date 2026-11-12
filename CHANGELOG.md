@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.6.6 (2026-11-12)
+
+**Smaller fixes for agents** (B-250, B-251). An agent key that may only ask for access is issued without naming a
+level, and the key list says which keys are like that. A campaign's recipients who were written to show the
+conversation their reply arrives in, so an agent finds a reply in one step.
+
 ## 1.6.5 (2026-11-12)
 
 **A right answer is no longer refused for a passage the agent found itself** (B-249). Before a reply agent's answer
