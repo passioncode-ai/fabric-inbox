@@ -116,13 +116,15 @@ export class CampaignsDO extends DurableObject<Env> {
     return { added, skipped: skipped.slice(0, 200) };
   }
 
-  async listRecipients(id: string, options: { status?: string; limit?: number; offset?: number } = {}): Promise<{ recipients: { email: string; fields: Record<string, string>; status: string; step: number; detail: string }[]; total: number }> {
+  async listRecipients(id: string, options: { status?: string; limit?: number; offset?: number } = {}): Promise<{ recipients: { email: string; fields: Record<string, string>; status: string; step: number; detail: string; threadId?: string }[]; total: number }> {
     const limit = Math.min(500, Math.max(1, options.limit ?? 100));
     const where = options.status ? "campaign_id = ? AND status = ?" : "campaign_id = ?";
     const args = options.status ? [id, options.status] : [id];
     return {
       recipients: this.rows(`SELECT * FROM recipients WHERE ${where} ORDER BY added_at, email LIMIT ? OFFSET ?`, ...args, limit, Math.max(0, options.offset ?? 0))
-        .map((r) => ({ email: String(r.email), fields: JSON.parse(String(r.fields)), status: String(r.status), step: Number(r.step), detail: String(r.detail) })),
+        .map((r) => ({ email: String(r.email), fields: JSON.parse(String(r.fields)), status: String(r.status), step: Number(r.step), detail: String(r.detail),
+          // B-251: the conversation the first message started in the sending account, so a reply is found in one call.
+          ...(String(r.thread_id) ? { threadId: String(r.thread_id) } : {}) })),
       total: Number(this.rows(`SELECT COUNT(*) AS n FROM recipients WHERE ${where}`, ...args)[0]!.n),
     };
   }
