@@ -2287,6 +2287,42 @@ const revokeAgentKey = defineTool({
   routes: ["DELETE /api/agent-keys/:id"], call: (a, ctx) => del(ctx, `/api/agent-keys/${enc(a.keyId)}`),
 });
 
+// ── B-246 W2c: access grants per mailbox (docs/app-store/tasks/2026-11-12-inbox-agent-grants.md, SCN-101) ──
+const GRANT_CAPABILITIES = ["read", "draft", "send", "organize", "delete", "create", "remove", "agents", "campaign"] as const;
+const listGrants = defineTool({
+  name: "list_grants", title: "List the access grants on this server", level: "admin", readOnly: true,
+  description: "The access grants of this server (B-246): each grant's holder (an agent key by id, or a person by email), its mailboxes (addresses, gmail:/imap:/outlook: accounts, domain:<domain> entries, or * for every mailbox), its capabilities (read, draft, send, organize, delete, create, remove, agents, campaign), its limits (send mode, daily cap, owner approval), its end, who gave it and why. decides: false while the grants are checked beside today's key levels and member levels and decide nothing yet.",
+  input: {}, routes: ["GET /api/grants"], call: (_a, ctx) => get(ctx, "/api/grants"),
+});
+const grantAccess = defineTool({
+  name: "grant_access", title: "Give an agent key or a person access to mailboxes", level: "admin", ownerApproval: true, standingWaives: { standing: "keys" },
+  target: (a) => `${a.holderKey ?? a.holderEmail} ${a.can.join(",")} on ${a.mailboxes.join(",")}`,
+  description: "Gives one agent key (by its id from list_agent_keys) or one person (by email) capabilities on mailboxes (B-246): read, draft, send, organize (move, mark, folders), delete (mail, with its two-call code), create and remove (addresses on the named domains), agents (the mailboxes' reply agents) and campaign. Mailboxes are addresses, gmail:/imap:/outlook: account ids, domain:<domain> entries, or * for every mailbox. A holder's reach is the union of its grants. Waits for the owner's approval in Settings → Agent access, unless the owner let this key issue keys (B-215). While the grants are checked beside today's rules (decides: false), a grant is recorded and compared, not yet used. Two calls.",
+  input: {
+    holderKey: z.string().min(1).max(128).optional().describe("The agent key's id (list_agent_keys); or holderEmail"),
+    holderEmail: z.string().email().max(320).optional().describe("A person's email; or holderKey"),
+    mailboxes: z.array(z.string().max(320)).min(1).max(200).describe("Addresses, account ids, domain:<domain> entries, or *"),
+    can: z.array(z.enum(GRANT_CAPABILITIES)).min(1).max(GRANT_CAPABILITIES.length).describe("What the holder may do on them"),
+    sendMode: z.enum(["drafts", "send"]).default("send").describe("drafts: sends are kept as drafts for a person"),
+    dailySendLimit: z.number().int().min(0).max(1000).optional().describe("Sends a day; none for no cap"),
+    expiresAt: z.string().datetime({ offset: true }).optional().describe("When the grant ends; none for no end"),
+    why: z.string().min(1).max(500).describe("Why: kept with the grant and in the audit record"),
+  },
+  confirm: (a) => `Give ${a.holderKey ? `agent key ${a.holderKey}` : a.holderEmail} ${a.can.join(", ")} on ${a.mailboxes.join(", ")}${a.expiresAt ? ` until ${a.expiresAt}` : ""}.`,
+  routes: ["POST /api/grants"],
+  call: (a, ctx) => {
+    if (!a.holderKey === !a.holderEmail) throw new Error("Name exactly one holder: holderKey or holderEmail.");
+    return post(ctx, "/api/grants", { holder: a.holderKey ? { kind: "key", id: a.holderKey } : { kind: "person", email: a.holderEmail }, mailboxes: a.mailboxes, can: a.can,
+      limits: { sendMode: a.sendMode, dailySendLimit: a.dailySendLimit ?? null, ownerApproval: false }, expiresAt: a.expiresAt ?? null, why: a.why });
+  },
+});
+const revokeGrant = defineTool({
+  name: "revoke_grant", title: "Revoke an access grant", level: "admin", target: (a) => a.id,
+  description: "Revokes one access grant by its id (list_grants), with every grant delegated from it (B-246). The holder keeps its other grants.",
+  input: { id: z.string().min(8).max(64).describe("The grant's id from list_grants") },
+  routes: ["DELETE /api/grants/:id"], call: (a, ctx) => del(ctx, `/api/grants/${enc(a.id)}`),
+});
+
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, decideHeldMessage, listFolders, getSendStatus,
   listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, getServerErrors, getOpsDigest, getStorage, getSupportMonths, getSupportTopics, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
@@ -2301,7 +2337,7 @@ export const TOOLS: readonly ToolDef[] = [
   outlookConnectLink, connectAccount, setAccountPassword, setProviderSetup, microsoftSetupStatus, checkMicrosoftSetup, listAgentKeys, agentActivity,
   listCampaigns, getCampaign, saveCampaign, deleteCampaign, addCampaignRecipients, listCampaignRecipients, previewCampaign, dryRunCampaign, listSuppression, changeSuppression,
   launchCampaign, pauseCampaign, stopCampaign, campaignReport,
-  saveMember, removeMember, syncMemberSignIn, createAgentKey, revokeAgentKey,
+  saveMember, removeMember, syncMemberSignIn, createAgentKey, revokeAgentKey, listGrants, grantAccess, revokeGrant,
 ];
 
 /**

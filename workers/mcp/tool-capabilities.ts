@@ -47,5 +47,5 @@ export const TOOL_NEEDS: Readonly<Record<string, ToolNeed>> = Object.freeze(Obje
     send_test_message get_server_errors get_ops_digest get_storage check_spam list_members list_audit export_mailbox
     export_setup list_mail_providers gmail_connect_link gmail_setup_status check_gmail_setup outlook_connect_link
     connect_account set_account_password set_provider_setup microsoft_setup_status check_microsoft_setup list_agent_keys
-    list_agent_activity`),
+    list_agent_activity list_grants grant_access revoke_grant`),
 ]));

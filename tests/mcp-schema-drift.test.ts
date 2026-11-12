@@ -118,6 +118,7 @@ const BODIES: Record<string, string[]> = {
   "POST /api/campaigns/:id/dry-run": ["count"],
   "POST /api/suppression": ["add", "remove", "reason"],
   "PUT /api/members/:email": ["role", "accounts", "levels"], // workers/routes/members.ts SaveMember (B-154, B-160)
+  "POST /api/grants": ["holder", "mailboxes", "can", "limits", "expiresAt", "why"], // workers/routes/grants.ts GiveGrant (B-246)
   "POST /api/agent-keys": ["name", "level", "send", "dailySendLimit", "duration", "accounts", "approval"], // workers/routes/agent-keys.ts NewKey
 };
 /** Written routes whose body carries nothing (or that take a whole document as it is). */
@@ -150,6 +151,8 @@ const MAP: Record<string, Record<string, Record<string, string> & { via?: string
   decide_held_message: { "POST /api/safety/decide": { by: `${BY_TOOL}: the key's label` } },
   // B-160: the route takes a level per mailbox; the tool names the read-only mailboxes (read) and those whose agent the member chooses (agents).
   save_member: { "PUT /api/members/:email": { levels: "readOnly" } },
+  // B-246: the tool names one holder (holderKey or holderEmail) and the limits field by field.
+  grant_access: { "POST /api/grants": { holder: "holderKey", limits: "sendMode" } },
   save_draft: {
     "PUT /api/v1/mailboxes/:mailboxId/drafts/:id": { body: "text", in_reply_to: "replyToMessageId", thread_id: `${BY_TOOL}: the conversation of the message it answers`,
       keep_attachments: "keepAttachments", expected_revision: "expectedRevision" },

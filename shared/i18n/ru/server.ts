@@ -9,6 +9,13 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"{action} could not be completed: {error}. Try again.": "{action}: не удалось выполнить. {error} Попробуйте ещё раз.",
 	"{action} could not be completed: {error}": "{action}: не удалось выполнить. {error}",
 
+	// Access grants (workers/routes/grants.ts, B-246)
+	"The grants changed at the same time. Try again.": "Права доступа изменились одновременно с вашим изменением. Попробуйте ещё раз.",
+	"The grants could not be saved. Try again.": "Не удалось сохранить права доступа. Попробуйте ещё раз.",
+	"Name who gets access, the mailboxes, what they may do and why.": "Укажите, кто получает доступ, к каким ящикам, что ему можно и зачем.",
+	"No agent key with that id on this server.": "На этом сервере нет ключа агента с таким id.",
+	"A mailbox in the list is not one this server can name.": "Один из ящиков в списке этот сервер не может обозначить.",
+	"No grant with that id.": "Права доступа с таким id нет.",
 	// Agent access (workers/routes/agent-keys.ts)
 	"Name the agent this key is for": "Назовите агента, для которого этот ключ",
 	"Invalid key": "Недопустимый ключ",

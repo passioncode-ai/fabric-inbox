@@ -16,7 +16,10 @@ export type AuditEntry =
   // B-160 step 3: a member chose which agent answers one of their mailboxes, or none ("off").
   | { kind: "member_agent_set"; mailbox: string; agent: string; name: string | null }
   // B-215: what an agent key may do without the owner's approval (people, keys), set by the owner or the account's token.
-  | { kind: "key_standing_set"; key: string; name: string; standing: string[]; previous: string[] };
+  | { kind: "key_standing_set"; key: string; name: string; standing: string[]; previous: string[] }
+  // B-246: an access grant given or revoked (the holder, its mailboxes and capabilities; never a secret).
+  | { kind: "grant_given"; grant: string; holder: string; mailboxes: string[]; can: string[]; why: string }
+  | { kind: "grant_revoked"; grant: string; holder: string; also: string[] };
 
 export type AuditRecord = AuditEntry & { id: string; at: string; actor: string | null };
 
