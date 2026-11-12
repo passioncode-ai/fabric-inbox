@@ -114,3 +114,56 @@ test("for every tool and every key shape of today, the grants decide exactly as 
   }
   assert.deepEqual(differ, []);
 });
+
+// ---- W2b: the contracts ----
+import { AccessRequestSchema, GrantSchema, ORG_ROLES, ROLE_PRESETS, admitRequest, decide, requestKey, MAX_WAITING_PER_HOLDER, type AccessRequest } from "../workers/mcp/grants";
+import { mailCapabilities } from "../workers/routes/fabric-service";
+
+const request = (over: Partial<AccessRequest> = {}): AccessRequest => AccessRequestSchema.parse({
+  schema: "access-request/1", id: "req-00000001", holder: { kind: "key", id: "k1" }, mailboxes: ["sales@acme.example"], can: ["send", "read"],
+  why: "outreach", until: null, requestedAt: "2026-11-12T00:00:00Z", expiresAt: "2026-11-19T00:00:00Z", state: "waiting", ...over });
+
+test("grant/1 and access-request/1 take canonical mailboxes and ordered capabilities, and refuse anything else", () => {
+  const r = request();
+  assert.deepEqual(r.mailboxes, ["cloudflare:sales@acme.example"]);
+  assert.deepEqual(r.can, ["read", "send"]);
+  assert.throws(() => request({ mailboxes: ["not a mailbox"] }), /not a mailbox/);
+  assert.throws(() => request({ can: ["fly" as never] }));
+  assert.throws(() => AccessRequestSchema.parse({ ...r, extra: 1 }), "a strict contract");
+  const g = GrantSchema.parse({ schema: "grant/1", id: "grant-0001", holder: { kind: "person", email: "Ann@Acme.example" }, mailboxes: ["*"], can: ["read"],
+    limits: { sendMode: "send", dailySendLimit: null, ownerApproval: false }, expiresAt: null, grantedBy: "owner@acme.example", grantedAt: "2026-11-12T00:00:00Z", why: "role" });
+  assert.equal(g.holder.kind === "person" && g.holder.email, "ann@acme.example");
+  assert.throws(() => GrantSchema.parse({ ...g, can: [] }), "a grant gives something");
+});
+
+test("a repeated request answers the waiting one, at most ten wait per holder, an expired one counts for nothing (R-3)", () => {
+  const now = new Date("2026-11-13T00:00:00Z");
+  const first = request();
+  assert.deepEqual(admitRequest([first], { holder: first.holder, mailboxes: [...first.mailboxes].reverse(), can: ["send", "read"] }, now), { outcome: "repeat", id: first.id });
+  const many = Array.from({ length: MAX_WAITING_PER_HOLDER }, (_, i) => request({ id: `req-${String(i).padStart(8, "0")}`, mailboxes: [`a${i}@acme.example`] }));
+  assert.deepEqual(admitRequest(many, { holder: first.holder, mailboxes: ["cloudflare:new@acme.example"], can: ["read"] }, now), { outcome: "too_many" });
+  assert.deepEqual(admitRequest(many, { holder: { kind: "key", id: "other" }, mailboxes: ["cloudflare:new@acme.example"], can: ["read"] }, now), { outcome: "new" });
+  assert.deepEqual(admitRequest([first], { holder: first.holder, mailboxes: first.mailboxes, can: first.can }, new Date("2026-11-20T00:00:00Z")), { outcome: "new" });
+  assert.equal(requestKey(first), "k1|cloudflare:sales@acme.example|read,send");
+});
+
+test("a decision is taken once and never on an expired request", () => {
+  const now = new Date("2026-11-13T00:00:00Z");
+  const approved = decide(request(), "approved", "owner@acme.example", now, { grant: "grant-0001" });
+  assert.equal(approved?.state, "approved");
+  assert.equal(approved?.decision?.grant, "grant-0001");
+  assert.equal(decide(approved!, "refused", "admin@acme.example", now), null, "already decided");
+  assert.equal(decide(request(), "approved", "owner@acme.example", new Date("2026-11-20T00:00:00Z")), null, "expired");
+});
+
+test("every role has a preset; the employee reaches its own and shared addresses only, never the whole server", () => {
+  assert.deepEqual(Object.keys(ROLE_PRESETS).sort(), [...ORG_ROLES].sort());
+  assert.equal(ROLE_PRESETS.employee.mailboxes, "own+shared");
+  assert.deepEqual(ROLE_PRESETS.employee.standing, []);
+  assert.ok(!ROLE_PRESETS.architect.can.includes("send"), "the architect sets mail up; sending stays with the mailbox's people");
+});
+
+test("the service declares a capability only once its tools exist (D-5)", () => {
+  assert.deepEqual(mailCapabilities(TOOLS), ["mail.read", "mail.send"]);
+  assert.deepEqual(mailCapabilities([...TOOLS, { name: "request_access" }]), ["mail.read", "mail.send", "mail.access"]);
+});

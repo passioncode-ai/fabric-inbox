@@ -50,11 +50,17 @@ test("a real folder: writing the file reaches its handler, and the folder can be
   const seen = new Promise<void>((r) => { resolve = r; });
   const w = watchProfile({ dir, watch, debounceMs: 20, handlers: { "new-mail-notifications": async () => resolve() } });
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let again: ReturnType<typeof setInterval> | undefined;
   try {
-    writeFileSync(path.join(dir, "new-mail-notifications"), "on\n");
+    // macOS starts delivering a new watch's events a moment after it is made, so a write at once can go unseen:
+    // the file is written again every 200 ms until the handler hears it, within the same 3 s.
+    const write = () => writeFileSync(path.join(dir, "new-mail-notifications"), "on\n");
+    write();
+    again = setInterval(write, 200);
     await Promise.race([seen, new Promise((_, no) => { timer = setTimeout(() => no(new Error("no event in 3 s")), 3000); })]);
   } finally {
     clearTimeout(timer);
+    clearInterval(again);
     w.close();
     rmSync(dir, { recursive: true, force: true });
   }

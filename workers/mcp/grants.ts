@@ -8,6 +8,7 @@
 import type { AgentKey, Level, SendMode } from "./keys";
 import type { Member, MemberLevel } from "../lib/members";
 import { normaliseAccountId } from "./scope";
+import { z } from "zod";
 
 /** What a grant lets its holder do on its mailboxes. */
 export const CAPABILITIES = ["read", "draft", "send", "organize", "delete", "create", "remove", "agents", "campaign"] as const;
@@ -140,3 +141,93 @@ export function isSubset(child: Pick<Grant, "mailboxes" | "can" | "limits" | "ex
 export function capabilitiesOn(grants: readonly Grant[], mailbox: string, now = new Date()): Capability[] {
   return order(grants.filter((g) => live(g, now) && covers(g.mailboxes, mailbox)).flatMap((g) => g.can));
 }
+
+// ---- W2b: the contracts (packet R-3, R-8) ----
+
+/** A mailbox id a grant or a request may name: "*", a canonical address or account id, or a `domain:` entry. */
+const MailboxId = z.string().max(320).transform((v, ctx) => {
+  const id = canonicalMailbox(v);
+  if (!id) { ctx.addIssue({ code: "custom", message: `not a mailbox: ${v.slice(0, 80)}` }); return z.NEVER; }
+  return id;
+});
+const Capabilities = z.array(z.enum(CAPABILITIES)).min(1).max(CAPABILITIES.length).transform((c) => order(c));
+const Instant = z.string().datetime({ offset: true });
+
+/** grant/1: one grant as the store keeps it and `list_grants` answers it. */
+export const GrantSchema = z.object({
+  schema: z.literal("grant/1"),
+  id: z.string().min(8).max(64),
+  holder: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("key"), id: z.string().min(1).max(128) }),
+    z.object({ kind: z.literal("person"), email: z.string().email().max(320).transform((e) => e.toLowerCase()) }),
+  ]),
+  mailboxes: z.array(MailboxId).min(1).max(200),
+  can: Capabilities,
+  limits: z.object({ sendMode: z.enum(["drafts", "send"]), dailySendLimit: z.number().int().min(0).max(1000).nullable(), ownerApproval: z.boolean() }),
+  expiresAt: Instant.nullable(),
+  parent: z.string().min(8).max(64).optional(),
+  grantedBy: z.string().min(1).max(320),
+  grantedAt: Instant,
+  why: z.string().min(1).max(500),
+}).strict();
+export type StoredGrant = z.infer<typeof GrantSchema>;
+
+/** How long a request waits for a decision, and how many may wait for one holder (R-3). */
+export const REQUEST_TTL_MS = 7 * 24 * 3600 * 1000;
+export const MAX_WAITING_PER_HOLDER = 10;
+
+/** access-request/1: what an agent asked for and what became of it. */
+export const AccessRequestSchema = z.object({
+  schema: z.literal("access-request/1"),
+  id: z.string().min(8).max(64),
+  holder: z.object({ kind: z.literal("key"), id: z.string().min(1).max(128) }),
+  mailboxes: z.array(MailboxId).min(1).max(200),
+  can: Capabilities,
+  why: z.string().min(1).max(500),
+  until: Instant.nullable(),
+  /** The project that asked on the Fabric board, as the board names it (the board path, D-4). */
+  board: z.object({ project: z.string().min(1).max(192), message: z.string().min(8).max(128) }).optional(),
+  requestedAt: Instant,
+  expiresAt: Instant,
+  state: z.enum(["waiting", "approved", "refused", "expired"]),
+  decision: z.object({ by: z.string().min(1).max(320), at: Instant, note: z.string().max(500).optional(), grant: z.string().min(8).max(64).optional() }).optional(),
+}).strict();
+export type AccessRequest = z.infer<typeof AccessRequestSchema>;
+
+/** The same request asked again: one holder, the same mailboxes and capabilities (R-3, no second row). */
+export function requestKey(r: Pick<AccessRequest, "holder" | "mailboxes" | "can">): string {
+  return `${r.holder.id}|${[...r.mailboxes].sort().join(",")}|${[...r.can].sort().join(",")}`;
+}
+
+/**
+ * Whether a new request may wait: a repeat answers the waiting one, and a holder with MAX_WAITING_PER_HOLDER waiting
+ * is refused. Expired requests count for nothing.
+ */
+export function admitRequest(existing: readonly AccessRequest[], asked: Pick<AccessRequest, "holder" | "mailboxes" | "can">, now = new Date()):
+  { outcome: "new" } | { outcome: "repeat"; id: string } | { outcome: "too_many" } {
+  const waiting = existing.filter((r) => r.state === "waiting" && r.holder.id === asked.holder.id && Date.parse(r.expiresAt) > now.getTime());
+  const same = waiting.find((r) => requestKey(r) === requestKey(asked));
+  if (same) return { outcome: "repeat", id: same.id };
+  return waiting.length >= MAX_WAITING_PER_HOLDER ? { outcome: "too_many" } : { outcome: "new" };
+}
+
+/** A decision is taken once: only a waiting, unexpired request moves (the compare and set the store does, R-3). */
+export function decide(r: AccessRequest, verdict: "approved" | "refused", by: string, now = new Date(), extra: { note?: string; grant?: string } = {}): AccessRequest | null {
+  if (r.state !== "waiting" || Date.parse(r.expiresAt) <= now.getTime()) return null;
+  return { ...r, state: verdict, decision: { by, at: now.toISOString(), ...(extra.note ? { note: extra.note } : {}), ...(extra.grant ? { grant: extra.grant } : {}) } };
+}
+
+/** The organization roles a server reads from its attestation (B-159), and their ready access (D-3, R-5). */
+export const ORG_ROLES = ["owner", "admin", "architect", "employee"] as const;
+export type OrgRole = (typeof ORG_ROLES)[number];
+/**
+ * A role's preset, before the owner edits it: `own` is the person's own address, `shared` the shared addresses the
+ * owner lists. The owner and administrators hold everything; the architect per the operator's decision of 2026-11-06
+ * (B-232), with its acts journaled and its reach ending with the role.
+ */
+export const ROLE_PRESETS: Readonly<Record<OrgRole, { mailboxes: "all" | "own+shared"; can: readonly Capability[]; standing: readonly ("grants")[] }>> = Object.freeze({
+  owner: { mailboxes: "all", can: CAPABILITIES, standing: ["grants"] },
+  admin: { mailboxes: "all", can: CAPABILITIES, standing: ["grants"] },
+  architect: { mailboxes: "all", can: ["read", "organize", "create", "remove", "agents"], standing: ["grants"] },
+  employee: { mailboxes: "own+shared", can: ["read", "draft", "send"], standing: [] },
+});

@@ -65,6 +65,8 @@ test("B-87: a registered agent key or a person reads the well-known document; an
     assert.equal(key.status, 200);
     const doc = JSON.parse(key.text);
     validate("service-well-known", doc);
+    // B-246 D-5: the capabilities the MCP surface serves, as the contract names them; mail.access only with its tools (W3).
+    assert.deepEqual(doc.surfaces.mcp.capabilities, ["mail.read", "mail.send"]);
     assert.deepEqual(doc.service.id, "fabric-inbox");
     assert.equal(doc.service.version, version);
     // The token and the model key are set; only the agent registry is absent in this fixture.
