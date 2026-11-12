@@ -9,6 +9,7 @@ import { guarded, type RecipientCheck } from "./recipient-check";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z, type ZodRawShape } from "zod";
 import { levelAllows, type Level, type Principal, type Standing } from "./keys";
+import { grantsAllowTool, type Grant } from "./grants";
 import { NARROWING, NARROWING_CAPABILITY, toolFitsScope } from "./scope";
 
 /** What a route answered: its status and parsed JSON (or text), unchanged. */
@@ -32,7 +33,11 @@ export class HumanStepRequired extends Error {
   constructor(readonly humanStep: HumanStep, readonly url: string, message: string) { super(message); }
 }
 
-export interface ToolContext { api: Api; principal: Principal; recipientCheck?: RecipientCheck | null }
+export interface ToolContext {
+  api: Api; principal: Principal; recipientCheck?: RecipientCheck | null;
+  /** B-246 W2c: the caller's grants, read once per request, for the shadow decision beside today's checks. */
+  grants?: () => Promise<Grant[]>;
+}
 
 export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   name: string;
@@ -167,6 +172,20 @@ export function sendOutcome(error: unknown): "not_sent" | "unknown" {
 const CONFIRM_FIELD = z.string().min(4).max(40).optional()
   .describe("Leave out on the first call. The first call returns what will happen and a code; call again with the same arguments and that code (valid 5 minutes) to do it.");
 
+/**
+ * B-246 W2c: the grants decide the same call beside today's checks and decide nothing yet; a disagreement is logged with
+ * the tool and the key's id, never a mailbox or an argument. The cut-over waits for three days with none.
+ */
+export async function shadowGrants(tool: ToolDef, ctx: ToolContext, allowed: boolean): Promise<void> {
+  if (!ctx.grants) return;
+  try {
+    const decided = grantsAllowTool(tool, ctx.principal, await ctx.grants());
+    if (decided !== allowed) console.warn(JSON.stringify({ event: "grant_shadow_disagreement", tool: tool.name, caller: ctx.principal.kind, key: ctx.principal.keyId, today: allowed, grants: decided }));
+  } catch (error) {
+    console.error(JSON.stringify({ event: "grant_shadow_failed", tool: tool.name, error: String(error).slice(0, 200) }));
+  }
+}
+
 /** Runs one tool call with the protocol's rules around it. */
 export async function runTool(tool: ToolDef, rawArgs: Record<string, unknown>, ctx: ToolContext, ledger: Ledger, now = () => Date.now()): Promise<ToolResult> {
   const caller = callerId(ctx.principal);
@@ -184,7 +203,9 @@ export async function runTool(tool: ToolDef, rawArgs: Record<string, unknown>, c
   };
   // A caller outside the tool's level never gets here (the tool is not registered), but the check stays
   // so a registration mistake fails closed.
-  if (!toolsFor(ctx.principal, [tool]).length) {
+  const allowed = toolsFor(ctx.principal, [tool]).length > 0;
+  await shadowGrants(tool, ctx, allowed);
+  if (!allowed) {
     await journal("refused", "not allowed for this key");
     return text({ error: `This key may not use ${tool.name}.` }, true);
   }
