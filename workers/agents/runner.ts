@@ -1060,9 +1060,12 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   } else if (policy.mode === "auto" && outcome.action !== "skip") {
     const handoff = policy.handoff;
     // B-141: only what the sender wrote now; a topic in the quoted history of an earlier answer is not this message's.
-    // B-247: the subject of a reply ("Re: Refund for last month") is that history too, so a new question in it is read
-    // without it; the run's summary still carries the conversation when the new text only asks about it ("any news?").
-    const handText = `${isFollowUpSubject(email.subject) ? "" : email.subject}\n${newText(email.body)}\n${run.summary ?? ""}`;
+    // B-247: in a reply the subject ("Re: Refund for last month") is that history too, and so is the summary, which tells
+    // the conversation ("While waiting on a refund, the sender asks ..."); a reply is read by its new text and the run's
+    // topic, the two to four words of what it asks now, so a reply that only asks about the refund ("any news?") is
+    // still handed over by its topic ("refund status").
+    const reply = isFollowUpSubject(email.subject);
+    const handText = reply ? `${newText(email.body)}\n${run.topic ?? ""}` : `${email.subject}\n${newText(email.body)}\n${run.summary ?? ""}`;
     // B-237: the category of a message with nothing to act on is a guess, so a question back or a decline is handed
     // over only by the policy's own topic words; the sender's next message is categorized by what it says.
     const guessed = triage === "clarify" || triage === "decline";
