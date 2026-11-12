@@ -1029,6 +1029,24 @@ test("a message in a hand-off category or topic gets the hand-off reply; the cat
   assert.equal((await odd.run())!.category, "other");
 });
 
+test("B-247: a new question in a reply is not handed over for the subject it inherited; a reply about that subject still is", async () => {
+  const confident = async () => JSON.stringify({ abstained: false, results: [{ id: "fact:x", coverage: 0.9 }] });
+  const agent = autonomous({ handoff: { categories: ["refund"], topics: ["refund|money back"], reply: { en: "A person handles this: write to our support manager." } } });
+  const quoted = "<p>One more thing while I wait: how do I connect my agent to Telegram?</p><p>On Tue, 10 Nov 2026 at 09:12, Acme Support wrote:</p><p>&gt; Refunds and charges are handled by a person from our team, who will reply to this email.</p>";
+  const howTo = harness({ agent, email: { subject: "Re: Refund for last month", body: quoted }, callTool: confident,
+    model: async () => ({ decision: answer({ intent: "how-to", category: "other", summary: "Asks how to connect the agent to Telegram.", body: "Open Settings, then Telegram." }), text: "" }) });
+  const r = (await howTo.run())!;
+  assert.equal(r.status, "sent", r.reason);
+  assert.equal(r.handoff, undefined, "the inherited subject is history, as the quote is");
+  assert.match((howTo.effects.sends[0] as any).request.text, /Settings, then Telegram/);
+  const news = harness({ agent, email: { subject: "Re: Refund for last month", body: "<p>Any news?</p>" }, callTool: confident,
+    model: async () => ({ decision: answer({ intent: "status", category: "other", summary: "Asks for news about the refund for last month." }), text: "" }) });
+  assert.equal((await news.run())!.handoff, true, "the summary names what the reply is about");
+  const fresh = harness({ agent, email: { subject: "Refund for last month", body: "<p>Hello, see the subject.</p>" }, callTool: confident,
+    model: async () => ({ decision: answer({ intent: "status", category: "other" }), text: "" }) });
+  assert.equal((await fresh.run())!.handoff, true, "a first message's subject is its own");
+});
+
 test("a hand-off category with its own reply gets that reply; the others get the shared one", async () => {
   const policy = { categories: ["refund", "premium", "other"], handoff: { categories: ["refund", "premium"], topics: [],
     reply: { en: "A person handles this: write to our support manager." },
