@@ -2090,9 +2090,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** empty, loading, error, success
 - **Errors & recovery:** A request that cannot be stored answers the agent with an error it can retry with the same key; nothing half-granted is kept.
 - **Status:** draft
-- **Coverage:** none yet (B-246 W3)
+- **Coverage:** `workers/routes/access-requests.ts` (`POST /api/access-requests`, `GET /api/my-access`, `GET /api/access-requests`, `POST /api/access-requests/:id/decision`), `workers/mcp/access-requests.ts`, `workers/mcp/grants.ts` (`admitRequest`, `decide`, `isSubset`), `workers/mcp/tools.ts` (`request_access`, `list_my_access`, `list_access_requests`, `decide_access_request`, `create_agent_key` with `requestOnly`), `app/components/settings/sections/GrantsPanel.tsx` (`WaitingRequest`), `app/components/settings/sections/AgentAccessSection.tsx` (the pinned row's count), `tests/access-requests.test.ts`
 - **Product:** unobserved
-- **Today:** Not built. An agent reaches mail only with a key a person made (SCN-043), and the desktop connect link asks for a level with no mailboxes.
+- **Today:** B-246 W3 built steps 1 to 3 on the server and in Agent access: an agent with a requester key (made with `requestOnly`, it sees only `request_access` and `list_my_access`) or any other key asks; the request waits 7 days (10 at most per key, a repeat answers the waiting one); Access by mailbox lists it with Approve, the narrowing ticks and Refuse, and its pinned row counts the waiting ones. Approving makes a grant; while the grants do not decide yet (the W2c cut-over after the shadow wait), the agent's reach is still its key's level. Not yet: the Telegram message to the owner, and an agent with no key asking on the board (`mail.access`).
 
 ### SCN-101: Grant a person or an agent capabilities on one or several mailboxes
 - **Persona:** P-01

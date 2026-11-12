@@ -53,12 +53,17 @@ export interface AgentKey {
   standing?: Standing[];
   /** N-4: the person who made it (their sign-in email); their keys go when they leave or stop being an administrator. */
   createdBy?: string;
+  /**
+   * B-246 W3: a key that reaches no mailbox and may only ask for access (`request_access`) and read what it holds
+   * (`list_my_access`). Approved requests give it grants; until the cut-over it reaches mail only through those.
+   */
+  requestOnly?: true;
 }
 
 /** Who is calling the protocol, after Access and the key registry. */
 export type Principal =
   | { kind: "owner"; label: string; level: "admin"; send: "send"; dailySendLimit: null; keyId: null; accounts: null }
-  | { kind: "agent"; label: string; level: Level; send: SendMode; dailySendLimit: number; keyId: string; accounts: readonly string[] | null; approval?: "owner"; standing?: readonly Standing[] };
+  | { kind: "agent"; label: string; level: Level; send: SendMode; dailySendLimit: number; keyId: string; accounts: readonly string[] | null; approval?: "owner"; standing?: readonly Standing[]; requestOnly?: true };
 
 const rank: Record<Level, number> = { read: 0, mail: 1, admin: 2 };
 export const levelAllows = (have: Level, need: Level) => rank[have] >= rank[need];
@@ -84,6 +89,8 @@ function normaliseKey(raw: unknown): AgentKey | null {
     // Standing permissions act on the whole server (people, keys): only an Admin key holds them.
     ...(level === "admin" && normaliseStanding(k.standing).length ? { standing: normaliseStanding(k.standing) } : {}),
     ...(typeof k.createdBy === "string" && k.createdBy ? { createdBy: k.createdBy.toLowerCase() } : {}),
+    // B-246 W3: only a Read key that reaches no mailbox can be a requester.
+    ...(k.requestOnly === true && level === "read" && Array.isArray(k.accounts) && k.accounts.length === 0 ? { requestOnly: true as const } : {}),
   };
 }
 
@@ -132,7 +139,8 @@ export function principalFor(claims: AccessClaims, keys: AgentKey[], now = Date.
   if (key.expiresAt && Date.parse(key.expiresAt) <= now) return null;
   // An admin key can make rules and reply agents that send; it is never Drafts only (agent-keys.ts sendFor).
   return { kind: "agent", label: key.name, level: key.level, send: key.level === "admin" ? "send" : key.send, dailySendLimit: key.dailySendLimit, keyId: key.id, accounts: key.accounts,
-    ...(key.approval === "owner" ? { approval: "owner" as const } : {}), ...(key.standing?.length ? { standing: key.standing } : {}) };
+    ...(key.approval === "owner" ? { approval: "owner" as const } : {}), ...(key.standing?.length ? { standing: key.standing } : {}),
+    ...(key.requestOnly ? { requestOnly: true as const } : {}) };
 }
 
 /** A service token: no person behind it. */

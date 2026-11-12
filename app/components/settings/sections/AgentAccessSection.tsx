@@ -44,6 +44,8 @@ export const JOURNAL = "journal";
 export const APPROVALS = "approvals";
 /** B-246 (SCN-101): access per mailbox, for agent keys and people. */
 export const GRANTS = "grants";
+/** B-246 W3 (SCN-100): agent keys' requests for access, read here for the pinned row's count and in GrantsPanel. */
+export const ACCESS_REQUESTS_KEY = ["access-requests"];
 export const APPROVALS_KEY = ["agent-approvals"];
 /** B-38: who answers a key's irreversible actions. */
 /** B-215: what an Admin key may do without the owner's approval, which people and keys otherwise wait for. */
@@ -97,6 +99,8 @@ export default function AgentAccessSection({ id }: { id: string | null }) {
   // B-38: what waits for the owner; looked at again every 30 s while this screen is open and visible.
   const approvals = useQuery({ queryKey: APPROVALS_KEY, refetchInterval: 30_000, queryFn: () => fabric<{ approvals: Approval[] }>("/api/agent-keys/approvals") });
   const waiting = (approvals.data?.approvals ?? []).filter((a) => !a.approved).length;
+  const requests = useQuery({ queryKey: ACCESS_REQUESTS_KEY, refetchInterval: 30_000, queryFn: () => fabric<{ requests: { state: string }[] }>("/api/access-requests") });
+  const asking = (requests.data?.requests ?? []).filter((r) => r.state === "waiting").length;
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -116,7 +120,7 @@ export default function AgentAccessSection({ id }: { id: string | null }) {
           <span className="fi-row-main"><span className="fi-row-title">{t("Waiting for your approval")}</span><span className="fi-row-meta">{t.plural(waiting, { one: "{n} action an agent cannot do without you", other: "{n} actions agents cannot do without you" })}</span></span>
         ) }] : []),
         { key: GRANTS, href: settingsPath("agent-access", GRANTS), content: (
-          <span className="fi-row-main"><span className="fi-row-title">{t("Access by mailbox")}</span><span className="fi-row-meta">{t("Who may read, send or set up which mailboxes")}</span></span>
+          <span className="fi-row-main"><span className="fi-row-title">{t("Access by mailbox")}</span><span className="fi-row-meta">{asking ? t.plural(asking, { one: "{n} agent asks for access", other: "{n} agents ask for access" }) : t("Who may read, send or set up which mailboxes")}</span></span>
         ) },
         { key: JOURNAL, href: settingsPath("agent-access", JOURNAL), content: (
           <span className="fi-row-main"><span className="fi-row-title">{t("What agents changed")}</span><span className="fi-row-meta">{t("Every change an outside agent made, newest first")}</span></span>

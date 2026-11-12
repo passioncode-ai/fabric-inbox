@@ -2267,11 +2267,14 @@ const createAgentKey = defineTool({
     duration: z.enum(["30d", "90d", "1y"]).optional().describe("How long the key lasts (default 1y)"),
     accounts: z.array(z.string().max(400)).min(1).max(50).optional().describe("Read and mail keys: the mailboxes it may reach (list_accounts), or domain:<domain>; left out, the whole workspace"),
     approval: z.enum(["agent", "owner"]).optional().describe("owner: the owner approves each irreversible action of the new key"),
+    requestOnly: z.boolean().optional().describe("B-246: a key that reaches no mailbox and may only ask for access (request_access) and read what it holds (list_my_access); level and accounts are ignored"),
   },
-  confirm: (a) => `Issue a ${a.level} key named ${quoted(a.name)}${a.accounts ? ` limited to ${a.accounts.join(", ")}` : " for the whole workspace"}, lasting ${a.duration ?? "1y"}; its secret is shown once.`,
+  confirm: (a) => a.requestOnly ? `Issue a key named ${quoted(a.name)} that reaches no mailbox and may only ask for access, lasting ${a.duration ?? "1y"}; its secret is shown once.`
+    : `Issue a ${a.level} key named ${quoted(a.name)}${a.accounts ? ` limited to ${a.accounts.join(", ")}` : " for the whole workspace"}, lasting ${a.duration ?? "1y"}; its secret is shown once.`,
   routes: ["POST /api/agent-keys"],
   call: (a, ctx) => post(ctx, "/api/agent-keys", { name: a.name, level: a.level, ...(a.send ? { send: a.send } : {}), ...(a.dailySendLimit ? { dailySendLimit: a.dailySendLimit } : {}),
-    ...(a.duration ? { duration: a.duration } : {}), ...(a.accounts ? { accounts: a.accounts } : {}), ...(a.approval ? { approval: a.approval } : {}) }),
+    ...(a.duration ? { duration: a.duration } : {}), ...(a.accounts && !a.requestOnly ? { accounts: a.accounts } : {}), ...(a.approval ? { approval: a.approval } : {}),
+    ...(a.requestOnly ? { requestOnly: true } : {}) }),
 });
 const revokeAgentKey = defineTool({
   name: "revoke_agent_key", title: "Revoke an agent key", level: "admin", ownerApproval: true, target: (a) => a.keyId,
@@ -2287,8 +2290,48 @@ const revokeAgentKey = defineTool({
   routes: ["DELETE /api/agent-keys/:id"], call: (a, ctx) => del(ctx, `/api/agent-keys/${enc(a.keyId)}`),
 });
 
-// ── B-246 W2c: access grants per mailbox (docs/app-store/tasks/2026-11-12-inbox-agent-grants.md, SCN-101) ──
+// ── B-246 W3: access requests (D-4, SCN-100) ──
 const GRANT_CAPABILITIES = ["read", "draft", "send", "organize", "delete", "create", "remove", "agents", "campaign"] as const;
+const requestAccess = defineTool({
+  name: "request_access", title: "Ask for access to mailboxes", level: "read", anyKey: true, additive: true,
+  target: (a) => `${a.can.join(",")} on ${a.mailboxes.join(",")}`,
+  description: "Asks this server's owner or administrators for access (B-246): the mailboxes (addresses, gmail:/imap:/outlook: account ids, domain:<domain> entries, or * for every mailbox), what this key would do on them (read, draft, send, organize, delete, create, remove, agents, campaign), why, and optionally until when. Any key may ask, one that reaches no mailbox yet included. The request waits up to 7 days; asking the same again answers the waiting one (repeated: true); at most 10 wait per key. They approve it, narrow it or refuse it in Settings → Agent access; list_my_access shows the answer and what this key holds.",
+  input: {
+    mailboxes: z.array(z.string().max(320)).min(1).max(200).describe("Addresses, account ids, domain:<domain> entries, or *"),
+    can: z.array(z.enum(GRANT_CAPABILITIES)).min(1).max(GRANT_CAPABILITIES.length).describe("What this key would do on them"),
+    why: z.string().min(1).max(500).describe("Why: the person deciding reads this"),
+    until: z.string().datetime({ offset: true }).optional().describe("When the access should end; none for no end"),
+  },
+  routes: ["POST /api/access-requests"],
+  call: (a, ctx) => post(ctx, "/api/access-requests", { mailboxes: a.mailboxes, can: a.can, why: a.why, until: a.until ?? null }),
+});
+const listMyAccess = defineTool({
+  name: "list_my_access", title: "Show what this key holds and what it asked for", level: "read", anyKey: true, readOnly: true,
+  description: "This key's own access (B-246): its level and mailboxes, the grants it holds (each with its mailboxes and capabilities), and its access requests with their state (waiting, approved, refused, expired) and the decision's note. decides: false while grants are checked beside today's key levels and decide nothing yet.",
+  input: {}, routes: ["GET /api/my-access"], call: (_a, ctx) => get(ctx, "/api/my-access"),
+});
+const listAccessRequests = defineTool({
+  name: "list_access_requests", title: "List the access requests", level: "admin", readOnly: true,
+  description: "Access requests agents made on this server (B-246), waiting ones first: the key and its name, the mailboxes and capabilities asked, why, until when, the state and, once decided, who decided, when, the note and the grant made.",
+  input: {}, routes: ["GET /api/access-requests"], call: (_a, ctx) => get(ctx, "/api/access-requests"),
+});
+const decideAccessRequest = defineTool({
+  name: "decide_access_request", title: "Approve or refuse an access request", level: "admin", ownerApproval: true, standingWaives: { standing: "keys" },
+  target: (a) => `${a.id} ${a.verdict}`,
+  description: "Approves an access request (B-246), as asked or narrowed to part of it (fewer mailboxes, fewer capabilities), which gives the asking key a grant; or refuses it with a note the key reads. A request is decided once; one that expired cannot be. Waits for the owner's approval unless the owner let this key issue keys (B-215). Two calls.",
+  input: {
+    id: z.string().min(8).max(64).describe("The request's id (list_access_requests)"),
+    verdict: z.enum(["approve", "refuse"]),
+    mailboxes: z.array(z.string().max(320)).min(1).max(200).optional().describe("Approve only these of the asked mailboxes"),
+    can: z.array(z.enum(GRANT_CAPABILITIES)).min(1).max(GRANT_CAPABILITIES.length).optional().describe("Approve only these of the asked capabilities"),
+    note: z.string().max(500).optional().describe("Why, for the key"),
+  },
+  confirm: (a) => `${a.verdict === "approve" ? "Approve" : "Refuse"} access request ${a.id}${a.mailboxes || a.can ? " narrowed" : ""}.`,
+  routes: ["POST /api/access-requests/:id/decision"],
+  call: (a, ctx) => post(ctx, `/api/access-requests/${enc(a.id)}/decision`, { verdict: a.verdict, ...(a.mailboxes ? { mailboxes: a.mailboxes } : {}), ...(a.can ? { can: a.can } : {}), ...(a.note ? { note: a.note } : {}) }),
+});
+
+// ── B-246 W2c: access grants per mailbox (docs/app-store/tasks/2026-11-12-inbox-agent-grants.md, SCN-101) ──
 const listGrants = defineTool({
   name: "list_grants", title: "List the access grants on this server", level: "admin", readOnly: true,
   description: "The access grants of this server (B-246): each grant's holder (an agent key by id, or a person by email), its mailboxes (addresses, gmail:/imap:/outlook: accounts, domain:<domain> entries, or * for every mailbox), its capabilities (read, draft, send, organize, delete, create, remove, agents, campaign), its limits (send mode, daily cap, owner approval), its end, who gave it and why. decides: false while the grants are checked beside today's key levels and member levels and decide nothing yet.",
@@ -2337,7 +2380,7 @@ export const TOOLS: readonly ToolDef[] = [
   outlookConnectLink, connectAccount, setAccountPassword, setProviderSetup, microsoftSetupStatus, checkMicrosoftSetup, listAgentKeys, agentActivity,
   listCampaigns, getCampaign, saveCampaign, deleteCampaign, addCampaignRecipients, listCampaignRecipients, previewCampaign, dryRunCampaign, listSuppression, changeSuppression,
   launchCampaign, pauseCampaign, stopCampaign, campaignReport,
-  saveMember, removeMember, syncMemberSignIn, createAgentKey, revokeAgentKey, listGrants, grantAccess, revokeGrant,
+  saveMember, removeMember, syncMemberSignIn, createAgentKey, revokeAgentKey, listGrants, grantAccess, revokeGrant, requestAccess, listMyAccess, listAccessRequests, decideAccessRequest,
 ];
 
 /**

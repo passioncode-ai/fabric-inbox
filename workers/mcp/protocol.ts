@@ -62,6 +62,8 @@ export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   standingWaives?: { standing: Standing; when?: (args: never, ctx: ToolContext) => Promise<boolean> | boolean };
   /** B-154 (DEC-0121 AP-4): the person's steps this tool stands for (it refuses with human-step-required), for the actions declaration. */
   humanSteps?: readonly HumanStep[];
+  /** B-246 W3: any key may call it, a requester key that reaches no mailbox included (asking for access, reading its own). */
+  anyKey?: boolean;
   /** Changes nothing. Tools that change something are journalled. */
   readOnly?: boolean;
   /** Only adds (an address, a sent message): told to clients as not destructive. Every other changing tool is. */
@@ -111,6 +113,8 @@ export function annotationsFor(tool: Pick<ToolDef<any>, "title" | "readOnly" | "
 }
 
 export function toolsFor(principal: Principal, tools: readonly ToolDef[]): ToolDef[] {
+  // B-246 W3: a requester key may only ask for access and read what it holds.
+  if (principal.kind === "agent" && principal.requestOnly) return tools.filter((t) => t.anyKey);
   // An empty limit (a damaged list, or a limit on an Admin key) reaches nothing, so it lists nothing.
   if (principal.accounts && !principal.accounts.length) return [];
   return tools.filter((t) => levelAllows(principal.level, t.level) && (!t.sends || principal.send === "send") && (!principal.accounts || toolFitsScope(t)));

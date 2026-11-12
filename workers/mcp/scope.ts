@@ -94,8 +94,12 @@ export const AGENT_READ_ROUTES = new Set(["GET /api/agent-runs", "GET /api/agent
 /** B-214: counts per mailbox that a limited key reads for its own mailboxes (scopedApi filters them). */
 export const COUNT_READ_ROUTES = new Set(["GET /api/support-months", "GET /api/support-topics"]);
 
+/** B-246 W3: the routes any key reaches for itself (asking for access, reading what it holds), whatever its mailboxes. */
+export const SELF_KEY_ROUTES = new Set(["POST /api/access-requests", "GET /api/my-access"]);
+
 export function toolFitsScope(tool: Pick<ToolDef, "routes">): boolean {
   return tool.routes.length > 0 && tool.routes.every((r) => {
+    if (SELF_KEY_ROUTES.has(r)) return true;
     const [method, path] = r.split(" ") as [string, string];
     if (adminMailboxAction(method, path)) return false;
     return FEED_ROUTES.has(r) || SAFETY_ROUTES.has(r) || AGENT_READ_ROUTES.has(r) || COUNT_READ_ROUTES.has(r) || MAILBOX_ROUTE.test(r) || GMAIL_ROUTE.test(r);
@@ -163,6 +167,8 @@ export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubje
       const pathname = path.split("?")[0]!;
       const route = `${method} ${pathname}`;
       if (FEED_ROUTES.has(route)) return narrowFeed(route, init);
+      // B-246 W3: a key asks for access and reads its own grants whatever it reaches; the route knows the key by its caller id.
+      if (SELF_KEY_ROUTES.has(route)) return api.request(method, path, init);
       // B-178: the safety check's routes name their messages' accounts in the body, or list every account's.
       if (route === "POST /api/safety/lookup" || route === "POST /api/safety/decide") {
         const b = (init.body && typeof init.body === "object" ? init.body : {}) as { keys?: { accountId?: unknown }[]; accountId?: unknown };

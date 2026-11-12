@@ -119,7 +119,9 @@ const BODIES: Record<string, string[]> = {
   "POST /api/suppression": ["add", "remove", "reason"],
   "PUT /api/members/:email": ["role", "accounts", "levels"], // workers/routes/members.ts SaveMember (B-154, B-160)
   "POST /api/grants": ["holder", "mailboxes", "can", "limits", "expiresAt", "why"], // workers/routes/grants.ts GiveGrant (B-246)
-  "POST /api/agent-keys": ["name", "level", "send", "dailySendLimit", "duration", "accounts", "approval"], // workers/routes/agent-keys.ts NewKey
+  "POST /api/access-requests": ["mailboxes", "can", "why", "until", "board"], // workers/routes/access-requests.ts Ask (B-246 W3)
+  "POST /api/access-requests/:id/decision": ["verdict", "mailboxes", "can", "note"], // workers/routes/access-requests.ts Decision
+  "POST /api/agent-keys": ["name", "level", "send", "dailySendLimit", "duration", "accounts", "approval", "requestOnly"], // workers/routes/agent-keys.ts NewKey
 };
 /** Written routes whose body carries nothing (or that take a whole document as it is). */
 const NO_BODY = new Set([
@@ -153,6 +155,8 @@ const MAP: Record<string, Record<string, Record<string, string> & { via?: string
   save_member: { "PUT /api/members/:email": { levels: "readOnly" } },
   // B-246: the tool names one holder (holderKey or holderEmail) and the limits field by field.
   grant_access: { "POST /api/grants": { holder: "holderKey", limits: "sendMode" } },
+  // B-246 W3: the asking project is the board path's, never an agent's argument.
+  request_access: { "POST /api/access-requests": { board: `${BY_TOOL}: the board path names it, not the tool` } },
   save_draft: {
     "PUT /api/v1/mailboxes/:mailboxId/drafts/:id": { body: "text", in_reply_to: "replyToMessageId", thread_id: `${BY_TOOL}: the conversation of the message it answers`,
       keep_attachments: "keepAttachments", expected_revision: "expectedRevision" },

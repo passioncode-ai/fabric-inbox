@@ -125,7 +125,7 @@ export async function handleMcp(request: Request, env: Env, ctx: ExecutionContex
   }
   // A limit that names nothing (a damaged list, or a narrowing header with no valid mailbox) reaches
   // nothing: say so at the door rather than serve a server with no tools.
-  if (principal.accounts && !principal.accounts.length) {
+  if (principal.accounts && !principal.accounts.length && !(principal.kind === "agent" && principal.requestOnly)) {
     console.warn(JSON.stringify({ event: "mcp.refused", reason: "empty_scope" }));
     return refuse(403, "This key is limited to no mailbox here (its list, or the X-Fabric-Accounts header, names none that is valid).");
   }

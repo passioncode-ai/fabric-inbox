@@ -249,7 +249,10 @@ export function grantsOfPrincipal(p: Principal, stored: readonly StoredGrant[] =
 export function grantsAllowTool(tool: { name: string; sends?: boolean; routes: readonly string[] }, p: Principal, grants: readonly Grant[], now = new Date()): boolean {
   const need = TOOL_NEEDS[tool.name];
   if (!need) return false;
-  if (p.accounts && !p.accounts.length) return false;
+  // A limit that names nothing reaches nothing, except a requester key's own requests (B-246 W3).
+  if (p.accounts && !p.accounts.length) return need === "self" && p.kind === "agent" && !!p.requestOnly;
+  // A key asks for access and reads its own for itself, whatever it reaches.
+  if (need === "self") return true;
   const mailbox = p.accounts ? p.accounts[0] : null;
   const reach = need === "server" ? CAPABILITIES.every((c) => allows(grants, null, c, now)) : allows(grants, mailbox, need, now);
   const drafts = !!tool.sends && p.kind === "agent" && p.send === "drafts" && p.level !== "admin";

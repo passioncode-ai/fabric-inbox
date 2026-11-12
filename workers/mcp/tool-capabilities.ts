@@ -6,11 +6,14 @@
  */
 import type { Capability } from "./grants";
 
-export type ToolNeed = Capability | "server";
+/** "self": any key, for itself (asking for access, reading what it holds; B-246 W3). */
+export type ToolNeed = Capability | "server" | "self";
 
 const ofEach = (need: ToolNeed, names: string): [string, ToolNeed][] => names.trim().split(/\s+/).map((n) => [n, need]);
 
 export const TOOL_NEEDS: Readonly<Record<string, ToolNeed>> = Object.freeze(Object.fromEntries([
+  // Any key, for itself.
+  ...ofEach("self", "request_access list_my_access"),
   // Reading mail, the server's lists and its reports; changes nothing.
   ...ofEach("read", `list_accounts list_messages search_mailbox list_mailbox_messages read_message read_thread get_attachment
     list_held_messages list_folders get_send_status list_addresses check_address_routing list_domains get_spam_settings
@@ -47,5 +50,5 @@ export const TOOL_NEEDS: Readonly<Record<string, ToolNeed>> = Object.freeze(Obje
     send_test_message get_server_errors get_ops_digest get_storage check_spam list_members list_audit export_mailbox
     export_setup list_mail_providers gmail_connect_link gmail_setup_status check_gmail_setup outlook_connect_link
     connect_account set_account_password set_provider_setup microsoft_setup_status check_microsoft_setup list_agent_keys
-    list_agent_activity list_grants grant_access revoke_grant`),
+    list_agent_activity list_grants grant_access revoke_grant list_access_requests decide_access_request`),
 ]));
