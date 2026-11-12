@@ -85,12 +85,11 @@ test("B-215: a key the owner let manage people or keys confirms those with its o
 });
 
 test("B-250: a request-only key needs no level and is posted as a Read key; any other key without a level is refused", async () => {
+  const owner: Principal = { kind: "owner", label: "owner@shop.invalid", level: "admin", send: "send", dailySendLimit: null, keyId: null, accounts: null };
+  const tool = TOOLS.find((t) => t.name === "create_agent_key")!;
   const api = fakeApi({ "POST /api/agent-keys": ok({ key: { id: "k9", requestOnly: true }, clientSecret: "s" }) });
-  const done = await call(api.api, "create_agent_key", { name: "Outreach", requestOnly: true });
-  assert.equal(done.isError ?? false, false, JSON.stringify(done));
-  const posted = api.calls.find((c) => c.path === "/api/agent-keys")!;
+  await tool.call({ name: "Outreach", requestOnly: true } as never, { api: api.api, principal: owner } as never);
+  const posted = api.calls.find((c) => c.method === "POST")!;
   assert.deepEqual([(posted.body as any).level, (posted.body as any).requestOnly], ["read", true]);
-  const refused = await call(fakeApi({}).api, "create_agent_key", { name: "Research" });
-  assert.equal(refused.isError, true);
-  assert.match(JSON.stringify(refused), /Name the level/);
+  await assert.rejects(() => tool.call({ name: "Research" } as never, { api: fakeApi({}).api, principal: owner } as never), /Name the level/);
 });
