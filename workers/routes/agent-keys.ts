@@ -33,6 +33,8 @@ const NewKey = z.object({
   accounts: z.array(z.string().max(400)).max(50).optional(),
   /** B-38: "owner" when the owner approves each irreversible action of this key in Agent access. */
   approval: z.enum(["agent", "owner"]).default("agent"),
+  /** B-246 W3: a key that reaches no mailbox and may only ask for access; it is a Read key with an empty list. */
+  requestOnly: z.boolean().default(false),
 }).strict();
 
 export type NewKeyInput = Omit<z.infer<typeof NewKey>, "accounts"> & { accounts: string[] | null };
@@ -42,6 +44,7 @@ export function validateNewKey(raw: unknown): { ok: true; value: NewKeyInput } |
   const parsed = NewKey.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? msg("Invalid key") };
   const { accounts: asked, ...rest } = parsed.data;
+  if (rest.requestOnly) return { ok: true, value: { ...rest, level: "read", send: "drafts", accounts: [] } };
   if (asked === undefined) return { ok: true, value: { ...rest, accounts: null } };
   if (rest.level === "admin") return { ok: false, error: msg("An Admin key manages the whole workspace, so it cannot be limited to mailboxes. Choose Read or Mail.") };
   if (!asked.length) return { ok: false, error: msg("Choose at least one mailbox, or leave the limit out for the whole workspace.") };
@@ -123,6 +126,7 @@ agentKeysRouter.post("/api/agent-keys", async (c) => {
     dailySendLimit: input.dailySendLimit, createdAt: new Date().toISOString(), expiresAt: token.expires_at ?? null, accounts: input.accounts,
     ...(input.approval === "owner" ? { approval: "owner" as const } : {}),
     ...(signedInEmail(c) ? { createdBy: signedInEmail(c)! } : {}),
+    ...(input.requestOnly ? { requestOnly: true as const } : {}),
   };
   try {
     await updateAgentKeys(c.env.BUCKET, (keys) => [...keys.filter((k) => k.id !== key.id), key]);

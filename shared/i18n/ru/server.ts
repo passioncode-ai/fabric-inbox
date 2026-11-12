@@ -16,6 +16,16 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"No agent key with that id on this server.": "На этом сервере нет ключа агента с таким id.",
 	"A mailbox in the list is not one this server can name.": "Один из ящиков в списке этот сервер не может обозначить.",
 	"No grant with that id.": "Права доступа с таким id нет.",
+	// Access requests (workers/routes/access-requests.ts, B-246 W3)
+	"The access requests changed at the same time. Try again.": "Запросы доступа изменились одновременно с вашим изменением. Попробуйте ещё раз.",
+	"The access request could not be saved. Try again.": "Не удалось сохранить запрос доступа. Попробуйте ещё раз.",
+	"Only an agent key asks for access; a person is given it in Agent access.": "Доступ просит только ключ агента; человеку его выдают в разделе «Доступ агентов».",
+	"Name the mailboxes, what the key may do on them and why.": "Укажите ящики, что ключ будет в них делать и зачем.",
+	"This key already has 10 requests waiting. Wait for a decision first.": "У этого ключа уже 10 запросов ждут решения. Сначала дождитесь решения.",
+	"Only an agent key reads its own access here.": "Здесь свой доступ читает только ключ агента.",
+	"Approve or refuse, and narrow it only to part of what was asked.": "Одобрите или откажите; сузить можно только до части того, что просили.",
+	"No access request with that id.": "Запроса доступа с таким id нет.",
+	"This request was already decided, or it expired.": "По этому запросу уже есть решение, или его срок истёк.",
 	// Agent access (workers/routes/agent-keys.ts)
 	"Name the agent this key is for": "Назовите агента, для которого этот ключ",
 	"Invalid key": "Недопустимый ключ",

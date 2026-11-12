@@ -106,7 +106,8 @@ test("for every tool and every key shape of today, the grants decide exactly as 
       const old = !(k.level === "admin" && k.accounts !== null) && levelAllows(k.level, tool.level) && !(tool.sends && drafts) && (k.accounts === null || toolFitsScope(tool));
       const grants = grantsOfKey(k);
       const mailbox = k.accounts === null ? null : A;
-      const reach = need === "server" ? CAPABILITIES.every((c) => allows(grants, null, c)) : allows(grants, mailbox, need);
+      // "self" (B-246 W3): any key that reaches something asks for itself; a key that reaches nothing does not.
+      const reach = need === "self" ? grants.length > 0 : need === "server" ? CAPABILITIES.every((c) => allows(grants, null, c)) : allows(grants, mailbox, need);
       const sendsKept = !(tool.sends && grants.some((g) => g.limits.sendMode === "drafts"));
       const now = reach && sendsKept && (k.accounts === null || toolFitsScope(tool));
       if (old !== now) differ.push(`${tool.name} ${k.level}/${k.send}/${k.accounts ? "limited" : "all"}: old ${old}, grants ${now}`);
@@ -164,8 +165,8 @@ test("every role has a preset; the employee reaches its own and shared addresses
 });
 
 test("the service declares a capability only once its tools exist (D-5)", () => {
-  assert.deepEqual(mailCapabilities(TOOLS), ["mail.read", "mail.send"]);
-  assert.deepEqual(mailCapabilities([...TOOLS, { name: "request_access" }]), ["mail.read", "mail.send", "mail.access"]);
+  assert.deepEqual(mailCapabilities(TOOLS), ["mail.read", "mail.send", "mail.access"]);
+  assert.deepEqual(mailCapabilities(TOOLS.filter((t) => t.name !== "request_access")), ["mail.read", "mail.send"]);
 });
 
 // ---- W2c: the store and the shadow beside today's checks ----
