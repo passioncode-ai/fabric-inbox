@@ -35,7 +35,7 @@ function messageLink(accountId, providerMessageId) {
 
 /**
  * deps: servers() → [{ origin, label }] (the servers the app holds; one without origin for a single-server caller),
- * read(origin, path) → the JSON body or null, open(origin, link), openAll() (the All Servers window, when several
+ * read(origin, path) → the JSON body or null, open(origin, link), openAll() (the inbox with All chosen, when several
  * servers have new mail), focused() → the origin the person is looking at in the mail window, or null.
  */
 function createNewMailNotifier(deps) {

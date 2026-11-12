@@ -405,22 +405,48 @@ function installMoveIPC() {
   });
 }
 
-// ── B-233 (SCN-099): the mail of every server the app holds, in one window ─────────────────────────────
-// Each server is read through its own session; a message opens on its own server (switched to, still signed in).
+// ── B-233, B-244 (SCN-099): the mail of every server the app holds, read through each one's own session ─────
+// The merged list lives in the mail window (B-244 D-3); `readAll` reads the other servers for its bridge.
 const allServers = require('./all-servers.cjs');
-let allWindow = null;
-function showAllServers() {
-  if (allWindow && !allWindow.isDestroyed()) { allWindow.show(); allWindow.focus(); return; }
-  allWindow = new BrowserWindow({ title: t('All Servers'), width: 980, height: 720, minWidth: 640, minHeight: 480,
-    backgroundColor: '#f7f7f8', webPreferences: securePreferences({ preload: path.join(__dirname, 'all-servers-preload.cjs'), partition: 'fabric-all-servers' }) });
-  allWindow.setMenuBarVisibility(false);
-  rejectPermissions(allWindow.webContents.session);
-  allWindow.webContents.on('will-navigate', event => event.preventDefault());
-  allWindow.webContents.on('will-redirect', event => event.preventDefault());
-  allWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  allWindow.on('closed', () => { allWindow = null; });
-  allWindow.loadFile(path.join(__dirname, 'all-servers.html'));
-  logEvent({ event: 'all_servers_opened', servers: servers.length });
+
+// ── B-244 D-4 (SCN-099): a server's name is the person's, kept in servers.json on this Mac ─────────────────────
+let renameWindow = null;
+let renameOrigin = null;
+function showRename(origin) {
+  if (!servers.some((s) => s.origin === origin)) return;
+  renameOrigin = origin;
+  if (renameWindow && !renameWindow.isDestroyed()) { renameWindow.reload(); renameWindow.show(); renameWindow.focus(); return; }
+  renameWindow = new BrowserWindow({ title: t('Rename Server'), width: 480, height: 360, minWidth: 420, minHeight: 320,
+    backgroundColor: '#f7f7f8', webPreferences: securePreferences({ preload: path.join(__dirname, 'rename-server-preload.cjs'), partition: 'fabric-rename' }) });
+  renameWindow.setMenuBarVisibility(false);
+  rejectPermissions(renameWindow.webContents.session);
+  renameWindow.webContents.on('will-navigate', event => event.preventDefault());
+  renameWindow.webContents.on('will-redirect', event => event.preventDefault());
+  renameWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  renameWindow.on('closed', () => { renameWindow = null; renameOrigin = null; });
+  renameWindow.loadFile(path.join(__dirname, 'rename-server.html'));
+}
+/** B-244 D-3: the inbox of the server shown, with All chosen (a notification about mail on several servers opens it). */
+async function showAllMail() {
+  if (!config) return false;
+  return openOnServer(config.origin, '/?servers=all');
+}
+function installRenameIPC() {
+  const own = (event) => !!(renameWindow && !renameWindow.isDestroyed() && event.sender === renameWindow.webContents);
+  const handle = (channel, fn) => ipcMain.handle(channel, async (event, arg) => (own(event) ? fn(arg) : null));
+  handle('fabric:rename-locale', () => i18n.forWindow());
+  handle('fabric:rename-state', () => {
+    const server = servers.find((s) => s.origin === renameOrigin);
+    return server ? { host: new URL(server.origin).host, label: server.label || '', max: serverList.LABEL_MAX } : null;
+  });
+  handle('fabric:rename-save', async (label) => {
+    if (!servers.some((s) => s.origin === renameOrigin)) return false;
+    await saveServers(serverList.rename(servers, renameOrigin, typeof label === 'string' ? label : ''));
+    logEvent({ event: 'server_renamed', named: !!(servers.find((s) => s.origin === renameOrigin) || {}).label });
+    installMenu();
+    return true;
+  });
+  handle('fabric:rename-close', () => { if (renameWindow && !renameWindow.isDestroyed()) renameWindow.close(); return true; });
 }
 /** Opens one message on its own server: the window shows that server (its sign-in kept) and the message. */
 async function openOnServer(origin, link) {
@@ -435,20 +461,6 @@ async function openOnServer(origin, link) {
   await switchServer(origin);
   if (mailWindow && !mailWindow.isDestroyed()) { mailWindow.show(); mailWindow.focus(); }
   return true;
-}
-function installAllServersIPC() {
-  const own = (event) => !!(allWindow && !allWindow.isDestroyed() && event.sender === allWindow.webContents);
-  const handle = (channel, fn) => ipcMain.handle(channel, async (event, arg) => (own(event) ? fn(arg) : null));
-  handle('fabric:all-locale', () => i18n.forWindow());
-  handle('fabric:all-read', async () => {
-    const list = servers.map((s) => ({ origin: s.origin, label: serverList.labelFor(s, t) }));
-    const result = await allServers.readAll({ servers: list, read: (origin, pathname) => serverApi(origin).get(pathname) });
-    logEvent({ event: 'all_servers_read', servers: result.servers.length, ok: result.servers.filter((s) => s.state === 'ok').length });
-    return result;
-  });
-  handle('fabric:all-open', async (arg) => openOnServer(String(arg && arg.origin || ''), arg && arg.link));
-  // A server whose sign-in lapsed: the window shows it, at its sign-in page.
-  handle('fabric:all-sign-in', async (origin) => { if (servers.some((s) => s.origin === origin)) await switchServer(String(origin)); return true; });
 }
 /**
  * B-244 D-2 (SCN-099): the mail page learns of the other servers the app holds through its narrow bridge. Answered only
@@ -905,7 +917,7 @@ function startNewMail() {
   };
   mailNotifier = newMail.createNewMailNotifier({ fs, userData: app.getPath('userData'), t, log: logEvent,
     servers: () => servers.map((s) => ({ origin: s.origin, label: serverList.labelFor(s, t) })),
-    read, open: (origin, link) => void openOnServer(origin, link), openAll: () => showAllServers(),
+    read, open: (origin, link) => void openOnServer(origin, link), openAll: () => void showAllMail(),
     notify: (title, body, onClick) => notify(title, body, onClick),
     focused: () => (config && mailWindow && !mailWindow.isDestroyed() && mailWindow.isFocused() ? config.origin : null) });
   void mailNotifier.start().then(installMenu);
@@ -1283,7 +1295,7 @@ async function handleConnectLink(url) {
 }
 function installIPC() {
   installMoveIPC();
-  installAllServersIPC();
+  installRenameIPC();
   installServersBridgeIPC();
   const fromConsole = (event) => {
     const docked = consoleView && !consoleView.webContents.isDestroyed() && event.sender === consoleView.webContents
@@ -1495,9 +1507,9 @@ function installMenu() {
     servers: {
       items: servers.map((s) => ({ label: serverList.labelFor(s, t), checked: !!config && s.origin === config.origin, click: () => void switchServer(s.origin) })),
       add: () => showSetup(),
-      all: servers.length > 1 ? () => showAllServers() : null,
       move: servers.length > 1 && config ? () => showMove() : null,
       forget: servers.filter((s) => !config || s.origin !== config.origin).map((s) => ({ label: serverList.labelFor(s, t), click: () => void forgetServer(s.origin) })),
+      rename: servers.map((s) => ({ label: serverList.labelFor(s, t), click: () => showRename(s.origin) })),
     },
     connectGmail: () => { if (config) void openExternal(policy.gmailConnectURL(config), true); else showSetup(t('Set the server address before connecting Gmail.')); },
     retry: retryMail,

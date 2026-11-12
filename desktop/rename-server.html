@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'">
+<title>Fabric Inbox</title>
+<link rel="stylesheet" href="fabric-tokens.css">
+<link rel="stylesheet" href="setup.css">
+<script src="rename-server.js" defer></script>
+</head>
+<!-- B-244 D-4 (SCN-099). Every word is written by rename-server.js through its dictionary. -->
+<body>
+<main>
+  <p class="eyebrow"><img src="inbox-mark.svg" alt="">Fabric Inbox</p>
+  <h1 id="title" tabindex="-1"></h1>
+  <form id="form">
+    <label for="name" id="name-label"></label>
+    <input id="name" type="text" autocomplete="off" spellcheck="false">
+    <p id="hint" class="help"></p>
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <div class="actions">
+      <button type="button" id="cancel" class="secondary"></button>
+      <button type="submit" id="save"></button>
+    </div>
+  </form>
+</main>
+</body>
+</html>

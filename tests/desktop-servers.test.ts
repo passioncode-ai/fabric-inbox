@@ -40,6 +40,38 @@ test("remembering adds a new server at the end, keeps a known one's place and co
   assert.equal(servers.labelFor(list[1], t), "acme-inbox.someone.workers.dev (organization)");
 });
 
+test("a server keeps the name a person gave it, cleaned and bounded; an empty name gives back the host (B-244 D-4)", () => {
+  let list = servers.remember(servers.remember([], MINE, "personal"), ACME, "org:acme");
+  list = servers.rename(list, ACME.origin, "  Acme\n  Corp\u0007 ");
+  assert.equal(list[1].label, "Acme Corp");
+  assert.equal(servers.labelFor(list[1], t), "Acme Corp", "the name replaces the host and the organization mark");
+  assert.equal(servers.labelFor(list[0], t), "fabric-inbox.someone.workers.dev");
+  list = servers.remember(list, ACME, "org:acme");
+  assert.equal(list[1].label, "Acme Corp", "a later save keeps the name");
+  const read = servers.readList({ servers: list }, policy.validateConfig);
+  assert.equal(read[1].label, "Acme Corp", "the name survives servers.json");
+  assert.equal(servers.readList({ servers: [{ ...MINE, label: 42 }] }, policy.validateConfig)[0].label, undefined);
+  assert.equal([...servers.rename(list, ACME.origin, "x".repeat(200))[1].label].length, servers.LABEL_MAX);
+  assert.deepEqual(servers.rename(list, "https://unknown.example", "Other"), list, "an origin not held changes nothing");
+  list = servers.rename(list, ACME.origin, "   ");
+  assert.equal("label" in list[1], false);
+  assert.equal(servers.labelFor(list[1], t), "acme-inbox.someone.workers.dev (organization)");
+});
+
+test("the rename window is answered only from itself, saves through servers.json and has no network (B-244 D-4)", () => {
+  const main = readFileSync(new URL("../desktop/main.cjs", import.meta.url), "utf8");
+  const ipc = main.slice(main.indexOf("function installRenameIPC"), main.indexOf("/**", main.indexOf("function installRenameIPC")));
+  assert.match(ipc, /event\.sender === renameWindow\.webContents/);
+  assert.match(ipc, /saveServers\(serverList\.rename\(servers, renameOrigin/);
+  assert.match(ipc, /installMenu\(\)/);
+  const html = readFileSync(new URL("../desktop/rename-server.html", import.meta.url), "utf8");
+  assert.match(html, /connect-src 'none'/);
+  for (const gone of ["all-servers.html", "all-servers.js", "all-servers-preload.cjs"]) {
+    assert.ok(!readdirSync(new URL("../desktop/", import.meta.url)).includes(gone), `${gone} is removed (B-244 D-5)`);
+  }
+  assert.doesNotMatch(main, /showAllServers|all-servers\.html/);
+});
+
 test("the Account menu lists the servers, the one shown ticked, with Add Another Server and Forget Server", () => {
   const clicked: string[] = [];
   const ctx = { t, update: { label: "u", enabled: true, click() {} }, automatic: { checked: true, enabled: true, click() {} },
@@ -65,13 +97,15 @@ test("the Account menu lists the servers, the one shown ticked, with Add Another
   move.click();
   assert.equal(clicked.at(-1), "move");
   assert.ok(!one.some((i: any) => i.label === "Move an Address to Another Server…"));
-  // SCN-099 (B-233): with two servers held, All Servers shows the mail of every one in one list, before Add Another Server.
-  const withAll = menuTemplate("darwin", { ...ctx, servers: { ...ctx.servers, all: () => clicked.push("all") } }).find((m: any) => m.label === "Account").submenu;
-  const all = withAll.find((i: any) => i.label === "All Servers");
-  assert.ok(all && withAll.indexOf(all) === 2, "after the servers, before Add Another Server");
-  all.click();
-  assert.equal(clicked.at(-1), "all");
-  assert.ok(!one.some((i: any) => i.label === "All Servers"));
+  // SCN-099 (B-244 D-4): every server held can be named, after Move and before Forget Server; All Servers is gone (D-5).
+  const withRename = menuTemplate("darwin", { ...ctx, servers: { ...ctx.servers, rename: [{ label: "mine", click: () => clicked.push("rename mine") }] } }).find((m: any) => m.label === "Account").submenu;
+  const rename = withRename.find((i: any) => i.label === "Rename Server");
+  assert.ok(rename && withRename.indexOf(rename) === withRename.findIndex((i: any) => i.label === "Forget Server") - 1, "just before Forget Server");
+  assert.deepEqual(rename.submenu.map((i: any) => i.label), ["mine…"]);
+  rename.submenu[0].click();
+  assert.equal(clicked.at(-1), "rename mine");
+  assert.ok(!withRename.some((i: any) => i.label === "All Servers"));
+  assert.ok(!one.some((i: any) => i.label === "Rename Server"), "no rename list, no item");
 });
 
 test("the start-up sweep keeps every remembered server's sign-in and removes the rest", async () => {

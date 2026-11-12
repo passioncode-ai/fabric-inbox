@@ -278,12 +278,20 @@ export default function UnifiedInbox() {
   // server's own.
   const heldServers = useHeldServers();
   const [mergeAll, setMergeAll] = useState(() => {
+    // `?servers=all`: the app opens All (a notification about new mail on several servers).
+    if (params.get("servers") === "all") return true;
     try { return window.localStorage.getItem("fi-server-tab") !== "own"; } catch { return true; }
   });
   const chooseServerTab = (all: boolean) => {
     setMergeAll(all);
     try { window.localStorage.setItem("fi-server-tab", all ? "all" : "own"); } catch { /* kept for this page only */ }
   };
+  useEffect(() => {
+    if (params.get("servers") !== "all") return;
+    chooseServerTab(true);
+    setParams((old) => { const next = new URLSearchParams(old); next.delete("servers"); return next; }, { replace: true, preventScrollReset: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
   const serverTabs = heldServers.length > 1 && folder === "inbox" && !search;
   const merging = serverTabs && mergeAll && !accountId && !domainFilter && !categoryParam && !providerFilter && !replyFilter;
   const otherInbox = useOtherInbox(serverTabs, windowActive);
