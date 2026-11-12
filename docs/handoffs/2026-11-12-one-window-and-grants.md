@@ -22,22 +22,23 @@
 | Remote branches: only `main` left; `agent/b213-stop-hour` (landed as #416, #417) archived at `refs/archive/2026-11-12/` | | `git ls-remote origin 'refs/heads/*'` |
 
 
+| Releases 1.6.3 to 1.6.6 published and on the three servers (receipts `linked`, `get_server` answered 1.6.4) | tags `v1.6.3` to `v1.6.6` | release runs green to 1.6.4; 1.6.5 and 1.6.6 watched |
+| B-236: an agent adds a server by `fabric-inbox://server` after the person's Add Server | PR #500 | Studio `npm test` 2069 pass |
+| B-248, B-249: a reply asks the knowledge what it asks now; the checker reads the passages the model found itself | PRs #501, #503 | live previews of the asking agent's ticket: no hand-off, no "not in the facts" |
+| B-250, B-251: a request-only key needs no level and is listed as such; a campaign recipient written to names its thread | PRs #505, #506 | Studio `npm test` 2072 pass |
+| The client organization's outreach agent's requester key in its Studio space's vault (`<agent>/prod/FABRIC_INBOX_*`); proved with `list_my_access` from that space | board thread `0100677f` | the first attempt's key, whose value was lost, revoked |
+
 ## Open, with its watcher
 
-- Release run 43221388971 for `v1.6.2` queued: the organization's Actions runners are busy (free plan; 15 runs of
-  another repository ahead). This session's background job tags `v1.6.3` on `6340c2d` once that run ends green, so
-  1.6.2 is published before 1.6.3 and stays out of the way of "latest". If the session is gone: wait for the run, then
-  `git tag -a v1.6.3 -m "Fabric Inbox 1.6.3" 6340c2df1f965c53cb13f63b897bee602502cc31 && git push origin v1.6.3`,
-  watch the release run, check `/api/server` 1.6.3 on each server (already deployed). The Mac app updates itself.
-- B-246 shadow wait until 2026-11-15: read each server's Worker log for `grant_shadow_disagreement`; none expected;
-  then the cut-over (grants decide, `decides: true`). Reader: the next session on B-246, no scheduled job.
-- B-246 W5 (the client organization's outreach agent): board thread `0100677f` (its organization agent, studio-agent,
-  fabric-agents-database), message `1ffd7124`: the sales owner, the outreach address, the access owner, the assembly
-  from `sales-leads` and the deploy. Human gates: the access owner's approval (DEC-0009) and the owner's word on the
-  first send of each campaign.
-- B-247 asker (a reply agent's project, thread `7a01c638`): told the hand-off is fixed; their checker now refuses the
-  answer for details not in their facts (theirs to fix).
-- A person's first sign-in in the Inbox app of each Studio space (Cloudflare Access): a human gate; agents do not need it.
+- Release runs for `v1.6.5` and `v1.6.6`: this session's background poll; the servers already run 1.6.6.
+- B-246 shadow wait until 2026-11-15: read each server's Worker log for `grant_shadow_disagreement`, then the cut-over.
+- B-246 W5: the outreach agent is assembled (its own private repository, `8a99a1e`); placement by studio-agent waits for
+  its HTTP surface and probe (its OI-9) and the operator's word for the deploy key; the owner's decisions (sales owner,
+  mailbox and sender, audience and texts, privacy) wait on the organization agent's question `e8c2435c`; the access
+  owner approves the agent's request once it asks.
+- A person's first sign-in in the Inbox app of each Studio space (Cloudflare Access): a human gate.
+- MacBook disk: full at ~15:30 UTC today, then 8.8 GB; builds run on Studio and only `build/` comes back (13 MB),
+  deployed with `npx --yes wrangler@4.74.0 deploy --config build/server/wrangler.json`.
 
 ## Exact next task
 
