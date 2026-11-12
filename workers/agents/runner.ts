@@ -879,6 +879,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   }
 
   const asked = new Set<string>();
+  // B-249: the passages the model found itself, so the checker sees every passage the answer may rest on.
+  const found: KnowledgeHit[] = [];
   if (collections.length) tools.push({
     name: "search_knowledge",
     description: "Search the agent's knowledge collections for passages. Use other words than before if a search found nothing.",
@@ -893,6 +895,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
       try {
         const hits = await deps.knowledge.search(query, collections, passageLimit);
         remember(hits);
+        found.push(...hits);
         record.ok = true;
         record.result = msg('{n} passage(s) for "{query}": {refs}', { n: hits.length, query, refs: hits.map((h) => h.ref).join(", ") }).slice(0, RESULT_PREVIEW_CHARS);
         return hits.length ? passagesBlock(hits) : "Nothing matched. Try other words, or say you will pass the question on.";
@@ -1104,7 +1107,10 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
           // 2026-10-17: a support contact named only in the instructions was rejected as invented. They go last:
           // the checker reads the first 16,000 characters, and long instructions first cut off the tool results
           // a right answer rested on, so it was rejected as invented (VoC audit 2026-10-27, 2).
-          const facts = [factTexts.length ? `[tool results]\n${RANK_NOTE}` : "", ...factTexts, passagesBlock(passages),
+          // B-249: the passages searched before the model and those it searched itself, each once.
+          const seen = new Set<string>();
+          const read = [...passages, ...found].filter((h) => !seen.has(h.ref) && !!seen.add(h.ref));
+          const facts = [factTexts.length ? `[tool results]\n${RANK_NOTE}` : "", ...factTexts, passagesBlock(read),
             agent.knowledge.trim() && `[knowledge]\n${agent.knowledge.trim()}`, `[operator instructions]\n${agent.instructions.trim()}`].filter(Boolean).join("\n\n");
           const verdict = await deps.check(response.model ?? "", { message: `${email.subject}\n${deps.htmlToText(email.body)}`, facts, answer: body });
           record.ok = verdict.approved;
