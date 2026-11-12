@@ -424,7 +424,8 @@ function showAllServers() {
 }
 /** Opens one message on its own server: the window shows that server (its sign-in kept) and the message. */
 async function openOnServer(origin, link) {
-  if (!servers.some((s) => s.origin === origin) || typeof link !== 'string' || !link.startsWith('/')) return false;
+  // A path of that server only: `//host/…` would load another site into the mail window (B-244 D-2).
+  if (!servers.some((s) => s.origin === origin) || !policy.serverPath(link)) return false;
   if (config && config.origin === origin && mailWindow && !mailWindow.isDestroyed() && mailPage()) {
     mailWindow.show(); mailWindow.focus();
     void mailPage().loadURL(new URL(link, origin).href).catch(() => {});
@@ -448,6 +449,39 @@ function installAllServersIPC() {
   handle('fabric:all-open', async (arg) => openOnServer(String(arg && arg.origin || ''), arg && arg.link));
   // A server whose sign-in lapsed: the window shows it, at its sign-in page.
   handle('fabric:all-sign-in', async (origin) => { if (servers.some((s) => s.origin === origin)) await switchServer(String(origin)); return true; });
+}
+/**
+ * B-244 D-2 (SCN-099): the mail page learns of the other servers the app holds through its narrow bridge. Answered only
+ * to a page of a held server, at its own main frame (policy.heldPageOrigin). The other servers' inboxes are read
+ * through each one's own session and handed to the page in this window only; no row of one server is sent to another
+ * server's backend.
+ */
+function installServersBridgeIPC() {
+  const from = (event) => {
+    const origin = mailViews ? policy.heldPageOrigin(event, (contents) => mailViews.originOf(contents)) : null;
+    if (!origin) throw new Error('Untrusted request');
+    return origin;
+  };
+  ipcMain.handle('fabric:servers', (event) => {
+    from(event);
+    const shown = config ? config.origin : null;
+    return servers.map((s) => ({ origin: s.origin, label: serverList.labelFor(s, t), context: s.context ?? null, shown: s.origin === shown }));
+  });
+  ipcMain.handle('fabric:other-inbox', async (event) => {
+    const self = from(event);
+    const others = servers.filter((s) => s.origin !== self).map((s) => ({ origin: s.origin, label: serverList.labelFor(s, t) }));
+    const result = await allServers.readAll({ servers: others, read: (origin, pathname) => serverApi(origin).get(pathname) });
+    logEvent({ event: 'other_inbox_read', servers: result.servers.length, ok: result.servers.filter((s) => s.state === 'ok').length });
+    return result;
+  });
+  // Shows a held server in this window, at one of its paths when given (a message link); false when refused.
+  ipcMain.handle('fabric:show-server', async (event, origin, link) => {
+    from(event);
+    const target = String(origin || '');
+    if (!servers.some((s) => s.origin === target)) return false;
+    if (link === undefined || link === null || link === '') { await switchServer(target); return true; }
+    return openOnServer(target, link);
+  });
 }
 function showSetup(message = '', start = '') {
   notice = message;
@@ -1250,6 +1284,7 @@ async function handleConnectLink(url) {
 function installIPC() {
   installMoveIPC();
   installAllServersIPC();
+  installServersBridgeIPC();
   const fromConsole = (event) => {
     const docked = consoleView && !consoleView.webContents.isDestroyed() && event.sender === consoleView.webContents
       && event.senderFrame === consoleView.webContents.mainFrame && event.senderFrame.url === consoleURL;

@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import fsPromises from "node:fs/promises";
 import { readFile } from "node:fs/promises";
 import os from "node:os";
@@ -374,4 +374,42 @@ test("Settings… (⌘,) opens the server's Settings screen in the mail window; 
   h.openSettings();
   await h.settle();
   assert.ok(h.windows.some((w: any) => w.options.webPreferences.partition === "fabric-setup"), "Server address… opens the server-address window");
+});
+
+test("B-244 D-2: a held server's page lists the servers and shows another at one of its paths; anything else is refused", async () => {
+  const h = await boot({ config: { origin: A, accessOrigin: "" }, files: { [P]: [dirOf(A)] } });
+  await h.settle();
+  h.openSettings();
+  await h.handlers.get("fabric:setup-save")!(h.setupSender(), { origin: B, accessOrigin: "" });
+  await h.settle();
+  const page = (origin: string) => h.mailWindows().find((w: any) => w.webContents.session.partition === policy.partitionFor({ origin }));
+  const from = (origin: string) => { const p = page(origin); return { sender: p.webContents, senderFrame: p.webContents.mainFrame }; };
+  page(A).loadURL(A + "/");
+  page(B).loadURL(B + "/");
+  for (let i = 0; i < 500 && h.handlers.get("fabric:servers")!(from(B)).length < 2; i++) await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(h.handlers.get("fabric:servers")!(from(B)).map((s: any) => [s.origin, s.shown]), [[A, false], [B, true]]);
+  // The hidden page of a held server may ask too (its own frame, its own origin).
+  assert.equal(h.handlers.get("fabric:servers")!(from(A)).length, 2);
+  // Not a held server's page, another frame, or a page navigated away: refused.
+  assert.throws(() => h.handlers.get("fabric:servers")!(h.setupSender()), /Untrusted/);
+  assert.throws(() => h.handlers.get("fabric:servers")!({ sender: page(B).webContents, senderFrame: { url: B + "/" } }), /Untrusted/);
+  page(B).loadURL("https://elsewhere.example/");
+  assert.throws(() => h.handlers.get("fabric:servers")!(from(B)), /Untrusted/);
+  page(B).loadURL(B + "/");
+  // Another site's address is never loaded into the window; a path of the server is, on that server's page.
+  assert.equal(await h.handlers.get("fabric:show-server")!(from(B), A, "//evil.example/x"), false);
+  assert.equal(await h.handlers.get("fabric:show-server")!(from(B), "https://unknown.example", "/x"), false);
+  assert.equal(page(A).webContents.getURL(), A + "/");
+  assert.equal(await h.handlers.get("fabric:show-server")!(from(B), A, "/?folder=inbox"), true);
+  await h.settle();
+  assert.equal(page(A).webContents.getURL(), new URL("/?folder=inbox", A).href);
+  assert.ok(!h.log.includes(`destroy ${policy.partitionFor({ origin: B })}`), "the page it came from is kept");
+});
+
+test("B-244 D-2: the other servers' inbox is read through each one's own session and never includes the asking server", () => {
+  const main = readFileSync(new URL("../desktop/main.cjs", import.meta.url), "utf8");
+  const bridge = main.slice(main.indexOf("function installServersBridgeIPC"), main.indexOf("function showSetup"));
+  assert.match(bridge, /servers\.filter\(\(s\) => s\.origin !== self\)/);
+  assert.match(bridge, /read: \(origin, pathname\) => serverApi\(origin\)\.get\(pathname\)/);
+  assert.match(main, /installAllServersIPC\(\);\n  installServersBridgeIPC\(\);/);
 });

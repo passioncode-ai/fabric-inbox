@@ -125,6 +125,20 @@ function readSetup(value) {
     },
   };
 }
+/**
+ * B-244 D-2: the server whose page in the mail window sends this, from that page's main frame on its own origin;
+ * null for anything else (another frame, a page navigated away, a page the window does not hold). `originOf` maps a
+ * webContents to the server whose page it is (desktop/mail-views.cjs `originOf`).
+ */
+function heldPageOrigin(event, originOf) {
+  const origin = event && event.sender ? originOf(event.sender) : null;
+  if (!origin || !event.senderFrame || event.senderFrame !== event.sender.mainFrame) return null;
+  try { return new URL(event.senderFrame.url).origin === origin ? origin : null; } catch { return null; }
+}
+/** B-244 D-2: a link the bridge may open on a server is a path of that server: one leading slash, never `//host`. */
+function serverPath(link) {
+  return typeof link === 'string' && link.length <= 2048 && /^\/(?![/\\])[^\s\\]*$/.test(link) ? link : null;
+}
 function isMailSender(event, mailWindow, config) {
   if (!mailWindow || mailWindow.isDestroyed() || !config || event.sender !== mailWindow.webContents || event.senderFrame !== mailWindow.webContents.mainFrame) return false;
   try { return new URL(event.senderFrame.url).origin === config.origin; } catch { return false; }
@@ -191,4 +205,4 @@ function sandboxWarning(platform, noSandbox, dismissed) {
 }
 const SANDBOX_HELP_URL = 'https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/desktop-data-and-updates.md#windows-and-linux';
 
-module.exports = { permissionAllowed, retryAction, signInHandoff, signInDone, sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL, keyStoreRefusal, passwordStoreFor, secretServiceOnBus, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, SETUP_FORMAT };
+module.exports = { permissionAllowed, retryAction, signInHandoff, signInDone, sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL, keyStoreRefusal, passwordStoreFor, secretServiceOnBus, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, heldPageOrigin, serverPath, SETUP_FORMAT };
