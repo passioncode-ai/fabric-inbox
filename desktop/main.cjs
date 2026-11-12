@@ -15,6 +15,7 @@ const browsersFinder = require('./browsers.cjs');
 const newMail = require('./new-mail.cjs');
 const addressWait = require('./address-wait.cjs');
 const serverList = require('./servers.cjs');
+const serverLink = require('./server-link.cjs');
 const serverUpdates = require('./server-update.cjs');
 const usage = require('./analytics.cjs');
 const backup = require('./backup.cjs');
@@ -1110,7 +1111,7 @@ function queueLink(url) {
 async function drainLinks() {
   if (connecting) return;
   connecting = true;
-  try { while (pendingLinks.length) await handleConnectLink(pendingLinks.shift()); }
+  try { while (pendingLinks.length) await handleLink(pendingLinks.shift()); }
   finally { connecting = false; }
   if (analytics) void askUsageCounts(BrowserWindow.getFocusedWindow());
 }
@@ -1236,6 +1237,38 @@ function openConsole() {
   consoleWindow.loadFile(path.join(__dirname, 'console.html'));
 }
 
+/** One `fabric-inbox://` link: a server link (B-236) or a connect link (ADR-0115), one at a time. */
+async function handleLink(url) {
+  let kind = '';
+  try { kind = new URL(url).hostname; } catch { /* a connect link's own parser refuses it */ }
+  return kind === 'server' ? handleServerLink(url) : handleConnectLink(url);
+}
+/**
+ * B-236 (SCN-092): an agent on this Mac adds a server by a `fabric-inbox://server?origin=…&access=…&from=…` link. A server
+ * already held is shown; a new one is added only when the person allows it, then shown at its sign-in.
+ */
+async function handleServerLink(url) {
+  const plan = serverLink.planFor(serverLink.parseServerLink(url, policy.validateConfig), servers.map((s) => s.origin));
+  if (plan.action === 'refuse') {
+    logEvent({ event: 'server_link', outcome: 'refused' });
+    const parent = promptWindow();
+    const options = { type: 'warning', title: t('Add Another Server…'), message: t('This server link cannot be used.'), detail: t.text(plan.error), buttons: [t('OK')] };
+    await (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options));
+    return;
+  }
+  if (plan.action === 'show') { logEvent({ event: 'server_link', outcome: 'shown' }); await switchServer(plan.server.origin); return; }
+  const owner = promptWindow();
+  const stop = attend(owner);
+  let answer;
+  try { answer = owner ? await dialog.showMessageBox(owner, serverLink.promptFor(plan.server)) : await dialog.showMessageBox(serverLink.promptFor(plan.server)); }
+  finally { stop(); }
+  if (answer.response !== 1) { logEvent({ event: 'server_link', outcome: 'denied' }); return; }
+  logEvent({ event: 'server_link', outcome: 'added' });
+  // Remembered first, then shown as Account's own servers are (a console for another server stops first).
+  await saveServers(serverList.remember(servers, { origin: plan.server.origin, accessOrigin: plan.server.accessOrigin }));
+  installMenu();
+  await switchServer(plan.server.origin);
+}
 async function handleConnectLink(url) {
   const parsed = connector.parseConnectLink(url);
   const parent = mailWindow && !mailWindow.isDestroyed() ? mailWindow : (setupWindow && !setupWindow.isDestroyed() ? setupWindow : null);
