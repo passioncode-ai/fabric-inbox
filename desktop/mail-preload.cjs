@@ -1,9 +1,11 @@
 'use strict';
-// The mail window loads the configured server. It gets exactly three capabilities: reading (once)
+// The mail window holds a page per server (B-244). Each page gets these capabilities only: reading (once)
 // the setup chosen in the first-run window, hearing that the Mac woke from sleep so it can read new
-// mail at once (P1-4), and reading and setting this Mac's interface language (L10N-01), so the
-// app's menus and windows follow Settings → App → Language. main.cjs answers only the configured
-// origin's main frame (policy.isMailSender) and sends the wake signal only to the mail window.
+// mail at once (P1-4), reading and setting this Mac's interface language (L10N-01), so the app's
+// menus and windows follow Settings → App → Language, the agent console, and (B-244 D-2) the other
+// servers the app holds: their list, their inboxes and showing one of them. main.cjs answers the
+// shown page's main frame (policy.isMailSender), the servers' calls any held server's page at its own
+// main frame (policy.heldPageOrigin), and sends the wake signal only to the mail window's pages.
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('fabricDesktop', Object.freeze({
   pendingSetup: () => ipcRenderer.invoke('fabric:pending-setup'),
@@ -22,6 +24,11 @@ contextBridge.exposeInMainWorld('fabricDesktop', Object.freeze({
     ipcRenderer.on('fabric:console-dock', listener);
     return () => ipcRenderer.removeListener('fabric:console-dock', listener);
   },
+  // B-244 D-2: the servers this app holds ({ origin, label, context, shown }), the other servers' inbox rows
+  // ({ servers: [{ origin, label, state, unread }], messages }), and showing one server, at one of its paths.
+  servers: () => ipcRenderer.invoke('fabric:servers'),
+  otherInbox: () => ipcRenderer.invoke('fabric:other-inbox'),
+  showServer: (origin, link) => ipcRenderer.invoke('fabric:show-server', String(origin), link === undefined ? undefined : String(link)),
   // Receive-only: the page passes a callback and gets back its unsubscribe; no data crosses.
   onResume: (callback) => {
     if (typeof callback !== 'function') return () => {};

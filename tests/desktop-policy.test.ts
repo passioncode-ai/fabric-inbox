@@ -159,7 +159,7 @@ test('a failed remote load cannot close recovery when Chromium finishes its erro
   assert.equal(mail.options.webPreferences.preload, '/fixture/desktop/mail-preload.cjs');
   const bridge = await readFile(new URL('../desktop/mail-preload.cjs', import.meta.url), 'utf8');
   assert.deepEqual([...bridge.matchAll(/ipcRenderer\.(\w+)\('([^']+)'/g)].map(m => m[1] + ' ' + m[2]),
-    ['invoke fabric:pending-setup', 'invoke fabric:pending-setup-done', 'invoke fabric:locale', 'invoke fabric:locale-set', 'invoke fabric:console-available', 'invoke fabric:console-open', 'invoke fabric:console-dock-ready', 'on fabric:console-dock', 'removeListener fabric:console-dock', 'on fabric:resumed', 'removeListener fabric:resumed']);
+    ['invoke fabric:pending-setup', 'invoke fabric:pending-setup-done', 'invoke fabric:locale', 'invoke fabric:locale-set', 'invoke fabric:console-available', 'invoke fabric:console-open', 'invoke fabric:console-dock-ready', 'on fabric:console-dock', 'removeListener fabric:console-dock', 'invoke fabric:servers', 'invoke fabric:other-inbox', 'invoke fabric:show-server', 'on fabric:resumed', 'removeListener fabric:resumed']);
   // Waking the Mac tells the open mail window, and only it, to read new mail.
   powerMonitor.emit('resume');
   assert.deepEqual(sent, ['fabric:resumed']);
@@ -253,4 +253,18 @@ test("B-15 (7): the mail window may write to the clipboard from its own server o
   const main = readFileSync(new URL("../desktop/main.cjs", import.meta.url), "utf8");
   assert.match(main, /rejectPermissions\(ses, snapshot\.origin\)/, "only the mail window passes its server");
   assert.equal((main.match(/rejectPermissions\([^)]*\)/g) ?? []).filter((c) => c.includes(",") && !c.includes("clipboardFrom")).length, 1, "the setup window and the console keep refusing everything");
+});
+
+test("B-244 D-2: a held server's page is known only at its own main frame and origin; a link is a path of the server", async () => {
+  const policy = (await import("../desktop/policy.cjs")).default as any;
+  const frame = { url: "https://inbox.acme.example/x" };
+  const contents = { mainFrame: frame };
+  const originOf = (c: unknown) => (c === contents ? "https://inbox.acme.example" : null);
+  assert.equal(policy.heldPageOrigin({ sender: contents, senderFrame: frame }, originOf), "https://inbox.acme.example");
+  assert.equal(policy.heldPageOrigin({ sender: contents, senderFrame: { url: frame.url } }, originOf), null, "a subframe");
+  assert.equal(policy.heldPageOrigin({ sender: { mainFrame: frame }, senderFrame: frame }, originOf), null, "not a held page");
+  assert.equal(policy.heldPageOrigin({ sender: contents, senderFrame: Object.assign(frame, { url: "https://elsewhere.example/" }) }, originOf), null, "navigated away");
+  assert.equal(policy.heldPageOrigin(null, originOf), null);
+  for (const ok of ["/", "/?folder=inbox", "/mailbox/a/emails/b#x"]) assert.equal(policy.serverPath(ok), ok);
+  for (const bad of ["//evil.example/x", "/\\evil.example", "https://evil.example/", "inbox", "/a b", "", null, 3, "/" + "a".repeat(2048)]) assert.equal(policy.serverPath(bad), null, String(bad));
 });
