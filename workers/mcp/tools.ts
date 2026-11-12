@@ -2257,11 +2257,11 @@ const syncMemberSignIn = defineTool({
   input: {}, routes: ["POST /api/members/sign-in"], call: (_a, ctx) => post(ctx, "/api/members/sign-in", {}),
 });
 const createAgentKey = defineTool({
-  name: "create_agent_key", title: "Issue an agent key", level: "admin", ownerApproval: true, standingWaives: { standing: "keys" }, target: (a) => `${a.name} ${a.level}`,
+  name: "create_agent_key", title: "Issue an agent key", level: "admin", ownerApproval: true, standingWaives: { standing: "keys" }, target: (a) => `${a.name} ${a.requestOnly ? "request-only" : a.level}`,
   description: "Issues a key for another agent to use this server over MCP, at a level (read, mail, admin), sending mode, daily send limit, lifetime and, for read and mail keys, the mailboxes it may reach. Its secret comes back once, in this answer, with client configurations: hand it to that agent and nowhere else. Waits for the owner's approval in Settings → Agent access: a key is a new way into the mail; a key the owner let issue keys (B-215) confirms with its own code. A new key never gets that permission. Two calls.",
   input: {
     name: z.string().trim().min(1).max(80).describe("The agent this key is for"),
-    level: z.enum(["read", "mail", "admin"]),
+    level: z.enum(["read", "mail", "admin"]).optional().describe("Required unless requestOnly"),
     send: z.enum(["drafts", "send"]).optional().describe("A mail key: drafts only (default) or send"),
     dailySendLimit: z.number().int().min(1).max(1000).optional(),
     duration: z.enum(["30d", "90d", "1y"]).optional().describe("How long the key lasts (default 1y)"),
@@ -2272,9 +2272,13 @@ const createAgentKey = defineTool({
   confirm: (a) => a.requestOnly ? `Issue a key named ${quoted(a.name)} that reaches no mailbox and may only ask for access, lasting ${a.duration ?? "1y"}; its secret is shown once.`
     : `Issue a ${a.level} key named ${quoted(a.name)}${a.accounts ? ` limited to ${a.accounts.join(", ")}` : " for the whole workspace"}, lasting ${a.duration ?? "1y"}; its secret is shown once.`,
   routes: ["POST /api/agent-keys"],
-  call: (a, ctx) => post(ctx, "/api/agent-keys", { name: a.name, level: a.level, ...(a.send ? { send: a.send } : {}), ...(a.dailySendLimit ? { dailySendLimit: a.dailySendLimit } : {}),
+  call: (a, ctx) => {
+    // B-250: a request-only key needs no level (it is a Read key with no mailbox); any other key names one.
+    if (!a.requestOnly && !a.level) throw new ApiError(400, "Name the level: read, mail or admin (or ask for a requestOnly key).", null);
+    return post(ctx, "/api/agent-keys", { name: a.name, level: a.requestOnly ? "read" : a.level, ...(a.send ? { send: a.send } : {}), ...(a.dailySendLimit ? { dailySendLimit: a.dailySendLimit } : {}),
     ...(a.duration ? { duration: a.duration } : {}), ...(a.accounts && !a.requestOnly ? { accounts: a.accounts } : {}), ...(a.approval ? { approval: a.approval } : {}),
-    ...(a.requestOnly ? { requestOnly: true } : {}) }),
+    ...(a.requestOnly ? { requestOnly: true } : {}) });
+  },
 });
 const revokeAgentKey = defineTool({
   name: "revoke_agent_key", title: "Revoke an agent key", level: "admin", ownerApproval: true, target: (a) => a.keyId,

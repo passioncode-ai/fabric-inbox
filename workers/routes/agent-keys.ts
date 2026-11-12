@@ -63,7 +63,9 @@ export function validateNewKey(raw: unknown): { ok: true; value: NewKeyInput } |
  */
 export const sendFor = (level: AgentKey["level"], send: AgentKey["send"]): AgentKey["send"] => (level === "read" ? "drafts" : level === "admin" ? "send" : send);
 
-const publicKey = (k: AgentKey) => ({ id: k.id, clientId: k.clientId, name: k.name, level: k.level, send: k.send, dailySendLimit: k.dailySendLimit, createdAt: k.createdAt, expiresAt: k.expiresAt, accounts: k.accounts, approval: k.approval ?? "agent", standing: k.standing ?? [], createdBy: k.createdBy ?? null });
+const publicKey = (k: AgentKey) => ({ id: k.id, clientId: k.clientId, name: k.name, level: k.level, send: k.send, dailySendLimit: k.dailySendLimit, createdAt: k.createdAt, expiresAt: k.expiresAt, accounts: k.accounts, approval: k.approval ?? "agent", standing: k.standing ?? [], createdBy: k.createdBy ?? null,
+  // B-250: a key that may only ask for access says so in every listing.
+  ...(k.requestOnly ? { requestOnly: true } : {}) });
 
 function access(c: C): AgentAccess | Response {
   const api = cloudflareApi(c.env);
