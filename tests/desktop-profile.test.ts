@@ -145,8 +145,16 @@ async function boot({ config, packaged = true, switches = [] as string[], files 
       this.webContents = Object.assign(new EventEmitter(), { session: sessionFor(partition), mainFrame: frame, setWindowOpenHandler() {}, getURL: () => frame.url,
         reload: () => log.push(`reload ${partition}`) });
       log.push(`window ${partition}`);
+      // B-244 D-1: a mail page is a WebContentsView; its webContents loads, focuses and closes itself.
+      Object.assign(this.webContents, { isDestroyed: () => this.destroyed, loadURL: (u: string) => this.loadURL(u), close: () => this.close(), focus() {}, once: this.webContents.once.bind(this.webContents) });
+      if (!this.webContents.reload) this.webContents.reload = () => {};
+      if (!this.webContents.send) this.webContents.send = () => {};
       windows.push(this);
     }
+    // B-244 D-1: the mail window is a frame holding the pages; a page is shown or hidden and laid out in it.
+    contentView = { addChildView() {}, removeChildView() {} };
+    getContentBounds() { return { x: 0, y: 0, width: 1360, height: 900 }; }
+    setVisible() {} setBounds() {}
     isDestroyed() { return this.destroyed; }
     destroy() { this.destroyed = true; log.push(`destroy ${this.webContents.session.partition}`); this.emit("closed"); }
     hide() {} show() {} focus() {} setTitle() {} reload() {} isMinimized() { return false; }
@@ -183,7 +191,7 @@ async function boot({ config, packaged = true, switches = [] as string[], files 
     mkdir: async () => {}, writeFile: async (file: string) => { log.push(`write ${file}`); }, chmod: async () => {}, rename: async (from: string, to: string) => { log.push(`rename ${to}`); },
   };
   const fakeElectron = {
-    app: fakeApp, BrowserWindow: FakeWindow,
+    app: fakeApp, BrowserWindow: FakeWindow, WebContentsView: FakeWindow,
     Menu: { buildFromTemplate: (x: any) => { menu = x; return x; }, setApplicationMenu() {} },
     ipcMain: { handle: (name: string, fn: Function) => handlers.set(name, fn), on() {} }, shell: {}, dialog: {},
     session: { fromPartition: sessionFor },
@@ -261,7 +269,9 @@ test("B-158: changing the server keeps the old one, signed in, until it is forgo
   assert.equal(answer.ok, true);
   await h.settle();
   const oldPartition = policy.partitionFor({ origin: A });
-  assert.ok(h.log.includes(`destroy ${oldPartition}`));
+  // B-244 D-1: the old server's page stays in the window, hidden, signed in and not reloaded.
+  assert.ok(!h.log.includes(`destroy ${oldPartition}`), "a switch keeps the old server's page");
+  assert.equal(h.log.filter((l) => l === `reload ${oldPartition}`).length, 1, "only Retry reloaded it");
   h.mailWindows().pop().webContents.emit("did-finish-load");
   await h.settle();
   assert.ok(!h.log.some((l) => l.startsWith("clear-")), "the old server is remembered: its sign-in stays for a switch back");
@@ -272,6 +282,7 @@ test("B-158: changing the server keeps the old one, signed in, until it is forgo
   account.find((i: any) => i.label === "Forget Server").submenu[0].click();
   await h.settle();
   assert.ok(h.log.includes(`clear-storage ${oldPartition}`) && h.log.includes(`clear-cache ${oldPartition}`), h.log.join("\n"));
+  assert.ok(h.log.indexOf(`destroy ${oldPartition}`) < h.log.indexOf(`clear-storage ${oldPartition}`), "a forgotten server's page closes before its storage goes");
   assert.ok(!h.log.includes(`rm ${P}/${dirOf(A)}`), "the directory stays under its live session until the next start's sweep");
   assert.ok(!h.log.some((l) => l.includes(`clear-storage ${policy.partitionFor({ origin: B })}`)), "the server shown keeps its session");
   assert.ok(!h.menu().find((m: any) => m.label === "Account").submenu.some((i: any) => i.label === "Forget Server"), "nothing left to forget");

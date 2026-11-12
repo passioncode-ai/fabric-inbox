@@ -1927,9 +1927,9 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, success
 - **Errors & recovery:** A server that does not answer shows the ordinary Retry in its place; the others stay listed and signed in.
 - **Status:** draft
-- **Coverage:** `desktop/main.cjs` (`switchServer`, `loadMail`), `desktop/menu.cjs`, `tests/desktop-servers.test.ts`, `tests/desktop-profile.test.ts`
+- **Coverage:** `desktop/main.cjs` (`switchServer`, `loadMail`, `showPage`), `desktop/mail-views.cjs`, `desktop/menu.cjs`, `tests/desktop-mail-views.test.ts`, `tests/desktop-servers.test.ts`, `tests/desktop-profile.test.ts`
 - **Product:** unobserved
-- **Today:** Built in 0.64.0 (B-158 M1 step 2) with one page at a time: a switch destroys the window and opens a new one on the other server, so the page reloads. A page kept per server in one window is B-244 step 2.
+- **Today:** Built in 0.64.0 (B-158 M1 step 2); since B-244 step 2 the window keeps a page per server and a switch shows it as it was left, with no reload (walk 2026-11-12 on two local servers).
 
 ### SCN-094: Move an address to another server I hold
 - **Persona:** P-01

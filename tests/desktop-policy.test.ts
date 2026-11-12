@@ -66,7 +66,7 @@ test('B-02: an identity provider Access sends to signs in inside the app; anythi
   for (const u of ['https://team.cloudflareaccess.com/cdn-cgi/access/callback', 'https://mail.example.com.evil.example/', idp]) assert.equal(signInDone(u, config), false, u);
   // The mail window hands main-frame navigations over through the policy; the sign-in window has no preload.
   const main = require('node:fs').readFileSync(new URL('../desktop/main.cjs', import.meta.url), 'utf8');
-  assert.match(main, /policy\.signInHandoff\(kind, win\.webContents\.getURL\(\), url, snapshot\)/);
+  assert.match(main, /policy\.signInHandoff\(kind, page\.getURL\(\), url, snapshot\)\) \{ openSignIn\(win, page, ses, url, snapshot\)/);
   const signIn = main.slice(main.indexOf('function openSignIn'), main.indexOf('/** The server\'s Settings screen'));
   assert.match(signIn, /securePreferences\(\{ session: ses \}\)/);
   assert.doesNotMatch(signIn, /preload/i);
@@ -114,8 +114,16 @@ test('a failed remote load cannot close recovery when Chromium finishes its erro
     constructor(options: any) {
       super(); this.options = options;
       this.webContents = Object.assign(new EventEmitter(), { session: fakeSession, setWindowOpenHandler() {}, send: (channel: string) => sent.push(channel) });
+      // B-244 D-1: a mail page is a WebContentsView; its webContents loads, focuses and closes itself.
+      Object.assign(this.webContents, { isDestroyed: () => this.destroyed, loadURL: (u: string) => this.loadURL(u), close: () => this.close(), focus() {}, once: this.webContents.once.bind(this.webContents) });
+      if (!this.webContents.reload) this.webContents.reload = () => {};
+      if (!this.webContents.send) this.webContents.send = () => {};
       windows.push(this);
     }
+    // B-244 D-1: the mail window is a frame holding the pages; a page is shown or hidden and laid out in it.
+    contentView = { addChildView() {}, removeChildView() {} };
+    getContentBounds() { return { x: 0, y: 0, width: 1360, height: 900 }; }
+    setVisible() {} setBounds() {}
     isDestroyed() { return this.destroyed; }
     hide() { this.visible = false; }
     destroy() { this.destroyed = true; this.visible = false; this.emit('closed'); }
@@ -131,7 +139,7 @@ test('a failed remote load cannot close recovery when Chromium finishes its erro
     setName() {}, enableSandbox() {}, requestSingleInstanceLock: () => true,
     whenReady: () => Promise.resolve(), getPath: () => '/fixture',
   });
-  const fakeElectron = { app: fakeApp, BrowserWindow: FakeWindow,
+  const fakeElectron = { app: fakeApp, BrowserWindow: FakeWindow, WebContentsView: FakeWindow,
     Menu: { buildFromTemplate: (x: any) => x, setApplicationMenu() {} },
     ipcMain: { handle() {}, on() {} }, shell: {}, dialog: {}, session: { fromPartition: () => fakeSession }, powerMonitor };
   const code = await readFile(new URL('../desktop/main.cjs', import.meta.url), 'utf8');
@@ -142,8 +150,9 @@ test('a failed remote load cannot close recovery when Chromium finishes its erro
     setTimeout: () => 1, clearTimeout() {},
   });
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(windows.length, 1);
-  const mail = windows[0];
+  // B-244 D-1: the mail window is a frame, and the server's page a view in it.
+  assert.equal(windows.length, 2);
+  const [frame, mail] = windows;
   // The server page gets one narrow bridge and nothing else (desktop/mail-preload.cjs): the pending
   // setup, a receive-only wake signal (P1-4) it can subscribe to and unsubscribe from, and this
   // Mac's interface language, read and set from Settings → App → Language (L10N-01).
@@ -157,13 +166,14 @@ test('a failed remote load cannot close recovery when Chromium finishes its erro
   assert.equal(mail.options.webPreferences.sandbox, true);
   assert.equal(mail.options.webPreferences.nodeIntegration, false);
   mail.webContents.emit('did-fail-load', {}, -102, 'connection refused', config.origin, true);
-  assert.equal(windows.length, 2);
-  const recovery = windows[1];
-  assert.equal(mail.destroyed, true, "B-11: a window that could not load is closed, not left hidden");
+  assert.equal(windows.length, 3);
+  const recovery = windows[2];
+  assert.equal(frame.destroyed, true, "B-11: a window that could not load is closed, not left hidden");
+  assert.equal(mail.destroyed, true, "its page closes with it");
   mail.webContents.emit('did-finish-load');
   assert.equal(recovery.destroyed, false);
   assert.equal(recovery.visible, true);
-  assert.equal(mail.visible, false);
+  assert.equal(frame.visible, false);
 });
 
 test("SCN-028: a setup file is read for its server and counted; anything else is refused with a reason", async () => {
@@ -229,7 +239,7 @@ test("B-11: Retry connection reloads a mail window that loaded this server, so i
   const main = readFileSync(new URL("../desktop/main.cjs", import.meta.url), "utf8");
   assert.match(main, /retry: retryMail/, "the menu's Retry connection goes through retryMail");
   assert.match(main, /'will-prevent-unload'/, "the page's leave warning is answered in a dialog, not cancelled silently");
-  assert.match(main, /loadFailed = true;[\s\S]{0,200}win\.destroy\(\);/, "a window that could not load is closed, not left hidden");
+  assert.match(main, /loadFailed = true;[\s\S]{0,400}win\.destroy\(\);/, "a window that could not load is closed, not left hidden");
 });
 
 test("B-15 (7): the mail window may write to the clipboard from its own server only; every other permission stays refused", () => {

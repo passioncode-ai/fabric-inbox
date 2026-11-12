@@ -29,6 +29,7 @@ const profileWatch = require('./profile-watch.cjs');
 const { createLog } = require('./log.cjs');
 const { createDigest } = require('./ops-digest.cjs');
 const { ensureDescriptor } = require('./fabric-descriptor.cjs');
+const { createMailViews } = require('./mail-views.cjs');
 const { randomUUID } = require('node:crypto');
 const { execFile, spawn } = require('node:child_process');
 const execFileAsync = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10000, maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout) => (error ? reject(error) : resolve({ stdout }))));
@@ -66,6 +67,18 @@ const setupURL = pathToFileURL(path.join(__dirname, 'setup.html')).href;
 let config = null;
 let setupWindow = null;
 let mailWindow = null;
+// B-244 D-1: the mail window's pages, one per server it holds (desktop/mail-views.cjs); null while no window is open.
+let mailViews = null;
+/** The page the mail window shows (its webContents), or null. */
+function mailPage() {
+  const shown = mailViews && mailViews.current();
+  return shown && !shown.view.webContents.isDestroyed() ? shown.view.webContents : null;
+}
+/** The shown page as policy.isMailSender reads a window: alive, with its webContents. */
+function mailTarget() {
+  const page = mailPage();
+  return page ? { isDestroyed: () => page.isDestroyed(), webContents: page } : null;
+}
 /** B-11: whether the current mail window failed to load, and which server it shows. */
 let mailFailed = false;
 let mailOrigin = null;
@@ -277,7 +290,7 @@ async function learnContext(snapshot) {
 /** Shows another remembered server: its own sign-in is kept, so nothing is entered again. */
 async function switchServer(origin) {
   const target = servers.find((s) => s.origin === origin);
-  if (!target || (config && config.origin === origin)) { if (mailWindow && !mailWindow.isDestroyed()) mailWindow.focus(); return; }
+  if (!target || (config && config.origin === origin && mailPage())) { if (mailWindow && !mailWindow.isDestroyed()) mailWindow.focus(); return; }
   // A console works for one server with that server's key: it stops before the window shows another.
   if (agentConsole && agentConsole.running() && consoleFor !== origin) await agentConsole.stop({ wait: true, timeoutMs: 5000 });
   await saveConfig({ origin: target.origin, accessOrigin: target.accessOrigin });
@@ -291,6 +304,7 @@ async function forgetServer(origin) {
   await saveServers(serverList.forget(servers, origin));
   installMenu();
   if (consoleFor === origin && agentConsole && agentConsole.running()) await agentConsole.stop({ wait: true, timeoutMs: 5000 });
+  if (mailViews) mailViews.drop(origin);
   await retirePartition(partition);
   logEvent({ event: 'server_forgotten' });
 }
@@ -411,9 +425,9 @@ function showAllServers() {
 /** Opens one message on its own server: the window shows that server (its sign-in kept) and the message. */
 async function openOnServer(origin, link) {
   if (!servers.some((s) => s.origin === origin) || typeof link !== 'string' || !link.startsWith('/')) return false;
-  if (config && config.origin === origin && mailWindow && !mailWindow.isDestroyed()) {
+  if (config && config.origin === origin && mailWindow && !mailWindow.isDestroyed() && mailPage()) {
     mailWindow.show(); mailWindow.focus();
-    void mailWindow.loadURL(new URL(link, origin).href).catch(() => {});
+    void mailPage().loadURL(new URL(link, origin).href).catch(() => {});
     return true;
   }
   openAfterSignIn = link;
@@ -478,7 +492,7 @@ let signInWindow = null;
  * no permission, no new windows and https only. When the provider hands back to the server, the window
  * closes and the mail window opens that page, signed in. Closing it leaves the mail window as it was.
  */
-function openSignIn(parent, ses, url, snapshot) {
+function openSignIn(parent, page, ses, url, snapshot) {
   if (signInWindow && !signInWindow.isDestroyed()) { void signInWindow.loadURL(url); signInWindow.focus(); return; }
   logEvent({ event: 'signin_window', host: (() => { try { return new URL(url).hostname; } catch { return null; } })() });
   const sw = new BrowserWindow({ title: t('Sign in'), parent, modal: process.platform !== 'linux', width: 520, height: 720, show: true,
@@ -488,7 +502,7 @@ function openSignIn(parent, ses, url, snapshot) {
     if (sw.isDestroyed()) return;
     logEvent({ event: 'signin_window', outcome: 'done' });
     sw.destroy();
-    if (!parent.isDestroyed()) void parent.loadURL(target).catch(() => {});
+    if (!page.isDestroyed()) void page.loadURL(target).catch(() => {});
   };
   const guard = (event, target) => { if (!/^https:/i.test(String(target))) event.preventDefault(); };
   sw.webContents.on('will-navigate', guard);
@@ -507,23 +521,86 @@ const SETUP_PAGE = '/settings/app/setup';
 /** B-11: Retry connection reloads a mail window that loaded this server (its leave warning holds), else makes one. */
 function retryMail() {
   const win = mailWindow;
-  if (policy.retryAction({ alive: !!win && !win.isDestroyed(), failed: mailFailed, origin: mailOrigin }, config) === 'reload') {
-    win.show(); win.focus(); win.webContents.reload(); return;
+  const page = mailPage();
+  if (policy.retryAction({ alive: !!win && !win.isDestroyed() && !!page, failed: mailFailed, origin: mailOrigin }, config) === 'reload') {
+    win.show(); win.focus(); page.reload(); return;
   }
   loadMail();
 }
+/**
+ * B-244 D-1: the mail window, a frame that holds one page per server (desktop/mail-views.cjs). Made once; its pages
+ * are laid out over its whole content, the docked console on top of them.
+ */
+function mailFrame() {
+  if (mailWindow && !mailWindow.isDestroyed() && mailViews) return mailWindow;
+  const win = new BrowserWindow({ title: 'Fabric Inbox', width: 1360, height: 900, minWidth: 760, minHeight: 560,
+    show: true, webPreferences: securePreferences({ partition: 'fabric-frame' }) });
+  const views = createMailViews({
+    attach: (view) => {
+      win.contentView.addChildView(view);
+      // A page added later never covers the docked console.
+      if (consoleDocked && consoleView) { win.contentView.removeChildView(consoleView); win.contentView.addChildView(consoleView); }
+      layoutPages();
+    },
+    detach: (view) => { if (!win.isDestroyed()) win.contentView.removeChildView(view); },
+    close: (view) => { if (!view.webContents.isDestroyed()) view.webContents.close(); },
+  });
+  mailWindow = win;
+  mailViews = views;
+  win.on('resize', layoutPages);
+  win.on('page-title-updated', event => event.preventDefault());
+  win.on('closed', () => {
+    views.clear();
+    if (mailWindow === win) { mailWindow = null; mailViews = null; }
+    consoleView = null; consoleDocked = false; dockReadyPages.clear();
+  });
+  return win;
+}
+/** Every page over the window's whole content; the docked console on the right, over them. */
+function layoutPages() {
+  if (!mailWindow || mailWindow.isDestroyed() || !mailViews) return;
+  const { width, height } = mailWindow.getContentBounds();
+  mailViews.each((view) => view.setBounds({ x: 0, y: 0, width, height }));
+  layoutDock();
+}
+/** Shows a server's page in the window (B-244 D-1): the others stay as they were, hidden. */
+function showPage(origin, { fresh = false } = {}) {
+  if (!mailViews || !mailViews.get(origin)) return false;
+  // The console belongs to the server it was started for: its panel is not shown over another server's page.
+  if (consoleDocked && consoleFor && consoleFor !== origin) toggleDock();
+  mailViews.show(origin);
+  mailOrigin = origin;
+  layoutPages();
+  const page = mailPage();
+  // A page shown again learns whether the panel is there now; a new page asks itself once it has loaded.
+  if (page && !fresh) page.send('fabric:console-dock', consoleDocked ? dockWidth() : 0);
+  if (page) page.focus();
+  return true;
+}
 function loadMail() {
   if (!config) { showSetup(); return; }
-  if (mailWindow && !mailWindow.isDestroyed()) { mailWindow.destroy(); }
   const snapshot = { ...config };
   const partition = policy.partitionFor(snapshot);
   const previousPartition = mailPartition;
   mailPartition = partition;
-  // The old server's window is destroyed above; its storage goes once this server has answered
-  // (F3: never left behind). Coming back to it before then cancels that.
-  // A server the app still remembers keeps its storage: switching back finds it signed in (B-158).
+  // A server the app still remembers keeps its page and its storage: switching back finds it as it was (B-158, B-244).
+  // A server no longer listed loses its storage once this server has answered (F3: never left behind). Coming back
+  // to it before then cancels that.
   if (previousPartition && previousPartition !== partition && !partitionsOf(servers).includes(previousPartition)) retireAfterLoad = previousPartition;
   if (retireAfterLoad === partition) retireAfterLoad = null;
+  const win = mailFrame();
+  if (mailViews.get(snapshot.origin) && !mailViews.get(snapshot.origin).webContents.isDestroyed()) {
+    showPage(snapshot.origin);
+    mailFailed = false;
+    win.show(); win.focus();
+    if (openAfterSignIn) {
+      const next = openAfterSignIn;
+      openAfterSignIn = '';
+      void mailPage().loadURL(new URL(next, snapshot.origin).href).catch(() => {});
+    }
+    return;
+  }
+  if (mailViews.get(snapshot.origin)) mailViews.drop(snapshot.origin);
   const ses = session.fromPartition(partition);
   rejectPermissions(ses, snapshot.origin);
   // A download remains an explicit user choice; never auto-save attachment files.
@@ -531,18 +608,21 @@ function loadMail() {
   ses.on('will-download', (_event, item) => {
     item.setSaveDialogOptions({ title: t('Save attachment'), defaultPath: path.basename(item.getFilename()) });
   });
-  const win = new BrowserWindow({ title: 'Fabric Inbox', width: 1360, height: 900, minWidth: 760, minHeight: 560,
-    show: true, webPreferences: securePreferences({ session: ses, preload: path.join(__dirname, 'mail-preload.cjs') }) });
+  const view = new WebContentsView({ webPreferences: securePreferences({ session: ses, preload: path.join(__dirname, 'mail-preload.cjs') }) });
+  const page = view.webContents;
+  mailViews.add(snapshot.origin, view, partition);
+  showPage(snapshot.origin, { fresh: true });
   let setupOpened = false;
-  mailWindow = win;
   mailFailed = false;
-  mailOrigin = snapshot.origin;
   let loadTimer;
   let loadFailed = false;
+  const shown = () => !!mailViews && mailViews.current()?.view === view;
   const failure = () => {
     clearTimeout(loadTimer);
-    if (quitting || win.isDestroyed() || mailWindow !== win || loadFailed) return;
+    if (quitting || page.isDestroyed() || win.isDestroyed() || loadFailed) return;
     loadFailed = true;
+    // A page not shown that failed is dropped; the window makes it again when the person comes back to it.
+    if (!shown()) { mailViews.drop(snapshot.origin); logEvent({ event: 'mail_page_dropped' }); return; }
     mailFailed = true;
     // B-11: a window that could not load is closed, not kept hidden; Retry makes a new one.
     win.destroy();
@@ -553,56 +633,58 @@ function loadMail() {
     event.preventDefault();
     // B-02: an identity provider Access sends to signs in inside the app's own sign-in window.
     const mainFrame = event.isMainFrame ?? isMainFrame ?? true;
-    if (mainFrame && policy.signInHandoff(kind, win.webContents.getURL(), url, snapshot)) { openSignIn(win, ses, url, snapshot); return; }
+    if (mainFrame && policy.signInHandoff(kind, page.getURL(), url, snapshot)) { openSignIn(win, page, ses, url, snapshot); return; }
     void openExternal(url);
   };
-  win.webContents.on('will-navigate', navigate('navigate'));
-  win.webContents.on('will-redirect', navigate('redirect'));
-  win.webContents.on('will-frame-navigate', event => {
+  page.on('will-navigate', navigate('navigate'));
+  page.on('will-redirect', navigate('redirect'));
+  page.on('will-frame-navigate', event => {
     // Main-frame navigation is handled above. Message subframes cannot leave app content.
     if (event.isMainFrame) return;
     if (['about:blank', 'about:srcdoc'].includes(event.url)) return;
     if (policy.navigation(event.url, snapshot) !== 'internal') event.preventDefault();
   });
-  win.webContents.setWindowOpenHandler(({ url }) => {
+  page.setWindowOpenHandler(({ url }) => {
     const action = policy.navigation(url, snapshot);
-    if (action === 'internal') void win.loadURL(url).catch(failure);
+    if (action === 'internal') void page.loadURL(url).catch(failure);
     else void openExternal(url);
     return { action: 'deny' };
   });
-  win.webContents.on('will-attach-webview', event => event.preventDefault());
+  page.on('will-attach-webview', event => event.preventDefault());
   // A right-click on a link or a button in a message offers to open it in the browser or copy it
   // (operator, 2026-10-21); the person chose it, so no second question. Messages' own frames included.
-  win.webContents.on('context-menu', (_event, params) => {
+  page.on('context-menu', (_event, params) => {
     const items = contextMenuTemplate(params, { t,
       open: (url) => { shell.openExternal(url).catch(() => logEvent({ event: 'context_menu_open', outcome: 'failed' })); },
       copy: (text) => clipboard.writeText(text), browsers: installedBrowsers, openIn: openInBrowser });
     if (items.length && !win.isDestroyed()) Menu.buildFromTemplate(items).popup({ window: win });
   });
-  win.webContents.on('page-title-updated', event => event.preventDefault());
+  page.on('page-title-updated', event => event.preventDefault());
+  // A new page (a reload, another server's page in its place) has not said yet that it makes room for the console.
+  page.on('did-start-navigation', (_e, _url, inPlace, isMainFrame) => { if (isMainFrame && !inPlace) dockReadyPages.delete(snapshot.origin); });
   // B-11: the page asks before unsaved work is left (a reload, Retry connection, closing the window);
   // the person answers here, since Electron would otherwise cancel the unload without a word.
-  win.webContents.on('will-prevent-unload', (event) => {
+  page.on('will-prevent-unload', (event) => {
     if (quitting || win.isDestroyed()) { event.preventDefault(); return; }
     const choice = dialog.showMessageBoxSync(win, { type: 'question', buttons: [t('Leave'), t('Stay')], defaultId: 1, cancelId: 1,
       title: t('Leave this page?'), message: t('Leave this page?'), detail: t('Changes you made may not be saved.') });
     logEvent({ event: 'leave_warning', outcome: choice === 0 ? 'left' : 'stayed' });
     if (choice === 0) event.preventDefault();
   });
-  win.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
+  page.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
     if (mainFrame && code !== -3) failure();
   });
-  win.webContents.on('render-process-gone', failure);
-  win.webContents.on('did-finish-load', async () => {
+  page.on('render-process-gone', failure);
+  page.on('did-finish-load', async () => {
     clearTimeout(loadTimer);
-    if (win.isDestroyed() || mailWindow !== win || loadFailed) return;
-    win.show(); win.setTitle('Fabric Inbox');
+    if (page.isDestroyed() || win.isDestroyed() || loadFailed) return;
+    if (shown()) { win.show(); win.setTitle('Fabric Inbox'); }
     logEvent({ event: 'window_shown', window: 'mail' });
     if (setupWindow && !setupWindow.isDestroyed()) setupWindow.close();
     // A chosen setup is applied by the server's Setup page once the person is
     // signed in there (the page loads only behind Access).
     let current;
-    try { current = new URL(win.webContents.getURL()); } catch { return; }
+    try { current = new URL(page.getURL()); } catch { return; }
     // The new server (or its sign-in page) answered: the previous server's storage can go.
     if (retireAfterLoad && (current.origin === snapshot.origin || (snapshot.accessOrigin && current.origin === snapshot.accessOrigin))) {
       const retiring = retireAfterLoad;
@@ -611,6 +693,7 @@ function loadMail() {
       // still holds its sign-in; retiring the partition first left the key live (bug hunt 2026-10-12).
       void (async () => {
         if (agentConsole && agentConsole.running() && consoleFor !== snapshot.origin) await agentConsole.stop({ wait: true, timeoutMs: 5000 });
+        if (mailViews) mailViews.dropPartition(retiring);
         await retirePartition(retiring);
       })();
     }
@@ -619,16 +702,16 @@ function loadMail() {
     if (current.origin === snapshot.origin) void learnContext(snapshot);
     if (!setupOpened && current.origin === snapshot.origin && current.pathname !== SETUP_PAGE && await readPendingSetup()) {
       setupOpened = true;
-      void win.loadURL(new URL(`${SETUP_PAGE}?source=desktop`, snapshot.origin).href).catch(failure);
-    } else if (openAfterSignIn && current.origin === snapshot.origin) {
+      void page.loadURL(new URL(`${SETUP_PAGE}?source=desktop`, snapshot.origin).href).catch(failure);
+    } else if (openAfterSignIn && current.origin === snapshot.origin && shown()) {
       const next = openAfterSignIn;
       openAfterSignIn = '';
-      if (current.pathname !== next) void win.loadURL(new URL(next, snapshot.origin).href).catch(failure);
+      if (current.pathname !== next) void page.loadURL(new URL(next, snapshot.origin).href).catch(failure);
     }
   });
-  win.on('closed', () => { clearTimeout(loadTimer); if (mailWindow === win) mailWindow = null; });
+  page.once('destroyed', () => clearTimeout(loadTimer));
   loadTimer = setTimeout(failure, 30000);
-  void win.loadURL(snapshot.origin).catch(failure);
+  void page.loadURL(snapshot.origin).catch(failure);
 }
 /**
  * Once a UTC day: the active event. The server's counts are read only when the person said yes
@@ -1002,7 +1085,9 @@ let consoleWindow = null;
 // mail page says it makes room for it (fabric:console-dock-ready); otherwise a window of its own.
 let consoleView = null;
 let consoleDocked = false;
-let dockReady = false;
+// The servers whose page said it makes room for the docked console (fabric:console-dock-ready), since its last load.
+const dockReadyPages = new Set();
+const dockReadyNow = () => !!(mailViews && mailViews.current() && dockReadyPages.has(mailViews.current().origin));
 const DOCK_WIDTH = 520;
 let agentConsole = null;
 /** 829e673d: whether the console's agent skips permission prompts (on unless the person turned it off; read at start). */
@@ -1038,12 +1123,17 @@ function consoleSend(channel, value) {
   if (consoleWindow && !consoleWindow.isDestroyed()) consoleWindow.webContents.send(channel, value);
   if (consoleView && !consoleView.webContents.isDestroyed()) consoleView.webContents.send(channel, value);
 }
+function dockWidth() {
+  const { width } = mailWindow.getContentBounds();
+  return Math.min(DOCK_WIDTH, Math.max(320, Math.floor(width / 2)));
+}
 function layoutDock() {
   if (!consoleDocked || !consoleView || !mailWindow || mailWindow.isDestroyed()) return;
   const { width, height } = mailWindow.getContentBounds();
-  const panel = Math.min(DOCK_WIDTH, Math.max(320, Math.floor(width / 2)));
+  const panel = dockWidth();
   consoleView.setBounds({ x: width - panel, y: 0, width: panel, height });
-  mailWindow.webContents.send('fabric:console-dock', panel);
+  const page = mailPage();
+  if (page) page.send('fabric:console-dock', panel);
 }
 /** Shows or hides the docked panel; the session in it keeps running while hidden. */
 function toggleDock() {
@@ -1051,7 +1141,8 @@ function toggleDock() {
   if (consoleDocked) {
     mailWindow.contentView.removeChildView(consoleView);
     consoleDocked = false;
-    mailWindow.webContents.send('fabric:console-dock', 0);
+    const page = mailPage();
+    if (page) page.send('fabric:console-dock', 0);
     return;
   }
   if (!consoleView || consoleView.webContents.isDestroyed()) {
@@ -1060,12 +1151,6 @@ function toggleDock() {
     consoleView.webContents.on('will-navigate', (event) => event.preventDefault());
     consoleView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     consoleView.webContents.loadFile(path.join(__dirname, 'console.html'));
-    if (!mailWindow.__consoleLayout) {
-      mailWindow.__consoleLayout = true;
-      mailWindow.on('resize', layoutDock);
-      mailWindow.on('closed', () => { consoleView = null; consoleDocked = false; dockReady = false; });
-      mailWindow.webContents.on('did-start-navigation', (_e, _url, inPlace, isMainFrame) => { if (isMainFrame && !inPlace) dockReady = false; });
-    }
   }
   mailWindow.contentView.addChildView(consoleView);
   consoleDocked = true;
@@ -1092,7 +1177,7 @@ async function ensureConsole() {
 function openConsole() {
   if (!consoleAvailable()) return;
   if (!config) { showSetup(t('Set up your server first; the console works with it.')); return; }
-  if (dockReady && mailWindow && !mailWindow.isDestroyed() && !(consoleWindow && !consoleWindow.isDestroyed())) { toggleDock(); return; }
+  if (dockReadyNow() && mailWindow && !mailWindow.isDestroyed() && !(consoleWindow && !consoleWindow.isDestroyed())) { toggleDock(); return; }
   if (consoleWindow && !consoleWindow.isDestroyed()) { consoleWindow.show(); consoleWindow.focus(); return; }
   const anchor = mailWindow && !mailWindow.isDestroyed() ? mailWindow.getBounds() : null;
   consoleWindow = new BrowserWindow({ title: t('Agent console — Fabric Inbox'), width: 720, height: anchor ? anchor.height : 640, minWidth: 420, minHeight: 320,
@@ -1171,10 +1256,10 @@ function installIPC() {
     if (!docked && !policy.isSetupSender(event, consoleWindow, consoleURL)) throw new Error('Untrusted console request');
   };
   ipcMain.handle('fabric:console-locale', (event) => { fromConsole(event); return i18n.forWindow(); });
-  ipcMain.handle('fabric:console-available', (event) => { if (!policy.isMailSender(event, mailWindow, config)) throw new Error('Untrusted request'); return consoleAvailable(); });
-  ipcMain.handle('fabric:console-open', (event) => { if (!policy.isMailSender(event, mailWindow, config)) throw new Error('Untrusted request'); openConsole(); return true; });
+  ipcMain.handle('fabric:console-available', (event) => { if (!policy.isMailSender(event, mailTarget(), config)) throw new Error('Untrusted request'); return consoleAvailable(); });
+  ipcMain.handle('fabric:console-open', (event) => { if (!policy.isMailSender(event, mailTarget(), config)) throw new Error('Untrusted request'); openConsole(); return true; });
   // The mail page makes room for a docked console (it shifts by --fi-console-width); an older page does not, and gets a window.
-  ipcMain.handle('fabric:console-dock-ready', (event) => { if (!policy.isMailSender(event, mailWindow, config)) throw new Error('Untrusted request'); dockReady = consoleAvailable(); if (consoleDocked) layoutDock(); return dockReady; });
+  ipcMain.handle('fabric:console-dock-ready', (event) => { if (!policy.isMailSender(event, mailTarget(), config)) throw new Error('Untrusted request'); if (consoleAvailable()) dockReadyPages.add(config.origin); else dockReadyPages.delete(config.origin); if (consoleDocked) layoutDock(); return dockReadyNow(); });
   ipcMain.handle('fabric:console-state', async (event) => {
     fromConsole(event);
     const c = await ensureConsole();
@@ -1232,11 +1317,11 @@ function installIPC() {
   });
   // The server's Setup page (trusted origin only) reads the chosen setup once.
   ipcMain.handle('fabric:pending-setup', async event => {
-    if (!policy.isMailSender(event, mailWindow, config)) throw new Error('Untrusted request');
+    if (!policy.isMailSender(event, mailTarget(), config)) throw new Error('Untrusted request');
     return readPendingSetup();
   });
   ipcMain.handle('fabric:pending-setup-done', async event => {
-    if (!policy.isMailSender(event, mailWindow, config)) throw new Error('Untrusted request');
+    if (!policy.isMailSender(event, mailTarget(), config)) throw new Error('Untrusted request');
     await fs.rm(pendingSetupPath(), { force: true });
     return { ok: true };
   });
@@ -1252,11 +1337,11 @@ function installIPC() {
   // Mac's choice and sets it from Settings → App → Language, and the menus follow at once.
   ipcMain.handle('fabric:setup-locale', event => { trusted(event); return i18n.forWindow(); });
   ipcMain.handle('fabric:locale', event => {
-    if (!policy.isMailSender(event, mailWindow, config)) throw new Error('Untrusted request');
+    if (!policy.isMailSender(event, mailTarget(), config)) throw new Error('Untrusted request');
     return i18n.choice();
   });
   ipcMain.handle('fabric:locale-set', (event, value) => {
-    if (!policy.isMailSender(event, mailWindow, config)) throw new Error('Untrusted request');
+    if (!policy.isMailSender(event, mailTarget(), config)) throw new Error('Untrusted request');
     const kept = i18n.setChoice(value, { userData: app.getPath('userData') });
     installMenu();
     if (setupWindow && !setupWindow.isDestroyed()) setupWindow.reload();
@@ -1341,9 +1426,9 @@ function installIPC() {
  */
 function openSettings() {
   if (!config) { showSetup(); return; }
-  if (mailWindow && !mailWindow.isDestroyed()) {
+  if (mailWindow && !mailWindow.isDestroyed() && mailPage()) {
     mailWindow.show(); mailWindow.focus();
-    void mailWindow.loadURL(new URL(SETTINGS_PAGE, config.origin).href).catch(() => {});
+    void mailPage().loadURL(new URL(SETTINGS_PAGE, config.origin).href).catch(() => {});
     return;
   }
   openAfterSignIn = SETTINGS_PAGE;
@@ -1482,7 +1567,7 @@ if (ownsInstance) app.whenReady().then(async () => {
   // The Mac woke from sleep: the open mail window reads new mail now instead of at its next poll
   // (P1-4). An event, not a timer: nothing runs here while the Mac sleeps or no window is open.
   if (electron.powerMonitor) electron.powerMonitor.on('resume', () => {
-    if (mailWindow && !mailWindow.isDestroyed()) mailWindow.webContents.send('fabric:resumed');
+    if (mailViews) mailViews.each((view) => { if (!view.webContents.isDestroyed()) view.webContents.send('fabric:resumed'); });
   });
   // Orphan partitions and settings leftovers go before any window opens (LC-12). An unreadable
   // server.json is kept and nothing is swept: the person is about to enter that server again.

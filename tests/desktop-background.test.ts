@@ -24,8 +24,16 @@ async function boot(userData: string, switches: string[], server = true) {
       super(); this.options = options;
       const mainFrame = { url: config.origin + "/" };
       this.webContents = Object.assign(new EventEmitter(), { session: fakeSession, mainFrame, setWindowOpenHandler() {}, send() {}, getURL: () => mainFrame.url });
+      // B-244 D-1: a mail page is a WebContentsView; its webContents loads, focuses and closes itself.
+      Object.assign(this.webContents, { isDestroyed: () => this.destroyed, loadURL: (u: string) => this.loadURL(u), close: () => this.close(), focus() {}, once: this.webContents.once.bind(this.webContents) });
+      if (!this.webContents.reload) this.webContents.reload = () => {};
+      if (!this.webContents.send) this.webContents.send = () => {};
       windows.push(this);
     }
+    // B-244 D-1: the mail window is a frame holding the pages; a page is shown or hidden and laid out in it.
+    contentView = { addChildView() {}, removeChildView() {} };
+    getContentBounds() { return { x: 0, y: 0, width: 1360, height: 900 }; }
+    setVisible() {} setBounds() {}
     isDestroyed() { return this.destroyed; }
     hide() {} show() {} focus() {} setTitle() {} reload() {}
     loadURL() { return Promise.resolve(); } loadFile() { return Promise.resolve(); }
@@ -38,7 +46,7 @@ async function boot(userData: string, switches: string[], server = true) {
     getPreferredSystemLanguages: () => ["en-US"],
   });
   const fakeElectron = {
-    app: fakeApp, BrowserWindow: FakeWindow,
+    app: fakeApp, BrowserWindow: FakeWindow, WebContentsView: FakeWindow,
     Menu: { buildFromTemplate: (x: any) => x, setApplicationMenu() {} },
     ipcMain: { handle() {}, on() {} }, shell: {}, dialog: {},
     session: { fromPartition: () => fakeSession }, powerMonitor: new EventEmitter(),
