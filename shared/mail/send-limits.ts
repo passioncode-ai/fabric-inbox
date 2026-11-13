@@ -8,7 +8,7 @@
  */
 export const REMOTE_SEND_LIMITS = { day: 1000 } as const;
 /** B-262: an agent key's sends a day, by default and at most (a key asked for more is given more, up to the most). */
-export const KEY_DAILY_SENDS = { default: 1000, max: 100_000 } as const;
+export const KEY_DAILY_SENDS: { readonly default: number; readonly max: number } = { default: 1000, max: 100_000 };
 /** The most `SEND_LIMIT_DAY` may set: a day's log of sends is one stored list. */
 export const MAX_SEND_LIMIT_DAY = 100_000;
 
