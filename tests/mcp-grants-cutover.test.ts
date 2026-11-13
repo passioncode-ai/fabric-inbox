@@ -45,9 +45,9 @@ test("W2c: an approved request widens a requester key to the granted mailbox and
   const requester = key({ accounts: [], requestOnly: true });
   const grants = grantsOfPrincipal(requester, [stored({ can: ["read", "draft", "campaign"] })]);
   assert.deepEqual(grantScope(tool("list_messages"), grants), { allowed: true, accounts: [B] });
-  // B-259: the campaign routes do not yet keep a scoped key to its mailboxes' campaigns, so a key limited to mailboxes
-  // has no campaign tool even with `campaign` granted; until they do, nothing reaches another mailbox's campaigns.
-  assert.equal(grantScope(tool("save_campaign"), grants).allowed, false);
+  // B-259: a campaign is its sender mailbox's, so a key limited to mailboxes keeps its campaigns to them.
+  assert.deepEqual(grantScope(tool("save_campaign"), grants), { allowed: true, accounts: [B] });
+  assert.equal(grantScope(tool("launch_campaign"), grants).allowed, true, "the grant's send mode is send");
   assert.equal(grantScope(tool("send_email"), grants).allowed, false, "no send was granted");
   assert.equal(grantScope(tool("delete_message"), grants).allowed, false);
   assert.equal(grantScope(tool("request_access"), grants).allowed, true, "it can still ask for more");
@@ -79,4 +79,31 @@ test("W2c: each call's API is narrowed to the tool's mailboxes, a domain grant i
   const nothing = await scopeFromGrants(grants, base, "x@other.example", async () => []);
   assert.equal(nothing.allowed(tool("send_email")), false, "no mailbox left after narrowing");
   assert.equal(nothing.allowed(tool("request_access")), true);
+});
+
+test("B-259: a limited key reaches only its own mailboxes' campaigns, by sender", async () => {
+  const { scopedApi } = await import("../workers/mcp/scope");
+  const G = "gmail:own1";
+  const campaigns: Record<string, { id: string; sender: string }> = { c1: { id: "c1", sender: G }, c2: { id: "c2", sender: "gmail:other" } };
+  const calls: string[] = [];
+  const base: Api = { request: async (method, path, init) => {
+    calls.push(`${method} ${path}`);
+    if (path === "/api/campaigns" && method === "GET") return { status: 200, contentType: "application/json", data: { campaigns: Object.values(campaigns) } };
+    const id = path.split("/")[3];
+    if (method === "GET" && id && path === `/api/campaigns/${id}`) return campaigns[id] ? { status: 200, contentType: "application/json", data: campaigns[id] } : { status: 404, contentType: "application/json", data: { error: "No such campaign." } };
+    return { status: 200, contentType: "application/json", data: { ok: true, body: init?.body ?? null } };
+  } };
+  const api = scopedApi(base, [G]);
+  const listed = await api.request("GET", "/api/campaigns");
+  assert.deepEqual((listed.data as { campaigns: { id: string }[] }).campaigns.map((c) => c.id), ["c1"], "another mailbox's campaign is not listed");
+  assert.equal((await api.request("GET", "/api/campaigns/c1")).status, 200);
+  await assert.rejects(api.request("GET", "/api/campaigns/c2"), "another mailbox's campaign reads as refused");
+  await assert.rejects(api.request("GET", "/api/campaigns/nope"), "a missing one reads the same");
+  await assert.rejects(api.request("POST", "/api/campaigns/c2/launch", { body: {} }));
+  await assert.rejects(api.request("POST", "/api/campaigns", { body: { campaign: { sender: "gmail:other" } } }), "not made from another mailbox");
+  await assert.rejects(api.request("PUT", "/api/campaigns/c1", { body: { campaign: { sender: "gmail:other" } } }), "not moved to another mailbox");
+  assert.equal((await api.request("POST", "/api/campaigns", { body: { campaign: { sender: "GMAIL:own1" } } })).status, 200);
+  assert.equal((await api.request("POST", "/api/campaigns/c1/launch", { body: {} })).status, 200);
+  assert.equal(calls.includes("POST /api/campaigns/c2/launch"), false, "a refused call never reaches the server");
+  await assert.rejects(api.request("GET", "/api/suppression"), "the suppression list stays the whole server's");
 });
