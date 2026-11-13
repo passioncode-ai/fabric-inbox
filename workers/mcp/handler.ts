@@ -11,11 +11,12 @@ import type { Env } from "../types";
 import { principalFor, readAgentKeys, type AccessClaims, type Principal } from "./keys";
 import { grantsOfPrincipal, type Grant } from "./grants";
 import { readGrants } from "./grant-store";
-import { ApiError, buildServer, callerId, type Api, type Ledger } from "./protocol";
+import { ApiError, buildServer, callerId, type Api, type Ledger, type ToolContext } from "./protocol";
 import { inProcessActors } from "../lib/audit";
 import { NARROW_HEADER, expandDomains, namesDomain, narrowPrincipal, scopedApi } from "./scope";
 import { listMailboxAddresses } from "../lib/mailbox-store";
 import { TOOLS } from "./tools";
+import { scopeFromGrants } from "./grant-scope";
 import { instructionsFor, PROTOCOL_NAME } from "./instructions";
 import { version } from "../../package.json";
 import { expectedAccountOrigin } from "../providers/app-origin";
@@ -130,11 +131,22 @@ export async function handleMcp(request: Request, env: Env, ctx: ExecutionContex
     return refuse(403, "This key is limited to no mailbox here (its list, or the X-Fabric-Accounts header, names none that is valid).");
   }
   const origin = new URL(request.url).origin;
+  const grants = grantsOnce(env, principal);
+  const base = inProcessApi(origin, env, ctx, callerId(principal));
+  let scope: ToolContext["scope"];
+  if (env.GRANTS_DECIDE === "on" && principal.kind === "agent") {
+    try {
+      scope = await scopeFromGrants(await grants(), base, request.headers.get(NARROW_HEADER), () => listMailboxAddresses(env.BUCKET));
+    } catch (error) {
+      console.error(JSON.stringify({ event: "mcp.grants_unreadable", error: String(error).slice(0, 200) }));
+      return refuse(503, "The access grants could not be read; try again");
+    }
+  }
   const server = buildServer(
     { name: PROTOCOL_NAME, version, instructions: instructionsFor(principal, origin) },
     TOOLS,
-    { api: principal.accounts ? scopedApi(inProcessApi(origin, env, ctx, callerId(principal)), principal.accounts) : inProcessApi(origin, env, ctx, callerId(principal)), principal,
-      recipientCheck: recipientCheckFrom(env, () => allServedDomains(env)), grants: grantsOnce(env, principal) },
+    { api: principal.accounts ? scopedApi(base, principal.accounts) : base, principal,
+      recipientCheck: recipientCheckFrom(env, () => allServedDomains(env)), grants, ...(scope ? { scope } : {}) },
     ledgerFor(env),
   );
   return createMcpHandler(server, { route: "/mcp" })(request, env, ctx);

@@ -245,6 +245,42 @@ export function grantsOfPrincipal(p: Principal, stored: readonly StoredGrant[] =
   return [...own, ...extra];
 }
 
+/**
+ * B-246 W2c, the cut-over (`GRANTS_DECIDE=on`): the mailboxes on which a caller's grants give `need`; "all" when a grant on
+ * "*" gives it. A send counts only under a grant whose send mode is send, so a drafts-only grant never sends.
+ */
+export function mailboxesFor(need: Capability, grants: readonly Grant[], now = new Date()): "all" | string[] {
+  const usable = grants.filter((g) => live(g, now) && g.can.includes(need) && (need !== "send" || g.limits.sendMode === "send"));
+  if (usable.some((g) => g.mailboxes.includes(ALL))) return "all";
+  return [...new Set(usable.flatMap((g) => g.mailboxes))];
+}
+
+/**
+ * B-246 W2c, the cut-over: whether the grants let a caller use a tool, and the mailboxes its call reaches (null: every
+ * mailbox). The call's API is narrowed to exactly those, so a grant of `send` on one mailbox and `read` on another never
+ * lets a send reach the second. A tool that acts on the whole server needs every capability on "*".
+ */
+export function grantScope(tool: { name: string; routes: readonly string[]; sends?: boolean }, grants: readonly Grant[], now = new Date()): { allowed: boolean; accounts: readonly string[] | null } {
+  const need = TOOL_NEEDS[tool.name];
+  const none = { allowed: false, accounts: [] as string[] };
+  if (!need) return none;
+  if (need === "self") return { allowed: true, accounts: [] };
+  // A tool that sends mail (a campaign's launch, a test message) also needs a grant whose send mode is send there.
+  const sendable = tool.sends ? sendableMailboxes(grants, now) : "all";
+  if (need === "server") return CAPABILITIES.every((c) => mailboxesFor(c, grants, now) === "all") && sendable === "all" ? { allowed: true, accounts: null } : none;
+  const want = mailboxesFor(need, grants, now);
+  const reach = sendable === "all" ? want : want === "all" ? sendable : want.filter((m) => sendable.includes(m));
+  if (reach === "all") return { allowed: true, accounts: null };
+  return reach.length && toolFitsScope(tool) ? { allowed: true, accounts: reach } : none;
+}
+
+/** The mailboxes under a live grant whose send mode is send, whatever it grants there; "all" under one on "*". */
+function sendableMailboxes(grants: readonly Grant[], now: Date): "all" | string[] {
+  const usable = grants.filter((g) => live(g, now) && g.limits.sendMode === "send");
+  if (usable.some((g) => g.mailboxes.includes(ALL))) return "all";
+  return [...new Set(usable.flatMap((g) => g.mailboxes))];
+}
+
 /** Whether the grants let this caller use a tool: its need on its mailboxes, drafts kept, a limited caller kept to one mailbox's tools. */
 export function grantsAllowTool(tool: { name: string; sends?: boolean; routes: readonly string[] }, p: Principal, grants: readonly Grant[], now = new Date()): boolean {
   const need = TOOL_NEEDS[tool.name];
