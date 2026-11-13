@@ -41,11 +41,16 @@
 | Release 1.6.10 (B-246 W2c off, B-259) | PR #524, tag `v1.6.10` on `2ae43b0` | the three servers on 1.6.10 (receipts commit `2ae43b0a7bee`, 100 %); `get_server` answers 1.6.10 |
 | Release 1.6.10 published | run `43414822585`, third attempt green after the Apple agreement was accepted (14:07 UTC) and Sigstore's 502 at attestation cleared | `gh release view v1.6.10`: Latest, 20 assets; the update feed answers 1.6.10 |
 | B-246 W4a: the architect role behind `ROLE_GRANTS` (off), the HTTP gate by each route's capability read from the tools, every change kept as `architect_act`, Architect in Settings → People | PR #526 `1713a78` | Studio `npm test` 2095 pass, typecheck 0; `tests/role-architect.test.ts` |
+| B-246 W4b: an architect gives the agent keys they made access within the role, held only while the role does | PR #528 `a7bd755` | Studio `npm test` 2099 pass; `tests/role-delegation.test.ts` |
+| Release 1.6.11 (W4a, W4b; `ROLE_GRANTS` off) | PR #529, tag `v1.6.11` on `2e7777c` | published 15:07 UTC; the three servers on 1.6.11 (receipts, tag `2e7777cbd1e0`) |
+| 17 board rows released long ago closed with their receipts | PR #530 `bc27aaa` | `tests/board-table.test.ts` |
+| B-246 W5a (packet R-6): a key that may prepare campaigns but not send launches one only through the owner's approval, bound to the campaign's fingerprint and used once; the MCP reference generator without em dashes (the rest is B-260) | PR #531 `22581ed` | Studio `npm test` 2103 pass, typecheck 0; `tests/campaign-owner-send.test.ts` |
+| Release 1.6.12 (W5a) | PR #532, tag `v1.6.12` on `b7624ff` | the three servers on 1.6.12 (receipts, tag `b7624fffb159`); `get_server` answers 1.6.12 on the organization's and the client organization's servers |
 | Each server's Worker logs are readable: `CF_WORKERS_OBSERVABILITY_READ` in the owner's vault and, issued today, in the client organization's; the query filters on `$workers.scriptName` and the log's own `event` field | Observatory `cloudflare.py issue --preset workers-observability-read` | the shadow read above |
 
 ## Open, with its watcher
 
-- The Mac app on the owner's Mac has 1.6.10 downloaded and verified; it installs when the app quits (the app was not started by the lifecycle broker, so no agent restarts it). `v1.6.9` stays unpublished on purpose: 1.6.10 holds it, and publishing it now would move the latest release back.
+- The Mac app on the owner's Mac installs its latest verified update when it quits (it was not started by the lifecycle broker, so no agent restarts it). The release run of `v1.6.12` (`43450183482`) was building at this handoff; its watcher is this session's, and if it dies, `gh run view 43450183482` says whether it published. `v1.6.9` stays unpublished on purpose: 1.6.10 holds it, and publishing it now would move the latest release back.
 - B-246 cut-over on 2026-11-15: read each server's Worker logs for `grant_shadow_disagreement` and `grant_shadow_failed` (none through 2026-11-13); with none, deploy with `--var GRANTS_DECIDE:on` on the three servers (operator 2026-11-13: «Да, включай сам») and read them again a day later.
 - B-246 W5: the outreach agent is assembled (its own private repository, `8a99a1e`); placement by studio-agent waits for
   its HTTP surface and probe (its OI-9) and the operator's word for the deploy key (given 2026-11-13: «Да, подключать и ставить», relayed to studio-agent); the mailbox is the operator's to choose later (OI-2); the owner's decisions (sales owner,
@@ -57,7 +62,7 @@
 
 ## Exact next task
 
-1. W4b: delegation (packet D-3a, `delegate` on a grant): an architect gives agent keys grants within the preset, each checked against the architect's current standing at every use; released with W4a as 1.6.11. After 2026-11-15: B-246 cut-over (W2c end). The B-232 design (D-3a) waits to be posted on thread `eefa7959` when the board reconnects.
+1. On or after 2026-11-15: B-246 cut-over (W2c end): read the three servers' Worker logs for `grant_shadow_disagreement` and `grant_shadow_failed`; with none, redeploy 1.6.12 (or later) with `--var GRANTS_DECIDE:on` and read them again a day later. `ROLE_GRANTS` stays off until W4c (the employee preset) passes, which waits for B-159. When the board reconnects: post the B-232 design (D-3a) and the architect role on thread `eefa7959`.
 2. The B-236 server address door by 2026-11-18 (board request `3f8cfff5`). After 2026-11-20, read one day of each
    server's Worker log for Workers AI `5028` (a retired model) to confirm B-258 left none.
 3. Stale rows in `docs/evidence/backlog.md` still "in review" for work released long ago (B-243 among them): close
