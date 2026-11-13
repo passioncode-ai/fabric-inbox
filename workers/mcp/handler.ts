@@ -9,7 +9,8 @@ import { createMcpHandler } from "agents/mcp";
 import { api } from "../api";
 import type { Env } from "../types";
 import { principalFor, readAgentKeys, type AccessClaims, type Principal } from "./keys";
-import { grantsOfPrincipal, type Grant } from "./grants";
+import { delegationHolds, grantsOfPrincipal, type Grant } from "./grants";
+import { membersCached, standingOf } from "../lib/members";
 import { readGrants } from "./grant-store";
 import { ApiError, buildServer, callerId, type Api, type Ledger, type ToolContext } from "./protocol";
 import { inProcessActors } from "../lib/audit";
@@ -97,10 +98,15 @@ export function refuseUnsafe(request: Request): Response | null {
   return null;
 }
 
-/** B-246 W2c: the caller's grants, the stored ones read at most once per request (the shadow beside today's checks). */
+/**
+ * B-246 W2c: the caller's grants, the stored ones read at most once per request (the shadow beside today's checks). W4b:
+ * a grant an architect gave holds only while its grantor's role does; a list of people that cannot be read gives such a
+ * grant nothing.
+ */
 function grantsOnce(env: Env, principal: Principal): () => Promise<Grant[]> {
   let read: Promise<Grant[]> | null = null;
-  return () => (read ??= readGrants(env.BUCKET).then((stored) => grantsOfPrincipal(principal, stored)));
+  return () => (read ??= Promise.all([readGrants(env.BUCKET), membersCached(env.BUCKET).catch(() => null)]).then(([stored, members]) =>
+    grantsOfPrincipal(principal, stored, (g) => delegationHolds(g, (email) => (members ? standingOf(members, email, env.ROLE_GRANTS === "on").role : null)))));
 }
 
 export async function handleMcp(request: Request, env: Env, ctx: ExecutionContext, claims: AccessClaims | null): Promise<Response> {

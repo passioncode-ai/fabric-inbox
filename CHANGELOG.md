@@ -11,7 +11,9 @@ is cut and published: [docs/release.md](docs/release.md).
 mail of every mailbox and sets up its addresses and the agents that answer them, without waiting for a second
 approval; sending, drafts, deleting mail and the server's settings stay with the administrators, and every change an
 architect makes is kept in the record. Off until the server turns the role on (`ROLE_GRANTS`); until then the role
-cannot be given. Basis: the operator's decision of 2026-11-06 and the packet's D-3a; `tests/role-architect.test.ts`.
+cannot be given. An architect can also give the agents they set up access within the same role: such access lasts only while
+they stay an architect. Basis: the operator's decision of 2026-11-06 and the packet's D-3a; `tests/role-architect.test.ts`,
+`tests/role-delegation.test.ts`.
 
 ## 1.6.10 (2026-11-13)
 

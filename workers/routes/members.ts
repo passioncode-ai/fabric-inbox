@@ -89,9 +89,10 @@ membersRouter.put("/api/members/:email", async (c) => {
         ...(at(previous.levels, "agents").length ? { agents: at(previous.levels, "agents") } : {}) } : null });
     // B-215: the listed people can sign in, with nothing done in Cloudflare by hand.
     const signIn = signInAnswer(await syncSignIn(c.env, emailsOf(members)), email);
-    // N-4: a member makes no keys; the keys they made as an administrator go when they become one. An architect's own
-    // keys come only from their grants (D-3a delegation), never from an administrator's past keys.
-    if (parsed.data.role !== "admin") {
+    // N-4: a member makes no keys; the keys they made as an administrator go when they become one. A person who becomes
+    // an architect starts with none too (B-246 W4b): the keys an architect then makes reach only what they give them,
+    // so saving an architect again keeps those.
+    if (parsed.data.role === "member" || (parsed.data.role === "architect" && previous?.role !== "architect")) {
       const keys = await revokeKeysOf(c.env, email).catch((error: unknown) => ({ revoked: [] as string[], warning: (error as Error).message }));
       if (keys.revoked.length) await recordAudit(c.env.BUCKET, actor, { kind: "keys_revoked", person: email, keys: keys.revoked });
       return c.json({ members, signIn, revokedKeys: keys.revoked, ...(keys.warning ? { warning: keys.warning } : {}) });

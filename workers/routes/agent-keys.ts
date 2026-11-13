@@ -9,6 +9,7 @@ import {
 import { recordAudit } from "../lib/audit";
 import { normaliseAccountId } from "../mcp/scope";
 import { msg } from "../../shared/i18n";
+import type { Standing } from "../lib/members";
 
 /**
  * Agent access (AP-7): the owner issues, lists and revokes the keys agents use on `/mcp`.
@@ -17,6 +18,16 @@ import { msg } from "../../shared/i18n";
  */
 export const agentKeysRouter = new Hono<{ Bindings: Env }>();
 type C = Context<{ Bindings: Env }>;
+/**
+ * B-246 W4b (packet D-3a, Delegation): the signed-in architect's email, or null for anyone else. An architect lists and
+ * revokes only the keys they made, and makes only keys that ask for access; what such a key reaches is the grants the
+ * architect gives it (workers/routes/grants.ts), each held only while the architect's role does.
+ */
+export const architectOf = (c: Context): string | null => {
+  const s = (c as unknown as Context<{ Variables: { standing?: Standing } }>).get("standing");
+  return s?.role === "architect" ? s.email : null;
+};
+
 /** The signed-in person's email (Access), or null for an agent key or development. */
 const signedInEmail = (c: C): string | null => {
   const email = (c as unknown as Context<{ Bindings: Env; Variables: { access?: { email?: unknown } } }>).get("access")?.email;
@@ -106,7 +117,8 @@ export function clientConfigs(mcpUrl: string, clientId: string, clientSecret: st
 agentKeysRouter.get("/api/agent-keys", async (c) => {
   c.header("Cache-Control", "no-store");
   try {
-    const keys = await readAgentKeys(c.env.BUCKET);
+    const architect = architectOf(c);
+    const keys = (await readAgentKeys(c.env.BUCKET)).filter((k) => !architect || k.createdBy === architect);
     return c.json({ keys: keys.map(publicKey), mcpUrl: `${new URL(c.req.url).origin}/mcp`, levels: LEVELS, durations: Object.keys(TOKEN_DURATIONS), canIssue: !!cloudflareApi(c.env) });
   } catch (error) { return failure(c, error, msg("Reading the agent keys")); }
 });
@@ -116,6 +128,8 @@ agentKeysRouter.post("/api/agent-keys", async (c) => {
   const parsed = validateNewKey(await c.req.json().catch(() => null));
   if (!parsed.ok) return c.json({ error: parsed.error }, 400);
   const input = parsed.value;
+  if (architectOf(c) && !input.requestOnly)
+    return c.json({ error: msg("An architect makes keys that ask for access; give the key its access afterwards.") }, 403);
   const cf = access(c);
   if (cf instanceof Response) return cf;
   return alone(c, async () => {
@@ -145,11 +159,19 @@ agentKeysRouter.post("/api/agent-keys", async (c) => {
 
 agentKeysRouter.delete("/api/agent-keys/:id", (c) => alone(c, async () => {
   const id = c.req.param("id");
+  const architect = architectOf(c);
   let removed: AgentKey | undefined;
+  let notTheirs = false;
   try {
     // Out of the registry first: the key stops working on this server at once.
-    await updateAgentKeys(c.env.BUCKET, (keys) => { removed = keys.find((k) => k.id === id); return keys.filter((k) => k.id !== id); });
+    await updateAgentKeys(c.env.BUCKET, (keys) => {
+      removed = keys.find((k) => k.id === id);
+      // B-246 W4b: an architect revokes only the keys they made.
+      if (removed && architect && removed.createdBy !== architect) { notTheirs = true; removed = undefined; return keys; }
+      return keys.filter((k) => k.id !== id);
+    });
   } catch (error) { return failure(c, error, msg("Revoking the key")); }
+  if (notTheirs) return c.json({ error: msg("An architect revokes only the keys and access they gave.") }, 403);
   if (!removed) return c.json({ error: msg("No such agent key") }, 404);
   console.log(JSON.stringify({ event: "agent_key_revoked", keyId: id }));
   const cf = access(c);
