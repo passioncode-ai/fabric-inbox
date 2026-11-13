@@ -62,7 +62,7 @@
   its HTTP surface and probe (its OI-9) and the operator's word for the deploy key (given 2026-11-13: «Да, подключать и ставить», relayed to studio-agent); the mailbox is the operator's to choose later (OI-2); the owner's decisions (sales owner,
   mailbox and sender, audience and texts, privacy) wait on the organization agent's question `e8c2435c`; the access
   owner approves the agent's request once it asks.
-- A person's first sign-in in the Inbox app of each Studio space (Cloudflare Access): a human gate.
+- Studio: the operator signed in on 2026-11-13 in the `sshlg` space only, which is enough (agents in the other spaces use their own keys): its app (1.6.13 in `~/Applications`, put in place from the verified zip) holds the personal, the organization's and the client organization's servers, and the log reads all three (`other_inbox_read servers 2 ok 2`). The other spaces need no person's sign-in.
 - MacBook disk: full at ~15:30 UTC today, then 8.8 GB; builds run on Studio and only `build/` comes back (13 MB),
   deployed with `npx --yes wrangler@4.74.0 deploy --config build/server/wrangler.json`.
 
