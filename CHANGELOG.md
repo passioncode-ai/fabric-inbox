@@ -5,7 +5,7 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 1.6.12 (2026-11-13)
 
 **An agent that writes campaigns but may not send asks you to start one** (B-246). An agent that may prepare campaigns
 but not send mail can now ask to start a campaign; the request waits for your approval in Agent access, and the
