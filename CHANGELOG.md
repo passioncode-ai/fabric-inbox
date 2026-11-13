@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.6.7 (2026-11-13)
+
+**See how close an answer's check came to its limit** (B-252). The model that checks a reply agent's answer reads a
+limited amount of facts. Each checked answer now records how much of that room it used and which parts did not fit,
+so an agent's owner can shorten what crowds the check before answers suffer.
+
 ## 1.6.6 (2026-11-12)
 
 **Smaller fixes for agents** (B-250, B-251). An agent key that may only ask for access is issued without naming a
