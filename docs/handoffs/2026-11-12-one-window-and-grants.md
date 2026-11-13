@@ -27,13 +27,20 @@
 | B-248, B-249: a reply asks the knowledge what it asks now; the checker reads the passages the model found itself | PRs #501, #503 | live previews of the asking agent's ticket: no hand-off, no "not in the facts" |
 | B-250, B-251: a request-only key needs no level and is listed as such; a campaign recipient written to names its thread | PRs #505, #506 | Studio `npm test` 2072 pass |
 | The client organization's outreach agent's requester key in its Studio space's vault (`<agent>/prod/FABRIC_INBOX_*`); proved with `list_my_access` from that space | board thread `0100677f` | the first attempt's key, whose value was lost, revoked |
+| Release 1.6.7: each checked answer records how much of the checker's window it used (B-252) | PR #510, tag `v1.6.7` | release run 43334164552 green; the three servers on 1.6.7 |
+| B-253 (links): only a packaged app takes `fabric-inbox://` links | PR #511 | released in 1.6.8 |
+| B-256: a new agent answers by itself (operator, 2026-11-13: «по дефолту если мы создаем агента он должен начинать писать автоматом»); the old templates retired in `shipped.lock.json`, `support-auto`, `sales-auto`, `billing-auto` added (R28) | PR #512 (filed as B-253, renumbered: two rows shared it) | `tests/agents-add-only.test.ts` |
+| B-168: the PassionCode support agent in auto (operator: «Проверь сам и включай»): one false claim fixed (v2), the server's own reply-lane OpenRouter key set as `OPENROUTER_API_KEY`, v3 sends `question`, `how-to`, `status`, `download`, `bug` | board row B-168 | eight live previews: every send carries a `check` approved by `qwen/qwen3.8-flash` |
+| B-255: the model is told the intents an agent may send, word for word | PR #513 `9085a96` | Studio `npm test` 2077 pass, typecheck 0; live preview labels `bug` |
+| Release 1.6.8 (B-253 links, B-255, B-256) | PR #514, tag `v1.6.8` on `30af301` | the three servers on 1.6.8 (receipts commit `30af30150b2e`, 100 %); release run 43353660766 |
 
 ## Open, with its watcher
 
-- Release runs for `v1.6.5` and `v1.6.6`: this session's background poll; the servers already run 1.6.6.
-- B-246 shadow wait until 2026-11-15: read each server's Worker log for `grant_shadow_disagreement`, then the cut-over.
+- Release run for `v1.6.8` (43353660766, queued for an org runner): watched by this session; the servers already run 1.6.8.
+- B-254: a server without an OpenRouter key sends auto answers unchecked (`workers/agents/deps.ts`); a first attempt (branch `agent/b254-no-checker`, local worktree `fi-b254`) broke 11 runner tests that rely on a checkerless harness.
+- B-246 shadow wait until 2026-11-15: read each server's Worker log for `grant_shadow_disagreement`, then the cut-over (operator, 2026-11-13: «Да, включай сам» when no disagreement is logged).
 - B-246 W5: the outreach agent is assembled (its own private repository, `8a99a1e`); placement by studio-agent waits for
-  its HTTP surface and probe (its OI-9) and the operator's word for the deploy key; the owner's decisions (sales owner,
+  its HTTP surface and probe (its OI-9) and the operator's word for the deploy key (given 2026-11-13: «Да, подключать и ставить», relayed to studio-agent); the mailbox is the operator's to choose later (OI-2); the owner's decisions (sales owner,
   mailbox and sender, audience and texts, privacy) wait on the organization agent's question `e8c2435c`; the access
   owner approves the agent's request once it asks.
 - A person's first sign-in in the Inbox app of each Studio space (Cloudflare Access): a human gate.
@@ -43,7 +50,7 @@
 ## Exact next task
 
 1. After 2026-11-15: B-246 cut-over (W2c end), then W4 (roles, B-232 design due 2026-11-13 on thread `eefa7959`).
-2. B-236 server address door by 2026-11-18 (board request `3f8cfff5`), and B-168 auto mode for the PassionCode
-   support agent once a person read its first drafts.
+2. B-254: a checker for a server without an OpenRouter key (a Workers AI model of another vendor), or drafts there;
+   make the runner harness name its checker first. Then the B-236 server address door by 2026-11-18 (`3f8cfff5`).
 3. Stale rows in `docs/evidence/backlog.md` still "in review" for work released long ago (B-243 among them): close
    them with their receipts under the lease.
