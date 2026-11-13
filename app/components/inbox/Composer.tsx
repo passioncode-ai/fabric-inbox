@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fabric, accountPath } from "~/services/fabric";
-import { ApiError } from "~/services/api";
-import { recipientAddresses, sendRecovery } from "./send-state";
+import { recipientAddresses, sendFailure, sendFailureNotice } from "./send-state";
 import { isRemote, rawAccount, type InboxAccount } from "./model";
 import type { Draft } from "./draft-store";
 import {
@@ -227,39 +226,14 @@ export default function Composer({
           t("Acceptance is not confirmed. Keep this attempt unchanged and check again."),
         );
     } catch (error) {
-      const code = error instanceof ApiError ? String(error.body.code ?? error.body.error ?? "") : "";
-      if (error instanceof ApiError && error.status === 409 && /^(DRAFT_CONFLICT|draft_conflict)$/.test(code)) {
-        // Changed elsewhere between saving and sending: nothing went out; the person decides.
-        if (!(await recover(fixed, "editable"))) return;
-        // Saving again meets the change and offers the choice between the two versions.
-        void onResync(draft);
-        setNotice(t("This draft was changed elsewhere just before sending, so it was not sent. Check it, then send again."));
-      } else if (error instanceof ApiError && error.status === 429 && code === "send_rate_limited") {
-        // B-06: this server's sending budget for the account; nothing was reserved or handed over.
-        if (!(await recover(fixed, "editable"))) return;
-        setNotice(t("Not sent: this account has reached this server's daily sending limit. Nothing went out; send it again later, or ask the server's administrator to raise the limit."));
-      } else if (
-        error instanceof ApiError &&
-        sendRecovery(!!draft.locked, error.status, error.body) === "failed"
-      ) {
-        if (!(await recover(fixed, "failed"))) return;
-        setNotice(
-          t("The provider did not accept this attempt. Correct the draft and send again, or discard it."),
-        );
-      } else if (
-        error instanceof ApiError &&
-        sendRecovery(!!draft.locked, error.status, error.body) === "editable"
-      ) {
-        if (!(await recover(fixed, "editable"))) return;
-        setNotice(
-          t("Send refused: {reason}. Correct the message or reconnect.", {
-            reason: t.text(error.message).replace(/[.!?]+$/, ""),
-          }),
-        );
-      } else
-        setNotice(
-          t("Acceptance is not confirmed. Retry the same attempt; its recovery key prevents a duplicate send."),
-        );
+      const failure = sendFailure(error, !!draft.locked);
+      // A draft changed elsewhere, or past this server's sending budget (B-06): nothing went out,
+      // so the draft stays editable; the provider's refusal unlocks it as failed.
+      const recovery = failure.kind === "failed" ? "failed" : failure.kind === "uncertain" ? null : "editable";
+      if (recovery && !(await recover(fixed, recovery))) return;
+      // Saving again meets the change and offers the choice between the two versions.
+      if (failure.kind === "conflict") void onResync(draft);
+      setNotice(sendFailureNotice(failure, t));
     } finally {
       sending.current = false;
       setBusy(false);
