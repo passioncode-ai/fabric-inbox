@@ -39,11 +39,13 @@
 | B-246 W2c: the cut-over built behind `GRANTS_DECIDE` (off): the grants decide a key's tools and each call's API is narrowed to the mailboxes they give that tool | PR #522 `f20dd8e` | `tests/mcp-grants-cutover.test.ts`: equal to today's checks for every tool and every key that exists; the shadow over 3 days on the three servers (434, 113, 196 `/mcp` calls): no disagreement, no failure |
 | B-259: a key limited to mailboxes runs only its own mailboxes' campaigns (by sender) | PR #523 `3ce538f` | Studio `npm test` 2088 pass, typecheck 0 |
 | Release 1.6.10 (B-246 W2c off, B-259) | PR #524, tag `v1.6.10` on `2ae43b0` | the three servers on 1.6.10 (receipts commit `2ae43b0a7bee`, 100 %); `get_server` answers 1.6.10 |
+| Release 1.6.10 published | run `43414822585`, third attempt green after the Apple agreement was accepted (14:07 UTC) and Sigstore's 502 at attestation cleared | `gh release view v1.6.10`: Latest, 20 assets; the update feed answers 1.6.10 |
+| B-246 W4a: the architect role behind `ROLE_GRANTS` (off), the HTTP gate by each route's capability read from the tools, every change kept as `architect_act`, Architect in Settings → People | PR #526 `1713a78` | Studio `npm test` 2095 pass, typecheck 0; `tests/role-architect.test.ts` |
 | Each server's Worker logs are readable: `CF_WORKERS_OBSERVABILITY_READ` in the owner's vault and, issued today, in the client organization's; the query filters on `$workers.scriptName` and the log's own `event` field | Observatory `cloudflare.py issue --preset workers-observability-read` | the shadow read above |
 
 ## Open, with its watcher
 
-- Releases `v1.6.9` and `v1.6.10` are not published: their runs fail at notarization and the Mac App Store check with Apple's 403 "A required agreement is missing or has expired" (the signing team's App Store Connect read answers 403 since 2026-11-13 10:31 UTC). A human gate: the Apple Developer account holder accepts the agreement (developer.apple.com/account, and App Store Connect, Business). Watcher: this session's background loop checks the account every 10 min and then runs `gh run rerun 43414822585 --failed` (v1.6.10 only: it holds everything, and publishing 1.6.9 after it would move the latest release back). It dies with the session; then run that command by hand. The servers already run 1.6.10.
+- The Mac app on the owner's Mac has 1.6.10 downloaded and verified; it installs when the app quits (the app was not started by the lifecycle broker, so no agent restarts it). `v1.6.9` stays unpublished on purpose: 1.6.10 holds it, and publishing it now would move the latest release back.
 - B-246 cut-over on 2026-11-15: read each server's Worker logs for `grant_shadow_disagreement` and `grant_shadow_failed` (none through 2026-11-13); with none, deploy with `--var GRANTS_DECIDE:on` on the three servers (operator 2026-11-13: «Да, включай сам») and read them again a day later.
 - B-246 W5: the outreach agent is assembled (its own private repository, `8a99a1e`); placement by studio-agent waits for
   its HTTP surface and probe (its OI-9) and the operator's word for the deploy key (given 2026-11-13: «Да, подключать и ставить», relayed to studio-agent); the mailbox is the operator's to choose later (OI-2); the owner's decisions (sales owner,
@@ -55,7 +57,7 @@
 
 ## Exact next task
 
-1. After 2026-11-15: B-246 cut-over (W2c end), then W4 (roles, B-232 design due 2026-11-13 on thread `eefa7959`).
+1. W4b: delegation (packet D-3a, `delegate` on a grant): an architect gives agent keys grants within the preset, each checked against the architect's current standing at every use; released with W4a as 1.6.11. After 2026-11-15: B-246 cut-over (W2c end). The B-232 design (D-3a) waits to be posted on thread `eefa7959` when the board reconnects.
 2. The B-236 server address door by 2026-11-18 (board request `3f8cfff5`). After 2026-11-20, read one day of each
    server's Worker log for Workers AI `5028` (a retired model) to confirm B-258 left none.
 3. Stale rows in `docs/evidence/backlog.md` still "in review" for work released long ago (B-243 among them): close
