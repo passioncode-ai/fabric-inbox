@@ -32,7 +32,8 @@ const bundle = await build({
 });
 
 const steps = [{ subject: "Hi {{first_name|there}}", body: "Hello {{first_name}}, about {{company}}." }, { body: "Following up.", delayDays: 3 }];
-const draft = (over: Record<string, unknown> = {}) => ({ name: "Pilot", sender: "gmail:g1", timezone: "UTC", steps, ...over });
+// The window and gaps of the dry-run checks below are given: since B-262 the defaults are every day 08:00 to 20:00, 0 to 1 minute apart.
+const draft = (over: Record<string, unknown> = {}) => ({ name: "Pilot", sender: "gmail:g1", timezone: "UTC", gapMinutes: [5, 10], window: { days: [1, 2, 3, 4, 5], start: "09:00", end: "17:00" }, steps, ...over });
 
 test("SCN-089: prepare, add, preview, dry-run and the do-not-write list, nothing sent", async () => {
   const mf = new Miniflare({
