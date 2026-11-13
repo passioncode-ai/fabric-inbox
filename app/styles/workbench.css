@@ -1794,9 +1794,19 @@ body {
 }
 .fi-also-in { font-size: 10px; color: var(--pc-text-muted); }
 /* B-244 D-3 (SCN-099): the servers' tabs above the inbox and the mark of another server's message. */
-.fi-server-tabs { padding: 0 21px 8px; flex-wrap: wrap; }
+.fi-server-tabs { padding: 0 21px 8px; flex-wrap: wrap; row-gap: 6px; }
+/* B-263: a tab is one line whatever the window's width; a long server name is cut (its full name is the title), and
+   tabs that do not fit move to the next line whole, never growing into tall ovals. */
+.fi-server-tabs .fi-chip {
+  display: inline-flex; align-items: center; flex: 0 0 auto; max-width: 100%; box-sizing: border-box;
+  white-space: nowrap; line-height: 16px;
+}
+.fi-server-tabs .fi-chip > * { flex-shrink: 0; }
+.fi-server-tabs .fi-chip > .fi-server-name {
+  flex: 0 1 auto; color: inherit; margin-left: 0; min-width: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis;
+}
 .fi-server-tabs .fi-chip.is-problem { border-style: dashed; }
-.fi-server-unreachable { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
+.fi-server-unreachable { gap: 6px; cursor: default; }
 .fi-server-unreachable .fi-text-button { font-size: 11px; }
 .fi-server-pill {
   display: inline-flex; align-items: center; border-radius: var(--pc-radius-pill); padding: 0 6px;
