@@ -17,15 +17,17 @@ export async function scopeFromGrants(grants: readonly Grant[], base: Api, heade
   const everything = { kind: "owner", label: "", level: "admin", send: "send", dailySendLimit: null, keyId: null, accounts: null } as Principal;
   const narrowed = header === null ? null : narrowPrincipal(everything, header, addresses)?.accounts ?? [];
   const reach = (tool: Pick<ToolDef, "name" | "routes">) => {
-    const { allowed, accounts } = grantScope(tool, grants);
-    if (TOOL_NEEDS[tool.name] === "self") return { allowed, accounts };
+    const { allowed, accounts, viaOwner } = grantScope(tool, grants);
+    if (TOOL_NEEDS[tool.name] === "self") return { allowed, accounts, viaOwner: false };
     const concrete = accounts === null ? null : expandDomains(accounts, addresses);
     const kept = narrowed === null ? concrete : concrete === null ? narrowed : concrete.filter((a) => narrowed.includes(a));
     // A tool that needs a mailbox needs one left after narrowing.
-    return { allowed: allowed && (kept === null || kept.length > 0), accounts: kept };
+    return { allowed: allowed && (kept === null || kept.length > 0), accounts: kept, viaOwner: !!viaOwner };
   };
   return {
     allowed: (tool) => reach(tool).allowed,
     api: (tool) => { const { accounts } = reach(tool); return accounts === null ? base : scopedApi(base, accounts); },
+    // B-246 W5a: the owner's approval stands in for a send the grants do not give.
+    viaOwner: (tool) => reach(tool).viaOwner,
   };
 }

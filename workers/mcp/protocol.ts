@@ -41,7 +41,7 @@ export interface ToolContext {
    * B-246 W2c, the cut-over: when the grants decide (`GRANTS_DECIDE=on`), whether a tool is the caller's and the API its
    * call uses, narrowed to the mailboxes the grants give it. Absent: today's level and accounts decide.
    */
-  scope?: { allowed(tool: ToolDef): boolean; api(tool: ToolDef): Api };
+  scope?: { allowed(tool: ToolDef): boolean; api(tool: ToolDef): Api; viaOwner?(tool: ToolDef): boolean };
 }
 
 export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
@@ -59,6 +59,16 @@ export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
   sends?: boolean;
   /** B-178: its confirmation always waits for the owner's approval (B-38), whatever the key's setting. */
   ownerApproval?: boolean;
+  /**
+   * B-246 W5a (packet R-6): a caller that may prepare what this tool sends but not send it itself (a Drafts only key, or
+   * grants without send on the mailbox) still reaches the tool, and its confirmation then waits for the owner's approval.
+   */
+  ownerSends?: boolean;
+  /**
+   * B-246 W5a: the state the confirmation is about, read when it is issued and again when it is used; the code is bound to
+   * it, so a change in between (a campaign's text or recipients) makes the code invalid and needs a new approval.
+   */
+  bind?(args: any, ctx: ToolContext): Promise<string>;
   /**
    * B-215: the owner's approval above is waived for a key holding this standing permission (keys.ts `standing`),
    * when `when` (if given) agrees for these arguments; the key still confirms with its own code. A key set to
@@ -122,7 +132,7 @@ export function toolsFor(principal: Principal, tools: readonly ToolDef[]): ToolD
   if (principal.kind === "agent" && principal.requestOnly) return tools.filter((t) => t.anyKey);
   // An empty limit (a damaged list, or a limit on an Admin key) reaches nothing, so it lists nothing.
   if (principal.accounts && !principal.accounts.length) return [];
-  return tools.filter((t) => levelAllows(principal.level, t.level) && (!t.sends || principal.send === "send") && (!principal.accounts || toolFitsScope(t)));
+  return tools.filter((t) => levelAllows(principal.level, t.level) && (!t.sends || principal.send === "send" || !!t.ownerSends) && (!principal.accounts || toolFitsScope(t)));
 }
 
 export const callerId = (p: Principal) => (p.kind === "owner" ? `owner:${p.label}` : `key:${p.keyId}`);
@@ -222,18 +232,33 @@ export async function runTool(tool: ToolDef, rawArgs: Record<string, unknown>, c
   // B-246 W2c: under the grants, the call reaches only the mailboxes they give this tool.
   if (ctx.scope) ctx = { ...ctx, api: ctx.scope.api(tool) };
   const { confirm, ...args } = rawArgs as Record<string, unknown> & { confirm?: string };
+  // B-246 W5a: a caller that may not send reaches an `ownerSends` tool only through the owner's approval.
+  const viaOwner = !!tool.ownerSends && ctx.principal.kind === "agent"
+    && (ctx.scope?.viaOwner ? ctx.scope.viaOwner(tool) : ctx.principal.send !== "send" && ctx.principal.level !== "admin");
+  if (viaOwner && !tool.confirm) {
+    await journal("refused", "no confirmation for the owner's approval");
+    return text({ error: `This key may not use ${tool.name}.` }, true);
+  }
   if (tool.confirm) {
-    const hash = await argsHash(args);
+    let hash: string;
     let summary: string | null;
-    try { summary = await tool.confirm(args as never, ctx); }
+    try {
+      // The code is bound to the arguments and, for a tool that binds, to the state it acts on (B-246 W5a).
+      hash = await argsHash(tool.bind ? { ...args, "#bound": await tool.bind(args as never, ctx) } : args);
+      summary = await tool.confirm(args as never, ctx);
+    }
     catch (error) { await journal("failed", errorText(error)); return text({ error: errorText(error) }, true); }
+    if (summary === null && viaOwner) {
+      await journal("refused", "nothing for the owner to approve");
+      return text({ error: `This key may not use ${tool.name}.` }, true);
+    }
     if (summary === null) { /* nothing irreversible in these arguments */ }
     else if (!confirm) {
       // B-38: a key whose irreversible actions the owner approves gets a code that works only once approved.
       const waived = ctx.principal.kind === "agent" && ctx.principal.approval !== "owner" && !!tool.ownerApproval && !!tool.standingWaives
         && !!ctx.principal.standing?.includes(tool.standingWaives.standing)
         && (tool.standingWaives.when ? await Promise.resolve(tool.standingWaives.when(args as never, ctx)).catch(() => false) : true);
-      const owner = ctx.principal.kind === "agent" && (ctx.principal.approval === "owner" || (!!tool.ownerApproval && !waived));
+      const owner = ctx.principal.kind === "agent" && (ctx.principal.approval === "owner" || viaOwner || (!!tool.ownerApproval && !waived));
       const { code, expiresAt } = await ledger.issueConfirmation({ caller, tool: tool.name, argsHash: hash, summary, ...(owner ? { owner, callerLabel: ctx.principal.label } : {}) });
       await journal("confirmation_asked", summary);
       if (owner)

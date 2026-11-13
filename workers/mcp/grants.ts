@@ -277,7 +277,8 @@ export function mailboxesFor(need: Capability, grants: readonly Grant[], now = n
  * mailbox). The call's API is narrowed to exactly those, so a grant of `send` on one mailbox and `read` on another never
  * lets a send reach the second. A tool that acts on the whole server needs every capability on "*".
  */
-export function grantScope(tool: { name: string; routes: readonly string[]; sends?: boolean }, grants: readonly Grant[], now = new Date()): { allowed: boolean; accounts: readonly string[] | null } {
+export function grantScope(tool: { name: string; routes: readonly string[]; sends?: boolean; ownerSends?: boolean }, grants: readonly Grant[], now = new Date()):
+  { allowed: boolean; accounts: readonly string[] | null; viaOwner?: boolean } {
   const need = TOOL_NEEDS[tool.name];
   const none = { allowed: false, accounts: [] as string[] };
   if (!need) return none;
@@ -286,6 +287,13 @@ export function grantScope(tool: { name: string; routes: readonly string[]; send
   const sendable = tool.sends ? sendableMailboxes(grants, now) : "all";
   if (need === "server") return CAPABILITIES.every((c) => mailboxesFor(c, grants, now) === "all") && sendable === "all" ? { allowed: true, accounts: null } : none;
   const want = mailboxesFor(need, grants, now);
+  // W5a (packet R-6): a tool the owner may send for reaches every mailbox its need covers; where the grants give no send,
+  // the owner's approval stands in for it (`viaOwner`), bound to what the call sends.
+  if (tool.ownerSends) {
+    const short = sendable !== "all" && (want === "all" || want.some((m) => !sendable.includes(m)));
+    if (want === "all") return { allowed: true, accounts: null, viaOwner: short };
+    return want.length && toolFitsScope(tool) ? { allowed: true, accounts: want, viaOwner: short } : none;
+  }
   const reach = sendable === "all" ? want : want === "all" ? sendable : want.filter((m) => sendable.includes(m));
   if (reach === "all") return { allowed: true, accounts: null };
   return reach.length && toolFitsScope(tool) ? { allowed: true, accounts: reach } : none;
@@ -299,7 +307,7 @@ function sendableMailboxes(grants: readonly Grant[], now: Date): "all" | string[
 }
 
 /** Whether the grants let this caller use a tool: its need on its mailboxes, drafts kept, a limited caller kept to one mailbox's tools. */
-export function grantsAllowTool(tool: { name: string; sends?: boolean; routes: readonly string[] }, p: Principal, grants: readonly Grant[], now = new Date()): boolean {
+export function grantsAllowTool(tool: { name: string; sends?: boolean; ownerSends?: boolean; routes: readonly string[] }, p: Principal, grants: readonly Grant[], now = new Date()): boolean {
   const need = TOOL_NEEDS[tool.name];
   if (!need) return false;
   // A limit that names nothing reaches nothing, except a requester key's own requests (B-246 W3).
@@ -308,6 +316,6 @@ export function grantsAllowTool(tool: { name: string; sends?: boolean; routes: r
   if (need === "self") return true;
   const mailbox = p.accounts ? p.accounts[0] : null;
   const reach = need === "server" ? CAPABILITIES.every((c) => allows(grants, null, c, now)) : allows(grants, mailbox, need, now);
-  const drafts = !!tool.sends && p.kind === "agent" && p.send === "drafts" && p.level !== "admin";
+  const drafts = !!tool.sends && !tool.ownerSends && p.kind === "agent" && p.send === "drafts" && p.level !== "admin";
   return reach && !drafts && (!p.accounts || toolFitsScope(tool));
 }

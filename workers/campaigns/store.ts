@@ -55,9 +55,21 @@ export class CampaignsDO extends DurableObject<Env> {
   private counts(id: string): Record<string, number> {
     return Object.fromEntries(this.rows("SELECT status, COUNT(*) AS n FROM recipients WHERE campaign_id = ? GROUP BY status", id).map((r) => [String(r.status), Number(r.n)]));
   }
-  async getCampaign(id: string): Promise<(Campaign & { counts: Record<string, number> }) | null> {
+  async getCampaign(id: string): Promise<(Campaign & { counts: Record<string, number>; fingerprint: string }) | null> {
     const r = this.rows("SELECT * FROM campaigns WHERE id = ?", id)[0];
-    return r ? { ...toCampaign(r), counts: this.counts(id) } : null;
+    return r ? { ...toCampaign(r), counts: this.counts(id), fingerprint: await this.fingerprint(id, Number(r.version)) } : null;
+  }
+
+  /**
+   * B-246 W5a (packet R-6): what a launch would send, as one hash: the campaign's version (its steps, sender, cap and window
+   * change it) and every recipient still waiting with their fields. The owner's approval of a launch is bound to it, so a
+   * campaign changed after the approval needs a new one.
+   */
+  private async fingerprint(id: string, version: number): Promise<string> {
+    const waiting = this.rows("SELECT email, fields FROM recipients WHERE campaign_id = ? AND status = 'queued' ORDER BY email", id)
+      .map((r) => `${String(r.email)}\t${String(r.fields)}`);
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${id}\n${version}\n${waiting.join("\n")}`));
+    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
   }
 
   /** Creates a campaign (no `id`) or changes a draft (`id` and the version read); a running one is not edited here. */
