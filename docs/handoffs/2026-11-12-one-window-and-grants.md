@@ -33,11 +33,12 @@
 | B-168: the PassionCode support agent in auto (operator: «Проверь сам и включай»): one false claim fixed (v2), the server's own reply-lane OpenRouter key set as `OPENROUTER_API_KEY`, v3 sends `question`, `how-to`, `status`, `download`, `bug` | board row B-168 | eight live previews: every send carries a `check` approved by `qwen/qwen3.8-flash` |
 | B-255: the model is told the intents an agent may send, word for word | PR #513 `9085a96` | Studio `npm test` 2077 pass, typecheck 0; live preview labels `bug` |
 | Release 1.6.8 (B-253 links, B-255, B-256) | PR #514, tag `v1.6.8` on `30af301` | the three servers on 1.6.8 (receipts commit `30af30150b2e`, 100 %); release run 43353660766 |
+| B-258, B-254: Workers AI agents outlive Kimi (K2.6 stops answering on 2026-11-20; the default `kimi-k2.5` answered as K2.6): default `@cf/qwen/qwen3.8-27b` at low effort, retired ids replaced; a server without an OpenRouter key checks every auto answer by a Workers AI model of another vendor | PR #517 `33b9ff4` | Studio `npm test` 2083 pass, typecheck 0; measured writers and checkers through `wrangler dev` with a remote AI binding; the shipped code run live: Qwen wrote a valid answer in 7 s, DeepSeek refused a wrong answer and approved a right one in about 1 s |
+| Release 1.6.9 (B-257 by another session, B-258, B-254) | PR #518, tag `v1.6.9` on `e60cc84` | the three servers on 1.6.9 (receipts commit `e60cc84e4a55`, 100 %); v1.6.8 release run 43353660766 green |
 
 ## Open, with its watcher
 
-- Release run for `v1.6.8` (43353660766, queued for an org runner): watched by this session; the servers already run 1.6.8.
-- B-254: a server without an OpenRouter key sends auto answers unchecked (`workers/agents/deps.ts`); a first attempt (branch `agent/b254-no-checker`, local worktree `fi-b254`) broke 11 runner tests that rely on a checkerless harness.
+- Release run for `v1.6.9`: watched by this session; the servers already run 1.6.9.
 - B-246 shadow wait until 2026-11-15: read each server's Worker log for `grant_shadow_disagreement`, then the cut-over (operator, 2026-11-13: «Да, включай сам» when no disagreement is logged).
 - B-246 W5: the outreach agent is assembled (its own private repository, `8a99a1e`); placement by studio-agent waits for
   its HTTP surface and probe (its OI-9) and the operator's word for the deploy key (given 2026-11-13: «Да, подключать и ставить», relayed to studio-agent); the mailbox is the operator's to choose later (OI-2); the owner's decisions (sales owner,
@@ -50,7 +51,7 @@
 ## Exact next task
 
 1. After 2026-11-15: B-246 cut-over (W2c end), then W4 (roles, B-232 design due 2026-11-13 on thread `eefa7959`).
-2. B-254: a checker for a server without an OpenRouter key (a Workers AI model of another vendor), or drafts there;
-   make the runner harness name its checker first. Then the B-236 server address door by 2026-11-18 (`3f8cfff5`).
+2. The B-236 server address door by 2026-11-18 (board request `3f8cfff5`). After 2026-11-20, read one day of each
+   server's Worker log for Workers AI `5028` (a retired model) to confirm B-258 left none.
 3. Stale rows in `docs/evidence/backlog.md` still "in review" for work released long ago (B-243 among them): close
    them with their receipts under the lease.
