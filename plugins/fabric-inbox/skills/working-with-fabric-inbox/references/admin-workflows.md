@@ -142,8 +142,10 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
   subject and the run's summary, a reply (`Re:`, `Fwd:`) with the run's topic instead, since its subject and summary
   carry the earlier conversation; so a new question in that reply is answered. The knowledge is asked the same way
   (B-248): what the sender wrote now, without the quote, and in a reply without its subject.
-  The checker reads at most 16,000 characters of facts (tool results, passages, knowledge, then your instructions):
-  each checked run's `checkerRoom` in `list_agent_runs` says how much was left and what was cut (B-252).
+  The checker reads at most 16,000 characters of facts (tool results, your instructions, knowledge, then passages):
+  each checked run's `checkerRoom` in `list_agent_runs` says how much was left and what was cut (B-252). Passages
+  take the room left: those that do not fit are left out whole, the model's own last finds first, and named in
+  `checkerRoom.dropped`, so many passages never cut your instructions (B-257).
   `knowledgeIsEvidence: true` lets an answer built from the agent's own knowledge leave when a knowledge
   tool abstains, if the checker approves it. Events add `agent.handoff` and `agent.not_helped`.
   Nobody waits without a word (B-131): a held message (`holdUnsure`) still unanswered a day after it came
