@@ -10,6 +10,13 @@ is cut and published: [docs/release.md](docs/release.md).
 **A development run no longer takes the app's links** (B-253). Only the installed app registers itself for
 `fabric-inbox://` links, so connecting from Fabric's Agent access opens Fabric Inbox, never a blank Electron window.
 
+**A new agent answers by itself** (B-256). An agent created without saying how it answers sends its answers from the
+start, and the three starting templates do the same; switch it to drafts when a person should read each answer first.
+Agents you already have keep their setting.
+
+**An agent's answers reach the topics it may send** (B-255). When an agent may send answers only on some topics, the
+model is told those topics by name, so an answer about one of them is not held as a draft for a different wording.
+
 ## 1.6.7 (2026-11-13)
 
 **See how close an answer's check came to its limit** (B-252). The model that checks a reply agent's answer reads a

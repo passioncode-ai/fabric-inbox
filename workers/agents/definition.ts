@@ -310,7 +310,7 @@ Never promise a refund or change a charge yourself: explain the process from the
     tools: [],
     replyPolicy: { mode: "draft", allowedIntents: ["receipt"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, secondLook: true, knowledgeIsEvidence: false, categories: [] },
   },
-  // B-253 (operator, 2026-11-13: «по дефолту если мы создаем агента он должен начинать писать автоматом а не стоять
+  // B-256 (operator, 2026-11-13: «по дефолту если мы создаем агента он должен начинать писать автоматом а не стоять
   // молчать»): the same three starting points answering by themselves; the draft-only ones above stay readable, retired.
   "support-auto": {
     name: msg("Support"),
@@ -342,13 +342,13 @@ Never promise a refund or change a charge yourself: explain the process from the
   },
 };
 
-/** B-253: templates no longer offered for a new agent (retired in shipped.lock.json with their date and reason). */
+/** B-256: templates no longer offered for a new agent (retired in shipped.lock.json with their date and reason). */
 export const RETIRED_TEMPLATES: ReadonlySet<string> = new Set(["support", "sales", "billing"]);
 /** The starting points the app offers: every template not retired. */
 export const OFFERED_TEMPLATES: Record<string, AgentInput> = Object.fromEntries(Object.entries(AGENT_TEMPLATES).filter(([key]) => !RETIRED_TEMPLATES.has(key)));
 
 /**
- * B-253: a new agent answers by itself unless its policy says otherwise; a change to an agent keeps what it had. The
+ * B-256: a new agent answers by itself unless its policy says otherwise; a change to an agent keeps what it had. The
  * schema's own default stays `draft`, so a stored agent read again never changes its mode.
  */
 export function withNewAgentDefaults(input: unknown): unknown {

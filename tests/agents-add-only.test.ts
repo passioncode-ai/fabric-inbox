@@ -52,7 +52,7 @@ test("the digest is the add-only-catalog pattern's: sorted keys, compact JSON", 
   assert.equal(digest({ a: "é" }), "sha256:" + createHash("sha256").update('{"a":"é"}').digest("hex"));
 });
 
-test("B-253: retired templates are exactly the ones marked in the lock, and none is offered", () => {
+test("B-256: retired templates are exactly the ones marked in the lock, and none is offered", () => {
   const marked = Object.entries(lock.entries).filter(([name, e]) => name.startsWith("template:") && e.retired).map(([name]) => name.slice(9)).sort();
   assert.deepEqual([...RETIRED_TEMPLATES].sort(), marked);
   for (const key of RETIRED_TEMPLATES) assert.ok(!(key in OFFERED_TEMPLATES), `${key} is retired and still offered`);
@@ -60,7 +60,7 @@ test("B-253: retired templates are exactly the ones marked in the lock, and none
   for (const template of Object.values(OFFERED_TEMPLATES)) assert.equal(template.replyPolicy?.mode, "auto");
 });
 
-test("B-253: a new agent with no mode answers by itself; a mode given is kept", () => {
+test("B-256: a new agent with no mode answers by itself; a mode given is kept", () => {
   assert.deepEqual(withNewAgentDefaults({ name: "A", instructions: "x" }), { name: "A", instructions: "x", replyPolicy: { mode: "auto" } });
   assert.deepEqual(withNewAgentDefaults({ name: "A", replyPolicy: { dailySendLimit: 5 } }), { name: "A", replyPolicy: { dailySendLimit: 5, mode: "auto" } });
   const drafting = { name: "A", replyPolicy: { mode: "draft" } };
