@@ -18,6 +18,7 @@ import { useForwardEmail, useInvalidateEmailData, useReplyToEmail, useSaveDraft,
 import { useMailbox } from "~/queries/mailboxes";
 import { useUIStore } from "~/hooks/useUIStore";
 import { useT, type T } from "~/lib/i18n";
+import { sendFailure, sendFailureNotice } from "~/components/inbox/send-state";
 import { formatQuotedDate } from "shared/dates";
 
 function appendUniqueAddress(
@@ -304,7 +305,7 @@ export function useComposeForm(mailboxId?: string, _folder?: string) {
 			else await sendEmailMutation.mutateAsync({ mailboxId, email: emailData });
 			toastManager.add({ title: t("Accepted by email provider") });
 			onClose();
-		} catch (err: unknown) { const message = (err instanceof Error && err.message ? t.text(err.message) : null) || t("Failed to send email."); setError(message); toastManager.add({ title: message, variant: "error" }); }
+		} catch (err: unknown) { const message = sendFailureNotice(sendFailure(err, false), t); setError(message); toastManager.add({ title: message, variant: "error" }); }
 		finally { sendingRef.current = false; setIsSending(false); }
 	};
 

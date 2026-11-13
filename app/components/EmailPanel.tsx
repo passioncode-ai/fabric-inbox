@@ -17,6 +17,7 @@ import { useDeleteMessage } from "~/hooks/useDeleteMessage";
 import { useT } from "../lib/i18n";
 import { splitEmailList } from "~/lib/utils";
 import api from "~/services/api";
+import { sendFailure, sendFailureNotice } from "~/components/inbox/send-state";
 import { useDeleteEmail, useEmail, useMoveEmail, useThreadReplies, useUpdateEmail } from "~/queries/emails";
 import { useQueryClient } from "@tanstack/react-query";
 import { useFolders } from "~/queries/folders";
@@ -152,8 +153,7 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 			queryClient.invalidateQueries({ queryKey: ["folders", mailboxId] });
 			if (isDraftFolder) closePanel();
 		} catch (err) {
-			const message = (err instanceof Error ? err.message : null) || t("Failed to send email.");
-			toastManager.add({ title: t.text(message), variant: "error" });
+			toastManager.add({ title: sendFailureNotice(sendFailure(err, false), t), variant: "error" });
 		} finally { setIsSending(false); }
 	};
 

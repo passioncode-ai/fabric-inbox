@@ -193,7 +193,6 @@ export const COMMON: Readonly<Record<string, string>> = {
 	"Details": "Подробности",
 	"Drafts": "Черновики",
 	"Expires": "Истекает",
-	"Failed to send email.": "Не удалось отправить письмо.",
 	"Fix it": "Исправить",
 	"Forward": "Переслать",
 	"Forwarded message": "Пересланное письмо",
