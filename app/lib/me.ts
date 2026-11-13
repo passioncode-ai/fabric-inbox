@@ -3,7 +3,7 @@ import { fabric } from "../services/fabric";
 
 /** The signed-in person on this server (B-149, GET /api/me). */
 export interface Me {
-  role: "admin" | "member" | "none"; email: string | null; accounts: string[] | null;
+  role: "admin" | "member" | "architect" | "none"; email: string | null; accounts: string[] | null;
   /** B-160: a member's mailboxes they may only read, or whose agent they may choose (0.81.0); a server older than 0.78.0 sends none. */
   levels?: Record<string, "read" | "send" | "agents"> | null;
   listed: boolean;

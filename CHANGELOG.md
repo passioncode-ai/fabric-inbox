@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+**A server can have an architect** (B-246, B-232). A person an administrator makes an architect reads and sorts the
+mail of every mailbox and sets up its addresses and the agents that answer them, without waiting for a second
+approval; sending, drafts, deleting mail and the server's settings stay with the administrators, and every change an
+architect makes is kept in the record. Off until the server turns the role on (`ROLE_GRANTS`); until then the role
+cannot be given. Basis: the operator's decision of 2026-11-06 and the packet's D-3a; `tests/role-architect.test.ts`.
+
 ## 1.6.10 (2026-11-13)
 
 **Access granted to an agent can now take effect** (B-246). A server can let the access it grants decide what each

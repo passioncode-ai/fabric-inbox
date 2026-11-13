@@ -2123,16 +2123,17 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Steps:**
   1. A person with the employee role signs in -> they reach their own address and the shared addresses the owner listed, to read, draft and send.
   2. The architect signs in, or uses their agent -> they reach every mailbox to read, organize and set up reply agents and addresses, and may give agent keys within their own reach; each act is journaled under the role.
+  2a. An administrator makes a listed person an architect (Settings → People, Architect; `save_member` with role architect, which waits for the owner's approval) -> the person signs in to the preset: sending, drafts, deleting mail and the server's settings answer that they stay with the administrators.
   3. The owner edits a role's preset once -> everyone with that role follows it.
 - **Expected result:** Nobody waits for a grant their role already gives; the owner and administrators grant the rest.
 - **Alt paths:** A role the organization's service does not name grants nothing until someone grants it. A user's act that needs approval still waits; the owner's, an administrator's and the architect's do not.
-- **UI elements:** the role presets in People.
+- **UI elements:** the role presets in People; the Architect role in People's dialog, offered where the server gives it.
 - **States covered:** loading, error, success
-- **Errors & recovery:** An organization service that does not answer leaves grants as they were and says the roles could not be read.
+- **Errors & recovery:** An organization service that does not answer leaves grants as they were and says the roles could not be read. Where the server does not give the Architect role, saving one answers so and nothing changes.
 - **Status:** draft
-- **Coverage:** none yet (B-246 W4)
+- **Coverage:** step 2a: `tests/role-architect.test.ts` (B-246 W4a)
 - **Product:** unobserved
-- **Today:** Not built. Organization roles are shown only (the organizations plan, D4).
+- **Today:** Step 2a is built behind `ROLE_GRANTS` (off; 1.6.11, packet D-3a): an architect from the server's own list, the HTTP gate by each route's capability, every change kept in the record. Giving agent keys within the architect's reach (delegation) and the employee preset from the attestation (B-159) are not built. Organization roles are shown only (the organizations plan, D4).
 
 ### SCN-103: An organization's outreach agent writes from its own mailbox
 - **Persona:** P-01

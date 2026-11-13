@@ -30,6 +30,8 @@ export interface Env extends Cloudflare.Env {
 	OKOLOS_FEED_PUBLIC_KEY?: string;
 	/** B-246 W2c: "on" lets the access grants decide every agent key's tools and mailboxes; otherwise today's level and accounts decide and the grants only shadow them. */
 	GRANTS_DECIDE?: string;
+	/** B-246 W4: "on" makes a person listed as `architect` one (packet D-3a); otherwise they reach nothing. */
+	ROLE_GRANTS?: string;
 	/** Workers AI model for address agents and the chat; defaults to @cf/qwen/qwen3.8-27b (`DEFAULT_AGENT_MODEL`; a retired id is replaced, B-258). */
 	AGENT_MODEL?: string;
 	/** OpenRouter key for reply agents (secret): with it, answers are written by REPLY_MODEL (fallback REPLY_FALLBACK_MODEL) and approved by a checker of another vendor. */

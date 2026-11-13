@@ -44,7 +44,9 @@ membersRouter.get("/api/members", async (c) => {
     const members = await readMembers(c.env.BUCKET);
     // B-215: whether each listed person can sign in, by the last sync of the server's people policy.
     const signIn = await readSignIn(c.env.BUCKET).catch(() => null);
-    return c.json({ members: members.map((m) => ({ ...m, signIn: signInOf(signIn, m.email) })), open: members.length === 0, you: c.get("standing")?.email ?? null, max: MAX_MEMBERS,
+    // B-246 W4: the roles a person may be given here; Architect only with ROLE_GRANTS on.
+    const roles = c.env.ROLE_GRANTS === "on" ? ROLES : ROLES.filter((r) => r !== "architect");
+    return c.json({ members: members.map((m) => ({ ...m, signIn: signInOf(signIn, m.email) })), open: members.length === 0, you: c.get("standing")?.email ?? null, max: MAX_MEMBERS, roles,
       signIn: signIn ? { state: signIn.state, at: signIn.at, ...(signIn.reason ? { reason: signIn.reason } : {}) } : null });
   } catch (error) { return failure(c, error); }
 });
@@ -54,6 +56,9 @@ membersRouter.put("/api/members/:email", async (c) => {
   if (!email) return c.json({ error: msg("Enter an email address.") }, 400);
   const parsed = SaveMember.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: msg("Choose Administrator or Member.") }, 400);
+  // B-246 W4 (D-3a): an architect is given only where roles are on; off, the role would reach nothing.
+  if (parsed.data.role === "architect" && c.env.ROLE_GRANTS !== "on")
+    return c.json({ error: msg("This server does not give the Architect role yet. Choose Administrator or Member.") }, 400);
   let accounts: string[] | null = null;
   if (parsed.data.role === "member") {
     // A member names mailboxes only: a whole-domain entry (B-36, agent keys) is not a member's.
@@ -84,8 +89,9 @@ membersRouter.put("/api/members/:email", async (c) => {
         ...(at(previous.levels, "agents").length ? { agents: at(previous.levels, "agents") } : {}) } : null });
     // B-215: the listed people can sign in, with nothing done in Cloudflare by hand.
     const signIn = signInAnswer(await syncSignIn(c.env, emailsOf(members)), email);
-    // N-4: a member makes no keys; the keys they made as an administrator go when they become one.
-    if (parsed.data.role === "member") {
+    // N-4: a member makes no keys; the keys they made as an administrator go when they become one. An architect's own
+    // keys come only from their grants (D-3a delegation), never from an administrator's past keys.
+    if (parsed.data.role !== "admin") {
       const keys = await revokeKeysOf(c.env, email).catch((error: unknown) => ({ revoked: [] as string[], warning: (error as Error).message }));
       if (keys.revoked.length) await recordAudit(c.env.BUCKET, actor, { kind: "keys_revoked", person: email, keys: keys.revoked });
       return c.json({ members, signIn, revokedKeys: keys.revoked, ...(keys.warning ? { warning: keys.warning } : {}) });

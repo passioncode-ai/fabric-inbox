@@ -18,6 +18,7 @@ import { audienceFor, serviceAudience } from "./mcp/service-access";
 import { agentableOf, membersCached, MembersError, standingOf, writableOf, type Standing } from "./lib/members";
 import { memberSent, recordAudit, sendRouteOf } from "./lib/audit";
 import { agentChoiceOf, memberBody, memberGate, readsOnly } from "./lib/member-gate";
+import { architectGate } from "./lib/role-gate";
 import { inProcessApi } from "./mcp/handler";
 import { scopedApi } from "./mcp/scope";
 import { ApiError } from "./mcp/protocol";
@@ -155,7 +156,7 @@ app.use("*", async (c, next) => {
 	if (typeof email !== "string" || !email) return next(); // an agent key: its own checks
 	let standing: Standing;
 	try {
-		standing = standingOf(await membersCached(c.env.BUCKET), email);
+		standing = standingOf(await membersCached(c.env.BUCKET), email, c.env.ROLE_GRANTS === "on");
 	} catch (error) {
 		console.error(JSON.stringify({ event: "members_unreadable", error: (error as Error).message.slice(0, 200) }));
 		return c.text(error instanceof MembersError ? error.message : "The server's list of people cannot be read; try again in a moment.", 503);
@@ -163,6 +164,20 @@ app.use("*", async (c, next) => {
 	c.set("standing", standing);
 	if (standing.role === "admin") return next();
 	const url = new URL(c.req.url);
+	if (standing.role === "architect") {
+		// B-246 W4 (D-3a): an architect's request passes by the capability its route needs; each change it makes is kept
+		// with the person and where the role came from, and runs without a second approval (the operator, 2026-11-06).
+		const path = c.req.path;
+		if (architectGate(c.req.method, path) === "refuse") {
+			const text = msg("An architect sets up addresses and agents. Sending mail and the server's settings stay with its administrators.");
+			return path.startsWith("/api/") ? c.json({ error: text }, 403) : c.text(text, 403);
+		}
+		await next();
+		if (!readsOnly(c.req.method, path) && path.startsWith("/api/"))
+			await recordAudit(c.env.BUCKET, standing.email, { kind: "architect_act", method: c.req.method, path: path.slice(0, 300), status: c.res.status, source: "members" })
+				.catch((error: unknown) => console.error(JSON.stringify({ event: "audit_failed", kind: "architect_act", error: (error as Error)?.message?.slice(0, 200) })));
+		return;
+	}
 	// Gated on the path the router matches: "/%61pi/members" is routed as "/api/members", so judging
 	// the raw "/%61pi/..." as a page let a member reach every route, /mcp included (N-1).
 	const path = c.req.path;

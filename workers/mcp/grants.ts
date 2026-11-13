@@ -76,6 +76,8 @@ export function grantsOfMember(member: Pick<Member, "email" | "role" | "accounts
   const holder = { kind: "person" as const, email: member.email.toLowerCase() };
   const limits: GrantLimits = { sendMode: "send", dailySendLimit: null, ownerApproval: false };
   if (member.role === "admin") return [{ holder, mailboxes: [ALL], can: [...CAPABILITIES], limits, expiresAt: null }];
+  // B-246 W4 (D-3a): an architect's preset on every mailbox; read only where ROLE_GRANTS is on (workers/lib/members.ts standingOf).
+  if (member.role === "architect") return [{ holder, mailboxes: [ALL], can: [...ROLE_PRESETS.architect.can], limits, expiresAt: null }];
   const byLevel = new Map<MemberLevel, string[]>();
   for (const account of member.accounts ?? []) {
     const level = member.levels?.[account] ?? "send";
