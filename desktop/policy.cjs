@@ -205,4 +205,13 @@ function sandboxWarning(platform, noSandbox, dismissed) {
 }
 const SANDBOX_HELP_URL = 'https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/desktop-data-and-updates.md#windows-and-linux';
 
-module.exports = { permissionAllowed, retryAction, signInHandoff, signInDone, sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL, keyStoreRefusal, passwordStoreFor, secretServiceOnBus, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, heldPageOrigin, serverPath, SETUP_FORMAT };
+/**
+ * Fabric CO-570 (2026-11-13): only a packaged app registers itself for `fabric-inbox://`. An unpackaged
+ * run is the bare Electron binary (`node_modules/electron`), so registering it took the scheme from
+ * the installed app, and every connect link from Fabric opened a blank Electron window.
+ */
+function registersScheme(isPackaged) {
+  return isPackaged === true;
+}
+
+module.exports = { registersScheme, permissionAllowed, retryAction, signInHandoff, signInDone, sandboxWarning, SANDBOX_WARNING_FILE, SANDBOX_HELP_URL, keyStoreRefusal, passwordStoreFor, secretServiceOnBus, serverOrigin, accessOrigin, validateConfig, navigation, gmailConnectURL, afterDeployPage, partitionFor, isSetupSender, readSetup, isMailSender, heldPageOrigin, serverPath, SETUP_FORMAT };

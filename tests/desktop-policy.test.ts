@@ -268,3 +268,10 @@ test("B-244 D-2: a held server's page is known only at its own main frame and or
   for (const ok of ["/", "/?folder=inbox", "/mailbox/a/emails/b#x"]) assert.equal(policy.serverPath(ok), ok);
   for (const bad of ["//evil.example/x", "/\\evil.example", "https://evil.example/", "inbox", "/a b", "", null, 3, "/" + "a".repeat(2048)]) assert.equal(policy.serverPath(bad), null, String(bad));
 });
+
+test('only a packaged app takes fabric-inbox:// links (Fabric CO-570)', () => {
+  // An unpackaged run is the bare Electron binary: registering it opened a blank window for every connect link.
+  assert.equal(policy.registersScheme(true), true);
+  for (const no of [false, undefined, null]) assert.equal(policy.registersScheme(no), false, String(no));
+  assert.match(readFileSync(new URL('../desktop/main.cjs', import.meta.url), 'utf8'), /policy\.registersScheme\(app\.isPackaged\)\) app\.setAsDefaultProtocolClient/);
+});
