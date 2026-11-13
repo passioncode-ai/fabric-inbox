@@ -25,8 +25,8 @@ export default function ServerTabs({ servers, states, mergeAll, ownUnread, onCho
 			{servers.map((s) => {
 				if (s.shown) {
 					return (
-						<button type="button" key={s.origin} className="fi-chip" aria-pressed={!mergeAll} onClick={() => onChoose(false)}>
-							{s.label}{ownUnread > 0 && <span>{ownUnread}</span>}
+						<button type="button" key={s.origin} className="fi-chip" title={s.label} aria-pressed={!mergeAll} onClick={() => onChoose(false)}>
+							<span className="fi-server-name">{s.label}</span>{ownUnread > 0 && <span>{ownUnread}</span>}
 						</button>
 					);
 				}
@@ -34,21 +34,21 @@ export default function ServerTabs({ servers, states, mergeAll, ownUnread, onCho
 				if (state?.state === "signed_out") {
 					return (
 						<button type="button" key={s.origin} className="fi-chip is-problem" title={t("Sign in to {server}", { server: s.label })} onClick={() => showServer(s.origin)}>
-							{s.label} <span>{t("Sign In")}</span>
+							<span className="fi-server-name">{s.label}</span> <span>{t("Sign In")}</span>
 						</button>
 					);
 				}
 				if (state?.state === "unreachable") {
 					return (
-						<span key={s.origin} className="fi-chip is-problem fi-server-unreachable">
-							{s.label} <span>{t("Not reachable now")}</span>
+						<span key={s.origin} className="fi-chip is-problem fi-server-unreachable" title={s.label}>
+							<span className="fi-server-name">{s.label}</span> <span>{t("Not reachable now")}</span>
 							<button type="button" className="fi-text-button" onClick={onRetry}>{t("Retry")}</button>
 						</span>
 					);
 				}
 				return (
 					<button type="button" key={s.origin} className="fi-chip" title={t("Opens on {server}", { server: s.label })} onClick={() => showServer(s.origin)}>
-						{s.label}{(state?.unread ?? 0) > 0 && <span>{state!.unread}</span>}
+						<span className="fi-server-name">{s.label}</span>{(state?.unread ?? 0) > 0 && <span>{state!.unread}</span>}
 					</button>
 				);
 			})}

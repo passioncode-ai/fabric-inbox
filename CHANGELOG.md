@@ -5,6 +5,10 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+**Server tabs fit a narrow window** (B-263). Above the inbox, each server's tab stays one line high in a narrow window: a long server name is cut, with its full name when you point at it, and tabs that do not fit move to the next line. Before, they grew into tall ovals and pushed the mail list down. Basis: `tests/server-tabs-layout.test.ts` and renders at three widths.
+
 ## 1.6.13 (2026-11-13)
 
 **No sending limits beyond 1000 a day** (B-262). A campaign now sends up to 1000 messages a day by default, every day from 08:00 to 20:00, with no slow start on an account's first days; ask for more and its daily cap goes up to 100000. An agent key sends up to 1000 a day by default, and a Gmail, Outlook or IMAP account up to 1000 a day through the server with no hourly limit; the server's administrator raises that with `SEND_LIMIT_DAY`. Unsubscribe, the do-not-write list and the pause when too many messages bounce stay, and your mail provider keeps its own limit. Campaigns and keys made before keep their settings. Reason: the operator's decision of 2026-11-13; basis `tests/send-limits.test.ts` and the campaign tests.
