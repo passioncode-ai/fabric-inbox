@@ -5,7 +5,7 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 1.6.9 (2026-11-13)
 
 **Agents keep answering after Cloudflare retires Kimi** (B-258). Workers AI stops serving the Kimi model on
 November 20, 2026. The agent panel, support topic labels and reply agents on a server without an OpenRouter key now
