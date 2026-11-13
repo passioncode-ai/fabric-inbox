@@ -480,6 +480,7 @@
  "unknown error": "неизвестная ошибка",
  "upload the server (Workers Scripts: Edit)": "загрузить сервер (Workers Scripts: Edit)",
  "without a jurisdiction": "без юрисдикции",
+ "{agent} has had no output and no input for 30 minutes. It is still running with its key; stop it if you are done.": "{agent} молчит 30 минут: ни вывода, ни ввода. Сессия по-прежнему работает со своим ключом; остановите её, если работа закончена.",
  "{agent} is connected to Fabric Inbox.": "{agent} подключён к Fabric Inbox.",
  "{app} asks to work with your mail on {host}.": "{app} просит доступ к вашей почте на {host}.",
  "{client} did not receive the key, so it was made but could not be revoked: revoke it in Settings → Agent access.": "{client} не получил ключ. Ключ создан, но отозвать его не удалось — отзовите его в «Настройки → Доступ агентов».",

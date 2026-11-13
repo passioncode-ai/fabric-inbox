@@ -17,6 +17,8 @@ const crypto = require('node:crypto');
 
 const RING_BYTES = 1024 * 1024;
 const STOP_GRACE_MS = 2000;
+/** B-261 (SL-3): a session with no output and no input this long is quiet, logged and shown once. */
+const QUIET_MS = 30 * 60_000;
 const LEVELS = ['read', 'mail', 'admin'];
 
 /**
@@ -113,7 +115,7 @@ function ring(limit = RING_BYTES) {
 function createConsole(deps) {
   const { pty, fs, dir, mint, revoke, origin, mcpUrl, cwd, loginPath, env = process.env, platform = process.platform,
     kill = (pid, signal) => process.kill(pid, signal), log = () => {}, onData = () => {}, onState = () => {}, setTimer = setTimeout,
-    skipPermissions = () => true } = deps;
+    now = Date.now, skipPermissions = () => true } = deps;
   let session = null;
   let starting = false;   // a start between its first await and its session (bug hunt 2026-10-12: two keys, two agents)
   let state = { phase: 'idle' };
@@ -144,6 +146,36 @@ function createConsole(deps) {
     s.resolveEnded();
   }
   const newSession = (fields) => { const s = { ...fields }; s.ended = new Promise((resolve) => { s.resolveEnded = resolve; }); return s; };
+
+  /**
+   * B-261 (SL-3, fabric-workspace `knowledge/lifecycle.md`): a session nobody and nothing has used for
+   * QUIET_MS is quiet, logged with its minutes and shown in the console once, so a forgotten agent
+   * holding a live key is noticed. One unref'd timer per running session, moved by activity only when
+   * it fires; any output or input ends the quiet.
+   */
+  function watchQuiet(s) {
+    const check = () => {
+      if (session !== s) return;
+      const idle = now() - s.lastActive;
+      if (idle < QUIET_MS) { arm(QUIET_MS - idle); return; }
+      if (!s.quiet) {
+        s.quiet = true;
+        log({ event: 'console', outcome: 'quiet', runtime: s.runtime, minutes: Math.round(idle / 60_000) });
+        set({ ...state, quiet: true });
+      }
+      arm(QUIET_MS);
+    };
+    const arm = (ms) => { const timer = setTimer(check, ms); if (timer && typeof timer.unref === 'function') timer.unref(); };
+    arm(QUIET_MS);
+  }
+  function active(s) {
+    const idle = now() - s.lastActive;
+    s.lastActive = now();
+    if (!s.quiet) return;
+    s.quiet = false;
+    log({ event: 'console', outcome: 'active', runtime: s.runtime, minutes: Math.round(idle / 60_000) });
+    set({ ...state, quiet: false });
+  }
 
   async function startOnce({ runtime, spec, level, resume, cols, rows }) {
     set({ phase: 'starting', runtime: spec.id });
@@ -176,10 +208,12 @@ function createConsole(deps) {
       return { ok: false, error: 'spawn', detail: String(error && error.message || error) };
     }
     pending.child = child;
-    child.onData((data) => { out.push(data); onData(data); });
+    pending.lastActive = now();
+    child.onData((data) => { out.push(data); onData(data); if (session === pending) active(pending); });
     child.onExit(({ exitCode }) => { void end(pending, pending.stopping ? 'stopped' : 'exited', exitCode); });
     log({ event: 'console', outcome: 'started', runtime: spec.id, level, resume, skipPermissions: skip });
     set({ phase: 'running', runtime: spec.id, level });
+    watchQuiet(pending);
     return { ok: true };
   }
 
@@ -198,7 +232,7 @@ function createConsole(deps) {
       finally { starting = false; }
     },
 
-    write(data) { if (session && session.child && typeof data === 'string' && data.length <= 1024 * 1024) session.child.write(data); },
+    write(data) { if (session && session.child && typeof data === 'string' && data.length <= 1024 * 1024) { active(session); session.child.write(data); } },
     resize(cols, rows) { if (session && session.child) session.child.resize(Math.max(2, Math.min(1000, cols | 0)), Math.max(1, Math.min(500, rows | 0))); },
 
     /** Hang up the agent's whole process group, then kill it if it is still there (PL-07: taskkill on Windows). */

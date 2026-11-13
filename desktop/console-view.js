@@ -42,6 +42,7 @@ function show(state) {
   $('#none').hidden = running || !!state.runtimes?.length;
   $('#terminal').hidden = !running && state.phase !== 'ended';
   if (state.phase === 'starting') say(t('Making a key for this session…'));
+  else if (state.phase === 'running' && state.quiet) say(t('{agent} has had no output and no input for 30 minutes. It is still running with its key; stop it if you are done.', { agent: state.runtimeName || state.runtime }));
   else if (state.phase === 'running') say(t('{agent} is connected to Fabric Inbox.', { agent: state.runtimeName || state.runtime }));
   else if (state.phase === 'ended') say(state.keyRevoked === false
     ? t('The session ended; its key could not be revoked: revoke it in Settings → Agent access.')

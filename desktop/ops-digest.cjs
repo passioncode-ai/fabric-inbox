@@ -35,7 +35,9 @@ const OPEN_FILE = 'open-hour.json';
 const OUTCOME_OK = new Set(['ok', 'done', 'ready', 'started', 'running', 'connected', 'current', 'newer', 'older', 'installed',
   'verified', 'downloading', 'requested', 'handed_over', 'ended', 'on', 'off', 'left', 'stayed', 'superseded', 'applied',
   // B-236: a server link that added a server, or showed one already held.
-  'added', 'shown']);
+  'added', 'shown',
+  // B-261: a quiet console session that has output or input again (`quiet` itself is unknown on purpose).
+  'active']);
 const OUTCOME_FAILED = new Set(['failed', 'lost', 'unparsed', 'timeout', 'not_saved', 'not_written', 'storage_not_cleared',
   'directory_not_removed', 'leftovers', 'not_watched']);
 function outcomeOf(outcome) {

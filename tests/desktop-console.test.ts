@@ -267,3 +267,41 @@ test("the choice is the profile file console-permissions: ask turns the skip off
   await writeSkip(fsPromises, dir, true);
   assert.equal(await readSkip(fsPromises, dir), true);
 });
+
+test("B-261 SL-3: a session quiet for 30 minutes is logged and shown once; any output or input ends the quiet", async () => {
+  let clock = 1_000_000;
+  const timers: { fn: () => void; ms: number; unref: boolean }[] = [];
+  const logs: any[] = [];
+  const s = setup({
+    now: () => clock, log: (e: any) => logs.push(e),
+    setTimer: (fn: () => void, ms: number) => { const t = { fn, ms, unref: false }; timers.push(t); return { unref() { t.unref = true; } }; },
+  });
+  assert.equal((await s.c.start({ runtime: { id: "claude", file: "/bin/claude" } })).ok, true);
+  const quietTimer = timers.find((t) => t.ms === 30 * 60_000)!;
+  assert.ok(quietTimer, "one check is due 30 minutes after the start");
+  assert.equal(quietTimer.unref, true, "the check never keeps the app running");
+  // Output at minute 10 moves the next check to 30 minutes after it.
+  clock += 10 * 60_000; s.p.emit("thinking…");
+  clock += 20 * 60_000; quietTimer.fn();
+  assert.equal(logs.filter((e) => e.outcome === "quiet").length, 0);
+  const next = timers[timers.length - 1];
+  assert.equal(next.ms, 10 * 60_000, "checked again when 30 minutes have passed since the output");
+  clock += 10 * 60_000; next.fn();
+  const quiet = logs.filter((e) => e.outcome === "quiet");
+  assert.deepEqual(quiet, [{ event: "console", outcome: "quiet", runtime: "claude", minutes: 30 }]);
+  assert.equal(s.c.state().quiet, true);
+  assert.equal(s.states[s.states.length - 1].phase, "running");
+  // Still quiet at the next check: not logged twice.
+  clock += 30 * 60_000; timers[timers.length - 1].fn();
+  assert.equal(logs.filter((e) => e.outcome === "quiet").length, 1);
+  // The person types: the quiet ends, and is logged again only after another 30 minutes.
+  s.c.write("y\r");
+  assert.equal(s.c.state().quiet, false);
+  assert.deepEqual(logs.filter((e) => e.outcome === "active"), [{ event: "console", outcome: "active", runtime: "claude", minutes: 60 }]);
+  // An ended session's check does nothing.
+  s.p.exit(0);
+  await new Promise((r) => setTimeout(r, 10));
+  const before = logs.length;
+  clock += 60 * 60_000; timers[timers.length - 1].fn();
+  assert.equal(logs.length, before);
+});
