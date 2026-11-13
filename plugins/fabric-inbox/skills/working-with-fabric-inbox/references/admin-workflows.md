@@ -122,7 +122,7 @@ on arrival. Rules are learned by `discard_messages` (mail level), never written 
 ## Reply agents
 
 - **Create:** `list_agents` (templates, allowed tool hosts) → `save_agent` with the whole
-  definition (a new agent drafts every answer until `replyPolicy.mode` is `auto`) →
+  definition (a new agent answers by itself, `replyPolicy.mode` `auto`, unless you give `draft`; B-253) →
   `update_address` with `agent: { agentId }` for each address it answers.
 - **On a Gmail, IMAP or Outlook account:** `set_account_agent` with the account's `accountId`
   (`list_accounts`) and `agent: { agentId }`, or `"off"`. Replies leave from the account itself; an

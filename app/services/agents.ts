@@ -172,7 +172,7 @@ export function runStatusText(t: T = englishT): Record<AgentRunStatus, string> {
 }
 
 export function blankAgent(): AgentInput {
-  return { name: "", instructions: "", knowledge: "", collections: [], tools: [], replyPolicy: { mode: "draft", allowedIntents: [], dailySendLimit: 20 } };
+  return { name: "", instructions: "", knowledge: "", collections: [], tools: [], replyPolicy: { mode: "auto", allowedIntents: [], dailySendLimit: 20 } };
 }
 
 /** The Recent answers filter a link asks for (`/settings/agents?runs=unanswered`, B-115); anything else is all. */

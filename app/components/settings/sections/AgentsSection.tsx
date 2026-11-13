@@ -139,7 +139,7 @@ function NewAgentPanel({ list, onCreated }: { list: AgentList; onCreated: (a: Ag
               </button>
             ))}
             <button type="button" className="fi-provider-card" onClick={() => setDraft(blankAgent())}>
-              <strong>{t("Blank")}</strong><span>{t("Drafts every answer until you change its policy.")}</span>
+              <strong>{t("Blank")}</strong><span>{t("Answers by itself from the start; you can make it draft instead.")}</span>
             </button>
           </div>
         </PanelBlock>

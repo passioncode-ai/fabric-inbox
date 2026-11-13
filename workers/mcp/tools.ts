@@ -1746,7 +1746,7 @@ const runAgentEvals = defineTool({
 
 const saveAgent = defineTool({
   name: "save_agent", title: "Create or change a reply agent", level: "admin", target: (a) => a.agentId ?? a.agent.name,
-  description: "Creates a reply agent, or saves a new version of one (give agentId and expectedVersion, the version you read with list_agents). A new agent drafts every answer until its replyPolicy says auto. Assign it to addresses with update_address.",
+  description: "Creates a reply agent, or saves a new version of one (give agentId and expectedVersion, the version you read with list_agents). A new agent answers by itself (replyPolicy mode auto) unless its replyPolicy says draft. Assign it to addresses with update_address.",
   input: { agentId: z.string().max(100).optional(), expectedVersion: z.number().int().min(1).optional(), agent: agentInput },
   routes: ["POST /api/agents", "PUT /api/agents/:id"],
   async call(a, ctx) {

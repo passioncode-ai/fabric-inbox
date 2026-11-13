@@ -281,7 +281,7 @@ Use the name the sender signs with.`;
  * The starting points of a new agent. Name and instructions are dictionary keys (msg), so the
  * editor fills them in the interface's language (B-113); the server keeps them in English.
  */
-export const AGENT_TEMPLATES: Record<"support" | "sales" | "billing", AgentInput> = {
+export const AGENT_TEMPLATES: Record<string, AgentInput> = {
   support: {
     name: msg("Support"),
     instructions: msg(`Answer customer questions about the product.
@@ -310,4 +310,50 @@ Never promise a refund or change a charge yourself: explain the process from the
     tools: [],
     replyPolicy: { mode: "draft", allowedIntents: ["receipt"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, secondLook: true, knowledgeIsEvidence: false, categories: [] },
   },
+  // B-253 (operator, 2026-11-13: «по дефолту если мы создаем агента он должен начинать писать автоматом а не стоять
+  // молчать»): the same three starting points answering by themselves; the draft-only ones above stay readable, retired.
+  "support-auto": {
+    name: msg("Support"),
+    instructions: msg(`Answer customer questions about the product.
+Answer only from the knowledge below. If the answer is not there, say you will pass the question to the team and do not invent details.
+Be brief and friendly; one clear next step per reply.`),
+    knowledge: "",
+    collections: [],
+    tools: [],
+    replyPolicy: { mode: "auto", allowedIntents: ["question", "how-to", "status"], dailySendLimit: 20, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, secondLook: true, knowledgeIsEvidence: false, categories: [] },
+  },
+  "sales-auto": {
+    name: msg("Sales"),
+    instructions: msg(`Reply to people asking about buying, pricing or partnerships.
+Share only prices and terms from the knowledge below. Offer a call for anything custom.`),
+    knowledge: "",
+    collections: [],
+    tools: [],
+    replyPolicy: { mode: "auto", allowedIntents: ["pricing", "question"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, secondLook: true, knowledgeIsEvidence: false, categories: [] },
+  },
+  "billing-auto": {
+    name: msg("Billing"),
+    instructions: msg(`Handle invoices, receipts and refunds.
+Never promise a refund or change a charge yourself: explain the process from the knowledge below and draft the rest for the operator.`),
+    knowledge: "",
+    collections: [],
+    tools: [],
+    replyPolicy: { mode: "auto", allowedIntents: ["receipt"], dailySendLimit: 10, draftFollowUps: false, draftTopics: [], requireEvidence: false, holdUnsure: false, secondLook: true, knowledgeIsEvidence: false, categories: [] },
+  },
 };
+
+/** B-253: templates no longer offered for a new agent (retired in shipped.lock.json with their date and reason). */
+export const RETIRED_TEMPLATES: ReadonlySet<string> = new Set(["support", "sales", "billing"]);
+/** The starting points the app offers: every template not retired. */
+export const OFFERED_TEMPLATES: Record<string, AgentInput> = Object.fromEntries(Object.entries(AGENT_TEMPLATES).filter(([key]) => !RETIRED_TEMPLATES.has(key)));
+
+/**
+ * B-253: a new agent answers by itself unless its policy says otherwise; a change to an agent keeps what it had. The
+ * schema's own default stays `draft`, so a stored agent read again never changes its mode.
+ */
+export function withNewAgentDefaults(input: unknown): unknown {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+  const agent = input as { replyPolicy?: unknown };
+  const policy = agent.replyPolicy && typeof agent.replyPolicy === "object" && !Array.isArray(agent.replyPolicy) ? agent.replyPolicy as Record<string, unknown> : {};
+  return policy.mode === undefined ? { ...agent, replyPolicy: { ...policy, mode: "auto" } } : input;
+}

@@ -4,7 +4,7 @@ import { cancelRename, renameAddress, renameStatus } from "../lib/address-rename
 import { renamesInProgress } from "../lib/rename-journal";
 import { z } from "zod";
 import type { Env } from "../types";
-import { AGENT_TEMPLATES, readAssignment } from "../agents/definition";
+import { OFFERED_TEMPLATES, readAssignment, withNewAgentDefaults } from "../agents/definition";
 import { isAccountMailbox, updateAccountSettings } from "../agents/account-settings";
 import { REASONING_EFFORTS, type ReasoningEffort } from "../agents/model";
 import { registryError } from "../agents/errors";
@@ -97,7 +97,7 @@ agentsRouter.get("/api/agents", async (c) => {
         addresses: served.filter((s) => s.assignment && s.assignment !== "off" && s.assignment.id === agent.id).map((s) => s.email),
         accounts: accounts.filter((a) => a.agentId === agent.id).map((a) => a.accountId),
       })),
-      templates: AGENT_TEMPLATES,
+      templates: OFFERED_TEMPLATES,
       toolHosts: (c.env.AUTOMATION_MCP_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean),
     });
   } catch (error) { return registryFailure(c, error); }
@@ -117,7 +117,7 @@ agentsRouter.post("/api/agents", async (c) => {
   try {
     const problem = await unknownCollections(c, body?.agent ?? body);
     if (problem) return c.json({ error: problem }, 400);
-    const created = await registry(c).createAgent(body?.agent ?? body);
+    const created = await registry(c).createAgent(withNewAgentDefaults(body?.agent ?? body) as never);
     await knowledgeChanged(c.env, c.req.raw, c.get("standing")?.email, created, "");
     return c.json(created, 201);
   } catch (error) { return registryFailure(c, error); }
