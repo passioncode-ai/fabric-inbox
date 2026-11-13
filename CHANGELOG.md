@@ -5,7 +5,7 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 1.6.14 (2026-11-13)
 
 **Server tabs fit a narrow window** (B-263). Above the inbox, each server's tab stays one line high in a narrow window: a long server name is cut, with its full name when you point at it, and tabs that do not fit move to the next line. Before, they grew into tall ovals and pushed the mail list down. Basis: `tests/server-tabs-layout.test.ts` and renders at three widths.
 
