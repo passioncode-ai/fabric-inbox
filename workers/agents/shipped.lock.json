@@ -11,7 +11,7 @@
       "shipped": "2026-11-12",
       "retired": {
         "date": "2026-11-13",
-        "reason": "B-253, operator 2026-11-13: a new agent answers by itself; replaced by the same template with mode auto (support-auto)"
+        "reason": "B-256, operator 2026-11-13: a new agent answers by itself; replaced by the same template with mode auto (support-auto)"
       }
     },
     "template:sales": {
@@ -19,7 +19,7 @@
       "shipped": "2026-11-12",
       "retired": {
         "date": "2026-11-13",
-        "reason": "B-253, operator 2026-11-13: a new agent answers by itself; replaced by the same template with mode auto (sales-auto)"
+        "reason": "B-256, operator 2026-11-13: a new agent answers by itself; replaced by the same template with mode auto (sales-auto)"
       }
     },
     "template:billing": {
@@ -27,7 +27,7 @@
       "shipped": "2026-11-12",
       "retired": {
         "date": "2026-11-13",
-        "reason": "B-253, operator 2026-11-13: a new agent answers by itself; replaced by the same template with mode auto (billing-auto)"
+        "reason": "B-256, operator 2026-11-13: a new agent answers by itself; replaced by the same template with mode auto (billing-auto)"
       }
     },
     "template:support-auto": {

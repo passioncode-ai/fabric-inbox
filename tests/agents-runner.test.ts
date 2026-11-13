@@ -1883,3 +1883,14 @@ test("the sales owner's reply is sent once in auto mode and drafted otherwise (B
   assert.deepEqual(draft.effects.drafts.map((d) => d.id), ["mail-abc:r1"]);
   assert.equal((await deliverLeadReply({ key: "k", mailboxId: MAILBOX, emailId: "gone", agentId: "support" }, { id: "r1", text: "x" }, draft.deps)).status, "not_sent");
 });
+
+test("B-255: the model is told the allowed intents word for word, so a listed request is labelled to pass the send gate", async () => {
+  const { systemPrompt, intentList } = await import("../workers/agents/runner");
+  assert.equal(intentList([" bug ", "Bug", "download", ""]), '"bug", "download"');
+  const listed = systemPrompt(agent({ replyPolicy: { mode: "auto", allowedIntents: ["bug", "download"], dailySendLimit: 5 } }), MAILBOX, []);
+  assert.match(listed, /- intent: when the sender wants one of these, exactly that word: "bug", "download"\./);
+  assert.match(listed, /never a listed word for a request it does not describe/);
+  const open = systemPrompt(agent({ replyPolicy: { mode: "auto", allowedIntents: [], dailySendLimit: 5 } }), MAILBOX, []);
+  assert.match(open, /- intent: one or two words for what the sender wants, e\.g\. question, pricing, refund, bug, partnership\./);
+  assert.doesNotMatch(open, /exactly that word/);
+});
