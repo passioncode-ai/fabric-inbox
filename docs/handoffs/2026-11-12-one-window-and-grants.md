@@ -38,7 +38,7 @@
 
 ## Open, with its watcher
 
-- Release run for `v1.6.9`: watched by this session; the servers already run 1.6.9.
+- Release `v1.6.9` is not published: run 43403285392 failed at notarization and the Mac App Store check, both with Apple's 403 "A required agreement is missing or has expired". A human gate: the Apple Developer account holder accepts the updated agreement (developer.apple.com/account, and App Store Connect, Business). Then `gh run rerun 43403285392 --failed`; nothing else changes. The servers already run 1.6.9.
 - B-246 shadow wait until 2026-11-15: read each server's Worker log for `grant_shadow_disagreement`, then the cut-over (operator, 2026-11-13: «Да, включай сам» when no disagreement is logged).
 - B-246 W5: the outreach agent is assembled (its own private repository, `8a99a1e`); placement by studio-agent waits for
   its HTTP surface and probe (its OI-9) and the operator's word for the deploy key (given 2026-11-13: «Да, подключать и ставить», relayed to studio-agent); the mailbox is the operator's to choose later (OI-2); the owner's decisions (sales owner,
