@@ -131,6 +131,43 @@ npm run mcp:docs                                       # the agent protocol's to
   reserved yet; a register that gains one is declared under `idRegisters` and taken with
   `agent_sync.py reserve <REG>`.
 
+## North Star, step 0, questions and sessions (operator, 2026-11-13)
+
+Inbox's answers to fabric-workspace's board thread `16093ded`; the rules live in fabric-workspace `knowledge/`.
+
+- **North Star sections served** ([north-star.md](https://github.com/passioncode-ai/fabric-workspace/blob/main/knowledge/north-star.md)):
+  §2 Places (the Mac app on a person's own machine, the server in the organization's own Cloudflare account); §3 People:
+  roles and access (owner, administrator, architect and employee levels, B-232, B-246); §4 Administration (the *Inbox*
+  row: the organization's mailboxes and grants to members, B-158, B-215); §5 Agents (the support inbox: reply agents on
+  addresses under a reply policy, B-199, B-256); §11 Security and isolation (one server per organization, attachment
+  checks B-222); gaps G2 (levels, B-232), G3 (a leaving person's mailbox grants), G16 (support mailboxes still on the
+  owner's personal accounts) and G31. When Inbox's state changes against them (a release, a gap closed or opened, a
+  «where we stand» fact), write fabric-workspace a board message naming the section and the evidence.
+- **The architect.** Before an agent template or a reply agent's shape is built or changed, consult the architect (skill
+  `fabric-agents:fabric-agents`, or `python3 tools/audit.py consult "<need>"` in the agents database). At each release
+  run `audit.py scan <checkout>` and keep the result in [docs/evidence/architect/](docs/evidence/architect/); the judged
+  half writes into the base's repository, so it is asked of the base (G30). First scan, 2026-11-13 on `3d5fcf40`:
+  `agent-host` 21.572, `support-answerer` 16.29 ([scan](docs/evidence/architect/2026-11-13-scan.json)); no judged
+  verdict yet, so no blocking gap is named.
+- **Step 0 before every change** (fabric-workspace `knowledge/rules.md` §0, North Star principle 12): the workstation
+  first: `npx --yes sshlg-skills@latest update`, `npx @passioncode-ai/passioncode doctor` with no `fail`, the board
+  (`com.status`), Dashboards, Switchboard and Observatory answering. Without them, no change. Every change goes through
+  `task-pipeline` inside an Observatory workflow (a checkpoint after each step); a changed agent template, prompt or
+  workflow is a new version beside the old one (R28 above). Keys come by name from Observatory's vault, per project
+  where possible.
+- **Agents close questions themselves, by access level** (fabric-workspace `knowledge/authority.md`). Decide by the
+  access levels, the operator's recorded decisions, this project's goal, then the safest reversible option; write the
+  decision and its reason where the work lives and go on. Trust comes from checks (the gate, readback, a second model
+  for a choice), not from a person. Ask only at a human gate (a sign-in, a one-time code, a consent screen, a typed
+  secret, a payment, spend above the limit, a send outside the estate, access wider than the act needs), once, naming
+  it. A request on this project's board is answered here (`com.reply`) without waiting for a service responder.
+- **Coding-agent sessions, SL-1 to SL-8** (fabric-workspace `knowledge/lifecycle.md`). Sessions on this repository are
+  the operator's own and those Fabric starts for unread board messages (a workflow and handoff id, an Observatory
+  checkpoint at least every 10 minutes, a final checkpoint that closes the workflow). The app's agent console (B-70,
+  `desktop/console.cjs`) starts the person's `claude` or `codex` only on their command, logs `started`, `ended` and
+  `leftovers` with codes, makes one agent key per session and revokes it on every end (a key a crash left, before the
+  next start). What it does not do yet is row B-261.
+
 ## Lifecycle
 
 How the product starts, idles, asks and stops, against the organization's
