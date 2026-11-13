@@ -5,6 +5,13 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+**Many found passages no longer hide an agent's rules from its check** (B-257). The model that checks a reply agent's
+answer now reads the agent's instructions before the passages the search found. When the passages do not all fit,
+the lowest-ranked ones are left out whole and named in the run's record, instead of cutting off the end of the
+instructions.
+
 ## 1.6.8 (2026-11-13)
 
 **A development run no longer takes the app's links** (B-253). Only the installed app registers itself for

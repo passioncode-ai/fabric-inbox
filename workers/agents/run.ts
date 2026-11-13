@@ -62,10 +62,11 @@ export interface AgentRun {
   checkedBy?: string;
   /**
    * B-252: how much of the checker's window the run used: the facts' characters against their limit (`left` is negative
-   * when facts were cut), and what the checker did not read whole: `tool results`, `passages`, `knowledge`,
-   * `instructions` (cut from the end, in that order), `message` or `answer`.
+   * when facts were cut), and what the checker did not read whole: `tool results`, `instructions`, `knowledge`,
+   * `passages` (cut from the end, in that order since B-257), `message` or `answer`. B-257: `dropped` names the refs of
+   * passages left out whole for want of room, the lowest-ranked (the model's own last finds) first to go.
    */
-  checkerRoom?: { factsChars: number; factsLimit: number; left: number; cut: string[] };
+  checkerRoom?: { factsChars: number; factsLimit: number; left: number; cut: string[]; dropped?: string[] };
   /** The policy category the model chose. */
   category?: string;
   /** Answered with the policy's hand-off reply (a person handles it), or its safe reply (nothing confident to say). */

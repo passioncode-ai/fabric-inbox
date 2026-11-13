@@ -1119,17 +1119,24 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
         toolCalls.push(record);
         try {
           // The operator's instructions are facts too (contacts, routing, what the team offers); measured
-          // 2026-10-17: a support contact named only in the instructions was rejected as invented. They go last:
-          // the checker reads the first 16,000 characters, and long instructions first cut off the tool results
-          // a right answer rested on, so it was rejected as invented (VoC audit 2026-10-27, 2).
-          // B-249: the passages searched before the model and those it searched itself, each once.
+          // 2026-10-17: a support contact named only in the instructions was rejected as invented. The checker reads
+          // the first 16,000 characters: the tool results come first, since long instructions first cut off the tool
+          // results a right answer rested on (VoC audit 2026-10-27, 2); then the instructions and the knowledge; the
+          // passages last (B-257: a model that searched twice brought enough passages to cut off the operator's rules).
+          // B-249: the passages searched before the model and those it searched itself, each once, in that order.
           const seen = new Set<string>();
           const read = [...passages, ...found].filter((h) => !seen.has(h.ref) && !!seen.add(h.ref));
           const parts: [string, string][] = [
             ...(factTexts.length ? [["tool results", [`[tool results]\n${RANK_NOTE}`, ...factTexts].join("\n\n")] as [string, string]] : []),
-            ["passages", passagesBlock(read)],
-            ...(agent.knowledge.trim() ? [["knowledge", `[knowledge]\n${agent.knowledge.trim()}`] as [string, string]] : []),
-            ["instructions", `[operator instructions]\n${agent.instructions.trim()}`]];
+            ["instructions", `[operator instructions]\n${agent.instructions.trim()}`],
+            ...(agent.knowledge.trim() ? [["knowledge", `[knowledge]\n${agent.knowledge.trim()}`] as [string, string]] : [])];
+          // B-257: the passages take the room the other parts leave, whole passages from the head of `read`; the ones that
+          // do not fit are dropped from its tail (the model's own last finds first) and named, never given in part.
+          const room = CHECK_LIMITS.facts - parts.reduce((n, [, text], i) => n + text.length + (i ? 2 : 0), 0) - 2;
+          let kept = 0;
+          while (kept < read.length && passagesBlock(read.slice(0, kept + 1)).length <= room) kept++;
+          const dropped = read.slice(kept).map((h) => h.ref);
+          if (kept || (!read.length && passagesBlock([]).length <= room)) parts.push(["passages", passagesBlock(read.slice(0, kept))]);
           const facts = parts.map(([, text]) => text).join("\n\n");
           const message = `${email.subject}\n${deps.htmlToText(email.body)}`;
           // B-252: what the checker reads of each, so an agent's owner sees the real margin, not a guess.
@@ -1137,7 +1144,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
           const cut = parts.filter(([, text], i) => (end += text.length + (i ? 2 : 0)) > CHECK_LIMITS.facts).map(([name]) => name);
           if (message.length > CHECK_LIMITS.message) cut.push("message");
           if (body.length > CHECK_LIMITS.answer) cut.push("answer");
-          run.checkerRoom = { factsChars: facts.length, factsLimit: CHECK_LIMITS.facts, left: CHECK_LIMITS.facts - facts.length, cut };
+          run.checkerRoom = { factsChars: facts.length, factsLimit: CHECK_LIMITS.facts, left: CHECK_LIMITS.facts - facts.length, cut, ...(dropped.length ? { dropped } : {}) };
           const verdict = await deps.check(response.model ?? "", { message, facts, answer: body });
           record.ok = verdict.approved;
           record.result = `${verdict.model}: ${verdict.approved ? "approved" : "rejected"} — ${verdict.reason}`.slice(0, RESULT_PREVIEW_CHARS);

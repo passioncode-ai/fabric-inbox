@@ -579,7 +579,33 @@ test("B-252: a run says how much of the checker's window it used and what was cu
   crowded.deps.check = async () => ({ approved: true, reason: "ok", model: "checker" });
   const r2 = (await crowded.run())!;
   assert.ok(r2.checkerRoom!.left < 0);
-  assert.deepEqual(r2.checkerRoom!.cut, ["knowledge", "instructions"], "what lies past the limit is named, the instructions last");
+  assert.deepEqual(r2.checkerRoom!.cut, ["knowledge"], "what lies past the limit is named; the instructions come before the knowledge (B-257)");
+});
+
+test("B-257: many passages never cut the operator's instructions; the checker drops whole passages from the tail and names them", async () => {
+  let checked = "";
+  const hit = (n: number) => ({ ref: `faq/p${n}#0`, collectionId: "faq", documentId: `p${n}`, title: `Passage ${n}`, sourceUri: `faq/p${n}.md`, revision: "r", text: `Fact ${n}. ${"x".repeat(1200)}`, snippet: "", score: -n });
+  const before = [1, 2, 3, 4, 5].map(hit);
+  const later = [6, 7, 8, 9, 10, 11, 12, 13, 14].map(hit);
+  const h = harness({
+    agent: autoAgent({ collections: ["faq"], instructions: "Answer politely.\nRULE AT THE END: never repeat a quoted promise." }),
+    email: { subject: "Telegram", body: "<p>How do I connect my agent?</p>" },
+    search: async (query: string) => (/more/i.test(query) ? later : before),
+    model: async (r) => { await r.tools.find((t) => t.name === "search_knowledge")!.run({ query: "more" }); return { decision: answer(), text: "" }; },
+  });
+  h.deps.check = async (_writer, input) => { checked = input.facts; return { approved: true, reason: "ok", model: "checker" }; };
+  const run = (await h.run())!;
+  const room = run.checkerRoom!;
+  assert.ok(checked.length <= 16000, `the facts fit the window (${checked.length})`);
+  assert.match(checked, /RULE AT THE END: never repeat a quoted promise\./, "the operator's instructions are read whole");
+  assert.ok(checked.indexOf("[operator instructions]") < checked.indexOf("Fact 1."), "the instructions come before the passages");
+  assert.match(checked, /Fact 1\./, "the passages searched before the model come first");
+  assert.ok(room.left >= 0, JSON.stringify(room));
+  assert.deepEqual(room.cut, [], "nothing is read in part");
+  assert.ok(room.dropped && room.dropped.length > 0, JSON.stringify(room));
+  assert.equal(room.dropped.at(-1), "faq/p14#0", "the lowest-ranked passages, the model's own last finds, go first");
+  for (const ref of room.dropped) assert.doesNotMatch(checked, new RegExp(`Fact ${ref.slice(5, -2)}\\.`), `${ref} is not given in part`);
+  assert.equal(room.dropped.length + (checked.match(/^\[P\d+\]/gm)?.length ?? 0), 14, "every passage is either read whole or named");
 });
 
 test("the prefetch keeps the message's line breaks and asks only what the sender wrote now (data agent reads by sentence)", async () => {
