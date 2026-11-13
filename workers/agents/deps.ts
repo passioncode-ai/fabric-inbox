@@ -4,7 +4,7 @@ import { scanPromptInjection } from "../lib/ai";
 import { allServedDomains } from "../lib/mailbox-store";
 import { agentAccounts } from "../lib/agent-status";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
-import { callMcpTool, toolResultText, type ToolTokens } from "../automation/mcp";
+import { callMcpTool, readToolTokens, toolResultText, type ToolTokens } from "../automation/mcp";
 import { openRouterAgentModel, openRouterCheck, openRouterParaphrase, replyReasoning, workersAiCheck, workersAiModel, workersAiParaphrase } from "./model";
 import { legacyAgentId, readAssignment } from "./definition";
 import type { RunnerDeps } from "./runner";
@@ -14,12 +14,7 @@ type Registry = RunnerDeps["registry"];
 
 /** The tool tokens keyed by their secret names (a grant's `tokenRef`); never the values out. */
 export function toolTokens(env: Env): ToolTokens {
-  try {
-    const value = JSON.parse(env.AUTOMATION_TOOL_TOKENS || "{}");
-    return value && typeof value === "object" ? value : {};
-  } catch {
-    throw new Error(msg("Tool credentials are misconfigured"));
-  }
+  return readToolTokens(env as unknown as Record<string, unknown>);
 }
 
 /**

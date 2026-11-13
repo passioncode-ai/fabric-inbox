@@ -160,7 +160,11 @@ Inbox's answers to fabric-workspace's board thread `16093ded`; the rules live in
   decision and its reason where the work lives and go on. Trust comes from checks (the gate, readback, a second model
   for a choice), not from a person. Ask only at a human gate (a sign-in, a one-time code, a consent screen, a typed
   secret, a payment, spend above the limit, a send outside the estate, access wider than the act needs), once, naming
-  it. A request on this project's board is answered here (`com.reply`) without waiting for a service responder.
+  it. A request on this project's board is answered here (`com.reply`) without waiting for a service responder. The coordinator's rule
+  (announcement `35556d27`, 2026-11-13): an operator's decision relayed on the board with his words verbatim, the date,
+  where he said it and its scope is his approval, acted on and cited, never asked again; a question left for a person
+  goes only to `fabric_question_ask` or to Fabric's coordinator on the board, never stays in a chat's text; a run whose
+  `fabric` MCP dropped says so in its summary.
 - **Coding-agent sessions, SL-1 to SL-8** (fabric-workspace `knowledge/lifecycle.md`). Sessions on this repository are
   the operator's own and those Fabric starts for unread board messages (a workflow and handoff id, an Observatory
   checkpoint at least every 10 minutes, a final checkpoint that closes the workflow). The app's agent console (B-70,

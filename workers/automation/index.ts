@@ -23,7 +23,7 @@ import {
   RULE_ANALYSIS_SYSTEM,
 } from "./policy";
 import { processRun, ActionRejected, refusalsKnown } from "./engine";
-import { invokeTool } from "./mcp";
+import { invokeTool, readToolTokens } from "./mcp";
 import { parseRemoteAccount } from "../../shared/mail/accounts";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
 import { msg } from "../../shared/i18n";
@@ -454,7 +454,7 @@ export class AutomationDO extends DurableObject<Env> {
       return invokeTool(
         action,
         this.env.AUTOMATION_MCP_HOSTS ?? "",
-        this.env.AUTOMATION_TOOL_TOKENS ?? "{}",
+        () => readToolTokens(this.env as unknown as Record<string, unknown>),
       );
     if (action.type === "forward" && email.hasAttachments)
       throw new ActionRejected(

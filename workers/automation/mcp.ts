@@ -61,6 +61,38 @@ export function toolTransport(url: URL, token: string | undefined): StreamableHT
  */
 export type ToolTokens = Record<string, string | { host: string; token: string }>;
 
+/** B-264: a credential kept in its own secret, `AUTOMATION_TOOL_TOKEN_<NAME>`, named `<NAME>` by a grant. */
+export const OWN_TOOL_TOKEN_PREFIX = "AUTOMATION_TOOL_TOKEN_";
+
+/**
+ * Every tool credential the server holds: the entries of the AUTOMATION_TOOL_TOKENS map, then each
+ * `AUTOMATION_TOOL_TOKEN_<NAME>` secret holding one `{ host, token }` (B-264). The map cannot be read
+ * back, so adding to it meant writing it again whole from sources that may be gone; an own secret is
+ * added, rotated or removed alone and replaces a map entry of the same name. An own secret must name
+ * its host: a malformed one is kept as misconfigured, so only the tool that names it refuses.
+ */
+export function readToolTokens(env: Record<string, unknown>): ToolTokens {
+  let tokens: ToolTokens;
+  try {
+    const value = JSON.parse(typeof env.AUTOMATION_TOOL_TOKENS === "string" && env.AUTOMATION_TOOL_TOKENS ? env.AUTOMATION_TOOL_TOKENS : "{}");
+    tokens = value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
+  } catch {
+    throw new Error(msg("Tool credentials are misconfigured"));
+  }
+  for (const [key, raw] of Object.entries(env)) {
+    if (!key.startsWith(OWN_TOOL_TOKEN_PREFIX) || key.length === OWN_TOOL_TOKEN_PREFIX.length) continue;
+    let entry: unknown;
+    try {
+      entry = typeof raw === "string" ? JSON.parse(raw) : raw;
+    } catch {
+      entry = null;
+    }
+    const bound = entry && typeof entry === "object" && typeof (entry as { host?: unknown }).host === "string" && typeof (entry as { token?: unknown }).token === "string";
+    tokens[key.slice(OWN_TOOL_TOKEN_PREFIX.length)] = bound ? { host: (entry as { host: string }).host, token: (entry as { token: string }).token } : { host: "", token: "" };
+  }
+  return tokens;
+}
+
 /**
  * The bearer a call to `url` may carry. A token bound to a host goes only to that host: before
  * 2026-10-12 any grant could send any named token to any allowlisted host (bug hunt). A bare token
@@ -111,14 +143,14 @@ export function toolResultText(result: CallResult): string {
 export async function invokeTool(
   action: Extract<Rule["action"], { type: "mcp" }>,
   hosts: string,
-  tokens: ToolTokens | string,
+  tokens: ToolTokens | string | (() => ToolTokens),
 ): Promise<string> {
   // What fails before a request leaves (a host no longer allowed, a missing or foreign credential,
   // malformed credentials) and a tool that answers isError are refusals: nothing happened, so the run
   // is failed, not "outcome uncertain" with nothing the person can settle (bug hunt 2026-10-12).
   let parsed: ToolTokens;
   try {
-    parsed = typeof tokens === "string" ? JSON.parse(tokens || "{}") : tokens;
+    parsed = typeof tokens === "function" ? tokens() : typeof tokens === "string" ? JSON.parse(tokens || "{}") : tokens;
     tokenFor(parsed, action.tokenRef, validateToolUrl(action.endpoint, hosts));
   } catch (error) {
     throw new ActionRejected(error instanceof SyntaxError ? msg("Tool credentials are misconfigured") : (error as Error).message);
