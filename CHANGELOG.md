@@ -5,7 +5,7 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 1.6.11 (2026-11-13)
 
 **A server can have an architect** (B-246, B-232). A person an administrator makes an architect reads and sorts the
 mail of every mailbox and sets up its addresses and the agents that answer them, without waiting for a second
