@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.6.15 (2026-11-14)
+
+**Clear reasons when a message is not sent** (B-228). Every place you send from now says the same thing for the same cause: the draft was changed elsewhere, the account reached its daily sending limit, the provider refused the message, or the server refused it and says why. When the server does not answer in time or the connection drops, you are told the outcome is not confirmed and that sending the same message again is safe: it goes out once. Before, the older message view and the classic compose window showed "Failed to send email." or a technical error.
+
+**Agent tools are easier to connect** (B-264). The administrator can add a credential for an agent's tool as its own server secret, without writing every other credential again. Basis: `tests/tool-token-secrets.test.ts`, `tests/send-failure.test.ts`.
+
 ## 1.6.14 (2026-11-13)
 
 **Server tabs fit a narrow window** (B-263). Above the inbox, each server's tab stays one line high in a narrow window: a long server name is cut, with its full name when you point at it, and tabs that do not fit move to the next line. Before, they grew into tall ovals and pushed the mail list down. Basis: `tests/server-tabs-layout.test.ts` and renders at three widths.

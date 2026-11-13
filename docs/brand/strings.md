@@ -144,8 +144,8 @@ Locations name the source function while the integration branch is being formatt
 | state.composer.forward_limit | Original attachments are not included yet. Load all files below before forwarding. | app/components/inbox/Composer.tsx:Composer | SCN-009 | proposed |
 | state.composer.send_not_attempted | Could not save send recovery information. Sending was not attempted. | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
 | state.composer.acceptance_pending | Acceptance is not confirmed. Keep this attempt unchanged and check again. | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
-| state.composer.failed | The provider did not accept this attempt. Correct the draft and send again, or discard it. | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
-| state.composer.uncertain | Acceptance is not confirmed. Retry the same attempt; its recovery key prevents a duplicate send. | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
+| state.composer.failed | The provider did not accept this attempt. Correct the draft and send again, or discard it. | app/components/inbox/send-state.ts:sendFailureNotice | SCN-007 | proposed |
+| state.composer.uncertain | Acceptance is not confirmed. Retry the same attempt; its recovery key prevents a duplicate send. | app/components/inbox/send-state.ts:sendFailureNotice | SCN-007 | proposed |
 | state.composer.save_failed | Draft could not be saved on this device. Keep this window open and copy your text before leaving. | app/components/inbox/use-drafts.ts | SCN-006 | proposed |
 | state.composer.recovery_saved | Send recovery saved on this device | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
 | state.composer.draft_saved | Saved to your server | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
@@ -168,7 +168,7 @@ Locations name the source function while the integration branch is being formatt
 | action.composer.keep_mine | Keep my version | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
 | action.composer.save_as_new | Save it again as a new draft | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
 | state.composer.not_sent_unsaved | The draft could not be saved to your server, so it was not sent. Check the connection and try again. | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
-| state.composer.changed_before_send | This draft was changed elsewhere just before sending, so it was not sent. Check it, then send again. | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
+| state.composer.changed_before_send | This draft was changed elsewhere just before sending, so it was not sent. Check it, then send again. | app/components/inbox/send-state.ts:sendFailureNotice | SCN-007 | proposed |
 | state.composer.signature_failed | The sender's signature could not be loaded; add it to the message if you need it. | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
 | state.composer.files_limit_total | A message can carry up to 10 files, 5 MiB together. Remove a file before adding another. | app/components/inbox/Composer.tsx:Composer | SCN-009 | proposed |
 | action.composer.discard | Discard draft | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
