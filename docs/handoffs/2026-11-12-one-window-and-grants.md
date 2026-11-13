@@ -46,11 +46,17 @@
 | 17 board rows released long ago closed with their receipts | PR #530 `bc27aaa` | `tests/board-table.test.ts` |
 | B-246 W5a (packet R-6): a key that may prepare campaigns but not send launches one only through the owner's approval, bound to the campaign's fingerprint and used once; the MCP reference generator without em dashes (the rest is B-260) | PR #531 `22581ed` | Studio `npm test` 2103 pass, typecheck 0; `tests/campaign-owner-send.test.ts` |
 | Release 1.6.12 (W5a) | PR #532, tag `v1.6.12` on `b7624ff` | the three servers on 1.6.12 (receipts, tag `b7624fffb159`); `get_server` answers 1.6.12 on the organization's and the client organization's servers |
+| B-260: no em dash in the tool texts agents read and in the agent protocol reference | PR #534 `3d5fcf4` | `tests/mcp-no-em-dash.test.ts` |
+| B-262 (operator 2026-11-13: «не ставь лимитов, по дефолту заданы 1000 емаилов в день но можно расширить по запросу»): campaigns 1000 a day by default, every day 08:00 to 20:00, 0 to 1 minute apart, no ramp-up, `dailyCap` up to 100000; agent keys and grants 1000 a day, up to 100000; every Gmail, IMAP or Outlook account 1000 a rolling day with no hourly cap, `SEND_LIMIT_DAY` raises it | PR #536 `2661bf4` | Studio `npm test` 2106 pass, typecheck 0; `tests/send-limits.test.ts` |
+| Release 1.6.13 (B-260, B-262) | PR #537, tag `v1.6.13` on `4bc4318` | the three servers on 1.6.13 (receipts, tag `4bc431857dd7`; versions 568b3dab, c9c7eca8, f519468e); `get_server` answers 1.6.13 on the organization's and the client organization's servers |
+| The client organization's outreach agent follows B-262: its campaign cap 1000 by default, up to 100000 (its own repository, 0.2.1) | `edf4378` | its 891 tests |
+| Studio's checkout of this repository fast-forwarded from `c9d9cc7` (#438) to `4bc4318` | `git merge --ff-only` | `git log -1` there |
 | Each server's Worker logs are readable: `CF_WORKERS_OBSERVABILITY_READ` in the owner's vault and, issued today, in the client organization's; the query filters on `$workers.scriptName` and the log's own `event` field | Observatory `cloudflare.py issue --preset workers-observability-read` | the shadow read above |
 
 ## Open, with its watcher
 
-- The Mac app on the owner's Mac installs its latest verified update when it quits (it was not started by the lifecycle broker, so no agent restarts it). The release run of `v1.6.12` (`43450183482`) was building at this handoff; its watcher is this session's, and if it dies, `gh run view 43450183482` says whether it published. `v1.6.9` stays unpublished on purpose: 1.6.10 holds it, and publishing it now would move the latest release back.
+- The Mac app on the owner's Mac installs its latest verified update when it quits (it was not started by the lifecycle broker, so no agent restarts it). 1.6.12 published at 15:33:58Z (run `43450183482`); the release run of `v1.6.13` (`43500528038`) was building at this handoff, its watcher this session's; if it dies, `gh run view 43500528038` says whether it published. `v1.6.9` stays unpublished on purpose.
+- Studio: Fabric Inbox is installed (1.6.12 until the 1.6.13 image is put in place) and not running; its app holds only the owner's server; Codex there has no `fabric-inbox` MCP server (the PassionCode doctor's warning). Adding the organization's and the client organization's servers to that app needs a person's sign-in (Cloudflare Access code): a human gate.
 - B-246 cut-over on 2026-11-15: read each server's Worker logs for `grant_shadow_disagreement` and `grant_shadow_failed` (none through 2026-11-13); with none, deploy with `--var GRANTS_DECIDE:on` on the three servers (operator 2026-11-13: «Да, включай сам») and read them again a day later.
 - B-246 W5: the outreach agent is assembled (its own private repository, `8a99a1e`); placement by studio-agent waits for
   its HTTP surface and probe (its OI-9) and the operator's word for the deploy key (given 2026-11-13: «Да, подключать и ставить», relayed to studio-agent); the mailbox is the operator's to choose later (OI-2); the owner's decisions (sales owner,
@@ -62,7 +68,7 @@
 
 ## Exact next task
 
-1. On or after 2026-11-15: B-246 cut-over (W2c end): read the three servers' Worker logs for `grant_shadow_disagreement` and `grant_shadow_failed`; with none, redeploy 1.6.12 (or later) with `--var GRANTS_DECIDE:on` and read them again a day later. `ROLE_GRANTS` stays off until W4c (the employee preset) passes, which waits for B-159. When the board reconnects: post the B-232 design (D-3a) and the architect role on thread `eefa7959`.
+1. On or after 2026-11-15: B-246 cut-over (W2c end): read the three servers' Worker logs for `grant_shadow_disagreement` and `grant_shadow_failed`; with none, redeploy 1.6.13 (or later) with `--var GRANTS_DECIDE:on` and read them again a day later. `ROLE_GRANTS` stays off until W4c (the employee preset) passes, which waits for B-159. When the board reconnects: post the B-232 design (D-3a) and the architect role on thread `eefa7959`.
 2. The B-236 server address door by 2026-11-18 (board request `3f8cfff5`). After 2026-11-20, read one day of each
    server's Worker log for Workers AI `5028` (a retired model) to confirm B-258 left none.
 3. Stale rows in `docs/evidence/backlog.md` still "in review" for work released long ago (B-243 among them): close
