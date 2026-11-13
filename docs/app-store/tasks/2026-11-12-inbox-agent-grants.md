@@ -56,6 +56,42 @@ of step W5 is assembled from `sales-leads` through the base's assembly, never wr
   and the `grants` standing for agent keys, with every act journaled under the role (closes B-232 for Inbox: owner,
   administrator and architect commands run without a second approval; a user's still wait). A person's own agents get
   at most the person's grants (closes gap 3).
+- **D-3a. Where a role comes from (2026-11-13, B-232's design; amends D-3).** The contract says an attestation's role
+  is no authority (fabric-agent-contract DEC-0133, OL-6: "An attestation's role never proves an administrator; the
+  applied key set's `administrators` does"), and `org-membership/1` names only `owner`, `admin` and `member` (DEC-0127,
+  OM-1; a finer role rides in issuer-named `extensions` that grant nothing). So D-3 reads its roles from four sources,
+  never from the attestation's `role` alone:
+  1. **owner**: the server's owner, as today (the account the server runs in, `workers/mcp/protocol.ts`).
+  2. **admin**: a person listed as an administrator on this server (`config/members.json`, role `admin`, as today), or
+     one of the organization's applied key set's `administrators` once the server applies the organization's key set
+     (B-159; until then only the first).
+  3. **architect**: a role this server's owner or an administrator gives a listed person (`config/members.json`, role
+     `architect`, journaled with who gave it and why). It is read from the list at every use, and it ends when the
+     person leaves the list; for a person bound to an attestation (item 4) it is also suspended while that attestation
+     is expired or unverifiable and ends when it reads `ended`, the same fail-closed rule as an employee. The
+     attestation never makes an architect.
+  4. **employee**: a person whose current `org-membership/1` attestation reads `status: active` for this server's
+     audience gets the employee preset on their own address and the shared addresses the owner lists. The attestation
+     counts only when `verifyOrgMembership` accepts it under the organization root this server pinned and the key set
+     it applied (OM-2 to OM-4; nothing before the server applies one, B-159), and only for the person who presented it:
+     the signed-in person's own Fabric hands it over in that session (the connect flow), and the server binds its
+     pairwise `subject` to that person's address once; an attestation presented for another address, or a second
+     address for one subject, is refused. An `ended`, expired or unverifiable attestation grants nothing new (OM-6) and
+     ends it (OM-5). A listed member keeps exactly the mailboxes and levels the list gives today; the preset adds
+     nothing to a listed member.
+  An act by the owner, an administrator or an architect runs without a second approval and is journaled with the
+  caller's immutable id and the source of its role (`owner`, `members`, `key-set`); a user's (employee's or member's)
+  waits as today (B-232). A person's own agent keys get at most the person's grants, read at every use.
+  **Delegation.** The `grants` standing is a field of the grant, not a capability: `delegate: { holders: "agent-keys",
+  can, mailboxes }`, where `can` and `mailboxes` are a subset of the grantor's own, and `delegate` itself is never
+  delegated. A grant made under it names its grantor (`grantedBy`, the immutable id) and its parent grant, and every
+  use checks the grantor's current reach (R-4): when the architect leaves the list, or an administrator's role ends,
+  the agent keys they granted lose that reach at their next call; a delegated grant never outlives its parent's
+  expiry. Behind the flag `ROLE_GRANTS` (off) until W4's tests pass on every server; members stay refused at `/mcp`
+  until then.
+  *Reviewed 2026-11-13 by `moonshotai/kimi-k3.1-pro` (another model family, USD 0.05): four findings, all taken: an
+  attestation bound to its issuer and to the person who presents it (item 4), an architect's reach fail-closed like an
+  employee's (item 3), delegated grants checked against the grantor at every use, and `delegate` as an explicit field.*
 - **D-4. Inbox answers requests for access.** A new tool `request_access {mailboxes, can, why, until?}` (holder, expiry, repetition and single decision as R-3 says) works with any
   key, even one that holds nothing yet (a `requester` key the Fabric hub or the connect link can make with no mail
   reach). The request waits in Settings → Agent access and is announced to the owner and administrators (the app's
