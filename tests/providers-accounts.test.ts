@@ -640,14 +640,13 @@ test("B-06: an account past its sending budget is refused before anything is res
   const { service, store } = await fixture(async () => { sends++; return json({ id: "sent", threadId: "thread" }); });
   const request = (key: string) => ({ idempotencyKey: key, to: ["recipient@example.invalid"], subject: "Hello", text: "Fixture" });
   const now = Date.now();
-  await store.put("sendlog:a", Array.from({ length: REMOTE_SEND_LIMITS.hour }, (_, i) => now - i * 1000));
-  await assert.rejects(service.send("a", request("over-hour")), (e: ProviderError) => e.code === "send_rate_limited" && e.status === 429);
-  assert.equal(sends, 0, "nothing was handed to the provider");
-  assert.equal(await store.get("send:a:over-hour"), undefined, "no reservation: the same attempt may be sent later");
+  // B-262: no hourly cap; a whole day's budget inside one hour is still the day's.
+  await store.put("sendlog:a", Array.from({ length: REMOTE_SEND_LIMITS.day - 1 }, (_, i) => now - i * 1000));
+  assert.equal((await service.send("a", request("in-hour"))).status, "accepted", "999 in the last hour do not stop the 1000th");
+  await assert.rejects(service.send("a", request("over-day")), (e: ProviderError) => e.code === "send_rate_limited" && e.status === 429);
+  assert.equal(sends, 1, "the refused one was not handed to the provider");
+  assert.equal(await store.get("send:a:over-day"), undefined, "no reservation: the same attempt may be sent later");
   assert.equal((await service.send("b", request("other-account"))).status, "accepted", "another account has its own budget");
-  // An hour later the hour is free, but the day is full.
-  await store.put("sendlog:a", Array.from({ length: REMOTE_SEND_LIMITS.day }, (_, i) => now - 2 * 3_600_000 - i * 1000));
-  await assert.rejects(service.send("a", request("over-day")), (e: ProviderError) => e.code === "send_rate_limited");
   await store.put("sendlog:a", Array.from({ length: REMOTE_SEND_LIMITS.day }, () => now - 25 * 3_600_000));
   assert.equal((await service.send("a", request("next-day"))).status, "accepted", "sends older than a day no longer count");
   assert.equal((await store.get<number[]>("sendlog:a"))?.length, 1, "the log keeps only the last day");

@@ -148,8 +148,8 @@ the rules that would discard it again; `list_messages` with `folder: "discarded"
 server has: `list_accounts` gives each account's `capabilities` (no Archive folder → no archive).
 
 **Outreach.** `save_campaign` prepares a campaign from a connected Gmail, Outlook or IMAP account
-(never a Cloudflare address), human-paced by default (30 a day, the account's first day 10, weekdays
-09:00 to 17:00, 5 to 10 minutes apart, stop on reply and for the whole company);
+(never a Cloudflare address), 1000 a day by default with no ramp-up (every day 08:00 to 20:00, up to a minute
+apart, stop on reply and for the whole company; set a higher `dailyCap` when the person asks);
 `add_campaign_recipients` takes the people with their fields (`{{first_name|there}}` in the steps)
 and leaves out repeats, invalid addresses and anyone on the do-not-write list (`list_suppression`,
 `change_suppression`). Before the person approves: `preview_campaign` (fix the fields it says are

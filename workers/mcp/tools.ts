@@ -22,6 +22,8 @@ import { AttachmentValidationError, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, valid
 import { BATCH_MAX } from "../../shared/address-name";
 import { bareContentId } from "../../shared/mail/inline";
 import { MAX_CURSOR_CHARS } from "../../shared/mail/inbox";
+import { CAMPAIGN_DEFAULTS } from "../../shared/mail/campaign";
+import { KEY_DAILY_SENDS } from "../../shared/mail/send-limits";
 
 // ── Shared pieces ──────────────────────────────────────────────────
 
@@ -2119,7 +2121,7 @@ const campaignInput = z.object({
   timezone: z.string().max(64).optional().describe("IANA time zone of the sending window (default UTC)"),
   window: z.object({ days: z.array(z.number().int().min(0).max(6)).optional().describe("0 Sunday … 6 Saturday; default Monday to Friday"),
     start: z.string().optional().describe("HH:MM, default 09:00"), end: z.string().optional().describe("HH:MM, default 17:00") }).optional(),
-  dailyCap: z.number().int().min(1).max(50).optional().describe("Messages a day from the sender, over a rolling day (default 30, at most 50)"),
+  dailyCap: z.number().int().min(1).max(CAMPAIGN_DEFAULTS.maxDailyCap).optional().describe("Messages a day from the sender, over a rolling day (default 1000; set more when asked, up to 100000)"),
   gapMinutes: z.tuple([z.number().int(), z.number().int()]).optional().describe("A random gap between sends, in minutes (default [5, 10])"),
   steps: z.array(campaignStep).min(1).max(4).describe("The first message and up to three follow-ups"),
   stopOnReply: z.boolean().optional(), companyStop: z.boolean().optional().describe("Stop everyone at the same company domain when one replies (default on; free-mail domains excluded)"),
@@ -2140,7 +2142,7 @@ const getCampaign = defineTool({
 });
 const saveCampaign = defineTool({
   name: "save_campaign", title: "Prepare an outreach campaign", level: "mail", target: (a) => a.campaignId ?? a.campaign.name,
-  description: "Creates a campaign (no campaignId) or changes a draft (campaignId, with expectedVersion from get_campaign). Human-paced by default: 30 a day (the account's first day 10, then 5 more a day), Monday to Friday 09:00 to 17:00, 5 to 10 minutes apart, stop on reply and for the whole company. It sends only from a connected Gmail, Outlook or IMAP account; every message ends with `unsubscribeText` and `postalAddress` and carries List-Unsubscribe. Nothing is sent until launch_campaign: add recipients, preview and dry-run it first.",
+  description: "Creates a campaign (no campaignId) or changes a draft (campaignId, with expectedVersion from get_campaign). By default 1000 a day with no ramp-up, every day 08:00 to 20:00, up to a minute apart, stop on reply and for the whole company; set a higher dailyCap when the person asks for more. The account also sends at most 1000 a day through this server, whoever sends (its administrator raises it), and the provider keeps its own cap. It sends only from a connected Gmail, Outlook or IMAP account; every message ends with `unsubscribeText` and `postalAddress` and carries List-Unsubscribe. Nothing is sent until launch_campaign: add recipients, preview and dry-run it first.",
   input: { campaignId: campaignId.optional(), expectedVersion: z.number().int().optional(), campaign: campaignInput },
   routes: ["POST /api/campaigns", "PUT /api/campaigns/:id"],
   call: (a, ctx) => {
@@ -2266,7 +2268,7 @@ const createAgentKey = defineTool({
     name: z.string().trim().min(1).max(80).describe("The agent this key is for"),
     level: z.enum(["read", "mail", "admin"]).optional().describe("Required unless requestOnly"),
     send: z.enum(["drafts", "send"]).optional().describe("A mail key: drafts only (default) or send"),
-    dailySendLimit: z.number().int().min(1).max(1000).optional(),
+    dailySendLimit: z.number().int().min(1).max(KEY_DAILY_SENDS.max).optional().describe("Sends a day (default 1000; set more when asked, up to 100000)"),
     duration: z.enum(["30d", "90d", "1y"]).optional().describe("How long the key lasts (default 1y)"),
     accounts: z.array(z.string().max(400)).min(1).max(50).optional().describe("Read and mail keys: the mailboxes it may reach (list_accounts), or domain:<domain>; left out, the whole workspace"),
     approval: z.enum(["agent", "owner"]).optional().describe("owner: the owner approves each irreversible action of the new key"),
@@ -2354,7 +2356,7 @@ const grantAccess = defineTool({
     mailboxes: z.array(z.string().max(320)).min(1).max(200).describe("Addresses, account ids, domain:<domain> entries, or *"),
     can: z.array(z.enum(GRANT_CAPABILITIES)).min(1).max(GRANT_CAPABILITIES.length).describe("What the holder may do on them"),
     sendMode: z.enum(["drafts", "send"]).default("send").describe("drafts: sends are kept as drafts for a person"),
-    dailySendLimit: z.number().int().min(0).max(1000).optional().describe("Sends a day; none for no cap"),
+    dailySendLimit: z.number().int().min(0).max(KEY_DAILY_SENDS.max).optional().describe("Sends a day; none for no cap"),
     expiresAt: z.string().datetime({ offset: true }).optional().describe("When the grant ends; none for no end"),
     why: z.string().min(1).max(500).describe("Why: kept with the grant and in the audit record"),
   },

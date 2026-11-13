@@ -58,6 +58,8 @@ export interface Env extends Cloudflare.Env {
 	GMAIL_TOKEN_ENCRYPTION_KEY?: string;
 	PUBLIC_APP_URL?: string;
 	GMAIL_POLL_SECONDS?: string;
+	/** B-262: one Gmail, IMAP or Outlook account's sends a rolling day through this server (default 1000, at most 100000). */
+	SEND_LIMIT_DAY?: string;
 	/** Outlook (SCN-057): the Microsoft Entra app registration's Application (client) ID. */
 	MICROSOFT_CLIENT_ID?: string;
 	/** Outlook: the app registration's client secret Value (a Worker secret). */

@@ -6,8 +6,8 @@ import type { Env } from "../types";
 import { msg } from "../../shared/i18n";
 import { oneClickUrl, readUnsubscribeAccess, type UnsubscribeAccess } from "./unsubscribe";
 import {
-  BOUNCE_PAUSE, CampaignInputSchema, campaignProblem, companyOf, composeStep, inboundKind, inWindow, MAX_RECIPIENTS, nextInWindow,
-  normaliseRecipient, plan, RAMP, rampedCap, render, suppressed, suppressionEntry, type CampaignInput, type RecipientInput,
+  BOUNCE_MIN_SENT, BOUNCE_PAUSE, CampaignInputSchema, campaignProblem, companyOf, composeStep, inboundKind, inWindow, MAX_RECIPIENTS, nextInWindow,
+  normaliseRecipient, plan, render, suppressed, suppressionEntry, type CampaignInput, type RecipientInput,
 } from "../../shared/mail/campaign";
 
 const DAY = 86_400_000;
@@ -252,7 +252,7 @@ export class CampaignsDO extends DurableObject<Env> {
         const s = this.senderRow(sender);
         if (s.next_at > now) continue;
         for (const c of running.filter((x) => x.sender === sender)) {
-          if (!inWindow(c, now) || this.sentToday(sender, now) >= rampedCap(c.dailyCap, s.first_at, now)) continue;
+          if (!inWindow(c, now) || this.sentToday(sender, now) >= c.dailyCap) continue;
           const r = this.rows(`SELECT * FROM recipients WHERE campaign_id = ? AND status IN ${OPEN} AND next_at <= ? ORDER BY next_at, added_at LIMIT 1`, c.id, now)[0];
           if (!r) continue;
           if (suppressed(String(r.email), this.suppressionSet())) {
@@ -342,7 +342,7 @@ export class CampaignsDO extends DurableObject<Env> {
     if (due === null || due === undefined) return null;
     let at = Math.max(Number(due), this.senderRow(c.sender).next_at, now);
     const day = this.rows("SELECT at FROM sends WHERE sender = ? AND at > ? AND status = 'sent' ORDER BY at", c.sender, at - DAY).map((x) => Number(x.at));
-    const cap = rampedCap(c.dailyCap, this.senderRow(c.sender).first_at, at);
+    const cap = c.dailyCap;
     if (day.length >= cap) at = Math.max(at, day[day.length - cap]! + DAY);
     return nextInWindow(c, at);
   }
@@ -384,7 +384,7 @@ export class CampaignsDO extends DurableObject<Env> {
         this.sql.exec("UPDATE recipients SET status = 'bounced', detail = '' WHERE campaign_id = ? AND email = ?", c.id, email);
         const contacted = Number(this.rows("SELECT COUNT(DISTINCT email) AS n FROM sends WHERE campaign_id = ? AND status = 'sent'", c.id)[0]!.n);
         const bounced = Number(this.rows("SELECT COUNT(*) AS n FROM recipients WHERE campaign_id = ? AND status = 'bounced'", c.id)[0]!.n);
-        if (c.state === "running" && contacted >= RAMP.start && bounced / contacted >= BOUNCE_PAUSE) await this.pause(c.id, "bounces");
+        if (c.state === "running" && contacted >= BOUNCE_MIN_SENT && bounced / contacted >= BOUNCE_PAUSE) await this.pause(c.id, "bounces");
         continue;
       }
       if (kind === "unsubscribe") { await this.unsubscribe(email, "replied_unsubscribe"); continue; }

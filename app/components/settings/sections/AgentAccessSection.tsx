@@ -11,6 +11,7 @@ import { groupRows, visibleRows, type ListEntry } from "../list-model";
 import { settingsPath } from "../paths";
 import GrantsPanel from "./GrantsPanel";
 import {
+import { KEY_DAILY_SENDS } from "../../../../shared/mail/send-limits";
   ActionMenu, ActionResult, Badge, Dialog, ListSearch, LoadFailure, Panel, PanelBlock, PanelPlaceholder, SectionLayout,
   SelectableList, SkeletonPanel, SkeletonRows, errorText, useConfirm, useWork,
 } from "../ui";
@@ -322,7 +323,7 @@ function Journal() {
   );
 }
 
-const blankForm = () => ({ name: "", level: "mail" as Level, send: "drafts" as Send, dailySendLimit: 50, duration: "1y" as (typeof DURATIONS)[number]["id"], limited: false, accounts: [] as string[], approval: "agent" as "agent" | "owner" });
+const blankForm = () => ({ name: "", level: "mail" as Level, send: "drafts" as Send, dailySendLimit: KEY_DAILY_SENDS.default, duration: "1y" as (typeof DURATIONS)[number]["id"], limited: false, accounts: [] as string[], approval: "agent" as "agent" | "owner" });
 
 /** A new key: the form, then its secret, shown once. Closing after the secret was shown keeps the key. */
 export function NewKeyDialog({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: (key: AgentKey) => void }) {
@@ -345,7 +346,7 @@ export function NewKeyDialog({ open, onClose, onDone }: { open: boolean; onClose
     } catch (error) { setProblem(t.text(errorText(error))); } finally { setWorking(false); }
   }
   const finish = () => (created ? onDone(created.key) : onClose());
-  const limit = (v: string) => Math.max(1, Math.min(1000, Number(v) || 1));
+  const limit = (v: string) => Math.max(1, Math.min(KEY_DAILY_SENDS.max, Number(v) || 1));
 
   return (
     <Dialog open={open} title={created ? t("Key for {name}", { name: created.key.name }) : t("New key")} onClose={finish} busy={working} wide>
@@ -387,7 +388,7 @@ export function NewKeyDialog({ open, onClose, onDone }: { open: boolean; onClose
           </fieldset>
           {form.level === "admin" && (
             <p>{t.rich("An Admin key can send: it can make rules and reply agents that send by themselves. Up to {limit} messages a day through its own send tools; what its rules and agents send is not counted here.", {
-              limit: <input key="limit" type="number" min={1} max={1000} className="fi-input" style={{ width: 80, display: "inline-block" }} aria-label={t("Messages a day")}
+              limit: <input key="limit" type="number" min={1} max={KEY_DAILY_SENDS.max} className="fi-input" style={{ width: 80, display: "inline-block" }} aria-label={t("Messages a day")}
                 value={form.dailySendLimit} onChange={(e) => setForm({ ...form, dailySendLimit: limit(e.target.value) })} />,
             })}</p>
           )}
@@ -398,7 +399,7 @@ export function NewKeyDialog({ open, onClose, onDone }: { open: boolean; onClose
                 <span><strong>{t("Drafts only")}</strong> — {t("the agent writes drafts; you send them.")}</span></label>
               <label className="fi-check"><input type="radio" name="send" checked={form.send === "send"} onChange={() => setForm({ ...form, send: "send" })} />
                 <span><strong>{t("Can send")}</strong> — {t.rich("up to {limit} messages a day.", {
-                  limit: <input key="limit" type="number" min={1} max={1000} className="fi-input" style={{ width: 80, display: "inline-block" }} aria-label={t("Messages a day")}
+                  limit: <input key="limit" type="number" min={1} max={KEY_DAILY_SENDS.max} className="fi-input" style={{ width: 80, display: "inline-block" }} aria-label={t("Messages a day")}
                     value={form.dailySendLimit} onChange={(e) => setForm({ ...form, dailySendLimit: limit(e.target.value) })} />,
                 })}</span></label>
             </fieldset>

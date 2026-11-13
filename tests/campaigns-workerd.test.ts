@@ -51,13 +51,13 @@ test("SCN-089: prepare, add, preview, dry-run and the do-not-write list, nothing
     assert.equal(unknown.status, 400);
     assert.match(unknown.json.error, /not a connected account/);
     assert.equal((await call("POST", "/api/campaigns", { campaign: draft({ window: { start: "17:00", end: "09:00" } }) })).status, 400);
-    assert.equal((await call("POST", "/api/campaigns", { campaign: draft({ dailyCap: 500 }) })).status, 400, "the ceiling is 50 a day");
+    assert.equal((await call("POST", "/api/campaigns", { campaign: draft({ dailyCap: 100_001 }) })).status, 400, "the ceiling is 100000 a day");
 
     const created = await call("POST", "/api/campaigns", { campaign: draft() });
     assert.equal(created.status, 201);
     const id = created.json.id as string;
     assert.equal(created.json.state, "draft");
-    assert.equal(created.json.dailyCap, 30, "human-paced by default");
+    assert.equal(created.json.dailyCap, 1000, "1000 a day by default (B-262)");
 
     // Recipients: a repeat, an invalid address and one already on the list are left out with why.
     assert.equal((await call("POST", "/api/suppression", { add: ["blocked.example"], reason: "asked" })).status, 200);

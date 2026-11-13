@@ -18,7 +18,6 @@ import { missingOriginals, prepareMessage } from "./compose-payload";
 import { sendSavedDraft, signatureFor, swapSignature } from "./server-drafts";
 import type { SyncStatus } from "./use-drafts";
 import { useT } from "../../lib/i18n";
-import { REMOTE_SEND_LIMITS } from "../../../shared/mail/send-limits";
 import EmailIframe from "~/components/EmailIframe";
 export type { Draft } from "./draft-store";
 export default function Composer({
@@ -238,7 +237,7 @@ export default function Composer({
       } else if (error instanceof ApiError && error.status === 429 && code === "send_rate_limited") {
         // B-06: this server's sending budget for the account; nothing was reserved or handed over.
         if (!(await recover(fixed, "editable"))) return;
-        setNotice(t("Not sent: this account has reached this server's sending limit ({hour} an hour, {day} a day). Nothing went out; send it again later.", { ...REMOTE_SEND_LIMITS }));
+        setNotice(t("Not sent: this account has reached this server's daily sending limit. Nothing went out; send it again later, or ask the server's administrator to raise the limit."));
       } else if (
         error instanceof ApiError &&
         sendRecovery(!!draft.locked, error.status, error.body) === "failed"

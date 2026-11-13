@@ -22,7 +22,7 @@ of step W5 is assembled from `sales-leads` through the base's assembly, never wr
 | Approval of one act | `workers/mcp/protocol.ts:197-210`, `agent-keys.ts:206-225` | B-38: a tool that needs the owner answers `needsApproval` with a code; the owner approves in the app |
 | Standing | B-215, SCN-098 | an admin key may add members and make keys with its own code |
 | The service document | `workers/routes/fabric-service.ts:15-144` | `/.well-known/fabric-service`: MCP surface, actions, connections, usage |
-| Campaigns | `workers/campaigns/`, `shared/mail/campaign.ts` (B-181) | up to 4 steps, daily cap 30 (max 50), ramp-up, bounce pause, do-not-write list, unsubscribe |
+| Campaigns | `workers/campaigns/`, `shared/mail/campaign.ts` (B-181) | up to 4 steps, daily cap 1000 by default and higher on request (B-262, 2026-11-13; it was 30, at most 50, with a ramp-up), bounce pause, do-not-write list, unsubscribe |
 | Lead hand-off | `workers/agents/leads.ts`, `registry.ts:1495-1514` | a reply agent hands a lead to a sales agent; campaign replies are not handed off |
 
 ## Gaps
@@ -106,7 +106,7 @@ of step W5 is assembled from `sales-leads` through the base's assembly, never wr
   (`fail-closed-door`).
 - **D-6. An organization's outreach agent.** Assembled from the base's `sales-leads` template for the client
   organization (variant: outreach through Inbox campaigns), it holds one grant on the outreach addresses with `read`,
-  `draft` and `campaign`, never `send` (R-6), under the campaign caps (30 a day, ramp-up, bounce pause, unsubscribe), and
+  `draft` and `campaign`, never `send` (R-6), under the campaign caps (1000 a day by default, more on request, B-262; bounce pause, unsubscribe), and
   hands every human reply to the organization's sales agent (the lead hand-off of B-237 extended to campaign replies).
   The grant comes from a request the organization's access owner approves (DEC-0009); the first campaign runs as
   drafts until the organization's owner says send, since sending to people outside the estate needs that word.
