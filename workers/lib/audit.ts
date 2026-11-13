@@ -8,7 +8,7 @@ export const AUDIT_PREFIX = "audit/";
 const MAX_TIME = 9_999_999_999_999;
 
 export type AuditEntry =
-  | { kind: "member_saved"; person: string; role: "admin" | "member"; mailboxes: string[] | null; readOnly?: string[]; agents?: string[];
+  | { kind: "member_saved"; person: string; role: "admin" | "member" | "architect"; mailboxes: string[] | null; readOnly?: string[]; agents?: string[];
       previous: { role: string; mailboxes: string[] | null; readOnly?: string[]; agents?: string[] } | null }
   | { kind: "member_removed"; person: string; previous: { role: string; mailboxes: string[] | null } }
   | { kind: "keys_revoked"; person: string; keys: string[] }
@@ -19,7 +19,9 @@ export type AuditEntry =
   | { kind: "key_standing_set"; key: string; name: string; standing: string[]; previous: string[] }
   // B-246: an access grant given or revoked (the holder, its mailboxes and capabilities; never a secret).
   | { kind: "grant_given"; grant: string; holder: string; mailboxes: string[]; can: string[]; why: string }
-  | { kind: "grant_revoked"; grant: string; holder: string; also: string[] };
+  | { kind: "grant_revoked"; grant: string; holder: string; also: string[] }
+  // B-246 W4: a change an architect made over HTTP (the route and its answer; never a body), and where the role came from.
+  | { kind: "architect_act"; method: string; path: string; status: number; source: "members" };
 
 export type AuditRecord = AuditEntry & { id: string; at: string; actor: string | null };
 

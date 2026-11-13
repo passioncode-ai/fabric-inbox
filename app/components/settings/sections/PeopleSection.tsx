@@ -13,16 +13,17 @@ import {
   SelectableList, SkeletonPanel, SkeletonRows, errorText, useConfirm, useWork,
 } from "../ui";
 
-type Role = "admin" | "member";
+type Role = "admin" | "member" | "architect";
 type Level = "read" | "send" | "agents";
 /** B-215: whether the server's own sign-in lets the person in; null before the first sync or on a server without Access. */
 export interface SignIn { canSignIn: boolean | null; reason?: string }
 export interface Person { email: string; role: Role; accounts: string[] | null; levels?: Record<string, Level>; addedAt: string; signIn?: SignIn }
-interface PeopleState { members: Person[]; open: boolean; you: string | null }
+/** `roles`: what a person may be given here; a server before 1.6.11 sends none (Administrator and Member). */
+interface PeopleState { members: Person[]; open: boolean; you: string | null; roles?: Role[] }
 interface Mailbox { id: string; email?: string }
 export const PEOPLE_KEY = ["members"];
 
-export const roleTitle = (role: Role, t: T) => (role === "admin" ? t("Administrator") : t("Member"));
+export const roleTitle = (role: Role, t: T) => (role === "admin" ? t("Administrator") : role === "architect" ? t("Architect") : t("Member"));
 /** B-215: a person's sign-in in words. */
 export const signInText = (s: SignIn | undefined, t: T) =>
   s?.canSignIn === true ? t("Can sign in") : s?.canSignIn === false ? t("Cannot sign in yet") : t("As Cloudflare Access allows");
@@ -36,6 +37,8 @@ const levelsOf = (readOnly: string[] = [], agents: string[] = []) =>
   Object.fromEntries([...readOnly.map((a) => [a, "read" as const]), ...agents.map((a) => [a, "agents" as const])]);
 export const reachText = (p: Pick<Person, "role" | "accounts" | "levels">, t: T) => {
   if (p.role === "admin") return t("Everything on this server");
+  // B-246 W4 (D-3a): an architect's preset on every mailbox.
+  if (p.role === "architect") return t("Every mailbox: reads and sorts mail, sets up addresses and agents, never sends");
   const mailboxes = t.list((p.accounts ?? []).map(shown));
   const readOnly = t.list(readOnlyOf(p).map(shown));
   const agents = t.list(agentsOf(p).map(shown));
@@ -57,7 +60,7 @@ export default function PeopleSection({ id }: { id: string | null }) {
   const [query, setQuery] = useState("");
   const data = people.data;
   const entries = (data?.members ?? []).map((p): ListEntry & { person: Person } => ({ key: p.email, group: p.role, person: p, text: `${p.email} ${roleTitle(p.role, t)}` }));
-  const groups = groupRows(visibleRows(entries, query, id), [{ id: "admin", label: t("Administrators") }, { id: "member", label: t("Members") }]);
+  const groups = groupRows(visibleRows(entries, query, id), [{ id: "admin", label: t("Administrators") }, { id: "architect", label: t("Architects") }, { id: "member", label: t("Members") }]);
   const selected = id ? entries.find((e) => e.key === id) ?? null : null;
   const adding = params.get("new") === "1";
   const setAdding = (on: boolean) => setParams((old) => { const n = new URLSearchParams(old); if (on) n.set("new", "1"); else n.delete("new"); return n; }, { replace: true, preventScrollReset: true });
@@ -93,7 +96,7 @@ export default function PeopleSection({ id }: { id: string | null }) {
       <Link className="fi-secondary" to={settingsPath("people")} replace preventScrollReset>{t("All people")}</Link>
     </PanelPlaceholder>
   ) : (
-    <PersonPanel key={selected.key} person={selected.person} you={data?.you ?? null}
+    <PersonPanel key={selected.key} person={selected.person} you={data?.you ?? null} roles={data?.roles}
       onRemoved={() => navigate(settingsPath("people"), { replace: true, preventScrollReset: true })} />
   );
 
@@ -104,13 +107,13 @@ export default function PeopleSection({ id }: { id: string | null }) {
           <ListSearch value={query} onChange={setQuery} placeholder={t("Find a person")} label={t("Find a person")} />
           <button type="button" className="fi-primary" onClick={() => setAdding(true)}><PlusIcon size={16} /> {t("Add a person")}</button>
         </>} />
-      <PersonDialog open={adding} onClose={() => setAdding(false)}
+      <PersonDialog open={adding} roles={data?.roles} onClose={() => setAdding(false)}
         onDone={(email) => { setAdding(false); navigate(settingsPath("people", email), { replace: true, preventScrollReset: true }); }} />
     </>
   );
 }
 
-function PersonPanel({ person: p, you, onRemoved }: { person: Person; you: string | null; onRemoved: () => void }) {
+function PersonPanel({ person: p, you, roles, onRemoved }: { person: Person; you: string | null; roles?: Role[]; onRemoved: () => void }) {
   const t = useT();
   const client = useQueryClient();
   const confirm = useConfirm();
@@ -152,15 +155,16 @@ function PersonPanel({ person: p, you, onRemoved }: { person: Person; you: strin
         </ul>
         {p.signIn?.canSignIn === false && <button type="button" onClick={() => void retrySignIn()}>{t("Try again")}</button>}
         {p.role === "member" && <p className="fi-hint">{t("A member reads, answers and sorts the mail of these mailboxes, only reads a mailbox marked Read only, and chooses which agent answers a mailbox where you allow it. Settings, other mailboxes, the agents themselves and categories stay with the administrators.")}</p>}
+        {p.role === "architect" && <p className="fi-hint">{t("An architect reads and sorts the mail of every mailbox and sets up addresses and the agents that answer them, with each change kept in the record. Sending, drafts, deleting mail and this server's settings stay with the administrators.")}</p>}
         <ActionResult result={work.result} />
       </PanelBlock>
-      <PersonDialog open={editing} person={p} onClose={() => setEditing(false)} onDone={() => setEditing(false)} />
+      <PersonDialog open={editing} person={p} roles={roles} onClose={() => setEditing(false)} onDone={() => setEditing(false)} />
     </Panel>
   );
 }
 
 /** Adds a person, or changes one (`person`). A member needs at least one mailbox. */
-function PersonDialog({ open, person, onClose, onDone }: { open: boolean; person?: Person; onClose: () => void; onDone: (email: string) => void }) {
+function PersonDialog({ open, person, roles, onClose, onDone }: { open: boolean; person?: Person; roles?: Role[]; onClose: () => void; onDone: (email: string) => void }) {
   const t = useT();
   const client = useQueryClient();
   const blank = () => ({ email: person?.email ?? "", role: (person?.role ?? "member") as Role, accounts: person?.accounts ?? [], levels: { ...(person?.levels ?? {}) } as Record<string, Level> });
@@ -196,6 +200,11 @@ function PersonDialog({ open, person, onClose, onDone }: { open: boolean; person
             <span><strong>{t("Member")}</strong>: {t("reads and answers only the mailboxes below, or only reads the ones you mark.")}</span></label>
           <label className="fi-check"><input type="radio" name="role" checked={form.role === "admin"} onChange={() => setForm({ ...form, role: "admin" })} />
             <span><strong>{t("Administrator")}</strong>: {t("everything on this server, including this list.")}</span></label>
+          {/* B-246 W4: offered where the server gives the role, and kept visible for a person who already has it. */}
+          {(roles?.includes("architect") || person?.role === "architect") && (
+            <label className="fi-check"><input type="radio" name="role" checked={form.role === "architect"} onChange={() => setForm({ ...form, role: "architect" })} />
+              <span><strong>{t("Architect")}</strong>: {t("reads and sorts every mailbox and sets up addresses and agents; never sends or changes settings.")}</span></label>
+          )}
         </fieldset>
         {form.role === "member" && (
           <fieldset>

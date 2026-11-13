@@ -830,6 +830,8 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"The list of people could not be saved. Try again.": "Не удалось сохранить список людей. Попробуйте ещё раз.",
 	"Enter an email address.": "Введите адрес почты.",
 	"Choose Administrator or Member.": "Выберите «Администратор» или «Участник».",
+	"This server does not give the Architect role yet. Choose Administrator or Member.": "Этот сервер пока не даёт роль «Архитектор». Выберите «Администратор» или «Участник».",
+	"An architect sets up addresses and agents. Sending mail and the server's settings stay with its administrators.": "Архитектор настраивает адреса и агентов. Отправка почты и настройки сервера остаются за его администраторами.",
 	"Choose at least one mailbox for a member.": "Выберите для участника хотя бы один почтовый ящик.",
 	"{email} is not on the list.": "{email} нет в списке.",
 	"Say whether you approve this key's irreversible actions: approval \"owner\" or \"agent\".": "Укажите, одобряете ли вы необратимые действия этого ключа: approval \"owner\" или \"agent\".",

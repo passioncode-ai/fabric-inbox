@@ -12,7 +12,7 @@ import { msg } from "../../shared/i18n";
 export class MembersError extends Error { constructor(message: string, readonly status: number) { super(message); } }
 
 export const MEMBERS_KEY = "config/members.json";
-export const ROLES = ["admin", "member"] as const;
+export const ROLES = ["admin", "member", "architect"] as const;
 export type Role = (typeof ROLES)[number];
 export const MAX_MEMBERS = 500;
 /**
@@ -26,8 +26,12 @@ export type MemberLevel = (typeof LEVELS)[number];
 
 export interface Member {
   email: string;
+  /**
+   * B-246 W4 (packet D-3a): `architect` reads, sorts and sets up every mailbox, its addresses and agents, and never sends,
+   * drafts, deletes mail or changes the server's settings. Only with ROLE_GRANTS on; off, it reaches nothing.
+   */
   role: Role;
-  /** A member's mailboxes ("cloudflare:<address>", "gmail:<id>", …); null for an administrator. */
+  /** A member's mailboxes ("cloudflare:<address>", "gmail:<id>", …); null for an administrator and an architect. */
   accounts: string[] | null;
   /** B-160: a member's mailboxes they may only read, or whose agent they may choose. Absent, or a mailbox not named: send. */
   levels?: Record<string, MemberLevel>;
@@ -38,6 +42,7 @@ export interface Member {
 export type Standing =
   | { role: "admin"; email: string; listed: boolean }
   | { role: "member"; email: string; accounts: readonly string[]; levels: Readonly<Record<string, MemberLevel>> }
+  | { role: "architect"; email: string }
   | { role: "none"; email: string };
 
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,253}\.[^\s@]{2,63}$/;
@@ -53,8 +58,8 @@ function normaliseMember(raw: unknown): Member | null {
   const email = normaliseEmail(m.email);
   if (!email) return null;
   // An unknown role is the safest one; a member with a damaged list reaches nothing.
-  const role: Role = m.role === "admin" ? "admin" : "member";
-  const accounts = role === "admin" ? null : (normaliseAccounts(m.accounts) ?? []).filter((a) => !a.startsWith("domain:"));
+  const role: Role = m.role === "admin" || m.role === "architect" ? m.role : "member";
+  const accounts = role !== "member" ? null : (normaliseAccounts(m.accounts) ?? []).filter((a) => !a.startsWith("domain:"));
   const levels = accounts ? levelsFor(accounts, m.levels) : {};
   return { email, role, accounts, ...(Object.keys(levels).length ? { levels } : {}),
     addedAt: typeof m.addedAt === "string" ? m.addedAt : new Date(0).toISOString() };
@@ -104,13 +109,18 @@ export async function readMembers(bucket: R2Bucket): Promise<Member[]> {
   return normaliseMembers(raw);
 }
 
-/** The standing of a signed-in email against the list. */
-export function standingOf(members: readonly Member[], email: string): Standing {
+/**
+ * The standing of a signed-in email against the list. An architect is one only with `roleGrants` (the ROLE_GRANTS flag,
+ * B-246 W4); without it they are a member of no mailbox, so a server that has not turned roles on gives them nothing.
+ */
+export function standingOf(members: readonly Member[], email: string, roleGrants = false): Standing {
   const who = email.trim().toLowerCase();
   if (!members.length) return { role: "admin", email: who, listed: false };
   const m = members.find((x) => x.email === who);
   if (!m) return { role: "none", email: who };
-  return m.role === "admin" ? { role: "admin", email: who, listed: true } : { role: "member", email: who, accounts: m.accounts ?? [], levels: m.levels ?? {} };
+  if (m.role === "admin") return { role: "admin", email: who, listed: true };
+  if (m.role === "architect") return roleGrants ? { role: "architect", email: who } : { role: "member", email: who, accounts: [], levels: {} };
+  return { role: "member", email: who, accounts: m.accounts ?? [], levels: m.levels ?? {} };
 }
 
 /**
