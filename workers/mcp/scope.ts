@@ -94,6 +94,13 @@ export const AGENT_READ_ROUTES = new Set(["GET /api/agent-runs", "GET /api/agent
 /** B-214: counts per mailbox that a limited key reads for its own mailboxes (scopedApi filters them). */
 export const COUNT_READ_ROUTES = new Set(["GET /api/support-months", "GET /api/support-topics"]);
 
+/**
+ * B-259: outreach campaigns. A campaign belongs to its sender's mailbox (`sender`, a connected account's id), so a
+ * limited key lists, reads and changes only its own mailboxes' campaigns and makes one only from them. The suppression
+ * list stays the whole server's.
+ */
+export const CAMPAIGN_ROUTE = /^[A-Z]+ \/api\/campaigns(\/:id(\/(recipients|preview|dry-run|launch|pause|stop|report))?)?$/;
+
 /** B-246 W3: the routes any key reaches for itself (asking for access, reading what it holds), whatever its mailboxes. */
 export const SELF_KEY_ROUTES = new Set(["POST /api/access-requests", "GET /api/my-access"]);
 
@@ -102,7 +109,7 @@ export function toolFitsScope(tool: Pick<ToolDef, "routes">): boolean {
     if (SELF_KEY_ROUTES.has(r)) return true;
     const [method, path] = r.split(" ") as [string, string];
     if (adminMailboxAction(method, path)) return false;
-    return FEED_ROUTES.has(r) || SAFETY_ROUTES.has(r) || AGENT_READ_ROUTES.has(r) || COUNT_READ_ROUTES.has(r) || MAILBOX_ROUTE.test(r) || GMAIL_ROUTE.test(r);
+    return FEED_ROUTES.has(r) || SAFETY_ROUTES.has(r) || AGENT_READ_ROUTES.has(r) || COUNT_READ_ROUTES.has(r) || CAMPAIGN_ROUTE.test(r) || MAILBOX_ROUTE.test(r) || GMAIL_ROUTE.test(r);
   });
 }
 
@@ -182,6 +189,7 @@ export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubje
         return data && Array.isArray(data.held) ? { ...response, data: { ...data, held: data.held.filter((h) => allowedLower.has(String(h.accountId).toLowerCase())) } } : response;
       }
       if (method === "GET" && /^\/api\/agent-(runs|events|threads)(\/[^/]+)?$/.test(pathname)) return agentRead(pathname, init);
+      if (pathname === "/api/campaigns" || pathname.startsWith("/api/campaigns/")) return campaign(method, pathname, path, init);
       // B-214: support counts per month, only for the key's Cloudflare mailboxes; another mailbox reads as refused.
       if (route === "GET /api/support-months" || route === "GET /api/support-topics") {
         const own = new Set(accounts.filter((a) => a.toLowerCase().startsWith("cloudflare:")).map((a) => a.slice("cloudflare:".length).toLowerCase()));
@@ -197,6 +205,29 @@ export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubje
       return api.request(method, path, init);
     },
   };
+
+  /** B-259: a campaign is the key's when its sender is one of the key's mailboxes; another reads as refused. */
+  async function campaign(method: Parameters<Api["request"]>[0], pathname: string, path: string, init: { body?: unknown }): Promise<ApiResponse> {
+    const senderOf = (body: unknown) => String(((body as { campaign?: { sender?: unknown } } | null)?.campaign?.sender) ?? "").toLowerCase();
+    if (pathname === "/api/campaigns") {
+      if (method === "POST") {
+        if (!allowedLower.has(senderOf(init.body))) throw refuse(accounts, who);
+        return api.request(method, path, init);
+      }
+      const response = await api.request(method, path, init);
+      const data = response.data as { campaigns?: { sender?: unknown }[] } | null;
+      return data && Array.isArray(data.campaigns)
+        ? { ...response, data: { ...data, campaigns: data.campaigns.filter((c) => allowedLower.has(String(c.sender).toLowerCase())) } } : response;
+    }
+    const id = pathname.split("/")[3] ?? "";
+    const current = await api.request("GET", `/api/campaigns/${id}`);
+    // Another mailbox's campaign reads as refused, whether or not it exists; a change may not move it to another sender.
+    if (current.status === 404) throw refuse(accounts, who);
+    if (current.status < 200 || current.status >= 300) return current;
+    if (!allowedLower.has(String((current.data as { sender?: unknown } | null)?.sender ?? "").toLowerCase())) throw refuse(accounts, who);
+    if (method === "PUT" && !allowedLower.has(senderOf(init.body))) throw refuse(accounts, who);
+    return method === "GET" && pathname === `/api/campaigns/${id}` ? current : api.request(method, path, init);
+  }
 
   /** The emails of the key's mailboxes: its Cloudflare addresses and its accounts' addresses (read once per call). */
   async function emailsOfScope(): Promise<Set<string>> {

@@ -11,6 +11,10 @@ is cut and published: [docs/release.md](docs/release.md).
 agent key reaches, mailbox by mailbox, so an approved request widens the key without a new one. It stays off until
 the owner turns it on; until then nothing changes.
 
+**An agent limited to some mailboxes can run their campaigns** (B-259). A campaign belongs to the mailbox it is sent
+from. An agent key limited to mailboxes now sees, prepares and runs the campaigns of those mailboxes only, and never
+another mailbox's.
+
 ## 1.6.9 (2026-11-13)
 
 **Agents keep answering after Cloudflare retires Kimi** (B-258). Workers AI stops serving the Kimi model on
