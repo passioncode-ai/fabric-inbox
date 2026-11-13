@@ -1140,6 +1140,11 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
         } finally {
           record.ms = Date.now() - started;
         }
+      } else if (outcome.action === "send" && !deps.check && !fixedTriage) {
+        // B-254 (operator rule 2026-10-16): an answer leaves without a person only when a model of another vendor
+        // approved it. A server with no checker (no reply-lane key) used to send it unchecked; now it waits like an
+        // answer the agent is not sure of (the safe reply, a hold or a draft).
+        outcome = { action: "draft", reason: msg("No checker on this server: the answer waits for a person") };
       }
     }
     if (run.handoff) {

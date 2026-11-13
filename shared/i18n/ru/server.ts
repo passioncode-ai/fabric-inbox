@@ -418,6 +418,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"A reply, a forward or a follow-up to an earlier answer: a person answers it": "Ответ, пересылка или продолжение после прошлого ответа: на него отвечает человек",
 	"It is about a topic a person answers ({topic})": "Это тема, на которую отвечает человек ({topic})",
 	"No tool gave a confident answer to rest it on": "Ни один инструмент не дал уверенного ответа, на который можно опереться",
+	"No checker on this server: the answer waits for a person": "На этом сервере нет проверяющей модели: ответ ждёт человека",
 	"Handed to a person: the reply says whom to contact": "Передано человеку: в ответе сказано, к кому обратиться",
 	"Safe reply sent ({reason})": "Отправлен безопасный ответ ({reason})",
 	"A preview needs the address, a sender and the message text": "Для предпросмотра нужны адрес, отправитель и текст письма",

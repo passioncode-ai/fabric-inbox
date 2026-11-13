@@ -97,6 +97,8 @@ function harness(options: {
     callTool: options.callTool ?? (async () => "tool result"),
     knowledge: { search: options.search ?? (async () => []) },
     htmlToText: (html) => html.replace(/<[^>]+>/g, " ").trim(),
+    // B-254: an auto answer leaves only when a checker of another vendor approved it; the stand approves by default.
+    check: async () => ({ approved: true, reason: "ok", model: "checker" }),
   };
   return { deps, runs, effects, run: () => runAgent({ mailboxId: MAILBOX, emailId: email.id }, deps) };
 }
