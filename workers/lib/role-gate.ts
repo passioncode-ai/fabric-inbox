@@ -58,15 +58,26 @@ export const ARCHITECT_CAN: ReadonlySet<Capability> = new Set(ROLE_PRESETS.archi
 export type RoleGate = "pass" | "refuse";
 
 /**
+ * B-246 W4b (D-3a, Delegation): the routes an architect reaches to give their agent keys access within the role. Each
+ * route narrows itself for an architect (workers/routes/agent-keys.ts, grants.ts): their own keys and grants only, a key
+ * that asks for access, a grant inside the preset with the role as its parent.
+ */
+const DELEGATION = [/^GET \/api\/agent-keys\/?$/, /^POST \/api\/agent-keys\/?$/, /^DELETE \/api\/agent-keys\/[^/]+\/?$/,
+  /^GET \/api\/grants\/?$/, /^POST \/api\/grants\/?$/, /^DELETE \/api\/grants\/[^/]+\/?$/];
+const delegation = (method: string, pathname: string) => DELEGATION.some((r) => r.test(`${method === "HEAD" ? "GET" : method} ${pathname}`));
+
+/**
  * An architect's request: pages pass; the agent protocol, the operator's chat assistant and the relays stay an
- * administrator's, as for a member; an API route passes when its need is one the architect's preset holds. Sending,
- * drafts, deleting mail, campaigns and the server's own settings (people, keys, domains, rules) are refused.
+ * administrator's, as for a member; an API route passes when its need is one the architect's preset holds, and the
+ * delegation routes pass to narrow themselves. Sending, drafts, deleting mail, campaigns and the server's own settings
+ * (people, domains, rules, other people's keys) are refused.
  */
 export function architectGate(method: string, pathname: string): RoleGate {
   if (pathname === MCP_PATH || pathname.startsWith("/agents/") || pathname.startsWith("/relay/") || pathname.startsWith("/fabric/")
     || pathname === "/.well-known/fabric-service") return "refuse";
   if (!pathname.startsWith("/api/")) return "pass";
   if (SELF_ROUTES.has(`${method === "HEAD" ? "GET" : method} ${pathname}`)) return "pass";
+  if (delegation(method, pathname)) return "pass";
   const need = routeNeed(method, pathname);
   return need && need !== "self" && need !== "server" && ARCHITECT_CAN.has(need) ? "pass" : "refuse";
 }

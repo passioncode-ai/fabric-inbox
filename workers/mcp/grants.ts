@@ -237,13 +237,28 @@ export const ROLE_PRESETS: Readonly<Record<OrgRole, { mailboxes: "all" | "own+sh
 
 // ---- W2c: the grants of a caller, and the decision they make for a tool (the shadow beside today's checks) ----
 
-/** A caller's grants from its key or sign-in today, plus the stored grants naming it (W2c). */
-export function grantsOfPrincipal(p: Principal, stored: readonly StoredGrant[] = []): Grant[] {
+/**
+ * B-246 W4b (packet D-3a, Delegation): the parent of a grant an architect gave one of their agent keys from their role.
+ * Such a grant holds only while its grantor is still an architect (or became an administrator) and it stays inside the
+ * architect's preset; it is read at every use, so leaving the list or losing the role takes it away at the next call.
+ */
+export const ARCHITECT_ROLE_PARENT = "role:architect";
+
+/** Whether a stored grant still holds by its grantor; `roleOf` is the grantor's role on this server now, null when unknown. */
+export function delegationHolds(g: Pick<StoredGrant, "parent" | "grantedBy" | "can">, roleOf: (email: string) => string | null): boolean {
+  if (g.parent !== ARCHITECT_ROLE_PARENT) return true;
+  const role = roleOf(g.grantedBy);
+  if (role !== "architect" && role !== "admin") return false;
+  return g.can.every((c) => ROLE_PRESETS.architect.can.includes(c));
+}
+
+/** A caller's grants from its key or sign-in today, plus the stored grants naming it (W2c) that still hold (W4b). */
+export function grantsOfPrincipal(p: Principal, stored: readonly StoredGrant[] = [], holds: (g: StoredGrant) => boolean = () => true): Grant[] {
   const own: Grant[] = p.kind === "owner"
     ? [{ holder: { kind: "person", email: p.label.toLowerCase() }, mailboxes: [ALL], can: [...CAPABILITIES], limits: { sendMode: "send", dailySendLimit: null, ownerApproval: false }, expiresAt: null }]
     : grantsOfKey({ id: p.keyId, level: p.level, send: p.send, dailySendLimit: p.dailySendLimit, accounts: p.accounts ? [...p.accounts] : null, approval: p.approval, expiresAt: null });
   const holderId = p.kind === "owner" ? null : p.keyId;
-  const extra = stored.filter((g) => g.holder.kind === "key" && g.holder.id === holderId);
+  const extra = stored.filter((g) => g.holder.kind === "key" && g.holder.id === holderId && holds(g));
   return [...own, ...extra];
 }
 

@@ -67,8 +67,11 @@ test("the architect's gate: setting up mailboxes, addresses and agents passes; s
   assert.equal(architectGate("GET", "/inbox"), "pass");
   for (const p of ["/mcp", "/agents/chat/x", "/relay/x", "/fabric/x", "/.well-known/fabric-service"]) assert.equal(architectGate("GET", p), "refuse", p);
   assert.equal(architectGate("GET", "/api/me"), "pass");
-  // Every tool route passes exactly when its need is in the architect's preset.
+  // Every tool route passes exactly when its need is in the architect's preset; the delegation routes narrow themselves (W4b).
+  const delegation = new Set(["GET /api/agent-keys", "POST /api/agent-keys", "DELETE /api/agent-keys/:id", "GET /api/grants", "POST /api/grants", "DELETE /api/grants/:id"]);
+  for (const r of delegation) assert.equal(architectGate(r.slice(0, r.indexOf(" ")), r.slice(r.indexOf(" ") + 1).replace(":id", "k1")), "pass", r);
   for (const t of TOOLS) for (const r of t.routes) {
+    if (delegation.has(r)) continue;
     const [method, path] = [r.slice(0, r.indexOf(" ")), r.slice(r.indexOf(" ") + 1).replace(/:[A-Za-z]+/g, "x%40owner.example")];
     const need = routeNeed(method, path);
     const want = need && need !== "self" && need !== "server" && ARCHITECT_CAN.has(need) ? "pass" : "refuse";
@@ -85,7 +88,8 @@ test("the architect's gate: setting up mailboxes, addresses and agents passes; s
   assert.equal(architectGate("PUT", "/api/agents/a1"), "pass", "save an agent");
   assert.equal(architectGate("POST", "/api/v1/mailboxes/x%40owner.example/send"), "refuse", "send");
   assert.equal(architectGate("PUT", "/api/members/x%40owner.example"), "refuse", "people");
-  assert.equal(architectGate("POST", "/api/agent-keys"), "refuse", "keys, until delegation (W4b)");
+  assert.equal(architectGate("PATCH", "/api/agent-keys/k1"), "refuse", "a key's standing is the owner's");
+  assert.equal(architectGate("GET", "/api/agent-keys/approvals"), "refuse", "approvals are the owner's");
 });
 
 /** An R2 bucket as far as the list uses it. */
