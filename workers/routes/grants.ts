@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
+import { KEY_DAILY_SENDS } from "../../shared/mail/send-limits";
 import type { Env } from "../types";
 import type { Standing } from "../lib/members";
 import { msg } from "../../shared/i18n";
@@ -25,7 +26,7 @@ const GiveGrant = z.object({
   ]),
   mailboxes: z.array(z.string().max(320)).min(1).max(200),
   can: z.array(z.enum(CAPABILITIES)).min(1).max(CAPABILITIES.length),
-  limits: z.object({ sendMode: z.enum(["drafts", "send"]).default("send"), dailySendLimit: z.number().int().min(0).max(1000).nullable().default(null),
+  limits: z.object({ sendMode: z.enum(["drafts", "send"]).default("send"), dailySendLimit: z.number().int().min(0).max(KEY_DAILY_SENDS.max).nullable().default(null),
     ownerApproval: z.boolean().default(false) }).default({}),
   expiresAt: z.string().datetime({ offset: true }).nullable().default(null),
   why: z.string().trim().min(1).max(500),

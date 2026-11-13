@@ -32,7 +32,8 @@ const bundle = await build({
 });
 
 const steps = [{ subject: "Hi {{first_name|there}}", body: "Hello {{first_name}}, about {{company}}." }, { body: "Following up.", delayDays: 3 }];
-const draft = (over: Record<string, unknown> = {}) => ({ name: "Pilot", sender: "gmail:g1", timezone: "UTC", steps, ...over });
+// The window and gaps of the dry-run checks below are given: since B-262 the defaults are every day 08:00 to 20:00, 0 to 1 minute apart.
+const draft = (over: Record<string, unknown> = {}) => ({ name: "Pilot", sender: "gmail:g1", timezone: "UTC", gapMinutes: [5, 10], window: { days: [1, 2, 3, 4, 5], start: "09:00", end: "17:00" }, steps, ...over });
 
 test("SCN-089: prepare, add, preview, dry-run and the do-not-write list, nothing sent", async () => {
   const mf = new Miniflare({
@@ -51,13 +52,13 @@ test("SCN-089: prepare, add, preview, dry-run and the do-not-write list, nothing
     assert.equal(unknown.status, 400);
     assert.match(unknown.json.error, /not a connected account/);
     assert.equal((await call("POST", "/api/campaigns", { campaign: draft({ window: { start: "17:00", end: "09:00" } }) })).status, 400);
-    assert.equal((await call("POST", "/api/campaigns", { campaign: draft({ dailyCap: 500 }) })).status, 400, "the ceiling is 50 a day");
+    assert.equal((await call("POST", "/api/campaigns", { campaign: draft({ dailyCap: 100_001 }) })).status, 400, "the ceiling is 100000 a day");
 
     const created = await call("POST", "/api/campaigns", { campaign: draft() });
     assert.equal(created.status, 201);
     const id = created.json.id as string;
     assert.equal(created.json.state, "draft");
-    assert.equal(created.json.dailyCap, 30, "human-paced by default");
+    assert.equal(created.json.dailyCap, 1000, "1000 a day by default (B-262)");
 
     // Recipients: a repeat, an invalid address and one already on the list are left out with why.
     assert.equal((await call("POST", "/api/suppression", { add: ["blocked.example"], reason: "asked" })).status, 200);

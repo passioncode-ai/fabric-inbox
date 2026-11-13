@@ -16,7 +16,7 @@ export const CAMPAIGNS_STEPS: readonly SchemaStep[] = [
   ]),
   // B-181 step 2: sending. Each recipient keeps the conversation its first message started (thread and Message-ID,
   // so follow-ups answer in it); every send is a row (the rolling daily cap per account, the report); each account
-  // keeps when it may send next and when it first sent (the ramp-up).
+  // keeps when it may send next and when it first sent (the ramp-up until B-262 removed it; the column stays).
   statements("2_sending", [
     `ALTER TABLE recipients ADD COLUMN thread_id TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE recipients ADD COLUMN rfc_id TEXT NOT NULL DEFAULT ''`,

@@ -1,18 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CampaignInputSchema, campaignProblem, companyOf, FREE_MAIL, composeStep, inboundKind, inWindow, nextInWindow, normaliseRecipient, plan, rampedCap, render, suppressed, suppressionEntry } from "../shared/mail/campaign";
+import { CampaignInputSchema, campaignProblem, companyOf, FREE_MAIL, composeStep, inboundKind, inWindow, nextInWindow, normaliseRecipient, plan, render, suppressed, suppressionEntry } from "../shared/mail/campaign";
 
 // B-181 (SCN-089): a campaign as it is prepared.
 const base = (over: Record<string, unknown> = {}) => CampaignInputSchema.parse({ name: "Q4 partners", sender: "gmail:a1", steps: [{ body: "Hi {{first_name|there}}" }], ...over });
 
-test("human-paced defaults, and a Cloudflare sender or a backwards window is refused with why", () => {
+test("B-262 defaults: 1000 a day, every day 08:00 to 20:00, up to a minute apart; a Cloudflare sender or a backwards window is refused with why", () => {
   const c = base();
-  assert.deepEqual([c.dailyCap, c.gapMinutes, c.window.days, c.window.start, c.window.end, c.stopOnReply, c.companyStop], [30, [5, 10], [1, 2, 3, 4, 5], "09:00", "17:00", true, true]);
+  assert.deepEqual([c.dailyCap, c.gapMinutes, c.window.days, c.window.start, c.window.end, c.stopOnReply, c.companyStop], [1000, [0, 1], [0, 1, 2, 3, 4, 5, 6], "08:00", "20:00", true, true]);
   assert.equal(campaignProblem(c), null);
   assert.match(campaignProblem(base({ sender: "cloudflare:me@owner.example" }))!, /transactional mail only/);
   assert.match(campaignProblem(base({ window: { start: "17:00", end: "09:00" } }))!, /must end after it starts/);
   assert.match(campaignProblem(base({ timezone: "Mars/Olympus" }))!, /not a time zone/);
-  assert.equal(CampaignInputSchema.safeParse({ name: "x", sender: "gmail:a1", steps: [{ body: "a" }], dailyCap: 51 }).success, false, "never over 50 a day");
+  assert.equal(CampaignInputSchema.safeParse({ name: "x", sender: "gmail:a1", steps: [{ body: "a" }], dailyCap: 100_001 }).success, false, "never over 100000 a day");
+  assert.equal(CampaignInputSchema.safeParse({ name: "x", sender: "gmail:a1", steps: [{ body: "a" }], dailyCap: 5000 }).success, true, "a cap asked for above 1000 is kept");
+  assert.equal(CampaignInputSchema.safeParse({ name: "x", sender: "gmail:a1", steps: [{ body: "a" }], gapMinutes: [0, 0] }).success, true, "no gap at all");
 });
 
 test("fields fill the template, a fallback covers a missing one, and what is still missing is named", () => {
@@ -31,7 +33,7 @@ test("recipients are normalised and the suppression list holds addresses and who
 });
 
 test("a dry run sends only inside the window, at most the daily cap a rolling day, with the gaps", () => {
-  const c = base({ timezone: "UTC", dailyCap: 3 });
+  const c = base({ timezone: "UTC", dailyCap: 3, gapMinutes: [5, 10], window: { days: [1, 2, 3, 4, 5], start: "09:00", end: "17:00" } });
   const monday9 = Date.parse("2026-10-26T09:00:00Z");
   const times = plan(c, 5, Date.parse("2026-10-25T12:00:00Z"), () => 0);
   assert.equal(times.length, 5);
@@ -42,21 +44,19 @@ test("a dry run sends only inside the window, at most the daily cap a rolling da
 });
 
 // B-181 step 2 (SCN-090): the rules the sending loop follows.
-test("the ramp holds an account to 10 on its first day, 5 more each day, never over the campaign's cap", () => {
-  const first = Date.UTC(2026, 10, 2, 9);
-  assert.equal(rampedCap(30, 0, first), 10, "before any send");
-  assert.equal(rampedCap(30, first, first + 3_600_000), 10);
-  assert.equal(rampedCap(30, first, first + 86_400_000), 15);
-  assert.equal(rampedCap(30, first, first + 10 * 86_400_000), 30);
-  assert.equal(rampedCap(8, first, first), 8);
-  const c = base({ dailyCap: 30, gapMinutes: [5, 5] });
-  const times = plan(c, 12, Date.UTC(2026, 10, 2, 9), () => 0); // Monday 09:00 UTC
-  assert.equal(times.filter((t) => t < Date.UTC(2026, 10, 2, 17)).length, 10, "the dry run keeps the ramp too");
+test("B-262: no ramp-up, an account's first day sends up to the campaign's cap", () => {
+  const c = base({ dailyCap: 30, gapMinutes: [5, 5], window: { days: [1, 2, 3, 4, 5], start: "09:00", end: "17:00" } });
+  const times = plan(c, 40, Date.UTC(2026, 10, 2, 9), () => 0); // Monday 09:00 UTC
+  assert.equal(times.filter((t) => t < Date.UTC(2026, 10, 2, 17)).length, 30, "the whole cap on the first day");
+  const fast = plan(base({ timezone: "UTC" }), 100, Date.UTC(2026, 10, 2, 8), () => 0.5);
+  assert.equal(fast.length, 100);
+  assert.ok(fast[99]! - fast[0]! < 60 * 60_000, "by default 100 leave within the hour");
 });
 
 test("the next moment inside the window, and each step as the recipient gets it", () => {
-  const c = base();
+  const c = base({ window: { days: [1, 2, 3, 4, 5], start: "09:00", end: "17:00" } });
   assert.equal(nextInWindow(c, Date.UTC(2026, 10, 7, 12)), Date.UTC(2026, 10, 9, 9), "Saturday noon waits for Monday 09:00");
+  assert.equal(nextInWindow(base(), Date.UTC(2026, 10, 7, 12)), Date.UTC(2026, 10, 7, 12), "by default Saturday noon is inside the window");
   const two = base({ steps: [{ subject: "About {{company|your team}}", body: "Hi {{first_name|there}}" }, { body: "Any thoughts?" }], postalAddress: "1 Main St, Springfield" });
   const first = composeStep(two, 0, { first_name: "Ann" }, "");
   assert.equal(first.subject, "About your team");

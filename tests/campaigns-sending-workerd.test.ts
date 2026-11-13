@@ -65,7 +65,7 @@ test("SCN-090: the loop sends one at a time, follow-ups answer in the thread, re
   const inbound = (at: number, sender: string, subject: string, body: string, threadId?: string) =>
     call("POST", `/t/inbound?now=${at}`, { account: "gmail:g1", message: { sender, subject, body, threadId } });
   try {
-    const created = await call("POST", "/api/campaigns", { campaign: { name: "Pilot", sender: "gmail:g1", timezone: "UTC", gapMinutes: [5, 5],
+    const created = await call("POST", "/api/campaigns", { campaign: { name: "Pilot", sender: "gmail:g1", timezone: "UTC", gapMinutes: [5, 5], window: { days: [1, 2, 3, 4, 5], start: "09:00", end: "17:00" },
       steps: [{ subject: "About {{company|your team}}", body: "Hi {{first_name|there}}" }, { body: "Any thoughts?", delayDays: 3 }] } });
     const id = created.json.id;
     await call("POST", `/api/campaigns/${id}/recipients`, { recipients: [

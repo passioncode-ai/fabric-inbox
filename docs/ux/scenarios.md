@@ -253,7 +253,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Alt paths:** Return to the previous surface without causing an external action; preserve confirmed saved work.
 - **UI elements:** SCR-05; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** Invalid recipient blocks send inline; rejection preserves draft; unknown outcome is SCN-020. A Gmail, IMAP or Outlook account past this server's sending limit (50 an hour, 250 a day, whoever sends; B-06) is refused before anything leaves: the draft stays editable and the notice says the limit and to send it again later.
+- **Errors & recovery:** Invalid recipient blocks send inline; rejection preserves draft; unknown outcome is SCN-020. A Gmail, IMAP or Outlook account past this server's daily sending limit (1000 a day, whoever sends, no hourly cap; B-06, B-262; the administrator raises it with `SEND_LIMIT_DAY`) is refused before anything leaves: the draft stays editable and the notice says to send it again later or ask the administrator to raise the limit.
 - **Status:** validated
 - **Coverage:** app/components/inbox/Composer.tsx (`send`); app/components/inbox/send-state.ts (`sendRecovery`); app/components/inbox/server-drafts.ts (`sendSavedDraft`); workers/durableObject/index.ts (`sendDraft`); workers/providers/account-service.ts (`takeSend`, B-06), shared/mail/send-limits.ts, tests/providers-accounts.test.ts (B-06)
 - **Product:** unobserved
@@ -1838,7 +1838,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** an agent over MCP (the screen comes in step 3)
 - **Preconditions:** A connected Gmail, Outlook or IMAP account to send from; an agent with a mail key.
 - **Steps:**
-  1. Ask the agent to prepare a campaign -> it creates one with a name, the account to send from, the steps (a first message and up to three follow-ups, each a number of days after the one before) and the sending window; defaults are human-paced (30 a day, Monday to Friday 09:00 to 17:00, 5 to 10 minutes apart).
+  1. Ask the agent to prepare a campaign -> it creates one with a name, the account to send from, the steps (a first message and up to three follow-ups, each a number of days after the one before) and the sending window; by default 1000 a day, every day 08:00 to 20:00, up to a minute apart, and a higher cap when I ask for one (B-262; before 2026-11-13 the defaults were human-paced: 30 a day, weekdays 09:00 to 17:00, 5 to 10 minutes apart).
   2. Give it the list -> it adds the recipients with their fields (name, company and any other); an address on the suppression list, a repeat, or one that is not an address is left out and said so.
   3. Ask for a preview -> it shows each step as one recipient will get it, with `{{field}}` filled and a missing field named before anything can be sent.
   4. Ask for a dry run -> it says what would leave when, from which account, without sending.
@@ -1860,7 +1860,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** A prepared campaign (SCN-089) with recipients, previewed and dry-run; the person approved it.
 - **Steps:**
   1. Ask the agent to start it -> it confirms the account, the number of people and the daily cap with you, then starts it.
-  2. The server sends it on its own, from your account: one message at a time inside the window, 5 to 10 minutes apart, 10 on the account's first day and 5 more each day up to the cap; every message ends with how to stop them (and your postal address, when given) and carries List-Unsubscribe: a one-click link to your server's unsubscribe page, and a reply to you.
+  2. The server sends it on its own, from your account: one message at a time inside the window and its gaps, up to the cap from the first day (no ramp-up since B-262); every message ends with how to stop them (and your postal address, when given) and carries List-Unsubscribe: a one-click link to your server's unsubscribe page, and a reply to you.
   3. Someone replies -> nothing more goes to them, nor, by default, to the rest of their company; "unsubscribe" in a reply puts them on the do-not-write list; an automatic reply moves their next message three days on.
   4. The follow-ups go after their days, in the same conversation.
   5. Ask for the report -> people by status, messages per step, reply and bounce rates, the next send, and what failed.
@@ -1870,7 +1870,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** loading, error, success
 - **Errors & recovery:** A provider's rate limit holds the account an hour and tries again; a send that failed is listed in the report with why.
 - **Status:** draft
-- **Coverage:** `tests/campaign.test.ts` (the ramp, the window, each step as sent, what an arriving message is), `tests/campaigns-sending-workerd.test.ts` (the loop over a fake account: one send per wake and the gap, the stop line and List-Unsubscribe, a reply stopping the company, unsubscribe, an auto-reply, the follow-up in the thread, the report; bounces pausing, stop; the one-click link once the page exists), `tests/campaign-unsubscribe.test.ts` (the token, the page asking before it acts, the Bypass application, the headers).
+- **Coverage:** `tests/campaign.test.ts` (the defaults and the cap from the first day, the window, each step as sent, what an arriving message is), `tests/campaigns-sending-workerd.test.ts` (the loop over a fake account: one send per wake and the gap, the stop line and List-Unsubscribe, a reply stopping the company, unsubscribe, an auto-reply, the follow-up in the thread, the report; bounces pausing, stop; the one-click link once the page exists), `tests/campaign-unsubscribe.test.ts` (the token, the page asking before it acts, the Bypass application, the headers).
 - **Product:** unobserved
 - **Today:** Built 2026-10-27 (B-181 step 2, 0.45.0). One-click unsubscribe (0.47.0): once a campaign has started, the server makes its own unsubscribe page outside Access, and every message carries its link first in List-Unsubscribe; the page asks before it unsubscribes, and a mail client's one-click POST unsubscribes at once.
 
@@ -2143,7 +2143,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** the organization's outreach agent, assembled from the agents database's sales and leads template
 - **Preconditions:** The organization's server holds an outreach address; the organization's access owner approved the agent's request (SCN-100).
 - **Steps:**
-  1. The agent prepares a campaign on its address: recipients, steps, the daily cap -> drafts, under the campaign limits (at most 50 a day, ramp-up, pause on bounces, unsubscribe in every message).
+  1. The agent prepares a campaign on its address: recipients, steps, the daily cap -> drafts, under the campaign's cap (1000 a day by default, more when the owner asks; B-262), pause on bounces and unsubscribe in every message.
   2. The organization's owner says send for that campaign -> the agent asks to launch it, the request waits in Settings → Agent access (Waiting for your approval), and the owner approves the campaign as it is then: its steps, cap, window and the people still waiting; the agent launches it with that approval, once, and the server sends step by step and stops a sequence when someone replies. A campaign changed after the approval needs a new one.
   3. Someone replies with interest -> the reply is handed to the organization's sales agent with its thread; an unsubscribe goes to the do-not-write list.
 - **Expected result:** Outreach runs from the organization's own mailbox through its own agent, inside the caps, and every human answer reaches sales.

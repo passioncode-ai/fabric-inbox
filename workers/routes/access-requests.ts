@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
+import { KEY_DAILY_SENDS } from "../../shared/mail/send-limits";
 import type { Env } from "../types";
 import type { Standing } from "../lib/members";
 import { msg } from "../../shared/i18n";
@@ -102,7 +103,7 @@ accessRequestsRouter.post("/api/access-requests/:id/decision", async (c) => {
     if (parsed.data.verdict === "approve") {
       const grant = GrantSchema.safeParse({ schema: "grant/1", id: `grant-${crypto.randomUUID()}`, holder: request.holder,
         mailboxes: parsed.data.mailboxes ?? request.mailboxes, can: parsed.data.can ?? request.can,
-        limits: { sendMode: "send", dailySendLimit: 50, ownerApproval: false }, expiresAt: request.until, grantedBy: actor, grantedAt: now.toISOString(), why: request.why });
+        limits: { sendMode: "send", dailySendLimit: KEY_DAILY_SENDS.default, ownerApproval: false }, expiresAt: request.until, grantedBy: actor, grantedAt: now.toISOString(), why: request.why });
       if (!grant.success) return c.json({ error: msg("A mailbox in the list is not one this server can name.") }, 400);
       // Narrowing only: never more than was asked (D-2), so an approval cannot widen a request.
       if (!isSubset(grant.data, { mailboxes: request.mailboxes, can: request.can, limits: grant.data.limits, expiresAt: request.until }))

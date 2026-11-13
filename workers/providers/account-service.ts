@@ -21,7 +21,7 @@ import {
 import { GmailClient, ProviderError, exchangeCode, makeMime, type Fetcher, type Message, type OutgoingMessage, type SendInput } from "./gmail-client";
 import type { InboxReadOptions, InboxMessage } from "../../shared/mail/inbox";
 import { isGmailReason, type GmailReason } from "../../shared/mail/gmail-reasons";
-import { REMOTE_SEND_LIMITS } from "../../shared/mail/send-limits";
+import { REMOTE_SEND_LIMITS, sendLimitPerDay } from "../../shared/mail/send-limits";
 import { DISCARDED_LABEL, GMAIL_FOLDERS, GmailCache, gmailInboxMessage, inFolder, keyPart, msgKey, type GmailFolder, type InboxCounts, type IndexRow, type StoredMessage } from "./gmail-cache";
 export { GMAIL_FOLDERS, type GmailFolder } from "./gmail-cache";
 import { credentialKeys, hasCredentialKey, openCredentials, sealCredentials, type CredentialEnvironment, type CredentialKeys } from "./credentials";
@@ -254,9 +254,9 @@ const EVENT_PRUNE_CURSOR = "events-prune:cursor";
 export { REMOTE_SEND_LIMITS };
 const sendLogKey = (accountId: string) => "sendlog:" + keyPart(accountId);
 /** Takes one send from the account's budget inside the reservation's transaction; throws send_rate_limited. */
-async function takeSend(tx: Store, accountId: string, now: number): Promise<number> {
+async function takeSend(tx: Store, accountId: string, now: number, perDay: number = REMOTE_SEND_LIMITS.day): Promise<number> {
   const log = ((await tx.get<number[]>(sendLogKey(accountId))) ?? []).filter((at) => typeof at === "number" && at > now - 86_400_000);
-  if (log.filter((at) => at > now - 3_600_000).length >= REMOTE_SEND_LIMITS.hour || log.length >= REMOTE_SEND_LIMITS.day)
+  if (log.length >= perDay)
     throw new ProviderError("send_rate_limited", 429);
   await tx.put(sendLogKey(accountId), [...log, now]);
   return now;
@@ -266,7 +266,7 @@ async function takeSend(tx: Store, accountId: string, now: number): Promise<numb
 export interface ProviderDeps {
   imap?: ImapDeps;
 }
-export type AccountsEnvironment = GmailEnvironment & CredentialEnvironment & MicrosoftEnvironment & { MAIL_POLL_SECONDS?: string };
+export type AccountsEnvironment = GmailEnvironment & CredentialEnvironment & MicrosoftEnvironment & { MAIL_POLL_SECONDS?: string; SEND_LIMIT_DAY?: string };
 
 /** The poll interval of every provider: MAIL_POLL_SECONDS, else GMAIL_POLL_SECONDS, else 300 s (60 s … 1 h). */
 export function pollInterval(env: AccountsEnvironment) {
@@ -1005,7 +1005,7 @@ export class AccountService {
         return { fresh: false, receipt: old, taken: undefined };
       }
       const receipt: StoredSend = { status: "sending", idempotencyKey, digest };
-      const taken = kind === "send" ? await takeSend(tx, accountId, Date.now()) : undefined;
+      const taken = kind === "send" ? await takeSend(tx, accountId, Date.now(), sendLimitPerDay(this.env)) : undefined;
       await tx.put(key, receipt);
       return { fresh: true, receipt, taken };
     });
@@ -1633,7 +1633,7 @@ export class AccountService {
         const existing = await tx.get<StoredSend>(key);
         if (existing) { if (existing.digest !== digest) throw new ProviderError("idempotency_conflict", 409); return { fresh: false, receipt: existing, taken: undefined }; }
         const receipt: StoredSend = { status: "sending", idempotencyKey, digest };
-        const taken = await takeSend(tx, accountId, Date.now());
+        const taken = await takeSend(tx, accountId, Date.now(), sendLimitPerDay(this.env));
         await tx.put(key, receipt);
         return { fresh: true, receipt, taken };
       });

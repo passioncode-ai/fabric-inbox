@@ -10,6 +10,7 @@ import type { Member, MemberLevel } from "../lib/members";
 import { normaliseAccountId, toolFitsScope } from "./scope";
 import { TOOL_NEEDS } from "./tool-capabilities";
 import { z } from "zod";
+import { KEY_DAILY_SENDS } from "../../shared/mail/send-limits";
 
 /** What a grant lets its holder do on its mailboxes. */
 export const CAPABILITIES = ["read", "draft", "send", "organize", "delete", "create", "remove", "agents", "campaign"] as const;
@@ -166,7 +167,7 @@ export const GrantSchema = z.object({
   ]),
   mailboxes: z.array(MailboxId).min(1).max(200),
   can: Capabilities,
-  limits: z.object({ sendMode: z.enum(["drafts", "send"]), dailySendLimit: z.number().int().min(0).max(1000).nullable(), ownerApproval: z.boolean() }),
+  limits: z.object({ sendMode: z.enum(["drafts", "send"]), dailySendLimit: z.number().int().min(0).max(KEY_DAILY_SENDS.max).nullable(), ownerApproval: z.boolean() }),
   expiresAt: Instant.nullable(),
   parent: z.string().min(8).max(64).optional(),
   grantedBy: z.string().min(1).max(320),

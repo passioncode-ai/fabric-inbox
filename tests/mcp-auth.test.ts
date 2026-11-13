@@ -37,7 +37,7 @@ test("a damaged key file reads as no keys, and odd fields fall back to the safes
   const [k] = normaliseKeys({ keys: [{ id: "t", clientId: "c", level: "root", send: "always", dailySendLimit: -3 }] });
   assert.equal(k!.level, "read");
   assert.equal(k!.send, "drafts");
-  assert.equal(k!.dailySendLimit, 50);
+  assert.equal(k!.dailySendLimit, 1000, "the default daily sends (B-262)");
 });
 
 /** R2 with etags and onlyIf, enough for conditional writes. */

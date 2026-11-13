@@ -6,6 +6,7 @@
  */
 import { normaliseAccounts } from "./scope";
 import { bodyForUpdate } from "../lib/r2-json";
+import { KEY_DAILY_SENDS } from "../../shared/mail/send-limits";
 
 export const AGENT_KEYS_KEY = "config/agent-keys.json";
 
@@ -13,8 +14,8 @@ export const LEVELS = ["read", "mail", "admin"] as const;
 export type Level = (typeof LEVELS)[number];
 export const SEND_MODES = ["drafts", "send"] as const;
 export type SendMode = (typeof SEND_MODES)[number];
-export const DEFAULT_DAILY_SENDS = 50;
-export const MAX_DAILY_SENDS = 1000;
+export const DEFAULT_DAILY_SENDS: number = KEY_DAILY_SENDS.default;
+export const MAX_DAILY_SENDS: number = KEY_DAILY_SENDS.max;
 export const MAX_KEYS = 50;
 /** B-215: the standing permissions a key may hold. */
 export const STANDINGS = ["people", "keys"] as const;

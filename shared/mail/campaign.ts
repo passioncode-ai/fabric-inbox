@@ -3,20 +3,22 @@ import { msg } from "../i18n";
 
 /**
  * B-181 (SCN-089): an outreach campaign, as the person or their agent prepares it. Pure: the store keeps it, the
- * routes and tools read and write it, tests run it. The defaults are human-paced (docs/app-store/tasks/
- * 2026-10-27-outreach.md, decision 2, with their sources in the research).
+ * routes and tools read and write it, tests run it. B-262 (operator, 2026-11-13: «не ставь лимитов, по дефолту заданы
+ * 1000 емаилов в день но можно расширить по запросу») replaces the human-paced defaults of decision 2
+ * (docs/app-store/tasks/2026-10-27-outreach.md): 1000 a day, every day 08:00 to 20:00, up to a minute apart, no
+ * ramp-up; a campaign asked for more sets a higher `dailyCap`, up to `maxDailyCap`. A campaign saved before keeps
+ * the cap, window and gaps it was saved with.
  */
-export const CAMPAIGN_DEFAULTS = { dailyCap: 30, maxDailyCap: 50, gapMinutes: [5, 10] as [number, number], days: [1, 2, 3, 4, 5], start: "09:00", end: "17:00", followUpDays: 3 };
+export const CAMPAIGN_DEFAULTS = { dailyCap: 1000, maxDailyCap: 100_000, gapMinutes: [0, 1] as [number, number], days: [0, 1, 2, 3, 4, 5, 6], start: "08:00", end: "20:00", followUpDays: 3 };
 export const MAX_STEPS = 4;
 export const MAX_RECIPIENTS = 5000;
 export const MAX_FIELDS = 30;
 
 /** The default line under every campaign message (the recipient reads it, in the campaign's language: change it with the steps). */
 export const UNSUBSCRIBE_TEXT = "If you would rather not hear from me again, reply \"unsubscribe\" and I will not write again.";
-/** The ramp-up (decision 2): an account's first sending day is held to RAMP.start, each later day RAMP.perDay more, up to the cap. */
-export const RAMP = { start: 10, perDay: 5 };
-/** A campaign pauses when this share of its sends bounced, once at least RAMP.start were sent. */
+/** A campaign pauses when this share of its sends bounced, once at least BOUNCE_MIN_SENT were sent. */
 export const BOUNCE_PAUSE = 0.05;
+export const BOUNCE_MIN_SENT = 10;
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const ADDRESS = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
@@ -39,7 +41,7 @@ export const CampaignInputSchema = z.object({
     end: z.string().regex(TIME).default(CAMPAIGN_DEFAULTS.end),
   }).strict().default({}),
   dailyCap: z.number().int().min(1).max(CAMPAIGN_DEFAULTS.maxDailyCap).default(CAMPAIGN_DEFAULTS.dailyCap),
-  gapMinutes: z.tuple([z.number().int().min(1).max(120), z.number().int().min(1).max(240)]).default(CAMPAIGN_DEFAULTS.gapMinutes),
+  gapMinutes: z.tuple([z.number().int().min(0).max(120), z.number().int().min(0).max(240)]).default(CAMPAIGN_DEFAULTS.gapMinutes),
   steps: z.array(CampaignStepSchema).min(1).max(MAX_STEPS),
   stopOnReply: z.boolean().default(true),
   /** Stop everyone at the same company domain when one of them replies (free-mail domains excluded). */
@@ -127,13 +129,13 @@ export function inWindow(c: Pick<CampaignInput, "timezone" | "window">, at: numb
  * A dry run of the first step: when each of the first `count` recipients would get it, from `from`, within the
  * window, the daily cap (a rolling day) and the gaps (`random` picks inside the gap range; a test passes a fixed one).
  */
-export function plan(c: CampaignInput, count: number, from: number, random: () => number = Math.random, firstSentAt = 0): number[] {
+export function plan(c: CampaignInput, count: number, from: number, random: () => number = Math.random): number[] {
   const out: number[] = [];
   let at = from;
   const step = 60_000;
   for (let guard = 0; out.length < count && guard < 60 * 24 * 60; guard++) {
     const dayAgo = at - 86_400_000;
-    if (!inWindow(c, at) || out.filter((t) => t > dayAgo).length >= rampedCap(c.dailyCap, firstSentAt || out[0] || 0, at)) { at += 15 * step; continue; }
+    if (!inWindow(c, at) || out.filter((t) => t > dayAgo).length >= c.dailyCap) { at += 15 * step; continue; }
     out.push(at);
     const [lo, hi] = c.gapMinutes;
     at += Math.round((lo + random() * (hi - lo)) * step);
@@ -141,12 +143,6 @@ export function plan(c: CampaignInput, count: number, from: number, random: () =
   return out;
 }
 
-/** An account's cap for the rolling day that ends at `at`: the ramp from its first send, never above the campaign's. */
-export function rampedCap(cap: number, firstSentAt: number, at: number): number {
-  if (!firstSentAt) return Math.min(cap, RAMP.start);
-  const days = Math.max(0, Math.floor((at - firstSentAt) / 86_400_000));
-  return Math.min(cap, RAMP.start + RAMP.perDay * days);
-}
 
 /** The first moment at or after `at` inside the window (15-minute steps, at most 8 days ahead), or null. */
 export function nextInWindow(c: Pick<CampaignInput, "timezone" | "window">, at: number): number | null {
