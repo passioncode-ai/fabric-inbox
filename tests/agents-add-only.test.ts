@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { AGENT_TEMPLATES, LEGACY_INSTRUCTIONS } from "../workers/agents/definition";
+import { AGENT_TEMPLATES, LEGACY_INSTRUCTIONS, OFFERED_TEMPLATES, RETIRED_TEMPLATES, withNewAgentDefaults } from "../workers/agents/definition";
 
 type LockEntry = { digest: string; shipped: string; retired?: { date: string; reason: string } };
 const lock = JSON.parse(readFileSync(new URL("../workers/agents/shipped.lock.json", import.meta.url), "utf8")) as { schema: string; entries: Record<string, LockEntry> };
@@ -50,4 +50,20 @@ test("every template in the catalogue is in the lock", () => {
 test("the digest is the add-only-catalog pattern's: sorted keys, compact JSON", () => {
   assert.equal(digest({ b: 1, a: [{ d: 2, c: 3 }] }), digest({ a: [{ c: 3, d: 2 }], b: 1 }));
   assert.equal(digest({ a: "é" }), "sha256:" + createHash("sha256").update('{"a":"é"}').digest("hex"));
+});
+
+test("B-253: retired templates are exactly the ones marked in the lock, and none is offered", () => {
+  const marked = Object.entries(lock.entries).filter(([name, e]) => name.startsWith("template:") && e.retired).map(([name]) => name.slice(9)).sort();
+  assert.deepEqual([...RETIRED_TEMPLATES].sort(), marked);
+  for (const key of RETIRED_TEMPLATES) assert.ok(!(key in OFFERED_TEMPLATES), `${key} is retired and still offered`);
+  assert.deepEqual(Object.keys(OFFERED_TEMPLATES).sort(), ["billing-auto", "sales-auto", "support-auto"]);
+  for (const template of Object.values(OFFERED_TEMPLATES)) assert.equal(template.replyPolicy?.mode, "auto");
+});
+
+test("B-253: a new agent with no mode answers by itself; a mode given is kept", () => {
+  assert.deepEqual(withNewAgentDefaults({ name: "A", instructions: "x" }), { name: "A", instructions: "x", replyPolicy: { mode: "auto" } });
+  assert.deepEqual(withNewAgentDefaults({ name: "A", replyPolicy: { dailySendLimit: 5 } }), { name: "A", replyPolicy: { dailySendLimit: 5, mode: "auto" } });
+  const drafting = { name: "A", replyPolicy: { mode: "draft" } };
+  assert.equal(withNewAgentDefaults(drafting), drafting);
+  assert.equal(withNewAgentDefaults(null), null);
 });

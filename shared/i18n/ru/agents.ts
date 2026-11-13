@@ -67,7 +67,7 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"Saved {name}, version {version}. Put it on an address under Addresses → Who answers.": "«{name}» сохранён, версия {version}. Назначьте его на адрес в разделе «Адреса → Кто отвечает».",
 	"Start from": "Начать с",
 	"Blank": "Пустой",
-	"Drafts every answer until you change its policy.": "Готовит черновики всех ответов, пока вы не измените правила ответа.",
+	"Answers by itself from the start; you can make it draft instead.": "Сразу отвечает сам; можно переключить на черновики.",
 	"Create agent": "Создать агента",
 	"Saved {name}, version {version}.": "«{name}» сохранён, версия {version}.",
 	"Not saved: {error}": "Не сохранено: {error}",

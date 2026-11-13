@@ -2,9 +2,33 @@
   "schema": "add-only-lock/1",
   "note": "R28 (operator, 2026-11-11): a shipped agent template or prompt is never changed or deleted. A changed one ships beside it under a new name; one leaves only by a retired mark with its date and reason. tests/agents-add-only.test.ts checks this file.",
   "entries": {
-    "legacy-instructions": { "digest": "sha256:e55059441c566f0c85c5d42bf8dc80198cb9545af842e893b18161673a0a4f88", "shipped": "2026-11-12" },
-    "template:support": { "digest": "sha256:47b000ab46e8665e399f9b99432f19e4264449a69cde9d8db1b3c6da98a7dbb7", "shipped": "2026-11-12" },
-    "template:sales": { "digest": "sha256:14dff9f7b3897b817d263aba6427809b69f9d462186c8ceff67dc600aabe7678", "shipped": "2026-11-12" },
-    "template:billing": { "digest": "sha256:fdf4b32e162230657cf6df2f86dbe0443f37de33fc2fbd8763cadf5baf4044b3", "shipped": "2026-11-12" }
+    "legacy-instructions": {
+      "digest": "sha256:e55059441c566f0c85c5d42bf8dc80198cb9545af842e893b18161673a0a4f88",
+      "shipped": "2026-11-12"
+    },
+    "template:support": {
+      "digest": "sha256:47b000ab46e8665e399f9b99432f19e4264449a69cde9d8db1b3c6da98a7dbb7",
+      "shipped": "2026-11-12",
+      "retired": {
+        "date": "2026-11-13",
+        "reason": "B-253, operator 2026-11-13: a new agent answers by itself; replaced by the same template with mode auto (support-auto)"
+      }
+    },
+    "template:sales": {
+      "digest": "sha256:14dff9f7b3897b817d263aba6427809b69f9d462186c8ceff67dc600aabe7678",
+      "shipped": "2026-11-12",
+      "retired": {
+        "date": "2026-11-13",
+        "reason": "B-253, operator 2026-11-13: a new agent answers by itself; replaced by the same template with mode auto (sales-auto)"
+      }
+    },
+    "template:billing": {
+      "digest": "sha256:fdf4b32e162230657cf6df2f86dbe0443f37de33fc2fbd8763cadf5baf4044b3",
+      "shipped": "2026-11-12",
+      "retired": {
+        "date": "2026-11-13",
+        "reason": "B-253, operator 2026-11-13: a new agent answers by itself; replaced by the same template with mode auto (billing-auto)"
+      }
+    }
   }
 }
