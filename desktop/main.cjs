@@ -59,7 +59,7 @@ app.enableSandbox();
 const ownsInstance = app.requestSingleInstanceLock();
 if (!ownsInstance) app.quit();
 // fabric-inbox://connect links (ADR-0115 §4): a local hub asks to connect, a person allows here.
-if (typeof app.setAsDefaultProtocolClient === "function") app.setAsDefaultProtocolClient(connector.SCHEME);
+if (typeof app.setAsDefaultProtocolClient === "function" && policy.registersScheme(app.isPackaged)) app.setAsDefaultProtocolClient(connector.SCHEME);
 const pendingLinks = [];
 let appReady = false;
 let connecting = false;
