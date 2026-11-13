@@ -120,7 +120,7 @@ import { AgentConflict, AgentInvalid, AgentNotFound } from "./errors";
 import { msg } from "../../shared/i18n";
 import { labelSupportTopics, labelThread, topicBudget, type TopicLabeler } from "../lib/support-topics";
 import { createWorkersAI } from "workers-ai-provider";
-import { DEFAULT_AGENT_MODEL } from "./model";
+import { withReasoning, workersAiAgentModel } from "./model";
 export { AgentConflict, AgentInvalid, AgentNotFound, registryError, type RegistryErrorCode } from "./errors";
 
 type Row = Record<string, string | number | null>;
@@ -203,8 +203,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
 
   /** B-238: the Workers AI model that labels support conversations (test seam). */
   protected topicLabeler(): { label: TopicLabeler; model: string } {
-    const model = this.env.SUPPORT_TOPIC_MODEL || DEFAULT_AGENT_MODEL;
-    const workersai = createWorkersAI({ binding: this.env.AI });
+    const model = workersAiAgentModel(this.env.SUPPORT_TOPIC_MODEL);
+    const workersai = createWorkersAI({ binding: withReasoning(this.env.AI) });
     return { model, label: (message) => labelThread(workersai(model as Parameters<typeof workersai>[0]), message) };
   }
 

@@ -5,7 +5,7 @@ import { allServedDomains } from "../lib/mailbox-store";
 import { agentAccounts } from "../lib/agent-status";
 import { stripHtmlToText, textToHtml } from "../lib/email-helpers";
 import { callMcpTool, toolResultText, type ToolTokens } from "../automation/mcp";
-import { openRouterAgentModel, openRouterCheck, openRouterParaphrase, replyReasoning, workersAiModel, workersAiParaphrase } from "./model";
+import { openRouterAgentModel, openRouterCheck, openRouterParaphrase, replyReasoning, workersAiCheck, workersAiModel, workersAiParaphrase } from "./model";
 import { legacyAgentId, readAssignment } from "./definition";
 import type { RunnerDeps } from "./runner";
 import { msg } from "../../shared/i18n";
@@ -113,7 +113,7 @@ export function sharedDeps(env: Env, registry: Registry): Omit<RunnerDeps, "mail
       },
     } : {}),
     // With a reply-lane key, answers are written on OpenRouter and checked by another vendor before they
-    // leave; without one, the server's own Workers AI writes them and nothing checks them.
+    // leave; without one, the server's own Workers AI writes them and a Workers AI model of another vendor checks them (B-258).
     ...(env.OPENROUTER_API_KEY ? {
       model: (request) => openRouterAgentModel(env.OPENROUTER_API_KEY!, request, { primary: env.REPLY_MODEL, fallback: env.REPLY_FALLBACK_MODEL,
         reasoning: replyReasoning(env.REPLY_REASONING) }),
@@ -122,7 +122,8 @@ export function sharedDeps(env: Env, registry: Registry): Omit<RunnerDeps, "mail
     } satisfies Pick<RunnerDeps, "model" | "paraphrase" | "check"> : {
       model: (request) => workersAiModel(env.AI, env.AGENT_MODEL, request),
       paraphrase: (text) => workersAiParaphrase(env.AI, env.AGENT_MODEL, text),
-    }),
+      check: (writer, input) => workersAiCheck(env.AI, writer, input),
+    } satisfies Pick<RunnerDeps, "model" | "paraphrase" | "check">),
     knowledge: {
       async search(query, collections, limit) {
         if (!env.KNOWLEDGE) throw new Error("knowledge is not configured on this server");

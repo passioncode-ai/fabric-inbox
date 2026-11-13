@@ -9,6 +9,7 @@ import {
 	stepCountIs,
 } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
+import { withReasoning, workersAiAgentModel } from "../agents/model";
 import { z } from "zod";
 import {
 	toolListEmails,
@@ -270,12 +271,12 @@ export class EmailAgent extends AIChatAgent<any> {
 	async onChatMessage(onFinish: any) {
 		const env = this.env as Env;
 		const mailboxId = this.name;
-		const workersai = createWorkersAI({ binding: env.AI });
+		const workersai = createWorkersAI({ binding: withReasoning(env.AI) });
 		const tools = createEmailTools(env, mailboxId);
 		const systemPrompt = await getSystemPrompt(env, mailboxId);
 
 		const result = streamText({
-			model: workersai((env.AGENT_MODEL || "@cf/moonshotai/kimi-k2.5") as Parameters<typeof workersai>[0]),
+			model: workersai(workersAiAgentModel(env.AGENT_MODEL) as Parameters<typeof workersai>[0]),
 			system: systemPrompt,
 			// The chat keeps its whole history for the operator, but the model only
 			// needs the recent part; an unbounded history eventually overflows it.
