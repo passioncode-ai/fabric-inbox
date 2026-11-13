@@ -8,6 +8,7 @@ export interface Env extends Cloudflare.Env {
 	/** JSON map of domain → "reject" | "catch_all:<address>"; unknown domains reject. */
 	UNKNOWN_ADDRESS_POLICY?: string;
 	AUTOMATION_MCP_HOSTS?: string;
+	/** JSON map credential name → { host, token }; each `AUTOMATION_TOOL_TOKEN_<NAME>` secret adds one more (B-264, `readToolTokens`). */
 	AUTOMATION_TOOL_TOKENS?: string;
 	AUTOMATION_MODEL?: string;
 	/** Workers AI model that sorts mail into described categories; defaults to AUTOMATION_MODEL, then llama-4-scout. */
