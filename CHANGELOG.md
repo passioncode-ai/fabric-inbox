@@ -5,6 +5,11 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+**Cleaner tool texts for agents** (B-260). The descriptions agents read for each tool, and the agent protocol's
+reference, no longer use long dashes; a test keeps them out.
+
 ## 1.6.12 (2026-11-13)
 
 **An agent that writes campaigns but may not send asks you to start one** (B-246). An agent that may prepare campaigns
