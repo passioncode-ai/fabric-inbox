@@ -48,6 +48,8 @@ const bundle = await build({
           const env = this.env;
           return {...real,
             injection: async () => ({ flagged: false }),
+            // B-258: every server now checks an auto answer by another vendor; this one approves, as the real one would here.
+            check: async () => ({ approved: true, reason: 'test checker', model: 'test/checker' }),
             // B-153: a gap list scripted in test/gap-list.json ({ tool, revision, gaps, throw }); every call is logged.
             callTool: async (grant, args) => {
               // B-237 gap 8: a sales agent scripted in test/lead.json ({ answers: { tool: answer } }); every call is logged.

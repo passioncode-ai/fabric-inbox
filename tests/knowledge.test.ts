@@ -47,7 +47,9 @@ const bundle = await build({
         deps(mailboxId) {
           const real = super.deps(mailboxId);
           const env = this.env;
-          return {...real, injection: async () => ({ flagged: false }), callTool: forbidden,
+          return {...real, injection: async () => ({ flagged: false }),
+            // B-258: every server now checks an auto answer by another vendor; this one approves, as the real one would here.
+            check: async () => ({ approved: true, reason: 'test checker', model: 'test/checker' }), callTool: forbidden,
             knowledge: env.BROKEN_KNOWLEDGE === '1' ? { search: async () => { throw new Error('index offline'); } } : real.knowledge,
             model: async (request) => {
               await env.BUCKET.put('test/last-system.txt', request.system);

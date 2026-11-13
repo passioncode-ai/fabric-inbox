@@ -28,7 +28,7 @@ export interface Env extends Cloudflare.Env {
 	OKOLOS_FEED_URL?: string;
 	/** B-180: the feed's Ed25519 public key (base64); absent, Okolos's published one. */
 	OKOLOS_FEED_PUBLIC_KEY?: string;
-	/** Workers AI model for address agents and the chat; defaults to @cf/moonshotai/kimi-k2.5. */
+	/** Workers AI model for address agents and the chat; defaults to @cf/qwen/qwen3.8-27b (`DEFAULT_AGENT_MODEL`; a retired id is replaced, B-258). */
 	AGENT_MODEL?: string;
 	/** OpenRouter key for reply agents (secret): with it, answers are written by REPLY_MODEL (fallback REPLY_FALLBACK_MODEL) and approved by a checker of another vendor. */
 	OPENROUTER_API_KEY?: string;

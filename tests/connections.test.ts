@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { CONNECTIONS_EXTENSION, SCAN_MODEL, connectionsOf } from "../workers/lib/connections";
-import { REPLY_FALLBACK_MODEL, REPLY_MODEL, checkersFor } from "../workers/agents/model";
+import { DEFAULT_AGENT_MODEL, REPLY_FALLBACK_MODEL, REPLY_MODEL, WORKERS_AI_CHECK_MODELS, checkersFor } from "../workers/agents/model";
 
 const full = { OPENROUTER_API_KEY: "sk-synthetic", CLOUDFLARE_API_TOKEN: "synthetic", CLOUDFLARE_ACCOUNT_ID: "0".repeat(32), GOOGLE_CLIENT_ID: "synthetic",
   AGENT_REGISTRY: {}, CATEGORIES: {}, KNOWLEDGE: {} } as never;
@@ -28,14 +28,18 @@ test("B-209: with every setting, the stores, the channels and each model the age
   assert.equal(JSON.stringify(list).includes("synthetic"), false, "a setting's value is never named");
 });
 
-test("B-209: without a token or a model key the connections say degraded, with the reason", () => {
+test("B-209, B-258: without a token the connections say degraded; without a model key Workers AI writes and another vendor checks", () => {
   const list = connectionsOf({ AGENT_REGISTRY: {} } as never);
   const by = Object.fromEntries(list.map((c) => [c.id, c]));
   assert.equal(by.cloudflare.state, "degraded");
   assert.match(by.cloudflare.reason!, /No Cloudflare token/);
-  assert.equal(by["model-writer"].state, "degraded");
-  assert.match(by["model-writer"].reason!, /No OpenRouter key/);
-  assert.equal(list.some((c) => c.id.startsWith("model-checker-")), false);
+  assert.equal(by["model-writer"].state, "ok");
+  assert.equal(by["model-writer"].target, DEFAULT_AGENT_MODEL);
+  assert.deepEqual(list.filter((c) => c.id.startsWith("model-checker-")).map((c) => c.target), checkersFor(DEFAULT_AGENT_MODEL, WORKERS_AI_CHECK_MODELS));
+  assert.equal(list.some((c) => c.target === DEFAULT_AGENT_MODEL && c.id.startsWith("model-checker-")), false, "never the writer's own vendor");
+  // A retired model a server still names is shown as what answers for it.
+  const retired = connectionsOf({ AGENT_REGISTRY: {}, AGENT_MODEL: "@cf/moonshotai/kimi-k2.5" } as never);
+  assert.equal(retired.find((c) => c.id === "model-writer")!.target, DEFAULT_AGENT_MODEL);
   assert.equal(by.gmail, undefined);
 });
 

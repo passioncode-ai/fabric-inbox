@@ -4,7 +4,7 @@
 // read every minute, and a connection's state here is what its settings say, not a live probe.
 import type { Env } from "../types";
 import { cloudflareApi } from "../routing/cloudflare-api";
-import { DEFAULT_AGENT_MODEL, REPLY_FALLBACK_MODEL, REPLY_MODEL, checkersFor } from "../agents/model";
+import { REPLY_FALLBACK_MODEL, REPLY_MODEL, WORKERS_AI_CHECK_MODELS, checkersFor, workersAiAgentModel } from "../agents/model";
 import { DEFAULT_CATEGORY_MODEL } from "../categories/classify";
 
 export const CONNECTIONS_EXTENSION = "https://fabric.passioncode.ai/agent-contract/extensions/connections/0.1";
@@ -43,8 +43,11 @@ export function connectionsOf(env: Settings & Parameters<typeof cloudflareApi>[0
       checkersFor(writer).forEach((model, i) =>
         out.push({ id: `model-checker-${i + 1}`, kind: "model", target: model, state: "ok", purpose: "Checks an answer before it is sent (another vendor than the writer)." }));
     } else {
-      out.push({ id: "model-writer", kind: "model", target: env.AGENT_MODEL || DEFAULT_AGENT_MODEL, state: "degraded", purpose: "Writes the reply agents' answers.",
-        reason: "No OpenRouter key: the server's own Workers AI writes, and no checker approves an answer before it is sent." });
+      // B-258: without an OpenRouter key the server's own Workers AI writes and a Workers AI model of another vendor checks.
+      const writer = workersAiAgentModel(env.AGENT_MODEL);
+      out.push({ id: "model-writer", kind: "model", target: writer, state: "ok", purpose: "Writes the reply agents' answers." });
+      checkersFor(writer, WORKERS_AI_CHECK_MODELS).forEach((model, i) =>
+        out.push({ id: `model-checker-${i + 1}`, kind: "model", target: model, state: "ok", purpose: "Checks an answer before it is sent (another vendor than the writer)." }));
     }
     out.push({ id: "model-scan", kind: "model", target: SCAN_MODEL, state: "ok", purpose: "Looks for text that tries to steer an agent." });
   }

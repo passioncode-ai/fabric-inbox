@@ -19,4 +19,4 @@ TEAM_DOMAIN=https://your-team.cloudflareaccess.com
 # AUTOMATION_TOOL_TOKENS={"ORDERS_API":"..."}
 
 # Models (Workers AI has no local mode; runs fail closed under npm run dev).
-# AGENT_MODEL=@cf/moonshotai/kimi-k2.5
+# AGENT_MODEL=@cf/qwen/qwen3.8-27b

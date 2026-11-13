@@ -7,6 +7,13 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+**Agents keep answering after Cloudflare retires Kimi** (B-258). Workers AI stops serving the Kimi model on
+November 20, 2026. The agent panel, support topic labels and reply agents on a server without an OpenRouter key now
+use Qwen 3.8 27B, and a server set to a retired model gets it too.
+
+**Every answer an agent sends by itself is checked** (B-254). On a server without an OpenRouter key, a model of
+another vendor on the server's own Workers AI now checks each answer before it is sent, as on a server with one.
+
 **Many found passages no longer hide an agent's rules from its check** (B-257). The model that checks a reply agent's
 answer now reads the agent's instructions before the passages the search found. When the passages do not all fit,
 the lowest-ranked ones are left out whole and named in the run's record, instead of cutting off the end of the
