@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+**An agent that writes campaigns but may not send asks you to start one** (B-246). An agent that may prepare campaigns
+but not send mail can now ask to start a campaign; the request waits for your approval in Agent access, and the
+approval holds for the campaign as you saw it, its steps, its daily cap and the people still waiting. A campaign
+changed after you approved it needs a new approval, and one approval starts it once. Basis: the packet's R-6;
+`tests/campaign-owner-send.test.ts`.
+
 ## 1.6.11 (2026-11-13)
 
 **A server can have an architect** (B-246, B-232). A person an administrator makes an architect reads and sorts the

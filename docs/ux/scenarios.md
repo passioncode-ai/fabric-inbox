@@ -2144,7 +2144,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** The organization's server holds an outreach address; the organization's access owner approved the agent's request (SCN-100).
 - **Steps:**
   1. The agent prepares a campaign on its address: recipients, steps, the daily cap -> drafts, under the campaign limits (at most 50 a day, ramp-up, pause on bounces, unsubscribe in every message).
-  2. The organization's owner says send for that campaign -> the agent sends, step by step, and stops a sequence when someone replies.
+  2. The organization's owner says send for that campaign -> the agent asks to launch it, the request waits in Settings → Agent access (Waiting for your approval), and the owner approves the campaign as it is then: its steps, cap, window and the people still waiting; the agent launches it with that approval, once, and the server sends step by step and stops a sequence when someone replies. A campaign changed after the approval needs a new one.
   3. Someone replies with interest -> the reply is handed to the organization's sales agent with its thread; an unsubscribe goes to the do-not-write list.
 - **Expected result:** Outreach runs from the organization's own mailbox through its own agent, inside the caps, and every human answer reaches sales.
 - **Alt paths:** Without the owner's send, the campaign stays drafts. A bounce rate over 5% pauses it and says why.
@@ -2152,6 +2152,6 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **States covered:** empty, loading, error, success
 - **Errors & recovery:** A send the server refuses keeps the campaign paused with the reason; nothing is sent twice.
 - **Status:** draft
-- **Coverage:** none yet (B-246 W5)
+- **Coverage:** step 2: `tests/campaign-owner-send.test.ts` (B-246 W5a)
 - **Product:** unobserved
-- **Today:** Not built. Campaigns exist for a key that already has mail access; campaign replies reach no sales agent.
+- **Today:** Step 2 is built (1.6.12, packet R-6): a key that may prepare campaigns but not send launches one only through the owner's approval, bound to the campaign as it was. The agent itself (W5) and campaign replies reaching a sales agent are not built.

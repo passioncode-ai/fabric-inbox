@@ -51,7 +51,7 @@ function inputs(tool: ToolDef): string {
     const required = !schema.isOptional();
     const dflt = defaultOf(schema);
     const bits = [`\`${name}\``, typeOf(schema), required ? "required" : dflt !== undefined ? `default ${JSON.stringify(dflt)}` : "optional"];
-    return `${bits.join(" · ")}${schema.description ? ` — ${schema.description}` : ""}`;
+    return `${bits.join(" · ")}${schema.description ? `: ${schema.description}` : ""}`;
   }).map((l) => `- ${cell(l)}`).join("<br>");
 }
 
@@ -59,12 +59,12 @@ const LEVEL_TITLE = { read: "Reading (level `read` and up)", mail: "Mail (level 
 
 export function renderTools(): string {
   const out: string[] = [START, ""];
-  out.push(`${TOOLS.length} tools. **Sends** — hidden from a *Drafts only* key and counted against its daily sends. **Two steps** — the first call returns a summary and a code (see [Two steps](#two-steps)). **Changes nothing** — not journalled.`, "");
+  out.push(`${TOOLS.length} tools. **Sends**: hidden from a *Drafts only* key and counted against its daily sends; **sends, the owner approves** stays for that key, and its call waits for the owner's approval (B-246 W5a). **Two steps**: the first call returns a summary and a code (see [Two steps](#two-steps)). **Changes nothing**: not journalled.`, "");
   for (const level of ["read", "mail", "admin"] as const) {
     const tools = TOOLS.filter((t) => t.level === level);
     out.push(`### ${LEVEL_TITLE[level]}`, "", "| Tool | What it does | Inputs | Kind | Routes |", "|---|---|---|---|---|");
     for (const t of tools) {
-      const kind = [t.readOnly ? "changes nothing" : "", t.sends ? "**sends**" : "", t.confirm ? "**two steps**" : ""].filter(Boolean).join(", ") || "changes";
+      const kind = [t.readOnly ? "changes nothing" : "", t.sends ? (t.ownerSends ? "**sends, the owner approves**" : "**sends**") : "", t.confirm ? "**two steps**" : ""].filter(Boolean).join(", ") || "changes";
       out.push(`| \`${t.name}\` | ${cell(t.description)} | ${inputs(t)} | ${kind} | ${t.routes.map((r) => `\`${r}\``).join("<br>")} |`);
     }
     out.push("");

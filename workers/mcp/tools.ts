@@ -2194,9 +2194,11 @@ const changeSuppression = defineTool({
 });
 
 const launchCampaign = defineTool({
-  name: "launch_campaign", title: "Start or resume a campaign", level: "mail", sends: true, target: (a) => a.campaignId,
-  description: "Starts a draft campaign, or resumes a paused one: the server then sends it from the chosen account inside its window, daily cap and gaps, follow-ups in the same conversation, until each person replies, unsubscribes, bounces or has had every step. Every message carries List-Unsubscribe: a one-click link to the server's own unsubscribe page (made at the first launch) and a reply to the sender. Real mail to real people: confirm the list, the preview and the dry run with the person you work for first. Two calls.",
+  name: "launch_campaign", title: "Start or resume a campaign", level: "mail", sends: true, ownerSends: true, target: (a) => a.campaignId,
+  description: "Starts a draft campaign, or resumes a paused one: the server then sends it from the chosen account inside its window, daily cap and gaps, follow-ups in the same conversation, until each person replies, unsubscribes, bounces or has had every step. Every message carries List-Unsubscribe: a one-click link to the server's own unsubscribe page (made at the first launch) and a reply to the sender. Real mail to real people: confirm the list, the preview and the dry run with the person you work for first. A key that may prepare campaigns but not send (Drafts only, or no send on the sender) gets the owner's approval instead (Settings → Agent access): it is bound to the campaign as it is then, its steps, cap, window and the people still waiting, so a change after it needs a new one. Two calls.",
   input: { campaignId },
+  // B-246 W5a (packet R-6): the confirmation, and the owner's approval, hold only for the campaign as it was read.
+  bind: async (a, ctx) => String(((await get(ctx, `/api/campaigns/${enc(a.campaignId)}`)) as { fingerprint?: unknown }).fingerprint ?? ""),
   confirm: async (a, ctx) => {
     const c = (await get(ctx, `/api/campaigns/${enc(a.campaignId)}`)) as { name: string; sender: string; dailyCap: number; steps: unknown[]; counts: Record<string, number> };
     const open = (c.counts.queued ?? 0) + (c.counts.active ?? 0);
