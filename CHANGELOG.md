@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+**Access granted to an agent can now take effect** (B-246). A server can let the access it grants decide what each
+agent key reaches, mailbox by mailbox, so an approved request widens the key without a new one. It stays off until
+the owner turns it on; until then nothing changes.
+
 ## 1.6.9 (2026-11-13)
 
 **Agents keep answering after Cloudflare retires Kimi** (B-258). Workers AI stops serving the Kimi model on

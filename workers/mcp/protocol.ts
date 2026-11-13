@@ -37,6 +37,11 @@ export interface ToolContext {
   api: Api; principal: Principal; recipientCheck?: RecipientCheck | null;
   /** B-246 W2c: the caller's grants, read once per request, for the shadow decision beside today's checks. */
   grants?: () => Promise<Grant[]>;
+  /**
+   * B-246 W2c, the cut-over: when the grants decide (`GRANTS_DECIDE=on`), whether a tool is the caller's and the API its
+   * call uses, narrowed to the mailboxes the grants give it. Absent: today's level and accounts decide.
+   */
+  scope?: { allowed(tool: ToolDef): boolean; api(tool: ToolDef): Api };
 }
 
 export interface ToolDef<S extends ZodRawShape = ZodRawShape> {
@@ -207,12 +212,15 @@ export async function runTool(tool: ToolDef, rawArgs: Record<string, unknown>, c
   };
   // A caller outside the tool's level never gets here (the tool is not registered), but the check stays
   // so a registration mistake fails closed.
-  const allowed = toolsFor(ctx.principal, [tool]).length > 0;
-  await shadowGrants(tool, ctx, allowed);
+  const today = toolsFor(ctx.principal, [tool]).length > 0;
+  await shadowGrants(tool, ctx, today);
+  const allowed = ctx.scope ? ctx.scope.allowed(tool) : today;
   if (!allowed) {
     await journal("refused", "not allowed for this key");
     return text({ error: `This key may not use ${tool.name}.` }, true);
   }
+  // B-246 W2c: under the grants, the call reaches only the mailboxes they give this tool.
+  if (ctx.scope) ctx = { ...ctx, api: ctx.scope.api(tool) };
   const { confirm, ...args } = rawArgs as Record<string, unknown> & { confirm?: string };
   if (tool.confirm) {
     const hash = await argsHash(args);
@@ -311,7 +319,7 @@ export interface ServerInfo { name: string; version: string; instructions: strin
 export function buildServer(info: ServerInfo, tools: readonly ToolDef[], ctx: ToolContext, ledger: Ledger): McpServer {
   const server = new McpServer({ name: info.name, version: info.version },
     { instructions: info.instructions, capabilities: { experimental: { [NARROWING_CAPABILITY]: { ...NARROWING } } } });
-  for (const tool of toolsFor(ctx.principal, tools)) {
+  for (const tool of ctx.scope ? tools.filter((t) => ctx.scope!.allowed(t)) : toolsFor(ctx.principal, tools)) {
     const input = tool.confirm ? { ...tool.input, confirm: CONFIRM_FIELD } : tool.input;
     server.registerTool(tool.name, {
       title: tool.title,
