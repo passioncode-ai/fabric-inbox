@@ -454,7 +454,7 @@ const getSendStatus = defineTool({
 
 const listAddresses = defineTool({
   name: "list_addresses", title: "List addresses", level: "read", readOnly: true,
-  description: "The Cloudflare addresses this server keeps mail for: each with its display name, its agent, where a copy is forwarded and any delivery problem; the served domains with their catch-all; recent mail to addresses that do not exist; and incomingFailures — mail the server could neither take nor refuse (whom it was for, when, its size, why; never the sender or content), which clear_incoming_failures removes once read. Give address to get one address's settings: display name, signature, its reply agent, its forwarding copy, and the chat assistant's instructions for that mailbox (agentSystemPrompt, set with update_address assistantPrompt). An address paused carries `paused` (since when); `pausedUnknown: true` means the pause list could not be read, so `paused: null` does not prove an address takes mail.",
+  description: "The Cloudflare addresses this server keeps mail for: each with its display name, its agent, where a copy is forwarded and any delivery problem; the served domains with their catch-all; recent mail to addresses that do not exist; and incomingFailures: mail the server could neither take nor refuse (whom it was for, when, its size, why; never the sender or content), which clear_incoming_failures removes once read. Give address to get one address's settings: display name, signature, its reply agent, its forwarding copy, and the chat assistant's instructions for that mailbox (agentSystemPrompt, set with update_address assistantPrompt). An address paused carries `paused` (since when); `pausedUnknown: true` means the pause list could not be read, so `paused: null` does not prove an address takes mail.",
   input: { address: address.optional() },
   routes: ["GET /api/project-addresses", "GET /api/v1/mailboxes", "GET /api/v1/mailboxes/:mailboxId", "GET /api/v1/config"],
   async call(a, ctx) {
@@ -499,7 +499,7 @@ const cloudflareAccount = z.string().regex(/^[0-9a-f]{32}$/).describe("A Cloudfl
 
 const listDomains = defineTool({
   name: "list_domains", title: "List domains", level: "read", readOnly: true,
-  description: "The domains of the shown Cloudflare accounts, each with its account and whether it is served here, the accounts themselves, what a token needs, and — with destinations — `destinations: { account, destinations }`, the forwarding destinations of one account (the server's unless account is given; a copy must be confirmed in its domain's own account). Give domain for one domain's full routing detail. Connected with no domain listed: an account may be hidden (`accounts[].shown`), a token may see only some zones (`problems`), or the account has none yet; adding a domain to Cloudflare is the person's step, at https://dash.cloudflare.com/?to=/:account/add-site.",
+  description: "The domains of the shown Cloudflare accounts, each with its account and whether it is served here, the accounts themselves, what a token needs, and (with destinations) `destinations: { account, destinations }`, the forwarding destinations of one account (the server's unless account is given; a copy must be confirmed in its domain's own account). Give domain for one domain's full routing detail. Connected with no domain listed: an account may be hidden (`accounts[].shown`), a token may see only some zones (`problems`), or the account has none yet; adding a domain to Cloudflare is the person's step, at https://dash.cloudflare.com/?to=/:account/add-site.",
   input: { domain: domain.optional(), destinations: z.boolean().default(false).describe("Also list the forwarding destinations"), account: cloudflareAccount.optional().describe("With destinations: whose forwarding destinations to list (default: this server's account). It does not filter the domains") },
   routes: ["GET /api/domains", "GET /api/domains/:domain", "GET /api/domains/destinations"],
   async call(a, ctx) {
@@ -1175,7 +1175,7 @@ const messageRefsOf = (messages: { accountId: string; messageId: string }[]) => 
 
 const discardMessages = defineTool({
   name: "discard_messages", title: "Discard messages", level: "mail", target: (a) => `${a.messages.length} message(s)${a.learn === false ? " (no rule)" : ""}`,
-  description: "Discards messages, as ⌘⌫ does in the app: each leaves the inbox for Discarded (a Cloudflare mailbox's Discarded folder, Gmail's own \"Discarded\" label, an IMAP or Outlook folder named Discarded, made when missing), marked read. Discarded counts as deleted — out of the inbox, its counts and categories — but is kept 30 days and can be brought back (restore_discarded). Each discard also learns a rule keyed on the message's mailing list (List-Id), else its sender, so future mail like it goes straight to Discarded; learned names each rule and created: true the first time. learn: false discards without teaching anything. Mail in a Gmail, IMAP or Outlook account's Spam is refused (moving it out would teach the provider it is not spam). Mail from someone any mailbox or account of the workspace wrote to, replies in a conversation it took part in, mail from the workspace's own domains, and allowed senders are never discarded on arrival. Each moved message in results names learnedRuleId, the rule its discard taught (absent when it taught nothing). Discarding is undone with restore_discarded (unlearn: true with each message's ruleId takes that rule's lesson back).",
+  description: "Discards messages, as ⌘⌫ does in the app: each leaves the inbox for Discarded (a Cloudflare mailbox's Discarded folder, Gmail's own \"Discarded\" label, an IMAP or Outlook folder named Discarded, made when missing), marked read. Discarded counts as deleted (out of the inbox, its counts and categories) but is kept 30 days and can be brought back (restore_discarded). Each discard also learns a rule keyed on the message's mailing list (List-Id), else its sender, so future mail like it goes straight to Discarded; learned names each rule and created: true the first time. learn: false discards without teaching anything. Mail in a Gmail, IMAP or Outlook account's Spam is refused (moving it out would teach the provider it is not spam). Mail from someone any mailbox or account of the workspace wrote to, replies in a conversation it took part in, mail from the workspace's own domains, and allowed senders are never discarded on arrival. Each moved message in results names learnedRuleId, the rule its discard taught (absent when it taught nothing). Discarding is undone with restore_discarded (unlearn: true with each message's ruleId takes that rule's lesson back).",
   input: { messages: messageRefs, learn: z.boolean().default(true).describe("Learn a rule from each message (the default)") },
   routes: ["POST /api/discard"],
   call: (a, ctx) => post(ctx, "/api/discard", { messages: messageRefsOf(a.messages), learn: a.learn }),
@@ -1183,7 +1183,7 @@ const discardMessages = defineTool({
 
 const restoreDiscarded = defineTool({
   name: "restore_discarded", title: "Bring back discarded messages", level: "mail", target: (a) => `${a.messages.length} message(s)${a.unlearn ? " (unlearn)" : ""}`,
-  description: "Not discarded: moves messages from Discarded back to the inbox, or with to back to the folder each was discarded from (an undo: archive, trash, spam or a Cloudflare folder; the from discard_messages answered). Answers rules: the discard rules that would discard such mail again (remove_discard_rule stops one). unlearn: true is an undo of the discard — for each message given with ruleId (the learnedRuleId discard_messages answered for it), that rule's count is taken back, and a rule the discard made goes; a message without ruleId forgets nothing, so a rule learned earlier is never removed by mistake. read: false makes them unread again. A message gives its id in the inbox in results (an IMAP move gives it a new one).",
+  description: "Not discarded: moves messages from Discarded back to the inbox, or with to back to the folder each was discarded from (an undo: archive, trash, spam or a Cloudflare folder; the from discard_messages answered). Answers rules: the discard rules that would discard such mail again (remove_discard_rule stops one). unlearn: true is an undo of the discard: for each message given with ruleId (the learnedRuleId discard_messages answered for it), that rule's count is taken back, and a rule the discard made goes; a message without ruleId forgets nothing, so a rule learned earlier is never removed by mistake. read: false makes them unread again. A message gives its id in the inbox in results (an IMAP move gives it a new one).",
   input: { messages: z.array(z.object({ accountId, messageId,
       ruleId: z.string().regex(/^[ls]-[0-9a-f]{8}$/).optional().describe("The rule this message's discard taught (learnedRuleId from discard_messages); taken back with unlearn"),
       to: z.string().regex(/^[a-z0-9_-]{1,100}$/).optional().describe("Where it goes back: the inbox when absent; for an undo, the folder discard_messages answered as its from (archive, trash, spam or a Cloudflare folder id; Gmail, IMAP and Outlook: inbox, archive or trash)") })).min(1).max(100),
@@ -1221,7 +1221,7 @@ const removeDiscardRule = defineTool({
 
 const updateDiscardAllowList = defineTool({
   name: "update_discard_allow_list", title: "Change the Always allow list", level: "admin", target: (a) => `${a.action} ${a.value}`,
-  description: "Adds a sender (full address) or a domain (and its subdomains) to the Always allow list — their mail is never discarded on arrival, whatever a rule says — or removes it. The Never spam lists count as Always allow too.",
+  description: "Adds a sender (full address) or a domain (and its subdomains) to the Always allow list (their mail is never discarded on arrival, whatever a rule says), or removes it. The Never spam lists count as Always allow too.",
   input: { value: z.string().min(1).max(320).describe("An address, or a domain such as example.com"), action: z.enum(["add", "remove"]) },
   routes: ["POST /api/discard/allowed"],
   call: (a, ctx) => post(ctx, "/api/discard/allowed", a),
@@ -1229,7 +1229,7 @@ const updateDiscardAllowList = defineTool({
 
 const deleteMessage = defineTool({
   name: "delete_message", title: "Delete a message for good", level: "mail", target: (a) => `${a.accountId} ${a.messageId}`,
-  description: "Deletes a Cloudflare message, its body and attachments permanently — it cannot be restored. Prefer move_messages to trash. Takes two calls: the first says what will be deleted and gives a code.",
+  description: "Deletes a Cloudflare message, its body and attachments permanently: it cannot be restored. Prefer move_messages to trash. Takes two calls: the first says what will be deleted and gives a code.",
   input: { accountId, messageId },
   confirm: async (a, ctx) => { const m = await readMessage(ctx, cloudflareOnly(parseAccount(a.accountId), "Deleting for good"), a.messageId, 1); return `Delete for good the message ${quoted(m.subject)} from ${quoted(m.from)} (${quoted(m.date)}) in ${a.accountId}, with ${m.attachments.length} attachment(s). It cannot be restored.`; },
   routes: ["DELETE /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/v1/mailboxes/:mailboxId/emails/:id"],
@@ -1315,7 +1315,7 @@ const newAddressSettings = {
 
 const checkAddress = defineTool({
   name: "check_address", title: "Check addresses before creating them", level: "read", readOnly: true,
-  description: "What the person sees before creating an address: the domain's state (receiving, can_receive — create_address needs connect_domain first —, needs_fix, no_token, not_visible, unknown, unavailable), whether a Cloudflare rule can be made, whether a test message is worth sending, the catch-all, and per name: available, exists, elsewhere (a Cloudflare rule sends it somewhere else, and where), invalid (and why) or restricted (this server creates only the addresses its EMAIL_ADDRESSES lists), with notes such as mail that arrived for it recently or the catch-all keeping its mail today.",
+  description: "What the person sees before creating an address: the domain's state (receiving, can_receive (create_address needs connect_domain first), needs_fix, no_token, not_visible, unknown, unavailable), whether a Cloudflare rule can be made, whether a test message is worth sending, the catch-all, and per name: available, exists, elsewhere (a Cloudflare rule sends it somewhere else, and where), invalid (and why) or restricted (this server creates only the addresses its EMAIL_ADDRESSES lists), with notes such as mail that arrived for it recently or the catch-all keeping its mail today.",
   input: { domain, localParts: z.array(z.string().max(320)).min(1).max(BATCH_MAX).describe("The names before @ to check, up to 50") },
   routes: ["GET /api/project-addresses/check"],
   // A JSON array, so a name is checked exactly as given and never split at a comma.
@@ -1335,7 +1335,7 @@ const createAddress = defineTool({
 
 const createAddresses = defineTool({
   name: "create_addresses", title: "Create several addresses", level: "admin", additive: true, target: (a) => `${a.localParts.length} on ${a.domain}`,
-  description: "Makes up to 50 addresses on one served domain with the same settings (agent, signature, copy, rule), one after another; each gets its own display name from its name unless name is given for all. Answers one row per address with its status (201 created, 409 exists, 400 refused) and steps; a failure never stops the others. One call does only what fits the server's Cloudflare budget for a request: the names it did not start come back in remaining (complete false) — call create_addresses again with them, same settings, until complete is true. Sending a name again is safe: an address that exists answers 409.",
+  description: "Makes up to 50 addresses on one served domain with the same settings (agent, signature, copy, rule), one after another; each gets its own display name from its name unless name is given for all. Answers one row per address with its status (201 created, 409 exists, 400 refused) and steps; a failure never stops the others. One call does only what fits the server's Cloudflare budget for a request: the names it did not start come back in remaining (complete false): call create_addresses again with them, same settings, until complete is true. Sending a name again is safe: an address that exists answers 409.",
   input: { domain, localParts: z.array(z.string().max(320)).min(1).max(BATCH_MAX).describe("The names before @, up to 50"), ...newAddressSettings },
   routes: ["POST /api/project-addresses/batch"],
   call: (a, ctx) => post(ctx, "/api/project-addresses/batch", { domain: a.domain.toLowerCase(), localParts: a.localParts, name: a.name, agent: toAgent(a.agent),
@@ -1657,7 +1657,7 @@ const agentInput = z.object({
 const previewAgentAnswer = defineTool({
   // Sends nothing, but spends the model and calls the agent's read-only tools, so it is journalled.
   name: "preview_agent_answer", title: "Preview a reply agent's answer", level: "admin", target: (a) => `${a.agentId} ${a.address}`,
-  description: "Runs a reply agent on a message you write, as if it came to the address, and returns what it would do and the reply it would send — nothing is sent, drafted, stored or reported to its knowledge. Use it to test an agent before or after changing it. Mail from a domain this server serves is left alone, as in a real run, so use an outside sender.",
+  description: "Runs a reply agent on a message you write, as if it came to the address, and returns what it would do and the reply it would send. Nothing is sent, drafted, stored or reported to its knowledge. Use it to test an agent before or after changing it. Mail from a domain this server serves is left alone, as in a real run, so use an outside sender.",
   input: { agentId: z.string().min(1).max(100), address, from: z.string().email().describe("The sender, from outside this server's domains"),
     subject: z.string().max(500).default(""), text: z.string().min(1).max(20_000).describe("The message, as plain text"),
     reasoning: z.enum(["none", "minimal", "low", "medium", "high", "default"]).optional()
@@ -1914,7 +1914,7 @@ const retryIncoming = defineTool({
 
 const exportSetup = defineTool({
   name: "export_setup", title: "Export or read the setup", level: "admin", readOnly: true,
-  description: "The server's setup as a file (domains, mailboxes, their agents and forwarding, catch-alls — no secrets), or, with fromCloudflare, a proposed setup read from the Email Routing rules in your Cloudflare account, for apply_setup.",
+  description: "The server's setup as a file (domains, mailboxes, their agents and forwarding, catch-alls; no secrets), or, with fromCloudflare, a proposed setup read from the Email Routing rules in your Cloudflare account, for apply_setup.",
   input: { fromCloudflare: z.boolean().default(false), domains: z.array(z.string().max(253)).max(100).optional().describe("fromCloudflare: only these domains") },
   routes: ["GET /api/setup/export", "GET /api/setup/from-cloudflare"],
   async call(a, ctx) {
@@ -2055,7 +2055,7 @@ const microsoftSetupStatus = defineTool({
 
 const checkMicrosoftSetup = defineTool({
   name: "check_microsoft_setup", title: "Check the Outlook setup", level: "admin", readOnly: true,
-  description: "Checks the server's Outlook setup: that the app is used at the address Outlook was set up for, when the client secret ends, and — once an Outlook account is connected — that Microsoft accepts the client ID and secret (one account's access is renewed now). Each check says ok, failed or unknown, with what to fix.",
+  description: "Checks the server's Outlook setup: that the app is used at the address Outlook was set up for, when the client secret ends, and (once an Outlook account is connected) that Microsoft accepts the client ID and secret (one account's access is renewed now). Each check says ok, failed or unknown, with what to fix.",
   input: {},
   routes: ["GET /api/microsoft-setup/check"],
   call: (_a, ctx) => get(ctx, "/api/microsoft-setup/check"),
