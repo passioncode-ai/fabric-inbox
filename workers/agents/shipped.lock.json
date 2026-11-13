@@ -29,6 +29,18 @@
         "date": "2026-11-13",
         "reason": "B-253, operator 2026-11-13: a new agent answers by itself; replaced by the same template with mode auto (billing-auto)"
       }
+    },
+    "template:support-auto": {
+      "digest": "sha256:e3f693dd124f93eddf26668d477561ab2b8b55f3a4344e6d7a74d2eaafd6ef53",
+      "shipped": "2026-11-13"
+    },
+    "template:sales-auto": {
+      "digest": "sha256:30f8e317c1925773f1241dcb30adae3f97f511a5d146bb8bb02c8a7c4d75eba2",
+      "shipped": "2026-11-13"
+    },
+    "template:billing-auto": {
+      "digest": "sha256:4be3e29495e864aa235e0ea7ccb50005e597bb381c0c03ab2a5cae1fc6bf5087",
+      "shipped": "2026-11-13"
     }
   }
 }
