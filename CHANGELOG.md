@@ -5,7 +5,7 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 1.6.8 (2026-11-13)
 
 **A development run no longer takes the app's links** (B-253). Only the installed app registers itself for
 `fabric-inbox://` links, so connecting from Fabric's Agent access opens Fabric Inbox, never a blank Electron window.
