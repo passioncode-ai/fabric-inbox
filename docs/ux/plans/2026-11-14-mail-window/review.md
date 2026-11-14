@@ -150,4 +150,29 @@ findings, 3 blocking; all applied.
 
 ## Round 4
 
-Planned before W2 (S06, S07) and W3 (S03, S04) are built: a fresh reader over those four specs. W1 builds meanwhile.
+On the round 3 revision (`3f681ff9`, on `main` since `9b44fda7`), for S03, S04, S06, S07. A fresh Claude verifier (R4)
+and Kimi ([review/round4-kimi.md](review/round4-kimi.md)). 17 findings, 4 blocking; all applied. Two claims of the
+earlier revisions were wrong and are corrected: providers' drafts do have a revision (`draftRevision`, 409
+`draft_conflict`), and every account kind has a Discarded place; both make S07 simpler.
+
+| Id | Severity | Disposition |
+|---|---|---|
+| R4-1, KIMI-26 | blocking | → S03 §3, README Q2: the review only raises; `likely_benign_sender_mismatch` and "Reviewed: probably fine" are gone; a brand named on another domain (`brandMismatch`, `critical`) is a red floor |
+| KIMI-25 | blocking | → S03 §3: a program or disguised file found by its bytes holds the message from agents (`suspect()`) |
+| KIMI-29 | blocking | → S06, S07: the provider's own `draftRevision` for saves and sends; `agentDraftRevision` on the run, written once, decides untouched |
+| R4-2, KIMI-27 | major | → S03 §4, S04: lookalike From and links are red floors; S04's table moves them to the red row |
+| R4-3, KIMI-28 | major | → S03 §4, S04: sent mail and drafts get the links check on open and are guarded like received mail |
+| R4-4 | major | → S04: links stored in canonical `new URL(decoded).href` in `findings.check.links`, sent with the record before the body renders; `mailto:` by scheme; `linkDecision` takes the current feed version |
+| R4-5 | major | → S04 acceptance: grey split into links clean (kept) and links not complete (removed) |
+| R4-6 | major | → S06, S07: revisions as above; the move to Discarded re-reads the revision and is refused on a mismatch |
+| R4-7 | major | → S07: retirement moves to the account's own Discarded with the existing sweep, restore action and tool; no new store |
+| R4-8 | major | → S06: the tuning name split on the last `:tune:`, the run checked against the mailbox, the conversation deleted on close or after 24 hours, the button hidden for members |
+| KIMI-30 | major | → S06: the first change is saved at once, so it is the person's before any retirement; text kept on the device until acknowledged |
+| KIMI-31 | major | → S07: the provider revision changes with any save, attachments included; no hash of names and sizes |
+| R4-9 | minor | → S07: one reading rule (`outcome.kind` first); MCP and in-app sends are `answered_by_agent`; Sent sync is `answered_by_person` unless the run sent it |
+| R4-10 | minor | → S03: `checkSenderIdentity` called once per From address |
+
+## Round 5
+
+Planned on this revision for S03, S04, S06, S07: a fresh Claude verifier and Kimi. The finish line for a spec is two
+consecutive rounds with no blocking finding; W2's S06 and S07 and W3 build after it.

@@ -18,14 +18,16 @@ keeps `allow-popups` (`:217`); its one script runs only with `autoSize` (`:133`)
 **The guard lives in the sanitizer, not in a click handler.** Links ask when the link check cannot vouch for them: the
 message is red; or amber; or the links check did not run fully (no record yet, the record checked against an older feed
 than the server's current `feedVersion`, the feed missing or stale, the link cap hit); or a link-related signal fired. A message that is grey only because another check did not run
-(sender authentication on IMAP, a file too large) keeps working links when its links check ran clean. Sent mail and
-drafts are not guarded (S03). In those cases every `a` and `area` loses its `href` while it is sanitized (the hook that already strips feed-listed links);
+(sender authentication on IMAP, a file too large) keeps working links when its links check ran clean. Sent mail and drafts get the links check on open
+(S03) and are guarded by it like received mail. In those cases every `a` and `area` loses its `href` while it is sanitized (the hook that already strips feed-listed links);
 it keeps a `data-okolos-link` index into a list the reader holds. A link with no `href` cannot be opened by a middle
 click, a modifier click, Enter, a drag, or the desktop menu: there is nothing to open.
 
-- **What the browser would open is what was checked:** the sanitizer resolves every surviving `href` with `new URL()`
-  (a message has no base URL, so a relative or malformed one fails) and keeps it only when that exact resolved URL is in
-  the record's per-link list; any other href (`https:\\host`, `https:host`, a URL split by a tab or a newline, an
+- **What the browser would open is what was checked:** the server stores each link it checked in canonical form,
+  `new URL(decoded).href` (entities decoded first), in `findings.check.links`, and the reader receives that list with the
+  safety record before it renders the body (the body waits for the record; a record that cannot be read leaves every link
+  without its `href`, as grey). The sanitizer resolves every surviving `href` the same way and keeps it only when that
+  canonical URL is in the list. `mailto:` links are kept by scheme and open the app's composer (red: no open); any other href (`https:\\host`, `https:host`, a URL split by a tab or a newline, an
   entity-encoded one the server's pattern missed) loses its `href` and asks first, whatever the message's colour.
 - The frame's script runs for every message (made so by S08 in W2) and reports an activated link only as
   its index (`postMessage({type: "link", index})`) on `click`, `auxclick` and Enter.
@@ -34,8 +36,8 @@ click, a modifier click, Enter, a drag, or the desktop menu: there is nothing to
 
 | Message or link | What happens |
 |---|---|
-| Red message, or a feed-listed link | A notice: where the link goes, why; "Don't open" and "Copy address" |
-| Amber message, links not fully checked, a lookalike link, or a link whose text names another domain | A notice: "This link goes to <host>", why; "Don't open" (focused) and "Open anyway" |
+| Red message, a feed-listed link, or a lookalike link | A notice: where the link goes, why; "Don't open" and "Copy address" |
+| Amber message, links not fully checked, or a link whose text names another domain | A notice: "This link goes to <host>", why; "Don't open" (focused) and "Open anyway" |
 | Links check ran clean and the message is green or grey for another reason | Links keep their `href` and open as today |
 
 - **The notice** is an inline alert above the message frame (`role="alert"`), focus moves to it, Escape is "Don't
@@ -65,12 +67,13 @@ click, a modifier click, Enter, a drag, or the desktop menu: there is nothing to
 
 ## Acceptance
 
-- Unit: `linkDecision(record, link)` over every row (an IMAP message with clean links opens directly; a stale feed asks; sent mail is not guarded), and the scheme allowlist (`javascript:`, `data:`, `file:` and
+- Unit: `linkDecision(record, link, currentFeedVersion)` over every row (an IMAP message with clean links opens directly; a stale feed asks; a sent forward with a phishing link is guarded), and the scheme allowlist (`javascript:`, `data:`, `file:` and
   an unparsable URL never open).
 - Unit: on a green message, `https:\\evil.example`, `https:evil.example` and a URL with a tab inside lose their `href`
   and ask; a link in the record keeps it.
-- Unit: the sanitizer for amber, red and grey removes every `href` (`a`, `area`, SVG `a`) and keeps the index; green
-  keeps them.
+- Unit: the sanitizer for amber, red and grey-with-links-not-complete removes every `href` (`a`, `area`, SVG `a`) and
+  keeps the index; green, and grey whose links check ran clean, keep them; `https://example.com` and its canonical
+  `https://example.com/` match.
 - Unit: a forged `postMessage` with a URL instead of an index opens nothing.
 - WebKit walk: a red message's link (click, middle click, Enter) shows the notice and opens nothing; an amber one
   opens after "Open anyway"; a green one opens directly.

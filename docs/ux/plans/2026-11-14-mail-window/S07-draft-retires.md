@@ -33,25 +33,30 @@ default). No subject-only guess retires anything.
 
 **Untouched or edited:**
 - Untouched: on a Cloudflare address, `draft_revision` is null or 1 (B-52), checked in the same transaction that retires
-  it; on an account, the hash of the draft as read back from the provider right after the agent saved it (a new run
-  field `draftHash`, over a canonical form of every field a person can edit: To, Cc, Bcc, subject, the text and HTML
-  bodies with line endings and trailing spaces normalised, and the attachments' names and sizes) equals the
-  hash of the draft read now. A run without `draftHash` (saved before this change), a draft that cannot be read, or a
-  hash that cannot be compared counts as edited, so the draft is kept. Opening a draft in the composer without changing
+  it; on an account, the provider's own draft revision (every provider keeps `draftRevision` and answers a stale one
+  with 409 `draft_conflict`, `workers/providers/provider.ts:126, 156-159`) is still the one the agent's save returned,
+  kept on the run as `agentDraftRevision` (written once, never changed). Any save through the provider, the app's or
+  the provider's own client, changes the revision, attachments included. A run without `agentDraftRevision` (saved
+  before this change) or a draft whose revision cannot be read counts as edited, so the draft is kept. Opening a draft in the composer without changing
   it saves nothing, so it stays untouched (a test holds this).
 - A draft sent from the S06 card is the reply itself: it leaves through the existing send path, never through
   retirement; a newer revision saved while it was sending stays a draft (the B-52 rule).
-- Untouched drafts are retired: on a Cloudflare address, moved to Discarded with the reason "Answered by a sent reply"
-  («Отвечено отправленным письмом»), kept 30 days and restorable. A Gmail, IMAP or Outlook account has no Discarded
-  folder and its draft delete is permanent (`account-service.ts:1608`), so the draft is first copied into the server's
-  own Discarded store with that reason and its account, then deleted from the provider; Restore saves it back as a
-  provider draft.
+- Untouched drafts are retired: moved to the account's own Discarded (a folder on a Cloudflare address, a label on
+  Gmail, a folder on IMAP and Outlook, `workers/providers/provider.ts:83-84`) with the reason "Answered by a sent reply"
+  («Отвечено отправленным письмом»), kept 30 days by the existing Discarded sweep and restored with the existing "Not
+  discarded" action and its tool. The move carries the expected revision (Cloudflare: in the same transaction; accounts:
+  re-read right before the move, which is refused on a mismatch), so an edit made meanwhile keeps the draft.
 - Edited drafts are the person's: they leave the thread and stay in Drafts, and the thread shows one quiet line "Your
   edited draft is in Drafts" («Ваш изменённый черновик лежит в черновиках») with a link.
 
+**Reading the outcome:** `ticket-outcome.ts` and `quality.ts` read `outcome.kind` first, and `answeredByPerson` only
+for runs written before it existed (one rule, the same as S06).
+
 **Which kind wins:** the first accepted reply decides and later ones change nothing (idempotent by run). The person
 from the composer or the card: `answered_by_person` (or `approved_by_person` for the agent's draft sent unedited, S06);
-the MCP `reply` tool with a person's key: `answered_by_person`; another agent or the in-app agent: `answered_by_agent`;
+the MCP `reply` tool and the in-app agent, whatever their key: `answered_by_agent` (an agent sent it; the agent console's
+key is an agent key, B-70); a reply caught at Sent sync from another client: `answered_by_person` unless the run itself
+sent it;
 a draft discarded from the card before any reply: `superseded`, which a later reply does not change.
 
 **The run's outcome:** a new field `outcome: {kind, sentMessageId, at}` with `kind` one of `answered_by_person`,
@@ -71,8 +76,8 @@ run: a second accepted reply changes nothing. Logged as `{event: "agent_draft_re
 
 - Worker (workerd), Cloudflare: an accepted reply retires an untouched draft to Discarded, keeps an edited one, keeps a
   draft answering a later message, retires nothing on an uncertain send and on a forward; the run's `outcome`.
-- Worker, an account fixture (Gmail provider double): the same through the content hash; a run without `draftHash` and
-  a provider that rewrites the saved text keep the draft.
+- Worker, an account fixture (Gmail provider double): the same through `agentDraftRevision`; a run without it keeps the
+  draft; a revision changed between the read and the move keeps it (the move is refused).
 - Worker: a synced sent message naming the thread only in References retires; a subject-only match does not.
 - Unit: opening a draft in the composer without a change leaves its revision unchanged.
 - WebKit walk: send a reply in a thread with an agent's draft card; the card is gone; Discarded holds it.

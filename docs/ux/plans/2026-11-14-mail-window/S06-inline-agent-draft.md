@@ -35,7 +35,9 @@ draft, by `message_id` for every other row), the card replaces both today's "Dra
 - **Where its facts came from, always visible:** "Answered from:" and each source as a link (the knowledge entry, or the
   message it cites). Tools called, model and checker fold under "How it was made" («Как он составлен»).
 - **The text, editable in place**, with recipients and subject in one line above ("Edit recipients" opens the full
-  composer on the same draft). Saved as the draft's next revision 1.5 s after typing stops and on leaving the field;
+  composer on the same draft). The first change is saved at once (from then on the draft is the person's, so a reply sent elsewhere never retires it,
+  S07); later changes are saved 1.5 s after typing stops and on leaving the field; until a save is acknowledged the text
+  is kept on the device (the composer's draft store);
   the B-52 revision guard applies. States: saving, saved, save failed (Retry, the text kept on the device), a newer
   revision saved elsewhere (the card shows the newer text and keeps the person's as "Your unsaved text", with "Use
   mine"); the draft was retired meanwhile (S07): the save restores it with the card's text, which makes it the person's.
@@ -50,8 +52,10 @@ draft, by `message_id` for every other row), the card replaces both today's "Dra
 - **States:** no run record (the card shows the draft without the meta line and says "The agent's notes are not
   available"); a narrow window (actions wrap below the text); a member without access to runs (`AgentRunPanel.tsx:26-28`
   rule kept: the text and Send, no meta).
-- **Account drafts and the revision guard:** a provider draft has no revision number; its `draftHash` (S07) is the
-  expected revision that goes with a save and a send, and a mismatch is the "newer revision saved elsewhere" state.
+- **Account drafts and the revision guard:** a provider draft has its own `draftRevision`
+  (`workers/providers/provider.ts:126, 156-159`); the card sends the revision its own last save returned, and a 409
+  `draft_conflict` is the "newer revision saved elsewhere" state. The run's `agentDraftRevision` (S07) is never used as
+  the expected revision.
 - **Account drafts** (Gmail, IMAP, Outlook): runs are attached to Cloudflare rows only today (`workers/routes/inbox.ts:345-350`,
   `workers/index.ts:400-419`). The account thread read gains the run lookup by `runIdFor(account, providerMessageId)`;
   the run's `draftId` is the idempotency key, so the provider's draft is resolved through
@@ -78,10 +82,14 @@ every variable part is data:
 - A held message (B-178) is not quoted: the block says only that it is held.
 - **A tuning session is its own conversation, read and draft only:** it opens a separate agent instance named
   `<mailboxId>:tune:<runId>` (the panel's ordinary conversation is `name: mailboxId`, `app/components/AgentPanel.tsx:310`,
-  and keeps its history apart), and the server builds the tool set from that name: no moving, marking or discarding mail
+  and keeps its history apart). The server splits the name on its last `:tune:`, takes the mailbox from the part before
+  it (the agent reads its mailbox from `this.name`, `workers/agent/index.ts:273-276`), refuses a run that does not
+  belong to that mailbox, deletes the conversation when the panel closes it or after 24 hours, and builds the tool set
+  from the name: no moving, marking or discarding mail
   (today's panel agent can do those, `workers/agent/index.ts:15-23`; it cannot send). The fenced block never enters the
   ordinary conversation. Closing the session returns the panel to the ordinary one. A change to the agent is a proposal
   the person saves in Settings.
+- "Tune the agent" is hidden for a member (members are refused `/agents/*`, `workers/lib/member-gate.ts:49`).
 - A link "Open <agent name> settings" goes to Settings → Agents → that agent; a save there makes a new version (R28).
 
 ### The run's outcome when the card sends

@@ -43,7 +43,7 @@ keep working).
 | Check | How | Notes |
 |---|---|---|
 | `senderAuth` | DMARC, SPF and DKIM, counted only when the **topmost** `Authentication-Results` header is the account's own receiver's: Cloudflare's MX (the existing `authResults`, `shared/mail/spam.ts:45-47`, changed to look at the topmost header only), Gmail's `mx.google.com` when the topmost `Received` header is also Google's | Outlook, IMAP and any message whose topmost header is not the receiver's: "did not run: the provider's own result cannot be told apart from one the sender wrote". Outlook is not counted in this version (Exchange Online's header carries no reliable authserv-id); a row is filed to study it. A `DKIM-Signature` or `Received-SPF` header alone never counts. Okolos's `checkSenderAuth` is not used (it reads the first header of that name, `core-mail/src/sender.ts:65-67`) |
-| `senderIdentity` | Okolos `checkSenderIdentity` with the vendored `checkLookalike`, the default watchlist and the server's own `DOMAINS`; every From address, not only the first | A display name naming a brand on another domain fires |
+| `senderIdentity` | Okolos `checkSenderIdentity` with the vendored `checkLookalike`, the default watchlist and the server's own `DOMAINS`, called once per From address (it reads `from[0]`, `core-mail/src/sender.ts:152`) | A display name naming a brand on another domain fires |
 | `replyPath` | Okolos `checkReplyPath` | Reply-To on another registrable domain fires `major` as Okolos writes it (`core-mail/src/sender.ts:228`) |
 | `links` | existing feed and lookalike checks, plus a link whose visible text names another domain than it goes to; entity-encoded and protocol-relative hrefs decoded first; a cap that was hit goes to not-run | S04 uses the per-link results |
 | `hidden` | existing `inspectMessage` | unchanged |
@@ -89,7 +89,9 @@ headers and the stored addresses (not `parseMessage`, since remote mail has no r
   `{verdict, reasons}`, its release rule and its guard against feed-listed links and files that run code,
   `store.ts:642-647`). That path keeps its job, which is deciding whether agents with tools may read the message; its
   guard grows by one case: a file disguised by its bytes (section 2) blocks an automatic release as a file that runs
-  code does today. The new checks (sender, file type by content) do not hold mail; they colour it. A release, by the
+  code does today. A file that runs code or is disguised, found by its bytes, now also holds the message like one found
+  by its name (`suspect()` gains it), so a renamed program never reaches an agent with tools before a person or the
+  review releases it (round 4: KIMI-25). The sender checks do not hold mail; they colour it. A release, by the
   review or by a person, never changes the colour: the badge and the link guard (S04) still follow the signals, with
   "Released by you" or "Released by the review" beside it.
 - **A new, separate review** (its own prompt and schema, version 1, stored under `findings.check.review` with that
@@ -102,15 +104,13 @@ headers and the stored addresses (not `parseMessage`, since remote mail has no r
   fields: the display name, the headers, the subject, the body, link texts and hosts, file names, and the deterministic
   signals and per-file judgements (which carry those strings).
 - **Output, validated strictly:** a closed set of reason codes (`looks_like_phishing`, `asks_for_credentials`,
-  `urgent_payment`, `impersonates_brand`, `instructions_to_ai`, `likely_benign_sender_mismatch`, `unsure`), a combination
-  table that rejects contradictions (`likely_benign_sender_mismatch` with any other code but `unsure`), and at most two
+  `urgent_payment`, `impersonates_brand`, `instructions_to_ai`, `unsure`), and at most two
   quotes, each kept only when it matches a span of the normalised message text exactly. Output that fails validation is
   dropped whole: "review did not run: the answer could not be used". No free sentence of the model is ever shown.
-- **What it may change, through one pure function `colourOf` (section 4):** a raising code (`looks_like_phishing`,
-  `asks_for_credentials`, `urgent_payment`, `impersonates_brand`, `instructions_to_ai`) makes a green or grey message
-  amber; `likely_benign_sender_mismatch` alone, when the only signals are `replyPath` or a display-name mismatch (both
-  `major` in Okolos), makes the message grey "Reviewed: probably fine" (never green); nothing it says changes a floor (a feed-listed link, a file that runs code or is disguised, a DMARC fail
-  with an enforcing policy, a lookalike From or link, instructions to an AI found by the checks).
+- **What it may change, through one pure function `colourOf` (section 4): only upward.** A raising code
+  (`looks_like_phishing`, `asks_for_credentials`, `urgent_payment`, `impersonates_brand`, `instructions_to_ai`) makes a
+  green or grey message amber. Nothing it says lowers a colour: a model's reading of text an attacker wrote is never
+  evidence that the text is harmless (round 4: KIMI-26, R4-1).
 - **Green means the deterministic checks:** a message is green when every check ran and nothing fired; the review is
   not needed for green (it runs only where something fired), and the badge's panel says which checks made it green.
 - No budget left or the call failing: "review did not run: <why>" in the not-run list; the colour stays as the checks
@@ -122,18 +122,16 @@ headers and the stored addresses (not `parseMessage`, since remote mail has no r
 |---|---|---|
 | Green | "Checked by Okolos" / «Проверено Okolos» | All six checks ran in full for this message and nothing fired (the review is not one of the six: it runs only where something fired) |
 | Grey | "Partly checked" / «Проверено частично» | Nothing fired, a check did not run in full for this message (no trusted auth result, a file too large, a document whose text was not read, the feed stale or missing) |
-| Grey | "Reviewed: probably fine" / «Проверено: похоже, всё в порядке» | Only `replyPath` or display-name signals fired and the review said `likely_benign_sender_mismatch` |
 | Grey | "Not checked" / «Не проверено» | No record: arrived before this version, the check is off, the record expired; or held only because the scan could not run (`modelError`) |
-| Amber | "Sender may be forged" / «Отправитель может быть поддельным» | Only sender signals fired (DMARC fail is red's floor only when the domain publishes `p=reject` or `p=quarantine`; otherwise amber) |
-| Amber | "Suspicious message" / «Подозрительное письмо» | Any other signal (minor, major, or critical that is not a floor); the review raised it; an amber file. When something fired but the review could not run, the colour is the checks' own: this row, with "review did not run" in the panel |
+| Amber | "Sender may be forged" / «Отправитель может быть поддельным» | Only these sender signals fired: Reply-To on another domain (`replyPath`, `major` in Okolos), a DMARC, SPF or DKIM fail without an enforcing policy |
+| Amber | "Suspicious message" / «Подозрительное письмо» | Any other signal that is not in the red row; the review raised it; an amber file. When something fired but the review could not run, the colour is the checks' own: this row, with "review did not run" in the panel |
 | Amber | "Suspicious message" / «Подозрительное письмо» | Held only because the light model said YES (`findings.model` alone is a model's guess, not a floor) |
-| Red | "Dangerous" / «Опасно» | A feed-listed link, a file that runs code or is disguised, instructions to an AI found by Okolos's signals (visible strong, hidden or in a file), DMARC fail with an enforcing policy; held for any of these and not released |
+| Red | "Dangerous" / «Опасно» | The floors: a feed-listed link; a lookalike From or link; a display name naming a brand on another domain (`brandMismatch`, `critical` in Okolos, `core-mail/src/sender.ts:170`); a file that runs code or is disguised (by name or bytes); instructions to an AI found by Okolos's signals (visible strong, hidden or in a file); DMARC fail with an enforcing policy; held for any of these and not released |
 | (same) | plus "Released by you" / «Вы разрешили», or "Released by the review" / «Разрешено проверкой» | A held message was released: the colour still follows its signals |
 
-Which mail is checked: received mail in every folder. Mail we sent and drafts are not checked as mail (no receiver's
-result), but a forward carries the sender's links: a sent message or draft with forwarded content gets the links check
-when opened (without the model), and S04 guards it by that result; one without forwarded content shows no badge and its
-links open as written.
+Which mail is checked: received mail in every folder, at arrival. Mail we sent and drafts get the links check only,
+when opened (no model, no sender checks: there is no receiver's result), because a forward or a quote carries someone
+else's links; they show a badge only when a link fired, and S04 guards their links by that result like any other.
 
 **Where the DMARC policy is read:** Cloudflare's result carries `policy.dmarc=` (the existing `authResults`); Gmail's
 puts `p=` inside a comment, which `authResults` strips (`spam.ts:51`), so its parser reads the comment for that one
@@ -149,8 +147,7 @@ A file's own chip uses the same colours: red for a program or a disguised file, 
 macro document or a mixed file, grey for a file not checked, green for a checked one with no signal.
 
 `colourOf(findings, state, feedVersion)` is the one pure function behind the badge, S04 and S09, tested over every
-row of this table and every review code. A lowered minor sender signal is grey "Reviewed: probably fine" («Проверено:
-похоже, всё в порядке»).
+row of this table and every review code; no review code lowers a colour.
 
 A message with no record is checked when it is opened: the deterministic checks only, no model, once (`POST
 /api/safety/check`); until the answer, it is grey and its links ask (S04). A record checked against an older feed than
@@ -212,7 +209,7 @@ hashes go into `manifest.json`; `tests/okolos-vendor.test.ts` checks them.
   entity-encoded href; a `.pdf` that is a PE by its bytes (red); a PDF with a program signature in its first KiB
   (mixed); an `.html` attachment (amber); a ZIP (contents not checked); 12 files (10 checked, 2 not, said so); an empty
   file (did not run).
-- Unit: the review cannot raise above amber, cannot lower a floor, cannot make green; an injected "severity none" in
+- Unit: the review cannot raise above amber and lowers nothing (every code against every colour); an injected "severity none" in
   the body leaves a red verdict red; malformed output, a contradicting code pair and a quote not found in the message
   are dropped; a held message's review path is unchanged.
 - Unit: a `.docm` and an `.xlsm` (macros listed), a `.docx` without macros, a ZIP whose central directory is cut (macros
