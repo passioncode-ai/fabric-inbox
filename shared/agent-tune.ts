@@ -29,3 +29,11 @@ export const sessionMailbox = (name: string) => tuneTarget(name)?.mailboxId ?? n
 /** A run belongs to the session's mailbox only when the names match (addresses compare without case). */
 export const runBelongs = (run: { mailboxId?: string } | null | undefined, mailboxId: string) =>
   !!run && typeof run.mailboxId === "string" && run.mailboxId.toLowerCase() === mailboxId.toLowerCase();
+
+/**
+ * The tools a panel session gets, decided by its name alone (round 2, K-7): a tuning session (any name holding
+ * `:tune:`) gets none at all, whatever the ordinary set is; `ordinary` is never even built for it.
+ */
+export function sessionTools<T extends object>(name: string, ordinary: () => T): T | Record<string, never> {
+  return name.includes(TUNE_MARK) ? {} : ordinary();
+}

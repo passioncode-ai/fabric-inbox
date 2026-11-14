@@ -206,3 +206,7 @@ Where the build differs from the text above, the safest reversible choice was ta
   device is kept: Keep as my draft saves it." in en-US and ru-RU, no blocking finding (reports
   `bc98565c-f3c6-4bcc-b3a9-5f02ab187ef8`, `1669891c-9f36-4f7d-8d60-e546ee3d4b53`, `27b46603-97d0-451c-a836-1aa992a45c3b`,
   `ab48b75c-e53d-4e0d-b757-21323e739a47`).
+- **After round 2 of the second-model review (`d349926d`):** the retired-card notice reads and clears the device copy by
+  the retired card's own draft id (`retiredCards`), never by the run's current draft id, which "Answer again" moves on.
+  The card's save, send and keep logic lives in `DraftAutosave` (`sendWith`, `keepWith`, `locked`), driven by tests
+  without a DOM; the tuning session's tools come from `sessionTools`, which gives any `:tune:` name none.

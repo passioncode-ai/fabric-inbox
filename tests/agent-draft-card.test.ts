@@ -181,8 +181,8 @@ test("a tuning session is decided by its name on the server: its mailbox, its ru
   assert.equal(TUNING_TTL_SECONDS, 86_400);
   const agent = readFileSync("workers/agent/index.ts", "utf8");
   const turn = agent.slice(agent.indexOf("private async tuningTurn"), agent.indexOf("async forgetTuning"));
-  assert.match(turn, /tools: \{\},/, "no tools at all (KIMI-35)");
-  assert.ok(!/createEmailTools/.test(turn), "never the mailbox tools");
+  assert.match(turn, /tools: sessionTools\(this\.name, /, "no tools at all (KIMI-35): decided by the name");
+  assert.match(turn, /sessionTools\(this\.name, \(\) => createEmailTools/, "the mailbox tools only through sessionTools, which gives a tuning name none");
   assert.match(turn, /system: TUNING_PROMPT/, "its own fixed prompt (R6-8)");
   assert.match(turn, /runBelongs\(run, target\.mailboxId\)/, "a run of another mailbox is refused");
   assert.match(agent, /if \(this\.name\.includes\(TUNE_MARK\)\) return this\.tuningTurn\(env, onFinish\);/, "decided before the ordinary path");
@@ -236,19 +236,139 @@ test("K-2: once the agent's draft was retired, Keep as my draft saves this devic
   assert.deepEqual(retiredRedraftBody(readCardCopy(key, storage)), { text: "My first words" });
   writeCardCopy(key, null, storage);
   assert.deepEqual(retiredRedraftBody(readCardCopy(key, storage)), {}, "no edit here: the agent's text the run kept");
-  const card = readFileSync("app/components/inbox/AgentDraftCard.tsx", "utf8");
-  const notice = card.slice(card.indexOf("export function RetiredDraftNotice"));
-  assert.match(notice, /const copy = key \? readCardCopy\(key\) : null;/);
-  assert.match(notice, /redraft`, body\)/, "the notice sends the device copy");
-  assert.match(notice, /\(run\.draftKept \|\| body\.text\)/, "offered even when the run kept no text");
-  assert.match(readFileSync("app/routes/unified-inbox.tsx", "utf8"), /<RetiredDraftNotice run=\{answered\.message\.agentRun\} accountId=\{answered\.message\.accountId\}/);
 });
 
-test("K-3: the text is locked while it sends or is saved as the person's draft; the device copy goes only when nothing newer waits", () => {
-  const card = readFileSync("app/components/inbox/AgentDraftCard.tsx", "utf8");
-  assert.match(card, /const locked = state === "gone" \|\| busy === "send" \|\| busy === "keep";/);
-  assert.match(card, /onChange=\{\(e\) => \{ if \(locked\) return;/);
-  assert.match(card, /readOnly=\{locked\}/);
-  assert.match(card, /if \(!card\.dirty\) device\.write\(deviceKey, null\);/, "after a send");
-  assert.match(card, /if \(card\.text === text\) device\.write\(deviceKey, null\);/, "after Keep as my draft");
+/** A card whose saves and the outside world are driven by the test: each save waits for `answer` (K-7). */
+function drivenCard(text = "Agent text", copyKey = "k", storage?: Map<string, string>) {
+  const pending: { text: string; revision: number; answer: (a: SaveAnswer) => void }[] = [];
+  const timers: { run: () => void }[] = [];
+  const copy = storage ?? new Map<string, string>();
+  const card = new DraftAutosave(text, 1, {
+    save: (t, revision) => new Promise<SaveAnswer>((answer) => pending.push({ text: t, revision, answer })),
+    keep: (t) => { if (t === null) copy.delete(copyKey); else copy.set(copyKey, t); },
+    changed: () => {},
+    setTimer: (run) => { const t = { run }; timers.push(t); return t; },
+    clearTimer: (h) => { const i = timers.indexOf(h as never); if (i >= 0) timers.splice(i, 1); },
+  });
+  return { card, pending, timers, copy };
+}
+const deferred = () => { let settle!: (ok: boolean) => void; const promise = new Promise<void>((res, rej) => { settle = (ok) => (ok ? res() : rej(new Error("refused"))); }); return { promise, settle }; };
+
+test("K-7: a reply elsewhere retires the draft before the card's first save: gone, the text survives, Keep as my draft recovers it", async () => {
+  const { card, pending, copy } = drivenCard();
+  assert.equal(card.edit("My first words"), true);
+  assert.equal(pending.length, 1, "the first change is saved at once");
+  assert.equal(copy.get("k"), "My first words", "kept on the device while the save is out");
+  pending[0]!.answer({ ok: false, code: "gone" });
+  await tick();
+  assert.equal(card.state, "gone");
+  assert.equal(card.text, "My first words");
+  assert.equal(copy.get("k"), "My first words", "a refused save never clears the copy");
+  assert.equal(card.sendable, false, "a retired draft cannot be sent");
+  const redraft = deferred();
+  const sent: string[] = [];
+  const keeping = card.keepWith((t) => { sent.push(t); return redraft.promise; });
+  assert.equal(card.locked, true);
+  redraft.settle(true);
+  await keeping;
+  assert.deepEqual(sent, ["My first words"], "Keep as my draft saves the person's text, not the agent's");
+  assert.equal(copy.has("k"), false, "the copy goes once it is the person's draft on the server");
+  assert.equal(card.locked, false);
+});
+
+test("K-7: a late edit during Send is refused (the box is locked), the revision saved is the one sent, the copy goes after", async () => {
+  const { card, pending, copy } = drivenCard();
+  card.edit("Final words");
+  pending.shift()!.answer({ ok: true, revision: 2 });
+  await tick();
+  const send = deferred();
+  const revisions: number[] = [];
+  const sending = card.sendWith((revision) => { revisions.push(revision); return send.promise; });
+  await tick();
+  assert.equal(card.locked, true);
+  assert.equal(card.edit("Final words, and one more"), false, "the late edit is not taken while it sends");
+  assert.equal(card.text, "Final words");
+  send.settle(true);
+  assert.equal(await sending, "sent");
+  assert.deepEqual(revisions, [2]);
+  assert.equal(copy.has("k"), false);
+  assert.equal(card.locked, false);
+});
+
+test("K-7: Send with an edit still unsaved saves it first; a failed send keeps the text, the copy and unlocks", async () => {
+  const { card, pending, copy, timers } = drivenCard();
+  card.edit("one");
+  pending.shift()!.answer({ ok: true, revision: 2 });
+  await tick();
+  card.edit("two");
+  assert.equal(timers.length, 1, "a later change waits for the timer");
+  const send = deferred();
+  const sending = card.sendWith(() => send.promise);
+  await tick();
+  assert.equal(timers.length, 0, "Send flushes the waiting save");
+  assert.equal(pending.length, 1);
+  assert.equal(card.edit("three"), false, "locked while the flush saves");
+  pending.shift()!.answer({ ok: true, revision: 3 });
+  await tick();
+  send.settle(false);
+  await assert.rejects(sending);
+  assert.equal(card.locked, false, "unlocked after a failed send");
+  assert.equal(card.text, "two");
+  assert.equal(copy.has("k"), false, "the text is on the server (revision 3), so no device copy is needed");
+  assert.equal(card.sendable, true, "it can be sent again");
+  assert.equal(card.edit("three"), true);
+});
+
+test("K-7: a late edit during Keep as my draft is refused; a failed keep keeps the text and the copy", async () => {
+  const { card, pending, copy } = drivenCard();
+  card.edit("Mine");
+  pending.shift()!.answer({ ok: false, code: "gone" });
+  await tick();
+  const keep = deferred();
+  const keeping = card.keepWith(() => keep.promise);
+  assert.equal(card.edit("Mine, changed"), false);
+  keep.settle(false);
+  await assert.rejects(keeping);
+  assert.equal(card.text, "Mine");
+  assert.equal(copy.get("k"), "Mine");
+  assert.equal(card.locked, false);
+});
+
+test("round 2, K-2: an outside reply after Answer again, while the earlier card's first save is out: its notice reads its own copy", async () => {
+  const { retiredCards, cardCopyKey, readCardCopy, retiredRedraftBody, cardPlacement } = await import("../app/components/inbox/draft-card");
+  const account = "cloudflare:help@owner.example";
+  const d1 = "agent-" + "e".repeat(32) + "-draft", d2 = d1 + "-2";
+  const store = new Map<string, string>();
+  const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) };
+  // The earlier card (d1) is on screen and its first save is still out.
+  const { card, pending } = drivenCard("Agent text", cardCopyKey(account, d1), store);
+  const before = [row("m1", "received", { rfcMessageId: "<a@acme.example>" }, { draftId: d1 }), row(d1, "draft", { inReplyTo: "m1" }, { draftId: d1 })];
+  const shown = retiredCards(new Map(), before, cardPlacement(before)).now;
+  assert.deepEqual([...shown.values()], [{ answered: "x:m1", draftId: d1 }]);
+  card.edit("My edit of the first answer");
+  assert.equal(pending.length, 1);
+  // Meanwhile: Answer again (the run's draft is now d2), then a reply elsewhere retired both untouched drafts.
+  const after = [row("m1", "received", { rfcMessageId: "<a@acme.example>" }, { draftId: d2, outcome: { kind: "answered_by_person", at: "" } })];
+  const { gone } = retiredCards(shown, after, cardPlacement(after));
+  assert.deepEqual(gone, [{ answered: "x:m1", draftId: d1 }], "the notice gets the retired card's own draft id");
+  assert.deepEqual(retiredRedraftBody(readCardCopy(cardCopyKey(account, gone[0]!.draftId), storage)), { text: "My edit of the first answer" });
+  assert.equal(readCardCopy(cardCopyKey(account, d2), storage), null, "the run's current draft id would read nothing (the round 2 defect)");
+  const card2 = readFileSync("app/components/inbox/AgentDraftCard.tsx", "utf8");
+  assert.match(card2, /const key = cardCopyKey\(accountId, draftId\);/, "the notice reads and clears by that id");
+  assert.match(readFileSync("app/routes/unified-inbox.tsx", "utf8"), /renderRetired=\{\(answered, draftId, close\) =>[\s\S]{0,200}draftId=\{draftId\}/);
+  // A card sent as written, or a draft kept as the person's, is not a retirement.
+  const approved = [row("m1", "received", {}, { draftId: d1, outcome: { kind: "approved_by_person", at: "" } })];
+  assert.deepEqual(retiredCards(shown, approved, cardPlacement(approved)).gone, []);
+});
+
+test("K-7: a tuning session's tool list is empty, whatever the ordinary set is; an ordinary session gets its tools", async () => {
+  const { sessionTools } = await import("../shared/agent-tune");
+  let built = 0;
+  const ordinary = () => { built++; return { list_emails: {}, draft_reply: {}, discard_draft: {} }; };
+  assert.deepEqual(sessionTools(`help@owner.example:tune:${RUN}`, ordinary), {});
+  assert.deepEqual(sessionTools("help@owner.example:tune:malformed", ordinary), {}, "any name holding :tune: gets none");
+  assert.equal(built, 0, "the mailbox tools are never even built for it");
+  assert.deepEqual(Object.keys(sessionTools("help@owner.example", ordinary)), ["list_emails", "draft_reply", "discard_draft"]);
+  const agent = readFileSync("workers/agent/index.ts", "utf8");
+  assert.match(agent.slice(agent.indexOf("private async tuningTurn"), agent.indexOf("async forgetTuning")), /tools: sessionTools\(this\.name, /);
 });

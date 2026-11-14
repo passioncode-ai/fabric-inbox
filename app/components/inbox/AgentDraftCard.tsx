@@ -113,12 +113,9 @@ export default function AgentDraftCard({ row, answered, member, loadText, onOpen
     setBusy("send");
     setNotice(null);
     try {
-      const revision = await card.flush();
-      if (revision === null) return;
-      await fabric(`${draftUrl}/send`, { idempotencyKey: `card-${draftId}-${revision}`, expected_revision: revision });
-      // K-3: the text is locked while it sends; the copy goes only when nothing newer than what was sent waits.
-      if (!card.dirty) device.write(deviceKey, null);
-      onChanged();
+      // K-3: locked while it sends; the device copy goes only when nothing newer than what was sent waits.
+      const sent = await card.sendWith((revision) => fabric(`${draftUrl}/send`, { idempotencyKey: `card-${draftId}-${revision}`, expected_revision: revision }).then(() => undefined));
+      if (sent === "sent") onChanged();
     } catch (error) {
       setNotice(sendFailureNotice(sendFailure(error, false), t));
     } finally { setBusy(null); }
@@ -136,9 +133,7 @@ export default function AgentDraftCard({ row, answered, member, loadText, onOpen
     if (!run || !card || !loaded) return;
     setBusy("keep");
     try {
-      const text = card.text;
-      await fabric(`/api/agent-runs/${encodeURIComponent(run.id)}/redraft`, { text, to: loaded.to, subject: loaded.subject });
-      if (card.text === text) device.write(deviceKey, null);
+      await card.keepWith((text) => fabric(`/api/agent-runs/${encodeURIComponent(run.id)}/redraft`, { text, to: loaded.to, subject: loaded.subject }).then(() => undefined));
       onChanged();
     } catch { setNotice(t("Your text could not be saved as a draft. It is kept on this device; try again.")); }
     finally { setBusy(null); }
@@ -162,7 +157,7 @@ export default function AgentDraftCard({ row, answered, member, loadText, onOpen
 
   const state: SaveState = card?.state ?? "idle";
   // K-3: no edit while the text is being sent or saved as the person's draft: what leaves is what the box shows.
-  const locked = state === "gone" || busy === "send" || busy === "keep";
+  const locked = state === "gone" || !!card?.locked || busy === "send" || busy === "keep";
   const stateText = state === "saving" ? t("Saving…") : state === "saved" ? t("Saved") : state === "failed" ? t("Not saved. Your text is kept on this device.") : null;
   return (
     <section className="fi-draft-card" aria-label={t("The agent's draft")}>
@@ -203,7 +198,7 @@ export default function AgentDraftCard({ row, answered, member, loadText, onOpen
             <button type="button" className="fi-thread-action" onClick={() => onOpenComposer(draftId)}>{t("Edit recipients")}</button>
           </p>
           <textarea className="fi-draft-card-text" aria-label={t("The draft's text")} value={card.text} rows={Math.min(16, Math.max(4, card.text.split("\n").length + 1))}
-            onChange={(e) => { if (locked) return; card.edit(e.target.value); rerender((n) => n + 1); }} onBlur={() => card.blur()} readOnly={locked} />
+            onChange={(e) => { if (locked || !card.edit(e.target.value)) return; rerender((n) => n + 1); }} onBlur={() => card.blur()} readOnly={locked} />
           {stateText && <p className="fi-draft-card-state" role="status">{stateText}{state === "failed" && <> <button type="button" className="fi-thread-action" onClick={() => card.retry()}>{t("Retry")}</button></>}</p>}
           {state === "conflict" && (
             <div className="fi-draft-card-conflict" role="alert">
@@ -242,12 +237,17 @@ export default function AgentDraftCard({ row, answered, member, loadText, onOpen
  * S07 (B-272): an untouched card whose draft was retired while it was open: the notice instead of the card vanishing,
  * with "Keep as my draft" (the agent's text, kept on the run, as a new draft of the person's) and "Close".
  */
-export function RetiredDraftNotice({ run, accountId, onChanged, onClose }: { run: AgentRunView; accountId: string; onChanged: () => void; onClose: () => void }) {
+export function RetiredDraftNotice({ run, accountId, draftId, onChanged, onClose }: {
+  run: AgentRunView; accountId: string;
+  /** The retired card's own draft id: the device copy's key (round 2, K-2), never the run's current draft. */
+  draftId: string;
+  onChanged: () => void; onClose: () => void;
+}) {
   const t = useT();
   const [failed, setFailed] = useState(false);
   // K-2: an edit this device holds that no save acknowledged (the reply won the race) is what "Keep as my draft" keeps.
-  const key = run.draftId ? cardCopyKey(accountId, run.draftId) : null;
-  const copy = key ? readCardCopy(key) : null;
+  const key = cardCopyKey(accountId, draftId);
+  const copy = readCardCopy(key);
   const body = retiredRedraftBody(copy);
   return (
     <section className="fi-draft-card is-retired" role="status">
@@ -257,7 +257,7 @@ export function RetiredDraftNotice({ run, accountId, onChanged, onClose }: { run
       <div className="fi-draft-card-actions">
         {(run.draftKept || body.text) && (
           <button type="button" className="fi-secondary" onClick={() => fabric(`/api/agent-runs/${encodeURIComponent(run.id)}/redraft`, body)
-            .then(() => { if (key) writeCardCopy(key, null); onChanged(); onClose(); }, () => setFailed(true))}>
+            .then(() => { writeCardCopy(key, null); onChanged(); onClose(); }, () => setFailed(true))}>
             {t("Keep as my draft")}
           </button>
         )}

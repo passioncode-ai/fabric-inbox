@@ -8,7 +8,7 @@ import { listDate } from "./triage-view";
 import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
 import { answeredRows, foldQuotedHtml, isNested, splitQuotedText, type QuoteLabels, type ThreadEvent } from "./quotes";
 import { addressOf, compactRecipients, headerFacts } from "./message-header";
-import { cardPlacement } from "./draft-card";
+import { cardPlacement, retiredCards, type ShownCard } from "./draft-card";
 
 /** Messages shown whole at once; earlier ones wait behind "Show earlier messages" (a long thread stays light). */
 const SHOWN = 25;
@@ -37,7 +37,7 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
   /** S06 (B-271): a reply agent's waiting draft as a card under the message it answers (`answered` absent: not in this thread). */
   renderCard?: (draft: ThreadRow, answered: ThreadRow | undefined) => ReactNode;
   /** S07 (B-272): an open card whose draft was retired meanwhile, as a notice in its place. */
-  renderRetired?: (answered: ThreadRow, close: () => void) => ReactNode;
+  renderRetired?: (answered: ThreadRow, draftId: string, close: () => void) => ReactNode;
   /** S07: opens Drafts, from "Your edited draft is in Drafts". */
   onOpenDrafts?: () => void;
 }) {
@@ -79,17 +79,15 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
       firstCard.current.scrollIntoView?.({ block: "nearest" });
     }
   }, [openId, rows.length]); // eslint-disable-line react-hooks/exhaustive-deps
-  // S07: a card on screen whose draft a reply retired meanwhile turns into a notice instead of vanishing.
-  const shownCards = useRef(new Map<string, string>());
-  const [retired, setRetired] = useState<string[]>([]);
+  // S07: a card on screen whose draft a reply retired meanwhile turns into a notice instead of vanishing; the notice
+  // knows the retired card's own draft id (round 2, K-2: "Answer again" moves the run's draft id on).
+  const shownCards = useRef(new Map<string, ShownCard>());
+  const [retired, setRetired] = useState<ShownCard[]>([]);
   useEffect(() => { shownCards.current = new Map(); setRetired([]); }, [threadKey]);
   useEffect(() => {
     if (!placement) return;
-    const now = new Map<string, string>();
-    for (const [at, drafts] of placement.cards) for (const d of drafts) now.set(d.message.id, rows[at]!.message.id);
-    const gone = [...shownCards.current.entries()].filter(([draft]) => !now.has(draft)).map(([, answered]) => answered)
-      .filter((answered) => { const r = rows.find((x) => x.message.id === answered)?.message.agentRun; return !!r?.outcome && !r.outcome.edited && r.outcome.kind !== "approved_by_person"; });
-    if (gone.length) setRetired((list) => [...new Set([...list, ...gone])]);
+    const { now, gone } = retiredCards(shownCards.current, rows, placement);
+    if (gone.length) setRetired((list) => [...list, ...gone.filter((g) => !list.some((x) => x.draftId === g.draftId))]);
     shownCards.current = now;
   }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
   if (rows.length < 2) return null;
@@ -151,7 +149,9 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
               {placement?.cards.get(index)?.map((draft, i) => (
                 <div key={draft.message.id} ref={(el) => { if (i === 0 && el) firstCard.current = el; }}>{renderCard!(draft, row)}</div>
               ))}
-              {retired.includes(row.message.id) && renderRetired?.(row, () => setRetired((list) => list.filter((x) => x !== row.message.id)))}
+              {retired.filter((card) => card.answered === row.message.id).map((card) => (
+                <div key={card.draftId}>{renderRetired?.(row, card.draftId, () => setRetired((list) => list.filter((x) => x.draftId !== card.draftId)))}</div>
+              ))}
               {placement?.quiet.get(index)?.map((draft) => (
                 <p key={draft.message.id} className="fi-thread-event is-quiet">
                   {t("Your edited draft is in Drafts")}

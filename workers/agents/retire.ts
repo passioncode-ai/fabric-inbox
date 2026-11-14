@@ -86,12 +86,57 @@ export function runKeepsWholeDraft(run: Pick<AgentRun, "draftId" | "draftText" |
 export const isRunsAgentDraft = (run: Pick<AgentRun, "draftId" | "priorDrafts">, draftId: string) =>
   run.draftId === draftId || !!run.priorDrafts?.some((d) => d.id === draftId);
 
+/** One earlier attempt's draft the run remembers (K-5). */
+export type PriorDraft = NonNullable<AgentRun["priorDrafts"]>[number];
+
 /**
  * S07 (K-5): before a run's draft is replaced by a new attempt's, the earlier one is remembered with its kept text, so a
- * reply later retires it too (by the same rules: untouched and its whole text kept). At most `keep` are remembered.
+ * reply later retires it too (by the same rules: untouched and its whole text kept). Every earlier attempt is returned;
+ * `trimPriorDrafts` decides which fall beyond the limit.
  */
-export function withPriorDraft<R extends Pick<AgentRun, "draftId" | "draftText" | "draftTextComplete" | "priorDrafts">>(run: R, nextDraftId: string, keep: number): R {
+export function withPriorDraft<R extends Pick<AgentRun, "draftId" | "draftText" | "draftTextComplete" | "priorDrafts">>(run: R, nextDraftId: string): R {
   if (!run.draftId || run.draftId === nextDraftId) return run;
   const prior = { id: run.draftId, text: run.draftText ?? "", complete: run.draftTextComplete === true && typeof run.draftText === "string" };
-  return { ...run, priorDrafts: [...(run.priorDrafts ?? []).filter((d) => d.id !== prior.id), prior].slice(-keep) };
+  return { ...run, priorDrafts: [...(run.priorDrafts ?? []).filter((d) => d.id !== prior.id), prior] };
+}
+
+/**
+ * Round 2, K-5: past `keep` remembered attempts, the oldest that could be retired (its whole text kept) are retired now
+ * instead of being forgotten, so no untouched draft outlives its conversation; one whose text was not kept can never be
+ * retired and stays tracked (it costs only its id).
+ */
+export function trimPriorDrafts(list: readonly PriorDraft[], keep: number): { kept: PriorDraft[]; toRetire: PriorDraft[] } {
+  const toRetire: PriorDraft[] = [];
+  let over = list.filter((d) => d.complete).length - keep;
+  const kept = list.filter((d) => {
+    if (over > 0 && d.complete) { over--; toRetire.push(d); return false; }
+    return true;
+  });
+  return { kept, toRetire };
+}
+
+/** What deleting an untouched draft found (the mailbox's `deleteUntouchedDraft`). */
+export type RetireState = "deleted" | "edited" | "gone";
+
+/**
+ * K-5: the run's earlier attempts after a new one replaces its draft. Each attempt beyond the limit is retired by the
+ * mailbox's revision-checked delete (`retire`): deleted, edited (a person's draft now, which stays in Drafts) or gone, it
+ * is no longer tracked. Where retiring cannot run (no `retire`, as on an account, or it failed) it stays tracked, so
+ * the reply that answers the conversation still retires it.
+ */
+export async function rememberPriorDraft<R extends Pick<AgentRun, "draftId" | "draftText" | "draftTextComplete" | "priorDrafts">>(
+  run: R, nextDraftId: string, keep: number, retire?: (draftId: string) => Promise<RetireState>,
+): Promise<{ priorDrafts: PriorDraft[] | undefined; retired: { id: string; state: RetireState }[] }> {
+  const all = withPriorDraft(run, nextDraftId).priorDrafts ?? [];
+  const { kept, toRetire } = trimPriorDrafts(all, keep);
+  const retired: { id: string; state: RetireState }[] = [];
+  const stay: PriorDraft[] = [];
+  for (const d of toRetire) {
+    if (!retire) { stay.push(d); continue; }
+    try { retired.push({ id: d.id, state: await retire(d.id) }); }
+    catch { stay.push(d); }
+  }
+  const order = new Map(all.map((d, i) => [d.id, i] as const));
+  const priorDrafts = [...stay, ...kept].sort((a, b) => order.get(a.id)! - order.get(b.id)!);
+  return { priorDrafts: priorDrafts.length ? priorDrafts : undefined, retired };
 }
