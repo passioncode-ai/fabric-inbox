@@ -23,6 +23,8 @@ import {
 	toolDiscardDraft,
 } from "../lib/tools";
 import { Folders, FOLDER_TOOL_DESCRIPTION, MOVE_FOLDER_TOOL_DESCRIPTION } from "../../shared/folders";
+import { TUNING_PROMPT } from "../agents/definition";
+import { runBelongs, TUNE_MARK, TUNING_TTL_SECONDS, tuneTarget } from "../../shared/agent-tune";
 import type { Env } from "../types";
 
 // AI SDK v6 changed tool() overloads significantly. We define tools as plain
@@ -270,6 +272,8 @@ function createEmailTools(env: Env, mailboxId: string) {
 export class EmailAgent extends AIChatAgent<any> {
 	async onChatMessage(onFinish: any) {
 		const env = this.env as Env;
+		// S06 (B-271): a "Tune the agent" session is decided by its name, never by what the client says.
+		if (this.name.includes(TUNE_MARK)) return this.tuningTurn(env, onFinish);
 		const mailboxId = this.name;
 		const workersai = createWorkersAI({ binding: withReasoning(env.AI) });
 		const tools = createEmailTools(env, mailboxId);
@@ -287,5 +291,38 @@ export class EmailAgent extends AIChatAgent<any> {
 		});
 
 		return result.toUIMessageStreamResponse();
+	}
+
+	/**
+	 * S06 (B-271): one turn of a tuning session (`<mailbox>:tune:<run>`): the run must be that mailbox's, the session has
+	 * no tools at all and its own fixed prompt (TUNING_PROMPT), and it is forgotten 24 hours after it began (the panel
+	 * clears it sooner when it closes the session).
+	 */
+	private async tuningTurn(env: Env, onFinish: any) {
+		const target = tuneTarget(this.name);
+		const refuse = (text: string) => new Response(text, { status: 403, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+		if (!target || !env.AGENT_REGISTRY) return refuse("This tuning session is not valid on this server.");
+		const [run] = await env.AGENT_REGISTRY.getByName("workspace").runsByIds([target.runId]).catch(() => []);
+		if (!runBelongs(run, target.mailboxId)) return refuse("This tuning session does not belong to this mailbox.");
+		if (!this.getSchedules().some((s) => (s as { callback?: string }).callback === "forgetTuning"))
+			await this.schedule(TUNING_TTL_SECONDS, "forgetTuning");
+		const workersai = createWorkersAI({ binding: withReasoning(env.AI) });
+		const result = streamText({
+			model: workersai(workersAiAgentModel(env.AGENT_MODEL) as Parameters<typeof workersai>[0]),
+			system: TUNING_PROMPT,
+			messages: await convertToModelMessages(this.messages.slice(-CHAT_CONTEXT_MESSAGES)),
+			// No tools at all (KIMI-35): a message an attacker wrote cannot steer this session into reading, drafting,
+			// moving or discarding mail.
+			tools: {},
+			stopWhen: stepCountIs(1),
+			onFinish,
+		});
+		return result.toUIMessageStreamResponse();
+	}
+
+	/** S06: a tuning session's whole conversation goes 24 hours after it began. */
+	async forgetTuning() {
+		console.log(JSON.stringify({ event: "tuning_session_forgotten" }));
+		await this.destroy();
 	}
 }

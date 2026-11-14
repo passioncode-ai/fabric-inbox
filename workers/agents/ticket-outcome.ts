@@ -44,6 +44,16 @@ export function ticketOutcomeOf(run: AgentRun, now = Date.now()): TicketOutcome 
       if (run.gapClosed || run.heldFacts || (run.attempt ?? 1) > 1) return "answered_after_question";
       return "answered";
     case "drafted":
+      // S06, S07 (B-271, B-272): how the conversation ended once the draft waited is read first; `answeredByPerson` only
+      // for runs written before `outcome` existed.
+      if (run.outcome) {
+        switch (run.outcome.kind) {
+          case "approved_by_person": return "answered";
+          case "answered_by_person": return "closed_by_person";
+          case "answered_by_agent": return "answered_elsewhere";
+          case "superseded": return age > FINAL_LIMIT_MS ? "unanswered" : "handed_open";
+        }
+      }
       if (run.answeredByPerson) return "closed_by_person";
       return age > FINAL_LIMIT_MS ? "unanswered" : "awaiting_approval";
     case "held":

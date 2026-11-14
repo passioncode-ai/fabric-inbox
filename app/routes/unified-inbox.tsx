@@ -58,7 +58,8 @@ import { forwardBody } from "../../shared/mail/forward";
 import { isAgentState, type AgentStatusSettings } from "../../shared/mail/agent-state";
 import ConversationList from "~/components/inbox/ConversationList";
 import { foldQuotedHtml, splitQuotedText, threadEvents, type RunLike, type SafetyLike } from "~/components/inbox/quotes";
-import { loadConversation, markRead, messageBody, type ThreadRow } from "~/components/inbox/thread";
+import { loadConversation, markRead, messageBody, messageText, type ThreadRow } from "~/components/inbox/thread";
+import AgentDraftCard, { RetiredDraftNotice, type TuneRequest } from "~/components/inbox/AgentDraftCard";
 import AgentRunPanel from "~/components/inbox/AgentRunPanel";
 import HeldPanel from "~/components/inbox/HeldPanel";
 import MessageHeader from "~/components/inbox/MessageHeader";
@@ -224,6 +225,8 @@ export default function UnifiedInbox() {
     // The AI panel (SCN-013, B11-01): closed until asked for, so no chat socket opens before then;
     // and the Cloudflare address the person picked in it, when no open message decides.
     [agentOpen, setAgentOpen] = useState(false),
+    // S06 (B-271): a "Tune the agent" session the agent panel opens from a draft card.
+    [tune, setTune] = useState<TuneRequest | null>(null),
     [agentChoice, setAgentChoice] = useState<string | null>(null);
   const agentToggle = useRef<HTMLButtonElement>(null);
   const agentWide = useWideAgentLayout();
@@ -492,6 +495,13 @@ export default function UnifiedInbox() {
    * Marks messages of the open conversation read (B-114): the whole conversation, or one message shown
    * in place. The conversation and the list are read again either way, so a partial refusal shows as it is.
    */
+  /** S06, S07: a card sent, discarded or made a draft again: the conversation, the list and Drafts are read again. */
+  const conversationChanged = () => {
+    void client.invalidateQueries({ queryKey: ["conversation"] });
+    void client.invalidateQueries({ queryKey: ["unified-inbox"] });
+    void client.invalidateQueries({ queryKey: ["server-drafts"] });
+    void client.invalidateQueries({ queryKey: ["agent-run"] });
+  };
   const markConversationRead = (rows: ThreadRow[], whole: boolean) =>
     markRead(rows, (url, body, method) => fabric(url, body, method), whole).finally(() => {
       void client.invalidateQueries({ queryKey: ["conversation"] });
@@ -1026,7 +1036,7 @@ export default function UnifiedInbox() {
                         <AgentRunPanel message={selected} onOpenDraft={(draftId) => {
                           void saved.openServer({ accountId: selected.accountId, serverId: draftId, revision: 0, to: "", subject: "", date: "", snippet: "", files: 0 })
                             .then((opened) => { if (opened) setComposeOpen(true); });
-                        }} />
+                        }} hideWhileDraftWaits={threaded} onChanged={conversationChanged} />
                         <div className="fi-message-body">
                           {/* HTML when the message has it (sandboxed), the text part otherwise:
                               Gmail sends both, and text-first dropped every layout. */}
@@ -1717,7 +1727,19 @@ export default function UnifiedInbox() {
                         {threaded ? (
                           <ConversationList rows={conversation.data ?? []} openId={selected.providerMessageId}
                             onOpen={(message) => setSelected(message)} loadBody={(message) => messageBody(message, (url) => fabric(url))}
-                            onMarkRead={markConversationRead} events={threadEventRows.data ?? []} renderOpen={() => openContent} />
+                            onMarkRead={markConversationRead} events={threadEventRows.data ?? []}
+                            onOpenDrafts={() => setDraftsOpen(true)}
+                            renderCard={(draft, answered) => (
+                              <AgentDraftCard row={draft} answered={answered} orphan={!answered} member={me.data?.role === "member"}
+                                loadText={(row) => messageText(row.message, (url) => fabric(url))}
+                                onOpenComposer={(draftId) => void saved.openServer({ accountId: draft.message.accountId, serverId: draftId, revision: 0, to: "", subject: "", date: "", snippet: "", files: 0 })
+                                  .then((opened) => { if (opened) setComposeOpen(true); })}
+                                onTune={(request) => { setTune(request); setAgentOpen(true); }}
+                                onChanged={conversationChanged} />
+                            )}
+                            renderRetired={(answered, close) => answered.message.agentRun
+                              ? <RetiredDraftNotice run={answered.message.agentRun} accountId={answered.message.accountId} onChanged={conversationChanged} onClose={close} /> : null}
+                            renderOpen={() => openContent} />
                         ) : openContent}
                         </QuoteSelectionContext.Provider>
                         {quote && quote.at && !readOnlyIn(me, selected.accountId) && (
@@ -1771,7 +1793,8 @@ export default function UnifiedInbox() {
       <AgentDock open={agentOpen} wide={agentWide} onClose={closeAgent}
         addresses={accounts.filter((a) => a.provider === "cloudflare")} reading={agentReading} onChoose={setAgentChoice}
         unreadableOpen={selected && selected.provider !== "cloudflare" ? (owner?.email ?? rawAccount(selected.accountId)) : null}
-        focus={agentFocus} onOpenSource={openAgentSource} onEditDraft={editAgentDraft} />
+        focus={agentFocus} onOpenSource={openAgentSource} onEditDraft={editAgentDraft}
+        tune={tune} onTuneClose={() => setTune(null)} />
       {saved.notice && (
         <p className="fi-draft-warning" role="alert">
           {t.text(saved.notice)}

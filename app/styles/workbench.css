@@ -2406,3 +2406,78 @@ details.fi-quote:not([open]) .fi-quote-hide {
 .fi-thread-event.is-safety {
   color: var(--pc-warning-text, var(--pc-text-muted));
 }
+
+/* S06 (B-271): a reply agent's draft as a card right under the message it answers. */
+.fi-draft-card {
+  margin: 8px 0 4px 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--pc-accent, var(--pc-border-strong));
+  border-radius: 8px;
+  background: var(--pc-accent-soft, var(--pc-panel));
+  font-size: 13px;
+}
+.fi-draft-card.is-retired {
+  border-color: var(--pc-border);
+  background: var(--pc-panel);
+}
+.fi-draft-card p {
+  margin: 4px 0;
+}
+.fi-draft-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+}
+.fi-draft-card-why,
+.fi-draft-card-sources,
+.fi-draft-card-to,
+.fi-draft-card-how,
+.fi-draft-card-state {
+  color: var(--pc-text-muted);
+  font-size: 12px;
+}
+.fi-draft-card-sources a {
+  color: var(--pc-link);
+}
+.fi-draft-card-text {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 6px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-control, 6px);
+  background: var(--pc-bg);
+  color: var(--pc-text);
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
+}
+.fi-draft-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.fi-draft-card-conflict pre,
+.fi-draft-card-gone p {
+  white-space: pre-wrap;
+}
+.fi-draft-card-notice,
+.fi-draft-card-gone {
+  color: var(--pc-warning, var(--pc-text));
+}
+.fi-thread-event.is-quiet {
+  font-size: 12px;
+}
+.fi-draft-waiting {
+  margin-left: 6px;
+  font-weight: 400;
+}
+/* S06: the message above a card is held to 40 % of the pane until "Show whole message". */
+.fi-clamp.is-clamped {
+  max-height: 40vh;
+  overflow: hidden;
+}

@@ -8,6 +8,7 @@ import { listDate } from "./triage-view";
 import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
 import { answeredRows, foldQuotedHtml, isNested, splitQuotedText, type QuoteLabels, type ThreadEvent } from "./quotes";
 import { addressOf, compactRecipients, headerFacts } from "./message-header";
+import { cardPlacement } from "./draft-card";
 
 /** Messages shown whole at once; earlier ones wait behind "Show earlier messages" (a long thread stays light). */
 const SHOWN = 25;
@@ -21,7 +22,7 @@ const SHOWN = 25;
  * Reply, Reply all and Forward act on it. Opening the conversation reads it, as opening a message does.
  * Shown only when the conversation has more than one message.
  */
-export default function ConversationList({ rows, openId, onOpen, loadBody, onMarkRead, renderOpen, events = [] }: {
+export default function ConversationList({ rows, openId, onOpen, loadBody, onMarkRead, renderOpen, events = [], renderCard, renderRetired, onOpenDrafts }: {
   rows: ThreadRow[];
   /** S05 (B-221): what rules and the safety check did to the thread's messages, shown as thin rows after each one. */
   events?: ThreadEvent[];
@@ -33,6 +34,12 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
   onMarkRead: (rows: ThreadRow[], whole: boolean) => Promise<void>;
   /** The open message's own content: its body, pictures, attachments and what the agent did. */
   renderOpen: () => ReactNode;
+  /** S06 (B-271): a reply agent's waiting draft as a card under the message it answers (`answered` absent: not in this thread). */
+  renderCard?: (draft: ThreadRow, answered: ThreadRow | undefined) => ReactNode;
+  /** S07 (B-272): an open card whose draft was retired meanwhile, as a notice in its place. */
+  renderRetired?: (answered: ThreadRow, close: () => void) => ReactNode;
+  /** S07: opens Drafts, from "Your edited draft is in Drafts". */
+  onOpenDrafts?: () => void;
 }) {
   const t = useT();
   const [failed, setFailed] = useState(false);
@@ -58,8 +65,33 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
     marked.current = threadKey;
     onMarkRead(unread, true).then(() => setFailed(false), () => setFailed(true));
   }, [threadKey, unread.length]); // eslint-disable-line react-hooks/exhaustive-deps
-  // The open message comes into view: the conversation reads from the top, the reader lands on it.
-  useEffect(() => { openRef.current?.scrollIntoView?.({ block: "start" }); }, [openId, rows.length]);
+  // S06: where each reply agent's draft is drawn: as a card under the message it answers.
+  const placement = renderCard ? cardPlacement(rows) : null;
+  const firstCard = useRef<HTMLElement | null>(null);
+  // The open message comes into view: the conversation reads from the top, the reader lands on it; a waiting draft's
+  // card is then brought into view too (S06: seen at once).
+  const cardSeen = useRef("");
+  useEffect(() => {
+    openRef.current?.scrollIntoView?.({ block: "start" });
+    // Once per conversation opened, so moving within it never jumps back to the card.
+    if (firstCard.current?.isConnected && cardSeen.current !== threadKey) {
+      cardSeen.current = threadKey;
+      firstCard.current.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [openId, rows.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  // S07: a card on screen whose draft a reply retired meanwhile turns into a notice instead of vanishing.
+  const shownCards = useRef(new Map<string, string>());
+  const [retired, setRetired] = useState<string[]>([]);
+  useEffect(() => { shownCards.current = new Map(); setRetired([]); }, [threadKey]);
+  useEffect(() => {
+    if (!placement) return;
+    const now = new Map<string, string>();
+    for (const [at, drafts] of placement.cards) for (const d of drafts) now.set(d.message.id, rows[at]!.message.id);
+    const gone = [...shownCards.current.entries()].filter(([draft]) => !now.has(draft)).map(([, answered]) => answered)
+      .filter((answered) => { const r = rows.find((x) => x.message.id === answered)?.message.agentRun; return !!r?.outcome && !r.outcome.edited && r.outcome.kind !== "approved_by_person"; });
+    if (gone.length) setRetired((list) => [...new Set([...list, ...gone])]);
+    shownCards.current = now;
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
   if (rows.length < 2) return null;
   const hidden = earlier ? 0 : Math.max(0, rows.length - SHOWN);
   const shown = rows.slice(hidden);
@@ -85,11 +117,13 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
       )}
       <ol className="fi-thread-cells">
         {shown.map((row, k) => {
+          if (placement?.taken.has(row.message.id)) return null;
           const open = row.message.providerMessageId === openId;
           const index = hidden + k;
           const answers = answered[index]!;
           const nested = isNested(answers, index);
           const target = answers >= 0 ? rows[answers] : undefined;
+          const body = <div className="fi-thread-cell-body">{open ? renderOpen() : <CellBody row={row} loadBody={loadBody} />}</div>;
           return (
             <li key={row.message.id}>
               <article ref={(el) => { if (open) openRef.current = el; if (el) cells.current.set(row.message.id, el); else cells.current.delete(row.message.id); }}
@@ -109,8 +143,21 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
                 <CellPeople row={row} />
                 {answers === -2 && <p className="fi-thread-reply-to">{t("In reply to an earlier message")}</p>}
                 {nested && target && <ReplyTo target={target} onGo={() => { if (answers < hidden) setEarlier(true); setGoto(target.message.id); }} />}
-                <div className="fi-thread-cell-body">{open ? renderOpen() : <CellBody row={row} loadBody={loadBody} />}</div>
+                {row.sentBy === "agent" && !!row.message.agentRun?.sources?.length && (
+                  <p className="fi-thread-reply-to">{t("Answered from:")} {row.message.agentRun.sources.map((x) => x.title).join(" · ")}</p>
+                )}
+                {placement?.cards.has(index) ? <Clamp>{body}</Clamp> : body}
               </article>
+              {placement?.cards.get(index)?.map((draft, i) => (
+                <div key={draft.message.id} ref={(el) => { if (i === 0 && el) firstCard.current = el; }}>{renderCard!(draft, row)}</div>
+              ))}
+              {retired.includes(row.message.id) && renderRetired?.(row, () => setRetired((list) => list.filter((x) => x !== row.message.id)))}
+              {placement?.quiet.get(index)?.map((draft) => (
+                <p key={draft.message.id} className="fi-thread-event is-quiet">
+                  {t("Your edited draft is in Drafts")}
+                  {onOpenDrafts && <>{" "}<button type="button" className="fi-thread-action" onClick={onOpenDrafts}>{t("Open Drafts")}</button></>}
+                </p>
+              ))}
               {events.filter((e) => e.messageId === row.message.providerMessageId).map((e, i) => (
                 <p key={`${e.kind}-${i}`} className={"fi-thread-event is-" + e.kind}>
                   {eventText(e, t)}{e.at ? <> · <time dateTime={new Date(e.at).toISOString()}>{listDate(new Date(e.at).toISOString(), undefined, t)}</time></> : null}
@@ -120,7 +167,35 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
           );
         })}
       </ol>
+      {placement?.last.map((draft) => <div key={draft.message.id}>{renderCard!(draft, undefined)}</div>)}
     </section>
+  );
+}
+
+/**
+ * S06: a message above the agent's draft card is held to 40 % of the pane, so the card is seen at once; a longer one
+ * shows "Show whole message".
+ */
+function Clamp({ children }: { children: ReactNode }) {
+  const t = useT();
+  const box = useRef<HTMLDivElement | null>(null);
+  const [whole, setWhole] = useState(false);
+  const [long, setLong] = useState(false);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || whole) return;
+    const measure = () => setLong(el.scrollHeight > el.clientHeight + 4);
+    measure();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    observer?.observe(el);
+    if (el.firstElementChild) observer?.observe(el.firstElementChild);
+    return () => observer?.disconnect();
+  }, [whole]);
+  return (
+    <>
+      <div ref={box} className={"fi-clamp" + (whole ? "" : " is-clamped")}>{children}</div>
+      {long && !whole && <button type="button" className="fi-thread-action fi-clamp-more" onClick={() => setWhole(true)}>{t("Show whole message")}</button>}
+    </>
   );
 }
 
@@ -185,6 +260,11 @@ function whoSent(row: ThreadRow, t: ReturnType<typeof useT>): string {
 function WhoChip({ row }: { row: ThreadRow }) {
   const t = useT();
   if (row.kind === "draft") return <span className="fi-thread-chip">{t("Draft")}</span>;
+  // S06: the agent's own sent answer names its agent and version.
+  if (row.sentBy === "agent" && row.message.agentRun?.agentId)
+    return <span className="fi-thread-chip is-agent">{row.message.agentRun.agentVersion
+      ? t("Sent by {agent}, version {n}", { agent: row.message.agentRun.agentId, n: row.message.agentRun.agentVersion })
+      : t("Sent by {agent}", { agent: row.message.agentRun.agentId })}</span>;
   if (row.sentBy === "agent") return <span className="fi-thread-chip is-agent">{t("Agent's answer")}</span>;
   if (row.sentBy === "agent_waiting") return <span className="fi-thread-chip is-agent">{t("Agent's waiting reply")}</span>;
   if (row.kind === "sent") return <span className="fi-thread-chip">{t("Sent by a person")}</span>;

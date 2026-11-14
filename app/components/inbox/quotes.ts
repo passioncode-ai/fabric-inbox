@@ -1,3 +1,5 @@
+import { bareMessageId, replyTarget } from "../../../shared/mail/reply-target";
+
 /**
  * S05 (B-221): the quoted history a reply carries below its own lines, folded so a thread reads as one conversation,
  * and which earlier message each reply answers. What is not recognised as a quote stays shown: nothing is cut from a
@@ -108,22 +110,24 @@ export interface ReplyFacts {
   draft?: boolean;
 }
 
-const bare = (id: string | undefined) => (id ?? "").trim().replace(/^<|>$/g, "").toLowerCase();
-
 /**
- * For each row of a thread (oldest first), the index of the earlier row it answers: by In-Reply-To, then the last
- * References entry; a draft by the internal id in its In-Reply-To. -1 when it answers nothing (the first message, a
- * message with no reply headers), -2 when it answers a message that is not in this thread.
+ * For each row of a thread (oldest first), the index of the earlier row it answers, by the one reply rule the server
+ * uses too (`replyTarget`: In-Reply-To, else the last References entry that names an earlier row); a draft names what
+ * it answers by the internal id in its In-Reply-To. -1 when it answers nothing (the first message, a message with no
+ * reply headers), -2 when it answers a message that is not in this thread.
  */
 export function answeredRows(rows: ReplyFacts[]): number[] {
   return rows.map((row, i) => {
-    const wanted = bare(row.inReplyTo) || bare(row.references?.trim().split(/\s+/).at(-1));
-    if (!wanted) return -1;
-    for (let j = i - 1; j >= 0; j--) {
+    const earlier = new Map<string, number>();
+    for (let j = 0; j < i; j++) {
       const other = rows[j]!;
-      if (row.draft ? bare(other.internalId) === wanted || bare(other.rfcMessageId) === wanted : bare(other.rfcMessageId) === wanted) return j;
+      const rfc = bareMessageId(other.rfcMessageId);
+      if (rfc) earlier.set(rfc, j);
+      if (row.draft) { const internal = bareMessageId(other.internalId); if (internal) earlier.set(internal, j); }
     }
-    return -2;
+    const { target, named } = replyTarget({ inReplyTo: row.inReplyTo, references: row.references }, (id) => earlier.has(id));
+    if (target !== null) return earlier.get(target)!;
+    return named ? -2 : -1;
   });
 }
 

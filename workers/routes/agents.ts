@@ -8,7 +8,14 @@ import { OFFERED_TEMPLATES, readAssignment, withNewAgentDefaults } from "../agen
 import { isAccountMailbox, updateAccountSettings } from "../agents/account-settings";
 import { REASONING_EFFORTS, type ReasoningEffort } from "../agents/model";
 import { registryError } from "../agents/errors";
-import { RUN_OUTCOMES, type RunOutcome } from "../agents/run";
+import { DRAFT_TEXT_CHARS, RUN_OUTCOMES, type AgentRun, type RunOutcome } from "../agents/run";
+import { isUntouched, runKeepsWholeDraft } from "../agents/retire";
+import { replySubject } from "../agents/runner";
+import { threadRunView } from "../lib/thread-runs";
+import { textToHtml } from "../../shared/mail/text";
+
+/** S06 (KIMI-44): the longest instructions, policy or knowledge text "Tune the agent" carries. */
+const TUNING_FIELD_CHARS = 2000;
 import { allServedDomains, createMailbox, deleteMailbox, isDomainName, readAllSettings, readSettings, settingsKey, storedCatchAll, updateSettings } from "../lib/mailbox-store";
 import { cloudflareApi, cloudflareToken } from "../routing/cloudflare-api";
 import { DomainManager } from "../routing/domains";
@@ -240,6 +247,92 @@ agentsRouter.post("/api/agent-runs/:id/again", async (c) => {
   try {
     const result = await registry(c).answerAgain(c.req.param("id"));
     return result.ok ? c.json(result.run) : c.json({ error: result.reason }, 409);
+  } catch (error) { return registryFailure(c, error); }
+});
+
+/** S06, S07 (B-271, B-272): a run's mailbox object, for a run on a Cloudflare address; null for an account's run. */
+const runMailbox = (c: C, run: AgentRun) => (isAccountMailbox(run.mailboxId) ? null : c.env.MAILBOX.get(c.env.MAILBOX.idFromName(run.mailboxId.toLowerCase())));
+const ACCOUNT_DRAFT = msg("On a Gmail, IMAP or Outlook account the agent's draft is kept in that account's Drafts; change or delete it there");
+
+/**
+ * S06 (B-271), R6-2: "Discard draft" on the card. It does what retirement does: the run's outcome is written as
+ * `superseded` first, then the agent's draft is deleted in the revision-checked step, its whole text kept on the run
+ * ("Make a draft of it again" brings it back). A draft a person changed is theirs and is refused here (409 draft_edited);
+ * a run that does not keep the draft's whole text keeps the draft (409 draft_text_not_kept). Never moved to Discarded.
+ */
+agentsRouter.post("/api/agent-runs/:id/discard-draft", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  try {
+    const [run] = await registry(c).runsByIds([c.req.param("id")]);
+    if (!run) return c.json({ error: msg("This agent run is not kept any more") }, 404);
+    const box = runMailbox(c, run);
+    if (!box) return c.json({ error: ACCOUNT_DRAFT, code: "account_draft" }, 409);
+    if (!run.draftId) return c.json({ error: msg("This run left no draft"), code: "no_draft" }, 409);
+    if (run.outcome && run.outcome.kind !== "superseded") return c.json({ error: msg("A reply was sent; this draft is no longer needed"), code: "answered", outcome: run.outcome }, 409);
+    const current = await box.getEmail(run.draftId) as { folder_id?: string; draft_revision?: number | null } | null;
+    if (!current || current.folder_id !== "draft") return c.json({ discarded: true, state: "gone", run: threadRunView(run) });
+    if (!isUntouched(current.draft_revision)) return c.json({ error: msg("You changed this draft, so it is yours: it stays in Drafts"), code: "draft_edited" }, 409);
+    if (!runKeepsWholeDraft(run, run.draftId)) return c.json({ error: msg("This run does not keep the draft's whole text; delete the draft in Drafts"), code: "draft_text_not_kept" }, 409);
+    const settled = await registry(c).settleDraftOutcome(run.id, { kind: "superseded", at: new Date().toISOString() }, run.draftId);
+    const removed = await box.deleteUntouchedDraft(run.draftId);
+    if (removed.state === "edited") return c.json({ error: msg("You changed this draft, so it is yours: it stays in Drafts"), code: "draft_edited" }, 409);
+    return c.json({ discarded: true, state: removed.state, run: threadRunView(settled?.run ?? run) });
+  } catch (error) { return registryFailure(c, error); }
+});
+
+const RedraftBody = z.object({ text: z.string().min(1).max(DRAFT_TEXT_CHARS).optional(), to: z.string().max(10_000).optional(), subject: z.string().max(998).optional() }).strict();
+/**
+ * S06, S07 (R6-4): "Make a draft of it again" (the run's own text) and "Keep as my draft" (the card's text): a new draft
+ * under a new id, the person's (its revision starts at 2, `personDraftId` on the run), so it is never retired and never
+ * overwrites the agent's draft. Each call makes a new one.
+ */
+agentsRouter.post("/api/agent-runs/:id/redraft", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  const body = RedraftBody.safeParse((await c.req.json().catch(() => ({}))) ?? {});
+  if (!body.success) return c.json({ error: msg("Give the draft's text (up to 20,000 characters), and optionally its recipients and subject") }, 400);
+  try {
+    const [run] = await registry(c).runsByIds([c.req.param("id")]);
+    if (!run) return c.json({ error: msg("This agent run is not kept any more") }, 404);
+    const box = runMailbox(c, run);
+    if (!box) return c.json({ error: ACCOUNT_DRAFT, code: "account_draft" }, 409);
+    const text = body.data.text ?? (run.draftTextComplete ? run.draftText : undefined);
+    if (!text) return c.json({ error: msg("The run does not keep the draft's text"), code: "draft_text_not_kept" }, 409);
+    const answered = await box.getEmail(run.emailId) as { thread_id?: string | null } | null;
+    const id = `${run.id}-mine-${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`;
+    const saved = await box.createPersonDraft({ id, sender: run.mailboxId.toLowerCase(), to: (body.data.to ?? run.sender ?? "").toLowerCase(),
+      subject: body.data.subject ?? replySubject(run.subject ?? ""), body: textToHtml(text), inReplyTo: run.emailId,
+      threadId: answered?.thread_id || run.threadId || run.emailId });
+    if (!saved.ok) return c.json({ error: msg("The draft could not be saved"), code: saved.code }, 409);
+    const updated = await registry(c).setPersonDraft(run.id, id);
+    console.log(JSON.stringify({ event: "agent_draft_redrafted", runId: run.id, from: body.data.text ? "card" : "run" }));
+    return c.json({ draft: saved.draft, run: updated ? threadRunView(updated) : null }, 201);
+  } catch (error) { return registryFailure(c, error); }
+});
+
+/**
+ * S06 (B-271), KIMI-44: what "Tune the agent" carries outside the fenced block, the person's own data: the agent's
+ * current version's instructions and policy, and the text of the knowledge entries the run cited (each at most 2,000
+ * characters). The message itself and the draft go inside the fence, built in the app.
+ */
+agentsRouter.get("/api/agent-runs/:id/tuning", async (c) => {
+  if (!c.env.AGENT_REGISTRY) return c.json({ error: msg("Agents are not configured on this server") }, 503);
+  try {
+    const [run] = await registry(c).runsByIds([c.req.param("id")]);
+    if (!run) return c.json({ error: msg("This agent run is not kept any more") }, 404);
+    const agent = run.agentId ? await registry(c).getAgent(run.agentId) : null;
+    const knowledge: { title: string; text: string }[] = [];
+    for (const source of (run.sources ?? []).slice(0, 8)) {
+      const document = /^[^/]+\/([^#]+)/.exec(source.ref)?.[1];
+      if (!c.env.KNOWLEDGE || !document) continue;
+      const read = await c.env.KNOWLEDGE.getByName("workspace").readDocument(source.collectionId, document).catch(() => null);
+      if (read) knowledge.push({ title: source.title, text: read.text.slice(0, TUNING_FIELD_CHARS) });
+    }
+    return c.json({
+      run: { ...threadRunView(run), mailboxId: run.mailboxId, emailId: run.emailId },
+      agent: agent ? { id: agent.id, name: agent.name, version: agent.version, instructions: (agent.instructions ?? "").slice(0, TUNING_FIELD_CHARS),
+        replyPolicy: JSON.stringify(agent.replyPolicy ?? {}).slice(0, TUNING_FIELD_CHARS) } : null,
+      knowledge,
+    });
   } catch (error) { return registryFailure(c, error); }
 });
 

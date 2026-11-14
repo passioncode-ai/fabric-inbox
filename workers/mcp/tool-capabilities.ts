@@ -21,9 +21,9 @@ export const TOOL_NEEDS: Readonly<Record<string, ToolNeed>> = Object.freeze(Obje
     get_agent_status agent_mail_volume list_answers_to_grade get_judge_calibration get_support_months get_support_topics
     list_agent_evals list_categories list_knowledge search_knowledge list_rules list_drafts read_draft list_discard_rules
     get_server check_address rename_status check_test_message list_cloudflare_accounts list_campaigns get_campaign
-    list_campaign_recipients preview_campaign dry_run_campaign list_suppression campaign_report`),
+    list_campaign_recipients preview_campaign dry_run_campaign list_suppression campaign_report get_agent_tuning`),
   // Drafts, kept for a person or sent later.
-  ...ofEach("draft", "save_draft delete_draft answer_again"),
+  ...ofEach("draft", "save_draft delete_draft answer_again discard_agent_draft redraft_agent_answer"),
   // Sending mail now.
   ...ofEach("send", "send_draft send_email reply forward approve_rule_run"),
   // Sorting mail without sending or destroying it.

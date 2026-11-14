@@ -357,7 +357,9 @@ export async function attachAgentRuns(page: InboxMessage[], runsByIds: (ids: str
   cloudflare.forEach((m, i) => {
     const run = byId.get(ids[i]!);
     if (run) m.agentRun = { id: run.id, status: run.status, ...(run.agentId ? { agentId: run.agentId } : {}),
-      ...(run.agentVersion ? { agentVersion: run.agentVersion } : {}), ...(run.draftId ? { draftId: run.draftId } : {}) };
+      ...(run.agentVersion ? { agentVersion: run.agentVersion } : {}), ...(run.draftId ? { draftId: run.draftId } : {}),
+      // S06, S07: a draft whose conversation was answered (or set aside) is not "waiting" in the list.
+      ...(run.outcome ? { outcome: run.outcome } : {}) };
   });
 }
 

@@ -923,4 +923,12 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Give from and to as YYYY-MM, from not after to": "Укажите from и to в виде ГГГГ-ММ, from не позже to",
 	"Nothing was counted on {day}": "За {day} ничего не посчитано",
 	"Ask for a closed UTC hour as YYYY-MM-DDTHH or a closed UTC day as YYYY-MM-DD, of the last {days} days": "Укажите завершившийся час UTC в формате ГГГГ-ММ-ДДTЧЧ или завершившийся день UTC в формате ГГГГ-ММ-ДД за последние {days} дней",
+	// S06, S07 (B-271, B-272): the agent's draft card routes
+	"On a Gmail, IMAP or Outlook account the agent's draft is kept in that account's Drafts; change or delete it there": "В аккаунте Gmail, IMAP или Outlook черновик агента лежит в черновиках этого аккаунта; измените или удалите его там",
+	"This run left no draft": "Этот запуск не оставил черновика",
+	"You changed this draft, so it is yours: it stays in Drafts": "Вы изменили этот черновик, поэтому он ваш: он остаётся в черновиках",
+	"This run does not keep the draft's whole text; delete the draft in Drafts": "Этот запуск не хранит весь текст черновика; удалите черновик в черновиках",
+	"Give the draft's text (up to 20,000 characters), and optionally its recipients and subject": "Укажите текст черновика (до 20 000 символов) и, если нужно, получателей и тему",
+	"The run does not keep the draft's text": "Запуск не хранит текст черновика",
+	"The draft could not be saved": "Не удалось сохранить черновик",
 };

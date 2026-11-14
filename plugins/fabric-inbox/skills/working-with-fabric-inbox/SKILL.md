@@ -123,6 +123,11 @@ person approves, `send_draft` with `expectedRevision` and an `idempotencyKey`: i
 as a reply when it answers a message, and leaves Drafts. A new draft with your own `idempotencyKey`
 is made once however often you save it. `delete_draft` is two-step.
 
+**A reply agent's draft.** In `read_thread` the agent's draft carries `agentRun` with why it waited and the sources
+it cited. A reply agent's untouched draft goes away once a reply is sent in that conversation; its text stays on the
+run, and `redraft_agent_answer` makes it a draft again (the new draft is the person's). To set an agent's draft aside
+without replying, `discard_agent_draft`. `get_agent_tuning` gives what improving the agent starts from.
+
 **Files.** `send_email`, `reply`, `forward` and `save_draft` take `attachments:
 [{ filename, type, base64 }]` (10 files, 5 MB together). `get_attachment` returns a file in that
 form; `forward` carries the original's files unless `includeOriginalAttachments: false`, and

@@ -41,6 +41,10 @@
     "template:billing-auto": {
       "digest": "sha256:4be3e29495e864aa235e0ea7ccb50005e597bb381c0c03ab2a5cae1fc6bf5087",
       "shipped": "2026-11-13"
+    },
+    "prompt:tuning": {
+      "digest": "sha256:3b708d0b6150245c9d9b372c2e47106150e2ec47aa9d6b6e9849e8438a857760",
+      "shipped": "2026-11-14"
     }
   }
 }

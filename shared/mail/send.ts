@@ -15,6 +15,13 @@ export interface SendMailCommand {
   request: SendMailRequest;
   /** MCP draft verification is performed once before persisting the transport payload. */
   verifyContent?: boolean;
+  /**
+   * S07 (B-272), R6-3: who sends it (a person in the app, or an agent: a key over the agent protocol, a reply agent) and
+   * the draft it came from. Kept in the outbox payload, outside the identity hash, so the accepted reply's `project` step
+   * leaves that draft to the send and records which outcome the reply gives the waiting agent drafts.
+   */
+  sentBy?: 'person' | 'agent';
+  sourceDraft?: { id: string; answers: string | null; revision: number | null };
 }
 export type SendMailResult = OutboxEntry | {
   error: string;

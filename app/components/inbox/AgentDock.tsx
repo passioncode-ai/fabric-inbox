@@ -37,6 +37,9 @@ export interface AgentDockProps {
 	focus?: { emailId: string; subject: string } | null;
 	onOpenSource: (source: Source) => void;
 	onEditDraft: (draft: SavedDraft) => void;
+	/** S06 (B-271): a "Tune the agent" session from a draft card, and closing it. */
+	tune?: { runId: string; agentName: string; prepared: string } | null;
+	onTuneClose?: () => void;
 }
 
 /**
@@ -73,7 +76,7 @@ export default function AgentDock(props: AgentDockProps) {
 	);
 }
 
-function AgentDockBody({ onClose, addresses, reading, onChoose, unreadableOpen, focus, onOpenSource, onEditDraft }: AgentDockProps) {
+function AgentDockBody({ onClose, addresses, reading, onChoose, unreadableOpen, focus, onOpenSource, onEditDraft, tune, onTuneClose }: AgentDockProps) {
 	const t = useT();
 	const mailbox = reading ? mailboxOf(reading.account) : null;
 	return (
@@ -106,8 +109,8 @@ function AgentDockBody({ onClose, addresses, reading, onChoose, unreadableOpen, 
 			)}
 			{mailbox ? (
 				<div className="fi-agent-chat">
-					<LazyAgentPanel key={mailbox} mailboxId={mailbox} focus={focus ?? null}
-						onOpenSource={onOpenSource} onEditDraft={onEditDraft} />
+					<LazyAgentPanel key={tune ? `${mailbox}:${tune.runId}` : mailbox} mailboxId={mailbox} focus={focus ?? null}
+						onOpenSource={onOpenSource} onEditDraft={onEditDraft} tune={tune ?? null} onTuneClose={onTuneClose} />
 				</div>
 			) : (
 				<p className="fi-agent-note">

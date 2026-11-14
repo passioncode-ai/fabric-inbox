@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { AGENT_TEMPLATES, LEGACY_INSTRUCTIONS, OFFERED_TEMPLATES, RETIRED_TEMPLATES, withNewAgentDefaults } from "../workers/agents/definition";
+import { AGENT_TEMPLATES, LEGACY_INSTRUCTIONS, OFFERED_TEMPLATES, RETIRED_TEMPLATES, SHIPPED_PROMPTS, withNewAgentDefaults } from "../workers/agents/definition";
 
 type LockEntry = { digest: string; shipped: string; retired?: { date: string; reason: string } };
 const lock = JSON.parse(readFileSync(new URL("../workers/agents/shipped.lock.json", import.meta.url), "utf8")) as { schema: string; entries: Record<string, LockEntry> };
@@ -19,6 +19,8 @@ const digest = (v: unknown) => "sha256:" + createHash("sha256").update(JSON.stri
 const catalog = (): Record<string, unknown> => ({
   "legacy-instructions": { instructions: LEGACY_INSTRUCTIONS },
   ...Object.fromEntries(Object.entries(AGENT_TEMPLATES).map(([k, v]) => [`template:${k}`, v])),
+  // S06 (B-271), R6-8: prompts shipped beside the templates, locked the same way.
+  ...Object.fromEntries(Object.entries(SHIPPED_PROMPTS).map(([k, v]) => [`prompt:${k}`, { prompt: v }])),
 });
 
 test("the lock is add-only-lock/1 and every line names its digest and shipping day; a retired line its date and reason", () => {

@@ -9,7 +9,8 @@ import { decide, isFollowUpSubject, matchedTopic, type ModelDecision } from "./p
 import { CHECK_LIMITS } from "./model";
 import { MAX_RECEIPTS, asRole, type UsageReceipt } from "./usage";
 import { bareAddress, parseStoredHeaders, prefilter, replyToAddress, SKIP_TEXT } from "./prefilter";
-import { RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type AwaitingAnswer, type ToolCallRecord } from "./run";
+import { withPriorDraft } from "./retire";
+import { DRAFT_TEXT_CHARS, PRIOR_DRAFTS_KEPT, RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type AwaitingAnswer, type ToolCallRecord } from "./run";
 import { secondLookCause } from "./learning-events";
 import { answeringOrder, duplicateReason, electAnswerer, messageKey, type MessageClaim } from "./dedupe";
 import type { KnowledgeHit } from "../knowledge/store";
@@ -297,8 +298,11 @@ export interface RunnerDeps {
     thread(threadId: string): Promise<RunnerThreadMessage[]>;
     rateLimit(): Promise<string | null>;
     send(command: SendMailCommand): Promise<SendMailResult>;
-    /** Idempotent by id: a repeated call must not create a second draft. */
-    createDraft(draft: { id: string; to: string; subject: string; text: string; inReplyTo: string; threadId: string }): Promise<void>;
+    /**
+     * Idempotent by id: a repeated call must not create a second draft. S07: answers `created: false` when a draft with
+     * that id was there already (its text may be another attempt's), and the provider's draft revision when it has one.
+     */
+    createDraft(draft: { id: string; to: string; subject: string; text: string; inReplyTo: string; threadId: string }): Promise<void | { created?: boolean; revision?: string }>;
   };
   /** flagged when the text looks like an attempt to steer the agent; a failed scan sets error. */
   injection(text: string): Promise<{ flagged: boolean; error?: string }>;
@@ -1190,8 +1194,16 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   const saveDraft = async (reason: string) => {
     // An answer given again keeps the earlier draft (a person may have edited it) beside the new one.
     const draftId = `${run.id}-draft${run.attempt && run.attempt > 1 ? `-${run.attempt}` : ""}`;
-    await deps.mailbox.createDraft({ id: draftId, ...reply, inReplyTo: email.id, threadId: email.thread_id || email.id });
+    const saved = await deps.mailbox.createDraft({ id: draftId, ...reply, inReplyTo: email.id, threadId: email.thread_id || email.id });
+    // K-5: an earlier attempt's draft stays in Drafts; the run remembers it, so a reply retires it too.
+    run.priorDrafts = withPriorDraft(run, draftId, PRIOR_DRAFTS_KEPT).priorDrafts;
+    if (!run.priorDrafts) delete run.priorDrafts;
     run.draftId = draftId;
+    // S07 (B-272): the run keeps the draft's text, so retiring an untouched draft never loses it; only a text the run
+    // knows is the draft's whole text lets retirement delete the draft (KIMI-46).
+    run.draftText = reply.text.slice(0, DRAFT_TEXT_CHARS);
+    run.draftTextComplete = reply.text.length <= DRAFT_TEXT_CHARS && !(saved && saved.created === false);
+    if (saved && typeof saved.revision === "string" && !run.agentDraftRevision) run.agentDraftRevision = saved.revision;
     return finish("drafted", reason);
   };
   try {
@@ -1235,6 +1247,8 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
   if ("error" in result) return saveDraft(msg("The send was refused ({error}); saved as a draft", { error: result.error }));
   run.sent = { to: reply.to, subject: reply.subject, body: reply.text.slice(0, SENT_BODY_CHARS), outboxId: result.id };
   if (result.status === "accepted") {
+    // S06 (B-271): the sent row finds its run by this id (on an address, the outbox id is the sent message's id).
+    run.sentMessageId = result.id;
     // Every answer sent without a person is traceable to what it rested on.
     // B-192: the kinds of state the answer tells the person (never its words), counted before anything is held on them.
     console.log(JSON.stringify({ event: "agent_answer_sent", run: run.id, agent: agent.id, version: agent.version, evidence: run.evidence ?? [], stateClaims: stateClaims(reply.text) }));

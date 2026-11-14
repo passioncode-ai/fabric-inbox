@@ -4,6 +4,9 @@ import type { OutboxRow } from './outbox-store';
 import { buildThreadingHeaders } from '../lib/email-helpers';
 export interface PreparedMail {
   request: SendMailRequest;
+  /** S07 (B-272): who sent it and the draft it came from; outside the identity hash (R6-3). Absent on older rows. */
+  sentBy?: 'person' | 'agent';
+  sourceDraft?: { id: string; answers: string | null; revision: number | null };
 }
 export function transportParams(payload: PreparedMail): SendEmailParams {
   const { in_reply_to, references, thread_id: _threadId, auto_submitted, ...message } = payload.request;

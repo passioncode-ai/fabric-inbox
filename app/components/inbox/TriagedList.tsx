@@ -6,6 +6,7 @@ import { TRIAGE_GROUPS, type Triage, type TriageGroup } from "../../../shared/ma
 import { triageText } from "./triage-text";
 import { useT, type T } from "../../lib/i18n";
 import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
+import { draftWaits } from "./draft-card";
 import { replyStateLabel, replyStateOpen } from "./reply-state";
 import { interleave, showServer, type OtherRow } from "../../lib/other-servers";
 
@@ -95,6 +96,8 @@ function MessageRow({ message, account, selected, marked, onSelect, showGroup, c
               <span className="fi-visually-hidden">{" " + t.plural(message.threadCount!, { one: "{n} message in this thread", other: "{n} messages in this thread" })}</span>
             </>
           )}
+          {/* S06 (B-271): the agent's draft waits under this message for a person. */}
+          {draftWaits(message.agentRun) && <span className="fi-agent-tag fi-draft-waiting">{t("Draft waiting")}</span>}
         </strong>
         <time dateTime={message.date}>{listDate(message.date, undefined, t)}</time>
       </div>

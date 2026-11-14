@@ -105,6 +105,7 @@
 | SCN-101 | Grant a person or an agent capabilities on one or several mailboxes | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-15 | draft | partial |
 | SCN-102 | Employees and the architect find their mail access ready | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-17 | draft | not yet |
 | SCN-103 | An organization's outreach agent writes from its own mailbox | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-15 | draft | not yet |
+| SCN-104 | Check and send the agent's draft in the thread | Review AI help | P-01 | ST-004, FLW-04, SCR-04 | draft | not yet |
 
 ## Personas
 See [foundation](foundation.md), P-01. Evidence RE-001 supports approved requirements; RE-002 is partial source inventory; RE-003 names unresolved providers/tools. Coverage now names partial source behavior. No full scenario has passed end-to-end acceptance; validated/draft statuses are unchanged and Product remains unobserved. RE-008 records the unified-workbench request; RE-009 records scoped synthetic UI observation. Detailed limits are in each Today field and the [integration receipt](implementation-receipt.md).
@@ -378,6 +379,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **UI elements:** SCR-04; named actions and fields in the steps; visible state and recovery control.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Model failure offers retry without sending; mail instructions do not expand permissions.
+- **Refinement (S06, B-271, 2026-11-14):** "Tune the agent" on a reply agent's draft card (SCN-104) opens this panel in a session of its own (`<mailbox>:tune:<run>`), with a prepared first message waiting in the box, not sent: our fixed words, the agent's instructions, reply policy and cited knowledge outside the fence, and the message, its sender, subject and the draft inside one fenced block with a fresh random token (`shared/untrusted-fence.ts`). That session has no tools at all and its own prompt (`TUNING_PROMPT`, locked under R28); the server decides both from the name and refuses a run of another mailbox. "Close tuning" deletes its conversation and returns to the ordinary one, which never holds the fenced block. Evidence: `tests/agent-draft-card.test.ts`.
 - **Audit refinement (2026-09-28):** The chat agent's Markdown never renders images: Markdown image syntax becomes a visible "Image: alt (host)" link, so a hostile email cannot make a reply fetch an attacker URL on display. Evidence: `tests/agent-markdown.test.ts`.
 - **Status:** validated
 - **Coverage:** app/routes/unified-inbox.tsx:953 (header toggle), :1457 (`AgentDock` mount), :435 (`agentAccount`), :443 (`openAgentSource`), :450 (`editAgentDraft`), :657 (keys typed in the panel never act on mail); app/components/inbox/AgentDock.tsx:48; app/components/agent-chat.ts (`agentAccount`, `sourcesOf`, `draftOf`, `retryTurn`); app/components/AgentPanel.tsx:147 (`SourceLinks`), :185 (`ChatErrorBubble`), :447; app/components/AgentMarkdown.tsx, workers/automation/index.ts:180, app/routes/automation.tsx:433. Tests: tests/agent-panel.test.ts, tests/agent-markdown.test.ts
@@ -2163,3 +2165,25 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** step 2: `tests/campaign-owner-send.test.ts` (B-246 W5a)
 - **Product:** unobserved
 - **Today:** Step 2 is built (1.6.12, packet R-6): a key that may prepare campaigns but not send launches one only through the owner's approval, bound to the campaign as it was. The agent itself (W5) and campaign replies reaching a sales agent are not built.
+
+### SCN-104: Check and send the agent's draft in the thread
+- **Persona:** P-01
+- **Feature:** Review AI help
+- **Traces:** ST-004, FLW-04, SCR-04; S06 (B-271) and S07 (B-272) of the mail-window plan (`docs/ux/plans/2026-11-14-mail-window/`); operator, 2026-11-14: «сначала первое письмо, под ним уже сразу драфт ... в драфте сразу есть отправить ... он уже editable»; «драфт находится только до того, пока он не отправлен или я не отправил»
+- **Entry point:** SCR-04, a conversation on a Cloudflare address whose reply agent drafted an answer (the list row says "Draft waiting")
+- **Preconditions:** A reply agent in draft mode (or one that drafted because of a limit or an ungrounded answer) answered a message; the person may change mail on that address.
+- **Steps:**
+  1. Open the conversation -> the agent's draft is a card right under the message it answers, scrolled into view; a long message above it is held to 40 % of the pane with "Show whole message". The card says "Draft by {agent}, version {n}", why it waits, "Answered from:" with each knowledge source as a link, and folds tools, model and checker under "How it was made".
+  2. Edit the text in place -> the first change is saved at once (the draft is the person's from then on), later ones 1.5 s after typing stops and on leaving the field; until a save is acknowledged the text stays on the device. A save that fails says so with Retry; a newer revision saved elsewhere shows the newer text and keeps the person's as "Your unsaved text" with "Use mine".
+  3. Send -> a pending edit is saved first and exactly that revision is sent; the card turns into a sent cell. Sent as the agent wrote it, the run's outcome is `approved_by_person`; after an edit, `answered_by_person`.
+  4. Or reply in the composer, from another device, or let an agent reply -> the reply agent's untouched drafts answering that message or an earlier one go away, their text kept on the run (S07), and the run's panel offers "Make a draft of it again"; an edited draft stays in Drafts behind the quiet line "Your edited draft is in Drafts". A card open at that moment shows "A reply was sent; this draft is no longer needed" with "Keep as my draft" and Close.
+  5. Or Discard draft -> the outcome is `superseded` and the untouched draft is removed (its text kept on the run); or Tune the agent -> the agent panel opens its tuning session (SCN-013).
+- **Expected result:** The person reads the message, the agent's proposal and where its facts came from in one place, edits and sends without opening another window, and a draft never outlives the answer to its conversation; nothing a person wrote is lost.
+- **Alt paths:** No run record kept: the card shows the draft and says "The agent's notes are not available". A member sees the text and Send only. A save answering that the draft was removed shows "This draft was removed because a reply was sent" with "Keep as my draft", which saves a new draft of the person's (R6-4).
+- **UI elements:** SCR-04; the draft card (header, why it waits, "Answered from:", "How it was made", recipients and subject with "Edit recipients", the text, Send, Discard draft, Tune the agent, "Open {agent} settings"); "Draft waiting" on the list row; the run's panel.
+- **States covered:** loading, error, success, conflict, removed
+- **Errors & recovery:** Send is disabled while a save runs, after a failed save and on a newer revision; an uncertain send retires nothing until it is accepted; a forward retires nothing.
+- **Status:** draft
+- **Coverage:** `app/components/inbox/AgentDraftCard.tsx`, `app/components/inbox/draft-card.ts`, `app/components/inbox/ConversationList.tsx` (`cardPlacement`, `Clamp`), `workers/agents/retire.ts`, `workers/durableObject/index.ts` (`retireAgentDrafts`, `deleteUntouchedDraft`, `createPersonDraft`), `workers/routes/agents.ts` (`discard-draft`, `redraft`, `tuning`). Tests: `tests/agent-draft-card.test.ts`, `tests/draft-retire.test.ts`, `tests/draft-retire-workerd.test.ts`.
+- **Product:** unobserved
+- **Today:** Built for Cloudflare addresses (S06, S07). On Gmail, IMAP and Outlook accounts the agent's draft stays as before (an ordinary draft cell; not retired or hidden when a reply is sent); see the "Built as" notes of S06 and S07. Not yet walked in WebKit.

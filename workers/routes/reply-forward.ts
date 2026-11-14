@@ -2,6 +2,13 @@ import type { Context } from 'hono';
 import type { MailboxContext } from '../lib/mailbox';
 import type { SendMailCommand } from '../../shared/mail/send';
 import { msg } from "../../shared/i18n";
+import { inProcessActors } from "../lib/audit";
+
+/**
+ * S07 (B-272): who sends through this route. A call over the agent protocol arrives in-process under its agent's name
+ * (`inProcessActors`); anything else is a person in the app.
+ */
+export const sentByOf = (raw: Request): 'person' | 'agent' => (inProcessActors.has(raw) ? 'agent' : 'person');
 
 /** All browser sends share the same mailbox-owned durable effect boundary. */
 export async function handleSendEmail(c: Context<MailboxContext>, kind: 'send' | 'reply' | 'forward' = 'send') {
@@ -16,6 +23,7 @@ export async function handleSendEmail(c: Context<MailboxContext>, kind: 'send' |
     kind,
     originalEmailId: kind === 'send' ? undefined : c.req.param('id'),
     request: raw as SendMailCommand['request'],
+    sentBy: sentByOf(c.req.raw),
   });
   if ('error' in result) {
     const status = result.code === 'IDEMPOTENCY_CONFLICT' || result.code === 'MOVED' ? 409 : result.code === 'NOT_FOUND' ? 404 : 400;
