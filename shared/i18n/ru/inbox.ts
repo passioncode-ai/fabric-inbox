@@ -378,6 +378,12 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"and {n} more": "и ещё {n}",
 	"Copy {address}": "Скопировать {address}",
 	"Received at": "Получено на",
+	// S05 (B-221): what a reply answered, and its quoted history folded.
+	"In reply to {name}, {date}": "В ответ на {name}, {date}",
+	"In reply to an earlier message": "В ответ на более раннее письмо",
+	"Go to message": "Перейти к письму",
+	"Show quoted text": "Показать цитату",
+	"Hide quoted text": "Скрыть цитату",
 	// S01 (B-267)
 	"All groups": "Все группы",
 };

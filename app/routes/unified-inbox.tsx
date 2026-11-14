@@ -56,6 +56,7 @@ import ReplyFilter from "~/components/inbox/ReplyFilter";
 import { forwardBody } from "../../shared/mail/forward";
 import { isAgentState, type AgentStatusSettings } from "../../shared/mail/agent-state";
 import ConversationList from "~/components/inbox/ConversationList";
+import { foldQuotedHtml } from "~/components/inbox/quotes";
 import { loadConversation, markRead, messageBody, type ThreadRow } from "~/components/inbox/thread";
 import AgentRunPanel from "~/components/inbox/AgentRunPanel";
 import HeldPanel from "~/components/inbox/HeldPanel";
@@ -950,7 +951,7 @@ export default function UnifiedInbox() {
                           {reading?.html ? (
                             <EmailIframe
                               messageKey={selected.id}
-                              body={reading.html}
+                              body={foldQuotedHtml(reading.html, { show: t("Show quoted text"), hide: t("Hide quoted text") })}
                               inlineAttachments={reading.inline}
                               autoSize
                               blockedHosts={selected.held?.links}

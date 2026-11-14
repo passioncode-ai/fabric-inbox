@@ -20,6 +20,12 @@ export interface ThreadRow {
   sentBy?: SentBy;
   /** The message's HTML as the thread route gives it (Cloudflare), so its cell shows it without another request. */
   body?: string;
+  /** S05 (B-221): its Cc, for the cell's one-line header. */
+  cc?: string;
+  /** S05: its own Message-ID and what it answers (In-Reply-To, References), to show which message a reply answers. */
+  rfcMessageId?: string;
+  inReplyTo?: string;
+  references?: string;
 }
 
 type Request = (url: string) => Promise<unknown>;
@@ -45,8 +51,13 @@ function fromCloudflare(open: InboxMessage, e: Record<string, unknown>): ThreadR
     ...(folder === "trash" || folder === "spam" || folder === "discarded" ? { removed: true } : {}),
     ...(e.sent_by === "agent" || e.sent_by === "agent_waiting" || e.sent_by === "person" ? { sentBy: e.sent_by } : {}),
     ...(typeof e.body === "string" ? { body: e.body } : {}),
+    ...field("cc", e.cc), ...field("rfcMessageId", e.message_id), ...field("inReplyTo", e.in_reply_to), ...field("references", e.email_references),
   };
 }
+
+/** A non-empty string field, or nothing. */
+const field = <K extends string>(key: K, value: unknown): Partial<Record<K, string>> =>
+  typeof value === "string" && value.trim() ? ({ [key]: value } as Record<K, string>) : {};
 
 /** A Gmail, IMAP or Outlook cached message with this thread id, as a message of the open one's account. */
 function fromRemote(open: InboxMessage, m: Record<string, unknown>): ThreadRow {
@@ -63,6 +74,7 @@ function fromRemote(open: InboxMessage, m: Record<string, unknown>): ThreadRow {
     open: id === open.providerMessageId,
     at: Number(m.timestamp) > 0 ? Number(m.timestamp) : Date.parse(String(m.date ?? "")) || 0,
     ...(labels.includes("TRASH") || labels.includes("SPAM") || labels.includes("DISCARDED") ? { removed: true } : {}),
+    ...field("cc", m.cc), ...field("rfcMessageId", m.rfcMessageId), ...field("inReplyTo", m.inReplyTo), ...field("references", m.references),
   };
 }
 

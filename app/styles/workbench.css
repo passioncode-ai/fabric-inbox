@@ -2303,3 +2303,66 @@ body.fi-resizing { cursor: col-resize; user-select: none; }
   .fi-rules-switch > span,
   .fi-rules-switch > span::after { transition: none; }
 }
+
+/* S05 (B-221): who wrote to whom in a cell, what a reply answered, nesting, folded quotes. */
+.fi-thread-people {
+  margin: -4px 0 8px;
+  color: var(--pc-text-muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.fi-thread-cell.is-nested {
+  margin-left: 24px;
+  border-left: 2px solid var(--pc-border);
+  padding-left: 14px;
+}
+.fi-thread-cell:focus-visible {
+  outline: 2px solid var(--pc-focus);
+  outline-offset: 2px;
+}
+.fi-thread-reply-to {
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: var(--pc-text-muted);
+}
+.fi-thread-reply-toggle {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.fi-thread-reply-quote {
+  margin-top: 6px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--pc-border-strong);
+  background: var(--pc-panel-raised);
+  border-radius: 0 var(--pc-radius-control) var(--pc-radius-control) 0;
+}
+.fi-thread-reply-quote p {
+  margin: 0 0 6px;
+  color: var(--pc-text);
+}
+details.fi-quote {
+  margin: 10px 0 0;
+}
+details.fi-quote > summary {
+  cursor: pointer;
+  color: var(--pc-text-muted);
+  font-size: 11px;
+  list-style: none;
+}
+details.fi-quote > summary::-webkit-details-marker {
+  display: none;
+}
+details.fi-quote[open] .fi-quote-show,
+details.fi-quote:not([open]) .fi-quote-hide {
+  display: none;
+}
+.fi-quote-text {
+  white-space: pre-wrap;
+  color: var(--pc-text-muted);
+}
