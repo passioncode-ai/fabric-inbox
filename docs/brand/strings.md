@@ -144,7 +144,13 @@ Locations name the source function while the integration branch is being formatt
 | label.composer.to | To | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
 | label.composer.subject | Subject | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
 | label.composer.message | Message | app/components/inbox/Composer.tsx:Composer | SCN-006 | proposed |
-| state.composer.forward_limit | Original attachments are not included yet. Load all files below before forwarding. | app/components/inbox/Composer.tsx:Composer | SCN-009 | proposed |
+| state.composer.forward_attaching | Attaching files… | app/components/inbox/Composer.tsx:Composer | SCN-009 | proposed |
+| state.composer.forward_missing | Some of the original's files are not attached. Retry or remove each one. | app/components/inbox/Composer.tsx:Composer | SCN-009 | proposed |
+| state.composer.forward_no_room | {n} files did not fit in one message | app/components/inbox/Composer.tsx:LeftOutFiles | SCN-009 | proposed |
+| error.composer.no_room | No room left: remove a file first | app/components/inbox/Composer.tsx:Composer | SCN-009 | proposed |
+| state.composer.forward_dangerous | Not attached: the safety check found this file dangerous | app/components/inbox/Composer.tsx:LeftOutFiles | SCN-009 | proposed |
+| action.composer.attach_anyway | Attach anyway | app/components/inbox/Composer.tsx:LeftOutFiles | SCN-009 | proposed |
+| state.composer.forward_removed | Removed; it will not be sent | app/components/inbox/Composer.tsx:LeftOutFiles | SCN-009 | proposed |
 | state.composer.send_not_attempted | Could not save send recovery information. Sending was not attempted. | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
 | state.composer.acceptance_pending | Acceptance is not confirmed. Keep this attempt unchanged and check again. | app/components/inbox/Composer.tsx:Composer | SCN-007 | proposed |
 | state.composer.failed | The provider did not accept this attempt. Correct the draft and send again, or discard it. | app/components/inbox/send-state.ts:sendFailureNotice | SCN-007 | proposed |

@@ -1152,6 +1152,24 @@ body {
   color: var(--pc-text-muted);
   white-space: nowrap;
 }
+.fi-compose-file-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+/* A forward's file safety chip (S09, S03's colours), always with its word. */
+.fi-file-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: var(--pc-radius-pill);
+  font-size: 11px;
+  white-space: nowrap;
+  border: 1px solid var(--pc-border);
+  color: var(--pc-text-muted);
+}
+.fi-file-chip-green { color: var(--pc-positive); background: var(--pc-positive-soft); border-color: transparent; }
+.fi-file-chip-amber { color: var(--pc-warning); background: var(--pc-warning-soft); border-color: transparent; }
+.fi-file-chip-red { color: var(--pc-negative); background: var(--pc-negative-soft); border-color: transparent; }
 .fi-rules-dialog p {
   font-size: 13px;
   color: var(--pc-text-muted);

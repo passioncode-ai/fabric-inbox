@@ -7,11 +7,16 @@ import { recipientAddresses } from "./send-state";
 import type { Draft } from "./draft-store";
 import { msg } from "../../../shared/i18n";
 import { withForward, withForwardText } from "../../../shared/mail/forward";
+import { includedOriginalIds, leftOutIds } from "./forward-files";
 
+/**
+ * Originals a forward neither carries nor left out on purpose (B-274): in the original, not included
+ * (its bytes wait here or are on the server) and not in `leftOut`. Send waits for them.
+ */
 export function missingOriginals(draft: Draft) {
-  // An original is included while its bytes wait here or once they are on the server.
-  const included = new Set([...(draft.attachments ?? []).map((a) => a.sourceId), ...(draft.serverFiles ?? []).map((f) => f.sourceId)]);
-  return draft.forwardSource?.files.filter((f) => !included.has(f.id)) ?? [];
+  const included = includedOriginalIds(draft);
+  const left = leftOutIds(draft);
+  return draft.forwardSource?.files.filter((f) => !included.has(f.id) && !left.has(f.id)) ?? [];
 }
 /** Merge only references into the current identity, never captured message text. */
 export function appendAttachments(
@@ -41,7 +46,7 @@ export async function prepareMessage(draft: Draft, storage: AttachmentStorage) {
     );
   if (missingOriginals(draft).length)
     throw new Error(
-      msg("Include all original attachments before forwarding. If a file cannot be retrieved, keep this draft and try again."),
+      msg("Some of the original's files are not attached. Retry or remove each one."),
     );
   const attachments = await loadAttachments(
     storage,
