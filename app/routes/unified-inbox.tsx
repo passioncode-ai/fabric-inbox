@@ -1305,16 +1305,16 @@ export default function UnifiedInbox() {
                   ? t("Search results")
                   : t.text(folders.find((f) => f[0] === folder)?.[1] ?? "")}
               </strong>
-              <span>
-                {marked.size > 1 ? TT.selected(marked.size) : t(view === "focus" ? "Important first" : "Newest first")}
-              </span>
+              {marked.size > 1 ? <span>{TT.selected(marked.size)}</span>
+                : serverTabs ? (
+                  // S01 (B-267): the server switch sits in the heading; the order hint stays on the Focus/Newest control.
+                  <ServerTabs servers={heldServers} states={otherInbox.data?.servers ?? []} mergeAll={mergeAll}
+                    ownUnread={totalUnread(accounts) ?? 0} onChoose={chooseServerTab} onRetry={() => void otherInbox.refetch()} />
+                ) : <span>{t(view === "focus" ? "Important first" : "Newest first")}</span>}
             </div>
-            {serverTabs && (
-              <ServerTabs servers={heldServers} states={otherInbox.data?.servers ?? []} mergeAll={mergeAll}
-                ownUnread={totalUnread(accounts) ?? 0} onChoose={chooseServerTab} onRetry={() => void otherInbox.refetch()} />
-            )}
             <div className="fi-filter-bar" role="toolbar" aria-label={t("List view and filters")}>
-              {folder !== "spam" && <div className="fi-segmented" role="group" aria-label={t("Order")}>
+              {folder !== "spam" && <div className="fi-segmented" role="group" aria-label={t("Order")}
+                title={t(view === "focus" ? "Important first" : "Newest first")}>
                 <button type="button" aria-pressed={view === "focus"} onClick={() => scope({ view: "focus" })}>
                   {t("Focus")}
                 </button>
@@ -1336,7 +1336,7 @@ export default function UnifiedInbox() {
               {folder !== "spam" && (counts.length > 1 || !!group) && (
                 <div className="fi-chip-row" role="group" aria-label={t("Show one group")}>
                   <button type="button" className="fi-chip" aria-pressed={!group} onClick={() => scope({ group: "" })}>
-                    {t("All")}
+                    {t("All groups")}
                   </button>
                   {counts.map((c) => (
                     <button

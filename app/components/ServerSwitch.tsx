@@ -88,7 +88,7 @@ export default function ServerSwitch(props: ServerSwitchProps) {
 	}
 	const label = props.label ?? t("Servers");
 	return layout === "menu"
-		? <SwitchMenu choices={choices} current={current} label={label} servers={servers} />
+		? <SwitchMenu choices={choices} current={current} label={label} servers={servers} count={countText(current)} />
 		: <SwitchSegments choices={choices} current={current} label={label} />;
 }
 
@@ -122,7 +122,7 @@ function SwitchSegments({ choices, current, label }: { choices: Choice[]; curren
 	);
 }
 
-function SwitchMenu({ choices, current, label, servers }: { choices: Choice[]; current: SwitchChoice; label: string; servers: readonly SwitchServer[] }) {
+function SwitchMenu({ choices, current, label, servers, count }: { choices: Choice[]; current: SwitchChoice; label: string; servers: readonly SwitchServer[]; count?: ReactNode }) {
 	const t = useT();
 	const [open, setOpen] = useState(false);
 	const trigger = useRef<HTMLButtonElement>(null);
@@ -156,6 +156,7 @@ function SwitchMenu({ choices, current, label, servers }: { choices: Choice[]; c
 			<button ref={trigger} type="button" className="fi-server-choice fi-server-switch-trigger" aria-haspopup="true" aria-expanded={open}
 				aria-controls={open ? id : undefined} title={shown?.label} onClick={() => setOpen(!open)}>
 				<span className="fi-server-name">{shown ? shown.label : t("All servers")}</span>
+				{count}
 				<CaretDownIcon size={12} aria-hidden="true" />
 			</button>
 			{open && (

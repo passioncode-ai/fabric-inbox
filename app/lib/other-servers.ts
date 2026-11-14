@@ -35,6 +35,8 @@ export interface OtherServerState {
 	state: "ok" | "signed_out" | "unreachable";
 	/** Unread among the messages read; null when the server was not read. */
 	unread: number | null;
+	/** S01 (B-267): the read came back full, so `unread` is a lower bound. */
+	full?: boolean;
 }
 export interface OtherInbox {
 	servers: OtherServerState[];
@@ -90,7 +92,7 @@ export function readOtherInbox(value: unknown): OtherInbox {
 	const rows = Array.isArray(v.messages) ? v.messages : [];
 	return {
 		servers: states.filter((s): s is OtherServerState => !!s && typeof s.origin === "string" && typeof s.label === "string" && ["ok", "signed_out", "unreachable"].includes(s.state))
-			.map((s) => ({ origin: s.origin, label: s.label, state: s.state, unread: typeof s.unread === "number" ? s.unread : null })),
+			.map((s) => ({ origin: s.origin, label: s.label, state: s.state, unread: typeof s.unread === "number" ? s.unread : null, ...(s.full === true ? { full: true } : {}) })),
 		messages: rows.filter((r): r is OtherRow => !!r && typeof r.origin === "string" && typeof r.link === "string" && r.link.startsWith("/") && typeof r.at === "number")
 			.map((r) => ({ origin: r.origin, server: String(r.server ?? ""), sender: String(r.sender ?? ""), to: String(r.to ?? ""), subject: String(r.subject ?? ""),
 				snippet: String(r.snippet ?? ""), at: r.at, read: !!r.read, link: r.link })),

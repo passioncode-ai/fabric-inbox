@@ -38,7 +38,7 @@ function rowOf(server, m) {
 
 /**
  * Reads every server at once and merges their inboxes. servers: [{ origin, label }].
- * Answers { servers: [{ origin, label, state, unread }], messages: [row, …] } (messages newest first).
+ * Answers { servers: [{ origin, label, state, unread, full }], messages: [row, …] } (messages newest first).
  */
 async function readAll({ servers, read }) {
   const answers = await Promise.all(servers.map(async (s) => {
@@ -51,7 +51,9 @@ async function readAll({ servers, read }) {
     const state = stateOf(answer);
     const mine = state === 'ok' ? answer.body.messages.map((m) => rowOf(server, m)).filter(Boolean) : [];
     rows.push(...mine);
-    return { origin: server.origin, label: server.label, state, unread: state === 'ok' ? mine.filter((r) => !r.read).length : null };
+    // S01 (B-267): a read that came back full counts unread among its last PAGE_SIZE rows only, a lower bound ("50+").
+    return { origin: server.origin, label: server.label, state, unread: state === 'ok' ? mine.filter((r) => !r.read).length : null,
+      full: state === 'ok' && answer.body.messages.length >= PAGE_SIZE };
   });
   rows.sort((a, b) => b.at - a.at);
   return { servers: states, messages: rows.slice(0, LIST_MAX) };

@@ -1798,21 +1798,13 @@ body {
 }
 .fi-also-in { font-size: 10px; color: var(--pc-text-muted); }
 /* B-244 D-3 (SCN-099): the servers' tabs above the inbox and the mark of another server's message. */
-/* B-266: the row sits in the mail list's column (a flex column), where `.fi-chip-row`'s `flex: 1 0 100%` made it take the
-   column's whole height: its wrapped lines stretched and every tab grew into a tall oval, pushing the mail out of view.
-   It is as tall as its tabs, and its lines and tabs keep their own height. */
-.fi-server-tabs { padding: 0 21px 8px; flex: 0 0 auto; flex-wrap: wrap; row-gap: 6px; align-content: flex-start; align-items: center; overflow: visible; }
-/* B-263: a tab is one line whatever the window's width; a long server name is cut (its full name is the title), and
-   tabs that do not fit move to the next line whole, never growing into tall ovals. */
-.fi-server-tabs .fi-chip {
-  display: inline-flex; align-items: center; flex: 0 0 auto; max-width: 100%; box-sizing: border-box;
-  white-space: nowrap; line-height: 16px;
-}
-.fi-server-tabs .fi-chip > * { flex-shrink: 0; }
-.fi-server-tabs .fi-chip > .fi-server-name {
-  flex: 0 1 auto; color: inherit; margin-left: 0; min-width: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis;
-}
-.fi-server-tabs .fi-chip.is-problem { border-style: dashed; }
+/* S01 (B-267): the switch sits in the list heading, at its right, as tall as one line; it never wraps or grows. The
+   heading's text spans keep their small muted style; the switch's own text does not inherit it. */
+.fi-list-heading { gap: 12px; }
+.fi-server-tabs { display: flex; justify-content: flex-end; flex: 1 1 auto; min-width: 0; }
+.fi-list-heading .fi-server-tabs span { font-size: inherit; color: inherit; }
+.fi-list-heading .fi-server-switch .fi-server-count { color: var(--pc-text-muted); }
+.fi-list-heading .fi-server-switch .fi-server-switch-list { left: auto; right: 0; max-width: calc(100vw - 24px); }
 .fi-server-unreachable { gap: 6px; cursor: default; }
 .fi-server-unreachable .fi-text-button { font-size: 11px; }
 .fi-server-pill {

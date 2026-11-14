@@ -377,4 +377,6 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"and {n} more": "и ещё {n}",
 	"Copy {address}": "Скопировать {address}",
 	"Received at": "Получено на",
+	// S01 (B-267)
+	"All groups": "Все группы",
 };

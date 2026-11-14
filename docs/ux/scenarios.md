@@ -2062,7 +2062,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** the inbox of the mail window, its row of organization tabs
 - **Preconditions:** The app holds two or more servers (SCN-092), each signed in at least once.
 - **Steps:**
-  1. Open the inbox -> above the list a row of tabs: All, then each server by its name (my own space, or the organization's name) with its unread count; All lists the inbox of every server I hold, newest first, and marks each message of another server with its organization's name.
+  1. Open the inbox -> in the list heading a server switch (B-267, S01): All, then each server by its name (my own space, or the organization's name) with its unread count, "N+" when another server's count comes from a full read of its last 50 messages; segments when the list is at least 360 px wide and holds up to four servers, else one button ("All servers ▾" or the server's name) opening a menu of the same rows; a signed-out server reads "<name> · Sign in" and an unreachable one "<name> · Retry", each choosing signs in or retries; the group chips' All reads "All groups"; All lists the inbox of every server I hold, newest first, and marks each message of another server with its organization's name.
   2. Open a message of another organization from All -> the same window shows it on its own server, with that server's actions, agents and reply; nothing reloads, and Back returns to All where I left it.
   3. Choose an organization's tab -> the window shows that server's own inbox, still signed in (SCN-093); All brings the merged list back.
   4. Archive, mark or discard a message of another organization -> the window shows that server first, and the action is that server's.
