@@ -4,6 +4,7 @@ import { useT } from "~/lib/i18n";
 import { useMe } from "~/lib/me";
 import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
 import { draftWaits } from "./draft-card";
+import { useAgentName } from "./agent-name";
 import type { InboxMessage } from "./model";
 
 /** A run as `GET /api/agent-runs/:id` answers it (workers/agents/run.ts), the fields the reader shows. */
@@ -55,15 +56,18 @@ export default function AgentRunPanel({ message, onOpenDraft, hideWhileDraftWait
     mutationFn: () => fabric(`/api/agent-runs/${encodeURIComponent(id!)}/redraft`, {}),
     onSuccess: () => { void client.invalidateQueries({ queryKey: ["agent-run", id] }); onChanged?.(); },
   });
+  // A-26: the agent by its name, as the draft card names it (its id when the name cannot be read).
+  const agentName = useAgentName(run.data?.agentId ?? message.agentRun?.agentId);
   if (!message.agentRun || !id) return null;
   if (hideWhileDraftWaits && draftWaits(message.agentRun)) return null;
   const r = run.data;
   const status = r?.status ?? message.agentRun.status;
+  const version = r?.agentVersion ?? message.agentRun.agentVersion;
   return (
     <section className={"fi-agent-run" + (agentRunNeedsLook(status) ? " needs-look" : "")} aria-label={t("What the agent did")}>
       <p className="fi-agent-run-title">
         <strong>{agentRunLabel(status, t)}</strong>
-        {(r?.agentId ?? message.agentRun.agentId) && <span> · {r?.agentId ?? message.agentRun.agentId}{(r?.agentVersion ?? message.agentRun.agentVersion) ? ` v${r?.agentVersion ?? message.agentRun.agentVersion}` : ""}</span>}
+        {agentName && <span> · {version ? t("{agent}, version {n}", { agent: agentName, n: version }) : agentName}</span>}
       </p>
       {run.isError && <p role="alert">{t("What the agent did could not load.")}</p>}
       {r && (

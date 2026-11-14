@@ -210,3 +210,10 @@ Where the build differs from the text above, the safest reversible choice was ta
   the retired card's own draft id (`retiredCards`), never by the run's current draft id, which "Answer again" moves on.
   The card's save, send and keep logic lives in `DraftAutosave` (`sendWith`, `keepWith`, `locked`), driven by tests
   without a DOM; the tuning session's tools come from `sessionTools`, which gives any `:tune:` name none.
+- **After the mail-window audit (wave F2, 2026-11-14):** the sent cell and the run's panel name the agent by its name
+  (`useAgentName`, `app/components/inbox/agent-name.ts`, the card's own read), falling back to its id; a member reads
+  the id (A-26). Discard draft is no longer shown as "A reply was sent": the card turns into "You discarded the agent's
+  draft. Nothing was sent." with "Make a draft of it again" (A-5). The card answering the open message is the one
+  brought into view, placed again while the thread settles (A-6). The tuning box grows to half the panel (A-7). The list
+  row's second mark is left out while "Draft waiting" says it (A-15). "Discard draft" reads «Выбросить черновик» on the
+  card and in the composer, as the word table says (A-27).

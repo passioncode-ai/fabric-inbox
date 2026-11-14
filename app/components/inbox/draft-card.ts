@@ -91,6 +91,11 @@ export const retiredRedraftBody = (copy: string | null): { text?: string } => (c
 
 /** A card on screen: the message it answers and its own draft id (the device copy's key), by its row. */
 export type ShownCard = { answered: string; draftId: string };
+/**
+ * A card that left the screen and what took it: a reply retired its draft (S07, "A reply was sent"), or the person set
+ * it aside with Discard draft (A-5: nothing was sent, so it says so, with the way back).
+ */
+export type GoneCard = ShownCard & { kind: "retired" | "discarded" };
 
 /**
  * The cards on screen now, and those that went since the last read because a reply retired their draft: each with the
@@ -99,16 +104,56 @@ export type ShownCard = { answered: string; draftId: string };
  * a retirement.
  */
 export function retiredCards(before: ReadonlyMap<string, ShownCard>, rows: readonly ThreadRow[], placement: Pick<CardPlacement, "cards">): {
-  now: Map<string, ShownCard>; gone: ShownCard[];
+  now: Map<string, ShownCard>; gone: GoneCard[];
 } {
   const now = new Map<string, ShownCard>();
   for (const [at, drafts] of placement.cards) for (const d of drafts) now.set(d.message.id, { answered: rows[at]!.message.id, draftId: d.message.providerMessageId });
-  const gone = [...before.entries()].filter(([row]) => !now.has(row)).map(([, card]) => card).filter((card) => {
-    const run = rows.find((r) => r.message.id === card.answered)?.message.agentRun;
-    return !!run?.outcome && !run.outcome.edited && run.outcome.kind !== "approved_by_person";
-  });
+  const gone: GoneCard[] = [];
+  for (const [row, card] of before) {
+    if (now.has(row)) continue;
+    const outcome = rows.find((r) => r.message.id === card.answered)?.message.agentRun?.outcome;
+    if (!outcome || outcome.edited || outcome.kind === "approved_by_person") continue;
+    // A-5: Discard draft writes `superseded`; no reply went, so it is not "A reply was sent".
+    gone.push({ ...card, kind: outcome.kind === "superseded" ? "discarded" : "retired" });
+  }
   return { now, gone };
 }
+
+// ── The card in view on open (S06; A-6) ─────────────────────────────
+
+/**
+ * The card a thread brings into view when it opens: the one answering the open message, else the last waiting card
+ * (the newest question still waiting). Its row's id, or null when no card waits.
+ */
+export function cardToShow(rows: readonly ThreadRow[], placement: Pick<CardPlacement, "cards" | "last">, openId: string): string | null {
+  const open = rows.findIndex((r) => r.message.providerMessageId === openId);
+  const mine = open >= 0 ? placement.cards.get(open)?.[0] : undefined;
+  if (mine) return mine.message.id;
+  if (placement.last.length) return placement.last[placement.last.length - 1]!.message.id;
+  let at = -1;
+  for (const i of placement.cards.keys()) at = Math.max(at, i);
+  return at >= 0 ? placement.cards.get(at)!.at(-1)!.message.id : null;
+}
+
+/** How much of a card must show below its top for it to count as seen without scrolling to it. */
+export const CARD_SEEN_PX = 160;
+
+/**
+ * Whether the card must be scrolled to: its top is above the pane, or too near its bottom (less than `CARD_SEEN_PX`
+ * of it shows). Then it is scrolled to the pane's top (A-6: at 900 px the card's header and sources were cut off).
+ */
+export const cardNeedsScroll = (cardTop: number, pane: { top: number; bottom: number }) =>
+  cardTop < pane.top || cardTop > pane.bottom - Math.min(CARD_SEEN_PX, (pane.bottom - pane.top) / 2);
+
+// ── The list row's marks (A-15) ─────────────────────────────────────
+
+/**
+ * Whether the row's status mark only says again what "Draft waiting" beside the sender says: the conversation's state
+ * is the agent's waiting draft (or, with no state, the run's "Agent's draft"). Another state (a new message after the
+ * agent, an error) still shows.
+ */
+export const statusRepeatsDraft = (message: { agentRun?: AgentRunView; agentState?: string }) =>
+  draftWaits(message.agentRun) && (!message.agentState || message.agentState === "agent_draft");
 
 // ── Autosave (S06, KIMI-48) ────────────────────────────────────────
 

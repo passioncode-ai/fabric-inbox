@@ -7,8 +7,9 @@ import { useT } from "~/lib/i18n";
 import { settingsPath } from "~/components/settings/paths";
 import { htmlToText, textToHtml } from "../../../shared/mail/text";
 import type { AgentRunView } from "../../../shared/mail/agent-run-view";
-import { cardCopyKey, DraftAutosave, readCardCopy, retiredRedraftBody, sourceCollection, writeCardCopy, tuningMessage, waitReason, type SaveAnswer, type SaveState, type TuningWords } from "./draft-card";
+import { cardCopyKey, DraftAutosave, readCardCopy, retiredRedraftBody, sourceCollection, writeCardCopy, tuningMessage, waitReason, type GoneCard, type SaveAnswer, type SaveState, type TuningWords } from "./draft-card";
 import { rawAccount } from "./model";
+import { useAgentName } from "./agent-name";
 import { sendFailure, sendFailureNotice } from "./send-state";
 import type { ThreadRow } from "./thread";
 
@@ -52,11 +53,7 @@ export default function AgentDraftCard({ row, answered, member, loadText, onOpen
     queryKey: ["agent-run", run?.id], enabled: !!run && !member, staleTime: 15_000,
     queryFn: () => fabric<RunDetails>(`/api/agent-runs/${encodeURIComponent(run!.id)}`),
   });
-  const agent = useQuery({
-    queryKey: ["agent-name", run?.agentId], enabled: !!run?.agentId && !member, staleTime: 300_000,
-    queryFn: () => fabric<{ name?: string }>(`/api/agents/${encodeURIComponent(run!.agentId!)}`),
-  });
-  const agentName = agent.data?.name || run?.agentId || t("the agent");
+  const agentName = useAgentName(run?.agentId) || t("the agent");
   const [, rerender] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<"send" | "discard" | "keep" | "tune" | null>(null);
@@ -235,13 +232,17 @@ export default function AgentDraftCard({ row, answered, member, loadText, onOpen
 
 /**
  * S07 (B-272): an untouched card whose draft was retired while it was open: the notice instead of the card vanishing,
- * with "Keep as my draft" (the agent's text, kept on the run, as a new draft of the person's) and "Close".
+ * with "Keep as my draft" (the agent's text, kept on the run, as a new draft of the person's) and "Close". A-5: a card
+ * set aside with Discard draft (`kind: "discarded"`) says that, and that nothing was sent; its way back is "Make a draft
+ * of it again", the same words the run's panel uses.
  */
-export function RetiredDraftNotice({ run, accountId, draftId, onChanged, onClose }: {
+export function RetiredDraftNotice({ run, accountId, draftId, onChanged, onClose, kind = "retired" }: {
   run: AgentRunView; accountId: string;
   /** The retired card's own draft id: the device copy's key (round 2, K-2), never the run's current draft. */
   draftId: string;
   onChanged: () => void; onClose: () => void;
+  /** What took the card: a reply (S07) or Discard draft (A-5). */
+  kind?: GoneCard["kind"];
 }) {
   const t = useT();
   const [failed, setFailed] = useState(false);
@@ -251,14 +252,14 @@ export function RetiredDraftNotice({ run, accountId, draftId, onChanged, onClose
   const body = retiredRedraftBody(copy);
   return (
     <section className="fi-draft-card is-retired" role="status">
-      <p>{t("A reply was sent; this draft is no longer needed")}</p>
+      <p>{kind === "discarded" ? t("You discarded the agent's draft. Nothing was sent.") : t("A reply was sent; this draft is no longer needed")}</p>
       {body.text && <p className="fi-muted">{t("Your edit on this device is kept: Keep as my draft saves it.")}</p>}
       {failed && <p role="alert">{t("Your text could not be saved as a draft. Try again.")}</p>}
       <div className="fi-draft-card-actions">
         {(run.draftKept || body.text) && (
           <button type="button" className="fi-secondary" onClick={() => fabric(`/api/agent-runs/${encodeURIComponent(run.id)}/redraft`, body)
             .then(() => { writeCardCopy(key, null); onChanged(); onClose(); }, () => setFailed(true))}>
-            {t("Keep as my draft")}
+            {kind === "discarded" ? t("Make a draft of it again") : t("Keep as my draft")}
           </button>
         )}
         <button type="button" className="fi-thread-action" onClick={onClose}>{t("Close")}</button>

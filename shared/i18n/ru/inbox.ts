@@ -422,6 +422,8 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Not saved. Your text is kept on this device.": "Не сохранено. Ваш текст сохранён на этом устройстве.",
 	"The agent's draft": "Черновик агента",
 	"Draft by {agent}, version {n}": "Черновик агента {agent}, версия {n}",
+	"{agent}, version {n}": "{agent}, версия {n}",
+	"You discarded the agent's draft. Nothing was sent.": "Вы выбросили черновик агента. Ничего не отправлено.",
 	"Draft by {agent}": "Черновик агента {agent}",
 	"Answers a message not in this thread": "Отвечает на письмо не из этой переписки",
 	"The agent's notes are not available": "Заметки агента недоступны",
