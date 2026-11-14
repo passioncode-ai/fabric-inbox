@@ -143,3 +143,24 @@ Severity: **blocking**, the operator's ask not met or broken; **major**, wrong o
 The two blocking findings (A-1, A-2) and the major ones are the fix waves' first rows; each fix lands
 with its test and a walk on this fixture (`FIXTURE_PORT=5175 PREVIEW_ACTIONS=1 node
 scripts/preview-fixture.mjs` behind `npm run dev -- --port 5174`).
+
+## Fixed in wave F3
+
+| Finding | Fixed in | How |
+|---|---|---|
+| A-12 | fb9b7a66 | The group label "Security" is «Безопасность» (`shared/i18n/ru/server.ts`); the IMAP form's setting uses its own key `[connection] Security` → «Шифрование» (`ImapAccount.tsx`). Test: `tests/i18n-context-words.test.ts`. |
+| A-28 | fb9b7a66 | "Would not act: {reason}." ends with a full stop in both languages (`app/lib/rule-sentence.ts`). Test: `tests/rule-sentence.test.ts`. |
+| A-29 | fb9b7a66 | The full tabs pattern: roving tabindex, Left/Right wrapping, Home/End (`app/lib/tab-keys.ts`), one `tabpanel` with `aria-labelledby` the chosen tab, `aria-controls` on each tab; the waiting count is visible text with a visually hidden sentence. Tests: `tests/tab-keys.test.ts`, `tests/automation-ui.test.ts`. |
+| A-30 | fb9b7a66 | One word per state: a signed-out server's button says «Войти» in the groups as in the switch (`[action] Sign in`; «Вход» stays the sign-in window's title), and "Not reachable now" is «Сейчас недоступен» everywhere (S01's words); rows added to `docs/brand/terminology.md`. Test: `tests/settings-server-words.test.ts` renders both in Russian. |
+| A-33 | fb9b7a66 | The search field's flex basis is its placeholder's length (`--fi-search-chars`, 1ch a character plus padding and the clear button); with less room the button wraps below and the field takes the row. WebKit walk at 1400 and 900 px, EN and RU: the field is 301 px in the 340 px list column (placeholder needs 123 px), full row below 930 px. |
+
+The same mistake as A-12 elsewhere in the dictionary (one English key, two meanings), found by listing every
+one- and two-word key used from more than one place and reading each call site. Outside this wave's files, so
+left for a board row:
+
+- `desktop/move.js:65`: the primary button `t('Move')` reads «Перемещение» (a noun, the keyboard shortcuts' group
+  heading in `app/lib/mail-keys.ts:90`); the button needs a verb («Перенести»), under its own key. The page's `t()`
+  does not strip a `[context]` prefix, so the key needs a plain new English text or the prefix support
+  `desktop/i18n.cjs:68` already has.
+- `app/routes/gmail-inbox.tsx:521`: the Archive button `t("Archive")` reads «Архив» (the folder); the action key
+  `[action] Archive` («Архивировать») exists and fits.
