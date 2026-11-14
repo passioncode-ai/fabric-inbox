@@ -19,6 +19,8 @@ below is on `main`. The previous entry is [2026-11-12](2026-11-12-one-window-and
 | Release 1.6.17 (B-265 step 1) merged and on the three servers | PR #552 `6690e71`; receipts tag `6690e71ed794`, all `linked` | versions `e5869050`, `1b403035`, `dcff28cf`; the tag `v1.6.17` waits for the 1.6.16 run |
 | B-265 steps 2a and 2b: every Russian translation without an em dash but one shipped prompt template (R28); the Mac app's copy has none | PR #554 `08a68cb`, #555 `8f1d958` | the copy check in ru-RU over every changed string, no blocking finding; `tests/no-em-dash-ui.test.ts` |
 | Release 1.6.18 (B-265 steps 2a, 2b; carries 1.6.17, whose tag is not pushed: one heavy run saved, as with `v1.6.9`) merged and on the three servers | PR #556 `5d7fee8`; receipts tag `5d7fee87752f`, all `linked` | versions `da677dab`, `46835c89`, `199058eb` |
+| B-266 (the operator's screenshot): the servers' tabs no longer take the mail list column's height (780 px row and 253 px tabs before, 26 px after, measured in WebKit); the sidebar finds an address or domain past 8 groups and scrolls as one; the sidebar's and the mail list's widths are dragged or set with the arrow keys | PR #558 `313e13f` | walked in WebKit at 1500, 1100 and 700 px with 32 synthetic domains (`PREVIEW_MANY=1 node scripts/preview-fixture.mjs`) |
+| Release 1.6.19 (B-266) on the three servers; tag `v1.6.19` pushed, release run `43542650886` | PR #559 `9646e8e`; receipts tag `9646e8e50bf7`, all `linked` | versions `bae595f6`, `b461545b`, `583a1e09` |
 | Board: the coordinator's rule (`35556d27`) recorded in `AGENTS.md` and answered (`e794b5c7`, with the North Star state for section 4); 27 unread messages read and marked | board thread `16093ded` | |
 | Audit of production: one day of Worker logs on the three servers | Workers Observability, `CF_WORKERS_OBSERVABILITY_READ` | only `support_topics_failed` twice, caused by the deploy's Durable Object reset and retried by itself (`TOPICS_IDLE_MS`): no defect |
 | B-265 filed: em dashes in text people read (25 English interface strings, 163 Russian translations, README, docs) | `docs/evidence/backlog.md` | counts by `grep -c` |
@@ -37,8 +39,7 @@ below is on `main`. The previous entry is [2026-11-12](2026-11-12-one-window-and
 
 ## Exact next task
 
-1. When run `43533241999` is green and `gh release view v1.6.16` lists 20 assets: push the tag `v1.6.18` on `5d7fee8`
-   and watch its run to the published release.
+1. Watch release run `43542650886` (tag `v1.6.19`) to the published release; 1.6.18 is published (20 assets).
 2. On or after 2026-11-15: the B-246 cut-over above.
-3. B-265 step 3: the server texts a person reads outside the dictionary (setup names such as the generated
-   "<name> (dash) domains (Cloudflare)", knowledge citations), then README and current docs; dated records stay.
+3. B-265 step 3: the server texts a person reads outside the dictionary, then README and current docs.
+4. A UI walk on the owner's Mac with the real 30+ domains (B-266 was walked on synthetic data only).
