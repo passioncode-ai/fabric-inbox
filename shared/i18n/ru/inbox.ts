@@ -498,7 +498,6 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Partly checked": "Проверено частично",
 	"Sender may be forged": "Отправитель может быть поддельным",
 	"Suspicious message": "Подозрительное письмо",
-	"Dangerous": "Опасно",
 	"The sender's domain says it did not send this, and asks to reject such mail (DMARC).": "Домен отправителя сообщает, что не отправлял это письмо, и просит отклонять такую почту (DMARC).",
 	"The sender's domain did not confirm it sent this (DMARC).": "Домен отправителя не подтвердил, что отправил это письмо (DMARC).",
 	"The server that sent it is not one the sender's domain names (SPF).": "Письмо отправил сервер, которого нет в списке домена отправителя (SPF).",
