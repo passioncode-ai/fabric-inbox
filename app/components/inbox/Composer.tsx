@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { fabric, accountPath } from "~/services/fabric";
 import { recipientAddresses, sendFailure, sendFailureNotice } from "./send-state";
 import { isRemote, rawAccount, type InboxAccount } from "./model";
@@ -14,6 +14,18 @@ import {
   validateAttachments,
 } from "../../../shared/mail/attachments";
 import { missingOriginals, prepareMessage } from "./compose-payload";
+import {
+  applyPlan,
+  dropForRetry,
+  leaveOut,
+  leftOutFiles,
+  noRoom,
+  planOriginals,
+  removeAttachment,
+  removeServerFile,
+  safetyOf,
+} from "./forward-files";
+import type { FileSafety } from "./draft-store";
 import { sendSavedDraft, signatureFor, swapSignature } from "./server-drafts";
 import type { SyncStatus } from "./use-drafts";
 import { useT } from "../../lib/i18n";
@@ -246,7 +258,10 @@ export default function Composer({
     const count = saved.length + (draft.attachments?.length ?? 0) + files.length;
     const bytes = [...saved, ...(draft.attachments ?? []), ...files].reduce((n, f) => n + f.size, 0);
     if (count > MAX_ATTACHMENTS || bytes > MAX_ATTACHMENT_BYTES) {
-      setNotice(t("A message can carry up to 10 files, 5 MiB together. Remove a file before adding another."));
+      // With nothing left to fill (a forward's originals took the room), say so plainly (B-274).
+      setNotice(noRoom(draft)
+        ? t("No room left: remove a file first")
+        : t("A message can carry up to 10 files, 5 MiB together. Remove a file before adding another."));
       return;
     }
     fileWork.current = true;
@@ -277,91 +292,109 @@ export default function Composer({
       setLoadingFiles(false);
     }
   }
-  async function includeOriginals() {
-    if (
-      fileWork.current ||
-      sending.current ||
-      draft.locked ||
-      !draft.forwardSource
-    )
-      return;
+  /**
+   * A forward's original files (B-274): attached one at a time in the original's order, while they fit
+   * in one message; the rest, and a file the safety check found dangerous, are recorded as left out.
+   * Without `ids` it takes every original not yet carried nor left out (as the composer opens); with
+   * `ids` it puts those back or retries them. One failing file leaves the others attached.
+   */
+  async function attachOriginals(ids?: string[], { anyway = false, from = latest.current }: { anyway?: boolean; from?: Draft } = {}) {
+    if (fileWork.current || sending.current || from.locked || !from.forwardSource) return;
     fileWork.current = true;
     setLoadingFiles(true);
     setNotice("");
+    let failure: unknown;
     try {
-      const source = draft.forwardSource;
-      const missing = missingOriginals(draft);
+      const source = from.forwardSource;
+      const plan = planOriginals(from, ids, { anyway });
+      const planned = applyPlan(from, plan);
+      if (planned !== from) onChange(planned);
+      // Putting a file back with no room left says what to do first.
+      if (ids && plan.leftOut.some((x) => x.why === "no-room")) setNotice(t("No room left: remove a file first"));
       const prefix =
         source.provider !== "cloudflare"
           ? `${accountPath(rawAccount(source.accountId))}/messages/${encodeURIComponent(source.originalId)}`
           : `/api/v1/mailboxes/${encodeURIComponent(rawAccount(source.accountId))}/emails/${encodeURIComponent(source.originalId)}`;
-      const files: Parameters<typeof captureFiles>[2] = missing.map((file) => ({
-        name: file.filename,
-        type: file.mimeType,
-        size: file.size,
-        sourceId: file.id,
-        arrayBuffer: async () => {
-          const path = `${prefix}/attachments/${encodeURIComponent(file.id)}`;
-          let bytes: ArrayBuffer;
-          if (source.provider !== "cloudflare") {
-            const result = await fabric<{ data: string }>(path);
-            if (typeof result.data !== "string")
-              throw new Error(t("The original file is unavailable."));
-            let content = result.data.replaceAll("-", "+").replaceAll("_", "/");
-            content += "=".repeat((4 - (content.length % 4)) % 4);
-            validateAttachments([
-              {
-                content,
-                filename: file.filename,
-                type: file.mimeType || "application/octet-stream",
-                disposition: "attachment",
-              },
-            ]);
-            bytes = Uint8Array.from(atob(content), (c) =>
-              c.charCodeAt(0),
-            ).buffer;
-          } else {
-            const response = await fetch(path, {
-              signal: AbortSignal.timeout(30_000),
-            });
-            if (!response.ok)
-              throw new Error(
-                t("The original file could not be retrieved. Reconnect the source account and try again."),
-              );
-            if (
-              Number(response.headers.get("Content-Length")) >
-              MAX_ATTACHMENT_BYTES
-            )
-              throw new Error(t("An original file exceeds the 5 MiB limit."));
-            bytes = await response.arrayBuffer();
-          }
-          return bytes;
-        },
-      }));
-      await captureFiles(
-        attachmentsOnDevice(),
-        draft.id,
-        files,
-        draft.attachments,
-        {
-          stage: (refs) => onAddAttachments(draft.id, refs),
-          complete: (ids) => onCompleteAttachments(draft.id, ids),
-        },
-      );
+      for (const file of plan.attach) {
+        const one: Parameters<typeof captureFiles>[2][number] = {
+          name: file.filename,
+          type: file.mimeType,
+          size: file.size,
+          sourceId: file.id,
+          arrayBuffer: async () => {
+            const path = `${prefix}/attachments/${encodeURIComponent(file.id)}`;
+            let bytes: ArrayBuffer;
+            if (source.provider !== "cloudflare") {
+              const result = await fabric<{ data: string }>(path);
+              if (typeof result.data !== "string")
+                throw new Error(t("The original file is unavailable."));
+              let content = result.data.replaceAll("-", "+").replaceAll("_", "/");
+              content += "=".repeat((4 - (content.length % 4)) % 4);
+              validateAttachments([
+                {
+                  content,
+                  filename: file.filename,
+                  type: file.mimeType || "application/octet-stream",
+                  disposition: "attachment",
+                },
+              ]);
+              bytes = Uint8Array.from(atob(content), (c) =>
+                c.charCodeAt(0),
+              ).buffer;
+            } else {
+              const response = await fetch(path, {
+                signal: AbortSignal.timeout(30_000),
+              });
+              if (!response.ok)
+                throw new Error(
+                  t("The original file could not be retrieved. Reconnect the source account and try again."),
+                );
+              if (
+                Number(response.headers.get("Content-Length")) >
+                MAX_ATTACHMENT_BYTES
+              )
+                throw new Error(t("An original file exceeds the 5 MiB limit."));
+              bytes = await response.arrayBuffer();
+            }
+            return bytes;
+          },
+        };
+        try {
+          await captureFiles(attachmentsOnDevice(), from.id, [one], [], {
+            stage: (refs) => onAddAttachments(from.id, refs),
+            complete: (done) => onCompleteAttachments(from.id, done),
+          });
+        } catch (error) {
+          failure = error;
+        }
+      }
     } catch (error) {
-      setNotice(
-        t("Original attachment loading failed. {reason}", {
-          reason:
-            error instanceof Error
-              ? t.text(error.message)
-              : t("Try again before forwarding."),
-        }),
-      );
+      failure = error;
     } finally {
       fileWork.current = false;
       setLoadingFiles(false);
     }
+    if (failure)
+      setNotice(
+        t("Original attachment loading failed. {reason}", {
+          reason:
+            failure instanceof Error
+              ? t.text(failure.message)
+              : t("Try again before forwarding."),
+        }),
+      );
   }
+  // A forward attaches the original's files by itself as the composer opens (B-274, S09); a draft
+  // reopened later picks up only what it neither carries nor left out.
+  const autoAttached = useRef(false);
+  useEffect(() => {
+    if (autoAttached.current) return;
+    autoAttached.current = true;
+    if (draft.mode === "forward" && draft.forwardSource && !draft.locked && missingOriginals(draft).length)
+      void attachOriginals();
+    // Once per composer: later changes go through Retry, Remove and Attach.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   async function recover(d: Draft, outcome: "failed" | "editable") {
     try {
       await onSettle(d, outcome);
@@ -481,6 +514,14 @@ export default function Composer({
             onChange={(e) => change({ text: e.target.value })}
           />
         </label>
+        {draft.forwardHtml && (
+          // The original goes below the text as it was, with its links and buttons (operator,
+          // 2026-10-21); on the screen it comes after the text and before the files (S09).
+          <details className="fi-forward-original">
+            <summary>{t("The original message goes below your text as it was, with its links and buttons. Show it")}</summary>
+            <EmailIframe messageKey={draft.id + ":forward"} body={draft.forwardHtml} autoSize />
+          </details>
+        )}
         <section
           className="fi-compose-attachments"
           aria-label={t("Message attachments")}
@@ -519,14 +560,15 @@ export default function Composer({
                 <li key={file.id}>
                   <span>
                     {file.filename}{" "}
-                    <small>{bytes(file.size)} · {t("Saved")}</small>
+                    <small>{bytes(file.size)} · {t("Saved")}</small>{" "}
+                    <SafetyChip colour={safetyOf(draft, file.sourceId)} />
                   </span>
                   <button
                     type="button"
                     className="fi-text-button"
                     disabled={busy || loadingFiles || draft.locked}
                     aria-label={t("Remove {name}", { name: file.filename })}
-                    onClick={() => change({ serverFiles: draft.serverFiles?.filter((f) => f.id !== file.id) })}
+                    onClick={() => onChange(removeServerFile(draft, file.id))}
                   >
                     {t("Remove")}
                   </button>
@@ -536,81 +578,110 @@ export default function Composer({
           )}
           {!!draft.attachments?.length && (
             <ul>
-              {draft.attachments.map((file) => (
-                <li key={file.id}>
-                  <span>
-                    {file.filename}{" "}
-                    <small>
-                      {bytes(file.size)}
-                      {draft.pendingAttachments?.includes(file.id)
-                        ? ` · ${t("Pending")}`
-                        : ""}
-                    </small>
-                  </span>
-                  <button
-                    type="button"
-                    className="fi-text-button"
-                    disabled={busy || loadingFiles || draft.locked}
-                    aria-label={t("Remove {name}", { name: file.filename })}
-                    onClick={() =>
-                      change({
-                        attachments: draft.attachments?.filter(
-                          (f) => f.id !== file.id,
-                        ),
-                        pendingAttachments: draft.pendingAttachments?.filter(
-                          (id) => id !== file.id,
-                        ),
-                      })
-                    }
-                  >
-                    {t("Remove")}
-                  </button>
-                </li>
-              ))}
+              {draft.attachments.map((file) => {
+                const pending = !!draft.pendingAttachments?.includes(file.id);
+                // An original still pending once loading stopped could not be attached: Retry or Remove (S09).
+                const failed = pending && !!file.sourceId && !loadingFiles;
+                return (
+                  <li key={file.id}>
+                    <span>
+                      {file.filename}{" "}
+                      <small>
+                        {bytes(file.size)}
+                        {pending
+                          ? ` · ${file.sourceId ? (failed ? t("Could not attach") : t("Attaching…")) : t("Pending")}`
+                          : ""}
+                      </small>{" "}
+                      <SafetyChip colour={safetyOf(draft, file.sourceId)} />
+                    </span>
+                    <span className="fi-compose-file-actions">
+                      {failed && (
+                        <button
+                          type="button"
+                          className="fi-text-button"
+                          disabled={busy || loadingFiles || draft.locked}
+                          aria-label={t("Retry {name}", { name: file.filename })}
+                          onClick={() => {
+                            const retry = dropForRetry(latest.current, file.sourceId!);
+                            onChange(retry);
+                            void attachOriginals([file.sourceId!], { from: retry });
+                          }}
+                        >
+                          {t("Retry")}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="fi-text-button"
+                        disabled={busy || loadingFiles || draft.locked}
+                        aria-label={t("Remove {name}", { name: file.filename })}
+                        onClick={() => onChange(removeAttachment(draft, file.id))}
+                      >
+                        {t("Remove")}
+                      </button>
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
-          )}
-          {draft.forwardHtml && (
-            // The original goes below the text as it was, with its links and buttons (operator, 2026-10-21).
-            <details className="fi-forward-original">
-              <summary>{t("The original message goes below your text as it was, with its links and buttons. Show it")}</summary>
-              <EmailIframe messageKey={draft.id + ":forward"} body={draft.forwardHtml} autoSize />
-            </details>
           )}
           {draft.mode === "forward" && (
             <>
-              <p className="fi-muted">
-                {missingOriginals(draft).length
-                  ? t("Original attachments are not included yet. Load all files below before forwarding.")
-                  : draft.forwardSource?.files.length
-                    ? t("Original files selected for this draft.")
-                    : draft.forwardSource
-                      ? t("The original message has no attachments.")
-                      : draft.locked
-                        ? t("This saved attempt contains forwarded text only.")
-                        : t("Original attachment information is unavailable. Open the original message and start a new forward.")}
+              <p className="fi-muted" role="status">
+                {loadingFiles && missingOriginals(draft).length
+                  ? t("Attaching files…")
+                  : missingOriginals(draft).length
+                    ? t("Some of the original's files are not attached. Retry or remove each one.")
+                    : draft.forwardSource?.files.length
+                      ? t("Original files selected for this draft.")
+                      : draft.forwardSource
+                        ? t("The original message has no attachments.")
+                        : draft.locked
+                          ? t("This saved attempt contains forwarded text only.")
+                          : t("Original attachment information is unavailable. Open the original message and start a new forward.")}
               </p>
               {!!missingOriginals(draft).length && (
-                <>
-                  <ul>
-                    {missingOriginals(draft).map((f) => (
-                      <li key={f.id}>
-                        <span>
-                          {f.filename}{" "}
-                          <small>{bytes(f.size)}</small>
+                <ul aria-label={t("Files of the original")}>
+                  {missingOriginals(draft).map((f) => (
+                    <li key={f.id}>
+                      <span>
+                        {f.filename}{" "}
+                        <small>
+                          {bytes(f.size)} · {loadingFiles ? t("Attaching…") : t("Could not attach")}
+                        </small>
+                      </span>
+                      {!loadingFiles && (
+                        <span className="fi-compose-file-actions">
+                          <button
+                            type="button"
+                            className="fi-text-button"
+                            disabled={busy || draft.locked}
+                            aria-label={t("Retry {name}", { name: f.filename })}
+                            onClick={() => void attachOriginals([f.id])}
+                          >
+                            {t("Retry")}
+                          </button>
+                          <button
+                            type="button"
+                            className="fi-text-button"
+                            disabled={busy || draft.locked}
+                            aria-label={t("Remove {name}", { name: f.filename })}
+                            onClick={() => onChange(leaveOut(draft, f.id))}
+                          >
+                            {t("Remove")}
+                          </button>
                         </span>
-                      </li>
-                    ))}
-                  </ul>
-                  <button
-                    type="button"
-                    className="fi-secondary"
-                    disabled={busy || loadingFiles || draft.locked}
-                    onClick={() => void includeOriginals()}
-                  >
-                    {t("Include original attachments")}
-                  </button>
-                </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               )}
+              <LeftOutFiles
+                draft={draft}
+                bytes={bytes}
+                disabled={busy || loadingFiles || !!draft.locked}
+                onAttach={(id, anyway) => void attachOriginals([id], { anyway })}
+              />
             </>
           )}
           {!!draft.pendingAttachments?.length && !loadingFiles && (
@@ -711,12 +782,92 @@ export default function Composer({
           >
             {busy
               ? t("Sending…")
-              : draft.locked
+              : draft.mode === "forward" && loadingFiles
+                ? t("Attaching files…")
+                : draft.locked
                 ? t("Retry same attempt")
                 : t("Send message")}
           </button>
         </footer>
       </form>
     </dialog>
+  );
+}
+
+/**
+ * A file's safety chip, by S03's colour table (B-269), with its word: never colour alone. Shown only
+ * when a check named a colour for the file; until then nothing is claimed about it.
+ */
+function SafetyChip({ colour }: { colour?: FileSafety }) {
+  const t = useT();
+  if (!colour) return null;
+  const word =
+    colour === "red" ? t("Dangerous") : colour === "amber" ? t("Suspicious") : colour === "green" ? t("Checked") : t("Not checked");
+  return <span className={`fi-file-chip fi-file-chip-${colour}`}>{word}</span>;
+}
+
+/**
+ * The original's files a forward does not carry (B-274, S09): those past what one message carries,
+ * one the safety check found dangerous, and those the person removed; each can be attached again.
+ */
+function LeftOutFiles({
+  draft,
+  bytes,
+  disabled,
+  onAttach,
+}: {
+  draft: Draft;
+  bytes: (size: number) => string;
+  disabled: boolean;
+  onAttach: (id: string, anyway: boolean) => void;
+}) {
+  const t = useT();
+  const all = leftOutFiles(draft);
+  if (!all.length) return null;
+  const noRoomFiles = all.filter((x) => x.why === "no-room");
+  const row = (x: (typeof all)[number], note: ReactNode, anyway = false) => (
+    <li key={x.file.id}>
+      <span>
+        {x.file.filename}{" "}
+        <small>{bytes(x.file.size)}</small>{" "}
+        <SafetyChip colour={x.file.safety} />
+        {note && <><br /><small>{note}</small></>}
+      </span>
+      <button
+        type="button"
+        className="fi-text-button"
+        disabled={disabled}
+        aria-label={anyway ? t("Attach {name} anyway", { name: x.file.filename }) : t("Attach {name}", { name: x.file.filename })}
+        onClick={() => onAttach(x.file.id, anyway)}
+      >
+        {anyway ? t("Attach anyway") : t("Attach")}
+      </button>
+    </li>
+  );
+  return (
+    <>
+      {!!noRoomFiles.length && (
+        <>
+          <p className="fi-muted">
+            {t.plural(noRoomFiles.length, {
+              one: "{n} file did not fit in one message",
+              other: "{n} files did not fit in one message",
+            })}
+          </p>
+          <ul>{noRoomFiles.map((x) => row(x, null))}</ul>
+        </>
+      )}
+      {all.some((x) => x.why !== "no-room") && (
+        <ul>
+          {all
+            .filter((x) => x.why !== "no-room")
+            .map((x) =>
+              x.why === "dangerous"
+                ? row(x, t("Not attached: the safety check found this file dangerous"), true)
+                : row(x, t("Removed; it will not be sent")),
+            )}
+        </ul>
+      )}
+    </>
   );
 }

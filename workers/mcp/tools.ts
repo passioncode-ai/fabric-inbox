@@ -1013,7 +1013,7 @@ const reply = defineTool({
 async function originalFiles(ctx: ToolContext, account: Account, messageId: string, files: ReadMessage["attachments"], extra: MailAttachment[]): Promise<MailAttachment[]> {
   const bytes = files.reduce((n, f) => n + f.size, 0) + extra.reduce((n, f) => n + Math.floor((f.content.length * 3) / 4), 0);
   if (bytes > MAX_ATTACHMENT_BYTES || files.length + extra.length > MAX_ATTACHMENTS)
-    throw new ApiError(413, `The original's attachments${extra.length ? " and your files" : ""} are more than 5 MB or ${MAX_ATTACHMENTS} files; forward with includeOriginalAttachments: false`, null);
+    throw new ApiError(413, `The original's attachments${extra.length ? " and your files" : ""} are more than 5 MB or ${MAX_ATTACHMENTS} files; leave some out with leaveOut, or forward with includeOriginalAttachments: false`, null);
   const out: MailAttachment[] = [];
   for (const f of files) {
     const got = (await getAttachment.call({ accountId: account.id, messageId, attachmentId: f.attachmentId }, ctx)) as { base64: string };
@@ -1025,7 +1025,7 @@ async function originalFiles(ctx: ToolContext, account: Account, messageId: stri
 const forward = defineTool({
   name: "forward", title: "Forward a message", level: "mail", additive: true, sends: true, target: (a) => `${a.accountId} ${a.messageId} → ${[a.to].flat().join(", ")}`,
   recipients: (a) => [a.to, a.cc, a.bcc].flat().filter((x): x is string => typeof x === "string"),
-  description: "Forwards a message with its text and its attachments (up to 10 files, 5 MB together with any files you add), your note and the address's signature on top. cc, bcc and subject replace what would be chosen. It really leaves; counts against this key's daily sends.",
+  description: "Forwards a message with its text and its attachments (up to 10 files, 5 MB together with any files you add; leaveOut keeps chosen ones back), your note and the address's signature on top. cc, bcc and subject replace what would be chosen. It really leaves; counts against this key's daily sends.",
   input: { accountId, messageId, to: recipients, cc: recipients.optional(), bcc: recipients.optional(),
     subject: z.string().min(1).max(998).optional().describe("Instead of Fwd: and the original's subject"),
     text: z.string().max(100_000).default("").describe("Your note above the forwarded message"),
@@ -1034,6 +1034,8 @@ const forward = defineTool({
     attachments: z.union([z.array(fileInput).max(MAX_ATTACHMENTS), z.boolean()]).optional()
       .describe("Files to add (as send_email takes them). A boolean is the older spelling of includeOriginalAttachments"),
     includeOriginalAttachments: z.boolean().optional().describe("Include the original's attachments (true unless you say false)"),
+    leaveOut: z.array(z.string().min(1).max(1000)).max(1000).optional()
+      .describe("The original's attachments not to carry, by their attachmentId in read_message; the others still go (B-274, as Remove on a file in the app's forward)"),
     signature: z.boolean().default(true).describe("Add the address's signature below your note (Cloudflare)") },
   routes: ["GET /api/v1/mailboxes/:mailboxId/emails/:id", "GET /api/v1/mailboxes/:mailboxId", "GET /api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId",
     "POST /api/v1/mailboxes/:mailboxId/emails/:id/forward", "GET /api/accounts/:accountId/messages/:messageId", "GET /api/accounts/:accountId/messages/:messageId/attachments/:attachmentId",
@@ -1047,7 +1049,10 @@ const forward = defineTool({
     const includeOriginals = a.includeOriginalAttachments ?? (typeof a.attachments === "boolean" ? a.attachments : true);
     const original = await readMessage(ctx, account, a.messageId, 200_000);
     const subject = a.subject ?? (/^fwd?:/i.test(original.subject) ? original.subject : `Fwd: ${original.subject}`);
-    const files = checkFiles([...(includeOriginals ? await originalFiles(ctx, account, a.messageId, original.attachments, added) : []), ...added]);
+    const unknown = (a.leaveOut ?? []).filter((id) => !original.attachments.some((f) => f.attachmentId === id));
+    if (unknown.length) throw new ApiError(400, `leaveOut names no attachment of this message: ${unknown.join(", ")}; read_message lists their attachmentId`, null);
+    const carried = original.attachments.filter((f) => !a.leaveOut?.includes(f.attachmentId));
+    const files = checkFiles([...(includeOriginals ? await originalFiles(ctx, account, a.messageId, carried, added) : []), ...added]);
     if (account.provider === "cloudflare") {
       const settings = await mailboxSettings(ctx, account.mailbox);
       const text = [signed(a.text.trim(), settings, a.signature), forwardedBlock(original)].filter(Boolean).join("\n\n");

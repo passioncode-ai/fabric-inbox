@@ -188,9 +188,10 @@ export function rebaseEdit(before: Draft | undefined, input: Draft, uploaded: Re
   return { ...d, synced: contentKey(before) === contentKey(d) ? before.synced : false };
 }
 
-/** The part of a draft the server holds; a change to any of it is still to be saved. */
+/** The part of a draft the server holds, and a forward's files left out (B-274); a change to any of it is still to be saved. */
 export function contentKey(d: Draft): string {
-  return JSON.stringify([d.accountId, d.to, d.cc ?? "", d.bcc ?? "", d.subject, d.text, d.forwardHtml ?? "", (d.attachments ?? []).map((a) => a.id), (d.serverFiles ?? []).map((f) => f.id)]);
+  return JSON.stringify([d.accountId, d.to, d.cc ?? "", d.bcc ?? "", d.subject, d.text, d.forwardHtml ?? "", (d.attachments ?? []).map((a) => a.id), (d.serverFiles ?? []).map((f) => f.id),
+    (d.leftOut ?? []).map((x) => `${x.id}:${x.why}`)]);
 }
 
 /** Sends the saved draft from the server; it leaves Drafts there once accepted. Throws the server's refusal. */

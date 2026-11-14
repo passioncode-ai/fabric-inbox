@@ -125,7 +125,9 @@ is made once however often you save it. `delete_draft` is two-step.
 
 **Files.** `send_email`, `reply`, `forward` and `save_draft` take `attachments:
 [{ filename, type, base64 }]` (10 files, 5 MB together). `get_attachment` returns a file in that
-form; `forward` carries the original's files unless `includeOriginalAttachments: false`.
+form; `forward` carries the original's files unless `includeOriginalAttachments: false`, and
+`leaveOut: [attachmentId…]` keeps chosen ones back (the app's forward attaches them all by itself and
+lets the person remove each).
 
 **Find.** `list_messages` with `query` searches every inbox; `search_mailbox` searches one account
 by sender, recipient, subject, dates, read, starred, attachments and folder — every field applies,

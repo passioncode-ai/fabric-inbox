@@ -23,6 +23,18 @@ import {
   type Exclusive,
 } from "../app/components/inbox/draft-store";
 import { SendEmailRequestSchema } from "../workers/lib/schemas";
+import {
+  applyPlan,
+  dropForRetry,
+  leaveOut,
+  leftOutFiles,
+  noRoom,
+  planOriginals,
+  removeAttachment,
+  removeServerFile,
+  safetyOf,
+} from "../app/components/inbox/forward-files";
+import { contentKey } from "../app/components/inbox/server-drafts";
 import { MAX_ATTACHMENT_BYTES } from "../shared/mail/attachments";
 class MemoryFiles implements AttachmentStorage {
   rows = new Map<string, AttachmentRecord>();
@@ -305,39 +317,121 @@ test("file read racing text edits merges references into current draft; another 
   );
   assert.throws(() => appendAttachments(draft("b"), "a", refs), /changed/);
 });
-test("forward requires every original and uses captured bytes after source metadata disappears", async () => {
-  const { files, store, tab } = fixture();
-  const a: Draft = {
-    ...draft(),
-    mode: "forward",
+// S09 (B-274): the refusal of an incomplete forward is gone; an original left out on purpose lets it go.
+const threeOriginals = (sizes = [7, 7, 7]): Draft => ({
+  ...draft(),
+  mode: "forward",
+  originalId: "message",
+  forwardSource: {
+    accountId: "gmail:a",
     originalId: "message",
-    forwardSource: {
-      accountId: "gmail:a",
-      originalId: "message",
-      provider: "gmail",
-      files: [
-        { id: "one", filename: "one.txt", size: 7, mimeType: "text/plain" },
-        { id: "two", filename: "two.txt", size: 7, mimeType: "text/plain" },
-      ],
-    },
-  };
-  await assert.rejects(prepareMessage(a, files), /Include all/);
+    provider: "gmail",
+    files: sizes.map((size, i) => ({ id: ["one", "two", "three", "four", "five"][i] ?? `f${i}`, filename: `${i}.txt`, size, mimeType: "text/plain" })),
+  },
+});
+test("a forward waits only for originals neither attached nor left out, and sends what it carries", async () => {
+  const { files, store, tab } = fixture();
+  const a = threeOriginals();
+  await assert.rejects(prepareMessage(a, files), /not attached\. Retry or remove each one/);
   const refs = await captureFiles(files, "a", [
-    { ...file("one.txt"), sourceId: "one" },
-    { ...file("two.txt"), sourceId: "two" },
+    { ...file("0.txt"), sourceId: "one" },
+    { ...file("1.txt"), sourceId: "two" },
+    { ...file("2.txt"), sourceId: "three" },
   ]);
-  await assert.rejects(
-    prepareMessage({ ...a, attachments: refs.slice(0, 1) }, files),
-    /Include all/,
-  );
-  await store.save({ ...a, attachments: refs });
+  // Removing an attached original records it as left out: Send is allowed, and the choice survives a reload.
+  const removed = removeAttachment({ ...a, attachments: refs }, refs[1]!.id);
+  assert.deepEqual(removed.leftOut, [{ id: "two", why: "removed" }]);
+  assert.equal(missingOriginals(removed).length, 0);
+  await store.save(removed);
   const reopened = tab().open("a");
-  assert.equal(missingOriginals(reopened).length, 0);
-  assert.equal((await prepareMessage(reopened, files)).attachments!.length, 2);
+  assert.deepEqual(reopened.leftOut, [{ id: "two", why: "removed" }]);
+  const payload = await prepareMessage(reopened, files);
+  assert.deepEqual(payload.attachments!.map((x) => x.filename), ["0.txt", "2.txt"], "the sent payload carries two of three");
   await assert.rejects(
     prepareMessage({ ...draft(), mode: "forward" }, files),
     /Original attachment information/,
   );
+});
+test("originals are planned in order while they fit; the rest are left out as no room", () => {
+  const MiB = 1024 * 1024;
+  const d = threeOriginals([4 * MiB, 2 * MiB, MiB / 2]);
+  const plan = planOriginals(d);
+  assert.deepEqual(plan.attach.map((f) => f.id), ["one", "three"], "a later smaller file still fits");
+  assert.deepEqual(plan.leftOut, [{ id: "two", why: "no-room" }]);
+  const applied = applyPlan(d, plan);
+  assert.deepEqual(applied.leftOut, [{ id: "two", why: "no-room" }]);
+  assert.deepEqual(missingOriginals(applied).map((f) => f.id), ["one", "three"], "the attached ones are still to load");
+  // Ten files at most: two of the person's own leave room for eight originals.
+  const many = { ...threeOriginals(Array(12).fill(10)), serverFiles: [1, 2].map((i) => ({ id: `s${i}`, filename: `own${i}.txt`, mimetype: "text/plain", size: 10 })) };
+  many.forwardSource!.files.forEach((f, i) => (f.id = `o${i}`));
+  const tenth = planOriginals(many);
+  assert.equal(tenth.attach.length, 8);
+  assert.deepEqual(tenth.leftOut.map((x) => x.id), ["o8", "o9", "o10", "o11"]);
+  assert.equal(noRoom(applyPlan(many, tenth)), false, "the planned files are not on the draft yet");
+  assert.equal(noRoom({ ...many, serverFiles: Array.from({ length: 10 }, (_, i) => ({ id: `s${i}`, filename: "x", mimetype: "text/plain", size: 1 })) }), true);
+  // Putting a file back plans just that one, whatever its entry said.
+  const back = planOriginals({ ...applied, attachments: [] , serverFiles: [{ id: "big", filename: "big", mimetype: "text/plain", size: 4 * MiB, sourceId: "one" }] }, ["two"]);
+  assert.deepEqual(back.leftOut, [{ id: "two", why: "no-room" }], "still no room beside the 4 MiB file");
+  assert.deepEqual(planOriginals({ ...applied, serverFiles: [] }, ["two"]).attach.map((f) => f.id), ["two"]);
+});
+test("a red original is not attached by itself and does not block Send; Attach anyway attaches it", async () => {
+  const { files } = fixture();
+  const d = threeOriginals();
+  d.forwardSource!.files[1]!.safety = "red";
+  d.forwardSource!.files[2]!.safety = "amber";
+  const plan = planOriginals(d);
+  assert.deepEqual(plan.attach.map((f) => f.id), ["one", "three"], "amber goes with its chip");
+  assert.deepEqual(plan.leftOut, [{ id: "two", why: "dangerous" }]);
+  const refs = await captureFiles(files, "a", [{ ...file("0.txt"), sourceId: "one" }, { ...file("2.txt"), sourceId: "three" }]);
+  const ready = { ...applyPlan(d, plan), attachments: refs };
+  assert.equal((await prepareMessage(ready, files)).attachments!.length, 2);
+  assert.deepEqual(leftOutFiles(ready).map((x) => [x.file.id, x.why]), [["two", "dangerous"]]);
+  const anyway = planOriginals(ready, ["two"], { anyway: true });
+  assert.deepEqual(anyway.attach.map((f) => f.id), ["two"]);
+  assert.deepEqual(applyPlan(ready, anyway).leftOut, [], "attached again, no longer left out");
+  assert.equal(safetyOf(ready, "two"), "red");
+});
+test("an original that failed to load blocks Send until Retry or Remove", async () => {
+  const { files } = fixture();
+  const d = threeOriginals([7]);
+  const failing = { ...file("0.txt"), sourceId: "one", arrayBuffer: async (): Promise<ArrayBuffer> => { throw new Error("offline"); } };
+  let staged: Draft = d;
+  await assert.rejects(captureFiles(files, "a", [failing], [], {
+    stage: async (refs) => { staged = stageAttachments(staged, "a", refs); return true; },
+    complete: async () => true,
+  }));
+  assert.equal(missingOriginals(staged).length, 0, "it is on the draft, pending");
+  await assert.rejects(prepareMessage(staged, files), /Files are not ready/);
+  // Retry: the failed reference goes, and the original is planned again.
+  const retry = dropForRetry(staged, "one");
+  assert.deepEqual(retry.attachments, []);
+  assert.deepEqual(retry.pendingAttachments, []);
+  assert.deepEqual(planOriginals(retry, ["one"]).attach.map((f) => f.id), ["one"]);
+  // Remove: left out on purpose, Send allowed.
+  const removed = removeAttachment(staged, staged.attachments![0]!.id);
+  assert.deepEqual(removed.leftOut, [{ id: "one", why: "removed" }]);
+  assert.deepEqual(await prepareMessage(removed, files).then((p) => p.attachments), undefined);
+  // An original never staged is removed straight to leftOut.
+  assert.deepEqual(leaveOut(d, "one").leftOut, [{ id: "one", why: "removed" }]);
+  // A file saved on the server keeps its source: removing it records the original too.
+  const saved = { ...d, serverFiles: [{ id: "s1", filename: "0.txt", mimetype: "text/plain", size: 7, sourceId: "one" }] };
+  assert.deepEqual(removeServerFile(saved, "s1").leftOut, [{ id: "one", why: "removed" }]);
+  assert.deepEqual(removeServerFile({ ...draft(), serverFiles: saved.serverFiles }, "s1").leftOut, undefined, "only a forward records it");
+});
+test("leftOut is sanitized, defaults to none for older drafts, and is part of the content key", async () => {
+  const { store, storage, tab } = fixture();
+  await store.save(threeOriginals());
+  assert.equal(tab().open("a").leftOut, undefined, "a draft saved before has none");
+  const key = DRAFT_PREFIX + "a";
+  const raw = JSON.parse(storage.getItem(key)!);
+  for (const bad of [[{ id: "", why: "removed" }], [{ id: "x", why: "maybe" }], [{ id: "x", why: "removed" }, { id: "x", why: "no-room" }], "x"]) {
+    storage.setItem(key, JSON.stringify({ ...raw, draft: { ...raw.draft, leftOut: bad } }));
+    assert.throws(() => tab().open("a"), /Invalid draft/, JSON.stringify(bad));
+  }
+  storage.setItem(key, JSON.stringify({ ...raw, draft: { ...raw.draft, forwardSource: { ...raw.draft.forwardSource, files: [{ id: "x", filename: "x", mimeType: "text/plain", size: 1, safety: "purple" }] } } }));
+  assert.throws(() => tab().open("a"), /Invalid forward source/);
+  const d = threeOriginals();
+  assert.notEqual(contentKey(d), contentKey(leaveOut(d, "one")));
 });
 test("an initially quota-blocked draft can be durably discarded without stale resurrection", async () => {
   const { storage, store, tab } = fixture();

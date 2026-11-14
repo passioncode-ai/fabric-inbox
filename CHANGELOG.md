@@ -5,6 +5,10 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+**Forward takes the original's files along** (B-274, S09; the operator, 2026-11-14: forwards should attach every file by themselves, each removable before sending). Forward attaches the original's files as it opens, in their order, and Send waits with "Attaching files…" until they are on the draft. Remove takes any of them off and the forward still sends (before, removing one refused the send); a file past 10 files or 5 MiB is listed as did not fit instead of making the forward impossible to send; a file whose loading failed has Retry and Remove; a file the safety check finds dangerous is left out until "Attach anyway". The original now shows after your text and before the files. Agents: `forward` takes `leaveOut`. Basis: `tests/attachment-composer.test.ts`, `tests/mcp-parity.test.ts`.
+
 ## 1.6.19 (2026-11-14)
 
 **Easier with many domains, and the mail list stays in view** (B-266). With several servers in a tall window, the server tabs above the mail list grew into tall ovals and pushed your mail out of view; they now stay one line high. When you have more than eight domains, a field above the addresses finds an address or a domain as you type, and the addresses scroll with the rest of the sidebar instead of in a small box of their own. Drag the edge of the sidebar or of the mail list (or use the arrow keys on it) to make it wider: long domain names and message previews then show in full, and the width is kept on this device. A double click puts it back.

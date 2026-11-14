@@ -167,6 +167,33 @@ test("a Gmail forward carries the original's attachments, as a Cloudflare forwar
   assert.equal(got.data.base64, HI_BASE64, "get_attachment pads Gmail's base64 like every other file");
 });
 
+// ── B-274 (S09): a forward leaves chosen original files out, as Remove does in the app ──
+
+test("forward with leaveOut carries the other originals and refuses an id the message does not have", async () => {
+  const message = gmailMessage({ attachments: [
+    { providerAttachmentId: "att-1", filename: "a.txt", mimeType: "text/plain", size: 2 },
+    { providerAttachmentId: "att-2", filename: "b.txt", mimeType: "text/plain", size: 2 },
+    { providerAttachmentId: "att-3", filename: "c.txt", mimeType: "text/plain", size: 2 },
+  ] });
+  const answers = {
+    "GET /api/accounts/g1/messages/m1": ok(message),
+    "GET /api/accounts/g1/messages/m1/attachments/att-1": ok({ data: "aGk", size: 2 }),
+    "GET /api/accounts/g1/messages/m1/attachments/att-3": ok({ data: "aGk", size: 2 }),
+    "POST /api/accounts/g1/send": ok({ status: "accepted", idempotencyKey: "f1" }, 202),
+  };
+  const gm = fakeApi(answers);
+  const sent = await call(gm.api, "forward", { accountId: "gmail:g1", messageId: "m1", to: "zed@x.invalid", idempotencyKey: "f1", leaveOut: ["att-2"] });
+  assert.equal(sent.isError, false, JSON.stringify(sent.data));
+  assert.deepEqual((posted(gm.calls).attachments as { filename: string }[]).map((f) => f.filename), ["a.txt", "c.txt"]);
+  assert.equal(gm.calls.some((c) => c.path.endsWith("/att-2")), false, "a left-out file is not even read");
+
+  const typo = fakeApi(answers);
+  const refused = await call(typo.api, "forward", { accountId: "gmail:g1", messageId: "m1", to: "zed@x.invalid", idempotencyKey: "f2", leaveOut: ["att-9"] });
+  assert.equal(refused.isError, true);
+  assert.equal(refused.data.status, 400);
+  assert.equal(typo.calls.filter((c) => c.method === "POST" && c.path.endsWith("/send")).length, 0, "nothing is sent");
+});
+
 // ── Gap 5: cc, bcc and subject on reply and forward ─────────────────
 
 test("reply and forward take cc, bcc and subject (parity gap 5)", async () => {
