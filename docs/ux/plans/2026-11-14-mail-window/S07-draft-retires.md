@@ -93,3 +93,17 @@ run: a second accepted reply changes nothing. Logged as `{event: "agent_draft_re
 - Unit: opening a draft in the composer without a change leaves its revision unchanged.
 - WebKit walk: send a reply in a thread with an agent's draft card; the card is gone; the run's panel offers "Make a draft of it again".
 - The S06 scenario names this step.
+
+## Decisions after round 6 (normative: they override the text above where they differ)
+
+- **R6-3:** the outbox payload carries `sourceDraftId` and `sentBy` (outside the identity hash), so the `project` step
+  can leave out the draft the send came from and record which kind wins.
+- **KIMI-46:** a Cloudflare draft is deleted only when the run holds its complete text (`draftText` is the whole body,
+  up to the draft size limit, and the run says it is complete); a run without it (written before this change) or an
+  incomplete one keeps the draft.
+- **R6-5:** order: the run's outcome is written first, then the draft is deleted; a `project` step that runs again
+  finds the outcome and deletes the draft if it is still there, so a crash leaves at worst a draft that is retired
+  later, never a lost one.
+- **KIMI-49:** one resolver for every path: In-Reply-To, else the last References entry that names a message of the
+  thread; the same function at acceptance and at Sent sync, with one test feeding both.
+- **R6-2:** "Keep as my draft" saves a new draft from the card's text (S06 R6-4); nothing is restored from Discarded.

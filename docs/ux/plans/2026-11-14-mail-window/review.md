@@ -196,6 +196,15 @@ nothing a person may be editing is moved or deleted outside one atomic step.
 | KIMI-39 | minor | → S03 §4: precedence red, then review-raised amber, then sender-only amber |
 | KIMI-40 | minor | → S03 §2: one place says how bytes are read per provider |
 
-## Round 6
+## Round 6, and the end of the spec review
 
-Planned on this revision for S03, S04, S06, S07: a fresh Claude verifier and Kimi.
+On `2af683e6`. A fresh Claude verifier (R6, 8 findings, 2 blocking) and Kimi (KIMI-41 to KIMI-49, 2 blocking,
+[review/round6-kimi.md](review/round6-kimi.md)). Every one is answered in the section "Decisions after round 6" at the
+end of S03, S04, S06 and S07 (normative where it differs from the text above it); KIMI-41 is recorded as an accepted
+risk with its reason.
+
+**Why the review stops here.** task-pipeline caps a review loop at three rounds per node and parks what is left with
+its evidence (`references/loop-guard.md`); these four specs had six. Rounds 4 to 6 found fewer and narrower defects
+(17, 15, 17 findings, mostly races and protocol edges an implementation and its tests settle better than prose). The
+remaining assurance moves to the build: each decision above names its test, and the build's blind verification tiers
+(unit, seam, product, security) read the code against these specs.

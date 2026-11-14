@@ -230,3 +230,21 @@ hashes go into `manifest.json`; `tests/okolos-vendor.test.ts` checks them.
 ## Out of scope
 
 An antivirus engine (Q12); sending a file or its hash outside the owner's server.
+
+## Decisions after round 6 (normative: they override the text above where they differ)
+
+- **R6-1:** `POST /api/safety/check` is an upsert that cannot change a state: `INSERT … state='clear', decided_by='check'
+  … ON CONFLICT(account_id, message_id) DO UPDATE SET findings = json_set(findings, '$.check', json(?))`; a workerd test
+  lands an arrival `held` write between the route's read and write, and the message stays held.
+- **KIMI-41 (accepted risk, recorded):** the held review keeps releasing mail held only because the light model said
+  YES. That release does not lower anything the checks found: no deterministic signal fired, so releasing returns the
+  message to what the deterministic checks say. Every Okolos floor still waits for a person (round 5).
+- **KIMI-42:** the new review runs inside the arrival safety step (`checkSafety`), before any agent reads the message
+  (the queue already runs it first, `workers/categories/store.ts:451`). A review code `instructions_to_ai` holds the
+  message like a deterministic signal does; any other raising code makes a reply agent draft instead of send. A spent
+  budget holds nothing.
+- **KIMI-43:** the review's result is kept under `findings.check.review` with the hash of the content it read; a
+  recheck (open-time or stale feed) keeps it and reapplies it while the hash is unchanged, so a raised colour is never
+  lost to a recheck.
+- **R6-7:** `checkReplyPath` compares each Reply-To with every From address; a Reply-To fires only when its domain
+  matches none of them.

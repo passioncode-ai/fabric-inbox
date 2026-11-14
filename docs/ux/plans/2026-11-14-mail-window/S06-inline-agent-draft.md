@@ -150,3 +150,21 @@ where it is missing).
 ## Out of scope
 
 Changing a reply agent's prompt or mode (R28); B-224's other chips (Summarize, Translate).
+
+## Decisions after round 6 (normative: they override the text above where they differ)
+
+- **R6-2, KIMI-45:** "Discard draft" does what retirement does (S07): on a Cloudflare address it deletes the draft in
+  the revision-checked transaction after its full text is on the run; on an account it hides the draft in the app. It
+  never moves a draft to Discarded (Discarded does not take drafts).
+- **R6-4:** making a draft again (from the run's text, or "Keep as my draft") always saves a **new** draft id, marked
+  as the person's (its revision starts at 2, and a new run field `personDraftId` names it), so it is never taken for an
+  untouched agent draft and never overwrites one. A save that answers `gone` (`workers/lib/mailbox-drafts.ts:67`) shows
+  "This draft was removed because a reply was sent" with "Keep as my draft".
+- **KIMI-48:** the card's first change is saved at once; until that save is acknowledged the text stays on the device,
+  and if retirement wins the race, the acknowledgement path is the `gone` state above, which keeps the text and offers
+  "Keep as my draft". The full composer behaves the same (its first change saves at once). Tests: an external reply
+  arrives before the first save, in the card and in the composer; the text survives.
+- **KIMI-44:** the tuning message also carries, outside the fence (it is the person's own data), the agent's current
+  version's instructions and policy and the cited knowledge entries' text (each at most 2,000 characters).
+- **R6-8:** the tuning instance gets its own fixed system prompt (`TUNING_PROMPT`, a new template beside the shipped
+  ones, R28), not the panel's mailbox prompt.

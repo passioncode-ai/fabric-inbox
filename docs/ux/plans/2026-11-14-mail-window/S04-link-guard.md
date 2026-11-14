@@ -81,3 +81,12 @@ click, a modifier click, Enter, a drag, or the desktop menu: there is nothing to
 - WebKit walk: a red message's link (click, middle click, Enter) shows the notice and opens nothing; an amber one
   opens after "Open anyway"; a green one opens directly.
 - SCN-010's REL-05 line and SCN-088 name this behaviour.
+
+## Decisions after round 6 (normative: they override the text above where they differ)
+
+- **KIMI-47:** each render of a body draws a nonce; the frame's script sends it with every message, and the reader
+  accepts a message only from that frame's `contentWindow` with that render's nonce and a valid index of that render's
+  list; the decision is taken again at every activation (a remembered "Open anyway" included). A test sends a valid
+  index from another window and from a previous render: nothing opens.
+- **R6-6:** on a red message `mailto:` links lose their `href` too (the desktop menu would otherwise open them,
+  `desktop/main.cjs:719`).
