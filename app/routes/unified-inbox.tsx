@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { Link, useSearchParams, type MetaArgs } from "react-router";
 import {
   useInfiniteQuery,
@@ -36,7 +36,8 @@ import { fabric } from "~/services/fabric";
 import { agentChoicesOf, readOnlyIn, useMe } from "~/lib/me";
 import type { Mail } from "~/services/fabric";
 import type { Email } from "~/types";
-import EmailIframe from "~/components/EmailIframe";
+import EmailIframe, { QuoteSelectionContext, type FrameSelectionReport } from "~/components/EmailIframe";
+import { buildQuotedReplyText, heldQuote, pageSelection, type QuoteRect } from "~/lib/quote-selection";
 import { replyAllRecipients, replyRecipient } from "~/components/inbox/send-state";
 import Composer, { type Draft } from "~/components/inbox/Composer";
 import {
@@ -825,6 +826,62 @@ export default function UnifiedInbox() {
       );
     }
   }
+  // S08 (B-273): the text selected in the open message (a frame or the text body), held for Reply to quote.
+  const [quote, dispatchQuote] = useReducer(heldQuote, null);
+  const readerScrollRef = useRef<HTMLDivElement>(null);
+  // Another message opening drops what was selected in the last one (SEC-14).
+  useEffect(() => dispatchQuote({ type: "reset" }), [selected?.id]);
+  /** Where "Reply with quote" sits: just under the selection's end, inside the reader's scroll area. */
+  const placeQuote = useCallback((rect: QuoteRect | null) => {
+    const pane = readerScrollRef.current;
+    if (!rect || !pane) return null;
+    const box = pane.getBoundingClientRect();
+    const left = rect.right - box.left + pane.scrollLeft;
+    const top = rect.bottom - box.top + pane.scrollTop + 6;
+    return { left: Math.max(8, Math.min(left, pane.clientWidth - 160)), top: Math.max(0, top) };
+  }, []);
+  const onFrameSelection = useCallback((report: FrameSelectionReport) => {
+    if (report.reload) dispatchQuote({ type: "reload", key: report.key });
+    else if (!report.selection) dispatchQuote({ type: "clear", key: report.key, source: "frame" });
+    else dispatchQuote({ type: "select", quote: { key: report.key, source: "frame", text: report.selection.text, at: placeQuote(report.selection.rect) } });
+  }, [placeQuote]);
+  // A text body is in the page (<pre data-quote-key>): its selection is read from the page's own.
+  useEffect(() => {
+    const read = (e: Event) => {
+      const target = e.target as Element | null;
+      // Pressing Reply (or the quote button) must not drop the selection it is about to quote.
+      if (target?.closest?.(".fi-reply-bar, .fi-quote-button")) return;
+      const selection = document.getSelection();
+      const found = pageSelection(selection, (node) => {
+        const el = node instanceof Element ? node : node instanceof Node ? node.parentElement : null;
+        const source = el?.closest<HTMLElement>("[data-quote-key]");
+        return source?.dataset.quoteKey && readerScrollRef.current?.contains(source) ? { key: source.dataset.quoteKey } : null;
+      });
+      if (!found) {
+        dispatchQuote({ type: "clear", key: quote?.source === "page" ? quote.key : "", source: "page" });
+        return;
+      }
+      const range = selection!.getRangeAt(selection!.rangeCount - 1);
+      const rects = range.getClientRects();
+      const end = rects.length ? rects[rects.length - 1]! : range.getBoundingClientRect();
+      dispatchQuote({ type: "select", quote: { key: found.key, source: "page", text: found.text, at: placeQuote(end) } });
+    };
+    document.addEventListener("mouseup", read);
+    document.addEventListener("keyup", read);
+    return () => {
+      document.removeEventListener("mouseup", read);
+      document.removeEventListener("keyup", read);
+    };
+  }, [placeQuote, quote?.source, quote?.key]);
+  /** The held selection as the start of a reply: "On {date}, {sender} wrote:" and its lines, or "" (Q8: unchanged). */
+  function quotedStart(): string {
+    if (!quote || !selected || !detail.data) return "";
+    const row = quote.key === selected.id ? null : conversation.data?.find((r) => r.message.id === quote.key);
+    if (quote.key !== selected.id && !row) return "";
+    return row
+      ? buildQuotedReplyText(row.message.date, row.message.sender, quote.text, t)
+      : buildQuotedReplyText(detail.data.date, detail.data.from, quote.text, t);
+  }
   // One compose at a time: a double-click on Reply made two drafts, both synced to the server (bug hunt 2026-10-12).
   const composing = useRef(false);
   async function compose(mode: Draft["mode"], all = false) {
@@ -846,6 +903,9 @@ export default function UnifiedInbox() {
       setNotice(t("The sender's signature could not be loaded; add it to the message if you need it."));
     }
     const signed = signature ? "\n\n" + signature : "";
+    // S08: a reply with text selected starts with that text quoted, an empty line, then the signature.
+    const quoted = mode === "reply" ? quotedStart() : "";
+    if (quoted) dispatchQuote({ type: "reset" });
     saved.create({
       id: crypto.randomUUID(),
       accountId: from,
@@ -872,7 +932,9 @@ export default function UnifiedInbox() {
             "\n" + t("Subject:") + " " +
             m?.subject +
             (m?.html ? "" : "\n\n" + (m?.text ?? ""))
-          : signed,
+          : quoted
+            ? quoted + "\n\n" + signature
+            : signed,
       ...(mode === "forward" && m?.html ? { forwardHtml: forwardBody(m.html) } : {}),
       mode,
       originalId: selected?.providerMessageId,
@@ -956,7 +1018,7 @@ export default function UnifiedInbox() {
                               blockedHosts={selected.held?.links}
                             />
                           ) : detail.data.text ? (
-                            <pre>{detail.data.text}</pre>
+                            <pre data-quote-key={selected.id}>{detail.data.text}</pre>
                           ) : (
                             <p>{t("No message body.")}</p>
                           )}
@@ -1602,7 +1664,8 @@ export default function UnifiedInbox() {
                 ) : (
                   detail.data && (
                     <>
-                      <div className="fi-reader-scroll">
+                      <div className="fi-reader-scroll" ref={readerScrollRef}>
+                        <QuoteSelectionContext.Provider value={onFrameSelection}>
                         <header className="fi-message-header">
                           <span className="fi-eyebrow">
                             {selected.provider === "cloudflare"
@@ -1626,6 +1689,13 @@ export default function UnifiedInbox() {
                             onOpen={(message) => setSelected(message)} loadBody={(message) => messageBody(message, (url) => fabric(url))}
                             onMarkRead={markConversationRead} renderOpen={() => openContent} />
                         ) : openContent}
+                        </QuoteSelectionContext.Provider>
+                        {quote && quote.at && !readOnlyIn(me, selected.accountId) && (
+                          <button type="button" className="fi-secondary fi-quote-button" style={{ left: quote.at.left, top: quote.at.top }}
+                            onMouseDown={(e) => e.preventDefault()} onClick={() => void compose("reply")}>
+                            <ArrowBendUpLeftIcon size={15} /> {t("Reply with quote")}
+                          </button>
+                        )}
                       </div>
                       <footer className="fi-reply-bar">
                         {readOnlyIn(me, selected.accountId) ? (
@@ -1633,6 +1703,7 @@ export default function UnifiedInbox() {
                         ) : (<>
                         <button
                           className="fi-primary"
+                          title={t("Select text in the message to quote it")}
                           onClick={() => void compose("reply")}
                         >
                           <ArrowBendUpLeftIcon size={17} /> {t("Reply")}
@@ -1640,6 +1711,7 @@ export default function UnifiedInbox() {
                         {offersReplyAll && (
                           <button
                             className="fi-secondary"
+                            title={t("Select text in the message to quote it")}
                             onClick={() => void compose("reply", true)}
                           >
                             <ArrowBendDoubleUpLeftIcon size={17} /> {t("Reply all")}

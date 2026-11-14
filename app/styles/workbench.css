@@ -589,6 +589,17 @@ body {
   overflow: auto;
   flex: 1;
   min-height: 0;
+  /* S08: "Reply with quote" is placed in it, under the selection's end. */
+  position: relative;
+}
+/* S08 (B-273): the small button at the end of a selection in the open message. */
+.fi-quote-button {
+  position: absolute;
+  z-index: 5;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  box-shadow: var(--pc-shadow-overlay);
 }
 .fi-message-header {
   padding: 34px 34px 20px;

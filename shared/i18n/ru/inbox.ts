@@ -116,6 +116,9 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Attachments": "Вложения",
 	"Downloading…": "Скачиваем…",
 	"Reply all": "Ответить всем",
+	// S08 (B-273): quoting the selected text in a reply.
+	"Select text in the message to quote it": "Выделите текст в письме, чтобы процитировать его",
+	"Reply with quote": "Ответить с цитатой",
 	"Rules for this account": "Правила для этого аккаунта",
 	"Rules for this address": "Правила для этого адреса",
 	"Accepted by the email provider. Recipient delivery is not confirmed.": "Почтовый провайдер принял письмо. Доставка получателю не подтверждена.",
