@@ -80,6 +80,8 @@ export function productionDeps(env: Env, mailboxId: string, registry: Registry):
         }, []);
         return { created: true };
       },
+      // K-5: an earlier attempt's untouched draft retired when it falls beyond the run's memory.
+      retireDraft: async (draftId) => (await stub.deleteUntouchedDraft(draftId)).state,
     },
   };
 }
