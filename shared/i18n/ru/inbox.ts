@@ -119,6 +119,7 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Downloading…": "Скачиваем…",
 	"Reply all": "Ответить всем",
 	"Rules for this account": "Правила для этого аккаунта",
+	"Rules for this address": "Правила для этого адреса",
 	"Accepted by the email provider. Recipient delivery is not confirmed.": "Почтовый провайдер принял письмо. Доставка получателю не подтверждена.",
 	"Close rules chooser": "Закрыть выбор правил",
 	"Choose the account whose mail the rule can act on.": "Выберите аккаунт, с почтой которого будет работать правило.",

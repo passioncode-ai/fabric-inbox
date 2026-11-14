@@ -210,7 +210,7 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
     { id: "routing", label: t("Routing & test") },
     { id: "copy", label: t("[tab] Copy") },
     { id: "signature", label: t("Name & signature") },
-    { id: "rules", label: t("Rules & history") },
+    { id: "rules", label: t("Rules") },
   ];
 
   const setAnswerer = (value: string) => void work.run(t("Saving…"), async () => {
@@ -250,7 +250,7 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
   const remove = async () => {
     const ok = await confirm({
       title: t("Remove {email} and delete its mail?", { email: a.email }),
-      body: <p>{t("Its routing rule in Cloudflare is removed too. This cannot be undone.")}</p>,
+      body: <p>{t("Its forwarding in Cloudflare is removed too. This cannot be undone.")}</p>,
       confirmLabel: t("Remove and delete mail"), danger: true,
       blocked: catchAll ? t("{email} keeps the mail for every other address on {domain}. Choose another catch-all on Domains first.", { email: a.email, domain: a.domain }) : undefined,
     });
@@ -307,8 +307,8 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
       {tab === "signature" && <SignatureForm email={a.email} />}
       {tab === "rules" && (
         <PanelBlock>
-          <p>{t("Rules act on new mail to {email}: they can archive, label, forward or call a tool, after approval or by themselves. Every run is kept with what it did.", { email: a.email })}</p>
-          <Link className="fi-secondary" to={"/automation/" + encodeURIComponent(a.email)}>{t("Open rules and history")}</Link>
+          <p>{t("Rules act on new mail to {email}: they can archive, mark as read, prepare a reply draft, forward or call a tool, after approval or by themselves. Every run is kept with what it did.", { email: a.email })}</p>
+          <Link className="fi-secondary" to={"/automation/" + encodeURIComponent(a.email)}>{t("Rules")}</Link>
         </PanelBlock>
       )}
       <ActionResult result={pauseWork.result} />

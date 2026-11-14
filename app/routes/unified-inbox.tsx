@@ -1086,7 +1086,7 @@ export default function UnifiedInbox() {
             <>
               <button className="fi-nav-item" onClick={() => setRulesOpen(true)}>
                 <SparkleIcon size={19} />
-                <span>{t("Rules & history")}</span>
+                <span>{t("Rules")}</span>
                 <CaretRightIcon size={14} />
               </button>
               <Link className="fi-nav-item" to="/settings">
@@ -1668,8 +1668,8 @@ export default function UnifiedInbox() {
                         </button>
                         </>)}
                         {owner && (
-                          <Link to={rulesPath(owner)} className="fi-rule-link">
-                            <SparkleIcon size={17} /> {t("Rules for this account")}
+                          <Link to={rulesPath(owner)} state={{ from: "mail" }} className="fi-rule-link">
+                            <SparkleIcon size={17} /> {owner.provider === "cloudflare" ? t("Rules for this address") : t("Rules for this account")}
                           </Link>
                         )}
                       </footer>
@@ -1766,7 +1766,7 @@ export default function UnifiedInbox() {
         aria-labelledby="rules-title"
       >
         <header>
-          <h2 id="rules-title">{t("Rules & history")}</h2>
+          <h2 id="rules-title">{t("Rules")}</h2>
           <button
             className="fi-icon-button"
             aria-label={t("Close rules chooser")}
@@ -1777,7 +1777,7 @@ export default function UnifiedInbox() {
         </header>
         <p>{t("Choose the account whose mail the rule can act on.")}</p>
         {accounts.map((a) => (
-          <Link className="fi-rule-account" key={a.id} to={rulesPath(a)}>
+          <Link className="fi-rule-account" key={a.id} to={rulesPath(a)} state={{ from: "mail" }}>
             {a.email}
             <CaretRightIcon size={16} />
           </Link>
