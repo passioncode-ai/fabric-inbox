@@ -24,7 +24,7 @@ import {
 } from "../lib/tools";
 import { Folders, FOLDER_TOOL_DESCRIPTION, MOVE_FOLDER_TOOL_DESCRIPTION } from "../../shared/folders";
 import { TUNING_PROMPT } from "../agents/definition";
-import { runBelongs, TUNE_MARK, TUNING_TTL_SECONDS, tuneTarget } from "../../shared/agent-tune";
+import { runBelongs, sessionTools, TUNE_MARK, TUNING_TTL_SECONDS, tuneTarget } from "../../shared/agent-tune";
 import type { Env } from "../types";
 
 // AI SDK v6 changed tool() overloads significantly. We define tools as plain
@@ -276,7 +276,7 @@ export class EmailAgent extends AIChatAgent<any> {
 		if (this.name.includes(TUNE_MARK)) return this.tuningTurn(env, onFinish);
 		const mailboxId = this.name;
 		const workersai = createWorkersAI({ binding: withReasoning(env.AI) });
-		const tools = createEmailTools(env, mailboxId);
+		const tools = sessionTools(this.name, () => createEmailTools(env, mailboxId));
 		const systemPrompt = await getSystemPrompt(env, mailboxId);
 
 		const result = streamText({
@@ -313,7 +313,7 @@ export class EmailAgent extends AIChatAgent<any> {
 			messages: await convertToModelMessages(this.messages.slice(-CHAT_CONTEXT_MESSAGES)),
 			// No tools at all (KIMI-35): a message an attacker wrote cannot steer this session into reading, drafting,
 			// moving or discarding mail.
-			tools: {},
+			tools: sessionTools(this.name, () => createEmailTools(env, target.mailboxId)),
 			stopWhen: stepCountIs(1),
 			onFinish,
 		});

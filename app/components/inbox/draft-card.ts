@@ -87,6 +87,29 @@ export function writeCardCopy(key: string, text: string | null, storage: CopySto
  */
 export const retiredRedraftBody = (copy: string | null): { text?: string } => (copy && copy.trim() ? { text: copy } : {});
 
+// ── A card retired while on screen (S07; round 2, K-2) ─────────────
+
+/** A card on screen: the message it answers and its own draft id (the device copy's key), by its row. */
+export type ShownCard = { answered: string; draftId: string };
+
+/**
+ * The cards on screen now, and those that went since the last read because a reply retired their draft: each with the
+ * retired card's own draft id, never the run's current one (which "Answer again" moves on), so its notice reads and
+ * clears the right device copy. A card whose run was approved by its own send, or whose draft was kept as edited, is not
+ * a retirement.
+ */
+export function retiredCards(before: ReadonlyMap<string, ShownCard>, rows: readonly ThreadRow[], placement: Pick<CardPlacement, "cards">): {
+  now: Map<string, ShownCard>; gone: ShownCard[];
+} {
+  const now = new Map<string, ShownCard>();
+  for (const [at, drafts] of placement.cards) for (const d of drafts) now.set(d.message.id, { answered: rows[at]!.message.id, draftId: d.message.providerMessageId });
+  const gone = [...before.entries()].filter(([row]) => !now.has(row)).map(([, card]) => card).filter((card) => {
+    const run = rows.find((r) => r.message.id === card.answered)?.message.agentRun;
+    return !!run?.outcome && !run.outcome.edited && run.outcome.kind !== "approved_by_person";
+  });
+  return { now, gone };
+}
+
 // ── Autosave (S06, KIMI-48) ────────────────────────────────────────
 
 /** Later changes are saved this long after typing stops (the first change is saved at once). */
@@ -141,14 +164,54 @@ export class DraftAutosave {
 
   private set(state: SaveState) { this.state = state; this.deps.changed(state); }
 
-  /** The person typed. */
-  edit(text: string) {
-    if (text === this.text) return;
+  /**
+   * Round 2, K-3: no edit while the text is being sent or saved as the person's draft, so what leaves is what the box
+   * shows and a late edit is never silently dropped with the device copy.
+   */
+  locked = false;
+
+  /** The person typed; false when the text is locked (sending, or being kept as the person's draft). */
+  edit(text: string): boolean {
+    if (this.locked) return false;
+    if (text === this.text) return true;
     this.text = text;
     this.deps.keep(text);
-    if (this.state === "conflict" || this.state === "gone") return;
-    if (!this.everChanged) { this.everChanged = true; void this.saveNow(); return; }
+    if (this.state === "conflict" || this.state === "gone") return true;
+    if (!this.everChanged) { this.everChanged = true; void this.saveNow(); return true; }
     this.schedule();
+    return true;
+  }
+
+  private lock(on: boolean) { this.locked = on; this.deps.changed(this.state); }
+
+  /**
+   * Send from the card: locked, the pending edit flushed and saved, exactly that revision sent (`send` throws when the
+   * send fails or its outcome is unknown, and then the copy and the text stay). The device copy goes only when nothing
+   * newer than what left waits.
+   */
+  async sendWith(send: (revision: number) => Promise<void>): Promise<"sent" | "not_sendable"> {
+    this.lock(true);
+    try {
+      const revision = await this.flush();
+      if (revision === null) return "not_sendable";
+      const text = this.text;
+      await send(revision);
+      if (this.text === text && !this.dirty) this.deps.keep(null);
+      return "sent";
+    } finally { this.lock(false); }
+  }
+
+  /**
+   * "Keep as my draft" (R6-4) once the agent's draft is gone: the text, locked while it is saved as a new draft of the
+   * person's; the device copy goes only when the text that was saved is still all there is.
+   */
+  async keepWith(redraft: (text: string) => Promise<void>): Promise<void> {
+    this.lock(true);
+    try {
+      const text = this.text;
+      await redraft(text);
+      if (this.text === text) this.deps.keep(null);
+    } finally { this.lock(false); }
   }
 
   /** The person left the field: save only when the text changed. */

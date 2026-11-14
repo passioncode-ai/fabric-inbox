@@ -9,7 +9,7 @@ import { decide, isFollowUpSubject, matchedTopic, type ModelDecision } from "./p
 import { CHECK_LIMITS } from "./model";
 import { MAX_RECEIPTS, asRole, type UsageReceipt } from "./usage";
 import { bareAddress, parseStoredHeaders, prefilter, replyToAddress, SKIP_TEXT } from "./prefilter";
-import { withPriorDraft } from "./retire";
+import { rememberPriorDraft } from "./retire";
 import { DRAFT_TEXT_CHARS, PRIOR_DRAFTS_KEPT, RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type AwaitingAnswer, type ToolCallRecord } from "./run";
 import { secondLookCause } from "./learning-events";
 import { answeringOrder, duplicateReason, electAnswerer, messageKey, type MessageClaim } from "./dedupe";
@@ -303,6 +303,11 @@ export interface RunnerDeps {
      * that id was there already (its text may be another attempt's), and the provider's draft revision when it has one.
      */
     createDraft(draft: { id: string; to: string; subject: string; text: string; inReplyTo: string; threadId: string }): Promise<void | { created?: boolean; revision?: string }>;
+    /**
+     * K-5: deletes an agent's draft only while it is untouched (revision-checked, the mailbox's `deleteUntouchedDraft`).
+     * Absent where drafts are not retired (accounts): earlier attempts then stay tracked.
+     */
+    retireDraft?(draftId: string): Promise<"deleted" | "edited" | "gone">;
   };
   /** flagged when the text looks like an attempt to steer the agent; a failed scan sets error. */
   injection(text: string): Promise<{ flagged: boolean; error?: string }>;
@@ -1203,8 +1208,10 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     const draftId = `${run.id}-draft${run.attempt && run.attempt > 1 ? `-${run.attempt}` : ""}`;
     const saved = await deps.mailbox.createDraft({ id: draftId, ...reply, inReplyTo: email.id, threadId: email.thread_id || email.id });
     // K-5: an earlier attempt's draft stays in Drafts; the run remembers it, so a reply retires it too.
-    run.priorDrafts = withPriorDraft(run, draftId, PRIOR_DRAFTS_KEPT).priorDrafts;
-    if (!run.priorDrafts) delete run.priorDrafts;
+    // Round 2: beyond PRIOR_DRAFTS_KEPT the oldest are retired now by the same rules, never just forgotten.
+    const remembered = await rememberPriorDraft(run, draftId, PRIOR_DRAFTS_KEPT, deps.mailbox.retireDraft?.bind(deps.mailbox));
+    if (remembered.priorDrafts) run.priorDrafts = remembered.priorDrafts; else delete run.priorDrafts;
+    for (const r of remembered.retired) console.log(JSON.stringify({ event: "agent_prior_draft_retired", run: run.id, state: r.state }));
     run.draftId = draftId;
     // S07 (B-272): the run keeps the draft's text, so retiring an untouched draft never loses it; only a text the run
     // knows is the draft's whole text lets retirement delete the draft (KIMI-46).

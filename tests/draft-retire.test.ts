@@ -118,19 +118,16 @@ test("the outbox payload carries who sent it and the draft it came from, outside
 test("K-5: Answer again remembers the earlier attempt's draft with its kept text, and retirement treats it as the run's own", async () => {
   const { withPriorDraft, isRunsAgentDraft } = await import("../workers/agents/retire");
   const first = { draftId: "a-draft", draftText: "first", draftTextComplete: true };
-  const second = { ...withPriorDraft(first, "a-draft-2", 5), draftId: "a-draft-2", draftText: "second", draftTextComplete: true };
+  const second = { ...withPriorDraft(first, "a-draft-2"), draftId: "a-draft-2", draftText: "second", draftTextComplete: true };
   assert.deepEqual(second.priorDrafts, [{ id: "a-draft", text: "first", complete: true }]);
-  assert.equal(withPriorDraft(second, "a-draft-2", 5), second, "the same draft again changes nothing");
-  const many = Array.from({ length: 7 }, (_, i) => i).reduce((r, i) => ({ ...withPriorDraft(r, `d${i + 1}`, 5), draftId: `d${i + 1}`, draftText: `t${i + 1}`, draftTextComplete: true }),
-    { draftId: "d0", draftText: "t0", draftTextComplete: true } as Partial<AgentRun>);
-  assert.equal(many.priorDrafts!.length, 5, "at most PRIOR_DRAFTS_KEPT remembered");
+  assert.equal(withPriorDraft(second, "a-draft-2"), second, "the same draft again changes nothing");
   assert.equal(isRunsAgentDraft(second, "a-draft"), true);
   assert.equal(isRunsAgentDraft(second, "a-draft-2"), true);
   assert.equal(isRunsAgentDraft({ ...second, personDraftId: "mine" }, "mine"), false, "the person's copy is never the agent's");
   assert.equal(runKeepsWholeDraft(second, "a-draft"), true);
   assert.equal(runKeepsWholeDraft({ draftId: "x", priorDrafts: [{ id: "y", text: "", complete: false }] }, "y"), false);
-  assert.match(readFileSync("workers/agents/runner.ts", "utf8"), /run\.priorDrafts = withPriorDraft\(run, draftId, PRIOR_DRAFTS_KEPT\)\.priorDrafts;\n[^\n]*\n\s+run\.draftId = draftId;/,
-    "the earlier draft is remembered before the run's draft id is replaced");
+  assert.match(readFileSync("workers/agents/runner.ts", "utf8"), /await rememberPriorDraft\(run, draftId, PRIOR_DRAFTS_KEPT, deps\.mailbox\.retireDraft\?\.bind\(deps\.mailbox\)\);[\s\S]{0,400}run\.draftId = draftId;/,
+    "the earlier draft is remembered (or retired) before the run's draft id is replaced");
   assert.match(readFileSync("workers/agents/registry.ts", "utf8"), /const own = isRunsAgentDraft\(run, draftId\), mine = run\.personDraftId === draftId;/);
   assert.match(readFileSync("workers/index.ts", "utf8"), /for \(const prior of run\.priorDrafts \?\? \[\]\) if \(!byDraft\.has\(prior\.id\)\) byDraft\.set\(prior\.id, run\);/,
     "an earlier attempt's draft is an ordinary draft in the reader, never a second card");
@@ -139,4 +136,39 @@ test("K-5: Answer again remembers the earlier attempt's draft with its kept text
 test("K-6: only a draft kept because a person changed it is marked edited; a sent source draft is not", () => {
   const src = readFileSync("workers/durableObject/index.ts", "utf8");
   assert.match(src, /await store\.settleDraftOutcome\(runId, \{ kind, sentMessageId: row\.id, at \}, source\.id\);/);
+});
+
+test("round 2, K-5: seven attempts: beyond five, the oldest retirable attempts are retired at once, never forgotten untouched", async () => {
+  const { rememberPriorDraft, trimPriorDrafts } = await import("../workers/agents/retire");
+  const asked: string[] = [];
+  const states: Record<string, "deleted" | "edited" | "gone"> = { d0: "deleted", d1: "edited" };
+  let run: Partial<AgentRun> = { draftId: "d0", draftText: "t0", draftTextComplete: true };
+  const retiredAll: { id: string; state: string }[] = [];
+  for (let i = 1; i <= 7; i++) {
+    const r = await rememberPriorDraft(run, `d${i}`, 5, async (id) => { asked.push(id); return states[id] ?? "deleted"; });
+    retiredAll.push(...r.retired);
+    // d3's text was not kept: it can never be retired, so it stays tracked.
+    run = { draftId: `d${i}`, draftText: `t${i}`, draftTextComplete: i !== 3, ...(r.priorDrafts ? { priorDrafts: r.priorDrafts } : {}) };
+  }
+  // Eight drafts (d0..d6 earlier, d7 current): six of the earlier ones are retirable, so the oldest, d0, was retired
+  // when the seventh attempt pushed it beyond five; d3 (text not kept) stays tracked beside the five.
+  assert.deepEqual(retiredAll, [{ id: "d0", state: "deleted" }]);
+  assert.deepEqual(asked, ["d0"]);
+  assert.deepEqual(run.priorDrafts!.map((d) => d.id), ["d1", "d2", "d3", "d4", "d5", "d6"]);
+  // An attempt a person edited meanwhile is theirs: retiring finds it edited, it stays in Drafts and is no longer tracked.
+  const edited = await rememberPriorDraft({ draftId: "d6", draftText: "t6", draftTextComplete: true, priorDrafts: run.priorDrafts }, "d7", 4, async (id) => states[id] ?? "deleted");
+  assert.deepEqual(edited.retired, [{ id: "d1", state: "edited" }]);
+  assert.ok(!edited.priorDrafts!.some((d) => d.id === "d1"));
+  assert.equal(run.priorDrafts!.find((d) => d.id === "d3")!.complete, false);
+  // Without a way to retire (an account), or when it fails, nothing is forgotten.
+  const many = Array.from({ length: 7 }, (_, i) => ({ id: `x${i}`, text: `t${i}`, complete: true }));
+  const none = await rememberPriorDraft({ draftId: "x7", draftText: "t7", draftTextComplete: true, priorDrafts: many }, "x8", 5);
+  assert.equal(none.priorDrafts!.length, 8, "no retire: every attempt stays tracked");
+  const failing = await rememberPriorDraft({ draftId: "x7", draftText: "t7", draftTextComplete: true, priorDrafts: many }, "x8", 5, async () => { throw new Error("down"); });
+  assert.equal(failing.priorDrafts!.length, 8, "a failed retire keeps tracking it");
+  assert.deepEqual(failing.priorDrafts!.map((d) => d.id), [...many.map((d) => d.id), "x7"], "order kept");
+  assert.deepEqual(trimPriorDrafts([{ id: "a", text: "", complete: false }, { id: "b", text: "t", complete: true }], 0),
+    { kept: [{ id: "a", text: "", complete: false }], toRetire: [{ id: "b", text: "t", complete: true }] });
+  assert.match(readFileSync("workers/agents/deps.ts", "utf8"), /retireDraft: async \(draftId\) => \(await stub\.deleteUntouchedDraft\(draftId\)\)\.state,/,
+    "on an address it is the same revision-checked delete retirement uses");
 });

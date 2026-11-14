@@ -135,3 +135,9 @@ run: a second accepted reply changes nothing. Logged as `{event: "agent_draft_re
   (K-6). K-1 (a card send carrying no thread) was checked and is not so: `#sendDraftOnce` sends a draft that answers a
   message as a `reply` from the draft, and `sendMail` resolves it to the answered message and sets `thread_id` from it;
   a workerd test now also checks that a card send retires an earlier untouched sibling.
+- **After round 2 of the second-model review (`d349926d`):** past five remembered attempts, the oldest whose whole text
+  the run kept is retired at once by the same revision-checked delete (`rememberPriorDraft`, the mailbox's
+  `retireDraft`), never just forgotten: deleted, found edited (the person's, stays in Drafts) or gone, it is untracked;
+  where it cannot be retired (no `retireDraft`, as on an account, or the delete failed) it stays tracked, and one whose
+  text was not kept is tracked beside the five. A superseded attempt's text is not kept on the run after it is retired
+  this way (the run's current draft text is).
