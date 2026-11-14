@@ -84,7 +84,11 @@ headers and the stored addresses (not `parseMessage`, since remote mail has no r
 
 - **Held mail keeps today's review.** A held message is reviewed exactly as today (`reviewHeld`, output
   `{verdict, reasons}`, its release rule and its guard against feed-listed links and files that run code,
-  `store.ts:642-647`). Nothing here changes that path.
+  `store.ts:642-647`). That path keeps its job, which is deciding whether agents with tools may read the message; its
+  guard grows by one case: a file disguised by its bytes (section 2) blocks an automatic release as a file that runs
+  code does today. The new checks (sender, file type by content) do not hold mail; they colour it. A release, by the
+  review or by a person, never changes the colour: the badge and the link guard (S04) still follow the signals, with
+  "Released by you" or "Released by the review" beside it.
 - **A new, separate review** (its own prompt and schema, version 1, stored under `findings.check.review` with that
   version) runs for a message that is not held, when any deterministic check fired (any severity, minor included) or a
   document attachment's text was read, inside its own daily budget (separate from the arrival scan's), at most 20 a day
@@ -120,7 +124,7 @@ headers and the stored addresses (not `parseMessage`, since remote mail has no r
 | Amber | "Suspicious message" / «Подозрительное письмо» | Any other minor or major signal; the review raised it; an amber file |
 | Amber | "Suspicious message" / «Подозрительное письмо» | Held only because the light model said YES (`findings.model` alone is a model's guess, not a floor) |
 | Red | "Dangerous" / «Опасно» | A feed-listed link, a file that runs code or is disguised, instructions to an AI found by Okolos's signals (visible strong, hidden or in a file), DMARC fail with an enforcing policy; held for any of these and not released |
-| (same) | plus "Released by you" / «Вы разрешили» | A person released a held message: the colour still follows its signals |
+| (same) | plus "Released by you" / «Вы разрешили», or "Released by the review" / «Разрешено проверкой» | A held message was released: the colour still follows its signals |
 
 Which mail is checked: received mail in every folder. Mail we sent and drafts are not checked (they carry no receiver's
 result and their links are ours); they show no badge and their links open as written.

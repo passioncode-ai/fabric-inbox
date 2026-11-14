@@ -34,7 +34,8 @@ default). No subject-only guess retires anything.
 **Untouched or edited:**
 - Untouched: on a Cloudflare address, `draft_revision` is null or 1 (B-52), checked in the same transaction that retires
   it; on an account, the hash of the draft as read back from the provider right after the agent saved it (a new run
-  field `draftHash`, over a canonical form: the text body with line endings and trailing spaces normalised) equals the
+  field `draftHash`, over a canonical form of every field a person can edit: To, Cc, Bcc, subject, the text and HTML
+  bodies with line endings and trailing spaces normalised, and the attachments' names and sizes) equals the
   hash of the draft read now. A run without `draftHash` (saved before this change), a draft that cannot be read, or a
   hash that cannot be compared counts as edited, so the draft is kept. Opening a draft in the composer without changing
   it saves nothing, so it stays untouched (a test holds this).
