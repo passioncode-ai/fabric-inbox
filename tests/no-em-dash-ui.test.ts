@@ -1,6 +1,7 @@
 // B-265: no em dash (U+2014) in the interface strings a person reads, against the operator's rule (text for
 // people carries no em dash and no substitute). The English sources are the dictionary's keys; B-260 keeps
-// them out of the tool texts agents read. The Russian translations are the row's next step.
+// them out of the tool texts agents read. A reply agent's prompt template keeps its words (R28: a shipped
+// template changes only as a new version), so a multi-line prompt is left out of the Russian check.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -14,6 +15,16 @@ test("no English interface string carries an em dash", () => {
   for (const file of readdirSync(dir).filter((f) => f.endsWith(".ts"))) {
     for (const m of readFileSync(path.join(dir, file), "utf8").matchAll(/^\s*"((?:[^"\\]|\\.)*)":\s*"/gm))
       if (m[1].includes(EM)) found.push(`${file}: ${m[1]}`);
+  }
+  assert.deepEqual(found, []);
+});
+
+test("no Russian translation carries an em dash, but a shipped prompt template", () => {
+  const dir = "shared/i18n/ru";
+  const found: string[] = [];
+  for (const file of readdirSync(dir).filter((f) => f.endsWith(".ts"))) {
+    for (const m of readFileSync(path.join(dir, file), "utf8").matchAll(/^\s*"((?:[^"\\]|\\.)*)":\s*"((?:[^"\\]|\\.)*)"/gm))
+      if (m[2].includes(EM) && !m[1].includes("\\n")) found.push(`${file}: ${m[2]}`);
   }
   assert.deepEqual(found, []);
 });
