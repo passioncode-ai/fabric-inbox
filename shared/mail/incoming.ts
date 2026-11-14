@@ -20,4 +20,6 @@ export interface IncomingMailEvent {
   discarded?: boolean;
   /** B-179: its files (a Cloudflare message's, stored in R2 under `attachments/<id>/<file id>/<name>`), for the safety check. */
   files?: { id: string; filename: string; mimetype: string; size: number }[];
+  /** S03 (B-269): the header lines the safety check reads (the receiver's Authentication-Results and Received, From, Reply-To), in order, capped. */
+  headers?: { key: string; value: string }[];
 }

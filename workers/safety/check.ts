@@ -1,5 +1,6 @@
 import { analyse, type SignalName } from "../../vendor/okolos/core-injection/signals";
 import { splitHidden, HIDDEN_CHARS } from "./hidden";
+import type { MailCheck } from "../../shared/mail/safety";
 
 /**
  * B-178: whether an arriving message carries instructions aimed at an AI, read from what a person sees and what
@@ -31,6 +32,10 @@ export interface SafetyFindings {
   riskyFiles?: string[];
   /** B-179: attached documents whose text could not be read, by name. */
   unreadFiles?: string[];
+  /** S03 (B-269): files whose bytes are a program under a name that is not one (a renamed program), by name. */
+  disguisedFiles?: string[];
+  /** S03 (B-269, B-222): the six checks, their files and links, and the review of mail that is not held. */
+  check?: MailCheck;
 }
 
 export type SafetyScan = (text: string) => Promise<{ flagged: boolean; error?: string }>;
@@ -61,8 +66,17 @@ export async function inspectMessage(input: SafetyInput, scan: SafetyScan): Prom
   };
 }
 
-/** Suspect: held until reviewed. */
+/** Suspect: held until reviewed. S03: a renamed program, found by its bytes, holds it like one found by its name. */
 export function suspect(f: SafetyFindings): boolean {
   return f.visibleStrong.length > 0 || f.hiddenSignals.length > 0 || f.model || !!f.modelError || !!f.phishing?.length
-    || !!f.lookalikes?.length || !!f.riskyFiles?.length || !!f.fileSignals?.length;
+    || !!f.lookalikes?.length || !!f.riskyFiles?.length || !!f.fileSignals?.length || !!f.disguisedFiles?.length;
+}
+
+/**
+ * S03 §3 (round 5, KIMI-32): the held review may release a message only when the light model's YES was its sole
+ * reason. Any Okolos signal, a listed or lookalike link, or a file that runs code waits for a person.
+ */
+export function modelOnly(f: SafetyFindings): boolean {
+  return f.model && !f.modelError && !f.visibleStrong.length && !f.hiddenSignals.length && !f.fileSignals?.length && !f.phishing?.length
+    && !f.lookalikes?.length && !f.riskyFiles?.length && !f.disguisedFiles?.length;
 }

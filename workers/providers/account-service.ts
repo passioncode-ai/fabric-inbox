@@ -8,6 +8,7 @@
  * Records live under `account:<id>`; the world names an account `<provider>:<id>` (shared/mail/
  * accounts.ts). Gmail records written before 0.11 are read as they are: same key, same id, same cache.
  */
+import { checkHeaders } from "../safety/verdict";
 import { validateAttachments } from '../../shared/mail/attachments';
 import type { RemoteProvider } from "../../shared/mail/accounts";
 import {
@@ -138,6 +139,14 @@ export interface IncomingEvent {
   date: string;
   /** B-179: its attached files (not the pictures shown in its text), for the safety check; the bytes stay with the provider. */
   files?: { id: string; filename: string; mimetype: string; size: number }[];
+  /** S03 (B-269): its Reply-To, for the safety check's reply-path check. */
+  replyTo?: string;
+  /**
+   * S03 (B-269): the header lines the safety check reads (Authentication-Results, Received, From, Reply-To, List-Id,
+   * Delivered-To), in order, capped. Read for Gmail only: the only remote provider whose receiver's result counts;
+   * Outlook's and IMAP's would be read for nothing.
+   */
+  headers?: { key: string; value: string }[];
 }
 interface PendingEvent {
   accountId: string;
@@ -1517,6 +1526,12 @@ export class AccountService {
           if (applied) await applied(verdict.ruleId).catch((error: unknown) => console.warn(JSON.stringify({ event: "discard_count_failed", error: (error as Error)?.message?.slice(0, 120) })));
           continue;
         }
+        // S03 (B-269): Gmail's receiver lines for the sender check; a read that fails leaves it "did not run".
+        const lines = provider === "gmail" ? await this.getHeaders(event.accountId, event.messageId)
+          .then((all) => checkHeaders(all.headers), (error: unknown) => {
+            console.warn(JSON.stringify({ event: "safety_headers_unread", provider, error: error instanceof ProviderError ? error.code : "unknown" }));
+            return [];
+          }) : [];
         await deliver({
           account: provider + ":" + event.accountId,
           emailId: message.providerMessageId,
@@ -1528,6 +1543,8 @@ export class AccountService {
           ...(message.html ? { html: message.html.slice(0, 200_000) } : {}),
           date: message.date || new Date(message.timestamp || Date.now()).toISOString(),
           ...(attachedFiles(message).length ? { files: attachedFiles(message) } : {}),
+          ...(message.replyTo ? { replyTo: message.replyTo } : {}),
+          ...(lines.length ? { headers: lines } : {}),
         });
         const handed = await handedKey(event.accountId, message.rfcMessageId);
         await this.store.transaction(async (tx) => {

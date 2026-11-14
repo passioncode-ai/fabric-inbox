@@ -453,4 +453,7 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"An agent whose key asks you sees nothing change until you approve; it then calls again with the same code. Refusing deletes the code.": "Пока вы не одобрите, у агента с таким ключом ничего не меняется; после одобрения он вызывает действие снова с тем же кодом. Отклонение удаляет код.",
 	"(deleting for good, removing an address and the like wait for you here)": "(удаление навсегда, удаление адреса и подобное ждут вас здесь)",
 	"Agent panel": "Панель агента",
+	// S03 (B-269)
+	"The safety check found the sender may be forged, so the answer waits as a draft": "Проверка безопасности нашла, что отправитель может быть поддельным, поэтому ответ ждёт в черновике",
+	"The safety check's review found the message suspicious, so the answer waits as a draft": "Разбор проверки безопасности нашёл письмо подозрительным, поэтому ответ ждёт в черновике",
 };

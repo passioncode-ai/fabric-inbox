@@ -62,6 +62,11 @@ import { loadConversation, markRead, messageBody, messageText, type ThreadRow } 
 import AgentDraftCard, { RetiredDraftNotice, type TuneRequest } from "~/components/inbox/AgentDraftCard";
 import AgentRunPanel from "~/components/inbox/AgentRunPanel";
 import HeldPanel from "~/components/inbox/HeldPanel";
+import SafetyBadge from "~/components/inbox/SafetyBadge";
+import { downloadQuestion } from "~/components/inbox/safety-words";
+import { changeSpam } from "~/components/inbox/MessageActions";
+import { colourOf, type FileEntry, type SafetyLikeRecord } from "../../shared/mail/safety";
+import { UNCHECKED } from "~/lib/link-guard";
 import MessageHeader from "~/components/inbox/MessageHeader";
 import { openFromLink } from "~/components/inbox/open-link";
 import { untouchedDraft } from "~/components/inbox/draft-store";
@@ -520,6 +525,32 @@ export default function UnifiedInbox() {
         selected!.provider,
       ),
   });
+  // S03 (B-269) and S04 (B-270): the open message's safety record and the server's feed version. A message with no
+  // record, or one whose links were checked against an older feed, is checked now (deterministic, no model, Q14 and
+  // SEC-11); until the answer it is grey and its links ask. A recomputation that fails leaves it grey for its links.
+  const safetyCheck = useQuery({
+    queryKey: ["safety-check", selected?.accountId.toLowerCase(), selected?.providerMessageId],
+    enabled: !!selected && marked.size < 2,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const key = { accountId: selected!.accountId.toLowerCase(), messageId: selected!.providerMessageId };
+      type Answer = { records?: Record<string, SafetyLikeRecord>; feedVersion?: number | null; unavailable?: boolean };
+      const looked = await fabric<Answer>("/api/safety/lookup", { keys: [key] }, "POST");
+      let record: SafetyLikeRecord | null = looked.records?.[`${key.accountId}|${key.messageId}`] ?? null;
+      let feedVersion = looked.feedVersion ?? null;
+      const check = record?.findings.check;
+      const stale = !!check && feedVersion !== null && (check.feedVersion ?? -1) < feedVersion;
+      if (!looked.unavailable && (!check || stale)) {
+        const checked = await fabric<{ record?: SafetyLikeRecord | null; feedVersion?: number | null }>("/api/safety/check",
+          { accountId: selected!.accountId, messageId: key.messageId }, "POST").catch(() => null);
+        if (checked?.record) { record = checked.record; feedVersion = checked.feedVersion ?? feedVersion; }
+      }
+      return { record, feedVersion };
+    },
+  });
+  const safetyColour = safetyCheck.data ? colourOf(safetyCheck.data.record, safetyCheck.data.feedVersion) : UNCHECKED;
+  const safetyFiles = new Map((safetyCheck.data?.record?.findings.check?.files ?? []).map((f) => [f.id, f]));
+  const askedFiles = useRef(new Set<string>());
   // Opening an unread message marks it read once the body has loaded, as every
   // mail client does; a failure leaves it unread and says so.
   const markedRead = useRef<string | null>(null);
@@ -688,6 +719,19 @@ export default function UnifiedInbox() {
     const order = displayOrder(messages, view, group, openGroups);
     if (marked.size) return order.filter((m) => marked.has(m.id));
     return selected ? [selected] : [];
+  }
+  /** S03: "Report spam" from the safety panel, as the toolbar's button does it. */
+  function reportSpamFromPanel() {
+    if (!selected) return;
+    const message = selected;
+    let notice = "";
+    void perform(async () => {
+      const change = await changeSpam(message, true);
+      if ("notice" in change && change.notice) notice = change.notice;
+    }, () => {
+      if (selected?.id === message.id) selectNextAfter(message.id);
+      if (notice) setNotice(t.text(notice));
+    }, { id: message.id, removed: true });
   }
   /**
    * Archive (Delete/Backspace: also marks read) or discard (⌘⌫): the rows leave at once, the next
@@ -985,15 +1029,24 @@ export default function UnifiedInbox() {
     });
     setComposeOpen(true);
   }
-  async function download(a: OpenMessage["attachments"][number]) {
+  async function download(a: OpenMessage["attachments"][number], override = false) {
     if (!selected || downloading) return;
+    // S03 §5: an amber file asks once; a red one downloads only through "Save anyway" in the safety panel.
+    const entry = safetyFiles.get(a.id);
+    if (entry?.colour === "red" && !override) return;
+    if (entry?.colour === "amber" && !askedFiles.current.has(a.id)) {
+      if (!window.confirm(downloadQuestion(entry, t))) return;
+      askedFiles.current.add(a.id);
+    }
+    const risky = entry?.colour === "red" || entry?.colour === "amber";
+    const query = override ? "?override=1" : "";
     setDownloading(a.id);
     try {
       await perform(async () => {
         let blob: Blob;
         if (isRemote(selected.provider)) {
           const result = await fabric<{ data: string }>(
-            messagePath(selected) + "/attachments/" + encodeURIComponent(a.id),
+            messagePath(selected) + "/attachments/" + encodeURIComponent(a.id) + query,
           );
           blob = new Blob(
             [
@@ -1002,11 +1055,12 @@ export default function UnifiedInbox() {
                 (c) => c.charCodeAt(0),
               ),
             ],
-            { type: a.mimeType },
+            // An amber or red file is saved as bytes, never as a type a browser would render.
+            { type: risky ? "application/octet-stream" : a.mimeType },
           );
         } else {
           const response = await fetch(
-            messagePath(selected) + "/attachments/" + encodeURIComponent(a.id),
+            messagePath(selected) + "/attachments/" + encodeURIComponent(a.id) + query,
           );
           if (!response.ok)
             throw new Error(t("{name} could not be downloaded.", { name: a.filename }));
@@ -1047,6 +1101,7 @@ export default function UnifiedInbox() {
                               inlineAttachments={reading.inline}
                               autoSize
                               blockedHosts={selected.held?.links}
+                              linkSafety={safetyCheck.data ? { colour: safetyColour, links: safetyCheck.data.record?.findings.check?.links ?? [] } : null}
                             />
                           ) : detail.data.text ? (
                             // S05 (B-221): a text body's quoted history folds under "Show quoted text", as in a thread's cells.
@@ -1068,9 +1123,10 @@ export default function UnifiedInbox() {
                             <h3>{t("Attachments")}</h3>
                             {reading.listed.map((a) => (
                               <button
-                                className="fi-secondary"
+                                className={"fi-secondary fi-file-chip" + (safetyFiles.get(a.id) ? ` is-${safetyFiles.get(a.id)!.colour}` : "")}
                                 key={a.id}
-                                disabled={busy || downloading === a.id}
+                                disabled={busy || downloading === a.id || safetyFiles.get(a.id)?.colour === "red"}
+                                title={safetyFiles.get(a.id)?.colour === "red" ? t("This file runs code or hides a program. Save anyway is in the safety panel.") : undefined}
                                 onClick={() => void download(a)}
                               >
                                 {downloading === a.id ? (
@@ -1712,7 +1768,16 @@ export default function UnifiedInbox() {
                               ? "CLOUDFLARE"
                               : (owner?.providerName ?? (selected.provider === "gmail" ? "Gmail" : "IMAP")).toUpperCase()}
                           </span>
-                          <h2>{detail.data.subject || t("(No subject)")}</h2>
+                          <div className="fi-subject-line">
+                            <h2>{detail.data.subject || t("(No subject)")}</h2>
+                            {/* Mail we sent and drafts show a badge only when a link fired (S03 §4). */}
+                            {!(detail.data.sent && safetyCheck.data?.record?.findings.check?.scope === "links" && !safetyCheck.data.record.findings.check.signals.length) && (
+                              <SafetyBadge colour={safetyColour} record={safetyCheck.data?.record ?? null} checking={safetyCheck.isPending} failed={safetyCheck.isError}
+                                onReportSpam={readOnlyIn(me, selected.accountId) || folder === "spam" || folder === "sent" ? undefined : reportSpamFromPanel}
+                                onDiscard={readOnlyIn(me, selected.accountId) || folder === "discarded" ? undefined : () => void triageAction("discard", [selected])}
+                                onSaveAnyway={(f: FileEntry) => { const a = detail.data!.attachments.find((x) => x.id === f.id); if (a) void download(a, true); }} />
+                            )}
+                          </div>
                           {selected.discardReason && (
                             <p className="fi-category-reason fi-spam-reason">
                               {TT.whyDiscarded} {t.text(selected.discardReason)}{" "}

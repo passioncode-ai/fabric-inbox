@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { colourOf, type SafetyLikeRecord } from "../../shared/mail/safety";
 import { INBOX_FOLDERS, compareInbox, inboxPosition, type InboxAccount, type InboxIssue, type InboxReadOptions, type InboxResponse, type InboxMessage, type InboxPosition } from "../../shared/mail/inbox";
 import type { Env } from "../types";
 import { inboxSources } from "../lib/inbox-sources";
@@ -367,7 +368,16 @@ async function markCategories(env: Env, page: InboxMessage[]) {
   if (!env.CATEGORIES || !page.length) return;
   // B-178: a held message is marked, with why; its snippet is the person's to read, an agent's tool blanks it.
   const keys = page.map((m) => ({ accountId: m.accountId.toLowerCase(), messageId: m.providerMessageId }));
-  const safety = await env.CATEGORIES.getByName("workspace").safetyOf(keys).catch(() => ({} as Record<string, never>));
+  const store = env.CATEGORIES.getByName("workspace");
+  const [safety, feedVersion] = await Promise.all([store.safetyOf(keys).catch(() => ({} as Record<string, never>)), store.feedVersion().catch(() => null)]);
+  for (const m of page) {
+    // S03 (B-269): every message with a record carries its colour; one without reads "Not checked" in the reader.
+    const record = (safety as Record<string, SafetyLikeRecord & { checkedAt: number; findings: { check?: { checkedAt: number } } }>)[`${m.accountId.toLowerCase()}|${m.providerMessageId}`];
+    if (record) {
+      const c = colourOf(record, feedVersion);
+      m.safety = { colour: c.colour, label: c.label, checkedAt: record.findings.check?.checkedAt ?? record.checkedAt, ...(c.released ? { released: c.released } : {}) };
+    }
+  }
   for (const m of page) {
     const s = (safety as Record<string, { state: string; reason: string; review: { verdict: string } | null; findings: { phishing?: { host: string }[]; lookalikes?: { host: string }[] } }>)[`${m.accountId.toLowerCase()}|${m.providerMessageId}`];
     if (s && (s.state === "held" || s.state === "kept"))

@@ -1,5 +1,6 @@
 import type { Env } from "../types";
 import { isHeld, safetyKey } from "../safety/state";
+import { draftOnlyReason } from "../../shared/mail/safety";
 import { scanPromptInjection } from "../lib/ai";
 import { allServedDomains } from "../lib/mailbox-store";
 import { agentAccounts } from "../lib/agent-status";
@@ -107,6 +108,14 @@ export function sharedDeps(env: Env, registry: Registry): Omit<RunnerDeps, "mail
         const accountId = mailboxId.includes("@") ? `cloudflare:${mailboxId.toLowerCase()}` : mailboxId.toLowerCase();
         const record = (await env.CATEGORIES.getByName("workspace").safetyOf([{ accountId, messageId: emailId }]))[safetyKey(accountId, emailId)];
         return record && isHeld(record.state) ? record.reason || msg("held for review") : null;
+      },
+      // S03 (B-269, R5-3): a forged sender or a message the review raised is answered as a draft, whatever the policy.
+      async draftOnly(mailboxId: string, emailId: string) {
+        const accountId = mailboxId.includes("@") ? `cloudflare:${mailboxId.toLowerCase()}` : mailboxId.toLowerCase();
+        const record = (await env.CATEGORIES.getByName("workspace").safetyOf([{ accountId, messageId: emailId }]))[safetyKey(accountId, emailId)];
+        const why = draftOnlyReason(record);
+        return why === "sender" ? msg("The safety check found the sender may be forged, so the answer waits as a draft")
+          : why === "review" ? msg("The safety check's review found the message suspicious, so the answer waits as a draft") : null;
       },
     } : {}),
     // With a reply-lane key, answers are written on OpenRouter and checked by another vendor before they

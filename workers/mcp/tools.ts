@@ -376,7 +376,7 @@ const toBase64 = (bytes: Uint8Array) => { let s = ""; for (let i = 0; i < bytes.
 const fromBase64Url = (data: string) => { const s = data.replace(/-/g, "+").replace(/_/g, "/"); return s + "=".repeat((4 - (s.length % 4)) % 4); };
 const listHeldMessages = defineTool({
   name: "list_held_messages", title: "Messages held by the safety check", level: "read", readOnly: true,
-  description: "The messages the arrival safety check holds from agents with tools (B-178): text that gives orders to an AI, or hidden text a person does not see addressing one, found by fixed signals and a light model, then reviewed by a model with no tools. Each with why, newest first. Give accountId and messageId for one message's verdict, the review's reasons and the hidden text that was found (quoted, at most 4,000 characters), whether held or not. Their text and attachments are never given to agents while held; read_message answers a notice.",
+  description: "The messages the arrival safety check holds from agents with tools (B-178): text that gives orders to an AI, or hidden text a person does not see addressing one, found by fixed signals and a light model, then reviewed by a model with no tools. Each with why and its check (the six checks of the sender, links, hidden text and files, null on older records), newest first. Give accountId and messageId for one message's verdict, the review's reasons and the hidden text that was found (quoted, at most 4,000 characters), whether held or not. Their text and attachments are never given to agents while held; read_message answers a notice.",
   input: { accountId: accountId.optional(), messageId: messageId.optional(), limit: z.number().int().min(1).max(500).default(100) },
   routes: ["GET /api/safety/held", "POST /api/safety/lookup"],
   async call(a, ctx) {
@@ -387,6 +387,18 @@ const listHeldMessages = defineTool({
     }
     return get(ctx, "/api/safety/held", { limit: a.limit });
   },
+});
+
+/**
+ * S03 (B-269, B-222): one message's safety checks run now (sender, links, files; no model). Writes only the check's
+ * record, never the message's state: a held message stays held.
+ */
+const checkMessageSafety = defineTool({
+  name: "check_message_safety", title: "Check a message's safety now", level: "mail", target: (a) => `${a.accountId} ${a.messageId}`,
+  description: "Runs the deterministic safety checks of one message now, as opening it in the app does: the sender (the receiver's own DMARC, SPF and DKIM result where it can be trusted, a lookalike or brand-named From, a Reply-To on another domain), every link (the Okolos phishing feed, lookalike hosts, link text naming another domain) and every attachment (what its bytes are, macros in Office files). No model runs. It records the result as the message's check and never changes whether the message is held; mail you sent and drafts get the links check only. Answers the record: check (signals, what did not run and why, links, files, the review when one ran on arrival) and feedVersion. Use list_held_messages for why a message is held.",
+  input: { accountId, messageId },
+  routes: ["POST /api/safety/check"],
+  call: (a, ctx) => post(ctx, "/api/safety/check", { accountId: parseAccount(a.accountId).id, messageId: a.messageId }),
 });
 
 const decideHeldMessage = defineTool({
@@ -2407,7 +2419,7 @@ const revokeGrant = defineTool({
 });
 
 export const TOOLS: readonly ToolDef[] = [
-  listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, decideHeldMessage, listFolders, getSendStatus,
+  listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, checkMessageSafety, decideHeldMessage, listFolders, getSendStatus,
   listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, discardAgentDraft, redraftAgentAnswer, getAgentTuning, previewAgentAnswer, getServerErrors, getOpsDigest, getStorage, getSupportMonths, getSupportTopics, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,

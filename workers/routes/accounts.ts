@@ -1,4 +1,6 @@
 import { bodyLimit } from 'hono/body-limit';
+import { msg } from "../../shared/i18n";
+import { fileColour, servedAs, type SafetyStore } from "../safety/download";
 import { remoteCategoryKeys, restoreCategories } from "../categories/restore";
 import { MAX_SEND_REQUEST_BYTES } from '../../shared/mail/attachments';
 import { Hono, type Context } from "hono";
@@ -461,14 +463,20 @@ accountsRouter.post(
 );
 accountsRouter.get(
   "/api/accounts/:accountId/messages/:messageId/attachments/:attachmentId",
-  async (c) =>
-    c.json(
+  async (c) => {
+    // S03 (B-269): a red file (a program, a disguised one) is handed over only with override=1, logged.
+    const colour = await fileColour((c.env as { CATEGORIES?: { getByName(n: string): SafetyStore } }).CATEGORIES?.getByName("workspace"), c.req.param("accountId"), c.req.param("messageId"), c.req.param("attachmentId"), "");
+    if (servedAs(colour, c.req.query("override") === "1").refuse)
+      return c.json({ error: msg("This file runs code or hides a program; open it only with Save anyway in the message's safety panel") }, 423);
+    if (colour === "red") console.log(JSON.stringify({ event: "attachment_override", colour }));
+    return c.json(
       await stub(c.env).getAttachment(
         c.req.param("accountId"),
         c.req.param("messageId"),
         c.req.param("attachmentId"),
       ),
-    ),
+    );
+  },
 );
 
 /**

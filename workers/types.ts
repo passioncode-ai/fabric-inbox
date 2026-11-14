@@ -25,6 +25,8 @@ export interface Env extends Cloudflare.Env {
 	SAFETY_DAILY_LIMIT?: string;
 	/** B-178: the review's Workers AI model (default: the spam check's). */
 	SAFETY_REVIEW_MODEL?: string;
+	/** S03 (B-269): daily calls of the review of mail that is not held (default 500; at most 20 a day per sender domain). */
+	SAFETY_REVIEW_DAILY_LIMIT?: string;
 	/** B-180: the signed Okolos phishing feed the server keeps a copy of (Okolos's `GET /feeds/phishing`); absent, links are not looked up. */
 	OKOLOS_FEED_URL?: string;
 	/** B-180: the feed's Ed25519 public key (base64); absent, Okolos's published one. */

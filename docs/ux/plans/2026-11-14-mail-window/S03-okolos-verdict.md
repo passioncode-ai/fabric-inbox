@@ -248,3 +248,33 @@ An antivirus engine (Q12); sending a file or its hash outside the owner's server
   lost to a recheck.
 - **R6-7:** `checkReplyPath` compares each Reply-To with every From address; a Reply-To fires only when its domain
   matches none of them.
+
+## Built as (2026-11-14, branch `agent/mailwin-s03`)
+
+Where the build differs from the text above, the safest reversible reading of the round-6 decisions was taken:
+
+- **Header lines:** the arrival event carries them for Cloudflare (from the stored headers) and Gmail (read once per
+  arriving message with the existing headers read); Graph's `internetMessageHeaders` and IMAP's `HEADER.FIELDS` are not
+  read, since Outlook and IMAP never count for sender authentication in this version. Remote From and Reply-To come
+  from the stored message fields.
+- **Bytes per provider:** R2 is read by range (4 KiB, 64 KiB); Gmail, Outlook and IMAP are read whole up to 10 MiB
+  (IMAP by range is a later step). A file is read once per check, its document text and its bytes from one read.
+- **`.one`** is red, not amber: Okolos's `core-download` lists it as a program, and the union of the lists wins.
+- **Old Office files (OLE):** their macros cannot be listed, so the chip is grey with "macros not checked".
+- **DMARC `none`** is no policy, not a failure; a DKIM failure counts only when no DKIM signature passed.
+- **A contradicting review answer** is `unsure` beside a finding; it is dropped whole.
+- **`POST /api/safety/check`** takes `model` only as `false`: the open-time check is deterministic (Q14) and the review
+  runs on arrival only. For a message with no record, hidden text is checked by Okolos's signals alone and documents
+  are not read (named in `notRun`, so it cannot be green); the row it writes is `decided_by = 'open'`, which the
+  arrival check runs over in full.
+- **First steps:** Release and Keep held stay in the existing held panel above the body, not repeated in the badge's
+  panel. "Report spam" and "Discard" run the toolbar's own actions.
+- **Downloads:** an amber file asks once with the system's confirm dialog. The desktop quarantine flag and a WebKit
+  walk of the badge, the panel and a red file's download are not done in this unit (W4 audit).
+- **Okolos page link (Q4):** not added; the page is not public yet.
+- **Inbox rows** carry `safety: {colour, label, checkedAt, released?}`; thread rows do not yet. `list_held_messages`
+  rows carry `check`.
+- **`check_message_safety`** is level mail, capability `organize`; for a member the route counts as a read (it changes
+  no message).
+- **Prompts:** the held review's prompt is locked as shipped (`prompt:safety-held-review`) and the new one ships as
+  `prompt:safety-check-review/1` (R28).

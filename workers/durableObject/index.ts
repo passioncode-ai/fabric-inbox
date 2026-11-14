@@ -15,6 +15,10 @@ import type { Env } from "../types";
 import { applyMigrations, mailboxMigrations } from "./migrations";
 import { IncomingJournal, RECEIPT_KEEP_MS } from '../actions/incoming';
 import type { IncomingMailEvent } from '../../shared/mail/incoming';
+import { checkHeaders } from '../safety/verdict';
+
+/** S03 (B-269): the header lines the safety check reads, from a stored message's `raw_headers`. */
+const storedCheckHeaders = (raw: string | null | undefined) => { try { return checkHeaders(JSON.parse(raw || '[]')); } catch { return []; } };
 import { SqlOutboxStore, journal, type OutboxRow } from '../actions/outbox-store';
 import type { OutboxEntry } from '../../shared/mail/outbox';
 import { OutboxCoordinator, IdempotencyConflict, payloadHash } from '../actions/outbox';
@@ -1629,6 +1633,8 @@ export class MailboxDO extends DurableObject<Env> {
       this.incoming.record(mailboxId, { id: email.id, sender: email.sender, subject: email.subject,
         body: email.body, date: email.date, thread_id: email.thread_id,
         ...(attachments.length ? { files: attachments.slice(0, 20).map((a) => ({ id: a.id, filename: a.filename, mimetype: a.mimetype, size: a.size })) } : {}),
+        // S03 (B-269): the receiver's lines and the From and Reply-To, for the safety check's sender checks.
+        ...(storedCheckHeaders(email.raw_headers).length ? { headers: storedCheckHeaders(email.raw_headers) } : {}),
         ...(spam ? { spam: true } : discard ? { discarded: true }
           : verdict.screen ? { screen: true, senderName: email.sender_name ?? null, verified: verdict.verified ?? null,
             ...(verdict.replyTo ? { replyTo: verdict.replyTo } : {}) } : {}) });

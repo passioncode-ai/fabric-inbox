@@ -931,4 +931,10 @@ export const SERVER: Readonly<Record<string, string>> = {
 	"Give the draft's text (up to 20,000 characters), and optionally its recipients and subject": "Укажите текст черновика (до 20 000 символов) и, если нужно, получателей и тему",
 	"The run does not keep the draft's text": "Запуск не хранит текст черновика",
 	"The draft could not be saved": "Не удалось сохранить черновик",
+	// S03 (B-269)
+	"Carries a program under another file's name: {files}": "Содержит программу под именем другого файла: {files}",
+	"The review found instructions aimed at an AI": "Разбор нашёл указания, обращённые к ИИ",
+	"This file runs code or hides a program; open it only with Save anyway in the message's safety panel": "Этот файл запускает код или прячет программу; откройте его только через «Всё равно сохранить» в панели проверки письма",
+	"Name one message to check": "Укажите одно письмо для проверки",
+	"The message could not be read: {error}": "Письмо не удалось прочитать: {error}",
 };

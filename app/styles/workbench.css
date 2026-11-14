@@ -2481,3 +2481,109 @@ details.fi-quote:not([open]) .fi-quote-hide {
   max-height: 40vh;
   overflow: hidden;
 }
+/* S03 (B-269): the Okolos badge at the right of the subject line, apart from it by a rule and its own background, so a
+   subject written to look like a badge never reads as part of it. Colour is never the only signal: an icon and a word. */
+.fi-subject-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.fi-subject-line h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.fi-okolos {
+  flex: 0 0 auto;
+  margin-top: 18px;
+  padding-left: 14px;
+  border-left: 1px solid var(--pc-border);
+  max-width: 100%;
+}
+.fi-okolos-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--pc-border-strong);
+  border-radius: var(--pc-radius-pill);
+  background: var(--pc-panel-raised);
+  color: var(--pc-text);
+  font: inherit;
+  font-size: var(--pc-type-meta);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fi-okolos.is-green .fi-okolos-badge { background: var(--pc-positive-soft); color: var(--pc-positive); border-color: var(--pc-positive); }
+.fi-okolos.is-amber .fi-okolos-badge { background: var(--pc-warning-soft); color: var(--pc-warning); border-color: var(--pc-warning); }
+.fi-okolos.is-red .fi-okolos-badge { background: var(--pc-negative-soft); color: var(--pc-negative); border-color: var(--pc-negative); }
+.fi-okolos-released {
+  font-weight: 400;
+  color: var(--pc-text-muted);
+}
+.fi-okolos-panel {
+  margin-top: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-control);
+  background: var(--pc-panel);
+  font-size: var(--pc-type-meta);
+  max-width: 460px;
+}
+.fi-okolos-panel h3 {
+  margin: 12px 0 4px;
+  font-size: var(--pc-type-meta);
+  font-weight: 650;
+}
+.fi-okolos-panel h3:first-child { margin-top: 0; }
+.fi-okolos-lines, .fi-okolos-files {
+  margin: 0;
+  padding-left: 16px;
+}
+.fi-okolos-lines li.is-fired { font-weight: 600; }
+.fi-okolos-files { list-style: none; padding-left: 0; }
+.fi-okolos-files li { display: flex; align-items: baseline; gap: 6px; overflow-wrap: anywhere; }
+.fi-okolos-chip, .fi-file-chip::before {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pc-text-muted);
+}
+.fi-okolos-files li.is-green .fi-okolos-chip { background: var(--pc-positive); }
+.fi-okolos-files li.is-amber .fi-okolos-chip { background: var(--pc-warning); }
+.fi-okolos-files li.is-red .fi-okolos-chip { background: var(--pc-negative); }
+.fi-file-chip::before { content: ""; margin-right: 6px; }
+.fi-file-chip.is-green::before { background: var(--pc-positive); }
+.fi-file-chip.is-amber::before { background: var(--pc-warning); }
+.fi-file-chip.is-red::before { background: var(--pc-negative); }
+.fi-okolos-panel blockquote {
+  margin: 6px 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--pc-border-strong);
+  color: var(--pc-text-muted);
+}
+.fi-okolos-actions { display: flex; gap: 8px; margin: 8px 0 0; }
+.fi-okolos-when, .fi-okolos-about, .fi-okolos-note { margin: 8px 0 0; color: var(--pc-text-muted); }
+
+/* S04 (B-270): the notice a guarded link raises, above the message frame. */
+.fi-link-notice {
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--pc-warning);
+  border-radius: var(--pc-radius-control);
+  background: var(--pc-warning-soft);
+  color: var(--pc-text);
+  font-size: var(--pc-type-body);
+}
+.fi-link-notice.is-red { border-color: var(--pc-negative); background: var(--pc-negative-soft); }
+.fi-link-notice p { margin: 0 0 6px; }
+.fi-link-notice-title { font-weight: 600; overflow-wrap: anywhere; }
+.fi-link-host strong { font-weight: 750; }
+.fi-link-notice-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 720px) {
+  .fi-subject-line { flex-direction: column; gap: 0; }
+  .fi-okolos { padding-left: 0; border-left: 0; margin-top: 0; margin-bottom: 14px; }
+}
+.fi-okolos-save { margin-left: auto; padding: 2px 8px; font-size: var(--pc-type-meta); }

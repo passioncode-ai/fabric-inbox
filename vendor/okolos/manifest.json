@@ -1,6 +1,6 @@
 {
   "source": "https://github.com/passioncode-ai/okolos",
-  "commit": "5d664c5",
+  "commit": "aa5dc1ddce78d32f60f7bfd802096e7949ccb0e6",
   "files": {
     "core-injection/signals.ts": {
       "from": "packages/core-injection/src/signals.ts",
@@ -41,6 +41,30 @@
     "core-lookalike/watchlist.ts": {
       "from": "packages/core-lookalike/src/watchlist.ts",
       "sha256": "4323c6697780c7dc5fad02cee11ba289261dd4ffe3edf11de7bf00d68f3a62f8"
+    },
+    "core-lookalike/index.ts": {
+      "from": "packages/core-lookalike/src/index.ts",
+      "sha256": "a0203ab378726f10e23b7ac4191915aff32db5d1a3319a84cbf925c9cfe85316"
+    },
+    "core-mail/types.ts": {
+      "from": "packages/core-mail/src/types.ts",
+      "sha256": "59334887f351fe7f03be960997b94bbb38f688e7a1a5135d79e25fa7c301071d"
+    },
+    "core-mail/verdict.ts": {
+      "from": "packages/core-mail/src/verdict.ts",
+      "sha256": "6f66b5b43f88e12aede8e05951bcac96019dc4e10ef0cb4a45c8e1cc87df1304"
+    },
+    "core-mail/sender.ts": {
+      "from": "packages/core-mail/src/sender.ts",
+      "sha256": "7e6a435bd4d5d7a1fd14f0769d2311800f49487497215507c2dca9e1f7e28d2b"
+    },
+    "core-mail/parse.ts": {
+      "from": "packages/core-mail/src/parse.ts",
+      "sha256": "df1741097f26699f2c1ba8069d34f17fae31f10bbdb167be7818720c35c767d0"
+    },
+    "core-download/judge.ts": {
+      "from": "packages/core-download/src/judge.ts",
+      "sha256": "cf303128c6c9513cc6f9e63ba6dcd2927b5148d2cc12ae1a2ed82723c20fce87"
     }
   }
 }

@@ -40,13 +40,13 @@ const domainOf = (address: string) => asciiDomain(address.slice(address.lastInde
 const under = (domain: string, list: string[]) => list.find((d) => domain === d || domain.endsWith("." + d));
 
 /**
- * The topmost Authentication-Results by Cloudflare's MX. Cloudflare prepends its own
- * header, so a sender's forged "mx.cloudflare.net; dmarc=pass" can only sit below it.
+ * The topmost Authentication-Results, when Cloudflare's MX wrote it. Cloudflare prepends its own
+ * header, so a sender's forged "mx.cloudflare.net; dmarc=pass" can only sit below it; S03 (B-269):
+ * only the topmost one is read, so a forged one with no receiver's line above it counts for nothing.
  */
 export function authResults(headers: { key: string; value: string }[]): AuthResults | null {
-  const header = headers.find((h) => h.key.toLowerCase() === "authentication-results"
-    && h.value.trim().toLowerCase().startsWith(AUTHSERV));
-  if (!header) return null;
+  const header = headers.find((h) => h.key.toLowerCase() === "authentication-results");
+  if (!header || !header.value.trim().toLowerCase().startsWith(AUTHSERV)) return null;
   // Each result is its own clause; text in a comment or a property (a quoted envelope local part) is not a result.
   const clauses = header.value.toLowerCase().split(";").slice(1).map((c) => c.replace(/\([^()]*\)/g, " ").trim());
   const result = (method: string) => clauses.map((c) => c.match(new RegExp(`^${method}=([a-z]+)([\\s\\S]*)$`))).filter((m): m is RegExpMatchArray => !!m);

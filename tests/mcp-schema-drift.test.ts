@@ -65,6 +65,7 @@ const BODIES: Record<string, string[]> = {
   // B-178 (workers/routes/safety.ts).
   "POST /api/safety/lookup": ["keys"],
   "POST /api/safety/decide": ["accountId", "messageId", "action", "by"],
+  "POST /api/safety/check": ["accountId", "messageId", "model"],
   "POST /api/discard": keys(DiscardInput),
   "POST /api/discard/restore": keys(RestoreInput),
   "POST /api/discard/allowed": keys(AllowEdit),
@@ -152,6 +153,8 @@ const MAP: Record<string, Record<string, Record<string, string> & { via?: string
   get_attachment: { "POST /api/safety/lookup": { keys: `${BY_TOOL}: the attachment's message` } },
   list_held_messages: { "POST /api/safety/lookup": { keys: "accountId" } },
   decide_held_message: { "POST /api/safety/decide": { by: `${BY_TOOL}: the key's label` } },
+  // S03: the open-time check is deterministic; an agent never asks it to run a model.
+  check_message_safety: { "POST /api/safety/check": { model: "not offered: the route takes only false, and the check is deterministic without it" } },
   // B-160: the route takes a level per mailbox; the tool names the read-only mailboxes (read) and those whose agent the member chooses (agents).
   save_member: { "PUT /api/members/:email": { levels: "readOnly" } },
   // B-246: the tool names one holder (holderKey or holderEmail) and the limits field by field.
