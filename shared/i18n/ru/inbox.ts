@@ -243,6 +243,7 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"{n} messages selected": "Выбрано {n} письмо|Выбрано {n} письма|Выбрано {n} писем",
 	"Act on all of them at once, or press Esc to clear the selection.": "Примените действие сразу ко всем или нажмите Esc, чтобы снять выбор.",
 	"[action] Archive": "Архивировать",
+	"[action] Move": "Перенести",
 	"Discard": "Выбросить",
 	"Clear selection": "Снять выбор",
 	"Keyboard shortcuts": "Сочетания клавиш",
