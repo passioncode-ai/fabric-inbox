@@ -71,7 +71,7 @@ const GMAIL_ROUTE = /^[A-Z]+ \/api\/accounts\/:accountId(\/|$)/;
 
 /** Whether every route of a tool stays inside one mailbox, or reads the feed. */
 /** B-178: the safety check's routes, narrowed to a key's mailboxes by scopedApi (their accounts are in the body). */
-export const SAFETY_ROUTES = new Set(["POST /api/safety/lookup", "GET /api/safety/held", "POST /api/safety/decide"]);
+export const SAFETY_ROUTES = new Set(["POST /api/safety/lookup", "GET /api/safety/held", "POST /api/safety/decide", "POST /api/safety/check"]);
 
 /**
  * A mailbox's own settings (its forwarding, reply agent, signature), deleting it, and an account's
@@ -177,9 +177,9 @@ export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubje
       // B-246 W3: a key asks for access and reads its own grants whatever it reaches; the route knows the key by its caller id.
       if (SELF_KEY_ROUTES.has(route)) return api.request(method, path, init);
       // B-178: the safety check's routes name their messages' accounts in the body, or list every account's.
-      if (route === "POST /api/safety/lookup" || route === "POST /api/safety/decide") {
+      if (route === "POST /api/safety/lookup" || route === "POST /api/safety/decide" || route === "POST /api/safety/check") {
         const b = (init.body && typeof init.body === "object" ? init.body : {}) as { keys?: { accountId?: unknown }[]; accountId?: unknown };
-        const named = route === "POST /api/safety/decide" ? [b.accountId] : (b.keys ?? []).map((k) => k?.accountId);
+        const named = route === "POST /api/safety/lookup" ? (b.keys ?? []).map((k) => k?.accountId) : [b.accountId];
         if (!named.length || !named.every((id) => typeof id === "string" && allowedLower.has(id.toLowerCase()))) throw refuse(accounts, who);
         return api.request(method, path, init);
       }

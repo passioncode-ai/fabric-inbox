@@ -27,6 +27,8 @@ export interface FileFindings {
   text: string;
   /** Documents whose text could not be read, by name (checked by name and type only). */
   unread: string[];
+  /** S03 (B-269): each document's text by its file, for the review (which reads at most 4,000 characters of each). */
+  parts?: { name: string; text: string }[];
 }
 
 export async function readFiles(files: MailFile[], get: (key: string) => Promise<Blob | null>, toText: ToText | null): Promise<FileFindings> {
@@ -34,6 +36,7 @@ export async function readFiles(files: MailFile[], get: (key: string) => Promise
   const docs = files.filter(readable).slice(0, MAX_READ_FILES);
   const unread: string[] = [];
   let text = "";
+  const parts: { name: string; text: string }[] = [];
   if (docs.length && toText) {
     const blobs: { name: string; blob: Blob }[] = [];
     for (const f of docs) {
@@ -43,9 +46,9 @@ export async function readFiles(files: MailFile[], get: (key: string) => Promise
     const answers: { name: string; text?: string; error?: string }[] = blobs.length
       ? await toText(blobs).catch((error: unknown) => blobs.map((b) => ({ name: b.name, error: (error as Error)?.message ?? "failed" }))) : [];
     for (const a of answers) {
-      if (a.text?.trim()) text += `\n[${a.name}]\n${a.text.trim()}`;
+      if (a.text?.trim()) { text += `\n[${a.name}]\n${a.text.trim()}`; parts.push({ name: a.name, text: a.text.trim() }); }
       else unread.push(a.name);
     }
   } else unread.push(...docs.map((f) => f.filename));
-  return { risky, text: text.trim().slice(0, FILE_TEXT_CHARS), unread };
+  return { risky, text: text.trim().slice(0, FILE_TEXT_CHARS), unread, ...(parts.length ? { parts } : {}) };
 }

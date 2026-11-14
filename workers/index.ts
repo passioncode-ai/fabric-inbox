@@ -18,6 +18,7 @@ import { threadRunView } from "./lib/thread-runs";
 import { routingClient } from "./routing/email-routing";
 import { handleSendEmail, handleReplyEmail, handleForwardEmail, sentByOf } from "./routes/reply-forward";
 import { Folders, isBuiltInFolder } from "../shared/folders";
+import { fileColour, servedAs } from "./safety/download";
 import { authResults, replyToOf, spamCheck, tooLittleToJudge, verifiedDomain, type SpamVerdict } from "../shared/mail/spam";
 import { readSpamLists } from "./spam/lists";
 import { autoReason, discardFacts, discardSafety, matchDiscard, recordApplied } from "../shared/mail/discard";
@@ -486,10 +487,17 @@ app.get("/api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId"
 	const attachmentId = c.req.param("attachmentId")!;
 	const attachment = await c.var.mailboxStub.getAttachment(attachmentId);
 	if (!attachment) return c.json({ error: "Attachment not found" }, 404);
+	// S03 (B-269): an amber or red file is never rendered; a red one is served only with override=1, logged.
+	const colour = await fileColour(c.env.CATEGORIES?.getByName("workspace"), `cloudflare:${c.req.param("mailboxId")}`, emailId, attachmentId, attachment.filename);
+	const override = c.req.query("override") === "1";
+	const served = servedAs(colour, override);
+	if (served.refuse) return c.json({ error: msg("This file runs code or hides a program; open it only with Save anyway in the message's safety panel") }, 423);
+	if (colour === "red") console.log(JSON.stringify({ event: "attachment_override", colour }));
 	const obj = await c.env.BUCKET.get(`attachments/${emailId}/${attachmentId}/${attachment.filename}`);
 	if (!obj) return c.json({ error: "Attachment file not found" }, 404);
 	const headers = new Headers();
 	headers.set("Content-Type", attachment.mimetype);
+	for (const [k, v] of Object.entries(served.headers)) headers.set(k, v);
 	const sanitized = attachment.filename.replace(/[\x00-\x1f"\\]/g, "_");
 	headers.set("Content-Disposition", `attachment; filename="${sanitized}"; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`);
 	return new Response(obj.body, { headers });

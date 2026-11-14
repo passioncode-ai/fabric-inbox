@@ -9,6 +9,8 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { hasRemoteContent } from "../lib/mail-content";
 import { useT } from "../lib/i18n";
 import { acceptFrameSelection, FRAME_SELECTION_SCRIPT, type QuoteRect } from "../lib/quote-selection";
+import { acceptFrameLink, frameLinkScript, guardContext, guardHref, hostParts, type LinkGuardContext } from "../lib/link-guard";
+import { linkDecision, type CheckedLink, type LinkVerdict, type ReaderLink, type SafetyColour } from "../../shared/mail/safety";
 
 /**
  * S08 (B-273): what a message frame tells the reader about the text selected in it. `rect` is the selection's
@@ -30,6 +32,8 @@ export const QuoteSelectionContext = createContext<((report: FrameSelectionRepor
  */
 let blocked: { hosts: string[]; title: string } | null = null;
 const blockedHost = (href: string | null) => !!blocked && isBlockedLink(href, blocked.hosts);
+/** S04 (B-270): while one guarded sanitize runs, its context and the links it took the address from. */
+let guarded: { ctx: LinkGuardContext; links: ReaderLink[] } | null = null;
 
 export function sanitizeMailHtml(html: string, block?: { hosts: string[]; title: string }): string {
 	installLinkHook();
@@ -38,6 +42,23 @@ export function sanitizeMailHtml(html: string, block?: { hosts: string[]; title:
 		return sanitizeNow(html);
 	} finally {
 		blocked = null;
+	}
+}
+
+/**
+ * S04 (B-270): the sanitize every message frame uses. A link the safety check cannot vouch for loses its address and
+ * keeps `data-okolos-link`, its index in `links`, which the reader resolves and decides (`linkDecision`).
+ */
+export function sanitizeGuarded(html: string, ctx: LinkGuardContext, block?: { hosts: string[]; title: string }): { html: string; links: ReaderLink[] } {
+	installLinkHook();
+	blocked = block?.hosts.length ? { hosts: block.hosts.map((h) => h.toLowerCase()), title: block.title } : null;
+	guarded = { ctx, links: [] };
+	try {
+		const out = sanitizeNow(html);
+		return { html: out, links: guarded.links };
+	} finally {
+		blocked = null;
+		guarded = null;
 	}
 }
 function sanitizeNow(html: string): string {
@@ -54,12 +75,29 @@ function installLinkHook() {
 	if (linkHookInstalled || typeof DOMPurify.addHook !== "function") return;
 	linkHookInstalled = true;
 	DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-		if (node.tagName === "A" || node.tagName === "AREA") {
+		// S04: the index is ours alone; a message's own data-okolos-link is dropped.
+		if (typeof node.removeAttribute === "function") node.removeAttribute("data-okolos-link");
+		const tag = (node.nodeName || "").toUpperCase();
+		if (tag === "A" || tag === "AREA") {
 			if (blockedHost(node.getAttribute("href"))) {
 				node.removeAttribute("href");
 				node.setAttribute("title", blocked!.title);
 				node.setAttribute("style", "text-decoration: line-through; cursor: not-allowed");
 				return;
+			}
+			const raw = node.getAttribute("href") ?? node.getAttribute("xlink:href");
+			if (guarded && raw !== null) {
+				const { keep, link } = guardHref(raw, node.textContent ?? "", guarded.links.length, guarded.ctx);
+				if (!keep) {
+					node.removeAttribute("href");
+					node.removeAttribute("xlink:href");
+					node.setAttribute("data-okolos-link", String(link.index));
+					node.setAttribute("role", "link");
+					node.setAttribute("tabindex", "0");
+					node.setAttribute("style", `${node.getAttribute("style") ?? ""};cursor:pointer`);
+					guarded.links.push(link);
+					return;
+				}
 			}
 			node.setAttribute("target", "_blank");
 			node.setAttribute("rel", "noopener noreferrer");
@@ -77,6 +115,18 @@ interface EmailIframeProps {
 	autoSize?: boolean;
 	/** B-180: hosts of known phishing sites this message links to; their links do not open. */
 	blockedHosts?: string[];
+	/**
+	 * S04 (B-270): the message's safety colour and the links the server checked. Absent (no record, a view with none,
+	 * a record that cannot be read): grey, and every link asks before it opens.
+	 */
+	linkSafety?: { colour: SafetyColour; links: CheckedLink[] } | null;
+}
+
+/** "Open anyway", remembered for that link of that message until the window closes (S04). */
+const openedAnyway = new Set<string>();
+
+function openUrl(url: string) {
+	window.open(url, "_blank", "noopener,noreferrer");
 }
 
 /**
@@ -98,9 +148,16 @@ interface EmailIframeProps {
  *   visible text a person selects so Reply can quote it. The parent accepts it only from this frame,
  *   with user activation, re-checked (`acceptFrameSelection`).
  */
-export default function EmailIframe({ body, messageKey, inlineAttachments, autoSize, blockedHosts }: EmailIframeProps) {
+export default function EmailIframe({ body, messageKey, inlineAttachments, autoSize, blockedHosts, linkSafety }: EmailIframeProps) {
 	const t = useT();
 	const iframeRef = useRef<HTMLIFrameElement>(null);
+	// S04: this render's guarded links and nonce, and the notice a guarded link raised.
+	const renderRef = useRef<{ nonce: string; links: ReaderLink[] }>({ nonce: "", links: [] });
+	const [notice, setNotice] = useState<{ link: ReaderLink; verdict: LinkVerdict } | null>(null);
+	const noticeRef = useRef<HTMLDivElement>(null);
+	const colourRef = useRef(linkSafety?.colour);
+	colourRef.current = linkSafety?.colour;
+	const safetyKey = JSON.stringify(linkSafety ?? null);
 	const [height, setHeight] = useState(autoSize ? 100 : 0);
 	const [allowedMessage, setAllowedMessage] = useState<string | null>(null);
 	const identity = JSON.stringify([messageKey ?? "", body]);
@@ -132,8 +189,18 @@ export default function EmailIframe({ body, messageKey, inlineAttachments, autoS
 				) setHeight(Math.min(event.data.height, 30000));
 				return;
 			}
-			if (!reportRef.current) return;
 			const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation;
+			// S04: a guarded link, by its index in this render's list; decided again at every activation (KIMI-47).
+			const index = acceptFrameLink(event, frame.contentWindow, renderRef.current.nonce, renderRef.current.links.length, activation);
+			if (index !== undefined) {
+				const link = renderRef.current.links[index]!;
+				const verdict = linkDecision(colourRef.current ?? { colour: "grey", label: "notChecked", linksComplete: false }, link);
+				if (verdict.action === "open") openUrl(verdict.url);
+				else if (verdict.action === "ask" && openedAnyway.has(`${keyRef.current}|${verdict.url}`)) openUrl(verdict.url);
+				else setNotice({ link, verdict });
+				return;
+			}
+			if (!reportRef.current) return;
 			const selection = acceptFrameSelection(event, frame.contentWindow, activation);
 			if (selection === undefined) return;
 			if (!selection) {
@@ -161,7 +228,13 @@ export default function EmailIframe({ body, messageKey, inlineAttachments, autoS
 		const iframe = iframeRef.current;
 		if (!iframe) return;
 
-		const cleanBody = sanitizeMailHtml(body, blockedHosts?.length ? { hosts: blockedHosts, title: t("Blocked: a known phishing site") } : undefined);
+		const safety = JSON.parse(safetyKey) as EmailIframeProps["linkSafety"];
+		const guardedBody = sanitizeGuarded(body, guardContext(safety?.colour, safety?.links),
+			blockedHosts?.length ? { hosts: blockedHosts, title: t("Blocked: a known phishing site") } : undefined);
+		const cleanBody = guardedBody.html;
+		const nonce = crypto.randomUUID();
+		renderRef.current = { nonce, links: guardedBody.links };
+		setNotice(null);
 
 		const padding = autoSize ? "0" : "24px";
 
@@ -185,6 +258,8 @@ export default function EmailIframe({ body, messageKey, inlineAttachments, autoS
 			: "";
 		// S08: every frame reports what is selected in it, so Reply can quote it.
 		const selectionScript = `<script>${FRAME_SELECTION_SCRIPT}<\/script>`;
+		// S04: every frame reports an activated guarded link as its index and this render's nonce; it runs from the head.
+		const linkScript = `<script>${frameLinkScript(nonce)}<\/script>`;
 
 		// Use srcdoc so the iframe is truly sandboxed (no same-origin access).
 		// We can't use doc.write() because that requires allow-same-origin.
@@ -195,6 +270,7 @@ export default function EmailIframe({ body, messageKey, inlineAttachments, autoS
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="${mailImagePolicy(remoteImages, window.location.origin, JSON.parse(inlineKey) ?? undefined)}">
+${linkScript}
 <style>
 * { box-sizing: border-box; }
 html {
@@ -244,7 +320,10 @@ ul, ol { padding-left: 20px; margin: 4px 0; }
 		const key = keyRef.current;
 		reportRef.current?.({ key, selection: null, reload: true });
 		return () => reportRef.current?.({ key, selection: null, reload: true });
-	}, [body, autoSize, remoteImages, inlineKey, (blockedHosts ?? []).join(",")]);
+	}, [body, autoSize, remoteImages, inlineKey, (blockedHosts ?? []).join(","), safetyKey]);
+
+	useEffect(() => { if (notice) noticeRef.current?.focus(); }, [notice]);
+	const closeNotice = () => { setNotice(null); iframeRef.current?.focus(); };
 
 	return (
 		<div className={autoSize ? "" : "flex h-full min-h-0 flex-col"}>
@@ -254,6 +333,11 @@ ul, ol { padding-left: 20px; margin: 4px 0; }
 					{remoteImages ? t("Block external images") : t("Load external images")}
 				</button>
 			</div>}
+			{notice && <LinkNotice notice={notice} refEl={noticeRef} onClose={closeNotice} onOpenAnyway={(url) => {
+				openedAnyway.add(`${keyRef.current}|${url}`);
+				openUrl(url);
+				closeNotice();
+			}} />}
 		<iframe
 			ref={iframeRef}
 			className="block w-full border-0"
@@ -262,6 +346,55 @@ ul, ol { padding-left: 20px; margin: 4px 0; }
 			title={t("Email content")}
 			referrerPolicy="no-referrer"
 		/>
+		</div>
+	);
+}
+
+/**
+ * S04: the notice a guarded link raises, an inline alert above the message frame. Escape is "Don't open"; focus moves
+ * to it and returns to the frame after.
+ */
+function LinkNotice({ notice, refEl, onClose, onOpenAnyway }: {
+	notice: { link: ReaderLink; verdict: LinkVerdict };
+	refEl: React.RefObject<HTMLDivElement | null>;
+	onClose: () => void;
+	onOpenAnyway: (url: string) => void;
+}) {
+	const t = useT();
+	const [copied, setCopied] = useState(false);
+	const { link, verdict } = notice;
+	const parts = hostParts(verdict.url);
+	const host = parts ? (parts.sub ? `${parts.sub}.${parts.registrable}` : parts.registrable) : "";
+	const why = verdict.action === "block"
+		? verdict.why === "phishing" ? t("This site is on the phishing list.")
+			: verdict.why === "lookalike" ? t("This address imitates {resembles}.", { resembles: link.checked?.resembles ?? "" })
+			: verdict.why === "dangerous" ? t("The safety check found this message dangerous, so its links do not open.")
+			: t("This link cannot be opened safely.")
+		: verdict.action === "ask"
+			? verdict.why === "textMismatch" ? t("The text of the link says {shown}, but it goes to {host}.", { shown: link.checked?.shown ?? "", host })
+				: verdict.why === "suspicious" ? t("This message looks suspicious, so its links ask first.")
+				: verdict.why === "odd" ? t("This link is written in an unusual way, so it asks first.")
+				: t("This message was not fully checked, so its links ask first.")
+			: "";
+	return (
+		<div ref={refEl} role="alert" tabIndex={-1} className={"fi-link-notice" + (verdict.action === "block" ? " is-red" : "")}
+			onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } }}>
+			<p className="fi-link-notice-title">
+				{parts ? <>{t("This link goes to {host}", { host: "" }).trim()} <span className="fi-link-host">{parts.sub ? `${parts.sub}.` : ""}<strong>{parts.registrable}</strong></span></>
+					: t("This link cannot be opened safely.")}
+			</p>
+			{why && <p>{why}</p>}
+			<div className="fi-link-notice-actions">
+				<button type="button" className="fi-secondary" autoFocus={verdict.action === "ask"} onClick={onClose}>{t("Don't open")}</button>
+				{verdict.action === "ask" && <button type="button" className="fi-secondary" onClick={() => onOpenAnyway(verdict.url)}>{t("Open anyway")}</button>}
+				{verdict.action === "block" && verdict.url && (
+					<button type="button" className="fi-secondary" onClick={() => {
+						void navigator.clipboard?.writeText(verdict.url!).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => {});
+					}}>
+						{t("Copy address")}{copied && <span role="status" className="fi-copied"> {t("Copied")}</span>}
+					</button>
+				)}
+			</div>
 		</div>
 	);
 }

@@ -29,6 +29,8 @@ export default function HeldPanel({ message }: { message: InboxMessage }) {
     mutationFn: (action: "release" | "keep") => fabric<{ state: string }>("/api/safety/decide", { ...key, action }, "POST"),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["safety", key.accountId, key.messageId] });
+      // S03: the badge says "Released by you" beside the colour, which still follows the signals.
+      void client.invalidateQueries({ queryKey: ["safety-check", key.accountId, key.messageId] });
       void client.invalidateQueries({ queryKey: ["unified-inbox"] });
       void client.invalidateQueries({ queryKey: ["unified-inbox-head"] });
     },

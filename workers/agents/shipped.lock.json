@@ -45,6 +45,14 @@
     "prompt:tuning": {
       "digest": "sha256:3b708d0b6150245c9d9b372c2e47106150e2ec47aa9d6b6e9849e8438a857760",
       "shipped": "2026-11-14"
+    },
+    "prompt:safety-held-review": {
+      "digest": "sha256:2af84e2d25518bf087f713d6c51efe22e34f4e891eaa66ce35ff07c9e13404ea",
+      "shipped": "2026-10-27"
+    },
+    "prompt:safety-check-review/1": {
+      "digest": "sha256:562929ba903c64a595715ad096e7a6ad7a6d63e57dabcc5cdc122c68d0957b91",
+      "shipped": "2026-11-14"
     }
   }
 }

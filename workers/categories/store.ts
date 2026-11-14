@@ -19,7 +19,14 @@ import { tooLittleToJudge } from "../../shared/mail/spam";
 import { parseRemoteAccount } from "../../shared/mail/accounts";
 import { msg } from "../../shared/i18n";
 import { scanPromptInjection } from "../lib/ai";
-import { inspectMessage, suspect, type SafetyFindings } from "../safety/check";
+import { inspectMessage, modelOnly, suspect, type SafetyFindings } from "../safety/check";
+import { judgeFiles, slicesOf, type ReadSlices } from "../safety/attachments";
+import { HEAD_BYTES, TAIL_BYTES } from "../safety/sniff";
+import { checkLinks, extractLinks } from "../safety/links";
+import { buildCheck, reviewOwed } from "../safety/verdict";
+import { contentHash, reviewCheck } from "../safety/check-review";
+import { colourOf, type CheckReview, type FileEntry, type MailCheck, type SafetyColour } from "../../shared/mail/safety";
+import { addresses } from "../safety/sender";
 import { splitHidden } from "../safety/hidden";
 import { reviewHeld, type SafetyReview } from "../safety/review";
 
@@ -46,7 +53,9 @@ export interface QueueItem { accountId: string; accountEmail: string; messageId:
   /** B-179: its files, for the safety check (a Cloudflare message's; an account's files are not read here yet). */
   files?: MailFile[];
   /** B-178: the message is checked for instructions aimed at agents; its HTML (at most HTML_CHARS) is what is read. */
-  safety?: boolean; html?: string }
+  safety?: boolean; html?: string;
+  /** S03 (B-269): the From and Reply-To as written, and the receiver's header lines, for the sender checks. */
+  fromLine?: string; replyToLine?: string | null; headers?: { key: string; value: string }[] }
 
 export { isHeld, safetyKey, type SafetyRecord, type SafetyState } from "../safety/state";
 import { isHeld, safetyKey, type SafetyRecord, type SafetyState } from "../safety/state";
@@ -80,6 +89,9 @@ const PRUNE_EVERY_MS = 3_600_000;
 export const DEFAULT_SPAM_DAILY_CALLS = 300;
 /** B-178: model calls of the safety check and its reviews per day; over it a message is held as unchecked. */
 export const DEFAULT_SAFETY_DAILY_CALLS = 2000;
+/** S03 (B-269): the review of mail that is not held: its own daily calls, and at most so many a day per sender domain. */
+export const DEFAULT_CHECK_REVIEW_DAILY_CALLS = 500;
+export const CHECK_REVIEW_PER_DOMAIN = 20;
 const HTML_CHARS = 100_000;
 import { safetyOn } from "../safety/on";
 import { FEED_REFRESH_MS, FEED_STALE_MS, linksOf, lookalikeLinks, phishingLinks, refreshFeed, type FeedEnv, type KeptFeed } from "../safety/feed";
@@ -89,12 +101,30 @@ export function fileKey(accountId: string, messageId: string, f: { id: string; f
   return accountId.startsWith("cloudflare:") ? `attachments/${messageId}/${f.id}/${f.filename}`
     : `account:${[accountId, messageId, f.id].map(encodeURIComponent).join("/")}`;
 }
+/** S03: the sender's domain, for the review's per-domain cap. */
+const senderDomain = (item: QueueItem) => (addresses(item.fromLine ?? item.sender)[0]?.domain ?? item.sender.split("@").pop() ?? "").toLowerCase() || "-";
+
+/** A queued file's attachment id: the last part of its key (`attachments/<message>/<id>/<name>` or `account:<a>/<m>/<id>`). */
+export function fileIdOf(f: MailFile): string {
+  const remote = parseAccountFileKey(f.key);
+  if (remote) return remote.attachmentId;
+  return f.key.split("/")[2] ?? f.filename;
+}
+
+/** S03 (B-269): the From and Reply-To as written (a Cloudflare message's from its headers), and the receiver's lines. */
+function senderLines(event: { sender?: string; senderName?: string | null; replyTo?: string | null; headers?: { key: string; value: string }[] }) {
+  const header = (name: string) => event.headers?.find((h) => h.key.toLowerCase() === name)?.value;
+  const fromLine = header("from") ?? (event.senderName ? `"${event.senderName.replaceAll('"', "")}" <${event.sender ?? ""}>` : event.sender ?? "");
+  const lines = (event.headers ?? []).filter((h) => ["authentication-results", "received"].includes(h.key.toLowerCase())).slice(0, 20);
+  return { fromLine: fromLine.slice(0, 1000), replyToLine: (header("reply-to") ?? event.replyTo ?? null)?.slice(0, 1000) ?? null, ...(lines.length ? { headers: lines } : {}) };
+}
+
 export function parseAccountFileKey(key: string): { accountId: string; messageId: string; attachmentId: string } | null {
   if (!key.startsWith("account:")) return null;
   const parts = key.slice("account:".length).split("/").map(decodeURIComponent);
   return parts.length === 3 && parts.every(Boolean) ? { accountId: parts[0]!, messageId: parts[1]!, attachmentId: parts[2]! } : null;
 }
-import { readFiles, type MailFile, type ToText } from "../safety/files";
+import { readable, readFiles, type MailFile, type ToText } from "../safety/files";
 export { safetyOn };
 type Row = Record<string, string | number | null>;
 
@@ -361,7 +391,8 @@ export class CategoriesDO extends DurableObject<Env> {
    * no enabled screened category exists, so an idle workspace costs nothing.
    */
   async ingest(account: AccountRef, event: { id: string; sender: string; subject: string; body: string; html?: string; date: string; screen?: boolean; spam?: boolean;
-    senderName?: string | null; verified?: string | null; replyTo?: string | null; files?: { id: string; filename: string; mimetype: string; size: number }[] }): Promise<void> {
+    senderName?: string | null; verified?: string | null; replyTo?: string | null; files?: { id: string; filename: string; mimetype: string; size: number }[];
+    headers?: { key: string; value: string }[] }): Promise<void> {
     if (event.spam) return;
     const screened = (await this.categories()).filter((c) => c.enabled && c.kind === "screened");
     const projects = await this.listProjects();
@@ -379,7 +410,8 @@ export class CategoriesDO extends DurableObject<Env> {
         ...(/\bhref\s*=|<img\b/i.test(event.body ?? "") ? { linked: true } : {}) } : {}),
       // A Cloudflare body is HTML already; an account's is its text, with its HTML beside it.
       ...(safety ? { safety: true, html: (event.html || (account.id.startsWith("cloudflare:") ? event.body : textToHtml(event.body ?? "")) || "").slice(0, HTML_CHARS),
-        ...(event.files?.length ? { files: event.files.map((f) => ({ key: fileKey(account.id, event.id, f), filename: f.filename, mimetype: f.mimetype, size: f.size })) } : {}) } : {}),
+        ...(event.files?.length ? { files: event.files.map((f) => ({ key: fileKey(account.id, event.id, f), filename: f.filename, mimetype: f.mimetype, size: f.size })) } : {}),
+        ...senderLines(event) } : {}),
     };
     this.enqueue(item, "*");
     await this.arm(500);
@@ -432,7 +464,7 @@ export class CategoriesDO extends DurableObject<Env> {
     if (!item.screen && !item.safety) return;
     // The agent answers once its spam check has answered (B-30) and its safety check let it through (B-178).
     const spamDone = !item.screen || this.sql.exec("SELECT 1 FROM spam_checks WHERE account_id = ? AND message_id = ?", item.accountId, item.messageId).toArray().length > 0;
-    const state = item.safety ? this.safetyState(item.accountId, item.messageId) : "clear";
+    const state = item.safety ? this.arrivalState(item.accountId, item.messageId) : "clear";
     if (spamDone && state !== undefined && !isHeld(state)) await this.releaseAgent(item);
   }
 
@@ -449,7 +481,7 @@ export class CategoriesDO extends DurableObject<Env> {
     const item = queued(row);
     const target = String(row.target);
     // B-178: the safety check comes first and never fails the item: what it cannot check it holds.
-    if (item.safety && target === "*" && this.safetyState(item.accountId, item.messageId) === undefined) await this.checkSafety(item);
+    if (item.safety && target === "*" && this.arrivalState(item.accountId, item.messageId) === undefined) await this.checkSafety(item);
     const account: AccountRef = { id: item.accountId, email: item.accountEmail };
     const projects = await this.listProjects();
     const owed = (await this.categories()).filter((c) => c.enabled && c.kind === "screened" && (target === "*" || c.id === target)
@@ -577,6 +609,14 @@ export class CategoriesDO extends DurableObject<Env> {
     const row = this.sql.exec("SELECT state FROM safety WHERE account_id = ? AND message_id = ?", accountId, messageId).toArray()[0] as Row | undefined;
     return row ? (String(row.state) as SafetyState) : undefined;
   }
+  /**
+   * The arrival check's state. A row written only by an open-time check (`decided_by = 'open'`, S03) is not the
+   * arrival's: the arrival still runs in full over it and replaces it.
+   */
+  private arrivalState(accountId: string, messageId: string): SafetyState | undefined {
+    const row = this.sql.exec("SELECT state, decided_by FROM safety WHERE account_id = ? AND message_id = ?", accountId, messageId).toArray()[0] as Row | undefined;
+    return row && row.decided_by !== "open" ? (String(row.state) as SafetyState) : undefined;
+  }
 
   /** One call from today's safety budget; false when it is spent. */
   private spendSafety(): boolean {
@@ -604,11 +644,80 @@ export class CategoriesDO extends DurableObject<Env> {
     return new Blob([Uint8Array.from(binary, (c) => c.charCodeAt(0))]);
   }
 
+  /** S03 (B-269): a file's first and last bytes: by range from R2, whole from a provider (memoised per check). */
+  protected fileSlicesReader(whole: (key: string) => Promise<Blob | null>): ReadSlices {
+    return async (file) => {
+      if (!parseAccountFileKey(file.key) && this.env.BUCKET) {
+        const [head, tail] = await Promise.all([
+          this.env.BUCKET.get(file.key, { range: { offset: 0, length: HEAD_BYTES } }),
+          this.env.BUCKET.get(file.key, { range: { suffix: TAIL_BYTES } }),
+        ]);
+        if (!head) return null;
+        return { head: new Uint8Array(await head.arrayBuffer()), tail: tail ? new Uint8Array(await tail.arrayBuffer()) : new Uint8Array() };
+      }
+      const blob = await whole(file.key);
+      return blob ? slicesOf(new Uint8Array(await blob.arrayBuffer())) : null;
+    };
+  }
+
+  /** S03 (B-269): the feed as the checks name it: its version, and whether it is fresh. */
+  private feedState(feed: KeptFeed | null, now: number): { version: number | null; state: "fresh" | "stale" | "missing" } {
+    if (!feed) return { version: null, state: "missing" };
+    return { version: feed.snapshot.version, state: now - feed.fetchedAt > FEED_STALE_MS ? "stale" : "fresh" };
+  }
+
+  /** The server's current feed version (S03 §4: a record checked against an older one is grey for its links). */
+  async feedVersion(): Promise<number | null> {
+    return (await this.ctx.storage.get<KeptFeed>("okolos:feed"))?.snapshot.version ?? null;
+  }
+
+  /** One call of the new review, from its own daily budget and at most CHECK_REVIEW_PER_DOMAIN a day per sender domain. */
+  private spendCheckReview(domain: string): "ok" | "budget" | "domainCap" {
+    const today = day();
+    const used = Number((this.sql.exec("SELECT COALESCE(MAX(calls), 0) AS n FROM check_review_budget WHERE day = ?", today).one() as Row).n);
+    const limit = Number(this.env.SAFETY_REVIEW_DAILY_LIMIT);
+    if (used >= (Number.isInteger(limit) && limit > 0 ? limit : DEFAULT_CHECK_REVIEW_DAILY_CALLS)) return "budget";
+    const byDomain = Number((this.sql.exec("SELECT COALESCE(MAX(calls), 0) AS n FROM check_review_domains WHERE day = ? AND domain = ?", today, domain).one() as Row).n);
+    if (byDomain >= CHECK_REVIEW_PER_DOMAIN) return "domainCap";
+    this.sql.exec("INSERT INTO check_review_budget (day, calls) VALUES (?, 1) ON CONFLICT(day) DO UPDATE SET calls = calls + 1", today);
+    this.sql.exec("INSERT INTO check_review_domains (day, domain, calls) VALUES (?, ?, 1) ON CONFLICT(day, domain) DO UPDATE SET calls = calls + 1", today, domain);
+    this.sql.exec("DELETE FROM check_review_budget WHERE day < ?", day(Date.now() - 30 * 86_400_000));
+    this.sql.exec("DELETE FROM check_review_domains WHERE day < ?", day(Date.now() - 2 * 86_400_000));
+    return "ok";
+  }
+
+  /**
+   * S03 (B-269): the deterministic checks of a message (sender, links, files) assembled into `findings.check`. Its
+   * files are judged by their bytes; `findings` are the hidden-text findings already made.
+   */
+  private async deterministicCheck(input: { accountId: string; subject: string; html: string; fromLine: string; replyToLine: string | null;
+    headers: { key: string; value: string }[]; files: MailFile[]; scope: "received" | "links"; findings: SafetyFindings; read: ReadSlices; now: number }): Promise<MailCheck> {
+    const provider = input.accountId.slice(0, input.accountId.indexOf(":"));
+    const ownDomains = (this.env.DOMAINS ?? "").split(",").map((d) => d.trim()).filter(Boolean);
+    const feed = await this.phishingFeed(input.now).catch(() => null);
+    const found = extractLinks(input.html);
+    const files: FileEntry[] = input.scope === "received"
+      ? await judgeFiles(input.files.map((f) => ({ ...f, id: fileIdOf(f) })), input.read, provider !== "cloudflare") : [];
+    const hash = await contentHash([input.subject, input.html, input.fromLine, input.replyToLine ?? "", ...input.files.map((f) => `${f.key}:${f.size}`)]);
+    return buildCheck({
+      provider, headers: input.headers, from: input.fromLine, replyTo: input.replyToLine, ownDomains, findings: input.findings,
+      links: checkLinks(found.links, feed?.snapshot ?? null, ownDomains), linksCapped: found.capped, feed: this.feedState(feed, input.now),
+      files, scope: input.scope, contentHash: hash, now: input.now,
+    });
+  }
+
   /** Checks one arriving message, reviews it when suspect, and records where it stands. */
   private async checkSafety(item: QueueItem): Promise<void> {
     const now = Date.now();
-    // B-179: what its files say, read before the check so their text is checked with the body.
-    const files = item.files?.length ? await readFiles(item.files, (key) => this.fileBytes(key), this.toText()).catch(() => null) : null;
+    // A file is read once per check, whatever reads it (its document text, its bytes).
+    const blobs = new Map<string, Promise<Blob | null>>();
+    const whole = (key: string) => { if (!blobs.has(key)) blobs.set(key, this.fileBytes(key).catch(() => null)); return blobs.get(key)!; };
+    // B-179: what its files say, read before the check so their text is checked with the body. K-5: turning documents
+    // into text is a model call: it is charged to the review's own budget and the sender domain's cap first, and with
+    // neither left the documents stay unread (named, never passed as read).
+    const docs = (item.files ?? []).some(readable);
+    const converts = docs ? this.spendCheckReview(senderDomain(item)) : "ok";
+    const files = item.files?.length ? await readFiles(item.files, whole, converts === "ok" ? this.toText() : null).catch(() => null) : null;
     const findings = await inspectMessage({ subject: item.subject, html: item.html ?? "", files: files?.text ?? "" }, (text) =>
       this.spendSafety() ? this.safetyScan(text) : Promise.resolve({ flagged: false, error: msg("The day's safety budget was spent") }));
     if (files?.risky.length) findings.riskyFiles = files.risky;
@@ -624,6 +733,23 @@ export class CategoriesDO extends DurableObject<Env> {
       const phishing = phishingLinks(links, feed.snapshot);
       if (phishing.length) findings.phishing = phishing;
     }
+    // S03 (B-269): the six checks; a renamed program, found by its bytes, holds it like one found by its name.
+    const check = await this.deterministicCheck({ accountId: item.accountId, subject: item.subject, html: item.html ?? "",
+      fromLine: item.fromLine ?? item.sender, replyToLine: item.replyToLine ?? null, headers: item.headers ?? [], files: item.files ?? [],
+      scope: "received", findings, read: this.fileSlicesReader(whole), now });
+    if (converts !== "ok") check.notRun.push({ check: "hidden", why: "inboxDocumentBudget" });
+    const disguised = check.files.filter((f) => f.codes.includes("disguised")).map((f) => f.filename);
+    if (disguised.length) findings.disguisedFiles = disguised;
+    // K-2: a feed-listed or lookalike link the canonical extraction found (an entity-encoded href, a protocol-relative
+    // one) holds the message like one the older extraction found; the hold reads the final link results.
+    for (const l of check.links) {
+      if (l.why === "phishing" && !findings.phishing?.some((p) => p.host === l.host)) (findings.phishing ??= []).push({ host: l.host, entry: l.host });
+      if (l.why === "lookalike" && !findings.lookalikes?.some((p) => p.host === l.host)) (findings.lookalikes ??= []).push({ host: l.host, resembles: l.resembles ?? "", kind: "lookalike" });
+    }
+    const namedRisky = check.files.filter((f) => f.colour === "red" && !f.codes.includes("disguised") && !findings.riskyFiles?.includes(f.filename)).map((f) => f.filename);
+    if (namedRisky.length) findings.riskyFiles = [...(findings.riskyFiles ?? []), ...namedRisky];
+    // K-4: the held review reads every deterministic signal through modelOnly.
+    findings.check = check;
     let state: SafetyState = "clear";
     let reason = "";
     let review: SafetyReview | null = null;
@@ -631,6 +757,7 @@ export class CategoriesDO extends DurableObject<Env> {
       state = "held";
       reason = findings.phishing?.length ? msg("Links to a known phishing site: {hosts}", { hosts: findings.phishing.map((p) => p.host).join(", ") })
         : findings.riskyFiles?.length ? msg("Carries a file that runs code: {files}", { files: findings.riskyFiles.join(", ") })
+        : findings.disguisedFiles?.length ? msg("Carries a program under another file's name: {files}", { files: findings.disguisedFiles.join(", ") })
         : findings.lookalikes?.length ? msg("Links to a site imitating {names}: {hosts}", {
           names: [...new Set(findings.lookalikes.map((l) => l.resembles))].join(", "), hosts: findings.lookalikes.map((l) => l.host).join(", ") })
         : findings.fileSignals?.length ? msg("An attached file gives orders to an AI")
@@ -638,13 +765,14 @@ export class CategoriesDO extends DurableObject<Env> {
         : findings.hiddenSignals.length ? msg("Hidden text addresses an AI")
         : findings.visibleStrong.length ? msg("The text gives orders to an AI")
         : msg("The safety model found instructions aimed at an AI");
-      // A listed phishing site is the feed's verdict: no review releases it (a person still can).
-      if (!findings.modelError && !findings.phishing?.length && !findings.riskyFiles?.length && this.spendSafety()) {
+      // A listed phishing site, or a file that runs code (by name or bytes), is the check's verdict: no review releases it (a person still can).
+      if (!findings.modelError && !findings.phishing?.length && !findings.riskyFiles?.length && !findings.disguisedFiles?.length && this.spendSafety()) {
         try {
           const { model, name } = this.reviewModel();
           review = await reviewHeld(model, name, { sender: item.sender, to: item.accountEmail, subject: item.subject,
             visible: splitHidden(item.html ?? "").visible, findings });
-          if (review.verdict === "safe") { state = "released"; reason = msg("Reviewed: nothing aimed at an AI"); }
+          // S03 §3 (round 5): the review releases only a message the light model alone held; an Okolos signal waits for a person.
+          if (review.verdict === "safe" && modelOnly(findings)) { state = "released"; reason = msg("Reviewed: nothing aimed at an AI"); }
         } catch (error) {
           reason = msg("{reason}; the review could not run", { reason });
           console.warn(JSON.stringify({ event: "safety_review_failed", account: item.accountId, error: (error as Error)?.message?.slice(0, 200) }));
@@ -652,12 +780,84 @@ export class CategoriesDO extends DurableObject<Env> {
       }
       console.log(JSON.stringify({ event: "safety_held", account: item.accountId, state, verdict: review?.verdict ?? null,
         hidden: findings.hiddenSignals, visible: findings.visibleStrong, model: findings.model, unchecked: !!findings.modelError }));
+    } else if (reviewOwed(check, !!files?.parts?.length)) {
+      // S03 §3 and KIMI-42: mail that is not held is reviewed here, before any agent reads it, when a check fired or a
+      // document was read. The review only raises; `instructions_to_ai` holds it like a deterministic signal.
+      check.review = await this.runCheckReview(item, check, files?.parts ?? [], now);
+      if (check.review.ran && check.review.codes.includes("instructions_to_ai")) {
+        state = "held";
+        reason = msg("The review found instructions aimed at an AI");
+        console.log(JSON.stringify({ event: "safety_held", account: item.accountId, state, verdict: "check_review", codes: check.review.codes }));
+      }
     }
+    findings.check = check;
     this.sql.exec(`INSERT OR REPLACE INTO safety (account_id, message_id, state, findings, review, reason, checked_at, decided_by, decided_at, timestamp, subject, sender)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       item.accountId, item.messageId, state, JSON.stringify(findings), review ? JSON.stringify(review) : null, reason.slice(0, 300), now,
       review ? "review" : "check", now, item.timestamp, item.subject.slice(0, 300), item.sender.slice(0, 300));
     this.sql.exec("DELETE FROM safety WHERE checked_at < ? AND state = 'clear'", now - 90 * 86_400_000);
+  }
+
+  /** S03 §3: the new review, or why it did not run (its budget, the sender domain's cap, a failure). Never holds by itself. */
+  private async runCheckReview(item: QueueItem, check: MailCheck, parts: { name: string; text: string }[], now: number): Promise<CheckReview> {
+    const spent = this.spendCheckReview(senderDomain(item));
+    if (spent !== "ok") return { version: 1, ran: false, why: spent, codes: [], quotes: [], contentHash: check.contentHash, at: now };
+    const { model, name } = this.reviewModel();
+    const from = addresses(item.fromLine ?? item.sender)[0];
+    const visible = splitHidden(item.html ?? "").visible;
+    return reviewCheck(model, name, {
+      displayName: from?.display ?? "", from: from?.address ?? item.sender, replyTo: item.replyToLine ?? "", subject: item.subject, body: visible,
+      links: check.links.map((l) => ({ text: "", host: l.host })),
+      files: check.files.map((f) => ({ id: f.id, name: f.filename, text: parts.find((p) => p.name === f.filename)?.text })),
+      signals: [...check.signals.map((x) => x.code), ...check.files.flatMap((f) => f.codes.map((c) => `${f.filename}:${c}`))],
+    }, check.contentHash, now).catch((error: unknown) => {
+      console.warn(JSON.stringify({ event: "safety_check_review_failed", account: item.accountId, error: (error as Error)?.message?.slice(0, 200) }));
+      return { version: 1 as const, ran: false, why: "failed", codes: [], quotes: [], contentHash: check.contentHash, at: now };
+    });
+  }
+
+  /**
+   * S03 (B-269, R6-1): the deterministic checks of one stored message, run now (on open, or when its record was checked
+   * against an older feed). It writes only `findings.check`: a message with a record keeps its state, review and every
+   * other finding (`ON CONFLICT ... json_set`), so a held message stays held whatever lands between the read and the
+   * write; one with none gets a `clear` row marked `open`, which the arrival check still runs over in full. A review
+   * of the same content is kept (KIMI-43). No model runs here.
+   */
+  async recheckSafety(key: { accountId: string; messageId: string }, input: { subject: string; html: string; fromLine: string; replyToLine?: string | null;
+    headers?: { key: string; value: string }[]; files?: { id: string; filename: string; mimetype: string; size: number }[]; sender: string; timestamp: number;
+    scope: "received" | "links" }): Promise<SafetyRecord | null> {
+    const now = Date.now();
+    const existing = (await this.safetyOf([key]))[safetyKey(key.accountId, key.messageId)];
+    const files: MailFile[] = (input.files ?? []).map((f) => ({ key: fileKey(key.accountId, key.messageId, f), filename: f.filename, mimetype: f.mimetype, size: f.size }));
+    // Hidden text: the arrival's findings when there are any; otherwise Okolos's signals alone (no model on open).
+    const findings: SafetyFindings = existing?.findings ? { ...existing.findings }
+      : await inspectMessage({ subject: input.subject, html: input.html }, async () => ({ flagged: false }));
+    if (!existing && files.some((f) => /\.(pdf|docx?|xlsx?|pptx|odt|ods|odp|rtf|html?|txt|csv|md|xml)$/i.test(f.filename)))
+      findings.unreadFiles = files.filter((f) => /\.(pdf|docx?|xlsx?|pptx|odt|ods|odp|rtf|html?|txt|csv|md|xml)$/i.test(f.filename)).map((f) => f.filename);
+    const blobs = new Map<string, Promise<Blob | null>>();
+    const whole = (k: string) => { if (!blobs.has(k)) blobs.set(k, this.fileBytes(k).catch(() => null)); return blobs.get(k)!; };
+    const check = await this.deterministicCheck({ accountId: key.accountId, subject: input.subject, html: input.html.slice(0, HTML_CHARS),
+      fromLine: input.fromLine, replyToLine: input.replyToLine ?? null, headers: (input.headers ?? []).slice(0, 20), files,
+      scope: input.scope, findings, read: this.fileSlicesReader(whole), now });
+    const kept = existing?.findings.check?.review;
+    if (kept && kept.contentHash === check.contentHash) check.review = kept;
+    await this.beforeCheckWrite(key);
+    const base = { ...findings, check };
+    this.sql.exec(`INSERT INTO safety (account_id, message_id, state, findings, review, reason, checked_at, decided_by, decided_at, timestamp, subject, sender)
+       VALUES (?, ?, 'clear', ?, NULL, '', ?, 'open', ?, ?, ?, ?)
+       ON CONFLICT(account_id, message_id) DO UPDATE SET findings = json_set(findings, '$.check', json(?))`,
+      key.accountId, key.messageId, JSON.stringify(base), now, now, input.timestamp, input.subject.slice(0, 300), input.sender.slice(0, 300), JSON.stringify(check));
+    console.log(JSON.stringify({ event: "safety_rechecked", account: key.accountId, scope: input.scope, signals: check.signals.length, notRun: check.notRun.length }));
+    return (await this.safetyOf([key]))[safetyKey(key.accountId, key.messageId)] ?? null;
+  }
+  /** A seam for tests: runs between the recheck's read and its write (R6-1). */
+  protected async beforeCheckWrite(_key: { accountId: string; messageId: string }): Promise<void> {}
+
+  /** S03: the colour of each record, with the server's current feed version. */
+  async coloursOf(keys: { accountId: string; messageId: string }[]): Promise<Record<string, SafetyColour & { checkedAt: number }>> {
+    const records = await this.safetyOf(keys);
+    const version = await this.feedVersion();
+    return Object.fromEntries(Object.entries(records).map(([k, r]) => [k, { ...colourOf(r, version), checkedAt: r.findings.check?.checkedAt ?? r.checkedAt }]));
   }
 
   /** Where these messages stand with the safety check (B-178); a message never checked is absent. */
@@ -688,10 +888,11 @@ export class CategoriesDO extends DurableObject<Env> {
   }
 
   /** The held messages, newest first (B-178). */
-  async heldMessages(limit = 100): Promise<{ accountId: string; messageId: string; state: SafetyState; reason: string; subject: string; sender: string; timestamp: number }[]> {
-    return (this.sql.exec("SELECT account_id, message_id, state, reason, subject, sender, timestamp FROM safety WHERE state IN ('held', 'kept') ORDER BY timestamp DESC LIMIT ?",
+  async heldMessages(limit = 100): Promise<{ accountId: string; messageId: string; state: SafetyState; reason: string; subject: string; sender: string; timestamp: number; check: MailCheck | null }[]> {
+    // S03: each with its six checks beside why it is held (null for a record from before them).
+    return (this.sql.exec("SELECT account_id, message_id, state, reason, subject, sender, timestamp, json_extract(findings, '$.check') AS chk FROM safety WHERE state IN ('held', 'kept') ORDER BY timestamp DESC LIMIT ?",
       Math.min(500, Math.max(1, limit))).toArray() as Row[]).map((r) => ({ accountId: String(r.account_id), messageId: String(r.message_id), state: String(r.state) as SafetyState,
-      reason: String(r.reason), subject: String(r.subject), sender: String(r.sender), timestamp: Number(r.timestamp) }));
+      reason: String(r.reason), subject: String(r.subject), sender: String(r.sender), timestamp: Number(r.timestamp), check: r.chk ? JSON.parse(String(r.chk)) as MailCheck : null }));
   }
 
   /**

@@ -28,7 +28,7 @@ export const TOOL_NEEDS: Readonly<Record<string, ToolNeed>> = Object.freeze(Obje
   ...ofEach("send", "send_draft send_email reply forward approve_rule_run"),
   // Sorting mail without sending or destroying it.
   ...ofEach("organize", `update_messages move_messages label_messages mark_spam discard_messages restore_discarded sync_account
-    refresh_inbox mark_category_seen manage_folder dismiss_rule_run check_rule_run`),
+    refresh_inbox mark_category_seen manage_folder dismiss_rule_run check_rule_run check_message_safety`),
   // Deleting mail for good (its two-call code stays).
   ...ofEach("delete", "delete_message"),
   // Campaigns: prepared, queued and sent through their own caps (R-6).

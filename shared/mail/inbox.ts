@@ -68,6 +68,8 @@ export interface InboxMessage {
   agentAbandoned?: boolean;
   /** B-178: held from agents with tools by the arrival safety check, with why. */
   held?: { reason: string; verdict: string | null; /** B-180: hosts of known phishing sites it links to. */ links?: string[] };
+  /** S03 (B-269): the safety check's colour and badge, for every message with a record (absent: not checked). */
+  safety?: { colour: "green" | "grey" | "amber" | "red"; label: string; checkedAt: number; released?: "person" | "review" };
   /** In a category's own view: why this message belongs there. */
   categoryReason?: string;
   /** Why it is in Spam (SP-4): a rule, the model, the operator, or Gmail. */

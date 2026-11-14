@@ -98,7 +98,9 @@ export class GmailAccountsDO extends DurableObject<GmailBindings> {
     const answered = new Map<string, Promise<boolean>>();
     await this.service.drainEvents(async (event: IncomingEvent) => {
       const payload = { id: event.emailId, sender: event.sender, subject: event.subject, body: event.body, date: event.date, thread_id: event.threadId,
-        ...(event.html ? { html: event.html } : {}), ...(event.files?.length ? { files: event.files } : {}) };
+        ...(event.html ? { html: event.html } : {}), ...(event.files?.length ? { files: event.files } : {}),
+        // S03 (B-269): for the sender checks; the rules and the campaigns ignore them.
+        ...(event.replyTo ? { replyTo: event.replyTo } : {}), ...(event.headers?.length ? { headers: event.headers } : {}) };
       // B-171: an account with a reply agent hands its new mail to the agent first; a failure retries the
       // whole event, and enqueuing the same message again changes nothing.
       const registry = this.env.AGENT_REGISTRY, bucket = this.env.BUCKET;

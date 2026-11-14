@@ -58,4 +58,10 @@ export const CATEGORIES_STEPS: readonly SchemaStep[] = [
     `CREATE INDEX IF NOT EXISTS safety_age ON safety(checked_at)`,
     `CREATE TABLE IF NOT EXISTS safety_budget (day TEXT PRIMARY KEY, calls INTEGER NOT NULL)`,
   ]),
+  // S03 (B-269): the review of mail that is not held has its own daily budget, and at most so many calls a day per
+  // sender domain, so a flood from one domain cannot spend it (SEC-8).
+  statements("5_check_review", [
+    `CREATE TABLE IF NOT EXISTS check_review_budget (day TEXT PRIMARY KEY, calls INTEGER NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS check_review_domains (day TEXT NOT NULL, domain TEXT NOT NULL, calls INTEGER NOT NULL, PRIMARY KEY (day, domain))`,
+  ]),
 ];

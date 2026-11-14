@@ -90,3 +90,19 @@ click, a modifier click, Enter, a drag, or the desktop menu: there is nothing to
   index from another window and from a previous render: nothing opens.
 - **R6-6:** on a red message `mailto:` links lose their `href` too (the desktop menu would otherwise open them,
   `desktop/main.cjs:719`).
+
+## Built as (2026-11-14, branch `agent/mailwin-s03`)
+
+- **The body does not wait:** it renders at once with every link guarded (grey), and again when the record arrives;
+  a record that cannot be read keeps every link guarded.
+- **Views without a record** (the thread's other cells, the forward preview, the older mailbox route) pass no colour
+  and are grey: every link asks. Passing each thread row's own colour is a later step.
+- **`mailto:`** keeps its address unless the message is red, and opens as it did before (not the app's composer yet).
+- **Two strings beyond the table:** "This link is written in an unusual way, so it asks first." (an odd href) and "This
+  link cannot be opened safely." (an unparsable one or another scheme).
+- **The frame script** also answers Space and stops a drag of a guarded link; it runs from the frame's head, after its
+  CSP.
+- **A link's text names another domain** only when the text is itself an address (a host or a URL).
+- **User activation is required outright** (K-6): a browser that cannot say whether the click was the person's opens
+  nothing from a guarded link.
+- The WebKit walk (red, amber, green link by click, middle click and Enter) is not done in this unit (W4 audit).

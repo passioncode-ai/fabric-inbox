@@ -311,6 +311,8 @@ export interface RunnerDeps {
    * checked: the run's own scan below still reads it). Absent: no arrival check here.
    */
   held?(mailboxId: string, emailId: string): Promise<string | null>;
+  /** S03 (B-269): why this message's answer must be a draft (a forged sender, a review that raised it), or null. */
+  draftOnly?(mailboxId: string, emailId: string): Promise<string | null>;
   model(request: ModelRequest): Promise<ModelResponse>;
   /**
    * What the sender asks, as one or two English sentences without personal details: what a knowledge
@@ -1187,6 +1189,11 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     }
   }
   if (outcome.action === "skip") return finish("skipped", outcome.reason);
+  // S03 (B-269, R5-3): the safety check's word wins over the policy: a forged sender or a raised message gets a draft.
+  if (outcome.action === "send" && deps.draftOnly) {
+    const why = await deps.draftOnly(run.mailboxId, email.id).catch(() => null);
+    if (why) outcome = { action: "draft", reason: why };
+  }
 
   const signature = settings?.signature as { enabled?: boolean; text?: string } | undefined;
   const signed = signature?.enabled && signature.text?.trim() ? `${body}\n\n${signature.text.trim()}` : body;

@@ -42,6 +42,8 @@ function harness(options: {
   claim?: (key: string, mailboxId: string, elected: string) => MessageClaim;
   /** B-178: the arrival check's answer for the message (a reason when held). */
   held?: string | null | Error;
+  /** S03 (B-269): why the answer must be a draft (a forged sender, a raised message), or null. */
+  draftOnly?: string | null;
 } = {}) {
   const runs = new Map<string, AgentRun>();
   const effects: { sends: unknown[]; drafts: { id: string; text: string }[]; modelCalls: number; assignments: string[]; ensured: string[]; claims: { key: string; mailboxId: string; elected: string }[] } =
@@ -87,6 +89,7 @@ function harness(options: {
       }),
       async createDraft(draft) { if (!effects.drafts.some((d) => d.id === draft.id)) effects.drafts.push({ id: draft.id, text: draft.text }); },
     },
+    ...(options.draftOnly !== undefined ? { async draftOnly() { return options.draftOnly as string | null; } } : {}),
     ...(options.held !== undefined ? { async held() { if (options.held instanceof Error) throw options.held; return options.held as string | null; } } : {}),
     async injection(text) {
       if (options.injectionFor) return { flagged: options.injectionFor(text) };
@@ -1677,6 +1680,16 @@ test("B-178: a message the arrival check holds is never read by the model and wa
   assert.notEqual((await clear.run())!.status, "skipped");
   for (const h of [held, unread]) assert.equal(h.effects.modelCalls + h.effects.sends.length + h.effects.drafts.length, 0);
   assert.equal(clear.effects.modelCalls, 1);
+});
+
+test("S03 (B-269, R5-3): a forged sender or a message the review raised gets a draft, whatever the policy", async () => {
+  const forged = harness({ draftOnly: "The safety check found the sender may be forged, so the answer waits as a draft" });
+  const run = (await forged.run())!;
+  assert.deepEqual([run.status, run.reason], ["drafted", "The safety check found the sender may be forged, so the answer waits as a draft"]);
+  assert.equal(forged.effects.sends.length, 0);
+  assert.equal(forged.effects.drafts.length, 1);
+  const clear = harness({ draftOnly: null });
+  assert.equal((await clear.run())!.status, "sent");
 });
 
 test("A-13: an earlier waiting reply whose policy text has a dash is still known as a waiting reply, not an answer", async () => {
