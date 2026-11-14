@@ -133,7 +133,8 @@ export function SettingsServersHeader() {
 	);
 }
 
-function ServerGroups({ kind, groups, list, onOpen, onRetry }: {
+/** Exported for its test (A-30: the groups say a server's state in the switch's words). */
+export function ServerGroups({ kind, groups, list, onOpen, onRetry }: {
 	kind: SettingsKind; groups: ReturnType<typeof settingsGroups>; list: ReactNode;
 	onOpen: (origin: string, path: string) => void; onRetry: () => void;
 }) {
@@ -153,7 +154,7 @@ function ServerGroups({ kind, groups, list, onOpen, onRetry }: {
 						: g.state === "loading" ? <p className="fi-server-group-note" role="status">{t("Loading…")}</p>
 						: g.state === "signed_out" ? (
 							<button type="button" className="fi-secondary fi-server-group-action" onClick={() => onOpen(g.origin, settingsPath(kind))}>
-								<SignInIcon size={14} aria-hidden="true" /> {t("Sign in")}
+								<SignInIcon size={14} aria-hidden="true" /> {t("[action] Sign in")}
 							</button>
 						) : g.state === "unreachable" ? (
 							<div className="fi-server-group-note">

@@ -488,6 +488,7 @@ export const SETTINGS: Readonly<Record<string, string>> = {
 	"The agent console session will stop": "Сессия консоли агента остановится",
 	"Open {server}": "Открыть {server}",
 	"{name} · Sign in": "{name} · Войти",
+	"[action] Sign in": "Войти",
 	"{name} · Retry": "{name} · Повторить",
 	"All servers": "Все серверы",
 	"the account of {server}": "аккаунт сервера {server}",
