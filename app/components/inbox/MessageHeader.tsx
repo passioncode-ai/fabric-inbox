@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useT } from "~/lib/i18n";
-import { headerFacts, SHOWN_RECIPIENTS, type Recipient } from "./message-header";
+import { headerFacts, relativeDate, SHOWN_RECIPIENTS, type Recipient } from "./message-header";
 import { senderName, type OpenMessage } from "./model";
 
 /**
@@ -56,7 +56,7 @@ export default function MessageHeader({ message, own, provider, catchAll, header
             <dd><Address text={facts.replyTo} /></dd>
           </div>
         )}
-        {own && ![...facts.to, ...facts.cc, ...facts.bcc].some((r) => r.you) && (
+        {facts.receivedAt && (
           <div>
             <dt>{t("Received at")}</dt>
             <dd>{own} · {provider}</dd>
@@ -65,7 +65,7 @@ export default function MessageHeader({ message, own, provider, catchAll, header
         {facts.notAddressed && <p className="fi-people-note">{t("Your address is not in To or Cc")}</p>}
       </dl>
       {validDate && (
-        <time dateTime={message.date} title={t.dateTime(date)}>
+        <time dateTime={message.date} title={relativeDate(date, Date.now(), t.locale === "ru" ? "ru-RU" : "en-US")}>
           {t.dateTime(date, { dateStyle: "medium", timeStyle: "short" })}
         </time>
       )}

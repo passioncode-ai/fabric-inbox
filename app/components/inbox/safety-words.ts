@@ -17,6 +17,19 @@ export function badgeWords(label: BadgeLabel, t: T): string {
   }
 }
 
+/**
+ * A file's chip word, by S03's colour table: the reader's attachment buttons and the composer's files say the same
+ * words, so a file's colour is never the only signal (A-10).
+ */
+export function fileChipWord(colour: "green" | "grey" | "amber" | "red", t: T): string {
+  switch (colour) {
+    case "red": return t("Dangerous");
+    case "amber": return t("Suspicious");
+    case "green": return t("Checked");
+    case "grey": return t("Not checked");
+  }
+}
+
 /** A fact as shown: a domain in ASCII (punycode), any text with zero-width and bidi characters removed (SEC-10). */
 const HOSTS = new Set(["mailFactAddress", "mailFactResembles", "mailFactReplyDomain", "mailFactFromDomain", "inboxFactShown"]);
 const fact = (s: CheckSignal, label: string) => {
@@ -127,4 +140,14 @@ export function reviewNotRunWords(why: string | undefined, t: T): string {
     : why === "domainCap" ? t("The review did not run: this sender's domain reached its daily limit.")
     : why === "unusable" ? t("The review did not run: its answer could not be used.")
     : t("The review did not run: the model could not answer.");
+}
+
+/**
+ * A-23 (S03 §4): whether the open message shows the badge. Mail we sent and drafts get the links check only, so they
+ * show a badge only when a link fired; an old sent message with no record, or one whose check failed, shows none
+ * (never a grey "Not checked" beside our own words). Received mail always shows it.
+ */
+export function showsSafetyBadge(sent: boolean | undefined, check: Pick<MailCheck, "signals"> | null | undefined): boolean {
+  if (!sent) return true;
+  return !!check?.signals.some((s) => s.check === "links");
 }

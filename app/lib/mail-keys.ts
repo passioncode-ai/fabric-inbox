@@ -59,8 +59,22 @@ export function escapeCancelsConfirmation(e: KeyLike): boolean {
   return e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.isComposing && !isTypingTarget(e.target);
 }
 
+/**
+ * Controls that keep their own keys (A-3, A-4): the server switch moves between its choices with the arrows, the link
+ * notice and the safety panel close with Escape. A key there acts only there: it never also moves, clears or archives
+ * in the list (the open message stays open). Only the help, undo and Check for new mail still answer.
+ */
+export const OWN_KEYS = ".fi-server-switch, .fi-link-notice, .fi-okolos-panel";
+const GLOBAL: ReadonlySet<MailKey> = new Set(["help", "undo", "refresh"]);
+
 /** The action a key press means in the mail list, or null when it means nothing here. */
 export function mailKeyAction(e: KeyLike, mac: boolean): MailKey | null {
+  const action = listKeyAction(e, mac);
+  if (action && !GLOBAL.has(action) && e.target?.closest?.(OWN_KEYS)) return null;
+  return action;
+}
+
+function listKeyAction(e: KeyLike, mac: boolean): MailKey | null {
   if (e.isComposing || isTypingTarget(e.target)) return null;
   const command = mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
   const plain = !e.metaKey && !e.ctrlKey && !e.altKey;

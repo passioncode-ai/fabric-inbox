@@ -780,6 +780,21 @@ body {
 .fi-thread-cell.is-open > .fi-thread-cell-body {
   padding: 0;
 }
+/* A-11: an amber or red cell's mark, with its word, before its time. */
+.fi-thread-safety {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: var(--pc-radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  align-self: center;
+}
+.fi-thread-safety.is-amber { color: var(--pc-warning); background: var(--pc-warning-soft); }
+.fi-thread-safety.is-red { color: var(--pc-negative); background: var(--pc-negative-soft); }
 .fi-thread-cell-head time {
   font-size: 12px;
   color: var(--pc-muted);
@@ -1830,9 +1845,14 @@ body {
 /* S01 (B-267): the switch sits in the list heading, at its right, as tall as one line; it never wraps or grows. The
    heading's text spans keep their small muted style; the switch's own text does not inherit it. */
 .fi-list-heading { gap: 12px; }
-.fi-server-tabs { display: flex; justify-content: flex-end; flex: 1 1 auto; min-width: 0; }
+.fi-server-tabs { display: flex; justify-content: flex-end; flex: 1 1 auto; min-width: 0; position: relative; }
+/* A-13: the segments drawn whole, off screen, so the switch takes them whenever they fit (ServerTabs' tabsLayout). */
+.fi-server-tabs-measure { position: absolute; top: 0; left: 0; width: max-content; height: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
 .fi-list-heading .fi-server-tabs span { font-size: inherit; color: inherit; }
 .fi-list-heading .fi-server-switch .fi-server-count { color: var(--pc-text-muted); }
+/* A-13: in the list heading the segments are a little tighter, so the default list column (about 265 px beside the
+   folder's name) holds All and three servers with their counts. */
+.fi-list-heading .fi-server-switch-segments .fi-server-choice { padding: 0 7px; gap: 3px; }
 .fi-list-heading .fi-server-switch .fi-server-switch-list { left: auto; right: 0; max-width: calc(100vw - 24px); }
 .fi-server-unreachable { gap: 6px; cursor: default; }
 .fi-server-unreachable .fi-text-button { font-size: 11px; }
@@ -2102,7 +2122,7 @@ body.fi-resizing { cursor: col-resize; user-select: none; }
 
 /* S11, S01 (B-276, B-267; SCN-099): the server switch (app/components/ServerSwitch.tsx), one control wherever a screen
    shows one server of several. Segments on .fi-segmented up to four servers, a menu for five or more; 28 px tall in
-   every state, a long name cut at 160 px with its full name in the title. */
+   every state, a long name cut at 160 px with its full name in Kumo's tooltip (A-32). */
 .fi-server-switch { display: inline-flex; min-width: 0; max-width: 100%; position: relative; }
 .fi-server-switch-segments { border-radius: var(--pc-radius-control); max-width: 100%; }
 .fi-server-switch .fi-server-choice {
@@ -2129,6 +2149,8 @@ body.fi-resizing { cursor: col-resize; user-select: none; }
 .fi-server-switch .fi-server-switch-trigger { border: 1px solid var(--pc-border); border-radius: var(--pc-radius-control); }
 .fi-server-switch .fi-server-switch-list { position: absolute; top: calc(100% + 4px); left: 0; right: auto; z-index: 20; min-width: 200px; }
 .fi-server-switch-list .fi-server-choice { width: 100%; justify-content: flex-start; }
+/* A-14: in the menu a row's count stands apart at its right end, never flush after the name. */
+.fi-server-switch-list .fi-server-count { margin-left: auto; padding-left: 16px; }
 
 /* ── The Rules screen (S10, B-275; app/routes/automation.tsx) ─────────────────────────
    One account's or address's rules as sentence cards, the four-step editor, History and Sending.
@@ -2381,11 +2403,25 @@ body.fi-resizing { cursor: col-resize; user-select: none; }
 details.fi-quote {
   margin: 10px 0 0;
 }
+/* A-25: "Show quoted text" reads as a control, with a disclosure mark that turns when it opens. */
 details.fi-quote > summary {
+  display: inline-block;
   cursor: pointer;
-  color: var(--pc-text-muted);
+  color: var(--pc-link);
   font-size: 11px;
   list-style: none;
+  padding: 2px 0;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+details.fi-quote > summary::before {
+  content: "\25B8";
+  display: inline-block;
+  width: 1.1em;
+  text-decoration: none;
+}
+details.fi-quote[open] > summary::before {
+  content: "\25BE";
 }
 details.fi-quote > summary::-webkit-details-marker {
   display: none;
@@ -2521,15 +2557,18 @@ details.fi-quote:not([open]) .fi-quote-hide {
   font-weight: 400;
   color: var(--pc-text-muted);
 }
+/* A-2: the panel opens under the header, its full width (the reader draws it after From and To), never beside the
+   subject. Its border takes the badge's colour. */
 .fi-okolos-panel {
-  margin-top: 10px;
+  margin-top: 14px;
   padding: 14px 16px;
   border: 1px solid var(--pc-border);
   border-radius: var(--pc-radius-control);
   background: var(--pc-panel);
   font-size: var(--pc-type-meta);
-  max-width: 460px;
 }
+.fi-okolos-panel.is-amber { border-color: var(--pc-warning); }
+.fi-okolos-panel.is-red { border-color: var(--pc-negative); }
 .fi-okolos-panel h3 {
   margin: 12px 0 4px;
   font-size: var(--pc-type-meta);
@@ -2540,7 +2579,13 @@ details.fi-quote:not([open]) .fi-quote-hide {
   margin: 0;
   padding-left: 16px;
 }
+/* A-17: a line that fired carries a warning mark, a clean one a check, beside the weight. */
+.fi-okolos-lines li.is-fired, .fi-okolos-lines li.is-clean { list-style: none; margin-left: -16px; display: flex; align-items: baseline; gap: 6px; }
 .fi-okolos-lines li.is-fired { font-weight: 600; }
+.fi-okolos-mark { flex: 0 0 auto; position: relative; top: 2px; }
+.fi-okolos-lines li.is-fired .fi-okolos-mark { color: var(--pc-warning); }
+.fi-okolos-panel.is-red .fi-okolos-lines li.is-fired .fi-okolos-mark { color: var(--pc-negative); }
+.fi-okolos-lines li.is-clean .fi-okolos-mark { color: var(--pc-positive); }
 .fi-okolos-files { list-style: none; padding-left: 0; }
 .fi-okolos-files li { display: flex; align-items: baseline; gap: 6px; overflow-wrap: anywhere; }
 .fi-okolos-chip, .fi-file-chip::before {
@@ -2554,10 +2599,13 @@ details.fi-quote:not([open]) .fi-quote-hide {
 .fi-okolos-files li.is-green .fi-okolos-chip { background: var(--pc-positive); }
 .fi-okolos-files li.is-amber .fi-okolos-chip { background: var(--pc-warning); }
 .fi-okolos-files li.is-red .fi-okolos-chip { background: var(--pc-negative); }
-.fi-file-chip::before { content: ""; margin-right: 6px; }
+.fi-file-chip::before { content: ""; margin-right: 6px; vertical-align: 1px; }
 .fi-file-chip.is-green::before { background: var(--pc-positive); }
 .fi-file-chip.is-amber::before { background: var(--pc-warning); }
 .fi-file-chip.is-red::before { background: var(--pc-negative); }
+/* A-10: the reader's attachment buttons carry the same chip, with its word. */
+.fi-file-button { display: inline-flex; align-items: center; gap: 4px; }
+.fi-file-button .fi-file-chip { margin-left: 4px; }
 .fi-okolos-panel blockquote {
   margin: 6px 0;
   padding-left: 10px;

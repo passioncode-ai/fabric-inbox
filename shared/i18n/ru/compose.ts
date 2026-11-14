@@ -10,7 +10,6 @@
  */
 export const COMPOSE: Readonly<Record<string, string>> = {
 	// Composer (app/components/inbox/Composer.tsx)
-	"{size} bytes": "{size} байт|{size} байта|{size} байт",
 	"The draft could not be saved to your server, so it was not sent. Check the connection and try again.": "Черновик не удалось сохранить на ваш сервер, поэтому он не отправлен. Проверьте подключение и попробуйте ещё раз.",
 	"Could not save send recovery information. Sending was not attempted.": "Не удалось сохранить данные для повторной отправки. Письмо не отправлялось.",
 	"Acceptance is not confirmed. Keep this attempt unchanged and check again.": "Провайдер пока не подтвердил приём. Не меняйте письмо и проверьте ещё раз.",
@@ -37,6 +36,7 @@ export const COMPOSE: Readonly<Record<string, string>> = {
 	"{n} files did not fit in one message": "{n} файл не поместился в одно письмо|{n} файла не поместились в одно письмо|{n} файлов не поместились в одно письмо",
 	"No room left: remove a file first": "Места нет: сначала уберите файл",
 	"Not attached: the safety check found this file dangerous": "Не прикреплён: проверка нашла файл опасным",
+	"Not attached: the safety check could not read this file": "Не прикреплён: проверка не смогла прочитать файл",
 	"Removed; it will not be sent": "Убран, не будет отправлен",
 	"Attach": "Прикрепить",
 	"Attach anyway": "Всё равно прикрепить",

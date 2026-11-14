@@ -56,6 +56,28 @@ export type QuoteRect = { left: number; top: number; right: number; bottom: numb
 export type FrameSelection = { text: string; rect: QuoteRect | null };
 
 /**
+ * A-24 (S08): where "Reply with quote" sits in the reader's scroll area, never on the text under the selection: at
+ * the right of the selection's last line when there is room, else just above that line (clamped into the pane), and
+ * below it only when the line is at the very top of what is shown. `end` is the last line's box in window coordinates;
+ * `pane` the scroll area's box, scroll and visible width.
+ */
+export function quoteButtonPlace(
+	end: QuoteRect,
+	pane: { left: number; top: number; width: number; scrollLeft: number; scrollTop: number },
+	button = { width: 180, height: 30 },
+): { left: number; top: number } {
+	const gap = 6;
+	const x = (v: number) => v - pane.left + pane.scrollLeft;
+	const y = (v: number) => v - pane.top + pane.scrollTop;
+	const maxLeft = pane.scrollLeft + pane.width - button.width - 8;
+	const right = x(end.right) + gap;
+	if (right <= maxLeft) return { left: right, top: Math.max(0, y(end.top) + (end.bottom - end.top - button.height) / 2) };
+	const left = Math.max(pane.scrollLeft + 8, Math.min(x(end.right) - button.width, maxLeft));
+	const above = y(end.top) - button.height - gap;
+	return { left, top: above >= pane.scrollTop ? above : y(end.bottom) + gap };
+}
+
+/**
  * The parent's reading of a frame's message. `undefined`: not a selection message for us, or refused
  * (another window sent it, a selection without user activation, a text over the limit); `null`: the
  * frame's selection cleared; otherwise the selection, cleaned again.
