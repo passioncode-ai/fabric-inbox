@@ -37,7 +37,7 @@ import { agentChoicesOf, readOnlyIn, useMe } from "~/lib/me";
 import type { Mail } from "~/services/fabric";
 import type { Email } from "~/types";
 import EmailIframe, { QuoteSelectionContext, type FrameSelectionReport } from "~/components/EmailIframe";
-import { buildQuotedReplyText, heldQuote, pageSelection, type QuoteRect } from "~/lib/quote-selection";
+import { buildQuotedReplyText, heldQuote, pageSelection, quoteButtonPlace, type QuoteRect } from "~/lib/quote-selection";
 import { replyAllRecipients, replyRecipient } from "~/components/inbox/send-state";
 import Composer, { type Draft } from "~/components/inbox/Composer";
 import {
@@ -62,8 +62,11 @@ import { loadConversation, markRead, messageBody, messageText, type ThreadRow } 
 import AgentDraftCard, { RetiredDraftNotice, type TuneRequest } from "~/components/inbox/AgentDraftCard";
 import AgentRunPanel from "~/components/inbox/AgentRunPanel";
 import HeldPanel from "~/components/inbox/HeldPanel";
-import SafetyBadge from "~/components/inbox/SafetyBadge";
-import { downloadAskKey, downloadQuestion } from "~/components/inbox/safety-words";
+import SafetyBadge, { SafetyPanel } from "~/components/inbox/SafetyBadge";
+import { downloadAskKey, downloadQuestion, fileChipWord, showsSafetyBadge } from "~/components/inbox/safety-words";
+import { originalsWithSafety } from "~/components/inbox/forward-files";
+import { threadCellSafety, type LookupAnswer } from "~/components/inbox/thread-safety";
+import { formatBytes } from "~/lib/utils";
 import { changeSpam } from "~/components/inbox/MessageActions";
 import { colourOf, type FileEntry, type SafetyLikeRecord } from "../../shared/mail/safety";
 import { UNCHECKED } from "~/lib/link-guard";
@@ -488,12 +491,15 @@ export default function UnifiedInbox() {
       const rulesAccount = isRemote(selected!.provider) ? account : rawAccount(account);
       const [runs, lookup] = await Promise.all([
         fabric<RunLike[]>(`/api/automation/${encodeURIComponent(rulesAccount)}/runs`).catch(() => [] as RunLike[]),
-        fabric<{ records?: Record<string, SafetyLike> }>("/api/safety/lookup", { keys: ids.slice(0, 200).map((messageId) => ({ accountId: account.toLowerCase(), messageId })) })
-          .catch(() => ({ records: {} as Record<string, SafetyLike> })),
+        fabric<LookupAnswer>("/api/safety/lookup", { keys: ids.slice(0, 200).map((messageId) => ({ accountId: account.toLowerCase(), messageId })) })
+          .catch(() => ({ records: {}, unavailable: true }) as LookupAnswer),
       ]);
       const byId: Record<string, SafetyLike> = {};
-      for (const id of ids) { const r = lookup.records?.[`${account.toLowerCase()}|${id}`]; if (r) byId[id] = r; }
-      return threadEvents(ids, Array.isArray(runs) ? runs : [], byId);
+      for (const id of ids) { const r = lookup.records?.[`${account.toLowerCase()}|${id}`]; if (r) byId[id] = r as SafetyLike; }
+      // A-11: every cell's own colour and checked links, from the same lookup (a cell with no record is checked now).
+      const cells = await threadCellSafety(account, ids.slice(0, 200), lookup,
+        (messageId) => fabric<{ record?: SafetyLikeRecord | null; feedVersion?: number | null }>("/api/safety/check", { accountId: account, messageId }, "POST"));
+      return { events: threadEvents(ids, Array.isArray(runs) ? runs : [], byId), cells };
     },
   });
   /**
@@ -550,6 +556,10 @@ export default function UnifiedInbox() {
   });
   const safetyColour = safetyCheck.data ? colourOf(safetyCheck.data.record, safetyCheck.data.feedVersion) : UNCHECKED;
   const safetyFiles = new Map((safetyCheck.data?.record?.findings.check?.files ?? []).map((f) => [f.id, f]));
+  // S03: the badge's panel is the reader's (A-2: drawn under the header); another message opens with it closed.
+  const [safetyOpen, setSafetyOpen] = useState(false);
+  useEffect(() => setSafetyOpen(false), [selected?.id]);
+  const badgeShown = !!detail.data && showsSafetyBadge(detail.data.sent, safetyCheck.data?.record?.findings.check);
   const askedFiles = useRef(new Set<string>());
   // Opening an unread message marks it read once the body has loaded, as every
   // mail client does; a failure leaves it unread and says so.
@@ -906,14 +916,12 @@ export default function UnifiedInbox() {
   const readerScrollRef = useRef<HTMLDivElement>(null);
   // Another message opening drops what was selected in the last one (SEC-14).
   useEffect(() => dispatchQuote({ type: "reset" }), [selected?.id]);
-  /** Where "Reply with quote" sits: just under the selection's end, inside the reader's scroll area. */
+  /** Where "Reply with quote" sits: beside or above the selection's end, never on the text under it (A-24). */
   const placeQuote = useCallback((rect: QuoteRect | null) => {
     const pane = readerScrollRef.current;
     if (!rect || !pane) return null;
     const box = pane.getBoundingClientRect();
-    const left = rect.right - box.left + pane.scrollLeft;
-    const top = rect.bottom - box.top + pane.scrollTop + 6;
-    return { left: Math.max(8, Math.min(left, pane.clientWidth - 160)), top: Math.max(0, top) };
+    return quoteButtonPlace(rect, { left: box.left, top: box.top, width: pane.clientWidth, scrollLeft: pane.scrollLeft, scrollTop: pane.scrollTop });
   }, []);
   const onFrameSelection = useCallback((report: FrameSelectionReport) => {
     if (report.reload) dispatchQuote({ type: "reload", key: report.key });
@@ -978,6 +986,13 @@ export default function UnifiedInbox() {
       setNotice(t("The sender's signature could not be loaded; add it to the message if you need it."));
     }
     const signed = signature ? "\n\n" + signature : "";
+    // A-1 (S03, S09): a forward carries each file's safety colour, so a dangerous one is never attached by itself. The
+    // open message's check may still be running: it is awaited; a check that fails leaves every file "Not checked".
+    let forwardColours = safetyFiles;
+    if (mode === "forward" && m?.attachments.length && !safetyCheck.data) {
+      const checked = await safetyCheck.refetch().catch(() => null);
+      forwardColours = new Map((checked?.data?.record?.findings.check?.files ?? []).map((f) => [f.id, f]));
+    }
     // S08: a reply with text selected starts with that text quoted, an empty line, then the signature.
     const quoted = mode === "reply" ? quotedStart() : "";
     if (quoted) dispatchQuote({ type: "reset" });
@@ -1019,7 +1034,7 @@ export default function UnifiedInbox() {
               accountId: selected.accountId,
               originalId: selected.providerMessageId,
               provider: selected.provider,
-              files: m.attachments,
+              files: originalsWithSafety(m.attachments, forwardColours),
             }
           : undefined,
       threadId: mode === "reply" ? m?.threadId : undefined,
@@ -1103,7 +1118,7 @@ export default function UnifiedInbox() {
                               inlineAttachments={reading.inline}
                               autoSize
                               blockedHosts={selected.held?.links}
-                              linkSafety={safetyCheck.data ? { colour: safetyColour, links: safetyCheck.data.record?.findings.check?.links ?? [] } : null}
+                              linkSafety={safetyCheck.data ? { colour: safetyColour, links: safetyCheck.data.record?.findings.check?.links ?? [] } : safetyCheck.isPending ? "pending" : null}
                             />
                           ) : detail.data.text ? (
                             // S05 (B-221): a text body's quoted history folds under "Show quoted text", as in a thread's cells.
@@ -1123,12 +1138,15 @@ export default function UnifiedInbox() {
                         {!!reading?.listed.length && (
                           <div className="fi-attachments">
                             <h3>{t("Attachments")}</h3>
-                            {reading.listed.map((a) => (
+                            {reading.listed.map((a) => {
+                              // A-10 (S03, SCN-010): a file's colour is never the only signal: its chip says the word.
+                              const colour = safetyFiles.get(a.id)?.colour;
+                              return (
                               <button
-                                className={"fi-secondary fi-file-chip" + (safetyFiles.get(a.id) ? ` is-${safetyFiles.get(a.id)!.colour}` : "")}
+                                className={"fi-secondary fi-file-button" + (colour ? ` is-${colour}` : "")}
                                 key={a.id}
-                                disabled={busy || downloading === a.id || safetyFiles.get(a.id)?.colour === "red"}
-                                title={safetyFiles.get(a.id)?.colour === "red" ? t("This file runs code or hides a program. Save anyway is in the safety panel.") : undefined}
+                                disabled={busy || downloading === a.id || colour === "red"}
+                                title={colour === "red" ? t("This file runs code or hides a program. Save anyway is in the safety panel.") : undefined}
                                 onClick={() => void download(a)}
                               >
                                 {downloading === a.id ? (
@@ -1136,11 +1154,13 @@ export default function UnifiedInbox() {
                                 ) : (
                                   <>
                                     {a.filename} ↓{" "}
-                                    <small>{t("{size} KB", { size: Math.ceil(a.size / 1024) })}</small>
+                                    <small>{formatBytes(a.size, 1, t)}</small>
+                                    {colour && <>{" "}<span className={`fi-file-chip fi-file-chip-${colour} is-${colour}`}>{fileChipWord(colour, t)}</span></>}
                                   </>
                                 )}
                               </button>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </>
@@ -1772,12 +1792,9 @@ export default function UnifiedInbox() {
                           </span>
                           <div className="fi-subject-line">
                             <h2>{detail.data.subject || t("(No subject)")}</h2>
-                            {/* Mail we sent and drafts show a badge only when a link fired (S03 §4). */}
-                            {!(detail.data.sent && safetyCheck.data?.record?.findings.check?.scope === "links" && !safetyCheck.data.record.findings.check.signals.length) && (
-                              <SafetyBadge colour={safetyColour} record={safetyCheck.data?.record ?? null} checking={safetyCheck.isPending} failed={safetyCheck.isError}
-                                onReportSpam={readOnlyIn(me, selected.accountId) || folder === "spam" || folder === "sent" ? undefined : reportSpamFromPanel}
-                                onDiscard={readOnlyIn(me, selected.accountId) || folder === "discarded" ? undefined : () => void triageAction("discard", [selected])}
-                                onSaveAnyway={(f: FileEntry) => { const a = detail.data!.attachments.find((x) => x.id === f.id); if (a) void download(a, true); }} />
+                            {/* Mail we sent and drafts show a badge only when a link fired (S03 §4, A-23). */}
+                            {badgeShown && (
+                              <SafetyBadge colour={safetyColour} checking={safetyCheck.isPending} open={safetyOpen} onToggle={() => setSafetyOpen((v) => !v)} />
                             )}
                           </div>
                           {selected.discardReason && (
@@ -1790,11 +1807,19 @@ export default function UnifiedInbox() {
                             provider={selected.provider === "cloudflare" ? "Cloudflare" : (owner?.providerName ?? (selected.provider === "gmail" ? "Gmail" : "IMAP"))}
                             headersPath={isRemote(selected.provider) ? `${messagePath(selected)}/headers` : undefined}
                             fetchJson={(url) => fabric(url)} />
+                          {/* A-2: the badge's panel opens under the header, its full width, never beside the subject. */}
+                          {badgeShown && safetyOpen && (
+                            <SafetyPanel colour={safetyColour} record={safetyCheck.data?.record ?? null} failed={safetyCheck.isError}
+                              onReportSpam={readOnlyIn(me, selected.accountId) || folder === "spam" || folder === "sent" ? undefined : reportSpamFromPanel}
+                              onDiscard={readOnlyIn(me, selected.accountId) || folder === "discarded" ? undefined : () => void triageAction("discard", [selected])}
+                              onSaveAnyway={(f: FileEntry) => { const a = detail.data!.attachments.find((x) => x.id === f.id); if (a) void download(a, true); }} />
+                          )}
                         </header>
                         {threaded ? (
                           <ConversationList rows={conversation.data ?? []} openId={selected.providerMessageId}
                             onOpen={(message) => setSelected(message)} loadBody={(message) => messageBody(message, (url) => fabric(url))}
-                            onMarkRead={markConversationRead} events={threadEventRows.data ?? []}
+                            onMarkRead={markConversationRead} events={threadEventRows.data?.events ?? []}
+                            cellSafety={threadEventRows.data?.cells} cellSafetyPending={threadEventRows.isPending}
                             onOpenDrafts={() => setDraftsOpen(true)}
                             renderCard={(draft, answered) => (
                               <AgentDraftCard row={draft} answered={answered} orphan={!answered} member={me.data?.role === "member"}

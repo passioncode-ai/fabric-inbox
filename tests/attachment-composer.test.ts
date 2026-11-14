@@ -33,6 +33,7 @@ import {
   planOriginals,
   removeAttachment,
   removeServerFile,
+  originalsWithSafety,
   safetyOf,
 } from "../app/components/inbox/forward-files";
 import { contentKey } from "../app/components/inbox/server-drafts";
@@ -391,6 +392,24 @@ test("a red original is not attached by itself and does not block Send; Attach a
   assert.deepEqual(anyway.attach.map((f) => f.id), ["two"]);
   assert.deepEqual(applyPlan(ready, anyway).leftOut, [], "attached again, no longer left out");
   assert.equal(safetyOf(ready, "two"), "red");
+});
+test("A-1: a forward of a message whose check found a dangerous file leaves that file out as dangerous", () => {
+  // The reader's attachments and the safety record's files, by attachment id; one file the record does not name.
+  const attachments = [
+    { id: "a1", filename: "invoice.pdf", mimeType: "application/pdf", size: 120_000 },
+    { id: "a2", filename: "page.html", mimeType: "text/html", size: 4_000 },
+    { id: "a3", filename: "photo.jpg", mimeType: "image/jpeg", size: 9_000 },
+    { id: "a4", filename: "notes.txt", mimeType: "text/plain", size: 500 },
+  ];
+  const record = new Map([["a1", { colour: "red" as const }], ["a2", { colour: "amber" as const }], ["a3", { colour: "green" as const }]]);
+  const files = originalsWithSafety(attachments, record);
+  assert.deepEqual(files.map((f) => f.safety), ["red", "amber", "green", "grey"], "a file the check named nothing about is Not checked");
+  const d: Draft = { ...threeOriginals(), forwardSource: { accountId: "cloudflare:a", originalId: "m", provider: "cloudflare", files } };
+  const plan = planOriginals(d);
+  assert.deepEqual(plan.attach.map((f) => f.id), ["a2", "a3", "a4"]);
+  assert.deepEqual(plan.leftOut, [{ id: "a1", why: "dangerous" }], "the dangerous file is not attached by itself");
+  // No record at all: every file is grey and attached, never left without a word.
+  assert.deepEqual(originalsWithSafety(attachments, new Map()).map((f) => f.safety), ["grey", "grey", "grey", "grey"]);
 });
 test("an original that failed to load blocks Send until Retry or Remove", async () => {
   const { files } = fixture();

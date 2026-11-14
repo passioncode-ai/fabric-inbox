@@ -1,7 +1,8 @@
 /** @jsxRuntime automatic @jsxImportSource react */
 // ^ pins the automatic JSX runtime so the tests (tsx) render it as the app does.
+import { Tooltip } from "@cloudflare/kumo";
 import { CaretDownIcon, SignInIcon, WarningIcon } from "@phosphor-icons/react";
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
 import { useT } from "../lib/i18n";
 import { nextSwitchIndex, switchLayout, type AllMode } from "../lib/settings-servers";
 
@@ -69,7 +70,8 @@ export default function ServerSwitch(props: ServerSwitchProps) {
 	if (allMode !== "hidden") {
 		choices.push({
 			key: "all", disabled: allMode === "disabled", title: allMode === "disabled" ? allReason : undefined,
-			content: <><span className="fi-server-name">{t("All")}</span>{countText("all")}</>,
+			// A-14: the menu's row says "All servers", as its button does; the segments keep the short "All".
+			content: <><span className="fi-server-name">{layout === "menu" ? t("All servers") : t("All")}</span>{countText("all")}</>,
 			act: () => onChoose("all"),
 		});
 	}
@@ -104,18 +106,22 @@ function SwitchSegments({ choices, current, label }: { choices: Choice[]; curren
 		if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
 		const buttons = [...(row.current?.querySelectorAll<HTMLButtonElement>("button") ?? [])];
 		const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+		// A-4: the arrows move between the choices only; they never also move the mail list's selection.
 		event.preventDefault();
+		event.stopPropagation();
 		buttons[nextSwitchIndex(choices, at < 0 ? tabStop : at, event.key)]?.focus();
 	};
 	return (
 		<nav className="fi-server-switch" aria-label={label}>
 			<div ref={row} className="fi-segmented fi-server-switch-segments" onKeyDown={onKey}>
 				{choices.map((c, i) => (
-					<button type="button" key={c.key} className={choiceClass(c, current)} data-choice={c.key} title={c.title}
-						aria-current={c.key === current ? "page" : undefined} aria-disabled={c.disabled || undefined}
-						tabIndex={i === tabStop ? 0 : -1} onClick={() => { if (!c.disabled) c.act(); }}>
-						{c.content}
-					</button>
+					<Tip key={c.key} title={c.title}>
+						<button type="button" className={choiceClass(c, current)} data-choice={c.key}
+							aria-current={c.key === current ? "page" : undefined} aria-disabled={c.disabled || undefined}
+							tabIndex={i === tabStop ? 0 : -1} onClick={() => { if (!c.disabled) c.act(); }}>
+							{c.content}
+						</button>
+					</Tip>
 				))}
 			</div>
 		</nav>
@@ -147,31 +153,41 @@ function SwitchMenu({ choices, current, label, servers, count }: { choices: Choi
 		if (event.key === "Tab") { setOpen(false); return; }
 		if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
 		event.preventDefault();
+		event.stopPropagation();
 		const all = buttons();
 		all[nextSwitchIndex(choices, all.indexOf(document.activeElement as HTMLButtonElement), event.key)]?.focus();
 	};
 	const shown = current === "all" ? null : servers.find((s) => s.origin === current);
 	return (
 		<nav className="fi-server-switch is-menu" aria-label={label}>
-			<button ref={trigger} type="button" className="fi-server-choice fi-server-switch-trigger" aria-haspopup="true" aria-expanded={open}
-				aria-controls={open ? id : undefined} title={shown?.label} onClick={() => setOpen(!open)}>
-				<span className="fi-server-name">{shown ? shown.label : t("All servers")}</span>
-				{count}
-				<CaretDownIcon size={12} aria-hidden="true" />
-			</button>
+			<Tip title={shown?.label}>
+				<button ref={trigger} type="button" className="fi-server-choice fi-server-switch-trigger" aria-haspopup="true" aria-expanded={open}
+					aria-controls={open ? id : undefined} onClick={() => setOpen(!open)}>
+					<span className="fi-server-name">{shown ? shown.label : t("All servers")}</span>
+					{count}
+					<CaretDownIcon size={12} aria-hidden="true" />
+				</button>
+			</Tip>
 			{open && (
 				<ul ref={list} id={id} className="fi-menu fi-server-switch-list" onKeyDown={onKey}>
 					{choices.map((c) => (
 						<li key={c.key}>
-							<button type="button" className={choiceClass(c, current)} data-choice={c.key} title={c.title}
-								aria-current={c.key === current ? "page" : undefined} aria-disabled={c.disabled || undefined}
-								tabIndex={-1} onClick={() => { if (c.disabled) return; close(); c.act(); }}>
-								{c.content}
-							</button>
+							<Tip title={c.title} side="left">
+								<button type="button" className={choiceClass(c, current)} data-choice={c.key}
+									aria-current={c.key === current ? "page" : undefined} aria-disabled={c.disabled || undefined}
+									tabIndex={-1} onClick={() => { if (c.disabled) return; close(); c.act(); }}>
+									{c.content}
+								</button>
+							</Tip>
 						</li>
 					))}
 				</ul>
 			)}
 		</nav>
 	);
+}
+
+/** A-32 (S01): a choice's full name or state in Kumo's tooltip (as the app's other controls), not a native title. */
+function Tip({ title, side, children }: { title?: string; side?: "top" | "left"; children: ReactElement }) {
+	return title ? <Tooltip content={title} side={side} asChild>{children}</Tooltip> : children;
 }

@@ -143,3 +143,33 @@ Severity: **blocking**, the operator's ask not met or broken; **major**, wrong o
 The two blocking findings (A-1, A-2) and the major ones are the fix waves' first rows; each fix lands
 with its test and a walk on this fixture (`FIXTURE_PORT=5175 PREVIEW_ACTIONS=1 node
 scripts/preview-fixture.mjs` behind `npm run dev -- --port 5174`).
+
+## Fixed in wave F1
+
+All fixed in one commit on `agent/mailwin-fix-F1` (its sha is the commit that adds this section). A WebKit walk on the
+fixture (1400x900 and 900x700) checked A-1, A-2, A-3, A-4, A-8, A-9, A-10, A-11, A-13, A-14, A-16, A-19, A-20, A-23.
+
+| Id | Fix |
+|---|---|
+| A-1 | The forward carries each file's colour (`originalsWithSafety`), awaiting the check when it is still running; a red original lands in `leftOut` as dangerous; chips with their words. |
+| A-2 | `SafetyPanel` is drawn after From and To, the header's full width; the subject line holds only the badge. |
+| A-3 | Escape on the notice stops there; `mailKeyAction` ignores list keys inside `.fi-link-notice`, `.fi-okolos-panel`, `.fi-server-switch`. |
+| A-4 | The switch stops its arrow keys from reaching the list (and the same region rule). |
+| A-8 | `headerFacts().receivedAt` is false on mail we sent. |
+| A-9 | A `mailto:` notice reads "This link writes to <address>" (`mailtoParts`); `hostParts` answers null without a host. |
+| A-10 | The reader's file buttons carry the chip word (`fileChipWord`, shared with the composer). |
+| A-11 | Every cell gets its own record (`threadCellSafety`: one lookup, missing or stale ones checked, at most 10); amber and red cells marked with their word; cell links decided by their record. |
+| A-13 | The switch measures its segments off screen and takes the menu only when they do not fit (`tabsLayout`); the heading's segments are tighter, so All and three servers fit the default 265 px. A long name that does not fit whole still takes the menu. |
+| A-14 | The menu's row reads "All servers"; counts at the row's right. |
+| A-16 | Nesting is computed against the cell drawn above (`nestedRows`), not a draft shown as a card. |
+| A-17 | Fired lines carry a warning mark, clean lines a check. |
+| A-18 | "Released by ..." after a separator. |
+| A-19 | Focus returns to the frame after the notice unmounts. |
+| A-20 | Guarded links: dotted underline and the title "Asks before it opens". |
+| A-21 | While the record is pending a `mailto:` loses its address and any link asks. |
+| A-22 | The date's title is the relative time (`relativeDate`). |
+| A-23 | Sent mail and drafts show the badge only when a link fired (`showsSafetyBadge`). |
+| A-24 | "Reply with quote" sits right of the selection's end, else above it (`quoteButtonPlace`). |
+| A-25 | "Show quoted text" styled as a control with a disclosure mark; the frame reports its content height, so no gap is left. |
+| A-31 | The composer's sizes use `formatBytes` (KB, MB), as the reader. |
+| A-32 | Cut names and states in Kumo's `Tooltip` instead of a native title. |

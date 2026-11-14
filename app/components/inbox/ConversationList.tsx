@@ -6,9 +6,13 @@ import { senderName, type InboxMessage } from "./model";
 import { unreadOf, type ThreadRow } from "./thread";
 import { listDate } from "./triage-view";
 import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
-import { answeredRows, foldQuotedHtml, isNested, splitQuotedText, type QuoteLabels, type ThreadEvent } from "./quotes";
+import { answeredRows, foldQuotedHtml, nestedRows, splitQuotedText, type QuoteLabels, type ThreadEvent } from "./quotes";
 import { addressOf, compactRecipients, headerFacts } from "./message-header";
 import { cardPlacement, retiredCards, type ShownCard } from "./draft-card";
+import type { CellSafety } from "./thread-safety";
+import { badgeWords } from "./safety-words";
+import { ShieldSlashIcon, ShieldWarningIcon } from "@phosphor-icons/react";
+import type { SafetyColour } from "../../../shared/mail/safety";
 
 /** Messages shown whole at once; earlier ones wait behind "Show earlier messages" (a long thread stays light). */
 const SHOWN = 25;
@@ -22,8 +26,12 @@ const SHOWN = 25;
  * Reply, Reply all and Forward act on it. Opening the conversation reads it, as opening a message does.
  * Shown only when the conversation has more than one message.
  */
-export default function ConversationList({ rows, openId, onOpen, loadBody, onMarkRead, renderOpen, events = [], renderCard, renderRetired, onOpenDrafts }: {
+export default function ConversationList({ rows, openId, onOpen, loadBody, onMarkRead, renderOpen, events = [], renderCard, renderRetired, onOpenDrafts, cellSafety, cellSafetyPending }: {
   rows: ThreadRow[];
+  /** A-11: each message's own safety colour and checked links, by provider message id; absent while not read. */
+  cellSafety?: Readonly<Record<string, CellSafety>>;
+  /** The colours are still on their way: a cell's links ask meanwhile, a `mailto:` too (A-21). */
+  cellSafetyPending?: boolean;
   /** S05 (B-221): what rules and the safety check did to the thread's messages, shown as thin rows after each one. */
   events?: ThreadEvent[];
   openId: string;
@@ -95,6 +103,8 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
   const shown = rows.slice(hidden);
   const answered = answeredRows(rows.map((r) => ({ internalId: r.message.providerMessageId, rfcMessageId: r.rfcMessageId,
     inReplyTo: r.inReplyTo, references: r.references, draft: r.kind === "draft" })));
+  // A-16: a reply is nested against the cell drawn above it, not against a draft drawn as a card in between.
+  const nestedAt = nestedRows(answered, (i) => !placement?.taken.has(rows[i]!.message.id));
   return (
     <section className="fi-thread" aria-label={t("Conversation")}>
       <div className="fi-thread-head">
@@ -119,9 +129,11 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
           const open = row.message.providerMessageId === openId;
           const index = hidden + k;
           const answers = answered[index]!;
-          const nested = isNested(answers, index);
+          const nested = nestedAt[index]!;
           const target = answers >= 0 ? rows[answers] : undefined;
-          const body = <div className="fi-thread-cell-body">{open ? renderOpen() : <CellBody row={row} loadBody={loadBody} />}</div>;
+          const safety = cellSafety?.[row.message.providerMessageId];
+          const body = <div className="fi-thread-cell-body">{open ? renderOpen()
+            : <CellBody row={row} loadBody={loadBody} linkSafety={safety ?? (cellSafetyPending ? "pending" : null)} />}</div>;
           return (
             <li key={row.message.id}>
               <article ref={(el) => { if (open) openRef.current = el; if (el) cells.current.set(row.message.id, el); else cells.current.delete(row.message.id); }}
@@ -136,6 +148,7 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
                       <WhoChip row={row} />
                     </button>
                   )}
+                  {!open && safety && <CellMark colour={safety.colour} />}
                   <time dateTime={row.message.date}>{listDate(row.message.date, undefined, t)}</time>
                 </header>
                 <CellPeople row={row} />
@@ -274,7 +287,8 @@ function WhoChip({ row }: { row: ThreadRow }) {
 }
 
 /** A message other than the open one, whole: the HTML the thread route carried, else read when shown. */
-function CellBody({ row, loadBody }: { row: ThreadRow; loadBody: (message: InboxMessage) => Promise<{ html: string; text: string }> }) {
+function CellBody({ row, loadBody, linkSafety }: { row: ThreadRow; loadBody: (message: InboxMessage) => Promise<{ html: string; text: string }>;
+  linkSafety: CellSafety | "pending" | null }) {
   const t = useT();
   const carried = row.body !== undefined;
   const body = useQuery({
@@ -284,7 +298,7 @@ function CellBody({ row, loadBody }: { row: ThreadRow; loadBody: (message: Inbox
     staleTime: 300_000,
   });
   const labels: QuoteLabels = { show: t("Show quoted text"), hide: t("Hide quoted text") };
-  if (carried) return row.body ? <EmailIframe messageKey={row.message.id} body={foldQuotedHtml(row.body, labels)} autoSize blockedHosts={row.message.held?.links} /> : <p className="fi-thread-text">{t("This message has no text.")}</p>;
+  if (carried) return row.body ? <EmailIframe messageKey={row.message.id} body={foldQuotedHtml(row.body, labels)} autoSize blockedHosts={row.message.held?.links} linkSafety={linkSafety} /> : <p className="fi-thread-text">{t("This message has no text.")}</p>;
   if (body.isPending) return <p className="fi-thread-text is-loading">{t("Loading…")}</p>;
   if (body.isError)
     return (
@@ -293,7 +307,7 @@ function CellBody({ row, loadBody }: { row: ThreadRow; loadBody: (message: Inbox
         <button type="button" className="fi-thread-action" onClick={() => void body.refetch()}>{t("Try again")}</button>
       </p>
     );
-  if (body.data.html) return <EmailIframe messageKey={row.message.id} body={foldQuotedHtml(body.data.html, labels)} autoSize blockedHosts={row.message.held?.links} />;
+  if (body.data.html) return <EmailIframe messageKey={row.message.id} body={foldQuotedHtml(body.data.html, labels)} autoSize blockedHosts={row.message.held?.links} linkSafety={linkSafety} />;
   return body.data.text ? <QuotedText text={body.data.text} /> : <div className="fi-thread-text">{t("This message has no text.")}</div>;
 }
 
@@ -311,5 +325,20 @@ export function QuotedText({ text, className = "fi-thread-text" }: { text: strin
         </details>
       )}
     </div>
+  );
+}
+
+/**
+ * A-11 (S02): a cell other than the open one marks an amber or red message with its icon and word, as the open
+ * message's badge would say it; a green or grey cell carries no mark.
+ */
+function CellMark({ colour }: { colour: SafetyColour }) {
+  const t = useT();
+  if (colour.colour !== "amber" && colour.colour !== "red") return null;
+  const Icon = colour.colour === "red" ? ShieldSlashIcon : ShieldWarningIcon;
+  return (
+    <span className={`fi-thread-safety is-${colour.colour}`}>
+      <Icon size={13} weight="bold" aria-hidden="true" />{badgeWords(colour.label, t)}
+    </span>
   );
 }

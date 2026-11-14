@@ -10,7 +10,6 @@
  */
 export const COMPOSE: Readonly<Record<string, string>> = {
 	// Composer (app/components/inbox/Composer.tsx)
-	"{size} bytes": "{size} байт|{size} байта|{size} байт",
 	"The draft could not be saved to your server, so it was not sent. Check the connection and try again.": "Черновик не удалось сохранить на ваш сервер, поэтому он не отправлен. Проверьте подключение и попробуйте ещё раз.",
 	"Could not save send recovery information. Sending was not attempted.": "Не удалось сохранить данные для повторной отправки. Письмо не отправлялось.",
 	"Acceptance is not confirmed. Keep this attempt unchanged and check again.": "Провайдер пока не подтвердил приём. Не меняйте письмо и проверьте ещё раз.",

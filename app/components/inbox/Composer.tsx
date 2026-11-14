@@ -28,6 +28,8 @@ import {
 } from "./forward-files";
 import type { FileSafety } from "./draft-store";
 import { sendSavedDraft, signatureFor, swapSignature } from "./server-drafts";
+import { fileChipWord } from "./safety-words";
+import { formatBytes } from "~/lib/utils";
 import type { SyncStatus } from "./use-drafts";
 import { useT } from "../../lib/i18n";
 import EmailIframe from "~/components/EmailIframe";
@@ -107,11 +109,8 @@ export default function Composer({
     };
   }, []);
   const account = accounts.find((a) => a.id === draft.accountId);
-  /** A file's size: as before in English (the system's digit grouping), with the noun's form in Russian. */
-  const bytes = (size: number) =>
-    t.plural(size, { one: "{size} byte", other: "{size} bytes" }, {
-      size: t.locale === "en" ? size.toLocaleString() : t.number(size),
-    });
+  /** A-31: a file's size in the reader's format (KB, MB), the same in the reader and here. */
+  const bytes = (size: number) => formatBytes(size, 1, t);
   function change(patch: Partial<Draft>) {
     onChange({ ...draft, ...patch });
   }
@@ -798,9 +797,7 @@ export default function Composer({
 function SafetyChip({ colour }: { colour?: FileSafety }) {
   const t = useT();
   if (!colour) return null;
-  const word =
-    colour === "red" ? t("Dangerous") : colour === "amber" ? t("Suspicious") : colour === "green" ? t("Checked") : t("Not checked");
-  return <span className={`fi-file-chip fi-file-chip-${colour}`}>{word}</span>;
+  return <span className={`fi-file-chip fi-file-chip-${colour} is-${colour}`}>{fileChipWord(colour, t)}</span>;
 }
 
 /**
