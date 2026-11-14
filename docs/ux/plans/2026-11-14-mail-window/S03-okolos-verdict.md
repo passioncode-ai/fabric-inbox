@@ -44,7 +44,7 @@ keep working).
 |---|---|---|
 | `senderAuth` | DMARC, SPF and DKIM, counted only when the **topmost** `Authentication-Results` header is the account's own receiver's: Cloudflare's MX (the existing `authResults`, `shared/mail/spam.ts:45-47`, changed to look at the topmost header only), Gmail's `mx.google.com` when the topmost `Received` header is also Google's | Outlook, IMAP and any message whose topmost header is not the receiver's: "did not run: the provider's own result cannot be told apart from one the sender wrote". Outlook is not counted in this version (Exchange Online's header carries no reliable authserv-id); a row is filed to study it. A `DKIM-Signature` or `Received-SPF` header alone never counts. Okolos's `checkSenderAuth` is not used (it reads the first header of that name, `core-mail/src/sender.ts:65-67`) |
 | `senderIdentity` | Okolos `checkSenderIdentity` with the vendored `checkLookalike`, the default watchlist and the server's own `DOMAINS`; every From address, not only the first | A display name naming a brand on another domain fires |
-| `replyPath` | Okolos `checkReplyPath` | Reply-To on another registrable domain fires minor |
+| `replyPath` | Okolos `checkReplyPath` | Reply-To on another registrable domain fires `major` as Okolos writes it (`core-mail/src/sender.ts:228`) |
 | `links` | existing feed and lookalike checks, plus a link whose visible text names another domain than it goes to; entity-encoded and protocol-relative hrefs decoded first; a cap that was hit goes to not-run | S04 uses the per-link results |
 | `hidden` | existing `inspectMessage` | unchanged |
 | `attachments` | one entry per attachment, always (see 2) | |
@@ -66,6 +66,9 @@ headers and the stored addresses (not `parseMessage`, since remote mail has no r
   scripts, OLE and OOXML with macros, PDF, ZIP, RAR, 7z, ISO, DMG, image formats). An empty or too short read is "did
   not run (too short)", never "matches". A PDF that also carries a program signature in its first 1 KiB is flagged as
   a mixed file.
+- **How bytes are read, per provider:** R2 (Cloudflare) and IMAP read by range (the first 4 KiB, the last 64 KiB for a
+  ZIP). Gmail's `attachments.get` and Graph return the whole file (`gmail-client.ts:644`), so up to 10 MiB is read whole
+  and a larger file is "did not run (too large)".
 - **Office documents:** macros cannot be seen in the first bytes (OOXML is a ZIP). The ZIP's central directory (the last
   64 KiB, read by range) is listed for `vbaProject.bin`, `xl/macrosheets/` and `word/vbaData.xml`; no entry is
   decompressed. A central directory that cannot be read gives "macros not checked" and a grey file chip; the absence of
@@ -105,8 +108,8 @@ headers and the stored addresses (not `parseMessage`, since remote mail has no r
   dropped whole: "review did not run: the answer could not be used". No free sentence of the model is ever shown.
 - **What it may change, through one pure function `colourOf` (section 4):** a raising code (`looks_like_phishing`,
   `asks_for_credentials`, `urgent_payment`, `impersonates_brand`, `instructions_to_ai`) makes a green or grey message
-  amber; `likely_benign_sender_mismatch` alone, over minor sender signals only, makes it grey "Reviewed: probably fine"
-  (never green); nothing it says changes a floor (a feed-listed link, a file that runs code or is disguised, a DMARC fail
+  amber; `likely_benign_sender_mismatch` alone, when the only signals are `replyPath` or a display-name mismatch (both
+  `major` in Okolos), makes the message grey "Reviewed: probably fine" (never green); nothing it says changes a floor (a feed-listed link, a file that runs code or is disguised, a DMARC fail
   with an enforcing policy, a lookalike From or link, instructions to an AI found by the checks).
 - **Green means the deterministic checks:** a message is green when every check ran and nothing fired; the review is
   not needed for green (it runs only where something fired), and the badge's panel says which checks made it green.
@@ -117,17 +120,30 @@ headers and the stored addresses (not `parseMessage`, since remote mail has no r
 
 | Colour | Badge (English / Russian) | When |
 |---|---|---|
-| Green | "Checked by Okolos" / «Проверено Okolos» | All six checks ran for this message and nothing fired |
-| Grey | "Partly checked" / «Проверено частично» | Nothing fired, a check did not run for this message (no trusted auth result, a file too large, review not run) |
+| Green | "Checked by Okolos" / «Проверено Okolos» | All six checks ran in full for this message and nothing fired (the review is not one of the six: it runs only where something fired) |
+| Grey | "Partly checked" / «Проверено частично» | Nothing fired, a check did not run in full for this message (no trusted auth result, a file too large, a document whose text was not read, the feed stale or missing) |
+| Grey | "Reviewed: probably fine" / «Проверено: похоже, всё в порядке» | Only `replyPath` or display-name signals fired and the review said `likely_benign_sender_mismatch` |
 | Grey | "Not checked" / «Не проверено» | No record: arrived before this version, the check is off, the record expired; or held only because the scan could not run (`modelError`) |
 | Amber | "Sender may be forged" / «Отправитель может быть поддельным» | Only sender signals fired (DMARC fail is red's floor only when the domain publishes `p=reject` or `p=quarantine`; otherwise amber) |
-| Amber | "Suspicious message" / «Подозрительное письмо» | Any other minor or major signal; the review raised it; an amber file |
+| Amber | "Suspicious message" / «Подозрительное письмо» | Any other signal (minor, major, or critical that is not a floor); the review raised it; an amber file. When something fired but the review could not run, the colour is the checks' own: this row, with "review did not run" in the panel |
 | Amber | "Suspicious message" / «Подозрительное письмо» | Held only because the light model said YES (`findings.model` alone is a model's guess, not a floor) |
 | Red | "Dangerous" / «Опасно» | A feed-listed link, a file that runs code or is disguised, instructions to an AI found by Okolos's signals (visible strong, hidden or in a file), DMARC fail with an enforcing policy; held for any of these and not released |
 | (same) | plus "Released by you" / «Вы разрешили», or "Released by the review" / «Разрешено проверкой» | A held message was released: the colour still follows its signals |
 
-Which mail is checked: received mail in every folder. Mail we sent and drafts are not checked (they carry no receiver's
-result and their links are ours); they show no badge and their links open as written.
+Which mail is checked: received mail in every folder. Mail we sent and drafts are not checked as mail (no receiver's
+result), but a forward carries the sender's links: a sent message or draft with forwarded content gets the links check
+when opened (without the model), and S04 guards it by that result; one without forwarded content shows no badge and its
+links open as written.
+
+**Where the DMARC policy is read:** Cloudflare's result carries `policy.dmarc=` (the existing `authResults`); Gmail's
+puts `p=` inside a comment, which `authResults` strips (`spam.ts:51`), so its parser reads the comment for that one
+property. No policy found: a DMARC fail is amber, never red.
+
+**The record names its feed:** `findings.check.feedVersion` is the feed version the links were checked against; a
+record whose version is older than the server's current one, or whose feed was missing or stale, is grey for links.
+
+**Unread documents:** a document whose text was not read (the 4th and later, over 10 MiB) puts `hidden` and
+`attachments` in the not-run list, so the message cannot be green.
 
 A file's own chip uses the same colours: red for a program or a disguised file, amber for a web page, an archive, a
 macro document or a mixed file, grey for a file not checked, green for a checked one with no signal.
@@ -144,7 +160,9 @@ rendered again from the new record. A recomputation that fails stays grey.
 
 ### 5. What a person sees
 
-- **The badge** at the right of the subject line (S02): the Okolos mark (the shield from Okolos's icon set) and the
+- **The badge** at the right of the subject line (S02), separated from it by a rule line and its own background, so a
+  subject written to look like a badge never reads as part of it; a shield character or the badge's own words at the
+  start or end of a displayed subject are shown as plain text after the badge's rule, never next to it: the Okolos mark (the shield from Okolos's icon set) and the
   words of the table above; a button with `aria-expanded`, colour never the only signal (an icon and a word each).
 - **The panel** opens under the header (not a modal):
   - **What was checked:** one line per check in plain words ("The sender's own server confirmed it sent this (DMARC)",

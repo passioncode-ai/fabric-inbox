@@ -38,7 +38,8 @@ draft, by `message_id` for every other row), the card replaces both today's "Dra
   composer on the same draft). Saved as the draft's next revision 1.5 s after typing stops and on leaving the field;
   the B-52 revision guard applies. States: saving, saved, save failed (Retry, the text kept on the device), a newer
   revision saved elsewhere (the card shows the newer text and keeps the person's as "Your unsaved text", with "Use
-  mine").
+  mine"); the draft was retired meanwhile (S07): the save restores it with the card's text, which makes it the person's.
+  Leaving the field saves only when the text changed.
 - **Actions:** "Send" (the composer's `sendSavedDraft` and its states, `app/components/inbox/send-state.ts`). Send first
   flushes the pending edit, waits for the save, and sends exactly the revision it saved (the expected revision goes with
   the send); Send is disabled while a save is running, has failed or meets a newer revision; "Discard
@@ -49,6 +50,8 @@ draft, by `message_id` for every other row), the card replaces both today's "Dra
 - **States:** no run record (the card shows the draft without the meta line and says "The agent's notes are not
   available"); a narrow window (actions wrap below the text); a member without access to runs (`AgentRunPanel.tsx:26-28`
   rule kept: the text and Send, no meta).
+- **Account drafts and the revision guard:** a provider draft has no revision number; its `draftHash` (S07) is the
+  expected revision that goes with a save and a send, and a mismatch is the "newer revision saved elsewhere" state.
 - **Account drafts** (Gmail, IMAP, Outlook): runs are attached to Cloudflare rows only today (`workers/routes/inbox.ts:345-350`,
   `workers/index.ts:400-419`). The account thread read gains the run lookup by `runIdFor(account, providerMessageId)`;
   the run's `draftId` is the idempotency key, so the provider's draft is resolved through
@@ -73,17 +76,20 @@ every variable part is data:
 - The block follows the `untrusted-fence` pattern (a random fence, a preamble line, forged fence lines neutralised,
   every field length-capped); sender, subject and source titles sit inside it, never in the fixed words.
 - A held message (B-178) is not quoted: the block says only that it is held.
-- **A tuning conversation is read and draft only:** the panel opens it with `mode=tune`, and the server builds that
-  conversation's tool set without moving, marking or discarding mail (today's panel agent can do those,
-  `workers/agent/index.ts:15-23`; it cannot send). A change to the agent is a proposal the person saves in Settings.
+- **A tuning session is its own conversation, read and draft only:** it opens a separate agent instance named
+  `<mailboxId>:tune:<runId>` (the panel's ordinary conversation is `name: mailboxId`, `app/components/AgentPanel.tsx:310`,
+  and keeps its history apart), and the server builds the tool set from that name: no moving, marking or discarding mail
+  (today's panel agent can do those, `workers/agent/index.ts:15-23`; it cannot send). The fenced block never enters the
+  ordinary conversation. Closing the session returns the panel to the ordinary one. A change to the agent is a proposal
+  the person saves in Settings.
 - A link "Open <agent name> settings" goes to Settings → Agents → that agent; a save there makes a new version (R28).
 
 ### The run's outcome when the card sends
 
 Sending the agent's draft is the reply itself, not a retirement (S07): sent as the agent wrote it, the run's `outcome`
-is `approved_by_person`; sent after an edit, `answered_by_person`. `answeredByPerson` is true only for the second, so
-the quality metrics and ticket outcomes (`workers/agents/quality.ts:92`, `ticket-outcome.ts:47`) and the reply agents'
-evals read an approval as the agent's answer.
+is `approved_by_person`; sent after an edit, `answered_by_person`. `answeredByPerson` stays true only for the second.
+Today the run's status stays `drafted` and `ticket-outcome.ts:46-48` and `quality.ts:92` read that as waiting; both
+change to read `outcome.kind` first, so `approved_by_person` counts as answered by the agent (tested in each).
 
 ### Sent by the agent
 
@@ -117,8 +123,8 @@ where it is missing).
   renders last with "Answers a message not in this thread".
 - Unit: autosave timing, the revision guard, the three save states, "Use mine".
 - Unit: every variable field is inside the fence; a subject or source title holding a forged fence line is neutralised;
-  the prompt is not sent by itself; a held message is not quoted; a `mode=tune` conversation has no move, mark or
-  discard tool.
+  the prompt is not sent by itself; a held message is not quoted; a tuning instance has no move, mark or discard tool, decided by
+  its name on the server; the ordinary conversation's history never holds the fenced block.
 - Unit: Send during a pending edit saves first and sends that revision; Send is disabled while saving, after a failed
   save and on a newer revision.
 - WebKit walk: a received message with an agent draft; the card in view on open; edit, send, the card turns into a sent

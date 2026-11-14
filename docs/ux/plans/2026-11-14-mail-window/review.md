@@ -124,5 +124,30 @@ security) and KIMI again ([review/round2-kimi.md](review/round2-kimi.md)). 23 fi
 
 ## Round 3
 
-Planned on the round 2 revision, for S03, S04, S06 and S07 (the specs round 2 changed in substance): a fresh Claude
-reader and Kimi. W1 (S01, S02, S10, S11), where round 2 found nothing blocking, starts building meanwhile.
+On commit `48550dac`, for S03, S04, S06, S07. A fresh Claude verifier (R3) and Kimi
+([review/round3-kimi.md](review/round3-kimi.md); its answer was cut at the token limit after two findings). 17
+findings, 3 blocking; all applied.
+
+| Id | Severity | Disposition |
+|---|---|---|
+| R3-1 | blocking | → S04: every surviving `href` resolved with `new URL()` and kept only when in the record's per-link list; fixtures for `https:\\host`, `https:host`, a split URL |
+| R3-2 | blocking | → S06: a tuning session is its own agent instance `<mailboxId>:tune:<runId>`, tools decided by the name on the server; the ordinary conversation never holds the fenced block |
+| KIMI-23 | blocking | → S03 §3: the held review's release guard also blocks a disguised file; new checks colour, never hold; a release never changes the colour |
+| R3-3 | major | → S06: `ticket-outcome.ts` and `quality.ts` read `outcome.kind`; `approved_by_person` counts as answered |
+| R3-4 | major | → S06, S07: account drafts copied into the server's Discarded store before the provider delete; `draftHash` as their expected revision |
+| R3-5 | major | → S06: a save that finds its draft retired restores it with the card's text; leaving the field saves only on a change |
+| R3-6 | major | → S03 §4: rows for "Reviewed: probably fine", for something fired with no review, for `critical` that is not a floor; green defined without the review |
+| R3-7 | major | → S03: Okolos writes `replyPath` and display-name signals as `major`; the lowering path names those two signals |
+| R3-8 | major | → S03 §2: range reads on R2 and IMAP; whole reads up to 10 MiB on Gmail and Graph |
+| R3-9 | major | → S03 §4: an unread document puts `hidden` and `attachments` in not-run |
+| R3-10 | major | → S03 §4: sent mail and drafts with forwarded content get the links check on open |
+| KIMI-24 | major | → S07: `draftHash` over every editable field |
+| R3-11 | minor | → S03 `feedVersion`; S04's stale rule corrected |
+| R3-12 | minor | → S03: where the DMARC policy is read per receiver; no policy found is amber |
+| R3-13 | minor | → S03 §5: the badge set apart from a subject written to imitate it |
+| R3-14 | minor | → S07: which kind each sender gives and which wins |
+| R3-15 | minor | → README Q2 and Q3 brought in line |
+
+## Round 4
+
+Planned before W2 (S06, S07) and W3 (S03, S04) are built: a fresh reader over those four specs. W1 builds meanwhile.

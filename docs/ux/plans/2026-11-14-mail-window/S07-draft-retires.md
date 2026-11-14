@@ -41,10 +41,18 @@ default). No subject-only guess retires anything.
   it saves nothing, so it stays untouched (a test holds this).
 - A draft sent from the S06 card is the reply itself: it leaves through the existing send path, never through
   retirement; a newer revision saved while it was sending stays a draft (the B-52 rule).
-- Untouched drafts are retired: moved to Discarded with the reason "Answered by a sent reply" («Отвечено отправленным
-  письмом»), which keeps it 30 days and can be restored, not deleted.
+- Untouched drafts are retired: on a Cloudflare address, moved to Discarded with the reason "Answered by a sent reply"
+  («Отвечено отправленным письмом»), kept 30 days and restorable. A Gmail, IMAP or Outlook account has no Discarded
+  folder and its draft delete is permanent (`account-service.ts:1608`), so the draft is first copied into the server's
+  own Discarded store with that reason and its account, then deleted from the provider; Restore saves it back as a
+  provider draft.
 - Edited drafts are the person's: they leave the thread and stay in Drafts, and the thread shows one quiet line "Your
   edited draft is in Drafts" («Ваш изменённый черновик лежит в черновиках») with a link.
+
+**Which kind wins:** the first accepted reply decides and later ones change nothing (idempotent by run). The person
+from the composer or the card: `answered_by_person` (or `approved_by_person` for the agent's draft sent unedited, S06);
+the MCP `reply` tool with a person's key: `answered_by_person`; another agent or the in-app agent: `answered_by_agent`;
+a draft discarded from the card before any reply: `superseded`, which a later reply does not change.
 
 **The run's outcome:** a new field `outcome: {kind, sentMessageId, at}` with `kind` one of `answered_by_person`,
 `approved_by_person` (the agent's draft sent unedited, S06), `answered_by_agent`, `superseded`; `answeredByPerson` stays as it is and becomes true only for `answered_by_person`, so
