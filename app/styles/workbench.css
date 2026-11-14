@@ -2002,3 +2002,75 @@ body.fi-resizing { cursor: col-resize; user-select: none; }
 .fi-add-links.is-compact .fi-add-label {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
+
+/* S02 (B-268): who wrote the open message and to whom. */
+.fi-message-people {
+  align-items: flex-start;
+}
+.fi-people {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  min-width: 0;
+  font-size: 11px;
+}
+.fi-people > div {
+  display: grid;
+  grid-template-columns: minmax(56px, auto) 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+.fi-people dt {
+  color: var(--pc-text-muted);
+  font-size: 10px;
+}
+.fi-people dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fi-people > div:first-child dd {
+  font-weight: 600;
+}
+.fi-address {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: copy;
+  overflow-wrap: anywhere;
+}
+.fi-address:hover,
+.fi-address:focus-visible {
+  text-decoration: underline;
+}
+.fi-you {
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: var(--pc-radius-pill);
+  background: var(--pc-panel-raised);
+  color: var(--pc-text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.fi-copied {
+  margin-left: 6px;
+  color: var(--pc-text-muted);
+  font-size: 10px;
+}
+.fi-people-note {
+  margin: 2px 0 0;
+  color: var(--pc-text-muted);
+  font-size: 10px;
+}
+.fi-more-people {
+  font: inherit;
+  color: var(--pc-text-muted);
+  background: none;
+  border: 0;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}

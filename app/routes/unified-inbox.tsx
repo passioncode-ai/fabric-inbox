@@ -59,6 +59,7 @@ import ConversationList from "~/components/inbox/ConversationList";
 import { loadConversation, markRead, messageBody, type ThreadRow } from "~/components/inbox/thread";
 import AgentRunPanel from "~/components/inbox/AgentRunPanel";
 import HeldPanel from "~/components/inbox/HeldPanel";
+import MessageHeader from "~/components/inbox/MessageHeader";
 import { openFromLink } from "~/components/inbox/open-link";
 import { untouchedDraft } from "~/components/inbox/draft-store";
 import DraftsDialog, { draftRows } from "~/components/inbox/DraftsDialog";
@@ -1618,23 +1619,10 @@ export default function UnifiedInbox() {
                               {restoredRules.length === 0 && <Link to={settingsPath("discard")}>{TT.bannerLink}</Link>}
                             </p>
                           )}
-                          {!threaded && (
-                          <div className="fi-sender">
-                            <span className="fi-avatar">
-                              {senderName(detail.data.from)
-                                .charAt(0)
-                                .toUpperCase()}
-                            </span>
-                            <div>
-                              <strong>{detail.data.from}</strong>
-                              <p>{t("To {to}", { to: detail.data.to })}</p>
-                              {detail.data.cc ? <p>{t("Cc {cc}", { cc: detail.data.cc })}</p> : null}
-                            </div>
-                            <time dateTime={detail.data.date}>
-                              {listDate(detail.data.date, undefined, t)}
-                            </time>
-                          </div>
-                          )}
+                          <MessageHeader message={detail.data} own={owner?.email} catchAll={owner?.catchAll}
+                            provider={selected.provider === "cloudflare" ? "Cloudflare" : (owner?.providerName ?? (selected.provider === "gmail" ? "Gmail" : "IMAP"))}
+                            headersPath={isRemote(selected.provider) ? `${messagePath(selected)}/headers` : undefined}
+                            fetchJson={(url) => fabric(url)} />
                         </header>
                         {threaded ? (
                           <ConversationList rows={conversation.data ?? []} openId={selected.providerMessageId}

@@ -262,7 +262,10 @@ test("an address made in the last 7 days is listed before its first message; an 
 
 test("UI walk 2026-10-08: the reader names Cc; the images notice shows only for remote content; a short address list has no dead collapse button", async () => {
   const reader = readFileSync("app/routes/unified-inbox.tsx", "utf8");
-  assert.match(reader, /detail\.data\.cc \? <p>\{t\("Cc \{cc\}", \{ cc: detail\.data\.cc \}\)\}<\/p> : null/);
+  // S02 (B-268): the reader's header names Cc through MessageHeader, for a single message and a thread's open one.
+  assert.match(reader, /<MessageHeader message=\{detail\.data\}/);
+  const header = readFileSync("app/components/inbox/MessageHeader.tsx", "utf8");
+  assert.match(header, /facts\.cc\.length > 0 && <Line label=\{t\("Cc"\)\}/);
   const { hasRemoteContent } = await import("../app/lib/mail-content");
   assert.equal(hasRemoteContent("Plain text, no markup."), false);
   assert.equal(hasRemoteContent('<p>Hi</p><img src="cid:logo">'), false, "an inline cid: image loads nothing from the network");

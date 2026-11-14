@@ -56,3 +56,21 @@ export function displaySender(address: string | null | undefined, name?: string 
   if (!shown || shown.toLowerCase() === email.toLowerCase()) return email;
   return /[(),.:;@[\]]/.test(shown) ? `"${shown}" <${email}>` : `${shown} <${email}>`;
 }
+
+/**
+ * S02 (B-268): one header's value from a Cloudflare row's stored headers (postal-mime `{key, value}[]` JSON), decoded
+ * like a name; null when the header is absent, undefined when the row kept no headers to read (unknown, not absent).
+ */
+export function storedHeader(rawHeaders: string | null | undefined, name: string): string | null | undefined {
+  if (!rawHeaders) return undefined;
+  let list: unknown;
+  try {
+    list = JSON.parse(rawHeaders);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(list)) return undefined;
+  const wanted = name.toLowerCase();
+  const found = list.find((h) => h && typeof h.key === "string" && h.key.toLowerCase() === wanted);
+  return found ? decodeWords(String(found.value ?? "")).trim() || null : null;
+}
