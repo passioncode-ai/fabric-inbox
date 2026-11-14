@@ -81,3 +81,21 @@ export function sidebarAccounts(accounts: InboxAccount[], options: { filter: Add
   const withoutMail = shown.filter((a) => !listed(a));
   return { visible, hidden, withoutMail };
 }
+
+/** B-266: with more groups than this the sidebar offers a field to find an address or a domain. */
+export const FIND_FROM_GROUPS = 8;
+
+/**
+ * B-266: the addresses a search in the sidebar keeps. A domain whose name holds the words keeps all its addresses; any
+ * other address is kept when its address or name holds them. Case and surrounding spaces do not matter; an empty search
+ * keeps everything.
+ */
+export function matchAccounts(accounts: InboxAccount[], query: string): InboxAccount[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return accounts;
+  return accounts.filter((a) => {
+    const email = a.email.toLowerCase();
+    const domain = a.provider === "cloudflare" ? email.slice(email.lastIndexOf("@") + 1) : "";
+    return domain.includes(q) || email.includes(q) || (a.name ?? "").toLowerCase().includes(q);
+  });
+}

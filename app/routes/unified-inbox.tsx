@@ -66,6 +66,8 @@ import { listServerDrafts, signatureFor } from "~/components/inbox/server-drafts
 import MessageActions, { applyMessageChange, changeMessage, type ActionMessage } from "~/components/inbox/MessageActions";
 import TriagedList from "~/components/inbox/TriagedList";
 import AccountSidebar from "~/components/inbox/AccountSidebar";
+import ColumnResizer from "~/components/ColumnResizer";
+import { LIST_COLUMN, SIDEBAR_COLUMN, columnStyle, readWidth, writeWidth, type ColumnSpec } from "~/lib/column-width";
 import CategorySidebar from "~/components/inbox/CategorySidebar";
 import { progressText, scopeSummary, type CategoryList } from "~/services/categories";
 import { totalUnread } from "~/components/inbox/account-groups";
@@ -153,6 +155,20 @@ function readOpenGroups(): Set<TriageGroup> {
 }
 export default function UnifiedInbox() {
   const t = useT();
+  // B-266: the sidebar's and the mail list's widths the person set on this device (null: the layout's default).
+  const sidebarRef = useRef<HTMLElement>(null);
+  const listRef = useRef<HTMLElement>(null);
+  const [sidebarWidth, setSidebarWidth] = useState<number | null>(null);
+  const [listWidth, setListWidth] = useState<number | null>(null);
+  useEffect(() => {
+    const store = typeof localStorage === "undefined" ? undefined : localStorage;
+    setSidebarWidth(readWidth(SIDEBAR_COLUMN, store));
+    setListWidth(readWidth(LIST_COLUMN, store));
+  }, []);
+  const resized = (spec: ColumnSpec, set: (w: number | null) => void) => (width: number | null, commit: boolean) => {
+    set(width);
+    if (commit) writeWidth(spec, typeof localStorage === "undefined" ? undefined : localStorage, width);
+  };
   const TT = triageText(t);
   const [params, setParams] = useSearchParams();
   const accountId = params.get("account") ?? "",
@@ -969,8 +985,9 @@ export default function UnifiedInbox() {
                       </>
   ) : null;
   return (
-    <main className={"fi-app" + (selected ? " fi-has-selection" : "") + (agentOpen && agentWide ? " fi-agent-open" : "")}>
-      <aside className="fi-sidebar" aria-label={t("Mailbox navigation")}>
+    <main className={"fi-app" + (selected ? " fi-has-selection" : "") + (agentOpen && agentWide ? " fi-agent-open" : "")}
+      style={columnStyle([[SIDEBAR_COLUMN, sidebarWidth], [LIST_COLUMN, listWidth]])}>
+      <aside ref={sidebarRef} className="fi-sidebar" aria-label={t("Mailbox navigation")}>
         <Link to="/" className="fi-brand">
           <img src="/inbox-mark.svg" alt="" />
           <span>
@@ -1116,6 +1133,8 @@ export default function UnifiedInbox() {
           </div>
         </div>
       </aside>
+      <ColumnResizer spec={SIDEBAR_COLUMN} target={sidebarRef} width={sidebarWidth}
+        onChange={resized(SIDEBAR_COLUMN, setSidebarWidth)} label={t("Sidebar width")} />
       <section className="fi-workspace" aria-label={t("Mail workspace")}>
         <header className="fi-toolbar">
           <div>
@@ -1278,7 +1297,7 @@ export default function UnifiedInbox() {
           </div>
         )}
         <div className="fi-content">
-          <section className="fi-message-list" aria-label={t("Messages")}>
+          <section ref={listRef} className="fi-message-list" aria-label={t("Messages")}>
             <div className="fi-list-heading">
               <strong>
                 {search
@@ -1448,6 +1467,8 @@ export default function UnifiedInbox() {
               · {t("Cached mail")}
             </footer>
           </section>
+          <ColumnResizer spec={LIST_COLUMN} target={listRef} width={listWidth}
+            onChange={resized(LIST_COLUMN, setListWidth)} label={t("Mail list width")} />
           <section className="fi-reader" aria-label={t("Message reader")}>
             {marked.size > 1 ? (
               <div className="fi-reader-empty">
