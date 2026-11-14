@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.6.18 (2026-11-14)
+
+**Russian wording without long dashes** (B-265). Russian interface text throughout the app reads with a colon, a comma or brackets where it used a long dash before, and so does the Mac app's own text. Basis: `tests/no-em-dash-ui.test.ts`.
+
+1.6.17 went to the servers only; its desktop changes ship here.
+
 ## 1.6.17 (2026-11-14)
 
 **Cleaner wording in settings and the agent console** (B-265). Labels such as the agent key levels and the console's window title now use a colon or brackets instead of a long dash, in both languages. Basis: `tests/no-em-dash-ui.test.ts`.
