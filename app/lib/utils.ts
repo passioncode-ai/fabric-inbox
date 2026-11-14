@@ -13,6 +13,7 @@ import DOMPurify from "dompurify";
 import { formatQuotedDate } from "shared/dates";
 import { englishT, type T } from "../../shared/i18n";
 import { htmlToText } from "../../shared/mail/text";
+import { quoteHeader } from "./quote-selection";
 import type { Attachment } from "~/types";
 
 export {
@@ -160,7 +161,8 @@ export function getSignatureBlock(settings?: {
 }
 
 /**
- * Build a quoted reply block HTML string from original email data. The words
+ * Build a quoted reply block HTML string from original email data (the text form a selection is quoted in,
+ * S08, is `buildQuotedReplyText` in `./quote-selection`). The words
  * around it ("On …, … wrote:") and the date follow the interface language of
  * the person writing (`t` from `useT()`; English when none is given).
  */
@@ -171,10 +173,9 @@ export function buildQuotedReplyBlock(
 	t: T = englishT,
 ): string {
 	if (!body) return "";
-	const formattedDate = formatQuotedDate(dateStr, t.locale);
-	
-	// HTML-escape sender to prevent <john@example.com> from disappearing as a tag
-	const escapedSender = escapeHtml(sender);
+	// The header is the text one (S08 shares it), HTML-escaped as a whole so <john@example.com> does not
+	// disappear as a tag.
+	const header = escapeHtml(quoteHeader(dateStr, sender, t));
 
 	// Sanitize the body to plain text to prevent stored XSS.
 	// The original HTML renders safely in the sandboxed iframe, but quoted
@@ -184,7 +185,7 @@ export function buildQuotedReplyBlock(
 	// "&nbsp;" and CSS in the quote and ran every line together (bug hunt 2026-10-12).
 	const bodyToQuote = escapeHtml(htmlToText(body)).replace(/\n/g, "<br>");
 
-	return `<br><blockquote style="border-left: 2px solid #ccc; margin: 0; padding-left: 1em; color: #666;">${t("On {date}, {sender} wrote:", { date: formattedDate, sender: escapedSender })}<br><br>${bodyToQuote}</blockquote>`;
+	return `<br><blockquote style="border-left: 2px solid #ccc; margin: 0; padding-left: 1em; color: #666;">${header}<br><br>${bodyToQuote}</blockquote>`;
 }
 
 /**
