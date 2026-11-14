@@ -144,6 +144,12 @@ const conversation = [
   { id: "message-0", folder_id: "inbox", sender: "maya@example.com", sender_name: "Maya Chen", recipient: "hello@example.com", date: messages[0].date, subject: messages[0].subject, thread_id: "thread-0", read: 0,
     body: "<p>The quieter layout is working. I left a few notes on the account switcher.</p><p>Synthetic preview message, not real mail.</p>" },
 ];
+// S05 (B-221): reply headers, a quoted history, and a reply to an earlier message (nested).
+Object.assign(conversation[0], { message_id: "<c1@example.com>", cc: "Kim Ito <kim@example.net>" });
+Object.assign(conversation[1], { message_id: "<c2@example.com>", in_reply_to: "<c1@example.com>" });
+Object.assign(conversation[2], { message_id: "<c3@example.com>", in_reply_to: "<c2@example.com>",
+  body: conversation[2].body + '<div class="gmail_quote"><div class="gmail_attr">On Thu, Maya Chen wrote:</div><blockquote>Open Settings, then Plan, and choose the new plan.</blockquote></div>' });
+Object.assign(conversation[3], { message_id: "<m0@example.com>", in_reply_to: "<c1@example.com>" });
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   if (!url.pathname.startsWith("/api/")) {

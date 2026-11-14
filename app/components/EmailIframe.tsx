@@ -5,9 +5,19 @@
 import DOMPurify from "dompurify";
 import { isBlockedLink } from "../../shared/mail/blocked-links";
 import { mailImagePolicy, type InlineAttachments } from "~/lib/mail-image-policy";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { hasRemoteContent } from "../lib/mail-content";
 import { useT } from "../lib/i18n";
+import { acceptFrameSelection, FRAME_SELECTION_SCRIPT, type QuoteRect } from "../lib/quote-selection";
+
+/**
+ * S08 (B-273): what a message frame tells the reader about the text selected in it. `rect` is the selection's
+ * end in the app window's coordinates; `selection` null means it cleared; `reload` that the frame's content was
+ * replaced (or the frame left), so a selection held from it is gone.
+ */
+export type FrameSelectionReport = { key: string; selection: { text: string; rect: QuoteRect | null } | null; reload?: boolean };
+/** Given by a reader that quotes selections (the unified inbox); frames elsewhere report to nobody. */
+export const QuoteSelectionContext = createContext<((report: FrameSelectionReport) => void) | null>(null);
 
 /**
  * Every link in a message opens a new window with no opener. A message can no
@@ -84,6 +94,9 @@ interface EmailIframeProps {
  *   the opaque-origin sandbox cannot access anything useful.
  * - A strict CSP meta tag blocks external resource loads inside the
  *   iframe as a defense-in-depth layer.
+ * - S08: every frame also runs the selection script (`FRAME_SELECTION_SCRIPT`), which posts the
+ *   visible text a person selects so Reply can quote it. The parent accepts it only from this frame,
+ *   with user activation, re-checked (`acceptFrameSelection`).
  */
 export default function EmailIframe({ body, messageKey, inlineAttachments, autoSize, blockedHosts }: EmailIframeProps) {
 	const t = useT();
@@ -94,22 +107,47 @@ export default function EmailIframe({ body, messageKey, inlineAttachments, autoS
 	const remoteImages = allowedMessage === identity;
 	const inlineKey = JSON.stringify(inlineAttachments ?? null);
 
-	// Listen for height reports from the sandboxed iframe
+	const report = useContext(QuoteSelectionContext);
+	const reportRef = useRef(report);
+	reportRef.current = report;
+	const keyRef = useRef(messageKey ?? "");
+	keyRef.current = messageKey ?? "";
+
+	// Height reports (autoSize) and selections (S08) from the sandboxed iframe
 	const handleMessage = useCallback(
 		(event: MessageEvent) => {
-			if (!autoSize) return;
+			const frame = iframeRef.current;
 			// Only accept messages from our own iframe
-			if (event.source !== iframeRef.current?.contentWindow) return;
+			if (!frame?.contentWindow || event.source !== frame.contentWindow) return;
 			if (
 				event.data &&
 				typeof event.data === "object" &&
-				event.data.__emailIframeHeight &&
-				typeof event.data.height === "number" &&
-				Number.isFinite(event.data.height) &&
-				event.data.height > 0
+				event.data.__emailIframeHeight
 			) {
-				setHeight(Math.min(event.data.height, 30000));
+				if (
+					autoSize &&
+					typeof event.data.height === "number" &&
+					Number.isFinite(event.data.height) &&
+					event.data.height > 0
+				) setHeight(Math.min(event.data.height, 30000));
+				return;
 			}
+			if (!reportRef.current) return;
+			const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation;
+			const selection = acceptFrameSelection(event, frame.contentWindow, activation);
+			if (selection === undefined) return;
+			if (!selection) {
+				reportRef.current({ key: keyRef.current, selection: null });
+				return;
+			}
+			const box = frame.getBoundingClientRect();
+			const rect = selection.rect && {
+				left: box.left + selection.rect.left,
+				top: box.top + selection.rect.top,
+				right: box.left + selection.rect.right,
+				bottom: box.top + selection.rect.bottom,
+			};
+			reportRef.current({ key: keyRef.current, selection: { text: selection.text, rect } });
 		},
 		[autoSize],
 	);
@@ -145,6 +183,8 @@ export default function EmailIframe({ body, messageKey, inlineAttachments, autoS
 				setTimeout(reportHeight, 400);
 			<\/script>`
 			: "";
+		// S08: every frame reports what is selected in it, so Reply can quote it.
+		const selectionScript = `<script>${FRAME_SELECTION_SCRIPT}<\/script>`;
 
 		// Use srcdoc so the iframe is truly sandboxed (no same-origin access).
 		// We can't use doc.write() because that requires allow-same-origin.
@@ -198,8 +238,12 @@ h1, h2, h3 { margin: 8px 0 4px; }
 ul, ol { padding-left: 20px; margin: 4px 0; }
 </style>
 </head>
-<body>${cleanBody}${heightScript}</body>
+<body>${cleanBody}${selectionScript}${heightScript}</body>
 </html>`;
+		// The frame's content was replaced: a selection held from it is gone (SEC-14).
+		const key = keyRef.current;
+		reportRef.current?.({ key, selection: null, reload: true });
+		return () => reportRef.current?.({ key, selection: null, reload: true });
 	}, [body, autoSize, remoteImages, inlineKey, (blockedHosts ?? []).join(",")]);
 
 	return (

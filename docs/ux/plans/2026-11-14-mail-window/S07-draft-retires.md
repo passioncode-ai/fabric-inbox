@@ -33,25 +33,40 @@ default). No subject-only guess retires anything.
 
 **Untouched or edited:**
 - Untouched: on a Cloudflare address, `draft_revision` is null or 1 (B-52), checked in the same transaction that retires
-  it; on an account, the hash of the draft as read back from the provider right after the agent saved it (a new run
-  field `draftHash`, over a canonical form of every field a person can edit: To, Cc, Bcc, subject, the text and HTML
-  bodies with line endings and trailing spaces normalised, and the attachments' names and sizes) equals the
-  hash of the draft read now. A run without `draftHash` (saved before this change), a draft that cannot be read, or a
-  hash that cannot be compared counts as edited, so the draft is kept. Opening a draft in the composer without changing
+  it; on an account, the provider's own draft revision (every provider keeps `draftRevision` and answers a stale one
+  with 409 `draft_conflict`, `workers/providers/provider.ts:126, 156-159`) is still the one the agent's save returned,
+  kept on the run as `agentDraftRevision` (written once, never changed). Any save through the provider, the app's or
+  the provider's own client, changes the revision, attachments included. A run without `agentDraftRevision` (saved
+  before this change) or a draft whose revision cannot be read counts as edited, so the draft is kept. Opening a draft in the composer without changing
   it saves nothing, so it stays untouched (a test holds this).
 - A draft sent from the S06 card is the reply itself: it leaves through the existing send path, never through
-  retirement; a newer revision saved while it was sending stays a draft (the B-52 rule).
-- Untouched drafts are retired: on a Cloudflare address, moved to Discarded with the reason "Answered by a sent reply"
-  («Отвечено отправленным письмом»), kept 30 days and restorable. A Gmail, IMAP or Outlook account has no Discarded
-  folder and its draft delete is permanent (`account-service.ts:1608`), so the draft is first copied into the server's
-  own Discarded store with that reason and its account, then deleted from the provider; Restore saves it back as a
-  provider draft.
+  retirement; the retirement set excludes the draft id the send came from (the outbox `project` step runs before that
+  draft is deleted, `workers/durableObject/index.ts:1043-1053`); a newer revision saved while it was sending stays a
+  draft (the B-52 rule).
+- **Untouched drafts are retired without any destructive step a person's edit could race** (round 5: R5-1, R5-4,
+  KIMI-37; Discarded does not take drafts, `durableObject/index.ts:1612, 1622, 1637-1638`, `provider.ts:91-93`):
+  - On a Cloudflare address: deleted in the same Durable Object transaction that checks `draft_revision` is null or 1,
+    so no edit can land between the check and the delete. The agent's text is kept on the run (a new field
+    `draftText`, at most 20,000 characters, written when the agent saves the draft), so the run's panel can show it
+    and "Make a draft of it again" («Снова сделать черновиком») saves a new draft from it.
+  - On a Gmail, IMAP or Outlook account: the provider's draft is not touched. The run is marked retired and the app
+    hides that draft from the thread and from its Drafts list; the provider's own client still shows it (said in the
+    run's panel: "Still in <provider>'s own Drafts"). Nothing is moved or deleted, so nothing can be lost.
+- **The revision an account draft starts with:** every provider's `createDraft` returns the draft's revision (Gmail its
+  id, IMAP its message id, Outlook a hash of its `changeKey`, `outlook/provider.ts:304, 352-353`), the receipt keeps it
+  and the run stores it as `agentDraftRevision`; an account draft is untouched while its current revision is that one.
+  Hidden only when untouched; an edited one stays visible with the quiet line below.
 - Edited drafts are the person's: they leave the thread and stay in Drafts, and the thread shows one quiet line "Your
   edited draft is in Drafts" («Ваш изменённый черновик лежит в черновиках») with a link.
 
+**Reading the outcome:** `ticket-outcome.ts` and `quality.ts` read `outcome.kind` first, and `answeredByPerson` only
+for runs written before it existed (one rule, the same as S06).
+
 **Which kind wins:** the first accepted reply decides and later ones change nothing (idempotent by run). The person
 from the composer or the card: `answered_by_person` (or `approved_by_person` for the agent's draft sent unedited, S06);
-the MCP `reply` tool with a person's key: `answered_by_person`; another agent or the in-app agent: `answered_by_agent`;
+the MCP `reply` tool and the in-app agent, whatever their key: `answered_by_agent` (an agent sent it; the agent console's
+key is an agent key, B-70); a reply caught at Sent sync from another client: `answered_by_person` unless the run itself
+sent it;
 a draft discarded from the card before any reply: `superseded`, which a later reply does not change.
 
 **The run's outcome:** a new field `outcome: {kind, sentMessageId, at}` with `kind` one of `answered_by_person`,
@@ -69,11 +84,26 @@ run: a second accepted reply changes nothing. Logged as `{event: "agent_draft_re
 
 ## Acceptance
 
-- Worker (workerd), Cloudflare: an accepted reply retires an untouched draft to Discarded, keeps an edited one, keeps a
+- Worker (workerd), Cloudflare: an accepted reply deletes an untouched draft in the revision-checked transaction (its text kept on the run), keeps an edited one, keeps a
   draft answering a later message, retires nothing on an uncertain send and on a forward; the run's `outcome`.
-- Worker, an account fixture (Gmail provider double): the same through the content hash; a run without `draftHash` and
-  a provider that rewrites the saved text keep the draft.
+- Worker, an account fixture (Gmail provider double): an untouched draft is hidden, never moved or deleted; an edited one
+  (revision changed) stays visible; a run without `agentDraftRevision` stays visible; each provider's `createDraft`
+  returns a revision.
 - Worker: a synced sent message naming the thread only in References retires; a subject-only match does not.
 - Unit: opening a draft in the composer without a change leaves its revision unchanged.
-- WebKit walk: send a reply in a thread with an agent's draft card; the card is gone; Discarded holds it.
+- WebKit walk: send a reply in a thread with an agent's draft card; the card is gone; the run's panel offers "Make a draft of it again".
 - The S06 scenario names this step.
+
+## Decisions after round 6 (normative: they override the text above where they differ)
+
+- **R6-3:** the outbox payload carries `sourceDraftId` and `sentBy` (outside the identity hash), so the `project` step
+  can leave out the draft the send came from and record which kind wins.
+- **KIMI-46:** a Cloudflare draft is deleted only when the run holds its complete text (`draftText` is the whole body,
+  up to the draft size limit, and the run says it is complete); a run without it (written before this change) or an
+  incomplete one keeps the draft.
+- **R6-5:** order: the run's outcome is written first, then the draft is deleted; a `project` step that runs again
+  finds the outcome and deletes the draft if it is still there, so a crash leaves at worst a draft that is retired
+  later, never a lost one.
+- **KIMI-49:** one resolver for every path: In-Reply-To, else the last References entry that names a message of the
+  thread; the same function at acceptance and at Sent sync, with one test feeding both.
+- **R6-2:** "Keep as my draft" saves a new draft from the card's text (S06 R6-4); nothing is restored from Discarded.

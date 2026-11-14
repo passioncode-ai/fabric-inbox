@@ -40,9 +40,11 @@ Revised after review round 1 (UX-7, UX-8, IR-8, IR-10, CB-5, CB-6, CB-21).
 - `fromCloudflare` and `fromRemote` keep `inReplyTo`, `references` and `rfcMessageId`; the client types gain
   `inReplyTo`; Outlook's conversion keeps the header. The answered cell is found by `message_id` (sent and received
   rows) and by internal id (an agent's draft, whose `in_reply_to` is the internal id, `runner.ts:1193`).
-- Events come from a separate route, so the thread route's array stays as it is: `GET
-  /api/threads/:accountId/:threadId/events` returning `[{at, kind, textKey, args, messageId}]`, from the automation runs
-  and the safety table; MCP tool `read_thread_events` (level read); `npm run mcp:docs`.
+- Events are read from the routes the app already has, not a new one (decided while building, 2026-11-14): the rule
+  history (`GET /api/automation/:account/runs`) and the safety lookup (`POST /api/safety/lookup`), joined by message id
+  in a pure function (`threadEvents`, `app/components/inbox/quotes.ts`). Agents read the same facts through the existing
+  `list_rules` and `list_held_messages` tools, so no new route needs a tool, and a key's scope stays as it is. A member
+  who cannot read the rule history sees no rule rows.
 
 ## Words
 

@@ -6,6 +6,8 @@ import { senderName, type InboxMessage } from "./model";
 import { unreadOf, type ThreadRow } from "./thread";
 import { listDate } from "./triage-view";
 import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
+import { answeredRows, foldQuotedHtml, isNested, splitQuotedText, type QuoteLabels, type ThreadEvent } from "./quotes";
+import { addressOf, compactRecipients, headerFacts } from "./message-header";
 
 /** Messages shown whole at once; earlier ones wait behind "Show earlier messages" (a long thread stays light). */
 const SHOWN = 25;
@@ -19,8 +21,10 @@ const SHOWN = 25;
  * Reply, Reply all and Forward act on it. Opening the conversation reads it, as opening a message does.
  * Shown only when the conversation has more than one message.
  */
-export default function ConversationList({ rows, openId, onOpen, loadBody, onMarkRead, renderOpen }: {
+export default function ConversationList({ rows, openId, onOpen, loadBody, onMarkRead, renderOpen, events = [] }: {
   rows: ThreadRow[];
+  /** S05 (B-221): what rules and the safety check did to the thread's messages, shown as thin rows after each one. */
+  events?: ThreadEvent[];
   openId: string;
   onOpen: (message: InboxMessage) => void;
   /** A message's HTML or text, for a cell whose body the thread route did not carry (Gmail, IMAP, Outlook). */
@@ -34,6 +38,17 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
   const [failed, setFailed] = useState(false);
   const [earlier, setEarlier] = useState(false);
   const openRef = useRef<HTMLElement | null>(null);
+  const cells = useRef(new Map<string, HTMLElement>());
+  const [goto, setGoto] = useState<string | null>(null);
+  // "Go to message": the answered cell is shown (opening the earlier ones when it is among them), scrolled to and focused.
+  useEffect(() => {
+    if (!goto) return;
+    const cell = cells.current.get(goto);
+    if (!cell) return;
+    cell.scrollIntoView?.({ block: "start" });
+    cell.focus();
+    setGoto(null);
+  }, [goto, earlier]);
   const unread = rows.length > 1 ? unreadOf(rows) : [];
   const threadKey = rows[0]?.message.threadId ?? "";
   // Reading the conversation reads it, once per conversation opened; a refusal is said, with a retry.
@@ -48,6 +63,8 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
   if (rows.length < 2) return null;
   const hidden = earlier ? 0 : Math.max(0, rows.length - SHOWN);
   const shown = rows.slice(hidden);
+  const answered = answeredRows(rows.map((r) => ({ internalId: r.message.providerMessageId, rfcMessageId: r.rfcMessageId,
+    inReplyTo: r.inReplyTo, references: r.references, draft: r.kind === "draft" })));
   return (
     <section className="fi-thread" aria-label={t("Conversation")}>
       <div className="fi-thread-head">
@@ -67,12 +84,17 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
         </button>
       )}
       <ol className="fi-thread-cells">
-        {shown.map((row) => {
+        {shown.map((row, k) => {
           const open = row.message.providerMessageId === openId;
+          const index = hidden + k;
+          const answers = answered[index]!;
+          const nested = isNested(answers, index);
+          const target = answers >= 0 ? rows[answers] : undefined;
           return (
             <li key={row.message.id}>
-              <article ref={open ? openRef : undefined} className={"fi-thread-cell" + (open ? " is-open" : "") + (row.kind !== "received" ? " is-outgoing" : "")
-                + (row.sentBy === "agent" || row.sentBy === "agent_waiting" ? " is-agent" : "")} aria-current={open ? "true" : undefined}>
+              <article ref={(el) => { if (open) openRef.current = el; if (el) cells.current.set(row.message.id, el); else cells.current.delete(row.message.id); }}
+                tabIndex={-1} className={"fi-thread-cell" + (open ? " is-open" : "") + (row.kind !== "received" ? " is-outgoing" : "")
+                + (row.sentBy === "agent" || row.sentBy === "agent_waiting" ? " is-agent" : "") + (nested ? " is-nested" : "")} aria-current={open ? "true" : undefined}>
                 <header className="fi-thread-cell-head">
                   {open ? (
                     <span className="fi-thread-cell-who"><strong>{whoSent(row, t)}</strong><WhoChip row={row} /></span>
@@ -84,14 +106,73 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
                   )}
                   <time dateTime={row.message.date}>{listDate(row.message.date, undefined, t)}</time>
                 </header>
+                <CellPeople row={row} />
+                {answers === -2 && <p className="fi-thread-reply-to">{t("In reply to an earlier message")}</p>}
+                {nested && target && <ReplyTo target={target} onGo={() => { if (answers < hidden) setEarlier(true); setGoto(target.message.id); }} />}
                 <div className="fi-thread-cell-body">{open ? renderOpen() : <CellBody row={row} loadBody={loadBody} />}</div>
               </article>
+              {events.filter((e) => e.messageId === row.message.providerMessageId).map((e, i) => (
+                <p key={`${e.kind}-${i}`} className={"fi-thread-event is-" + e.kind}>
+                  {eventText(e, t)}{e.at ? <> · <time dateTime={new Date(e.at).toISOString()}>{listDate(new Date(e.at).toISOString(), undefined, t)}</time></> : null}
+                </p>
+              ))}
             </li>
           );
         })}
       </ol>
     </section>
   );
+}
+
+/** S05 (B-221): the cell's one line of who wrote to whom: the sender's address, the first recipient and how many more. */
+function CellPeople({ row }: { row: ThreadRow }) {
+  const facts = headerFacts({ from: row.message.sender, to: row.message.recipient, cc: row.cc });
+  const { first, more } = compactRecipients(facts);
+  const from = addressOf(row.message.sender);
+  if (!from && !first) return null;
+  return (
+    <p className="fi-thread-people">
+      {from}{first ? <> → {first.address || first.text}{more > 0 ? `, +${more}` : ""}</> : null}
+    </p>
+  );
+}
+
+/** S05: "In reply to <name>, <date>" for a reply that does not answer the cell above it; opens the answered lines in place. */
+function ReplyTo({ target, onGo }: { target: ThreadRow; onGo: () => void }) {
+  const t = useT();
+  const [showing, setShowing] = useState(false);
+  const name = target.kind === "received" ? senderName(target.message.sender) : whoSent(target, t);
+  return (
+    <div className="fi-thread-reply-to">
+      <button type="button" className="fi-thread-reply-toggle" aria-expanded={showing} onClick={() => setShowing(!showing)}>
+        {t("In reply to {name}, {date}", { name, date: listDate(target.message.date, undefined, t) })}
+      </button>
+      {showing && (
+        <div className="fi-thread-reply-quote">
+          <p>{target.message.snippet || t("This message has no text.")}</p>
+          <button type="button" className="fi-thread-action" onClick={onGo}>{t("Go to message")}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** S05: a thread event in the reader's words. */
+function eventText(e: ThreadEvent, t: ReturnType<typeof useT>): string {
+  const v = e.values;
+  switch (e.code) {
+    case "rule_waiting": return t("The rule {name} waits for your approval", v);
+    case "rule_failed": return t("The rule {name} failed on this message", v);
+    case "rule_forwarded": return t("The rule {name} forwarded this to {to}", v);
+    case "rule_archived": return t("The rule {name} archived this", v);
+    case "rule_marked_read": return t("The rule {name} marked this read", v);
+    case "rule_drafted": return t("The rule {name} prepared a reply draft", v);
+    case "rule_called_tool": return t("The rule {name} called the tool {tool}", v);
+    case "safety_held": return t("The safety check held this message");
+    case "safety_kept": return t("You kept this message held");
+    case "safety_released_by_review": return t("The safety check's review released this message");
+    case "safety_released": return t("You released this message");
+  }
 }
 
 function whoSent(row: ThreadRow, t: ReturnType<typeof useT>): string {
@@ -122,7 +203,8 @@ function CellBody({ row, loadBody }: { row: ThreadRow; loadBody: (message: Inbox
     enabled: !carried,
     staleTime: 300_000,
   });
-  if (carried) return row.body ? <EmailIframe messageKey={row.message.id} body={row.body} autoSize blockedHosts={row.message.held?.links} /> : <p className="fi-thread-text">{t("This message has no text.")}</p>;
+  const labels: QuoteLabels = { show: t("Show quoted text"), hide: t("Hide quoted text") };
+  if (carried) return row.body ? <EmailIframe messageKey={row.message.id} body={foldQuotedHtml(row.body, labels)} autoSize blockedHosts={row.message.held?.links} /> : <p className="fi-thread-text">{t("This message has no text.")}</p>;
   if (body.isPending) return <p className="fi-thread-text is-loading">{t("Loading…")}</p>;
   if (body.isError)
     return (
@@ -131,6 +213,23 @@ function CellBody({ row, loadBody }: { row: ThreadRow; loadBody: (message: Inbox
         <button type="button" className="fi-thread-action" onClick={() => void body.refetch()}>{t("Try again")}</button>
       </p>
     );
-  if (body.data.html) return <EmailIframe messageKey={row.message.id} body={body.data.html} autoSize blockedHosts={row.message.held?.links} />;
-  return <div className="fi-thread-text">{body.data.text || t("This message has no text.")}</div>;
+  if (body.data.html) return <EmailIframe messageKey={row.message.id} body={foldQuotedHtml(body.data.html, labels)} autoSize blockedHosts={row.message.held?.links} />;
+  return body.data.text ? <QuotedText text={body.data.text} /> : <div className="fi-thread-text">{t("This message has no text.")}</div>;
+}
+
+/** S05: a text body with its quoted history folded under "Show quoted text". */
+export function QuotedText({ text, className = "fi-thread-text" }: { text: string; className?: string }) {
+  const t = useT();
+  const { main, quote } = splitQuotedText(text);
+  return (
+    <div className={className}>
+      {main}
+      {quote && (
+        <details className="fi-quote">
+          <summary><span className="fi-quote-show">{t("Show quoted text")}</span><span className="fi-quote-hide">{t("Hide quoted text")}</span></summary>
+          <div className="fi-quote-text">{quote}</div>
+        </details>
+      )}
+    </div>
+  );
 }

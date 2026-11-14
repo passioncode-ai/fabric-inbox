@@ -589,6 +589,17 @@ body {
   overflow: auto;
   flex: 1;
   min-height: 0;
+  /* S08: "Reply with quote" is placed in it, under the selection's end. */
+  position: relative;
+}
+/* S08 (B-273): the small button at the end of a selection in the open message. */
+.fi-quote-button {
+  position: absolute;
+  z-index: 5;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  box-shadow: var(--pc-shadow-overlay);
 }
 .fi-message-header {
   padding: 34px 34px 20px;
@@ -2302,4 +2313,78 @@ body.fi-resizing { cursor: col-resize; user-select: none; }
   .fi-rules-card,
   .fi-rules-switch > span,
   .fi-rules-switch > span::after { transition: none; }
+}
+
+/* S05 (B-221): who wrote to whom in a cell, what a reply answered, nesting, folded quotes. */
+.fi-thread-people {
+  margin: 0;
+  padding: 0 12px 8px;
+  background: var(--pc-surface-hover, rgba(127, 127, 127, 0.06));
+  color: var(--pc-text-muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.fi-thread-cell.is-nested {
+  margin-left: 24px;
+  border-left: 2px solid var(--pc-border);
+  padding-left: 14px;
+}
+.fi-thread-cell:focus-visible {
+  outline: 2px solid var(--pc-focus);
+  outline-offset: 2px;
+}
+.fi-thread-reply-to {
+  margin: 0;
+  padding: 6px 12px 0;
+  font-size: 11px;
+  color: var(--pc-text-muted);
+}
+.fi-thread-reply-toggle {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.fi-thread-reply-quote {
+  margin-top: 6px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--pc-border-strong);
+  background: var(--pc-panel-raised);
+  border-radius: 0 var(--pc-radius-control) var(--pc-radius-control) 0;
+}
+.fi-thread-reply-quote p {
+  margin: 0 0 6px;
+  color: var(--pc-text);
+}
+details.fi-quote {
+  margin: 10px 0 0;
+}
+details.fi-quote > summary {
+  cursor: pointer;
+  color: var(--pc-text-muted);
+  font-size: 11px;
+  list-style: none;
+}
+details.fi-quote > summary::-webkit-details-marker {
+  display: none;
+}
+details.fi-quote[open] .fi-quote-show,
+details.fi-quote:not([open]) .fi-quote-hide {
+  display: none;
+}
+.fi-quote-text {
+  white-space: pre-wrap;
+  color: var(--pc-text-muted);
+}
+.fi-thread-event {
+  margin: 6px 0 0 12px;
+  color: var(--pc-text-muted);
+  font-size: 10px;
+}
+.fi-thread-event.is-safety {
+  color: var(--pc-warning-text, var(--pc-text-muted));
 }

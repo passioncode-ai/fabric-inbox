@@ -116,6 +116,9 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Attachments": "Вложения",
 	"Downloading…": "Скачиваем…",
 	"Reply all": "Ответить всем",
+	// S08 (B-273): quoting the selected text in a reply.
+	"Select text in the message to quote it": "Выделите текст в письме, чтобы процитировать его",
+	"Reply with quote": "Ответить с цитатой",
 	"Rules for this account": "Правила для этого аккаунта",
 	"Rules for this address": "Правила для этого адреса",
 	"Accepted by the email provider. Recipient delivery is not confirmed.": "Почтовый провайдер принял письмо. Доставка получателю не подтверждена.",
@@ -378,6 +381,23 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"and {n} more": "и ещё {n}",
 	"Copy {address}": "Скопировать {address}",
 	"Received at": "Получено на",
+	// S05 (B-221): what a reply answered, and its quoted history folded.
+	"In reply to {name}, {date}": "В ответ на {name}, {date}",
+	"In reply to an earlier message": "В ответ на более раннее письмо",
+	"Go to message": "Перейти к письму",
+	"Show quoted text": "Показать цитату",
+	"Hide quoted text": "Скрыть цитату",
+	"The rule {name} waits for your approval": "Правило «{name}» ждёт вашего одобрения",
+	"The rule {name} failed on this message": "Правило «{name}» не сработало на этом письме",
+	"The rule {name} forwarded this to {to}": "Правило «{name}» переслало это письмо на {to}",
+	"The rule {name} archived this": "Правило «{name}» отправило это письмо в архив",
+	"The rule {name} marked this read": "Правило «{name}» отметило это письмо прочитанным",
+	"The rule {name} prepared a reply draft": "Правило «{name}» подготовило черновик ответа",
+	"The rule {name} called the tool {tool}": "Правило «{name}» вызвало инструмент {tool}",
+	"The safety check held this message": "Проверка безопасности задержала это письмо",
+	"You kept this message held": "Вы оставили это письмо задержанным",
+	"The safety check's review released this message": "Проверка безопасности отпустила это письмо после разбора",
+	"You released this message": "Вы отпустили это письмо",
 	// S01 (B-267)
 	"All groups": "Все группы",
 };

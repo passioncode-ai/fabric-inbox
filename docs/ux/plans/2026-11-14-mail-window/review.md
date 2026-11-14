@@ -150,4 +150,61 @@ findings, 3 blocking; all applied.
 
 ## Round 4
 
-Planned before W2 (S06, S07) and W3 (S03, S04) are built: a fresh reader over those four specs. W1 builds meanwhile.
+On the round 3 revision (`3f681ff9`, on `main` since `9b44fda7`), for S03, S04, S06, S07. A fresh Claude verifier (R4)
+and Kimi ([review/round4-kimi.md](review/round4-kimi.md)). 17 findings, 4 blocking; all applied. Two claims of the
+earlier revisions were wrong and are corrected: providers' drafts do have a revision (`draftRevision`, 409
+`draft_conflict`), and every account kind has a Discarded place; both make S07 simpler.
+
+| Id | Severity | Disposition |
+|---|---|---|
+| R4-1, KIMI-26 | blocking | → S03 §3, README Q2: the review only raises; `likely_benign_sender_mismatch` and "Reviewed: probably fine" are gone; a brand named on another domain (`brandMismatch`, `critical`) is a red floor |
+| KIMI-25 | blocking | → S03 §3: a program or disguised file found by its bytes holds the message from agents (`suspect()`) |
+| KIMI-29 | blocking | → S06, S07: the provider's own `draftRevision` for saves and sends; `agentDraftRevision` on the run, written once, decides untouched |
+| R4-2, KIMI-27 | major | → S03 §4, S04: lookalike From and links are red floors; S04's table moves them to the red row |
+| R4-3, KIMI-28 | major | → S03 §4, S04: sent mail and drafts get the links check on open and are guarded like received mail |
+| R4-4 | major | → S04: links stored in canonical `new URL(decoded).href` in `findings.check.links`, sent with the record before the body renders; `mailto:` by scheme; `linkDecision` takes the current feed version |
+| R4-5 | major | → S04 acceptance: grey split into links clean (kept) and links not complete (removed) |
+| R4-6 | major | → S06, S07: revisions as above; the move to Discarded re-reads the revision and is refused on a mismatch |
+| R4-7 | major | → S07: retirement moves to the account's own Discarded with the existing sweep, restore action and tool; no new store |
+| R4-8 | major | → S06: the tuning name split on the last `:tune:`, the run checked against the mailbox, the conversation deleted on close or after 24 hours, the button hidden for members |
+| KIMI-30 | major | → S06: the first change is saved at once, so it is the person's before any retirement; text kept on the device until acknowledged |
+| KIMI-31 | major | → S07: the provider revision changes with any save, attachments included; no hash of names and sizes |
+| R4-9 | minor | → S07: one reading rule (`outcome.kind` first); MCP and in-app sends are `answered_by_agent`; Sent sync is `answered_by_person` unless the run sent it |
+| R4-10 | minor | → S03: `checkSenderIdentity` called once per From address |
+
+## Round 5
+
+On `695f4c91`, for S03, S04, S06, S07. A fresh Claude verifier (R5) and Kimi
+([review/round5-kimi.md](review/round5-kimi.md)). 15 findings, 3 blocking; all applied. S07 is redesigned so that
+nothing a person may be editing is moved or deleted outside one atomic step.
+
+| Id | Severity | Disposition |
+|---|---|---|
+| R5-1 | blocking | → S07: Discarded does not take drafts; a Cloudflare draft is deleted in the revision-checked transaction with its text kept on the run (`draftText`, "Make a draft of it again"); an account draft is only hidden in the app |
+| R5-2 | blocking | → S03: `POST /api/safety/check` writes only `findings.check`, never the state; a test holds a held message held |
+| KIMI-32 | blocking | → S03 §3: the held review releases only mail held for the light model's YES alone; any Okolos floor waits for a person (narrows B-178) |
+| R5-3 | major | → S03 §3: a red sender floor makes a reply agent draft instead of send |
+| R5-4, KIMI-37 | major | → S07: no move on accounts at all, so no race with an edit |
+| R5-5 | major | → S07: every provider's `createDraft` returns its revision, stored as `agentDraftRevision` |
+| KIMI-33 | major | → S03 §3: each document's text (4,000 characters) goes to the review inside the fence |
+| KIMI-34 | major | → S04: every link found has a record in the reader's own list, checked or not; unchecked `http(s)` asks, unparsable never opens |
+| KIMI-35 | major | → S06: a tuning instance has no tools at all |
+| KIMI-36 | major | → S06: the card loads the draft's current revision, so an untouched Send has one |
+| KIMI-38 | major | → S06: a run with an outcome shows no card; an edited draft shows only the quiet line |
+| R5-6 | minor | → S03: `checkReplyPath` once per Reply-To address |
+| R5-7 | minor | → S07: the retirement set excludes the draft the send came from |
+| KIMI-39 | minor | → S03 §4: precedence red, then review-raised amber, then sender-only amber |
+| KIMI-40 | minor | → S03 §2: one place says how bytes are read per provider |
+
+## Round 6, and the end of the spec review
+
+On `2af683e6`. A fresh Claude verifier (R6, 8 findings, 2 blocking) and Kimi (KIMI-41 to KIMI-49, 2 blocking,
+[review/round6-kimi.md](review/round6-kimi.md)). Every one is answered in the section "Decisions after round 6" at the
+end of S03, S04, S06 and S07 (normative where it differs from the text above it); KIMI-41 is recorded as an accepted
+risk with its reason.
+
+**Why the review stops here.** task-pipeline caps a review loop at three rounds per node and parks what is left with
+its evidence (`references/loop-guard.md`); these four specs had six. Rounds 4 to 6 found fewer and narrower defects
+(17, 15, 17 findings, mostly races and protocol edges an implementation and its tests settle better than prose). The
+remaining assurance moves to the build: each decision above names its test, and the build's blind verification tiers
+(unit, seam, product, security) read the code against these specs.

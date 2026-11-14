@@ -35,7 +35,9 @@ draft, by `message_id` for every other row), the card replaces both today's "Dra
 - **Where its facts came from, always visible:** "Answered from:" and each source as a link (the knowledge entry, or the
   message it cites). Tools called, model and checker fold under "How it was made" («Как он составлен»).
 - **The text, editable in place**, with recipients and subject in one line above ("Edit recipients" opens the full
-  composer on the same draft). Saved as the draft's next revision 1.5 s after typing stops and on leaving the field;
+  composer on the same draft). The first change is saved at once (from then on the draft is the person's, so a reply sent elsewhere never retires it,
+  S07); later changes are saved 1.5 s after typing stops and on leaving the field; until a save is acknowledged the text
+  is kept on the device (the composer's draft store);
   the B-52 revision guard applies. States: saving, saved, save failed (Retry, the text kept on the device), a newer
   revision saved elsewhere (the card shows the newer text and keeps the person's as "Your unsaved text", with "Use
   mine"); the draft was retired meanwhile (S07): the save restores it with the card's text, which makes it the person's.
@@ -50,8 +52,11 @@ draft, by `message_id` for every other row), the card replaces both today's "Dra
 - **States:** no run record (the card shows the draft without the meta line and says "The agent's notes are not
   available"); a narrow window (actions wrap below the text); a member without access to runs (`AgentRunPanel.tsx:26-28`
   rule kept: the text and Send, no meta).
-- **Account drafts and the revision guard:** a provider draft has no revision number; its `draftHash` (S07) is the
-  expected revision that goes with a save and a send, and a mismatch is the "newer revision saved elsewhere" state.
+- **Account drafts and the revision guard:** a provider draft has its own `draftRevision`
+  (`workers/providers/provider.ts:126, 156-159`); the card loads the draft with its current revision and sends the
+  revision it loaded or its own last save returned (an untouched Send included, KIMI-36), and a 409
+  `draft_conflict` is the "newer revision saved elsewhere" state. The run's `agentDraftRevision` (S07) is never used as
+  the expected revision.
 - **Account drafts** (Gmail, IMAP, Outlook): runs are attached to Cloudflare rows only today (`workers/routes/inbox.ts:345-350`,
   `workers/index.ts:400-419`). The account thread read gains the run lookup by `runIdFor(account, providerMessageId)`;
   the run's `draftId` is the idempotency key, so the provider's draft is resolved through
@@ -76,12 +81,17 @@ every variable part is data:
 - The block follows the `untrusted-fence` pattern (a random fence, a preamble line, forged fence lines neutralised,
   every field length-capped); sender, subject and source titles sit inside it, never in the fixed words.
 - A held message (B-178) is not quoted: the block says only that it is held.
-- **A tuning session is its own conversation, read and draft only:** it opens a separate agent instance named
+- **A tuning session is its own conversation, with no tools:** it opens a separate agent instance named
   `<mailboxId>:tune:<runId>` (the panel's ordinary conversation is `name: mailboxId`, `app/components/AgentPanel.tsx:310`,
-  and keeps its history apart), and the server builds the tool set from that name: no moving, marking or discarding mail
-  (today's panel agent can do those, `workers/agent/index.ts:15-23`; it cannot send). The fenced block never enters the
+  and keeps its history apart). The server splits the name on its last `:tune:`, takes the mailbox from the part before
+  it (the agent reads its mailbox from `this.name`, `workers/agent/index.ts:273-276`), refuses a run that does not
+  belong to that mailbox, deletes the conversation when the panel closes it or after 24 hours, and gives that instance
+  no tools at all (round 5, KIMI-35): everything it needs is in the prepared message, and a message an attacker wrote
+  cannot steer it into reading, drafting, moving or discarding mail (today's panel agent has those tools,
+  `workers/agent/index.ts:15-23`; it cannot send). The fenced block never enters the
   ordinary conversation. Closing the session returns the panel to the ordinary one. A change to the agent is a proposal
   the person saves in Settings.
+- "Tune the agent" is hidden for a member (members are refused `/agents/*`, `workers/lib/member-gate.ts:49`).
 - A link "Open <agent name> settings" goes to Settings → Agents → that agent; a save there makes a new version (R28).
 
 ### The run's outcome when the card sends
@@ -90,6 +100,12 @@ Sending the agent's draft is the reply itself, not a retirement (S07): sent as t
 is `approved_by_person`; sent after an edit, `answered_by_person`. `answeredByPerson` stays true only for the second.
 Today the run's status stays `drafted` and `ticket-outcome.ts:46-48` and `quality.ts:92` read that as waiting; both
 change to read `outcome.kind` first, so `approved_by_person` counts as answered by the agent (tested in each).
+
+### When the thread was answered
+
+A run with an `outcome` (S07) shows no card and no editable panel: an untouched draft is gone (Cloudflare) or hidden
+(accounts), and an edited one is listed only as the quiet line "Your edited draft is in Drafts". A card open at that
+moment shows the S07 notice instead of disappearing under the person's hands.
 
 ### Sent by the agent
 
@@ -123,8 +139,8 @@ where it is missing).
   renders last with "Answers a message not in this thread".
 - Unit: autosave timing, the revision guard, the three save states, "Use mine".
 - Unit: every variable field is inside the fence; a subject or source title holding a forged fence line is neutralised;
-  the prompt is not sent by itself; a held message is not quoted; a tuning instance has no move, mark or discard tool, decided by
-  its name on the server; the ordinary conversation's history never holds the fenced block.
+  the prompt is not sent by itself; a held message is not quoted; a tuning instance has no tools at all, decided by its name on the
+  server; the ordinary conversation's history never holds the fenced block.
 - Unit: Send during a pending edit saves first and sends that revision; Send is disabled while saving, after a failed
   save and on a newer revision.
 - WebKit walk: a received message with an agent draft; the card in view on open; edit, send, the card turns into a sent
@@ -134,3 +150,21 @@ where it is missing).
 ## Out of scope
 
 Changing a reply agent's prompt or mode (R28); B-224's other chips (Summarize, Translate).
+
+## Decisions after round 6 (normative: they override the text above where they differ)
+
+- **R6-2, KIMI-45:** "Discard draft" does what retirement does (S07): on a Cloudflare address it deletes the draft in
+  the revision-checked transaction after its full text is on the run; on an account it hides the draft in the app. It
+  never moves a draft to Discarded (Discarded does not take drafts).
+- **R6-4:** making a draft again (from the run's text, or "Keep as my draft") always saves a **new** draft id, marked
+  as the person's (its revision starts at 2, and a new run field `personDraftId` names it), so it is never taken for an
+  untouched agent draft and never overwrites one. A save that answers `gone` (`workers/lib/mailbox-drafts.ts:67`) shows
+  "This draft was removed because a reply was sent" with "Keep as my draft".
+- **KIMI-48:** the card's first change is saved at once; until that save is acknowledged the text stays on the device,
+  and if retirement wins the race, the acknowledgement path is the `gone` state above, which keeps the text and offers
+  "Keep as my draft". The full composer behaves the same (its first change saves at once). Tests: an external reply
+  arrives before the first save, in the card and in the composer; the text survives.
+- **KIMI-44:** the tuning message also carries, outside the fence (it is the person's own data), the agent's current
+  version's instructions and policy and the cited knowledge entries' text (each at most 2,000 characters).
+- **R6-8:** the tuning instance gets its own fixed system prompt (`TUNING_PROMPT`, a new template beside the shipped
+  ones, R28), not the panel's mailbox prompt.
