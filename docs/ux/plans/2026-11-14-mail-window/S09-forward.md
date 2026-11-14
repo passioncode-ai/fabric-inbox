@@ -4,42 +4,45 @@
 во время форварда типа убрать это, просмотреть интерфейс типа форварда, сэнда вот этого всего, чтобы корректно все
 работало».
 
+Revised after review round 1 (KIMI-9, UX-12, UX-20, IR-7, IR-12, CB-13). Lands in W3, after S03.
+
 ## Today
 
-- Forward lists the original files but does not attach them; the person must press "Include original attachments"
+- Forward lists the original files but attaches them only on "Include original attachments"
   (`app/components/inbox/Composer.tsx:579-614`, `includeOriginals` `:284-360`).
-- Each included file has Remove (`:537-566`), yet sending is refused while any original is missing ("Include all
-  original attachments before forwarding", `app/components/inbox/compose-payload.ts:42-45`, `missingOriginals`
-  `:11-15`): in practice an original cannot be left out.
+- `missingOriginals` means "in the original but not included" (`compose-payload.ts:11-15`), so removing an included
+  original makes Send refuse again ("Include all original attachments before forwarding", `:42-45`;
+  `tests/attachment-composer.test.ts:308-331` checks the refusal).
 - The bound for one message is 10 files and 5 MiB (`shared/mail/attachments.ts:10-11`).
 
 ## Target
 
-- **Forward attaches the originals at once**, in the order of the original, as the composer opens (the same
-  `includeOriginals` path, started by itself). While they load, each shows its progress; Send waits for them, with
-  "Attaching files…" («Прикрепляю файлы…»).
-- **Each file can be removed** before sending; a removed original is left out on purpose, so sending is allowed. The
-  "Include all original attachments before forwarding" refusal is removed; `missingOriginals` remains only for files
-  that failed to load and were not removed (those still block, with Retry and Remove on each).
-- **More than fits:** the files that fit within 10 files and 5 MiB are attached in order; the rest are listed as "Left
-  out: too large for one message" («Не поместилось в одно письмо») with their size; sending is allowed (Q9).
-- **The forward screen reviewed:** From (the account the message arrived at, changeable as today), To, Cc and Bcc,
-  subject "Fwd: <subject>", the person's text, then the original (HTML as it was, SCN-009 2026-10-21), then the files.
-  A file with an amber verdict (S03) is attached with its verdict chip; a red one is not attached by itself ("Not attached: the safety check found this file dangerous", with "Attach anyway").
-- **Send states:** the composer's (`send-state.ts`), unchanged.
-
-## Words
-
-| English | Russian |
-|---|---|
-| Attaching files… | Прикрепляю файлы… |
-| Left out: too large for one message | Не поместилось в одно письмо |
-| Not attached: the safety check found this file dangerous | Не прикреплён: проверка сочла файл опасным |
-| Attach anyway | Всё равно прикрепить |
+- **Step 0 of the build: walk today's forward and send** in WebKit on the preview fixture (HTML and text originals, with
+  and without files, Cc and Bcc, a send that fails) and record each defect here with `file:line`, fixed in this change
+  or filed as a row.
+- **Originals attached at once**, in the original's order, as the composer opens (the same `includeOriginals` path);
+  while they load each shows its progress and Send waits with "Attaching files…" («Прикрепляем файлы…»).
+- **Each file can be removed.** A removed original is left out on purpose: the draft keeps a `leftOut` set of original
+  attachment ids (allowed by the draft sanitizer, `draft-store.ts:190`, and part of `contentKey`, `server-drafts.ts:193`;
+  drafts saved before default to an empty set). `missingOriginals` becomes "in the original, not included and not left
+  out". Send is refused only by an original that failed to load and was neither retried nor removed. The string
+  "Include all original attachments before forwarding" and its Russian are retired.
+- **More than fits:** originals are attached in order while they fit in 10 files and 5 MiB; the rest are listed as
+  "Did not fit in one message" («Не поместился в одно письмо», plural forms through `t.plural`) with their size, in
+  `leftOut`. Adding the person's own file when there is no room says "No room left: remove a file first" («Места нет:
+  сначала уберите файл»).
+- **The safety chip** (S03's file colour, by attachment id): amber files are attached with their chip and its word;
+  a red file is not attached by itself ("Not attached: the safety check found this file dangerous" / «Не прикреплён:
+  проверка нашла файл опасным», with "Attach anyway" / «Всё равно прикрепить»); a file with no verdict is attached with
+  a grey "Not checked" chip.
+- **The screen:** From (the account the message arrived at, changeable as today), To, Cc, Bcc, subject "Fwd:
+  <subject>", the person's text, then the original as it was (SCN-009, 2026-10-21), then the files. Send states as the
+  composer's (`send-state.ts`).
 
 ## Acceptance
 
-- Unit (`tests/attachment-composer.test.ts` extended): originals attached on open; removing one allows send; over the
-  bound attaches the first that fit and lists the rest; a failed load blocks until Retry or Remove.
-- WebKit walk on the fixture with a message of 3 files, one removed, forwarded; the sent payload carries 2.
-- SCN-009 updated (its "Only chosen successfully prepared attachments go" stays true).
+- Unit (`tests/attachment-composer.test.ts`, the refusal test rewritten): originals attached on open; removing one
+  allows send and survives a reload; over the bound fills in order and lists the rest; a failed load blocks until
+  Retry or Remove; a red file is not attached by itself.
+- WebKit walk: a message with 3 files, one removed, forwarded; the sent payload carries 2.
+- SCN-009 updated; the defects of step 0 listed with their outcome.

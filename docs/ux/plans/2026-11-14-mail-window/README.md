@@ -6,7 +6,7 @@
   `copywriting` and the copy check for every string in both locales; the agent architect consulted for S3 and S6
   (`audit.py consult`, 2026-11-14: template `support-answerer`, pattern `untrusted-fence`).
 - **Recon:** read on `main` `1f988fc8`; every "Today" line in a spec cites `file:line` at that commit.
-- **Status:** specs written, review below, then build in waves (section "Waves").
+- **Status:** specs written, review round 1 done and applied ([review.md](review.md)), round 2 next, then build in waves.
 
 ## The edits and their specs
 
@@ -28,33 +28,38 @@
 
 The operator's rule: an open question is a decision, taken by the recorded decisions, the project's goal, then the
 safest reversible option, written where the work lives. Each is open to the operator's word; none blocks.
+Revised after review round 1 ([review.md](review.md)).
 
 | # | Question | Decision | Why |
 |---|---|---|---|
-| Q1 | What is "Oculus extension"? | Okolos, PassionCode's browser security product (`okolos-extension`); its pure packages `core-mail`, `core-download` and `core-lookalike` run in the Worker. Three Okolos packages are already vendored (`vendor/okolos/`, pinned `5d664c5`) | Same organization and licence; the product said "if possible, our Okolos" |
-| Q2 | Which model judges a message, and does it get tools? | No tools, ever. The model already used for the held-message review (`SAFETY_REVIEW_MODEL`, default Workers AI `llama-4-scout`, `workers/categories/store.ts:180-184`), in the owner's own Cloudflare account; its review can lower a verdict, never raise it (`applyReview`, Okolos ADR-0004) | Mail never leaves the owner's account; a model that cannot raise severity cannot be talked into a false alarm or a false all-clear beyond what the checks found |
-| Q3 | Does the model run on every message? | Deterministic checks on every message; the model only where a check fired or a document attachment was read, inside the existing daily safety budget | Cost bounded by the budget; a clean message needs no model to be called clean |
-| Q4 | What does the badge link to? | It opens a panel in the app listing what ran, what did not and why; no outside link while Okolos has no public page | Okolos is pre-alpha, not published; a link to nothing teaches nothing |
-| Q5 | "Если нет автоматизации включенной ... просто уже сразу отправляется": what happens without automation? | The agent's mode decides as today: in "send allowed answers" mode the reply is sent and shows in the thread as sent by the agent; otherwise it is a draft card under the message (S6). No mode is changed by this work | The notes describe the two outcomes; changing an agent's mode is the operator's choice in Settings, not the UI's |
-| Q6 | "Открыть консоль" for tuning: the terminal console (B-70) or the agent panel on the right? | The agent panel on the right (AgentDock), opened with the message, the draft and the run's reasons as its context, plus a link to the agent's settings | The notes say "вот этот сбоку ... и там сразу же есть контекст этого письма"; the terminal console takes no message context |
-| Q7 | When I answer myself, is the agent's draft deleted or hidden? | Deleted on the server once my reply is accepted, only while the draft is still as the agent wrote it; a draft I edited is mine and stays | "Драфт находится только до того, пока он не отправлен"; deleting a draft someone edited would lose their work |
-| Q8 | Reply with no selection: quote everything or nothing? | Nothing, as today (the thread above already shows the history); with a selection, that text only | Keeps today's behaviour where nothing was asked; the notes ask for the selection case |
-| Q9 | Forward with more original files than one message may carry (10 files, 5 MiB)? | The files that fit are attached; the rest are listed as left out with the reason, and sending is allowed | Today a forward with a missing original refuses to send (`compose-payload.ts:42-45`), so a large forward cannot go at all |
-| Q10 | Settings with several servers: merged, or one server at a time? | One server at a time for changes, with the server's name in the header and a switch to the others; the lists (accounts, addresses, domains) read every server and group them by name, each item opening its own server's settings | A change always belongs to one server (SCN-099: nothing is copied between servers); reading them together answers "why do I see only one account" |
-| Q11 | The rest of the notes after "в e-mail я могу поставить все, то есть" | Not heard; S11 covers what was said. Asked again in the hand-back, not blocking | The message was cut off |
+| Q1 | What is "Oculus extension"? | Okolos, PassionCode's browser security product (`passioncode-ai/okolos`, checked out as `okolos-extension`); its pure packages run in the Worker; three are already vendored (`vendor/okolos/`, pinned `5d664c5`), `core-mail` and `core-download` join them | Same organization and licence; the notes said "if possible, our Okolos" |
+| Q2 | Which model judges a message, and what may it change? | The existing tool-less review model (`SAFETY_REVIEW_MODEL`, default Workers AI `llama-4-scout`) in the owner's own Cloudflare account. It answers in reason codes only; it may raise a message to amber, may lower only minor sender signals and never to green, and never touches the floors (feed-listed link, a program or disguised file, DMARC fail, lookalike, instructions to an AI, held) | Round 1 showed that a model allowed only to lower is what an attacker wants (SEC-1, KIMI-1, UX-1); floors keep every deterministic finding |
+| Q3 | Does the model run on every message? | Only when a check fired at amber or above, inside its own daily budget, at most 20 a day per sender domain; a spent budget never holds mail | Cost bounded; a flood cannot hold all mail (SEC-8) |
+| Q4 | What does the badge link to? | The Okolos mark and name on the badge and a line about Okolos in the panel; a link to Okolos's page behind a flag, on once the page is public | "Люди будут знакомиться": the name and mark are seen; a link to nothing teaches nothing (UX-4) |
+| Q5 | "Если нет автоматизации включенной ... просто уже сразу отправляется" | The agent's mode decides as today: "send allowed answers" sends and the thread shows "Sent by <agent>"; otherwise the draft card (S06). No mode is changed | Changing an agent's mode is the operator's choice in Settings |
+| Q6 | "Открыть консоль" for tuning: the terminal console or the agent panel? | The agent panel on the right, opened with a prepared first message carrying the message, the draft, the run's reason and sources | "этот сбоку ... и там ... контекст этого письма"; the terminal console takes no message context |
+| Q7 | When a reply is sent, what happens to the agent's draft? | An untouched draft moves to Discarded (kept 30 days, restorable); one the person edited leaves the thread and stays in Drafts with one quiet line; only drafts answering the replied-to message or an earlier one | "Драфт находится только до того, пока он не отправлен"; nothing a person wrote is lost; recoverable, not deleted (KIMI-7, UX-10) |
+| Q8 | Reply with no selection: quote everything or nothing? | Nothing, as today; with a selection, that text only | The thread above shows the history |
+| Q9 | Forward with more original files than one message may carry? | Attach in order while they fit; list the rest as did not fit; sending is allowed | Today such a forward cannot be sent at all |
+| Q10 | Settings with several servers: merged or one at a time? | Changes on one server, named in the header; Accounts, Addresses and Domains read every server under All, grouped by server, opening on the mail's own choice | A change belongs to one server (SCN-099); reading them together answers "only one account" |
+| Q11 | The rest of the notes after "в e-mail я могу поставить все, то есть" | Not heard; S11 covers what was said; asked again in the hand-back | The message was cut off |
+| Q12 | "Вирусов": an antivirus engine? | None runs in a Worker; files are checked by what their bytes are, and the panel says plainly that no antivirus engine ran, without turning a badge grey. A hash-reputation service is an option needing a key and spend, left for the operator | Honest about what is checked (KIMI-3, UX-2) |
+| Q13 | May an amber link open after a warning? | Yes: "Open anyway" for amber and grey; red never opens from the message | "Не даём кликать" applies to a found vulnerability (red); amber is a doubt, and blocking every doubtful link would teach people to ignore the notice (UX-6) |
+| Q14 | Old mail with no safety record | Grey "Not checked"; opening it runs the deterministic checks once (no model); until then its links ask | Unchecked is never shown as clean (SEC-5, IR-1) |
 
 ## Waves
 
 | Wave | Specs | Why this order |
 |---|---|---|
-| W1 | S1, S2, S10, S11 | Interface only, no new data on the server; S2 is the base S3 and S5 stand on |
-| W2 | S5, S6, S7, S8, S9 | The thread and the reply path; S6 and S7 change the server's draft handling |
-| W3 | S3, S4 | The verdict needs vendored packages, a schema step and the model; S4 reads S3's verdict |
+| W1 | S1, S2, S10, S11 | Interface and one desktop read; no badge yet (S2's subject line leaves room for it) |
+| W2 | S5, S6, S7, S8 | The thread and the reply path; S6 and S7 change the server's draft handling and the run's outcome |
+| W3 | S3, S4, S9 | The checks and the badge (vendored packages, new findings key, a route and a tool), the link guard that reads them, the forward that shows the files' chips |
 | W4 | Audit of the whole window (`/ux-audit`, a walk in WebKit), fixes in waves, release, the three servers | The operator's order: specs, review, build, then audit and release |
 
 Each wave lands as its own pull request with its tests, the MCP tools for a new route (`workers/mcp/tools.ts`,
 `npm run mcp:docs`), Russian strings in `shared/i18n/ru/` with copy-check report ids, and its SCN lines.
+No SQL schema step is needed: the new safety data is JSON in `findings`, the new run fields are JSON on the run.
 
 ## Review
 
-Recorded in [review.md](review.md): independent readers per spec, their findings and what changed.
+Recorded in [review.md](review.md): five independent readers in round 1 (four of one model family, one of another), their findings and what changed.

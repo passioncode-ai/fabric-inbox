@@ -3,45 +3,57 @@
 **Asked:** «Если я отправляю что-то сам, то этот драфт должен исчезать. То есть драфт находится только до того, пока он
 не отправлен или я не отправил, дальше он исчезает».
 
+Revised after review round 1 (KIMI-7, KIMI-8, UX-3, UX-10, IR-9, CB-4).
+
 ## Today
 
-- Sending the agent's own draft deletes it once the provider accepts it (`workers/durableObject/index.ts:1043-1053`).
-- When the person writes their own reply instead, nothing removes the agent's draft: it stays in Drafts and in the
-  thread. The registry marks the run `answeredByPerson` only for escalated drafts (`workers/agents/registry.ts:1109-1133`).
+- A reply agent saves its draft on a Cloudflare address with id `agent-<32 hex>-draft(-N)` (`workers/agents/runner.ts:1190-1195`,
+  `app/components/inbox/agent-run.ts` `isAgentDraft`), and on a Gmail, IMAP or Outlook account through the provider's
+  draft API with the provider's own id (`workers/agents/account-deps.ts:126-130`).
+- Sending the agent's own Cloudflare draft deletes it once accepted (`workers/durableObject/index.ts:1043-1053`).
+- When the person writes their own reply, nothing removes the agent's draft; the run is marked `answeredByPerson`
+  (a boolean, `workers/agents/run.ts:94`) only for escalated drafts (`workers/agents/registry.ts:1109-1133`).
 
 ## Target
 
-When any reply in a thread is accepted by the provider (sent by the person from the composer or the card, or by another
-agent), the server deletes the reply agents' drafts of that thread that are still as the agent wrote them:
+**When:** a reply is accepted by the provider, sent by anyone (the person from the composer or the S06 card, the MCP
+`reply` tool, the in-app agent, another agent, a send accepted later after an uncertain answer). A reply is a sent
+message whose In-Reply-To names a message of the thread. A forward does not count.
 
-- an agent draft: id matches `agent-<32 hex>-draft(-N)?` (`app/components/inbox/agent-run.ts` `isAgentDraft`, moved to
-  `shared/` so the server uses the same pattern);
-- still as the agent wrote it: `draft_revision` is null or 1 (B-52: every save raises it);
-- of that thread: the same `thread_id`, or `in_reply_to` naming a message of the thread.
+**Where it is caught:** Cloudflare addresses: the outbox's `project` step, which every accepted send passes through
+(`workers/durableObject/index.ts:193`). Gmail, IMAP and Outlook accounts: the account send path's accepted receipt
+(`account-deps.ts`) and the run's own send.
 
-A draft the person edited (revision above 1) is theirs and stays. The run is marked `answeredByPerson` (for every run,
-not only escalated ones) with the sent message's id, which feeds quality and ticket outcome as today
-(`workers/agents/quality.ts:92`). The deletion and its reason are logged: `{event: "agent_draft_retired", runId,
-reason: "answered"}`.
+**Which drafts retire:** a reply agent's drafts of that thread that answer the replied-to message or an earlier one
+(a draft answering a later message, from another person, stays). A draft is found by its run (`run.draftId`), not by
+an id pattern, on every account kind.
 
-The thread's draft card (S06) disappears with the draft; the person sees their sent reply in its place. A notice is not
-shown (the outcome is the one asked for).
+**Untouched or edited:**
+- Untouched: on a Cloudflare address, `draft_revision` is null or 1 (B-52); on an account, the draft's content hash
+  equals the hash the run stored when it saved the draft (a new run field `draftHash`). Opening a draft in the composer
+  without changing it saves nothing, so it stays untouched (a test holds this).
+- Untouched drafts are retired: moved to Discarded with the reason "Answered by a sent reply" («Отвечено отправленным
+  письмом»), which keeps it 30 days and can be restored, not deleted.
+- Edited drafts are the person's: they leave the thread and stay in Drafts, and the thread shows one quiet line "Your
+  edited draft is in Drafts" («Ваш изменённый черновик лежит в черновиках») with a link.
+
+**The run's outcome:** a new field `outcome: {kind, sentMessageId, at}` with `kind` one of `answered_by_person`,
+`answered_by_agent`, `superseded`; `answeredByPerson` stays as it is and becomes true only for `answered_by_person`, so
+quality and ticket outcome (`workers/agents/quality.ts:92`, `ticket-outcome.ts:47`) keep their meaning. Idempotent by
+run: a second accepted reply changes nothing. Logged as `{event: "agent_draft_retired", runId, kind, edited}`.
 
 ## Edge cases
 
-- The send's outcome is uncertain: nothing is deleted until it is accepted (the existing uncertain path).
+- An uncertain send retires nothing until it is accepted.
 - Two agents drafted in one thread: both retire.
-- A reply sent from Gmail, IMAP or Outlook directly (outside the app): agent drafts live on Cloudflare addresses
-  only; a reply that reaches the thread through sync to a Cloudflare address's thread retires them the same way when
-  the sent copy is stored.
-
-## Agent tool
-
-None new: the deletion is a consequence of sending. `read_thread` stops returning the retired draft.
+- The person is editing the draft in the S06 card when a reply from elsewhere is accepted: the card shows "A reply was
+  sent; this draft is no longer needed" with "Keep as my draft" (saves it, which makes it edited) and "Close".
 
 ## Acceptance
 
-- Worker (workerd): a person's reply accepted in a thread with one untouched and one edited agent draft deletes the
-  first and keeps the second; an uncertain send deletes nothing; the run gets `answeredByPerson`.
-- WebKit walk: send a reply in a thread with an agent's draft card; the card is gone.
-- SCN for S06 names this step.
+- Worker (workerd), Cloudflare: an accepted reply retires an untouched draft to Discarded, keeps an edited one, keeps a
+  draft answering a later message, retires nothing on an uncertain send and on a forward; the run's `outcome`.
+- Worker, an account fixture (Gmail provider double): the same through the content hash.
+- Unit: opening a draft in the composer without a change leaves its revision unchanged.
+- WebKit walk: send a reply in a thread with an agent's draft card; the card is gone; Discarded holds it.
+- The S06 scenario names this step.
