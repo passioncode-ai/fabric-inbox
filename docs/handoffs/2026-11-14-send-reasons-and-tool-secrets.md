@@ -1,7 +1,7 @@
 # Handoff 2026-11-14: 1.6.15 (send reasons, tool credentials as own secrets), console quiet, audit
 
 **Entry point for the next agent.** Session of 2026-11-14 (00:20 to about 02:30 Warsaw) in this repository. Everything
-below is on `main`. The previous entry is [2026-11-12](2026-11-12-one-window-and-grants.md).
+below is on `main`. The previous entry is [2026-11-12](2026-11-12-one-window-and-grants.md). The next entry is [the mail window and 1.7.0](2026-11-14-mail-window-1.7.0.md).
 
 ## Done
 
