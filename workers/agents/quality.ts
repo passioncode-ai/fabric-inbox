@@ -89,7 +89,8 @@ export function qualityDay(input: QualityInput): QualityDaily {
   const repliedOnDay = (r: AgentRun) => { const t = r.repliedAt ? Date.parse(r.repliedAt) : NaN; return t >= start && t < end; };
   const followupsAnswered = input.runs.filter((r) => r.status === "sent" && (r.attempt ?? 1) > 1 && created(r) < start && repliedOnDay(r)).length;
   const recent = input.runs.filter((r) => input.now - created(r) <= 3 * DAY);
-  const waiting = recent.filter((r) => r.status === "held" || (r.status === "drafted" && !r.answeredByPerson));
+  // S06, S07: a draft whose conversation was answered (or set aside) waits no more; `outcome` first, then the older flag.
+  const waiting = recent.filter((r) => r.status === "held" || (r.status === "drafted" && !r.outcome && !r.answeredByPerson));
   const metered = ofDay.filter((r) => r.modelCalls);
   const usedModel = ofDay.filter((r) => r.toolCalls !== undefined && r.status !== "skipped" && r.status !== "off");
   if (metered.length < usedModel.filter((r) => r.model).length) notMeasured.add("modelCalls").add("modelCallsFailed").add("fallbackTurns");
@@ -131,7 +132,7 @@ export function qualityDay(input: QualityInput): QualityDaily {
       smalltalk: ofDay.filter((r) => ticketOutcomeOf(r, input.now) === "no_reply_owed" && !SERVER_SKIP.test(r.reason ?? "")).length,
       personQueueWaiting: waiting.length,
       personQueueOldestMs: waiting.length ? Math.max(0, input.now - Math.min(...waiting.map(created))) : null,
-      noSafeDefault: ofDay.filter((r) => r.status === "drafted" && r.escalatedAt && !r.answeredByPerson).length,
+      noSafeDefault: ofDay.filter((r) => r.status === "drafted" && r.escalatedAt && !r.outcome && !r.answeredByPerson).length,
     },
     notMeasured: [...notMeasured].sort(),
   };

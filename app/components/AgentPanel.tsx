@@ -27,6 +27,7 @@ import { useT } from "../lib/i18n";
 import { msg } from "../../shared/i18n";
 import { useUIStore } from "~/hooks/useUIStore";
 import type { UIMessage } from "ai";
+import { tuneName } from "../../shared/agent-tune";
 import { draftOf, lastPrompt, MAX_SOURCES, retryTurn, sourcesOf, toolNameOf, turnFailed, unanswered, usesDraftTool, type SavedDraft, type Source } from "./agent-chat";
 
 /**
@@ -42,6 +43,13 @@ export interface AgentPanelProps {
 	onEditDraft?: (draft: SavedDraft) => void;
 	/** The message open in the reader, when it is on this mailbox: offered as the first prompts. */
 	focus?: { emailId: string; subject: string } | null;
+	/**
+	 * S06 (B-271): "Tune the agent" from a draft card: a session of its own (`<mailbox>:tune:<run>`, no tools on the
+	 * server), with the prepared first message waiting in the box, not sent. Closing it deletes that conversation and
+	 * returns the panel to the ordinary one.
+	 */
+	tune?: { runId: string; agentName: string; prepared: string } | null;
+	onTuneClose?: () => void;
 }
 
 const TOOL_LABELS: Record<string, { label: string; icon: React.ReactNode }> = {
@@ -296,6 +304,8 @@ export function AgentChatConnected({
 	onOpenSource,
 	onEditDraft,
 	focus,
+	tune,
+	onTuneClose,
 }: Omit<AgentPanelProps, "mailboxId"> & {
 	mailboxId: string;
 	useAgent: typeof import("agents/react").useAgent;
@@ -307,9 +317,18 @@ export function AgentChatConnected({
 	const [inputValue, setInputValue] = useState("");
 	const { startCompose } = useUIStore();
 
-	const agent = useAgent({ agent: "EmailAgent", name: mailboxId });
-	const { messages, sendMessage, status, setMessages, stop, error, regenerate, clearError } =
+	// S06: a tuning session is its own agent instance; the ordinary conversation never holds its fenced block.
+	const agent = useAgent({ agent: "EmailAgent", name: tune ? tuneName(mailboxId, tune.runId) : mailboxId });
+	const { messages, sendMessage, status, setMessages, stop, error, regenerate, clearError, clearHistory } =
 		useAgentChat({ agent });
+	// The prepared message waits in the box for the person to read, change and send; it is never sent by itself.
+	useEffect(() => {
+		if (tune) setInputValue(tune.prepared);
+	}, [tune?.runId]); // eslint-disable-line react-hooks/exhaustive-deps
+	const closeTuning = () => {
+		clearHistory();
+		onTuneClose?.();
+	};
 	const isStreaming = status === "streaming" || status === "submitted";
 	// A failed model turn (B11-02): an error bubble with Retry instead of silence.
 	const failed = turnFailed(status, error) || unanswered(messages, isStreaming);
@@ -355,7 +374,8 @@ export function AgentChatConnected({
 	// and a person does not (UI walk 2026-10-13: a 70-character id overflowed the panel).
 	const subject = focus ? focus.subject || t("(No subject)") : "";
 	const plain = (text: string) => ({ label: text, text });
-	const suggestedPrompts = [
+	// A tuning session starts from its prepared message only: no suggestion sends anything.
+	const suggestedPrompts = tune ? [] : [
 		...(focus
 			? [
 				{ label: t("Explain the open message “{subject}”", { subject }),
@@ -376,8 +396,13 @@ export function AgentChatConnected({
 				<div className="flex items-center gap-2">
 					<Badge variant="beta">AI</Badge>
 					<span className="text-xs text-kumo-subtle">
-						{t("Email Agent")}
+						{tune ? t("Tuning {agent}", { agent: tune.agentName }) : t("Email Agent")}
 					</span>
+					{tune && (
+						<Button variant="ghost" size="sm" onClick={closeTuning}>
+							{t("Close tuning")}
+						</Button>
+					)}
 				</div>
 				<div className="flex items-center gap-1">
 					{isStreaming && <Loader size="sm" />}
@@ -412,7 +437,9 @@ export function AgentChatConnected({
 							/>
 						</div>
 						<p className="text-xs text-kumo-subtle text-center leading-relaxed px-4">
-							{t("I can read emails, search conversations, and draft replies.")}
+							{tune
+								? t("Read the prepared message below, change it if you like, and send it. This session has no tools: it cannot read or change your mail or the agent.")
+								: t("I can read emails, search conversations, and draft replies.")}
 						</p>
 						<div className="flex flex-col gap-1.5 w-full">
 							{suggestedPrompts.map((prompt) => (
@@ -584,6 +611,8 @@ export default function AgentPanel(props: AgentPanelProps = {}) {
 			onOpenSource={props.onOpenSource}
 			onEditDraft={props.onEditDraft}
 			focus={props.focus}
+			tune={props.tune}
+			onTuneClose={props.onTuneClose}
 		/>
 	);
 }

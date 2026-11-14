@@ -70,12 +70,14 @@ export function productionDeps(env: Env, mailboxId: string, registry: Registry):
       rateLimit: () => stub.checkSendRateLimit(),
       send: (command) => stub.sendMail(command),
       async createDraft(draft) {
-        if (await stub.getEmail(draft.id)) return;
+        // S07: a draft already there under this id is reported, so the run never claims its text as the draft's.
+        if (await stub.getEmail(draft.id)) return { created: false };
         await stub.createEmail("draft", {
           id: draft.id, subject: draft.subject, sender: box, recipient: draft.to.toLowerCase(),
           date: new Date().toISOString(), body: textToHtml(draft.text), in_reply_to: draft.inReplyTo,
           email_references: null, thread_id: draft.threadId,
         }, []);
+        return { created: true };
       },
     },
   };

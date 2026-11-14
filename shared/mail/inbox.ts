@@ -61,7 +61,7 @@ export interface InboxMessage {
   /** Screened categories this message is in (CAT-5), with why. */
   categories?: { id: string; name: string; reason: string }[];
   /** A reply agent's run on this message (B-115): what it did, so the list can mark it and the reader show it. */
-  agentRun?: { id: string; status: string; agentId?: string; agentVersion?: number; draftId?: string };
+  agentRun?: import("./agent-run-view").AgentRunView;
   /** B-138: where its conversation stands on an address whose reply status is shown (shared/mail/agent-state.ts). */
   agentState?: import("./agent-state").AgentState;
   /** B-170: its conversation still waits for someone 48 hours after the last message that came in (isAbandoned). */

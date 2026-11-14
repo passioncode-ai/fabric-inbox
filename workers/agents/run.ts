@@ -92,6 +92,26 @@ export interface AgentRun {
   acknowledged?: { at: string; status: "accepted" | "unknown"; text: string };
   /** B-131: a drafted run whose conversation had a reply sent after the message when it was supervised. */
   answeredByPerson?: boolean;
+  /**
+   * S07 (B-272): the agent's draft text as it saved it, at most DRAFT_TEXT_CHARS, so the run keeps it after an untouched
+   * draft is retired ("Make a draft of it again"). `draftTextComplete` says it is the whole text: only then may retirement
+   * delete the draft (KIMI-46).
+   */
+  draftText?: string;
+  draftTextComplete?: boolean;
+  /** S07: on a Gmail, IMAP or Outlook account, the provider's draft revision the agent's save returned; written once. */
+  agentDraftRevision?: string;
+  /** S06 (B-271), R6-4: a draft made again from this run's text, under a new id, which is the person's (never retired). */
+  personDraftId?: string;
+  /**
+   * S07: how the conversation was answered once this run's draft waited, written once (the first accepted reply decides):
+   * the person (`answered_by_person`), the person sending the agent's draft as it was (`approved_by_person`), an agent
+   * (`answered_by_agent`: a key over the agent protocol, the in-app agent, a reply agent), or the draft set aside before
+   * any reply (`superseded`). `answeredByPerson` stays true only for `answered_by_person`.
+   */
+  outcome?: DraftOutcome;
+  /** S06: the sent message's id in the mailbox once the run's own answer was accepted (its outbox id on an address). */
+  sentMessageId?: string;
   /** Review 2026-10-21: when a waiting check whose mailbox could not be read is tried again. */
   waitCheckAt?: string;
   /** Review 2026-10-21: when an escalated draft is looked at again for a person's answer. */
@@ -157,7 +177,20 @@ export interface AwaitingAnswer {
   until: number;
 }
 
+/** S07 (B-272): how a run's conversation ended once its draft waited (see AgentRun.outcome). */
+export type DraftOutcomeKind = "answered_by_person" | "approved_by_person" | "answered_by_agent" | "superseded";
+export interface DraftOutcome {
+  kind: DraftOutcomeKind;
+  /** The accepted reply's id in the mailbox; absent for `superseded`. */
+  sentMessageId?: string;
+  at: string;
+  /** The run's draft had been changed by a person, so it was kept (in Drafts) rather than retired. */
+  edited?: boolean;
+}
+
 export const RESULT_PREVIEW_CHARS = 2000;
+/** S07: the longest draft text a run keeps; a longer draft is kept whole in Drafts and never retired (KIMI-46). */
+export const DRAFT_TEXT_CHARS = 20_000;
 export const SENT_BODY_CHARS = 12_000;
 
 export async function runIdFor(mailboxId: string, emailId: string): Promise<string> {

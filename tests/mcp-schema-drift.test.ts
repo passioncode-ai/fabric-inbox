@@ -88,6 +88,7 @@ const BODIES: Record<string, string[]> = {
   "POST /api/event-hooks": ["url", "kinds"], // workers/routes/agents.ts (B-137)
   "POST /api/agent-bench": ["address", "days", "runs", "models", "reference", "restart", "offset"], // workers/routes/agents.ts (B-152)
   "PUT /api/agent-runs/:id/grade": ["checks", "helped", "note", "source"], // workers/agents/calibration.ts parseGrade (B-189)
+  "POST /api/agent-runs/:id/redraft": ["text", "to", "subject"], // workers/routes/agents.ts RedraftBody (S06, B-271)
   "POST /api/v1/mailboxes/:mailboxId/folders": ["name"], // workers/index.ts
   "PUT /api/v1/mailboxes/:mailboxId/folders/:id": ["name"],
   "POST /api/v1/mailboxes/:mailboxId/emails/:id/move": ["folderId"],
@@ -129,7 +130,7 @@ const NO_BODY = new Set([
   "POST /api/members/sign-in", // B-215: rewrites the sign-in from the list as it is
   "POST /api/v1/mailboxes/:mailboxId/threads/:threadId/read", "POST /api/v1/mailboxes/:mailboxId/incoming/retry",
   "POST /api/accounts/:accountId/messages/:messageId/archive", "POST /api/accounts/:accountId/messages/:messageId/inbox",
-  "POST /api/accounts/:accountId/sync", "POST /api/accounts/:accountId/disconnect", "POST /api/accounts/:accountId/incoming/retry", "POST /api/categories/:id/seen", "POST /api/agent-runs/:id/again",
+  "POST /api/accounts/:accountId/sync", "POST /api/accounts/:accountId/disconnect", "POST /api/accounts/:accountId/incoming/retry", "POST /api/categories/:id/seen", "POST /api/agent-runs/:id/again", "POST /api/agent-runs/:id/discard-draft",
   "POST /api/automation/:account/runs/:id/approve", "POST /api/automation/:account/runs/:id/dismiss", "POST /api/automation/:account/runs/:id/check",
   "POST /api/project-addresses/:email/routing", "POST /api/project-addresses/:email/test", "POST /api/domains/:domain/sending",
   "POST /api/project-addresses/:email/pause", "POST /api/project-addresses/:email/resume",

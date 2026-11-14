@@ -1,3 +1,4 @@
+import { composerSaveDelay } from "./draft-card";
 import { useEffect, useRef, useState } from "react";
 import {
   browserDraftStore,
@@ -194,7 +195,8 @@ export function useDrafts() {
         dirty.current.delete(d.id);
         setErrors((e) => ({ ...e, [d.id]: "" }));
       }
-      if (!next.synced && !next.locked) schedule(d.id);
+      // KIMI-48: the first change to a reply agent's untouched draft is saved at once.
+      if (!next.synced && !next.locked) schedule(d.id, composerSaveDelay(before, SYNC_DELAY));
       return true;
     } catch (e) {
       setErrors((all) => ({

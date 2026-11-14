@@ -27,6 +27,8 @@ import type { SendMailCommand, SendMailResult, SendMailRequest } from '../../sha
 import type { InboxReadOptions } from '../../shared/mail/inbox';
 import { mailboxInboxQuery, mailboxInboxMessage, searchText, searchVariants, type MailboxInboxRow } from '../lib/inbox-query';
 import { parseStoredHeaders } from '../agents/prefilter';
+import { draftsToRetire, isUntouched, outcomeKindFor, runKeepsWholeDraft, type SentByKind, type ThreadRowFacts } from '../agents/retire';
+import { runIdFor } from '../agents/run';
 import { DISCARD_RETENTION_MS } from '../../shared/mail/discard';
 import { listDrafts as listDraftRows, saveDraft as saveDraftRows, type DraftSql, type DraftSummary, type SaveDraftInput, type SaveDraftResult } from '../lib/mailbox-drafts';
 import { htmlToText } from '../../shared/mail/text';
@@ -209,6 +211,9 @@ export class MailboxDO extends DurableObject<Env> {
           }
           if (payload.request.thread_id) this.ctx.storage.sql.exec('UPDATE emails SET read = 1 WHERE thread_id = ?', payload.request.thread_id);
         });
+        // S07 (B-272): the conversation is answered, so its waiting agent drafts retire. A failure here fails the
+        // projection, which is run again (the steps are idempotent: an outcome written stays, a draft deleted is gone).
+        await this.retireAgentDrafts(payload, row);
       },
     });
     if (this.outbox.recoverable().length || this.incoming.waiting()) {
@@ -262,7 +267,9 @@ export class MailboxDO extends DurableObject<Env> {
       }
       await this.armRecovery();
       validateSendHeaders(request);
-      return await this.sender.submit(mailboxId, key, { request }, identity);
+      // S07 (R6-3): who sent it and the draft it came from travel with the payload, outside the identity hash.
+      const sentBy = command.sentBy ?? (request.auto_submitted ? 'agent' : 'person');
+      return await this.sender.submit(mailboxId, key, { request, sentBy, ...(command.sourceDraft ? { sourceDraft: command.sourceDraft } : {}) }, identity);
     } catch (error) {
       if (error instanceof AttachmentValidationError) return { error: error.code, code: 'INVALID_REQUEST' };
       if (error instanceof IdempotencyConflict) return { error: error.message, code: 'IDEMPOTENCY_CONFLICT' };
@@ -988,6 +995,81 @@ export class MailboxDO extends DurableObject<Env> {
 	}
 
 	/**
+	 * S07 (B-272): deletes a draft only while it is untouched (no revision, or revision 1), checked and deleted in one
+	 * transaction, so a person's edit can never land between the check and the delete. `edited`: a person changed it, it
+	 * stays; `gone`: not a draft here any more. The files' bytes and a kept body are removed after.
+	 */
+	async deleteUntouchedDraft(id: string): Promise<{ state: "deleted" | "edited" | "gone" }> {
+		const result = this.ctx.storage.transactionSync(() => {
+			const row = this.ctx.storage.sql.exec<{ draft_revision: number | null; body_key: string | null }>(
+				"SELECT draft_revision, body_key FROM emails WHERE id = ? AND folder_id = ?", id, Folders.DRAFT).toArray()[0];
+			if (!row) return { state: "gone" as const, files: [] as { id: string; filename: string }[], bodyKey: null as string | null };
+			if (!isUntouched(row.draft_revision)) return { state: "edited" as const, files: [], bodyKey: null };
+			const files = this.ctx.storage.sql.exec<{ id: string; filename: string }>("SELECT id, filename FROM attachments WHERE email_id = ?", id).toArray()
+				.map((a) => ({ id: String(a.id), filename: String(a.filename) }));
+			this.ctx.storage.sql.exec("DELETE FROM attachments WHERE email_id = ?", id);
+			this.ctx.storage.sql.exec("DELETE FROM emails WHERE id = ? AND folder_id = ?", id, Folders.DRAFT);
+			return { state: "deleted" as const, files, bodyKey: row.body_key };
+		});
+		const unused = [...result.files.map((a) => `attachments/${id}/${a.id}/${a.filename}`), ...(result.bodyKey ? [result.bodyKey] : [])];
+		if (unused.length) await (this.env as Env).BUCKET.delete(unused).catch((error: unknown) =>
+			console.warn(JSON.stringify({ event: "draft_cleanup_failed", error: (error as Error).message })));
+		return { state: result.state };
+	}
+
+	/**
+	 * S06 (B-271), R6-4: a person's draft made from an agent's text ("Make a draft of it again", "Keep as my draft"): a new
+	 * id, whose revision starts at 2, so it is never taken for an untouched agent draft and never overwrites one.
+	 */
+	async createPersonDraft(input: { id: string; sender: string; to: string; subject: string; body: string; inReplyTo: string | null; threadId: string | null }): Promise<SaveDraftResult> {
+		const saved = await this.saveDraft({ ...input, cc: null, bcc: null, expectedRevision: 0, added: [] });
+		if (!saved.ok) return saved;
+		this.ctx.storage.sql.exec("UPDATE emails SET draft_revision = 2 WHERE id = ? AND folder_id = ? AND (draft_revision IS NULL OR draft_revision = 1)", input.id, Folders.DRAFT);
+		return { ...saved, draft: { ...saved.draft, revision: 2 } };
+	}
+
+	/**
+	 * S07 (B-272): an accepted reply retires the conversation's waiting reply-agent drafts that answer the replied-to
+	 * message or an earlier one (`draftsToRetire`): each run's outcome is written first, then an untouched draft whose
+	 * whole text the run keeps is deleted (`deleteUntouchedDraft`). The draft the send came from leaves by the send; its
+	 * run gets `approved_by_person` (sent as the agent wrote it) or `answered_by_person`. A forward, a new message and a
+	 * send with no thread retire nothing.
+	 */
+	async retireAgentDrafts(payload: PreparedMail, row: OutboxRow): Promise<void> {
+		const registry = (this.env as Env).AGENT_REGISTRY;
+		const request = payload.request;
+		if (!registry || !request.thread_id || (!request.in_reply_to && !request.references?.length && !payload.sourceDraft?.answers)) return;
+		const mailboxId = row.mailbox_id;
+		const rows: ThreadRowFacts[] = this.ctx.storage.sql.exec<Record<string, string | number | null>>(
+			"SELECT id, folder_id, message_id, in_reply_to, date, draft_revision FROM emails WHERE thread_id = ? ORDER BY date ASC", request.thread_id).toArray()
+			.map((r) => ({ id: String(r.id), folder_id: String(r.folder_id), message_id: r.message_id === null ? null : String(r.message_id),
+				in_reply_to: r.in_reply_to === null ? null : String(r.in_reply_to), date: r.date === null ? null : String(r.date), draft_revision: r.draft_revision === null || r.draft_revision === undefined ? null : Number(r.draft_revision) }));
+		const source = payload.sourceDraft;
+		const sent = { inReplyTo: request.in_reply_to, references: request.references, sourceDraftId: source?.id, sourceDraftAnswers: source?.answers ?? undefined };
+		const sentBy: SentByKind = payload.sentBy ?? (request.auto_submitted ? "agent" : "person");
+		const at = new Date(row.updated_at || Date.now()).toISOString();
+		const store = registry.getByName("workspace");
+		if (source?.answers) {
+			const runId = await runIdFor(mailboxId, source.answers);
+			const kind = outcomeKindFor(sentBy, { isRunDraft: true, untouched: isUntouched(source.revision) });
+			await store.settleDraftOutcome(runId, { kind, sentMessageId: row.id, at, ...(isUntouched(source.revision) ? {} : { edited: true }) }, source.id);
+		}
+		for (const draft of draftsToRetire(rows, sent)) {
+			const runId = await runIdFor(mailboxId, draft.answers);
+			const untouched = isUntouched(draft.revision);
+			const settled = await store.settleDraftOutcome(runId, { kind: outcomeKindFor(sentBy, null), sentMessageId: row.id, at, ...(untouched ? {} : { edited: true }) }, draft.draftId);
+			// Not a reply agent's draft, or the person's own copy: it is theirs and stays.
+			if (!settled || settled.run.draftId !== draft.draftId) continue;
+			if (!untouched || !runKeepsWholeDraft(settled.run, draft.draftId)) {
+				console.log(JSON.stringify({ event: "agent_draft_kept", runId, reason: untouched ? "text_not_kept" : "edited" }));
+				continue;
+			}
+			const removed = await this.deleteUntouchedDraft(draft.draftId);
+			console.log(JSON.stringify({ event: "agent_draft_deleted", runId, state: removed.state }));
+		}
+	}
+
+	/**
 	 * Sends a draft as it is (no signature or quote added: the draft already holds what the person
 	 * or agent wrote) and removes it once the transport accepted it. A draft that answers a message
 	 * goes out as a reply in its conversation. A retry with the same key after the draft is gone
@@ -1001,7 +1083,7 @@ export class MailboxDO extends DurableObject<Env> {
 	 * revision each made their own idempotency key, so both passed and the message left twice: the
 	 * draft is now claimed for the length of the send, and a second send meanwhile is a conflict.
 	 */
-	async sendDraft(command: { mailboxId: string; draftId: string; idempotencyKey: string; from: string | { email: string; name: string }; expectedRevision?: number }): Promise<SendMailResult> {
+	async sendDraft(command: { mailboxId: string; draftId: string; idempotencyKey: string; from: string | { email: string; name: string }; expectedRevision?: number; sentBy?: "person" | "agent" }): Promise<SendMailResult> {
 		if (this.#sendingDrafts.has(command.draftId))
 			return { error: msg("This draft is being sent already"), code: "DRAFT_CONFLICT" };
 		this.#sendingDrafts.add(command.draftId);
@@ -1009,7 +1091,7 @@ export class MailboxDO extends DurableObject<Env> {
 		finally { this.#sendingDrafts.delete(command.draftId); }
 	}
 
-	async #sendDraftOnce(command: { mailboxId: string; draftId: string; idempotencyKey: string; from: string | { email: string; name: string }; expectedRevision?: number }): Promise<SendMailResult> {
+	async #sendDraftOnce(command: { mailboxId: string; draftId: string; idempotencyKey: string; from: string | { email: string; name: string }; expectedRevision?: number; sentBy?: "person" | "agent" }): Promise<SendMailResult> {
 		const mailboxId = command.mailboxId.toLowerCase();
 		const draft = await this.getEmail(command.draftId);
 		if (!draft || draft.folder_id !== Folders.DRAFT) {
@@ -1038,6 +1120,9 @@ export class MailboxDO extends DurableObject<Env> {
 		const result = await this.sendMail({
 			mailboxId, idempotencyKey: command.idempotencyKey, kind: draft.in_reply_to ? "reply" : "send",
 			originalEmailId: draft.in_reply_to ? draft.id : undefined,
+			// S07: the draft leaves by this send, never by retirement; its revision says whether it was sent as the agent wrote it.
+			sentBy: command.sentBy ?? "person",
+			sourceDraft: { id: draft.id, answers: draft.in_reply_to ?? null, revision: draft.draft_revision ?? null },
 			request: { to, ...(cc.length ? { cc } : {}), ...(bcc.length ? { bcc } : {}), from: command.from, subject: draft.subject || "(no subject)",
 				html, text: htmlToText(html) || " ", ...(files.length ? { attachments: files } : {}) },
 		});

@@ -168,3 +168,33 @@ Changing a reply agent's prompt or mode (R28); B-224's other chips (Summarize, T
   version's instructions and policy and the cited knowledge entries' text (each at most 2,000 characters).
 - **R6-8:** the tuning instance gets its own fixed system prompt (`TUNING_PROMPT`, a new template beside the shipped
   ones, R28), not the panel's mailbox prompt.
+
+## Built as (2026-11-14, branch `agent/mailwin-s0607`)
+
+Where the build differs from the text above, the safest reversible choice was taken:
+
+- **Cloudflare addresses only.** The card, Discard, "Keep as my draft" and "Make a draft of it again" work on Cloudflare
+  addresses. On Gmail, IMAP and Outlook accounts the agent's draft stays an ordinary draft cell with today's run panel
+  (the account thread read does not carry runs yet, and the providers' `createDraft` do not return their revision); the
+  routes answer `account_draft` (409) there. Follow-up: the account half of S06 and S07 as one board row.
+- **Discard on an edited draft** is not offered: once the person changed the text it is theirs (the card hides Discard,
+  the route refuses with `draft_edited`); they delete it in Drafts.
+- **The device copy** of an unacknowledged text is kept under the card's own key (`fabric-inbox:agent-card:v1:`), not in
+  the composer's draft store, which keys drafts by the composer's ids; a second writer to that store would race it.
+- **The untrusted fence.** The repository had no fence helper (the reply agent passes untrusted text as JSON fields), so
+  `shared/untrusted-fence.ts` is the single implementation (agents database guidance relayed by the coordinator): a fresh
+  random token per block, one preamble line saying the block is data, characters a person does not see stripped, any
+  fence lookalike changed, every field capped. The agent's settings and cited knowledge stay outside it (KIMI-44, from
+  `GET /api/agent-runs/:id/tuning`, each at most 2,000 characters).
+- **The tuning session** runs on the panel's model with no tools at all and one step; `forgetTuning` destroys the
+  session's object 24 hours after its first turn, and "Close tuning" clears its history at once.
+- **Names.** The card's header reads the agent's name from `GET /api/agents/:id` (falls back to its id); the sent cell's
+  chip names the agent by its id, since the thread carries ids only. Sources link to Settings, Knowledge, their
+  collection; runs cite only knowledge passages today, so there is no "message it cites" link.
+- **A card retired while open** turns into the S07 notice when the conversation is read again (after the send that
+  retired it), not at the same instant; its "Keep as my draft" uses the agent's text kept on the run (an untouched card
+  holds nothing else).
+- **Not run in this unit:** the WebKit walk (left for the W4 audit of the whole window).
+- **Copy check** (2026-11-14, register ui): 35 of the new interface strings in en-US, no finding (first report
+  `996bed4d-91be-45ec-aa26-26781b8b8c28`); the same 35 in ru-RU (formal address), 4 advisory suggestions on a trailing
+  full stop of a short line, none blocking (first report `3dce40d4-b9e1-4909-bba4-88434d7bf609`).

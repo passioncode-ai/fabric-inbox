@@ -13,9 +13,10 @@ import { AttachmentValidationError, MAX_ATTACHMENTS, storedAttachmentName, valid
 import { allServedDomains, createMailbox, deleteMailbox, listMailboxAddresses, readSettings, storedCatchAll, updateSettings, readAllSettings, allowedAddresses as allowedAddressList } from "./lib/mailbox-store";
 import { createAddress, pausedKey, removeAddress } from "./lib/address-ops";
 import { renamedTo } from "./lib/address-rename";
-import { runIdFor } from "./agents/run";
+import { runIdFor, type AgentRun } from "./agents/run";
+import { threadRunView } from "./lib/thread-runs";
 import { routingClient } from "./routing/email-routing";
-import { handleSendEmail, handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
+import { handleSendEmail, handleReplyEmail, handleForwardEmail, sentByOf } from "./routes/reply-forward";
 import { Folders, isBuiltInFolder } from "../shared/folders";
 import { authResults, replyToOf, spamCheck, tooLittleToJudge, verifiedDomain, type SpamVerdict } from "../shared/mail/spam";
 import { readSpamLists } from "./spam/lists";
@@ -326,7 +327,7 @@ app.post("/api/v1/mailboxes/:mailboxId/drafts/:id/send", async (c: AppContext) =
 	const fromName = typeof settings?.fromName === "string" ? settings.fromName.trim() : "";
 	const from = fromName && fromName !== mailboxId ? { email: mailboxId, name: fromName } : mailboxId;
 	const result = await c.var.mailboxStub.sendDraft({ mailboxId, draftId: c.req.param("id")!, idempotencyKey: parsed.data.idempotencyKey, from,
-		expectedRevision: parsed.data.expected_revision });
+		expectedRevision: parsed.data.expected_revision, sentBy: sentByOf(c.req.raw) });
 	if ("error" in result) {
 		const status = result.code === "IDEMPOTENCY_CONFLICT" || result.code === "DRAFT_CONFLICT" || result.code === "MOVED" ? 409 : result.code === "NOT_FOUND" ? 404 : 400;
 		return c.json(result, status);
@@ -411,11 +412,17 @@ app.get("/api/v1/mailboxes/:mailboxId/threads/:threadId", async (c: AppContext) 
 				.then((found) => new Map(found.map((r) => [r.emailId, r] as const)))).catch(() => new Map())
 			: Promise.resolve(new Map()),
 	]);
+	// S06 (B-271): the run beside the row it answered, the agent's draft (or the person's copy of it) and the sent answer.
+	const byDraft = new Map<string, AgentRun>(), bySent = new Map<string, AgentRun>();
+	for (const run of (runs as Map<string, AgentRun>).values()) {
+		if (run.draftId) byDraft.set(run.draftId, run);
+		if (run.personDraftId) byDraft.set(run.personDraftId, run);
+		if (run.sentMessageId) bySent.set(run.sentMessageId, run);
+	}
 	return c.json(rows.map((r) => {
-		const run = (runs as Map<string, { id: string; status: string; agentId?: string; agentVersion?: number; draftId?: string }>).get(String(r.id));
-		return { ...r, ...(sentBy[String(r.id)] ? { sent_by: sentBy[String(r.id)] } : {}),
-			...(run ? { agent_run: { id: run.id, status: run.status, ...(run.agentId ? { agentId: run.agentId } : {}),
-				...(run.agentVersion ? { agentVersion: run.agentVersion } : {}), ...(run.draftId ? { draftId: run.draftId } : {}) } } : {}) };
+		const id = String(r.id);
+		const run = (runs as Map<string, AgentRun>).get(id) ?? (r.folder_id === "draft" ? byDraft.get(id) : r.folder_id === "sent" ? bySent.get(id) : undefined);
+		return { ...r, ...(sentBy[id] ? { sent_by: sentBy[id] } : {}), ...(run ? { agent_run: threadRunView(run) } : {}) };
 	}));
 });
 

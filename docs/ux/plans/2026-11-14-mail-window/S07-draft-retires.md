@@ -107,3 +107,24 @@ run: a second accepted reply changes nothing. Logged as `{event: "agent_draft_re
 - **KIMI-49:** one resolver for every path: In-Reply-To, else the last References entry that names a message of the
   thread; the same function at acceptance and at Sent sync, with one test feeding both.
 - **R6-2:** "Keep as my draft" saves a new draft from the card's text (S06 R6-4); nothing is restored from Discarded.
+
+## Built as (2026-11-14, branch `agent/mailwin-s0607`)
+
+- **Cloudflare addresses only.** Retirement runs in the outbox `project` step of a Cloudflare mailbox. On Gmail, IMAP
+  and Outlook accounts nothing is hidden or retired yet: the providers' `createDraft` do not return a revision, so no run
+  has `agentDraftRevision`, and by the rule above such a draft counts as edited and is kept. The runner records
+  `agentDraftRevision` as soon as a mailbox's `createDraft` returns one. Sent-sync retirement and the account receipt path
+  are the follow-up row with the account half of S06.
+- **Who sent it** (`sentBy`): `agent` for a call over the agent protocol (it arrives in-process under its agent's name,
+  `inProcessActors`) and for a reply agent's own send (`auto_submitted`); `person` for every other send from the app.
+  The in-app agent cannot send.
+- **A draft whose id was already taken** when its run saved it (a rerun after an interruption) is not claimed by the
+  run's text: `draftTextComplete` is false, so it is never deleted.
+- **Failures.** A retirement step that throws (the registry not answering) fails the projection, which the outbox's
+  alarm runs again; every step is idempotent (an outcome written stays, a deleted draft is gone).
+- **Ticket outcomes** read `outcome.kind` first: `approved_by_person` is `answered`, `answered_by_person` is
+  `closed_by_person`, `answered_by_agent` is `answered_elsewhere`, `superseded` is `handed_open` (`unanswered` after
+  30 days); the quality day's waiting count leaves out a run with an outcome.
+- **The full composer** saves the first change at once only for a reply agent's untouched draft (`composerSaveDelay`);
+  every other draft keeps its 1.5 s delay.
+- **Not run in this unit:** the WebKit walk (left for the W4 audit).

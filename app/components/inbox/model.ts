@@ -58,7 +58,7 @@ export type InboxMessage = {
   /** Screened categories this message is in, with why. */
   categories?: { id: string; name: string; reason: string }[];
   /** A reply agent's run on this message (B-115): what it did, so the list can mark it and the reader show it. */
-  agentRun?: { id: string; status: string; agentId?: string; agentVersion?: number; draftId?: string };
+  agentRun?: import("../../../shared/mail/agent-run-view").AgentRunView;
   /** B-138: where its conversation stands, on an address whose reply status is shown. */
   agentState?: import("../../../shared/mail/agent-state").AgentState;
   agentAbandoned?: boolean;

@@ -30,7 +30,7 @@ import {
   type AgentVersion,
   type ToolGrant,
 } from "./definition";
-import { RUN_OUTCOMES, runIdFor, type AgentRun, type RunOutcome } from "./run";
+import { RUN_OUTCOMES, runIdFor, type AgentRun, type DraftOutcome, type RunOutcome } from "./run";
 import { sumReceipts, type Spent, type UsageReceipt } from "./usage";
 import { closeRun, deliverLeadReply, runAgent, type LeadRecord, type ModelRequest, type RunnerDeps } from "./runner";
 import { LEAD_OPEN_MS, LEAD_POLL_MS, LEAD_SOURCE, leadAction, parseStatus } from "./leads";
@@ -1588,6 +1588,42 @@ export class AgentRegistryDO extends DurableObject<Env> {
     this.ctx.storage.sql.exec("UPDATE agent_runs SET status = ?, body = ?, updated_at = ? WHERE id = ?", again.status, JSON.stringify(again), again.updatedAt, id);
     await this.enqueue(run.mailboxId, run.emailId);
     return { ok: true, run: this.present(again) };
+  }
+
+  /**
+   * S07 (B-272): writes how the run's conversation ended once its draft waited, once: the first accepted reply decides,
+   * and a later one (or a discard after a reply) changes nothing. Only for the run's own draft (`draftId` is the reply
+   * agent's draft or the person's copy made from it, R6-4); any other id answers null and nothing is written. The run is
+   * written before any draft is deleted (R6-5), so a caller that stops between the two leaves a draft to retire later,
+   * never a lost one.
+   */
+  async settleDraftOutcome(id: string, outcome: DraftOutcome, draftId: string): Promise<{ run: AgentRun; settled: boolean } | null> {
+    return this.ctx.storage.transactionSync(() => {
+      const [row] = this.rows("SELECT body FROM agent_runs WHERE id = ?", id);
+      if (!row) return null;
+      const run = JSON.parse(String(row.body)) as AgentRun;
+      const own = run.draftId === draftId, mine = run.personDraftId === draftId;
+      if (!own && !mine) return null;
+      if (run.outcome) return { run: this.present(run), settled: false };
+      // The person's copy of the agent's text is the person's answer, whatever it says.
+      const kind = mine && outcome.kind === "approved_by_person" ? "answered_by_person" : outcome.kind;
+      const next: AgentRun = { ...run, outcome: { ...outcome, kind }, updatedAt: new Date().toISOString() };
+      if (kind === "answered_by_person") next.answeredByPerson = true;
+      delete next.personCheckAt;
+      this.ctx.storage.sql.exec("UPDATE agent_runs SET body = ?, updated_at = ? WHERE id = ?", JSON.stringify(next), next.updatedAt, id);
+      console.log(JSON.stringify({ event: "agent_draft_retired", runId: id, kind, edited: !!outcome.edited }));
+      return { run: this.present(next), settled: true };
+    });
+  }
+
+  /** S06 (B-271), R6-4: the person's copy of a run's draft, made under a new id; it is theirs and never retired. */
+  async setPersonDraft(id: string, draftId: string): Promise<AgentRun | null> {
+    const [row] = this.rows("SELECT body FROM agent_runs WHERE id = ?", id);
+    if (!row) return null;
+    const run = JSON.parse(String(row.body)) as AgentRun;
+    const next: AgentRun = { ...run, personDraftId: draftId, updatedAt: new Date().toISOString() };
+    this.ctx.storage.sql.exec("UPDATE agent_runs SET body = ?, updated_at = ? WHERE id = ?", JSON.stringify(next), next.updatedAt, id);
+    return this.present(next);
   }
 
   /** B-189: a person's grade of a sent answer; a later grade replaces it. */

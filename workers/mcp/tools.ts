@@ -332,7 +332,7 @@ const readMessageTool = defineTool({
 
 const readThread = defineTool({
   name: "read_thread", title: "Read a conversation", level: "read", readOnly: true,
-  description: "Every message of a conversation, oldest first, as plain text: a Cloudflare mailbox's, or a Gmail, IMAP or Outlook account's as synced here (IMAP conversations are put together from Message-ID, In-Reply-To and References). In a Cloudflare mailbox each sent message carries sentBy (agent: the reply agent's answer; agent_waiting: its waiting reply; person) and each message that came in carries agentRun (the reply agent's run on it, with its status) when there is one. threadId comes from list_messages or read_message.",
+  description: "Every message of a conversation, oldest first, as plain text: a Cloudflare mailbox's, or a Gmail, IMAP or Outlook account's as synced here (IMAP conversations are put together from Message-ID, In-Reply-To and References). In a Cloudflare mailbox each sent message carries sentBy (agent: the reply agent's answer; agent_waiting: its waiting reply; person) and each message that came in carries agentRun (the reply agent's run on it, with its status) when there is one; the agent's draft and its sent answer carry the same run (S06), with why it waited (reason), the sources it cited, and outcome once the conversation was answered: answered_by_person, approved_by_person (its draft sent as written), answered_by_agent, or superseded (set aside with discard_agent_draft). A reply agent's untouched draft is removed once a reply is sent (S07); its text stays on the run. threadId comes from list_messages or read_message.",
   input: { accountId, threadId: z.string().min(1).max(300), maxChars: z.number().int().min(500).max(50_000).default(8000).describe("Longest body returned per message") },
   routes: ["GET /api/v1/mailboxes/:mailboxId/threads/:threadId", "GET /api/accounts/:accountId/messages", "GET /api/accounts/:accountId/messages/:messageId", "POST /api/safety/lookup"],
   async call(a, ctx) {
@@ -566,6 +566,32 @@ const answerAgain = defineTool({
   input: { runId: z.string().regex(/^agent-[0-9a-f]{32}$/).describe("The run (list_agent_runs, list_agent_events)") },
   routes: ["POST /api/agent-runs/:id/again"],
   call: (a, ctx) => post(ctx, `/api/agent-runs/${enc(a.runId)}/again`, {}),
+});
+
+const discardAgentDraft = defineTool({
+  name: "discard_agent_draft", title: "Discard a reply agent's draft", level: "mail", readOnly: false, target: (a) => a.runId,
+  description: "Sets a reply agent's waiting draft aside, as Discard draft on the draft card does (S06): the run's outcome becomes superseded and the agent's draft is deleted in one step that checks nobody changed it; the run keeps the draft's whole text, so redraft_agent_answer makes it a draft again. A draft a person changed is theirs and is refused (draft_edited); a run that does not keep the whole text keeps the draft (draft_text_not_kept); a conversation already answered is refused (answered). Cloudflare addresses only: an account's draft is changed or deleted in its own Drafts.",
+  input: { runId: z.string().regex(/^agent-[0-9a-f]{32}$/).describe("The run (a message's agentRun.id in read_thread or list_messages)") },
+  routes: ["POST /api/agent-runs/:id/discard-draft"],
+  call: (a, ctx) => post(ctx, `/api/agent-runs/${enc(a.runId)}/discard-draft`, {}),
+});
+
+const redraftAgentAnswer = defineTool({
+  name: "redraft_agent_answer", title: "Make an agent's answer a draft again", level: "mail", readOnly: false, additive: true,
+  description: "Saves a new draft from a reply agent's answer, as Make a draft of it again and Keep as my draft do (S06, S07): the run's kept text, or text you give. The new draft has its own id and counts as a person's (it is never retired when the conversation is answered, and never overwrites the agent's draft); the run names it as personDraftId. Each call makes a new draft. Cloudflare addresses only.",
+  input: { runId: z.string().regex(/^agent-[0-9a-f]{32}$/).describe("The run (read_thread, list_agent_runs)"),
+    text: z.string().min(1).max(20_000).optional().describe("The draft's text; without it, the agent's own text the run kept"),
+    to: z.string().max(10_000).optional().describe("Recipients; without it, the message's sender"), subject: z.string().max(998).optional() },
+  routes: ["POST /api/agent-runs/:id/redraft"],
+  call: (a, ctx) => post(ctx, `/api/agent-runs/${enc(a.runId)}/redraft`, { ...(a.text ? { text: a.text } : {}), ...(a.to ? { to: a.to } : {}), ...(a.subject ? { subject: a.subject } : {}) }),
+});
+
+const getAgentTuning = defineTool({
+  name: "get_agent_tuning", title: "What tuning a reply agent starts from", level: "read", readOnly: true,
+  description: "What Tune the agent carries for one run (S06): the run (agent, version, why its draft waited, the sources it cited, how its conversation ended), the agent's current instructions and reply policy, and the text of the knowledge entries the run cited, each at most 2,000 characters. A change to the agent is saved with save_agent, which makes its next version.",
+  input: { runId: z.string().regex(/^agent-[0-9a-f]{32}$/).describe("The run (read_thread, list_agent_runs)") },
+  routes: ["GET /api/agent-runs/:id/tuning"],
+  call: (a, ctx) => get(ctx, `/api/agent-runs/${enc(a.runId)}/tuning`),
 });
 
 const listAgentEvents = defineTool({
@@ -2382,7 +2408,7 @@ const revokeGrant = defineTool({
 
 export const TOOLS: readonly ToolDef[] = [
   listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, decideHeldMessage, listFolders, getSendStatus,
-  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, previewAgentAnswer, getServerErrors, getOpsDigest, getStorage, getSupportMonths, getSupportTopics, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
+  listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, discardAgentDraft, redraftAgentAnswer, getAgentTuning, previewAgentAnswer, getServerErrors, getOpsDigest, getStorage, getSupportMonths, getSupportTopics, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,
   approveRuleRun, dismissRuleRun, checkRuleRun,
