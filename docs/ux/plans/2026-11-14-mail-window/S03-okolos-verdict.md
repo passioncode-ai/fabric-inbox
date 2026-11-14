@@ -44,7 +44,7 @@ keep working).
 |---|---|---|
 | `senderAuth` | DMARC, SPF and DKIM, counted only when the **topmost** `Authentication-Results` header is the account's own receiver's: Cloudflare's MX (the existing `authResults`, `shared/mail/spam.ts:45-47`, changed to look at the topmost header only), Gmail's `mx.google.com` when the topmost `Received` header is also Google's | Outlook, IMAP and any message whose topmost header is not the receiver's: "did not run: the provider's own result cannot be told apart from one the sender wrote". Outlook is not counted in this version (Exchange Online's header carries no reliable authserv-id); a row is filed to study it. A `DKIM-Signature` or `Received-SPF` header alone never counts. Okolos's `checkSenderAuth` is not used (it reads the first header of that name, `core-mail/src/sender.ts:65-67`) |
 | `senderIdentity` | Okolos `checkSenderIdentity` with the vendored `checkLookalike`, the default watchlist and the server's own `DOMAINS`, called once per From address (it reads `from[0]`, `core-mail/src/sender.ts:152`) | A display name naming a brand on another domain fires |
-| `replyPath` | Okolos `checkReplyPath` | Reply-To on another registrable domain fires `major` as Okolos writes it (`core-mail/src/sender.ts:228`) |
+| `replyPath` | Okolos `checkReplyPath`, called once per Reply-To address (it reads `replyTo[0]`, `core-mail/src/sender.ts:218`) | Reply-To on another registrable domain fires `major` as Okolos writes it (`core-mail/src/sender.ts:228`) |
 | `links` | existing feed and lookalike checks, plus a link whose visible text names another domain than it goes to; entity-encoded and protocol-relative hrefs decoded first; a cap that was hit goes to not-run | S04 uses the per-link results |
 | `hidden` | existing `inspectMessage` | unchanged |
 | `attachments` | one entry per attachment, always (see 2) | |
@@ -61,8 +61,7 @@ headers and the stored addresses (not `parseMessage`, since remote mail has no r
 
 - **Every attachment gets one entry**, with its outcome: checked, or not checked and why (too large, an archive whose
   contents are not opened, the per-message cap of 10 files reached). A test holds the invariant.
-- **Type by content:** the first 4 KiB, read by range from R2 (Cloudflare) or from the provider (Gmail, IMAP, Outlook;
-  the whole file is never loaded only for this), matched against a table of signatures (PE, Mach-O, ELF, shell
+- **Type by content:** the first 4 KiB (read as the next bullet but one says, per provider), matched against a table of signatures (PE, Mach-O, ELF, shell
   scripts, OLE and OOXML with macros, PDF, ZIP, RAR, 7z, ISO, DMG, image formats). An empty or too short read is "did
   not run (too short)", never "matches". A PDF that also carries a program signature in its first 1 KiB is flagged as
   a mixed file.
@@ -89,9 +88,14 @@ headers and the stored addresses (not `parseMessage`, since remote mail has no r
   `{verdict, reasons}`, its release rule and its guard against feed-listed links and files that run code,
   `store.ts:642-647`). That path keeps its job, which is deciding whether agents with tools may read the message; its
   guard grows by one case: a file disguised by its bytes (section 2) blocks an automatic release as a file that runs
-  code does today. A file that runs code or is disguised, found by its bytes, now also holds the message like one found
+  code does today, and it releases a message only when the light model's YES was its sole reason (`findings.model`
+  alone): a message held for any Okolos signal of instructions to an AI, or any other floor, waits for a person
+  (round 5, KIMI-32; this narrows B-178's automatic release, so more such mail waits in Held until someone decides).
+  A file that runs code or is disguised, found by its bytes, now also holds the message like one found
   by its name (`suspect()` gains it), so a renamed program never reaches an agent with tools before a person or the
-  review releases it (round 4: KIMI-25). The sender checks do not hold mail; they colour it. A release, by the
+  review releases it (round 4: KIMI-25). The sender checks do not hold mail; they colour it, and a red sender floor
+  (a lookalike From, a brand named on another domain, DMARC fail under an enforcing policy) makes a reply agent draft
+  its answer instead of sending it, whatever its policy (round 5, R5-3). A release, by the
   review or by a person, never changes the colour: the badge and the link guard (S04) still follow the signals, with
   "Released by you" or "Released by the review" beside it.
 - **A new, separate review** (its own prompt and schema, version 1, stored under `findings.check.review` with that
@@ -101,8 +105,9 @@ headers and the stored addresses (not `parseMessage`, since remote mail has no r
   otherwise changes a message's safety state.
 - **Input:** one fenced block of untrusted data (the `untrusted-fence` pattern: a random fence per call, a preamble that
   the block is data, forged fence lines neutralised), holding every attacker-derived string as structured, length-capped
-  fields: the display name, the headers, the subject, the body, link texts and hosts, file names, and the deterministic
-  signals and per-file judgements (which carry those strings).
+  fields: the display name, the headers, the subject, the body, link texts and hosts, file names, the text read from
+  each document (at most 4,000 characters per document, labelled by its attachment id), and the deterministic signals
+  and per-file judgements (which carry those strings). A quote may come from the body or a document's text.
 - **Output, validated strictly:** a closed set of reason codes (`looks_like_phishing`, `asks_for_credentials`,
   `urgent_payment`, `impersonates_brand`, `instructions_to_ai`, `unsure`), and at most two
   quotes, each kept only when it matches a span of the normalised message text exactly. Output that fails validation is
@@ -124,7 +129,7 @@ headers and the stored addresses (not `parseMessage`, since remote mail has no r
 | Grey | "Partly checked" / «Проверено частично» | Nothing fired, a check did not run in full for this message (no trusted auth result, a file too large, a document whose text was not read, the feed stale or missing) |
 | Grey | "Not checked" / «Не проверено» | No record: arrived before this version, the check is off, the record expired; or held only because the scan could not run (`modelError`) |
 | Amber | "Sender may be forged" / «Отправитель может быть поддельным» | Only these sender signals fired: Reply-To on another domain (`replyPath`, `major` in Okolos), a DMARC, SPF or DKIM fail without an enforcing policy |
-| Amber | "Suspicious message" / «Подозрительное письмо» | Any other signal that is not in the red row; the review raised it; an amber file. When something fired but the review could not run, the colour is the checks' own: this row, with "review did not run" in the panel |
+| Amber | "Suspicious message" / «Подозрительное письмо» | Any other signal that is not in the red row (and, ahead of "Sender may be forged", whenever the review raised the message: red, then a review-raised amber, then sender-only amber, KIMI-39); the review raised it; an amber file. When something fired but the review could not run, the colour is the checks' own: this row, with "review did not run" in the panel |
 | Amber | "Suspicious message" / «Подозрительное письмо» | Held only because the light model said YES (`findings.model` alone is a model's guess, not a floor) |
 | Red | "Dangerous" / «Опасно» | The floors: a feed-listed link; a lookalike From or link; a display name naming a brand on another domain (`brandMismatch`, `critical` in Okolos, `core-mail/src/sender.ts:170`); a file that runs code or is disguised (by name or bytes); instructions to an AI found by Okolos's signals (visible strong, hidden or in a file); DMARC fail with an enforcing policy; held for any of these and not released |
 | (same) | plus "Released by you" / «Вы разрешили», or "Released by the review" / «Разрешено проверкой» | A held message was released: the colour still follows its signals |
@@ -188,7 +193,8 @@ rendered again from the new record. A recomputation that fails stays grey.
 - Inbox and thread rows carry `safety: {colour, checkedAt}` for every message with a record (today only held ones);
   the panel reads the full record on open through the existing `POST /api/safety/lookup`.
 - `POST /api/safety/check {accountId, messageId, model?: false}`: runs the deterministic checks now (and the review
-  only when asked and inside the budget); returns the record. Listed in the safety scope routes
+  only when asked and inside the budget); returns the record. It writes only `findings.check` and its `feedVersion`,
+  never `state`, `review` or the other `findings` keys, so a held message stays held (round 5, R5-2; a test holds it). Listed in the safety scope routes
   (`workers/mcp/scope.ts:74, 180-186`); MCP tool `check_message_safety` (level mail). `list_held_messages` returns
   `check` beside its current fields.
 - Clean records are kept 90 days as today; after that a message reads "Not checked" and is checked again on open.

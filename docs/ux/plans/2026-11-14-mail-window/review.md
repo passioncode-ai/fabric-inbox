@@ -174,5 +174,28 @@ earlier revisions were wrong and are corrected: providers' drafts do have a revi
 
 ## Round 5
 
-Planned on this revision for S03, S04, S06, S07: a fresh Claude verifier and Kimi. The finish line for a spec is two
-consecutive rounds with no blocking finding; W2's S06 and S07 and W3 build after it.
+On `695f4c91`, for S03, S04, S06, S07. A fresh Claude verifier (R5) and Kimi
+([review/round5-kimi.md](review/round5-kimi.md)). 15 findings, 3 blocking; all applied. S07 is redesigned so that
+nothing a person may be editing is moved or deleted outside one atomic step.
+
+| Id | Severity | Disposition |
+|---|---|---|
+| R5-1 | blocking | → S07: Discarded does not take drafts; a Cloudflare draft is deleted in the revision-checked transaction with its text kept on the run (`draftText`, "Make a draft of it again"); an account draft is only hidden in the app |
+| R5-2 | blocking | → S03: `POST /api/safety/check` writes only `findings.check`, never the state; a test holds a held message held |
+| KIMI-32 | blocking | → S03 §3: the held review releases only mail held for the light model's YES alone; any Okolos floor waits for a person (narrows B-178) |
+| R5-3 | major | → S03 §3: a red sender floor makes a reply agent draft instead of send |
+| R5-4, KIMI-37 | major | → S07: no move on accounts at all, so no race with an edit |
+| R5-5 | major | → S07: every provider's `createDraft` returns its revision, stored as `agentDraftRevision` |
+| KIMI-33 | major | → S03 §3: each document's text (4,000 characters) goes to the review inside the fence |
+| KIMI-34 | major | → S04: every link found has a record in the reader's own list, checked or not; unchecked `http(s)` asks, unparsable never opens |
+| KIMI-35 | major | → S06: a tuning instance has no tools at all |
+| KIMI-36 | major | → S06: the card loads the draft's current revision, so an untouched Send has one |
+| KIMI-38 | major | → S06: a run with an outcome shows no card; an edited draft shows only the quiet line |
+| R5-6 | minor | → S03: `checkReplyPath` once per Reply-To address |
+| R5-7 | minor | → S07: the retirement set excludes the draft the send came from |
+| KIMI-39 | minor | → S03 §4: precedence red, then review-raised amber, then sender-only amber |
+| KIMI-40 | minor | → S03 §2: one place says how bytes are read per provider |
+
+## Round 6
+
+Planned on this revision for S03, S04, S06, S07: a fresh Claude verifier and Kimi.

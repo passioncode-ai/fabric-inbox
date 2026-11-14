@@ -40,12 +40,22 @@ default). No subject-only guess retires anything.
   before this change) or a draft whose revision cannot be read counts as edited, so the draft is kept. Opening a draft in the composer without changing
   it saves nothing, so it stays untouched (a test holds this).
 - A draft sent from the S06 card is the reply itself: it leaves through the existing send path, never through
-  retirement; a newer revision saved while it was sending stays a draft (the B-52 rule).
-- Untouched drafts are retired: moved to the account's own Discarded (a folder on a Cloudflare address, a label on
-  Gmail, a folder on IMAP and Outlook, `workers/providers/provider.ts:83-84`) with the reason "Answered by a sent reply"
-  («Отвечено отправленным письмом»), kept 30 days by the existing Discarded sweep and restored with the existing "Not
-  discarded" action and its tool. The move carries the expected revision (Cloudflare: in the same transaction; accounts:
-  re-read right before the move, which is refused on a mismatch), so an edit made meanwhile keeps the draft.
+  retirement; the retirement set excludes the draft id the send came from (the outbox `project` step runs before that
+  draft is deleted, `workers/durableObject/index.ts:1043-1053`); a newer revision saved while it was sending stays a
+  draft (the B-52 rule).
+- **Untouched drafts are retired without any destructive step a person's edit could race** (round 5: R5-1, R5-4,
+  KIMI-37; Discarded does not take drafts, `durableObject/index.ts:1612, 1622, 1637-1638`, `provider.ts:91-93`):
+  - On a Cloudflare address: deleted in the same Durable Object transaction that checks `draft_revision` is null or 1,
+    so no edit can land between the check and the delete. The agent's text is kept on the run (a new field
+    `draftText`, at most 20,000 characters, written when the agent saves the draft), so the run's panel can show it
+    and "Make a draft of it again" («Снова сделать черновиком») saves a new draft from it.
+  - On a Gmail, IMAP or Outlook account: the provider's draft is not touched. The run is marked retired and the app
+    hides that draft from the thread and from its Drafts list; the provider's own client still shows it (said in the
+    run's panel: "Still in <provider>'s own Drafts"). Nothing is moved or deleted, so nothing can be lost.
+- **The revision an account draft starts with:** every provider's `createDraft` returns the draft's revision (Gmail its
+  id, IMAP its message id, Outlook a hash of its `changeKey`, `outlook/provider.ts:304, 352-353`), the receipt keeps it
+  and the run stores it as `agentDraftRevision`; an account draft is untouched while its current revision is that one.
+  Hidden only when untouched; an edited one stays visible with the quiet line below.
 - Edited drafts are the person's: they leave the thread and stay in Drafts, and the thread shows one quiet line "Your
   edited draft is in Drafts" («Ваш изменённый черновик лежит в черновиках») with a link.
 
@@ -74,11 +84,12 @@ run: a second accepted reply changes nothing. Logged as `{event: "agent_draft_re
 
 ## Acceptance
 
-- Worker (workerd), Cloudflare: an accepted reply retires an untouched draft to Discarded, keeps an edited one, keeps a
+- Worker (workerd), Cloudflare: an accepted reply deletes an untouched draft in the revision-checked transaction (its text kept on the run), keeps an edited one, keeps a
   draft answering a later message, retires nothing on an uncertain send and on a forward; the run's `outcome`.
-- Worker, an account fixture (Gmail provider double): the same through `agentDraftRevision`; a run without it keeps the
-  draft; a revision changed between the read and the move keeps it (the move is refused).
+- Worker, an account fixture (Gmail provider double): an untouched draft is hidden, never moved or deleted; an edited one
+  (revision changed) stays visible; a run without `agentDraftRevision` stays visible; each provider's `createDraft`
+  returns a revision.
 - Worker: a synced sent message naming the thread only in References retires; a subject-only match does not.
 - Unit: opening a draft in the composer without a change leaves its revision unchanged.
-- WebKit walk: send a reply in a thread with an agent's draft card; the card is gone; Discarded holds it.
+- WebKit walk: send a reply in a thread with an agent's draft card; the card is gone; the run's panel offers "Make a draft of it again".
 - The S06 scenario names this step.

@@ -27,7 +27,10 @@ click, a modifier click, Enter, a drag, or the desktop menu: there is nothing to
   `new URL(decoded).href` (entities decoded first), in `findings.check.links`, and the reader receives that list with the
   safety record before it renders the body (the body waits for the record; a record that cannot be read leaves every link
   without its `href`, as grey). The sanitizer resolves every surviving `href` the same way and keeps it only when that
-  canonical URL is in the list. `mailto:` links are kept by scheme and open the app's composer (red: no open); any other href (`https:\\host`, `https:host`, a URL split by a tab or a newline, an
+  canonical URL is in the list. `mailto:` links are kept by scheme and open the app's composer (red: no open). Every link the sanitizer finds gets a
+  record in the reader's own list: its index, its canonical URL when it parses, and whether the server checked it; an
+  unchecked `http(s)` link (past the cap, missed by the server's extraction) asks with "Open anyway" unless the message
+  is red; an unparsable one never opens (round 5, KIMI-34); any other href (`https:\\host`, `https:host`, a URL split by a tab or a newline, an
   entity-encoded one the server's pattern missed) loses its `href` and asks first, whatever the message's colour.
 - The frame's script runs for every message (made so by S08 in W2) and reports an activated link only as
   its index (`postMessage({type: "link", index})`) on `click`, `auxclick` and Enter.
