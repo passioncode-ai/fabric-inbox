@@ -5,6 +5,10 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.6.16 (2026-11-14)
+
+**The agent console tells you when a session goes quiet** (B-261). When the coding agent in the console has had no output and no input for 30 minutes, the console says so and reminds you that the session still holds its key, so a forgotten session is easy to stop. Any output or keystroke clears the notice. Basis: `tests/desktop-console.test.ts`.
+
 ## 1.6.15 (2026-11-14)
 
 **Clear reasons when a message is not sent** (B-228). Every place you send from now says the same thing for the same cause: the draft was changed elsewhere, the account reached its daily sending limit, the provider refused the message, or the server refused it and says why. When the server does not answer in time or the connection drops, you are told the outcome is not confirmed and that sending the same message again is safe: it goes out once. Before, the older message view and the classic compose window showed "Failed to send email." or a technical error.
