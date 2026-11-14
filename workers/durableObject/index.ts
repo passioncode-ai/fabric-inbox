@@ -27,7 +27,7 @@ import type { SendMailCommand, SendMailResult, SendMailRequest } from '../../sha
 import type { InboxReadOptions } from '../../shared/mail/inbox';
 import { mailboxInboxQuery, mailboxInboxMessage, searchText, searchVariants, type MailboxInboxRow } from '../lib/inbox-query';
 import { parseStoredHeaders } from '../agents/prefilter';
-import { draftsToRetire, isUntouched, outcomeKindFor, runKeepsWholeDraft, type SentByKind, type ThreadRowFacts } from '../agents/retire';
+import { draftsToRetire, isRunsAgentDraft, isUntouched, outcomeKindFor, runKeepsWholeDraft, type SentByKind, type ThreadRowFacts } from '../agents/retire';
 import { runIdFor } from '../agents/run';
 import { DISCARD_RETENTION_MS } from '../../shared/mail/discard';
 import { listDrafts as listDraftRows, saveDraft as saveDraftRows, type DraftSql, type DraftSummary, type SaveDraftInput, type SaveDraftResult } from '../lib/mailbox-drafts';
@@ -1052,14 +1052,15 @@ export class MailboxDO extends DurableObject<Env> {
 		if (source?.answers) {
 			const runId = await runIdFor(mailboxId, source.answers);
 			const kind = outcomeKindFor(sentBy, { isRunDraft: true, untouched: isUntouched(source.revision) });
-			await store.settleDraftOutcome(runId, { kind, sentMessageId: row.id, at, ...(isUntouched(source.revision) ? {} : { edited: true }) }, source.id);
+			// K-6: the sent draft left by the send; `edited` marks only a draft kept in Drafts because a person changed it.
+			await store.settleDraftOutcome(runId, { kind, sentMessageId: row.id, at }, source.id);
 		}
 		for (const draft of draftsToRetire(rows, sent)) {
 			const runId = await runIdFor(mailboxId, draft.answers);
 			const untouched = isUntouched(draft.revision);
 			const settled = await store.settleDraftOutcome(runId, { kind: outcomeKindFor(sentBy, null), sentMessageId: row.id, at, ...(untouched ? {} : { edited: true }) }, draft.draftId);
-			// Not a reply agent's draft, or the person's own copy: it is theirs and stays.
-			if (!settled || settled.run.draftId !== draft.draftId) continue;
+			// Not a reply agent's draft (its current one or an earlier attempt's, K-5), or the person's own copy: it stays.
+			if (!settled || !isRunsAgentDraft(settled.run, draft.draftId)) continue;
 			if (!untouched || !runKeepsWholeDraft(settled.run, draft.draftId)) {
 				console.log(JSON.stringify({ event: "agent_draft_kept", runId, reason: untouched ? "text_not_kept" : "edited" }));
 				continue;

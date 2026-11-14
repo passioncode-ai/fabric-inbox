@@ -9,7 +9,8 @@ import { decide, isFollowUpSubject, matchedTopic, type ModelDecision } from "./p
 import { CHECK_LIMITS } from "./model";
 import { MAX_RECEIPTS, asRole, type UsageReceipt } from "./usage";
 import { bareAddress, parseStoredHeaders, prefilter, replyToAddress, SKIP_TEXT } from "./prefilter";
-import { DRAFT_TEXT_CHARS, RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type AwaitingAnswer, type ToolCallRecord } from "./run";
+import { withPriorDraft } from "./retire";
+import { DRAFT_TEXT_CHARS, PRIOR_DRAFTS_KEPT, RESULT_PREVIEW_CHARS, SENT_BODY_CHARS, runIdFor, type AgentRun, type AwaitingAnswer, type ToolCallRecord } from "./run";
 import { secondLookCause } from "./learning-events";
 import { answeringOrder, duplicateReason, electAnswerer, messageKey, type MessageClaim } from "./dedupe";
 import type { KnowledgeHit } from "../knowledge/store";
@@ -1194,6 +1195,9 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
     // An answer given again keeps the earlier draft (a person may have edited it) beside the new one.
     const draftId = `${run.id}-draft${run.attempt && run.attempt > 1 ? `-${run.attempt}` : ""}`;
     const saved = await deps.mailbox.createDraft({ id: draftId, ...reply, inReplyTo: email.id, threadId: email.thread_id || email.id });
+    // K-5: an earlier attempt's draft stays in Drafts; the run remembers it, so a reply retires it too.
+    run.priorDrafts = withPriorDraft(run, draftId, PRIOR_DRAFTS_KEPT).priorDrafts;
+    if (!run.priorDrafts) delete run.priorDrafts;
     run.draftId = draftId;
     // S07 (B-272): the run keeps the draft's text, so retiring an untouched draft never loses it; only a text the run
     // knows is the draft's whole text lets retirement delete the draft (KIMI-46).

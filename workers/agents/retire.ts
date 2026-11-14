@@ -77,5 +77,21 @@ export function outcomeKindFor(sentBy: SentByKind, source: { isRunDraft: boolean
  * A retired draft may be deleted only when the run holds its whole text (KIMI-46), so "Make a draft of it again" can
  * always bring it back; a run written before this change, or one whose draft was longer than the run keeps, keeps it.
  */
-export const runKeepsWholeDraft = (run: Pick<AgentRun, "draftId" | "draftText" | "draftTextComplete">, draftId: string) =>
-  run.draftId === draftId && run.draftTextComplete === true && typeof run.draftText === "string";
+export function runKeepsWholeDraft(run: Pick<AgentRun, "draftId" | "draftText" | "draftTextComplete" | "priorDrafts">, draftId: string): boolean {
+  if (run.draftId === draftId) return run.draftTextComplete === true && typeof run.draftText === "string";
+  return !!run.priorDrafts?.some((d) => d.id === draftId && d.complete && typeof d.text === "string");
+}
+
+/** A draft that is the run's own: its current one or an earlier attempt's (K-5); never the person's copy. */
+export const isRunsAgentDraft = (run: Pick<AgentRun, "draftId" | "priorDrafts">, draftId: string) =>
+  run.draftId === draftId || !!run.priorDrafts?.some((d) => d.id === draftId);
+
+/**
+ * S07 (K-5): before a run's draft is replaced by a new attempt's, the earlier one is remembered with its kept text, so a
+ * reply later retires it too (by the same rules: untouched and its whole text kept). At most `keep` are remembered.
+ */
+export function withPriorDraft<R extends Pick<AgentRun, "draftId" | "draftText" | "draftTextComplete" | "priorDrafts">>(run: R, nextDraftId: string, keep: number): R {
+  if (!run.draftId || run.draftId === nextDraftId) return run;
+  const prior = { id: run.draftId, text: run.draftText ?? "", complete: run.draftTextComplete === true && typeof run.draftText === "string" };
+  return { ...run, priorDrafts: [...(run.priorDrafts ?? []).filter((d) => d.id !== prior.id), prior].slice(-keep) };
+}

@@ -114,3 +114,29 @@ test("the outbox payload carries who sent it and the draft it came from, outside
   assert.ok(retire.indexOf("settleDraftOutcome") < retire.indexOf("deleteUntouchedDraft"), "outcome written before the draft is deleted");
   assert.match(readFileSync("workers/routes/reply-forward.ts", "utf8"), /sentBy: sentByOf\(c\.req\.raw\)/, "the reply route says who sent it");
 });
+
+test("K-5: Answer again remembers the earlier attempt's draft with its kept text, and retirement treats it as the run's own", async () => {
+  const { withPriorDraft, isRunsAgentDraft } = await import("../workers/agents/retire");
+  const first = { draftId: "a-draft", draftText: "first", draftTextComplete: true };
+  const second = { ...withPriorDraft(first, "a-draft-2", 5), draftId: "a-draft-2", draftText: "second", draftTextComplete: true };
+  assert.deepEqual(second.priorDrafts, [{ id: "a-draft", text: "first", complete: true }]);
+  assert.equal(withPriorDraft(second, "a-draft-2", 5), second, "the same draft again changes nothing");
+  const many = Array.from({ length: 7 }, (_, i) => i).reduce((r, i) => ({ ...withPriorDraft(r, `d${i + 1}`, 5), draftId: `d${i + 1}`, draftText: `t${i + 1}`, draftTextComplete: true }),
+    { draftId: "d0", draftText: "t0", draftTextComplete: true } as Partial<AgentRun>);
+  assert.equal(many.priorDrafts!.length, 5, "at most PRIOR_DRAFTS_KEPT remembered");
+  assert.equal(isRunsAgentDraft(second, "a-draft"), true);
+  assert.equal(isRunsAgentDraft(second, "a-draft-2"), true);
+  assert.equal(isRunsAgentDraft({ ...second, personDraftId: "mine" }, "mine"), false, "the person's copy is never the agent's");
+  assert.equal(runKeepsWholeDraft(second, "a-draft"), true);
+  assert.equal(runKeepsWholeDraft({ draftId: "x", priorDrafts: [{ id: "y", text: "", complete: false }] }, "y"), false);
+  assert.match(readFileSync("workers/agents/runner.ts", "utf8"), /run\.priorDrafts = withPriorDraft\(run, draftId, PRIOR_DRAFTS_KEPT\)\.priorDrafts;\n[^\n]*\n\s+run\.draftId = draftId;/,
+    "the earlier draft is remembered before the run's draft id is replaced");
+  assert.match(readFileSync("workers/agents/registry.ts", "utf8"), /const own = isRunsAgentDraft\(run, draftId\), mine = run\.personDraftId === draftId;/);
+  assert.match(readFileSync("workers/index.ts", "utf8"), /for \(const prior of run\.priorDrafts \?\? \[\]\) if \(!byDraft\.has\(prior\.id\)\) byDraft\.set\(prior\.id, run\);/,
+    "an earlier attempt's draft is an ordinary draft in the reader, never a second card");
+});
+
+test("K-6: only a draft kept because a person changed it is marked edited; a sent source draft is not", () => {
+  const src = readFileSync("workers/durableObject/index.ts", "utf8");
+  assert.match(src, /await store\.settleDraftOutcome\(runId, \{ kind, sentMessageId: row\.id, at \}, source\.id\);/);
+});

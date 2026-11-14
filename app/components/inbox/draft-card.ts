@@ -4,7 +4,7 @@
  * the tuning message); `AgentDraftCard.tsx` and `ConversationList.tsx` draw them.
  */
 import type { AgentRunView } from "../../../shared/mail/agent-run-view";
-import { fenceUntrusted, type FencedField } from "../../../shared/untrusted-fence";
+import { fenceUntrusted, stripHidden, type FencedField } from "../../../shared/untrusted-fence";
 import { isAgentDraft } from "./agent-run";
 import { answeredRows } from "./quotes";
 import type { ThreadRow } from "./thread";
@@ -67,6 +67,25 @@ export function waitReason(run: Pick<AgentRunView, "limited" | "grounded">): Wai
 
 /** The knowledge collection a source names (`<collection>/<document>#<chunk>`), for its link. */
 export const sourceCollection = (ref: string) => /^([^/]+)\//.exec(ref)?.[1] ?? null;
+
+// ── The card's copy on this device (S06, K-2, K-3) ─────────────────
+
+/** Where a card keeps a text no save has acknowledged yet. */
+export const CARD_COPY_PREFIX = "fabric-inbox:agent-card:v1:";
+export const cardCopyKey = (accountId: string, draftId: string) => `${CARD_COPY_PREFIX}${accountId}:${draftId}`;
+type CopyStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+const storageOf = (): CopyStorage | null => { try { return typeof localStorage === "undefined" ? null : localStorage; } catch { return null; } };
+export function readCardCopy(key: string, storage: CopyStorage | null = storageOf()): string | null {
+  try { return storage?.getItem(key) ?? null; } catch { return null; }
+}
+export function writeCardCopy(key: string, text: string | null, storage: CopyStorage | null = storageOf()): void {
+  try { if (text === null) storage?.removeItem(key); else storage?.setItem(key, text); } catch { /* private mode: the card still saves */ }
+}
+/**
+ * K-2: what "Keep as my draft" saves once the agent's draft was retired: the person's own text when this device still
+ * holds one no save acknowledged (they had started editing), else the agent's text the run kept (an empty body).
+ */
+export const retiredRedraftBody = (copy: string | null): { text?: string } => (copy && copy.trim() ? { text: copy } : {});
 
 // ── Autosave (S06, KIMI-48) ────────────────────────────────────────
 
@@ -201,7 +220,7 @@ export function composerSaveDelay(before: { synced?: boolean; serverId?: string;
 // ── Tune the agent (S06) ────────────────────────────────────────────
 
 /** Field caps inside the fence (the untrusted-fence pattern caps every variable part). */
-export const TUNE_CAPS = { agent: 120, reason: 400, sources: 1200, sender: 320, subject: 300, message: 6000, draft: 6000 } as const;
+export const TUNE_CAPS = { agent: 120, reason: 400, sources: 1200, sender: 320, subject: 300, message: 6000, draft: 6000, knowledgeText: 2000 } as const;
 
 export interface TuningInput {
   agentName: string;
@@ -229,6 +248,8 @@ export interface TuningWords {
   instructions: string;
   policy: string;
   knowledge: string;
+  /** Inside the fence: the titles of the knowledge entries listed outside it, by the same numbers (K-4). */
+  knowledgeTitles: string;
   agent: string;
   version: string;
   reason: string;
@@ -250,12 +271,15 @@ export function tuningMessage(input: TuningInput, context: TuningContext, words:
   const outside: string[] = [words.intro];
   if (context.instructions) outside.push(`${words.instructions}\n${context.instructions}`);
   if (context.replyPolicy) outside.push(`${words.policy}\n${context.replyPolicy}`);
-  if (context.knowledge?.length) outside.push(`${words.knowledge}\n${context.knowledge.map((k) => `- ${k.title}: ${k.text}`).join("\n")}`);
+  // K-4: outside the fence only the person's own knowledge text, numbered; every title (variable text) goes inside it.
+  const knowledge = (context.knowledge ?? []).slice(0, 8);
+  if (knowledge.length) outside.push(`${words.knowledge}\n${knowledge.map((k, i) => `${i + 1}. ${stripHidden(k.text).slice(0, TUNE_CAPS.knowledgeText)}`).join("\n")}`);
   const fields: FencedField[] = [
     { label: words.agent, value: input.agentName, max: TUNE_CAPS.agent },
     ...(input.agentVersion ? [{ label: words.version, value: String(input.agentVersion), max: 12 }] : []),
     { label: words.reason, value: input.reason, max: TUNE_CAPS.reason },
     { label: words.sources, value: input.sources.join("; "), max: TUNE_CAPS.sources },
+    ...(knowledge.length ? [{ label: words.knowledgeTitles, value: knowledge.map((k, i) => `${i + 1}. ${k.title}`).join("; "), max: TUNE_CAPS.sources }] : []),
     { label: words.sender, value: input.sender, max: TUNE_CAPS.sender },
     { label: words.subject, value: input.subject, max: TUNE_CAPS.subject },
     { label: words.message, value: input.message ?? words.held, max: TUNE_CAPS.message },

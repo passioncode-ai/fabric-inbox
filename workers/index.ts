@@ -417,6 +417,8 @@ app.get("/api/v1/mailboxes/:mailboxId/threads/:threadId", async (c: AppContext) 
 	for (const run of (runs as Map<string, AgentRun>).values()) {
 		if (run.draftId) byDraft.set(run.draftId, run);
 		if (run.personDraftId) byDraft.set(run.personDraftId, run);
+		// K-5: an earlier attempt's draft carries its run too, so the reader shows it as an ordinary draft, not a card.
+		for (const prior of run.priorDrafts ?? []) if (!byDraft.has(prior.id)) byDraft.set(prior.id, run);
 		if (run.sentMessageId) bySent.set(run.sentMessageId, run);
 	}
 	return c.json(rows.map((r) => {

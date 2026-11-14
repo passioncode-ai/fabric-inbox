@@ -198,3 +198,11 @@ Where the build differs from the text above, the safest reversible choice was ta
 - **Copy check** (2026-11-14, register ui): 35 of the new interface strings in en-US, no finding (first report
   `996bed4d-91be-45ec-aa26-26781b8b8c28`); the same 35 in ru-RU (formal address), 4 advisory suggestions on a trailing
   full stop of a short line, none blocking (first report `3dce40d4-b9e1-4909-bba4-88434d7bf609`).
+- **After the second-model review of `f16533a7`:** knowledge titles are variable text and sit only inside the fence (as
+  "Titles of those knowledge entries", by number); outside it, only each entry's text by the same number (K-4). The
+  retired-draft notice saves this device's unacknowledged edit with "Keep as my draft" when there is one, and says so
+  (K-2). The text is locked while it is sent or saved as the person's draft, and the device copy is cleared only when
+  nothing newer than what left waits (K-3). Copy check: "Titles of those knowledge entries" and "Your edit on this
+  device is kept: Keep as my draft saves it." in en-US and ru-RU, no blocking finding (reports
+  `bc98565c-f3c6-4bcc-b3a9-5f02ab187ef8`, `1669891c-9f36-4f7d-8d60-e546ee3d4b53`, `27b46603-97d0-451c-a836-1aa992a45c3b`,
+  `ab48b75c-e53d-4e0d-b757-21323e739a47`).

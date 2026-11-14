@@ -453,4 +453,6 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Show whole message": "Показать письмо целиком",
 	"Sent by {agent}, version {n}": "Отправил агент {agent}, версия {n}",
 	"Sent by {agent}": "Отправил агент {agent}",
+	"Titles of those knowledge entries": "Названия этих записей знаний",
+	"Your edit on this device is kept: Keep as my draft saves it.": "Ваша правка сохранена на этом устройстве: «Сохранить как мой черновик» сохранит её.",
 };

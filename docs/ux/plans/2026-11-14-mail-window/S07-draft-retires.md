@@ -128,3 +128,10 @@ run: a second accepted reply changes nothing. Logged as `{event: "agent_draft_re
 - **The full composer** saves the first change at once only for a reply agent's untouched draft (`composerSaveDelay`);
   every other draft keeps its 1.5 s delay.
 - **Not run in this unit:** the WebKit walk (left for the W4 audit).
+- **After the second-model review of `f16533a7`:** an "Answer again" attempt remembers the earlier attempt's draft with
+  its kept text on the run (`priorDrafts`, at most 5, `withPriorDraft`); retirement treats those drafts like the current
+  one (untouched and whole text kept), and the reader shows them as ordinary drafts, never a second card (K-5). A draft
+  sent from the card is never marked `edited`; `edited` marks only a draft kept in Drafts because a person changed it
+  (K-6). K-1 (a card send carrying no thread) was checked and is not so: `#sendDraftOnce` sends a draft that answers a
+  message as a `reply` from the draft, and `sendMail` resolves it to the answered message and sets `thread_id` from it;
+  a workerd test now also checks that a card send retires an earlier untouched sibling.

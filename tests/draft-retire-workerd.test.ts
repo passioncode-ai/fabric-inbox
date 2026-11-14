@@ -20,7 +20,7 @@ const bundle = await build({
         settleDraftOutcome: async (id, outcome, draftId) => {
           calls.push({ id, kind: outcome.kind, draftId, edited: !!outcome.edited });
           const run = runs.get(id);
-          if (!run || (run.draftId !== draftId && run.personDraftId !== draftId)) return null;
+          if (!run || (run.draftId !== draftId && run.personDraftId !== draftId && !(run.priorDrafts || []).some((d) => d.id === draftId))) return null;
           if (run.outcome) return { run, settled: false };
           run.outcome = outcome;
           return { run, settled: true };
@@ -144,5 +144,48 @@ test("S06/S07: sending the agent's draft as written is approved_by_person and le
     state = await call("state");
     assert.deepEqual(state.drafts, ["d2", "d3"], "a run that does not keep the whole text keeps its draft (KIMI-46)");
     assert.equal(state.outcomes.m3.kind, "answered_by_person", "the outcome is still written");
+  } finally { await mf.dispose(); }
+});
+
+test("K-1: an accepted card send carries its thread, so it settles its own run and retires an earlier untouched sibling", async () => {
+  const { mf, call } = await fixture();
+  try {
+    await call("setup", { rows, runs });
+    const sent = await call("sendDraft", { draftId: "d3", key: "card-k1" });
+    assert.equal(sent.status, "accepted");
+    const state = await call("state");
+    assert.equal(state.outcomes.m3.kind, "approved_by_person", "the card's own run is settled");
+    assert.deepEqual(state.drafts, ["d2"], "d3 left by the send, d1 (untouched, earlier) retired, d2 (edited) kept");
+    assert.equal(state.outcomes.m1.kind, "answered_by_person");
+  } finally { await mf.dispose(); }
+});
+
+test("K-6: sending a person's edited draft from the card is answered_by_person without the edited mark (it was sent, not kept)", async () => {
+  const { mf, call } = await fixture();
+  try {
+    await call("setup", { rows, runs });
+    assert.equal((await call("sendDraft", { draftId: "d2", key: "card-k6" })).status, "accepted");
+    const state = await call("state");
+    assert.equal(state.outcomes.m2.kind, "answered_by_person");
+    assert.equal(state.outcomes.m2.edited, undefined, "edited marks only a draft kept in Drafts");
+  } finally { await mf.dispose(); }
+});
+
+test("K-5: an earlier attempt's untouched draft is retired with the current one; one whose text the run did not keep stays", async () => {
+  const { mf, call } = await fixture();
+  try {
+    const multi = [
+      { id: "m1", folder: "inbox", date: at(0), messageId: "a@acme.example" },
+      { id: "d1", folder: "draft", date: at(1), inReplyTo: "m1" },
+      { id: "d1b", folder: "draft", date: at(2), inReplyTo: "m1" },
+      { id: "d1c", folder: "draft", date: at(3), inReplyTo: "m1" },
+      { id: "m2", folder: "inbox", date: at(4), messageId: "b@acme.example" },
+    ];
+    await call("setup", { rows: multi, runs: [{ emailId: "m1", draftId: "d1c", draftText: "third", draftTextComplete: true,
+      priorDrafts: [{ id: "d1", text: "first", complete: true }, { id: "d1b", text: "", complete: false }] }] });
+    await call("reply", { key: "k-multi", original: "m2" });
+    const state = await call("state");
+    assert.deepEqual(state.drafts, ["d1b"], "d1 and d1c retired; d1b's text was not kept, so it stays");
+    assert.equal(state.outcomes.m1.kind, "answered_by_person");
   } finally { await mf.dispose(); }
 });

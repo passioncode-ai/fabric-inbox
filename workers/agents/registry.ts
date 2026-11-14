@@ -31,6 +31,7 @@ import {
   type ToolGrant,
 } from "./definition";
 import { RUN_OUTCOMES, runIdFor, type AgentRun, type DraftOutcome, type RunOutcome } from "./run";
+import { isRunsAgentDraft } from "./retire";
 import { sumReceipts, type Spent, type UsageReceipt } from "./usage";
 import { closeRun, deliverLeadReply, runAgent, type LeadRecord, type ModelRequest, type RunnerDeps } from "./runner";
 import { LEAD_OPEN_MS, LEAD_POLL_MS, LEAD_SOURCE, leadAction, parseStatus } from "./leads";
@@ -1602,7 +1603,7 @@ export class AgentRegistryDO extends DurableObject<Env> {
       const [row] = this.rows("SELECT body FROM agent_runs WHERE id = ?", id);
       if (!row) return null;
       const run = JSON.parse(String(row.body)) as AgentRun;
-      const own = run.draftId === draftId, mine = run.personDraftId === draftId;
+      const own = isRunsAgentDraft(run, draftId), mine = run.personDraftId === draftId;
       if (!own && !mine) return null;
       if (run.outcome) return { run: this.present(run), settled: false };
       // The person's copy of the agent's text is the person's answer, whatever it says.

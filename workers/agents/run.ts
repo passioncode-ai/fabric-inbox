@@ -99,6 +99,11 @@ export interface AgentRun {
    */
   draftText?: string;
   draftTextComplete?: boolean;
+  /**
+   * S07 (K-5): the drafts of earlier attempts ("Answer again" saves a new draft beside the earlier one), each with its
+   * kept text, newest last, at most PRIOR_DRAFTS_KEPT. Retirement treats them like the current draft.
+   */
+  priorDrafts?: { id: string; text: string; complete: boolean }[];
   /** S07: on a Gmail, IMAP or Outlook account, the provider's draft revision the agent's save returned; written once. */
   agentDraftRevision?: string;
   /** S06 (B-271), R6-4: a draft made again from this run's text, under a new id, which is the person's (never retired). */
@@ -191,6 +196,8 @@ export interface DraftOutcome {
 export const RESULT_PREVIEW_CHARS = 2000;
 /** S07: the longest draft text a run keeps; a longer draft is kept whole in Drafts and never retired (KIMI-46). */
 export const DRAFT_TEXT_CHARS = 20_000;
+/** S07 (K-5): how many earlier attempts' drafts a run remembers for retirement. */
+export const PRIOR_DRAFTS_KEPT = 5;
 export const SENT_BODY_CHARS = 12_000;
 
 export async function runIdFor(mailboxId: string, emailId: string): Promise<string> {
